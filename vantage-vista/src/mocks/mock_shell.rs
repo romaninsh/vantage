@@ -340,8 +340,9 @@ impl TableShell for MockShell {
     ) -> Result<Vec<(String, Record<CborValue>)>> {
         self.guard_reads()?;
         let data = self.data.lock().unwrap();
-        let matches =
-            |record: &Record<CborValue>| self.matches_filters(record) && self.matches_search(record);
+        let matches = |record: &Record<CborValue>| {
+            self.matches_filters(record) && self.matches_search(record)
+        };
         let order = self.order.lock().unwrap().clone();
         Ok(match order {
             Some((field, dir)) => {

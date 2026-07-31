@@ -264,14 +264,22 @@ mod tests {
 
     #[test]
     fn same_seed_replays_the_same_records() {
-        let cols = [col("id", "string"), col("name", "string"), col("age", "int")];
+        let cols = [
+            col("id", "string"),
+            col("name", "string"),
+            col("age", "int"),
+        ];
         let a: Vec<_> = {
             let g = ValueGen::seeded(42);
-            (0..5).map(|i| g.record_for(&cols, "id", &i.to_string())).collect()
+            (0..5)
+                .map(|i| g.record_for(&cols, "id", &i.to_string()))
+                .collect()
         };
         let b: Vec<_> = {
             let g = ValueGen::seeded(42);
-            (0..5).map(|i| g.record_for(&cols, "id", &i.to_string())).collect()
+            (0..5)
+                .map(|i| g.record_for(&cols, "id", &i.to_string()))
+                .collect()
         };
         assert_eq!(a, b, "a seed is a promise");
     }
@@ -281,14 +289,18 @@ mod tests {
         let g = ValueGen::seeded(7).with_weirdness(1.0);
         let cols = [col("id", "string"), col("name", "string")];
         let anomalies: Vec<String> = (0..40)
-            .map(|i| text(g.record_for(&cols, "id", &i.to_string()).get("name").unwrap()).to_string())
+            .map(|i| {
+                text(
+                    g.record_for(&cols, "id", &i.to_string())
+                        .get("name")
+                        .unwrap(),
+                )
+                .to_string()
+            })
             .collect();
         // Every value came from the pool: blank, John Smith, unicode, or long.
         for v in &anomalies {
-            let from_pool = v.is_empty()
-                || v == "John Smith"
-                || v.contains('Ž')
-                || v.len() >= 200;
+            let from_pool = v.is_empty() || v == "John Smith" || v.contains('Ž') || v.len() >= 200;
             assert!(from_pool, "unexpected non-anomalous value {v:?}");
         }
         // And the pool cycles — more than one kind appears over 40 draws.
@@ -303,7 +315,10 @@ mod tests {
         for i in 0..40 {
             let rec = g.record_for(&cols, "id", &i.to_string());
             let v = text(rec.get("name").unwrap()).to_string();
-            assert!(!v.is_empty() && v != "John Smith" && v.len() < 200, "anomaly leaked: {v:?}");
+            assert!(
+                !v.is_empty() && v != "John Smith" && v.len() < 200,
+                "anomaly leaked: {v:?}"
+            );
         }
     }
 }

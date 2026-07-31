@@ -26,11 +26,11 @@ use indexmap::IndexMap;
 use tokio::time::Instant;
 use vantage_core::{Result, error};
 use vantage_types::Record;
+use vantage_vista::Vista;
 use vantage_vista::capabilities::VistaCapabilities;
 use vantage_vista::column::Column;
 use vantage_vista::reference::Reference;
 use vantage_vista::source::TableShell;
-use vantage_vista::Vista;
 
 /// A latency band: each request draws uniformly from `[min, max]`.
 #[derive(Clone, Copy, Debug)]
@@ -414,13 +414,20 @@ impl TableShell for ShapedShell {
             Some(t) => self.decode_cursor(t)?,
         };
         let offset = self.skewed_offset(offset);
-        let rows = self.inner.fetch_window(vista, offset, self.page_size).await?;
+        let rows = self
+            .inner
+            .fetch_window(vista, offset, self.page_size)
+            .await?;
         let next = (rows.len() == self.page_size).then(|| self.cursor_token(offset + rows.len()));
         Ok((rows, next))
     }
 
     async fn get_vista_count(&self, vista: &Vista) -> Result<i64> {
-        self.gate(self.shape.capabilities.can_count, "get_vista_count", "can_count")?;
+        self.gate(
+            self.shape.capabilities.can_count,
+            "get_vista_count",
+            "can_count",
+        )?;
         tracing::debug!(target: "vantage_faker::shape", op = "count", "request");
         self.toll(OpClass::Count).await?;
         self.lied_total(vista).await
@@ -435,7 +442,11 @@ impl TableShell for ShapedShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.gate(self.shape.capabilities.can_insert, "insert_vista_value", "can_insert")?;
+        self.gate(
+            self.shape.capabilities.can_insert,
+            "insert_vista_value",
+            "can_insert",
+        )?;
         self.inner.insert_vista_value(vista, id, record).await
     }
 
@@ -445,7 +456,11 @@ impl TableShell for ShapedShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.gate(self.shape.capabilities.can_update, "replace_vista_value", "can_update")?;
+        self.gate(
+            self.shape.capabilities.can_update,
+            "replace_vista_value",
+            "can_update",
+        )?;
         self.inner.replace_vista_value(vista, id, record).await
     }
 
@@ -455,12 +470,20 @@ impl TableShell for ShapedShell {
         id: &String,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.gate(self.shape.capabilities.can_update, "patch_vista_value", "can_update")?;
+        self.gate(
+            self.shape.capabilities.can_update,
+            "patch_vista_value",
+            "can_update",
+        )?;
         self.inner.patch_vista_value(vista, id, partial).await
     }
 
     async fn delete_vista_value(&self, vista: &Vista, id: &String) -> Result<()> {
-        self.gate(self.shape.capabilities.can_delete, "delete_vista_value", "can_delete")?;
+        self.gate(
+            self.shape.capabilities.can_delete,
+            "delete_vista_value",
+            "can_delete",
+        )?;
         self.inner.delete_vista_value(vista, id).await
     }
 
@@ -495,14 +518,22 @@ impl TableShell for ShapedShell {
     }
 
     fn add_search(&mut self, text: &str) -> Result<()> {
-        self.gate(self.shape.capabilities.can_search, "add_search", "can_search")?;
+        self.gate(
+            self.shape.capabilities.can_search,
+            "add_search",
+            "can_search",
+        )?;
         self.inner.add_search(text)?;
         self.searching.store(true, Ordering::Relaxed);
         Ok(())
     }
 
     fn clear_search(&mut self) -> Result<()> {
-        self.gate(self.shape.capabilities.can_search, "clear_search", "can_search")?;
+        self.gate(
+            self.shape.capabilities.can_search,
+            "clear_search",
+            "can_search",
+        )?;
         self.inner.clear_search()?;
         self.searching.store(false, Ordering::Relaxed);
         Ok(())
@@ -514,7 +545,11 @@ impl TableShell for ShapedShell {
     }
 
     fn clear_orders(&mut self) -> Result<()> {
-        self.gate(self.shape.capabilities.can_order, "clear_orders", "can_order")?;
+        self.gate(
+            self.shape.capabilities.can_order,
+            "clear_orders",
+            "can_order",
+        )?;
         self.inner.clear_orders()
     }
 
