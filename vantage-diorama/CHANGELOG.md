@@ -25,7 +25,16 @@ Rebuilding the index→row map from the cache placed an arbitrary subset of the
 mixed with correctly-placed rows wherever a later fetch landed. A paged,
 single-pass view whose master orders server-side now drops its positions (the
 cached records stay) and refills the visible window. Views holding the complete
-set still sort locally, which is both right and instant.
+set still sort locally, which is both right and instant — and "the complete set"
+is counted over the rows matching the current query, so a cache full of rows a
+search excludes cannot stand in for coverage of the narrowed one.
+
+- `debug::dur`, `bytes`, `num` and `pct` are public. The stream is a shared
+  format and `vantage-diorama-aggregate` writes into it; two crates printing the
+  same quantities two ways is what the format exists to prevent.
+- The inferred-total line is emitted only when the total moves, which is the
+  rule the stated-total line already followed. A reload that keeps landing on
+  the same short page used to repeat it once per fetch.
 
 ## 0.11.0 — 2026-07-30
 

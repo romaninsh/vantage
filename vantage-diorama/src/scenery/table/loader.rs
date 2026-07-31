@@ -535,14 +535,9 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 } else {
                     received.join(",")
                 };
-                let (demanded_str, undemanded_count) = match &demanded {
-                    None => ("all".to_string(), 0),
-                    Some(set) => {
-                        let mut names: Vec<&str> = set.iter().map(String::as_str).collect();
-                        names.sort_unstable();
-                        let undemanded = received.iter().filter(|c| !set.contains(*c)).count();
-                        (names.join(","), undemanded)
-                    }
+                let undemanded_count = match &demanded {
+                    None => 0,
+                    Some(set) => received.iter().filter(|c| !set.contains(*c)).count(),
                 };
                 // Name the columns the first time only. After that the set is
                 // established and repeating it every fetch is just width.
@@ -583,7 +578,6 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                         crate::debug::bytes(payload_bytes),
                     );
                 }
-                let _ = &demanded_str;
             }
             // Where the grand total came from. A total the source stated in the
             // same response as the rows (`ChunkSink::set_total`) outranks
@@ -633,13 +627,19 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 changed
             } else if pushed < effective_len {
                 let total = effective_range.start + pushed;
-                crate::debug::tapline!(
-                    tap,
-                    "total",
-                    "{} rows — inferred: the page came back short",
-                    crate::debug::num(total),
-                );
-                state.set_total(Some(total))
+                // Same rule as the stated branch above: only when it MOVES. A
+                // reload that keeps landing on the same short page would
+                // otherwise repeat this line for a total that never changed.
+                let changed = state.set_total(Some(total));
+                if changed {
+                    crate::debug::tapline!(
+                        tap,
+                        "total",
+                        "{} rows — inferred: the page came back short",
+                        crate::debug::num(total),
+                    );
+                }
+                changed
             } else {
                 // A FULL page from a source that has never stated a total. If
                 // it reached the advertised end, that end was only ever our

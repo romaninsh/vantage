@@ -352,7 +352,13 @@ impl TableSceneryState {
         let sort = self.sort.read().unwrap().clone();
         let search = self.search.read().unwrap().clone();
 
-        let filtered_len_hint = all.len();
+        let mut filtered: Vec<(String, Record<CborValue>)> = all
+            .into_iter()
+            .filter(|(_, rec)| matches_conditions(rec, &conditions))
+            .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
+            .filter(|(_, rec)| matches_search(rec, search.as_deref()))
+            .collect();
+
         // A paged view whose MASTER does the ordering cannot position cached
         // rows after the order changes. The cache holds an arbitrary subset of
         // the previous order — the windows this view happened to visit — and
@@ -374,8 +380,12 @@ impl TableSceneryState {
         // the whole set can order it locally and be right, which is both
         // cheaper and instant; the hazard is strictly about ordering a sample
         // and presenting it as the whole.
+        //
+        // Count MATCHING rows, not cached rows: `total` describes the narrowed
+        // set, so a cache full of rows the search excludes would otherwise
+        // clear the bar while the matching rows are still a sample.
         let holds_everything = match *self.total.read().unwrap() {
-            Some(total) => filtered_len_hint >= total,
+            Some(total) => filtered.len() >= total,
             None => false,
         };
         if self.paged
@@ -402,13 +412,6 @@ impl TableSceneryState {
             self.refresh_loaded_viewport();
             return Ok(());
         }
-
-        let mut filtered: Vec<(String, Record<CborValue>)> = all
-            .into_iter()
-            .filter(|(_, rec)| matches_conditions(rec, &conditions))
-            .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
-            .filter(|(_, rec)| matches_search(rec, search.as_deref()))
-            .collect();
 
         if let Some((col, dir)) = sort {
             let missing = filtered

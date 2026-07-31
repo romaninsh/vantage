@@ -220,13 +220,13 @@ impl AggregateLens {
             let ms = start.map(|s| s.elapsed().as_millis()).unwrap_or(0);
             tracing::info!(
                 target: "vantage_diorama::debug",
-                "{:<10} {:<8} \"{}\" recomputed from {} rows → {} in {}ms (initial, published)",
+                "{:<10} {:<8} \"{}\" recomputed from {} rows → {} in {} (initial, published)",
                 tap.ds(),
                 "derive",
                 name,
-                rows.len(),
-                initial.debug_row_count(),
-                ms,
+                vantage_diorama::debug::num(rows.len()),
+                vantage_diorama::debug::num(initial.debug_row_count()),
+                vantage_diorama::debug::dur(ms as u64),
             );
         }
 

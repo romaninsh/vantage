@@ -206,7 +206,7 @@ pub fn debug_summary_lines() -> Vec<String> {
             stat.fetches,
             stat.repeats,
             crate::debug::num(stat.rows_received),
-            stat.rows_redundant,
+            crate::debug::num(stat.rows_redundant),
             crate::debug::dur(stat.ms_total),
             crate::debug::dur(stat.ms_max),
         ));

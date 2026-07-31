@@ -113,7 +113,11 @@ macro_rules! tapline {
 pub(crate) use tapline;
 
 /// A duration in the unit a reader thinks in: `840ms`, `3.0s`, `1m12s`.
-pub(crate) fn dur(ms: u64) -> String {
+///
+/// Public because the stream is a shared format: a crate that writes into
+/// `vantage_diorama::debug` — `vantage-diorama-aggregate` does — has to print
+/// its numbers the same way, or the reader meets two conventions in one log.
+pub fn dur(ms: u64) -> String {
     if ms < 1_000 {
         format!("{ms}ms")
     } else if ms < 60_000 {
@@ -124,7 +128,7 @@ pub(crate) fn dur(ms: u64) -> String {
 }
 
 /// A byte count as `812B`, `24KB`, `1.2MB`.
-pub(crate) fn bytes(n: usize) -> String {
+pub fn bytes(n: usize) -> String {
     const KB: usize = 1024;
     const MB: usize = KB * 1024;
     if n < KB {
@@ -137,7 +141,7 @@ pub(crate) fn bytes(n: usize) -> String {
 }
 
 /// A count with thousands separators — `200,000` reads, `200000` doesn't.
-pub(crate) fn num(n: usize) -> String {
+pub fn num(n: usize) -> String {
     let s = n.to_string();
     let mut out = String::with_capacity(s.len() + s.len() / 3);
     for (i, c) in s.chars().enumerate() {
@@ -151,7 +155,7 @@ pub(crate) fn num(n: usize) -> String {
 
 /// `held` of `total` as a percentage, precise enough to stay honest at the
 /// small end: 200 of 200,000 is `0.1%`, not `0%`.
-pub(crate) fn pct(held: usize, total: usize) -> String {
+pub fn pct(held: usize, total: usize) -> String {
     if total == 0 {
         return "—".into();
     }

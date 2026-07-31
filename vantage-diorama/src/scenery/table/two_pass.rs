@@ -289,8 +289,8 @@ async fn list_page_into(
         "dio",
         "list #{} asks for {} ids from offset {}",
         req.unwrap_or_default(),
-        limit,
-        offset,
+        crate::debug::num(limit),
+        crate::debug::num(offset),
     );
     let t = std::time::Instant::now();
     let rows = if let Some(cb) = dio_inner.lens.callbacks.on_list_page.as_ref() {
@@ -361,7 +361,7 @@ async fn list_page_into(
         "dio",
         "list #{} got {} ids in {} — {} known so far{}",
         req.unwrap_or_default(),
-        rows_len,
+        crate::debug::num(rows_len),
         crate::debug::dur(t.elapsed().as_millis() as u64),
         crate::debug::num(index.len()),
         if index.is_complete() {
@@ -769,9 +769,9 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
         state.debug_tap,
         "hydrate",
         "{} rows in view — {} need detail, {} already complete",
-        requested,
-        pending.len(),
-        already_complete,
+        crate::debug::num(requested),
+        crate::debug::num(pending.len()),
+        crate::debug::num(already_complete),
     );
     if pending.is_empty() {
         return;
