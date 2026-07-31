@@ -128,10 +128,7 @@ async fn census_lines_fire_on_scenery_open_and_drop() {
     assert_eq!(opens.len(), 1);
     assert!(opens[0].contains("census"), "line: {}", opens[0]);
     assert!(opens[0].contains("now 1 table"), "line: {}", opens[0]);
-    assert!(
-        opens[0].contains("rss"),
-        "census carries process stats"
-    );
+    assert!(opens[0].contains("rss"), "census carries process stats");
 
     drop(scenery);
     // Guard teardown is synchronous; the census drop line is emitted from Drop.
@@ -257,11 +254,7 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
         lines_containing(&log, "served locally").len() == 1
     })
     .await;
-    assert_eq!(
-        lines_containing(&log, "asks for").len(),
-        1,
-        "no re-fetch"
-    );
+    assert_eq!(lines_containing(&log, "asks for").len(), 1, "no re-fetch");
 }
 
 /// A single row with 50 fat extra fields — the wide-data case the "columns"
@@ -315,7 +308,11 @@ async fn column_line_exposes_undemanded_wide_fields() {
     assert_eq!(cols.len(), 1, "{cols:?}");
     assert!(cols[0].contains("columns"), "{}", cols[0]);
     assert!(cols[0].contains("52 columns received"), "{}", cols[0]);
-    assert!(cols[0].contains("KB") || cols[0].contains("B"), "{}", cols[0]);
+    assert!(
+        cols[0].contains("KB") || cols[0].contains("B"),
+        "{}",
+        cols[0]
+    );
     // payload should be dominated by the extras: > 50KB for 1 row wouldn't
     // hold for all rows; just assert it's large.
     // The wide payload has to be visible in the size the line reports: 52

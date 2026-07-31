@@ -23,7 +23,7 @@ use vantage_vista::mocks::MockShell;
 use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata};
 
 mod support;
-use support::chunk::{col_at, settle, Backend};
+use support::chunk::{Backend, col_at, settle};
 
 fn rec(name: &str) -> Record<CborValue> {
     let mut r = Record::new();

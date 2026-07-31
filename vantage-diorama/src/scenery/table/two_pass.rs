@@ -364,7 +364,11 @@ async fn list_page_into(
         rows_len,
         crate::debug::dur(t.elapsed().as_millis() as u64),
         crate::debug::num(index.len()),
-        if index.is_complete() { ", that's all of them" } else { "" },
+        if index.is_complete() {
+            ", that's all of them"
+        } else {
+            ""
+        },
     );
     Ok(appended)
 }
