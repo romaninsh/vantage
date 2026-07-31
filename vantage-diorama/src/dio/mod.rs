@@ -241,8 +241,11 @@ impl DioInner {
     /// Next value in this Dio's request sequence — stamped as `req=N` to
     /// correlate a dispatch line with its return line in the debug stream.
     pub(crate) fn next_req(&self) -> u64 {
+        // 1-based: "fetch #1" is the first request a reader sees, and a
+        // zero-th of anything reads like an off-by-one bug in the log.
         self.req_seq
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
     }
 
     /// Prune dead entries from the table-scenery dedup registry and return
@@ -272,14 +275,14 @@ impl DioInner {
         let p = crate::debug::process_stats();
         crate::debug::tapline!(
             tap,
-            dio = self.master.read().unwrap().name(),
+            "census",
+            "{} {} — now {} table, {} record, {} servo · rss {}MB",
+            if verb == "opened" { "+1" } else { "-1" },
+            kind,
             table_sceneries,
             record_sceneries,
             servos,
-            uptime_ms = p.uptime_ms,
-            cpu_ms = p.cpu_ms,
-            peak_rss_mb = p.peak_rss_bytes / (1024 * 1024),
-            "census: {kind} {verb}",
+            p.peak_rss_bytes / (1024 * 1024),
         );
     }
 

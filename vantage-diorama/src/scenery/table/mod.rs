@@ -116,9 +116,9 @@ impl LoadState {
     /// emits.
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
-            LoadState::Loading => "Loading",
-            LoadState::Partial => "Partial",
-            LoadState::Complete => "Complete",
+            LoadState::Loading => "loading",
+            LoadState::Partial => "partial",
+            LoadState::Complete => "complete",
         }
     }
 }
@@ -398,6 +398,31 @@ impl TableScenery for TableSceneryImpl {
             two_pass = self.inner.two_pass,
             "set_sort",
         );
+        // Where the ordering will actually happen is the whole question: a
+        // source that can order does it over the entire set; one that can't
+        // leaves us sorting the rows we happen to hold, which is a different
+        // answer as well as a slower one.
+        match &column {
+            Some(col) => crate::debug::tapline!(
+                self.inner.debug_tap,
+                "sort",
+                "by {} {} — {}",
+                col,
+                match dir {
+                    SortDir::Asc => "ascending",
+                    SortDir::Desc => "descending",
+                },
+                if self.inner.master_capabilities.can_order {
+                    "pushed to the source".to_string()
+                } else {
+                    format!(
+                        "the source cannot order; sorting the {} rows held locally",
+                        crate::debug::num(self.inner.rows.read().unwrap().len())
+                    )
+                },
+            ),
+            None => crate::debug::tapline!(self.inner.debug_tap, "sort", "cleared"),
+        }
         self.inner.deregister();
         *self.inner.sort.write().unwrap() = column.map(|c| (c, dir));
         self.inner.reload_notify.notify_one();
@@ -422,6 +447,23 @@ impl TableScenery for TableSceneryImpl {
             paged = self.inner.paged,
             "set_search",
         );
+        match &normalized {
+            Some(q) => crate::debug::tapline!(
+                self.inner.debug_tap,
+                "search",
+                "\"{}\" — {}",
+                q,
+                if self.inner.master_capabilities.can_search {
+                    "pushed to the source".to_string()
+                } else {
+                    format!(
+                        "the source cannot search; filtering the {} rows held locally",
+                        crate::debug::num(self.inner.rows.read().unwrap().len())
+                    )
+                },
+            ),
+            None => crate::debug::tapline!(self.inner.debug_tap, "search", "cleared"),
+        }
         // Reshaping a shared view is not this consumer's to do — same rule
         // as `set_sort`/`set_filters`.
         self.inner.deregister();

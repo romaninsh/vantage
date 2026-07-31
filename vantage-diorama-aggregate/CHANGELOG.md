@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.6 — 2026-07-30
+
+- Recompute lines render in the same shape as the rest of the diorama debug
+  stream, so a project with aggregates no longer interleaves two log grammars.
+  They also use diorama's own formatters, so a recompute reports `1.5s` and
+  `200,000` instead of `1500ms` and `200000`.
+
 ## 0.6.5 — 2026-07-30
 
 - Track vantage-diorama 0.11.

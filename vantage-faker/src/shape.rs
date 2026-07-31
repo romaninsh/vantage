@@ -224,10 +224,9 @@ impl ShapedShell {
             let mut delay = band.map(|b| b.draw(rng)).unwrap_or_default();
             if matches!(class, OpClass::List | OpClass::Window)
                 && self.searching.load(Ordering::Relaxed)
+                && let Some(extra) = self.shape.latency.search_extra
             {
-                if let Some(extra) = self.shape.latency.search_extra {
-                    delay += extra.draw(rng);
-                }
+                delay += extra.draw(rng);
             }
             let failed = self.shape.faults.error_rate > 0.0
                 && rng.random_range(0.0..1.0) < self.shape.faults.error_rate;

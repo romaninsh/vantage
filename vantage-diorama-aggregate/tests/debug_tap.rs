@@ -119,20 +119,20 @@ async fn aggregate_recompute_line_is_inherited_from_the_source_tap() -> Result<(
         .await?;
     settle().await;
 
-    let lines = lines_containing(&log, "aggregate recompute");
+    let lines = lines_containing(&log, "recomputed from");
     assert!(!lines.is_empty(), "expected at least one recompute line");
     assert!(
         lines
             .iter()
-            .any(|l| l.contains("rows_out=") && l.contains("unchanged=false")),
+            .any(|l| l.contains("rows \u{2192}") && l.contains("published")),
         "{lines:?}"
     );
     assert!(
-        lines.iter().all(|l| l.contains("ds=agg-ds")),
+        lines.iter().all(|l| l.contains("agg-ds")),
         "every inherited line must carry the source's ds: {lines:?}"
     );
     assert!(
-        lines.iter().all(|l| l.contains("aggregate=\"by_status\"")),
+        lines.iter().all(|l| l.contains("\"by_status\"")),
         "{lines:?}"
     );
 
@@ -164,7 +164,7 @@ async fn a_non_debug_source_emits_no_aggregate_recompute_lines() -> Result<()> {
     settle().await;
 
     assert!(
-        lines_containing(&log, "aggregate recompute").is_empty(),
+        lines_containing(&log, "recomputed from").is_empty(),
         "a non-debug source must produce zero lines: {:?}",
         log.lock().unwrap()
     );
@@ -201,7 +201,7 @@ async fn nudge_trigger_is_emitted_by_a_values_local_write_through() -> Result<()
     total.request_refresh();
     settle().await;
 
-    let nudge_lines = lines_containing(&log, "trigger=\"nudge\"");
+    let nudge_lines = lines_containing(&log, "(nudge,");
     assert!(
         !nudge_lines.is_empty(),
         "expected a recompute line triggered by the local nudge: {:?}",
@@ -210,14 +210,14 @@ async fn nudge_trigger_is_emitted_by_a_values_local_write_through() -> Result<()
     assert!(
         nudge_lines
             .iter()
-            .all(|l| l.starts_with("aggregate recompute") && l.contains("aggregate=\"total\"")),
+            .all(|l| l.contains("recomputed from") && l.contains("\"total\"")),
         "{nudge_lines:?}"
     );
     // The failing refresh must not have smuggled in a DatasetChanged-
     // triggered line alongside the nudge — the whole point of the failing
     // source is to isolate the one trigger.
     assert!(
-        lines_containing(&log, "trigger=\"DatasetChanged\"").is_empty(),
+        lines_containing(&log, "(DatasetChanged,").is_empty(),
         "the refresh was made to fail precisely so it wouldn't race the nudge: {:?}",
         log.lock().unwrap()
     );

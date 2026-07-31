@@ -70,6 +70,29 @@ pub struct FakerTable {
     _task: Option<AbortOnDrop>,
 }
 
+/// Declare the generated columns on the shell so the Vista can answer for
+/// them. Without this the shell reports no columns at all, and anything that
+/// resolves a column by name — `add_order` most visibly — fails with
+/// "Unknown column" even where the shape advertises the capability. Every
+/// generated column is orderable and searchable: the store is in memory, so
+/// there is no honest reason to refuse either.
+fn faker_metadata(columns: &[FakerColumn], id_column: &str) -> vantage_vista::VistaMetadata {
+    let mut meta = vantage_vista::VistaMetadata::default();
+    for c in columns {
+        let mut col = vantage_vista::Column::new(&c.name, &c.ty)
+            .with_flag(vantage_vista::flags::ORDERABLE)
+            .with_flag(vantage_vista::flags::SEARCHABLE);
+        for f in &c.flags {
+            col = col.with_flag(f);
+        }
+        if c.name == id_column {
+            col = col.with_flag(vantage_vista::flags::ID);
+        }
+        meta.columns.insert(c.name.clone(), col);
+    }
+    meta
+}
+
 impl FakerTable {
     /// Build a faker table from its schema and a chosen effect.
     ///
@@ -82,14 +105,15 @@ impl FakerTable {
         id_column: impl Into<String>,
         effect: Box<dyn FakerEffect>,
     ) -> Self {
-        let shell = MockShell::new();
+        let id_column = id_column.into();
+        let shell = MockShell::new().with_metadata(faker_metadata(&columns, &id_column));
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
 
         let ctx = std::sync::Arc::new(FakerCtx::new(
             shell.clone(),
             events.clone(),
             columns,
-            id_column.into(),
+            id_column,
         ));
 
         effect.seed(&ctx);
@@ -121,7 +145,8 @@ impl FakerTable {
         effect: Box<dyn FakerEffect>,
         shape: BackendShape,
     ) -> Self {
-        let shell = MockShell::new();
+        let id_column = id_column.into();
+        let shell = MockShell::new().with_metadata(faker_metadata(&columns, &id_column));
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
 
         let values = match shape.seed {
@@ -131,7 +156,7 @@ impl FakerTable {
         .with_weirdness(shape.weirdness);
 
         let ctx = std::sync::Arc::new(
-            FakerCtx::new(shell.clone(), events.clone(), columns, id_column.into())
+            FakerCtx::new(shell.clone(), events.clone(), columns, id_column)
                 .with_values(values)
                 .with_extra_fields(shape.extra_fields)
                 .with_seed(shape.seed),

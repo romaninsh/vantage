@@ -15,42 +15,39 @@
 //! cache mutation, every consumer open/close (the *census*), every status
 //! transition — attributable, correlated (`req=N`), and greppable.
 //!
-//! # Frozen message strings
+//! # Line shape
 //!
-//! These strings are a contract: downstream test harnesses grep them.
-//! Changing one is a breaking change to whatever greps it, on par with
-//! changing a public function's signature.
+//! Every line is `<datasource>  <tag>  <clause>` — a scannable left edge and
+//! one clause of plain English. Units are human (`3.0s`, `24KB`, `200,000`,
+//! `0.1%`), and a field is omitted rather than printed empty.
 //!
-//! | Message | Fields | Where |
-//! |---|---|---|
-//! | `"load dispatch"` | `req, dio, visible, effective, rows_to_fetch, already_cached, sort, search, force_load` | a viewport fetch is about to run |
-//! | `"load return"` | `req, dio, received, ms, cached_after` | that fetch came back `Ok` |
-//! | `"load failed"` | `req, dio, ms, error` | that fetch came back `Err` |
-//! | `"cache hit — viewport served locally"` | `dio, range, rows` | a viewport is fully cached; no fetch fires |
-//! | `"total"` | `dio, total, provenance` | the grand total changed; `provenance` ∈ `stated` / `short-page` / `horizon-extended` / `hole-clamped` |
-//! | `"state"` | `dio, from, to, reason` | a [`LoadState`](crate::scenery::LoadState) transition |
-//! | `"cache write"` | `dio, written, new, updated, cached_rows, known_total, cached_pct` | a load committed rows to the cache; only emitted when `written > 0` |
-//! | `"cache seed"` | `dio, mode, rows` | a scenery seeded its rows from the cache at open; `mode` ∈ `warm` / `cold` |
-//! | `"columns"` | `dio, demanded, received_count, received_sample, undemanded_count, payload_bytes, rows` | the wide-data detector — what a chunk actually carried against what was asked for |
-//! | `"census: {kind} {verb}"` | `dio, table_sceneries, record_sceneries, servos, uptime_ms, cpu_ms, peak_rss_mb` | a consumer opened or closed; `kind` ∈ `table scenery` / `record scenery` / `servo`, `verb` ∈ `opened` / `closed` |
-//! | `"list page dispatch"` | `req, dio, offset, limit, conditions, sort` | a two-pass list page is about to be fetched |
-//! | `"list page return"` | `req, rows, ms, index_len, complete` | that list page came back |
-//! | `"detail pass"` | `dio, requested, pending, already_complete` | a two-pass detail (augment) sweep queued its pending ids |
-//! | `"aggregate recompute"` | `aggregate, trigger, rows_in, rows_out, ms, unchanged` | a `vantage-diorama-aggregate` layer recomputed; `trigger` ∈ `initial` / `debounce-trailing` / `nudge` / `lagged` / a `DioEvent` variant name |
-//! | `"— diorama session summary —"` | (header, no fields) | first line of [`stats::debug_summary_lines`](crate::stats::debug_summary_lines) / [`stats::emit_debug_summary`](crate::stats::emit_debug_summary) |
+//! The **tag** is the grep anchor and comes from a closed set:
 //!
-//! A `derive()`'s first load emits two `"aggregate recompute"` lines with
-//! `trigger = "initial"`: an eager compute that seeds the derived Vista's
-//! schema (`unchanged = false`, since there is no prior output to compare
-//! against), immediately followed by the engine's own seed pass over the
-//! same rows (`unchanged = true`, since it reads the value the eager pass
-//! just published). Both are real recomputations, not a duplicate log call —
-//! the second is what proves the engine's own loop agrees with the eager
-//! pass before anything has changed.
+//! | Tag | Says |
+//! |---|---|
+//! | `dio` | a Dio was created; a fetch was asked for, came back, or failed (`fetch #N`, `list #N`) |
+//! | `source` | what the master can and cannot do, and how this view loads — once, at open |
+//! | `scenery` | a view opened; a load-state transition; row positions dropped |
+//! | `census` | a consumer attached or detached, with live counts and RSS |
+//! | `viewport` | the range a consumer declared, and how many scroll events coalesced into it |
+//! | `cache` | rows committed, or a viewport served locally with no fetch |
+//! | `payload` | columns received against columns displayed, and the bytes |
+//! | `total` | the grand total changed, and what decided it |
+//! | `sort` / `search` | the query changed, and whether it was pushed to the source |
+//! | `hydrate` | a two-pass detail sweep queued its pending ids |
+//! | `derive` | a `vantage-diorama-aggregate` layer recomputed |
+//! | `summary` | the end-of-session ledger (see [`stats::emit_debug_summary`](crate::stats::emit_debug_summary)) |
 //!
-//! `req=N` is a per-dio, monotonically increasing counter
-//! (`DioInner::next_req`) that ties a dispatch line to its matching
-//! return/failed line — only allocated when the tap is enabled.
+//! `fetch #N` / `list #N` is a per-dio counter tying a request to its outcome;
+//! it is allocated only when the tap is enabled. Lines from one load are not
+//! emitted in a fixed order — the cache commit and the state transition happen
+//! inside the operation the return line closes — so correlate on the id rather
+//! than on adjacency.
+//!
+//! A `derive()`'s first load emits two `derive` lines: an eager compute that
+//! seeds the derived Vista's schema, then the engine's own seed pass over the
+//! same rows, which reports `unchanged` because it reads what the eager pass
+//! just published. Both are real recomputations.
 
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -69,9 +66,14 @@ impl DebugTap {
         Self { ds: None }
     }
 
-    /// An enabled tap tagged with the datasource's name; every emitted
-    /// line carries it as `ds=<name>`.
+    /// An enabled tap tagged with the datasource's name; it prefixes every
+    /// line the tap emits.
     pub fn for_datasource(name: impl Into<String>) -> Self {
+        ANY_TAP_ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
+        // Start the session clock here rather than at the first reader, so
+        // "session" spans the whole of the debug stream instead of beginning
+        // at whatever happened to look at it first.
+        LazyLock::force(&PROCESS_START);
         Self {
             ds: Some(Arc::from(name.into())),
         }
@@ -90,26 +92,102 @@ impl DebugTap {
 
 /// Emit one debug-stream line, only when the tap is enabled.
 ///
-/// `tapline!(tap, field = value, ..., "message")` — the target and the
-/// `ds` field are supplied here so call sites can't drift.
+/// `tapline!(tap, "tag", "clause {}", value)` renders as
+/// `<datasource>  <tag>  <clause>` — a scannable left edge (which source,
+/// which kind of event) followed by one clause of plain English. The whole
+/// invocation, arguments included, sits behind the enabled check, so a
+/// disabled tap pays for nothing it would otherwise format.
 macro_rules! tapline {
-    ($tap:expr, $($rest:tt)*) => {
+    ($tap:expr, $tag:literal, $($arg:tt)*) => {
         if $tap.enabled() {
-            tracing::info!(target: "vantage_diorama::debug", ds = %$tap.ds(), $($rest)*);
+            tracing::info!(
+                target: "vantage_diorama::debug",
+                "{:<10} {:<8} {}",
+                $tap.ds(),
+                $tag,
+                format_args!($($arg)*),
+            );
         }
     };
 }
 pub(crate) use tapline;
 
+/// A duration in the unit a reader thinks in: `840ms`, `3.0s`, `1m12s`.
+///
+/// Public because the stream is a shared format: a crate that writes into
+/// `vantage_diorama::debug` — `vantage-diorama-aggregate` does — has to print
+/// its numbers the same way, or the reader meets two conventions in one log.
+pub fn dur(ms: u64) -> String {
+    if ms < 1_000 {
+        format!("{ms}ms")
+    } else if ms < 60_000 {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    } else {
+        format!("{}m{:02}s", ms / 60_000, (ms % 60_000) / 1000)
+    }
+}
+
+/// A byte count as `812B`, `24KB`, `1.2MB`.
+pub fn bytes(n: usize) -> String {
+    const KB: usize = 1024;
+    const MB: usize = KB * 1024;
+    if n < KB {
+        format!("{n}B")
+    } else if n < MB {
+        format!("{}KB", n / KB)
+    } else {
+        format!("{:.1}MB", n as f64 / MB as f64)
+    }
+}
+
+/// A count with thousands separators — `200,000` reads, `200000` doesn't.
+pub fn num(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// `held` of `total` as a percentage, precise enough to stay honest at the
+/// small end: 200 of 200,000 is `0.1%`, not `0%`.
+pub fn pct(held: usize, total: usize) -> String {
+    if total == 0 {
+        return "—".into();
+    }
+    let p = held as f64 / total as f64 * 100.0;
+    if p >= 10.0 {
+        format!("{p:.0}%")
+    } else {
+        format!("{p:.1}%")
+    }
+}
+
 /// Wall/CPU/memory snapshot for census lines and the exit summary.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ProcessStats {
-    /// Milliseconds since the first `process_stats()` call in this process.
+    /// Milliseconds since the debug stream was armed (the first
+    /// [`DebugTap::for_datasource`]), not since process start — anything
+    /// before the first datasource opted in is not measured.
     pub uptime_ms: u64,
     /// User + system CPU time consumed by the process, in milliseconds.
     pub cpu_ms: u64,
     /// Peak resident set size, in bytes. 0 where unsupported.
     pub peak_rss_bytes: u64,
+}
+
+/// Set the first time any datasource opts in. The exit summary consults it
+/// so an embedder can call `emit_debug_summary()` unconditionally on quit
+/// without printing a ledger nobody asked for.
+static ANY_TAP_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether any datasource enabled the debug stream in this process.
+pub fn any_tap_enabled() -> bool {
+    ANY_TAP_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 static PROCESS_START: LazyLock<Instant> = LazyLock::new(Instant::now);

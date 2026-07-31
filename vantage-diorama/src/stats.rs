@@ -199,32 +199,36 @@ pub fn debug_summary_lines() -> Vec<String> {
 
     // Per-table stats (already sorted busiest first by fetch_stats())
     for stat in fetch_stats() {
-        let line = format!(
-            "{}: {} fetches ({} repeats), {} rows ({} redundant), {}ms total, {}ms max",
+        lines.push(format!(
+            "{:<10} {:<8} {} fetches, {} repeats · {} rows, {} redundant · {} waiting, {} slowest",
             stat.table,
+            "summary",
             stat.fetches,
             stat.repeats,
-            stat.rows_received,
-            stat.rows_redundant,
-            stat.ms_total,
-            stat.ms_max
-        );
-        lines.push(line);
+            crate::debug::num(stat.rows_received),
+            crate::debug::num(stat.rows_redundant),
+            crate::debug::dur(stat.ms_total),
+            crate::debug::dur(stat.ms_max),
+        ));
     }
 
     // Live counts
     let live = live_counts();
     lines.push(format!(
-        "live: {} dios, {} table sceneries, {} record sceneries, {} servos",
-        live.dios, live.table_sceneries, live.record_sceneries, live.servos
+        "{:<10} {:<8} {} dio, {} table scenery, {} record, {} servo still alive",
+        "", "summary", live.dios, live.table_sceneries, live.record_sceneries, live.servos
     ));
 
     // Process stats
     let proc = crate::debug::process_stats();
     let peak_rss_mb = proc.peak_rss_bytes / (1024 * 1024);
     lines.push(format!(
-        "process: uptime {}ms, cpu {}ms, peak rss {}MB",
-        proc.uptime_ms, proc.cpu_ms, peak_rss_mb
+        "{:<10} {:<8} session {} · cpu {} · peak rss {}MB",
+        "",
+        "summary",
+        crate::debug::dur(proc.uptime_ms),
+        crate::debug::dur(proc.cpu_ms),
+        peak_rss_mb
     ));
 
     lines
@@ -233,6 +237,12 @@ pub fn debug_summary_lines() -> Vec<String> {
 /// Log the debug summary lines via tracing at info level.
 /// Unconditional — the embedder decides when to call this.
 pub fn emit_debug_summary() {
+    // No-op unless some datasource actually opted in, so an embedder can call
+    // this unconditionally on the way out without printing a ledger nobody
+    // asked for.
+    if !crate::debug::any_tap_enabled() {
+        return;
+    }
     for line in debug_summary_lines() {
         tracing::info!(target: "vantage_diorama::debug", "{}", line);
     }
@@ -279,10 +289,10 @@ mod tests {
         record_fetch("book", &(0..20), 20, 20, 9);
         let lines = debug_summary_lines();
         assert!(lines[0].contains("session summary"));
-        let book = lines.iter().find(|l| l.starts_with("book:")).unwrap();
-        assert!(book.contains("2 fetches (1 repeats)"), "{book}");
-        assert!(book.contains("(20 redundant)"), "{book}");
-        assert!(lines.iter().any(|l| l.starts_with("live:")));
-        assert!(lines.iter().any(|l| l.starts_with("process:")));
+        let book = lines.iter().find(|l| l.starts_with("book ")).unwrap();
+        assert!(book.contains("2 fetches, 1 repeats"), "{book}");
+        assert!(book.contains("20 redundant"), "{book}");
+        assert!(lines.iter().any(|l| l.contains("still alive")));
+        assert!(lines.iter().any(|l| l.contains("peak rss")));
     }
 }

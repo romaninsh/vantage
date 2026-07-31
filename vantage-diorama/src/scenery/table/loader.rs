@@ -63,6 +63,16 @@ pub(crate) async fn viewport_loop(
             }
         }
         let depth_after = state.viewport_queue_depth.load(Ordering::SeqCst);
+        if absorbed > 0 {
+            crate::debug::tapline!(
+                state.debug_tap,
+                "viewport",
+                "rows {}..{} — {} scroll events coalesced into one",
+                latest.range.start,
+                latest.range.end,
+                absorbed + 1,
+            );
+        }
         tracing::debug!(
             target: "vantage_diorama::viewport",
             range = ?latest.range,
@@ -239,13 +249,22 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                     rows = visible_cached,
                     "CACHE — served locally, no master fetch",
                 );
-                crate::debug::tapline!(
-                    tap,
-                    dio = dio_inner.master.read().unwrap().name(),
-                    range = ?visible,
-                    rows = visible_cached,
-                    "cache hit — viewport served locally",
-                );
+                let repeat = {
+                    let mut last = state.last_served.lock().unwrap();
+                    let same = last.as_ref() == Some(&visible);
+                    *last = Some(visible.clone());
+                    same
+                };
+                if !repeat {
+                    crate::debug::tapline!(
+                        tap,
+                        "cache",
+                        "all {} rows of {}..{} served locally — no fetch",
+                        visible_cached,
+                        visible.start,
+                        visible.end,
+                    );
+                }
                 return;
             }
         }
@@ -380,16 +399,26 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     );
     crate::debug::tapline!(
         tap,
-        req = req.unwrap_or_default(),
-        dio = dio_inner.master.read().unwrap().name(),
-        visible = ?visible,
-        effective = ?effective_range,
-        rows_to_fetch = effective_to_fetch,
-        already_cached = effective_cached,
-        sort = ?query.sort,
-        search = ?query.search,
-        force_load,
-        "load dispatch",
+        "dio",
+        "fetch #{} asks for rows {}..{}{} — {} missing, {} already held{}{}",
+        req.unwrap_or_default(),
+        effective_range.start,
+        effective_range.end,
+        if effective_range == visible {
+            String::new()
+        } else {
+            format!(" (viewport {}..{})", visible.start, visible.end)
+        },
+        effective_to_fetch,
+        effective_cached,
+        match &query.sort {
+            Some((col, dir)) => format!(" · sorted by {col} {dir:?}"),
+            None => String::new(),
+        },
+        match &query.search {
+            Some(q) => format!(" · searching \"{q}\""),
+            None => String::new(),
+        },
     );
     // Clear the dirty flag so it reflects only the rows this load writes;
     // `write_chunk_row` sets it when a row's content actually changes.
@@ -432,25 +461,22 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             if let Some(report) = &flush_report
                 && report.written > 0
             {
+                // A concurrent flush from another in-flight load between the
+                // before/after `count()` calls could in principle make this go
+                // negative and underflow; accepted here since it's a debug-only
+                // line, not a value anything downstream trusts.
+                let new_rows = (report.cache_rows_after - report.cache_rows_before) as usize;
+                let held = report.cache_rows_after as usize;
+                let known_total = state.total.read().unwrap().unwrap_or(0);
                 crate::debug::tapline!(
                     tap,
-                    dio = dio_inner.master.read().unwrap().name(),
-                    written = report.written,
-                    // A concurrent flush from another in-flight load between the
-                    // before/after `count()` calls could in principle make this
-                    // go negative and underflow; accepted here since it's a
-                    // debug-only line, not a value anything downstream trusts.
-                    new = (report.cache_rows_after - report.cache_rows_before) as usize,
-                    updated = report.written.saturating_sub(
-                        (report.cache_rows_after - report.cache_rows_before) as usize
-                    ),
-                    cached_rows = report.cache_rows_after,
-                    known_total = state.total.read().unwrap().unwrap_or(0),
-                    cached_pct = match state.total.read().unwrap().unwrap_or(0) {
-                        0 => 0,
-                        total => 100 * report.cache_rows_after as usize / total,
-                    },
-                    "cache write",
+                    "cache",
+                    "+{} new, {} updated — now holding {} of {} ({})",
+                    new_rows,
+                    report.written.saturating_sub(new_rows),
+                    crate::debug::num(held),
+                    crate::debug::num(known_total),
+                    crate::debug::pct(held, known_total),
                 );
             }
             // The window came back — whatever it contained, this view now has
@@ -478,12 +504,12 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             );
             crate::debug::tapline!(
                 tap,
-                req = req.unwrap_or_default(),
-                dio = dio_inner.master.read().unwrap().name(),
-                received = pushed,
-                ms,
-                cached_after,
-                "load return",
+                "dio",
+                "fetch #{} got {} rows in {}{}",
+                req.unwrap_or_default(),
+                pushed,
+                crate::debug::dur(ms),
+                if ms >= 1_000 { "  ⚠ slow" } else { "" },
             );
             // The wide-data detector: how many distinct fields this chunk
             // carried against how many the open sceneries actually asked
@@ -509,26 +535,49 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 } else {
                     received.join(",")
                 };
-                let (demanded_str, undemanded_count) = match &demanded {
-                    None => ("all".to_string(), 0),
-                    Some(set) => {
-                        let mut names: Vec<&str> = set.iter().map(String::as_str).collect();
-                        names.sort_unstable();
-                        let undemanded = received.iter().filter(|c| !set.contains(*c)).count();
-                        (names.join(","), undemanded)
-                    }
+                let undemanded_count = match &demanded {
+                    None => 0,
+                    Some(set) => received.iter().filter(|c| !set.contains(*c)).count(),
                 };
-                crate::debug::tapline!(
-                    tap,
-                    dio = dio_inner.master.read().unwrap().name(),
-                    demanded = demanded_str,
-                    received_count,
-                    received_sample,
-                    undemanded_count,
-                    payload_bytes,
-                    rows = pushed,
-                    "columns",
-                );
+                // Name the columns the first time only. After that the set is
+                // established and repeating it every fetch is just width.
+                let first_time = !state
+                    .payload_named
+                    .swap(true, std::sync::atomic::Ordering::Relaxed);
+                // With no demand declared, "all columns are wanted" is an
+                // assumption, not a fact — saying "206/206 displayed" would
+                // claim a grid showing five columns wanted all two hundred.
+                // Report what is actually known instead.
+                let headline = match &demanded {
+                    None => format!(
+                        "{} columns received · no view declared what it needs, so all were fetched",
+                        received_count
+                    ),
+                    Some(_) => format!(
+                        "{} of {} columns wanted · {} fetched and dropped",
+                        received_count.saturating_sub(undemanded_count),
+                        received_count,
+                        undemanded_count
+                    ),
+                };
+                if first_time {
+                    crate::debug::tapline!(
+                        tap,
+                        "payload",
+                        "{} · {} · {}",
+                        headline,
+                        crate::debug::bytes(payload_bytes),
+                        received_sample,
+                    );
+                } else {
+                    crate::debug::tapline!(
+                        tap,
+                        "payload",
+                        "{} · {}",
+                        headline,
+                        crate::debug::bytes(payload_bytes),
+                    );
+                }
             }
             // Where the grand total came from. A total the source stated in the
             // same response as the rows (`ChunkSink::set_total`) outranks
@@ -546,14 +595,18 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                     total = ?stated,
                     "total stated by the fetch itself — no count request needed",
                 );
-                crate::debug::tapline!(
-                    tap,
-                    dio = dio_inner.master.read().unwrap().name(),
-                    total = stated.unwrap_or_default(),
-                    provenance = "stated",
-                    "total",
-                );
                 let changed = stated != total_before;
+                // Only when it MOVES. A source that restates the same total on
+                // every window would otherwise repeat this line per fetch,
+                // burying the times it actually changed.
+                if changed {
+                    crate::debug::tapline!(
+                        tap,
+                        "total",
+                        "{} rows — stated by the source in the same response",
+                        crate::debug::num(stated.unwrap_or_default()),
+                    );
+                }
                 // Remember a stated, un-narrowed total in the cache meta, so
                 // the NEXT open of this view can size its geometry before any
                 // fetch — the difference between a warm reopen appearing
@@ -574,14 +627,19 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 changed
             } else if pushed < effective_len {
                 let total = effective_range.start + pushed;
-                crate::debug::tapline!(
-                    tap,
-                    dio = dio_inner.master.read().unwrap().name(),
-                    total,
-                    provenance = "short-page",
-                    "total",
-                );
-                state.set_total(Some(total))
+                // Same rule as the stated branch above: only when it MOVES. A
+                // reload that keeps landing on the same short page would
+                // otherwise repeat this line for a total that never changed.
+                let changed = state.set_total(Some(total));
+                if changed {
+                    crate::debug::tapline!(
+                        tap,
+                        "total",
+                        "{} rows — inferred: the page came back short",
+                        crate::debug::num(total),
+                    );
+                }
+                changed
             } else {
                 // A FULL page from a source that has never stated a total. If
                 // it reached the advertised end, that end was only ever our
@@ -610,10 +668,9 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                     );
                     crate::debug::tapline!(
                         tap,
-                        dio = dio_inner.master.read().unwrap().name(),
-                        total = extended,
-                        provenance = "horizon-extended",
                         "total",
+                        "{} rows — a full page reached the end we assumed; extending it",
+                        crate::debug::num(extended),
                     );
                     state.set_total(Some(extended))
                 } else {
@@ -683,10 +740,9 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                         );
                         crate::debug::tapline!(
                             tap,
-                            dio = dio_inner.master.read().unwrap().name(),
-                            total = hole,
-                            provenance = "hole-clamped",
                             "total",
+                            "{} rows — capped: the source promises more than it serves",
+                            crate::debug::num(hole),
                         );
                         total_changed |= state.set_total(Some(hole));
                     }
@@ -727,11 +783,11 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             );
             crate::debug::tapline!(
                 tap,
-                req = req.unwrap_or_default(),
-                dio = dio_inner.master.read().unwrap().name(),
-                ms = t.elapsed().as_millis() as u64,
-                error = %e,
-                "load failed",
+                "dio",
+                "fetch #{} failed after {} — {}",
+                req.unwrap_or_default(),
+                crate::debug::dur(t.elapsed().as_millis() as u64),
+                e,
             );
             let _ = dio_inner.event_bus.send(DioEvent::LoadFailed {
                 range: effective_range,

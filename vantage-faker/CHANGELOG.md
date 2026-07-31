@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.13 — 2026-07-30
+
+- **A faker table can now be ordered.** `build` and `build_shaped` seeded the
+  store but never registered the columns as `VistaMetadata`, so the shell
+  reported none and `Vista::add_order` failed every sort with "Unknown column"
+  — on a shape that advertised `order`. Because the failure was instant and the
+  rows never landed, each viewport movement re-requested them, which presented
+  as a hung window. Generated columns are now declared, orderable and
+  searchable, carrying through the `id`/`title`/`searchable` flags they were
+  given.
+- Track vantage-diorama 0.12.
+
 ## 0.6.12 — 2026-07-30
 
 - Track vantage-diorama 0.11. No behavior changes here.

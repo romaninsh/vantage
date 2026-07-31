@@ -286,13 +286,11 @@ async fn list_page_into(
     let req = state.debug_tap.enabled().then(|| dio_inner.next_req());
     crate::debug::tapline!(
         state.debug_tap,
-        req = req.unwrap_or_default(),
-        dio = state.dio_name.as_str(),
-        offset,
-        limit,
-        conditions = ?q.conditions,
-        sort = ?q.sort,
-        "list page dispatch",
+        "dio",
+        "list #{} asks for {} ids from offset {}",
+        req.unwrap_or_default(),
+        crate::debug::num(limit),
+        crate::debug::num(offset),
     );
     let t = std::time::Instant::now();
     let rows = if let Some(cb) = dio_inner.lens.callbacks.on_list_page.as_ref() {
@@ -360,12 +358,17 @@ async fn list_page_into(
     let appended = index.append_page(new_ids, limit);
     crate::debug::tapline!(
         state.debug_tap,
-        req = req.unwrap_or_default(),
-        rows = rows_len,
-        ms = t.elapsed().as_millis() as u64,
-        index_len = index.len(),
-        complete = index.is_complete(),
-        "list page return",
+        "dio",
+        "list #{} got {} ids in {} — {} known so far{}",
+        req.unwrap_or_default(),
+        crate::debug::num(rows_len),
+        crate::debug::dur(t.elapsed().as_millis() as u64),
+        crate::debug::num(index.len()),
+        if index.is_complete() {
+            ", that's all of them"
+        } else {
+            ""
+        },
     );
     Ok(appended)
 }
@@ -764,11 +767,11 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     );
     crate::debug::tapline!(
         state.debug_tap,
-        dio = state.dio_name.as_str(),
-        requested,
-        pending = pending.len(),
-        already_complete,
-        "detail pass",
+        "hydrate",
+        "{} rows in view — {} need detail, {} already complete",
+        crate::debug::num(requested),
+        crate::debug::num(pending.len()),
+        crate::debug::num(already_complete),
     );
     if pending.is_empty() {
         return;
