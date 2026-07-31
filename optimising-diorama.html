@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 2: Expressions - Vantage Framework</title>
+        <title>Optimising Live Diorama Data - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -12,34 +12,34 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="../favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
-        <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-2459343d.css">
-        <link rel="stylesheet" href="../css/chrome-ae938929.css">
-        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href=".././mdbook-admonish.css">
+        <link rel="stylesheet" href="./mdbook-admonish.css">
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "../";
+            const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-cd3ff698.js";
+            window.path_to_searchindex_js = "searchindex-cd3ff698.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-8d4429da.js"></script>
+        <script src="toc-8d4429da.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -106,7 +106,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -141,7 +141,7 @@
                     <h1 class="menu-title">Vantage Framework</h1>
 
                     <div class="right-buttons">
-                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -175,232 +175,123 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-2-make-expressions-work"><a class="header" href="#step-2-make-expressions-work">Step 2: Make Expressions Work</a></h1>
-<p>With the type system in place, you can now use <code>Expression&lt;AnySqliteType&gt;</code> to build and execute
-queries. This step has two deliverables: a convenience macro and the <code>ExprDataSource</code> trait
-implementation.</p>
-<h3 id="the-vendor-macro"><a class="header" href="#the-vendor-macro">The vendor macro</a></h3>
-<p>Define a macro that produces <code>Expression&lt;YourAnyType&gt;</code>. SurrealDB has <code>surreal_expr!</code>, we create
-<code>sqlite_expr!</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
-<span class="boring">}</span></code></pre>
-<p>Under the hood, <code>100i64</code> gets wrapped as <code>AnySqliteType::new(100i64)</code> with variant <code>Integer</code>. When
-this expression hits the database, the bind layer knows to call <code>query.bind(100i64)</code> — not
-<code>query.bind("100")</code> or <code>query.bind(100.0)</code>.</p>
-<p>The macro handles three kinds of parameters:</p>
+                        <h1 id="optimising-live-diorama-data"><a class="header" href="#optimising-live-diorama-data">Optimising Live Diorama Data</a></h1>
+<p>An application reports its faults. It does not report its inefficiencies. A failed request raises an
+error, but a duplicate fetch stays unnoticed. Typical problems are:</p>
 <ul>
-<li><code>42i64</code> → scalar with type marker</li>
-<li><code>(sub_expr)</code> → nested expression (composed into the template)</li>
-<li><code>{deferred}</code> → lazy evaluation (resolved at execution time)</li>
+<li>refetch a static page in its entirety every 5 seconds</li>
+<li>fetch all columns of a related table, just to fill a select field in a form</li>
+<li>sort 120,000 rows in the client, and ignore the <code>sort</code> capability of the source</li>
 </ul>
-<h3 id="identifier-quoting"><a class="header" href="#identifier-quoting">Identifier quoting</a></h3>
-<p>SQL identifiers (table names, column names) need quoting to handle reserved words, spaces, and
-special characters. Different databases use different quote styles — PostgreSQL and SQLite use
-double quotes (<code>"name"</code>), MySQL uses backticks (<code>`name`</code>), SurrealDB uses something else
-entirely.</p>
-<p>Vantage centralises this in the <code>Identifier</code> struct (<code>vantage-sql/src/primitives/identifier.rs</code>).
-<code>Identifier</code> is quote-agnostic — it stores the name parts and optional alias, but the actual quoting
-happens in the <code>Expressive&lt;T&gt;</code> implementation for each backend type:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Expressive&lt;AnyMysqlType&gt; for Identifier {
-    fn expr(&amp;self) -&gt; Expression&lt;AnyMysqlType&gt; {
-        Expression::new(self.render_with('`'), vec![])  // `name`
-    }
-}
-<span class="boring">}</span></code></pre>
-<p>When you add a new SQL backend, add an <code>Expressive&lt;YourAnyType&gt;</code> impl with your quote character. The
-compiler picks the right impl based on the expression type context.</p>
-<p>In practice you use the <code>ident()</code> shorthand and pass it into the vendor macro with parentheses — the
-<code>(...)</code> syntax calls <code>.expr()</code> automatically, so quoting is handled by the type context:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::primitives::identifier::{Identifier, ident};
+<p>Inefficiencies show as extra latency, high CPU usage, or network traffic. This chapter gives you the
+mechanisms to detect them and to avoid them.</p>
+<div id="admonition-why-live-data-needs-a-cache" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-live-data-needs-a-cache-title">
+<div class="admonition-title">
+<div id="admonition-why-live-data-needs-a-cache-title">
+<p>Why live data needs a cache</p>
+</div>
 
-// The (ident(...)) syntax invokes Expressive — quoting is automatic
-let expr = mysql_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT `name` FROM `product` WHERE `price` = 100
+<a class="admonition-anchor-link" href="#admonition-why-live-data-needs-a-cache"></a>
+</div>
 
-let expr = postgres_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT "name" FROM "product" WHERE "price" = 100
-<span class="boring">}</span></code></pre>
-<p>For qualified identifiers (table.column) and aliases:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
-// → SELECT "u"."name"
+<div>
+<p>A user interface repaints many times each second. It cannot wait for the network on each frame, so
+the rows must already be in memory. When the user scrolls, the framework fetches rows ahead of the
+viewport to keep the movement smooth.</p>
+<p>Diorama keeps those rows in a <a href="https://www.redb.org/">redb</a> file on disk, one file for each
+datasource. The rows therefore survive a move to another page, and they survive a restart.</p>
+<p>A user interface is not the only consumer of a cache. Vantage is also designed for facade APIs and
+for live caches at the edge.</p>
+<p>The goal is the same in each case: answer most requests without a request to the master source, and
+keep the local copy in agreement with that source. A correct cache answers immediately, and then
+pushes each change to the viewport when it arrives.</p>
+<p><svg viewbox="0 0 720 172" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Consumers on the left declare a viewport to the Diorama cache in the middle, and receive the live updates that are relevant to it. The cache sends few batched fetches to the master source on the right, which returns changes for the whole table.">
+<defs>
+<marker id="dio-arrow" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse">
+<path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+</marker>
+</defs>
+<g fill="none" stroke="currentColor" stroke-opacity="0.45">
+<rect x="14" y="42" width="122" height="112" rx="6" />
+<rect x="578" y="62" width="128" height="72" rx="6" />
+</g>
+<rect x="292" y="52" width="152" height="92" rx="6" fill="none" stroke="#4a90d9" stroke-width="1.6" />
+<g fill="currentColor" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">
+<text x="75" y="76" font-size="11.5">UI viewport</text>
+<text x="75" y="102" font-size="11.5">Facade API</text>
+<text x="75" y="128" font-size="11.5">Edge cache</text>
+<text x="368" y="91" font-size="13">Diorama cache</text>
+<text x="368" y="109" font-size="10.5" fill-opacity="0.65">redb, on disk</text>
+<text x="642" y="93" font-size="13">Master source</text>
+<text x="642" y="111" font-size="10.5" fill-opacity="0.65">slow · remote</text>
+<g font-size="10.5" fill-opacity="0.75">
+<text x="214" y="76">declare viewport</text>
+<text x="214" y="134">relevant live updates</text>
+<text x="511" y="76">few fetches, batched</text>
+<text x="511" y="134">whole-table changes</text>
+</g>
+</g>
+<g fill="none" stroke="currentColor" stroke-opacity="0.75" marker-end="url(#dio-arrow)">
+<path d="M140,84 L288,84" />
+<path d="M288,116 L142,116" />
+<path d="M448,84 L574,84" />
+<path d="M574,116 L450,116" />
+</g>
+</svg></p>
+</div>
 
-let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
-// → SELECT `name` AS `n`
-<span class="boring">}</span></code></pre>
-<p>Test identifier quoting in <code>tests/&lt;backend&gt;/2_identifier.rs</code> — cover basic names, reserved words,
-spaces, hyphens, unicode, and names that start with numbers. These are all legal inside quoted
-identifiers in both PostgreSQL and MySQL.</p>
-<h3 id="exprdatasource"><a class="header" href="#exprdatasource">ExprDataSource</a></h3>
-<p>Implement <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnySqliteType&gt;</code> on your DB struct. The <code>execute</code>
-method takes an expression, flattens nested sub-expressions, converts <code>{}</code> placeholders to your
-driver’s syntax (<code>?N</code> for SQLite, <code>$N</code> for Postgres), binds parameters using type markers, and
-returns results.</p>
-<p>Results come back as <code>AnySqliteType</code> with <code>type_variant: None</code> — the database doesn’t preserve our
-markers, so results are permissive (see Step 1). For SQLite that’s especially natural since it
-doesn’t distinguish boolean from integer on the wire.</p>
-<p>If the persistence layer you’re implementing <em>does</em> preserve type information in responses (like
-SurrealDB with CBOR tags), set the correct <code>type_variant</code> when constructing result values in your
-<code>execute()</code> implementation. That way <code>try_get</code> enforces type boundaries on both sides of the
-round-trip.</p>
-<h3 id="validating-with-insert-expressions"><a class="header" href="#validating-with-insert-expressions">Validating with INSERT expressions</a></h3>
-<p>The best way to test this is INSERT + SELECT round-trips. A single insert exercises all the pieces —
-macro, parameter binding, type markers, and result parsing:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let insert = sqlite_expr!(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES ({}, {}, {}, {})",
-    "cupcake", "Flux Cupcake", 120i64, false
-);
-db.execute(&amp;insert).await?;
+</div>
 
-let select = sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake");
-let result = db.execute(&amp;select).await?;
-<span class="boring">}</span></code></pre>
-<p>Nested expressions let you build multi-row inserts from composable parts:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let row1 = sqlite_expr!("({}, {}, {}, {})", "tart", "Time Tart", 220i64, false);
-let row2 = sqlite_expr!("({}, {}, {}, {})", "pie", "Sea Pie", 299i64, true);
-
-// Expression::from_vec joins sub-expressions with a delimiter
-let rows = Expression::from_vec(vec![row1, row2], ", ");
-
-// Nest into the INSERT — flattener resolves everything into a single query
-let insert = Expression::&lt;AnySqliteType&gt;::new(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES {}",
-    vec![ExpressiveEnum::Nested(rows)],
-);
-db.execute(&amp;insert).await?;
-<span class="boring">}</span></code></pre>
-<p>The <code>ExpressionFlattener</code> collapses all nesting into one flat template with positional parameters —
-each one still carrying its type marker for correct binding.</p>
-<h3 id="deferring-cross-database-value-resolution"><a class="header" href="#deferring-cross-database-value-resolution">Deferring: cross-database value resolution</a></h3>
-<p>Sometimes a query on one database needs a value from another database. That’s what <code>defer()</code> is for
-— it wraps a query as a closure that executes later, when the outer query runs.</p>
-<p>This is not a subquery. The deferred query runs first, produces a concrete value, and that value
-gets bound as a regular parameter in the outer query.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let (config_db, shop_db) = setup().await;
-
-// This doesn't execute yet — it's a closure
-let threshold_query = sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price");
-let deferred_threshold = config_db.defer(threshold_query);
-
-// Use the deferred value as a parameter in a different database
-let shop_query = Expression::&lt;AnySqliteType&gt;::new(
-    "SELECT name FROM product WHERE price &gt;= {} ORDER BY price",
-    vec![ExpressiveEnum::Deferred(deferred_threshold)],
-);
-
-// When shop_db.execute() runs:
-// 1. Resolves the deferred → calls config_db, gets 150
-// 2. Replaces the Deferred param with Scalar(150)
-// 3. Flattens and binds: SELECT name FROM product WHERE price &gt;= ?1
-let result = shop_db.execute(&amp;shop_query).await?;
-<span class="boring">}</span></code></pre>
-<p>Your <code>execute()</code> implementation needs to resolve deferred parameters before flattening. Walk the
-parameter list, call <code>.call().await</code> on any <code>Deferred</code>, and leave <code>Scalar</code> and <code>Nested</code> untouched.</p>
-<p>The resolved value comes back as an untyped <code>AnySqliteType</code> (no variant marker), so it gets bound
-via JSON-inference. For SQLite this is fine — the loose type system handles it. For stricter
-databases, you may want <code>defer()</code> to preserve type information from the source query’s result.</p>
-<h3 id="reading-query-results"><a class="header" href="#reading-query-results">Reading query results</a></h3>
-<p>So far we’ve been calling <code>db.execute(&amp;expr).await</code> which returns <code>AnySqliteType</code>. For a SELECT
-query, that value wraps a JSON array of row objects. To work with individual rows, you convert into
-Records:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let result = db.execute(&amp;sqlite_expr!("SELECT * FROM product")).await?;
-
-// Result is AnySqliteType wrapping [{"id":"a","name":"Cheap","price":50}, ...]
-// Convert to records manually:
-let rows: Vec&lt;JsonValue&gt; = match result.into_value() {
-    JsonValue::Array(arr) =&gt; arr,
-    _ =&gt; panic!("expected rows"),
-};
-let record: Record&lt;JsonValue&gt; = rows[0].clone().into();
-<span class="boring">}</span></code></pre>
-<p>That works but it’s verbose. The <code>TryFrom&lt;AnyType&gt;</code> impls from Step 1 make this cleaner through
-<code>AssociatedExpression</code>. When you call <code>db.associate::&lt;R&gt;(expr)</code>, you get an expression that knows
-its return type — <code>.get()</code> executes and converts in one step:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Scalar — extracts single value from single-row result
-let count = db.associate::&lt;i64&gt;(sqlite_expr!("SELECT COUNT(*) FROM product"));
-assert_eq!(count.get().await?, 3);
-
-// Record — extracts first row
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-<span class="boring">}</span></code></pre>
-<p>From a Record, you can deserialize into a struct. For the <code>#[entity]</code> path:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(SqliteType)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;AnySqliteType&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Or for the serde path with <code>Record&lt;JsonValue&gt;</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Deserialize)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product: Product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Testing the failure modes (missing fields, NULL into required field, wrong types) can help spot
-issues in your implementation.</p>
-<h3 id="step-2-conclusion"><a class="header" href="#step-2-conclusion">Step 2 conclusion</a></h3>
-<p>At this point you should have:</p>
-<ol>
-<li>
-<p><strong>A vendor macro</strong> (<code>sqlite_expr!</code>, <code>surreal_expr!</code>, etc.) that produces <code>Expression&lt;AnyType&gt;</code>
-with typed parameters.</p>
-</li>
-<li>
-<p><strong>Trait impls</strong> in <code>src/&lt;backend&gt;/impls/</code> — <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnyType&gt;</code>
-with <code>execute()</code> and <code>defer()</code>.</p>
-</li>
-<li>
-<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/2_*.rs</code> covering:</p>
-<ul>
-<li>INSERT with typed parameters, read back and verify</li>
-<li>Multi-row INSERT using nested expressions and <code>from_vec</code></li>
-<li>Type marker verification (bool binds as bool, not as string “true”)</li>
-<li>Cross-database deferred value resolution</li>
-<li>AssociatedExpression with scalar, Record, and entity results</li>
-<li>Identifier quoting: basic names, reserved words, spaces, hyphens, unicode</li>
-</ul>
-</li>
-</ol>
+<h2 id="what-slows-the-app-down"><a class="header" href="#what-slows-the-app-down">What slows the app down?</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Inefficiency</th><th>What happens</th><th>The damage</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Repeated fetch</strong></td><td>The application asks for a window that it already asked for.</td><td>One request for each timer tick or repaint</td></tr>
+<tr><td><strong>Redundant rows</strong></td><td>Rows arrive that the cache already holds.</td><td>Bandwidth, with no change on screen</td></tr>
+<tr><td><strong>Off-screen updates</strong></td><td>The source announces a change to a row that the user cannot see, and the view repaints.</td><td>CPU usage for data that nobody looks at</td></tr>
+<tr><td><strong>Undeclared columns</strong></td><td>Each row carries fields that no table lists.</td><td>Bandwidth. A grid of five columns can cost megabytes for each screen.</td></tr>
+<tr><td><strong>Work in the client</strong></td><td>The client sorts, searches, or counts locally.</td><td>CPU usage, and an answer that covers the loaded rows only</td></tr>
+<tr><td><strong>A full copy of a large table</strong></td><td>The source cannot serve windows, so the client reads all the rows at open.</td><td>Memory, and a wait before the first screen</td></tr>
+<tr><td><strong>A total that no fetch can fill</strong></td><td>The source states more rows than it serves.</td><td>Requests for the missing rows, for as long as the page stays open</td></tr>
+</tbody>
+</table>
+</div>
+<p>There is no best caching strategy. Each use case needs a different approach. Vantage lets you design
+and implement your own strategy, but you must first understand how the cache behaves and how to
+monitor it.</p>
+<p>Vantage UI works well with its default behaviour. This chapter starts from that default, and then
+adjusts it.</p>
+<hr>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Section</th><th>What you do</th><th>What it answers</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="./optimising-diorama/stack.html">1. The setup</a></td><td>Build the <code>optimising</code> project and open it in Vantage UI</td><td>How do I put a source that I control under a real client?</td></tr>
+<tr><td><a href="./optimising-diorama/debug-stream.html">2. Reading the Debug Stream</a></td><td>Make the source slow, empty the cache, and switch on debug for one datasource</td><td>What does my application ask for?</td></tr>
+<tr><td><a href="./optimising-diorama/capabilities.html">3. Where the Work Happens</a></td><td>Remove capabilities and find where the work moves</td><td>Which work moved into my process, and what did it cost?</td></tr>
+<tr><td><a href="./optimising-diorama/waste.html">4. Fetching What You Drop</a></td><td>Find repeated fetches, redundant rows, and columns that no view shows</td><td>How many of these bytes did anybody need?</td></tr>
+<tr><td><a href="./optimising-diorama/faults.html">5. Faults: Errors, Outages &amp; Lies</a></td><td>Inject failures, outages, and dishonest totals</td><td>Does the application continue, or does it stop?</td></tr>
+<tr><td><a href="./optimising-diorama/regression.html">6. Locking It In</a></td><td>Make assertions from your measurements, over a run with a fixed seed</td><td>Will I know when this becomes worse?</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Start here:</strong> <a href="./optimising-diorama/stack.html">The setup</a></p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step1-types.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="live-data.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="optimising-diorama/stack.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -410,11 +301,11 @@ with <code>execute()</code> and <code>defer()</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step1-types.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="live-data.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="optimising-diorama/stack.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -434,17 +325,17 @@ with <code>execute()</code> and <code>defer()</code>.</p>
         </script>
 
 
-        <script src="../elasticlunr-ef4e11c1.min.js"></script>
-        <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
 
-        <script src="../clipboard-1626706a.min.js"></script>
-        <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-a0b12cfe.js"></script>
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="../mermaid-eefea253.min.js"></script>
-        <script src="../mermaid-init-ccf746f1.js"></script>
+        <script src="mermaid-eefea253.min.js"></script>
+        <script src="mermaid-init-ccf746f1.js"></script>
 
 
 

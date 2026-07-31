@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-92dca68e.js";
+            window.path_to_searchindex_js = "searchindex-cd3ff698.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cc60226a.js"></script>
+        <script src="toc-8d4429da.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -9450,12 +9450,1316 @@ override <code>watch_vista</code>, and when you may honestly advertise the capab
 <a href="#step-8-vista-integration">Adding a New Persistence</a>. Start with the capability
 <code>false</code>; turning it on the day the feed works is a healthier state than shipping a flag that lies.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="optimising-live-diorama-data"><a class="header" href="#optimising-live-diorama-data">Optimising Live Diorama Data</a></h1>
+<p>An application reports its faults. It does not report its inefficiencies. A failed request raises an
+error, but a duplicate fetch stays unnoticed. Typical problems are:</p>
+<ul>
+<li>refetch a static page in its entirety every 5 seconds</li>
+<li>fetch all columns of a related table, just to fill a select field in a form</li>
+<li>sort 120,000 rows in the client, and ignore the <code>sort</code> capability of the source</li>
+</ul>
+<p>Inefficiencies show as extra latency, high CPU usage, or network traffic. This chapter gives you the
+mechanisms to detect them and to avoid them.</p>
+<div id="admonition-why-live-data-needs-a-cache" class="admonition admonish-info" role="note" aria-labelledby="admonition-why-live-data-needs-a-cache-title">
+<div class="admonition-title">
+<div id="admonition-why-live-data-needs-a-cache-title">
+<p>Why live data needs a cache</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-why-live-data-needs-a-cache"></a>
+</div>
+
+<div>
+<p>A user interface repaints many times each second. It cannot wait for the network on each frame, so
+the rows must already be in memory. When the user scrolls, the framework fetches rows ahead of the
+viewport to keep the movement smooth.</p>
+<p>Diorama keeps those rows in a <a href="https://www.redb.org/">redb</a> file on disk, one file for each
+datasource. The rows therefore survive a move to another page, and they survive a restart.</p>
+<p>A user interface is not the only consumer of a cache. Vantage is also designed for facade APIs and
+for live caches at the edge.</p>
+<p>The goal is the same in each case: answer most requests without a request to the master source, and
+keep the local copy in agreement with that source. A correct cache answers immediately, and then
+pushes each change to the viewport when it arrives.</p>
+<p><svg viewbox="0 0 720 172" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Consumers on the left declare a viewport to the Diorama cache in the middle, and receive the live updates that are relevant to it. The cache sends few batched fetches to the master source on the right, which returns changes for the whole table.">
+<defs>
+<marker id="dio-arrow" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="7" markerheight="7" orient="auto-start-reverse">
+<path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+</marker>
+</defs>
+<g fill="none" stroke="currentColor" stroke-opacity="0.45">
+<rect x="14" y="42" width="122" height="112" rx="6" />
+<rect x="578" y="62" width="128" height="72" rx="6" />
+</g>
+<rect x="292" y="52" width="152" height="92" rx="6" fill="none" stroke="#4a90d9" stroke-width="1.6" />
+<g fill="currentColor" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">
+<text x="75" y="76" font-size="11.5">UI viewport</text>
+<text x="75" y="102" font-size="11.5">Facade API</text>
+<text x="75" y="128" font-size="11.5">Edge cache</text>
+<text x="368" y="91" font-size="13">Diorama cache</text>
+<text x="368" y="109" font-size="10.5" fill-opacity="0.65">redb, on disk</text>
+<text x="642" y="93" font-size="13">Master source</text>
+<text x="642" y="111" font-size="10.5" fill-opacity="0.65">slow · remote</text>
+<g font-size="10.5" fill-opacity="0.75">
+<text x="214" y="76">declare viewport</text>
+<text x="214" y="134">relevant live updates</text>
+<text x="511" y="76">few fetches, batched</text>
+<text x="511" y="134">whole-table changes</text>
+</g>
+</g>
+<g fill="none" stroke="currentColor" stroke-opacity="0.75" marker-end="url(#dio-arrow)">
+<path d="M140,84 L288,84" />
+<path d="M288,116 L142,116" />
+<path d="M448,84 L574,84" />
+<path d="M574,116 L450,116" />
+</g>
+</svg></p>
+</div>
+
+</div>
+
+<h2 id="what-slows-the-app-down"><a class="header" href="#what-slows-the-app-down">What slows the app down?</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Inefficiency</th><th>What happens</th><th>The damage</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Repeated fetch</strong></td><td>The application asks for a window that it already asked for.</td><td>One request for each timer tick or repaint</td></tr>
+<tr><td><strong>Redundant rows</strong></td><td>Rows arrive that the cache already holds.</td><td>Bandwidth, with no change on screen</td></tr>
+<tr><td><strong>Off-screen updates</strong></td><td>The source announces a change to a row that the user cannot see, and the view repaints.</td><td>CPU usage for data that nobody looks at</td></tr>
+<tr><td><strong>Undeclared columns</strong></td><td>Each row carries fields that no table lists.</td><td>Bandwidth. A grid of five columns can cost megabytes for each screen.</td></tr>
+<tr><td><strong>Work in the client</strong></td><td>The client sorts, searches, or counts locally.</td><td>CPU usage, and an answer that covers the loaded rows only</td></tr>
+<tr><td><strong>A full copy of a large table</strong></td><td>The source cannot serve windows, so the client reads all the rows at open.</td><td>Memory, and a wait before the first screen</td></tr>
+<tr><td><strong>A total that no fetch can fill</strong></td><td>The source states more rows than it serves.</td><td>Requests for the missing rows, for as long as the page stays open</td></tr>
+</tbody>
+</table>
+</div>
+<p>There is no best caching strategy. Each use case needs a different approach. Vantage lets you design
+and implement your own strategy, but you must first understand how the cache behaves and how to
+monitor it.</p>
+<p>Vantage UI works well with its default behaviour. This chapter starts from that default, and then
+adjusts it.</p>
+<hr>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Section</th><th>What you do</th><th>What it answers</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#the-setup">1. The setup</a></td><td>Build the <code>optimising</code> project and open it in Vantage UI</td><td>How do I put a source that I control under a real client?</td></tr>
+<tr><td><a href="#reading-the-debug-stream">2. Reading the Debug Stream</a></td><td>Make the source slow, empty the cache, and switch on debug for one datasource</td><td>What does my application ask for?</td></tr>
+<tr><td><a href="#where-the-work-happens-capabilities--latency">3. Where the Work Happens</a></td><td>Remove capabilities and find where the work moves</td><td>Which work moved into my process, and what did it cost?</td></tr>
+<tr><td><a href="#fetching-what-you-drop">4. Fetching What You Drop</a></td><td>Find repeated fetches, redundant rows, and columns that no view shows</td><td>How many of these bytes did anybody need?</td></tr>
+<tr><td><a href="#faults-errors-outages--lies">5. Faults: Errors, Outages &amp; Lies</a></td><td>Inject failures, outages, and dishonest totals</td><td>Does the application continue, or does it stop?</td></tr>
+<tr><td><a href="#locking-it-in-cache-regression-tests">6. Locking It In</a></td><td>Make assertions from your measurements, over a run with a fixed seed</td><td>Will I know when this becomes worse?</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Start here:</strong> <a href="#the-setup">The setup</a></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="the-setup"><a class="header" href="#the-setup">The setup</a></h1>
+<p>An enterprise source holds millions of records, and there can be hundreds of changes each second.
+The change channels are coarse: one channel for each table. But no user observes millions of
+records. A user looks at 20 or 30 rows, and possibly at some aggregated values.</p>
+<p>A Vantage client makes the distinction. Vantage UI connects to the datasource and then narrows the
+data to a <strong>viewport</strong>, which is the set of rows on screen. A live cache at the edge follows the same
+principle when it drives a frontend application: it holds a fragment of the table, and it forwards
+the changes that touch that fragment. The cache is the same cache in both cases, so what you learn
+here against Vantage UI transfers to the other components.</p>
+<p>To measure a cache strategy you need three things:</p>
+<ul>
+<li>a source whose behaviour you control: fast, slow, unreliable, or fast-changing</li>
+<li>a consumer that you can navigate by hand and check by eye</li>
+<li>full transparency into the cache mechanics, through a real-time log</li>
+</ul>
+<p>This chapter uses a <strong>Vantage Faker</strong> datasource, Vantage UI, and the full cache log.</p>
+<h2 id="create-a-project"><a class="header" href="#create-a-project">Create a project</a></h2>
+<p>Vantage UI is a free download from <a href="https://vantage-ui.com">vantage-ui.com</a>. It installs as a normal
+macOS application.</p>
+<p>Start it normally, create a new project, and choose <strong>Fake Data</strong> in the wizard. Then find the
+project folder — this chapter calls it <code>optimising</code> — and examine the structure inside:</p>
+<pre><code class="language-text">optimising/
+├── datasource/people.yaml     where the rows come from
+├── table/people.yaml          the columns, and which datasource supplies them
+├── page/people.yaml           what the screen shows
+└── menu/left.yaml             how to open the page
+</code></pre>
+<p>A project is a folder of YAML, and each folder holds one kind of declaration. Change the four files
+to match the listings below.</p>
+<p>The datasource is a <strong>faker</strong> source. It generates rows instead of fetching them, and you declare how
+it behaves. This one holds 200,000 personal records: names, surnames, emails, and some additional
+data.</p>
+<pre><code class="language-yaml"># datasource/people.yaml
+type: faker
+effect: static
+count: 200000
+seed: 103
+shape:
+  capabilities: [count, fetch_window, order, search]
+  latency:
+    window: 10ms..40ms
+    get: 5ms..20ms
+</code></pre>
+<div id="admonition-the-capabilities-list" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-capabilities-list-title">
+<div class="admonition-title">
+<div id="admonition-the-capabilities-list-title">
+<p>The capabilities list</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-capabilities-list"></a>
+</div>
+
+<div>
+<p><code>capabilities</code> is the contract of the source. A real driver declares what it can do, and faker
+declares what you tell it to. The list above mimics a SQL source:</p>
+<ul>
+<li><strong><code>count</code></strong> — the source reports how many rows the table holds. The grid then knows the size of the
+scrollbar before it has any row.</li>
+<li><strong><code>fetch_window</code></strong> — the source serves a range, such as rows 500 to 600. Without it, the only
+operation is “read everything”.</li>
+<li><strong><code>order</code></strong> — the source sorts. A sort then applies to all the rows, and not to the loaded rows.</li>
+<li><strong><code>search</code></strong> — the source filters, with the same condition.</li>
+</ul>
+<p>The source refuses each operation that is not in the list, and the work then moves to the client.
+Section 3 removes them one at a time.</p>
+<p><a href="#vista--the-universal-data-handle">Vista — the Universal Data Handle</a> describes the full set of capability
+flags and how a driver declares them.</p>
+</div>
+
+</div>
+
+<p>Once the datasource exists, declare the tables on it. Each table names its columns and the datasource
+that supplies them:</p>
+<pre><code class="language-yaml"># table/people.yaml
+datasource: people
+title: People
+columns:
+  - { name: id,      type: string,  flags: [id] }
+  - { name: name,    type: string,  flags: [title, searchable] }
+  - { name: surname, type: string,  flags: [title, searchable] }
+  - { name: email,   type: string }
+  - { name: city,    type: string }
+  - { name: balance, type: decimal }
+</code></pre>
+<p>Each column name is significant. <code>name</code> generates human names, <code>surname</code> generates surnames, and
+<code>email</code> generates email addresses. Faker uses the column name first and the declared type second, so
+a name that faker does not recognise gets a value from its type. Every value is fake, and faker
+generates all of them at start-up from the <code>seed</code>.</p>
+<p>Use realistic names. Much of this chapter measures size, and a table of <code>row_1</code> and <code>row_2</code> values
+makes each of those measurements wrong.</p>
+<div id="admonition-use-one-faker-datasource-for-each-table" class="admonition admonish-note" role="note" aria-labelledby="admonition-use-one-faker-datasource-for-each-table-title">
+<div class="admonition-title">
+<div id="admonition-use-one-faker-datasource-for-each-table-title">
+<p>Use one faker datasource for each table</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-use-one-faker-datasource-for-each-table"></a>
+</div>
+
+<div>
+<p>A table file follows the Vantage YAML specification, which is the same for every datasource type. It
+declares columns, types, and flags, and nothing more. A datasource file has no such restriction, so
+each faker knob is there: <code>count</code>, <code>seed</code>, <code>effect</code>, and the full <code>shape:</code> block.</p>
+<p>One faker datasource therefore describes one set of rows. Give each table its own datasource. This
+chapter builds four: <code>people</code>, <code>stubborn</code>, <code>flaky</code>, and <code>wide</code>, one for each behaviour that it
+measures.</p>
+</div>
+
+</div>
+
+<p>The page shows a <strong>binder</strong>. A binder appears as a full CRUD screen: it lists the rows, it edits them
+when the source supports editing, it has a quick-search box and column ordering, and a click on a row
+opens a summary of that row. Behind the screen it keeps its viewport equal to the rows that you see.</p>
+<p>Vantage UI also has a <code>kind: grid</code> component. A grid has no search box, so this chapter uses a
+binder.</p>
+<pre><code class="language-yaml"># page/people.yaml
+title: People
+body:
+  - kind: binder
+    name: people
+    observe: people
+    params:
+      columns:
+        name:    { width: 160 }
+        surname: { width: 160 }
+        email:   { width: 220 }
+        city:    { width: 180 }
+        balance: { width: 120 }
+</code></pre>
+<p>The menu makes the page available:</p>
+<pre><code class="language-yaml"># menu/left.yaml
+title: Optimising
+items:
+  - section: Optimising
+    children:
+      - page: people
+        label: People
+        icon: Users
+</code></pre>
+<h2 id="run-it"><a class="header" href="#run-it">Run it</a></h2>
+<p>Each later section starts Vantage UI again from the command line, and not from the Finder. The binary
+in the bundle accepts arguments, and the debug output goes to stdout. Make an alias:</p>
+<pre><code class="language-sh">alias vantage-ui='/Applications/Vantage.app/Contents/MacOS/vantage-ui'
+</code></pre>
+<pre><code class="language-sh">vantage-ui ./optimising --page=people
+</code></pre>
+<p><img src="images/optimising-people-grid.png" alt="The binder over 200,000 generated people: the row list, the quick-search box, the row count, and the details panel for the selected row"></p>
+<p>The binder lists the rows, and a click on a row fills the details panel below it. The row count says
+200000, because the source counted the set. Scrolling is smooth, and no row stays empty for long
+enough to see.</p>
+<p>The first argument is the project folder. <code>--page=&lt;key&gt;</code> opens that page instead of the first entry
+in the menu. This matters: a page that you did not intend to measure also opens a Dio, and its
+requests go into the same statistics.</p>
+<div id="admonition-keep-the-project-simple" class="admonition admonish-note" role="note" aria-labelledby="admonition-keep-the-project-simple-title">
+<div class="admonition-title">
+<div id="admonition-keep-the-project-simple-title">
+<p>Keep the project simple</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-keep-the-project-simple"></a>
+</div>
+
+<div>
+<p>Vantage UI builds one Dio for each observed table, when a page that observes it opens. The other YAML
+files in the folder cost nothing until you open them.</p>
+<p>Two conditions make a measurement unclear:</p>
+<ol>
+<li>One page with components that observe different tables. Each component has its own Dio and sends
+its own requests.</li>
+<li>Tabs that stay open behind the page that you measure. Each open tab keeps its Dios active.</li>
+</ol>
+<p>Use one table, one binder, and one variable. Close the pages that you do not measure.</p>
+</div>
+
+</div>
+
+<div id="admonition-using-faker-in-rust" class="admonition admonish-info" role="note" aria-labelledby="admonition-using-faker-in-rust-title">
+<div class="admonition-title">
+<div id="admonition-using-faker-in-rust-title">
+<p>Using faker in Rust</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-using-faker-in-rust"></a>
+</div>
+
+<div>
+<p>This chapter uses Vantage UI, because Vantage UI supplies the viewport. The faker source does not
+need Vantage UI. <code>vantage-faker</code> is a normal crate, and the YAML above is a
+<a href="https://docs.rs/vantage-faker/latest/vantage_faker/shape/struct.BackendShape.html"><code>BackendShape</code></a>
+in a file. This code builds the same datasource:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::time::Duration;
+use vantage_faker::{BackendShape, FakerTable, Latency, LatencyModel, StaticEffect};
+use vantage_vista::VistaCapabilities;
+
+let table = FakerTable::build_shaped(
+    "people",
+    columns,                       // Vec&lt;FakerColumn&gt; — name, type, flags
+    "id",
+    Box::new(StaticEffect { count: 200_000 }),
+    BackendShape {
+        capabilities: VistaCapabilities {
+            can_count: true,
+            can_fetch_window: true,
+            can_order: true,
+            can_search: true,
+            ..VistaCapabilities::default()
+        },
+        latency: LatencyModel {
+            window: Some(Latency::between(
+                Duration::from_millis(10),
+                Duration::from_millis(40),
+            )),
+            get: Some(Latency::between(
+                Duration::from_millis(5),
+                Duration::from_millis(20),
+            )),
+            ..LatencyModel::default()
+        },
+        seed: Some(103),
+        ..BackendShape::default()
+    },
+);
+
+// From here, this is the normal reactive stack. Nothing is faker-specific.
+let (vista, _handle) = table.split();
+let dio = lens.make_dio(vista).await?;
+<span class="boring">}</span></code></pre>
+<p>Use this code when your own code is the consumer: an integration test that calls <code>set_viewport</code>, a
+CLI, or a scenery in a terminal.</p>
+<p>Keep the handle. If you drop the handle, the effect loop stops, and a live effect then stops changing
+the data.</p>
+</div>
+
+</div>
+
+<h2 id="switch-on-the-debug-stream"><a class="header" href="#switch-on-the-debug-stream">Switch on the debug stream</a></h2>
+<p>Delete the cache and start Vantage UI again. Each measurement in this chapter starts from an empty
+cache, because a full cache serves the first screen and asks the source for nothing.</p>
+<pre><code class="language-sh">rm -rf ~/Library/Caches/Vantage/optimising-*
+vantage-ui ./optimising --page=people
+</code></pre>
+<p>Without the debug flag, the output describes the start-up and nothing else:</p>
+<pre><code class="language-text">INFO vantage_ui: starting root="…/optimising" has_project=true
+INFO catalog: loaded datasource key="people"
+INFO catalog: loaded table key="people"
+INFO catalog: loaded framework page key="people"
+INFO vantage_ui: Dio cache dir path="~/Library/Caches/Vantage/optimising-c79233058eb9f98f"
+INFO vantage_ui: configured faker datasource datasource=people effect=Some("static")
+INFO vantage_ui: entity open, by phase key=people/people ms=2891
+                 breakdown=vista=2798ms cache=82ms dio=2ms scenery=7ms
+</code></pre>
+<p>This tells you what loaded. The last line is the only measurement: 2.8 seconds inside the Vista,
+which is faker generating 200,000 rows at start-up. Nothing here reports a request, a cache hit, or a
+row.</p>
+<p>Now add one line to the datasource:</p>
+<pre><code class="language-yaml"># datasource/people.yaml
+type: faker
+effect: static
+debug: true          # ← add this
+count: 200000
+</code></pre>
+<p>Delete the cache and start it again:</p>
+<pre><code class="language-sh">rm -rf ~/Library/Caches/Vantage/optimising-*
+vantage-ui ./optimising --page=people
+</code></pre>
+<p>A second stream now appears beside the log:</p>
+<pre><code class="language-text">11:53:45.591  people  dio       created over "people" — cache table "people_people", nothing held yet
+11:53:45.592  people  source    can count, window, order, search · pages lazily, 100 rows at a time
+11:53:45.592  people  scenery   opened cold — 0 rows seeded from cache
+11:53:45.593  people  census    +1 table scenery — now 1 table, 0 record, 0 servo · rss 310MB
+11:53:45.645  people  viewport  rows 0..200 — 2 scroll events coalesced into one
+11:53:45.645  people  dio       fetch #1 asks for rows 0..200 — 200 missing, 0 already held
+11:53:45.715  people  cache     +200 new, 0 updated — now holding 200 of 200,000 (0.1%)
+11:53:45.715  people  scenery   opening → partial (chunk load succeeded)
+11:53:45.716  people  dio       fetch #1 got 200 rows in 70ms
+11:53:45.716  people  payload   6 columns received · no view declared what it needs, so all were
+                                fetched · 23KB · id,name,surname,email,city,balance
+11:53:45.717  people  total     200,000 rows — stated by the source in the same response
+11:53:45.821  people  cache     all 22 rows of 0..22 served locally — no fetch
+</code></pre>
+<p>That is one page opening, from an empty cache. The binder asked for 200 rows, one request supplied
+them, and the last line is the repaint that followed: 22 rows on screen, no request.</p>
+<p>The flag applies to one datasource. It is not a global setting. Your other datasources stay silent,
+so the question is always “what does <strong>this</strong> table do?”.</p>
+<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title">
+<p>What is next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
+</div>
+
+<div>
+<p>The next section makes the source slow, so that each of these lines separates in time. It then reads
+the stream line by line.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="reading-the-debug-stream"><a class="header" href="#reading-the-debug-stream">Reading the Debug Stream</a></h1>
+<p>The first thing that you learn from the stream is which line agrees with which moment on screen.
+Keep the window and the terminal beside each other. Sort a column, type in the quick-search box, and
+scroll, and watch which lines each action produces.</p>
+<p>That is much easier when each request needs three seconds than when it needs 40 milliseconds.</p>
+<h2 id="make-the-source-slow"><a class="header" href="#make-the-source-slow">Make the source slow</a></h2>
+<p>A source that answers in 40ms hides its behaviour. The rows are simply present, and a load is one
+flicker between two frames.</p>
+<p>Change one value in the datasource. Each fetch then becomes an event with a start and an end.</p>
+<pre><code class="language-yaml"># datasource/people.yaml
+shape:
+  capabilities: [count, fetch_window, order, search]
+  latency:
+    window: 3s          # each batch of rows costs three seconds
+    get: 500ms..1s      # each single record costs half a second or more
+</code></pre>
+<p>The two classes pay for different requests:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Latency class</th><th>The request that pays it</th><th>What causes it on screen</th></tr>
+</thead>
+<tbody>
+<tr><td><code>window</code></td><td>A range of rows, such as rows 500 to 600</td><td>The grid scrolls into rows that the cache does not hold</td></tr>
+<tr><td><code>get</code></td><td>One record, by its id</td><td>A click on a row, which opens the details panel</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>window</code> is the class that this chapter measures. A grid asks for ranges, and each unnecessary range
+is a fetch that you can count. Give <code>get</code> a value as well, so that a click on a row is also visible
+in the stream.</p>
+<p>Nothing else changes: the same table, the same page, and the same 200,000 rows. But each decision of
+the framework now takes clock time that you can see.</p>
+<p><img src="images/optimising-people-loading.png" alt="The grid during a load: the total is known, so the rows exist and the scrollbar has the correct size. The contents have not arrived."></p>
+<p>Open the page and watch it load:</p>
+<ol>
+<li>The window opens immediately, and the page then needs a few seconds to mount. That delay is the
+fixture, not the framework: <code>count: 200000</code> makes faker generate 200,000 rows at each start.
+Decrease <code>count</code> if you do not want it.</li>
+<li><strong>Skeleton rows</strong> appear. A skeleton row has a position, but no contents. The grid gave a position
+to each of the 200,000 rows, because the source declared <code>count</code>, so the scrollbar has the correct
+size before any row arrives.</li>
+<li>The first batch arrives three seconds later, and those rows paint together.</li>
+<li>Scroll past them. The same sequence occurs again.</li>
+</ol>
+<p>Now scroll back to the top. <strong>Nothing happens.</strong> There is no delay and there are no skeleton rows.
+That is the cache, and it is your first measurement: to return to a position that you visited costs
+nothing.</p>
+<h2 id="cold-runs-and-warm-runs"><a class="header" href="#cold-runs-and-warm-runs">Cold runs and warm runs</a></h2>
+<p>There is one cache file for each datasource, under <code>~/Library/Caches/Vantage/&lt;project&gt;-&lt;hash&gt;/</code>.
+Delete the folder for a cold run:</p>
+<pre><code class="language-sh">rm -rf ~/Library/Caches/Vantage/optimising-*
+</code></pre>
+<p>A cold run and a warm run are two different experiments. A cold run answers “what does the first open
+cost?”. A warm run starts from a full cache and answers “what does the application do with rows that
+it already holds?”. Too many refreshes appear in the warm run.</p>
+<p>The two sets of numbers are not comparable. Record which run you did, each time.</p>
+<h2 id="understanding-the-log"><a class="header" href="#understanding-the-log">Understanding the log</a></h2>
+<p>The debug stream shares the terminal with the ordinary log of the application:</p>
+<pre><code class="language-text">12:23:58.222  people  dio  created over "people" — cache table "people_people", 422 rows already held from a previous session
+2026-07-31T11:23:58.242796Z  INFO build_page_for_key{page_key="people" …}:build_entity{key="people"
+  datasource=Some("people")}: vantage_ui: entity open, by phase key=people/people ms=2791
+  breakdown=vista=2722ms cache=49ms dio=0ms scenery=18ms
+12:23:58.341  people  dio  fetch #1 asks for rows 0..22 — 0 missing, 22 already held
+12:23:58.420  people  dio  fetch #1 got 22 rows in 79ms
+</code></pre>
+<p>The short lines are the debug stream. Each one has four parts, always in this sequence:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Part</th><th>Example</th><th>What it is</th></tr>
+</thead>
+<tbody>
+<tr><td>time</td><td><code>12:23:58.341</code></td><td>Local time, to the millisecond</td></tr>
+<tr><td>table</td><td><code>people</code></td><td>The datasource with debug switched on. With one datasource for each table, this is also the table.</td></tr>
+<tr><td>origin</td><td><code>dio</code></td><td>The part of the framework that wrote the line</td></tr>
+<tr><td>message</td><td><code>fetch #1 asks for rows 0..22 …</code></td><td>One sentence, in units that a person reads: <code>3.0s</code>, <code>24KB</code>, <code>200,000</code>, <code>0.1%</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Each request has an identifier, such as <code>fetch #1</code>. The identifier connects a request to its result.
+There is one sequence for each Dio, and it starts at 1.</p>
+<div id="admonition-the-sequence-of-lines-in-one-load-is-not-a-contract" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-sequence-of-lines-in-one-load-is-not-a-contract-title">
+<div class="admonition-title">
+<div id="admonition-the-sequence-of-lines-in-one-load-is-not-a-contract-title">
+<p>The sequence of lines in one load is not a contract</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-sequence-of-lines-in-one-load-is-not-a-contract"></a>
+</div>
+
+<div>
+<p>The lines from one load do not always appear in the same sequence. The framework writes the cache
+line and the state line <em>inside</em> the operation that the result line completes. Both can therefore
+come before the result line.</p>
+<p>Use <code>fetch #N</code> to connect the lines. Do not use their positions.</p>
+</div>
+
+</div>
+
+<p>The origin is what you search for. There are twelve origins:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Origin</th><th>What the line reports</th></tr>
+</thead>
+<tbody>
+<tr><td><code>dio</code></td><td>The framework created a Dio. Or a fetch <strong>asks for</strong> a range, <strong>got</strong> rows, or <strong>failed</strong>.</td></tr>
+<tr><td><code>source</code></td><td>What the source can do and cannot do, and which load method follows. One line, at open.</td></tr>
+<tr><td><code>scenery</code></td><td>A view opened with a full or an empty cache. Or the load state changed.</td></tr>
+<tr><td><code>census</code></td><td>A consumer attached or detached. Consumers are table sceneries, record sceneries, and servos, which watch one value. The line gives the current counts and the memory.</td></tr>
+<tr><td><code>viewport</code></td><td>The range that a consumer declared. <strong>Coalesced</strong> means that several scroll events became one range.</td></tr>
+<tr><td><code>cache</code></td><td>The framework wrote rows. Or it <strong>served</strong> a viewport <strong>locally</strong>, with no fetch.</td></tr>
+<tr><td><code>payload</code></td><td>The columns that arrived, the columns that a view wants, and the size in bytes.</td></tr>
+<tr><td><code>total</code></td><td>The total count changed, and what supplied the new value.</td></tr>
+<tr><td><code>sort</code></td><td>A sort changed. Says whether the source does the work.</td></tr>
+<tr><td><code>search</code></td><td>A search changed. Says whether the source does the work.</td></tr>
+<tr><td><code>hydrate</code></td><td>A second pass fetched the remaining columns of rows that are on screen. Section 4 explains the two passes.</td></tr>
+<tr><td><code>summary</code></td><td>The session summary, printed when Vantage UI quits.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="read-one-origin-at-a-time"><a class="header" href="#read-one-origin-at-a-time">Read one origin at a time</a></h2>
+<p>Write the session to a file, then read one origin:</p>
+<pre><code class="language-sh">vantage-ui ./optimising --page=people 2&gt;&amp;1 | tee /tmp/optimising.log
+grep ' dio ' /tmp/optimising.log
+</code></pre>
+<pre><code class="language-text">12:23:58.222  people  dio  created over "people" — cache table "people_people", 422 rows already held from a previous session
+12:23:58.341  people  dio  fetch #1 asks for rows 0..22 — 0 missing, 22 already held
+12:23:58.420  people  dio  fetch #1 got 22 rows in 79ms
+12:24:11.295  people  dio  fetch #2 asks for rows 316..339 — 23 missing, 0 already held · sorted by city Desc
+12:24:16.842  people  dio  fetch #2 got 23 rows in 5.5s  ⚠ slow
+</code></pre>
+<p>Five lines report a whole session:</p>
+<ul>
+<li>The cache was <strong>warm</strong>: 422 rows from an earlier run. A cold start says <em>nothing held yet</em> here.</li>
+<li><code>fetch #1</code> asked for 22 rows that the cache already held. A warm start still asks the source for
+the window on screen, to check that the held rows are current.</li>
+<li>Between <code>12:23:58.420</code> and <code>12:24:11.295</code> there is no line. Thirteen seconds of use cost no
+request.</li>
+<li><code>fetch #2</code> carries <code>sorted by city Desc</code>. The sort went to the source, and the source applied it to
+all 200,000 rows, and not to the rows that the cache held.</li>
+<li>That sorted request cost 5.5s. <strong>⚠ slow</strong> marks each request of one second or more.</li>
+</ul>
+<p>Read the other origins in the same way:</p>
+<pre><code class="language-sh">grep ' cache '          /tmp/optimising.log   # what the cache wrote, and what it served
+grep 'served locally'   /tmp/optimising.log   # the viewports that cost nothing
+grep -E 'asks for|got ' /tmp/optimising.log   # the network, and nothing else
+</code></pre>
+<p>Scroll while you watch <code>tail -f</code> on the file. Each three-second delay must have one <code>asks for</code> line
+and one <code>got</code> line. Each immediate repaint must have a <code>served locally</code> line, or no line.</p>
+<p><strong>A delay with no request is a fault in the UI. A request with no delay is a request that you did
+not need.</strong></p>
+<h2 id="a-full-cold-open"><a class="header" href="#a-full-cold-open">A full cold open</a></h2>
+<p>This is the output of the <code>optimising</code> project, with high latency and an empty cache, when the
+People page opens. It is a capture, not an example.</p>
+<pre><code class="language-text">21:20:15.397  people  dio       created over "people" — cache table "people_people", nothing held yet
+21:20:15.399  people  source    can count, window, order, search · pages lazily, 100 rows at a time
+21:20:15.401  people  scenery   opened cold — 0 rows seeded from cache
+21:20:15.401  people  census    +1 table scenery — now 1 table, 0 record, 0 servo · rss 313MB
+21:20:15.455  people  viewport  rows 0..200 — 2 scroll events coalesced into one
+21:20:15.455  people  dio       fetch #1 asks for rows 0..200 — 200 missing, 0 already held
+21:20:18.493  people  cache     +200 new, 0 updated — now holding 200 of 200,000 (0.1%)
+21:20:18.494  people  scenery   opening → partial (chunk load succeeded)
+21:20:18.494  people  dio       fetch #1 got 200 rows in 3.0s  ⚠ slow
+21:20:18.494  people  payload   6 columns received · no view declared what it needs, so all were
+                                fetched · 23KB · id,name,surname,email,city,balance
+21:20:18.494  people  total     200,000 rows — stated by the source in the same response
+21:20:18.551  people  cache     all 13 rows of 0..13 served locally — no fetch
+</code></pre>
+<p>The framework creates the Dio before any view can use it, and its cache table is empty. That is the
+cold start. The <code>source</code> line gives the contract that each following line obeys.</p>
+<p>The binder declares a viewport of 200 rows, and not the 13 rows that you can see. The loader reads
+ahead of the screen, so that the next scroll costs nothing. Section 4 measures this.</p>
+<p>The <code>source</code> line says 100 rows for each page, and the first fetch asks for 200. The first fetch
+covers the opening viewport, which the binder sets to 200 rows. Later fetches use the page size of
+100.</p>
+<p>Then the delay: from <code>.455</code> to <code>18.493</code>, three seconds. Four facts then arrive together:</p>
+<ul>
+<li>the cache holds the rows — 200 of 200,000, which is 0.1%</li>
+<li>the view is no longer in the loading state</li>
+<li>the fetch reports its cost</li>
+<li>the total is known, because the source supplied it in the same response</li>
+</ul>
+<p>The last line is the result: the grid painted 13 rows and made no fetch.</p>
+<p>Now scroll. Most of the output is that same line:</p>
+<pre><code class="language-text">21:20:20.401  people  viewport  rows 29..43 — 5 scroll events coalesced into one
+21:20:20.401  people  cache     all 14 rows of 29..43 served locally — no fetch
+</code></pre>
+<h2 id="the-summary-at-the-end"><a class="header" href="#the-summary-at-the-end">The summary at the end</a></h2>
+<p>When you quit, the framework prints the summary of the session:</p>
+<pre><code class="language-text">21:20:33.374  — diorama session summary —
+21:20:33.374  people     summary  3 fetches, 0 repeats · 400 rows, 0 redundant · 9.1s waiting, 3.0s slowest
+21:20:33.374             summary  1 dio, 1 table scenery, 0 record, 0 servo still alive
+21:20:33.374             summary  session 18.0s · cpu 15.0s · peak rss 352MB
+</code></pre>
+<p>Two numbers in the first line are important. The other sections keep both at zero.</p>
+<ul>
+<li><strong><code>repeats</code></strong> is the count of ranges that the application fetched more than one time.</li>
+<li><strong><code>redundant</code></strong> is the count of rows that arrived when the cache already held them. A warm
+revalidation gives a small number. A number equal to the count of rows that arrived means that the
+application fetched a full page for nothing.</li>
+</ul>
+<p>The second line finds leaks. Close a page, and the counts must decrease. If the count of sceneries
+increases while you move between pages, something keeps views alive after their page closed.</p>
+<hr>
+<h2 id="what-we-covered-6"><a class="header" href="#what-we-covered-6">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>latency.window: 3s</code></td><td>Separates the events, so that you can attribute each line to a moment</td></tr>
+<tr><td><code>~/Library/Caches/Vantage/&lt;project&gt;-&lt;hash&gt;/</code></td><td>The location of the cache. Delete it for a cold run.</td></tr>
+<tr><td><code>debug: true</code></td><td>Switches the stream on for one datasource. The others stay silent.</td></tr>
+<tr><td><code>vantage_diorama::debug</code></td><td>The one target, at <code>info</code>. It appears without <code>RUST_LOG</code>.</td></tr>
+<tr><td>time · datasource · tag · clause</td><td>The four parts of each line. <code>fetch #N</code> connects a request to its result.</td></tr>
+<tr><td><code>served locally — no fetch</code></td><td>The line that reports a viewport that cost nothing</td></tr>
+<tr><td><code>repeats</code> / <code>redundant</code></td><td>The two waste counters in the session summary</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-what-is-next-1" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title-1">
+<p>What is next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-next-1"></a>
+</div>
+
+<div>
+<p>The next section removes the capabilities of the source, one at a time, and finds where the work
+goes. A sort that the source cannot do does not stop. It moves to a more expensive place, and it
+uses only the rows that the application loaded.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="where-the-work-happens-capabilities--latency"><a class="header" href="#where-the-work-happens-capabilities--latency">Where the Work Happens: Capabilities &amp; Latency</a></h1>
+<p>Until now the source was capable. When the source can do everything, the layers above it do nothing
+that you can measure.</p>
+<p>This section removes the capabilities. <strong>Work does not disappear when a source cannot do it. The
+work moves.</strong></p>
+<h2 id="one-line-controls-everything"><a class="header" href="#one-line-controls-everything">One line controls everything</a></h2>
+<p>Each session starts with this line:</p>
+<pre><code class="language-text">people   source   can count, window, order, search · pages lazily, 100 rows at a time
+</code></pre>
+<p>That line is the full contract. The <code>capabilities:</code> list in the datasource produces it, and each
+later decision follows from it. Change that line, and you change the behaviour of the application.
+You change no other file.</p>
+<h2 id="a-source-that-can-do-nothing"><a class="header" href="#a-source-that-can-do-nothing">A source that can do nothing</a></h2>
+<p>Remove all capabilities. One operation remains, because a source always supports <code>list</code>.</p>
+<pre><code class="language-yaml"># datasource/stubborn.yaml
+type: faker
+effect: static
+debug: true
+count: 3000
+seed: 109
+shape:
+  capabilities: []          # no count, no order, no search, no windows
+  latency:
+    list: 2500ms..3500ms    # and the one operation that it has is slow
+</code></pre>
+<p>Open the page. The stream is very short:</p>
+<pre><code class="language-text">22:02:51.204  stubborn   dio      created over "stubborn" — cache table "stubborn_stubborn", nothing held yet
+22:02:51.205  stubborn   source   can do nothing but list · cannot count, order, search · copied whole into the cache
+22:02:51.205  stubborn   scenery  opened cold — 0 rows seeded from cache
+22:02:51.206  stubborn   census   +1 table scenery — now 1 table, 0 record, 0 servo · rss 129MB
+22:02:54.265  stubborn   scenery  opening → complete (reactor reseed)
+22:02:54.337  stubborn   cache    all 22 rows of 0..22 served locally — no fetch
+</code></pre>
+<p><strong>There are no fetch lines.</strong> The <code>people</code> source sends one request for each screen of rows. This
+source receives one read only — the three seconds between the census line and the
+<code>opening → complete</code> line. Each later scroll comes from the cache, because the cache holds all the
+rows.</p>
+<p>Diorama has two load methods, and the <code>source</code> line names the one in use.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Log string</th><th>When the framework uses it</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>paged</strong></td><td><code>pages lazily</code></td><td>The source can serve <code>[offset, limit)</code> windows</td></tr>
+<tr><td><strong>eager</strong></td><td><code>copied whole into the cache</code></td><td>The source cannot serve windows</td></tr>
+</tbody>
+</table>
+</div>
+<p>You do not select the method. It follows from what the source can do.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th><strong>paged</strong></th><th><strong>eager</strong></th></tr>
+</thead>
+<tbody>
+<tr><td>Reads</td><td>one window for each screen, on demand</td><td>one full read at open</td></tr>
+<tr><td>Memory</td><td>proportional to the rows that you looked at</td><td>proportional to the whole table</td></tr>
+<tr><td>Scrolling</td><td>can cost a request</td><td>costs nothing</td></tr>
+<tr><td>A large table</td><td>stays cheap</td><td>is a large read</td></tr>
+</tbody>
+</table>
+</div>
+<p>Note the line <code>opening → complete</code>, and not <code>→ partial</code>. A paged view stays <em>partial</em> for most of
+its life: it holds 200 of 200,000 rows, and it knows this. An eager view goes directly to complete,
+because after the copy there is nothing more to get.</p>
+<div id="admonition-eager-is-correct-for-a-small-table-not-for-a-large-one" class="admonition admonish-note" role="note" aria-labelledby="admonition-eager-is-correct-for-a-small-table-not-for-a-large-one-title">
+<div class="admonition-title">
+<div id="admonition-eager-is-correct-for-a-small-table-not-for-a-large-one-title">
+<p>Eager is correct for a small table, not for a large one</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-eager-is-correct-for-a-small-table-not-for-a-large-one"></a>
+</div>
+
+<div>
+<p>This source holds 3,000 rows. The same shape with 200,000 rows would read all of them at open, and
+the user would wait.</p>
+<p>If your source cannot serve windows and your table is large, do not look for a Diorama setting. Add
+windows to the source, or observe fewer rows.</p>
+</div>
+
+</div>
+
+<h2 id="the-cost-of-a-sort-and-its-location"><a class="header" href="#the-cost-of-a-sort-and-its-location">The cost of a sort, and its location</a></h2>
+<p>Sort the windowed table. The stream tells you where the work goes:</p>
+<pre><code class="language-text">people   sort     by name descending — pushed to the source
+</code></pre>
+<p>The next fetch then includes the sort:</p>
+<pre><code class="language-text">people   dio      fetch #3 asks for rows 521..621 (viewport 521..534) — 100 missing, 0 already held · sorted by name Desc
+people   dio      fetch #3 got 100 rows in 7.3s  ⚠ slow
+</code></pre>
+<p>The framework did not sort the rows that it holds. It sent the sort to the source, because the
+source can order. When you hold 300 rows of 200,000, only the answer of the source is correct.</p>
+<p>The request also became more expensive: 7.3s for 100 rows, against 3.0s for 200 rows. The source
+must now order 200,000 rows for each window.</p>
+<p>The same action against the source that can do nothing gives a different line:</p>
+<pre><code class="language-text">stubborn   sort   by name descending — the source cannot order; sorting the 3,000 rows held locally
+</code></pre>
+<p>No fetch follows. The cache holds all the rows, so the sort is a local operation. It is immediate,
+and it is correct because the cache holds the complete set.</p>
+<p><strong>The dangerous combination is a source that cannot order and a table that is too large to copy.</strong>
+The framework would then have to sort the rows that it loaded, and “sorted” would mean “the first
+page of a sample”.</p>
+<p>Diorama does not do this. A paged view whose source orders the rows discards its cached row
+positions instead of moving them, and it fetches the visible window again:</p>
+<pre><code class="language-text">people   scenery  row positions dropped — the source re-orders, so cached rows must be re-placed
+</code></pre>
+<p>The cost is one more fetch. The result is correct.</p>
+<h2 id="search-and-the-control-that-the-ui-hides"><a class="header" href="#search-and-the-control-that-the-ui-hides">Search, and the control that the UI hides</a></h2>
+<p>Search obeys the same rule:</p>
+<pre><code class="language-text">people   search   "smith" — pushed to the source
+</code></pre>
+<p>A source that cannot search gives the opposite line, and the framework filters the rows that it
+holds. You see that line from the <code>stubborn</code> source, which holds all its rows.</p>
+<p>The UI adds one condition. <strong>A grid over a source that cannot search shows no search box.</strong> The UI
+hides the control instead of showing a control with a smaller scope than the user expects.</p>
+<div id="admonition-a-grid-has-no-search-control" class="admonition admonish-tip" role="note" aria-labelledby="admonition-a-grid-has-no-search-control-title">
+<div class="admonition-title">
+<div id="admonition-a-grid-has-no-search-control-title">
+<p>A grid has no search control</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-a-grid-has-no-search-control"></a>
+</div>
+
+<div>
+<p>A <code>grid</code> component shows no search box, and this does not depend on the source. Use <code>kind: binder</code>
+for the full table controls.</p>
+<p>A grid over a source that can search therefore offers less than the source can do.</p>
+</div>
+
+</div>
+
+<h2 id="latency-multiplies-the-cost"><a class="header" href="#latency-multiplies-the-cost">Latency multiplies the cost</a></h2>
+<p>Capabilities control <em>where</em> the work happens. Latency controls <em>what the work costs</em>.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>fast source</th><th>slow source</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>can serve windows</strong></td><td>scrolling is almost free; waste is invisible</td><td>each unnecessary window is a visible delay</td></tr>
+<tr><td><strong>cannot serve windows</strong></td><td>one large read, and it completes quickly</td><td>one large read, and the user waits for it</td></tr>
+</tbody>
+</table>
+</div>
+<p>The <em>count</em> of requests is the same in both conditions. <strong>Measure the count, not the feeling.</strong></p>
+<hr>
+<h2 id="what-we-covered-7"><a class="header" href="#what-we-covered-7">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>capabilities: []</code></td><td>Removes all operations except <code>list</code>. This gives the eager method.</td></tr>
+<tr><td>the <code>source</code> line</td><td>Names what the source can do, and which load method follows</td></tr>
+<tr><td><strong>paged</strong> and <strong>eager</strong></td><td>One window for each screen, against one read at open</td></tr>
+<tr><td>the <code>sort</code> line</td><td>Says whether the source sorts, or the framework sorts the rows that it holds</td></tr>
+<tr><td>the <code>search</code> line</td><td>The same, for filters. <code>kind: grid</code> hides the control.</td></tr>
+<tr><td><code>row positions dropped</code></td><td>A paged view that refetches instead of showing a sample as the set</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-what-is-next-2" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title-2">
+<p>What is next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-next-2"></a>
+</div>
+
+<div>
+<p>Capabilities explain the requests that the application had to send. The next section finds the
+requests that it did not have to send, and adds a source that sends 19MB to fill a grid of five
+columns.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fetching-what-you-drop"><a class="header" href="#fetching-what-you-drop">Fetching What You Drop</a></h1>
+<p>This section examines the requests that the application did not have to send. These are more
+difficult to find. A wasteful application and an efficient application look the same on screen.</p>
+<p>There are three types of waste, from the easiest to find to the most difficult:</p>
+<ol>
+<li><strong>Repeats.</strong> The application fetched the same window more than one time.</li>
+<li><strong>Redundant rows.</strong> Rows arrived when the cache already held them.</li>
+<li><strong>Columns that no view shows.</strong> Data crossed the network and then went in the bin.</li>
+</ol>
+<p>The first two have counters. The third has one line.</p>
+<h2 id="the-two-counters-that-must-be-zero"><a class="header" href="#the-two-counters-that-must-be-zero">The two counters that must be zero</a></h2>
+<p>Quit Vantage UI. The session summary prints:</p>
+<pre><code class="language-text">people     summary  3 fetches, 0 repeats · 400 rows, 0 redundant · 9.1s waiting, 3.0s slowest
+           summary  1 dio, 1 table scenery, 0 record, 0 servo still alive
+           summary  session 18.0s · cpu 15.0s · peak rss 352MB
+</code></pre>
+<p><strong><code>repeats</code></strong> counts the windows that the application requested more than one time. The loader is
+built to avoid repeats, so a number above zero is a defect. There are three causes:</p>
+<ul>
+<li>the cache is not operating</li>
+<li>a total declares rows that the source will not serve</li>
+<li>a viewport moves between two positions</li>
+</ul>
+<p><strong><code>redundant</code></strong> counts the rows that arrived when the cache already held them. A cold run must give
+zero. A warm run gives a small number, and that is the cost of revalidation. If the redundant count
+equals the received count, the application fetched a full page for nothing.</p>
+<div id="admonition-read-the-counters-with-the-session-not-alone" class="admonition admonish-note" role="note" aria-labelledby="admonition-read-the-counters-with-the-session-not-alone-title">
+<div class="admonition-title">
+<div id="admonition-read-the-counters-with-the-session-not-alone-title">
+<p>Read the counters with the session, not alone</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-read-the-counters-with-the-session-not-alone"></a>
+</div>
+
+<div>
+<p><code>3 fetches</code> has no meaning until you know that you scrolled through 400 rows of a table of 200,000.</p>
+<p>Use the ratios: fetches for each screen of rows, and redundant rows for each received row. Record
+what you did together with what it cost.</p>
+</div>
+
+</div>
+
+<h2 id="watch-the-cache-do-its-work"><a class="header" href="#watch-the-cache-do-its-work">Watch the cache do its work</a></h2>
+<pre><code class="language-text">22:42:19.028  people   viewport  rows 77..90 — 6 scroll events coalesced into one
+22:42:19.029  people   cache     all 13 rows of 77..90 served locally — no fetch
+22:42:19.516  people   viewport  rows 125..138 — 3 scroll events coalesced into one
+22:42:19.516  people   cache     all 13 rows of 125..138 served locally — no fetch
+22:42:19.858  people   viewport  rows 257..270 — 11 scroll events coalesced into one
+22:42:19.859  people   dio       fetch #2 asks for rows 257..357 (viewport 257..270) — 100 missing
+</code></pre>
+<p>Two efficiencies are visible here.</p>
+<p><strong>The framework combines scroll events.</strong> Twenty scroll events produced three viewports. The loader
+waits for the movement to stop, and then declares one viewport for the final position. The
+intermediate positions never cause a fetch.</p>
+<p><strong>The loader reads ahead of the screen.</strong> The viewport of <code>fetch #2</code> was <code>257..270</code>, which is 14
+rows. The request was for <code>257..357</code>, which is 100 rows. The loader fetches extra rows in the
+direction of movement, so that the next screen costs nothing. This is why the two ranges differ.</p>
+<p>Read-ahead also explains the fetch count in the summary above: 3 fetches covered 400 rows, which is
+more screens than three.</p>
+<h2 id="the-waste-with-no-counter"><a class="header" href="#the-waste-with-no-counter">The waste with no counter</a></h2>
+<p>Now add a source with large rows. The grid shows five short columns. Each row carries 200 more
+fields that nobody declared.</p>
+<pre><code class="language-yaml"># datasource/wide.yaml
+type: faker
+effect: static
+debug: true
+count: 500
+seed: 111
+shape:
+  capabilities: [count, fetch_window, order]
+  latency:
+    window: 50ms..150ms
+  extra_fields:
+    count: 200       # 200 extra fields in each row
+    size: 500        # each extra field holds 500 bytes
+</code></pre>
+<p>Open it and read one line:</p>
+<pre><code class="language-text">22:06:34.148  wide  dio      fetch #1 got 200 rows in 2.3s  ⚠ slow
+22:06:34.148  wide  payload  206 columns received · no view declared what it needs, so all were
+                             fetched · 19.6MB · id,name,surname,email,city,balance,extra_0001,
+                             extra_0002 +198 more
+</code></pre>
+<p><strong>The application moved 19.6MB to fill a grid of five columns.</strong> The five columns are about 19KB of
+that total.</p>
+<p>Nothing failed. No counter changed. <code>repeats</code> is zero, and <code>redundant</code> is zero. Each measurement in
+the session summary says that the application is correct.</p>
+<p>This fault hides better than the others, because each other signal says that the application is
+correct. Only the <code>payload</code> line finds it.</p>
+<h2 id="no-view-declared-what-it-needs"><a class="header" href="#no-view-declared-what-it-needs">“No view declared what it needs”</a></h2>
+<p>Diorama has a mechanism for this. A scenery can declare its <strong>demand</strong>, which is the list of columns
+that it shows. The Dio then combines the demands of the open views. When a view declares its demand,
+the line reports against that demand:</p>
+<pre><code class="language-text">wide  payload  5 of 206 columns wanted · 201 fetched and dropped · 19.6MB
+</code></pre>
+<p>This grid declares nothing. The combined demand is therefore “all columns”.</p>
+<p>The framework cannot tell the difference between a view that wants all 206 columns and a view that
+never declared its columns. It assumes the first, and it fetches all the columns.</p>
+<div id="admonition-demand-controls-the-second-pass-not-the-width-of-the-first" class="admonition admonish-note" role="note" aria-labelledby="admonition-demand-controls-the-second-pass-not-the-width-of-the-first-title">
+<div class="admonition-title">
+<div id="admonition-demand-controls-the-second-pass-not-the-width-of-the-first-title">
+<p>Demand controls the second pass, not the width of the first</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-demand-controls-the-second-pass-not-the-width-of-the-first"></a>
+</div>
+
+<div>
+<p>Diorama can load a row in two passes. The first pass fetches the window. The second pass — the
+<strong>hydrate</strong> pass — fetches the augmented columns of the rows on screen.</p>
+<p>Demand controls the second pass. A view that does not show an augmented column does not pay to
+hydrate it.</p>
+<p>Demand does not yet decrease the columns in one window fetch. The 19.6MB above is therefore not a
+configuration error that you can correct in YAML. Use the <code>payload</code> line as a measurement, and use
+the size of the number as the reason to make the source return fewer columns.</p>
+</div>
+
+</div>
+
+<h2 id="what-to-do-about-a-large-payload"><a class="header" href="#what-to-do-about-a-large-payload">What to do about a large payload</a></h2>
+<p>These actions are listed from the most effective to the least effective.</p>
+<ul>
+<li><strong>Decrease the columns at the source.</strong> Use a REST endpoint with a <code>fields=</code> parameter, a SQL view
+that selects the columns that you show, or a GraphQL query that names its columns. The cheapest
+byte is the byte that nobody sends.</li>
+<li><strong>Move the large columns into an augment.</strong> An <code>augment:</code> block on the table makes the large
+fields the second pass, which demand controls. See <a href="#augmentation">Augmentation</a> for the
+block and its options.</li>
+<li><strong>Observe fewer tables.</strong> A page that observes two tables opens two Dios and pays for both.</li>
+</ul>
+<h2 id="a-checklist-for-one-page"><a class="header" href="#a-checklist-for-one-page">A checklist for one page</a></h2>
+<p>Run the page cold, then warm. Read four numbers.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Number</th><th>Where</th><th>Correct value</th></tr>
+</thead>
+<tbody>
+<tr><td>fetches</td><td><code>summary</code></td><td>fewer than one for each screen, because the loader reads ahead</td></tr>
+<tr><td>repeats</td><td><code>summary</code></td><td><strong>zero</strong>, always</td></tr>
+<tr><td>redundant</td><td><code>summary</code></td><td>zero when cold; small when warm</td></tr>
+<tr><td>payload for each fetch</td><td><code>payload</code></td><td>proportional to the columns that you show</td></tr>
+</tbody>
+</table>
+</div>
+<p>If the first three numbers are correct and the fourth is not, you have the invisible fault.</p>
+<hr>
+<h2 id="what-we-covered-8"><a class="header" href="#what-we-covered-8">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>repeats</code></td><td>Windows that the application fetched more than one time. Must be zero.</td></tr>
+<tr><td><code>redundant</code></td><td>Rows that arrived when the cache held them. Zero when cold, small when warm.</td></tr>
+<tr><td>coalescing</td><td>Scroll events that became one viewport, because the loader waits for the movement to stop</td></tr>
+<tr><td>read-ahead</td><td>The extra rows that the loader fetches in the direction of movement</td></tr>
+<tr><td><code>payload</code></td><td>The columns that arrived, the columns that a view wants, and the cost in bytes</td></tr>
+<tr><td><code>extra_fields</code></td><td>The faker setting that adds fields to each row</td></tr>
+<tr><td>demand · hydrate</td><td>The columns that a view declares, and the second pass that they control</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-what-is-next-3" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title-3">
+<p>What is next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-next-3"></a>
+</div>
+
+<div>
+<p>Each source until now answered its requests. The next section uses a source that fails one request
+in five, stops for ten seconds each minute, and reports a row count that is wrong.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="faults-errors-outages--lies"><a class="header" href="#faults-errors-outages--lies">Faults: Errors, Outages &amp; Lies</a></h1>
+<p>Each source until now answered, and its answers were true. Production sources are not always honest.
+A source can fail one request while the user scrolls. It can stop for ten seconds. It can also
+report a row count that it will not serve.</p>
+<p>Here the cache stops being an optimisation. It becomes the component that keeps your application
+usable.</p>
+<h2 id="a-source-with-faults"><a class="header" href="#a-source-with-faults">A source with faults</a></h2>
+<pre><code class="language-yaml"># datasource/flaky.yaml
+type: faker
+effect: static
+debug: true
+count: 1000
+seed: 107
+shape:
+  capabilities: [count, fetch_window, order]
+  latency:
+    window: 100ms..300ms
+  faults:
+    error_rate: 0.2      # one request in five fails
+    offline: 10s/60s     # &lt;down&gt;/&lt;period&gt;: down for 10s in each 60s
+    total_lie: -13       # reports 13 fewer rows than it will serve
+</code></pre>
+<p>There are three independent faults, and each one repeats because the shape has a seed.</p>
+<h2 id="what-a-failure-looks-like"><a class="header" href="#what-a-failure-looks-like">What a failure looks like</a></h2>
+<pre><code class="language-text">22:08:05.813  flaky  dio  fetch #1 asks for rows 0..200 — 200 missing, 0 already held
+22:08:05.978  flaky  dio  fetch #1 failed after 164ms — shaped source request failed (injected fault)
+</code></pre>
+<p>The request identifier connects the two lines. The duration tells you how long you waited for the
+failure. The message is the error from the source.</p>
+<p>What is <strong>absent</strong> is more important. There is no state line, no cache line, and no total line.</p>
+<p><strong>A failed fetch changes nothing.</strong> The rows that the view already had are still present, still in
+their correct positions, and still on screen. A failed refresh costs freshness, not data.</p>
+<h2 id="the-viewport-causes-the-retry"><a class="header" href="#the-viewport-causes-the-retry">The viewport causes the retry</a></h2>
+<p>Nothing retries on a timer, and this is deliberate. The rows are still absent. The next time that a
+view declares a viewport that includes those rows, the loader asks again. A scroll, a repaint, or a
+window that gets focus each cause this.</p>
+<pre><code class="language-text">flaky  dio  fetch #2 asks for rows 0..200 — 200 missing, 0 already held
+flaky  dio  fetch #2 got 200 rows in 210ms
+flaky  cache +200 new, 0 updated — now holding 200 of 987 (20.3%)
+flaky  total 987 rows — stated by the source in the same response
+</code></pre>
+<p>The retry is a result of demand. It is not a policy. It therefore needs no backoff configuration,
+and it cannot flood the source: if no view looks at a range, the loader sends no request for it.</p>
+<div id="admonition-the-one-failure-that-does-flood-the-source" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-one-failure-that-does-flood-the-source-title">
+<div class="admonition-title">
+<div id="admonition-the-one-failure-that-does-flood-the-source-title">
+<p>The one failure that does flood the source</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-the-one-failure-that-does-flood-the-source"></a>
+</div>
+
+<div>
+<p>There is an exception, and the <code>optimising</code> project produced it.</p>
+<p>A fetch can fail <em>immediately</em> and always — a rejected query, and not an unreliable connection. Each
+viewport movement then sends a request, each request fails immediately, and the application uses all
+available CPU.</p>
+<p>During the writing of this guide, a faker datasource advertised <code>order</code> while the source refused
+every ordered query. Vantage UI appeared to stop responding.</p>
+<p>The lesson is not about retry policy. <strong>A capability that a source advertises but cannot do is worse
+than a capability that it never claims</strong>, because nothing limits the rate of the failure.</p>
+</div>
+
+</div>
+
+<h2 id="the-dishonest-total"><a class="header" href="#the-dishonest-total">The dishonest total</a></h2>
+<p>Read the two last lines above again. The table has <strong>1,000</strong> rows. The source says 987.</p>
+<p>The grid uses the total from the source, because the source is the authority on how many rows it
+has. One condition overrides this rule, and the next paragraph gives it.</p>
+<p>A total that is too small is the safe direction. The grid makes its scrollbar 13 rows short, and the
+user cannot reach the last rows.</p>
+<p>A total that is too large is the dangerous direction. If a fetch asks for a range with missing rows,
+and it fills <strong>none</strong> of them, then the set ends at the first missing row, whatever the total says.
+The framework caps the total and reports the cap with the message <em>“capped: the source promises more
+than it serves”</em>.</p>
+<p>Without this rule, the grid shows rows that no fetch can fill. A missing row causes a fetch.
+Therefore the application asks the source again, one request each few seconds, for as long as the
+page stays open.</p>
+<h2 id="outages"><a class="header" href="#outages">Outages</a></h2>
+<p><code>offline: 10s/60s</code> stops the source on a schedule. In the stream, an outage looks like a sequence of
+failures. There is no separate offline state to handle, no reconnect procedure, and no separate path
+in your code.</p>
+<ul>
+<li>Cached rows continue on screen, and they do not change.</li>
+<li>Ranges that the application has not fetched stay empty. The loader asks for them again when a view
+looks at them.</li>
+<li>When the source returns, the next viewport succeeds and fills the empty rows.</li>
+</ul>
+<p>The difficult condition is the first open with an empty cache during an outage. There is nothing to
+show and nothing to fetch. This is one more reason to measure the cold run and the warm run
+separately.</p>
+<h2 id="what-to-check-under-faults"><a class="header" href="#what-to-check-under-faults">What to check under faults</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Question</th><th>Where to look</th></tr>
+</thead>
+<tbody>
+<tr><td>Did a failure delete data?</td><td>No <code>cache</code> line after the <code>failed</code> line, and rows still on screen</td></tr>
+<tr><td>Did the retry behave correctly?</td><td>One <code>asks for</code> line for each viewport movement, and not a sequence of them</td></tr>
+<tr><td>Is the total correct?</td><td>The <code>total</code> line, and whether the framework ever caps it</td></tr>
+<tr><td>Did recovery need a restart?</td><td>A <code>got</code> line after the failures, with no restart</td></tr>
+</tbody>
+</table>
+</div>
+<p>An application that handles faults well produces a stream that looks normal: some failures, some
+retries when a view looks at the rows, and rows that never disappear.</p>
+<hr>
+<h2 id="what-we-covered-9"><a class="header" href="#what-we-covered-9">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>faults.error_rate</code></td><td>Makes a fraction of the requests fail</td></tr>
+<tr><td><code>faults.offline</code></td><td>Stops the source on a schedule, in the form <code>&lt;down&gt;/&lt;period&gt;</code></td></tr>
+<tr><td><code>faults.total_lie</code></td><td>Changes the number that the grid uses to set its size</td></tr>
+<tr><td><code>failed after …</code></td><td>The request that did not complete, with its cost and the error from the source</td></tr>
+<tr><td><em>capped: promises more than it serves</em></td><td>The defence against a total that no fetch can fill</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-what-is-next-4" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title-4">
+<p>What is next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-next-4"></a>
+</div>
+
+<div>
+<p>The last section makes assertions from what you read. A number that becomes worse then makes a test
+fail, instead of nobody noticing.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="locking-it-in-cache-regression-tests"><a class="header" href="#locking-it-in-cache-regression-tests">Locking It In: Cache Regression Tests</a></h1>
+<p>The numbers that you measured are true of the code as it is today. This section answers a different
+question: what happens in six months, when somebody adds a refresh timer or makes a query wider, and
+nobody repeats the experiment?</p>
+<p>Three measurements automate. The rest is judgement.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Property</th><th>Assertion</th><th>Why it becomes worse without a signal</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Requests for each open</strong></td><td>exactly <em>N</em> fetches for a known scroll</td><td>a second component that observes the table, a refresh at open, or a second Dio</td></tr>
+<tr><td><strong>No repeats</strong></td><td><code>repeats == 0</code></td><td>a total that is too large, or a viewport that moves between two positions</td></tr>
+<tr><td><strong>No redundant rows</strong></td><td><code>redundant == 0</code> on a cold run</td><td>a refresh that makes too much data invalid</td></tr>
+</tbody>
+</table>
+</div>
+<p>Put everything else in a report that you read. Do not put it in a test. Latency, memory, and payload
+size change for correct reasons, such as a larger fixture or a slower machine. A test that fails on
+those numbers gets disabled in one month.</p>
+<div id="admonition-assert-on-counts-never-assert-on-times" class="admonition admonish-note" role="note" aria-labelledby="admonition-assert-on-counts-never-assert-on-times-title">
+<div class="admonition-title">
+<div id="admonition-assert-on-counts-never-assert-on-times-title">
+<p>Assert on counts. Never assert on times.</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-assert-on-counts-never-assert-on-times"></a>
+</div>
+
+<div>
+<p><code>3 fetches</code> is a property of your code. <code>9.1 seconds</code> is a property of the machine that ran the
+test. Put the first in CI. Put the second in a log that you read when something feels wrong.</p>
+</div>
+
+</div>
+
+<h2 id="what-a-test-needs-from-the-source"><a class="header" href="#what-a-test-needs-from-the-source">What a test needs from the source</a></h2>
+<p><strong>Assertions on exact counts need a source that you control.</strong> A real source gives different numbers
+on each run, so you cannot assert on them. You can still point the <code>optimising</code> project at a real
+source and compare the two reports by hand, as section 1 describes.</p>
+<pre><code class="language-yaml">type: faker
+effect: static
+debug: true
+count: 1000                   # a small set, so the fetch count is small
+seed: 103                     # the same rows, in the same sequence, on each run
+shape:
+  capabilities: [count, fetch_window, order]
+  latency:
+    window: 20ms              # one value, not a range — no variation in CI
+</code></pre>
+<p>There are three changes from the interactive project.</p>
+<ul>
+<li><strong><code>count</code></strong> decreases from 200,000 to 1,000, so that a short scroll covers a known part of the set.</li>
+<li><strong><code>seed</code></strong> was always present, and now it is necessary. A test that asserts on row 0 needs row 0 to
+be the same row on each machine. A seed fixes the sequence of generated values, so the same seed
+with the same <code>count</code> gives the same rows. A different <code>count</code> gives a different set.</li>
+<li><strong><code>latency</code></strong> becomes one value instead of a range. Variable latency is realistic in a measurement
+session. In a test it causes intermittent failures and gives no benefit.</li>
+</ul>
+<h2 id="the-structure-of-a-test"><a class="header" href="#the-structure-of-a-test">The structure of a test</a></h2>
+<ol>
+<li><strong>Start from a known cache state.</strong> Delete the cache file of the datasource for a cold run. For a
+warm run, run Vantage UI one time to fill the cache, then measure the second start.</li>
+<li><strong>Do a known interaction.</strong> Open one page, declare one viewport, or scroll a fixed number of
+rows. Use <code>--page=&lt;key&gt;</code>, so that no other page adds requests to your count.</li>
+<li><strong>Wait for the requests to stop.</strong> Do not wait for a fixed time. Poll the fetch count until it
+does not change for 500ms. A fixed <code>sleep</code> is slower than necessary, and it also fails on a busy
+CI machine.</li>
+<li><strong>Assert on the session summary.</strong> Read the counters, compare them, and fail with a clear
+message.</li>
+</ol>
+<h2 id="how-to-read-the-numbers"><a class="header" href="#how-to-read-the-numbers">How to read the numbers</a></h2>
+<pre><code class="language-sh"># each fetch of the session
+grep 'asks for' session.log | wc -l
+
+# the summary, printed when Vantage UI quits
+grep -A3 'session summary' session.log
+</code></pre>
+<p>In a Rust harness, you read the same numbers directly:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vantage_diorama::stats;
+
+// Limit the measurement to this interaction, not to the whole process.
+stats::reset_fetch_stats();
+
+// ... drive the page ...
+
+let stats = stats::fetch_stats();
+// `table` is the name of the Dio, which is the master table of the datasource.
+let people = stats.iter().find(|s| s.table == "people").expect("the table was read");
+assert_eq!(people.repeats, 0, "the application fetched a window more than one time");
+assert_eq!(people.rows_redundant, 0, "rows arrived that the cache already held");
+<span class="boring">}</span></code></pre>
+<p><a href="optimising-diorama/vantage_diorama::stats::reset_fetch_stats"><code>reset_fetch_stats</code></a> makes the measurement local to one
+test. The counters are global to the process and they accumulate. A test that does not reset them
+measures each test before it.</p>
+<p>To assert on the count of fetches, first measure the count for your interaction, then write that
+number into the test. The count depends on the read-ahead that section 4 describes, so you cannot
+calculate it from the number of screens.</p>
+<h2 id="the-assertion-that-finds-faults"><a class="header" href="#the-assertion-that-finds-faults">The assertion that finds faults</a></h2>
+<p>If you write one assertion only, write this one:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>assert_eq!(people.repeats, 0);
+<span class="boring">}</span></code></pre>
+<p>It is cheap, it does not fail intermittently, and it finds every repeated fetch.</p>
+<p>It does not find a large payload. Section 4 shows a fault with 19.6MB of traffic, zero repeats, and
+zero redundant rows. Assert on the payload separately, or read the <code>payload</code> line.</p>
+<h2 id="the-result"><a class="header" href="#the-result">The result</a></h2>
+<p>The result is not a faster application. The framework always did this work. The result is an
+application that you can <strong>measure</strong>.</p>
+<hr>
+<h2 id="what-we-covered-10"><a class="header" href="#what-we-covered-10">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>seed:</code> with one latency value</td><td>Makes a run repeatable, so that you can assert on it</td></tr>
+<tr><td><code>--page=&lt;key&gt;</code></td><td>Opens one page, so you count the requests of that page only</td></tr>
+<tr><td><code>stats::reset_fetch_stats()</code></td><td>Limits the counters to one interaction</td></tr>
+<tr><td><code>stats::fetch_stats()</code></td><td>Gives the counters in Rust, with no log to parse</td></tr>
+<tr><td><code>repeats == 0</code></td><td>The one assertion to write, if you write one</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-where-to-go-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-where-to-go-next-title">
+<div class="admonition-title">
+<div id="admonition-where-to-go-next-title">
+<p>Where to go next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-where-to-go-next"></a>
+</div>
+
+<div>
+<p>If you want to measure your own source, point the <code>optimising</code> project at it. The method works with
+any datasource, and the faker runs stay useful as the control.</p>
+<p>If you write a driver, <a href="#adding-a-new-persistence">Adding a New Persistence</a> is where you select the
+capabilities to advertise. This chapter is where you find out whether your driver does what it
+advertised.</p>
+</div>
+
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="adding-a-new-persistence"><a class="header" href="#adding-a-new-persistence">Adding a New Persistence</a></h1>
 <p>So you want to connect Vantage to a new database? This guide walks through the process in nine
 incremental steps — each one unlocks more framework features. You don’t have to implement all
 nine; stop whenever your persistence has enough capability for your use case.</p>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#overview-1">Overview</a></li>
 <li><a href="#step-1-type-system">Step 1: Type System</a></li>
 <li><a href="#step-2-expressions">Step 2: Expressions</a></li>
 <li><a href="#step-3-operators">Step 3: Operators</a></li>
@@ -9467,7 +10771,7 @@ nine; stop whenever your persistence has enough capability for your use case.</p
 <li><a href="#step-9-contained-relations">Step 9: Contained Relations</a></li>
 </ul>
 <hr>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<h2 id="overview-1"><a class="header" href="#overview-1">Overview</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 2: Expressions - Vantage Framework</title>
+        <title>Where the Work Happens: Capabilities &amp; Latency - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,232 +175,198 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-2-make-expressions-work"><a class="header" href="#step-2-make-expressions-work">Step 2: Make Expressions Work</a></h1>
-<p>With the type system in place, you can now use <code>Expression&lt;AnySqliteType&gt;</code> to build and execute
-queries. This step has two deliverables: a convenience macro and the <code>ExprDataSource</code> trait
-implementation.</p>
-<h3 id="the-vendor-macro"><a class="header" href="#the-vendor-macro">The vendor macro</a></h3>
-<p>Define a macro that produces <code>Expression&lt;YourAnyType&gt;</code>. SurrealDB has <code>surreal_expr!</code>, we create
-<code>sqlite_expr!</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
-<span class="boring">}</span></code></pre>
-<p>Under the hood, <code>100i64</code> gets wrapped as <code>AnySqliteType::new(100i64)</code> with variant <code>Integer</code>. When
-this expression hits the database, the bind layer knows to call <code>query.bind(100i64)</code> — not
-<code>query.bind("100")</code> or <code>query.bind(100.0)</code>.</p>
-<p>The macro handles three kinds of parameters:</p>
-<ul>
-<li><code>42i64</code> → scalar with type marker</li>
-<li><code>(sub_expr)</code> → nested expression (composed into the template)</li>
-<li><code>{deferred}</code> → lazy evaluation (resolved at execution time)</li>
-</ul>
-<h3 id="identifier-quoting"><a class="header" href="#identifier-quoting">Identifier quoting</a></h3>
-<p>SQL identifiers (table names, column names) need quoting to handle reserved words, spaces, and
-special characters. Different databases use different quote styles — PostgreSQL and SQLite use
-double quotes (<code>"name"</code>), MySQL uses backticks (<code>`name`</code>), SurrealDB uses something else
-entirely.</p>
-<p>Vantage centralises this in the <code>Identifier</code> struct (<code>vantage-sql/src/primitives/identifier.rs</code>).
-<code>Identifier</code> is quote-agnostic — it stores the name parts and optional alias, but the actual quoting
-happens in the <code>Expressive&lt;T&gt;</code> implementation for each backend type:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Expressive&lt;AnyMysqlType&gt; for Identifier {
-    fn expr(&amp;self) -&gt; Expression&lt;AnyMysqlType&gt; {
-        Expression::new(self.render_with('`'), vec![])  // `name`
-    }
-}
-<span class="boring">}</span></code></pre>
-<p>When you add a new SQL backend, add an <code>Expressive&lt;YourAnyType&gt;</code> impl with your quote character. The
-compiler picks the right impl based on the expression type context.</p>
-<p>In practice you use the <code>ident()</code> shorthand and pass it into the vendor macro with parentheses — the
-<code>(...)</code> syntax calls <code>.expr()</code> automatically, so quoting is handled by the type context:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::primitives::identifier::{Identifier, ident};
+                        <h1 id="where-the-work-happens-capabilities--latency"><a class="header" href="#where-the-work-happens-capabilities--latency">Where the Work Happens: Capabilities &amp; Latency</a></h1>
+<p>Until now the source was capable. When the source can do everything, the layers above it do nothing
+that you can measure.</p>
+<p>This section removes the capabilities. <strong>Work does not disappear when a source cannot do it. The
+work moves.</strong></p>
+<h2 id="one-line-controls-everything"><a class="header" href="#one-line-controls-everything">One line controls everything</a></h2>
+<p>Each session starts with this line:</p>
+<pre><code class="language-text">people   source   can count, window, order, search · pages lazily, 100 rows at a time
+</code></pre>
+<p>That line is the full contract. The <code>capabilities:</code> list in the datasource produces it, and each
+later decision follows from it. Change that line, and you change the behaviour of the application.
+You change no other file.</p>
+<h2 id="a-source-that-can-do-nothing"><a class="header" href="#a-source-that-can-do-nothing">A source that can do nothing</a></h2>
+<p>Remove all capabilities. One operation remains, because a source always supports <code>list</code>.</p>
+<pre><code class="language-yaml"># datasource/stubborn.yaml
+type: faker
+effect: static
+debug: true
+count: 3000
+seed: 109
+shape:
+  capabilities: []          # no count, no order, no search, no windows
+  latency:
+    list: 2500ms..3500ms    # and the one operation that it has is slow
+</code></pre>
+<p>Open the page. The stream is very short:</p>
+<pre><code class="language-text">22:02:51.204  stubborn   dio      created over "stubborn" — cache table "stubborn_stubborn", nothing held yet
+22:02:51.205  stubborn   source   can do nothing but list · cannot count, order, search · copied whole into the cache
+22:02:51.205  stubborn   scenery  opened cold — 0 rows seeded from cache
+22:02:51.206  stubborn   census   +1 table scenery — now 1 table, 0 record, 0 servo · rss 129MB
+22:02:54.265  stubborn   scenery  opening → complete (reactor reseed)
+22:02:54.337  stubborn   cache    all 22 rows of 0..22 served locally — no fetch
+</code></pre>
+<p><strong>There are no fetch lines.</strong> The <code>people</code> source sends one request for each screen of rows. This
+source receives one read only — the three seconds between the census line and the
+<code>opening → complete</code> line. Each later scroll comes from the cache, because the cache holds all the
+rows.</p>
+<p>Diorama has two load methods, and the <code>source</code> line names the one in use.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Log string</th><th>When the framework uses it</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>paged</strong></td><td><code>pages lazily</code></td><td>The source can serve <code>[offset, limit)</code> windows</td></tr>
+<tr><td><strong>eager</strong></td><td><code>copied whole into the cache</code></td><td>The source cannot serve windows</td></tr>
+</tbody>
+</table>
+</div>
+<p>You do not select the method. It follows from what the source can do.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th><strong>paged</strong></th><th><strong>eager</strong></th></tr>
+</thead>
+<tbody>
+<tr><td>Reads</td><td>one window for each screen, on demand</td><td>one full read at open</td></tr>
+<tr><td>Memory</td><td>proportional to the rows that you looked at</td><td>proportional to the whole table</td></tr>
+<tr><td>Scrolling</td><td>can cost a request</td><td>costs nothing</td></tr>
+<tr><td>A large table</td><td>stays cheap</td><td>is a large read</td></tr>
+</tbody>
+</table>
+</div>
+<p>Note the line <code>opening → complete</code>, and not <code>→ partial</code>. A paged view stays <em>partial</em> for most of
+its life: it holds 200 of 200,000 rows, and it knows this. An eager view goes directly to complete,
+because after the copy there is nothing more to get.</p>
+<div id="admonition-eager-is-correct-for-a-small-table-not-for-a-large-one" class="admonition admonish-note" role="note" aria-labelledby="admonition-eager-is-correct-for-a-small-table-not-for-a-large-one-title">
+<div class="admonition-title">
+<div id="admonition-eager-is-correct-for-a-small-table-not-for-a-large-one-title">
+<p>Eager is correct for a small table, not for a large one</p>
+</div>
 
-// The (ident(...)) syntax invokes Expressive — quoting is automatic
-let expr = mysql_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT `name` FROM `product` WHERE `price` = 100
+<a class="admonition-anchor-link" href="#admonition-eager-is-correct-for-a-small-table-not-for-a-large-one"></a>
+</div>
 
-let expr = postgres_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT "name" FROM "product" WHERE "price" = 100
-<span class="boring">}</span></code></pre>
-<p>For qualified identifiers (table.column) and aliases:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
-// → SELECT "u"."name"
+<div>
+<p>This source holds 3,000 rows. The same shape with 200,000 rows would read all of them at open, and
+the user would wait.</p>
+<p>If your source cannot serve windows and your table is large, do not look for a Diorama setting. Add
+windows to the source, or observe fewer rows.</p>
+</div>
 
-let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
-// → SELECT `name` AS `n`
-<span class="boring">}</span></code></pre>
-<p>Test identifier quoting in <code>tests/&lt;backend&gt;/2_identifier.rs</code> — cover basic names, reserved words,
-spaces, hyphens, unicode, and names that start with numbers. These are all legal inside quoted
-identifiers in both PostgreSQL and MySQL.</p>
-<h3 id="exprdatasource"><a class="header" href="#exprdatasource">ExprDataSource</a></h3>
-<p>Implement <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnySqliteType&gt;</code> on your DB struct. The <code>execute</code>
-method takes an expression, flattens nested sub-expressions, converts <code>{}</code> placeholders to your
-driver’s syntax (<code>?N</code> for SQLite, <code>$N</code> for Postgres), binds parameters using type markers, and
-returns results.</p>
-<p>Results come back as <code>AnySqliteType</code> with <code>type_variant: None</code> — the database doesn’t preserve our
-markers, so results are permissive (see Step 1). For SQLite that’s especially natural since it
-doesn’t distinguish boolean from integer on the wire.</p>
-<p>If the persistence layer you’re implementing <em>does</em> preserve type information in responses (like
-SurrealDB with CBOR tags), set the correct <code>type_variant</code> when constructing result values in your
-<code>execute()</code> implementation. That way <code>try_get</code> enforces type boundaries on both sides of the
-round-trip.</p>
-<h3 id="validating-with-insert-expressions"><a class="header" href="#validating-with-insert-expressions">Validating with INSERT expressions</a></h3>
-<p>The best way to test this is INSERT + SELECT round-trips. A single insert exercises all the pieces —
-macro, parameter binding, type markers, and result parsing:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let insert = sqlite_expr!(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES ({}, {}, {}, {})",
-    "cupcake", "Flux Cupcake", 120i64, false
-);
-db.execute(&amp;insert).await?;
+</div>
 
-let select = sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake");
-let result = db.execute(&amp;select).await?;
-<span class="boring">}</span></code></pre>
-<p>Nested expressions let you build multi-row inserts from composable parts:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let row1 = sqlite_expr!("({}, {}, {}, {})", "tart", "Time Tart", 220i64, false);
-let row2 = sqlite_expr!("({}, {}, {}, {})", "pie", "Sea Pie", 299i64, true);
+<h2 id="the-cost-of-a-sort-and-its-location"><a class="header" href="#the-cost-of-a-sort-and-its-location">The cost of a sort, and its location</a></h2>
+<p>Sort the windowed table. The stream tells you where the work goes:</p>
+<pre><code class="language-text">people   sort     by name descending — pushed to the source
+</code></pre>
+<p>The next fetch then includes the sort:</p>
+<pre><code class="language-text">people   dio      fetch #3 asks for rows 521..621 (viewport 521..534) — 100 missing, 0 already held · sorted by name Desc
+people   dio      fetch #3 got 100 rows in 7.3s  ⚠ slow
+</code></pre>
+<p>The framework did not sort the rows that it holds. It sent the sort to the source, because the
+source can order. When you hold 300 rows of 200,000, only the answer of the source is correct.</p>
+<p>The request also became more expensive: 7.3s for 100 rows, against 3.0s for 200 rows. The source
+must now order 200,000 rows for each window.</p>
+<p>The same action against the source that can do nothing gives a different line:</p>
+<pre><code class="language-text">stubborn   sort   by name descending — the source cannot order; sorting the 3,000 rows held locally
+</code></pre>
+<p>No fetch follows. The cache holds all the rows, so the sort is a local operation. It is immediate,
+and it is correct because the cache holds the complete set.</p>
+<p><strong>The dangerous combination is a source that cannot order and a table that is too large to copy.</strong>
+The framework would then have to sort the rows that it loaded, and “sorted” would mean “the first
+page of a sample”.</p>
+<p>Diorama does not do this. A paged view whose source orders the rows discards its cached row
+positions instead of moving them, and it fetches the visible window again:</p>
+<pre><code class="language-text">people   scenery  row positions dropped — the source re-orders, so cached rows must be re-placed
+</code></pre>
+<p>The cost is one more fetch. The result is correct.</p>
+<h2 id="search-and-the-control-that-the-ui-hides"><a class="header" href="#search-and-the-control-that-the-ui-hides">Search, and the control that the UI hides</a></h2>
+<p>Search obeys the same rule:</p>
+<pre><code class="language-text">people   search   "smith" — pushed to the source
+</code></pre>
+<p>A source that cannot search gives the opposite line, and the framework filters the rows that it
+holds. You see that line from the <code>stubborn</code> source, which holds all its rows.</p>
+<p>The UI adds one condition. <strong>A grid over a source that cannot search shows no search box.</strong> The UI
+hides the control instead of showing a control with a smaller scope than the user expects.</p>
+<div id="admonition-a-grid-has-no-search-control" class="admonition admonish-tip" role="note" aria-labelledby="admonition-a-grid-has-no-search-control-title">
+<div class="admonition-title">
+<div id="admonition-a-grid-has-no-search-control-title">
+<p>A grid has no search control</p>
+</div>
 
-// Expression::from_vec joins sub-expressions with a delimiter
-let rows = Expression::from_vec(vec![row1, row2], ", ");
+<a class="admonition-anchor-link" href="#admonition-a-grid-has-no-search-control"></a>
+</div>
 
-// Nest into the INSERT — flattener resolves everything into a single query
-let insert = Expression::&lt;AnySqliteType&gt;::new(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES {}",
-    vec![ExpressiveEnum::Nested(rows)],
-);
-db.execute(&amp;insert).await?;
-<span class="boring">}</span></code></pre>
-<p>The <code>ExpressionFlattener</code> collapses all nesting into one flat template with positional parameters —
-each one still carrying its type marker for correct binding.</p>
-<h3 id="deferring-cross-database-value-resolution"><a class="header" href="#deferring-cross-database-value-resolution">Deferring: cross-database value resolution</a></h3>
-<p>Sometimes a query on one database needs a value from another database. That’s what <code>defer()</code> is for
-— it wraps a query as a closure that executes later, when the outer query runs.</p>
-<p>This is not a subquery. The deferred query runs first, produces a concrete value, and that value
-gets bound as a regular parameter in the outer query.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let (config_db, shop_db) = setup().await;
+<div>
+<p>A <code>grid</code> component shows no search box, and this does not depend on the source. Use <code>kind: binder</code>
+for the full table controls.</p>
+<p>A grid over a source that can search therefore offers less than the source can do.</p>
+</div>
 
-// This doesn't execute yet — it's a closure
-let threshold_query = sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price");
-let deferred_threshold = config_db.defer(threshold_query);
+</div>
 
-// Use the deferred value as a parameter in a different database
-let shop_query = Expression::&lt;AnySqliteType&gt;::new(
-    "SELECT name FROM product WHERE price &gt;= {} ORDER BY price",
-    vec![ExpressiveEnum::Deferred(deferred_threshold)],
-);
+<h2 id="latency-multiplies-the-cost"><a class="header" href="#latency-multiplies-the-cost">Latency multiplies the cost</a></h2>
+<p>Capabilities control <em>where</em> the work happens. Latency controls <em>what the work costs</em>.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>fast source</th><th>slow source</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>can serve windows</strong></td><td>scrolling is almost free; waste is invisible</td><td>each unnecessary window is a visible delay</td></tr>
+<tr><td><strong>cannot serve windows</strong></td><td>one large read, and it completes quickly</td><td>one large read, and the user waits for it</td></tr>
+</tbody>
+</table>
+</div>
+<p>The <em>count</em> of requests is the same in both conditions. <strong>Measure the count, not the feeling.</strong></p>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>capabilities: []</code></td><td>Removes all operations except <code>list</code>. This gives the eager method.</td></tr>
+<tr><td>the <code>source</code> line</td><td>Names what the source can do, and which load method follows</td></tr>
+<tr><td><strong>paged</strong> and <strong>eager</strong></td><td>One window for each screen, against one read at open</td></tr>
+<tr><td>the <code>sort</code> line</td><td>Says whether the source sorts, or the framework sorts the rows that it holds</td></tr>
+<tr><td>the <code>search</code> line</td><td>The same, for filters. <code>kind: grid</code> hides the control.</td></tr>
+<tr><td><code>row positions dropped</code></td><td>A paged view that refetches instead of showing a sample as the set</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title">
+<p>What is next</p>
+</div>
 
-// When shop_db.execute() runs:
-// 1. Resolves the deferred → calls config_db, gets 150
-// 2. Replaces the Deferred param with Scalar(150)
-// 3. Flattens and binds: SELECT name FROM product WHERE price &gt;= ?1
-let result = shop_db.execute(&amp;shop_query).await?;
-<span class="boring">}</span></code></pre>
-<p>Your <code>execute()</code> implementation needs to resolve deferred parameters before flattening. Walk the
-parameter list, call <code>.call().await</code> on any <code>Deferred</code>, and leave <code>Scalar</code> and <code>Nested</code> untouched.</p>
-<p>The resolved value comes back as an untyped <code>AnySqliteType</code> (no variant marker), so it gets bound
-via JSON-inference. For SQLite this is fine — the loose type system handles it. For stricter
-databases, you may want <code>defer()</code> to preserve type information from the source query’s result.</p>
-<h3 id="reading-query-results"><a class="header" href="#reading-query-results">Reading query results</a></h3>
-<p>So far we’ve been calling <code>db.execute(&amp;expr).await</code> which returns <code>AnySqliteType</code>. For a SELECT
-query, that value wraps a JSON array of row objects. To work with individual rows, you convert into
-Records:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let result = db.execute(&amp;sqlite_expr!("SELECT * FROM product")).await?;
+<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
+</div>
 
-// Result is AnySqliteType wrapping [{"id":"a","name":"Cheap","price":50}, ...]
-// Convert to records manually:
-let rows: Vec&lt;JsonValue&gt; = match result.into_value() {
-    JsonValue::Array(arr) =&gt; arr,
-    _ =&gt; panic!("expected rows"),
-};
-let record: Record&lt;JsonValue&gt; = rows[0].clone().into();
-<span class="boring">}</span></code></pre>
-<p>That works but it’s verbose. The <code>TryFrom&lt;AnyType&gt;</code> impls from Step 1 make this cleaner through
-<code>AssociatedExpression</code>. When you call <code>db.associate::&lt;R&gt;(expr)</code>, you get an expression that knows
-its return type — <code>.get()</code> executes and converts in one step:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Scalar — extracts single value from single-row result
-let count = db.associate::&lt;i64&gt;(sqlite_expr!("SELECT COUNT(*) FROM product"));
-assert_eq!(count.get().await?, 3);
+<div>
+<p>Capabilities explain the requests that the application had to send. The next section finds the
+requests that it did not have to send, and adds a source that sends 19MB to fill a grid of five
+columns.</p>
+</div>
 
-// Record — extracts first row
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-<span class="boring">}</span></code></pre>
-<p>From a Record, you can deserialize into a struct. For the <code>#[entity]</code> path:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(SqliteType)]
-struct Product { id: String, name: String, price: i64 }
+</div>
 
-let record: Record&lt;AnySqliteType&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Or for the serde path with <code>Record&lt;JsonValue&gt;</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Deserialize)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product: Product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Testing the failure modes (missing fields, NULL into required field, wrong types) can help spot
-issues in your implementation.</p>
-<h3 id="step-2-conclusion"><a class="header" href="#step-2-conclusion">Step 2 conclusion</a></h3>
-<p>At this point you should have:</p>
-<ol>
-<li>
-<p><strong>A vendor macro</strong> (<code>sqlite_expr!</code>, <code>surreal_expr!</code>, etc.) that produces <code>Expression&lt;AnyType&gt;</code>
-with typed parameters.</p>
-</li>
-<li>
-<p><strong>Trait impls</strong> in <code>src/&lt;backend&gt;/impls/</code> — <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnyType&gt;</code>
-with <code>execute()</code> and <code>defer()</code>.</p>
-</li>
-<li>
-<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/2_*.rs</code> covering:</p>
-<ul>
-<li>INSERT with typed parameters, read back and verify</li>
-<li>Multi-row INSERT using nested expressions and <code>from_vec</code></li>
-<li>Type marker verification (bool binds as bool, not as string “true”)</li>
-<li>Cross-database deferred value resolution</li>
-<li>AssociatedExpression with scalar, Record, and entity results</li>
-<li>Identifier quoting: basic names, reserved words, spaces, hyphens, unicode</li>
-</ul>
-</li>
-</ol>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step1-types.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../optimising-diorama/debug-stream.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../optimising-diorama/waste.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -410,11 +376,11 @@ with <code>execute()</code> and <code>defer()</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step1-types.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../optimising-diorama/debug-stream.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../optimising-diorama/waste.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

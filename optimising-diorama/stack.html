@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 2: Expressions - Vantage Framework</title>
+        <title>The setup - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,232 +175,318 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-2-make-expressions-work"><a class="header" href="#step-2-make-expressions-work">Step 2: Make Expressions Work</a></h1>
-<p>With the type system in place, you can now use <code>Expression&lt;AnySqliteType&gt;</code> to build and execute
-queries. This step has two deliverables: a convenience macro and the <code>ExprDataSource</code> trait
-implementation.</p>
-<h3 id="the-vendor-macro"><a class="header" href="#the-vendor-macro">The vendor macro</a></h3>
-<p>Define a macro that produces <code>Expression&lt;YourAnyType&gt;</code>. SurrealDB has <code>surreal_expr!</code>, we create
-<code>sqlite_expr!</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
-<span class="boring">}</span></code></pre>
-<p>Under the hood, <code>100i64</code> gets wrapped as <code>AnySqliteType::new(100i64)</code> with variant <code>Integer</code>. When
-this expression hits the database, the bind layer knows to call <code>query.bind(100i64)</code> — not
-<code>query.bind("100")</code> or <code>query.bind(100.0)</code>.</p>
-<p>The macro handles three kinds of parameters:</p>
+                        <h1 id="the-setup"><a class="header" href="#the-setup">The setup</a></h1>
+<p>An enterprise source holds millions of records, and there can be hundreds of changes each second.
+The change channels are coarse: one channel for each table. But no user observes millions of
+records. A user looks at 20 or 30 rows, and possibly at some aggregated values.</p>
+<p>A Vantage client makes the distinction. Vantage UI connects to the datasource and then narrows the
+data to a <strong>viewport</strong>, which is the set of rows on screen. A live cache at the edge follows the same
+principle when it drives a frontend application: it holds a fragment of the table, and it forwards
+the changes that touch that fragment. The cache is the same cache in both cases, so what you learn
+here against Vantage UI transfers to the other components.</p>
+<p>To measure a cache strategy you need three things:</p>
 <ul>
-<li><code>42i64</code> → scalar with type marker</li>
-<li><code>(sub_expr)</code> → nested expression (composed into the template)</li>
-<li><code>{deferred}</code> → lazy evaluation (resolved at execution time)</li>
+<li>a source whose behaviour you control: fast, slow, unreliable, or fast-changing</li>
+<li>a consumer that you can navigate by hand and check by eye</li>
+<li>full transparency into the cache mechanics, through a real-time log</li>
 </ul>
-<h3 id="identifier-quoting"><a class="header" href="#identifier-quoting">Identifier quoting</a></h3>
-<p>SQL identifiers (table names, column names) need quoting to handle reserved words, spaces, and
-special characters. Different databases use different quote styles — PostgreSQL and SQLite use
-double quotes (<code>"name"</code>), MySQL uses backticks (<code>`name`</code>), SurrealDB uses something else
-entirely.</p>
-<p>Vantage centralises this in the <code>Identifier</code> struct (<code>vantage-sql/src/primitives/identifier.rs</code>).
-<code>Identifier</code> is quote-agnostic — it stores the name parts and optional alias, but the actual quoting
-happens in the <code>Expressive&lt;T&gt;</code> implementation for each backend type:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Expressive&lt;AnyMysqlType&gt; for Identifier {
-    fn expr(&amp;self) -&gt; Expression&lt;AnyMysqlType&gt; {
-        Expression::new(self.render_with('`'), vec![])  // `name`
-    }
-}
-<span class="boring">}</span></code></pre>
-<p>When you add a new SQL backend, add an <code>Expressive&lt;YourAnyType&gt;</code> impl with your quote character. The
-compiler picks the right impl based on the expression type context.</p>
-<p>In practice you use the <code>ident()</code> shorthand and pass it into the vendor macro with parentheses — the
-<code>(...)</code> syntax calls <code>.expr()</code> automatically, so quoting is handled by the type context:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::primitives::identifier::{Identifier, ident};
+<p>This chapter uses a <strong>Vantage Faker</strong> datasource, Vantage UI, and the full cache log.</p>
+<h2 id="create-a-project"><a class="header" href="#create-a-project">Create a project</a></h2>
+<p>Vantage UI is a free download from <a href="https://vantage-ui.com">vantage-ui.com</a>. It installs as a normal
+macOS application.</p>
+<p>Start it normally, create a new project, and choose <strong>Fake Data</strong> in the wizard. Then find the
+project folder — this chapter calls it <code>optimising</code> — and examine the structure inside:</p>
+<pre><code class="language-text">optimising/
+├── datasource/people.yaml     where the rows come from
+├── table/people.yaml          the columns, and which datasource supplies them
+├── page/people.yaml           what the screen shows
+└── menu/left.yaml             how to open the page
+</code></pre>
+<p>A project is a folder of YAML, and each folder holds one kind of declaration. Change the four files
+to match the listings below.</p>
+<p>The datasource is a <strong>faker</strong> source. It generates rows instead of fetching them, and you declare how
+it behaves. This one holds 200,000 personal records: names, surnames, emails, and some additional
+data.</p>
+<pre><code class="language-yaml"># datasource/people.yaml
+type: faker
+effect: static
+count: 200000
+seed: 103
+shape:
+  capabilities: [count, fetch_window, order, search]
+  latency:
+    window: 10ms..40ms
+    get: 5ms..20ms
+</code></pre>
+<div id="admonition-the-capabilities-list" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-capabilities-list-title">
+<div class="admonition-title">
+<div id="admonition-the-capabilities-list-title">
+<p>The capabilities list</p>
+</div>
 
-// The (ident(...)) syntax invokes Expressive — quoting is automatic
-let expr = mysql_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT `name` FROM `product` WHERE `price` = 100
+<a class="admonition-anchor-link" href="#admonition-the-capabilities-list"></a>
+</div>
 
-let expr = postgres_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT "name" FROM "product" WHERE "price" = 100
-<span class="boring">}</span></code></pre>
-<p>For qualified identifiers (table.column) and aliases:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
-// → SELECT "u"."name"
+<div>
+<p><code>capabilities</code> is the contract of the source. A real driver declares what it can do, and faker
+declares what you tell it to. The list above mimics a SQL source:</p>
+<ul>
+<li><strong><code>count</code></strong> — the source reports how many rows the table holds. The grid then knows the size of the
+scrollbar before it has any row.</li>
+<li><strong><code>fetch_window</code></strong> — the source serves a range, such as rows 500 to 600. Without it, the only
+operation is “read everything”.</li>
+<li><strong><code>order</code></strong> — the source sorts. A sort then applies to all the rows, and not to the loaded rows.</li>
+<li><strong><code>search</code></strong> — the source filters, with the same condition.</li>
+</ul>
+<p>The source refuses each operation that is not in the list, and the work then moves to the client.
+Section 3 removes them one at a time.</p>
+<p><a href="../intro/step4-vista.html">Vista — the Universal Data Handle</a> describes the full set of capability
+flags and how a driver declares them.</p>
+</div>
 
-let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
-// → SELECT `name` AS `n`
-<span class="boring">}</span></code></pre>
-<p>Test identifier quoting in <code>tests/&lt;backend&gt;/2_identifier.rs</code> — cover basic names, reserved words,
-spaces, hyphens, unicode, and names that start with numbers. These are all legal inside quoted
-identifiers in both PostgreSQL and MySQL.</p>
-<h3 id="exprdatasource"><a class="header" href="#exprdatasource">ExprDataSource</a></h3>
-<p>Implement <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnySqliteType&gt;</code> on your DB struct. The <code>execute</code>
-method takes an expression, flattens nested sub-expressions, converts <code>{}</code> placeholders to your
-driver’s syntax (<code>?N</code> for SQLite, <code>$N</code> for Postgres), binds parameters using type markers, and
-returns results.</p>
-<p>Results come back as <code>AnySqliteType</code> with <code>type_variant: None</code> — the database doesn’t preserve our
-markers, so results are permissive (see Step 1). For SQLite that’s especially natural since it
-doesn’t distinguish boolean from integer on the wire.</p>
-<p>If the persistence layer you’re implementing <em>does</em> preserve type information in responses (like
-SurrealDB with CBOR tags), set the correct <code>type_variant</code> when constructing result values in your
-<code>execute()</code> implementation. That way <code>try_get</code> enforces type boundaries on both sides of the
-round-trip.</p>
-<h3 id="validating-with-insert-expressions"><a class="header" href="#validating-with-insert-expressions">Validating with INSERT expressions</a></h3>
-<p>The best way to test this is INSERT + SELECT round-trips. A single insert exercises all the pieces —
-macro, parameter binding, type markers, and result parsing:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let insert = sqlite_expr!(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES ({}, {}, {}, {})",
-    "cupcake", "Flux Cupcake", 120i64, false
-);
-db.execute(&amp;insert).await?;
+</div>
 
-let select = sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake");
-let result = db.execute(&amp;select).await?;
-<span class="boring">}</span></code></pre>
-<p>Nested expressions let you build multi-row inserts from composable parts:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let row1 = sqlite_expr!("({}, {}, {}, {})", "tart", "Time Tart", 220i64, false);
-let row2 = sqlite_expr!("({}, {}, {}, {})", "pie", "Sea Pie", 299i64, true);
+<p>Once the datasource exists, declare the tables on it. Each table names its columns and the datasource
+that supplies them:</p>
+<pre><code class="language-yaml"># table/people.yaml
+datasource: people
+title: People
+columns:
+  - { name: id,      type: string,  flags: [id] }
+  - { name: name,    type: string,  flags: [title, searchable] }
+  - { name: surname, type: string,  flags: [title, searchable] }
+  - { name: email,   type: string }
+  - { name: city,    type: string }
+  - { name: balance, type: decimal }
+</code></pre>
+<p>Each column name is significant. <code>name</code> generates human names, <code>surname</code> generates surnames, and
+<code>email</code> generates email addresses. Faker uses the column name first and the declared type second, so
+a name that faker does not recognise gets a value from its type. Every value is fake, and faker
+generates all of them at start-up from the <code>seed</code>.</p>
+<p>Use realistic names. Much of this chapter measures size, and a table of <code>row_1</code> and <code>row_2</code> values
+makes each of those measurements wrong.</p>
+<div id="admonition-use-one-faker-datasource-for-each-table" class="admonition admonish-note" role="note" aria-labelledby="admonition-use-one-faker-datasource-for-each-table-title">
+<div class="admonition-title">
+<div id="admonition-use-one-faker-datasource-for-each-table-title">
+<p>Use one faker datasource for each table</p>
+</div>
 
-// Expression::from_vec joins sub-expressions with a delimiter
-let rows = Expression::from_vec(vec![row1, row2], ", ");
+<a class="admonition-anchor-link" href="#admonition-use-one-faker-datasource-for-each-table"></a>
+</div>
 
-// Nest into the INSERT — flattener resolves everything into a single query
-let insert = Expression::&lt;AnySqliteType&gt;::new(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES {}",
-    vec![ExpressiveEnum::Nested(rows)],
-);
-db.execute(&amp;insert).await?;
-<span class="boring">}</span></code></pre>
-<p>The <code>ExpressionFlattener</code> collapses all nesting into one flat template with positional parameters —
-each one still carrying its type marker for correct binding.</p>
-<h3 id="deferring-cross-database-value-resolution"><a class="header" href="#deferring-cross-database-value-resolution">Deferring: cross-database value resolution</a></h3>
-<p>Sometimes a query on one database needs a value from another database. That’s what <code>defer()</code> is for
-— it wraps a query as a closure that executes later, when the outer query runs.</p>
-<p>This is not a subquery. The deferred query runs first, produces a concrete value, and that value
-gets bound as a regular parameter in the outer query.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let (config_db, shop_db) = setup().await;
+<div>
+<p>A table file follows the Vantage YAML specification, which is the same for every datasource type. It
+declares columns, types, and flags, and nothing more. A datasource file has no such restriction, so
+each faker knob is there: <code>count</code>, <code>seed</code>, <code>effect</code>, and the full <code>shape:</code> block.</p>
+<p>One faker datasource therefore describes one set of rows. Give each table its own datasource. This
+chapter builds four: <code>people</code>, <code>stubborn</code>, <code>flaky</code>, and <code>wide</code>, one for each behaviour that it
+measures.</p>
+</div>
 
-// This doesn't execute yet — it's a closure
-let threshold_query = sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price");
-let deferred_threshold = config_db.defer(threshold_query);
+</div>
 
-// Use the deferred value as a parameter in a different database
-let shop_query = Expression::&lt;AnySqliteType&gt;::new(
-    "SELECT name FROM product WHERE price &gt;= {} ORDER BY price",
-    vec![ExpressiveEnum::Deferred(deferred_threshold)],
-);
+<p>The page shows a <strong>binder</strong>. A binder appears as a full CRUD screen: it lists the rows, it edits them
+when the source supports editing, it has a quick-search box and column ordering, and a click on a row
+opens a summary of that row. Behind the screen it keeps its viewport equal to the rows that you see.</p>
+<p>Vantage UI also has a <code>kind: grid</code> component. A grid has no search box, so this chapter uses a
+binder.</p>
+<pre><code class="language-yaml"># page/people.yaml
+title: People
+body:
+  - kind: binder
+    name: people
+    observe: people
+    params:
+      columns:
+        name:    { width: 160 }
+        surname: { width: 160 }
+        email:   { width: 220 }
+        city:    { width: 180 }
+        balance: { width: 120 }
+</code></pre>
+<p>The menu makes the page available:</p>
+<pre><code class="language-yaml"># menu/left.yaml
+title: Optimising
+items:
+  - section: Optimising
+    children:
+      - page: people
+        label: People
+        icon: Users
+</code></pre>
+<h2 id="run-it"><a class="header" href="#run-it">Run it</a></h2>
+<p>Each later section starts Vantage UI again from the command line, and not from the Finder. The binary
+in the bundle accepts arguments, and the debug output goes to stdout. Make an alias:</p>
+<pre><code class="language-sh">alias vantage-ui='/Applications/Vantage.app/Contents/MacOS/vantage-ui'
+</code></pre>
+<pre><code class="language-sh">vantage-ui ./optimising --page=people
+</code></pre>
+<p><img src="../images/optimising-people-grid.png" alt="The binder over 200,000 generated people: the row list, the quick-search box, the row count, and the details panel for the selected row"></p>
+<p>The binder lists the rows, and a click on a row fills the details panel below it. The row count says
+200000, because the source counted the set. Scrolling is smooth, and no row stays empty for long
+enough to see.</p>
+<p>The first argument is the project folder. <code>--page=&lt;key&gt;</code> opens that page instead of the first entry
+in the menu. This matters: a page that you did not intend to measure also opens a Dio, and its
+requests go into the same statistics.</p>
+<div id="admonition-keep-the-project-simple" class="admonition admonish-note" role="note" aria-labelledby="admonition-keep-the-project-simple-title">
+<div class="admonition-title">
+<div id="admonition-keep-the-project-simple-title">
+<p>Keep the project simple</p>
+</div>
 
-// When shop_db.execute() runs:
-// 1. Resolves the deferred → calls config_db, gets 150
-// 2. Replaces the Deferred param with Scalar(150)
-// 3. Flattens and binds: SELECT name FROM product WHERE price &gt;= ?1
-let result = shop_db.execute(&amp;shop_query).await?;
-<span class="boring">}</span></code></pre>
-<p>Your <code>execute()</code> implementation needs to resolve deferred parameters before flattening. Walk the
-parameter list, call <code>.call().await</code> on any <code>Deferred</code>, and leave <code>Scalar</code> and <code>Nested</code> untouched.</p>
-<p>The resolved value comes back as an untyped <code>AnySqliteType</code> (no variant marker), so it gets bound
-via JSON-inference. For SQLite this is fine — the loose type system handles it. For stricter
-databases, you may want <code>defer()</code> to preserve type information from the source query’s result.</p>
-<h3 id="reading-query-results"><a class="header" href="#reading-query-results">Reading query results</a></h3>
-<p>So far we’ve been calling <code>db.execute(&amp;expr).await</code> which returns <code>AnySqliteType</code>. For a SELECT
-query, that value wraps a JSON array of row objects. To work with individual rows, you convert into
-Records:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let result = db.execute(&amp;sqlite_expr!("SELECT * FROM product")).await?;
+<a class="admonition-anchor-link" href="#admonition-keep-the-project-simple"></a>
+</div>
 
-// Result is AnySqliteType wrapping [{"id":"a","name":"Cheap","price":50}, ...]
-// Convert to records manually:
-let rows: Vec&lt;JsonValue&gt; = match result.into_value() {
-    JsonValue::Array(arr) =&gt; arr,
-    _ =&gt; panic!("expected rows"),
-};
-let record: Record&lt;JsonValue&gt; = rows[0].clone().into();
-<span class="boring">}</span></code></pre>
-<p>That works but it’s verbose. The <code>TryFrom&lt;AnyType&gt;</code> impls from Step 1 make this cleaner through
-<code>AssociatedExpression</code>. When you call <code>db.associate::&lt;R&gt;(expr)</code>, you get an expression that knows
-its return type — <code>.get()</code> executes and converts in one step:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Scalar — extracts single value from single-row result
-let count = db.associate::&lt;i64&gt;(sqlite_expr!("SELECT COUNT(*) FROM product"));
-assert_eq!(count.get().await?, 3);
-
-// Record — extracts first row
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-<span class="boring">}</span></code></pre>
-<p>From a Record, you can deserialize into a struct. For the <code>#[entity]</code> path:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(SqliteType)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;AnySqliteType&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Or for the serde path with <code>Record&lt;JsonValue&gt;</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Deserialize)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product: Product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Testing the failure modes (missing fields, NULL into required field, wrong types) can help spot
-issues in your implementation.</p>
-<h3 id="step-2-conclusion"><a class="header" href="#step-2-conclusion">Step 2 conclusion</a></h3>
-<p>At this point you should have:</p>
+<div>
+<p>Vantage UI builds one Dio for each observed table, when a page that observes it opens. The other YAML
+files in the folder cost nothing until you open them.</p>
+<p>Two conditions make a measurement unclear:</p>
 <ol>
-<li>
-<p><strong>A vendor macro</strong> (<code>sqlite_expr!</code>, <code>surreal_expr!</code>, etc.) that produces <code>Expression&lt;AnyType&gt;</code>
-with typed parameters.</p>
-</li>
-<li>
-<p><strong>Trait impls</strong> in <code>src/&lt;backend&gt;/impls/</code> — <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnyType&gt;</code>
-with <code>execute()</code> and <code>defer()</code>.</p>
-</li>
-<li>
-<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/2_*.rs</code> covering:</p>
-<ul>
-<li>INSERT with typed parameters, read back and verify</li>
-<li>Multi-row INSERT using nested expressions and <code>from_vec</code></li>
-<li>Type marker verification (bool binds as bool, not as string “true”)</li>
-<li>Cross-database deferred value resolution</li>
-<li>AssociatedExpression with scalar, Record, and entity results</li>
-<li>Identifier quoting: basic names, reserved words, spaces, hyphens, unicode</li>
-</ul>
-</li>
+<li>One page with components that observe different tables. Each component has its own Dio and sends
+its own requests.</li>
+<li>Tabs that stay open behind the page that you measure. Each open tab keeps its Dios active.</li>
 </ol>
+<p>Use one table, one binder, and one variable. Close the pages that you do not measure.</p>
+</div>
+
+</div>
+
+<div id="admonition-using-faker-in-rust" class="admonition admonish-info" role="note" aria-labelledby="admonition-using-faker-in-rust-title">
+<div class="admonition-title">
+<div id="admonition-using-faker-in-rust-title">
+<p>Using faker in Rust</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-using-faker-in-rust"></a>
+</div>
+
+<div>
+<p>This chapter uses Vantage UI, because Vantage UI supplies the viewport. The faker source does not
+need Vantage UI. <code>vantage-faker</code> is a normal crate, and the YAML above is a
+<a href="https://docs.rs/vantage-faker/latest/vantage_faker/shape/struct.BackendShape.html"><code>BackendShape</code></a>
+in a file. This code builds the same datasource:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::time::Duration;
+use vantage_faker::{BackendShape, FakerTable, Latency, LatencyModel, StaticEffect};
+use vantage_vista::VistaCapabilities;
+
+let table = FakerTable::build_shaped(
+    "people",
+    columns,                       // Vec&lt;FakerColumn&gt; — name, type, flags
+    "id",
+    Box::new(StaticEffect { count: 200_000 }),
+    BackendShape {
+        capabilities: VistaCapabilities {
+            can_count: true,
+            can_fetch_window: true,
+            can_order: true,
+            can_search: true,
+            ..VistaCapabilities::default()
+        },
+        latency: LatencyModel {
+            window: Some(Latency::between(
+                Duration::from_millis(10),
+                Duration::from_millis(40),
+            )),
+            get: Some(Latency::between(
+                Duration::from_millis(5),
+                Duration::from_millis(20),
+            )),
+            ..LatencyModel::default()
+        },
+        seed: Some(103),
+        ..BackendShape::default()
+    },
+);
+
+// From here, this is the normal reactive stack. Nothing is faker-specific.
+let (vista, _handle) = table.split();
+let dio = lens.make_dio(vista).await?;
+<span class="boring">}</span></code></pre>
+<p>Use this code when your own code is the consumer: an integration test that calls <code>set_viewport</code>, a
+CLI, or a scenery in a terminal.</p>
+<p>Keep the handle. If you drop the handle, the effect loop stops, and a live effect then stops changing
+the data.</p>
+</div>
+
+</div>
+
+<h2 id="switch-on-the-debug-stream"><a class="header" href="#switch-on-the-debug-stream">Switch on the debug stream</a></h2>
+<p>Delete the cache and start Vantage UI again. Each measurement in this chapter starts from an empty
+cache, because a full cache serves the first screen and asks the source for nothing.</p>
+<pre><code class="language-sh">rm -rf ~/Library/Caches/Vantage/optimising-*
+vantage-ui ./optimising --page=people
+</code></pre>
+<p>Without the debug flag, the output describes the start-up and nothing else:</p>
+<pre><code class="language-text">INFO vantage_ui: starting root="…/optimising" has_project=true
+INFO catalog: loaded datasource key="people"
+INFO catalog: loaded table key="people"
+INFO catalog: loaded framework page key="people"
+INFO vantage_ui: Dio cache dir path="~/Library/Caches/Vantage/optimising-c79233058eb9f98f"
+INFO vantage_ui: configured faker datasource datasource=people effect=Some("static")
+INFO vantage_ui: entity open, by phase key=people/people ms=2891
+                 breakdown=vista=2798ms cache=82ms dio=2ms scenery=7ms
+</code></pre>
+<p>This tells you what loaded. The last line is the only measurement: 2.8 seconds inside the Vista,
+which is faker generating 200,000 rows at start-up. Nothing here reports a request, a cache hit, or a
+row.</p>
+<p>Now add one line to the datasource:</p>
+<pre><code class="language-yaml"># datasource/people.yaml
+type: faker
+effect: static
+debug: true          # ← add this
+count: 200000
+</code></pre>
+<p>Delete the cache and start it again:</p>
+<pre><code class="language-sh">rm -rf ~/Library/Caches/Vantage/optimising-*
+vantage-ui ./optimising --page=people
+</code></pre>
+<p>A second stream now appears beside the log:</p>
+<pre><code class="language-text">11:53:45.591  people  dio       created over "people" — cache table "people_people", nothing held yet
+11:53:45.592  people  source    can count, window, order, search · pages lazily, 100 rows at a time
+11:53:45.592  people  scenery   opened cold — 0 rows seeded from cache
+11:53:45.593  people  census    +1 table scenery — now 1 table, 0 record, 0 servo · rss 310MB
+11:53:45.645  people  viewport  rows 0..200 — 2 scroll events coalesced into one
+11:53:45.645  people  dio       fetch #1 asks for rows 0..200 — 200 missing, 0 already held
+11:53:45.715  people  cache     +200 new, 0 updated — now holding 200 of 200,000 (0.1%)
+11:53:45.715  people  scenery   opening → partial (chunk load succeeded)
+11:53:45.716  people  dio       fetch #1 got 200 rows in 70ms
+11:53:45.716  people  payload   6 columns received · no view declared what it needs, so all were
+                                fetched · 23KB · id,name,surname,email,city,balance
+11:53:45.717  people  total     200,000 rows — stated by the source in the same response
+11:53:45.821  people  cache     all 22 rows of 0..22 served locally — no fetch
+</code></pre>
+<p>That is one page opening, from an empty cache. The binder asked for 200 rows, one request supplied
+them, and the last line is the repaint that followed: 22 rows on screen, no request.</p>
+<p>The flag applies to one datasource. It is not a global setting. Your other datasources stay silent,
+so the question is always “what does <strong>this</strong> table do?”.</p>
+<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title">
+<p>What is next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
+</div>
+
+<div>
+<p>The next section makes the source slow, so that each of these lines separates in time. It then reads
+the stream line by line.</p>
+</div>
+
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step1-types.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../optimising-diorama.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../optimising-diorama/debug-stream.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -410,11 +496,11 @@ with <code>execute()</code> and <code>defer()</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step1-types.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../optimising-diorama.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../optimising-diorama/debug-stream.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

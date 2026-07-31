@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Step 2: Expressions - Vantage Framework</title>
+        <title>Fetching What You Drop - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,232 +175,196 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="step-2-make-expressions-work"><a class="header" href="#step-2-make-expressions-work">Step 2: Make Expressions Work</a></h1>
-<p>With the type system in place, you can now use <code>Expression&lt;AnySqliteType&gt;</code> to build and execute
-queries. This step has two deliverables: a convenience macro and the <code>ExprDataSource</code> trait
-implementation.</p>
-<h3 id="the-vendor-macro"><a class="header" href="#the-vendor-macro">The vendor macro</a></h3>
-<p>Define a macro that produces <code>Expression&lt;YourAnyType&gt;</code>. SurrealDB has <code>surreal_expr!</code>, we create
-<code>sqlite_expr!</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT * FROM product WHERE price &gt; {}", 100i64);
-<span class="boring">}</span></code></pre>
-<p>Under the hood, <code>100i64</code> gets wrapped as <code>AnySqliteType::new(100i64)</code> with variant <code>Integer</code>. When
-this expression hits the database, the bind layer knows to call <code>query.bind(100i64)</code> — not
-<code>query.bind("100")</code> or <code>query.bind(100.0)</code>.</p>
-<p>The macro handles three kinds of parameters:</p>
-<ul>
-<li><code>42i64</code> → scalar with type marker</li>
-<li><code>(sub_expr)</code> → nested expression (composed into the template)</li>
-<li><code>{deferred}</code> → lazy evaluation (resolved at execution time)</li>
-</ul>
-<h3 id="identifier-quoting"><a class="header" href="#identifier-quoting">Identifier quoting</a></h3>
-<p>SQL identifiers (table names, column names) need quoting to handle reserved words, spaces, and
-special characters. Different databases use different quote styles — PostgreSQL and SQLite use
-double quotes (<code>"name"</code>), MySQL uses backticks (<code>`name`</code>), SurrealDB uses something else
-entirely.</p>
-<p>Vantage centralises this in the <code>Identifier</code> struct (<code>vantage-sql/src/primitives/identifier.rs</code>).
-<code>Identifier</code> is quote-agnostic — it stores the name parts and optional alias, but the actual quoting
-happens in the <code>Expressive&lt;T&gt;</code> implementation for each backend type:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Expressive&lt;AnyMysqlType&gt; for Identifier {
-    fn expr(&amp;self) -&gt; Expression&lt;AnyMysqlType&gt; {
-        Expression::new(self.render_with('`'), vec![])  // `name`
-    }
-}
-<span class="boring">}</span></code></pre>
-<p>When you add a new SQL backend, add an <code>Expressive&lt;YourAnyType&gt;</code> impl with your quote character. The
-compiler picks the right impl based on the expression type context.</p>
-<p>In practice you use the <code>ident()</code> shorthand and pass it into the vendor macro with parentheses — the
-<code>(...)</code> syntax calls <code>.expr()</code> automatically, so quoting is handled by the type context:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use vantage_sql::primitives::identifier::{Identifier, ident};
-
-// The (ident(...)) syntax invokes Expressive — quoting is automatic
-let expr = mysql_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT `name` FROM `product` WHERE `price` = 100
-
-let expr = postgres_expr!("SELECT {} FROM {} WHERE {} = {}",
-    (ident("name")), (ident("product")), (ident("price")), 100i64);
-// → SELECT "name" FROM "product" WHERE "price" = 100
-<span class="boring">}</span></code></pre>
-<p>For qualified identifiers (table.column) and aliases:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
-// → SELECT "u"."name"
-
-let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
-// → SELECT `name` AS `n`
-<span class="boring">}</span></code></pre>
-<p>Test identifier quoting in <code>tests/&lt;backend&gt;/2_identifier.rs</code> — cover basic names, reserved words,
-spaces, hyphens, unicode, and names that start with numbers. These are all legal inside quoted
-identifiers in both PostgreSQL and MySQL.</p>
-<h3 id="exprdatasource"><a class="header" href="#exprdatasource">ExprDataSource</a></h3>
-<p>Implement <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnySqliteType&gt;</code> on your DB struct. The <code>execute</code>
-method takes an expression, flattens nested sub-expressions, converts <code>{}</code> placeholders to your
-driver’s syntax (<code>?N</code> for SQLite, <code>$N</code> for Postgres), binds parameters using type markers, and
-returns results.</p>
-<p>Results come back as <code>AnySqliteType</code> with <code>type_variant: None</code> — the database doesn’t preserve our
-markers, so results are permissive (see Step 1). For SQLite that’s especially natural since it
-doesn’t distinguish boolean from integer on the wire.</p>
-<p>If the persistence layer you’re implementing <em>does</em> preserve type information in responses (like
-SurrealDB with CBOR tags), set the correct <code>type_variant</code> when constructing result values in your
-<code>execute()</code> implementation. That way <code>try_get</code> enforces type boundaries on both sides of the
-round-trip.</p>
-<h3 id="validating-with-insert-expressions"><a class="header" href="#validating-with-insert-expressions">Validating with INSERT expressions</a></h3>
-<p>The best way to test this is INSERT + SELECT round-trips. A single insert exercises all the pieces —
-macro, parameter binding, type markers, and result parsing:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let insert = sqlite_expr!(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES ({}, {}, {}, {})",
-    "cupcake", "Flux Cupcake", 120i64, false
-);
-db.execute(&amp;insert).await?;
-
-let select = sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake");
-let result = db.execute(&amp;select).await?;
-<span class="boring">}</span></code></pre>
-<p>Nested expressions let you build multi-row inserts from composable parts:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let row1 = sqlite_expr!("({}, {}, {}, {})", "tart", "Time Tart", 220i64, false);
-let row2 = sqlite_expr!("({}, {}, {}, {})", "pie", "Sea Pie", 299i64, true);
-
-// Expression::from_vec joins sub-expressions with a delimiter
-let rows = Expression::from_vec(vec![row1, row2], ", ");
-
-// Nest into the INSERT — flattener resolves everything into a single query
-let insert = Expression::&lt;AnySqliteType&gt;::new(
-    "INSERT INTO product (id, name, price, is_deleted) VALUES {}",
-    vec![ExpressiveEnum::Nested(rows)],
-);
-db.execute(&amp;insert).await?;
-<span class="boring">}</span></code></pre>
-<p>The <code>ExpressionFlattener</code> collapses all nesting into one flat template with positional parameters —
-each one still carrying its type marker for correct binding.</p>
-<h3 id="deferring-cross-database-value-resolution"><a class="header" href="#deferring-cross-database-value-resolution">Deferring: cross-database value resolution</a></h3>
-<p>Sometimes a query on one database needs a value from another database. That’s what <code>defer()</code> is for
-— it wraps a query as a closure that executes later, when the outer query runs.</p>
-<p>This is not a subquery. The deferred query runs first, produces a concrete value, and that value
-gets bound as a regular parameter in the outer query.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let (config_db, shop_db) = setup().await;
-
-// This doesn't execute yet — it's a closure
-let threshold_query = sqlite_expr!("SELECT value FROM config WHERE key = {}", "min_price");
-let deferred_threshold = config_db.defer(threshold_query);
-
-// Use the deferred value as a parameter in a different database
-let shop_query = Expression::&lt;AnySqliteType&gt;::new(
-    "SELECT name FROM product WHERE price &gt;= {} ORDER BY price",
-    vec![ExpressiveEnum::Deferred(deferred_threshold)],
-);
-
-// When shop_db.execute() runs:
-// 1. Resolves the deferred → calls config_db, gets 150
-// 2. Replaces the Deferred param with Scalar(150)
-// 3. Flattens and binds: SELECT name FROM product WHERE price &gt;= ?1
-let result = shop_db.execute(&amp;shop_query).await?;
-<span class="boring">}</span></code></pre>
-<p>Your <code>execute()</code> implementation needs to resolve deferred parameters before flattening. Walk the
-parameter list, call <code>.call().await</code> on any <code>Deferred</code>, and leave <code>Scalar</code> and <code>Nested</code> untouched.</p>
-<p>The resolved value comes back as an untyped <code>AnySqliteType</code> (no variant marker), so it gets bound
-via JSON-inference. For SQLite this is fine — the loose type system handles it. For stricter
-databases, you may want <code>defer()</code> to preserve type information from the source query’s result.</p>
-<h3 id="reading-query-results"><a class="header" href="#reading-query-results">Reading query results</a></h3>
-<p>So far we’ve been calling <code>db.execute(&amp;expr).await</code> which returns <code>AnySqliteType</code>. For a SELECT
-query, that value wraps a JSON array of row objects. To work with individual rows, you convert into
-Records:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let result = db.execute(&amp;sqlite_expr!("SELECT * FROM product")).await?;
-
-// Result is AnySqliteType wrapping [{"id":"a","name":"Cheap","price":50}, ...]
-// Convert to records manually:
-let rows: Vec&lt;JsonValue&gt; = match result.into_value() {
-    JsonValue::Array(arr) =&gt; arr,
-    _ =&gt; panic!("expected rows"),
-};
-let record: Record&lt;JsonValue&gt; = rows[0].clone().into();
-<span class="boring">}</span></code></pre>
-<p>That works but it’s verbose. The <code>TryFrom&lt;AnyType&gt;</code> impls from Step 1 make this cleaner through
-<code>AssociatedExpression</code>. When you call <code>db.associate::&lt;R&gt;(expr)</code>, you get an expression that knows
-its return type — <code>.get()</code> executes and converts in one step:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Scalar — extracts single value from single-row result
-let count = db.associate::&lt;i64&gt;(sqlite_expr!("SELECT COUNT(*) FROM product"));
-assert_eq!(count.get().await?, 3);
-
-// Record — extracts first row
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-<span class="boring">}</span></code></pre>
-<p>From a Record, you can deserialize into a struct. For the <code>#[entity]</code> path:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(SqliteType)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;AnySqliteType&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Or for the serde path with <code>Record&lt;JsonValue&gt;</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Deserialize)]
-struct Product { id: String, name: String, price: i64 }
-
-let record: Record&lt;JsonValue&gt; = db
-    .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
-    .get().await?;
-let product: Product = Product::from_record(record)?;
-<span class="boring">}</span></code></pre>
-<p>Testing the failure modes (missing fields, NULL into required field, wrong types) can help spot
-issues in your implementation.</p>
-<h3 id="step-2-conclusion"><a class="header" href="#step-2-conclusion">Step 2 conclusion</a></h3>
-<p>At this point you should have:</p>
+                        <h1 id="fetching-what-you-drop"><a class="header" href="#fetching-what-you-drop">Fetching What You Drop</a></h1>
+<p>This section examines the requests that the application did not have to send. These are more
+difficult to find. A wasteful application and an efficient application look the same on screen.</p>
+<p>There are three types of waste, from the easiest to find to the most difficult:</p>
 <ol>
-<li>
-<p><strong>A vendor macro</strong> (<code>sqlite_expr!</code>, <code>surreal_expr!</code>, etc.) that produces <code>Expression&lt;AnyType&gt;</code>
-with typed parameters.</p>
-</li>
-<li>
-<p><strong>Trait impls</strong> in <code>src/&lt;backend&gt;/impls/</code> — <code>DataSource</code> (marker) and <code>ExprDataSource&lt;AnyType&gt;</code>
-with <code>execute()</code> and <code>defer()</code>.</p>
-</li>
-<li>
-<p><strong>Tests</strong> in <code>tests/&lt;backend&gt;/2_*.rs</code> covering:</p>
-<ul>
-<li>INSERT with typed parameters, read back and verify</li>
-<li>Multi-row INSERT using nested expressions and <code>from_vec</code></li>
-<li>Type marker verification (bool binds as bool, not as string “true”)</li>
-<li>Cross-database deferred value resolution</li>
-<li>AssociatedExpression with scalar, Record, and entity results</li>
-<li>Identifier quoting: basic names, reserved words, spaces, hyphens, unicode</li>
-</ul>
-</li>
+<li><strong>Repeats.</strong> The application fetched the same window more than one time.</li>
+<li><strong>Redundant rows.</strong> Rows arrived when the cache already held them.</li>
+<li><strong>Columns that no view shows.</strong> Data crossed the network and then went in the bin.</li>
 </ol>
+<p>The first two have counters. The third has one line.</p>
+<h2 id="the-two-counters-that-must-be-zero"><a class="header" href="#the-two-counters-that-must-be-zero">The two counters that must be zero</a></h2>
+<p>Quit Vantage UI. The session summary prints:</p>
+<pre><code class="language-text">people     summary  3 fetches, 0 repeats · 400 rows, 0 redundant · 9.1s waiting, 3.0s slowest
+           summary  1 dio, 1 table scenery, 0 record, 0 servo still alive
+           summary  session 18.0s · cpu 15.0s · peak rss 352MB
+</code></pre>
+<p><strong><code>repeats</code></strong> counts the windows that the application requested more than one time. The loader is
+built to avoid repeats, so a number above zero is a defect. There are three causes:</p>
+<ul>
+<li>the cache is not operating</li>
+<li>a total declares rows that the source will not serve</li>
+<li>a viewport moves between two positions</li>
+</ul>
+<p><strong><code>redundant</code></strong> counts the rows that arrived when the cache already held them. A cold run must give
+zero. A warm run gives a small number, and that is the cost of revalidation. If the redundant count
+equals the received count, the application fetched a full page for nothing.</p>
+<div id="admonition-read-the-counters-with-the-session-not-alone" class="admonition admonish-note" role="note" aria-labelledby="admonition-read-the-counters-with-the-session-not-alone-title">
+<div class="admonition-title">
+<div id="admonition-read-the-counters-with-the-session-not-alone-title">
+<p>Read the counters with the session, not alone</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-read-the-counters-with-the-session-not-alone"></a>
+</div>
+
+<div>
+<p><code>3 fetches</code> has no meaning until you know that you scrolled through 400 rows of a table of 200,000.</p>
+<p>Use the ratios: fetches for each screen of rows, and redundant rows for each received row. Record
+what you did together with what it cost.</p>
+</div>
+
+</div>
+
+<h2 id="watch-the-cache-do-its-work"><a class="header" href="#watch-the-cache-do-its-work">Watch the cache do its work</a></h2>
+<pre><code class="language-text">22:42:19.028  people   viewport  rows 77..90 — 6 scroll events coalesced into one
+22:42:19.029  people   cache     all 13 rows of 77..90 served locally — no fetch
+22:42:19.516  people   viewport  rows 125..138 — 3 scroll events coalesced into one
+22:42:19.516  people   cache     all 13 rows of 125..138 served locally — no fetch
+22:42:19.858  people   viewport  rows 257..270 — 11 scroll events coalesced into one
+22:42:19.859  people   dio       fetch #2 asks for rows 257..357 (viewport 257..270) — 100 missing
+</code></pre>
+<p>Two efficiencies are visible here.</p>
+<p><strong>The framework combines scroll events.</strong> Twenty scroll events produced three viewports. The loader
+waits for the movement to stop, and then declares one viewport for the final position. The
+intermediate positions never cause a fetch.</p>
+<p><strong>The loader reads ahead of the screen.</strong> The viewport of <code>fetch #2</code> was <code>257..270</code>, which is 14
+rows. The request was for <code>257..357</code>, which is 100 rows. The loader fetches extra rows in the
+direction of movement, so that the next screen costs nothing. This is why the two ranges differ.</p>
+<p>Read-ahead also explains the fetch count in the summary above: 3 fetches covered 400 rows, which is
+more screens than three.</p>
+<h2 id="the-waste-with-no-counter"><a class="header" href="#the-waste-with-no-counter">The waste with no counter</a></h2>
+<p>Now add a source with large rows. The grid shows five short columns. Each row carries 200 more
+fields that nobody declared.</p>
+<pre><code class="language-yaml"># datasource/wide.yaml
+type: faker
+effect: static
+debug: true
+count: 500
+seed: 111
+shape:
+  capabilities: [count, fetch_window, order]
+  latency:
+    window: 50ms..150ms
+  extra_fields:
+    count: 200       # 200 extra fields in each row
+    size: 500        # each extra field holds 500 bytes
+</code></pre>
+<p>Open it and read one line:</p>
+<pre><code class="language-text">22:06:34.148  wide  dio      fetch #1 got 200 rows in 2.3s  ⚠ slow
+22:06:34.148  wide  payload  206 columns received · no view declared what it needs, so all were
+                             fetched · 19.6MB · id,name,surname,email,city,balance,extra_0001,
+                             extra_0002 +198 more
+</code></pre>
+<p><strong>The application moved 19.6MB to fill a grid of five columns.</strong> The five columns are about 19KB of
+that total.</p>
+<p>Nothing failed. No counter changed. <code>repeats</code> is zero, and <code>redundant</code> is zero. Each measurement in
+the session summary says that the application is correct.</p>
+<p>This fault hides better than the others, because each other signal says that the application is
+correct. Only the <code>payload</code> line finds it.</p>
+<h2 id="no-view-declared-what-it-needs"><a class="header" href="#no-view-declared-what-it-needs">“No view declared what it needs”</a></h2>
+<p>Diorama has a mechanism for this. A scenery can declare its <strong>demand</strong>, which is the list of columns
+that it shows. The Dio then combines the demands of the open views. When a view declares its demand,
+the line reports against that demand:</p>
+<pre><code class="language-text">wide  payload  5 of 206 columns wanted · 201 fetched and dropped · 19.6MB
+</code></pre>
+<p>This grid declares nothing. The combined demand is therefore “all columns”.</p>
+<p>The framework cannot tell the difference between a view that wants all 206 columns and a view that
+never declared its columns. It assumes the first, and it fetches all the columns.</p>
+<div id="admonition-demand-controls-the-second-pass-not-the-width-of-the-first" class="admonition admonish-note" role="note" aria-labelledby="admonition-demand-controls-the-second-pass-not-the-width-of-the-first-title">
+<div class="admonition-title">
+<div id="admonition-demand-controls-the-second-pass-not-the-width-of-the-first-title">
+<p>Demand controls the second pass, not the width of the first</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-demand-controls-the-second-pass-not-the-width-of-the-first"></a>
+</div>
+
+<div>
+<p>Diorama can load a row in two passes. The first pass fetches the window. The second pass — the
+<strong>hydrate</strong> pass — fetches the augmented columns of the rows on screen.</p>
+<p>Demand controls the second pass. A view that does not show an augmented column does not pay to
+hydrate it.</p>
+<p>Demand does not yet decrease the columns in one window fetch. The 19.6MB above is therefore not a
+configuration error that you can correct in YAML. Use the <code>payload</code> line as a measurement, and use
+the size of the number as the reason to make the source return fewer columns.</p>
+</div>
+
+</div>
+
+<h2 id="what-to-do-about-a-large-payload"><a class="header" href="#what-to-do-about-a-large-payload">What to do about a large payload</a></h2>
+<p>These actions are listed from the most effective to the least effective.</p>
+<ul>
+<li><strong>Decrease the columns at the source.</strong> Use a REST endpoint with a <code>fields=</code> parameter, a SQL view
+that selects the columns that you show, or a GraphQL query that names its columns. The cheapest
+byte is the byte that nobody sends.</li>
+<li><strong>Move the large columns into an augment.</strong> An <code>augment:</code> block on the table makes the large
+fields the second pass, which demand controls. See <a href="../augmentation.html">Augmentation</a> for the
+block and its options.</li>
+<li><strong>Observe fewer tables.</strong> A page that observes two tables opens two Dios and pays for both.</li>
+</ul>
+<h2 id="a-checklist-for-one-page"><a class="header" href="#a-checklist-for-one-page">A checklist for one page</a></h2>
+<p>Run the page cold, then warm. Read four numbers.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Number</th><th>Where</th><th>Correct value</th></tr>
+</thead>
+<tbody>
+<tr><td>fetches</td><td><code>summary</code></td><td>fewer than one for each screen, because the loader reads ahead</td></tr>
+<tr><td>repeats</td><td><code>summary</code></td><td><strong>zero</strong>, always</td></tr>
+<tr><td>redundant</td><td><code>summary</code></td><td>zero when cold; small when warm</td></tr>
+<tr><td>payload for each fetch</td><td><code>payload</code></td><td>proportional to the columns that you show</td></tr>
+</tbody>
+</table>
+</div>
+<p>If the first three numbers are correct and the fourth is not, you have the invisible fault.</p>
+<hr>
+<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>repeats</code></td><td>Windows that the application fetched more than one time. Must be zero.</td></tr>
+<tr><td><code>redundant</code></td><td>Rows that arrived when the cache held them. Zero when cold, small when warm.</td></tr>
+<tr><td>coalescing</td><td>Scroll events that became one viewport, because the loader waits for the movement to stop</td></tr>
+<tr><td>read-ahead</td><td>The extra rows that the loader fetches in the direction of movement</td></tr>
+<tr><td><code>payload</code></td><td>The columns that arrived, the columns that a view wants, and the cost in bytes</td></tr>
+<tr><td><code>extra_fields</code></td><td>The faker setting that adds fields to each row</td></tr>
+<tr><td>demand · hydrate</td><td>The columns that a view declares, and the second pass that they control</td></tr>
+</tbody>
+</table>
+</div>
+<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
+<div class="admonition-title">
+<div id="admonition-what-is-next-title">
+<p>What is next</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
+</div>
+
+<div>
+<p>Each source until now answered its requests. The next section uses a source that fails one request
+in five, stops for ten seconds each minute, and reports a row count that is wrong.</p>
+</div>
+
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../new-persistence/step1-types.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../optimising-diorama/capabilities.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../optimising-diorama/faults.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -410,11 +374,11 @@ with <code>execute()</code> and <code>defer()</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../new-persistence/step1-types.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../optimising-diorama/capabilities.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../new-persistence/step3-operators.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../optimising-diorama/faults.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
