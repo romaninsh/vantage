@@ -148,7 +148,7 @@ impl Expressive<AnySurrealType> for Thing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{identifier::Identifier, surrealdb::SurrealDB};
+    use crate::{identifier::Identifier, surreal_expr, surrealdb::SurrealDB};
     use indexmap::IndexMap;
     use surreal_client::{SurrealClient, SurrealConnection};
     use vantage_expressions::ExprDataSource;
