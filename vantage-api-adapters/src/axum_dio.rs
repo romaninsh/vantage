@@ -84,12 +84,21 @@ pub type ApiResult<T> = Result<T, ApiError>;
 
 // ---- Router builder ---------------------------------------------------------
 
+/// Maps the id from the URL path to the Dio cache key.
+pub type IdMap = dyn Fn(&str) -> String + Send + Sync;
+/// Shapes a record into the JSON object served by the detail endpoint and
+/// carried in record-watch events.
+pub type RecordProjection = dyn Fn(&Record<CborValue>) -> serde_json::Value + Send + Sync;
+
 /// Builder for a kubernetes-style GET + watch router over one [`Dio`].
 pub struct DioRouter {
     dio: Dio,
     columns: Vec<(String, String)>,
     page_size: usize,
     key_field: Option<String>,
+    id_map: Option<Arc<IdMap>>,
+    record_projection: Option<Arc<RecordProjection>>,
+    not_found_message: Option<String>,
 }
 
 impl DioRouter {
@@ -99,7 +108,43 @@ impl DioRouter {
             columns: Vec::new(),
             page_size: 50,
             key_field: None,
+            id_map: None,
+            record_projection: None,
+            not_found_message: None,
         }
+    }
+
+    /// Map the `{id}` path segment to the Dio cache key before any lookup.
+    /// Use this when URLs carry a short form of the id — for example a
+    /// SurrealDB router that accepts `75KE-F3HG` while the cache keys rows
+    /// as `tag:75KE-F3HG`:
+    ///
+    /// ```ignore
+    /// .with_id_map(|id| format!("tag:{id}"))
+    /// ```
+    pub fn with_id_map(mut self, map: impl Fn(&str) -> String + Send + Sync + 'static) -> Self {
+        self.id_map = Some(Arc::new(map));
+        self
+    }
+
+    /// Shape the detail response and every record-watch `object` with a
+    /// closure instead of serving the whole record. Use this to serve an
+    /// exact API contract: pick fields, rename them, nest them, and keep
+    /// internal columns off the wire.
+    pub fn with_record_projection(
+        mut self,
+        projection: impl Fn(&Record<CborValue>) -> serde_json::Value + Send + Sync + 'static,
+    ) -> Self {
+        self.record_projection = Some(Arc::new(projection));
+        self
+    }
+
+    /// The message served with a detail 404. Without it, the response
+    /// carries `not found: <cache key>` — set this when clients show the
+    /// error text to end users.
+    pub fn with_not_found_message(mut self, message: impl Into<String>) -> Self {
+        self.not_found_message = Some(message.into());
+        self
     }
 
     /// Expose record field `field` as JSON key `name` in listing rows. The
@@ -137,6 +182,9 @@ impl DioRouter {
             columns: Arc::from(self.columns),
             page_size: self.page_size,
             key_field: self.key_field.map(Arc::from),
+            id_map: self.id_map,
+            record_projection: self.record_projection,
+            not_found_message: self.not_found_message.map(Arc::from),
         };
         Router::new()
             .route("/", get(listing))
@@ -151,6 +199,35 @@ struct ApiState {
     columns: Arc<[(String, String)]>,
     page_size: usize,
     key_field: Option<Arc<str>>,
+    id_map: Option<Arc<IdMap>>,
+    record_projection: Option<Arc<RecordProjection>>,
+    not_found_message: Option<Arc<str>>,
+}
+
+impl ApiState {
+    fn cache_key(&self, path_id: &str) -> String {
+        match &self.id_map {
+            Some(map) => map(path_id),
+            None => path_id.to_string(),
+        }
+    }
+
+    fn record_object(&self, record: &Record<CborValue>) -> serde_json::Value {
+        match &self.record_projection {
+            Some(projection) => projection(record),
+            None => record_json(record),
+        }
+    }
+
+    fn not_found(&self, cache_key: &str) -> ApiError {
+        match &self.not_found_message {
+            Some(message) => ApiError {
+                status: StatusCode::NOT_FOUND,
+                message: message.to_string(),
+            },
+            None => not_found(cache_key),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -303,33 +380,35 @@ async fn detail(
     }
     // Bounded facade read: hydrates this row (through the shared scheduler)
     // before returning, so the response always carries the augment columns.
+    let key = st.cache_key(&id);
     let row = st
         .dio
         .vista()
-        .get_value(id.clone())
+        .get_value(key.clone())
         .await?
-        .ok_or_else(|| not_found(&id))?;
-    Ok(Json(record_json(&row)).into_response())
+        .ok_or_else(|| st.not_found(&key))?;
+    Ok(Json(st.record_object(&row)).into_response())
 }
 
 async fn watch_detail(st: ApiState, id: String) -> ApiResult<Response> {
     // Hydrate first so the watch opens on a complete record instead of
     // sitting on an unfilled one.
+    let key = st.cache_key(&id);
     let row = st
         .dio
         .vista()
-        .get_value(id.clone())
+        .get_value(key.clone())
         .await?
-        .ok_or_else(|| not_found(&id))?;
-    let scenery = st.dio.record_scenery(id).await?;
+        .ok_or_else(|| st.not_found(&key))?;
+    let scenery = st.dio.record_scenery(key).await?;
     let mut generations = scenery.subscribe();
     // Open on the subscribed scenery's snapshot, not the pre-subscription
     // read: a change landing between the two would otherwise never produce
     // a MODIFIED line.
     let initial = scenery
         .record()
-        .map(|current| record_json(&current.record))
-        .unwrap_or_else(|| record_json(&row));
+        .map(|current| st.record_object(&current.record))
+        .unwrap_or_else(|| st.record_object(&row));
 
     let stream = async_stream::stream! {
         let mut last = initial;
@@ -339,7 +418,7 @@ async fn watch_detail(st: ApiState, id: String) -> ApiResult<Response> {
                 break;
             }
             let Some(current) = scenery.record() else { continue };
-            let object = record_json(&current.record);
+            let object = st.record_object(&current.record);
             if object != last {
                 last = object.clone();
                 yield event_line("MODIFIED", object);
