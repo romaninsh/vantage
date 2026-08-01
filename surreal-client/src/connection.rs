@@ -100,6 +100,29 @@ impl SurrealConnection {
                 "version_check" => {
                     conn.version_check = value.parse().unwrap_or(true);
                 }
+                // Signin level for the DSN credentials. Without it, DSN
+                // credentials sign in as root — a namespace- or
+                // database-defined user needs `?auth=namespace` /
+                // `?auth=database` (cloud instances have no root users).
+                "auth" | "auth_level" => {
+                    let (username, password) = match conn.auth.take() {
+                        Some(AuthParams::Root { username, password }) => (username, password),
+                        other => {
+                            conn.auth = other;
+                            continue;
+                        }
+                    };
+                    conn.auth = Some(match value.as_ref() {
+                        "namespace" | "ns" => AuthParams::Namespace { username, password },
+                        "database" | "db" => AuthParams::Database { username, password },
+                        "root" => AuthParams::Root { username, password },
+                        other => {
+                            return Err(SurrealError::Connection(format!(
+                                "Unknown auth level `{other}` — use root, namespace, or database"
+                            )));
+                        }
+                    });
+                }
                 _ => {}
             }
         }
@@ -343,6 +366,19 @@ mod tests {
         assert_eq!(conn.database, Some("test_db".to_string()));
         assert!(!conn.version_check);
         assert!(matches!(conn.auth, Some(AuthParams::Root { .. })));
+    }
+
+    #[test]
+    fn test_dsn_auth_level() {
+        let conn =
+            SurrealConnection::dsn("cbor://user:pw@cloud.example/ns/db?auth=namespace").unwrap();
+        assert!(matches!(conn.auth, Some(AuthParams::Namespace { .. })));
+
+        let conn =
+            SurrealConnection::dsn("cbor://user:pw@cloud.example/ns/db?auth=db").unwrap();
+        assert!(matches!(conn.auth, Some(AuthParams::Database { .. })));
+
+        assert!(SurrealConnection::dsn("cbor://user:pw@h/n/d?auth=nope").is_err());
     }
 
     #[test]
