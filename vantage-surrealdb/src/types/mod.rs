@@ -143,6 +143,7 @@ impl SurrealTypeVariants {
 
 // Type implementations are organized in separate modules
 mod bool;
+mod datetime;
 mod decimal;
 mod generic;
 mod numbers;
