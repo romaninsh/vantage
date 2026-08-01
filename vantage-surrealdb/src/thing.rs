@@ -3,7 +3,7 @@ use std::str::FromStr;
 use vantage_expressions::{Expression, Expressive};
 
 use crate::{
-    AnySurrealType, surreal_expr,
+    AnySurrealType,
     types::{SurrealType, SurrealTypeThingMarker},
 };
 
@@ -131,7 +131,17 @@ impl SurrealType for Thing {
 
 impl Expressive<AnySurrealType> for Thing {
     fn expr(&self) -> Expression<AnySurrealType> {
-        surreal_expr!(format!("{}:{}", self.table, self.id))
+        // Escaping authority lives in `surreal-client`, same as `Identifier`.
+        // Ids like `75KE-F3HG` must render as `tag:⟨75KE-F3HG⟩` — bare, the
+        // dash parses as subtraction.
+        Expression::new(
+            format!(
+                "{}:{}",
+                surreal_client::escape_identifier(&self.table),
+                surreal_client::escape_identifier(&self.id)
+            ),
+            vec![],
+        )
     }
 }
 
@@ -143,6 +153,12 @@ mod tests {
     use surreal_client::{SurrealClient, SurrealConnection};
     use vantage_expressions::ExprDataSource;
     use vantage_types::{Record, TryFromRecord, entity};
+
+    #[test]
+    fn expr_escapes_non_identifier_ids() {
+        assert_eq!(Thing::new("tag", "75KE-F3HG").expr().preview(), "tag:⟨75KE-F3HG⟩");
+        assert_eq!(Thing::new("batch", "batch5").expr().preview(), "batch:batch5");
+    }
 
     const DB_URL: &str = "cbor://localhost:8000/rpc";
     const ROOT_USER: &str = "root";
