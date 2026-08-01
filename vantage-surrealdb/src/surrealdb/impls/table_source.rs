@@ -368,7 +368,19 @@ impl TableSource for SurrealDB {
         for (key, value) in record.iter() {
             insert = insert.with_any_field(key, value.clone());
         }
-        let result = self.execute(&insert.expr()).await?;
+        let result = match self.execute(&insert.expr()).await {
+            Ok(result) => result,
+            Err(e) => {
+                // The `WritableDataSet::insert` contract is idempotent: when
+                // the record already exists, return it untouched instead of
+                // failing. SurrealDB's CREATE (and, since v3, INSERT too)
+                // rejects duplicates, so recover by reading the record back.
+                if let Some(existing) = self.get_table_value(table, id).await? {
+                    return Ok(existing);
+                }
+                return Err(e);
+            }
+        };
         let map = extract_first_map(result)?;
         let id_field = table
             .id_field()
