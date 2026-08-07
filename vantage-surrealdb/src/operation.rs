@@ -1,7 +1,8 @@
 //! SurrealDB-specific operations for expressions.
 //!
 //! - `SurrealOperation` — common comparison methods (eq, ne, gt, gte, lt, lte,
-//!   in_) producing `Expression<AnySurrealType>`.
+//!   in_) that give an `Expression<AnySurrealType>`. It also has `or_` and
+//!   `and_`, which join conditions into a [`ConditionGroup`].
 //! - `RefOperation` — SurrealDB-specific graph traversal (rref/lref),
 //!   subtraction, CONTAINS, and parenthesis-free IN.
 
@@ -10,10 +11,109 @@ use vantage_expressions::{Expression, Expressive};
 
 use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
 
+/// Conditions that one logical operator joins. The group writes one set
+/// of brackets around the full chain. It writes no brackets around each
+/// operand: `(a OR b OR c)`.
+///
+/// A chain stays flat while the operator does not change. `a.or_(b).or_(c)`
+/// gives `(a OR b OR c)`. To make a different group, nest the calls.
+/// `a.or_(b.or_(c))` gives `(a OR (b OR c))`, because the inner group is
+/// an operand and it writes its own brackets.
+///
+/// The group writes the brackets. The statement renderer does not.
+/// `WHERE` joins its conditions with a plain `AND`, and each group
+/// arrives complete. This keeps the conditions of a table when a search
+/// runs on top of them. The query says `status = 'x' AND (a OR b)`. It
+/// does not say `status = 'x' AND a OR b`, which means
+/// `(status = 'x' AND a) OR b`, because `AND` binds more tightly
+/// than `OR`.
+#[derive(Debug, Clone)]
+pub struct ConditionGroup {
+    operator: &'static str,
+    operands: Vec<Expr>,
+}
+
+impl ConditionGroup {
+    pub(crate) fn new(operator: &'static str, operands: Vec<Expr>) -> Self {
+        Self { operator, operands }
+    }
+
+    /// Adds a condition with `OR`. If this group is an `OR` chain, the
+    /// condition goes into the same group.
+    ///
+    /// This method is inherent. Rust selects it before the blanket
+    /// [`SurrealOperation::or_`], and this keeps a chain flat.
+    pub fn or_(self, other: impl Expressive<AnySurrealType>) -> Self {
+        self.extend("OR", other.expr())
+    }
+
+    /// Adds a condition with `AND`. If this group is an `AND` chain, the
+    /// condition goes into the same group.
+    pub fn and_(self, other: impl Expressive<AnySurrealType>) -> Self {
+        self.extend("AND", other.expr())
+    }
+
+    fn extend(mut self, operator: &'static str, other: Expr) -> Self {
+        if self.operator == operator {
+            self.operands.push(other);
+            self
+        } else {
+            // The operator changes. The chain to this point becomes one
+            // operand of the new group. It keeps its brackets and its
+            // meaning.
+            Self::new(operator, vec![self.expr(), other])
+        }
+    }
+}
+
+impl Expressive<AnySurrealType> for ConditionGroup {
+    fn expr(&self) -> Expr {
+        let separator = format!(" {} ", self.operator);
+        let template = std::iter::repeat_n("{}", self.operands.len())
+            .collect::<Vec<_>>()
+            .join(&separator);
+        Expression::new(
+            format!("({template})"),
+            self.operands
+                .iter()
+                .cloned()
+                .map(ExpressiveEnum::Nested)
+                .collect(),
+        )
+    }
+}
+
 /// Standard comparison operations for SurrealDB expressions.
 ///
 /// Blanket-implemented for all `Expressive<AnySurrealType>`.
 pub trait SurrealOperation: Expressive<AnySurrealType> {
+    /// `(self OR other)` — joins two conditions into a
+    /// [`ConditionGroup`].
+    ///
+    /// Use this method to write alternatives. Do not write `"a OR b"` as
+    /// text. The group writes its own brackets, and it keeps its meaning
+    /// next to the other conditions. Text has no brackets, and `AND`
+    /// binds more tightly than `OR`. Thus `status = 'x' AND a OR b`
+    /// means `(status = 'x' AND a) OR b`.
+    fn or_(&self, other: impl Expressive<AnySurrealType>) -> ConditionGroup
+    where
+        Self: Sized,
+    {
+        ConditionGroup::new("OR", vec![self.expr(), other.expr()])
+    }
+
+    /// `(self AND other)` — joins two conditions into a
+    /// [`ConditionGroup`].
+    ///
+    /// A table joins its conditions with `AND` already. Use this method
+    /// when you must make a group inside an [`Self::or_`].
+    fn and_(&self, other: impl Expressive<AnySurrealType>) -> ConditionGroup
+    where
+        Self: Sized,
+    {
+        ConditionGroup::new("AND", vec![self.expr(), other.expr()])
+    }
+
     /// `field = value`
     fn eq(&self, value: impl Expressive<AnySurrealType>) -> Expr
     where

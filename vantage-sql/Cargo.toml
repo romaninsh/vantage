@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.6.16"
+version = "0.6.17"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -46,7 +46,10 @@ serde_yaml_ng = "0.10"
 vantage-vista = { version = "0.6", path = "../vantage-vista" }
 sqlformat = "0.3"
 
+# The name must be unique across the workspace: cargo writes every
+# example to the same target/debug/examples directory, and two targets
+# with one name overwrite each other.
 [[example]]
-name = "rhai_test"
+name = "rhai_test_sql"
 path = "examples/rhai_test.rs"
 required-features = ["rhai"]

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.13 — 2026-08-07
+
+- **Bug fix:** a search keeps the conditions of the table. The search
+  looks in each column, and `AND` binds more tightly than `OR`. Thus
+  `status = 'registered' AND <first branch> OR <second branch>` let each
+  row that matched a later branch ignore the status condition. The
+  branches are now one group with brackets.
+- **Bug fix:** a search also looks in computed columns. The query writes
+  a column with an `expr:` script as `(<expr>) AS <name>`. The alias does
+  not exist where the `WHERE` clause runs, and thus a search on the alias
+  matched no rows. The search now uses the expression.
+- `or_` and `and_` on `SurrealOperation` make alternatives. Do not write
+  `"a OR b"` as text. These methods give a `ConditionGroup`, which writes
+  one set of brackets around the chain and no brackets around each
+  operand: `a.or_(b).or_(c)` gives `(a OR b OR c)`. A chain stays flat.
+  To make a different group, nest the calls: `a.or_(b.or_(c))`.
+
 ## 0.6.12 — 2026-07-28
 
 - `fetch_window` serves a row-indexed window as `LIMIT n START m`. The
