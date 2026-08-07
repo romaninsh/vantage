@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.4 — unreleased
+
+- A DSN can select the authentication scope: `?auth=namespace` or `?auth=database`
+  signs in at that level instead of as a root user. Cloud instances have no root
+  user, so a connection string is now enough to reach one.
+- New `escape_record_id` for the id half of a record id. It follows the
+  `escape_identifier` rules, except that a numeric id stays bare: a numeric
+  field name has to be quoted to parse, but `t:1` and `t:⟨1⟩` address different
+  records (integer key vs string key).
+
 ## 0.6.3 — unreleased
 
 - The JSON convenience transcoding routes through the shared `vantage-types` walker

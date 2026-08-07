@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.14 — unreleased
+
+- **Bug fix:** `Thing::expr` escapes the table and the id through the
+  surreal-client authority. A record id with a dash (`tag:75KE-F3HG`) parsed
+  as a subtraction and matched no record; it now renders as `tag:⟨75KE-F3HG⟩`.
+- **Bug fix:** `insert` honours the idempotent `WritableDataSet` contract. A
+  duplicate `CREATE` returns the existing record instead of failing (SurrealDB
+  v3 rejects a duplicate `INSERT` too).
+- `SurrealType` is implemented for chrono `DateTime<Utc>`, reusing the tag-12
+  helpers from vantage-types.
+
 ## 0.6.13 — 2026-08-07
 
 - **Bug fix:** a search keeps the conditions of the table. The search

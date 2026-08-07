@@ -26,5 +26,7 @@ pub use engines::{DebugEngine, WsCborEngine};
 pub use error::{Result, SurrealError};
 pub use live::{Action, LiveStream, Notification};
 pub use mocks::{MockSurrealEngine, SurrealMockBuilder};
-pub use record::{RecordId, RecordIdValue, RecordRange, Table, escape_identifier};
+pub use record::{
+    RecordId, RecordIdValue, RecordRange, Table, escape_identifier, escape_record_id,
+};
 pub use session::SessionState;
