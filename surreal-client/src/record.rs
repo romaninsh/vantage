@@ -370,6 +370,22 @@ const RESERVED_KEYWORDS: &[&str] = &[
 /// emitted as `\u{27E9}` — `\⟩` is itself an invalid escape there, so the
 /// unicode escape is the only representation that survives. Plain identifiers
 /// pass through unchanged.
+/// Escape the id half of a record id (`table:<id>`).
+///
+/// The same rules as [`escape_identifier`], with one deliberate exception: a
+/// purely numeric id passes through unquoted. The two positions do not mean
+/// the same thing. A numeric *identifier* (a field name) has to be quoted to
+/// parse at all, but a numeric *record id* is an integer id — `t:1` and
+/// `t:⟨1⟩` address different records, the first keyed by the integer `1` and
+/// the second by the string `"1"`. Quoting here would silently repoint every
+/// lookup of an integer-keyed record.
+pub fn escape_record_id(id: &str) -> String {
+    if !id.is_empty() && id.parse::<i64>().is_ok() {
+        return id.to_string();
+    }
+    escape_identifier(id)
+}
+
 pub fn escape_identifier(ident: &str) -> String {
     if ident.is_empty() {
         return "⟨⟩".to_string();

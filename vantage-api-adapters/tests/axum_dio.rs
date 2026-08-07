@@ -408,3 +408,38 @@ async fn watch_detail_streams_record_changes() {
     assert_eq!(modified["object"]["modified"], "t2");
     assert_eq!(modified["object"]["size"], "101");
 }
+
+#[tokio::test]
+async fn detail_honours_id_map_projection_and_not_found_message() {
+    let fx = fixture(1024).await;
+    // Rebuild the router with the contract-shaping hooks: URLs carry a bare
+    // suffix ("0"), the cache keys rows as "r0"; responses expose only a
+    // renamed id; a miss serves a user-safe message.
+    let router = DioRouter::new(fx.dio.clone())
+        .with_id_map(|id| format!("r{id}"))
+        .with_record_projection(|record| {
+            serde_json::json!({
+                "record_id": record.get("id").and_then(|v| v.as_text().map(str::to_string)),
+            })
+        })
+        .with_not_found_message("Tag not found")
+        .into_router();
+
+    let (status, body) = get_json(&router, "/0").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["record_id"], "r0");
+    assert!(
+        body.get("modified").is_none(),
+        "projection replaces the record"
+    );
+
+    let (status, body) = get_json(&router, "/9").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "Tag not found");
+
+    // The watch stream carries the same projected object.
+    let mut lines = get_stream(&router, "/0?watch=true").await;
+    let added = lines.next().await;
+    assert_eq!(added["type"], "ADDED");
+    assert_eq!(added["object"]["record_id"], "r0");
+}

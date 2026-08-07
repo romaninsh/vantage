@@ -111,6 +111,24 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self
     }
 
+    /// Add a pre-built column AND mark it as a display title — the
+    /// flag-carrying twin of [`Self::with_title_column_of`], for callers
+    /// that need flags (searchable, mandatory) on a title column.
+    pub fn with_title_column<NewColumnType>(mut self, column: T::Column<NewColumnType>) -> Self
+    where
+        NewColumnType: ColumnType,
+    {
+        let name = column.name().to_string();
+        if !self.title_fields.contains(&name) {
+            self.title_fields.push(name.clone());
+        }
+        if self.title_field.is_none() {
+            self.title_field = Some(name);
+        }
+        self.add_column(column);
+        self
+    }
+
     /// Add a typed column to the table (builder pattern)
     pub fn with_column_of<NewColumnType>(self, name: impl Into<String>) -> Self
     where

@@ -485,8 +485,8 @@ pub(crate) fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnySur
 
 pub(crate) fn metadata_from_table<T, E>(table: &Table<T, E>) -> VistaMetadata
 where
-    T: vantage_table::traits::table_source::TableSource,
-    E: Entity<T::Value>,
+    T: vantage_table::traits::table_source::TableSource + 'static,
+    E: Entity<T::Value> + 'static,
     T::Column<T::AnyType>: ColumnLike<T::AnyType>,
 {
     let mut metadata = VistaMetadata::new();
@@ -509,6 +509,12 @@ where
         if col.flags().contains(&ColumnFlag::Hidden) {
             vc = vc.with_flag(vista_flags::HIDDEN);
         }
+        if col.flags().contains(&ColumnFlag::Searchable) {
+            vc = vc.with_flag(vista_flags::SEARCHABLE);
+        }
+        if col.flags().contains(&ColumnFlag::Mandatory) {
+            vc = vc.with_flag(vista_flags::MANDATORY);
+        }
         metadata = metadata.with_column(vc);
     }
     if let Some(id_field) = table.id_field() {
@@ -518,6 +524,24 @@ where
         if let Some(col) = metadata.columns.get_mut(title) {
             col.flags.push(vista_flags::TITLE.to_string());
         }
+    }
+    // Surface the table's typed relations as schema references, so
+    // consumers that read the vista's metadata (not just traversal calls)
+    // see them — the target table name comes from building the bare
+    // target, which is offline (no I/O until a query runs).
+    for (name, kind) in table.ref_kinds() {
+        let Ok(foreign_key) = table.ref_foreign_key(&name) else {
+            continue;
+        };
+        let Ok(target) = table.get_ref_target_erased(&name) else {
+            continue;
+        };
+        metadata = metadata.with_reference(VistaReferenceMeta::new(
+            name,
+            target.table_name().to_string(),
+            kind,
+            foreign_key,
+        ));
     }
     for spec in table.vista_contained() {
         metadata = metadata.with_contained(spec);

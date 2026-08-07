@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use vantage_core::{Result, error};
 use vantage_expressions::traits::selectable::Selectable;
 use vantage_expressions::{Expression, Expressive, SelectableDataSource, expr_any};
@@ -214,48 +216,10 @@ where
             }
 
             if parts.len() >= 2 {
-                let column = parts[parts.len() - 1];
-                let hops = &parts[..parts.len() - 1];
-
-                if !self.data_source().supports_traversal() {
-                    return Err(error!(
-                        "backend does not support implicit-reference traversal in columns",
-                        column = col
-                    ));
-                }
-
-                // Validate the has_one chain and that the final column exists.
-                let (target, fk_hops) = self.resolve_has_one_target(hops)?;
-                if !target.columns().contains_key(column) {
-                    return Err(error!(
-                        "implicit reference target has no such column",
-                        column = column
-                    ));
-                }
-
-                // Lower to an expression: native path first, else the generic
-                // nested correlated-subquery chain. The native path receives
-                // the foreign-key/link *fields*, not the relation names — a
-                // SurrealDB idiom path traverses record-link fields, and a
-                // relation is free to be named differently from its FK
-                // (`with_one("owner", "client", …)` must lower to
-                // `client.name`, not the nonexistent `owner.name`).
-                let fk_refs: Vec<&str> = fk_hops.iter().map(String::as_str).collect();
-                let expr = match self.data_source().traversal_path_expr(&fk_refs, column) {
-                    Some(e) => e,
-                    None => self.traverse_rest_generic(hops, column)?,
-                };
-
-                let dotted = col.to_string();
-                if !self.columns.contains_key(&dotted) {
-                    let column_def = self.data_source.create_column::<T::AnyType>(&dotted);
-                    self.add_column(column_def);
-                }
-                self = self.with_expression(&dotted, move |_| expr.clone());
-                self.imported_columns.insert(dotted.clone());
+                self.import_dotted_column(col)?;
                 self.active_columns
                     .get_or_insert_with(Default::default)
-                    .insert(dotted);
+                    .insert(col.to_string());
             } else {
                 // Expression columns registered via `with_expression` alone
                 // (no column def) are projectable too — activating them must
@@ -269,6 +233,92 @@ where
             }
         }
         Ok(self)
+    }
+
+    /// Import a dotted implicit-reference column (`a.b…c`) **additively**:
+    /// the column joins the projection without restricting it, so the
+    /// declared columns keep flowing. Use this to give one consumer (an API
+    /// vista, a page) an extra traversal column that the shared table
+    /// definition does not carry.
+    pub fn with_imported_column(mut self, col: &str) -> Result<Self>
+    where
+        T: 'static,
+        E: 'static,
+        T::Column<T::AnyType>: Expressive<T::Value>,
+        T::Select: Expressive<T::Value>,
+    {
+        self.import_dotted_column(col)?;
+        Ok(self)
+    }
+
+    /// In-place form of [`with_imported_column`](Self::with_imported_column).
+    pub fn add_imported_column(&mut self, col: &str) -> Result<()>
+    where
+        T: 'static,
+        E: 'static,
+        T::Column<T::AnyType>: Expressive<T::Value>,
+        T::Select: Expressive<T::Value>,
+    {
+        self.import_dotted_column(col)
+    }
+
+    /// Shared body of the dotted branch: validate the `has_one` chain, lower
+    /// it to an expression (native idiom path or nested subqueries), register
+    /// the dotted alias as a column + expression and mark it imported. Does
+    /// NOT touch `active_columns` — the caller decides whether the projection
+    /// is restricted.
+    fn import_dotted_column(&mut self, col: &str) -> Result<()>
+    where
+        T: 'static,
+        E: 'static,
+        T::Column<T::AnyType>: Expressive<T::Value>,
+        T::Select: Expressive<T::Value>,
+    {
+        let parts: Vec<&str> = col.split('.').collect();
+        if parts.len() < 2 || parts.iter().any(|p| p.is_empty()) {
+            return Err(error!("invalid dotted column name", column = col));
+        }
+        let column = parts[parts.len() - 1];
+        let hops = &parts[..parts.len() - 1];
+
+        if !self.data_source().supports_traversal() {
+            return Err(error!(
+                "backend does not support implicit-reference traversal in columns",
+                column = col
+            ));
+        }
+
+        // Validate the has_one chain and that the final column exists.
+        let (target, fk_hops) = self.resolve_has_one_target(hops)?;
+        if !target.columns().contains_key(column) {
+            return Err(error!(
+                "implicit reference target has no such column",
+                column = column
+            ));
+        }
+
+        // Lower to an expression: native path first, else the generic
+        // nested correlated-subquery chain. The native path receives
+        // the foreign-key/link *fields*, not the relation names — a
+        // SurrealDB idiom path traverses record-link fields, and a
+        // relation is free to be named differently from its FK
+        // (`with_one("owner", "client", …)` must lower to
+        // `client.name`, not the nonexistent `owner.name`).
+        let fk_refs: Vec<&str> = fk_hops.iter().map(String::as_str).collect();
+        let expr = match self.data_source().traversal_path_expr(&fk_refs, column) {
+            Some(e) => e,
+            None => self.traverse_rest_generic(hops, column)?,
+        };
+
+        let dotted = col.to_string();
+        if !self.columns.contains_key(&dotted) {
+            let column_def = self.data_source.create_column::<T::AnyType>(&dotted);
+            self.add_column(column_def);
+        }
+        let wrapped: crate::table::base::ExpressionFn<T> = Arc::new(move |_| expr.clone());
+        self.expressions.insert(dotted.clone(), wrapped);
+        self.imported_columns.insert(dotted.clone());
+        Ok(())
     }
 
     /// Recursively lower a dotted implicit reference into nested correlated
