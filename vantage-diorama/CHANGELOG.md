@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.1 — unreleased
+
+- **Bug fix:** a local quicksearch reads every kind of value, not only text.
+  A scenery that holds all of its rows filters them itself, and the predicate
+  compared `Text` alone — so a record id, a number, a boolean, and any field
+  inside a nested object or array never matched, while the same search run
+  against the data source found them. Numbers, booleans and record ids now
+  compare as text (the same shape a source-side `<string>` cast produces), and
+  the search descends into arrays and objects.
+
 ## 0.12.0 — 2026-07-30
 
 **The debug stream reads like a log, not a struct dump.**

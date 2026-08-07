@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4 — unreleased
+
+- `DioRouter` gains `with_id_map`, `with_record_projection` and
+  `with_not_found_message`, so a route can match an existing API contract
+  exactly: rename the id field, replace the record body with a projection, and
+  choose the 404 text.
+
 ## 0.1.3 — 2026-07-27
 
 - Depend on vantage-diorama 0.9 (client-side search and the augmentation spec

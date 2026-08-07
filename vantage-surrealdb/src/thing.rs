@@ -138,7 +138,7 @@ impl Expressive<AnySurrealType> for Thing {
             format!(
                 "{}:{}",
                 surreal_client::escape_identifier(&self.table),
-                surreal_client::escape_identifier(&self.id)
+                surreal_client::escape_record_id(&self.id)
             ),
             vec![],
         )
@@ -164,6 +164,9 @@ mod tests {
             Thing::new("batch", "batch5").expr().preview(),
             "batch:batch5"
         );
+        // A numeric id stays bare: `t:1` is keyed by the integer 1, and
+        // `t:⟨1⟩` by the string "1" — quoting would address another record.
+        assert_eq!(Thing::new("t", "1").expr().preview(), "t:1");
     }
 
     const DB_URL: &str = "cbor://localhost:8000/rpc";

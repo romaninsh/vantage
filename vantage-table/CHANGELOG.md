@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.15 — unreleased
+
+- `with_imported_column` / `add_imported_column` bring a column in over a
+  dotted traversal of a related record. Additive: the projection keeps every
+  column it already had, so importing one field no longer narrows the query.
+- `with_title_column` takes a pre-built column and marks it as the display
+  title, for callers that need flags (searchable, mandatory) on a title column
+  — `with_title_column_of` builds one by name as before.
+
 ## 0.6.14 — 2026-07-22
 
 - New `TableSource::coerce_reference_value` hook (default: identity). Reference
