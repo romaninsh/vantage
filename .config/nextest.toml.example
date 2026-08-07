@@ -1,0 +1,25 @@
+# Copy to .config/nextest.toml and tune to your machine.
+#
+#   cargo nextest run --workspace --all-features -j 45
+#
+# Thread count is machine-specific. Default is one per core; the suite
+# waits on databases, so more threads than cores is quicker. Measured on
+# 15 cores: 15.1s at 15 threads, 13.7s at 30, 12.9s at 45, 15.1s at 60.
+
+[profile.default]
+# vantage-diorama's `bdd` target is `harness = false` (cucumber). It
+# rejects `--list`, which aborts the whole nextest run. Run it with
+# `cargo test -p vantage-diorama --test bdd`.
+default-filter = 'not binary(bdd)'
+failure-output = "immediate-final"
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+# Parallel writes to the shared SurrealDB instance raise
+# "Transaction conflict". Serialise them; everything else stays parallel.
+[test-groups]
+surreal = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(vantage-surrealdb) or package(surreal-client) or package(bakery_model3)'
+test-group = 'surreal'
+retries = 2

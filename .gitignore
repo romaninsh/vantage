@@ -18,3 +18,6 @@ PR-REWRITE-LIST.md
 # Scratch project for the docs4 "Optimising Live Diorama Data" chapter — the
 # chapter tells the reader to generate their own, so this one is local only.
 /optimising/
+
+# nextest thread count is machine-specific; copy .config/nextest.toml.example.
+/.config/nextest.toml
