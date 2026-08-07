@@ -156,8 +156,14 @@ mod tests {
 
     #[test]
     fn expr_escapes_non_identifier_ids() {
-        assert_eq!(Thing::new("tag", "75KE-F3HG").expr().preview(), "tag:⟨75KE-F3HG⟩");
-        assert_eq!(Thing::new("batch", "batch5").expr().preview(), "batch:batch5");
+        assert_eq!(
+            Thing::new("tag", "75KE-F3HG").expr().preview(),
+            "tag:⟨75KE-F3HG⟩"
+        );
+        assert_eq!(
+            Thing::new("batch", "batch5").expr().preview(),
+            "batch:batch5"
+        );
     }
 
     const DB_URL: &str = "cbor://localhost:8000/rpc";
