@@ -24,5 +24,5 @@ pub use group_concat::GroupConcat;
 pub use identifier::{Identifier, ident};
 pub use iif::Iif;
 pub use interval::Interval;
-pub use logical::{and_, or_};
+pub use logical::{ConditionGroup, and_, or_};
 pub use ternary::ternary;

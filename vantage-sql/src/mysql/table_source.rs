@@ -152,10 +152,24 @@ impl TableSource for MysqlDB {
             })
             .collect();
 
-        if conditions.is_empty() {
+        // Add each branch with `or_`. The accumulator stays a group, and
+        // thus the branches stay flat: `(a OR b OR c)`, not
+        // `((a OR b) OR c)`. The brackets of the group keep the other
+        // conditions of the table when WHERE joins them with AND.
+        let mut branches = conditions.into_iter();
+        let Some(first) = branches.next() else {
+            // The table has no columns to search. Match no rows.
             return mysql_expr!("FALSE").into();
+        };
+        let Some(second) = branches.next() else {
+            // One branch needs no group.
+            return first.into();
+        };
+        let mut group = crate::primitives::or_(first, second);
+        for branch in branches {
+            group = group.or_(branch);
         }
-        Expression::from_vec(conditions, " OR ").into()
+        group.expr().into()
     }
 
     async fn list_table_values<E>(

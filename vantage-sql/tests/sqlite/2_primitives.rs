@@ -179,31 +179,46 @@ fn test_ident_alias() {
 
 // ── or_ / and_ ─────────────────────────────────────────────────────
 
+/// How conditions make groups. `AND` binds more tightly than `OR`. Thus
+/// alternatives without brackets change the query: `role = 'admin' AND a
+/// OR b` means `(role = 'admin' AND a) OR b`, and each row that matches
+/// only `b` ignores the role condition. `or_` and `and_` write the
+/// brackets. The statement renderer does not.
 #[test]
-fn test_or_with_ident() {
-    let expr = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
-    assert_eq!(
-        expr.preview(),
-        "(\"role\" = 'admin') OR (\"role\" = 'superuser')"
-    );
-}
-
-#[test]
-fn test_or_with_typed_columns() {
-    let price = Column::<i64>::new("price");
-    let featured = Column::<bool>::new("featured");
-    let expr = or_(price.gt(100i64), featured.eq(true));
-    assert_eq!(expr.preview(), "(price > 100) OR (featured = 1)");
-}
-
-#[test]
-fn test_nested_and_inside_or() {
+fn test_condition_grouping() {
     let price = Column::<i64>::new("price");
     let in_stock = Column::<bool>::new("in_stock");
     let featured = Column::<bool>::new("featured");
-    let expr = or_(and_(price.gt(100i64), in_stock.eq(true)), featured.eq(true));
+
+    // A chain is one flat group. It has one set of brackets around the
+    // full chain, and no brackets around each operand.
     assert_eq!(
-        expr.preview(),
-        "((price > 100) AND (in_stock = 1)) OR (featured = 1)"
+        price
+            .gt(100i64)
+            .or_(in_stock.eq(true))
+            .or_(featured.eq(true))
+            .preview(),
+        "(price > 100 OR in_stock = 1 OR featured = 1)"
+    );
+
+    // Nest the calls, and the inner group writes its own brackets.
+    assert_eq!(
+        price
+            .gt(100i64)
+            .or_(in_stock.eq(true).or_(featured.eq(true)))
+            .preview(),
+        "(price > 100 OR (in_stock = 1 OR featured = 1))"
+    );
+
+    // The operator changes. The chain to this point becomes one operand.
+    assert_eq!(
+        or_(and_(price.gt(100i64), in_stock.eq(true)), featured.eq(true)).preview(),
+        "((price > 100 AND in_stock = 1) OR featured = 1)"
+    );
+
+    // The function and the method give the same result.
+    assert_eq!(
+        or_(ident("role").eq("admin"), ident("role").eq("superuser")).preview(),
+        "(\"role\" = 'admin' OR \"role\" = 'superuser')"
     );
 }

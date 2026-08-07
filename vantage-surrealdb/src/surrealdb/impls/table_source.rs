@@ -164,18 +164,38 @@ impl TableSource for SurrealDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let needle = search_value.to_lowercase();
+                // The query writes a computed column as `(<expr>) AS <name>`.
+                // The alias does not exist where the WHERE clause runs, so
+                // search the expression instead. For a usual column,
+                // `get_column_expr` gives the identifier.
+                let target = table
+                    .get_column_expr(col.name())
+                    .unwrap_or_else(|| crate::surreal_expr!("{}", (Identifier::new(col.name()))));
                 crate::surreal_expr!(
-                    "string::contains(string::lowercase(<string>{}), {})",
-                    (Identifier::new(col.name())),
+                    "string::contains(string::lowercase(<string>({})), {})",
+                    (target),
                     needle
                 )
             })
             .collect();
-        if parts.is_empty() {
-            crate::surreal_expr!("false")
-        } else {
-            Expression::from_vec(parts, " OR ")
+        // Add each branch with `or_`. The accumulator stays a group, and
+        // thus the branches stay flat: `(a OR b OR c)`, not
+        // `((a OR b) OR c)`. The brackets of the group keep the other
+        // conditions of the table when WHERE joins them with AND.
+        let mut branches = parts.into_iter();
+        let Some(first) = branches.next() else {
+            // The table has no columns to search. Match no rows.
+            return crate::surreal_expr!("false");
+        };
+        let Some(second) = branches.next() else {
+            // One branch does not need a group.
+            return first;
+        };
+        let mut group = first.or_(second);
+        for branch in branches {
+            group = group.or_(branch);
         }
+        group.expr()
     }
 
     async fn list_table_values<E>(

@@ -5804,7 +5804,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.16"
+version = "0.6.17"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5832,7 +5832,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-stream",
  "async-trait",
