@@ -1,0 +1,45 @@
+# nextest settings for the workspace.
+#
+# Thread count: the default is one test thread per logical core, and
+# that is what CI uses. The tests wait on databases more than they use
+# the CPU, so a developer machine with many cores goes quicker with more
+# threads than cores. On a 15-core machine the full suite measured 15.1s
+# at 15 threads, 13.7s at 30, 12.9s at 45, and 15.1s at 60. Pass the
+# count on the command line, because the best value belongs to the
+# machine and not to the repository:
+#
+#   cargo nextest run --workspace --all-features -j 45
+[profile.default]
+# The `bdd` test target of vantage-diorama sets `harness = false` and
+# uses cucumber. Such a binary does not accept the `--list` argument that
+# nextest needs to find the tests, and nextest stops the full run with
+# "unexpected argument '--list' found". Leave it out, and run it with
+# cargo instead:
+#
+#   cargo test -p vantage-diorama --test bdd
+default-filter = 'not binary(bdd)'
+
+# Show each failure when it happens, and again in the summary. A full run
+# prints thousands of lines, and a failure at the start is easy to lose.
+failure-output = "immediate-final"
+
+# A test that stops responding must not hold the run forever. Warn at 30
+# seconds, and stop the test after 4 such periods (2 minutes). Every test
+# in this workspace finishes in under a second, thus this limit only
+# applies to a database connection that does not answer.
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+# Tests that write to the shared SurrealDB instance must not run at the
+# same time. They write to the same records, and parallel runs end with
+# "Transaction conflict: Write conflict, retry the transaction". This
+# group holds them to one test at a time. Every other test still uses all
+# of the cores.
+[test-groups]
+surreal = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(vantage-surrealdb) or package(surreal-client) or package(bakery_model3)'
+test-group = 'surreal'
+# SurrealDB reports a write conflict as "This transaction can be
+# retried". One retry clears it.
+retries = 2
