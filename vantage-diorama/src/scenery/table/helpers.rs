@@ -27,9 +27,15 @@ pub(crate) fn record_get_path<'a>(rec: &'a Record<CborValue>, path: &str) -> Opt
     Some(current)
 }
 
-/// Local quicksearch predicate: case-insensitive substring over every text
-/// field of the record (the same semantics drivers use server-side, so a
-/// table behaves alike whichever side evaluates). `None`/blank matches all.
+/// Local quicksearch predicate: case-insensitive substring over every
+/// field of the record. `None`/blank matches all.
+///
+/// A driver searches server-side with a cast to text, and thus it also
+/// looks in a record id, a number and the fields of an embedded object.
+/// This predicate reads the same values, so a table behaves alike
+/// whichever side evaluates. It reads a container one level at a time:
+/// a record id is `Tag(8, [table, key])`, and an owner is a map of
+/// name, email and phone.
 pub(crate) fn matches_search(rec: &Record<CborValue>, query: Option<&str>) -> bool {
     let Some(query) = query else {
         return true;
@@ -38,10 +44,23 @@ pub(crate) fn matches_search(rec: &Record<CborValue>, query: Option<&str>) -> bo
     if needle.is_empty() {
         return true;
     }
-    rec.values().any(|v| match v {
-        CborValue::Text(s) => s.to_lowercase().contains(&needle),
+    rec.values().any(|v| cbor_contains(v, &needle))
+}
+
+/// True when `needle` (already lower case) is in the text of `value` or
+/// of anything the value holds.
+fn cbor_contains(value: &CborValue, needle: &str) -> bool {
+    match value {
+        CborValue::Text(s) => s.to_lowercase().contains(needle),
+        CborValue::Integer(i) => i128::from(*i).to_string().contains(needle),
+        CborValue::Float(f) => f.to_string().contains(needle),
+        CborValue::Bool(b) => b.to_string().contains(needle),
+        CborValue::Tag(_, inner) => cbor_contains(inner, needle),
+        CborValue::Array(items) => items.iter().any(|item| cbor_contains(item, needle)),
+        CborValue::Map(entries) => entries.iter().any(|(_, v)| cbor_contains(v, needle)),
+        // Null, Bytes and anything else carry no text to match.
         _ => false,
-    })
+    }
 }
 
 pub(crate) fn matches_conditions(rec: &Record<CborValue>, conds: &[(String, CborValue)]) -> bool {
@@ -122,6 +141,45 @@ mod tests {
         r.insert("status".to_string(), CborValue::Text(status.to_string()));
         r.insert("count".to_string(), CborValue::Integer(count.into()));
         r
+    }
+
+    /// Quicksearch reads a record id, an embedded object and a number,
+    /// and not only the plain text fields. A driver casts every column
+    /// to text server-side, and a grid that filters its cached rows must
+    /// find the same rows.
+    #[test]
+    fn search_reads_every_kind_of_value() {
+        let mut row = Record::new();
+        // A record id: Tag(8, [table, key]).
+        row.insert(
+            "id".to_string(),
+            CborValue::Tag(8, Box::new(text_array(&["tag", "4N35-BK8F"]))),
+        );
+        row.insert("label".to_string(), CborValue::Text("Wedge".to_string()));
+        // An embedded owner object.
+        row.insert(
+            "owner".to_string(),
+            CborValue::Map(vec![
+                (
+                    CborValue::Text("name".to_string()),
+                    CborValue::Text("Kennedy".to_string()),
+                ),
+                (
+                    CborValue::Text("email".to_string()),
+                    CborValue::Text("k@example.com".to_string()),
+                ),
+            ]),
+        );
+        row.insert("total".to_string(), CborValue::Integer(42.into()));
+
+        assert!(matches_search(&row, Some("4N35-BK8F")));
+        assert!(matches_search(&row, Some("4n35")), "search is case free");
+        assert!(matches_search(&row, Some("Kennedy")), "an owner field");
+        assert!(matches_search(&row, Some("42")), "a number");
+        assert!(matches_search(&row, Some("wedge")), "a plain text field");
+        assert!(!matches_search(&row, Some("nothing here")));
+        assert!(matches_search(&row, None), "no query matches all");
+        assert!(matches_search(&row, Some("")), "a blank query matches all");
     }
 
     fn text_array(items: &[&str]) -> CborValue {

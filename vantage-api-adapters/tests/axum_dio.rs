@@ -428,7 +428,10 @@ async fn detail_honours_id_map_projection_and_not_found_message() {
     let (status, body) = get_json(&router, "/0").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["record_id"], "r0");
-    assert!(body.get("modified").is_none(), "projection replaces the record");
+    assert!(
+        body.get("modified").is_none(),
+        "projection replaces the record"
+    );
 
     let (status, body) = get_json(&router, "/9").await;
     assert_eq!(status, StatusCode::NOT_FOUND);

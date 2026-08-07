@@ -374,8 +374,7 @@ mod tests {
             SurrealConnection::dsn("cbor://user:pw@cloud.example/ns/db?auth=namespace").unwrap();
         assert!(matches!(conn.auth, Some(AuthParams::Namespace { .. })));
 
-        let conn =
-            SurrealConnection::dsn("cbor://user:pw@cloud.example/ns/db?auth=db").unwrap();
+        let conn = SurrealConnection::dsn("cbor://user:pw@cloud.example/ns/db?auth=db").unwrap();
         assert!(matches!(conn.auth, Some(AuthParams::Database { .. })));
 
         assert!(SurrealConnection::dsn("cbor://user:pw@h/n/d?auth=nope").is_err());

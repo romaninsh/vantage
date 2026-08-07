@@ -61,7 +61,10 @@ mod tests {
 
     #[test]
     fn rejects_other_shapes() {
-        assert_eq!(DateTime::<Utc>::from_cbor(CborValue::Integer(5.into())), None);
+        assert_eq!(
+            DateTime::<Utc>::from_cbor(CborValue::Integer(5.into())),
+            None
+        );
         assert_eq!(
             DateTime::<Utc>::from_cbor(CborValue::Text("not a date".into())),
             None
