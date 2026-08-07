@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.17 — 2026-08-07
+
+- **Bug fix:** a search keeps the conditions of the table. The search
+  looks in each column, and `AND` binds more tightly than `OR`. Thus
+  `role = 'admin' AND <first branch> OR <second branch>` let each row
+  that matched a later branch ignore the role condition. The branches
+  are now one group with brackets.
+- `or_` and `and_` are also methods on the operation trait:
+  `price.gt(100).or_(featured.eq(true))`. The functions stay available.
+- **Behaviour change:** `or_` and `and_` give a `ConditionGroup`, which
+  writes one set of brackets around the chain and no brackets around
+  each operand. `or_(a, b)` gave `(a) OR (b)`, and it now gives
+  `(a OR b)`. A chain stays flat: `a.or_(b).or_(c)` gives
+  `(a OR b OR c)`, not a nest. To make a different group, nest the
+  calls: `a.or_(b.or_(c))`.
+
 ## 0.6.16 — 2026-07-26
 
 - **Behaviour change:** a Postgres vista no longer advertises `can_subscribe`

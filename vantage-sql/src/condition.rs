@@ -174,6 +174,43 @@ macro_rules! define_sql_operation {
         where
             T: Into<$any_type> + Send + Clone + 'static,
         {
+            /// `(self OR other)` — joins two conditions into a
+            /// `ConditionGroup`.
+            ///
+            /// Use this method to write alternatives. Do not write
+            /// `"a OR b"` as text. The group writes its own brackets,
+            /// and it keeps its meaning next to the other conditions.
+            /// Text has no brackets, and `AND` binds more tightly than
+            /// `OR`. Thus `role = 'admin' AND a OR b` means
+            /// `(role = 'admin' AND a) OR b`.
+            ///
+            /// A chain stays flat: `a.or_(b).or_(c)` gives
+            /// `(a OR b OR c)`.
+            fn or_(
+                &self,
+                other: impl $crate::vantage_expressions::Expressive<T>,
+            ) -> $crate::primitives::ConditionGroup<T>
+            where
+                Self: Sized,
+            {
+                $crate::primitives::or_(self.expr(), other.expr())
+            }
+
+            /// `(self AND other)` — joins two conditions into a
+            /// `ConditionGroup`.
+            ///
+            /// A table joins its conditions with `AND` already. Use this
+            /// method when you must make a group inside an `or_`.
+            fn and_(
+                &self,
+                other: impl $crate::vantage_expressions::Expressive<T>,
+            ) -> $crate::primitives::ConditionGroup<T>
+            where
+                Self: Sized,
+            {
+                $crate::primitives::and_(self.expr(), other.expr())
+            }
+
             /// `field = value`
             fn eq(&self, value: impl $crate::vantage_expressions::Expressive<T>) -> $condition
             where
