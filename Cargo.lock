@@ -5526,16 +5526,9 @@ dependencies = [
 name = "vantage-action-macros"
 version = "0.6.0"
 dependencies = [
- "async-trait",
  "proc-macro2",
  "quote",
- "schemars",
- "serde",
- "serde_json",
  "syn 2.0.117",
- "tokio",
- "vantage-action",
- "vantage-core",
 ]
 
 [[package]]
@@ -5718,7 +5711,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5975,7 +5968,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "chrono",
  "ciborium",

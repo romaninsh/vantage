@@ -1,9 +1,12 @@
-use crate::{ActiveEntity, traits::ValueSet};
+use crate::{
+    ActiveEntity,
+    traits::{ValueSet, WritableValueSet},
+};
 
 use super::Result;
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use vantage_types::Entity;
+use vantage_types::{Entity, TryIntoRecord};
 
 /// Entity-aware dataset operations built on top of the [`ValueSet`] foundation.
 ///
@@ -212,6 +215,51 @@ where
     /// # Use Case
     /// Update only the modified fields of a entity.
     async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E>;
+
+    /// Write only the fields that differ between `before` and `after`.
+    ///
+    /// The read-modify-write most business logic wants. Read the entity,
+    /// change the fields the operation owns, and call this with both —
+    /// only the changed fields reach storage.
+    ///
+    /// Prefer this over [`replace`](Self::replace) whenever the entity
+    /// came from a read. `replace` writes every field the caller read,
+    /// so it silently reverts a field another writer changed while the
+    /// caller was working, and it saves back values the caller never
+    /// looked at — including any the entity failed to parse and filled
+    /// with a default.
+    ///
+    /// Deriving the change set from two entity values means no caller
+    /// writes out field names by hand; the struct stays the one place
+    /// they are declared.
+    ///
+    /// Writes nothing and returns `Ok(())` when the two are identical.
+    async fn patch_changed(
+        &self,
+        id: impl Into<Self::Id> + Send,
+        before: &E,
+        after: &E,
+    ) -> Result<()>
+    where
+        Self: WritableValueSet + Sized,
+        E: TryIntoRecord<Self::Value>,
+        <E as TryIntoRecord<Self::Value>>::Error: std::fmt::Debug,
+        Self::Value: PartialEq + Clone,
+    {
+        let to_record = |entity: &E| {
+            entity.clone().try_into_record().map_err(|e| {
+                vantage_core::error!("Failed to serialize entity to record", error = e)
+            })
+        };
+        let before = to_record(before)?;
+        let after = to_record(after)?;
+        let changes = after.changes_from(&before);
+        if changes.is_empty() {
+            return Ok(());
+        }
+        self.patch_value(id, &changes).await?;
+        Ok(())
+    }
 }
 
 /// Append-only operations with automatic ID generation.

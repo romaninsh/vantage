@@ -28,3 +28,6 @@ serde_json = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+# `tests/actions_macro.rs` expands `#[actions]` against real types.
+async-trait = "0.1"
+serde_json = "1"

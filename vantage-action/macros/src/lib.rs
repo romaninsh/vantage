@@ -1,4 +1,7 @@
-//! `#[actions]` — generate [`ModelAction`] constructors from a trait.
+//! `#[actions]` — generate `ModelAction` constructors from a trait.
+//!
+//! (Names from `vantage-action` appear unlinked throughout: this crate
+//! cannot depend on it, or the two would be mutually unpublishable.)
 //!
 //! Placed on a trait (above `#[async_trait]`), it scans for methods
 //! marked `#[action(...)]` and emits one constructor function per
@@ -51,18 +54,18 @@ pub fn actions(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     // The constructor is emitted as `fn …<S> where S: Trait`, which has
     // nowhere to put the trait's own parameters. Say so here rather than
-    // letting rustc report `missing generics for trait` against a span
-    // inside generated code.
-    if item
-        .generics
-        .params
-        .iter()
-        .any(|p| !matches!(p, syn::GenericParam::Lifetime(_)))
-    {
+    // letting rustc report against a span inside generated code.
+    //
+    // Lifetime parameters are rejected too. `S: Trait` for a
+    // `Trait<'a>` is not an elision site, so it raises E0726 ("implicit
+    // elided lifetime not allowed here") — a worse diagnostic than this
+    // one, pointing at code the author never wrote.
+    if !item.generics.params.is_empty() {
         errors.push(syn::Error::new_spanned(
             &item.generics,
-            "#[actions] does not support generic traits — the generated constructors have \
-             nowhere to carry the parameters; move the generic onto a dependency argument",
+            "#[actions] does not support generic traits, including lifetime parameters — \
+             the generated constructors have nowhere to carry them; move the parameter onto \
+             a dependency argument",
         ));
     }
 

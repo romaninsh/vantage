@@ -15,12 +15,8 @@ proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
 
-[dev-dependencies]
-# The expansion tests need the crates the generated code calls into.
-vantage-action = { version = "0.6", path = ".." }
-vantage-core = { version = "0.6", path = "../../vantage-core" }
-async-trait = "0.1"
-schemars = "0.8"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt"] }
+# No dev-dependency on `vantage-action`, deliberately. Cargo resolves
+# dev-dependencies against the registry when packaging, so depending on
+# the parent here would make the two crates unpublishable: neither could
+# go first. The expansion tests live in `vantage-action/tests/` instead,
+# where they also exercise the re-exported path consumers actually use.
