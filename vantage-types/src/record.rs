@@ -62,6 +62,30 @@ impl<V> Record<V> {
     }
 }
 
+impl<V: PartialEq + Clone> Record<V> {
+    /// The fields of `self` that `before` does not already hold with the
+    /// same value — the partial record that turns `before` into `self`.
+    ///
+    /// Write this instead of the whole entity. A whole-entity write
+    /// carries every field the caller read, so it overwrites a field
+    /// another writer changed in between, and it saves back values this
+    /// caller never looked at — including ones the entity failed to
+    /// parse and filled with a default.
+    ///
+    /// Fields present in `before` and absent from `self` are NOT
+    /// included: the result is a merge, and a merge cannot express a
+    /// removal. Set the field to the representation's null instead.
+    pub fn changes_from(&self, before: &Record<V>) -> Record<V> {
+        let mut out = Record::new();
+        for (key, value) in &self.inner {
+            if before.inner.get(key) != Some(value) {
+                out.inner.insert(key.clone(), value.clone());
+            }
+        }
+        out
+    }
+}
+
 impl<V> Default for Record<V> {
     fn default() -> Self {
         Self::new()
@@ -359,5 +383,63 @@ where
 
         let cbor_value = ciborium::Value::Map(cbor_map);
         cbor_value.deserialized()
+    }
+}
+
+#[cfg(test)]
+mod changes_from_tests {
+    use super::Record;
+
+    fn record(pairs: &[(&str, &str)]) -> Record<String> {
+        let mut r = Record::new();
+        for (k, v) in pairs {
+            r.insert(k.to_string(), v.to_string());
+        }
+        r
+    }
+
+    #[test]
+    fn only_the_differing_fields_come_back() {
+        let before = record(&[("status", "unregistered"), ("found", "[]")]);
+        let after = record(&[("status", "pending"), ("found", "[]")]);
+
+        let changes = after.changes_from(&before);
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes.get("status").map(String::as_str), Some("pending"));
+        // The whole point: an untouched field is not written back, so a
+        // concurrent writer's value survives.
+        assert!(!changes.contains_key("found"));
+    }
+
+    #[test]
+    fn a_field_the_earlier_record_lacks_counts_as_a_change() {
+        let before = record(&[("status", "unregistered")]);
+        let after = record(&[("status", "unregistered"), ("verification_code", "123456")]);
+
+        let changes = after.changes_from(&before);
+
+        assert_eq!(changes.len(), 1);
+        assert!(changes.contains_key("verification_code"));
+    }
+
+    #[test]
+    fn identical_records_produce_nothing() {
+        let same = record(&[("status", "registered")]);
+        assert!(same.changes_from(&same).is_empty());
+    }
+
+    /// A merge cannot express a removal, so a field that disappeared is
+    /// not reported — callers set the representation's null instead.
+    #[test]
+    fn a_dropped_field_is_not_reported() {
+        let before = record(&[("status", "pending"), ("verification_code", "123456")]);
+        let after = record(&[("status", "registered")]);
+
+        let changes = after.changes_from(&before);
+
+        assert_eq!(changes.len(), 1);
+        assert!(changes.contains_key("status"));
+        assert!(!changes.contains_key("verification_code"));
     }
 }

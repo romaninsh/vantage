@@ -50,6 +50,20 @@ macro_rules! vantage_type_system {
                 type_variant: Option<[<$trait_name Variants>]>,
             }
 
+            /// Equality is on the stored representation alone, not on
+            /// `type_variant`. The variant is an inference about the
+            /// value, and the same stored value can carry a different
+            /// one depending on how it was built — `new::<DateTime>()`
+            /// records `DateTime`, while the same value read back from
+            /// storage infers its variant from the encoding. Comparing
+            /// it would report a change where the stored bytes are
+            /// identical, which is exactly wrong for `Record::changes_from`.
+            impl PartialEq for [<Any $trait_name>] {
+                fn eq(&self, other: &Self) -> bool {
+                    self.value == other.value
+                }
+            }
+
             impl [<Any $trait_name>] {
                 pub fn new<T: $trait_name>(value: T) -> Self {
                     Self {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 — 2026-08-09
+
+- `ErrorKind::NotFound`, with `mark_not_found()` and `is_not_found()`.
+  The addressed record or resource does not exist — distinct from
+  `IncorrectUsage`, where the request itself was malformed. Transports
+  needed this to answer 404 without matching on the message text, which
+  turned any error whose text happened to contain "not found" (including
+  a wrapped `io::Error` or a vendor response body) into a 404.
+
 ## 0.6.2 — 2026-07-23
 
 - `VantageError::message()` and `location()` accessors: the bare message

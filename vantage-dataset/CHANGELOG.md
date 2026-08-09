@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 — 2026-08-09
+
+- `WritableDataSet::patch_changed(id, before, after)` writes only the
+  fields that differ between two entity values. This is the
+  read-modify-write most business logic wants, and it needs the caller
+  to name no fields by hand — the struct stays the one place they are
+  declared. Prefer it over `replace` whenever the entity came from a
+  read. Available where the set is also a `WritableValueSet`.
+
 ## 0.6.2 — 2026-06-25
 
 - `ActiveEntity::data()` / `ActiveEntity::dataset()` and `ActiveRecord::dataset()` accessors, so

@@ -1,0 +1,22 @@
+[package]
+name = "vantage-action-macros"
+version = "0.6.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "The #[actions] attribute: generate ModelAction constructors from trait method signatures"
+repository = "https://github.com/romaninsh/vantage"
+
+[lib]
+proc-macro = true
+doctest = false
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+
+# No dev-dependency on `vantage-action`, deliberately. Cargo resolves
+# dev-dependencies against the registry when packaging, so depending on
+# the parent here would make the two crates unpublishable: neither could
+# go first. The expansion tests live in `vantage-action/tests/` instead,
+# where they also exercise the re-exported path consumers actually use.
