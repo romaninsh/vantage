@@ -17,6 +17,7 @@ members = [
     "vantage-diorama",
     "vantage-diorama-aggregate",
     "vantage-action",
+    "vantage-bundle",
     "vantage-api-adapters",
     "vantage-log-writer",
     "vantage-sql",

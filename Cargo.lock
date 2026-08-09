@@ -5637,6 +5637,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-bundle"
+version = "0.6.0"
+dependencies = [
+ "async-trait",
+ "serde_json",
+ "tokio",
+ "vantage-action",
+ "vantage-core",
+ "vantage-vista",
+]
+
+[[package]]
 name = "vantage-cli-util"
 version = "0.6.1"
 dependencies = [
