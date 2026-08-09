@@ -66,6 +66,20 @@ fn error_response(e: VantageError) -> ApiError {
     }
 }
 
+/// The record key out of a path's captures.
+///
+/// A canonical route names it `{id}`, but an alias mounts onto a path
+/// somebody else already chose — `/tag/{tag_id}/register` in a contract
+/// that predates the action. So a single capture *is* the id whatever it
+/// is called, and `id` only has to be spelled out when the path captures
+/// more than one value and the choice would otherwise be arbitrary.
+fn record_id(params: &HashMap<String, String>) -> Option<String> {
+    if params.len() == 1 {
+        return params.values().next().cloned();
+    }
+    params.get("id").cloned()
+}
+
 async fn run(
     action: Arc<dyn ModelAction>,
     target: Target,
@@ -164,12 +178,13 @@ impl ActionRouter {
             ActionTarget::Record { .. } => post(
                 move |Path(params): Path<HashMap<String, String>>,
                       Json(body): Json<serde_json::Value>| async move {
-                    match params.get("id") {
-                        Some(id) => run(action, Target::Id(id.clone()), body).await,
+                    match record_id(&params) {
+                        Some(id) => run(action, Target::Id(id), body).await,
                         None => ApiError {
                             status: StatusCode::INTERNAL_SERVER_ERROR,
                             message: format!(
-                                "route for record action `{}` has no `{{id}}` segment",
+                                "route for record action `{}` has no id segment; name it \
+                                 `{{id}}` when the path captures more than one value",
                                 action.descriptor().name
                             ),
                         }

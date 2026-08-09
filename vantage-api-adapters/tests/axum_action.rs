@@ -174,6 +174,37 @@ async fn an_alias_path_may_carry_more_than_one_capture() {
     assert_eq!(body, r#"{"saw":"GH1"}"#);
 }
 
+/// An alias mounts onto a path somebody else already named. The legacy
+/// chtags contract spells it `/tag/{tag_id}/register`, so requiring the
+/// literal `{id}` would make every existing route unmountable.
+#[tokio::test]
+async fn a_single_capture_is_the_id_whatever_it_is_called() {
+    let actions = ActionRouter::new(vec![echo_record("tag", "register")]).unwrap();
+    let app: Router = Router::new().route(
+        "/tag/{tag_id}/register",
+        actions.alias("tag", "register").unwrap(),
+    );
+
+    let (status, body) = post(app, "/tag/GH1/register", "{}").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"saw":"GH1"}"#);
+}
+
+/// With more than one capture the choice would be arbitrary, so the id
+/// has to be named. Saying so beats picking one at random.
+#[tokio::test]
+async fn several_captures_none_named_id_is_reported_not_guessed() {
+    let actions = ActionRouter::new(vec![echo_record("tag", "register")]).unwrap();
+    let app: Router = Router::new().route(
+        "/t/{tenant}/tag/{tag_id}/register",
+        actions.alias("tag", "register").unwrap(),
+    );
+
+    let (status, body) = post(app, "/t/acme/tag/GH1/register", "{}").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(body.contains("has no id segment"), "{body}");
+}
+
 #[tokio::test]
 async fn alias_rejects_an_unknown_table_or_name() {
     let actions = ActionRouter::new(vec![echo_record("tag", "register")]).unwrap();
