@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.8 — 2026-08-09
+
+- `Record::changes_from(&before)` returns the fields that differ — the
+  partial record that turns `before` into `self`. Write this instead of
+  a whole entity: a whole-entity write reverts fields another writer
+  changed while the caller was working, and saves back values the caller
+  never read, including any the entity failed to parse and filled with a
+  default. A field that disappeared is not reported, because a merge
+  cannot express a removal.
+- The `Any<Trait>` wrapper that `vantage_type_system!` generates now
+  implements `PartialEq`, comparing the stored representation only. Its
+  `type_variant` is an inference about the value and differs by how the
+  value was built, so comparing it would report changes where the stored
+  bytes are identical.
+
 ## 0.6.7 — 2026-07-27
 
 - `cbor_id_to_string` renders a CBOR value as a **record id** — a cache key, a

@@ -84,6 +84,8 @@ jobs:
           # the unknown-crate tail is a safety net, not a substitute.
           PUBLISH_ORDER=(
             vantage-core
+            vantage-action/macros
+            vantage-action
             vantage-types/entity
             vantage-types
             vantage-dataset
