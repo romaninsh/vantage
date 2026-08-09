@@ -16,6 +16,7 @@ members = [
     "vantage-vista-factory",
     "vantage-diorama",
     "vantage-diorama-aggregate",
+    "vantage-action",
     "vantage-api-adapters",
     "vantage-log-writer",
     "vantage-sql",

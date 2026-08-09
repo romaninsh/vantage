@@ -1,0 +1,26 @@
+[package]
+name = "vantage-action-macros"
+version = "0.6.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "The #[actions] attribute: generate ModelAction constructors from trait method signatures"
+repository = "https://github.com/romaninsh/vantage"
+
+[lib]
+proc-macro = true
+doctest = false
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+# The expansion tests need the crates the generated code calls into.
+vantage-action = { version = "0.6", path = ".." }
+vantage-core = { version = "0.6", path = "../../vantage-core" }
+async-trait = "0.1"
+schemars = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt"] }

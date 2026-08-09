@@ -31,6 +31,11 @@ pub enum ErrorKind {
     /// required state, two parts of the framework disagreeing. Always a bug
     /// at one end of the call.
     IncorrectUsage,
+    /// The addressed record, table or resource does not exist. Distinct
+    /// from `IncorrectUsage` (the request was well formed) and from an
+    /// unclassified failure (the lookup itself worked). Transports map
+    /// this to 404 instead of guessing from the message text.
+    NotFound,
 }
 
 /// VantageError with location tracking and context information
@@ -268,6 +273,13 @@ impl VantageError {
         self
     }
 
+    /// Classify this error as [`ErrorKind::NotFound`] (builder). See
+    /// [`mark_unsupported`](Self::mark_unsupported) on tracing.
+    pub fn mark_not_found(mut self) -> Self {
+        self.kind = ErrorKind::NotFound;
+        self
+    }
+
     /// Emit a `tracing::error!` event with this error's kind, location,
     /// message and context, then return `self` so it can be chained:
     /// `error!(...).mark_unsupported().traced()`. Classification and logging
@@ -305,6 +317,11 @@ impl VantageError {
     /// `true` if this error is classified as [`ErrorKind::IncorrectUsage`].
     pub fn is_incorrect_usage(&self) -> bool {
         self.kind == ErrorKind::IncorrectUsage
+    }
+
+    /// `true` if this error is classified as [`ErrorKind::NotFound`].
+    pub fn is_not_found(&self) -> bool {
+        self.kind == ErrorKind::NotFound
     }
 
     fn emit_trace(&self) {

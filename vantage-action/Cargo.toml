@@ -1,0 +1,30 @@
+[package]
+name = "vantage-action"
+version = "0.6.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Model-level actions: typed business operations exposed uniformly to UI, HTTP and scripting"
+repository = "https://github.com/romaninsh/vantage"
+
+[lib]
+doctest = false
+
+[dependencies]
+vantage-core = { version = "0.6", path = "../vantage-core" }
+# The `#[actions]` attribute. A proc-macro crate cannot also export
+# ordinary items, so it stays a separate compilation unit — but it is an
+# implementation detail: `vantage_action::actions` is the only path
+# consumers use, and nothing should depend on the macro crate directly.
+vantage-action-macros = { version = "0.6", path = "./macros" }
+
+async-trait = "0.1"
+# `preserve_order` belongs on every crate that calls `schema_for!`, which
+# is this one — a synthesized form lists fields in struct declaration
+# order. Relying on a downstream crate to turn the feature on works only
+# while cargo happens to unify them into one graph.
+schemars = { version = "0.8", features = ["preserve_order"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
