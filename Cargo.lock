@@ -5642,9 +5642,9 @@ version = "0.6.0"
 dependencies = [
  "async-trait",
  "serde_json",
+ "tokio",
  "vantage-action",
  "vantage-core",
- "vantage-surrealdb",
  "vantage-vista",
 ]
 

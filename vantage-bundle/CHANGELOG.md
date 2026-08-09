@@ -20,3 +20,11 @@ and any application can compile it in.
   so the model crate cannot drift from a description of itself.
 - `BuiltinAction` — the older untyped action body, JSON in and JSON out,
   for screens that declare their own fields.
+
+The database is the bundle's own `Connection` associated type rather
+than a fixed handle in the signatures. The traits came from a codebase
+where every bundle was a SurrealDB one, and writing that in would have
+made the first bundle over another database a breaking change for
+everyone who had implemented against it. An application pins the type it
+holds connections for — `dyn ModelBundle<Connection = SurrealDB>` — so
+nothing is lost today, and this crate depends on no datasource at all.

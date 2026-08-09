@@ -10,10 +10,16 @@ repository = "https://github.com/romaninsh/vantage"
 doctest = false
 
 [dependencies]
+# No datasource crate: the connection is the bundle's associated type,
+# so nothing here needs to know which database is behind it.
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-vista = { version = "0.6", path = "../vantage-vista" }
-vantage-surrealdb = { version = "0.6", path = "../vantage-surrealdb" }
 vantage-action = { version = "0.6", path = "../vantage-action" }
 
 async-trait = "0.1"
 serde_json = "1"
+
+[dev-dependencies]
+# `tests/object_safe.rs` builds a bundle and holds it the way an
+# application does.
+tokio = { version = "1", features = ["macros", "rt"] }
