@@ -1,11 +1,10 @@
 [package]
 name = "vantage-api-adapters"
-version = "0.1.4"
+version = "0.6.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Web-framework adapters that expose Vantage Dio/Scenery over HTTP"
 repository = "https://github.com/romaninsh/vantage"
-publish = false
 
 [lib]
 doctest = false

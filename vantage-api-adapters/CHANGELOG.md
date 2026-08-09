@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 — 2026-08-10
+
+First published release. The crate existed and was used, but carried
+`publish = false`, so the only way to depend on it was a git reference —
+and a graph that reaches this crate over git while reaching
+`vantage-core` from the registry ends up with two of the latter, which
+fails as unsatisfied trait bounds somewhere unrelated. Publishing it
+lets a consumer pin released versions throughout.
+
+Numbered 0.6.0, not 0.1.5: it moves with `vantage-core`, `vantage-types`
+and `vantage-action`, and the 0.1.x line was never released to disagree
+with.
+
+No API change from the unreleased 0.1.4 below.
+
 ## 0.1.4 — 2026-08-09
 
 - `DioRouter` gains `with_id_map`, `with_record_projection` and
