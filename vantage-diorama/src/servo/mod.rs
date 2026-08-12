@@ -316,7 +316,7 @@ impl Servo {
             }
         };
 
-        let Some(flash) = frozen else {
+        let Some(mut flash) = frozen else {
             return self.flash_auto_insert().await.map(Some);
         };
 
@@ -329,7 +329,16 @@ impl Servo {
         self.state.in_flight.fetch_add(1, Ordering::SeqCst);
         self.state.bump_generation();
 
-        let outcome = self.dio.flash(flash.clone()).await;
+        let outcome = self.dio.flash_returning_id(flash.clone()).await;
+        // A driver may store a new record under an id of its own, so
+        // identity comes from the id the row settled under — the same
+        // discipline `flash_auto_insert` follows for a returning insert.
+        // Rebound before the measurement below, which reads the cache by
+        // this servo's id.
+        if let Ok(Some(settled)) = outcome.as_ref() {
+            *self.state.id.write().unwrap() = Some(settled.clone());
+            flash.rebind_id(settled.clone());
+        }
         // One deliberate measurement now that the write resolved — but
         // only for the LAST in-flight resolver: an earlier one would
         // read a sibling flash's still-staged optimistic value as an
@@ -342,7 +351,7 @@ impl Servo {
             self.absorb_now().await;
         }
         match outcome {
-            Ok(()) => {
+            Ok(_) => {
                 if last {
                     self.state.set_status(ServoStatus::Tracking);
                 }

@@ -560,6 +560,35 @@ async fn uuid_create_retry_reuses_the_id() -> Result<()> {
     Ok(())
 }
 
+/// A driver is free to keep a new record under an id of its own. The
+/// staged row must move onto that id — one record upstream is one row
+/// here, not the staged row plus the refreshed one.
+#[tokio::test]
+async fn a_create_settles_on_the_id_the_driver_stored() -> Result<()> {
+    let shell = MockShell::new().with_id_prefix("products:");
+    let dio = dio_over(&shell).await?;
+    let servo = dio.servo_new(IdStrategy::Uuid);
+    let minted = servo.id().expect("minted at creation");
+
+    servo.set("name", text("Croissant"));
+    let flash = servo.flash().await?.expect("insert fires");
+
+    let settled = format!("products:{minted}");
+    assert_eq!(flash.id(), Some(settled.as_str()));
+    assert_eq!(servo.id().as_deref(), Some(settled.as_str()));
+    assert!(
+        dio.cache().get_value(&minted).await?.is_none(),
+        "the minted key is retired"
+    );
+    assert!(
+        dio.cache().get_value(&settled).await?.is_some(),
+        "the row lives under the id the driver reported"
+    );
+    assert_eq!(shell.len(), 1, "one record upstream");
+    assert!(!servo.is_dirty(), "converged clean on the created row");
+    Ok(())
+}
+
 #[tokio::test]
 async fn auto_strategy_binds_the_backend_id() -> Result<()> {
     let shell = product_shell();
