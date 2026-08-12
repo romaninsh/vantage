@@ -124,11 +124,13 @@ the raw row forwards directly). The method comes from the `GetRefExt` extension 
 worked example (loading a record, traversing, inserting a child) lives in
 [Records: Traversal, Invariants & Hooks](../record-lifecycle.md#traversing-from-a-loaded-record-get_ref).
 
-## The bare target: `get_ref_target`
+## The bare target: `get_ref_target_erased`
 
 Sometimes you want the relation's target table with *no* condition at all —
-`Table::get_ref_target::<E2>(relation)` builds exactly that. Where the traversal forms narrow
-the target to related rows, `get_ref_target` hands you the table you'd insert a new related row
+`Table::get_ref_target_erased(relation)` builds exactly that. The target's entity type is erased:
+a relation is built by a caller-supplied constructor, so the traversal site cannot name it.
+Where the traversal forms narrow
+the target to related rows, `get_ref_target_erased` hands you the table you'd insert a new related row
 into before any join value exists (this is what Vista's nested insert uses).
 
 ## Contained relations
@@ -188,7 +190,7 @@ You can now:
    built for embedding in the source's SELECT.
 3. **Traverse from a loaded row or record** with `get_ref_from_row` / `get_ref` — one
    eq-condition, supported by every backend.
-4. **Obtain a bare insert target** with `get_ref_target` — the relation's target with no
+4. **Obtain a bare insert target** with `get_ref_target_erased` — the relation's target with no
    condition.
 5. **Declare embedded/contained relations** on document stores with `with_contained_many`,
    where traversal is descent rather than a query.

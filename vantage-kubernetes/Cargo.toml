@@ -11,12 +11,12 @@ repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
 
 [dependencies]
-vantage-core = { version = "0.6" }
-vantage-types = { version = "0.6", features = ["serde"] }
-vantage-expressions = { version = "0.6" }
-vantage-table = { version = "0.6" }
-vantage-dataset = { version = "0.6" }
-vantage-vista = { version = "0.6" }
+vantage-core = { version = "0.6", path = "../vantage-core" }
+vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
+vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
+vantage-table = { version = "0.6", path = "../vantage-table" }
+vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+vantage-vista = { version = "0.6", path = "../vantage-vista" }
 
 # Native Kubernetes client: config/auth/TLS only. We issue raw list
 # requests and project the JSON ourselves, so k8s-openapi's generated
@@ -45,7 +45,7 @@ ciborium = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 
 [dev-dependencies]
-vantage-cli-util = { version = "0.6" }
+vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
 ciborium = "0.2"
 
 anyhow = "1"

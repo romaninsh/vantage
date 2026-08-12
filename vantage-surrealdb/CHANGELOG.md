@@ -2,6 +2,10 @@
 
 ## 0.6.14 — unreleased
 
+- **Bug fix:** `SurrealTableShell::get_ref_target` resolves relations whose
+  target constructor returns a typed table. It went through an entity-typed
+  downcast that failed, so a reference field's list of eligible rows came back
+  as an error.
 - **Bug fix:** `Thing::expr` escapes the table and the id through the
   surreal-client authority. A record id with a dash (`tag:75KE-F3HG`) parsed
   as a subtraction and matched no record; it now renders as `tag:⟨75KE-F3HG⟩`.

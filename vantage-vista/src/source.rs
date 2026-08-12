@@ -482,7 +482,7 @@ pub trait TableShell: Send + Sync + 'static {
     /// has-many child's destination.
     ///
     /// Drivers override by forwarding into the wrapped typed `Table`'s
-    /// `get_ref_target::<EmptyEntity>(relation)` and wrapping the result back
+    /// `get_ref_target_erased(relation)` and wrapping the result back
     /// through the driver's factory — the same path as [`get_ref`](Self::get_ref)
     /// minus the row-derived condition. The default returns `Unimplemented`;
     /// cross-persistence relations are rejected at the `Vista` layer before

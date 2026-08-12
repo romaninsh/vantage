@@ -154,7 +154,7 @@ impl TableShell for AwsTableShell {
     }
 
     fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+        let target = self.table.get_ref_target_erased(relation)?;
         let factory = crate::vista::factory::AwsVistaFactory::new(self.table.data_source().clone());
         factory.from_table(target)
     }
