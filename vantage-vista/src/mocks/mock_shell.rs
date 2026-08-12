@@ -37,6 +37,10 @@ pub struct MockShell {
     /// source that is temporarily unreachable (a 503). Shared across clones
     /// (incl. narrowed `get_ref` results) so a test can flip it from any handle.
     fail_reads: Arc<AtomicBool>,
+    /// While set, the store keys every record by `<prefix><id>` — the
+    /// in-memory analogue of a driver that owns its key space and qualifies
+    /// what a caller hands it. See [`Self::with_id_prefix`].
+    id_prefix: Option<String>,
 }
 
 impl MockShell {
@@ -59,6 +63,7 @@ impl MockShell {
             metadata: VistaMetadata::new(),
             ref_targets: IndexMap::new(),
             fail_reads: Arc::new(AtomicBool::new(false)),
+            id_prefix: None,
         }
     }
 
@@ -93,6 +98,7 @@ impl MockShell {
             metadata: self.metadata.clone(),
             ref_targets: self.ref_targets.clone(),
             fail_reads: self.fail_reads.clone(),
+            id_prefix: self.id_prefix.clone(),
         }
     }
 
@@ -104,6 +110,23 @@ impl MockShell {
     pub fn with_metadata(mut self, metadata: VistaMetadata) -> Self {
         self.metadata = metadata;
         self
+    }
+
+    /// Qualify every id with `prefix`, the way a driver that owns its key
+    /// space does: a record inserted as `abc` is stored — and returned —
+    /// as `client:abc`. An id that already carries the prefix passes
+    /// through, so a caller can address a row in either form.
+    pub fn with_id_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.id_prefix = Some(prefix.into());
+        self
+    }
+
+    /// The store key for `id` under [`Self::with_id_prefix`].
+    fn key(&self, id: &str) -> String {
+        match &self.id_prefix {
+            Some(prefix) if !id.starts_with(prefix.as_str()) => format!("{prefix}{id}"),
+            _ => id.to_string(),
+        }
     }
 
     /// Seed a record with an explicit id.
@@ -388,6 +411,7 @@ impl TableShell for MockShell {
             metadata: self.metadata.clone(),
             ref_targets: self.ref_targets.clone(),
             fail_reads: self.fail_reads.clone(),
+            id_prefix: self.id_prefix.clone(),
         }))
     }
 
@@ -397,7 +421,7 @@ impl TableShell for MockShell {
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
         self.guard_reads()?;
-        Ok(self.data.lock().unwrap().get(id).cloned())
+        Ok(self.data.lock().unwrap().get(&self.key(id)).cloned())
     }
 
     async fn get_vista_some_value(
@@ -412,19 +436,27 @@ impl TableShell for MockShell {
             .map(|(k, v)| (k.clone(), v.clone())))
     }
 
+    /// Store the record and report it back carrying the key it landed
+    /// under. The key goes into the vista's id column, not a literal
+    /// `id` field: a caller that reads the id back off the returned
+    /// record — a cache settling a create, for one — reads the column the
+    /// metadata declares, so a mock configured with a different id column
+    /// must answer in that column too.
     async fn insert_vista_value(
         &self,
         _vista: &Vista,
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        let key = self.key(id);
         let mut data = self.data.lock().unwrap();
-        if data.contains_key(id) {
+        if data.contains_key(&key) {
             return Err(vantage_core::error!("Record already exists", id = id));
         }
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
         let mut stored = record.clone();
-        stored.insert("id".to_string(), CborValue::Text(id.clone()));
-        data.insert(id.clone(), stored.clone());
+        stored.insert(id_field.to_string(), CborValue::Text(key.clone()));
+        data.insert(key, stored.clone());
         Ok(stored)
     }
 
@@ -434,10 +466,12 @@ impl TableShell for MockShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        let key = self.key(id);
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
         let mut data = self.data.lock().unwrap();
         let mut stored = record.clone();
-        stored.insert("id".to_string(), CborValue::Text(id.clone()));
-        data.insert(id.clone(), stored.clone());
+        stored.insert(id_field.to_string(), CborValue::Text(key.clone()));
+        data.insert(key, stored.clone());
         Ok(stored)
     }
 
@@ -447,9 +481,10 @@ impl TableShell for MockShell {
         id: &String,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        let key = self.key(id);
         let mut data = self.data.lock().unwrap();
         let existing = data
-            .get_mut(id)
+            .get_mut(&key)
             .ok_or_else(|| vantage_core::error!("Record not found", id = id))?;
         for (k, v) in partial {
             existing.insert(k.clone(), v.clone());
@@ -458,8 +493,9 @@ impl TableShell for MockShell {
     }
 
     async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
+        let key = self.key(id);
         let mut data = self.data.lock().unwrap();
-        if data.shift_remove(id).is_none() {
+        if data.shift_remove(&key).is_none() {
             Err(vantage_core::error!("Record not found", id = id))
         } else {
             Ok(())
@@ -471,6 +507,9 @@ impl TableShell for MockShell {
         Ok(())
     }
 
+    /// Insert and report the id the record is addressable by. That is the
+    /// store key, prefix included: the caller uses this id to read the row
+    /// back, so it must be the same id the by-id insert path stores under.
     async fn insert_vista_return_id_value(
         &self,
         vista: &Vista,
@@ -482,7 +521,7 @@ impl TableShell for MockShell {
             _ => self.next_auto_id(),
         };
         self.insert_vista_value(vista, &id, record).await?;
-        Ok(id)
+        Ok(self.key(&id))
     }
 
     /// Count without materializing: `list_vista_values` clones every matching

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.2 — 2026-08-12
+
+- **Bug fix:** `KubeTableShell::get_ref_target` resolves relations whose target
+  constructor returns a typed table. It went through an entity-typed downcast
+  that failed, so a reference field's list of eligible rows came back as an
+  error.
+- The vantage dependencies carry a `path` next to their version, like
+  `vantage-aws` and `vantage-cmd`. This crate sits outside the workspace, so it
+  used to build against whatever crates.io last published — a change made here
+  and in `vantage-table` in one commit could not compile together. It now builds
+  against the sources beside it, and still publishes by version.
+
 ## 0.1.1 — 2026-07-23
 
 - `KubeTableShell` implements `get_ref_target` (the bare relation target via the

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.10 — 2026-08-12
+
+- **Bug fix:** the REST and GraphQL `TableShell`s resolve relations whose target
+  constructor returns a typed table. `get_ref_target` went through an
+  entity-typed downcast that failed, so a reference field's list of eligible
+  rows came back as an error.
+
 ## 0.6.9 — 2026-07-28
 
 - Every REST round trip is timed. Over a second it logs `slow REST GET` at info

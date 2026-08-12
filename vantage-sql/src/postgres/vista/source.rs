@@ -302,7 +302,7 @@ where
     }
 
     fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+        let target = self.table.get_ref_target_erased(relation)?;
         let factory = crate::postgres::vista::factory::PostgresVistaFactory::new(
             self.table.data_source().clone(),
         )

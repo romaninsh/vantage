@@ -1,7 +1,15 @@
 # Changelog
 
-## 0.12.1 — unreleased
+## 0.12.2 — 2026-08-12
 
+- **Bug fix:** a create settles on the id the driver stored it under. The
+  optimistic layer staged the new row under the id the flash minted and threw
+  away the record the write returned, so a driver that keeps its own key space
+  (a fully-qualified `table:key`) left the scenery showing one record as two
+  rows — the staged one and the refreshed one — and handed out a key nothing
+  upstream answered for. The staged entry now moves onto the id the master
+  reports, and the servo binds to it. `Dio::flash_returning_id` is the flash
+  that reports where the row landed.
 - **Bug fix:** a local quicksearch reads every kind of value, not only text.
   A scenery that holds all of its rows filters them itself, and the predicate
   compared `Text` alone — so a record id, a number, a boolean, and any field

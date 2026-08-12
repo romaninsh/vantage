@@ -467,38 +467,25 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         target.add_condition(condition);
     }
 
-    /// Entity-erased [`get_ref_target`](Self::get_ref_target): the bare target
-    /// (no condition) as `Table<T, EmptyEntity>`. Used to walk an
-    /// implicit-reference chain and read the final target's column definitions.
-    pub fn get_ref_target_erased(&self, relation: &str) -> Result<Table<T, EmptyEntity>> {
-        let (reference, relation_str) = self.lookup_ref(relation)?;
-        let target: Table<T, EmptyEntity> = *reference
-            .build_target_erased(self.data_source() as &dyn std::any::Any)
-            .downcast::<Table<T, EmptyEntity>>()
-            .map_err(|_| {
-                error!(
-                    "Failed to downcast related table",
-                    relation = relation_str.as_str()
-                )
-            })?;
-        Ok(target)
-    }
-
-    /// Build the relation's target table with **no condition** applied.
+    /// Build the relation's target table with **no condition** applied, as
+    /// `Table<T, EmptyEntity>`.
     ///
     /// Unlike [`Self::get_ref_from_row`] / [`Self::get_ref_as`] (which select
     /// the related rows for a known parent), this returns the bare target — the
     /// table you'd insert a new related row into. Used by Vista's nested insert
     /// to obtain the destination for a has-one/has-many child before any join
-    /// value exists.
-    pub fn get_ref_target<E2: Entity<T::Value> + 'static>(
-        &self,
-        relation: &str,
-    ) -> Result<Table<T, E2>> {
+    /// value exists, and to walk an implicit-reference chain and read the final
+    /// target's column definitions.
+    ///
+    /// The result is entity-erased on purpose: a relation's target is built by
+    /// a caller-supplied constructor whose entity type the traversal cannot
+    /// know, so naming an entity type here would only give a downcast that
+    /// fails whenever the two types disagree.
+    pub fn get_ref_target_erased(&self, relation: &str) -> Result<Table<T, EmptyEntity>> {
         let (reference, relation_str) = self.lookup_ref(relation)?;
-        let target: Table<T, E2> = *reference
-            .build_target(self.data_source() as &dyn std::any::Any)
-            .downcast::<Table<T, E2>>()
+        let target: Table<T, EmptyEntity> = *reference
+            .build_target_erased(self.data_source() as &dyn std::any::Any)
+            .downcast::<Table<T, EmptyEntity>>()
             .map_err(|_| {
                 error!(
                     "Failed to downcast related table",

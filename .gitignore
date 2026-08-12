@@ -21,3 +21,6 @@ PR-REWRITE-LIST.md
 
 # nextest thread count is machine-specific; copy .config/nextest.toml.example.
 /.config/nextest.toml
+
+# The `surreal` CLI writes its command history into the working directory.
+/history.txt

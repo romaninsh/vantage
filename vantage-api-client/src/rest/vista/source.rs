@@ -285,7 +285,7 @@ impl TableShell for RestApiTableShell {
         }
 
         // Hand-coded `with_many` / `with_one` registrations on the typed table.
-        let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+        let target = self.table.get_ref_target_erased(relation)?;
         let factory = RestApiVistaFactory::new(self.table.data_source().clone());
         factory.from_table(target)
     }

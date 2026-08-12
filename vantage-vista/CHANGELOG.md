@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.21 — 2026-08-12
+
+- `MockShell::with_id_prefix` qualifies every id with a prefix, the way a driver
+  that owns its key space does: a record inserted as `abc` is stored, and
+  reported back, as `client:abc`. It gives a test a driver that renames what it
+  is handed, without a real database.
+- `MockShell` reports the id it stored a record under in the vista's id column,
+  not in a literal `id` field, and its returning insert reports the same id its
+  by-id insert stores under. A caller that reads the id back off an insert now
+  gets one answer from both paths, whatever the id column is called.
+- Doc fix: `TableShell::get_ref_target` described the typed
+  `get_ref_target::<EmptyEntity>` a driver should forward into. That method is
+  gone; the erased `get_ref_target_erased` replaces it.
+
 ## 0.6.20 — 2026-07-30
 
 - `MockShell` serves windows and counts without copying the store. The obvious

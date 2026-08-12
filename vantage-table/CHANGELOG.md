@@ -1,7 +1,14 @@
 # Changelog
 
-## 0.6.15 — unreleased
+## 0.6.16 — 2026-08-12
 
+- **Bug fix:** `get_ref_target_erased` replaces the typed
+  `get_ref_target::<E2>`, which is removed. The typed form downcast the
+  relation's target to the entity type the caller named, so a relation declared
+  with a constructor that returns a typed table (`with_one("b", "b_id",
+  BEntity::table)`) failed with "Failed to downcast related table". The
+  traversal site cannot know the target's entity type, so the bare target is
+  always erased now.
 - `with_imported_column` / `add_imported_column` bring a column in over a
   dotted traversal of a related record. Additive: the projection keeps every
   column it already had, so importing one field no longer narrows the query.

@@ -5560,7 +5560,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5613,7 +5613,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5668,7 +5668,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5702,7 +5702,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5743,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.12.1"
+version = "0.12.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5847,7 +5847,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "bson",
@@ -5893,7 +5893,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.17"
+version = "0.6.18"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5921,7 +5921,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.14"
+version = "0.6.15"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5954,7 +5954,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6007,7 +6007,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.20"
+version = "0.6.21"
 dependencies = [
  "async-stream",
  "async-trait",
