@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-cd3ff698.js";
+            window.path_to_searchindex_js = "searchindex-8ddbe4c8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-8d4429da.js"></script>
@@ -7629,10 +7629,12 @@ the raw row forwards directly). The method comes from the <code>GetRefExt</code>
 <code>vantage-table</code>, with blanket implementations for both handles over any <code>TableSource</code>. The
 worked example (loading a record, traversing, inserting a child) lives in
 <a href="#traversing-from-a-loaded-record-get_ref">Records: Traversal, Invariants &amp; Hooks</a>.</p>
-<h2 id="the-bare-target-get_ref_target"><a class="header" href="#the-bare-target-get_ref_target">The bare target: <code>get_ref_target</code></a></h2>
+<h2 id="the-bare-target-get_ref_target_erased"><a class="header" href="#the-bare-target-get_ref_target_erased">The bare target: <code>get_ref_target_erased</code></a></h2>
 <p>Sometimes you want the relation’s target table with <em>no</em> condition at all —
-<code>Table::get_ref_target::&lt;E2&gt;(relation)</code> builds exactly that. Where the traversal forms narrow
-the target to related rows, <code>get_ref_target</code> hands you the table you’d insert a new related row
+<code>Table::get_ref_target_erased(relation)</code> builds exactly that. The target’s entity type is erased:
+a relation is built by a caller-supplied constructor, so the traversal site cannot name it.
+Where the traversal forms narrow
+the target to related rows, <code>get_ref_target_erased</code> hands you the table you’d insert a new related row
 into before any join value exists (this is what Vista’s nested insert uses).</p>
 <h2 id="contained-relations"><a class="header" href="#contained-relations">Contained relations</a></h2>
 <p>Some backends embed related data <em>inside</em> the row instead of linking to another table.
@@ -7698,7 +7700,7 @@ on the target.</li>
 built for embedding in the source’s SELECT.</li>
 <li><strong>Traverse from a loaded row or record</strong> with <code>get_ref_from_row</code> / <code>get_ref</code> — one
 eq-condition, supported by every backend.</li>
-<li><strong>Obtain a bare insert target</strong> with <code>get_ref_target</code> — the relation’s target with no
+<li><strong>Obtain a bare insert target</strong> with <code>get_ref_target_erased</code> — the relation’s target with no
 condition.</li>
 <li><strong>Declare embedded/contained relations</strong> on document stores with <code>with_contained_many</code>,
 where traversal is descent rather than a query.</li>
@@ -12358,11 +12360,11 @@ nothing rewires it into the Vista surface unless you write the glue (SQLite’s 
 <p><strong><code>get_ref</code> has a twin: <code>get_ref_target</code>.</strong> Where <code>get_ref</code> resolves a relation <em>for a known
 parent row</em> (join condition applied), <code>get_ref_target</code> builds the <strong>bare</strong> target — the same table
 with <strong>no</strong> condition. It has the same three-line shape, but calls the typed table’s
-<code>get_ref_target::&lt;EmptyEntity&gt;(relation)</code> instead of <code>get_ref_from_row</code>:</p>
+<code>get_ref_target_erased(relation)</code> instead of <code>get_ref_from_row</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>fn get_ref_target(&amp;self, relation: &amp;str) -&gt; Result&lt;Vista&gt; {
-    let target = self.table.get_ref_target::&lt;EmptyEntity&gt;(relation)?;
+    let target = self.table.get_ref_target_erased(relation)?;
     let factory = SqliteVistaFactory::new(self.table.data_source().clone());
     factory.from_table(target)
 }
