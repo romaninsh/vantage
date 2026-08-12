@@ -436,6 +436,12 @@ impl TableShell for MockShell {
             .map(|(k, v)| (k.clone(), v.clone())))
     }
 
+    /// Store the record and report it back carrying the key it landed
+    /// under. The key goes into the vista's id column, not a literal
+    /// `id` field: a caller that reads the id back off the returned
+    /// record — a cache settling a create, for one — reads the column the
+    /// metadata declares, so a mock configured with a different id column
+    /// must answer in that column too.
     async fn insert_vista_value(
         &self,
         _vista: &Vista,
@@ -447,8 +453,9 @@ impl TableShell for MockShell {
         if data.contains_key(&key) {
             return Err(vantage_core::error!("Record already exists", id = id));
         }
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
         let mut stored = record.clone();
-        stored.insert("id".to_string(), CborValue::Text(key.clone()));
+        stored.insert(id_field.to_string(), CborValue::Text(key.clone()));
         data.insert(key, stored.clone());
         Ok(stored)
     }
@@ -460,9 +467,10 @@ impl TableShell for MockShell {
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let key = self.key(id);
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
         let mut data = self.data.lock().unwrap();
         let mut stored = record.clone();
-        stored.insert("id".to_string(), CborValue::Text(key.clone()));
+        stored.insert(id_field.to_string(), CborValue::Text(key.clone()));
         data.insert(key, stored.clone());
         Ok(stored)
     }
@@ -499,6 +507,9 @@ impl TableShell for MockShell {
         Ok(())
     }
 
+    /// Insert and report the id the record is addressable by. That is the
+    /// store key, prefix included: the caller uses this id to read the row
+    /// back, so it must be the same id the by-id insert path stores under.
     async fn insert_vista_return_id_value(
         &self,
         vista: &Vista,
@@ -510,7 +521,7 @@ impl TableShell for MockShell {
             _ => self.next_auto_id(),
         };
         self.insert_vista_value(vista, &id, record).await?;
-        Ok(id)
+        Ok(self.key(&id))
     }
 
     /// Count without materializing: `list_vista_values` clones every matching
