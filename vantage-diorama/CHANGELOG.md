@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.1 — unreleased
+## 0.12.2 — 2026-08-12
 
 - **Bug fix:** a create settles on the id the driver stored it under. The
   optimistic layer staged the new row under the id the flash minted and threw

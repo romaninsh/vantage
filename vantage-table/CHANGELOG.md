@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.15 — unreleased
+## 0.6.16 — 2026-08-12
 
 - **Bug fix:** `get_ref_target_erased` replaces the typed
   `get_ref_target::<E2>`, which is removed. The typed form downcast the

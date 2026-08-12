@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.14 — unreleased
+## 0.6.15 — 2026-08-12
 
 - **Bug fix:** `SurrealTableShell::get_ref_target` resolves relations whose
   target constructor returns a typed table. It went through an entity-typed
