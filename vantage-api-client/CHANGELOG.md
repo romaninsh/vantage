@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.11 — 2026-08-16
+
+- GraphQL columns may be dotted paths. `run.commit.hash` groups into a nested
+  selection set at render time and flattens back to a dotted key on decode, so
+  a schema that nests its scalars needs no relation machinery to read them. A
+  null parent leaves the column present and null rather than missing.
+- `args:` renders literal root-field arguments — for a field whose input object
+  is non-null there was previously no way to query it at all. `response_path:`
+  locates the rows inside a Relay-style connection, and shapes the query as
+  well as the response, so the two can't drift apart.
+- Per-table `filter`/`order`/`search`/`paginate` declare what a root field
+  really accepts, defaulting to what the dialect implies. The shell implements
+  `add_op_condition`/`add_order`/`add_search`/`clear_*` and the factory
+  advertises the matching capabilities; previously every capability was left
+  false, so consumers sorted and searched in memory even against a Hasura
+  schema that could have done it server-side.
+- With `filter: false` — a root field that takes no arguments at all —
+  conditions are applied client-side over the decoded rows instead of being
+  dropped. Vista treats equality push-down as universal, so dropping them
+  silently widened results; rendering them produced a query the server
+  rejected. A filter shape that can't be evaluated row-wise now errors rather
+  than quietly matching everything.
+
 ## 0.6.10 — 2026-08-12
 
 - **Bug fix:** the REST and GraphQL `TableShell`s resolve relations whose target
