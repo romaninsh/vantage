@@ -48,6 +48,9 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
     if let Some(name) = api.filter_arg_name.clone() {
         select = select.with_filter_arg_name(name);
     }
+    if let Some(args) = api.root_args.clone() {
+        select = select.with_root_args(args);
+    }
 
     // Selection set
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -62,25 +65,33 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
         }
     }
 
-    // Conditions
-    for cond in table.conditions() {
-        select.conditions.push(cond.clone());
-    }
-
-    // Orders: GraphqlCondition's `Field` variant carries the column name.
-    for (cond, direction) in table.orders() {
-        if let GraphqlCondition::Field(fc) = cond {
-            let order = if matches!(direction, vantage_table::sorting::SortDirection::Ascending) {
-                Order::Asc
-            } else {
-                Order::Desc
-            };
-            select.sort.push((fc.field.clone(), order));
+    // Conditions, orders and pagination only reach the wire when the root
+    // field actually takes those arguments — otherwise they'd render a
+    // query the server rejects, and the consumer applies them locally.
+    if api.can_filter() {
+        for cond in table.conditions() {
+            select.conditions.push(cond.clone());
         }
     }
 
-    // Pagination
-    if let Some(pagination) = table.pagination() {
+    // Orders: GraphqlCondition's `Field` variant carries the column name.
+    if api.can_order() {
+        for (cond, direction) in table.orders() {
+            if let GraphqlCondition::Field(fc) = cond {
+                let order = if matches!(direction, vantage_table::sorting::SortDirection::Ascending)
+                {
+                    Order::Asc
+                } else {
+                    Order::Desc
+                };
+                select.sort.push((fc.field.clone(), order));
+            }
+        }
+    }
+
+    if api.can_paginate()
+        && let Some(pagination) = table.pagination()
+    {
         select.limit = Some(pagination.limit());
         select.skip = Some(pagination.skip());
     }
@@ -88,30 +99,75 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
     select
 }
 
+/// Walk `path` into the root field's value to reach the row array.
+///
+/// Each segment indexes an object, or maps over an array — so
+/// `["edges", "node"]` turns `{ edges: [{ node: … }] }` into `[…]`
+/// in one pass, which is every Relay-style connection.
+fn descend(value: &Value, path: &[String]) -> Value {
+    let Some((segment, rest)) = path.split_first() else {
+        return value.clone();
+    };
+    let stepped = match value {
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| item.get(segment.as_str()).cloned().unwrap_or(Value::Null))
+                .collect(),
+        ),
+        other => other.get(segment.as_str()).cloned().unwrap_or(Value::Null),
+    };
+    descend(&stepped, rest)
+}
+
+/// Resolve a dotted path against a row. A missing or null link yields
+/// `None`, so `run.commit.hash` on a run with no commit is absent rather
+/// than an error.
+fn pluck<'a>(row: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut cursor = row;
+    for segment in path.split('.') {
+        cursor = cursor.get(segment)?;
+    }
+    Some(cursor)
+}
+
 /// Convert a JSON row into `(Id, Record<AnyGraphqlType>)`. The id is
 /// stringified from whatever JSON shape the server returned — most
 /// schemas use `String` or numeric ids, both of which we coerce to
 /// `String` since that's our `Id` type.
-fn row_to_record(row: &Value, id_field: Option<&str>) -> Result<(String, Record<AnyGraphqlType>)> {
+fn row_to_record(
+    row: &Value,
+    fields: &[String],
+    id_field: Option<&str>,
+) -> Result<(String, Record<AnyGraphqlType>)> {
     let obj = row
         .as_object()
         .ok_or_else(|| error!("Expected JSON object for row", got = format!("{:?}", row)))?;
 
     let id = match id_field {
-        Some(field) => obj
-            .get(field)
+        Some(field) => pluck(row, field)
             .map(value_to_string)
             .ok_or_else(|| error!("Row missing id field", field = field.to_string()))?,
         // No id field declared — fall back to "id" then to a stringified row index later.
-        None => obj.get("id").map(value_to_string).unwrap_or_default(),
+        None => pluck(row, "id").map(value_to_string).unwrap_or_default(),
     };
 
-    let mut fields: IndexMap<String, AnyGraphqlType> = IndexMap::new();
-    for (k, v) in obj {
-        fields.insert(k.clone(), AnyGraphqlType::untyped(v.clone()));
+    // Each declared path becomes a dotted key, so a nested scalar reads as
+    // an ordinary flat column and a null parent still leaves the column
+    // present (as null) rather than missing.
+    let mut out: IndexMap<String, AnyGraphqlType> = IndexMap::new();
+    if fields.is_empty() {
+        for (k, v) in obj {
+            out.insert(k.clone(), AnyGraphqlType::untyped(v.clone()));
+        }
+    } else {
+        for path in fields {
+            let value = pluck(row, path).cloned().unwrap_or(Value::Null);
+            out.insert(path.clone(), AnyGraphqlType::untyped(value));
+        }
     }
 
-    Ok((id, Record::from_indexmap(fields)))
+    Ok((id, Record::from_indexmap(out)))
 }
 
 fn value_to_string(v: &Value) -> String {
@@ -224,9 +280,10 @@ impl TableSource for GraphqlApi {
                 field = root.to_string()
             )
         })?;
+        let rows = descend(rows, table.data_source().response_path());
 
         let arr = match rows {
-            Value::Array(a) => a.clone(),
+            Value::Array(a) => a,
             Value::Null => Vec::new(),
             other => {
                 return Err(error!(
@@ -240,7 +297,7 @@ impl TableSource for GraphqlApi {
         let id_name = table.id_field().map(|c| c.name().to_string());
         let mut out = IndexMap::with_capacity(arr.len());
         for (idx, row) in arr.iter().enumerate() {
-            let (mut id, rec) = row_to_record(row, id_name.as_deref())?;
+            let (mut id, rec) = row_to_record(row, &select.fields, id_name.as_deref())?;
             if id.is_empty() {
                 id = idx.to_string();
             }
@@ -281,12 +338,13 @@ impl TableSource for GraphqlApi {
                 field = root.to_string()
             )
         })?;
+        let rows = descend(rows, table.data_source().response_path());
 
         let arr = match rows {
-            Value::Array(a) => a.clone(),
+            Value::Array(a) => a,
             Value::Null => return Ok(None),
             // Some `byId`-style root fields return a single object instead of an array.
-            Value::Object(_) => vec![rows.clone()],
+            obj @ Value::Object(_) => vec![obj],
             other => {
                 return Err(error!(
                     "Unexpected response shape for get",
@@ -296,7 +354,7 @@ impl TableSource for GraphqlApi {
         };
         match arr.into_iter().next() {
             Some(row) => {
-                let (_id, rec) = row_to_record(&row, Some(&id_name))?;
+                let (_id, rec) = row_to_record(&row, &select.fields, Some(&id_name))?;
                 Ok(Some(rec))
             }
             None => Ok(None),
@@ -654,7 +712,7 @@ mod tests {
     #[test]
     fn row_to_record_extracts_id_and_fields() {
         let row = json!({ "id": "5", "mission_name": "FalconSat", "launch_year": 2006 });
-        let (id, rec) = row_to_record(&row, Some("id")).unwrap();
+        let (id, rec) = row_to_record(&row, &[], Some("id")).unwrap();
         assert_eq!(id, "5");
         assert_eq!(rec.iter().count(), 3);
     }
@@ -662,7 +720,7 @@ mod tests {
     #[test]
     fn row_to_record_stringifies_numeric_id() {
         let row = json!({ "id": 42, "name": "x" });
-        let (id, _rec) = row_to_record(&row, Some("id")).unwrap();
+        let (id, _rec) = row_to_record(&row, &[], Some("id")).unwrap();
         assert_eq!(id, "42");
     }
 
@@ -734,5 +792,79 @@ mod tests {
         };
         let r = cond.render(FilterDialect::Generic).await.unwrap();
         assert_eq!(r, json!({ "launch_id": 7 }));
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use super::*;
+    use serde_json::json;
+    use vantage_types::EmptyEntity;
+
+    use crate::graphql::types::GraphqlType as _;
+
+    fn paths(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn descend_unwraps_a_relay_connection() {
+        let payload = json!({
+            "total": 2,
+            "edges": [{ "node": { "run": { "id": "a" } } }, { "node": { "run": { "id": "b" } } }]
+        });
+        let rows = descend(&payload, &paths(&["edges", "node"]));
+        assert_eq!(
+            rows,
+            json!([{ "run": { "id": "a" } }, { "run": { "id": "b" } }])
+        );
+    }
+
+    #[test]
+    fn descend_with_an_empty_path_is_the_identity() {
+        let payload = json!([{ "id": "a" }]);
+        assert_eq!(descend(&payload, &[]), payload);
+    }
+
+    #[test]
+    fn declared_paths_become_dotted_columns() {
+        let row = json!({ "run": { "id": "a", "commit": { "hash": "deadbeef" } }, "stack": { "id": "api-uat" } });
+        let fields = paths(&["run.id", "run.commit.hash", "stack.id"]);
+        let (id, rec) = row_to_record(&row, &fields, Some("run.id")).unwrap();
+        assert_eq!(id, "a");
+        assert_eq!(
+            rec.get("run.commit.hash").map(|v| v.to_json()),
+            Some(json!("deadbeef"))
+        );
+        assert_eq!(
+            rec.get("stack.id").map(|v| v.to_json()),
+            Some(json!("api-uat"))
+        );
+    }
+
+    #[test]
+    fn a_null_parent_leaves_the_column_present_and_null() {
+        let row = json!({ "run": { "id": "a", "commit": null } });
+        let fields = paths(&["run.id", "run.commit.hash"]);
+        let (_id, rec) = row_to_record(&row, &fields, Some("run.id")).unwrap();
+        assert_eq!(
+            rec.get("run.commit.hash").map(|v| v.to_json()),
+            Some(json!(null))
+        );
+    }
+
+    #[test]
+    fn conditions_stay_local_when_the_root_field_takes_no_filter() {
+        let api = GraphqlApi::builder("https://api.test/graphql")
+            .supports(crate::graphql::api::Supports {
+                filter: Some(false),
+                ..Default::default()
+            })
+            .build();
+        let mut table = Table::<GraphqlApi, EmptyEntity>::new("stacks", api).with_id_column("id");
+        table.add_condition(GraphqlCondition::Field(
+            crate::graphql::condition::FieldCondition::new("space", GraphqlOp::Eq, json!("root")),
+        ));
+        assert!(select_from_table(&table).conditions.is_empty());
     }
 }

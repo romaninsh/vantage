@@ -35,6 +35,13 @@ impl GraphqlSelect {
         self
     }
 
+    /// Literal arguments always passed to the root field. Expects a JSON
+    /// object; anything else is ignored at render time.
+    pub fn with_root_args(mut self, args: serde_json::Value) -> Self {
+        self.root_args = Some(args);
+        self
+    }
+
     /// Add a sub-selection — used for nested relationships in Phase 6.
     pub fn with_sub_selection(mut self, name: impl Into<String>, child: GraphqlSelect) -> Self {
         self.sub_selections.push((name.into(), child));
