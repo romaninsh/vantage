@@ -4,6 +4,9 @@
 
 - `SurrealTableShell` implements `preview_query`, returning the SurrealQL SELECT
   with conditions, ordering and page size applied.
+- `SurrealTableShell::preview_query` reports the shell's `page_size`. It is
+  consumed by `fetch_page`/`fetch_next` rather than by the statement, so it is
+  named separately instead of folded into a `LIMIT` a plain list never sends.
 
 ## 0.6.15 — 2026-08-12
 

@@ -5,6 +5,8 @@
 - `AggregateShell` implements `preview_query`, recording that an aggregate is
   derived in memory from its source Dio's cached rows and costs no request of its
   own.
+- `AggregateShell::preview_query` reports the active order alongside its
+  conditions and search.
 
 ## 0.6.6 — 2026-07-30
 

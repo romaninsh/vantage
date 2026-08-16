@@ -197,22 +197,30 @@ impl TableShell for DioShell {
 
     /// A facade read hits the local cache, not a backend — so the query worth
     /// seeing is the **master's**, which is what filled that cache in the first
-    /// place. It is reported verbatim under `master`, alongside this handle's
-    /// own narrowing, which is applied to the cached rows and never sent
-    /// anywhere.
+    /// place.
     ///
-    /// The two are deliberately not merged: a condition on the facade and the
-    /// same condition on the master are different operations with different
-    /// costs, and flattening them would suggest the filter reached the server.
+    /// Which clauses that master carries is not a given: [`plan`](DioShell::plan)
+    /// offers each one to a private clone and keeps whatever it accepts, so the
+    /// same condition is a server-side filter against one driver and an
+    /// in-memory one against the next. The preview therefore reports the
+    /// **planned** master, and lists under `facade` only what the master
+    /// refused. Reporting the bare master and every clause as local would put
+    /// pushed-down filters in the wrong column — lossy is acceptable here,
+    /// wrong is not.
     fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-        let master = self.dio.master.read().unwrap();
-        let conditions: Vec<String> = self
-            .query
+        let (planned, local) = self.plan();
+        let master = match &planned {
+            Some(narrowed) => narrowed.preview_query(),
+            // Nothing pushed down: the master runs unnarrowed.
+            None => self.dio.master.read().unwrap().preview_query(),
+        };
+
+        let conditions: Vec<String> = local
             .conditions
             .iter()
             .map(|(field, value)| format!("{field} = {value:?}"))
             .collect();
-        let order = self.query.order.as_ref().map(|(col, dir)| {
+        let order = local.order.as_ref().map(|(col, dir)| {
             let dir = match dir {
                 SortDirection::Ascending => "asc",
                 SortDirection::Descending => "desc",
@@ -223,9 +231,10 @@ impl TableShell for DioShell {
         serde_json::json!({
             "driver": "dio",
             "note": "reads come from the local cache; this issues no query of \
-                     its own. `master` is the query that populates that cache; \
-                     `facade` is applied to the cached rows in memory.",
-            "master": master.preview_query(),
+                     its own. `master` is the query that populates that cache, \
+                     carrying every clause the driver accepted; `facade` is what \
+                     it refused, applied to the cached rows in memory.",
+            "master": master,
             "facade": { "conditions": conditions, "order": order },
         })
     }

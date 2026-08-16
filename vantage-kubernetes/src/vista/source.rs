@@ -290,6 +290,9 @@ impl TableShell for KubeTableShell {
             "driver": "kubernetes",
             "collection": self.table.table_name(),
             "client_side": { "search": self.search, "order": orders },
+            // Shell-owned, and consumed by fetch_page/fetch_next rather than by
+            // the listing itself — so it is reported rather than folded in.
+            "page_size": self.page_size,
             "note": "the collection is listed through the Kubernetes API; search \
                      and ordering are applied to the returned rows in memory",
         })

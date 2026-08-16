@@ -288,10 +288,30 @@ impl RestApi {
     ) -> serde_json::Value {
         let conds: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
 
+        // Conditions the query-param lowering cannot peel into an eq pair —
+        // deferred foreign keys, and anything else not shaped `field = value`.
+        let unresolved = conds
+            .iter()
+            .filter(|c| crate::condition_to_query_param(c).is_none())
+            .count();
+
         let (endpoint, consumed) = match self.endpoint_url(table_name, &conds) {
             Ok(pair) => pair,
-            // A URI template with no matching condition fails here exactly as
-            // it would on a real fetch — which makes it the useful answer.
+            // A URI template placeholder went unfilled. If some condition is
+            // still unresolved, the real fetch would have awaited it *before*
+            // building the path, so this is a preview limitation and the
+            // template is the honest answer. With nothing outstanding, the
+            // fetch would fail here too — report that.
+            Err(_) if unresolved > 0 => {
+                return serde_json::json!({
+                    "driver": "rest-api",
+                    "method": "GET",
+                    "url": format!("{}/{}", self.base_url, table_name),
+                    "unresolved_conditions": unresolved,
+                    "note": "path placeholders are filled from conditions resolved \
+                             at fetch time; the template is shown unfilled",
+                });
+            }
             Err(e) => {
                 return serde_json::json!({
                     "driver": "rest-api",
@@ -315,10 +335,6 @@ impl RestApi {
             };
 
         let query = self.build_query_string(window, &conds, &query_consumed);
-        let deferred = conds
-            .iter()
-            .filter(|c| crate::condition_to_query_param(c).is_none())
-            .count();
 
         serde_json::json!({
             "driver": "rest-api",
@@ -331,7 +347,7 @@ impl RestApi {
                 .into_iter()
                 .map(|(k, v)| format!("{k}={v}"))
                 .collect::<Vec<_>>(),
-            "deferred_conditions": deferred,
+            "unresolved_conditions": unresolved,
         })
     }
 

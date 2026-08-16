@@ -86,9 +86,22 @@ pub async fn run_script(
 /// table("orders").get_ref("client", #{ id: "42" })
 /// ```
 ///
-/// Synchronous throughout: the resolver builds vistas without fetching, and
-/// [`TableShell::preview_query`](crate::TableShell::preview_query) is
-/// contractually I/O-free. Returns the driver-shaped JSON that method produced.
+/// Returns the driver-shaped JSON that
+/// [`TableShell::preview_query`](crate::TableShell::preview_query) produced.
+///
+/// # What is and isn't guaranteed
+///
+/// What this enforces is that **no terminal fetch verb exists** on the engine,
+/// and `preview_query` is contractually I/O-free. What it does *not* enforce is
+/// the behaviour of the two things the caller supplies: the `resolver`, and
+/// whatever `get_ref` does inside a driver. Both are ordinary sync functions
+/// that construct a vista rather than read one, and neither can await — but
+/// neither is prevented from blocking on something either.
+///
+/// So: a preview script cannot *fetch the set it describes*. That is the useful
+/// guarantee, and it is structural. "Nothing at all leaves the process" would be
+/// a stronger claim than the types support, and is only as true as the resolver
+/// handed in.
 pub fn preview_script(
     script: String,
     resolver: TargetResolver,
@@ -303,10 +316,7 @@ mod tests {
     #[test]
     fn preview_of_a_non_query_explains_itself() {
         let err = preview_script(r#""just a string""#.into(), resolver()).unwrap_err();
-        assert!(
-            err.contains("must end on the query itself"),
-            "got: {err}"
-        );
+        assert!(err.contains("must end on the query itself"), "got: {err}");
     }
 
     #[test]

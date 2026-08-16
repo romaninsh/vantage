@@ -10,6 +10,10 @@
   server under `FilterStrategy::Client` are reported separately as
   `client_side_filters` — the difference between a filter you configured and a
   filter the API applies.
+- `RestApiTableShell::preview_query` no longer collapses to an error when a URI
+  template placeholder is filled by a condition that resolves at fetch time. The
+  real fetch awaits those before building the path; the preview cannot, so it
+  shows the unfilled template and counts them under `unresolved_conditions`.
 
 ## 0.6.11 — 2026-08-16
 

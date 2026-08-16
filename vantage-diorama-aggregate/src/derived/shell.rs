@@ -146,6 +146,13 @@ impl TableShell for AggregateShell {
             .iter()
             .map(|(field, value)| format!("{field} = {value:?}"))
             .collect();
+        let order = self.order.as_ref().map(|(column, dir)| {
+            let dir = match dir {
+                SortDirection::Ascending => "asc",
+                SortDirection::Descending => "desc",
+            };
+            format!("{column} {dir}")
+        });
         serde_json::json!({
             "driver": "aggregate",
             "name": vista.name(),
@@ -153,6 +160,7 @@ impl TableShell for AggregateShell {
                      query, no request. Preview the source table to see what \
                      fetches the rows this reduces.",
             "conditions": conditions,
+            "order": order,
             "search": self.search,
         })
     }
