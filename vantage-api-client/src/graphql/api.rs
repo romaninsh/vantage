@@ -28,6 +28,78 @@ pub struct GraphqlApi {
     auth_header: Option<String>,
     pub(crate) dialect: FilterDialect,
     pub(crate) filter_arg_name: Option<String>,
+    pub(crate) root_args: Option<Value>,
+    pub(crate) response_path: Vec<String>,
+    pub(crate) supports: Supports,
+}
+
+/// Per-table overrides for what the server will actually accept, each
+/// `None` meaning "use the dialect's default".
+///
+/// These exist because a GraphQL endpoint is not uniform: on one schema
+/// the list field takes `where`/`order_by`/`limit`, on the next it takes
+/// no arguments at all. Spacelift's `stacks` is the second kind, and
+/// pushing a filter at it renders a query the server rejects outright —
+/// so this is what stops equality push-down, which Vista otherwise
+/// assumes every driver supports.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Supports {
+    pub filter: Option<bool>,
+    pub order: Option<bool>,
+    pub search: Option<bool>,
+    pub paginate: Option<bool>,
+}
+
+impl GraphqlApi {
+    /// Whether conditions may be pushed into the query. Defaults to true —
+    /// most list fields take some filter argument.
+    pub fn can_filter(&self) -> bool {
+        self.supports.filter.unwrap_or(true)
+    }
+
+    /// Whether `order_by:` may be rendered. Only Hasura has a spelling for
+    /// it today, so Generic defaults to sorting client-side.
+    pub fn can_order(&self) -> bool {
+        self.supports
+            .order
+            .unwrap_or(matches!(self.dialect, FilterDialect::Hasura))
+    }
+
+    /// Whether a quicksearch renders as an OR of `_ilike`s. Same story as
+    /// ordering: Hasura only. A search *is* a condition, so it also needs
+    /// filter push-down to be on.
+    pub fn can_search(&self) -> bool {
+        self.can_filter()
+            && self
+                .supports
+                .search
+                .unwrap_or(matches!(self.dialect, FilterDialect::Hasura))
+    }
+
+    /// Whether operators richer than equality can be rendered. Generic
+    /// rejects them at render time, so only Hasura qualifies.
+    pub fn can_filter_operators(&self) -> bool {
+        self.can_filter() && matches!(self.dialect, FilterDialect::Hasura)
+    }
+
+    /// Whether `limit:`/`offset:` may be rendered. Off by default: a
+    /// schema that doesn't take them turns every query into an error, and
+    /// the cost of not paging is one extra round of rows.
+    pub fn can_paginate(&self) -> bool {
+        self.supports.paginate.unwrap_or(false)
+    }
+
+    /// Path walked into the root field's value before rows are read —
+    /// `["edges", "node"]` for a Relay-style connection. Empty means the
+    /// root field's value is the row array itself.
+    pub fn response_path(&self) -> &[String] {
+        &self.response_path
+    }
+
+    /// Literal arguments always passed to the root field.
+    pub fn root_args(&self) -> Option<&Value> {
+        self.root_args.as_ref()
+    }
 }
 
 impl GraphqlApi {
@@ -127,6 +199,9 @@ pub struct GraphqlApiBuilder {
     auth_header: Option<String>,
     dialect: FilterDialect,
     filter_arg_name: Option<String>,
+    root_args: Option<Value>,
+    response_path: Vec<String>,
+    supports: Supports,
 }
 
 impl GraphqlApiBuilder {
@@ -137,7 +212,30 @@ impl GraphqlApiBuilder {
             auth_header: None,
             dialect: FilterDialect::Generic,
             filter_arg_name: None,
+            root_args: None,
+            response_path: Vec::new(),
+            supports: Supports::default(),
         }
+    }
+
+    /// Literal arguments always passed to the root field, e.g.
+    /// `json!({ "input": {} })` for a mandatory non-null input object.
+    pub fn root_args(mut self, args: Value) -> Self {
+        self.root_args = Some(args);
+        self
+    }
+
+    /// Dotted path walked into the root field's value before rows are
+    /// read — `"edges.node"` unwraps a Relay-style connection.
+    pub fn response_path(mut self, path: impl AsRef<str>) -> Self {
+        self.response_path = split_response_path(path.as_ref());
+        self
+    }
+
+    /// Override what the server accepts; see [`Supports`].
+    pub fn supports(mut self, supports: Supports) -> Self {
+        self.supports = supports;
+        self
     }
 
     /// Set the `Authorization` header value (e.g. `"Bearer <token>"`).
@@ -174,8 +272,20 @@ impl GraphqlApiBuilder {
             auth_header: self.auth_header,
             dialect: self.dialect,
             filter_arg_name: self.filter_arg_name,
+            root_args: self.root_args,
+            response_path: self.response_path,
+            supports: self.supports,
         }
     }
+}
+
+/// Split a dotted response path, dropping empty segments so a stray
+/// leading or trailing dot doesn't produce a lookup for `""`.
+pub(crate) fn split_response_path(path: &str) -> Vec<String> {
+    path.split('.')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 #[cfg(test)]

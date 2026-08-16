@@ -51,6 +51,31 @@ pub struct GraphqlBlock {
     /// Falls back to the dialect default if absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter_arg: Option<String>,
+
+    /// Literal arguments always passed to the root field, e.g.
+    /// `args: { input: {} }` for Spacelift's `searchRuns(input:
+    /// SearchInput!)` — a non-null argument the query is invalid without.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
+
+    /// Dotted path walked into the root field's value to reach the rows.
+    /// `edges.node` unwraps a Relay-style connection; omit it when the
+    /// root field returns the array directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_path: Option<String>,
+
+    /// What this root field will actually accept. Each is `None` by
+    /// default, meaning "whatever the dialect implies" — set one only to
+    /// contradict that. A field taking no arguments at all needs
+    /// `filter: false`, or every narrowing renders a rejected query.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paginate: Option<bool>,
 }
 
 /// Per-column block — flattens into `ColumnSpec`. Optional today;

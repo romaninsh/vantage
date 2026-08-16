@@ -47,6 +47,11 @@ impl GraphqlApiVistaFactory {
     {
         let name = table.table_name().to_string();
         let metadata = metadata_from_table(&table);
+        // Advertise what this table's root field will actually accept, so a
+        // consumer either pushes the work to the server or does it locally —
+        // rather than the old blanket "nothing is supported", which had every
+        // grid sorting in memory even against a Hasura schema that could.
+        let api = table.data_source().clone();
         let any_table = table.into_entity::<EmptyEntity>();
 
         let source = GraphqlApiTableShell::new(
@@ -54,6 +59,10 @@ impl GraphqlApiVistaFactory {
             VistaCapabilities {
                 can_count: true,
                 can_traverse_to_record: true,
+                can_order: api.can_order(),
+                can_search: api.can_search(),
+                can_filter_operators: api.can_filter_operators(),
+                can_set_page_size: api.can_paginate(),
                 ..VistaCapabilities::default()
             },
             metadata,
@@ -86,6 +95,18 @@ impl GraphqlApiVistaFactory {
             if let Some(arg) = block.filter_arg.clone() {
                 api.filter_arg_name = Some(arg);
             }
+            if let Some(args) = block.args.clone() {
+                api.root_args = Some(args);
+            }
+            if let Some(path) = block.response_path.as_deref() {
+                api.response_path = crate::graphql::api::split_response_path(path);
+            }
+            api.supports = crate::graphql::api::Supports {
+                filter: block.filter,
+                order: block.order,
+                search: block.search,
+                paginate: block.paginate,
+            };
         }
 
         let root_field = spec
@@ -401,5 +422,56 @@ graphql:
             api.vista_factory().build_from_spec(spec),
             "Unknown filter dialect",
         );
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+    use crate::graphql::api::GraphqlApi;
+
+    fn vista_from(yaml: &str) -> vantage_vista::Vista {
+        let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+        GraphqlApi::new("https://api.test/graphql")
+            .vista_factory()
+            .build_from_spec(spec)
+            .unwrap()
+    }
+
+    /// A generic-dialect table can't spell `order_by` or `_ilike`, so it
+    /// must say so and let the consumer sort and search locally.
+    #[test]
+    fn generic_dialect_advertises_client_side_sort_and_search() {
+        let vista = vista_from(
+            "name: launches\ncolumns:\n  id:\n    type: string\n    flags: [id]\ngraphql:\n  dialect: generic\n",
+        );
+        let caps = vista.capabilities();
+        assert!(!caps.can_order);
+        assert!(!caps.can_search);
+        assert!(!caps.can_filter_operators);
+    }
+
+    /// Hasura can, so the same table on that dialect pushes the work down.
+    #[test]
+    fn hasura_dialect_advertises_server_side_sort_and_search() {
+        let vista = vista_from(
+            "name: launches\ncolumns:\n  id:\n    type: string\n    flags: [id]\ngraphql:\n  dialect: hasura\n",
+        );
+        let caps = vista.capabilities();
+        assert!(caps.can_order);
+        assert!(caps.can_search);
+        assert!(caps.can_filter_operators);
+    }
+
+    /// `filter: false` is for a root field that takes no arguments at all;
+    /// nothing derived from a condition may be advertised.
+    #[test]
+    fn filter_false_disables_everything_condition_shaped() {
+        let vista = vista_from(
+            "name: stacks\ncolumns:\n  id:\n    type: string\n    flags: [id]\ngraphql:\n  dialect: hasura\n  filter: false\n",
+        );
+        let caps = vista.capabilities();
+        assert!(!caps.can_search);
+        assert!(!caps.can_filter_operators);
     }
 }

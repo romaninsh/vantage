@@ -10,9 +10,10 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::column::core::Column;
+use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
@@ -24,11 +25,15 @@ use crate::graphql::api::GraphqlApi;
 use crate::graphql::operation::GraphqlOperation;
 use crate::graphql::types::AnyGraphqlType;
 use crate::graphql::vista::factory::GraphqlApiVistaFactory;
+use vantage_table::traits::table_source::TableSource as _;
 
 pub struct GraphqlApiTableShell {
     pub(crate) table: Table<GraphqlApi, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
+    /// Handle for the quicksearch condition, so the next `add_search`
+    /// replaces it rather than stacking another OR-of-ilikes on top.
+    search_handle: Option<vantage_table::conditions::ConditionHandle>,
 }
 
 impl GraphqlApiTableShell {
@@ -41,6 +46,7 @@ impl GraphqlApiTableShell {
             table,
             capabilities,
             metadata,
+            search_handle: None,
         }
     }
 
@@ -112,6 +118,91 @@ impl TableShell for GraphqlApiTableShell {
         let native = AnyGraphqlType::from(value.clone());
         let condition = Column::<AnyGraphqlType>::new(field).eq(native);
         self.table.add_condition(condition);
+        Ok(())
+    }
+
+    fn add_op_condition(
+        &mut self,
+        field: &str,
+        op: vantage_vista::FilterOp,
+        value: &CborValue,
+    ) -> Result<()> {
+        use vantage_vista::FilterOp;
+        let column = Column::<AnyGraphqlType>::new(field);
+        // Whether a given operator has a spelling is the dialect's call,
+        // made at render time — Generic rejects everything but equality.
+        let condition = match op {
+            FilterOp::InSet | FilterOp::NotInSet => {
+                let items: Vec<AnyGraphqlType> = match value {
+                    CborValue::Array(items) => {
+                        items.iter().cloned().map(AnyGraphqlType::from).collect()
+                    }
+                    single => vec![AnyGraphqlType::from(single.clone())],
+                };
+                if matches!(op, FilterOp::InSet) {
+                    column.in_(items)
+                } else {
+                    column.not_in(items)
+                }
+            }
+            scalar_op => {
+                let native = AnyGraphqlType::from(value.clone());
+                match scalar_op {
+                    FilterOp::Eq => column.eq(native),
+                    FilterOp::Ne => column.ne(native),
+                    FilterOp::Gt => column.gt(native),
+                    FilterOp::Gte => column.gte(native),
+                    FilterOp::Lt => column.lt(native),
+                    FilterOp::Lte => column.lte(native),
+                    FilterOp::InSet | FilterOp::NotInSet => unreachable!("handled above"),
+                }
+            }
+        };
+        self.table.add_condition(condition);
+        Ok(())
+    }
+
+    fn add_order(&mut self, field: &str, dir: vantage_vista::SortDirection) -> Result<()> {
+        if !self.table.columns().contains_key(field) {
+            return Err(error!("Unknown column for add_order", field = field));
+        }
+        // Vista's add_order is replace-semantics.
+        self.table.clear_orders();
+        // The table's order list is typed as conditions, and the renderer
+        // reads the column name back out of the `Field` variant — so an
+        // eq-condition on the column is how an order carries its field.
+        // The value is never rendered.
+        let expression = Column::<AnyGraphqlType>::new(field).eq(field);
+        let direction = match dir {
+            vantage_vista::SortDirection::Ascending => SortDirection::Ascending,
+            vantage_vista::SortDirection::Descending => SortDirection::Descending,
+        };
+        self.table.add_order(OrderBy {
+            expression,
+            direction,
+        });
+        Ok(())
+    }
+
+    fn clear_orders(&mut self) -> Result<()> {
+        self.table.clear_orders();
+        Ok(())
+    }
+
+    fn add_search(&mut self, text: &str) -> Result<()> {
+        if let Some(handle) = self.search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
+        let api = self.table.data_source().clone();
+        let condition = api.search_table_condition(&self.table, text);
+        self.search_handle = Some(self.table.temp_add_condition(condition));
+        Ok(())
+    }
+
+    fn clear_search(&mut self) -> Result<()> {
+        if let Some(handle) = self.search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
         Ok(())
     }
 

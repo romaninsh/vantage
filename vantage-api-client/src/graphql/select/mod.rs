@@ -31,9 +31,19 @@ pub struct GraphqlSelect {
     pub root_field: Option<String>,
     /// Optional operation name (e.g. `query GetLaunches { … }`).
     pub operation_name: Option<String>,
-    /// Selected scalar fields. Empty = use the schema's id field as a
-    /// fallback so we at least get *something* back.
+    /// Selected fields. A dotted path (`run.commit.hash`) groups into a
+    /// nested selection set at render time, so a schema that nests its
+    /// scalars needs no relation machinery to read them.
     pub fields: Vec<String>,
+    /// Literal arguments always passed to the root field — the mandatory
+    /// `input: {}` on Spacelift's `searchRuns(input: SearchInput!)`, say.
+    /// Rendered inline alongside any filter/pagination arguments.
+    pub root_args: Option<serde_json::Value>,
+    /// Envelope the rows sit inside, e.g. `["edges", "node"]` for a Relay
+    /// connection. The selection set is wrapped in these on the way out
+    /// and the response is unwrapped through them on the way back, so the
+    /// two can never drift apart.
+    pub response_path: Vec<String>,
     /// Nested selection sets for relationship traversal. Built up by
     /// the Phase 6 `with_many`/`with_one` paths.
     pub sub_selections: Vec<(String, GraphqlSelect)>,
@@ -76,6 +86,8 @@ impl Default for GraphqlSelect {
             root_field: None,
             operation_name: None,
             fields: Vec::new(),
+            root_args: None,
+            response_path: Vec::new(),
             sub_selections: Vec::new(),
             conditions: Vec::new(),
             sort: Vec::new(),

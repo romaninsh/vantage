@@ -37,6 +37,15 @@ impl GraphqlSelect {
         let mut var_decls: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
 
+        // ── Literal root arguments ───────────────────────────────
+        // First, so a mandatory `input:` reads before the filter it
+        // often has nothing to do with.
+        if let Some(Value::Object(map)) = &self.root_args {
+            for (name, value) in map {
+                args.push(format!("{}: {}", name, json_to_graphql_value(value)));
+            }
+        }
+
         // ── Filter (inline) ──────────────────────────────────────
         if !self.conditions.is_empty() {
             let combined = if self.conditions.len() == 1 {
@@ -83,7 +92,12 @@ impl GraphqlSelect {
         }
 
         // ── Selection set ────────────────────────────────────────
-        let selection_set = render_selection_set(self).await?;
+        // Wrapped in the response envelope, so the query asks for rows
+        // exactly where the decoder will look for them.
+        let mut selection_set = render_selection_set(self).await?;
+        for segment in self.response_path.iter().rev() {
+            selection_set = format!("{{ {} {} }}", segment, selection_set);
+        }
 
         // ── Assemble document ────────────────────────────────────
         let op_name = self.operation_name.as_deref().unwrap_or("");
@@ -155,13 +169,65 @@ fn render_selection_set<'a>(
                 root = select.root_field.clone().unwrap_or_default()
             ));
         }
-        let mut parts: Vec<String> = select.fields.clone();
+        let mut parts = FieldTree::from_paths(&select.fields).into_parts();
         for (field, child) in &select.sub_selections {
             let inner = render_inline_subselection(child).await?;
             parts.push(format!("{}{}", field, inner));
         }
         Ok(format!("{{ {} }}", parts.join(" ")))
     })
+}
+
+/// Dotted field paths grouped back into the tree GraphQL wants:
+/// `["run.id", "run.state", "isModule"]` → `run { id state } isModule`.
+///
+/// Insertion order is preserved at every level, so the rendered query
+/// reads in the order the columns were declared. A path that is both a
+/// leaf and a parent (`run` alongside `run.id`) renders as the parent —
+/// selecting an object without a sub-selection is invalid GraphQL anyway.
+#[derive(Default)]
+struct FieldTree {
+    children: Vec<(String, FieldTree)>,
+}
+
+impl FieldTree {
+    fn from_paths<S: AsRef<str>>(paths: &[S]) -> Self {
+        let mut root = FieldTree::default();
+        for path in paths {
+            root.insert(path.as_ref());
+        }
+        root
+    }
+
+    fn insert(&mut self, path: &str) {
+        let (head, rest) = match path.split_once('.') {
+            Some((head, rest)) => (head, Some(rest)),
+            None => (path, None),
+        };
+        let at = match self.children.iter().position(|(name, _)| name == head) {
+            Some(at) => at,
+            None => {
+                self.children.push((head.to_string(), FieldTree::default()));
+                self.children.len() - 1
+            }
+        };
+        if let Some(rest) = rest {
+            self.children[at].1.insert(rest);
+        }
+    }
+
+    fn into_parts(self) -> Vec<String> {
+        self.children
+            .into_iter()
+            .map(|(name, child)| {
+                if child.children.is_empty() {
+                    name
+                } else {
+                    format!("{} {{ {} }}", name, child.into_parts().join(" "))
+                }
+            })
+            .collect()
+    }
 }
 
 /// Render a sub-selection (a child of a parent's selection set). Args
@@ -398,5 +464,67 @@ mod tests {
         let v = json!({ "mission_name": "FalconSat", "year": 2006 });
         let rendered = json_to_graphql_value(&v);
         assert_eq!(rendered, "{mission_name: \"FalconSat\", year: 2006}");
+    }
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn dotted_fields_group_into_nested_selections() {
+        let q = GraphqlSelect::new()
+            .with_root_field("searchRuns")
+            .with_field("run.id")
+            .with_field("run.state")
+            .with_field("run.commit.hash")
+            .with_field("stack.id")
+            .with_field("isModule")
+            .render()
+            .await
+            .unwrap();
+        assert_eq!(
+            q.query,
+            "query { searchRuns { run { id state commit { hash } } stack { id } isModule } }"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_args_render_before_the_filter() {
+        let q = GraphqlSelect::new()
+            .with_root_field("searchRuns")
+            .with_root_args(json!({ "input": {} }))
+            .with_field("run.id")
+            .render()
+            .await
+            .unwrap();
+        assert_eq!(q.query, "query { searchRuns(input: {}) { run { id } } }");
+    }
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The envelope has to shape the query too — asking for `run` at the
+    /// root of a connection field is a server-side error, and the decoder
+    /// would then be reading a path the query never selected.
+    #[tokio::test]
+    async fn response_path_wraps_the_selection_set() {
+        let q = GraphqlSelect::new()
+            .with_root_field("searchRuns")
+            .with_root_args(json!({ "input": {} }))
+            .with_response_path(vec!["edges".into(), "node".into()])
+            .with_field("run.id")
+            .with_field("stack.id")
+            .render()
+            .await
+            .unwrap();
+        assert_eq!(
+            q.query,
+            "query { searchRuns(input: {}) { edges { node { run { id } stack { id } } } } }"
+        );
     }
 }

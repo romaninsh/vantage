@@ -26,10 +26,10 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::graphql::api::GraphqlApi;
-use crate::graphql::condition::{GraphqlCondition, GraphqlOp};
+use crate::graphql::condition::{FieldCondition, GraphqlCondition, GraphqlOp};
 use crate::graphql::operation::GraphqlOperation;
 use crate::graphql::select::GraphqlSelect;
-use crate::graphql::types::AnyGraphqlType;
+use crate::graphql::types::{AnyGraphqlType, GraphqlType as _};
 
 /// Build a `GraphqlSelect` from a table's current state.
 ///
@@ -48,6 +48,12 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
     if let Some(name) = api.filter_arg_name.clone() {
         select = select.with_filter_arg_name(name);
     }
+    if let Some(args) = api.root_args.clone() {
+        select = select.with_root_args(args);
+    }
+    if !api.response_path().is_empty() {
+        select = select.with_response_path(api.response_path().to_vec());
+    }
 
     // Selection set
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -62,25 +68,33 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
         }
     }
 
-    // Conditions
-    for cond in table.conditions() {
-        select.conditions.push(cond.clone());
-    }
-
-    // Orders: GraphqlCondition's `Field` variant carries the column name.
-    for (cond, direction) in table.orders() {
-        if let GraphqlCondition::Field(fc) = cond {
-            let order = if matches!(direction, vantage_table::sorting::SortDirection::Ascending) {
-                Order::Asc
-            } else {
-                Order::Desc
-            };
-            select.sort.push((fc.field.clone(), order));
+    // Conditions, orders and pagination only reach the wire when the root
+    // field actually takes those arguments — otherwise they'd render a
+    // query the server rejects, and the consumer applies them locally.
+    if api.can_filter() {
+        for cond in table.conditions() {
+            select.conditions.push(cond.clone());
         }
     }
 
-    // Pagination
-    if let Some(pagination) = table.pagination() {
+    // Orders: GraphqlCondition's `Field` variant carries the column name.
+    if api.can_order() {
+        for (cond, direction) in table.orders() {
+            if let GraphqlCondition::Field(fc) = cond {
+                let order = if matches!(direction, vantage_table::sorting::SortDirection::Ascending)
+                {
+                    Order::Asc
+                } else {
+                    Order::Desc
+                };
+                select.sort.push((fc.field.clone(), order));
+            }
+        }
+    }
+
+    if api.can_paginate()
+        && let Some(pagination) = table.pagination()
+    {
         select.limit = Some(pagination.limit());
         select.skip = Some(pagination.skip());
     }
@@ -88,30 +102,221 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
     select
 }
 
+/// Walk `path` into the root field's value to reach the row array.
+///
+/// Each segment indexes an object, or maps over an array — so
+/// `["edges", "node"]` turns `{ edges: [{ node: … }] }` into `[…]`
+/// in one pass, which is every Relay-style connection.
+fn descend(value: &Value, path: &[String]) -> Value {
+    let Some((segment, rest)) = path.split_first() else {
+        return value.clone();
+    };
+    let stepped = match value {
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| item.get(segment.as_str()).cloned().unwrap_or(Value::Null))
+                .collect(),
+        ),
+        other => other.get(segment.as_str()).cloned().unwrap_or(Value::Null),
+    };
+    descend(&stepped, rest)
+}
+
+/// Resolve a dotted path against a row. A missing or null link yields
+/// `None`, so `run.commit.hash` on a run with no commit is absent rather
+/// than an error.
+fn pluck<'a>(row: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut cursor = row;
+    for segment in path.split('.') {
+        cursor = cursor.get(segment)?;
+    }
+    Some(cursor)
+}
+
+/// Apply conditions in memory, for a root field that takes no filter
+/// argument.
+///
+/// Vista treats equality push-down as universal, so a consumer narrowing
+/// this table never learns the server can't do it. Dropping the condition
+/// at render time and returning every row would silently widen the result
+/// — a relation tab would list every parent's children — so the driver
+/// honours it here instead.
+async fn retain_matching(rows: Vec<Value>, conditions: &[GraphqlCondition]) -> Result<Vec<Value>> {
+    // Resolved up front: a deferred value fetches the parent table, so
+    // resolving per row would issue one round trip per row and could
+    // compare different rows against different values.
+    let conditions = resolve_deferred(conditions).await?;
+    let mut kept = Vec::with_capacity(rows.len());
+    for row in rows {
+        if conditions.iter().all(|c| matches_condition(&row, c)) {
+            kept.push(row);
+        }
+    }
+    Ok(kept)
+}
+
+/// Replace every `DeferredField` with the plain `Field` it resolves to,
+/// walking nested groups. `Deferred` produces a dialect-shaped filter
+/// object rather than `field op value`, so there is nothing to evaluate
+/// against a row — refusing beats quietly keeping every row.
+fn resolve_deferred<'a>(
+    conditions: &'a [GraphqlCondition],
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<GraphqlCondition>>> + Send + 'a>>
+{
+    Box::pin(async move {
+        let mut out = Vec::with_capacity(conditions.len());
+        for condition in conditions {
+            out.push(match condition {
+                GraphqlCondition::DeferredField {
+                    field,
+                    op,
+                    value_fn,
+                } => {
+                    let value = match value_fn.call().await? {
+                        ExpressiveEnum::Scalar(v) => v.to_json(),
+                        other => {
+                            return Err(error!(
+                                "Deferred filter resolved to a non-scalar",
+                                got = format!("{:?}", other)
+                            ));
+                        }
+                    };
+                    GraphqlCondition::Field(FieldCondition::new(field.clone(), op.clone(), value))
+                }
+                GraphqlCondition::And(parts) => {
+                    GraphqlCondition::And(resolve_deferred(parts).await?)
+                }
+                GraphqlCondition::Or(parts) => GraphqlCondition::Or(resolve_deferred(parts).await?),
+                GraphqlCondition::Not(inner) => GraphqlCondition::Not(Box::new(
+                    resolve_deferred(std::slice::from_ref(inner.as_ref()))
+                        .await?
+                        .remove(0),
+                )),
+                GraphqlCondition::Deferred(_) => {
+                    return Err(error!(
+                        "Deferred filter cannot be applied client-side; \
+                         this root field accepts no filter argument"
+                    ));
+                }
+                plain => plain.clone(),
+            });
+        }
+        Ok(out)
+    })
+}
+
+/// Evaluate a deferred-free condition against one row.
+fn matches_condition(row: &Value, condition: &GraphqlCondition) -> bool {
+    match condition {
+        GraphqlCondition::Field(fc) => compare(row, &fc.field, &fc.op, &fc.value),
+        GraphqlCondition::And(parts) => parts.iter().all(|p| matches_condition(row, p)),
+        GraphqlCondition::Or(parts) => {
+            parts.is_empty() || parts.iter().any(|p| matches_condition(row, p))
+        }
+        GraphqlCondition::Not(inner) => !matches_condition(row, inner),
+        // `resolve_deferred` removed these before the row loop.
+        GraphqlCondition::DeferredField { .. } | GraphqlCondition::Deferred(_) => false,
+    }
+}
+
+/// Compare one row's value at `path` against `expected`. Ordering
+/// comparisons work on numbers and strings; everything else falls back to
+/// structural equality.
+fn compare(row: &Value, path: &str, op: &GraphqlOp, expected: &Value) -> bool {
+    let actual = pluck(row, path).unwrap_or(&Value::Null);
+    let ordering = || match (actual.as_f64(), expected.as_f64()) {
+        (Some(a), Some(b)) => a.partial_cmp(&b),
+        _ => match (actual.as_str(), expected.as_str()) {
+            (Some(a), Some(b)) => Some(a.cmp(b)),
+            _ => None,
+        },
+    };
+    let contains = || match expected {
+        Value::Array(items) => items.iter().any(|item| item == actual),
+        single => single == actual,
+    };
+    // LIKE anchors decide the shape of the test: `%foo%` is a substring,
+    // `foo%` a prefix, `%foo` a suffix, and a bare `foo` an exact match.
+    // Collapsing all four to `contains` would have matched rows the server
+    // excludes. An interior `%` or an `_` is compared literally — narrower
+    // than the server, which is the safe direction to be wrong in.
+    let text_match = |case_sensitive: bool| match (actual.as_str(), expected.as_str()) {
+        (Some(a), Some(pattern)) => {
+            let (a, pattern) = if case_sensitive {
+                (a.to_string(), pattern.to_string())
+            } else {
+                (a.to_lowercase(), pattern.to_lowercase())
+            };
+            let core = pattern.trim_matches('%');
+            match (pattern.starts_with('%'), pattern.ends_with('%')) {
+                (true, true) => a.contains(core),
+                (true, false) => a.ends_with(core),
+                (false, true) => a.starts_with(core),
+                (false, false) => a == core,
+            }
+        }
+        _ => false,
+    };
+    match op {
+        GraphqlOp::Eq => actual == expected,
+        GraphqlOp::Ne => actual != expected,
+        GraphqlOp::Gt => matches!(ordering(), Some(std::cmp::Ordering::Greater)),
+        GraphqlOp::Gte => matches!(
+            ordering(),
+            Some(std::cmp::Ordering::Greater) | Some(std::cmp::Ordering::Equal)
+        ),
+        GraphqlOp::Lt => matches!(ordering(), Some(std::cmp::Ordering::Less)),
+        GraphqlOp::Lte => matches!(
+            ordering(),
+            Some(std::cmp::Ordering::Less) | Some(std::cmp::Ordering::Equal)
+        ),
+        GraphqlOp::In => contains(),
+        GraphqlOp::NotIn => !contains(),
+        GraphqlOp::Like => text_match(true),
+        GraphqlOp::ILike => text_match(false),
+        GraphqlOp::IsNull => actual.is_null(),
+        GraphqlOp::IsNotNull => !actual.is_null(),
+    }
+}
+
 /// Convert a JSON row into `(Id, Record<AnyGraphqlType>)`. The id is
 /// stringified from whatever JSON shape the server returned — most
 /// schemas use `String` or numeric ids, both of which we coerce to
 /// `String` since that's our `Id` type.
-fn row_to_record(row: &Value, id_field: Option<&str>) -> Result<(String, Record<AnyGraphqlType>)> {
+fn row_to_record(
+    row: &Value,
+    fields: &[String],
+    id_field: Option<&str>,
+) -> Result<(String, Record<AnyGraphqlType>)> {
     let obj = row
         .as_object()
         .ok_or_else(|| error!("Expected JSON object for row", got = format!("{:?}", row)))?;
 
     let id = match id_field {
-        Some(field) => obj
-            .get(field)
+        Some(field) => pluck(row, field)
             .map(value_to_string)
             .ok_or_else(|| error!("Row missing id field", field = field.to_string()))?,
         // No id field declared — fall back to "id" then to a stringified row index later.
-        None => obj.get("id").map(value_to_string).unwrap_or_default(),
+        None => pluck(row, "id").map(value_to_string).unwrap_or_default(),
     };
 
-    let mut fields: IndexMap<String, AnyGraphqlType> = IndexMap::new();
-    for (k, v) in obj {
-        fields.insert(k.clone(), AnyGraphqlType::untyped(v.clone()));
+    // Each declared path becomes a dotted key, so a nested scalar reads as
+    // an ordinary flat column and a null parent still leaves the column
+    // present (as null) rather than missing.
+    let mut out: IndexMap<String, AnyGraphqlType> = IndexMap::new();
+    if fields.is_empty() {
+        for (k, v) in obj {
+            out.insert(k.clone(), AnyGraphqlType::untyped(v.clone()));
+        }
+    } else {
+        for path in fields {
+            let value = pluck(row, path).cloned().unwrap_or(Value::Null);
+            out.insert(path.clone(), AnyGraphqlType::untyped(value));
+        }
     }
 
-    Ok((id, Record::from_indexmap(fields)))
+    Ok((id, Record::from_indexmap(out)))
 }
 
 fn value_to_string(v: &Value) -> String {
@@ -224,9 +429,10 @@ impl TableSource for GraphqlApi {
                 field = root.to_string()
             )
         })?;
+        let rows = descend(rows, table.data_source().response_path());
 
         let arr = match rows {
-            Value::Array(a) => a.clone(),
+            Value::Array(a) => a,
             Value::Null => Vec::new(),
             other => {
                 return Err(error!(
@@ -237,10 +443,18 @@ impl TableSource for GraphqlApi {
             }
         };
 
+        // Conditions the query couldn't carry are applied here, so a
+        // narrowed table returns narrowed rows either way.
+        let arr = if table.data_source().can_filter() {
+            arr
+        } else {
+            retain_matching(arr, &table.conditions().cloned().collect::<Vec<_>>()).await?
+        };
+
         let id_name = table.id_field().map(|c| c.name().to_string());
         let mut out = IndexMap::with_capacity(arr.len());
         for (idx, row) in arr.iter().enumerate() {
-            let (mut id, rec) = row_to_record(row, id_name.as_deref())?;
+            let (mut id, rec) = row_to_record(row, &select.fields, id_name.as_deref())?;
             if id.is_empty() {
                 id = idx.to_string();
             }
@@ -281,12 +495,13 @@ impl TableSource for GraphqlApi {
                 field = root.to_string()
             )
         })?;
+        let rows = descend(rows, table.data_source().response_path());
 
         let arr = match rows {
-            Value::Array(a) => a.clone(),
+            Value::Array(a) => a,
             Value::Null => return Ok(None),
             // Some `byId`-style root fields return a single object instead of an array.
-            Value::Object(_) => vec![rows.clone()],
+            obj @ Value::Object(_) => vec![obj],
             other => {
                 return Err(error!(
                     "Unexpected response shape for get",
@@ -296,7 +511,7 @@ impl TableSource for GraphqlApi {
         };
         match arr.into_iter().next() {
             Some(row) => {
-                let (_id, rec) = row_to_record(&row, Some(&id_name))?;
+                let (_id, rec) = row_to_record(&row, &select.fields, Some(&id_name))?;
                 Ok(Some(rec))
             }
             None => Ok(None),
@@ -654,7 +869,7 @@ mod tests {
     #[test]
     fn row_to_record_extracts_id_and_fields() {
         let row = json!({ "id": "5", "mission_name": "FalconSat", "launch_year": 2006 });
-        let (id, rec) = row_to_record(&row, Some("id")).unwrap();
+        let (id, rec) = row_to_record(&row, &[], Some("id")).unwrap();
         assert_eq!(id, "5");
         assert_eq!(rec.iter().count(), 3);
     }
@@ -662,7 +877,7 @@ mod tests {
     #[test]
     fn row_to_record_stringifies_numeric_id() {
         let row = json!({ "id": 42, "name": "x" });
-        let (id, _rec) = row_to_record(&row, Some("id")).unwrap();
+        let (id, _rec) = row_to_record(&row, &[], Some("id")).unwrap();
         assert_eq!(id, "42");
     }
 
@@ -734,5 +949,178 @@ mod tests {
         };
         let r = cond.render(FilterDialect::Generic).await.unwrap();
         assert_eq!(r, json!({ "launch_id": 7 }));
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use super::*;
+    use serde_json::json;
+    use vantage_types::EmptyEntity;
+
+    fn paths(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn descend_unwraps_a_relay_connection() {
+        let payload = json!({
+            "total": 2,
+            "edges": [{ "node": { "run": { "id": "a" } } }, { "node": { "run": { "id": "b" } } }]
+        });
+        let rows = descend(&payload, &paths(&["edges", "node"]));
+        assert_eq!(
+            rows,
+            json!([{ "run": { "id": "a" } }, { "run": { "id": "b" } }])
+        );
+    }
+
+    #[test]
+    fn descend_with_an_empty_path_is_the_identity() {
+        let payload = json!([{ "id": "a" }]);
+        assert_eq!(descend(&payload, &[]), payload);
+    }
+
+    #[test]
+    fn declared_paths_become_dotted_columns() {
+        let row = json!({ "run": { "id": "a", "commit": { "hash": "deadbeef" } }, "stack": { "id": "api-uat" } });
+        let fields = paths(&["run.id", "run.commit.hash", "stack.id"]);
+        let (id, rec) = row_to_record(&row, &fields, Some("run.id")).unwrap();
+        assert_eq!(id, "a");
+        assert_eq!(
+            rec.get("run.commit.hash").map(|v| v.to_json()),
+            Some(json!("deadbeef"))
+        );
+        assert_eq!(
+            rec.get("stack.id").map(|v| v.to_json()),
+            Some(json!("api-uat"))
+        );
+    }
+
+    #[test]
+    fn a_null_parent_leaves_the_column_present_and_null() {
+        let row = json!({ "run": { "id": "a", "commit": null } });
+        let fields = paths(&["run.id", "run.commit.hash"]);
+        let (_id, rec) = row_to_record(&row, &fields, Some("run.id")).unwrap();
+        assert_eq!(
+            rec.get("run.commit.hash").map(|v| v.to_json()),
+            Some(json!(null))
+        );
+    }
+
+    #[test]
+    fn conditions_stay_local_when_the_root_field_takes_no_filter() {
+        let api = GraphqlApi::builder("https://api.test/graphql")
+            .supports(crate::graphql::api::Supports {
+                filter: Some(false),
+                ..Default::default()
+            })
+            .build();
+        let mut table = Table::<GraphqlApi, EmptyEntity>::new("stacks", api).with_id_column("id");
+        table.add_condition(GraphqlCondition::Field(
+            crate::graphql::condition::FieldCondition::new("space", GraphqlOp::Eq, json!("root")),
+        ));
+        assert!(select_from_table(&table).conditions.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod local_filter_tests {
+    use super::*;
+    use crate::graphql::condition::FieldCondition;
+    use serde_json::json;
+
+    fn rows() -> Vec<Value> {
+        vec![
+            json!({ "stack": { "id": "api-uat" }, "run": { "id": "1", "delta": { "addCount": 4 } } }),
+            json!({ "stack": { "id": "api-dev" }, "run": { "id": "2", "delta": { "addCount": 0 } } }),
+        ]
+    }
+
+    /// The narrowing a binder tab applies has to survive even though the
+    /// root field takes no filter argument — otherwise the tab would list
+    /// every stack's runs.
+    #[tokio::test]
+    async fn equality_on_a_dotted_path_narrows_locally() {
+        let cond = GraphqlCondition::Field(FieldCondition::new(
+            "stack.id",
+            GraphqlOp::Eq,
+            json!("api-uat"),
+        ));
+        let kept = retain_matching(rows(), &[cond]).await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(pluck(&kept[0], "run.id"), Some(&json!("1")));
+    }
+
+    #[tokio::test]
+    async fn ordering_comparisons_work_on_numbers() {
+        let cond = GraphqlCondition::Field(FieldCondition::new(
+            "run.delta.addCount",
+            GraphqlOp::Gt,
+            json!(1),
+        ));
+        let kept = retain_matching(rows(), &[cond]).await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(pluck(&kept[0], "stack.id"), Some(&json!("api-uat")));
+    }
+
+    /// A LIKE pattern's anchors decide the test: collapsing every form to
+    /// `contains` matched rows the server would exclude.
+    #[tokio::test]
+    async fn like_anchors_are_honoured() {
+        let rows = vec![
+            json!({ "stack": { "id": "api-uat" } }),
+            json!({ "stack": { "id": "frontend-uat" } }),
+        ];
+        let prefix = GraphqlCondition::Field(FieldCondition::new(
+            "stack.id",
+            GraphqlOp::Like,
+            json!("api%"),
+        ));
+        let kept = retain_matching(rows.clone(), &[prefix]).await.unwrap();
+        assert_eq!(kept.len(), 1, "`api%` is a prefix, not a substring");
+
+        let substring = GraphqlCondition::Field(FieldCondition::new(
+            "stack.id",
+            GraphqlOp::Like,
+            json!("%uat%"),
+        ));
+        assert_eq!(retain_matching(rows, &[substring]).await.unwrap().len(), 2);
+    }
+
+    /// A deferred value hits the network, so it must resolve once for the
+    /// whole set rather than once per row.
+    #[tokio::test]
+    async fn a_deferred_value_resolves_once_for_all_rows() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let cond = GraphqlCondition::DeferredField {
+            field: "stack.id".into(),
+            op: GraphqlOp::Eq,
+            value_fn: DeferredFn::new(move || {
+                let counter = Arc::clone(&counter);
+                Box::pin(async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(
+                        "api-uat".to_string(),
+                    )))
+                })
+            }),
+        };
+        let kept = retain_matching(rows(), &[cond]).await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A filter that can't be evaluated row-wise must fail rather than
+    /// quietly returning everything.
+    #[tokio::test]
+    async fn an_opaque_deferred_filter_is_refused() {
+        let cond = GraphqlCondition::Deferred(DeferredFn::new(|| {
+            Box::pin(async { Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(1i64))) })
+        }));
+        assert!(retain_matching(rows(), &[cond]).await.is_err());
     }
 }
