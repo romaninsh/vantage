@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.12 — 2026-08-16
+
+- `GraphqlApiTableShell` implements `preview_query`, returning the endpoint and
+  the query document.
+- `RestApiTableShell` implements `preview_query`, returning the `GET` a read
+  would issue. It shares the URL builder with the real fetch path, so a previewed
+  URL cannot drift from the one that gets sent. Conditions that never reach the
+  server under `FilterStrategy::Client` are reported separately as
+  `client_side_filters` — the difference between a filter you configured and a
+  filter the API applies.
+
 ## 0.6.11 — 2026-08-16
 
 - GraphQL columns may be dotted paths. `run.commit.hash` groups into a nested

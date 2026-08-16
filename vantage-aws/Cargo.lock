@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.4"
+version = "0.6.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2156,7 +2156,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "atty",
  "indexmap",
@@ -2168,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.14"
+version = "0.6.16"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2224,8 +2224,9 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.3"
+version = "0.6.8"
 dependencies = [
+ "chrono",
  "ciborium",
  "indexmap",
  "paste",
@@ -2246,7 +2247,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.14"
+version = "0.6.22"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2254,6 +2255,7 @@ dependencies = [
  "futures-core",
  "indexmap",
  "serde",
+ "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.18",
  "vantage-core",

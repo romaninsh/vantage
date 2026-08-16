@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.19 — 2026-08-16
+
+- The SQLite, Postgres and MySQL shells implement `preview_query`, returning the
+  SELECT as it stands with values rendered inline. The executed form binds those
+  same values as parameters.
+
 ## 0.6.18 — 2026-08-12
 
 - **Bug fix:** the Postgres, MySQL and SQLite shells resolve relations whose

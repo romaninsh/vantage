@@ -562,6 +562,16 @@ where
         "surrealdb"
     }
 
+    /// The SurrealQL SELECT as it stands, with every condition, order and page
+    /// size applied so far rendered inline.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "surrealdb",
+            "table": self.table.table_name(),
+            "surql": self.table.select().preview(),
+        })
+    }
+
     /// Layer SurrealDB's expression vocabulary on top of vantage-vista's
     /// conventional `Vista` verbs, plus a `with_condition(<expr>)` builder that
     /// routes a native `Expression` through [`add_raw_condition`](Self::add_raw_condition).

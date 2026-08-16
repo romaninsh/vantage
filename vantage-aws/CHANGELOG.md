@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.6 — 2026-08-16
+
+- `AwsTableShell` implements `preview_query`, decoding the table name into its
+  service, target, protocol and array key, and listing the conditions the RPC
+  would carry. A malformed table name reports its error here, before any
+  request.
+
 ## 0.6.5 — 2026-08-12
 
 - **Bug fix:** `AwsTableShell::get_ref_target` resolves relations whose target

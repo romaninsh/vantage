@@ -194,6 +194,41 @@ impl TableShell for DioShell {
     fn driver_name(&self) -> &'static str {
         "dio"
     }
+
+    /// A facade read hits the local cache, not a backend — so the query worth
+    /// seeing is the **master's**, which is what filled that cache in the first
+    /// place. It is reported verbatim under `master`, alongside this handle's
+    /// own narrowing, which is applied to the cached rows and never sent
+    /// anywhere.
+    ///
+    /// The two are deliberately not merged: a condition on the facade and the
+    /// same condition on the master are different operations with different
+    /// costs, and flattening them would suggest the filter reached the server.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        let master = self.dio.master.read().unwrap();
+        let conditions: Vec<String> = self
+            .query
+            .conditions
+            .iter()
+            .map(|(field, value)| format!("{field} = {value:?}"))
+            .collect();
+        let order = self.query.order.as_ref().map(|(col, dir)| {
+            let dir = match dir {
+                SortDirection::Ascending => "asc",
+                SortDirection::Descending => "desc",
+            };
+            format!("{col} {dir}")
+        });
+
+        serde_json::json!({
+            "driver": "dio",
+            "note": "reads come from the local cache; this issues no query of \
+                     its own. `master` is the query that populates that cache; \
+                     `facade` is applied to the cached rows in memory.",
+            "master": master.preview_query(),
+            "facade": { "conditions": conditions, "order": order },
+        })
+    }
 }
 
 impl DioShell {

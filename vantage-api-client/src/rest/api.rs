@@ -270,6 +270,71 @@ impl RestApi {
         s
     }
 
+    /// Render the request a read would issue, without issuing it.
+    ///
+    /// Shares [`endpoint_url`](Self::endpoint_url) and
+    /// [`build_query_string`](Self::build_query_string) with the real fetch
+    /// path, so a previewed URL cannot drift from the one that gets sent.
+    ///
+    /// One difference is deliberate: `fetch_raw_body` first *awaits* any
+    /// deferred condition (a foreign key whose value arrives with the parent
+    /// row), and awaiting is what a preview must not do. Those are counted
+    /// under `deferred_conditions` and left out of the URL instead.
+    pub(crate) fn preview_request<'a>(
+        &self,
+        table_name: &str,
+        window: Option<(i64, i64)>,
+        conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
+    ) -> serde_json::Value {
+        let conds: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
+
+        let (endpoint, consumed) = match self.endpoint_url(table_name, &conds) {
+            Ok(pair) => pair,
+            // A URI template with no matching condition fails here exactly as
+            // it would on a real fetch — which makes it the useful answer.
+            Err(e) => {
+                return serde_json::json!({
+                    "driver": "rest-api",
+                    "base_url": self.base_url,
+                    "error": e.to_string(),
+                });
+            }
+        };
+
+        let (query_consumed, client_filters): (Vec<usize>, Vec<(String, String)>) =
+            if self.filter_strategy == FilterStrategy::Client {
+                let filters = conds
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| !consumed.contains(i))
+                    .filter_map(|(_, c)| crate::condition_to_query_param(c))
+                    .collect();
+                ((0..conds.len()).collect(), filters)
+            } else {
+                (consumed, Vec::new())
+            };
+
+        let query = self.build_query_string(window, &conds, &query_consumed);
+        let deferred = conds
+            .iter()
+            .filter(|c| crate::condition_to_query_param(c).is_none())
+            .count();
+
+        serde_json::json!({
+            "driver": "rest-api",
+            "method": "GET",
+            "url": join_query(&endpoint, &query),
+            "auth_header": self.auth_header.as_ref().map(|_| "<set>"),
+            // Under `FilterStrategy::Client` these never reach the server: the
+            // rows come back unfiltered and are narrowed in memory.
+            "client_side_filters": client_filters
+                .into_iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>(),
+            "deferred_conditions": deferred,
+        })
+    }
+
     /// Fetch data from the API endpoint and return parsed records.
     ///
     /// `id_field` selects which JSON field is treated as the record ID;

@@ -546,6 +546,33 @@ impl TableShell for MockShell {
         "mock"
     }
 
+    /// The mock has no query language, so it reports the narrowing state a real
+    /// driver would translate: which filters, order and search are pending.
+    /// Enough for tests to assert that a builder verb reached the shell.
+    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
+        let filters: Vec<String> = self
+            .filters
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(field, value)| format!("{field} = {value:?}"))
+            .collect();
+        let order = self.order.lock().unwrap().as_ref().map(|(col, dir)| {
+            let dir = match dir {
+                SortDirection::Ascending => "asc",
+                SortDirection::Descending => "desc",
+            };
+            format!("{col} {dir}")
+        });
+        serde_json::json!({
+            "driver": "mock",
+            "table": vista.name(),
+            "filters": filters,
+            "order": order,
+            "search": self.search.lock().unwrap().clone(),
+        })
+    }
+
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
         self.filters
             .lock()

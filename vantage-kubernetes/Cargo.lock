@@ -2177,7 +2177,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-kubernetes"
-version = "0.1.1"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2205,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.15"
+version = "0.6.16"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2252,7 +2252,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.20"
+version = "0.6.22"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2260,6 +2260,7 @@ dependencies = [
  "futures-core",
  "indexmap",
  "serde",
+ "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.18",
  "vantage-core",

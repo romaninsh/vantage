@@ -58,6 +58,15 @@ impl Vista {
         self.source.driver_name()
     }
 
+    /// Render the query this vista would send, without sending it — see
+    /// [`TableShell::preview_query`] for the shape and the no-I/O contract.
+    ///
+    /// A debugging surface: it reports what the *next* read would ask the
+    /// backend for, given every condition, order and page size applied so far.
+    pub fn preview_query(&self) -> serde_json::Value {
+        self.source.preview_query(self)
+    }
+
     // ---- metadata accessors -----------------------------------------------
     //
     // All schema accessors forward to the shell. Vista holds none of the

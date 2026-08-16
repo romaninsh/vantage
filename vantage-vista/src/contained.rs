@@ -273,6 +273,16 @@ impl TableShell for ContainedShell {
     fn driver_name(&self) -> &'static str {
         "contained"
     }
+
+    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "contained",
+            "relation": vista.name(),
+            "note": "embedded in the parent row — these records arrived with the \
+                     parent and cost no query of their own. Preview the parent \
+                     table to see what fetches them.",
+        })
+    }
 }
 
 /// Fixed id for the single record of a `contains_one` relation.

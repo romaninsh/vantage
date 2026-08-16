@@ -288,4 +288,15 @@ where
     fn driver_name(&self) -> &'static str {
         "mysql"
     }
+
+    /// The SELECT as it stands: every condition, order and page size applied so
+    /// far, rendered with values inline. The executed form binds those values as
+    /// `?` parameters instead — same query, different spelling.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "mysql",
+            "table": self.table.table_name(),
+            "sql": self.table.select().preview(),
+        })
+    }
 }

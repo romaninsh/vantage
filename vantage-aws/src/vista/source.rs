@@ -170,6 +170,43 @@ impl TableShell for AwsTableShell {
     fn driver_name(&self) -> &'static str {
         "aws"
     }
+
+    /// The RPC a read would dispatch: the operation decoded out of the table
+    /// name, plus the conditions that become request parameters.
+    ///
+    /// AWS APIs only push down their own request params (`PathPrefix`,
+    /// `logGroupNamePrefix`, …); a condition naming a *record* field is applied
+    /// to the response instead. Which is which isn't known until the rows come
+    /// back, so both are listed together under `conditions` — the split is
+    /// reported honestly in the note rather than guessed at here.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        let table_name = self.table.table_name();
+        let conditions: Vec<String> = self
+            .table
+            .conditions()
+            .map(|c| format!("{} = {:?}", c.field(), c))
+            .collect();
+
+        match crate::dispatch::parse_table_name(table_name) {
+            Ok(op) => serde_json::json!({
+                "driver": "aws",
+                "service": op.service,
+                "target": op.target,
+                "protocol": format!("{:?}", op.protocol),
+                "array_key": op.array_key,
+                "paginated": op.cursor.is_some(),
+                "conditions": conditions,
+                "note": "conditions naming a request parameter are pushed down; \
+                         conditions naming a record field are applied to the \
+                         response after it arrives",
+            }),
+            Err(e) => serde_json::json!({
+                "driver": "aws",
+                "table": table_name,
+                "error": e.to_string(),
+            }),
+        }
+    }
 }
 
 #[cfg(test)]

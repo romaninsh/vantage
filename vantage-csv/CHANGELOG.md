@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.4 — 2026-08-16
+
+- `CsvTableShell` implements `preview_query`, naming the file that gets read and
+  recording that conditions and ordering are applied in memory afterwards — they
+  change nothing about what is read from disk.
+
 ## 0.6.3 — 2026-08-12
 
 - **Bug fix:** `CsvTableShell::get_ref_target` resolves relations whose target

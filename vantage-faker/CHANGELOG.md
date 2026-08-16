@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.14 — 2026-08-16
+
+- The shaped and live-folder shells implement `preview_query`. Shaping forwards
+  to the shell it wraps, since latency and injected faults do not change the
+  query; the live-folder shells report the local path they read.
+
 ## 0.6.13 — 2026-07-30
 
 - **A faker table can now be ordered.** `build` and `build_shaped` seeded the

@@ -297,4 +297,15 @@ impl TableShell for RestApiTableShell {
     fn driver_name(&self) -> &'static str {
         "rest-api"
     }
+
+    /// The HTTP GET a read would issue — path template filled in, conditions
+    /// lowered to query params, pagination applied.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        let window = self.table.pagination().map(|p| (p.skip(), p.limit()));
+        self.table.data_source().preview_request(
+            self.table.table_name(),
+            window,
+            self.table.conditions(),
+        )
+    }
 }

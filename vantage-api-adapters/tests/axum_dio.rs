@@ -141,6 +141,9 @@ mod gated {
         fn driver_name(&self) -> &'static str {
             "gated-detail"
         }
+        fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+            serde_json::json!({ "driver": "gated-detail" })
+        }
     }
 }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.6 — 2026-08-16
+
+- `MongoTableShell` implements `preview_query`, returning the collection and the
+  rendered find.
+
 ## 0.6.5 — 2026-08-12
 
 - **Bug fix:** `MongoTableShell::get_ref_target` resolves relations whose target

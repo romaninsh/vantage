@@ -13,6 +13,11 @@
 //!   [`runtime::run_script`] runner that drives their async fetches from
 //!   synchronous Rhai.
 //!
+//! [`runtime::preview_script`] is the third combination: the builder layer with
+//! *no* terminal verbs, rendering the query a script built instead of running
+//! it. An engine that cannot fetch is a stronger guarantee than an engine that
+//! merely isn't asked to.
+//!
 //! [`convert`] and [`introspect`] are shared internals (value round-tripping and
 //! schema/capability map building).
 
@@ -28,4 +33,4 @@ pub use conventional::{
     lazy_value_closure, register_conventional_onto,
 };
 pub use fetch::register_fetch_verbs;
-pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, run_script};
+pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, preview_script, run_script};

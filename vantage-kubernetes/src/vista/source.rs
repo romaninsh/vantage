@@ -269,4 +269,29 @@ impl TableShell for KubeTableShell {
     fn driver_name(&self) -> &'static str {
         "kubernetes"
     }
+
+    /// The collection this shell lists, plus the narrowing it applies *after*
+    /// the API answers. Search and ordering are client-side here — they never
+    /// reach the API server, so a slow list is not made faster by either.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        let orders: Vec<String> = self
+            .orders
+            .iter()
+            .map(|(field, dir)| {
+                let dir = match dir {
+                    SortDirection::Ascending => "asc",
+                    SortDirection::Descending => "desc",
+                };
+                format!("{field} {dir}")
+            })
+            .collect();
+
+        serde_json::json!({
+            "driver": "kubernetes",
+            "collection": self.table.table_name(),
+            "client_side": { "search": self.search, "order": orders },
+            "note": "the collection is listed through the Kubernetes API; search \
+                     and ordering are applied to the returned rows in memory",
+        })
+    }
 }

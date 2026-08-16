@@ -547,6 +547,32 @@ pub trait TableShell: Send + Sync + 'static {
         "unknown"
     }
 
+    // ---- Preview -----------------------------------------------------------
+
+    /// Render the query this shell would send, **without sending it**.
+    ///
+    /// Free-form and driver-shaped: SQL answers with `sql`, GraphQL with a
+    /// `query` document, a cmd datasource with the argv it would spawn. The
+    /// only convention is a `driver` key naming the driver, so a reader can
+    /// tell what the rest of the object means.
+    ///
+    /// There is no default and no `Result`. No default, so a new driver is
+    /// forced to answer rather than inheriting silence; no `Result`, because
+    /// "there is no query" is an answer, not a failure — a driver that
+    /// generates its rows in-process says so in a `note` and is done.
+    ///
+    /// # Contract
+    ///
+    /// **Synchronous, and performs no I/O.** That is what makes preview safe
+    /// to expose where fetching is not. A value known only at fetch time (an
+    /// unresolved foreign-key narrowing) renders as a placeholder; it is never
+    /// awaited.
+    ///
+    /// **Lossy is acceptable, wrong is not.** A preview that omits a detail
+    /// should say so in a `note`. A preview showing a filter the driver would
+    /// not actually send is a bug.
+    fn preview_query(&self, vista: &Vista) -> serde_json::Value;
+
     // ---- Scripting ---------------------------------------------------------
 
     /// Contribute backend-specific vocabulary to a Rhai engine that

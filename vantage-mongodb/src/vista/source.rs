@@ -463,6 +463,16 @@ impl TableShell for MongoTableShell {
     fn driver_name(&self) -> &'static str {
         "mongodb"
     }
+
+    /// The find as it stands — collection, filter document, projection, sort
+    /// and limit — rendered the way `MongoSelect` spells them.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "mongodb",
+            "collection": self.table.table_name(),
+            "find": self.table.select().preview(),
+        })
+    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.3 — 2026-08-16
+
+- `DioShell` implements `preview_query`. A facade read hits the local cache, so
+  the query worth seeing is the master's — reported verbatim — alongside this
+  handle's own narrowing, which is applied to cached rows and sent nowhere. The
+  two are kept separate: merging them would suggest a facade filter reached the
+  server.
+
 ## 0.12.2 — 2026-08-12
 
 - **Bug fix:** a create settles on the id the driver stored it under. The

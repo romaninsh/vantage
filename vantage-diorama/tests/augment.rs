@@ -507,6 +507,9 @@ mod counting {
         fn driver_name(&self) -> &'static str {
             "counting-detail"
         }
+        fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+            serde_json::json!({ "driver": "counting-detail" })
+        }
     }
 }
 
