@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.4 — 2026-08-16
+
+- `CmdTableShell` implements `preview_query`. A cmd table's argv is assembled
+  inside its Rhai script, by the same call that runs it, so no preview can render
+  the argv without running the command. It reports what decides the argv instead:
+  the locked program, the script, and the scope values it would be evaluated
+  with.
+
 ## 0.6.3 — 2026-08-12
 
 - **Bug fix:** `CmdTableShell::get_ref_target` resolves relations whose target

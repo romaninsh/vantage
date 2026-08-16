@@ -321,6 +321,19 @@ impl TableShell for ShapedShell {
         "faker-shaped"
     }
 
+    /// Shaping adds latency, page-size negotiation and injected faults around
+    /// another shell; it does not change the query. So the wrapped shell's
+    /// preview is the answer, tagged with the shaping around it.
+    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "faker-shaped",
+            "page_size": self.page_size,
+            "note": "simulated backend: latency and faults are layered over the \
+                     wrapped shell without altering its query",
+            "shaped": self.inner.preview_query(vista),
+        })
+    }
+
     async fn list_vista_values(
         &self,
         vista: &Vista,

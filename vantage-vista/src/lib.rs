@@ -35,8 +35,8 @@ pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 pub use rhai::{
     AugmentSourceFn, DEFAULT_LIMIT, LazyValueFn, MAX_LIMIT, MIN_LIMIT, RhaiVista, TargetResolver,
     augment_source_closure, eval_augment_source, eval_lazy_expression, eval_modify_script,
-    eval_ref_script, lazy_value_closure, register_conventional_onto, register_fetch_verbs,
-    run_script,
+    eval_ref_script, lazy_value_closure, preview_script, register_conventional_onto,
+    register_fetch_verbs, run_script,
 };
 pub use sort::SortDirection;
 pub use source::{TableShell, VistaChange, VistaChangeStream};

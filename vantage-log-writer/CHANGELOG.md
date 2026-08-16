@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 — 2026-08-16
+
+- `LogWriterTableShell` implements `preview_query`, stating plainly that a
+  write-only sink refuses every read and so has no read query to preview.
+
 ## 0.6.1 — unreleased
 
 - CBOR↔JSON at the insert boundary uses the shared `vantage-types` walker; tagged

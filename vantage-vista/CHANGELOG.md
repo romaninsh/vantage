@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.22 — 2026-08-16
+
+- `TableShell::preview_query` renders the query a driver would send, without
+  sending it. It is required, not defaulted: adding a driver now forces an
+  answer rather than letting it inherit silence. The answer is a free-form,
+  driver-shaped `serde_json::Value` carrying a `driver` key — SQL returns its
+  `sql`, GraphQL its `query`, a cmd datasource the script and scope that build
+  its argv. Drivers with no query to show say so in a `note`.
+- The method is synchronous and performs no I/O, by contract. A value known only
+  at fetch time renders as a placeholder rather than being awaited, which is what
+  makes preview safe to expose where fetching is not.
+- `preview_script` runs a builder script on an engine carrying the conventional
+  verbs and *no* terminal fetch verbs, returning the rendered query. `list()` on
+  that engine is an unknown function, so the guarantee that nothing is fetched is
+  structural rather than a promise about how the API is used. The script needs no
+  terminal verb: its final expression is the query itself.
+- `Vista::preview_query` forwards to the shell.
+- `serde_json` is no longer optional — the preview type is part of the trait.
+
 ## 0.6.21 — 2026-08-12
 
 - `MockShell::with_id_prefix` qualifies every id with a prefix, the way a driver

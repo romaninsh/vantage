@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1 — 2026-08-16
+
+- `KubeTableShell` implements `preview_query`, naming the collection it lists and
+  reporting that search and ordering are applied to the returned rows rather than
+  pushed to the API server.
+- **Version:** this crate jumps from 0.1.x to the 0.6 line its dependents already
+  require. The old number could never satisfy a `0.6` requirement, so consumers
+  silently resolved the registry copy instead of a local path patch.
+- `KubeTableShell::preview_query` reports the shell's `page_size`.
+
 ## 0.1.2 — 2026-08-12
 
 - **Bug fix:** `KubeTableShell::get_ref_target` resolves relations whose target

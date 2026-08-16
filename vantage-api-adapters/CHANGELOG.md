@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 — 2026-08-16
+
+- Its `TableShell` test fixture implements the new required
+  `preview_query`. No change to the crate's own surface.
+
 ## 0.6.0 — 2026-08-10
 
 First published release. The crate existed and was used, but carried

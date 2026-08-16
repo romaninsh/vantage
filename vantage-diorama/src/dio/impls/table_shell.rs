@@ -194,6 +194,50 @@ impl TableShell for DioShell {
     fn driver_name(&self) -> &'static str {
         "dio"
     }
+
+    /// A facade read hits the local cache, not a backend — so the query worth
+    /// seeing is the **master's**, which is what filled that cache in the first
+    /// place.
+    ///
+    /// Which clauses that master carries is not a given: `plan` offers each one
+    /// to a private clone and keeps whatever it accepts, so the same condition
+    /// is a server-side filter against one driver and an in-memory one against
+    /// the next. The preview therefore reports the
+    /// **planned** master, and lists under `facade` only what the master
+    /// refused. Reporting the bare master and every clause as local would put
+    /// pushed-down filters in the wrong column — lossy is acceptable here,
+    /// wrong is not.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        let (planned, local) = self.plan();
+        let master = match &planned {
+            Some(narrowed) => narrowed.preview_query(),
+            // Nothing pushed down: the master runs unnarrowed.
+            None => self.dio.master.read().unwrap().preview_query(),
+        };
+
+        let conditions: Vec<String> = local
+            .conditions
+            .iter()
+            .map(|(field, value)| format!("{field} = {value:?}"))
+            .collect();
+        let order = local.order.as_ref().map(|(col, dir)| {
+            let dir = match dir {
+                SortDirection::Ascending => "asc",
+                SortDirection::Descending => "desc",
+            };
+            format!("{col} {dir}")
+        });
+
+        serde_json::json!({
+            "driver": "dio",
+            "note": "reads come from the local cache; this issues no query of \
+                     its own. `master` is the query that populates that cache, \
+                     carrying every clause the driver accepted; `facade` is what \
+                     it refused, applied to the cached rows in memory.",
+            "master": master,
+            "facade": { "conditions": conditions, "order": order },
+        })
+    }
 }
 
 impl DioShell {

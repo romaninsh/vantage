@@ -226,6 +226,63 @@ impl GraphqlCondition {
             }
         })
     }
+
+    /// Synchronous counterpart to [`render`](Self::render), for previewing a
+    /// query without sending it.
+    ///
+    /// Every arm matches `render` but one: a deferred value does not exist yet
+    /// — it is produced by calling back to the caller at fetch time — so
+    /// rendering it here would mean doing the very work a preview exists to
+    /// avoid. Those become a `**deferred(...)` marker, which is not valid
+    /// GraphQL and is not meant to be: it marks the one place the previewed
+    /// document and the sent one differ.
+    ///
+    /// Literal conditions — most of them, and all the ones written by hand in
+    /// YAML — render identically to what gets sent.
+    pub fn render_preview(&self, dialect: FilterDialect) -> Result<Value> {
+        match self {
+            Self::Field(fc) => render_field(fc, dialect),
+            Self::DeferredField { field, op, .. } => {
+                Ok(Value::String(format!("**deferred({} {:?})", field, op)))
+            }
+            Self::And(parts) => {
+                let rendered = parts
+                    .iter()
+                    .map(|p| p.render_preview(dialect))
+                    .collect::<Result<Vec<Value>>>()?;
+                combine_and(rendered, dialect)
+            }
+            Self::Or(parts) => {
+                if matches!(dialect, FilterDialect::Generic) {
+                    return Err(error!(
+                        "Generic dialect does not support OR; switch to Hasura"
+                    ));
+                }
+                let rendered = parts
+                    .iter()
+                    .map(|p| p.render_preview(dialect))
+                    .collect::<Result<Vec<Value>>>()?;
+                Ok(Value::Object({
+                    let mut m = Map::new();
+                    m.insert("_or".into(), Value::Array(rendered));
+                    m
+                }))
+            }
+            Self::Not(inner) => {
+                if matches!(dialect, FilterDialect::Generic) {
+                    return Err(error!(
+                        "Generic dialect does not support NOT; switch to Hasura"
+                    ));
+                }
+                Ok(Value::Object({
+                    let mut m = Map::new();
+                    m.insert("_not".into(), inner.render_preview(dialect)?);
+                    m
+                }))
+            }
+            Self::Deferred(_) => Ok(Value::String("**deferred()".into())),
+        }
+    }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

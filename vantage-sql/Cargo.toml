@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.6.18"
+version = "0.6.19"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -25,7 +25,7 @@ paste = "1.0"
 
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
-vantage-vista = { version = "0.6", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "0.6.22", path = "../vantage-vista", optional = true }
 async-trait = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "rust_decimal", "uuid", "chrono"] }
 rust_decimal = "1"
@@ -43,7 +43,7 @@ rhai = { version = "1.25", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "0.6", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
 sqlformat = "0.3"
 
 # The name must be unique across the workspace: cargo writes every

@@ -131,4 +131,48 @@ impl TableShell for CmdTableShell {
     fn driver_name(&self) -> &'static str {
         "cmd"
     }
+
+    /// A cmd table's argv is built *by* its Rhai script, and that script builds
+    /// it by calling `run(...)` — so there is no argv to render without running
+    /// the command. What this reports instead is everything that decides the
+    /// argv: the locked program, the script itself, and the values seeded into
+    /// its scope. Read the script against these and you can see the command it
+    /// will assemble.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        let script_name = self.table.table_name();
+        let source = self.table.data_source();
+        let (limit, offset) = match self.table.pagination() {
+            Some(p) => (Some(p.limit()), Some(p.skip())),
+            None => (None, None),
+        };
+        let conditions: Vec<serde_json::Value> = self
+            .table
+            .conditions()
+            .map(|c| {
+                serde_json::json!({
+                    "field": c.field(),
+                    "op": c.op(),
+                    "value": c.json_value(),
+                })
+            })
+            .collect();
+
+        serde_json::json!({
+            "driver": "cmd",
+            "command": source.command(),
+            "script_name": script_name,
+            "script": source
+                .spec_for(script_name)
+                .map(|spec| spec.script.to_string())
+                .unwrap_or_else(|e| format!("<no script registered: {e}>")),
+            "scope": {
+                "columns": self.table.columns().keys().collect::<Vec<_>>(),
+                "conditions": conditions,
+                "limit": limit,
+                "offset": offset,
+            },
+            "note": "the script builds its own argv and runs it; these are the \
+                     scope values it would be evaluated with",
+        })
+    }
 }

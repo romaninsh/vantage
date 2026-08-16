@@ -140,6 +140,14 @@ impl TableShell for FolderSizeShell {
     fn driver_name(&self) -> &'static str {
         "live-folder-size"
     }
+
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "live-folder-size",
+            "note": "rows are computed by walking a local directory tree — no \
+                     query, and nothing leaves the machine",
+        })
+    }
 }
 
 fn size_record(path: &str, size: u64, file_count: u64) -> Record<CborValue> {

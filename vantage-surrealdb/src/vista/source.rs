@@ -562,6 +562,22 @@ where
         "surrealdb"
     }
 
+    /// The SurrealQL SELECT as it stands, with every condition and order
+    /// applied so far rendered inline.
+    ///
+    /// `page_size` is reported separately because it lives on the shell, not on
+    /// the table: `fetch_page`/`fetch_next` turn it into a `START`/`LIMIT` at
+    /// call time, so it is absent from the statement below. Folding it in would
+    /// show a `LIMIT` that a plain `list_values()` never sends.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "surrealdb",
+            "table": self.table.table_name(),
+            "surql": self.table.select().preview(),
+            "page_size": self.page_size,
+        })
+    }
+
     /// Layer SurrealDB's expression vocabulary on top of vantage-vista's
     /// conventional `Vista` verbs, plus a `with_condition(<expr>)` builder that
     /// routes a native `Expression` through [`add_raw_condition`](Self::add_raw_condition).

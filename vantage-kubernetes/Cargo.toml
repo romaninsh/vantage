@@ -1,6 +1,6 @@
 [package]
 name = "vantage-kubernetes"
-version = "0.1.2"
+version = "0.6.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -16,7 +16,7 @@ vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde
 vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-vista = { version = "0.6", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
 
 # Native Kubernetes client: config/auth/TLS only. We issue raw list
 # requests and project the JSON ourselves, so k8s-openapi's generated

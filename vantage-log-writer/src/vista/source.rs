@@ -122,4 +122,15 @@ impl TableShell for LogWriterTableShell {
     fn driver_name(&self) -> &'static str {
         "log-writer"
     }
+
+    /// Write-only: every read on this shell errors, so there is no read query
+    /// to preview. Said plainly rather than left to be inferred from an empty
+    /// object.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "log-writer",
+            "note": "write-only sink — it accepts inserts and refuses every read, \
+                     so there is no read query to preview",
+        })
+    }
 }

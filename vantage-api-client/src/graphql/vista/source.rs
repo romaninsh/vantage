@@ -236,4 +236,16 @@ impl TableShell for GraphqlApiTableShell {
     fn driver_name(&self) -> &'static str {
         "graphql"
     }
+
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        // `GraphqlSelect::preview` is the synchronous renderer: it produces the
+        // real document, and spells out any condition whose value is only known
+        // at fetch time rather than resolving it. See `render()` for the
+        // executed form, which differs only in those deferred branches.
+        serde_json::json!({
+            "driver": "graphql",
+            "endpoint": self.table.data_source().endpoint(),
+            "query": self.table.select().preview(),
+        })
+    }
 }

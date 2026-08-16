@@ -137,4 +137,24 @@ impl TableShell for CsvTableShell {
     fn driver_name(&self) -> &'static str {
         "csv"
     }
+
+    /// A CSV table is one file, read whole. Conditions never reach a server —
+    /// they filter the parsed rows — so the only thing a preview can name is
+    /// which file gets opened, and that filtering happens after it is read.
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        let table_name = self.table.table_name();
+        serde_json::json!({
+            "driver": "csv",
+            "file": self
+                .table
+                .data_source()
+                .base_dir()
+                .join(format!("{table_name}.csv"))
+                .display()
+                .to_string(),
+            "note": "the whole file is read; conditions and ordering are applied \
+                     in memory afterwards, so they change nothing about what is \
+                     read from disk",
+        })
+    }
 }

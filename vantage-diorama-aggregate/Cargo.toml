@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama-aggregate"
-version = "0.6.6"
+version = "0.6.7"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Reactive client-side aggregation over a Vantage Diorama"
@@ -13,8 +13,10 @@ doctest = false
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-vista = { version = "0.6.18", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
 vantage-diorama = { version = "0.12", path = "../vantage-diorama" }
+# `TableShell::preview_query` answers with a driver-shaped JSON value.
+serde_json = "1"
 
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }

@@ -136,6 +136,35 @@ impl TableShell for AggregateShell {
         "aggregate"
     }
 
+    /// An aggregate is derived in memory from the rows its source Dio already
+    /// holds, so it issues no query and costs no request. The narrowing below
+    /// is applied to the derived rows. To see what feeds it, preview the source
+    /// table.
+    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
+        let conditions: Vec<String> = self
+            .conditions
+            .iter()
+            .map(|(field, value)| format!("{field} = {value:?}"))
+            .collect();
+        let order = self.order.as_ref().map(|(column, dir)| {
+            let dir = match dir {
+                SortDirection::Ascending => "asc",
+                SortDirection::Descending => "desc",
+            };
+            format!("{column} {dir}")
+        });
+        serde_json::json!({
+            "driver": "aggregate",
+            "name": vista.name(),
+            "note": "derived in memory from the source Dio's cached rows — no \
+                     query, no request. Preview the source table to see what \
+                     fetches the rows this reduces.",
+            "conditions": conditions,
+            "order": order,
+            "search": self.search,
+        })
+    }
+
     async fn list_vista_values(
         &self,
         _vista: &Vista,

@@ -20,7 +20,7 @@
 
 use rhai::{Dynamic, Engine};
 
-use super::conventional::{TargetResolver, register_conventional_onto};
+use super::conventional::{RhaiVista, TargetResolver, register_conventional_onto};
 use super::convert::dynamic_to_json;
 use super::fetch::register_fetch_verbs;
 
@@ -63,6 +63,71 @@ pub async fn run_script(
     .map_err(|e| format!("data-fetch script task failed to run: {e}"))?
 }
 
+/// Build a query with the conventional verbs and render what it *would* send,
+/// without sending anything.
+///
+/// The engine this runs on carries [`register_conventional_onto`] and nothing
+/// else — the terminal fetch verbs are deliberately absent, so there is no path
+/// from a preview script to a backend read. That is the point: preview is safe
+/// to expose in places where fetching is not, and the safety is structural
+/// rather than a promise about how the verb is used.
+///
+/// Consequently the script takes no terminal verb at all. Its final expression
+/// must *be* the built query:
+///
+/// ```rhai
+/// table("orders").add_condition_eq("status", "paid").set_page_size(20)
+/// ```
+///
+/// A reference can be previewed against a literal parent row, since `get_ref`
+/// reads the join value straight out of the map it is handed:
+///
+/// ```rhai
+/// table("orders").get_ref("client", #{ id: "42" })
+/// ```
+///
+/// Returns the driver-shaped JSON that
+/// [`TableShell::preview_query`](crate::TableShell::preview_query) produced.
+///
+/// # What is and isn't guaranteed
+///
+/// What this enforces is that **no terminal fetch verb exists** on the engine,
+/// and `preview_query` is contractually I/O-free. What it does *not* enforce is
+/// the behaviour of the two things the caller supplies: the `resolver`, and
+/// whatever `get_ref` does inside a driver. Both are ordinary sync functions
+/// that construct a vista rather than read one, and neither can await — but
+/// neither is prevented from blocking on something either.
+///
+/// So: a preview script cannot *fetch the set it describes*. That is the useful
+/// guarantee, and it is structural. "Nothing at all leaves the process" would be
+/// a stronger claim than the types support, and is only as true as the resolver
+/// handed in.
+pub fn preview_script(
+    script: String,
+    resolver: TargetResolver,
+) -> Result<serde_json::Value, String> {
+    let mut engine = Engine::new();
+    register_conventional_onto(&mut engine, resolver);
+
+    let result: Dynamic = engine.eval::<Dynamic>(&script).map_err(|e| e.to_string())?;
+    let handle: RhaiVista = result.try_cast::<RhaiVista>().ok_or_else(|| {
+        "preview script must end on the query itself, e.g. \
+         `table(\"orders\").add_condition_eq(\"status\", \"paid\")` — this engine \
+         has no terminal verbs (`list`, `count`, `get_some`), because it never \
+         fetches"
+            .to_string()
+    })?;
+
+    let vista = handle
+        .0
+        .lock()
+        .map_err(|_| "preview script: result mutex poisoned".to_string())?
+        .take()
+        .ok_or_else(|| "preview script: vista already consumed".to_string())?;
+
+    Ok(vista.preview_query())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,7 +166,11 @@ mod tests {
             );
         let metadata = VistaMetadata::new()
             .with_column(Column::new("id", "String").with_flag("id"))
-            .with_column(Column::new("name", "String").with_flag("title"))
+            .with_column(
+                Column::new("name", "String")
+                    .with_flag("title")
+                    .with_flag("orderable"),
+            )
             .with_id_column("id");
         Vista::new("users", Box::new(source.with_metadata(metadata)))
     }
@@ -110,6 +179,34 @@ mod tests {
         Arc::new(|name: &str| {
             if name == "users" {
                 Ok(users_vista())
+            } else {
+                Err(vantage_core::error!("unknown table", table = name))
+            }
+        })
+    }
+
+    /// `users` with a `posts` has-many hanging off it, joined on `author`.
+    fn users_with_posts() -> Vista {
+        let posts = MockShell::new();
+        let metadata = VistaMetadata::new()
+            .with_column(Column::new("id", "String").with_flag("id"))
+            .with_id_column("id")
+            .with_reference(crate::Reference::new(
+                "posts",
+                "posts",
+                crate::ReferenceKind::HasMany,
+                "author",
+            ));
+        let source = MockShell::new()
+            .with_metadata(metadata)
+            .with_ref_target("posts", posts);
+        Vista::new("users", Box::new(source))
+    }
+
+    fn ref_resolver() -> TargetResolver {
+        Arc::new(|name: &str| {
+            if name == "users" {
+                Ok(users_with_posts())
             } else {
                 Err(vantage_core::error!("unknown table", table = name))
             }
@@ -180,6 +277,62 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("unknown table"), "got: {err}");
+    }
+
+    #[test]
+    fn preview_renders_the_built_query() {
+        let json = preview_script(
+            r#"table("users").add_condition_eq("id", "3").add_order("name", "desc")"#.into(),
+            resolver(),
+        )
+        .unwrap();
+        assert_eq!(json["driver"], serde_json::json!("mock"));
+        assert_eq!(json["table"], serde_json::json!("users"));
+        assert!(
+            json["filters"][0].as_str().unwrap().starts_with("id ="),
+            "the condition reached the shell: {json}"
+        );
+        assert_eq!(json["order"], serde_json::json!("name desc"));
+    }
+
+    /// The security assertion: the preview engine carries the builder verbs and
+    /// nothing else, so there is no way to spell a fetch on it.
+    #[test]
+    fn preview_engine_has_no_terminal_verbs() {
+        for script in [
+            r#"table("users").list()"#,
+            r#"table("users").count()"#,
+            r#"table("users").get_some()"#,
+        ] {
+            let err = preview_script(script.into(), resolver())
+                .expect_err("a fetch verb must not exist on the preview engine");
+            assert!(
+                err.contains("Function not found"),
+                "expected an unknown-function error for `{script}`, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn preview_of_a_non_query_explains_itself() {
+        let err = preview_script(r#""just a string""#.into(), resolver()).unwrap_err();
+        assert!(err.contains("must end on the query itself"), "got: {err}");
+    }
+
+    #[test]
+    fn preview_traverses_a_reference_from_a_literal_row() {
+        // No fetch anywhere: `get_ref` reads the join value out of the map it
+        // is handed, so a drill-down previews from a made-up parent row.
+        let json = preview_script(
+            r#"table("users").get_ref("posts", #{ id: "1" })"#.into(),
+            ref_resolver(),
+        )
+        .unwrap();
+        assert_eq!(json["table"], serde_json::json!("posts"));
+        assert!(
+            json["filters"][0].as_str().unwrap().starts_with("author ="),
+            "the join condition is visible: {json}"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -326,3 +326,52 @@ async fn an_unnarrowed_facade_reads_the_cache() -> Result<()> {
     );
     Ok(())
 }
+
+// ---- preview: which side of the split a clause landed on -------------------
+
+/// A clause the master accepted belongs in the previewed master query, not in
+/// the facade's local list. Attributing a pushed-down filter to the cache would
+/// tell a reader the server never saw it.
+#[tokio::test]
+async fn preview_reports_a_pushed_down_condition_on_the_master() -> Result<()> {
+    let shell = capable_master();
+    shell.set_record("a", row("gamma", 3));
+    let dio = eager_dio(Vista::new("items", Box::new(shell.clone()))).await?;
+
+    let mut narrowed = dio.vista();
+    narrowed.add_condition_eq("name", CborValue::Text("gamma".into()))?;
+    narrowed.add_order("price", SortDirection::Descending)?;
+
+    let preview = narrowed.preview_query();
+    let master = preview["master"].to_string();
+    assert!(
+        master.contains("gamma"),
+        "the master accepted the filter, so it must appear there: {preview}",
+    );
+    assert_eq!(
+        preview["facade"]["conditions"],
+        serde_json::json!([]),
+        "nothing was refused, so nothing is applied over the cache: {preview}",
+    );
+    assert_eq!(preview["facade"]["order"], serde_json::Value::Null);
+    Ok(())
+}
+
+/// The mirror case. CSV can neither order nor filter here, so every clause is
+/// answered over the cache and the master query stays bare.
+#[tokio::test]
+async fn preview_reports_a_refused_order_on_the_facade() -> Result<()> {
+    let dio = eager_dio(csv_master()?).await?;
+
+    let mut narrowed = dio.vista();
+    narrowed.add_order("name", SortDirection::Ascending)?;
+
+    let preview = narrowed.preview_query();
+    assert_eq!(
+        preview["facade"]["order"],
+        serde_json::json!("name asc"),
+        "CSV refused the order, so it is applied locally: {preview}",
+    );
+    assert_eq!(preview["driver"], serde_json::json!("dio"));
+    Ok(())
+}

@@ -247,4 +247,12 @@ impl TableShell for FolderListingShell {
     fn driver_name(&self) -> &'static str {
         "live-folder-listing"
     }
+
+    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+        serde_json::json!({
+            "driver": "live-folder-listing",
+            "path": self.path,
+            "note": "a local directory read — no query, and nothing leaves the machine",
+        })
+    }
 }

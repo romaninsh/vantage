@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama"
-version = "0.12.2"
+version = "0.12.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cached, composable, reactive surface for Vantage Vistas"
@@ -12,10 +12,12 @@ doctest = false
 [dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-vista = { version = "0.6.18", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
 vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+# `TableShell::preview_query` answers with a driver-shaped JSON value.
+serde_json = "1"
 
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }

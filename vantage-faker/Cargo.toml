@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "0.6.13"
+version = "0.6.14"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -17,8 +17,10 @@ readme = "README.md"
 [dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "0.6", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
 vantage-diorama = { version = "0.12", path = "../vantage-diorama" }
+# `TableShell::preview_query` answers with a driver-shaped JSON value.
+serde_json = "1"
 
 # Universal value carrier across the type-erased Vista / ChangeEvent boundary.
 ciborium = "0.2"

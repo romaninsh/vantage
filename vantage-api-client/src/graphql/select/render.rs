@@ -124,35 +124,88 @@ impl GraphqlSelect {
         Ok(RenderedQuery { query, variables })
     }
 
-    /// Human-readable preview — same shape as `render()` but synchronous
-    /// and lossy (skips Deferred resolution). Useful for logs and tests.
+    /// The document [`render`](Self::render) would produce, built synchronously
+    /// so it can be shown without sending anything.
+    ///
+    /// Mirrors `render` arm for arm — same filter, same order, same selection
+    /// set, same response envelope — and differs in exactly two ways, both
+    /// forced by not being allowed to do any work:
+    ///
+    /// 1. A **deferred** condition renders as a `**deferred(...)` marker rather
+    ///    than being awaited. Resolving one means asking the caller for a value
+    ///    that only exists mid-fetch.
+    /// 2. Pagination is **inlined** (`limit: 5`) instead of going through the
+    ///    `$limit` variable, so the document reads standalone. The server is
+    ///    told the same numbers either way.
+    ///
+    /// Everything else is the query that gets sent, and pastes into a GraphQL
+    /// client as-is.
     pub fn preview(&self) -> String {
-        let root = self.root_field.as_deref().unwrap_or("?");
-        let count = self.conditions.len();
-        let limit = self
-            .limit
-            .map(|l| format!(", limit: {}", l))
-            .unwrap_or_default();
-        let skip = self
-            .skip
-            .map(|s| format!(", offset: {}", s))
-            .unwrap_or_default();
-        let where_part = if count > 0 {
-            format!("(<{} conditions>{}{})", count, limit, skip)
-        } else if !limit.is_empty() || !skip.is_empty() {
-            format!(
-                "({})",
-                format!("{}{}", limit, skip).trim_start_matches(", ")
-            )
-        } else {
+        let root = self.root_field.as_deref().unwrap_or("<no root_field>");
+        let mut args: Vec<String> = Vec::new();
+
+        if let Some(Value::Object(map)) = &self.root_args {
+            for (name, value) in map {
+                args.push(format!("{}: {}", name, json_to_graphql_value(value)));
+            }
+        }
+
+        if !self.conditions.is_empty() {
+            let combined = if self.conditions.len() == 1 {
+                self.conditions[0].render_preview(self.dialect)
+            } else {
+                GraphqlCondition::And(self.conditions.clone()).render_preview(self.dialect)
+            };
+            let arg_name = self
+                .filter_arg_name
+                .as_deref()
+                .unwrap_or(match self.dialect {
+                    FilterDialect::Hasura => "where",
+                    FilterDialect::Generic => "find",
+                });
+            match combined {
+                Ok(value) => args.push(format!("{}: {}", arg_name, json_to_graphql_value(&value))),
+                // A dialect that cannot spell this filter fails at send time
+                // too. Surfacing that here is the point of previewing.
+                Err(e) => args.push(format!("{}: <unrenderable: {}>", arg_name, e)),
+            }
+        }
+
+        if !self.sort.is_empty() && matches!(self.dialect, FilterDialect::Hasura) {
+            let entries: Vec<String> = self
+                .sort
+                .iter()
+                .map(|(field, order)| format!("{}: {}", field, render_order(*order)))
+                .collect();
+            args.push(format!("order_by: [{{{}}}]", entries.join(", ")));
+        }
+
+        if let Some(limit) = self.limit {
+            args.push(format!("limit: {}", limit));
+        }
+        if let Some(skip) = self.skip {
+            args.push(format!("offset: {}", skip));
+        }
+
+        let mut selection_set = preview_selection_set(self);
+        for segment in self.response_path.iter().rev() {
+            selection_set = format!("{{ {} {} }}", segment, selection_set);
+        }
+
+        let args_str = if args.is_empty() {
             String::new()
-        };
-        let selection = if self.fields.is_empty() {
-            "{ ... }".to_string()
         } else {
-            format!("{{ {} }}", self.fields.join(" "))
+            format!("({})", args.join(", "))
         };
-        format!("{}{} {}", root, where_part, selection)
+        let op_name = self.operation_name.as_deref().unwrap_or("");
+        if op_name.is_empty() {
+            format!("query {{ {}{} {} }}", root, args_str, selection_set)
+        } else {
+            format!(
+                "query {} {{ {}{} {} }}",
+                op_name, root, args_str, selection_set
+            )
+        }
     }
 }
 
@@ -176,6 +229,57 @@ fn render_selection_set<'a>(
         }
         Ok(format!("{{ {} }}", parts.join(" ")))
     })
+}
+
+/// Synchronous [`render_selection_set`], for [`GraphqlSelect::preview`].
+///
+/// Where the async version errors on an empty selection set, this reports it
+/// inline as `{ <empty selection set> }` — a preview's job is to show the query
+/// as it stands, and "you selected no fields" is exactly the fault worth seeing.
+fn preview_selection_set(select: &GraphqlSelect) -> String {
+    if select.fields.is_empty() && select.sub_selections.is_empty() {
+        return "{ <empty selection set> }".to_string();
+    }
+    let mut parts = FieldTree::from_paths(&select.fields).into_parts();
+    for (field, child) in &select.sub_selections {
+        parts.push(format!("{}{}", field, preview_inline_subselection(child)));
+    }
+    format!("{{ {} }}", parts.join(" "))
+}
+
+/// Synchronous [`render_inline_subselection`], for [`GraphqlSelect::preview`].
+fn preview_inline_subselection(child: &GraphqlSelect) -> String {
+    let mut args: Vec<String> = Vec::new();
+    if !child.conditions.is_empty() {
+        let condition = if child.conditions.len() == 1 {
+            child.conditions[0].clone()
+        } else {
+            GraphqlCondition::And(child.conditions.clone())
+        };
+        let arg_name = child
+            .filter_arg_name
+            .as_deref()
+            .unwrap_or(match child.dialect {
+                FilterDialect::Hasura => "where",
+                FilterDialect::Generic => "find",
+            });
+        match condition.render_preview(child.dialect) {
+            Ok(value) => args.push(format!("{}: {}", arg_name, json_to_graphql_value(&value))),
+            Err(e) => args.push(format!("{}: <unrenderable: {}>", arg_name, e)),
+        }
+    }
+    if let Some(limit) = child.limit {
+        args.push(format!("limit: {}", limit));
+    }
+    if let Some(skip) = child.skip {
+        args.push(format!("offset: {}", skip));
+    }
+    let args_str = if args.is_empty() {
+        String::new()
+    } else {
+        format!("({})", args.join(", "))
+    };
+    format!("{} {}", args_str, preview_selection_set(child))
 }
 
 /// Dotted field paths grouped back into the tree GraphQL wants:
@@ -321,6 +425,68 @@ mod tests {
     use serde_json::json;
 
     use crate::graphql::condition::{FieldCondition, FilterDialect, GraphqlOp};
+    use crate::graphql::types::AnyGraphqlType;
+    use vantage_expressions::{DeferredFn, ExpressiveEnum};
+
+    /// The guarantee worth pinning: for a query with no deferred conditions and
+    /// no pagination, previewing and rendering produce the *same document*. If
+    /// these ever diverge, a preview has started lying about what gets sent.
+    #[tokio::test]
+    async fn preview_matches_render_for_a_literal_query() {
+        let select = GraphqlSelect::new()
+            .with_root_field("launches")
+            .with_field("id")
+            .with_field("rocket.name")
+            .with_dialect(FilterDialect::Generic)
+            .with_condition(GraphqlCondition::Field(FieldCondition::new(
+                "mission_name",
+                GraphqlOp::Eq,
+                json!("FalconSat"),
+            )));
+
+        let rendered = select.render().await.unwrap();
+        assert_eq!(select.preview(), rendered.query);
+        // And it is the real thing, not two matching placeholders.
+        assert!(
+            select.preview().contains("\"FalconSat\""),
+            "the condition value is rendered, not summarised: {}",
+            select.preview()
+        );
+    }
+
+    /// Pagination is the one deliberate difference: `render` sends `$limit` as a
+    /// variable, `preview` inlines the number so the document reads standalone.
+    #[test]
+    fn preview_inlines_pagination() {
+        let preview = GraphqlSelect::new()
+            .with_root_field("launches")
+            .with_field("id")
+            .with_limit(Some(5), Some(10))
+            .preview();
+        assert_eq!(preview, "query { launches(limit: 5, offset: 10) { id } }");
+    }
+
+    /// A deferred condition is the other: its value only exists mid-fetch, so
+    /// preview marks it instead of awaiting it.
+    #[test]
+    fn preview_marks_a_deferred_condition_rather_than_resolving_it() {
+        let preview = GraphqlSelect::new()
+            .with_root_field("runs")
+            .with_field("id")
+            .with_dialect(FilterDialect::Generic)
+            .with_condition(GraphqlCondition::DeferredField {
+                field: "stack_id".into(),
+                op: GraphqlOp::Eq,
+                value_fn: DeferredFn::new(|| {
+                    Box::pin(async { Ok(ExpressiveEnum::Scalar(AnyGraphqlType::from(json!("x")))) })
+                }),
+            })
+            .preview();
+        assert!(
+            preview.contains("**deferred(stack_id"),
+            "deferred values are marked, never awaited: {preview}"
+        );
+    }
 
     #[tokio::test]
     async fn renders_minimal_query() {
