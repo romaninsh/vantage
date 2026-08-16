@@ -26,7 +26,7 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::graphql::api::GraphqlApi;
-use crate::graphql::condition::{GraphqlCondition, GraphqlOp};
+use crate::graphql::condition::{FieldCondition, GraphqlCondition, GraphqlOp};
 use crate::graphql::operation::GraphqlOperation;
 use crate::graphql::select::GraphqlSelect;
 use crate::graphql::types::{AnyGraphqlType, GraphqlType as _};
@@ -143,72 +143,81 @@ fn pluck<'a>(row: &'a Value, path: &str) -> Option<&'a Value> {
 /// — a relation tab would list every parent's children — so the driver
 /// honours it here instead.
 async fn retain_matching(rows: Vec<Value>, conditions: &[GraphqlCondition]) -> Result<Vec<Value>> {
+    // Resolved up front: a deferred value fetches the parent table, so
+    // resolving per row would issue one round trip per row and could
+    // compare different rows against different values.
+    let conditions = resolve_deferred(conditions).await?;
     let mut kept = Vec::with_capacity(rows.len());
     for row in rows {
-        let mut all = true;
-        for condition in conditions {
-            if !matches_condition(&row, condition).await? {
-                all = false;
-                break;
-            }
-        }
-        if all {
+        if conditions.iter().all(|c| matches_condition(&row, c)) {
             kept.push(row);
         }
     }
     Ok(kept)
 }
 
-fn matches_condition<'a>(
-    row: &'a Value,
-    condition: &'a GraphqlCondition,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool>> + Send + 'a>> {
+/// Replace every `DeferredField` with the plain `Field` it resolves to,
+/// walking nested groups. `Deferred` produces a dialect-shaped filter
+/// object rather than `field op value`, so there is nothing to evaluate
+/// against a row — refusing beats quietly keeping every row.
+fn resolve_deferred<'a>(
+    conditions: &'a [GraphqlCondition],
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<GraphqlCondition>>> + Send + 'a>>
+{
     Box::pin(async move {
-        match condition {
-            GraphqlCondition::Field(fc) => Ok(compare(row, &fc.field, &fc.op, &fc.value)),
-            GraphqlCondition::DeferredField {
-                field,
-                op,
-                value_fn,
-            } => {
-                let resolved = value_fn.call().await?;
-                let value = match resolved {
-                    ExpressiveEnum::Scalar(v) => v.to_json(),
-                    other => {
-                        return Err(error!(
-                            "Deferred filter resolved to a non-scalar",
-                            got = format!("{:?}", other)
-                        ));
-                    }
-                };
-                Ok(compare(row, field, op, &value))
-            }
-            GraphqlCondition::And(parts) => {
-                for part in parts {
-                    if !matches_condition(row, part).await? {
-                        return Ok(false);
-                    }
+        let mut out = Vec::with_capacity(conditions.len());
+        for condition in conditions {
+            out.push(match condition {
+                GraphqlCondition::DeferredField {
+                    field,
+                    op,
+                    value_fn,
+                } => {
+                    let value = match value_fn.call().await? {
+                        ExpressiveEnum::Scalar(v) => v.to_json(),
+                        other => {
+                            return Err(error!(
+                                "Deferred filter resolved to a non-scalar",
+                                got = format!("{:?}", other)
+                            ));
+                        }
+                    };
+                    GraphqlCondition::Field(FieldCondition::new(field.clone(), op.clone(), value))
                 }
-                Ok(true)
-            }
-            GraphqlCondition::Or(parts) => {
-                for part in parts {
-                    if matches_condition(row, part).await? {
-                        return Ok(true);
-                    }
+                GraphqlCondition::And(parts) => {
+                    GraphqlCondition::And(resolve_deferred(parts).await?)
                 }
-                Ok(parts.is_empty())
-            }
-            GraphqlCondition::Not(inner) => Ok(!matches_condition(row, inner).await?),
-            // A dynamic filter sub-object is dialect-shaped, not
-            // `field op value`, so there is nothing to evaluate against a
-            // row. Refusing beats quietly keeping every row.
-            GraphqlCondition::Deferred(_) => Err(error!(
-                "Deferred filter cannot be applied client-side; \
-                 this root field accepts no filter argument"
-            )),
+                GraphqlCondition::Or(parts) => GraphqlCondition::Or(resolve_deferred(parts).await?),
+                GraphqlCondition::Not(inner) => GraphqlCondition::Not(Box::new(
+                    resolve_deferred(std::slice::from_ref(inner.as_ref()))
+                        .await?
+                        .remove(0),
+                )),
+                GraphqlCondition::Deferred(_) => {
+                    return Err(error!(
+                        "Deferred filter cannot be applied client-side; \
+                         this root field accepts no filter argument"
+                    ));
+                }
+                plain => plain.clone(),
+            });
         }
+        Ok(out)
     })
+}
+
+/// Evaluate a deferred-free condition against one row.
+fn matches_condition(row: &Value, condition: &GraphqlCondition) -> bool {
+    match condition {
+        GraphqlCondition::Field(fc) => compare(row, &fc.field, &fc.op, &fc.value),
+        GraphqlCondition::And(parts) => parts.iter().all(|p| matches_condition(row, p)),
+        GraphqlCondition::Or(parts) => {
+            parts.is_empty() || parts.iter().any(|p| matches_condition(row, p))
+        }
+        GraphqlCondition::Not(inner) => !matches_condition(row, inner),
+        // `resolve_deferred` removed these before the row loop.
+        GraphqlCondition::DeferredField { .. } | GraphqlCondition::Deferred(_) => false,
+    }
 }
 
 /// Compare one row's value at `path` against `expected`. Ordering
@@ -227,6 +236,11 @@ fn compare(row: &Value, path: &str, op: &GraphqlOp, expected: &Value) -> bool {
         Value::Array(items) => items.iter().any(|item| item == actual),
         single => single == actual,
     };
+    // LIKE anchors decide the shape of the test: `%foo%` is a substring,
+    // `foo%` a prefix, `%foo` a suffix, and a bare `foo` an exact match.
+    // Collapsing all four to `contains` would have matched rows the server
+    // excludes. An interior `%` or an `_` is compared literally — narrower
+    // than the server, which is the safe direction to be wrong in.
     let text_match = |case_sensitive: bool| match (actual.as_str(), expected.as_str()) {
         (Some(a), Some(pattern)) => {
             let (a, pattern) = if case_sensitive {
@@ -234,7 +248,13 @@ fn compare(row: &Value, path: &str, op: &GraphqlOp, expected: &Value) -> bool {
             } else {
                 (a.to_lowercase(), pattern.to_lowercase())
             };
-            a.contains(pattern.trim_matches('%'))
+            let core = pattern.trim_matches('%');
+            match (pattern.starts_with('%'), pattern.ends_with('%')) {
+                (true, true) => a.contains(core),
+                (true, false) => a.ends_with(core),
+                (false, true) => a.starts_with(core),
+                (false, false) => a == core,
+            }
         }
         _ => false,
     };
@@ -938,8 +958,6 @@ mod shape_tests {
     use serde_json::json;
     use vantage_types::EmptyEntity;
 
-    use crate::graphql::types::GraphqlType as _;
-
     fn paths(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
     }
@@ -1044,6 +1062,56 @@ mod local_filter_tests {
         let kept = retain_matching(rows(), &[cond]).await.unwrap();
         assert_eq!(kept.len(), 1);
         assert_eq!(pluck(&kept[0], "stack.id"), Some(&json!("api-uat")));
+    }
+
+    /// A LIKE pattern's anchors decide the test: collapsing every form to
+    /// `contains` matched rows the server would exclude.
+    #[tokio::test]
+    async fn like_anchors_are_honoured() {
+        let rows = vec![
+            json!({ "stack": { "id": "api-uat" } }),
+            json!({ "stack": { "id": "frontend-uat" } }),
+        ];
+        let prefix = GraphqlCondition::Field(FieldCondition::new(
+            "stack.id",
+            GraphqlOp::Like,
+            json!("api%"),
+        ));
+        let kept = retain_matching(rows.clone(), &[prefix]).await.unwrap();
+        assert_eq!(kept.len(), 1, "`api%` is a prefix, not a substring");
+
+        let substring = GraphqlCondition::Field(FieldCondition::new(
+            "stack.id",
+            GraphqlOp::Like,
+            json!("%uat%"),
+        ));
+        assert_eq!(retain_matching(rows, &[substring]).await.unwrap().len(), 2);
+    }
+
+    /// A deferred value hits the network, so it must resolve once for the
+    /// whole set rather than once per row.
+    #[tokio::test]
+    async fn a_deferred_value_resolves_once_for_all_rows() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let cond = GraphqlCondition::DeferredField {
+            field: "stack.id".into(),
+            op: GraphqlOp::Eq,
+            value_fn: DeferredFn::new(move || {
+                let counter = Arc::clone(&counter);
+                Box::pin(async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(
+                        "api-uat".to_string(),
+                    )))
+                })
+            }),
+        };
+        let kept = retain_matching(rows(), &[cond]).await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     /// A filter that can't be evaluated row-wise must fail rather than

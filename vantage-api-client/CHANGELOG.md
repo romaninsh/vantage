@@ -21,7 +21,10 @@
   dropped. Vista treats equality push-down as universal, so dropping them
   silently widened results; rendering them produced a query the server
   rejected. A filter shape that can't be evaluated row-wise now errors rather
-  than quietly matching everything.
+  than quietly matching everything. A deferred filter value resolves once for
+  the whole set rather than per row, since resolving it fetches the parent
+  table; LIKE anchors are honoured, so `foo%` is a prefix rather than a
+  substring.
 
 ## 0.6.10 — 2026-08-12
 
