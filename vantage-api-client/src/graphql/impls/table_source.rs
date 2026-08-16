@@ -29,7 +29,7 @@ use crate::graphql::api::GraphqlApi;
 use crate::graphql::condition::{GraphqlCondition, GraphqlOp};
 use crate::graphql::operation::GraphqlOperation;
 use crate::graphql::select::GraphqlSelect;
-use crate::graphql::types::AnyGraphqlType;
+use crate::graphql::types::{AnyGraphqlType, GraphqlType as _};
 
 /// Build a `GraphqlSelect` from a table's current state.
 ///
@@ -129,6 +129,132 @@ fn pluck<'a>(row: &'a Value, path: &str) -> Option<&'a Value> {
         cursor = cursor.get(segment)?;
     }
     Some(cursor)
+}
+
+/// Apply conditions in memory, for a root field that takes no filter
+/// argument.
+///
+/// Vista treats equality push-down as universal, so a consumer narrowing
+/// this table never learns the server can't do it. Dropping the condition
+/// at render time and returning every row would silently widen the result
+/// — a relation tab would list every parent's children — so the driver
+/// honours it here instead.
+async fn retain_matching(rows: Vec<Value>, conditions: &[GraphqlCondition]) -> Result<Vec<Value>> {
+    let mut kept = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut all = true;
+        for condition in conditions {
+            if !matches_condition(&row, condition).await? {
+                all = false;
+                break;
+            }
+        }
+        if all {
+            kept.push(row);
+        }
+    }
+    Ok(kept)
+}
+
+fn matches_condition<'a>(
+    row: &'a Value,
+    condition: &'a GraphqlCondition,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool>> + Send + 'a>> {
+    Box::pin(async move {
+        match condition {
+            GraphqlCondition::Field(fc) => Ok(compare(row, &fc.field, &fc.op, &fc.value)),
+            GraphqlCondition::DeferredField {
+                field,
+                op,
+                value_fn,
+            } => {
+                let resolved = value_fn.call().await?;
+                let value = match resolved {
+                    ExpressiveEnum::Scalar(v) => v.to_json(),
+                    other => {
+                        return Err(error!(
+                            "Deferred filter resolved to a non-scalar",
+                            got = format!("{:?}", other)
+                        ));
+                    }
+                };
+                Ok(compare(row, field, op, &value))
+            }
+            GraphqlCondition::And(parts) => {
+                for part in parts {
+                    if !matches_condition(row, part).await? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            GraphqlCondition::Or(parts) => {
+                for part in parts {
+                    if matches_condition(row, part).await? {
+                        return Ok(true);
+                    }
+                }
+                Ok(parts.is_empty())
+            }
+            GraphqlCondition::Not(inner) => Ok(!matches_condition(row, inner).await?),
+            // A dynamic filter sub-object is dialect-shaped, not
+            // `field op value`, so there is nothing to evaluate against a
+            // row. Refusing beats quietly keeping every row.
+            GraphqlCondition::Deferred(_) => Err(error!(
+                "Deferred filter cannot be applied client-side; \
+                 this root field accepts no filter argument"
+            )),
+        }
+    })
+}
+
+/// Compare one row's value at `path` against `expected`. Ordering
+/// comparisons work on numbers and strings; everything else falls back to
+/// structural equality.
+fn compare(row: &Value, path: &str, op: &GraphqlOp, expected: &Value) -> bool {
+    let actual = pluck(row, path).unwrap_or(&Value::Null);
+    let ordering = || match (actual.as_f64(), expected.as_f64()) {
+        (Some(a), Some(b)) => a.partial_cmp(&b),
+        _ => match (actual.as_str(), expected.as_str()) {
+            (Some(a), Some(b)) => Some(a.cmp(b)),
+            _ => None,
+        },
+    };
+    let contains = || match expected {
+        Value::Array(items) => items.iter().any(|item| item == actual),
+        single => single == actual,
+    };
+    let text_match = |case_sensitive: bool| match (actual.as_str(), expected.as_str()) {
+        (Some(a), Some(pattern)) => {
+            let (a, pattern) = if case_sensitive {
+                (a.to_string(), pattern.to_string())
+            } else {
+                (a.to_lowercase(), pattern.to_lowercase())
+            };
+            a.contains(pattern.trim_matches('%'))
+        }
+        _ => false,
+    };
+    match op {
+        GraphqlOp::Eq => actual == expected,
+        GraphqlOp::Ne => actual != expected,
+        GraphqlOp::Gt => matches!(ordering(), Some(std::cmp::Ordering::Greater)),
+        GraphqlOp::Gte => matches!(
+            ordering(),
+            Some(std::cmp::Ordering::Greater) | Some(std::cmp::Ordering::Equal)
+        ),
+        GraphqlOp::Lt => matches!(ordering(), Some(std::cmp::Ordering::Less)),
+        GraphqlOp::Lte => matches!(
+            ordering(),
+            Some(std::cmp::Ordering::Less) | Some(std::cmp::Ordering::Equal)
+        ),
+        GraphqlOp::In => contains(),
+        GraphqlOp::NotIn => !contains(),
+        GraphqlOp::Like => text_match(true),
+        GraphqlOp::ILike => text_match(false),
+        GraphqlOp::IsNull => actual.is_null(),
+        GraphqlOp::IsNotNull => !actual.is_null(),
+    }
 }
 
 /// Convert a JSON row into `(Id, Record<AnyGraphqlType>)`. The id is
@@ -292,6 +418,14 @@ impl TableSource for GraphqlApi {
                     got = format!("{:?}", other)
                 ));
             }
+        };
+
+        // Conditions the query couldn't carry are applied here, so a
+        // narrowed table returns narrowed rows either way.
+        let arr = if table.data_source().can_filter() {
+            arr
+        } else {
+            retain_matching(arr, &table.conditions().cloned().collect::<Vec<_>>()).await?
         };
 
         let id_name = table.id_field().map(|c| c.name().to_string());
@@ -866,5 +1000,56 @@ mod shape_tests {
             crate::graphql::condition::FieldCondition::new("space", GraphqlOp::Eq, json!("root")),
         ));
         assert!(select_from_table(&table).conditions.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod local_filter_tests {
+    use super::*;
+    use crate::graphql::condition::FieldCondition;
+    use serde_json::json;
+
+    fn rows() -> Vec<Value> {
+        vec![
+            json!({ "stack": { "id": "api-uat" }, "run": { "id": "1", "delta": { "addCount": 4 } } }),
+            json!({ "stack": { "id": "api-dev" }, "run": { "id": "2", "delta": { "addCount": 0 } } }),
+        ]
+    }
+
+    /// The narrowing a binder tab applies has to survive even though the
+    /// root field takes no filter argument — otherwise the tab would list
+    /// every stack's runs.
+    #[tokio::test]
+    async fn equality_on_a_dotted_path_narrows_locally() {
+        let cond = GraphqlCondition::Field(FieldCondition::new(
+            "stack.id",
+            GraphqlOp::Eq,
+            json!("api-uat"),
+        ));
+        let kept = retain_matching(rows(), &[cond]).await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(pluck(&kept[0], "run.id"), Some(&json!("1")));
+    }
+
+    #[tokio::test]
+    async fn ordering_comparisons_work_on_numbers() {
+        let cond = GraphqlCondition::Field(FieldCondition::new(
+            "run.delta.addCount",
+            GraphqlOp::Gt,
+            json!(1),
+        ));
+        let kept = retain_matching(rows(), &[cond]).await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(pluck(&kept[0], "stack.id"), Some(&json!("api-uat")));
+    }
+
+    /// A filter that can't be evaluated row-wise must fail rather than
+    /// quietly returning everything.
+    #[tokio::test]
+    async fn an_opaque_deferred_filter_is_refused() {
+        let cond = GraphqlCondition::Deferred(DeferredFn::new(|| {
+            Box::pin(async { Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(1i64))) })
+        }));
+        assert!(retain_matching(rows(), &[cond]).await.is_err());
     }
 }
