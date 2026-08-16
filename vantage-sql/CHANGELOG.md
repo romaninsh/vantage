@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.18 — 2026-08-12
+
+- **Bug fix:** the Postgres, MySQL and SQLite shells resolve relations whose
+  target constructor returns a typed table. `get_ref_target` went through an
+  entity-typed downcast that failed, so a reference field's list of eligible
+  rows came back as an error.
+
 ## 0.6.17 — 2026-08-07
 
 - **Bug fix:** a search keeps the conditions of the table. The search

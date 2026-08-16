@@ -327,7 +327,7 @@ where
     }
 
     fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+        let target = self.table.get_ref_target_erased(relation)?;
         let mut factory = SurrealVistaFactory::new(self.table.data_source().clone());
         if let Some(resolver) = &self.resolver {
             factory = factory.with_resolver(resolver.clone());

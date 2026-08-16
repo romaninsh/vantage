@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.5 — 2026-08-12
+
+- **Bug fix:** `AwsTableShell::get_ref_target` resolves relations whose target
+  constructor returns a typed table. It went through an entity-typed downcast
+  that failed, so a reference field's list of eligible rows came back as an
+  error.
+
 ## 0.6.4 — 2026-07-23
 
 - `AwsTableShell` implements `get_ref_target`, forwarding the bare relation

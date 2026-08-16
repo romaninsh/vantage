@@ -560,6 +560,106 @@ async fn uuid_create_retry_reuses_the_id() -> Result<()> {
     Ok(())
 }
 
+/// A driver is free to keep a new record under an id of its own. The
+/// staged row must move onto that id — one record upstream is one row
+/// here, not the staged row plus the refreshed one.
+#[tokio::test]
+async fn a_create_settles_on_the_id_the_driver_stored() -> Result<()> {
+    let shell = MockShell::new().with_id_prefix("products:");
+    let dio = dio_over(&shell).await?;
+    let servo = dio.servo_new(IdStrategy::Uuid);
+    let minted = servo.id().expect("minted at creation");
+
+    servo.set("name", text("Croissant"));
+    let flash = servo.flash().await?.expect("insert fires");
+
+    let settled = format!("products:{minted}");
+    assert_eq!(flash.id(), Some(settled.as_str()));
+    assert_eq!(servo.id().as_deref(), Some(settled.as_str()));
+    assert!(
+        dio.cache().get_value(&minted).await?.is_none(),
+        "the minted key is retired"
+    );
+    assert!(
+        dio.cache().get_value(&settled).await?.is_some(),
+        "the row lives under the id the driver reported"
+    );
+    assert_eq!(shell.len(), 1, "one record upstream");
+    assert!(!servo.is_dirty(), "converged clean on the created row");
+    Ok(())
+}
+
+/// The settled id comes out of the master's id column, whatever that
+/// column is named. A master keyed by `sku` reports where it stored the
+/// record in `sku`, so a re-key that only looked at a literal `id` field
+/// would leave the row on the minted key.
+#[tokio::test]
+async fn a_create_settles_on_a_renamed_id_column() -> Result<()> {
+    let shell = MockShell::new().with_id_prefix("products:");
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("sku", "String").with_flag("id"))
+        .with_column(Column::new("name", "String").with_flag("title"))
+        .with_id_column("sku");
+    let vista = Vista::new("products", Box::new(shell.clone().with_metadata(metadata)));
+    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
+    let dio = lens.make_dio(vista).await?;
+
+    let servo = dio.servo_new(IdStrategy::Uuid);
+    let minted = servo.id().expect("minted at creation");
+    servo.set("name", text("Croissant"));
+    let flash = servo.flash().await?.expect("insert fires");
+
+    let settled = format!("products:{minted}");
+    assert_eq!(flash.id(), Some(settled.as_str()));
+    assert_eq!(servo.id().as_deref(), Some(settled.as_str()));
+    assert!(
+        dio.cache().get_value(&minted).await?.is_none(),
+        "the minted key is retired"
+    );
+    let row = dio
+        .cache()
+        .get_value(&settled)
+        .await?
+        .expect("the row lives under the id the driver reported");
+    assert_eq!(
+        row.get("sku"),
+        Some(&text(&settled)),
+        "the master reports the id in its own id column"
+    );
+    Ok(())
+}
+
+/// The returning insert reports the same id the by-id insert stores
+/// under. A driver that qualifies its keys must qualify this one too —
+/// otherwise an `Auto` create binds, and seeds the cache with, an id no
+/// read can resolve.
+#[tokio::test]
+async fn an_auto_create_binds_the_id_the_driver_qualified() -> Result<()> {
+    let shell = MockShell::new().with_id_prefix("products:");
+    let dio = dio_over(&shell).await?;
+    let servo = dio.servo_new(IdStrategy::Auto);
+
+    servo.set("name", text("Croissant"));
+    let flash = servo.flash().await?.expect("returning insert fires");
+
+    let id = servo.id().expect("bound to the created row");
+    assert_eq!(
+        shell.record_ids(),
+        vec![id.clone()],
+        "the id the store used"
+    );
+    assert_eq!(flash.id(), Some(id.as_str()));
+    assert!(
+        dio.master().get_value(&id).await?.is_some(),
+        "the bound id resolves upstream"
+    );
+    assert!(
+        dio.cache().get_value(&id).await?.is_some(),
+        "cache seeded under that same id"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn auto_strategy_binds_the_backend_id() -> Result<()> {
     let shell = product_shell();

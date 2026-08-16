@@ -392,11 +392,11 @@ fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
 **`get_ref` has a twin: `get_ref_target`.** Where `get_ref` resolves a relation *for a known
 parent row* (join condition applied), `get_ref_target` builds the **bare** target — the same table
 with **no** condition. It has the same three-line shape, but calls the typed table's
-`get_ref_target::<EmptyEntity>(relation)` instead of `get_ref_from_row`:
+`get_ref_target_erased(relation)` instead of `get_ref_from_row`:
 
 ```rust
 fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-    let target = self.table.get_ref_target::<EmptyEntity>(relation)?;
+    let target = self.table.get_ref_target_erased(relation)?;
     let factory = SqliteVistaFactory::new(self.table.data_source().clone());
     factory.from_table(target)
 }

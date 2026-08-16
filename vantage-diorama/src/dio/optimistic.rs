@@ -14,7 +14,7 @@
 //! the cache, but the optimistic stage and the rollback are what views observe.
 
 use vantage_core::Result;
-use vantage_types::Record;
+use vantage_types::{Record, cbor_id_to_string};
 
 use ciborium::Value as CborValue;
 
@@ -37,9 +37,24 @@ impl Dio {
     /// The flash reaches the `on_flash` route with its pre-image filled: if
     /// the emitter didn't supply `before`, the cache snapshot taken here is
     /// attached, so routes always see a self-contained flash.
-    pub async fn flash(&self, mut flash: ChangeFlash) -> Result<()> {
+    pub async fn flash(&self, flash: ChangeFlash) -> Result<()> {
+        self.flash_returning_id(flash).await.map(|_| ())
+    }
+
+    /// [`flash`](Self::flash), reporting the id the row settled under.
+    ///
+    /// A driver may keep a new record under an id of its own — a
+    /// fully-qualified `table:key`, a sequence number — instead of the id
+    /// the flash minted. The staged cache entry then moves onto the id the
+    /// driver reports, because one record upstream must stay one row here:
+    /// left alone, the staged row and the refreshed row are two rows, and
+    /// the staged key hands out a row nothing upstream answers for.
+    ///
+    /// `None` for an id-less flash (`Clear`).
+    pub async fn flash_returning_id(&self, mut flash: ChangeFlash) -> Result<Option<String>> {
         let Some(id) = flash.id().map(str::to_string) else {
-            return crate::dio::worker::run_write_through(self, flash).await;
+            crate::dio::worker::run_write_through(self, flash).await?;
+            return Ok(None);
         };
 
         // Mark the row in flight for the whole optimistic window —
@@ -61,14 +76,35 @@ impl Dio {
 
         // 3. Run the real write-through.
         match crate::dio::worker::run_write_through(self, flash.clone()).await {
-            Ok(()) => {
+            Ok(stored) => {
+                let settled = stored
+                    .as_ref()
+                    .and_then(|record| self.stored_id(record))
+                    .filter(|settled| *settled != id);
+                if let Some(settled) = settled {
+                    // The master keeps this record under an id of its
+                    // own. Re-key the staged row onto it — the returned
+                    // record is what the datastore now holds — and retire
+                    // the key the flash minted.
+                    let record = stored.expect("an id settles only from a stored record");
+                    self.inner.cache.insert_value(&settled, &record).await?;
+                    self.inner.cache.delete_value(&id).await?;
+                    let _ = self.inner.event_bus.send(DioEvent::RecordRemoved { id });
+                    let _ = self.inner.event_bus.send(DioEvent::RecordInserted {
+                        id: settled.clone(),
+                    });
+                    return Ok(Some(settled));
+                }
                 // Re-assert the confirmed fields over whatever raced into
                 // the cache mid-flight: a stale writer that bypassed the
                 // pending guard loses exactly the fields this flash wrote,
                 // and keeps everything else it brought.
                 reassert_confirmed(&self.inner, &flash).await?;
-                let _ = self.inner.event_bus.send(DioEvent::RecordChanged { id });
-                Ok(())
+                let _ = self
+                    .inner
+                    .event_bus
+                    .send(DioEvent::RecordChanged { id: id.clone() });
+                Ok(Some(id))
             }
             Err(err) => {
                 // 4. Roll the cache back to the pre-image and surface the error.
@@ -118,6 +154,16 @@ impl Dio {
     /// Delete the row at `id` optimistically.
     pub async fn flash_delete(&self, id: impl Into<String>) -> Result<()> {
         self.flash(ChangeFlash::delete(id)).await
+    }
+
+    /// The id the master reports for a record it stored: its id column,
+    /// read in the same form every other cache key takes. `None` when the
+    /// record carries no readable id — the caller then keeps the id it
+    /// wrote with.
+    fn stored_id(&self, record: &Record<CborValue>) -> Option<String> {
+        let master = self.master();
+        let id_column = master.get_id_column().unwrap_or("id");
+        record.get(id_column).and_then(cbor_id_to_string)
     }
 }
 

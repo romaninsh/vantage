@@ -93,6 +93,36 @@ async fn vista_count_with_eq_condition() -> Result<()> {
     Ok(())
 }
 
+/// A relation's target is built by a caller-supplied constructor, and that
+/// constructor usually returns a table typed with the target's own entity.
+/// Resolving the bare target must not depend on the entity type — it is not
+/// known at the traversal site.
+#[tokio::test]
+async fn vista_resolves_bare_target_of_typed_relation() -> Result<()> {
+    use vantage_csv::AnyCsvType;
+    use vantage_types::Record;
+
+    let csv = csv();
+    let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        // Target entity is `Record<AnyCsvType>`, not `EmptyEntity`.
+        .with_one("bakery", "bakery_id", |csv: Csv| {
+            Table::<Csv, Record<AnyCsvType>>::new("bakery", csv)
+                .with_id_column("id")
+                .with_column_of::<String>("name")
+        });
+    let vista = csv.vista_factory().from_table(table)?;
+
+    let target = vista.get_ref_target("bakery")?;
+    assert_eq!(target.name(), "bakery");
+
+    let rows = target.list_values().await?;
+    assert_eq!(rows.len(), 1);
+    assert!(rows.contains_key("hill_valley"));
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_writes_return_read_only_error() -> Result<()> {
     use vantage_core::ErrorKind;

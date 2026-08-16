@@ -93,6 +93,13 @@ impl ChangeFlash {
         }
     }
 
+    /// Re-point the flash at the id its row settled under, when the
+    /// driver stored the record under an id of its own. The emitter reads
+    /// the flash back to learn where the row landed.
+    pub(crate) fn rebind_id(&mut self, id: impl Into<String>) {
+        self.id = Some(id.into());
+    }
+
     pub fn kind(&self) -> &FlashKind {
         &self.kind
     }
