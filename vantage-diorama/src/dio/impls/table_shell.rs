@@ -199,10 +199,10 @@ impl TableShell for DioShell {
     /// seeing is the **master's**, which is what filled that cache in the first
     /// place.
     ///
-    /// Which clauses that master carries is not a given: [`plan`](DioShell::plan)
-    /// offers each one to a private clone and keeps whatever it accepts, so the
-    /// same condition is a server-side filter against one driver and an
-    /// in-memory one against the next. The preview therefore reports the
+    /// Which clauses that master carries is not a given: `plan` offers each one
+    /// to a private clone and keeps whatever it accepts, so the same condition
+    /// is a server-side filter against one driver and an in-memory one against
+    /// the next. The preview therefore reports the
     /// **planned** master, and lists under `facade` only what the master
     /// refused. Reporting the bare master and every clause as local would put
     /// pushed-down filters in the wrong column — lossy is acceptable here,

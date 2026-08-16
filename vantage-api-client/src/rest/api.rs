@@ -205,6 +205,36 @@ impl RestApi {
         Ok((format!("{}/{}", self.base_url, path), consumed))
     }
 
+    /// Decide which conditions go in the query string and which are applied to
+    /// the rows after they arrive.
+    ///
+    /// Under [`FilterStrategy::Client`] non-path eq-conditions are *not* sent —
+    /// the API rejects or ignores unknown params — so they come back as
+    /// client-side filters and every condition is marked consumed to keep it out
+    /// of the URL. Otherwise nothing is filtered locally and only the path
+    /// placeholders are consumed.
+    ///
+    /// Shared by the real fetch and by [`preview_request`](Self::preview_request)
+    /// so a previewed URL cannot claim a filter the fetch would have applied in
+    /// memory, or vice versa.
+    fn split_filters(
+        &self,
+        conds: &[&Expression<CborValue>],
+        consumed: Vec<usize>,
+    ) -> (Vec<usize>, Vec<(String, String)>) {
+        if self.filter_strategy == FilterStrategy::Client {
+            let filters = conds
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !consumed.contains(i))
+                .filter_map(|(_, c)| crate::condition_to_query_param(c))
+                .collect();
+            ((0..conds.len()).collect(), filters)
+        } else {
+            (consumed, Vec::new())
+        }
+    }
+
     /// Build the combined query-string from pagination + conditions.
     /// `consumed` lists condition indices already baked into the URI
     /// path; those don't appear in the query string. Conditions that
@@ -321,19 +351,7 @@ impl RestApi {
             }
         };
 
-        let (query_consumed, client_filters): (Vec<usize>, Vec<(String, String)>) =
-            if self.filter_strategy == FilterStrategy::Client {
-                let filters = conds
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| !consumed.contains(i))
-                    .filter_map(|(_, c)| crate::condition_to_query_param(c))
-                    .collect();
-                ((0..conds.len()).collect(), filters)
-            } else {
-                (consumed, Vec::new())
-            };
-
+        let (query_consumed, client_filters) = self.split_filters(&conds, consumed);
         let query = self.build_query_string(window, &conds, &query_consumed);
 
         serde_json::json!({
@@ -449,23 +467,7 @@ impl RestApi {
         let conds: Vec<&Expression<CborValue>> = resolved.iter().collect();
         let (endpoint, consumed) = self.endpoint_url(table_name, &conds)?;
 
-        // Under `FilterStrategy::Client`, non-path eq-conditions are applied
-        // to the fetched rows in memory rather than sent as query params (the
-        // API rejects/ignores unknown params). Collect them, and keep them out
-        // of the query string by marking every condition as consumed.
-        let (query_consumed, client_filters): (Vec<usize>, Vec<(String, String)>) =
-            if self.filter_strategy == FilterStrategy::Client {
-                let filters = conds
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| !consumed.contains(i))
-                    .filter_map(|(_, c)| crate::condition_to_query_param(c))
-                    .collect();
-                ((0..conds.len()).collect(), filters)
-            } else {
-                (consumed, Vec::new())
-            };
-
+        let (query_consumed, client_filters) = self.split_filters(&conds, consumed);
         let query = self.build_query_string(window, &conds, &query_consumed);
         let url = join_query(&endpoint, &query);
 
