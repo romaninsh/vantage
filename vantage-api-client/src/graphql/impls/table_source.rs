@@ -51,6 +51,9 @@ fn select_from_table<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) ->
     if let Some(args) = api.root_args.clone() {
         select = select.with_root_args(args);
     }
+    if !api.response_path().is_empty() {
+        select = select.with_response_path(api.response_path().to_vec());
+    }
 
     // Selection set
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();

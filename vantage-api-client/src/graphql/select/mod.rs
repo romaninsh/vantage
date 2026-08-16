@@ -39,6 +39,11 @@ pub struct GraphqlSelect {
     /// `input: {}` on Spacelift's `searchRuns(input: SearchInput!)`, say.
     /// Rendered inline alongside any filter/pagination arguments.
     pub root_args: Option<serde_json::Value>,
+    /// Envelope the rows sit inside, e.g. `["edges", "node"]` for a Relay
+    /// connection. The selection set is wrapped in these on the way out
+    /// and the response is unwrapped through them on the way back, so the
+    /// two can never drift apart.
+    pub response_path: Vec<String>,
     /// Nested selection sets for relationship traversal. Built up by
     /// the Phase 6 `with_many`/`with_one` paths.
     pub sub_selections: Vec<(String, GraphqlSelect)>,
@@ -82,6 +87,7 @@ impl Default for GraphqlSelect {
             operation_name: None,
             fields: Vec::new(),
             root_args: None,
+            response_path: Vec::new(),
             sub_selections: Vec::new(),
             conditions: Vec::new(),
             sort: Vec::new(),

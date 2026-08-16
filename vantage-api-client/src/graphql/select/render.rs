@@ -92,7 +92,12 @@ impl GraphqlSelect {
         }
 
         // ── Selection set ────────────────────────────────────────
-        let selection_set = render_selection_set(self).await?;
+        // Wrapped in the response envelope, so the query asks for rows
+        // exactly where the decoder will look for them.
+        let mut selection_set = render_selection_set(self).await?;
+        for segment in self.response_path.iter().rev() {
+            selection_set = format!("{{ {} {} }}", segment, selection_set);
+        }
 
         // ── Assemble document ────────────────────────────────────
         let op_name = self.operation_name.as_deref().unwrap_or("");
@@ -495,5 +500,31 @@ mod nesting_tests {
             .await
             .unwrap();
         assert_eq!(q.query, "query { searchRuns(input: {}) { run { id } } }");
+    }
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The envelope has to shape the query too — asking for `run` at the
+    /// root of a connection field is a server-side error, and the decoder
+    /// would then be reading a path the query never selected.
+    #[tokio::test]
+    async fn response_path_wraps_the_selection_set() {
+        let q = GraphqlSelect::new()
+            .with_root_field("searchRuns")
+            .with_root_args(json!({ "input": {} }))
+            .with_response_path(vec!["edges".into(), "node".into()])
+            .with_field("run.id")
+            .with_field("stack.id")
+            .render()
+            .await
+            .unwrap();
+        assert_eq!(
+            q.query,
+            "query { searchRuns(input: {}) { edges { node { run { id } stack { id } } } } }"
+        );
     }
 }
