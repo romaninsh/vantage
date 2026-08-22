@@ -403,10 +403,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        // A conditioned table represents a SUBSET, so this deletes that subset.
-        // Dropping the conditions here would render `DELETE FROM t` and take
-        // the whole table — the caller asked to delete what the table stands
-        // for, and every read path already reads it as narrowed.
+        // A conditioned table is a subset — see the trait's contract.
         let mut delete = crate::mysql::statements::MysqlDelete::new(table.table_name());
         for condition in table.conditions() {
             delete = delete.with_condition(condition.clone());

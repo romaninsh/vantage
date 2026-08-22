@@ -231,7 +231,14 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Delete all records (for WritableValueSet implementation)
+    /// Delete every record the table represents (for WritableValueSet).
+    ///
+    /// **Honour `table.conditions()`.** A conditioned table is a SUBSET, and
+    /// every read path already treats it as one, so deleting it must delete
+    /// that subset. An implementation that builds its statement from
+    /// `table_name()` alone silently truncates the table instead — the caller
+    /// narrowed to one row, and lost all of them. An unconditioned table
+    /// still deletes everything, which is the only case this looks like.
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
     where
         E: Entity<Self::Value>,
