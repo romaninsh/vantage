@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.20 — 2026-08-22
+
+- **Bug fix (data loss):** `delete_all` on a conditioned table deleted the whole
+  table. The SQLite, Postgres and MySQL sources built `DELETE FROM <table>` from
+  the table name alone and never read the table's conditions, so a caller that
+  narrowed a table and then deleted it lost every row. The conditions are now
+  applied, and an unconditioned table still truncates as before.
+
 ## 0.6.19 — 2026-08-16
 
 - The SQLite, Postgres and MySQL shells implement `preview_query`, returning the

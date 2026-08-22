@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.17 — 2026-08-22
+
+- `TableSource::delete_table_all_values` documents that implementations must
+  honour `table.conditions()`. Four backends had built the statement from the
+  table name alone and truncated conditioned tables; the one-line doc it
+  replaces did not say otherwise.
+
 ## 0.6.16 — 2026-08-12
 
 - **Bug fix:** `get_ref_target_erased` replaces the typed

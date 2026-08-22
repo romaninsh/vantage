@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.17 — 2026-08-22
+
+- **Bug fix (data loss):** `delete_all` on a conditioned table deleted the whole
+  table. `delete_table_all_values` rendered a bare `DELETE <table>` and never
+  read the table's conditions, so a caller that narrowed a table and then
+  deleted it lost every row. The conditions are now applied.
+
 ## 0.6.16 — 2026-08-16
 
 - `SurrealTableShell` implements `preview_query`, returning the SurrealQL SELECT

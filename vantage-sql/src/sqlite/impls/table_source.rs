@@ -382,7 +382,11 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let delete = crate::sqlite::statements::SqliteDelete::new(table.table_name());
+        // A conditioned table is a subset — see the trait's contract.
+        let mut delete = crate::sqlite::statements::SqliteDelete::new(table.table_name());
+        for condition in table.conditions() {
+            delete = delete.with_condition(condition.clone());
+        }
         self.execute(&delete.expr()).await?;
         Ok(())
     }
