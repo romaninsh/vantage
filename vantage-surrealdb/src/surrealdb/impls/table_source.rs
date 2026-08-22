@@ -470,7 +470,14 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let delete = SurrealDelete::table(table.table_name());
+        // A conditioned table represents a SUBSET, so this deletes that subset.
+        // Dropping the conditions here would render a bare `DELETE <table>`
+        // and take everything — the caller asked to delete what the table
+        // stands for, and every read path already reads it as narrowed.
+        let mut delete = SurrealDelete::table(table.table_name());
+        for condition in table.conditions() {
+            delete = delete.with_condition(condition.clone());
+        }
         self.execute(&delete.expr()).await?;
         Ok(())
     }

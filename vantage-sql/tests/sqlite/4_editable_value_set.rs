@@ -139,3 +139,35 @@ async fn test_insert_return_id_value() {
         "hello world"
     );
 }
+
+// ── Conditioned deletes ────────────────────────────────────────────────────
+
+/// A conditioned table represents a SUBSET, so `delete_all` must delete that
+/// subset and nothing else. Reported from the field as total data loss: the
+/// condition was added, the delete ran, and every row went.
+#[tokio::test]
+async fn delete_all_on_a_conditioned_table_only_deletes_matching_rows() {
+    let (_db, mut table) = setup().await;
+    table.add_condition(vantage_sql::sqlite_expr!(
+        "{} = {}",
+        (table["name"]),
+        "Alpha"
+    ));
+
+    table.delete_all().await.unwrap();
+
+    // The condition names one row. The other must survive.
+    let survivors = Table::<SqliteDB, EmptyEntity>::new("item", _db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("price")
+        .list_values()
+        .await
+        .unwrap();
+    assert!(
+        survivors.contains_key("b"),
+        "row 'b' did not match the condition but was deleted anyway — \
+         delete_all ignored the table's conditions and truncated the table",
+    );
+    assert_eq!(survivors.len(), 1, "only the matching row should have gone");
+}
