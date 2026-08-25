@@ -653,3 +653,75 @@ async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
     assert_eq!(ids, ["a", "b", "c"]);
     Ok(())
 }
+
+/// A cursor scan must visit every row even when the id column is not unique.
+///
+/// `list_values` keys rows by id, so duplicates collapse and a FULL SQL page
+/// can arrive under-length. Treating a short page as the end of the set — the
+/// obvious reading — silently drops every page after the first duplicate.
+#[tokio::test]
+async fn vista_fetch_next_survives_a_non_unique_id_column() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, name) = setup("dup_ids").await;
+    // Page by `name`, which repeats: 'dup' twice, then a distinct third row.
+    sqlx::query(&format!("DELETE FROM \"{}\"", name))
+        .execute(db.pool())
+        .await?;
+    sqlx::query(&format!(
+        "INSERT INTO \"{}\" VALUES \
+         ('a', 'dup', 10, false), \
+         ('b', 'dup', 20, false), \
+         ('c', 'tail', 30, false)",
+        name
+    ))
+    .execute(db.pool())
+    .await?;
+
+    let table = Table::<PostgresDB, EmptyEntity>::new(&name, db.clone())
+        .with_id_column("name")
+        .with_column_of::<String>("id")
+        .with_column_of::<i64>("price");
+    let mut vista = db.vista_factory().from_table(table)?;
+    vista.set_page_size(2)?;
+    vista.add_order("id", SortDirection::Ascending)?;
+
+    let mut seen: Vec<String> = Vec::new();
+    let mut token = None;
+    for _ in 0..10 {
+        let (rows, next) = vista.fetch_next(token).await?;
+        seen.extend(rows.into_iter().map(|(id, _)| id));
+        token = next;
+        if token.is_none() {
+            break;
+        }
+    }
+    // 'dup' collapses (page one returns a single record), but the scan must
+    // still reach 'tail' rather than stopping on the short page.
+    assert!(
+        seen.contains(&"tail".to_string()),
+        "cursor ended early on a deduped page; saw {seen:?}"
+    );
+    Ok(())
+}
+
+/// Paging with no caller-supplied order must still be a stable window:
+/// `LIMIT`/`OFFSET` without `ORDER BY` lets Postgres return rows in any
+/// order, so pages could repeat one row and skip another.
+#[tokio::test]
+async fn vista_paging_without_an_order_still_visits_every_row_once() -> TestResult {
+    let (db, name) = setup("unordered_pages").await;
+    let table = product_table(db.clone(), &name);
+    let mut vista = db.vista_factory().from_table(table)?;
+    vista.set_page_size(2)?;
+    vista.clear_orders()?;
+
+    let mut seen: Vec<String> = Vec::new();
+    for page in 1..=2 {
+        let rows = vista.fetch_page(page).await?;
+        seen.extend(rows.into_iter().map(|(id, _)| id));
+    }
+    seen.sort();
+    assert_eq!(seen, ["a", "b", "c"], "each id must appear exactly once");
+    Ok(())
+}

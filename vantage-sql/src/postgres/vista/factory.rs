@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use super::spec::DriverBlockArgs;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::column::flags::ColumnFlag;
@@ -89,6 +90,7 @@ impl PostgresVistaFactory {
             VistaCapabilities {
                 can_count: true,
                 can_order: true,
+                can_search: true,
                 can_filter_operators: true,
                 can_insert: !read_only,
                 can_update: !read_only,
@@ -98,6 +100,9 @@ impl PostgresVistaFactory {
                 // we cannot detect the trigger, and claiming a feed we may never
                 // receive is worse than claiming none.
                 can_subscribe: self.notify && !read_only,
+                can_set_page_size: true,
+                can_fetch_page: true,
+                can_fetch_next: true,
                 can_fetch_window: true,
                 can_traverse_to_record: true,
                 can_traverse_to_set: true,
@@ -232,7 +237,11 @@ fn table_from_rhai(
     code: &str,
     db: PostgresDB,
 ) -> Result<Table<PostgresDB, EmptyEntity>> {
-    let select = crate::postgres::vista::rhai_source::eval_to_select(code, None)?;
+    let select = crate::postgres::vista::rhai_source::eval_to_select_args(
+        code,
+        None,
+        &spec.driver_block_args(),
+    )?;
     Ok(Table::from_select(db, spec.name.clone(), select))
 }
 
@@ -270,7 +279,7 @@ fn build_derived_table(
 
     let block = spec.driver.postgres.as_ref();
     let transformed = match block.and_then(|m| m.rhai.clone()) {
-        Some(code) => eval_transform(&code, base_table.select())?,
+        Some(code) => eval_transform(&code, base_table.select(), &spec.driver_block_args())?,
         None => base_table.select(),
     };
 
@@ -308,12 +317,20 @@ fn build_derived_table(
 /// Apply a `rhai:` transform to a base select. Feature-gated like
 /// [`table_from_rhai`].
 #[cfg(feature = "rhai")]
-fn eval_transform(code: &str, base: PostgresSelect) -> Result<PostgresSelect> {
-    crate::postgres::vista::rhai_source::eval_to_select(code, Some(base))
+fn eval_transform(
+    code: &str,
+    base: PostgresSelect,
+    args: &[(String, String)],
+) -> Result<PostgresSelect> {
+    crate::postgres::vista::rhai_source::eval_to_select_args(code, Some(base), args)
 }
 
 #[cfg(not(feature = "rhai"))]
-fn eval_transform(_code: &str, _base: PostgresSelect) -> Result<PostgresSelect> {
+fn eval_transform(
+    _code: &str,
+    _base: PostgresSelect,
+    _args: &[(String, String)],
+) -> Result<PostgresSelect> {
     Err(error!(
         "vista declares a `rhai:` transform but vantage-sql was built without the `rhai` feature"
     ))

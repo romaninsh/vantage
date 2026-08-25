@@ -8,9 +8,11 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+use vantage_table::conditions::ConditionHandle;
 use vantage_table::pagination::Pagination;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
     Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
@@ -23,6 +25,7 @@ use crate::postgres::types::AnyPostgresType;
 use crate::primitives::identifier::ident;
 use crate::types::{cbor_to_json, parse_json_host};
 
+#[derive(Clone)]
 pub struct PostgresTableShell<E = EmptyEntity>
 where
     E: Entity<AnyPostgresType>,
@@ -30,6 +33,13 @@ where
     pub(crate) table: Table<PostgresDB, E>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
+    /// Handle for the active quicksearch condition (if any). Used by
+    /// `clear_search` and by `add_search`'s replace-semantics to remove the
+    /// previous search before pushing the new one.
+    pub(crate) current_search_handle: Option<ConditionHandle>,
+    /// Pages-per-fetch declared via `set_page_size`. `None` until the consumer
+    /// declares it; `fetch_page` errors with a clear message in that case.
+    pub(crate) page_size: Option<usize>,
 }
 
 impl<E> PostgresTableShell<E>
@@ -45,6 +55,8 @@ where
             table,
             capabilities,
             metadata,
+            current_search_handle: None,
+            page_size: None,
         }
     }
 
@@ -60,6 +72,37 @@ where
     /// consumer's reconcile path, a phantom one degrades to silence.
     fn notify_opt_in(&self) -> bool {
         self.capabilities.can_subscribe
+    }
+
+    /// Give a paged read a deterministic order.
+    ///
+    /// `LIMIT`/`OFFSET` without `ORDER BY` is not a stable window: Postgres
+    /// is free to return rows in any order, and a parallel or bitmap scan
+    /// readily does — so successive pages can repeat a row and skip
+    /// another, and the caller never learns. When the consumer has set no
+    /// order of its own, page by the id column, which is unique by
+    /// definition and therefore a total order.
+    ///
+    /// Tables whose id is not a real column (a query-sourced view
+    /// projecting a synthetic key) are left alone: ordering by a name the
+    /// SELECT does not expose would fail the query outright, and an
+    /// unstable page beats no page.
+    fn ordered_for_paging(&self) -> Table<PostgresDB, E> {
+        let mut table = self.table.clone();
+        if table.orders().next().is_some() {
+            return table;
+        }
+        let Some(id) = table.id_field().map(|c| c.name().to_string()) else {
+            return table;
+        };
+        if !table.columns().contains_key(&id) {
+            return table;
+        }
+        table.add_order(OrderBy {
+            expression: postgres_expr!("{}", (ident(&id))).into(),
+            direction: TableSortDirection::Ascending,
+        });
+        table
     }
 }
 
@@ -130,6 +173,109 @@ where
         self.table.get_count().await
     }
 
+    /// Cheap: `Table` clones its query state (conditions/order/pagination)
+    /// while the `PostgresDB` connection pool behind it is `Arc`-shared —
+    /// the same clone `fetch_window` already does per call.
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        Some(Box::new(self.clone()))
+    }
+
+    fn add_search(&mut self, text: &str) -> Result<()> {
+        // Replace-semantics: drop the previous search before pushing the new one.
+        if let Some(handle) = self.current_search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
+        let condition = self
+            .table
+            .data_source()
+            .search_table_condition(&self.table, text);
+        self.current_search_handle = Some(self.table.temp_add_condition(condition));
+        Ok(())
+    }
+
+    fn clear_search(&mut self) -> Result<()> {
+        if let Some(handle) = self.current_search_handle.take() {
+            let _ = self.table.temp_remove_condition(handle);
+        }
+        Ok(())
+    }
+
+    fn set_page_size(&mut self, size: usize) -> Result<()> {
+        if size == 0 {
+            return Err(error!("page size must be > 0"));
+        }
+        self.page_size = Some(size);
+        Ok(())
+    }
+
+    async fn fetch_page(
+        &self,
+        _vista: &Vista,
+        page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        if page == 0 {
+            return Err(error!("page is 1-based; got 0"));
+        }
+        let size = self
+            .page_size
+            .ok_or_else(|| error!("set_page_size must be called before fetch_page"))?;
+
+        // Clone the wrapped table so we don't disturb the shell's own
+        // condition / order / search state with this call's pagination.
+        let mut page_table = self.ordered_for_paging();
+        page_table.set_pagination(Some(Pagination::new(page as i64, size as i64)));
+
+        let raw = page_table.list_values().await?;
+        Ok(raw
+            .into_iter()
+            .map(|(id, record)| (id, to_cbor_record(record)))
+            .collect())
+    }
+
+    async fn fetch_next(
+        &self,
+        _vista: &Vista,
+        token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        let size = self
+            .page_size
+            .ok_or_else(|| error!("set_page_size must be called before fetch_next"))?;
+
+        // Postgres encodes its cursor as the 1-based page number for the next
+        // fetch. `None` ⇒ page 1; otherwise the previous call's returned
+        // integer.
+        let page: i64 = match token {
+            None => 1,
+            Some(CborValue::Integer(n)) => {
+                i64::try_from(n).map_err(|_| error!("fetch_next token out of i64 range"))?
+            }
+            Some(_) => return Err(error!("invalid fetch_next token type for postgres driver")),
+        };
+        if page < 1 {
+            return Err(error!("fetch_next token must be a 1-based page number"));
+        }
+
+        let mut page_table = self.ordered_for_paging();
+        page_table.set_pagination(Some(Pagination::new(page, size as i64)));
+        let raw = page_table.list_values().await?;
+        let records: Vec<(String, Record<CborValue>)> = raw
+            .into_iter()
+            .map(|(id, record)| (id, to_cbor_record(record)))
+            .collect();
+
+        // Exhausted only on an EMPTY page, never on a short one. `records`
+        // is keyed by id, so a non-unique id column collapses rows and a
+        // full SQL page can arrive here under-length; treating that as the
+        // end silently drops every remaining page. The cost of being sure
+        // is one extra round trip at the end of a scan.
+        let next_token = if records.is_empty() {
+            None
+        } else {
+            Some(CborValue::Integer((page + 1).into()))
+        };
+        Ok((records, next_token))
+    }
+
     async fn fetch_window(
         &self,
         _vista: &Vista,
@@ -138,7 +284,7 @@ where
     ) -> Result<Vec<(String, Record<CborValue>)>> {
         // Clone the wrapped table so this call's window doesn't disturb the
         // shell's own condition / order / search state.
-        let mut window_table = self.table.clone();
+        let mut window_table = self.ordered_for_paging();
         window_table.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
 
         let raw = window_table.list_values().await?;

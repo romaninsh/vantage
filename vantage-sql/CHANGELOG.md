@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.21 — 2026-08-25
+
+- **Observation args for `rhai:` vistas.** A query-sourced table's script can
+  now read values supplied at open time through an `args` map
+  (`if "lob" in args { … }`), so a caller filters *before* aggregation instead
+  of wrapping a finished aggregate in an outer `WHERE`. Values the script
+  embeds bind as query parameters like any other scalar. The script can also
+  route between source tables on argument presence.
+- **PostgreSQL vista parity with SQLite.** `PostgresTableShell` gained
+  `clone_shell`, `add_search`, `clear_search`, `set_page_size`, `fetch_page`
+  and `fetch_next`, and now advertises `can_search`, `can_set_page_size`,
+  `can_fetch_page` and `can_fetch_next`. Postgres tables previously
+  under-advertised, so consumers fell back to the slowest honest path: no
+  server-side quicksearch, and no declared page size. Postgres quicksearch
+  also matches case-insensitively (`ILIKE`), as SQLite's `LIKE` already did.
+- **Identifiers escape embedded quotes.** `Identifier` renders `a"b` as
+  `"a""b"` rather than interpolating it raw. Identifiers were code-defined by
+  construction until observation args made them reachable from runtime values
+  (`ident(args.col)`).
+- `from_as(<select>, alias)` in the Rhai vocabulary — derived tables, for
+  rank-then-regroup and top-N-plus-Other shapes.
+- **Paged Postgres reads are a stable window.** `fetch_page`, `fetch_next` and
+  `fetch_window` order by the id column when the caller has set no order of
+  its own. `LIMIT`/`OFFSET` without `ORDER BY` lets PostgreSQL return rows in
+  any order — a parallel or bitmap scan readily does — so successive pages
+  could repeat one row and skip another with nothing to signal it.
+- **Bug fix (data loss):** a Postgres cursor scan ended early on a table whose
+  id column is not unique. Rows are keyed by id, so duplicates collapse and a
+  full SQL page can arrive under-length; the scan read that as the end of the
+  set and dropped every remaining page. Exhaustion is now an EMPTY page, at
+  the cost of one extra round trip per scan. The source also warns when the
+  collapse happens, since it silently shrinks any read.
+
 ## 0.6.20 — 2026-08-22
 
 - **Bug fix (data loss):** `delete_all` on a conditioned table deleted the whole
