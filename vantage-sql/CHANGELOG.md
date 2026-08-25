@@ -21,9 +21,17 @@
   (`ident(args.col)`).
 - `from_as(<select>, alias)` in the Rhai vocabulary — derived tables, for
   rank-then-regroup and top-N-plus-Other shapes.
-- The Postgres source warns when a non-unique id column collapses rows. Rows
-  are keyed by id, so duplicates silently shorten a page — which reads to a
-  caller as the end of the set and can end a cursor scan early.
+- **Paged Postgres reads are a stable window.** `fetch_page`, `fetch_next` and
+  `fetch_window` order by the id column when the caller has set no order of
+  its own. `LIMIT`/`OFFSET` without `ORDER BY` lets PostgreSQL return rows in
+  any order — a parallel or bitmap scan readily does — so successive pages
+  could repeat one row and skip another with nothing to signal it.
+- **Bug fix (data loss):** a Postgres cursor scan ended early on a table whose
+  id column is not unique. Rows are keyed by id, so duplicates collapse and a
+  full SQL page can arrive under-length; the scan read that as the end of the
+  set and dropped every remaining page. Exhaustion is now an EMPTY page, at
+  the cost of one extra round trip per scan. The source also warns when the
+  collapse happens, since it silently shrinks any read.
 
 ## 0.6.20 — 2026-08-22
 

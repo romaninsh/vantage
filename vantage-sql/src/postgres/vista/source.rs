@@ -73,6 +73,37 @@ where
     fn notify_opt_in(&self) -> bool {
         self.capabilities.can_subscribe
     }
+
+    /// Give a paged read a deterministic order.
+    ///
+    /// `LIMIT`/`OFFSET` without `ORDER BY` is not a stable window: Postgres
+    /// is free to return rows in any order, and a parallel or bitmap scan
+    /// readily does — so successive pages can repeat a row and skip
+    /// another, and the caller never learns. When the consumer has set no
+    /// order of its own, page by the id column, which is unique by
+    /// definition and therefore a total order.
+    ///
+    /// Tables whose id is not a real column (a query-sourced view
+    /// projecting a synthetic key) are left alone: ordering by a name the
+    /// SELECT does not expose would fail the query outright, and an
+    /// unstable page beats no page.
+    fn ordered_for_paging(&self) -> Table<PostgresDB, E> {
+        let mut table = self.table.clone();
+        if table.orders().next().is_some() {
+            return table;
+        }
+        let Some(id) = table.id_field().map(|c| c.name().to_string()) else {
+            return table;
+        };
+        if !table.columns().contains_key(&id) {
+            return table;
+        }
+        table.add_order(OrderBy {
+            expression: postgres_expr!("{}", (ident(&id))).into(),
+            direction: TableSortDirection::Ascending,
+        });
+        table
+    }
 }
 
 fn to_cbor_record(record: Record<AnyPostgresType>) -> Record<CborValue> {
@@ -191,7 +222,7 @@ where
 
         // Clone the wrapped table so we don't disturb the shell's own
         // condition / order / search state with this call's pagination.
-        let mut page_table = self.table.clone();
+        let mut page_table = self.ordered_for_paging();
         page_table.set_pagination(Some(Pagination::new(page as i64, size as i64)));
 
         let raw = page_table.list_values().await?;
@@ -224,7 +255,7 @@ where
             return Err(error!("fetch_next token must be a 1-based page number"));
         }
 
-        let mut page_table = self.table.clone();
+        let mut page_table = self.ordered_for_paging();
         page_table.set_pagination(Some(Pagination::new(page, size as i64)));
         let raw = page_table.list_values().await?;
         let records: Vec<(String, Record<CborValue>)> = raw
@@ -232,16 +263,15 @@ where
             .map(|(id, record)| (id, to_cbor_record(record)))
             .collect();
 
-        // Exhausted whenever the page returned fewer rows than requested
-        // (including the empty case — the caller's last call). Note this
-        // counts rows AFTER id-keying: a non-unique id column collapses
-        // rows and can end the scan early, which `parse_rows` warns about
-        // rather than papering over here — a short page is otherwise
-        // indistinguishable from the real end of the set.
-        let next_token = if records.len() == size {
-            Some(CborValue::Integer((page + 1).into()))
-        } else {
+        // Exhausted only on an EMPTY page, never on a short one. `records`
+        // is keyed by id, so a non-unique id column collapses rows and a
+        // full SQL page can arrive here under-length; treating that as the
+        // end silently drops every remaining page. The cost of being sure
+        // is one extra round trip at the end of a scan.
+        let next_token = if records.is_empty() {
             None
+        } else {
+            Some(CborValue::Integer((page + 1).into()))
         };
         Ok((records, next_token))
     }
@@ -254,7 +284,7 @@ where
     ) -> Result<Vec<(String, Record<CborValue>)>> {
         // Clone the wrapped table so this call's window doesn't disturb the
         // shell's own condition / order / search state.
-        let mut window_table = self.table.clone();
+        let mut window_table = self.ordered_for_paging();
         window_table.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
 
         let raw = window_table.list_values().await?;
