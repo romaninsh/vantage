@@ -5895,7 +5895,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.20"
+version = "0.6.21"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5912,6 +5912,7 @@ dependencies = [
  "sqlformat",
  "sqlx",
  "tokio",
+ "tracing",
  "uuid",
  "vantage-core",
  "vantage-dataset",

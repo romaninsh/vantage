@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use super::spec::DriverBlockArgs;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::column::flags::ColumnFlag;
@@ -197,7 +198,11 @@ fn table_from_rhai(
     code: &str,
     db: MysqlDB,
 ) -> Result<Table<MysqlDB, EmptyEntity>> {
-    let select = crate::mysql::vista::rhai_source::eval_to_select(code, None)?;
+    let select = crate::mysql::vista::rhai_source::eval_to_select_args(
+        code,
+        None,
+        &spec.driver_block_args(),
+    )?;
     Ok(Table::from_select(db, spec.name.clone(), select))
 }
 
@@ -235,7 +240,7 @@ fn build_derived_table(
 
     let block = spec.driver.mysql.as_ref();
     let transformed = match block.and_then(|m| m.rhai.clone()) {
-        Some(code) => eval_transform(&code, base_table.select())?,
+        Some(code) => eval_transform(&code, base_table.select(), &spec.driver_block_args())?,
         None => base_table.select(),
     };
 
@@ -273,12 +278,16 @@ fn build_derived_table(
 /// Apply a `rhai:` transform to a base select. Feature-gated like
 /// [`table_from_rhai`].
 #[cfg(feature = "rhai")]
-fn eval_transform(code: &str, base: MysqlSelect) -> Result<MysqlSelect> {
-    crate::mysql::vista::rhai_source::eval_to_select(code, Some(base))
+fn eval_transform(code: &str, base: MysqlSelect, args: &[(String, String)]) -> Result<MysqlSelect> {
+    crate::mysql::vista::rhai_source::eval_to_select_args(code, Some(base), args)
 }
 
 #[cfg(not(feature = "rhai"))]
-fn eval_transform(_code: &str, _base: MysqlSelect) -> Result<MysqlSelect> {
+fn eval_transform(
+    _code: &str,
+    _base: MysqlSelect,
+    _args: &[(String, String)],
+) -> Result<MysqlSelect> {
     Err(error!(
         "vista declares a `rhai:` transform but vantage-sql was built without the `rhai` feature"
     ))

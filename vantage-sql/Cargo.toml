@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.6.20"
+version = "0.6.21"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -27,6 +27,10 @@ vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-vista = { version = "0.6.22", path = "../vantage-vista", optional = true }
 async-trait = "0.1"
+# Drivers occasionally need to report a data-modelling problem that is not
+# an error (a non-unique id column collapsing rows, say) — a facade, so the
+# host application still owns whether and where it lands.
+tracing = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "rust_decimal", "uuid", "chrono"] }
 rust_decimal = "1"
 uuid = "1"

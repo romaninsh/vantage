@@ -35,6 +35,12 @@ pub struct MysqlTableBlock {
     /// alongside `base`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inherit: Option<InheritBlock>,
+    /// Observation-supplied parameters, exposed to the `rhai` script as the
+    /// `args` map (`args.month`, `args.lob`, …) so a view can apply
+    /// conditions BEFORE aggregation. Set programmatically by the host at
+    /// open time — never from YAML (hence no serde).
+    #[serde(skip)]
+    pub args: Vec<(String, String)>,
 }
 
 /// Selects which parts of a `base` vista a derived vista inherits.
@@ -126,5 +132,22 @@ mysql:
         let inherit = block.inherit.as_ref().unwrap();
         assert_eq!(inherit.columns, vec!["id", "name"]);
         assert_eq!(inherit.relations, vec!["orders"]);
+    }
+}
+
+impl crate::mysql::vista::spec::MysqlTableExtras {}
+
+/// Observation args carried on the driver block ("" = unset by convention).
+pub trait DriverBlockArgs {
+    fn driver_block_args(&self) -> Vec<(String, String)>;
+}
+
+impl<C, R> DriverBlockArgs for vantage_vista::VistaSpec<MysqlTableExtras, C, R> {
+    fn driver_block_args(&self) -> Vec<(String, String)> {
+        self.driver
+            .mysql
+            .as_ref()
+            .map(|b| b.args.clone())
+            .unwrap_or_default()
     }
 }

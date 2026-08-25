@@ -4,7 +4,7 @@
 
 use crate::primitives::identifier::Identifier;
 use crate::primitives::select::{JoinBuilder, SelectBuilder};
-use vantage_expressions::{Expression, Expressive, Selectable};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum, Selectable};
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 
@@ -36,6 +36,24 @@ where
     V: From<String>,
 {
     s.inner.add_source(name, Some(alias.to_string()));
+    s
+}
+
+/// `from_as(<select>, "alias")` — a derived table: the subquery renders
+/// parenthesized as the FROM source (`FROM (SELECT …) AS "alias"`), the
+/// two-level shape every top-N-plus-Other or rank-then-regroup query needs.
+/// The subquery's bound parameters ride along via expression nesting.
+pub fn select_from_subquery<V, S, J, C>(
+    mut s: RhaiSelect<V, S, J, C>,
+    sub: RhaiSelect<V, S, J, C>,
+    alias: &str,
+) -> RhaiSelect<V, S, J, C>
+where
+    S: Selectable<V, C> + Expressive<V>,
+    V: Clone,
+{
+    let wrapped = Expression::new("({})", vec![ExpressiveEnum::Nested(sub.inner.expr())]);
+    s.inner.add_source(wrapped, Some(alias.to_string()));
     s
 }
 
@@ -251,6 +269,10 @@ macro_rules! register_select {
         $engine.register_fn(
             "from_as",
             $crate::rhai_engine::select_methods::select_from_str_as::<$V, $Select, $Join, $Cond>,
+        );
+        $engine.register_fn(
+            "from_as",
+            $crate::rhai_engine::select_methods::select_from_subquery::<$V, $Select, $Join, $Cond>,
         );
 
         $engine.register_fn(

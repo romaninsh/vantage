@@ -7,9 +7,10 @@ use vantage_expressions::{Expression, Expressive};
 /// `` ` `` for MySQL). This means `Identifier` is quote-agnostic;
 /// the quoting happens only when `.expr()` is called for a specific type.
 ///
-/// **Warning:** Identifier names are not escaped for embedded quote characters.
-/// Do not pass untrusted user input as identifier names — this is intended
-/// for code-defined table/column names only.
+/// Embedded quote characters ARE escaped (doubled) when rendering, so an
+/// identifier built from a runtime value cannot break out of its quotes.
+/// It is still a NAME, not a value: prefer binding values as parameters
+/// (`expr("… = {}", [v])`) and reserve identifiers for schema elements.
 ///
 /// # Examples
 ///
@@ -64,15 +65,24 @@ impl Identifier {
     }
 
     /// Render with a given quote character. Used by backend `Expressive` impls.
+    ///
+    /// Every quote character inside a part is DOUBLED, the escape all three
+    /// supported dialects use (`"a""b"`, `` `a``b` ``). Identifiers were
+    /// historically code-defined, so an unescaped `format!` was safe by
+    /// construction; that stopped being true once vista scripts could read
+    /// runtime values (an observation's `args`), where `ident(args.col)` on
+    /// a value containing a quote would otherwise terminate the identifier
+    /// and let the rest of the value be parsed as SQL.
     fn render_with(&self, q: char) -> String {
+        let quote = |p: &str| format!("{q}{}{q}", p.replace(q, &format!("{q}{q}")));
         let base = self
             .parts
             .iter()
-            .map(|p| format!("{q}{p}{q}"))
+            .map(|p| quote(p))
             .collect::<Vec<_>>()
             .join(".");
         match &self.alias {
-            Some(alias) => format!("{base} AS {q}{alias}{q}"),
+            Some(alias) => format!("{base} AS {}", quote(alias)),
             None => base,
         }
     }
@@ -124,5 +134,32 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Identifier {
 impl From<Identifier> for Expression<crate::mysql::types::AnyMysqlType> {
     fn from(id: Identifier) -> Self {
         id.expr()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parts_and_alias_quote_normally() {
+        let id = ident("name").dot_of("u").with_alias("n");
+        assert_eq!(id.render_with('"'), r#""u"."name" AS "n""#);
+    }
+
+    #[test]
+    fn embedded_quotes_are_doubled_not_escaped_out_of() {
+        // The break-out attempt: a value that would close the identifier and
+        // continue as SQL. Doubling keeps it one (absurd but inert) name.
+        let id = ident(r#"x" ; DROP TABLE users --"#);
+        assert_eq!(id.render_with('"'), r#""x"" ; DROP TABLE users --""#);
+        let id = ident("a`b");
+        assert_eq!(id.render_with('`'), "`a``b`");
+    }
+
+    #[test]
+    fn alias_is_escaped_too() {
+        let id = ident("col").with_alias(r#"a"b"#);
+        assert_eq!(id.render_with('"'), r#""col" AS "a""b""#);
     }
 }

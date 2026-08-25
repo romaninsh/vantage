@@ -58,6 +58,7 @@ fn parse_rows(
     };
 
     let mut records = IndexMap::new();
+    let mut kept = 0usize;
     for item in arr {
         let map = match item {
             CborValue::Map(map) => map,
@@ -96,7 +97,25 @@ fn parse_rows(
             return Err(error!("row missing id field", field = id_field_name));
         }
         let Some(id) = id else { continue };
+        kept += 1;
         records.insert(id, record);
+    }
+
+    // Rows are keyed BY ID, so a non-unique id column silently collapses
+    // them — the caller then sees a short page and reads it as "the set
+    // ended here" (`fetch_next` exhausts on a short page, a grid renders a
+    // gap). It is a modelling error rather than a driver error, so the read
+    // still succeeds; it just stops being invisible. Query-sourced views are
+    // the usual culprit: give the view a synthetic row key.
+    if records.len() < kept {
+        tracing::warn!(
+            target: "vantage_sql",
+            id_field = id_field_name,
+            rows = kept,
+            distinct = records.len(),
+            "id column is not unique — rows sharing an id collapsed into one; \
+             pages will look short and a cursor scan can end early",
+        );
     }
 
     Ok(records)
@@ -166,7 +185,10 @@ impl TableSource for PostgresDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
-                postgres_expr!("{}::text LIKE {} ESCAPE '$'", (ident(col.name())), p)
+                // ILIKE: quicksearch is case-insensitive everywhere else
+                // (SQLite LIKE folds case by default) — matching that here
+                // is parity, not a liberty.
+                postgres_expr!("{}::text ILIKE {} ESCAPE '$'", (ident(col.name())), p)
             })
             .collect();
 

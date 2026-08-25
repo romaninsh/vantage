@@ -27,6 +27,43 @@ crate::register_engine!(
 
 /// Run `code`, returning the `MysqlSelect` it builds. If `base` is given it is
 /// available to the script as the `base` variable.
+/// Public one-shot evaluation: run a query-builder script and return the
+/// `MysqlSelect` it built. Used by hosts (vantage-ui) that need a standalone
+/// query outside any vista — e.g. a dashboard dropdown's `query:` options
+/// block. Embedded scalar values become bound parameters as always.
+pub fn eval_select(code: &str) -> vantage_core::Result<MysqlSelect> {
+    eval_to_select(code, None)
+}
+
+/// [`eval_to_select`] with an observation-supplied `args` map in scope.
+/// Values are plain strings ("" = not set by convention); anything the
+/// script embeds in the query binds as a parameter like every other scalar.
+pub(crate) fn eval_to_select_args(
+    code: &str,
+    base: Option<MysqlSelect>,
+    args: &[(String, String)],
+) -> vantage_core::Result<MysqlSelect> {
+    let engine = __create_engine();
+    let mut scope = rhai::Scope::new();
+    let mut map = rhai::Map::new();
+    for (k, v) in args {
+        map.insert(k.as_str().into(), v.clone().into());
+    }
+    scope.push_constant("args", map);
+    if let Some(base) = base {
+        scope.push("base", Sel::new(base));
+    }
+    engine
+        .eval_with_scope::<Sel>(&mut scope, code)
+        .map(|select| select.into_inner())
+        .map_err(|e| {
+            vantage_core::error!(
+                "Rhai vista source failed to evaluate",
+                detail = e.to_string()
+            )
+        })
+}
+
 pub(crate) fn eval_to_select(
     code: &str,
     base: Option<MysqlSelect>,
