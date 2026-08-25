@@ -72,6 +72,21 @@ pub struct PostgresColumnBlock {
 
 pub type PostgresVistaSpec = VistaSpec<PostgresTableExtras, PostgresColumnExtras, NoExtras>;
 
+/// Observation args carried on the driver block ("" = unset by convention).
+pub trait DriverBlockArgs {
+    fn driver_block_args(&self) -> Vec<(String, String)>;
+}
+
+impl<C, R> DriverBlockArgs for vantage_vista::VistaSpec<PostgresTableExtras, C, R> {
+    fn driver_block_args(&self) -> Vec<(String, String)> {
+        self.driver
+            .postgres
+            .as_ref()
+            .map(|b| b.args.clone())
+            .unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,22 +150,5 @@ postgres:
         let inherit = block.inherit.as_ref().unwrap();
         assert_eq!(inherit.columns, vec!["id", "name"]);
         assert_eq!(inherit.relations, vec!["orders"]);
-    }
-}
-
-impl crate::postgres::vista::spec::PostgresTableExtras {}
-
-/// Observation args carried on the driver block ("" = unset by convention).
-pub trait DriverBlockArgs {
-    fn driver_block_args(&self) -> Vec<(String, String)>;
-}
-
-impl<C, R> DriverBlockArgs for vantage_vista::VistaSpec<PostgresTableExtras, C, R> {
-    fn driver_block_args(&self) -> Vec<(String, String)> {
-        self.driver
-            .postgres
-            .as_ref()
-            .map(|b| b.args.clone())
-            .unwrap_or_default()
     }
 }

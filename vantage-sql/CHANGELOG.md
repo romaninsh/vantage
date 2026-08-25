@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.21 — 2026-08-25
+
+- **Observation args for `rhai:` vistas.** A query-sourced table's script can
+  now read values supplied at open time through an `args` map
+  (`if "lob" in args { … }`), so a caller filters *before* aggregation instead
+  of wrapping a finished aggregate in an outer `WHERE`. Values the script
+  embeds bind as query parameters like any other scalar. The script can also
+  route between source tables on argument presence.
+- **PostgreSQL vista parity with SQLite.** `PostgresTableShell` gained
+  `clone_shell`, `add_search`, `clear_search`, `set_page_size`, `fetch_page`
+  and `fetch_next`, and now advertises `can_search`, `can_set_page_size`,
+  `can_fetch_page` and `can_fetch_next`. Postgres tables previously
+  under-advertised, so consumers fell back to the slowest honest path: no
+  server-side quicksearch, and no declared page size. Postgres quicksearch
+  also matches case-insensitively (`ILIKE`), as SQLite's `LIKE` already did.
+- **Identifiers escape embedded quotes.** `Identifier` renders `a"b` as
+  `"a""b"` rather than interpolating it raw. Identifiers were code-defined by
+  construction until observation args made them reachable from runtime values
+  (`ident(args.col)`).
+- `from_as(<select>, alias)` in the Rhai vocabulary — derived tables, for
+  rank-then-regroup and top-N-plus-Other shapes.
+- The Postgres source warns when a non-unique id column collapses rows. Rows
+  are keyed by id, so duplicates silently shorten a page — which reads to a
+  caller as the end of the set and can end a cursor scan early.
+
 ## 0.6.20 — 2026-08-22
 
 - **Bug fix (data loss):** `delete_all` on a conditioned table deleted the whole

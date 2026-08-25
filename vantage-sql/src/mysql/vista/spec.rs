@@ -72,6 +72,21 @@ pub struct MysqlColumnBlock {
 
 pub type MysqlVistaSpec = VistaSpec<MysqlTableExtras, MysqlColumnExtras, NoExtras>;
 
+/// Observation args carried on the driver block ("" = unset by convention).
+pub trait DriverBlockArgs {
+    fn driver_block_args(&self) -> Vec<(String, String)>;
+}
+
+impl<C, R> DriverBlockArgs for vantage_vista::VistaSpec<MysqlTableExtras, C, R> {
+    fn driver_block_args(&self) -> Vec<(String, String)> {
+        self.driver
+            .mysql
+            .as_ref()
+            .map(|b| b.args.clone())
+            .unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,22 +147,5 @@ mysql:
         let inherit = block.inherit.as_ref().unwrap();
         assert_eq!(inherit.columns, vec!["id", "name"]);
         assert_eq!(inherit.relations, vec!["orders"]);
-    }
-}
-
-impl crate::mysql::vista::spec::MysqlTableExtras {}
-
-/// Observation args carried on the driver block ("" = unset by convention).
-pub trait DriverBlockArgs {
-    fn driver_block_args(&self) -> Vec<(String, String)>;
-}
-
-impl<C, R> DriverBlockArgs for vantage_vista::VistaSpec<MysqlTableExtras, C, R> {
-    fn driver_block_args(&self) -> Vec<(String, String)> {
-        self.driver
-            .mysql
-            .as_ref()
-            .map(|b| b.args.clone())
-            .unwrap_or_default()
     }
 }
