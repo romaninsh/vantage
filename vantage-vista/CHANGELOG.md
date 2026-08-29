@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.23 — 2026-08-29
+
+- `TableShell::import_vista_values` + `VistaCapabilities.can_import`: a
+  driver-native bulk load — one round-trip for a whole record set (SQL
+  COPY, Surreal batch insert), all-or-nothing by contract. Defaulted, not
+  required: a driver that stays silent honestly refuses, and consumers
+  fall back to per-record inserts where partial progress is reportable.
+  `Vista::import_values` forwards. No shipped driver advertises it yet.
+
 ## 0.6.22 — 2026-08-16
 
 - `TableShell::preview_query` renders the query a driver would send, without

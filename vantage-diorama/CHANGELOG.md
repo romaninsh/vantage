@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.4 — 2026-08-29
+
+- `Dio::import_values(records, progress)` — bulk import that takes the
+  master's native path when it advertises `can_import` (one write, one
+  `DatasetChanged`) and otherwise falls back to per-record optimistic
+  `flash_insert`s. The fallback stops at the first failure naming the row
+  and id — an import never half-lands silently — and `progress(done,
+  total)` ticks per landed record for UIs to surface.
+- New `rhai` feature: `Servo` as a first-class Rhai type
+  (`rhai::register_servo_onto`), the same treatment vantage-vista's
+  `rhai` feature gives queries — `get`/`set`/`dirty`/`error`/`status`/
+  `rejection`/`revert`, and `save()` running the flash via `block_on`
+  under the established spawn_blocking posture, returning the settled id.
+
 ## 0.12.3 — 2026-08-16
 
 - `DioShell` implements `preview_query`. A facade read hits the local cache, so
