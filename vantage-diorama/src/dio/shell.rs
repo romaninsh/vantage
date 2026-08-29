@@ -81,6 +81,10 @@ impl DioShell {
             can_insert: write_caps.can_insert,
             can_update: write_caps.can_update,
             can_delete: write_caps.can_delete,
+            // Bulk import goes through `Dio::import_values`, which picks
+            // the master's native path or the per-record fallback itself —
+            // the facade never takes an import.
+            can_import: false,
             can_subscribe: true,
             can_invalidate: master_caps.can_invalidate || has_on_event,
             // Ordering is always available: the facade pushes it into the

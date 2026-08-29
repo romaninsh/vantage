@@ -5753,6 +5753,7 @@ dependencies = [
  "insta",
  "libc",
  "redb",
+ "rhai",
  "rstest",
  "serde",
  "serde_json",

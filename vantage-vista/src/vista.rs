@@ -67,6 +67,17 @@ impl Vista {
         self.source.preview_query(self)
     }
 
+    /// Driver-native bulk load — see [`TableShell::import_vista_values`]
+    /// for the all-or-nothing contract. Gated by
+    /// [`can_import`](crate::VistaCapabilities::can_import); callers that
+    /// see `false` fall back to per-record inserts.
+    pub async fn import_values(
+        &self,
+        records: &indexmap::IndexMap<String, Record<CborValue>>,
+    ) -> Result<usize> {
+        self.source.import_vista_values(self, records).await
+    }
+
     // ---- metadata accessors -----------------------------------------------
     //
     // All schema accessors forward to the shell. Vista holds none of the

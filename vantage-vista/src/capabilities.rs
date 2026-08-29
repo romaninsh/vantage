@@ -18,6 +18,14 @@ pub struct VistaCapabilities {
     pub can_insert: bool,
     pub can_update: bool,
     pub can_delete: bool,
+    /// Driver-native bulk load via
+    /// [`import_vista_values`](crate::TableShell::import_vista_values) —
+    /// one round-trip for a whole record set (SQL COPY, Surreal batch
+    /// insert), as opposed to per-record `can_insert` calls. Consumers
+    /// that see `false` fall back to inserting record by record; the
+    /// flag never changes *whether* an import is possible, only whether
+    /// the driver can take it in one operation.
+    pub can_import: bool,
     /// The driver will *attempt* to push changes via
     /// [`watch_vista`](crate::TableShell::watch_vista) — see that method for the
     /// four promises a subscription makes. It is an attempt, not a guarantee of

@@ -4,6 +4,7 @@ pub mod diagnostics;
 pub mod event_bus;
 pub mod hot_tier;
 pub mod impls;
+mod import;
 mod optimistic;
 pub(crate) mod pending;
 pub(crate) mod query_index;

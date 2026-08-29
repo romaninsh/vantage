@@ -9,6 +9,8 @@ pub mod dio;
 pub mod error;
 pub mod lens;
 pub mod ops;
+#[cfg(feature = "rhai")]
+pub mod rhai;
 pub mod scenery;
 pub mod servo;
 pub mod stats;
