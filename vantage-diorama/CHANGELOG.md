@@ -13,6 +13,10 @@
   `rhai` feature gives queries — `get`/`set`/`dirty`/`error`/`status`/
   `rejection`/`revert`, and `save()` running the flash via `block_on`
   under the established spawn_blocking posture, returning the settled id.
+- A failed default write now says why in its message (`write failed:
+  <driver error>`) instead of a bare "default write failed" with the cause
+  buried in a detail field nothing rendered — the string is what a form
+  footer or a wizard error line shows the user.
 
 ## 0.12.3 — 2026-08-16
 

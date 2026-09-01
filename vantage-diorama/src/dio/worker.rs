@@ -102,5 +102,9 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<Option<Record<Cb
         FlashKind::Delete => master.delete(need_id()?).await.map(|()| None),
         FlashKind::Clear => master.delete_all().await.map(|()| None),
     }
-    .map_err(|e| error!("default write failed", detail = e.to_string()))
+    // The cause rides IN the message: this string is what a form footer
+    // or a wizard error line shows the user, and "default write failed"
+    // alone turns a fixable input problem (a missing `int` the backend
+    // named precisely) into a dead end.
+    .map_err(|e| error!(format!("write failed: {e}")))
 }
