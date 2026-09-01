@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.24 — 2026-09-01
+
+- Nested insert: a bare **scalar** under a relation key links an existing
+  record — the value is stamped into the has-one reference's foreign-key
+  column, the same column a co-inserted child's id would land in. Before,
+  only a map (insert a child) or a list of maps was accepted, so
+  `bakery: <record id>` was rejected outright. A scalar on a has-many
+  relation is still an error.
+
 ## 0.6.23 — 2026-08-29
 
 - `TableShell::import_vista_values` + `VistaCapabilities.can_import`: a

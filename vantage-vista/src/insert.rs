@@ -115,11 +115,25 @@ impl Vista {
                         }
                         collected.insert(key.clone(), Collected::List(children));
                     }
+                    // A scalar names an EXISTING record: link it by
+                    // stamping the foreign-key column — the same column a
+                    // co-inserted child's id would land in. The value's
+                    // shape (Text id, Tag record-id, integer key, null)
+                    // is the driver's to validate, like any plain field.
                     _ => {
-                        return Err(error!(
-                            "relation value must be a map (has-one) or a list of maps (has-many)",
-                            relation = key
-                        ));
+                        let Some(reference) = self.get_reference(key) else {
+                            return Err(error!(
+                                "relation has no insertable reference",
+                                relation = key
+                            ));
+                        };
+                        if reference.kind != ReferenceKind::HasOne {
+                            return Err(error!(
+                                "has-many relation takes a list of maps, not a scalar",
+                                relation = key
+                            ));
+                        }
+                        main.insert(reference.foreign_key.clone(), value.clone());
                     }
                 }
                 continue;
@@ -338,6 +352,26 @@ mod tests {
         assert_eq!(relation, "orders");
         assert_eq!(fk, "client_id");
         assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn bare_scalar_links_an_existing_record_via_the_foreign_key() {
+        let (main, has_one, has_many) = client_vista()
+            .classify_insert(&record(&[
+                ("name", text("John")),
+                ("bakery", text("bakery:hill_valley")),
+            ]))
+            .unwrap();
+        assert!(has_one.is_empty());
+        assert!(has_many.is_empty());
+        assert!(main.get("bakery").is_none());
+        assert_eq!(main.get("bakery_id"), Some(&text("bakery:hill_valley")));
+    }
+
+    #[test]
+    fn has_many_given_a_scalar_is_an_error() {
+        let err = client_vista().classify_insert(&record(&[("orders", text("order:1"))]));
+        assert!(err.is_err());
     }
 
     #[test]

@@ -6010,7 +6010,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.23"
+version = "0.6.24"
 dependencies = [
  "async-stream",
  "async-trait",
