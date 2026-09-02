@@ -6,6 +6,7 @@
 //! an import that stops at row 3 says so, names the row, and leaves
 //! rows 1–2 legitimately stored.
 
+use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
@@ -57,14 +58,17 @@ async fn fallback_imports_every_record_and_reports_progress() -> Result<()> {
     let stored = dio
         .import_values(tag_records(&["t1", "t2", "t3"]), move |done, total| {
             seen.lock().unwrap().push((done, total));
+            ControlFlow::Continue(())
         })
         .await?;
 
-    assert_eq!(stored, 3);
+    assert_eq!(stored.inserted, 3);
+    assert_eq!(stored.skipped, 0);
+    assert!(!stored.cancelled);
     assert_eq!(
         *progress.lock().unwrap(),
         vec![(1, 3), (2, 3), (3, 3)],
-        "one tick per landed record"
+        "one tick per completed row"
     );
     let upstream = dio.master().list_values().await?;
     assert_eq!(upstream.len(), 3, "every record reached the master");
@@ -94,10 +98,16 @@ async fn fallback_skips_existing_ids_and_counts_only_inserts() -> Result<()> {
     let inserted = dio
         .import_values(tag_records(&["t1", "t2", "t3"]), move |done, total| {
             seen.lock().unwrap().push((done, total));
+            ControlFlow::Continue(())
         })
         .await?;
 
-    assert_eq!(inserted, 2);
+    assert_eq!(inserted.inserted, 2);
+    assert_eq!(
+        inserted.skipped, 1,
+        "the caller is told what it already had, not left to subtract"
+    );
+    assert_eq!(inserted.processed(), 3);
     assert_eq!(
         *progress.lock().unwrap(),
         vec![(1, 3), (2, 3), (3, 3)],
@@ -133,6 +143,7 @@ async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
     let result = dio
         .import_values(tag_records(&["t1", "t2", "t3", "t4", "t5"]), move |done, total| {
             seen.lock().unwrap().push((done, total));
+            ControlFlow::Continue(())
         })
         .await;
 
@@ -158,6 +169,34 @@ async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
     Ok(())
 }
 
+/// The progress callback is the stop button: an import is a long walk
+/// over the network, and `Break` has to end it at the row it reaches —
+/// what already landed stays landed, and the outcome admits it stopped.
+#[tokio::test]
+async fn breaking_from_progress_stops_the_walk() -> Result<()> {
+    let shell = MockShell::new();
+    let dio = dio_over(&shell).await?;
+
+    let outcome = dio
+        .import_values(tag_records(&["t1", "t2", "t3", "t4", "t5"]), |done, _| {
+            if done == 2 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        })
+        .await?;
+
+    assert!(outcome.cancelled);
+    assert_eq!(outcome.inserted, 2);
+    assert!(shell.get_record("t2").is_some());
+    assert!(
+        shell.get_record("t3").is_none(),
+        "row 3 was never attempted"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn advertised_native_import_is_taken_at_its_word() -> Result<()> {
     // A shell that *claims* can_import but doesn't implement the op:
@@ -171,7 +210,7 @@ async fn advertised_native_import_is_taken_at_its_word() -> Result<()> {
     let dio = dio_over(&shell).await?;
 
     let err = dio
-        .import_values(tag_records(&["t1"]), |_, _| {})
+        .import_values(tag_records(&["t1"]), |_, _| ControlFlow::Continue(()))
         .await
         .expect_err("placeholder surfaces");
     assert!(

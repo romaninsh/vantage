@@ -31,6 +31,7 @@ use ciborium::Value as CborValue;
 use vantage_types::Record;
 
 pub use event_bus::DioEvent;
+pub use import::ImportOutcome;
 pub use hot_tier::HotTier;
 pub use shell::DioShell;
 
