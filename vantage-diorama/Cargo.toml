@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama"
-version = "0.12.3"
+version = "0.12.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cached, composable, reactive surface for Vantage Vistas"
@@ -21,6 +21,10 @@ serde_json = "1"
 
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
+# Rhai scripts hand `dynamic_to_cbor` chrono instants (`now()`), which
+# land as the standard CBOR datetime tag.
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
+rhai = { version = "1.25", optional = true }
 futures = "0.3"
 indexmap = "2"
 redb = "2.6"
@@ -30,10 +34,16 @@ tokio = { version = "1", features = ["sync", "rt", "time"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v7"] }
 
+[features]
+# Servo as a first-class Rhai type — the same treatment vantage-vista's
+# `rhai` feature gives queries. See `src/rhai.rs`.
+rhai = ["dep:rhai", "dep:chrono"]
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tempfile = "3"
 # Diagnostic output in loader tests (`with_test_writer` + env filter).
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -50,3 +60,7 @@ futures = "0.3"
 [[test]]
 name = "bdd"
 harness = false
+
+[[test]]
+name = "rhai_servo"
+required-features = ["rhai"]

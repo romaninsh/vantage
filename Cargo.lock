@@ -5743,9 +5743,10 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.12.3"
+version = "0.12.4"
 dependencies = [
  "async-trait",
+ "chrono",
  "ciborium",
  "cucumber",
  "futures",
@@ -5753,6 +5754,7 @@ dependencies = [
  "insta",
  "libc",
  "redb",
+ "rhai",
  "rstest",
  "serde",
  "serde_json",
@@ -6010,7 +6012,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.22"
+version = "0.6.24"
 dependencies = [
  "async-stream",
  "async-trait",

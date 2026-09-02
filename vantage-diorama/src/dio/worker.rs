@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use tokio::sync::mpsc;
-use vantage_core::{Result, error};
+use vantage_core::{Context as _, Result, error};
 use vantage_dataset::traits::WritableValueSet;
 use vantage_types::Record;
 
@@ -102,5 +102,13 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<Option<Record<Cb
         FlashKind::Delete => master.delete(need_id()?).await.map(|()| None),
         FlashKind::Clear => master.delete_all().await.map(|()| None),
     }
-    .map_err(|e| error!("default write failed", detail = e.to_string()))
+    // Wrapped, not replaced. The cause has to reach two audiences: a
+    // form footer or wizard error line, which shows this string and for
+    // which "default write failed" alone turns a fixable input problem
+    // (a missing `int` the backend named precisely) into a dead end;
+    // and `FlashRejection::from_error`, which walks the SOURCE chain for
+    // the per-field errors a form highlights. `context` keeps both —
+    // `Display` renders "write failed: <driver error>" and the driver's
+    // error stays reachable underneath.
+    .context(error!("write failed"))
 }

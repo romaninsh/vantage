@@ -115,11 +115,25 @@ impl Vista {
                         }
                         collected.insert(key.clone(), Collected::List(children));
                     }
+                    // A scalar names an EXISTING record: link it by
+                    // stamping the foreign-key column — the same column a
+                    // co-inserted child's id would land in. The value's
+                    // shape (Text id, Tag record-id, integer key, null)
+                    // is the driver's to validate, like any plain field.
                     _ => {
-                        return Err(error!(
-                            "relation value must be a map (has-one) or a list of maps (has-many)",
-                            relation = key
-                        ));
+                        let Some(reference) = self.get_reference(key) else {
+                            return Err(error!(
+                                "relation has no insertable reference",
+                                relation = key
+                            ));
+                        };
+                        if reference.kind != ReferenceKind::HasOne {
+                            return Err(error!(
+                                "has-many relation takes a list of maps, not a scalar",
+                                relation = key
+                            ));
+                        }
+                        main.insert(reference.foreign_key.clone(), value.clone());
                     }
                 }
                 continue;
@@ -140,6 +154,21 @@ impl Vista {
             })?;
             let foreign_key = reference.foreign_key.clone();
             match reference.kind {
+                // Inserting a child stamps its new id into the main row's
+                // foreign key, so a main row that ALREADY carries that
+                // column is two instructions in one record: link this
+                // existing row, and create a new one to link instead.
+                // Silently, the child would win. Refuse instead — whether
+                // the column arrived as a scalar under the relation name
+                // (`bakery: "bakery:x"`) or as the plain column
+                // (`bakery_id: "x"`), neither is a typo worth guessing at.
+                ReferenceKind::HasOne if main.get(&foreign_key).is_some() => {
+                    return Err(error!(
+                        "relation given both a record link and child data",
+                        relation = relation.as_str(),
+                        foreign_key = foreign_key.as_str()
+                    ));
+                }
                 ReferenceKind::HasOne => match payload {
                     Collected::Map(child) => has_one.push((relation, foreign_key, child)),
                     Collected::List(_) => {
@@ -338,6 +367,58 @@ mod tests {
         assert_eq!(relation, "orders");
         assert_eq!(fk, "client_id");
         assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn bare_scalar_links_an_existing_record_via_the_foreign_key() {
+        let (main, has_one, has_many) = client_vista()
+            .classify_insert(&record(&[
+                ("name", text("John")),
+                ("bakery", text("bakery:hill_valley")),
+            ]))
+            .unwrap();
+        assert!(has_one.is_empty());
+        assert!(has_many.is_empty());
+        assert!(main.get("bakery").is_none());
+        assert_eq!(main.get("bakery_id"), Some(&text("bakery:hill_valley")));
+    }
+
+    /// Both forms of a has-one at once — link an existing row AND create
+    /// a child — is refused rather than resolved: the child insert would
+    /// silently overwrite the link.
+    #[test]
+    fn a_link_and_child_data_for_one_relation_is_an_error() {
+        let scalar_and_dotted = client_vista().classify_insert(&record(&[
+            ("bakery", text("bakery:hill_valley")),
+            ("bakery.name", text("New Bakery")),
+        ]));
+        let err = scalar_and_dotted.unwrap_err().to_string();
+        assert!(err.contains("both a record link and child data"), "{err}");
+
+        // Same conflict spelled with the plain foreign-key column.
+        let fk_and_map = client_vista().classify_insert(&record(&[
+            ("bakery_id", text("b1")),
+            ("bakery", map(&[("name", text("New Bakery"))])),
+        ]));
+        assert!(fk_and_map.is_err());
+
+        // Either form ALONE stays legal.
+        assert!(
+            client_vista()
+                .classify_insert(&record(&[("bakery", text("bakery:hill_valley"))]))
+                .is_ok()
+        );
+        assert!(
+            client_vista()
+                .classify_insert(&record(&[("bakery", map(&[("name", text("New"))]))]))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn has_many_given_a_scalar_is_an_error() {
+        let err = client_vista().classify_insert(&record(&[("orders", text("order:1"))]));
+        assert!(err.is_err());
     }
 
     #[test]

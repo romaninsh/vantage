@@ -9,6 +9,8 @@ pub mod dio;
 pub mod error;
 pub mod lens;
 pub mod ops;
+#[cfg(feature = "rhai")]
+pub mod rhai;
 pub mod scenery;
 pub mod servo;
 pub mod stats;
@@ -17,7 +19,7 @@ pub use augment::{Augmentation, BuildFn, Detail, Fetch, FetchFn, MergeRule, Sour
 pub use composition::Diorama;
 pub use debug::{DebugTap, ProcessStats, process_stats};
 pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};
-pub use dio::{Dio, DioEvent, DioShell, Generation, WeakDio, WriteCapabilities};
+pub use dio::{Dio, DioEvent, DioShell, Generation, ImportOutcome, WeakDio, WriteCapabilities};
 pub use error::{DioError, LensBuildError};
 pub use lens::{
     Activity, ActivitySignal, CacheBackend, CacheStatus, CacheTable, ChunkQuery, ChunkRow,

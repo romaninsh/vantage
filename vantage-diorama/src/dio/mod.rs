@@ -4,6 +4,7 @@ pub mod diagnostics;
 pub mod event_bus;
 pub mod hot_tier;
 pub mod impls;
+mod import;
 mod optimistic;
 pub(crate) mod pending;
 pub(crate) mod query_index;
@@ -31,6 +32,7 @@ use vantage_types::Record;
 
 pub use event_bus::DioEvent;
 pub use hot_tier::HotTier;
+pub use import::ImportOutcome;
 pub use shell::DioShell;
 
 /// Stringify a scalar CBOR id for use inside a cache table name. Non-scalars

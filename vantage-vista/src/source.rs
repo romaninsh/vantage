@@ -199,6 +199,29 @@ pub trait TableShell: Send + Sync + 'static {
         Err(self.default_error("insert_vista_return_id_value", "can_insert"))
     }
 
+    // ---- Bulk import -------------------------------------------------------
+
+    /// Store `records` (id → record) in one driver-native operation —
+    /// SQL COPY, Surreal batch insert — and return how many were
+    /// **newly inserted**. An id the table already held counts zero,
+    /// whether the driver's batch skips it or upserts it: the number
+    /// travels to a user as "n records created", and the per-record
+    /// fallback in `Dio::import_values` counts the same way. A driver
+    /// that cannot tell new from existing must not advertise
+    /// [`can_import`](VistaCapabilities::can_import).
+    ///
+    /// All-or-nothing is the other half of the contract: a driver that
+    /// cannot make the batch atomic must not advertise it either; the
+    /// caller then falls back to per-record inserts where partial
+    /// progress is honest and reportable.
+    async fn import_vista_values(
+        &self,
+        _vista: &Vista,
+        _records: &IndexMap<String, Record<CborValue>>,
+    ) -> Result<usize> {
+        Err(self.default_error("import_vista_values", "can_import"))
+    }
+
     // ---- Aggregates --------------------------------------------------------
 
     /// Default impl falls back to `list_vista_values` — drivers with native
@@ -646,6 +669,7 @@ pub trait TableShell: Send + Sync + 'static {
             "can_insert" => caps.can_insert,
             "can_update" => caps.can_update,
             "can_delete" => caps.can_delete,
+            "can_import" => caps.can_import,
             "can_subscribe" => caps.can_subscribe,
             "can_invalidate" => caps.can_invalidate,
             "can_order" => caps.can_order,
