@@ -15,8 +15,10 @@
   under the established spawn_blocking posture, returning the settled id.
 - `import_values` returns the number of records actually inserted: on the
   per-record path an id the master already holds is skipped (drivers'
-  inserts are idempotent, so the write alone can't tell), still ticking
-  `progress` but not the count. A re-run of the same set reports zero.
+  inserts are idempotent, so the write alone can't tell), and `progress`
+  ticks per **completed row**, skipped ones included, so a progress bar
+  tracks the walk through the set rather than the write count. A re-run
+  of the same set reports zero inserted.
 - `rhai::dynamic_to_cbor` maps a chrono instant to the standard CBOR
   datetime (tag 0, RFC 3339) — a host's `now()` lands as a datetime.
 - A failed default write now says why in its message (`write failed:

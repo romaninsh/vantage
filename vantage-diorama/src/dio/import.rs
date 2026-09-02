@@ -29,17 +29,29 @@ impl Dio {
     /// record runs through [`flash_insert`](Dio::flash_insert) — views
     /// see rows land one by one, exactly as if a user had entered them.
     ///
-    /// `progress(done, total)` fires after every record that lands (once,
-    /// with the full count, on the native path). The fallback **stops at
-    /// the first failure**: the error names the failing row and id, and
-    /// `progress` has already reported how many landed — an import that
-    /// stops at row 3,000 says so precisely, it never half-lands
-    /// silently.
+    /// `progress(done, total)` fires after every **completed row** —
+    /// including a row skipped because its id was already there, which
+    /// counts toward `done` but not toward the result — so a progress
+    /// bar tracks the walk through the file rather than the write count.
+    /// The native path reports once, with the full count. The fallback
+    /// **stops at the first failure**: the error names the failing row
+    /// and id, and `progress` has already reported how far the walk got
+    /// — an import that stops at row 3,000 says so precisely, it never
+    /// half-lands silently.
     ///
     /// Returns the number of records actually inserted. On the fallback
     /// path an id the master already holds is skipped — it still counts
     /// toward `progress`, never toward the result — so a re-run of the
     /// same set reports zero rather than claiming the set again.
+    ///
+    /// The skip is decided by a read before the write, so the count is
+    /// exact only against a table nobody else is writing: a racing
+    /// writer that creates one of these ids in between has its record
+    /// kept (the driver's insert is idempotent — nothing is
+    /// overwritten), but this import counts that row as its own. The
+    /// count is a report for a person, and no data turns on it; making
+    /// it exact needs an insert-if-absent the driver contract does not
+    /// have today.
     pub async fn import_values(
         &self,
         records: IndexMap<String, Record<CborValue>>,

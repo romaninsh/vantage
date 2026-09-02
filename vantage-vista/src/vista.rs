@@ -67,8 +67,9 @@ impl Vista {
         self.source.preview_query(self)
     }
 
-    /// Driver-native bulk load — see [`TableShell::import_vista_values`]
-    /// for the all-or-nothing contract. Gated by
+    /// Driver-native bulk load, returning how many records were newly
+    /// inserted — see [`TableShell::import_vista_values`] for that
+    /// count's definition and the all-or-nothing contract. Gated by
     /// [`can_import`](crate::VistaCapabilities::can_import); callers that
     /// see `false` fall back to per-record inserts.
     pub async fn import_values(

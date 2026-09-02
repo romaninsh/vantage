@@ -8,6 +8,10 @@
   only a map (insert a child) or a list of maps was accepted, so
   `bakery: <record id>` was rejected outright. A scalar on a has-many
   relation is still an error.
+- Nested insert refuses a has-one relation given **both** a link and
+  child data (`bakery: <id>` beside `bakery.name:`, or a plain
+  `bakery_id:` beside a `bakery:` map). The child's insert would have
+  overwritten the link silently, creating a record nobody asked for.
 
 ## 0.6.23 — 2026-08-29
 

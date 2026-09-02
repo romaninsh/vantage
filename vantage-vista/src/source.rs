@@ -202,12 +202,18 @@ pub trait TableShell: Send + Sync + 'static {
     // ---- Bulk import -------------------------------------------------------
 
     /// Store `records` (id → record) in one driver-native operation —
-    /// SQL COPY, Surreal batch insert — and return how many landed.
-    /// All-or-nothing is the contract: a driver that cannot make the
-    /// batch atomic must not advertise
-    /// [`can_import`](VistaCapabilities::can_import); the caller then
-    /// falls back to per-record inserts where partial progress is
-    /// honest and reportable.
+    /// SQL COPY, Surreal batch insert — and return how many were
+    /// **newly inserted**. An id the table already held counts zero,
+    /// whether the driver's batch skips it or upserts it: the number
+    /// travels to a user as "n records created", and the per-record
+    /// fallback in `Dio::import_values` counts the same way. A driver
+    /// that cannot tell new from existing must not advertise
+    /// [`can_import`](VistaCapabilities::can_import).
+    ///
+    /// All-or-nothing is the other half of the contract: a driver that
+    /// cannot make the batch atomic must not advertise it either; the
+    /// caller then falls back to per-record inserts where partial
+    /// progress is honest and reportable.
     async fn import_vista_values(
         &self,
         _vista: &Vista,
