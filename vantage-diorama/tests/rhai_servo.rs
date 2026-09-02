@@ -134,13 +134,20 @@ async fn rejected_save_is_a_script_error_and_the_draft_survives() -> Result<()> 
     .expect_err("the rejection surfaces as a script error");
     assert!(err.contains("save failed"), "{err}");
 
-    let status = eval(servo.clone(), r#"[servo.status(), servo.rejection().message]"#)
-        .await
-        .expect("status script runs");
+    let status = eval(
+        servo.clone(),
+        r#"[servo.status(), servo.rejection().message]"#,
+    )
+    .await
+    .expect("status script runs");
     let values = status.into_array().unwrap();
     assert_eq!(values[0].clone().into_string().unwrap(), "failed");
     assert!(
-        values[1].clone().into_string().unwrap().contains("rejected"),
+        values[1]
+            .clone()
+            .into_string()
+            .unwrap()
+            .contains("rejected"),
         "the rejection carries the route's message"
     );
     assert_eq!(

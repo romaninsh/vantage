@@ -141,10 +141,13 @@ async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
     let progress: Arc<Mutex<Vec<(usize, usize)>>> = Arc::default();
     let seen = progress.clone();
     let result = dio
-        .import_values(tag_records(&["t1", "t2", "t3", "t4", "t5"]), move |done, total| {
-            seen.lock().unwrap().push((done, total));
-            ControlFlow::Continue(())
-        })
+        .import_values(
+            tag_records(&["t1", "t2", "t3", "t4", "t5"]),
+            move |done, total| {
+                seen.lock().unwrap().push((done, total));
+                ControlFlow::Continue(())
+            },
+        )
         .await;
 
     let err = result.expect_err("row 3 fails");

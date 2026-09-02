@@ -403,12 +403,16 @@ mod tests {
         assert!(fk_and_map.is_err());
 
         // Either form ALONE stays legal.
-        assert!(client_vista()
-            .classify_insert(&record(&[("bakery", text("bakery:hill_valley"))]))
-            .is_ok());
-        assert!(client_vista()
-            .classify_insert(&record(&[("bakery", map(&[("name", text("New"))]))]))
-            .is_ok());
+        assert!(
+            client_vista()
+                .classify_insert(&record(&[("bakery", text("bakery:hill_valley"))]))
+                .is_ok()
+        );
+        assert!(
+            client_vista()
+                .classify_insert(&record(&[("bakery", map(&[("name", text("New"))]))]))
+                .is_ok()
+        );
     }
 
     #[test]

@@ -43,10 +43,7 @@ pub fn register_servo_onto(engine: &mut Engine) {
 
     engine.register_fn(
         "set",
-        |servo: &mut Arc<Servo>,
-         field: &str,
-         value: Dynamic|
-         -> Result<(), Box<EvalAltResult>> {
+        |servo: &mut Arc<Servo>, field: &str, value: Dynamic| -> Result<(), Box<EvalAltResult>> {
             servo.set(field, dynamic_to_cbor(&value)?);
             Ok(())
         },
@@ -107,7 +104,10 @@ pub fn register_servo_onto(engine: &mut Engine) {
                     fields.insert(field.as_str().into(), Dynamic::from(message.clone()));
                 }
                 let mut map = RhaiMap::new();
-                map.insert("message".into(), Dynamic::from(rejection.message().to_string()));
+                map.insert(
+                    "message".into(),
+                    Dynamic::from(rejection.message().to_string()),
+                );
                 map.insert("fields".into(), Dynamic::from_map(fields));
                 Dynamic::from_map(map)
             }
@@ -158,9 +158,7 @@ pub fn cbor_to_dynamic(value: &CborValue) -> Dynamic {
         CborValue::Float(f) => Dynamic::from(*f),
         CborValue::Text(s) => Dynamic::from(s.clone()),
         CborValue::Bytes(b) => Dynamic::from_blob(b.clone()),
-        CborValue::Array(items) => {
-            Dynamic::from_array(items.iter().map(cbor_to_dynamic).collect())
-        }
+        CborValue::Array(items) => Dynamic::from_array(items.iter().map(cbor_to_dynamic).collect()),
         CborValue::Map(pairs) => {
             let mut map = RhaiMap::new();
             for (k, v) in pairs {
@@ -201,7 +199,10 @@ pub fn dynamic_to_cbor(value: &Dynamic) -> Result<CborValue, Box<EvalAltResult>>
     // a datetime type reads as one; the SurrealDB driver accepts it
     // beside its own compact tag 12.
     if let Some(dt) = value.clone().try_cast::<chrono::DateTime<chrono::Utc>>() {
-        return Ok(CborValue::Tag(0, Box::new(CborValue::Text(dt.to_rfc3339()))));
+        return Ok(CborValue::Tag(
+            0,
+            Box::new(CborValue::Text(dt.to_rfc3339())),
+        ));
     }
     if let Some(array) = value.clone().try_cast::<rhai::Array>() {
         let items = array
@@ -217,5 +218,9 @@ pub fn dynamic_to_cbor(value: &Dynamic) -> Result<CborValue, Box<EvalAltResult>>
             .collect::<Result<Vec<_>, Box<EvalAltResult>>>()?;
         return Ok(CborValue::Map(pairs));
     }
-    Err(format!("no CBOR representation for rhai type '{}'", value.type_name()).into())
+    Err(format!(
+        "no CBOR representation for rhai type '{}'",
+        value.type_name()
+    )
+    .into())
 }
