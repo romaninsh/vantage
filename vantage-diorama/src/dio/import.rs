@@ -14,6 +14,7 @@
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::traits::ReadableValueSet as _;
 use vantage_types::Record;
 
 use crate::dio::{Dio, DioEvent};
@@ -35,7 +36,10 @@ impl Dio {
     /// stops at row 3,000 says so precisely, it never half-lands
     /// silently.
     ///
-    /// Returns the number of records stored.
+    /// Returns the number of records actually inserted. On the fallback
+    /// path an id the master already holds is skipped — it still counts
+    /// toward `progress`, never toward the result — so a re-run of the
+    /// same set reports zero rather than claiming the set again.
     pub async fn import_values(
         &self,
         records: IndexMap<String, Record<CborValue>>,
@@ -56,25 +60,39 @@ impl Dio {
             return Ok(stored);
         }
 
+        let stopped_at = |index: usize, id: &str, e: vantage_core::VantageError| {
+            error!(
+                format!(
+                    "import stopped at row {} of {} (id '{}'): {}",
+                    index + 1,
+                    total,
+                    id,
+                    e
+                ),
+                row = index + 1,
+                id = id.to_string(),
+                detail = e.to_string()
+            )
+        };
+        let mut inserted = 0;
         for (index, (id, record)) in records.iter().enumerate() {
-            self.flash_insert(id.clone(), record.clone())
+            // A driver's insert is idempotent — an existing id comes back
+            // as the stored record, not an error — so the count would
+            // otherwise claim every row landed. Ask first; an id already
+            // present is skipped and not counted.
+            let exists = master
+                .get_value(id)
                 .await
-                .map_err(|e| {
-                    error!(
-                        format!(
-                            "import stopped at row {} of {} (id '{}'): {}",
-                            index + 1,
-                            total,
-                            id,
-                            e
-                        ),
-                        row = index + 1,
-                        id = id.clone(),
-                        detail = e.to_string()
-                    )
-                })?;
+                .map_err(|e| stopped_at(index, id, e))?
+                .is_some();
+            if !exists {
+                self.flash_insert(id.clone(), record.clone())
+                    .await
+                    .map_err(|e| stopped_at(index, id, e))?;
+                inserted += 1;
+            }
             progress(index + 1, total);
         }
-        Ok(total)
+        Ok(inserted)
     }
 }

@@ -5746,6 +5746,7 @@ name = "vantage-diorama"
 version = "0.12.4"
 dependencies = [
  "async-trait",
+ "chrono",
  "ciborium",
  "cucumber",
  "futures",

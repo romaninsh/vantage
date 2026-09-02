@@ -79,6 +79,38 @@ async fn fallback_imports_every_record_and_reports_progress() -> Result<()> {
     Ok(())
 }
 
+/// An id the master already holds is skipped and NOT counted — the
+/// driver's idempotent insert would otherwise report it as landed, and
+/// a re-imported file would claim every row.
+#[tokio::test]
+async fn fallback_skips_existing_ids_and_counts_only_inserts() -> Result<()> {
+    let mut existing = tag_record("t2");
+    existing.insert("status".to_string(), text("registered"));
+    let shell = MockShell::new().with_record("t2", existing);
+    let dio = dio_over(&shell).await?;
+
+    let progress: Arc<Mutex<Vec<(usize, usize)>>> = Arc::default();
+    let seen = progress.clone();
+    let inserted = dio
+        .import_values(tag_records(&["t1", "t2", "t3"]), move |done, total| {
+            seen.lock().unwrap().push((done, total));
+        })
+        .await?;
+
+    assert_eq!(inserted, 2);
+    assert_eq!(
+        *progress.lock().unwrap(),
+        vec![(1, 3), (2, 3), (3, 3)],
+        "progress covers the skipped row too"
+    );
+    assert_eq!(
+        shell.get_record("t2").unwrap().get("status"),
+        Some(&text("registered")),
+        "the existing record is left as it was"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
     let shell = MockShell::new();

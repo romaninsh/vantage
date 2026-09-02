@@ -150,3 +150,34 @@ async fn rejected_save_is_a_script_error_and_the_draft_survives() -> Result<()> 
     );
     Ok(())
 }
+
+/// A chrono instant handed to a script (a host's `now()`) writes as the
+/// standard CBOR datetime — tag 0 over RFC 3339 — not as plain text.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_instant_writes_as_a_cbor_datetime() -> Result<()> {
+    let shell = MockShell::new();
+    let dio = dio_over(&shell).await?;
+    let servo = Arc::new(dio.servo_new(IdStrategy::FromRecord));
+    let stamp = chrono::Utc::now();
+
+    let servo_for_script = servo.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        let mut engine = Engine::new();
+        register_servo_onto(&mut engine);
+        let mut scope = Scope::new();
+        scope.push("servo", servo_for_script);
+        scope.push("stamp", stamp);
+        engine
+            .eval_with_scope::<Dynamic>(&mut scope, r#"servo.set("created", stamp)"#)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .expect("eval task")
+    .expect("script runs");
+
+    assert_eq!(
+        servo.get("created"),
+        Some(CborValue::Tag(0, Box::new(text(&stamp.to_rfc3339()))))
+    );
+    Ok(())
+}

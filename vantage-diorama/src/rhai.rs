@@ -196,6 +196,13 @@ pub fn dynamic_to_cbor(value: &Dynamic) -> Result<CborValue, Box<EvalAltResult>>
     if let Some(blob) = value.clone().try_cast::<rhai::Blob>() {
         return Ok(CborValue::Bytes(blob));
     }
+    // An instant (a host's `now()`) travels as the standard CBOR
+    // datetime — tag 0 over RFC 3339 text — which every driver that has
+    // a datetime type reads as one; the SurrealDB driver accepts it
+    // beside its own compact tag 12.
+    if let Some(dt) = value.clone().try_cast::<chrono::DateTime<chrono::Utc>>() {
+        return Ok(CborValue::Tag(0, Box::new(CborValue::Text(dt.to_rfc3339()))));
+    }
     if let Some(array) = value.clone().try_cast::<rhai::Array>() {
         let items = array
             .iter()

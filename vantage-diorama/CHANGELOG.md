@@ -13,6 +13,12 @@
   `rhai` feature gives queries — `get`/`set`/`dirty`/`error`/`status`/
   `rejection`/`revert`, and `save()` running the flash via `block_on`
   under the established spawn_blocking posture, returning the settled id.
+- `import_values` returns the number of records actually inserted: on the
+  per-record path an id the master already holds is skipped (drivers'
+  inserts are idempotent, so the write alone can't tell), still ticking
+  `progress` but not the count. A re-run of the same set reports zero.
+- `rhai::dynamic_to_cbor` maps a chrono instant to the standard CBOR
+  datetime (tag 0, RFC 3339) — a host's `now()` lands as a datetime.
 - A failed default write now says why in its message (`write failed:
   <driver error>`) instead of a bare "default write failed" with the cause
   buried in a detail field nothing rendered — the string is what a form
