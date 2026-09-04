@@ -14,7 +14,7 @@ use std::sync::Arc;
 use rhai::{AST, Dynamic, Engine};
 
 use crate::error::{Result, RhaiError};
-use crate::host::Host;
+use crate::host::{Host, Mode};
 use crate::resolver::{ENV_KEY, EnvHandle, RecordingResolver, Resolver};
 use crate::slot::{Block, Expr, Template};
 use crate::template::{self, Part};
@@ -74,25 +74,28 @@ pub enum Pieces {
 #[doc(hidden)]
 pub enum TPart {
     Lit(String),
-    Hole(Arc<AST>),
+    Hole {
+        ast: Arc<AST>,
+        /// 1-based (line, column) where this hole's expression starts in the
+        /// template, so an error inside it reports template coordinates.
+        at: (usize, usize),
+    },
+}
+
+fn compile_ast(host: &Host, mode: Mode, src: &str, cached: bool) -> Result<Arc<AST>> {
+    if cached {
+        host.ast(mode, src)
+    } else {
+        host.ast_uncached(mode, src)
+    }
 }
 
 fn expr_ast(host: &Host, src: &str, cached: bool) -> Result<Arc<AST>> {
-    let compile = |e: &Engine| e.compile_expression(src);
-    if cached {
-        host.ast(&format!("e:{src}"), src, compile)
-    } else {
-        host.ast_uncached(src, compile)
-    }
+    compile_ast(host, Mode::Expression, src, cached)
 }
 
 fn script_ast(host: &Host, src: &str, cached: bool) -> Result<Arc<AST>> {
-    let compile = |e: &Engine| e.compile(src);
-    if cached {
-        host.ast(&format!("s:{src}"), src, compile)
-    } else {
-        host.ast_uncached(src, compile)
-    }
+    compile_ast(host, Mode::Script, src, cached)
 }
 
 impl sealed::Sealed for Expr {}
@@ -119,12 +122,31 @@ impl Slot for Block {
 impl sealed::Sealed for Template {}
 impl Slot for Template {
     fn pieces(&self, host: &Host, cached: bool) -> Result<Pieces> {
+        let src = Template::src(self);
         let mut parts = Vec::new();
-        for part in template::split(Template::src(self))? {
-            parts.push(match part {
-                Part::Lit(s) => TPart::Lit(s),
-                Part::Hole(h) => TPart::Hole(expr_ast(host, h.trim(), cached)?),
-            });
+        // Byte cursor into `src`, so each hole knows its own line/column.
+        let mut at = 0usize;
+        for part in template::split(src)? {
+            match part {
+                Part::Lit(s) => {
+                    at += s.len();
+                    parts.push(TPart::Lit(s));
+                }
+                Part::Hole(h) => {
+                    // `at` sits on the `$`; the expression begins after `${`
+                    // plus whatever `trim` drops from the front.
+                    let lead = h.len() - h.trim_start().len();
+                    let expr_at = line_col(src, at + 2 + lead);
+                    parts.push(TPart::Hole {
+                        // A hole compiles alone, so a syntax error in it points
+                        // into the hole; rebase it onto the template.
+                        ast: expr_ast(host, h.trim(), cached)
+                            .map_err(|e| e.rebase(src, expr_at))?,
+                        at: expr_at,
+                    });
+                    at += 2 + h.len() + 1;
+                }
+            }
         }
         Ok(Pieces::Parts(parts))
     }
@@ -162,6 +184,24 @@ impl Host {
             discovered: false,
             _kind: PhantomData,
         })
+    }
+}
+
+/// 1-based (line, column) of a byte offset, counting columns in chars.
+fn line_col(src: &str, at: usize) -> (usize, usize) {
+    let line = src[..at].matches('\n').count() + 1;
+    let start = src[..at].rfind('\n').map(|p| p + 1).unwrap_or(0);
+    (line, src[start..at].chars().count() + 1)
+}
+
+impl<S: Slot> std::fmt::Debug for Compiled<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Compiled")
+            .field("kind", &std::any::type_name::<S>())
+            .field("src", &self.src)
+            .field("discovered", &self.discovered)
+            .field("read_set", &self.read_set)
+            .finish()
     }
 }
 
@@ -211,28 +251,32 @@ impl<S: Slot> Compiled<S> {
     fn eval_ast(
         &self,
         ast: &AST,
-        env: &Env,
-        resolver: Option<Arc<dyn Resolver>>,
+        scope: &mut rhai::Scope<'static>,
+        remap: Option<(usize, usize)>,
     ) -> Result<Dynamic> {
-        let mut scope = env.scope(resolver);
         self.engine
-            .eval_ast_with_scope::<Dynamic>(&mut scope, ast)
-            .map_err(|e| RhaiError::from_eval(&self.src, e))
+            .eval_ast_with_scope::<Dynamic>(scope, ast)
+            .map_err(|e| RhaiError::from_eval_at(&self.src, e, remap))
     }
 
     fn eval_with(&self, env: &Env, resolver: Option<Arc<dyn Resolver>>) -> Result<Dynamic> {
+        // One scope per evaluation, not one per template hole. Holes compile
+        // through `compile_expression`, so none of them can leave a binding
+        // behind for the next.
+        let mut scope = env.scope(resolver);
         match &self.pieces {
-            Pieces::One(ast) => self.eval_ast(ast, env, resolver),
+            Pieces::One(ast) => self.eval_ast(ast, &mut scope, None),
             Pieces::Parts(parts) => {
-                if let [TPart::Hole(ast)] = parts.as_slice() {
-                    return self.eval_ast(ast, env, resolver);
+                if let [TPart::Hole { ast, at }] = parts.as_slice() {
+                    return self.eval_ast(ast, &mut scope, Some(*at));
                 }
                 let mut out = String::new();
                 for part in parts {
                     match part {
                         TPart::Lit(s) => out.push_str(s),
-                        TPart::Hole(ast) => {
-                            out.push_str(&render(&self.eval_ast(ast, env, resolver.clone())?))
+                        TPart::Hole { ast, at } => {
+                            let v = self.eval_ast(ast, &mut scope, Some(*at))?;
+                            out.push_str(&render(&v));
                         }
                     }
                 }
@@ -297,6 +341,7 @@ impl Compiled<Block> {
 mod tests {
     use super::*;
     use crate::limits::Limits;
+    use crate::resolver::Lookup;
     use crate::resolver::tests::MapResolver;
     use std::collections::HashMap;
 
@@ -453,6 +498,97 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn template_hole_error_reports_template_coordinates() {
+        let h = host();
+        // The fault is on line 2, well to the right — not line 1 column 1.
+        let t = h
+            .compile(&Template::from(
+                "short\nthis is a longer line ${ nosuchfn(1) }",
+            ))
+            .unwrap();
+        let err = t.eval(&Env::new()).unwrap_err();
+        let RhaiError::Runtime(l) = err else {
+            panic!("expected Runtime, got {err:?}")
+        };
+        assert_eq!(l.line, 2, "line must index the template, not the hole");
+        assert_eq!(l.column, 26, "column must offset by where the hole starts");
+        let shown = l.to_string();
+        assert!(shown.contains("this is a longer line"), "{shown}");
+        // The position is printed once, by Located — not also by rhai.
+        assert_eq!(shown.matches("line 2").count(), 1, "{shown}");
+    }
+
+    #[test]
+    fn template_syntax_error_reports_template_coordinates() {
+        // Compile-time counterpart: a malformed hole must point into the
+        // template and carry the template as its source, so a validator can
+        // name the YAML key.
+        let h = host();
+        let err = h
+            .compile(&Template::from(
+                "line one
+value is ${ 1 + } here",
+            ))
+            .unwrap_err();
+        let RhaiError::Syntax(l) = &err else {
+            panic!("expected Syntax, got {err:?}")
+        };
+        assert_eq!(l.line, 2, "line must index the template");
+        assert!(
+            l.column >= 13,
+            "column must sit inside the hole, got {}",
+            l.column
+        );
+        assert!(err.src().contains("line one"), "src must be the template");
+    }
+
+    #[test]
+    fn unknown_name_inside_a_script_fn_is_still_unknown_name() {
+        // rhai wraps a failure inside `fn` in ErrorInFunctionCall; the wrapper
+        // must not hide the real cause from classification.
+        let h = host();
+        let env = Env::new().resolver(resolver());
+        let c = h.compile(&Block::from("fn f() { app.nope } f()")).unwrap();
+        match c.eval(&env) {
+            Err(RhaiError::UnknownName { path, .. }) => assert_eq!(path, "app"),
+            other => panic!("expected UnknownName, got {:?}", other.map(|_| ())),
+        }
+    }
+
+    #[test]
+    fn resolver_is_consulted_once_per_name() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct Counting(AtomicUsize);
+        impl Resolver for Counting {
+            fn resolve(&self, path: &str) -> Lookup {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                match path {
+                    "app" => Lookup::Namespace,
+                    "app.n" => Lookup::Leaf(Dynamic::from(1_i64)),
+                    _ => Lookup::Unknown,
+                }
+            }
+        }
+
+        let counter = Arc::new(Counting(AtomicUsize::new(0)));
+        let env = Env::new().resolver(counter.clone() as Arc<dyn Resolver>);
+        let c = host().compile(&Expr::from("app.n")).unwrap();
+        assert_eq!(c.eval(&env).unwrap().as_int().unwrap(), 1);
+        // `app` then `app.n`. Resolving twice would make this 3.
+        assert_eq!(counter.0.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn multi_hole_template_shares_one_scope() {
+        // Each hole sees the same pushed vars, and evaluation order is stable.
+        let h = host();
+        let env = Env::new().var("a", 1_i64).var("b", 2_i64);
+        let t = h.compile(&Template::from("${a}-${b}-${a + b}")).unwrap();
+        assert_eq!(t.eval(&env).unwrap().to_string(), "1-2-3");
     }
 
     #[test]

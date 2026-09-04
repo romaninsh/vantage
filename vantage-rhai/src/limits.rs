@@ -20,10 +20,13 @@ impl Limits {
         }
     }
 
+    /// The operation ceiling, never zero: rhai reads
+    /// `set_max_operations(0)` as *unlimited*, which would quietly undo the
+    /// one guarantee this type exists to make.
     pub fn max_operations(&self) -> u64 {
         match self {
             Limits::Ui => UI_MAX_OPERATIONS,
-            Limits::Background { max_operations } => *max_operations,
+            Limits::Background { max_operations } => (*max_operations).max(1),
         }
     }
 
@@ -63,6 +66,20 @@ mod tests {
                 "{limits:?}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn zero_operations_is_not_unlimited() {
+        // rhai treats 0 as "no ceiling"; the profile must never pass it on.
+        let limits = Limits::Background { max_operations: 0 };
+        assert_eq!(limits.max_operations(), 1);
+        let mut engine = Engine::new();
+        limits.apply(&mut engine);
+        let err = engine.run("while true {}").unwrap_err();
+        assert!(matches!(
+            *err,
+            rhai::EvalAltResult::ErrorTooManyOperations(_)
+        ));
     }
 
     #[test]

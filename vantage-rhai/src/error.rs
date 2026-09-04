@@ -45,6 +45,21 @@ impl RhaiError {
     // `Result<_, Box<EvalAltResult>>`, so taking it boxed is what callers have.
     #[allow(clippy::boxed_local)]
     pub fn from_eval(src: &str, err: Box<EvalAltResult>) -> Self {
+        Self::from_eval_at(src, err, None)
+    }
+
+    /// Classify an eval error. `remap` shifts the reported position into the
+    /// coordinates of `src` — a template hole's AST reports positions relative
+    /// to the hole, but `src` is the whole template.
+    #[allow(clippy::boxed_local)]
+    pub fn from_eval_at(src: &str, err: Box<EvalAltResult>, remap: Option<(usize, usize)>) -> Self {
+        // A failure inside a script `fn` arrives wrapped, and the wrapper is
+        // what `match` would see — unwrap so the real cause is classified.
+        let err = match *err {
+            EvalAltResult::ErrorInFunctionCall(_, _, inner, _)
+            | EvalAltResult::ErrorInModule(_, inner, _) => inner,
+            other => Box::new(other),
+        };
         let src_s = src.to_string();
         match *err {
             EvalAltResult::ErrorTooManyOperations(_) => RhaiError::LimitExceeded {
@@ -64,12 +79,59 @@ impl RhaiError {
                 src: src_s,
             },
             EvalAltResult::ErrorParsing(err_type, pos) => {
-                RhaiError::Syntax(Located::new(src, pos, err_type.to_string()))
+                RhaiError::Syntax(Located::at(src, pos, err_type.to_string(), remap))
             }
             other => {
                 let pos = other.position();
-                RhaiError::Runtime(Located::new(src, pos, other.to_string()))
+                // `to_string()` already embeds the position; keep the message
+                // alone so `Located` is not printed twice.
+                let message = other.to_string();
+                let message = match message.find(" (line ") {
+                    Some(cut) => message[..cut].to_string(),
+                    None => message,
+                };
+                RhaiError::Runtime(Located::at(src, pos, message, remap))
             }
+        }
+    }
+
+    /// Re-anchor a fragment's error onto the text that contains it. A template
+    /// hole compiles in isolation, so its position and source excerpt refer to
+    /// the hole; `at` is where the hole begins in `src`.
+    pub fn rebase(self, src: &str, at: (usize, usize)) -> Self {
+        let shift = |l: Located| {
+            let (line, column) = if l.line == 0 {
+                (0, 0)
+            } else if l.line == 1 {
+                (at.0, at.1 + l.column.saturating_sub(1))
+            } else {
+                (at.0 + l.line - 1, l.column)
+            };
+            Located {
+                src: src.to_string(),
+                line,
+                column,
+                message: l.message,
+            }
+        };
+        match self {
+            RhaiError::Syntax(l) => RhaiError::Syntax(shift(l)),
+            RhaiError::Runtime(l) => RhaiError::Runtime(shift(l)),
+            RhaiError::UnknownName { path, .. } => RhaiError::UnknownName {
+                path,
+                src: src.to_string(),
+            },
+            RhaiError::WrongType {
+                expected, actual, ..
+            } => RhaiError::WrongType {
+                expected,
+                actual,
+                src: src.to_string(),
+            },
+            RhaiError::LimitExceeded { limit, .. } => RhaiError::LimitExceeded {
+                limit,
+                src: src.to_string(),
+            },
         }
     }
 
@@ -96,10 +158,27 @@ pub struct Located {
 
 impl Located {
     pub fn new(src: &str, pos: Position, message: String) -> Self {
+        Self::at(src, pos, message, None)
+    }
+
+    /// `remap` is the (line, column) in `src` at which the reporting fragment
+    /// begins, both 1-based. A position on the fragment's first line is offset
+    /// by the column too; later lines only shift by line.
+    pub fn at(src: &str, pos: Position, message: String, remap: Option<(usize, usize)>) -> Self {
+        let mut line = pos.line().unwrap_or(0);
+        let mut column = pos.position().unwrap_or(0);
+        if let Some((base_line, base_col)) = remap
+            && line > 0
+        {
+            if line == 1 {
+                column = base_col + column.saturating_sub(1);
+            }
+            line = base_line + line - 1;
+        }
         Located {
             src: src.to_string(),
-            line: pos.line().unwrap_or(0),
-            column: pos.position().unwrap_or(0),
+            line,
+            column,
             message,
         }
     }

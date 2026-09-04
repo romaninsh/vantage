@@ -44,43 +44,82 @@ pub fn strip_single_wrapper(src: &str) -> &str {
 }
 
 /// Byte index of the `}` that closes a hole whose `${` has already been
-/// consumed. Counts nested braces; ignores braces inside `"…"` / `'…'`
-/// literals, honouring backslash escapes.
+/// consumed. Counts nested braces, and skips anything rhai would not read as
+/// code: `"…"` and `'…'` (with backslash escapes), backtick literal strings,
+/// and `//` / `/* */` comments. A brace inside any of those is text, not
+/// structure.
 fn close_brace(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
     let mut depth = 0usize;
-    let mut quote: Option<u8> = None;
-    let bytes = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        match quote {
-            Some(q) => {
-                if b == b'\\' {
-                    i += 1;
-                } else if b == q {
-                    quote = None;
-                }
+    while i < b.len() {
+        match b[i] {
+            // Escaped strings: `"…"` and the char literal `'…'`.
+            q @ (b'"' | b'\'') => {
+                i = skip_escaped(b, i, q)?;
+                continue;
             }
-            None => match b {
-                b'"' | b'\'' => quote = Some(b),
-                b'{' => depth += 1,
-                b'}' => {
-                    if depth == 0 {
-                        return Some(i);
+            // Rhai's literal string. No backslash escapes inside, so the next
+            // backtick always closes it; `${…}` interpolation is skipped whole.
+            b'`' => {
+                i = memchr(b, i + 1, b'`')? + 1;
+                continue;
+            }
+            b'/' if b.get(i + 1) == Some(&b'/') => {
+                // Line comment: to the newline. Running off the end means the
+                // hole was never closed.
+                i = memchr(b, i + 2, b'\n')? + 1;
+                continue;
+            }
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                let mut j = i + 2;
+                loop {
+                    j = memchr(b, j, b'*')?;
+                    if b.get(j + 1) == Some(&b'/') {
+                        i = j + 2;
+                        break;
                     }
-                    depth -= 1;
+                    j += 1;
                 }
-                _ => {}
-            },
+                continue;
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                if depth == 0 {
+                    return Some(i);
+                }
+                depth -= 1;
+            }
+            _ => {}
         }
         i += 1;
     }
     None
 }
 
+/// Index just past the closing `quote`, honouring backslash escapes.
+fn skip_escaped(b: &[u8], open: usize, quote: u8) -> Option<usize> {
+    let mut i = open + 1;
+    while i < b.len() {
+        match b[i] {
+            b'\\' => i += 2,
+            c if c == quote => return Some(i + 1),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+fn memchr(b: &[u8], from: usize, needle: u8) -> Option<usize> {
+    (from..b.len()).find(|&i| b[i] == needle)
+}
+
 fn unterminated(src: &str, at: usize) -> RhaiError {
     let line = src[..at].matches('\n').count() + 1;
-    let column = at - src[..at].rfind('\n').map(|p| p + 1).unwrap_or(0) + 1;
+    // Char column, not byte: `Located::Display` counts spaces, and rhai's own
+    // positions are char-based, so the two sources must agree.
+    let line_start = src[..at].rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let column = src[line_start..at].chars().count() + 1;
     RhaiError::Syntax(Located {
         src: src.to_string(),
         line,
@@ -128,6 +167,49 @@ mod tests {
             split(r#"${ "}" + '{' + "\"}" }"#).unwrap(),
             vec![hole(r#" "}" + '{' + "\"}" "#)]
         );
+    }
+
+    #[test]
+    fn backtick_literal_strings_are_skipped() {
+        // Rhai's third string form. A brace inside one is text, and the engine
+        // accepts these — the scanner must not split on them.
+        assert_eq!(split("${ `{` }").unwrap(), vec![hole(" `{` ")]);
+        assert_eq!(split("${ `}` }").unwrap(), vec![hole(" `}` ")]);
+        assert_eq!(
+            split(r#"${ "a" + `b}c` }"#).unwrap(),
+            vec![hole(r#" "a" + `b}c` "#)]
+        );
+        // Interpolation inside a backtick string carries its own braces.
+        assert_eq!(split("${ `x${y}z` }").unwrap(), vec![hole(" `x${y}z` ")]);
+    }
+
+    #[test]
+    fn comments_inside_a_hole_are_skipped() {
+        assert_eq!(
+            split("${ 1 /* } */ + 2 }").unwrap(),
+            vec![hole(" 1 /* } */ + 2 ")]
+        );
+        assert_eq!(
+            split("${ 1 + // }\n 2 }").unwrap(),
+            vec![hole(" 1 + // }\n 2 ")]
+        );
+    }
+
+    #[test]
+    fn char_literal_braces_are_skipped() {
+        assert_eq!(split("${ '}' }").unwrap(), vec![hole(" '}' ")]);
+        assert_eq!(
+            split(r"${ '\'' + '{' }").unwrap(),
+            vec![hole(r" '\'' + '{' ")]
+        );
+    }
+
+    #[test]
+    fn unterminated_hole_column_counts_chars_not_bytes() {
+        // "café " is 5 chars but 6 bytes; the caret must land on the `$`.
+        let err = split("café ${x").unwrap_err();
+        let RhaiError::Syntax(l) = err else { panic!() };
+        assert_eq!((l.line, l.column), (1, 6));
     }
 
     #[test]

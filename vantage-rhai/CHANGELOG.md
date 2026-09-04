@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.6.1 — 2026-09-04
+
+Review fixes, all with regression tests.
+
+- The `${…}` scanner now skips everything rhai would not read as code:
+  backtick literal strings, char literals, and `//` / `/* */` comments.
+  Before, a backtick string containing a brace either failed to compile with
+  a misleading "unterminated" message or split the template in the wrong
+  place — `${ `{` }` is valid rhai and was rejected.
+- A runtime error inside a template hole now reports the hole's position
+  **in the template**, not in the hole's own isolated source, and prints that
+  position once rather than twice. A fault on line 2 of a block scalar used to
+  point at line 1, column 1.
+- A failure inside a script `fn` arrives wrapped in `ErrorInFunctionCall`;
+  the wrapper is now unwrapped before classification, so an unknown name in a
+  helper function is `UnknownName` rather than an opaque `Runtime`.
+- `Resolver::resolve` is called once per name per evaluation, not twice. A
+  resolver that counts, logs, or caches on read no longer sees doubled reads.
+- One `rhai::Scope` per evaluation instead of one per template hole.
+- `Host::ast` takes a `Mode` instead of a caller-built cache key, so an
+  expression and a script with identical text cannot alias in the cache.
+- Template scanner columns are counted in chars, matching rhai's own
+  positions; non-ASCII text before a hole no longer shifts the caret.
+- `Limits::Background { max_operations: 0 }` no longer means *unlimited*.
+  Rhai reads a zero ceiling as "no limit", which quietly undid the one
+  guarantee the type exists to make; the floor is now 1.
+- A syntax error in a template hole reports the template's line, column and
+  source rather than the hole's, so a validator can still name the YAML key.
+- `to_json` walks maps and arrays instead of serializing the root in one go.
+  A single unsupported value nested in a map used to flatten the entire
+  object into one string; now it costs only its own leaf. Non-finite floats,
+  which JSON cannot represent, render as text.
+- `Compiled` implements `Debug`.
+
 ## 0.6.0 — 2026-09-04
 
 Initial release. One Rhai host for every YAML script slot, so the pieces that

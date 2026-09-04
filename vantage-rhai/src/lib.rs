@@ -29,7 +29,7 @@ pub mod template;
 
 pub use compiled::{Compiled, Env, Slot};
 pub use error::{Located, Result, RhaiError};
-pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Vocab};
+pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Mode, Vocab};
 pub use json::{from_json, to_json};
 pub use limits::{BACKGROUND_MAX_OPERATIONS, Limits, UI_MAX_OPERATIONS};
 pub use resolver::{Lookup, Resolver};

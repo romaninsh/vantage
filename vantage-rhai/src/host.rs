@@ -42,6 +42,32 @@ impl HostBuilder {
     }
 }
 
+/// Which rhai parse mode a source is compiled in. The cache key derives from
+/// this, so an expression and a script with identical text never share an AST.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// One expression, no statements (`compile_expression`).
+    Expression,
+    /// Statements (`compile`).
+    Script,
+}
+
+impl Mode {
+    fn compile(self, engine: &Engine, src: &str) -> std::result::Result<AST, rhai::ParseError> {
+        match self {
+            Mode::Expression => engine.compile_expression(src),
+            Mode::Script => engine.compile(src),
+        }
+    }
+
+    fn tag(self) -> char {
+        match self {
+            Mode::Expression => 'e',
+            Mode::Script => 's',
+        }
+    }
+}
+
 pub const AST_CACHE_BOUND: usize = 1024;
 
 #[derive(Default)]
@@ -69,34 +95,26 @@ impl Host {
         self.limits
     }
 
-    /// Compile through the bounded cache. `key` must encode the compile mode
-    /// as well as the source (`"e:<src>"` / `"s:<src>"`) so an expression and a
-    /// script with identical text never share an AST.
-    pub fn ast(
-        &self,
-        key: &str,
-        src: &str,
-        compile: impl FnOnce(&Engine) -> std::result::Result<AST, rhai::ParseError>,
-    ) -> Result<Arc<AST>> {
-        if let Some(ast) = self.cache.0.lock().unwrap().get(key) {
+    /// Compile through the bounded cache. The key derives from `mode` and
+    /// `src`, so a caller cannot accidentally alias an expression and a script
+    /// with the same text.
+    pub fn ast(&self, mode: Mode, src: &str) -> Result<Arc<AST>> {
+        let key = format!("{}:{src}", mode.tag());
+        if let Some(ast) = self.cache.0.lock().unwrap().get(&key) {
             return Ok(ast.clone());
         }
-        let ast = self.ast_uncached(src, compile)?;
+        let ast = self.ast_uncached(mode, src)?;
         let mut map = self.cache.0.lock().unwrap();
         if map.len() >= AST_CACHE_BOUND {
             map.clear();
         }
-        map.insert(key.to_string(), ast.clone());
+        map.insert(key, ast.clone());
         Ok(ast)
     }
 
     /// Compile without touching the cache (one-off scripts).
-    pub fn ast_uncached(
-        &self,
-        src: &str,
-        compile: impl FnOnce(&Engine) -> std::result::Result<AST, rhai::ParseError>,
-    ) -> Result<Arc<AST>> {
-        compile(&self.engine)
+    pub fn ast_uncached(&self, mode: Mode, src: &str) -> Result<Arc<AST>> {
+        mode.compile(&self.engine, src)
             .map(Arc::new)
             .map_err(|e| RhaiError::from_parse(src, e))
     }
@@ -118,11 +136,7 @@ mod tests {
                 e.register_fn("double", |x: i64| x * 2);
             })
             .build();
-        let ast = host
-            .ast("e:double(21)", "double(21)", |e| {
-                e.compile_expression("double(21)")
-            })
-            .unwrap();
+        let ast = host.ast(Mode::Expression, "double(21)").unwrap();
         let v: i64 = host.engine().eval_ast(&ast).unwrap();
         assert_eq!(v, 42);
     }
@@ -130,12 +144,8 @@ mod tests {
     #[test]
     fn same_source_compiles_once() {
         let host = Host::builder(Limits::Ui).build();
-        let a = host
-            .ast("e:1+1", "1+1", |e| e.compile_expression("1+1"))
-            .unwrap();
-        let b = host
-            .ast("e:1+1", "1+1", |e| e.compile_expression("1+1"))
-            .unwrap();
+        let a = host.ast(Mode::Expression, "1+1").unwrap();
+        let b = host.ast(Mode::Expression, "1+1").unwrap();
         assert!(Arc::ptr_eq(&a, &b));
         assert_eq!(host.cache_len(), 1);
     }
@@ -144,17 +154,14 @@ mod tests {
     fn overflow_clears_and_keeps_serving() {
         let host = Host::builder(Limits::Ui).build();
         for i in 0..AST_CACHE_BOUND {
-            let src = format!("{i}");
-            host.ast(&format!("e:{src}"), &src, |e| e.compile_expression(&src))
-                .unwrap();
+            host.ast(Mode::Expression, &format!("{i}")).unwrap();
         }
         assert_eq!(host.cache_len(), AST_CACHE_BOUND);
-        host.ast("e:overflow", "1", |e| e.compile_expression("1"))
-            .unwrap();
+        host.ast(Mode::Expression, "overflow-marker").unwrap();
         assert_eq!(host.cache_len(), 1);
         let v: i64 = host
             .engine()
-            .eval_ast(&host.ast("e:2", "2", |e| e.compile_expression("2")).unwrap())
+            .eval_ast(&host.ast(Mode::Expression, "2").unwrap())
             .unwrap();
         assert_eq!(v, 2);
     }
@@ -162,9 +169,12 @@ mod tests {
     #[test]
     fn syntax_error_is_located() {
         let host = Host::builder(Limits::Ui).build();
-        let err = host
-            .ast("e:1 +", "1 +", |e| e.compile_expression("1 +"))
-            .unwrap_err();
+        let err = host.ast(Mode::Expression, "1 +").unwrap_err();
         assert!(matches!(err, RhaiError::Syntax(_)));
+
+        // Same text, different modes: separate cache entries, no aliasing.
+        let expr = host.ast(Mode::Expression, "40 + 2").unwrap();
+        let script = host.ast(Mode::Script, "40 + 2").unwrap();
+        assert!(!Arc::ptr_eq(&expr, &script));
     }
 }

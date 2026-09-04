@@ -97,9 +97,15 @@ pub(crate) fn install(engine: &mut Engine) {
         let Some(handle) = ctx.scope().get_value::<EnvHandle>(ENV_KEY) else {
             return Ok(None);
         };
+        // Resolve exactly once: a resolver is not required to be idempotent,
+        // and this runs per name per evaluation.
         match handle.0.resolve(name) {
             Lookup::Unknown => Ok(None), // let rhai report it
-            _ => lookup(&handle.0, name).map(Some),
+            Lookup::Leaf(v) => Ok(Some(v)),
+            Lookup::Namespace => Ok(Some(Dynamic::from(NamespaceProxy {
+                resolver: handle.0.clone(),
+                prefix: name.to_string(),
+            }))),
         }
     });
 }
