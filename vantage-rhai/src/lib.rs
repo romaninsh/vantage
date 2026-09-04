@@ -5,6 +5,8 @@
 
 pub use rhai;
 
+mod error;
 mod slot;
 
+pub use error::{Located, Result, RhaiError};
 pub use slot::{Block, Expr, Template};
