@@ -5,6 +5,7 @@
 
 pub use rhai;
 
+mod compiled;
 mod error;
 mod host;
 mod limits;
@@ -12,6 +13,7 @@ mod resolver;
 mod slot;
 pub mod template;
 
+pub use compiled::{Compiled, Env, Slot};
 pub use error::{Located, Result, RhaiError};
 pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Vocab};
 pub use resolver::{Lookup, Resolver};
