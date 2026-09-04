@@ -34,9 +34,16 @@ impl RhaiError {
     }
 
     pub fn from_parse(src: &str, err: ParseError) -> Self {
-        RhaiError::Syntax(Located::new(src, err.position(), err.err_type().to_string()))
+        RhaiError::Syntax(Located::new(
+            src,
+            err.position(),
+            err.err_type().to_string(),
+        ))
     }
 
+    // Boxed by rhai's own choice: every `eval`/`run` returns
+    // `Result<_, Box<EvalAltResult>>`, so taking it boxed is what callers have.
+    #[allow(clippy::boxed_local)]
     pub fn from_eval(src: &str, err: Box<EvalAltResult>) -> Self {
         let src_s = src.to_string();
         match *err {

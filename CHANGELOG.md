@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## vantage-rhai 0.6.0 - 2026-09-04
+
+- New crate: one Rhai host for every YAML script slot. `Expr` / `Template` /
+  `Block` slot types, `Host` with closed `Limits` (no unlimited engine),
+  `Vocab` and `Resolver` traits, host-owned read-set discovery, one
+  brace- and string-aware `${…}` scanner, bounded AST cache, located errors,
+  `to_json` / `from_json`. Design: `plans/2026-09-04-vantage-rhai-host-design.md`.
+
 ## [0.2.0] - 2025-02-16
 
 - Refactored Column aliases with RwLock, implementing `join` properly #49

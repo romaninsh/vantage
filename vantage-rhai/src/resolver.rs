@@ -173,10 +173,7 @@ pub(crate) mod tests {
         let err = engine
             .eval_with_scope::<Dynamic>(&mut scope, "nothing")
             .unwrap_err();
-        assert!(matches!(
-            *err,
-            EvalAltResult::ErrorVariableNotFound(..)
-        ));
+        assert!(matches!(*err, EvalAltResult::ErrorVariableNotFound(..)));
     }
 
     #[test]

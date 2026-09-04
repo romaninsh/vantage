@@ -69,7 +69,11 @@ mod tests {
     fn background_honours_caller_number() {
         let mut engine = Engine::new();
         Limits::Background { max_operations: 10 }.apply(&mut engine);
-        assert!(engine.run("let x = 0; for i in 0..100 { x += i; }").is_err());
+        assert!(
+            engine
+                .run("let x = 0; for i in 0..100 { x += i; }")
+                .is_err()
+        );
         let mut engine = Engine::new();
         Limits::background().apply(&mut engine);
         assert!(engine.run("let x = 0; for i in 0..100 { x += i; }").is_ok());

@@ -261,9 +261,9 @@ macro_rules! value_methods {
 
             pub fn eval_as<T: Clone + Send + Sync + 'static>(&self, env: &Env) -> Result<T> {
                 let v = self.eval_dynamic(env)?;
-                v.clone().try_cast::<T>().ok_or_else(|| {
-                    RhaiError::wrong_type(&self.src, std::any::type_name::<T>(), &v)
-                })
+                v.clone()
+                    .try_cast::<T>()
+                    .ok_or_else(|| RhaiError::wrong_type(&self.src, std::any::type_name::<T>(), &v))
             }
         }
     };
@@ -385,7 +385,10 @@ mod tests {
         assert!(c.read_set().is_empty());
         let c = c.discover(&env).unwrap();
         assert!(c.is_discovered());
-        assert_eq!(c.read_set().iter().collect::<Vec<_>>(), vec!["app.currency"]);
+        assert_eq!(
+            c.read_set().iter().collect::<Vec<_>>(),
+            vec!["app.currency"]
+        );
         assert_eq!(c.eval(&env).unwrap().to_string(), "USD");
     }
 
@@ -459,7 +462,9 @@ mod tests {
         let handles: Vec<_> = (1..=4_i64)
             .map(|i| {
                 let c = c.clone();
-                std::thread::spawn(move || c.eval(&Env::new().var("x", i)).unwrap().as_int().unwrap())
+                std::thread::spawn(move || {
+                    c.eval(&Env::new().var("x", i)).unwrap().as_int().unwrap()
+                })
             })
             .collect();
         let got: Vec<i64> = handles.into_iter().map(|h| h.join().unwrap()).collect();
