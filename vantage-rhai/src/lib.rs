@@ -14,5 +14,6 @@ pub mod template;
 
 pub use error::{Located, Result, RhaiError};
 pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Vocab};
+pub use resolver::{Lookup, Resolver};
 pub use limits::{BACKGROUND_MAX_OPERATIONS, Limits, UI_MAX_OPERATIONS};
 pub use slot::{Block, Expr, Template};
