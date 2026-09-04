@@ -10,6 +10,7 @@ mod host;
 mod limits;
 mod resolver;
 mod slot;
+pub mod template;
 
 pub use error::{Located, Result, RhaiError};
 pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Vocab};
