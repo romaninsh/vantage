@@ -83,6 +83,10 @@ jobs:
           # publishable crates must be inserted here at the right layer;
           # the unknown-crate tail is a safety net, not a substitute.
           PUBLISH_ORDER=(
+            # No internal dependencies of its own, and the data-layer crates
+            # will depend on it as their Rhai engines move onto the shared
+            # host — so it publishes ahead of everything.
+            vantage-rhai
             vantage-core
             vantage-action/macros
             vantage-action

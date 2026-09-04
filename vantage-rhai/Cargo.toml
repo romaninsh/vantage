@@ -1,0 +1,21 @@
+[package]
+name = "vantage-rhai"
+version = "0.6.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "One Rhai host for every Vantage YAML script slot: slot types, limits, vocab/resolver traits, discovery, template scanner"
+repository = "https://github.com/romaninsh/vantage"
+
+[lib]
+doctest = false
+
+[features]
+default = []
+schema = ["dep:schemars"]
+
+[dependencies]
+rhai = { version = "1.25", default-features = false, features = ["std", "sync", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0"
+schemars = { version = "0.8", optional = true }

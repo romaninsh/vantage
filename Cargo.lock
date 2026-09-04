@@ -5896,6 +5896,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-rhai"
+version = "0.6.0"
+dependencies = [
+ "rhai",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "vantage-sql"
 version = "0.6.21"
 dependencies = [
