@@ -8,11 +8,20 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
-use vantage_diorama::rhai::register_servo_onto;
+use vantage_diorama::rhai::ServoVocab;
 use vantage_diorama::{Dio, IdStrategy, Lens, Servo};
-use vantage_rhai::rhai::{Dynamic, Engine, Scope};
+use vantage_rhai::rhai::Dynamic;
+use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+
+/// The host every script here runs on: background limits (a blocking
+/// thread), the servo vocabulary.
+fn host() -> Host {
+    Host::builder(Limits::background())
+        .vocab(ServoVocab)
+        .build()
+}
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -34,12 +43,9 @@ async fn dio_over(shell: &MockShell) -> Result<Dio> {
 /// Evaluate `script` with `servo` in scope, on a blocking thread.
 async fn eval(servo: Arc<Servo>, script: &'static str) -> std::result::Result<Dynamic, String> {
     tokio::task::spawn_blocking(move || {
-        let mut engine = Engine::new();
-        register_servo_onto(&mut engine);
-        let mut scope = Scope::new();
-        scope.push("servo", servo);
-        engine
-            .eval_with_scope::<Dynamic>(&mut scope, script)
+        host()
+            .compile(&Block::from(script))
+            .and_then(|s| s.eval(&Env::new().var("servo", Dynamic::from(servo))))
             .map_err(|e| e.to_string())
     })
     .await
@@ -169,13 +175,15 @@ async fn an_instant_writes_as_a_cbor_datetime() -> Result<()> {
 
     let servo_for_script = servo.clone();
     let _ = tokio::task::spawn_blocking(move || {
-        let mut engine = Engine::new();
-        register_servo_onto(&mut engine);
-        let mut scope = Scope::new();
-        scope.push("servo", servo_for_script);
-        scope.push("stamp", stamp);
-        engine
-            .eval_with_scope::<Dynamic>(&mut scope, r#"servo.set("created", stamp)"#)
+        host()
+            .compile(&Block::from(r#"servo.set("created", stamp)"#))
+            .and_then(|s| {
+                s.eval(
+                    &Env::new()
+                        .var("servo", Dynamic::from(servo_for_script))
+                        .var("stamp", Dynamic::from(stamp)),
+                )
+            })
             .map_err(|e| e.to_string())
     })
     .await

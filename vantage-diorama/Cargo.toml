@@ -36,8 +36,10 @@ uuid = { version = "1", features = ["v7"] }
 
 [features]
 # Servo as a first-class Rhai type — the same treatment vantage-vista's
-# `rhai` feature gives queries. See `src/rhai.rs`.
-rhai = ["dep:vantage-rhai", "dep:chrono"]
+# `rhai` feature gives queries. See `src/rhai.rs`. Pulls vista's `rhai`
+# for the shared CBOR ⇄ Dynamic converters, so a value round-trips the same
+# way in a servo script as in a vista script.
+rhai = ["dep:vantage-rhai", "dep:chrono", "vantage-vista/rhai"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
