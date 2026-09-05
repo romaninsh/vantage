@@ -85,10 +85,16 @@ vantage-rhai grew again: `Compiled::engine()` / `Compiled::ast()` accessors; `ui
   vantage-github and faker-demo. `ui-grammar` has a schema test asserting
   `x-language: rhai` on the three slot definitions and a `$ref` from `ButtonParams.action`.
 
-## Release — PREPARED, waiting on commits
+## Release — COMMITTED, PRs open, waiting on merge + publish
 
-Done in the working trees (nothing committed: the 1Password SSH signer has been failing
-all day — every `git commit` hangs on it):
+Landed 2026-09-05 once the signer was unlocked: vantage PR #395 (`rhai-unification`),
+vantage-ui PR #200 (commits `677c0e5` checkpoint + `4b43859` second batch; the app
+manifest carries only its version hunk, the generated `bundles.rs` was amended out),
+vantage-ui-examples PR #37. Remaining: merge vantage → CD publishes (rhai first) → step 4
+below regenerates the vantage-ui lock → merge vantage-ui and the examples.
+
+Done in the working trees before that (the 1Password SSH signer had been failing all day —
+every `git commit` hung on it):
 
 - vantage-ui: no crate imports `rhai::` directly any more — 38 files now go through
   `vantage_rhai::rhai::` (actions, components, wizard, plugin-host) or `ui_scope::rhai::`
