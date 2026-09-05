@@ -7,10 +7,10 @@
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
-use rhai::{Dynamic, Engine, Scope};
 use vantage_core::Result;
 use vantage_diorama::rhai::register_servo_onto;
 use vantage_diorama::{Dio, IdStrategy, Lens, Servo};
+use vantage_rhai::rhai::{Dynamic, Engine, Scope};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 

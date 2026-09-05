@@ -5,8 +5,9 @@ use crate::Expr;
 use crate::identifier::Identifier;
 use crate::primitives;
 use crate::sum::Fx;
-use rhai::{Array, FnPtr, NativeCallContext};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_rhai::rhai;
+use vantage_rhai::rhai::{Array, FnPtr, NativeCallContext};
 
 use super::operators::to_expr;
 use super::types::RhaiCase;

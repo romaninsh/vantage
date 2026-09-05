@@ -18,11 +18,18 @@
 //! }
 //! ```
 
-use rhai::{Dynamic, Engine};
+use vantage_rhai::{Block, Env, Host, Limits};
 
-use super::conventional::{RhaiVista, TargetResolver, register_conventional_onto};
-use super::convert::dynamic_to_json;
-use super::fetch::register_fetch_verbs;
+use super::conventional::{ConventionalVocab, RhaiVista, TargetResolver};
+use super::fetch::FetchVerbs;
+
+/// Compile and run a one-shot script on `host`. These are MCP entry points:
+/// every call is a different script, so the cache is bypassed.
+fn run_once(host: &Host, script: &str) -> Result<vantage_rhai::rhai::Dynamic, String> {
+    host.compile_uncached(&Block::from(script))
+        .and_then(|s| s.eval(&Env::new()))
+        .map_err(|e| e.to_string())
+}
 
 /// Lower bound applied to a requested row limit.
 pub const MIN_LIMIT: usize = 1;
@@ -50,14 +57,16 @@ pub async fn run_script(
     let limit = limit.clamp(MIN_LIMIT, MAX_LIMIT);
 
     tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
-        let mut engine = Engine::new();
-        // The conventional builder vocabulary (table/condition/order/get_ref…)…
-        register_conventional_onto(&mut engine, resolver);
-        // …plus the terminal fetch/introspection verbs.
-        register_fetch_verbs(&mut engine, limit);
-
-        let result: Dynamic = engine.eval::<Dynamic>(&script).map_err(|e| e.to_string())?;
-        Ok(dynamic_to_json(&result))
+        // The conventional builder vocabulary (table/condition/order/get_ref…)
+        // plus the terminal fetch/introspection verbs. Background profile: this
+        // is a blocking thread, and a fetch script may legitimately loop over
+        // rows.
+        let host = Host::builder(Limits::background())
+            .vocab(ConventionalVocab(resolver))
+            .vocab(FetchVerbs { limit })
+            .build();
+        let result = run_once(&host, &script)?;
+        Ok(vantage_rhai::to_json(&result))
     })
     .await
     .map_err(|e| format!("data-fetch script task failed to run: {e}"))?
@@ -66,10 +75,10 @@ pub async fn run_script(
 /// Build a query with the conventional verbs and render what it *would* send,
 /// without sending anything.
 ///
-/// The engine this runs on carries [`register_conventional_onto`] and nothing
-/// else — the terminal fetch verbs are deliberately absent, so there is no path
-/// from a preview script to a backend read. That is the point: preview is safe
-/// to expose in places where fetching is not, and the safety is structural
+/// The host this runs on carries [`ConventionalVocab`] and nothing else — the
+/// terminal fetch verbs ([`FetchVerbs`]) are deliberately absent, so there is no
+/// path from a preview script to a backend read. That is the point: preview is
+/// safe to expose in places where fetching is not, and the safety is structural
 /// rather than a promise about how the verb is used.
 ///
 /// Consequently the script takes no terminal verb at all. Its final expression
@@ -106,25 +115,20 @@ pub fn preview_script(
     script: String,
     resolver: TargetResolver,
 ) -> Result<serde_json::Value, String> {
-    let mut engine = Engine::new();
-    register_conventional_onto(&mut engine, resolver);
+    let host = Host::builder(Limits::background())
+        .vocab(ConventionalVocab(resolver))
+        .build();
 
-    let result: Dynamic = engine.eval::<Dynamic>(&script).map_err(|e| e.to_string())?;
+    let result = run_once(&host, &script)?;
     let handle: RhaiVista = result.try_cast::<RhaiVista>().ok_or_else(|| {
         "preview script must end on the query itself, e.g. \
-         `table(\"orders\").add_condition_eq(\"status\", \"paid\")` — this engine \
+         `table(\"orders\").add_condition_eq(\"status\", \"paid\")` — this host \
          has no terminal verbs (`list`, `count`, `get_some`), because it never \
          fetches"
             .to_string()
     })?;
 
-    let vista = handle
-        .0
-        .lock()
-        .map_err(|_| "preview script: result mutex poisoned".to_string())?
-        .take()
-        .ok_or_else(|| "preview script: vista already consumed".to_string())?;
-
+    let vista = handle.take("preview script").map_err(|e| e.to_string())?;
     Ok(vista.preview_query())
 }
 

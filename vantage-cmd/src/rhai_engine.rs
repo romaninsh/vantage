@@ -8,11 +8,12 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use vantage_rhai::rhai;
 
 use indexmap::IndexMap;
-use rhai::{Dynamic, Engine, EvalAltResult, Map, Position, Scope};
 use serde_json::Value as JsonValue;
 use vantage_core::{Result, error};
+use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map, Position, Scope};
 
 use crate::condition::CmdCondition;
 use crate::exec::run_command;

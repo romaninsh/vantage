@@ -3,6 +3,7 @@
 use crate::identifier::Identifier;
 use crate::statements::select::select_target::SelectTarget;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_rhai::rhai;
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 

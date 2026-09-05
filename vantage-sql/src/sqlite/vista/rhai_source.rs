@@ -6,8 +6,8 @@
 //! *transform* an existing query rather than build one from scratch.
 //!
 //! `register_engine!` expands to a full engine toolkit (conversion helpers,
-//! type aliases); a vista source only needs `__create_engine` + `eval`, so the
-//! unused generated items are allowed here.
+//! type aliases); a vista source only needs `__host` + `Sel`, so the unused
+//! generated items are allowed here.
 #![allow(dead_code)]
 
 // NOTE: do not `use vantage_core::Result` here — `register_engine!` expands to
@@ -18,6 +18,7 @@ use crate::sqlite::AnySqliteType;
 use crate::sqlite::statements::SqliteSelect;
 use crate::sqlite::statements::select::join::SqliteSelectJoin;
 
+// `register_engine!` imports `rhai` into this scope.
 crate::register_engine!(
     value: AnySqliteType,
     select: SqliteSelect,
@@ -43,18 +44,19 @@ pub(crate) fn eval_to_select_args(
     base: Option<SqliteSelect>,
     args: &[(String, String)],
 ) -> vantage_core::Result<SqliteSelect> {
-    let engine = __create_engine();
-    let mut scope = rhai::Scope::new();
     let mut map = rhai::Map::new();
     for (k, v) in args {
         map.insert(k.as_str().into(), v.clone().into());
     }
-    scope.push_constant("args", map);
+    let mut env = vantage_rhai::Env::new().var("args", rhai::Dynamic::from_map(map));
     if let Some(base) = base {
-        scope.push("base", Sel::new(base));
+        env = env.var("base", rhai::Dynamic::from(Sel::new(base)));
     }
-    engine
-        .eval_with_scope::<Sel>(&mut scope, code)
+    // Statements, not a lone expression: a `let` in an existing `rhai:` block
+    // keeps working, and the final expression is the select.
+    __host()
+        .compile(&vantage_rhai::Block::from(code))
+        .and_then(|script| script.eval_as::<Sel>(&env))
         .map(|select| select.into_inner())
         .map_err(|e| {
             vantage_core::error!(
@@ -68,19 +70,5 @@ pub(crate) fn eval_to_select(
     code: &str,
     base: Option<SqliteSelect>,
 ) -> vantage_core::Result<SqliteSelect> {
-    let engine = __create_engine();
-    let evaluated = match base {
-        Some(base) => {
-            let mut scope = rhai::Scope::new();
-            scope.push("base", Sel::new(base));
-            engine.eval_with_scope::<Sel>(&mut scope, code)
-        }
-        None => engine.eval::<Sel>(code),
-    };
-    evaluated.map(|select| select.into_inner()).map_err(|e| {
-        vantage_core::error!(
-            "Rhai vista source failed to evaluate",
-            detail = e.to_string()
-        )
-    })
+    eval_to_select_args(code, base, &[])
 }

@@ -36,12 +36,12 @@ fake = "5"
 
 # `effect: rhai` — scripted mutation loops. Same rhai as vantage-vista's
 # scripting feature, kept optional so the default build stays light.
-rhai = { version = "1.25", optional = true }
+vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
 
 tracing = "0.1"
 
 [features]
-rhai = ["dep:rhai"]
+rhai = ["dep:vantage-rhai"]
 
 [dev-dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }

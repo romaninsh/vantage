@@ -17,7 +17,7 @@ vista = ["dep:vantage-vista"]
 # reference traversal, so it pulls in the vista layer and its conventional
 # engine. Keeping them coupled means `register_rhai_extensions` always has the
 # `vantage-vista` rhai vocabulary to layer onto.
-rhai = ["dep:rhai", "vista", "vantage-vista/rhai"]
+rhai = ["dep:vantage-rhai", "vista", "vantage-vista/rhai"]
 
 [dependencies]
 async-trait = "0.1"
@@ -44,7 +44,7 @@ serde_path_to_error = "0.1"
 rust_decimal = { version = "1.42", optional = true }
 uuid = { version = "1.23", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-rhai = { version = "1.25", optional = true }
+vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
 
 # Disable all tests except queries.rs during 0.3 migration
 [[test]]

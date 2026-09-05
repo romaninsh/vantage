@@ -1,7 +1,8 @@
 //! Type conversion helpers for Rhai ↔ Rust interop.
 
-use rhai::Dynamic;
 use vantage_expressions::Order;
+use vantage_rhai::rhai;
+use vantage_rhai::rhai::Dynamic;
 
 pub fn parse_order(dir: &str) -> Result<Order, Box<rhai::EvalAltResult>> {
     match dir.to_lowercase().as_str() {

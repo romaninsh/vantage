@@ -8,6 +8,7 @@ use crate::primitives::identifier::Identifier;
 use crate::primitives::select::window::Window;
 use std::fmt::{Debug, Display};
 use vantage_expressions::Expressive;
+use vantage_rhai::rhai;
 
 use super::{RhaiCase, RhaiExpr, RhaiIdent, RhaiWindow};
 

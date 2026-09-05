@@ -18,8 +18,9 @@
 //! evaluates inside `tokio::task::spawn_blocking` — see that runner for why.
 
 use ciborium::Value as CborValue;
-use rhai::{Array, Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 use vantage_dataset::ReadableValueSet;
+use vantage_rhai::Vocab;
+use vantage_rhai::rhai::{Array, Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 use vantage_types::Record;
 
 use super::conventional::RhaiVista;
@@ -29,10 +30,25 @@ use crate::vista::Vista;
 
 type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
 
+/// The terminal fetch + introspection verbs as a [`Vocab`]. `limit` caps every
+/// `list()`. Register it beside [`ConventionalVocab`](super::ConventionalVocab);
+/// a host without it structurally cannot fetch (see `preview_script`).
+pub struct FetchVerbs {
+    pub limit: usize,
+}
+
+impl Vocab for FetchVerbs {
+    fn register(&self, engine: &mut Engine) {
+        register_fetch_verbs(engine, self.limit);
+    }
+}
+
 /// Register the terminal fetch + introspection verbs onto `engine`. The engine
 /// must already carry the conventional vocabulary (see
 /// [`register_conventional_onto`](crate::register_conventional_onto)). `limit`
 /// caps every `list()`. Each verb is read-only.
+///
+/// Prefer [`FetchVerbs`] on a host; this is what it registers.
 pub fn register_fetch_verbs(engine: &mut Engine, limit: usize) {
     // `list()` → array of record-maps, capped at `limit`.
     engine.register_fn("list", move |v: &mut RhaiVista| -> RhaiResult<Array> {

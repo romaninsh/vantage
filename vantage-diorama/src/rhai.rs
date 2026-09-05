@@ -21,9 +21,10 @@
 //! `tokio::task::spawn_blocking`, never directly inside an async task.
 
 use std::sync::Arc;
+use vantage_rhai::rhai;
 
 use ciborium::Value as CborValue;
-use rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
+use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 use vantage_types::Record;
 
 use crate::servo::{Servo, ServoStatus};

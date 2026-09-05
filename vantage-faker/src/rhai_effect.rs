@@ -20,11 +20,12 @@
 
 use std::sync::Arc;
 use std::time::Duration;
+use vantage_rhai::rhai;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
-use rhai::{Dynamic, Engine, Map as RhaiMap};
 use tokio::time::interval;
+use vantage_rhai::rhai::{Dynamic, Engine, Map as RhaiMap};
 use vantage_types::Record;
 
 use crate::effect::{FakerCtx, FakerEffect};

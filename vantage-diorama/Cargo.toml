@@ -24,7 +24,7 @@ ciborium = { version = "0.2", features = ["std"] }
 # Rhai scripts hand `dynamic_to_cbor` chrono instants (`now()`), which
 # land as the standard CBOR datetime tag.
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
-rhai = { version = "1.25", optional = true }
+vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
 futures = "0.3"
 indexmap = "2"
 redb = "2.6"
@@ -37,7 +37,7 @@ uuid = { version = "1", features = ["v7"] }
 [features]
 # Servo as a first-class Rhai type — the same treatment vantage-vista's
 # `rhai` feature gives queries. See `src/rhai.rs`.
-rhai = ["dep:rhai", "dep:chrono"]
+rhai = ["dep:vantage-rhai", "dep:chrono"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -15,7 +15,7 @@ sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
 mysql = ["sqlx/mysql"]
 vista = ["dep:vantage-vista"]
-rhai = ["dep:rhai", "vantage-vista?/rhai"]
+rhai = ["dep:vantage-rhai", "vantage-vista?/rhai"]
 
 [dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
@@ -42,7 +42,7 @@ ciborium = "0.2"
 hex = "0.4"
 indexmap = { version = "2.14.0", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
-rhai = { version = "1.25", optional = true }
+vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

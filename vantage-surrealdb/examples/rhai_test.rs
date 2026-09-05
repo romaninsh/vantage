@@ -10,7 +10,8 @@ use std::fs;
 use std::path::Path;
 use std::process;
 
-use vantage_surrealdb::rhai_engine::RhaiSelect;
+use vantage_rhai::{Block, Env};
+use vantage_surrealdb::rhai_engine::{RhaiSelect, surreal_env};
 
 vantage_surrealdb::register_surreal_engine!();
 
@@ -36,7 +37,8 @@ fn main() {
         .collect();
     entries.sort_by_key(|e| e.file_name());
 
-    let engine = __create_engine();
+    let host = __host();
+    let env = surreal_env(Env::new());
 
     let mut pass = 0u32;
     let mut fail = 0u32;
@@ -52,7 +54,10 @@ fn main() {
         let has_surql = surql_path.exists();
         let has_err = err_path.exists();
 
-        let result = engine.eval::<RhaiSelect>(&code).map(|s| s.preview());
+        let result = host
+            .compile(&Block::from(code.as_str()))
+            .and_then(|script| script.eval_as::<RhaiSelect>(&env))
+            .map(|s| s.preview());
 
         // --fix mode: generate missing files
         if fix {

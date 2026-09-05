@@ -1,4 +1,6 @@
 use std::pin::Pin;
+#[cfg(feature = "rhai")]
+use vantage_rhai::rhai;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -610,6 +612,18 @@ pub trait TableShell: Send + Sync + 'static {
     /// graceful degradation, not all-or-nothing.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, _engine: &mut rhai::Engine) {}
+
+    /// Vendor constants a script sees beside `row`/`self` — the per-evaluation
+    /// half of [`register_rhai_extensions`](Self::register_rhai_extensions).
+    /// SurrealDB pushes `me`, the current-record anchor. A value here is a
+    /// scope variable, never an engine hook, so it composes with the host's
+    /// own resolver.
+    ///
+    /// Default: `env` unchanged.
+    #[cfg(feature = "rhai")]
+    fn rhai_env(&self, env: vantage_rhai::Env) -> vantage_rhai::Env {
+        env
+    }
 
     // ---- Live subscription -------------------------------------------------
 

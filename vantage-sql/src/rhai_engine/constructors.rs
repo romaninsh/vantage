@@ -5,9 +5,10 @@
 
 use crate::primitives::fx::Fx;
 use crate::primitives::identifier::{Identifier, ident as make_ident};
-use rhai::Array;
 use std::fmt::{Debug, Display};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_rhai::rhai;
+use vantage_rhai::rhai::Array;
 
 use super::{RhaiExpr, RhaiIdent};
 

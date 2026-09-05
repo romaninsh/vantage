@@ -1,7 +1,7 @@
 //! Rhai scripting surface over the type-erased [`Vista`](crate::vista::Vista).
 //!
-//! vantage-vista owns Rhai engine construction with a *backend-agnostic*
-//! vocabulary, in two layers:
+//! vantage-vista owns the *backend-agnostic* Rhai vocabulary, as
+//! [`vantage_rhai::Vocab`] impls a host assembles, in two layers:
 //!
 //! - [`conventional`] — the chainable query *builder*: `table(name)` resolves a
 //!   fresh target through an injected [`TargetResolver`], and builder verbs
@@ -28,9 +28,12 @@ mod introspect;
 mod runtime;
 
 pub use conventional::{
-    AugmentSourceFn, LazyValueFn, RhaiVista, TargetResolver, augment_source_closure,
-    eval_augment_source, eval_lazy_expression, eval_modify_script, eval_ref_script,
-    lazy_value_closure, register_conventional_onto,
+    AugmentSourceFn, ConventionalVocab, LazyValueFn, RhaiVista, ShellVocab, TargetResolver,
+    augment_source_closure, eval_augment_source, eval_lazy_expression, eval_modify_script,
+    eval_ref_script, lazy_value_closure, register_conventional_onto,
 };
-pub use fetch::register_fetch_verbs;
+pub use convert::{
+    cbor_to_dynamic, dynamic_to_cbor, map_to_record, record_to_dynamic, record_to_map,
+};
+pub use fetch::{FetchVerbs, register_fetch_verbs};
 pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, preview_script, run_script};

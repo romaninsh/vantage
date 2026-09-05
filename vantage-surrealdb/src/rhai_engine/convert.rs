@@ -1,6 +1,7 @@
 //! Conversion helpers for Rhai ↔ Rust interop.
 
 use vantage_expressions::Order;
+use vantage_rhai::rhai;
 
 /// Create a Rhai runtime error.
 pub fn rhai_err(msg: impl Into<String>) -> Box<rhai::EvalAltResult> {

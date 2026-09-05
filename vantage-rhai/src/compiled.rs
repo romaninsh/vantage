@@ -315,6 +315,8 @@ macro_rules! value_methods {
 
 value_methods!(Expr);
 value_methods!(Template);
+// A script's final expression is its value, so the typed accessors apply.
+value_methods!(Block);
 
 impl Compiled<Template> {
     /// No holes: a static value.
@@ -327,13 +329,10 @@ impl Compiled<Template> {
 }
 
 impl Compiled<Block> {
+    /// Run for effect; the final value (if any) is discarded. `eval` returns
+    /// it instead, unit when the script ends on a statement.
     pub fn run(&self, env: &Env) -> Result<()> {
         self.eval_dynamic(env).map(|_| ())
-    }
-
-    /// The script's final expression value, unit when there is none.
-    pub fn eval(&self, env: &Env) -> Result<Dynamic> {
-        self.eval_dynamic(env)
     }
 }
 

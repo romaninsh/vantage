@@ -5673,7 +5673,6 @@ dependencies = [
  "async-trait",
  "ciborium",
  "indexmap 2.14.0",
- "rhai",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -5682,6 +5681,7 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
+ "vantage-rhai",
  "vantage-table",
  "vantage-types",
  "vantage-vista",
@@ -5754,7 +5754,6 @@ dependencies = [
  "insta",
  "libc",
  "redb",
- "rhai",
  "rstest",
  "serde",
  "serde_json",
@@ -5769,6 +5768,7 @@ dependencies = [
  "vantage-core",
  "vantage-csv",
  "vantage-dataset",
+ "vantage-rhai",
  "vantage-sql",
  "vantage-table",
  "vantage-types",
@@ -5897,7 +5897,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "rhai",
  "schemars",
@@ -5917,7 +5917,6 @@ dependencies = [
  "hex",
  "indexmap 2.14.0",
  "paste",
- "rhai",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -5930,6 +5929,7 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
+ "vantage-rhai",
  "vantage-table",
  "vantage-types",
  "vantage-vista",
@@ -5950,7 +5950,6 @@ dependencies = [
  "indexmap 2.14.0",
  "md5",
  "paste",
- "rhai",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -5963,6 +5962,7 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
+ "vantage-rhai",
  "vantage-table",
  "vantage-types",
  "vantage-vista",
@@ -6030,7 +6030,6 @@ dependencies = [
  "ciborium",
  "futures-core",
  "indexmap 2.14.0",
- "rhai",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -6038,6 +6037,7 @@ dependencies = [
  "tokio",
  "vantage-core",
  "vantage-dataset",
+ "vantage-rhai",
  "vantage-types",
 ]
 

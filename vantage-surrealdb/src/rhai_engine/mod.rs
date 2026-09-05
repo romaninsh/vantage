@@ -4,6 +4,8 @@
 //! Registers wrapper types, constructors, operators, and select builder
 //! methods into a Rhai engine.
 
+use vantage_rhai::rhai;
+
 #[cfg(feature = "rhai")]
 pub mod constructors;
 #[cfg(feature = "rhai")]
@@ -18,15 +20,41 @@ pub mod types;
 #[cfg(feature = "rhai")]
 pub use types::{RhaiCase, RhaiExpr, RhaiIdent, RhaiSelect};
 
+/// The SurrealDB query-building vocabulary as a [`vantage_rhai::Vocab`].
+/// Register it *before* vantage-vista's `ConventionalVocab` so the
+/// conventional `table(name) -> Vista` wins over this vocabulary's `table`
+/// alias for `ident` (which stays reachable as `ident(...)`).
+#[cfg(feature = "rhai")]
+pub struct SurrealVocab;
+
+#[cfg(feature = "rhai")]
+impl vantage_rhai::Vocab for SurrealVocab {
+    fn register(&self, engine: &mut rhai::Engine) {
+        register_surreal_onto(engine);
+    }
+}
+
+/// The per-evaluation half of the vocabulary: `me`, the current-record
+/// anchor, as a scope variable. It used to be an `on_var` hook on the engine,
+/// which collided with the host's own resolver hook (rhai keeps only the last
+/// one installed); a variable composes.
+#[cfg(feature = "rhai")]
+pub fn surreal_env(env: vantage_rhai::Env) -> vantage_rhai::Env {
+    env.var("me", rhai::Dynamic::from(RhaiExpr(crate::primitives::me())))
+}
+
 /// Register the full SurrealDB query-building vocabulary onto `engine`.
 ///
 /// Shared by two entry points:
-/// - the [`register_surreal_engine!`](crate::register_surreal_engine) macro, whose `__create_engine` wraps this
-///   in a fresh `Engine` (back-compat for the standalone Rhai tests/examples and
-///   the `rhai:` vista source);
+/// - [`SurrealVocab`], the form a [`vantage_rhai::Host`] takes (the `rhai:`
+///   vista source, the standalone Rhai tests/examples via
+///   [`register_surreal_engine!`](crate::register_surreal_engine));
 /// - `SurrealTableShell::register_rhai_extensions`, which layers it on top of
 ///   vantage-vista's conventional `Vista` verbs so a reference build-script can
 ///   use `ident`/`==`/`fx`/graph syntax and `with_condition`.
+///
+/// Prefer [`SurrealVocab`] on a host; this is what it registers. Limits and
+/// `me` are the host's and [`surreal_env`]'s business, not this function's.
 #[cfg(feature = "rhai")]
 pub fn register_surreal_onto(engine: &mut rhai::Engine) {
     use crate::AnySurrealType as AST;
@@ -314,27 +342,16 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
         engine.register_fn("fold", crate::rhai_engine::constructors::fn_fold);
         engine.register_fn("filter", crate::rhai_engine::constructors::fn_filter);
 
-        // `me` — the current-record anchor, available as a bare constant.
-        // `on_var` is marked volatile (not deprecated) by rhai; silence the lint.
-        #[allow(deprecated)]
-        {
-            engine.on_var(|name, _index, _context| {
-                if name == "me" {
-                    Ok(Some(rhai::Dynamic::from(Ex(crate::primitives::me()))))
-                } else {
-                    Ok(None)
-                }
-            });
-        }
-
         // ── Clone ─────────────────────────────────────────────
         engine.register_fn("clone", |e: Ex| -> Ex { e });
         engine.register_fn("clone", |id: Id| -> Id { id });
-
-        engine.set_max_expr_depths(256, 256);
     }
 }
 
+/// Bring the SurrealDB Rhai toolkit into scope: the `AST`/`Ex`/`Id`/`Sel`
+/// aliases and `__host()`, one shared [`vantage_rhai::Host`] carrying
+/// [`SurrealVocab`] under the background limit profile. Evaluate with
+/// `__host().compile(..)` and an `Env` from [`surreal_env`] so `me` resolves.
 #[cfg(feature = "rhai")]
 #[macro_export]
 macro_rules! register_surreal_engine {
@@ -344,10 +361,13 @@ macro_rules! register_surreal_engine {
         use $crate::AnySurrealType as AST;
         use $crate::rhai_engine::types::{RhaiExpr as Ex, RhaiIdent as Id, RhaiSelect as Sel};
 
-        fn __create_engine() -> rhai::Engine {
-            let mut engine = rhai::Engine::new();
-            $crate::rhai_engine::register_surreal_onto(&mut engine);
-            engine
+        fn __host() -> &'static vantage_rhai::Host {
+            static HOST: std::sync::LazyLock<vantage_rhai::Host> = std::sync::LazyLock::new(|| {
+                vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+                    .vocab($crate::rhai_engine::SurrealVocab)
+                    .build()
+            });
+            &HOST
         }
     };
 }

@@ -5,6 +5,7 @@
 use crate::primitives::identifier::Identifier;
 use crate::primitives::select::{JoinBuilder, SelectBuilder};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum, Selectable};
+use vantage_rhai::rhai;
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 
