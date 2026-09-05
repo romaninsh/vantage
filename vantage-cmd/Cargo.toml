@@ -1,6 +1,6 @@
 [package]
 name = "vantage-cmd"
-version = "0.6.4"
+version = "0.6.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -21,11 +21,11 @@ vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde
 vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
 
 # Rhai builds the argv and parses the output. "serde" gives us the
 # serde_json::Value <-> Dynamic bridge used by `parse_json`.
-vantage-rhai = { version = "0.6", path = "../vantage-rhai" }
+vantage-rhai = { version = "0.6.2", path = "../vantage-rhai" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

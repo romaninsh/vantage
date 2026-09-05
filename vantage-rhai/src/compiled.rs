@@ -218,6 +218,26 @@ impl<S: Slot> Compiled<S> {
         &self.src
     }
 
+    /// The engine this slot was compiled on. For callers that hand a value
+    /// back to rhai themselves — a closure's `FnPtr::call` needs the engine
+    /// and the AST that defined it.
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    /// The one compiled AST behind an `Expr` or `Block` (or a template that is
+    /// a single hole). `None` for a template with text around its holes, which
+    /// has one AST per hole and no single script to hand out.
+    pub fn ast(&self) -> Option<&AST> {
+        match &self.pieces {
+            Pieces::One(ast) => Some(ast),
+            Pieces::Parts(parts) => match parts.as_slice() {
+                [TPart::Hole { ast, .. }] => Some(ast),
+                _ => None,
+            },
+        }
+    }
+
     /// Dotted paths read through the resolver during discovery. Empty until
     /// `discover` has run.
     pub fn read_set(&self) -> &BTreeSet<String> {

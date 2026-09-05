@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.2 — 2026-09-05
+
+Additions made while the data layer and vantage-ui moved onto the host.
+
+- `Compiled<Block>` gains the value methods (`eval`, `eval_as`, `eval_bool`)
+  next to `run`: a script whose last statement is its answer no longer needs
+  to be re-typed as an expression.
+- `Compiled::engine()` and `Compiled::ast()` expose the compiled pair for
+  the one caller shape the host cannot express — evaluating to a `FnPtr`
+  once and calling it per line (a log filter).
+- The slot types (`Expr`, `Template`, `Block`) implement `Deref<Target =
+  str>`, `AsRef<str>`, `Display`, `Default`, `PartialEq<str>` and
+  `PartialEq<&str>`, so a YAML field can change from `Option<String>` to
+  the slot without touching readers that only display or compare it. The
+  kind still matters where it counts: `Host::compile` takes the typed slot.
+- Parse errors keep rhai's `Syntax error:` prefix in `Display`, matching
+  the fixtures downstream crates assert against.
+
 ## 0.6.1 — 2026-09-04
 
 Review fixes, all with regression tests.

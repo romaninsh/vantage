@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama"
-version = "0.12.4"
+version = "0.12.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cached, composable, reactive surface for Vantage Vistas"
@@ -12,7 +12,7 @@ doctest = false
 [dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
 vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
@@ -24,7 +24,7 @@ ciborium = { version = "0.2", features = ["std"] }
 # Rhai scripts hand `dynamic_to_cbor` chrono instants (`now()`), which
 # land as the standard CBOR datetime tag.
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
-vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
 futures = "0.3"
 indexmap = "2"
 redb = "2.6"

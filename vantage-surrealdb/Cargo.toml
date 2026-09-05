@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-surrealdb"
-version = "0.6.17"
+version = "0.6.18"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for SurrealDB"
@@ -26,7 +26,7 @@ vantage-expressions = { version = "0.6", path = "../vantage-expressions", featur
 vantage-table = { version = "0.6", path = "../vantage-table" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "0.6.22", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "0.6.25", path = "../vantage-vista", optional = true }
 surreal-client = { version = "0.6", path = "../surreal-client" }
 
 async-stream = "0.3"
@@ -44,7 +44,7 @@ serde_path_to_error = "0.1"
 rust_decimal = { version = "1.42", optional = true }
 uuid = { version = "1.23", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
 
 # Disable all tests except queries.rs during 0.3 migration
 [[test]]
@@ -93,7 +93,7 @@ bakery_model3 = { path = "../bakery_model3" }
 futures = "0.3"
 serde_yaml_ng = "0.10"
 tokio = { version = "1.52", features = ["full"] }
-vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
 
 [[example]]
 name = "expr"

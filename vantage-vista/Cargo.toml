@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "0.6.24"
+version = "0.6.25"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -21,7 +21,7 @@ futures-core = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
-vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
 # Not optional: `TableShell::preview_query` returns a driver-shaped
 # `serde_json::Value`, so the type is part of the trait every driver implements.
 serde_json = "1"

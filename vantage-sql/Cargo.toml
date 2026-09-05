@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.6.21"
+version = "0.6.22"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -25,7 +25,7 @@ paste = "1.0"
 
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-table = { version = "0.6", path = "../vantage-table" }
-vantage-vista = { version = "0.6.22", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "0.6.25", path = "../vantage-vista", optional = true }
 async-trait = "0.1"
 # Drivers occasionally need to report a data-modelling problem that is not
 # an error (a non-unique id column collapsing rows, say) — a facade, so the
@@ -42,12 +42,12 @@ ciborium = "0.2"
 hex = "0.4"
 indexmap = { version = "2.14.0", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
-vantage-rhai = { version = "0.6", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
+vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
 sqlformat = "0.3"
 
 # The name must be unique across the workspace: cargo writes every

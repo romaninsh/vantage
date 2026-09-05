@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.25 — 2026-09-05
+
+The `rhai` feature runs on `vantage-rhai` hosts instead of bare engines.
+Every script is bounded (`Limits::background()`), compiled through one
+cache, and no site builds an engine per call any more — `lazy_value_closure`
+used to build one **per record**.
+
+- `ConventionalVocab(TargetResolver)`, `ShellVocab(&Vista)` and
+  `FetchVerbs { limit }` are `Vocab` impls; `register_conventional_onto` /
+  `register_fetch_verbs` stay as one-line shims for callers that still hold
+  an `Engine`.
+- **Breaking:** `eval_ref_script`, `eval_modify_script`, `eval_augment_source`
+  and `eval_lazy_expression` take `&Host` and an `Env` instead of `&Engine`;
+  `row`/`self` arrive as `Env::var` bindings. `lazy_value_closure(&str)`
+  returns `Result<LazyValueFn>` and compiles once. `dynamic_to_json` is gone
+  in favour of `vantage_rhai::to_json`.
+- `run_script` / `preview_script` build a one-shot host each; `preview_script`
+  keeps its no-fetch guarantee by not registering `FetchVerbs`.
+- The CBOR ↔ `Dynamic` converters (`cbor_to_dynamic`, `dynamic_to_cbor`,
+  `record_to_map`, `map_to_record`, `record_to_dynamic`) are public and
+  round-trip arrays and maps, so drivers stop keeping private copies.
+- `TableShell::rhai_env(env)` lets a driver add its constants (SurrealDB's
+  `me`) to an evaluation without an `on_var` hook.
+
 ## 0.6.24 — 2026-09-01
 
 - Nested insert: a bare **scalar** under a relation key links an existing

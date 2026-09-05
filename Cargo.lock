@@ -5560,7 +5560,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5668,7 +5668,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5743,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5897,7 +5897,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "rhai",
  "schemars",
@@ -5908,7 +5908,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5937,7 +5937,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.17"
+version = "0.6.18"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6023,7 +6023,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.24"
+version = "0.6.25"
 dependencies = [
  "async-stream",
  "async-trait",
