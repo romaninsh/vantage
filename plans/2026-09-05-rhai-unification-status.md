@@ -85,6 +85,62 @@ vantage-rhai grew again: `Compiled::engine()` / `Compiled::ast()` accessors; `ui
   vantage-github and faker-demo. `ui-grammar` has a schema test asserting
   `x-language: rhai` on the three slot definitions and a `$ref` from `ButtonParams.action`.
 
+## Review — 2026-09-06
+
+Two review agents over the branch diffs. The defect hunt died on a session rate limit
+before reporting, so the scanner sites were checked by hand instead: `template::split`
+only skips strings and comments **inside** a hole, so prose with an apostrophe or `//`
+outside one is untouched — the six replacements are behaviour-preserving apart from
+holes now being trimmed (`${ args.x }` resolves where it used to error) and two
+lenient-direction differences on malformed input (`extract_paths` yields no paths where
+it used to yield the ones before the break; `substitute_key` reports a malformed key as
+complete). Both are config errors either way. **Still unreviewed for defects:** slot
+typing at crate boundaries, the sed-rewritten example YAML, limits-vs-thread pairing.
+
+Fixed and staged in vantage-ui (29 files) + vantage:
+
+- **Five tracked docs still taught removed slots** — the sweep only covered the
+  `vantage-ui-builder` skill. The REST persistence skill's `lazy:` section and the
+  SurrealDB skill's `expr:` section are shipped agent resources that would have
+  generated unparseable YAML; also an `expr:` bullet in `decorating-columns.md` and an
+  `expressions:` line in two example table READMEs.
+- **`rhai-expressions.md` contradicted itself** — its slot table showed `when:` reading
+  scope through `${...}`, twenty lines above the section saying scripts read it directly.
+- **`resolve_env` mangled non-ASCII** — `out.push(bytes[i] as char)` turned `café` in a
+  datasource value into `cafÃ©`. Rewritten over `&str` slices.
+- **`vantage_rhai::ui_host()` / `background_host()`** — the vocabulary-free host existed
+  four times under three names in crates that could not share `ui-scope`'s. All five
+  sites now take the shared one; `ui_scope::ui_host()` is a re-export.
+- **The dead `columns` parameter** is gone from the four `body_eval` entry points and
+  their call sites, with the comment that promised its removal.
+- **`RowVocab` is now exercised through a real `Host`** by its own tests — one test
+  proving one host serves two rows and a write reaches the row the script was handed.
+- **`included_script_lands_in_the_slot`** asserts the script text, not just the body length.
+- **`FormatVocab` / `ClockVocab` are public**, so `unit`, `money`, `compact`,
+  `date_relative` and `thing_key` are reachable outside `view_dio`.
+- Comment hygiene: eight prose comments the path rewrite had lengthened (`rhai::Map` →
+  `vantage_rhai::rhai::Map`) reverted, with `use vantage_rhai::rhai;` added to the four
+  heaviest files; the `Arc<Mutex>`-not-`Rc<RefCell>` sync-bound note restored; refactor
+  narration and a stale bypass comment trimmed.
+
+### Review follow-ups not taken
+
+- Collapse the three byte-identical SQL dialect `rhai_source.rs` files into
+  `register_engine!` (222 lines carrying four lines of information).
+- Port the remaining 15 row tests off the `#[cfg(test)] register_row` shim onto hosts,
+  and delete the duplicate `registers_action_under_actions_namespace` with the
+  `register_actions_marker` shim.
+- File splits: `framework_page.rs` record gate (~180 lines, tests move with it) and its
+  grammar walkers; `table.rs` driver blocks.
+- `ShellVocab(&dyn TableShell)`; hoist `SqlVocab`/`__host` out of the macro; one
+  `scripted_host` on the surreal shell instead of two inline builds per call.
+- Naming: bare `host()` where a module has one, `<noun>_env` taking-and-extending
+  everywhere, `ActionsMarker` → `ActionsVocab`. Better as one rename commit.
+- `bridge.rs` keeps a third `dynamic_to_json` whose tests pin the *opposite* behaviour to
+  `vantage-rhai`'s (strict error vs Display fallback) — needs a semantics call.
+- Tests for the two `validate.rs` files, and the 23 example script blocks still missing
+  `# language=rhai`.
+
 ## Release — COMMITTED, PRs open, waiting on merge + publish
 
 Landed 2026-09-05 once the signer was unlocked: vantage PR #395 (`rhai-unification`),

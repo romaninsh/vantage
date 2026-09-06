@@ -1,7 +1,7 @@
 //! A configured engine plus a bounded AST cache. Built once per owner, shared.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use rhai::{AST, Engine};
 
@@ -77,6 +77,28 @@ pub struct Host {
     engine: Arc<Engine>,
     limits: Limits,
     cache: AstCache,
+}
+
+/// The shared vocabulary-free host for work the UI thread waits on — a
+/// projection formula, a list row's template, an action argument. Every such
+/// site wants the same object, so they share one AST cache rather than each
+/// keeping a private copy of the same compiled scripts.
+///
+/// Take a host of your own ([`Host::builder`]) as soon as you need a verb;
+/// this one has none, deliberately, so nothing can come to depend on a
+/// vocabulary another caller registered.
+pub fn ui_host() -> &'static Host {
+    static HOST: LazyLock<Host> = LazyLock::new(|| Host::builder(Limits::Ui).build());
+    &HOST
+}
+
+/// The vocabulary-free host's background twin: same absence of verbs, the
+/// larger budget. For scripts that run off the UI thread — inside a fetch,
+/// per stream line — where a runaway must still be stopped rather than
+/// waited on.
+pub fn background_host() -> &'static Host {
+    static HOST: LazyLock<Host> = LazyLock::new(|| Host::builder(Limits::background()).build());
+    &HOST
 }
 
 impl Host {

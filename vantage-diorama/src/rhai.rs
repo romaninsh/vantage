@@ -44,7 +44,7 @@ impl Vocab for ServoVocab {
 }
 
 /// Teach `engine` the `Servo` type and its methods. Prefer [`ServoVocab`] on
-/// a host; this is what it registers.
+/// a host — this is the registration behind it.
 pub fn register_servo_onto(engine: &mut Engine) {
     engine.register_type_with_name::<Arc<Servo>>("Servo");
 

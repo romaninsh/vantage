@@ -83,8 +83,6 @@ mod tests {
 
     #[test]
     fn me_is_in_scope_as_a_variable() {
-        // `me` used to be an `on_var` hook on the engine; it is now pushed by
-        // `surreal_env`, so it resolves on the shared host like any variable.
         assert!(eval_to_expr("me").is_ok());
         assert!(eval_to_expr("me[\"name\"]").is_ok());
         let err = eval_to_expr("nope").unwrap_err();

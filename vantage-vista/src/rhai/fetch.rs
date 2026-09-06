@@ -48,7 +48,7 @@ impl Vocab for FetchVerbs {
 /// [`register_conventional_onto`](crate::register_conventional_onto)). `limit`
 /// caps every `list()`. Each verb is read-only.
 ///
-/// Prefer [`FetchVerbs`] on a host; this is what it registers.
+/// Prefer [`FetchVerbs`] on a host — this is the registration behind it.
 pub fn register_fetch_verbs(engine: &mut Engine, limit: usize) {
     // `list()` → array of record-maps, capped at `limit`.
     engine.register_fn("list", move |v: &mut RhaiVista| -> RhaiResult<Array> {

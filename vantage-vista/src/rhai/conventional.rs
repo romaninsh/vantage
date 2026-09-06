@@ -18,7 +18,7 @@
 //! Everything here uses only [`Vista`]'s public API, preserving the one-way
 //! `vantage-table → vantage-vista` dependency (Rhai is a leaf).
 
-use std::sync::{Arc, LazyLock, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
@@ -34,6 +34,9 @@ use crate::{sort::SortDirection, vista::Vista};
 /// place and return the same handle for chaining. The inner `Option` lets
 /// [`eval_ref_script`] move the finished `Vista` out even if the script kept
 /// extra references.
+///
+/// `Arc<Mutex<…>>` and not `Rc<RefCell<…>>`: `vantage-rhai` compiles rhai with
+/// its `sync` feature, so anything a script holds must be `Send + Sync`.
 #[derive(Clone)]
 pub struct RhaiVista(pub Arc<Mutex<Option<Vista>>>);
 
@@ -100,7 +103,7 @@ impl Vocab for ShellVocab<'_> {
 /// `set_page_size`, `get_ref`). Each verb returns the same handle so scripts can
 /// chain: `table("order").add_condition_eq("client", row.id).add_order("date", "desc")`.
 ///
-/// Prefer [`ConventionalVocab`] on a [`Host`]; this is what it registers.
+/// Prefer [`ConventionalVocab`] on a [`Host`] — this is the registration behind it.
 pub fn register_conventional_onto(engine: &mut Engine, resolver: TargetResolver) {
     engine.register_type_with_name::<RhaiVista>("Vista");
 
@@ -333,19 +336,15 @@ fn eval_lazy_compiled(script: &Compiled<Block>, row: &Record<CborValue>) -> Resu
     dynamic_to_cbor(result).map_err(|e| error!(format!("rhai lazy expression result: {e}")))
 }
 
-/// The host lazy expressions share: no vocabulary — a lazy expression derives
-/// a value from `row`, it doesn't build queries or fetch data — and the
-/// background profile, since it runs inside a fetch, per record.
-fn lazy_host() -> &'static Host {
-    static HOST: LazyLock<Host> = LazyLock::new(|| Host::builder(Limits::background()).build());
-    &HOST
-}
-
 /// Build a reusable [`LazyValueFn`] from a Rhai `code` string. Compiles once,
 /// here — a script that does not parse fails the table build, not the first
 /// row.
 pub fn lazy_value_closure(code: &str) -> Result<LazyValueFn> {
-    let script = compile(lazy_host(), "rhai lazy expression", code)?;
+    let script = compile(
+        vantage_rhai::background_host(),
+        "rhai lazy expression",
+        code,
+    )?;
     Ok(Arc::new(
         move |row: &Record<CborValue>| -> Result<CborValue> { eval_lazy_compiled(&script, row) },
     ))

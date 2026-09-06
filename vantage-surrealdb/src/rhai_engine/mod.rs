@@ -53,7 +53,7 @@ pub fn surreal_env(env: vantage_rhai::Env) -> vantage_rhai::Env {
 ///   vantage-vista's conventional `Vista` verbs so a reference build-script can
 ///   use `ident`/`==`/`fx`/graph syntax and `with_condition`.
 ///
-/// Prefer [`SurrealVocab`] on a host; this is what it registers. Limits and
+/// Prefer [`SurrealVocab`] on a host — this is the registration behind it. Limits and
 /// `me` are the host's and [`surreal_env`]'s business, not this function's.
 #[cfg(feature = "rhai")]
 pub fn register_surreal_onto(engine: &mut rhai::Engine) {
