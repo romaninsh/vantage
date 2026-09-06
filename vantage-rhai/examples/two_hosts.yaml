@@ -1,22 +1,23 @@
-# Two scripts that never call each other. They meet at `globals`.
+# Two scripts on two hosts on two threads. They meet at `globals`.
 
-# Backend host: it was given a writable `globals` and `commit`, and no way
-# to format. The Leibniz series gains roughly one digit per tenfold increase
-# in terms, so batch by batch the leading digits settle and the trailing ones
-# are still moving — which is the honest picture of a converging estimate.
+# Backend host: a writable `globals`, and no way to format.
 # language=rhai
 compute: |
   let sum = 0.0;
-  for i in 0..40000 {
+  for i in 0..80000 {
       let term = 1.0 / (2.0 * i.to_float() + 1.0);
       if i % 2 == 0 { sum += term; } else { sum -= term; }
       if i % 10000 == 9999 {
-          globals.terms = (i + 1).to_float();
-          globals.pi = 4.0 * sum;
-          commit();
+          globals.batch = ((i + 1) / 10000).to_float();
+          // Store what the label shows. Keep full precision here instead and
+          // the value moves on every batch forever, so the label repaints
+          // forever — the estimate is still converging in digits nobody sees.
+          globals.pi = (4.0 * sum * 100000.0).round() / 100000.0;
       }
   }
 
-# UI host: it can read `globals` and format it. Assigning to it would fail
-# here, because that host was never given the setter.
-label: 'pi ~ ${ fixed(globals.pi, 6) } after ${ fixed(globals.terms, 0) } terms'
+# UI host: reads `globals` and formats it. Each label subscribes to the paths
+# its own discovery pass recorded, so they wake independently.
+labels:
+  batch: 'batch ${ fixed(globals.batch, 0) } of 8'
+  pi: 'pi ~ ${ fixed(globals.pi, 5) }'
