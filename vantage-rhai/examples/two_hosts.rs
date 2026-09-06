@@ -35,15 +35,21 @@ impl Vocab for Readable {
     }
 }
 
-/// Write access, and the repaint it implies. Only the backend host gets
-/// this, so `globals.x = 1` on the UI host is a script that will not compile.
+/// Write access plus the frame boundary. Only the backend host gets this, so
+/// `globals.x = 1` on the UI host fails for want of a setter.
+///
+/// Writes are silent and `commit` is what asks for a repaint, so a batch that
+/// sets several values redraws once against all of them rather than being
+/// read halfway through.
 struct Writable(mpsc::Sender<()>);
 
 impl Vocab for Writable {
     fn register(&self, engine: &mut Engine) {
-        let tx = self.0.clone();
-        engine.register_indexer_set(move |g: &mut Globals, key: &str, value: f64| {
+        engine.register_indexer_set(|g: &mut Globals, key: &str, value: f64| {
             g.0.lock().unwrap().insert(key.to_string(), value);
+        });
+        let tx = self.0.clone();
+        engine.register_fn("commit", move || {
             let _ = tx.send(());
         });
     }
@@ -93,5 +99,6 @@ fn main() -> Result<(), vantage_rhai::RhaiError> {
     for () in repaint {
         println!("{}", label.eval_as::<String>(&env)?);
     }
+    println!("pi = 3.141593 — compare to see which digits had settled");
     Ok(())
 }
