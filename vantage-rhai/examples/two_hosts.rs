@@ -4,6 +4,10 @@
 //! value differs, and a pump loop repaints whatever moved since the last
 //! frame. Nothing tells the UI to redraw. It notices.
 //!
+//! Watch the `pi` column stop: once the estimate stops moving in the digits
+//! the script stores, the same value is written, no generation moves, and the
+//! label is never woken again.
+//!
 //! `cargo run --example two_hosts`
 
 use std::collections::BTreeMap;
@@ -161,7 +165,7 @@ fn main() -> Result<(), vantage_rhai::RhaiError> {
             .expect("the compute script runs")
     });
 
-    println!("\nDetecting global changes and repainting labels:");
+    println!("\nDetecting global changes and repainting labels automatically on-change:");
     let header: String = labels
         .iter()
         .map(|l| {
@@ -181,11 +185,6 @@ fn main() -> Result<(), vantage_rhai::RhaiError> {
         std::thread::sleep(Duration::from_millis(2));
     }
     paint(&mut labels, &env);
-
-    println!(
-        "\n`batch` repainted every time. `pi` fell quiet once its fifth decimal\n\
-         stopped moving: same value written, no generation bump, no repaint."
-    );
     Ok(())
 }
 
