@@ -1,0 +1,16 @@
+# One invoice line, as a project would write it: three fields, three slot
+# kinds. The Rust struct beside this file declares which is which, and that
+# is the whole of the type information — the YAML is plain scalars.
+
+# `Expr` — one expression, evaluated for its value.
+when: qty > 0
+
+# `Template` — literal text with `${ … }` holes.
+label: '${ settings.currency }${ line.total() } for ${ line.qty }'
+
+# `Block` — statements. The comment above a block scalar is the convention
+# that gets JetBrains and VS Code to highlight the body as Rhai.
+# language=rhai
+action: |
+  let discounted = line.total() * 9 / 10;
+  discounted

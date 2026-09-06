@@ -233,6 +233,12 @@ a frozen empty set from one that was never taken. Treat the result as a
 dependency floor: a branch the evaluation did not take recorded nothing, so
 recompile on structural change.
 
+`cargo run --example invalidation` puts a number on this. Two slots each roll a
+random value whenever they run, so you can see which ones a change recomputed:
+bumping a path recomputes the slot that reads it and leaves the other holding
+its original number, and bumping a sibling path that neither slot reads
+recomputes nothing.
+
 ## Errors
 
 `RhaiError` has five variants — `Syntax`, `UnknownName`, `Runtime`,
@@ -327,8 +333,14 @@ choosing its own binary.
    `Dynamic::from(…)`.
 7. Surface `RhaiError` with its `src()` so the author sees which slot failed.
 
-`cargo run --example quickstart` in this crate walks the same seven steps in
-one file.
+## Examples
+
+Both load their slots from a YAML file beside them, the way a project does.
+
+| Example | Shows |
+|---|---|
+| `cargo run --example quickstart` | the seven steps above end to end: all three slot kinds, a vocabulary, a resolver, discovery, and what each error looks like |
+| `cargo run --example invalidation` | how a consumer turns a read-set into a decision about what to recompute |
 
 ## Layout
 
