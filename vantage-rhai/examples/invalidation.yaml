@@ -1,0 +1,7 @@
+# Two readouts on an imaginary page. Both call `roll()`, so both produce a
+# fresh number every time they are evaluated — that is the instrument, not
+# the subject. What separates them is that only `offset` reads the scope.
+#
+# Neither declares a dependency anywhere. The host discovers it.
+drift: '${ roll() }'
+offset: '${ roll() + global.increment }'
