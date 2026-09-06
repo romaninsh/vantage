@@ -341,6 +341,7 @@ Both load their slots from a YAML file beside them, the way a project does.
 |---|---|
 | `cargo run --example quickstart` | the seven steps above end to end: all three slot kinds, a vocabulary, a resolver, discovery, and what each error looks like |
 | `cargo run --example invalidation` | how a consumer turns a read-set into a decision about what to recompute |
+| `cargo run --example two_hosts` | a background host computing on a worker thread while a UI host formats on the main one, sharing a scope and nothing else |
 
 ## Layout
 

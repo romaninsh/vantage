@@ -1,0 +1,21 @@
+# Two scripts that never call each other. They meet at `globals`.
+
+# Backend host. It was given a setter for `globals`, and no way to format.
+# language=rhai
+compute: |
+  let inside = 0;
+  let seed = 12345;
+  for i in 0..40000 {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      let x = seed.to_float() / 2147483648.0;
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      let y = seed.to_float() / 2147483648.0;
+      if x * x + y * y <= 1.0 { inside += 1; }
+      if i % 10000 == 9999 {
+          globals.pi = 4.0 * inside.to_float() / (i + 1).to_float();
+      }
+  }
+
+# UI host. It can read `globals` and format it. Assigning to it would fail
+# here: that host was never given the setter.
+label: 'pi ~ ${ fixed(globals.pi, 4) }'
