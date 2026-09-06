@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.18 — 2026-09-05
+
+- The `rhai` feature runs on `vantage-rhai` hosts: `SurrealVocab` is the
+  vendor vocabulary, `register_surreal_engine!` emits a lazily built,
+  bounded host (`__host()`), and the query-source, traversal and `modify`
+  sites all evaluate through it. Registration order is kept — vendor first,
+  then vista's conventional verbs — so `table("x")` still yields a Vista.
+- `me` is bound through `surreal_env(env)` / `TableShell::rhai_env` instead
+  of an `engine.on_var` hook. The hook collided with the host's own resolver
+  (rhai keeps the last `on_var`), so one of them silently stopped working;
+  a test now checks that `me.field` resolves while a resolver records reads
+  on the same host.
+- `set_max_expr_depths` is gone from the registration path; limits are the
+  host's.
+
 ## 0.6.17 — 2026-08-22
 
 - **Bug fix (data loss):** `delete_all` on a conditioned table deleted the whole

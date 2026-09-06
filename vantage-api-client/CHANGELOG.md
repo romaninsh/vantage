@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.13 — 2026-09-05
+
+- Follows vista 0.6.25: a lazy column's script compiles once through
+  `lazy_value_closure`, and a script that does not parse is reported when the
+  column is declared rather than on first read.
+
 ## 0.6.12 — 2026-08-16
 
 - `GraphqlApiTableShell` implements `preview_query`, returning the endpoint and

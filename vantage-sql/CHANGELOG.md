@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.22 — 2026-09-05
+
+- The `rhai` feature runs on a `vantage-rhai` host: `register_engine!` emits
+  a `SqlVocab` for the dialect plus one lazily built, bounded host
+  (`__host()`), and `__create_engine` is gone. Query-source scripts compile
+  through the host's cache — a table's script parses once, not per build.
+- `eval_to_select_args` binds `args` and `base` through an `Env`;
+  `eval_to_select` delegates to it. The `rhai` crate is reached as
+  `vantage_sql::rhai_engine::rhai` (re-exported from `vantage-rhai`), so a
+  consumer no longer needs its own `rhai` dependency to match versions.
+- An unknown identifier in a script now reads "unknown name `x`" (the host's
+  message) rather than rhai's variable-not-found text.
+
 ## 0.6.21 — 2026-08-25
 
 - **Observation args for `rhai:` vistas.** A query-sourced table's script can

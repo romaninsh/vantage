@@ -10,9 +10,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use rhai::{Dynamic, Engine, EvalAltResult, Map, Position, Scope};
 use serde_json::Value as JsonValue;
 use vantage_core::{Result, error};
+use vantage_rhai::rhai;
+use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map, Position};
+use vantage_rhai::{Block, Compiled, Env, Host, Limits, Vocab};
 
 use crate::condition::CmdCondition;
 use crate::exec::run_command;
@@ -49,23 +51,28 @@ fn dynamic_to_arg(d: Dynamic) -> String {
     }
 }
 
-/// A rhai script with its `Engine` and parsed `AST` built once and reused
-/// for every evaluation. The locked `command`/`env` are baked into the
-/// engine's `run` binding at construction, so a [`CompiledScript`] is
-/// specific to one table's script + command + env.
-///
-/// Requires rhai's `sync` feature so `Engine`/`AST` are `Send + Sync` and
-/// the compiled script can be cached on the (clone-shared) [`Cmd`] and
-/// evaluated across `spawn_blocking` threads.
+/// The `cmd` vocabulary — `parse_json`, `parse_jsonl`, and `run` — with the
+/// locked `command`/`env` baked into `run` at construction, so a script only
+/// ever supplies argv. That is the security lock, and it is why this is a
+/// value (one per table's script + command + env) rather than a static.
+pub(crate) struct CmdVocab {
+    pub command: String,
+    pub env: IndexMap<String, String>,
+    pub pass_path: bool,
+    pub base_dir: Option<Arc<Path>>,
+}
+
+/// A script compiled once, on a host carrying its [`CmdVocab`], and reused
+/// for every evaluation. Cached on the (clone-shared) [`Cmd`] and evaluated
+/// across `spawn_blocking` threads — `vantage-rhai` builds rhai with `sync`,
+/// so the compiled script is `Send + Sync`.
 pub(crate) struct CompiledScript {
-    engine: Engine,
-    ast: rhai::AST,
+    script: Compiled<Block>,
 }
 
 impl CompiledScript {
-    /// Build the engine (registering `run`/`parse_json`/`parse_jsonl`) and
-    /// compile `script` to an `AST`. Both are done once; [`eval`](Self::eval)
-    /// reuses them.
+    /// Build the host (background limits, the vocabulary) and compile
+    /// `script` on it. Both are done once; [`eval`](Self::eval) reuses them.
     pub(crate) fn compile(
         command: String,
         env: IndexMap<String, String>,
@@ -73,8 +80,30 @@ impl CompiledScript {
         base_dir: Option<Arc<Path>>,
         script: &str,
     ) -> Result<Self> {
-        let mut engine = Engine::new();
-        engine.set_max_expr_depths(256, 256);
+        let host = Host::builder(Limits::background())
+            .vocab(CmdVocab {
+                command,
+                env,
+                pass_path,
+                base_dir,
+            })
+            .build();
+        let script = host.compile_uncached(&Block::from(script)).map_err(|e| {
+            error!(
+                "command rhai script failed to compile",
+                detail = e.to_string()
+            )
+        })?;
+        Ok(Self { script })
+    }
+}
+
+impl Vocab for CmdVocab {
+    fn register(&self, engine: &mut Engine) {
+        let command = self.command.clone();
+        let env = self.env.clone();
+        let pass_path = self.pass_path;
+        let base_dir = self.base_dir.clone();
 
         // parse_json(string) -> Dynamic
         engine.register_fn(
@@ -138,32 +167,25 @@ impl CompiledScript {
                 Ok(map)
             },
         );
-
-        let ast = engine.compile(script).map_err(|e| {
-            error!(
-                "command rhai script failed to compile",
-                detail = e.to_string()
-            )
-        })?;
-
-        Ok(Self { engine, ast })
     }
+}
 
-    /// Evaluate the compiled script with the `ctx` variables seeded into a
-    /// fresh scope, returning the rows the script produced as JSON objects.
+impl CompiledScript {
+    /// Evaluate the compiled script with the `ctx` variables in scope,
+    /// returning the rows the script produced as JSON objects.
     pub(crate) fn eval(&self, ctx: QueryContext) -> Result<Vec<JsonValue>> {
-        let mut scope = Scope::new();
-        scope.push_dynamic("conditions", conditions_dynamic(&ctx.conditions)?);
-        scope.push_dynamic("columns", to_dynamic(&ctx.columns)?);
-        scope.push_dynamic("limit", opt_int(ctx.limit));
-        scope.push_dynamic("offset", opt_int(ctx.offset));
-        scope.push_dynamic("id_column", opt_string(ctx.id_column));
-        scope.push_dynamic("id", opt_string(ctx.id));
-        scope.push_dynamic("row", to_dynamic(&ctx.row)?);
+        let env = Env::new()
+            .var("conditions", conditions_dynamic(&ctx.conditions)?)
+            .var("columns", to_dynamic(&ctx.columns)?)
+            .var("limit", opt_int(ctx.limit))
+            .var("offset", opt_int(ctx.offset))
+            .var("id_column", opt_string(ctx.id_column))
+            .var("id", opt_string(ctx.id))
+            .var("row", to_dynamic(&ctx.row)?);
 
         let result: Dynamic = self
-            .engine
-            .eval_ast_with_scope(&mut scope, &self.ast)
+            .script
+            .eval(&env)
             .map_err(|e| error!("command rhai script failed", detail = e.to_string()))?;
 
         if !result.is_array() {

@@ -22,9 +22,9 @@ mod sqlite_tests {
     fn eval_rhai_file(path: &str) -> Select {
         let code = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
-        let engine = __create_engine();
-        engine
-            .eval::<Select>(&code)
+        __host()
+            .compile(&vantage_rhai::Block::from(code.as_str()))
+            .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
             .unwrap_or_else(|e| panic!("Rhai eval failed for {}: {}", path, e))
     }
 
@@ -62,9 +62,9 @@ mod postgres_tests {
     fn eval_rhai_file(path: &str) -> Select {
         let code = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
-        let engine = __create_engine();
-        engine
-            .eval::<Select>(&code)
+        __host()
+            .compile(&vantage_rhai::Block::from(code.as_str()))
+            .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
             .unwrap_or_else(|e| panic!("Rhai eval failed for {}: {}", path, e))
     }
 
@@ -101,9 +101,9 @@ mod mysql_tests {
     fn eval_rhai_file(path: &str) -> Select {
         let code = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
-        let engine = __create_engine();
-        engine
-            .eval::<Select>(&code)
+        __host()
+            .compile(&vantage_rhai::Block::from(code.as_str()))
+            .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
             .unwrap_or_else(|e| panic!("Rhai eval failed for {}: {}", path, e))
     }
 

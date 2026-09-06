@@ -4,8 +4,9 @@
 //! RhaiExpr, RhaiIdent, or scalar values.
 
 use crate::primitives::identifier::Identifier;
-use rhai::Dynamic;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_rhai::rhai;
+use vantage_rhai::rhai::Dynamic;
 
 use super::{RhaiExpr, RhaiIdent};
 

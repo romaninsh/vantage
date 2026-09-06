@@ -218,6 +218,26 @@ impl<S: Slot> Compiled<S> {
         &self.src
     }
 
+    /// The engine this slot was compiled on. For callers that hand a value
+    /// back to rhai themselves — a closure's `FnPtr::call` needs the engine
+    /// and the AST that defined it.
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    /// The one compiled AST behind an `Expr` or `Block` (or a template that is
+    /// a single hole). `None` for a template with text around its holes, which
+    /// has one AST per hole and no single script to hand out.
+    pub fn ast(&self) -> Option<&AST> {
+        match &self.pieces {
+            Pieces::One(ast) => Some(ast),
+            Pieces::Parts(parts) => match parts.as_slice() {
+                [TPart::Hole { ast, .. }] => Some(ast),
+                _ => None,
+            },
+        }
+    }
+
     /// Dotted paths read through the resolver during discovery. Empty until
     /// `discover` has run.
     pub fn read_set(&self) -> &BTreeSet<String> {
@@ -315,6 +335,8 @@ macro_rules! value_methods {
 
 value_methods!(Expr);
 value_methods!(Template);
+// A script's final expression is its value, so the typed accessors apply.
+value_methods!(Block);
 
 impl Compiled<Template> {
     /// No holes: a static value.
@@ -327,13 +349,10 @@ impl Compiled<Template> {
 }
 
 impl Compiled<Block> {
+    /// Run for effect; the final value (if any) is discarded. `eval` returns
+    /// it instead, unit when the script ends on a statement.
     pub fn run(&self, env: &Env) -> Result<()> {
         self.eval_dynamic(env).map(|_| ())
-    }
-
-    /// The script's final expression value, unit when there is none.
-    pub fn eval(&self, env: &Env) -> Result<Dynamic> {
-        self.eval_dynamic(env)
     }
 }
 

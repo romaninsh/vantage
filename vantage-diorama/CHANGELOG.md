@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.5 — 2026-09-05
+
+- `ServoVocab` registers the servo surface (`form.field`, `form.save()`) as
+  a `vantage-rhai` `Vocab`; `register_servo_onto` stays as a shim.
+- The CBOR ↔ `Dynamic` converters are vista's: `cbor_to_dynamic` and
+  `record_to_map` are re-exported, and `dynamic_to_cbor` keeps only the
+  chrono-instant case before delegating. The `rhai` feature pulls
+  `vantage-vista/rhai` accordingly.
+
 ## 0.12.4 — 2026-08-29
 
 - `Dio::import_values(records, progress)` — bulk import that takes the

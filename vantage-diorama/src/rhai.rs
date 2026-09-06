@@ -23,14 +23,28 @@
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
-use rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
-use vantage_types::Record;
+use vantage_rhai::Vocab;
+use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
+// One converter for the whole data layer: a record id renders as `table:id`
+// in a servo script exactly as it does in a vista script.
+pub use vantage_vista::{cbor_to_dynamic, record_to_map};
 
 use crate::servo::{Servo, ServoStatus};
 
-/// Teach `engine` the `Servo` type and its methods. The host decides how
-/// a script *obtains* a servo — a scope variable, a registered lookup fn
-/// — this only covers what a script can do once it holds one.
+/// The `Servo` type and its methods as a [`Vocab`]. The host decides how a
+/// script *obtains* a servo — an [`Env`](vantage_rhai::Env) variable, a
+/// registered lookup fn — this only covers what a script can do once it
+/// holds one.
+pub struct ServoVocab;
+
+impl Vocab for ServoVocab {
+    fn register(&self, engine: &mut Engine) {
+        register_servo_onto(engine);
+    }
+}
+
+/// Teach `engine` the `Servo` type and its methods. Prefer [`ServoVocab`] on
+/// a host — this is the registration behind it.
 pub fn register_servo_onto(engine: &mut Engine) {
     engine.register_type_with_name::<Arc<Servo>>("Servo");
 
@@ -135,92 +149,19 @@ pub fn register_servo_onto(engine: &mut Engine) {
     );
 }
 
-fn record_to_map(record: &Record<CborValue>) -> RhaiMap {
-    let mut map = RhaiMap::new();
-    for (key, value) in record.iter() {
-        map.insert(key.as_str().into(), cbor_to_dynamic(value));
-    }
-    map
-}
-
-/// CBOR → Dynamic, lossy only where Rhai has no representation (a tag is
-/// unwrapped to its value, bytes become a blob).
-pub fn cbor_to_dynamic(value: &CborValue) -> Dynamic {
-    match value {
-        CborValue::Null => Dynamic::UNIT,
-        CborValue::Bool(b) => Dynamic::from(*b),
-        CborValue::Integer(i) => {
-            let wide: i128 = (*i).into();
-            i64::try_from(wide)
-                .map(Dynamic::from)
-                .unwrap_or_else(|_| Dynamic::from(wide as f64))
-        }
-        CborValue::Float(f) => Dynamic::from(*f),
-        CborValue::Text(s) => Dynamic::from(s.clone()),
-        CborValue::Bytes(b) => Dynamic::from_blob(b.clone()),
-        CborValue::Array(items) => Dynamic::from_array(items.iter().map(cbor_to_dynamic).collect()),
-        CborValue::Map(pairs) => {
-            let mut map = RhaiMap::new();
-            for (k, v) in pairs {
-                if let CborValue::Text(key) = k {
-                    map.insert(key.as_str().into(), cbor_to_dynamic(v));
-                }
-            }
-            Dynamic::from_map(map)
-        }
-        CborValue::Tag(_, inner) => cbor_to_dynamic(inner),
-        _ => Dynamic::UNIT,
-    }
-}
-
-/// Dynamic → CBOR. Errors on types with no CBOR story (closures, custom
-/// types) — a script setting one on a servo is a bug worth naming.
+/// Dynamic → CBOR. An instant (a host's `now()`) travels as the standard
+/// CBOR datetime — tag 0 over RFC 3339 text — which every driver that has a
+/// datetime type reads as one; the SurrealDB driver accepts it beside its
+/// own compact tag 12. That case is diorama's (it owns `chrono` under the
+/// `rhai` feature); everything else is vista's one converter, which errors
+/// on types with no CBOR story — a script setting a closure on a servo is a
+/// bug worth naming.
 pub fn dynamic_to_cbor(value: &Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
-    if value.is_unit() {
-        return Ok(CborValue::Null);
-    }
-    if let Some(b) = value.clone().try_cast::<bool>() {
-        return Ok(CborValue::Bool(b));
-    }
-    if let Some(i) = value.clone().try_cast::<i64>() {
-        return Ok(CborValue::Integer(i.into()));
-    }
-    if let Some(f) = value.clone().try_cast::<f64>() {
-        return Ok(CborValue::Float(f));
-    }
-    if let Some(s) = value.clone().try_cast::<String>() {
-        return Ok(CborValue::Text(s));
-    }
-    if let Some(blob) = value.clone().try_cast::<rhai::Blob>() {
-        return Ok(CborValue::Bytes(blob));
-    }
-    // An instant (a host's `now()`) travels as the standard CBOR
-    // datetime — tag 0 over RFC 3339 text — which every driver that has
-    // a datetime type reads as one; the SurrealDB driver accepts it
-    // beside its own compact tag 12.
     if let Some(dt) = value.clone().try_cast::<chrono::DateTime<chrono::Utc>>() {
         return Ok(CborValue::Tag(
             0,
             Box::new(CborValue::Text(dt.to_rfc3339())),
         ));
     }
-    if let Some(array) = value.clone().try_cast::<rhai::Array>() {
-        let items = array
-            .iter()
-            .map(dynamic_to_cbor)
-            .collect::<Result<Vec<_>, _>>()?;
-        return Ok(CborValue::Array(items));
-    }
-    if let Some(map) = value.clone().try_cast::<RhaiMap>() {
-        let pairs = map
-            .iter()
-            .map(|(k, v)| Ok((CborValue::Text(k.to_string()), dynamic_to_cbor(v)?)))
-            .collect::<Result<Vec<_>, Box<EvalAltResult>>>()?;
-        return Ok(CborValue::Map(pairs));
-    }
-    Err(format!(
-        "no CBOR representation for rhai type '{}'",
-        value.type_name()
-    )
-    .into())
+    vantage_vista::dynamic_to_cbor(value.clone())
 }

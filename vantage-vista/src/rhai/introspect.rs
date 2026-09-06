@@ -2,7 +2,7 @@
 //! `columns()`, and `references()` fetch verbs. Each turns a [`Vista`]'s
 //! metadata into a plain Rhai value the script can read.
 
-use rhai::{Array, Dynamic, Map as RhaiMap};
+use vantage_rhai::rhai::{Array, Dynamic, Map as RhaiMap};
 
 use crate::vista::Vista;
 

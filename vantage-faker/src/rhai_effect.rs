@@ -11,20 +11,24 @@
 //! `patch(id, #{…})`, `insert(#{…})`, `delete(id)` mutate and broadcast;
 //! `fake(kind)`, `rand_int(a,b)`, `rand_float(a,b)`, `pick(array)` generate.
 //!
-//! A Rhai `Engine` is not `Send`, so each tick's evaluation runs inside
-//! `spawn_blocking` with a fresh engine — for the scripts these scenarios
-//! carry (a handful of statements at ≤50 ticks/s) construction cost is
-//! noise. A script that fails stops the loop after logging once: a static
-//! script that failed will fail every tick, and a sim whose data stops
-//! moving is a louder, cheaper signal than an error log at 50 Hz.
+//! The script compiles once, on a [`vantage_rhai::Host`] carrying the verbs
+//! as [`FakerVocab`] under the background limit profile; each tick's
+//! evaluation runs inside `spawn_blocking` against that compiled script (a
+//! runaway loop in a tick used to hang a blocking thread forever). A script
+//! that fails stops the loop after logging once: a static script that failed
+//! will fail every tick, and a sim whose data stops moving is a louder,
+//! cheaper signal than an error log at 50 Hz. A script that does not even
+//! compile stops it before the first tick.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
-use rhai::{Dynamic, Engine, Map as RhaiMap};
 use tokio::time::interval;
+use vantage_rhai::rhai;
+use vantage_rhai::rhai::{Dynamic, Engine, Map as RhaiMap};
+use vantage_rhai::{Block, Compiled, Env, Host, Limits, Vocab};
 use vantage_types::Record;
 
 use crate::effect::{FakerCtx, FakerEffect};
@@ -49,14 +53,20 @@ impl FakerEffect for RhaiEffect {
     }
 
     async fn run(&self, ctx: Arc<FakerCtx>) {
+        // Compile once. A script that does not parse never ticks.
+        let script = match compile_effect(&ctx, &self.script) {
+            Ok(script) => Arc::new(script),
+            Err(e) => {
+                tracing::error!(error = %e, "rhai faker effect failed to compile; not starting its mutation loop");
+                return;
+            }
+        };
         let mut ticker = interval(self.interval);
         let mut tick: i64 = 0;
         loop {
             ticker.tick().await;
-            let script = self.script.clone();
-            let tick_ctx = ctx.clone();
-            let result =
-                tokio::task::spawn_blocking(move || run_tick(&tick_ctx, &script, tick)).await;
+            let script = script.clone();
+            let result = tokio::task::spawn_blocking(move || run_compiled(&script, tick)).await;
             match result {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => {
@@ -73,15 +83,39 @@ impl FakerEffect for RhaiEffect {
     }
 }
 
-/// One evaluation: fresh engine, verbs bound to `ctx`, `tick` in scope.
-fn run_tick(ctx: &Arc<FakerCtx>, script: &str, tick: i64) -> std::result::Result<(), String> {
-    let mut engine = Engine::new();
-    register_verbs(&mut engine, ctx);
-    let mut scope = rhai::Scope::new();
-    scope.push("tick", tick);
-    engine
-        .run_with_scope(&mut scope, script)
+/// The mutation verbs, bound to one store, as a [`Vocab`].
+pub struct FakerVocab(pub Arc<FakerCtx>);
+
+impl Vocab for FakerVocab {
+    fn register(&self, engine: &mut Engine) {
+        register_verbs(engine, &self.0);
+    }
+}
+
+/// Build the host and compile `script` on it, once per effect.
+fn compile_effect(
+    ctx: &Arc<FakerCtx>,
+    script: &str,
+) -> std::result::Result<Compiled<Block>, String> {
+    let host = Host::builder(Limits::background())
+        .vocab(FakerVocab(ctx.clone()))
+        .build();
+    host.compile_uncached(&Block::from(script))
         .map_err(|e| e.to_string())
+}
+
+/// One evaluation of the compiled script with `tick` in scope.
+fn run_compiled(script: &Compiled<Block>, tick: i64) -> std::result::Result<(), String> {
+    script
+        .run(&Env::new().var("tick", tick))
+        .map_err(|e| e.to_string())
+}
+
+/// Compile and run once — the test path. The effect loop compiles once and
+/// runs many.
+#[cfg(test)]
+fn run_tick(ctx: &Arc<FakerCtx>, script: &str, tick: i64) -> std::result::Result<(), String> {
+    run_compiled(&compile_effect(ctx, script)?, tick)
 }
 
 fn register_verbs(engine: &mut Engine, ctx: &Arc<FakerCtx>) {

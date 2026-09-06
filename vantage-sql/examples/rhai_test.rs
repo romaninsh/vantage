@@ -9,6 +9,7 @@
 use std::fs;
 use std::path::Path;
 use std::process;
+use vantage_rhai::{Block, Env, RhaiError};
 
 fn format_sql(sql: &str) -> String {
     let options = sqlformat::FormatOptions {
@@ -39,8 +40,8 @@ mod sqlite_engine {
 
     pub type Select = RhaiSelect<AnySqliteType, SqliteSelect, SqliteSelectJoin, SqliteCondition>;
 
-    pub fn create() -> rhai::Engine {
-        __create_engine()
+    pub fn host() -> &'static vantage_rhai::Host {
+        __host()
     }
 }
 
@@ -62,8 +63,8 @@ mod postgres_engine {
     pub type Select =
         RhaiSelect<AnyPostgresType, PostgresSelect, PostgresSelectJoin, PostgresCondition>;
 
-    pub fn create() -> rhai::Engine {
-        __create_engine()
+    pub fn host() -> &'static vantage_rhai::Host {
+        __host()
     }
 }
 
@@ -84,8 +85,8 @@ mod mysql_engine {
 
     pub type Select = RhaiSelect<AnyMysqlType, MysqlSelect, MysqlSelectJoin, MysqlCondition>;
 
-    pub fn create() -> rhai::Engine {
-        __create_engine()
+    pub fn host() -> &'static vantage_rhai::Host {
+        __host()
     }
 }
 
@@ -123,22 +124,25 @@ fn main() {
 
         #[cfg(feature = "sqlite")]
         run_test(&mut pass, &mut fail, "sqlite", name, &code, fix, |e| {
-            sqlite_engine::create()
-                .eval::<sqlite_engine::Select>(e)
+            sqlite_engine::host()
+                .compile(&Block::from(e))
+                .and_then(|s| s.eval_as::<sqlite_engine::Select>(&Env::new()))
                 .map(|s| s.inner.preview())
         });
 
         #[cfg(feature = "postgres")]
         run_test(&mut pass, &mut fail, "postgres", name, &code, fix, |e| {
-            postgres_engine::create()
-                .eval::<postgres_engine::Select>(e)
+            postgres_engine::host()
+                .compile(&Block::from(e))
+                .and_then(|s| s.eval_as::<postgres_engine::Select>(&Env::new()))
                 .map(|s| s.inner.preview())
         });
 
         #[cfg(feature = "mysql")]
         run_test(&mut pass, &mut fail, "mysql", name, &code, fix, |e| {
-            mysql_engine::create()
-                .eval::<mysql_engine::Select>(e)
+            mysql_engine::host()
+                .compile(&Block::from(e))
+                .and_then(|s| s.eval_as::<mysql_engine::Select>(&Env::new()))
                 .map(|s| s.inner.preview())
         });
     }
@@ -158,7 +162,7 @@ fn run_test<F>(
     fix: bool,
     eval: F,
 ) where
-    F: Fn(&str) -> Result<String, Box<rhai::EvalAltResult>>,
+    F: Fn(&str) -> Result<String, RhaiError>,
 {
     let base = test_dir();
     let common_sql = base.join(format!("common/{}.sql", name));

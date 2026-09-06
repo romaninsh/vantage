@@ -2,8 +2,9 @@
 //!
 //! These functions generate the correct SQL syntax for each database backend.
 
+use vantage_rhai::rhai;
 use std::fmt::{Debug, Display};
-use rhai::Array;
+use vantage_rhai::rhai::Array;
 use vantage_expressions::{Expressive, ExpressiveEnum, Expression};
 use crate::primitives::identifier::Identifier;
 use super::{RhaiExpr, RhaiIdent};

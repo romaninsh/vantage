@@ -2,6 +2,8 @@
 //! `VistaFactory` trait impl. SurrealDB advertises full read/write/count.
 
 use std::sync::Arc;
+#[cfg(feature = "rhai")]
+use vantage_rhai::{Host, Limits};
 
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
@@ -177,8 +179,9 @@ impl VistaFactory for SurrealVistaFactory {
 impl SurrealVistaFactory {
     /// Run a `surreal: { modify }` script against an already-built vista,
     /// layering SurrealDB's expression vocabulary plus the conventional verbs
-    /// onto a fresh engine. `table(name)` inside the script resolves through the
-    /// factory's spec resolver (if attached); `self` is the built vista.
+    /// onto a host. `table(name)` inside the script resolves through the
+    /// factory's spec resolver (if attached); `self` is the built vista, `me`
+    /// comes from the shell.
     fn apply_modify(&self, vista: Vista, code: &str) -> Result<Vista> {
         let db = self.db.clone();
         let resolver = self.resolver.clone();
@@ -195,10 +198,11 @@ impl SurrealVistaFactory {
 
         // Vendor vocab first, conventional second (so `table` resolves a Vista,
         // not SurrealDB's `ident` alias — same ordering as scripted traversal).
-        let mut engine = rhai::Engine::new();
-        vista.source.register_rhai_extensions(&mut engine);
-        vantage_vista::register_conventional_onto(&mut engine, target_resolver);
-        vantage_vista::eval_modify_script(&engine, code, vista)
+        let host = Host::builder(Limits::background())
+            .vocab(vantage_vista::ShellVocab(&vista))
+            .vocab(vantage_vista::ConventionalVocab(target_resolver))
+            .build();
+        vantage_vista::eval_modify_script(&host, code, vista)
     }
 }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.15 — 2026-09-05
+
+- The `rhai` effect compiles its mutation script **once**, when the effect
+  starts, and runs the compiled script per tick on a bounded `vantage-rhai`
+  host — before, a fresh engine was built on every tick, up to 50 Hz. A
+  script that does not parse now fails at start instead of on every tick.
+- `FakerVocab(Arc<FakerCtx>)` carries the verbs as a `Vocab`.
+
 ## 0.6.14 — 2026-08-16
 
 - The shaped and live-folder shells implement `preview_query`. Shaping forwards

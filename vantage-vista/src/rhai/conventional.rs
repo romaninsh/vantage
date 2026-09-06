@@ -1,11 +1,15 @@
 //! Conventional Rhai vocabulary over the type-erased [`Vista`].
 //!
-//! vantage-vista owns Rhai engine construction with a *backend-agnostic*
-//! vocabulary: `table(name)` resolves a fresh target [`Vista`] through an
-//! injected [`TargetResolver`], and a small set of builder verbs narrow it in
-//! place. Backends layer their vendor-specific vocabulary (expression syntax,
-//! `with_condition`) on top by overriding
+//! vantage-vista owns the *backend-agnostic* vocabulary: `table(name)` resolves
+//! a fresh target [`Vista`] through an injected [`TargetResolver`], and a small
+//! set of builder verbs narrow it in place. Backends layer their vendor-specific
+//! vocabulary (expression syntax, `with_condition`) on top by overriding
 //! [`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions).
+//!
+//! Everything runs on a [`vantage_rhai::Host`]: the vocabulary is a
+//! [`Vocab`] ([`ConventionalVocab`]), every script slot compiles once through
+//! the host's cache, and each evaluation pushes its variables through an
+//! [`Env`] — the parent `row`, the vista as `self`.
 //!
 //! This keeps Rhai out of vantage-table and lets engine-less datasources
 //! (CSV/Mongo/REST) still script the conventional verbs — they only lose the
@@ -14,11 +18,12 @@
 //! Everything here uses only [`Vista`]'s public API, preserving the one-way
 //! `vantage-table → vantage-vista` dependency (Rhai is a leaf).
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ciborium::Value as CborValue;
-use rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap, Scope};
 use vantage_core::{Result, error};
+use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
+use vantage_rhai::{Block, Compiled, Env, Host, Limits, Vocab};
 use vantage_types::Record;
 
 use super::convert::{dynamic_to_cbor, map_to_record, record_to_dynamic};
@@ -30,9 +35,8 @@ use crate::{sort::SortDirection, vista::Vista};
 /// [`eval_ref_script`] move the finished `Vista` out even if the script kept
 /// extra references.
 ///
-/// `Arc<Mutex<…>>` (not `Rc<RefCell<…>>`) so the type satisfies Rhai's
-/// `Send + Sync` bound when a consumer compiles Rhai with its `sync` feature —
-/// `Vista` is itself `Send + Sync` (its `TableShell` is), so nothing is lost.
+/// `Arc<Mutex<…>>` and not `Rc<RefCell<…>>`: `vantage-rhai` compiles rhai with
+/// its `sync` feature, so anything a script holds must be `Send + Sync`.
 #[derive(Clone)]
 pub struct RhaiVista(pub Arc<Mutex<Option<Vista>>>);
 
@@ -53,6 +57,16 @@ impl RhaiVista {
     {
         with_inner(self, f)
     }
+
+    /// Take the `Vista` out, leaving the handle empty. Errors if a script
+    /// already consumed it.
+    pub fn take(&self, what: &str) -> Result<Vista> {
+        self.0
+            .lock()
+            .map_err(|_| error!(format!("{what}: result mutex poisoned")))?
+            .take()
+            .ok_or_else(|| error!(format!("{what}: vista already consumed")))
+    }
 }
 
 /// Resolve a table name to a fresh, unconditioned target [`Vista`]. Injected by
@@ -60,12 +74,36 @@ impl RhaiVista {
 /// backend-agnostic behind this boxed closure.
 pub type TargetResolver = Arc<dyn Fn(&str) -> Result<Vista> + Send + Sync>;
 
+/// The conventional vocabulary as a [`Vocab`]: `table(name)` backed by the
+/// resolver plus the builder verbs. Register it *after* a vendor vocabulary
+/// so its `table` wins over SurrealDB's `table` alias for `ident`.
+pub struct ConventionalVocab(pub TargetResolver);
+
+impl Vocab for ConventionalVocab {
+    fn register(&self, engine: &mut Engine) {
+        register_conventional_onto(engine, self.0.clone());
+    }
+}
+
+/// A shell's vendor vocabulary
+/// ([`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions))
+/// as a [`Vocab`], so a host can be built from a vista in hand.
+pub struct ShellVocab<'a>(pub &'a Vista);
+
+impl Vocab for ShellVocab<'_> {
+    fn register(&self, engine: &mut Engine) {
+        self.0.source.register_rhai_extensions(engine);
+    }
+}
+
 /// Register the conventional `Vista` vocabulary onto `engine`.
 ///
 /// Adds the `table(name)` constructor (backed by `resolver`) and the in-place
 /// builder verbs (`with_id`, `add_condition_eq`, `add_order`, `add_search`,
 /// `set_page_size`, `get_ref`). Each verb returns the same handle so scripts can
 /// chain: `table("order").add_condition_eq("client", row.id).add_order("date", "desc")`.
+///
+/// Prefer [`ConventionalVocab`] on a [`Host`] — this is the registration behind it.
 pub fn register_conventional_onto(engine: &mut Engine, resolver: TargetResolver) {
     engine.register_type_with_name::<RhaiVista>("Vista");
 
@@ -173,26 +211,35 @@ pub fn register_conventional_onto(engine: &mut Engine, resolver: TargetResolver)
     );
 }
 
+/// Compile a script slot through the host's cache, wording the error for the
+/// slot that failed.
+fn compile(host: &Host, what: &str, code: &str) -> Result<Compiled<Block>> {
+    host.compile(&Block::from(code))
+        .map_err(|e| error!(format!("{what} failed to compile: {e}")))
+}
+
 /// Evaluate a reference build-script and return the `Vista` it produced.
 ///
-/// `engine` must already have the conventional vocabulary (via
-/// [`register_conventional_onto`]) plus any vendor extensions registered. The
-/// parent `row` is exposed to the script as the `row` map. The script's final
-/// expression must evaluate to a `Vista` (e.g. `table("order").add_…(…)`).
-pub fn eval_ref_script(engine: &Engine, code: &str, row: &Record<CborValue>) -> Result<Vista> {
-    let mut scope = Scope::new();
-    scope.push_dynamic("row", record_to_dynamic(row));
-
-    let result: RhaiVista = engine
-        .eval_with_scope(&mut scope, code)
+/// `host` must carry the conventional vocabulary ([`ConventionalVocab`]) plus
+/// any vendor extensions. `env` is the vendor's base environment (see
+/// [`TableShell::rhai_env`](crate::TableShell::rhai_env)); the parent `row` is
+/// pushed onto it. The script's final expression must evaluate to a `Vista`
+/// (e.g. `table("order").add_…(…)`).
+pub fn eval_ref_script(
+    host: &Host,
+    code: &str,
+    env: Env,
+    row: &Record<CborValue>,
+) -> Result<Vista> {
+    let script = compile(host, "rhai reference build-script", code)?;
+    let env = env.var("row", record_to_dynamic(row));
+    let result = script
+        .eval(&env)
         .map_err(|e| error!(format!("rhai reference build-script failed: {e}")))?;
-
-    result
-        .0
-        .lock()
-        .map_err(|_| error!("rhai reference build-script: result mutex poisoned"))?
-        .take()
-        .ok_or_else(|| error!("rhai reference build-script did not return a Vista"))
+    let handle: RhaiVista = result
+        .try_cast::<RhaiVista>()
+        .ok_or_else(|| error!("rhai reference build-script did not return a Vista"))?;
+    handle.take("rhai reference build-script")
 }
 
 /// Evaluate a *modify* script against an already-built [`Vista`], applying extra
@@ -208,25 +255,18 @@ pub fn eval_ref_script(engine: &Engine, code: &str, row: &Record<CborValue>) -> 
 /// self.with_condition(ident("is_paying_client") == true)
 /// ```
 ///
-/// `engine` must already carry the conventional vocabulary (via
-/// [`register_conventional_onto`]) plus any vendor extensions.
-pub fn eval_modify_script(engine: &Engine, code: &str, vista: Vista) -> Result<Vista> {
+/// `host` must carry the conventional vocabulary plus any vendor extensions;
+/// the vista's own shell contributes its constants via `rhai_env`.
+pub fn eval_modify_script(host: &Host, code: &str, vista: Vista) -> Result<Vista> {
+    let script = compile(host, "rhai modify script", code)?;
+    let env = vista.source.rhai_env(Env::new());
     let handle = RhaiVista::wrap(vista);
-    let mut scope = Scope::new();
-    scope.push("self", handle.clone());
-
-    engine
-        .run_with_scope(&mut scope, code)
+    script
+        .run(&env.var("self", Dynamic::from(handle.clone())))
         .map_err(|e| error!(format!("rhai modify script failed: {e}")))?;
-
     // `take()` succeeds regardless of the scope's lingering `Arc` clone — it
     // empties the shared `Option`, not the `Arc`.
-    handle
-        .0
-        .lock()
-        .map_err(|_| error!("rhai modify script: result mutex poisoned"))?
-        .take()
-        .ok_or_else(|| error!("rhai modify script consumed `self`"))
+    handle.take("rhai modify script")
 }
 
 /// A diorama augmentation *source* closure: given a master `row` and a freshly
@@ -243,29 +283,31 @@ pub type AugmentSourceFn = Arc<dyn Fn(&Record<CborValue>, Vista) -> Result<Vista
 /// ```
 ///
 /// is the canonical form. Mirrors [`eval_modify_script`] but with the parent row
-/// in scope; the engine must already carry the conventional vocabulary (via
-/// [`register_conventional_onto`]) plus any vendor extensions.
+/// in scope.
 pub fn eval_augment_source(
-    engine: &Engine,
+    host: &Host,
     code: &str,
     base: Vista,
     row: &Record<CborValue>,
 ) -> Result<Vista> {
+    let script = compile(host, "rhai augment source script", code)?;
+    eval_augment_compiled(&script, base, row)
+}
+
+fn eval_augment_compiled(
+    script: &Compiled<Block>,
+    base: Vista,
+    row: &Record<CborValue>,
+) -> Result<Vista> {
+    let env = base.source.rhai_env(Env::new());
     let handle = RhaiVista::wrap(base);
-    let mut scope = Scope::new();
-    scope.push("self", handle.clone());
-    scope.push_dynamic("row", record_to_dynamic(row));
-
-    engine
-        .run_with_scope(&mut scope, code)
+    script
+        .run(
+            &env.var("self", Dynamic::from(handle.clone()))
+                .var("row", record_to_dynamic(row)),
+        )
         .map_err(|e| error!(format!("rhai augment source script failed: {e}")))?;
-
-    handle
-        .0
-        .lock()
-        .map_err(|_| error!("rhai augment source: result mutex poisoned"))?
-        .take()
-        .ok_or_else(|| error!("rhai augment source consumed `self`"))
+    handle.take("rhai augment source")
 }
 
 /// A lazy-expression value closure: given the record as built so far, compute
@@ -282,46 +324,57 @@ pub type LazyValueFn = Arc<dyn Fn(&Record<CborValue>) -> Result<CborValue> + Sen
 /// ```rhai
 /// row.contents.split("\n").len() - 1
 /// ```
-pub fn eval_lazy_expression(
-    engine: &Engine,
-    code: &str,
-    row: &Record<CborValue>,
-) -> Result<CborValue> {
-    let mut scope = Scope::new();
-    scope.push_dynamic("row", record_to_dynamic(row));
+pub fn eval_lazy_expression(host: &Host, code: &str, row: &Record<CborValue>) -> Result<CborValue> {
+    let script = compile(host, "rhai lazy expression", code)?;
+    eval_lazy_compiled(&script, row)
+}
 
-    let result: Dynamic = engine
-        .eval_with_scope(&mut scope, code)
+fn eval_lazy_compiled(script: &Compiled<Block>, row: &Record<CborValue>) -> Result<CborValue> {
+    let result = script
+        .eval(&Env::new().var("row", record_to_dynamic(row)))
         .map_err(|e| error!(format!("rhai lazy expression failed: {e}")))?;
     dynamic_to_cbor(result).map_err(|e| error!(format!("rhai lazy expression result: {e}")))
 }
 
-/// Build a reusable [`LazyValueFn`] from a Rhai `code` string. The engine is
-/// plain — a lazy expression derives a value from `row`, it doesn't build
-/// queries or fetch data, so no resolver or vendor vocabulary is needed.
-pub fn lazy_value_closure(code: String) -> LazyValueFn {
-    Arc::new(move |row: &Record<CborValue>| -> Result<CborValue> {
-        let engine = Engine::new();
-        eval_lazy_expression(&engine, code.as_str(), row)
-    })
+/// Build a reusable [`LazyValueFn`] from a Rhai `code` string. Compiles once,
+/// here — a script that does not parse fails the table build, not the first
+/// row.
+pub fn lazy_value_closure(code: &str) -> Result<LazyValueFn> {
+    let script = compile(
+        vantage_rhai::background_host(),
+        "rhai lazy expression",
+        code,
+    )?;
+    Ok(Arc::new(
+        move |row: &Record<CborValue>| -> Result<CborValue> { eval_lazy_compiled(&script, row) },
+    ))
 }
 
 /// Build a reusable [`AugmentSourceFn`] from a Rhai `code` string and a
-/// `resolver` for `table(name)`. Keeps all Rhai engine assembly inside
+/// `resolver` for `table(name)`. Keeps all Rhai host assembly inside
 /// vantage-vista: a consumer (diorama's augmentation lowering) only flips the
 /// `rhai` feature and calls this — it never touches the `rhai` crate directly.
 ///
-/// The engine is rebuilt per call (cheap; `rhai`'s `sync` feature is not assumed,
-/// so an [`Engine`] cannot be stored in a `Send + Sync` closure). Vendor
-/// extensions come from the supplied `base`'s shell, so scripted narrowing can
-/// use a backend's expression syntax when present.
+/// Vendor extensions come from the `base` vista's shell, which is only in hand
+/// per call, so the host is built on the first call and reused after: one
+/// augmentation always narrows the same detail table.
 pub fn augment_source_closure(resolver: TargetResolver, code: String) -> AugmentSourceFn {
+    let compiled: OnceLock<Result<Compiled<Block>>> = OnceLock::new();
     Arc::new(
         move |row: &Record<CborValue>, base: Vista| -> Result<Vista> {
-            let mut engine = Engine::new();
-            base.source.register_rhai_extensions(&mut engine);
-            register_conventional_onto(&mut engine, resolver.clone());
-            eval_augment_source(&engine, code.as_str(), base, row)
+            let script = compiled.get_or_init(|| {
+                // Vendor vocab first, conventional second, so `table(name)`
+                // resolves a Vista rather than a vendor identifier.
+                let host = Host::builder(Limits::background())
+                    .vocab(ShellVocab(&base))
+                    .vocab(ConventionalVocab(resolver.clone()))
+                    .build();
+                compile(&host, "rhai augment source script", &code)
+            });
+            match script {
+                Ok(script) => eval_augment_compiled(script, base, row),
+                Err(e) => Err(error!(e.to_string())),
+            }
         },
     )
 }
@@ -436,25 +489,29 @@ mod tests {
         Vista::new("users", Box::new(source.with_metadata(metadata)))
     }
 
-    fn engine() -> Engine {
-        let resolver: TargetResolver = Arc::new(|name: &str| {
+    fn resolver() -> TargetResolver {
+        Arc::new(|name: &str| {
             if name == "users" {
                 Ok(users_vista())
             } else {
                 Err(error!("unknown table in test resolver", table = name))
             }
-        });
-        let mut engine = Engine::new();
-        register_conventional_onto(&mut engine, resolver);
-        engine
+        })
+    }
+
+    fn host() -> Host {
+        Host::builder(Limits::background())
+            .vocab(ConventionalVocab(resolver()))
+            .build()
     }
 
     #[tokio::test]
     async fn script_narrows_target_with_literal_condition() {
         let row = record(&[("id", cbor_text("1"))]);
         let vista = eval_ref_script(
-            &engine(),
+            &host(),
             r#"table("users").add_condition_eq("vip_flag", true)"#,
+            Env::new(),
             &row,
         )
         .unwrap();
@@ -471,8 +528,9 @@ mod tests {
         // `parse_op`, and dispatch are wired.
         let row = record(&[("id", cbor_text("1"))]);
         let vista = eval_ref_script(
-            &engine(),
+            &host(),
             r#"table("users").add_condition("vip_flag", "eq", true)"#,
+            Env::new(),
             &row,
         )
         .unwrap();
@@ -485,8 +543,9 @@ mod tests {
     fn add_condition_rejects_unknown_operator() {
         let row = record(&[("id", cbor_text("1"))]);
         let result = eval_ref_script(
-            &engine(),
+            &host(),
             r#"table("users").add_condition("vip_flag", "wat", true)"#,
+            Env::new(),
             &row,
         );
         match result {
@@ -499,8 +558,9 @@ mod tests {
     async fn script_can_read_the_parent_row() {
         let row = record(&[("id", cbor_text("3"))]);
         let vista = eval_ref_script(
-            &engine(),
+            &host(),
             r#"table("users").add_condition_eq("id", row.id)"#,
+            Env::new(),
             &row,
         )
         .unwrap();
@@ -515,12 +575,9 @@ mod tests {
         // The YAML built `users`; a post-build modify script narrows it in place
         // via `self`, with no parent row in scope.
         let vista = users_vista();
-        let modified = eval_modify_script(
-            &engine(),
-            r#"self.add_condition_eq("vip_flag", true)"#,
-            vista,
-        )
-        .unwrap();
+        let modified =
+            eval_modify_script(&host(), r#"self.add_condition_eq("vip_flag", true)"#, vista)
+                .unwrap();
 
         let rows = modified.list_values().await.unwrap();
         assert_eq!(rows.len(), 2);
@@ -530,10 +587,43 @@ mod tests {
     #[test]
     fn unknown_table_surfaces_resolver_error() {
         let row = record(&[]);
-        let err = match eval_ref_script(&engine(), r#"table("ghosts")"#, &row) {
+        let err = match eval_ref_script(&host(), r#"table("ghosts")"#, Env::new(), &row) {
             Ok(_) => panic!("expected the resolver to reject an unknown table"),
             Err(e) => e,
         };
         assert!(err.to_string().contains("unknown table"));
+    }
+
+    #[test]
+    fn lazy_closure_compiles_once_and_fails_early() {
+        let f = lazy_value_closure("row.n * 2").unwrap();
+        let row = record(&[("n", CborValue::Integer(21.into()))]);
+        assert_eq!(f(&row).unwrap(), CborValue::Integer(42.into()));
+        assert!(
+            lazy_value_closure("row.n *").is_err(),
+            "syntax fails at build"
+        );
+    }
+
+    #[test]
+    fn lazy_expression_is_bounded() {
+        let f = lazy_value_closure("loop {}").unwrap();
+        let err = f(&record(&[])).unwrap_err();
+        assert!(err.to_string().contains("limit"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn augment_closure_narrows_base_per_row() {
+        let f =
+            augment_source_closure(resolver(), r#"self.add_condition_eq("id", row.key)"#.into());
+        let row = record(&[("key", cbor_text("2"))]);
+        let narrowed = f(&row, users_vista()).unwrap();
+        let rows = narrowed.list_values().await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows.contains_key("2"));
+        // Second call reuses the compiled script.
+        let row = record(&[("key", cbor_text("3"))]);
+        let rows = f(&row, users_vista()).unwrap().list_values().await.unwrap();
+        assert!(rows.contains_key("3"));
     }
 }

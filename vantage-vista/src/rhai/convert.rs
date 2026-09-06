@@ -1,19 +1,21 @@
-//! Value conversions between the CBOR carrier, Rhai `Dynamic`, and (for the
-//! fetch surface) `serde_json`.
+//! Value conversions between the CBOR carrier and Rhai `Dynamic`.
 //!
-//! Shared by [`rhai_conventional`](crate::rhai_conventional) (which seeds the
-//! parent `row` map and lowers condition scalars) and
-//! [`rhai_fetch`](crate::rhai_fetch) (which materialises fetched records and
-//! renders a script's final value as JSON). Kept in one place so the two
-//! vocabularies can never drift in how they round-trip a value.
+//! Shared by [`conventional`](super::conventional) (which seeds the parent
+//! `row` map and lowers condition scalars) and [`fetch`](super::fetch) (which
+//! materialises fetched records). Public so the other data-layer crates
+//! (diorama's servo, the faker effects) round-trip values the same way — one
+//! converter, so a record id renders as `"table:id"` in every script.
+//!
+//! JSON goes through `vantage_rhai::{to_json, from_json}`.
 
 use ciborium::Value as CborValue;
-use rhai::{Array, Dynamic, EvalAltResult, Map as RhaiMap};
+use vantage_rhai::rhai::{Array, Blob, Dynamic, EvalAltResult, Map as RhaiMap};
 use vantage_types::Record;
 
-/// Convert a scalar Rhai value into the universal CBOR carrier. Non-scalar
-/// types (arrays, maps) are rejected — only condition/id values pass through.
-pub(crate) fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
+/// Convert a Rhai value into the universal CBOR carrier. Scalars, arrays and
+/// maps pass through (an array is what an `in` condition takes); a value with
+/// no CBOR story — a closure, a custom type — is an error naming the type.
+pub fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
     if d.is_unit() {
         Ok(CborValue::Null)
     } else if d.is::<bool>() {
@@ -24,9 +26,27 @@ pub(crate) fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult
         Ok(CborValue::Float(d.cast::<f64>()))
     } else if d.is::<String>() {
         Ok(CborValue::Text(d.cast::<String>()))
+    } else if d.is::<char>() {
+        Ok(CborValue::Text(d.cast::<char>().to_string()))
+    } else if d.is::<Blob>() {
+        Ok(CborValue::Bytes(d.cast::<Blob>()))
+    } else if d.is::<Array>() {
+        let items = d
+            .cast::<Array>()
+            .into_iter()
+            .map(dynamic_to_cbor)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(CborValue::Array(items))
+    } else if d.is::<RhaiMap>() {
+        let pairs = d
+            .cast::<RhaiMap>()
+            .into_iter()
+            .map(|(k, v)| Ok((CborValue::Text(k.to_string()), dynamic_to_cbor(v)?)))
+            .collect::<Result<Vec<_>, Box<EvalAltResult>>>()?;
+        Ok(CborValue::Map(pairs))
     } else {
         Err(format!(
-            "cannot convert rhai value of type '{}' into a condition value",
+            "no CBOR representation for rhai value of type '{}'",
             d.type_name()
         )
         .into())
@@ -36,7 +56,7 @@ pub(crate) fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult
 /// CBOR → Rhai `Dynamic`. Tagged values render their presentation form
 /// (record ids as `"table:id"`, datetimes/UUIDs/decimals as their text —
 /// the same shapes the UI grid shows) instead of degrading to unit.
-pub(crate) fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
+pub fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
     match v {
         CborValue::Null => Dynamic::UNIT,
         CborValue::Bool(b) => Dynamic::from_bool(*b),
@@ -79,61 +99,26 @@ pub(crate) fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
 }
 
 /// A whole record as a Rhai map (used to seed `row` and to materialise rows).
-pub(crate) fn record_to_dynamic(rec: &Record<CborValue>) -> Dynamic {
+pub fn record_to_dynamic(rec: &Record<CborValue>) -> Dynamic {
+    Dynamic::from_map(record_to_map(rec))
+}
+
+/// A whole record as a Rhai map.
+pub fn record_to_map(rec: &Record<CborValue>) -> RhaiMap {
     let mut map = RhaiMap::new();
     for (k, v) in rec.iter() {
         map.insert(k.as_str().into(), cbor_to_dynamic(v));
     }
-    Dynamic::from_map(map)
+    map
 }
 
 /// A Rhai map back into a record (used to pass a parent row to `get_ref`).
-pub(crate) fn map_to_record(map: RhaiMap) -> Result<Record<CborValue>, Box<EvalAltResult>> {
+pub fn map_to_record(map: RhaiMap) -> Result<Record<CborValue>, Box<EvalAltResult>> {
     let mut out: Vec<(String, CborValue)> = Vec::with_capacity(map.len());
     for (k, v) in map {
         out.push((k.to_string(), dynamic_to_cbor(v)?));
     }
     Ok(out.into_iter().collect())
-}
-
-/// Rhai `Dynamic` → `serde_json::Value` for handing a script's result back to a
-/// caller (e.g. over MCP). `rhai` is built without its `serde` feature, so the
-/// conversion is explicit; unknown types fall back to their display string.
-pub(crate) fn dynamic_to_json(d: &Dynamic) -> serde_json::Value {
-    use serde_json::Value;
-    if d.is_unit() {
-        return Value::Null;
-    }
-    if d.is::<bool>() {
-        return Value::Bool(d.as_bool().unwrap_or(false));
-    }
-    if d.is::<i64>() {
-        return Value::from(d.as_int().unwrap_or(0));
-    }
-    if d.is::<f64>() {
-        return d
-            .as_float()
-            .ok()
-            .and_then(serde_json::Number::from_f64)
-            .map(Value::Number)
-            .unwrap_or(Value::Null);
-    }
-    if d.is::<String>() {
-        return Value::String(d.clone().into_string().unwrap_or_default());
-    }
-    if d.is::<Array>() {
-        let arr = d.clone().cast::<Array>();
-        return Value::Array(arr.iter().map(dynamic_to_json).collect());
-    }
-    if d.is::<RhaiMap>() {
-        let map = d.clone().cast::<RhaiMap>();
-        let obj = map
-            .iter()
-            .map(|(k, v)| (k.to_string(), dynamic_to_json(v)))
-            .collect();
-        return Value::Object(obj);
-    }
-    Value::String(d.to_string())
 }
 
 #[cfg(test)]
@@ -168,5 +153,30 @@ mod tests {
         let n = i128::from(i64::MIN) - 1;
         let big = CborValue::Integer(n.try_into().unwrap());
         assert_eq!(cbor_to_dynamic(&big).into_string().unwrap(), n.to_string());
+    }
+
+    #[test]
+    fn arrays_and_maps_round_trip() {
+        let mut map = RhaiMap::new();
+        map.insert(
+            "ids".into(),
+            Dynamic::from(vec![Dynamic::from(1_i64), Dynamic::from("x")]),
+        );
+        let cbor = dynamic_to_cbor(Dynamic::from(map)).unwrap();
+        let CborValue::Map(pairs) = &cbor else {
+            panic!("{cbor:?}")
+        };
+        assert_eq!(pairs[0].0, CborValue::Text("ids".into()));
+        assert!(matches!(&pairs[0].1, CborValue::Array(a) if a.len() == 2));
+        let back = cbor_to_dynamic(&cbor);
+        assert!(back.is_map());
+    }
+
+    #[test]
+    fn opaque_values_are_named_in_the_error() {
+        #[derive(Clone)]
+        struct Opaque;
+        let err = dynamic_to_cbor(Dynamic::from(Opaque)).unwrap_err();
+        assert!(err.to_string().contains("Opaque"), "{err}");
     }
 }

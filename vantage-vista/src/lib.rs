@@ -33,10 +33,11 @@ pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 #[cfg(feature = "rhai")]
 pub use rhai::{
-    AugmentSourceFn, DEFAULT_LIMIT, LazyValueFn, MAX_LIMIT, MIN_LIMIT, RhaiVista, TargetResolver,
-    augment_source_closure, eval_augment_source, eval_lazy_expression, eval_modify_script,
-    eval_ref_script, lazy_value_closure, preview_script, register_conventional_onto,
-    register_fetch_verbs, run_script,
+    AugmentSourceFn, ConventionalVocab, DEFAULT_LIMIT, FetchVerbs, LazyValueFn, MAX_LIMIT,
+    MIN_LIMIT, RhaiVista, ShellVocab, TargetResolver, augment_source_closure, cbor_to_dynamic,
+    dynamic_to_cbor, eval_augment_source, eval_lazy_expression, eval_modify_script,
+    eval_ref_script, lazy_value_closure, map_to_record, preview_script, record_to_dynamic,
+    record_to_map, register_conventional_onto, register_fetch_verbs, run_script,
 };
 pub use sort::SortDirection;
 pub use source::{TableShell, VistaChange, VistaChangeStream};

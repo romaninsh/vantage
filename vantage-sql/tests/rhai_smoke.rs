@@ -3,11 +3,13 @@
 #[cfg(feature = "rhai")]
 mod rhai_smoke {
     use vantage_expressions::Expressive;
+    use vantage_rhai::{Block, Env, Host};
     use vantage_sql::condition::SqliteCondition;
     use vantage_sql::sqlite::statements::SqliteSelect;
     use vantage_sql::sqlite::statements::select::join::SqliteSelectJoin;
     use vantage_sql::sqlite::types::AnySqliteType;
 
+    // `register_engine!` imports `rhai` into this scope.
     vantage_sql::register_engine!(
         value: AnySqliteType,
         select: SqliteSelect,
@@ -15,20 +17,20 @@ mod rhai_smoke {
         cond: SqliteCondition,
     );
 
-    pub fn create_engine() -> rhai::Engine {
-        __create_engine()
+    pub fn host() -> &'static Host {
+        __host()
     }
 
     fn eval_rhai(code: &str) -> rhai::Dynamic {
-        let engine = create_engine();
-        engine
-            .eval(code)
+        host()
+            .compile(&Block::from(code))
+            .and_then(|script| script.eval(&Env::new()))
             .unwrap_or_else(|e| panic!("rhai eval failed: {e}"))
     }
 
     #[test]
-    fn engine_creates() {
-        let _engine = create_engine();
+    fn host_builds() {
+        let _host = host();
     }
 
     #[test]

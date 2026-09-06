@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.5 — 2026-09-05
+
+- Scripts run on a `vantage-rhai` host. The direct `rhai = "1.21"` pin — the
+  last 1.21 anywhere in the family — is replaced by `vantage-rhai`, so the
+  engine version is the one every other crate uses.
+- `CmdVocab { command, env, pass_path, base_dir }` is the security lock as a
+  `Vocab`: `run(args)` can only ever spawn the configured command with the
+  configured environment. `CompiledScript` compiles the script once on a
+  bounded (`Limits::background()`) host; each evaluation binds `conditions`,
+  `columns`, `limit`, `offset`, `id_column`, `id` and `row` through an `Env`.
+
 ## 0.6.4 — 2026-08-16
 
 - `CmdTableShell` implements `preview_query`. A cmd table's argv is assembled

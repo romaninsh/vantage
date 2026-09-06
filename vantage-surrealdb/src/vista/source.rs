@@ -19,6 +19,10 @@ use indexmap::IndexMap;
 use surreal_client::Action;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+#[cfg(feature = "rhai")]
+use vantage_rhai::rhai;
+#[cfg(feature = "rhai")]
+use vantage_rhai::{Env, Host, Limits};
 use vantage_table::conditions::ConditionHandle;
 use vantage_table::pagination::Pagination;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
@@ -596,6 +600,13 @@ where
             },
         );
     }
+
+    /// `me`, the current-record anchor, for every script this shell's vistas
+    /// evaluate (`modify:`, augmentation, traversal).
+    #[cfg(feature = "rhai")]
+    fn rhai_env(&self, env: Env) -> Env {
+        crate::rhai_engine::surreal_env(env)
+    }
 }
 
 #[cfg(feature = "rhai")]
@@ -605,9 +616,9 @@ where
 {
     /// Build a reference's traversal target by evaluating its Rhai
     /// `build_script`. The conventional `Vista` vocabulary plus SurrealDB's
-    /// vendor extensions are registered onto a fresh engine; `table(name)`
-    /// resolves a fresh target through the shell's spec resolver, and the parent
-    /// `row` is exposed to the script.
+    /// vendor extensions go onto a host; `table(name)` resolves a fresh target
+    /// through the shell's spec resolver, and the parent `row` (and `me`) are
+    /// exposed to the script.
     fn get_ref_via_script(&self, script: &str, row: &Record<CborValue>) -> Result<Vista> {
         use vantage_vista::VistaFactory;
 
@@ -629,9 +640,10 @@ where
         // `table(name) -> Vista` win over SurrealDB's `table` alias for `ident`
         // (which stays reachable as `ident(...)`), so a build-script's
         // `table("order")` resolves a Vista rather than an identifier.
-        let mut engine = rhai::Engine::new();
-        self.register_rhai_extensions(&mut engine);
-        vantage_vista::register_conventional_onto(&mut engine, target_resolver);
-        vantage_vista::eval_ref_script(&engine, script, row)
+        let host = Host::builder(Limits::background())
+            .vocab_fn(|engine| self.register_rhai_extensions(engine))
+            .vocab(vantage_vista::ConventionalVocab(target_resolver))
+            .build();
+        vantage_vista::eval_ref_script(&host, script, self.rhai_env(Env::new()), row)
     }
 }

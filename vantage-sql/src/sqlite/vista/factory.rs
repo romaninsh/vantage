@@ -301,7 +301,8 @@ fn build_derived_table(
 /// (`AnySqliteType::untyped`).
 #[cfg(feature = "rhai")]
 fn add_lazy_column(table: &mut Table<SqliteDB, EmptyEntity>, name: &str, code: &str) -> Result<()> {
-    let script = vantage_vista::lazy_value_closure(code.to_string());
+    // Compiles once, here: a script that does not parse fails the table build.
+    let script = vantage_vista::lazy_value_closure(code)?;
     table.add_lazy_expression(
         name,
         Arc::new(move |record| {

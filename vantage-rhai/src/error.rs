@@ -33,11 +33,14 @@ impl RhaiError {
         }
     }
 
+    /// Classify a compile error. The message keeps rhai's own "Syntax error:"
+    /// prefix, which `Engine::eval` used to add and which a separate compile
+    /// step does not — so an author sees the same words either way.
     pub fn from_parse(src: &str, err: ParseError) -> Self {
         RhaiError::Syntax(Located::new(
             src,
             err.position(),
-            err.err_type().to_string(),
+            format!("Syntax error: {}", err.err_type()),
         ))
     }
 
@@ -78,9 +81,12 @@ impl RhaiError {
                 path: name,
                 src: src_s,
             },
-            EvalAltResult::ErrorParsing(err_type, pos) => {
-                RhaiError::Syntax(Located::at(src, pos, err_type.to_string(), remap))
-            }
+            EvalAltResult::ErrorParsing(err_type, pos) => RhaiError::Syntax(Located::at(
+                src,
+                pos,
+                format!("Syntax error: {err_type}"),
+                remap,
+            )),
             other => {
                 let pos = other.position();
                 // `to_string()` already embeds the position; keep the message

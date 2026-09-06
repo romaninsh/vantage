@@ -6,9 +6,21 @@ use serde::{Deserialize, Serialize};
 macro_rules! slot {
     ($(#[$doc:meta])* $name:ident, $desc:literal) => {
         $(#[$doc])*
-        #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
+        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Deserialize, Serialize)]
         #[serde(transparent)]
         pub struct $name(String);
+
+        impl PartialEq<str> for $name {
+            fn eq(&self, other: &str) -> bool {
+                self.0 == other
+            }
+        }
+
+        impl PartialEq<&str> for $name {
+            fn eq(&self, other: &&str) -> bool {
+                self.0 == *other
+            }
+        }
 
         impl $name {
             pub fn src(&self) -> &str {
@@ -26,6 +38,30 @@ macro_rules! slot {
         impl From<String> for $name {
             fn from(s: String) -> Self {
                 Self(s)
+            }
+        }
+
+        // A slot reads as its source text wherever a `&str` is wanted, so a
+        // struct field can change from `Option<String>` to `Option<$name>`
+        // without touching the sites that only display or compare it. The
+        // kind still matters where it counts: `Host::compile` takes the
+        // typed slot, never a bare string.
+        impl std::ops::Deref for $name {
+            type Target = str;
+            fn deref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0)
             }
         }
 
