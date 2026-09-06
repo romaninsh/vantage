@@ -95,8 +95,13 @@ impl Vocab for Format {
     }
 }
 
+/// Each label gets a column, so a repaint is visible as a line under the
+/// label that asked for it.
+const COLUMN: usize = 30;
+
 /// A label, and the generation it last painted for each path it reads.
 struct Label {
+    name: String,
     template: Compiled<Template>,
     watched: Vec<(Arc<Source>, u64)>,
 }
@@ -138,7 +143,11 @@ fn main() -> Result<(), vantage_rhai::RhaiError> {
                 .filter_map(|p| scope.key(p.strip_prefix("globals.")?))
                 .map(|s| (s.clone(), s.read().1))
                 .collect();
-            Ok(Label { template, watched })
+            Ok(Label {
+                name,
+                template,
+                watched,
+            })
         })
         .collect::<Result<Vec<_>, vantage_rhai::RhaiError>>()?;
 
@@ -152,8 +161,21 @@ fn main() -> Result<(), vantage_rhai::RhaiError> {
             .expect("the compute script runs")
     });
 
+    println!("\nDetecting global changes and repainting labels:");
+    let header: String = labels
+        .iter()
+        .map(|l| {
+            format!(
+                "{:<width$}",
+                format!("\"{}\" label", l.name),
+                width = COLUMN
+            )
+        })
+        .collect();
+    println!("{}", header.trim_end());
+    println!("{}", "-".repeat(header.trim_end().len()));
+
     // The frame clock. `Mount::tick` is this loop behind a real timer.
-    println!("\n  repaints:");
     while !worker.is_finished() {
         paint(&mut labels, &env);
         std::thread::sleep(Duration::from_millis(2));
@@ -168,9 +190,9 @@ fn main() -> Result<(), vantage_rhai::RhaiError> {
 }
 
 fn paint(labels: &mut [Label], env: &Env) {
-    for label in labels {
+    for (column, label) in labels.iter_mut().enumerate() {
         if let Some(text) = label.pump(env) {
-            println!("  {text}");
+            println!("{:pad$}{text}", "", pad = column * COLUMN);
         }
     }
 }
