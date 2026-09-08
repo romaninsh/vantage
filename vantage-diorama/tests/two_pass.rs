@@ -402,7 +402,14 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
         .open()
         .await
         .unwrap();
-    eventually("picker listed", || picker.row_count() >= 2).await;
+    // Wait for the rows themselves, not the index: a two-pass `row_count()`
+    // reads the list-pass index, while `status_summary` counts the sparse map
+    // the assertions below read. The two are filled by different steps, so
+    // waiting on the index let this pass with one row materialised.
+    eventually("picker rows materialised", || {
+        picker.status_summary().loaded >= 2
+    })
+    .await;
 
     let d = dio.diagnostics().await;
     assert_eq!(d.sceneries.len(), 1);
