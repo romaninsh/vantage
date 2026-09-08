@@ -53,11 +53,18 @@ pub struct ChunkQuery {
     pub sort: Option<(String, SortDir)>,
     /// The scenery's active quicksearch text (`None` when not searching).
     pub search: Option<String>,
+    /// The scenery's active operator filters (the grid's filter panel),
+    /// ANDed. Empty when none are set.
+    pub filters: Vec<crate::scenery::OpCondition>,
 }
 
 impl From<Option<(String, SortDir)>> for ChunkQuery {
     fn from(sort: Option<(String, SortDir)>) -> Self {
-        Self { sort, search: None }
+        Self {
+            sort,
+            search: None,
+            filters: Vec::new(),
+        }
     }
 }
 

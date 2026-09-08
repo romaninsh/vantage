@@ -172,11 +172,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let escaped = search_value
-            .replace('$', "$$")
-            .replace('%', "$%")
-            .replace('_', "$_");
-        let pattern = format!("%{}%", escaped);
+        let pattern = crate::like_pattern_str(search_value);
         let conditions: Vec<Expression<AnyPostgresType>> = table
             .columns()
             .values()

@@ -77,7 +77,7 @@ impl OpCondition {
     /// Stable `field<sym>value` fragment for the query-variant cache key, so a
     /// scenery narrowed by this operator gets its own ordered index (never
     /// colliding with the unfiltered set or a different-operator filter).
-    pub(crate) fn key_fragment(&self) -> String {
+    pub fn key_fragment(&self) -> String {
         format!("{}{}{:?}", self.column, self.op.key_symbol(), self.value)
     }
 }
@@ -173,6 +173,22 @@ pub trait TableScenery: Send + Sync {
     /// conditions, evaluated locally over the cache (which is what lets
     /// them reference augmented columns). Empty vec clears.
     fn set_filters(&self, filters: Vec<(String, ciborium::Value)>);
+
+    /// Replace the UI-level operator filter set (the grid's filter panel):
+    /// `column <op> value` terms ANDed together and with the query's own
+    /// conditions. Same mechanics as [`set_search`](Self::set_search): a
+    /// paged scenery carries the terms into every chunk fetch and the master
+    /// pushes down what it can — equality always, richer operators when it
+    /// advertises `can_filter_operators`, dropping the rest with a warning;
+    /// an eager scenery evaluates them over its complete cache. Empty vec
+    /// clears. Default no-op for wrappers that don't filter.
+    fn set_filter_terms(&self, _terms: Vec<OpCondition>) {}
+
+    /// The operator filter set currently in force — what a chip strip or a
+    /// persisted-filter store reads, so there is one list, held here.
+    fn filter_terms(&self) -> Vec<OpCondition> {
+        Vec::new()
+    }
 
     /// Replace the quicksearch text (replace semantics; `None` or blank
     /// clears). Paged sceneries push it into every chunk fetch — callers
@@ -434,6 +450,45 @@ impl TableScenery for TableSceneryImpl {
         // The cached total belongs to the unfiltered set.
         self.inner.set_total(None);
         self.inner.reload_notify.notify_one();
+    }
+
+    fn set_filter_terms(&self, terms: Vec<OpCondition>) {
+        // Order-insensitive: the same set restated is not a change.
+        if helpers::op_conditions_key(&self.inner.ui_terms.read().unwrap())
+            == helpers::op_conditions_key(&terms)
+        {
+            return;
+        }
+        crate::debug::tapline!(
+            self.inner.debug_tap,
+            "filter",
+            "{} term{} — {}",
+            terms.len(),
+            if terms.len() == 1 { "" } else { "s" },
+            if self.inner.paged {
+                "pushed to the source where it can take them".to_string()
+            } else {
+                format!(
+                    "filtering the {} rows held locally",
+                    crate::debug::num(self.inner.rows.read().unwrap().len())
+                )
+            },
+        );
+        self.inner.deregister();
+        *self.inner.ui_terms.write().unwrap() = terms;
+        // The cached total belongs to the unfiltered set.
+        self.inner.set_total(None);
+        if self.inner.paged {
+            // Same stale-while-revalidate as search: keep the rows on screen
+            // and refetch the viewport with the new terms in the query.
+            self.inner.refresh_loaded_viewport();
+        } else {
+            self.inner.reload_notify.notify_one();
+        }
+    }
+
+    fn filter_terms(&self) -> Vec<OpCondition> {
+        self.inner.ui_terms.read().unwrap().clone()
     }
 
     fn set_search(&self, query: Option<String>) {

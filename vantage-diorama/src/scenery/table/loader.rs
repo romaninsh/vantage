@@ -365,6 +365,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     let query = crate::lens::ChunkQuery {
         sort: state.sort.read().unwrap().clone(),
         search: state.search.read().unwrap().clone(),
+        filters: state.ui_terms.read().unwrap().clone(),
     };
     tracing::debug!(
         target: "vantage_diorama::viewport",

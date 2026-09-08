@@ -133,6 +133,13 @@ pub(crate) struct TableSceneryState {
     /// so chips can never clobber query narrowing.
     pub(crate) ui_filters: RwLock<Vec<(String, CborValue)>>,
 
+    /// UI-level operator filters (the grid's filter panel) — runtime-set
+    /// `column <op> value` terms. They follow quicksearch's mechanics rather
+    /// than `op_conditions`' build-time ones: a paged scenery carries them
+    /// into every chunk fetch and the master pushes what it can, an eager
+    /// one evaluates them over its complete cache.
+    pub(crate) ui_terms: RwLock<Vec<super::OpCondition>>,
+
     /// Active quicksearch text (`None` when not searching). Paged sceneries
     /// carry it into every chunk fetch (`ChunkQuery`); eager ones apply it as
     /// a local predicate in `reseed_from_cache` — honest there, because the
@@ -211,6 +218,7 @@ impl TableSceneryState {
         !self.conditions.read().unwrap().is_empty()
             || !self.op_conditions.read().unwrap().is_empty()
             || !self.ui_filters.read().unwrap().is_empty()
+            || !self.ui_terms.read().unwrap().is_empty()
             || self.sort.read().unwrap().is_some()
     }
 
@@ -349,13 +357,22 @@ impl TableSceneryState {
 
         let conditions = self.conditions.read().unwrap().clone();
         let op_conditions = self.op_conditions.read().unwrap().clone();
+        // The UI's own filter set (grid chips, toolbar filter panel). Applied
+        // here as well as on the two-pass path, because `local_refine` — which
+        // gates that path — is false for a single-pass scenery, so a table
+        // with no augmentation and no detail loader would take `set_filters`
+        // and narrow nothing.
+        let ui_filters = self.ui_filters.read().unwrap().clone();
+        let ui_terms = self.ui_terms.read().unwrap().clone();
         let sort = self.sort.read().unwrap().clone();
         let search = self.search.read().unwrap().clone();
 
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
             .filter(|(_, rec)| matches_conditions(rec, &conditions))
+            .filter(|(_, rec)| matches_conditions(rec, &ui_filters))
             .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
+            .filter(|(_, rec)| matches_op_conditions(rec, &ui_terms))
             .filter(|(_, rec)| matches_search(rec, search.as_deref()))
             .collect();
 

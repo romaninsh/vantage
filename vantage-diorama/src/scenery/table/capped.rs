@@ -89,6 +89,14 @@ impl TableScenery for CappedScenery {
         self.inner.set_filters(filters);
     }
 
+    fn set_filter_terms(&self, terms: Vec<super::OpCondition>) {
+        self.inner.set_filter_terms(terms);
+    }
+
+    fn filter_terms(&self) -> Vec<super::OpCondition> {
+        self.inner.filter_terms()
+    }
+
     fn subscribe(&self) -> watch::Receiver<Generation> {
         self.inner.subscribe()
     }

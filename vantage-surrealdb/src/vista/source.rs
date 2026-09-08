@@ -274,6 +274,17 @@ where
             FilterOp::Lte => column.lte(surreal_value),
             // `value` is a CBOR array → a SurrealDB array literal; `field IN [ … ]`.
             FilterOp::InSet => column.in_(surreal_value),
+            // SurrealDB's fuzzy operator: `field ~ 'smith'` matches "Smithson"
+            // and "smyth" alike. A typed column expression has no combinator
+            // for it, so the condition is spelled directly.
+            FilterOp::Like => {
+                self.table.add_condition(crate::surreal_expr!(
+                    "{} ~ {}",
+                    (Identifier::new(field)),
+                    surreal_value
+                ));
+                return Ok(());
+            }
             // The SurrealDB expression builder has no `NOT IN` combinator yet.
             // Report Unimplemented so the consumer filters locally (correct,
             // just not pushed) rather than silently dropping the filter.
