@@ -50,6 +50,30 @@ pub enum FilterOp {
     Like,
 }
 
+/// A [`FilterOp::Like`] operand as the text it matches against — the one
+/// spelling every side of the comparison uses, so a pattern pushed into a
+/// query and the same pattern evaluated locally read the operand alike.
+///
+/// Scalars spell themselves; a record id reads as `table:key` rather than its
+/// debug form, which is what a user typing `~client:bristol` means.
+pub fn operand_text(value: &ciborium::Value) -> String {
+    use ciborium::Value;
+    match value {
+        Value::Text(s) => s.clone(),
+        Value::Integer(i) => i128::from(*i).to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Tag(8, inner) => match inner.as_ref() {
+            Value::Array(parts) if parts.len() == 2 => {
+                format!("{}:{}", operand_text(&parts[0]), operand_text(&parts[1]))
+            }
+            other => operand_text(other),
+        },
+        Value::Tag(_, inner) => operand_text(inner),
+        other => format!("{other:?}"),
+    }
+}
+
 impl FilterOp {
     /// The operator an author or a user wrote: a symbol (`>=`, `!=`, `~`) or
     /// a word (`gte`, `ne`, `like`). The symbol set is what a filter field

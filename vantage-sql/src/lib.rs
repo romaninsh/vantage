@@ -34,12 +34,5 @@ pub(crate) fn like_pattern_str(text: &str) -> String {
 
 /// [`like_pattern_str`] over a filter operand, which may be any scalar.
 pub(crate) fn like_pattern(value: &ciborium::Value) -> String {
-    let text = match value {
-        ciborium::Value::Text(s) => s.clone(),
-        ciborium::Value::Integer(i) => i128::from(*i).to_string(),
-        ciborium::Value::Float(f) => f.to_string(),
-        ciborium::Value::Bool(b) => b.to_string(),
-        other => format!("{other:?}"),
-    };
-    like_pattern_str(&text)
+    like_pattern_str(&vantage_vista::operand_text(value))
 }

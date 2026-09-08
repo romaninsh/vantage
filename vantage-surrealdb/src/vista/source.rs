@@ -95,19 +95,6 @@ fn to_cbor_record(record: Record<AnySurrealType>) -> Record<CborValue> {
         .collect()
 }
 
-/// A [`FilterOp::Like`](vantage_vista::FilterOp::Like) operand as the text it
-/// matches against. Text passes through; a number or a bool spells itself, so
-/// `~5` on a numeric column still means "contains 5".
-fn like_text(value: &CborValue) -> String {
-    match value {
-        CborValue::Text(s) => s.clone(),
-        CborValue::Integer(i) => i128::from(*i).to_string(),
-        CborValue::Float(f) => f.to_string(),
-        CborValue::Bool(b) => b.to_string(),
-        other => format!("{other:?}"),
-    }
-}
-
 fn to_native_record(record: &Record<CborValue>) -> Record<AnySurrealType> {
     record
         .iter()
@@ -298,7 +285,8 @@ where
             // the id column that would have coerced the pattern into a Thing
             // and compared a record id against a substring.
             FilterOp::Like => {
-                let needle = AnySurrealType::from(CborValue::Text(like_text(value)));
+                let needle =
+                    AnySurrealType::from(CborValue::Text(vantage_vista::operand_text(value)));
                 self.table.add_condition(crate::surreal_expr!(
                     "string::lowercase(<string>{}) CONTAINS string::lowercase({})",
                     (Identifier::new(field)),

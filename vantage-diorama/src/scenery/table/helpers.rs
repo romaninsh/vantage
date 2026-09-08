@@ -93,31 +93,14 @@ pub(crate) fn matches_op_conditions(rec: &Record<CborValue>, conds: &[super::OpC
             // The one reading every backend's pattern match contains: a
             // case-insensitive substring test over the cell's text.
             FilterOp::Like => {
-                let needle = cbor_text(&cond.value).to_lowercase();
-                needle.is_empty() || cbor_text(cell).to_lowercase().contains(&needle)
+                let needle = vantage_vista::operand_text(&cond.value).to_lowercase();
+                needle.is_empty()
+                    || vantage_vista::operand_text(cell)
+                        .to_lowercase()
+                        .contains(&needle)
             }
         }
     })
-}
-
-/// A cell as the text a pattern match reads. Numbers and bools spell
-/// themselves; a record id reads as `table:key`; anything else as its debug
-/// form, which is what quicksearch matches against too.
-fn cbor_text(value: &CborValue) -> String {
-    match value {
-        CborValue::Text(s) => s.clone(),
-        CborValue::Integer(i) => i128::from(*i).to_string(),
-        CborValue::Float(f) => f.to_string(),
-        CborValue::Bool(b) => b.to_string(),
-        CborValue::Tag(8, inner) => match inner.as_ref() {
-            CborValue::Array(parts) if parts.len() == 2 => {
-                format!("{}:{}", cbor_text(&parts[0]), cbor_text(&parts[1]))
-            }
-            other => cbor_text(other),
-        },
-        CborValue::Tag(_, inner) => cbor_text(inner),
-        other => format!("{other:?}"),
-    }
 }
 
 /// Iterate the members of a set operand — the `CborValue::Array` payload of an
