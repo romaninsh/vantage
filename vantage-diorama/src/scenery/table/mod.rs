@@ -478,11 +478,16 @@ impl TableScenery for TableSceneryImpl {
         *self.inner.ui_terms.write().unwrap() = terms;
         // The cached total belongs to the unfiltered set.
         self.inner.set_total(None);
-        if self.inner.paged {
+        if self.inner.paged && !self.inner.two_pass {
             // Same stale-while-revalidate as search: keep the rows on screen
             // and refetch the viewport with the new terms in the query.
             self.inner.refresh_loaded_viewport();
         } else {
+            // A two-pass view's membership lives in its index, which only
+            // `resort` re-derives — refreshing the viewport would re-hydrate
+            // rows the new terms exclude and leave them on screen. The
+            // reactor routes this to `resort` (and `reseed_filtered` inside
+            // it) for two-pass, and to a cache reseed for eager.
             self.inner.reload_notify.notify_one();
         }
     }

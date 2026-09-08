@@ -37,11 +37,16 @@ pub enum FilterOp {
     /// `field ∉ value` — `value` is an array; matches when the cell equals no
     /// element.
     NotInSet,
-    /// `field ~ value` — a pattern match on text. What "pattern" means is the
-    /// backend's: SurrealDB's fuzzy `~`, SQL's `LIKE '%value%'`. A backend
-    /// with no spelling for it returns Unimplemented and the consumer
-    /// evaluates it locally as a case-insensitive substring test, which is
-    /// the one reading every backend's version contains.
+    /// `field` contains `value`, case-insensitively. SurrealDB lowercases both
+    /// sides and uses `CONTAINS`; SQL uses `LIKE '%value%'` (`ILIKE` on
+    /// Postgres). A backend with no spelling for it returns Unimplemented and
+    /// the consumer evaluates it locally.
+    ///
+    /// **Case folding is the backend's.** The local fallback and SurrealDB
+    /// fold Unicode; SQLite's `LIKE` folds ASCII only, and MySQL follows the
+    /// column's collation. So `~straße` can match `STRASSE` in one place and
+    /// not another. ASCII text — the overwhelmingly common case — behaves the
+    /// same everywhere.
     Like,
 }
 

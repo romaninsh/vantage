@@ -612,10 +612,12 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 // the NEXT open of this view can size its geometry before any
                 // fetch — the difference between a warm reopen appearing
                 // whole and its row count visibly jumping when the first
-                // counted response lands. A total under an active search
-                // describes the narrowed set and must not be remembered.
+                // counted response lands. A total under an active search or
+                // filter describes the narrowed set and must not be
+                // remembered — the next open would restore it as the whole.
                 if changed
                     && state.search.read().unwrap().is_none()
+                    && state.ui_terms.read().unwrap().is_empty()
                     && let Some(total) = stated
                     && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
                 {

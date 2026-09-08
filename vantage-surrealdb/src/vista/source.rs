@@ -95,6 +95,19 @@ fn to_cbor_record(record: Record<AnySurrealType>) -> Record<CborValue> {
         .collect()
 }
 
+/// A [`FilterOp::Like`](vantage_vista::FilterOp::Like) operand as the text it
+/// matches against. Text passes through; a number or a bool spells itself, so
+/// `~5` on a numeric column still means "contains 5".
+fn like_text(value: &CborValue) -> String {
+    match value {
+        CborValue::Text(s) => s.clone(),
+        CborValue::Integer(i) => i128::from(*i).to_string(),
+        CborValue::Float(f) => f.to_string(),
+        CborValue::Bool(b) => b.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
 fn to_native_record(record: &Record<CborValue>) -> Record<AnySurrealType> {
     record
         .iter()
@@ -274,14 +287,22 @@ where
             FilterOp::Lte => column.lte(surreal_value),
             // `value` is a CBOR array → a SurrealDB array literal; `field IN [ … ]`.
             FilterOp::InSet => column.in_(surreal_value),
-            // SurrealDB's fuzzy operator: `field ~ 'smith'` matches "Smithson"
-            // and "smyth" alike. A typed column expression has no combinator
-            // for it, so the condition is spelled directly.
+            // A lowercased `CONTAINS`, which is exactly the contract the
+            // local fallback applies: case-insensitive substring.
+            //
+            // Not the fuzzy `~`: SurrealDB 3.0 removed those operators (3.2.3
+            // answers `Unexpected token '~'`), and fuzzy was never this
+            // operator's meaning anyway.
+            //
+            // The operand is the value's own text, not `surreal_value` — on
+            // the id column that would have coerced the pattern into a Thing
+            // and compared a record id against a substring.
             FilterOp::Like => {
+                let needle = AnySurrealType::from(CborValue::Text(like_text(value)));
                 self.table.add_condition(crate::surreal_expr!(
-                    "{} ~ {}",
+                    "string::lowercase(<string>{}) CONTAINS string::lowercase({})",
                     (Identifier::new(field)),
-                    surreal_value
+                    needle
                 ));
                 return Ok(());
             }
