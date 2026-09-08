@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.26 — 2026-09-08
+
+- **Breaking:** `FilterOp` gains a `Like` variant — a pattern match on text,
+  spelled by whichever backend can (SurrealDB's fuzzy `~`, SQL's `LIKE`).
+  The enum is deliberately not `#[non_exhaustive]`: every source's
+  `add_op_condition` is an exhaustive match, so a new operator forces each
+  backend to decide rather than silently falling into a wildcard. A source
+  with no spelling for it returns `Unimplemented` and the consumer evaluates
+  it locally.
+- `FilterOp::parse` takes a symbol or a word (`">="`, `"gte"`);
+  `split_prefix` peels a leading operator off a typed value (`">30"` →
+  `(Gt, "30")`); `display_symbol` renders one for a label. The rhai
+  vocabulary's `parse_op` now delegates to `parse`.
+
 ## 0.6.25 — 2026-09-05
 
 The `rhai` feature runs on `vantage-rhai` hosts instead of bare engines.

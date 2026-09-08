@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.23 — 2026-09-08
+
+- `add_op_condition` handles `FilterOp::Like`: `LIKE '%…%' ESCAPE '$'` on
+  SQLite and MySQL, `ILIKE` on Postgres — matching what quicksearch already
+  does on each dialect.
+- The `%…%` escape lives in one place (`like_pattern_str`), shared by
+  quicksearch and by the new operator, so the two cannot drift.
+
 ## 0.6.22 — 2026-09-05
 
 - The `rhai` feature runs on a `vantage-rhai` host: `register_engine!` emits

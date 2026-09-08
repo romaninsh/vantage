@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.12.6 — 2026-09-08
+
+- `TableScenery::set_filter_terms(Vec<OpCondition>)` / `filter_terms()` — a
+  runtime `column <op> value` set, replacing eq-only `set_filters` where more
+  is needed. Mechanics follow `set_search`: a paged scenery carries the terms
+  in `ChunkQuery` and the master pushes down what it can take (equality
+  always, richer operators when it advertises `can_filter_operators`),
+  dropping the rest with a warning rather than evaluating them over one
+  window; an eager scenery applies them over its complete cache; a two-pass
+  one folds them into `reseed_filtered`. The scenery holds the list, so a
+  chip strip or a persisted store reads one source.
+- `ChunkQuery` gains `filters`. Constructed by name in one place, but the
+  struct is public — a lens building it literally needs the new field.
+- `ui_filters` are applied on the eager path too. `local_refine()` is false
+  without augmentation or a detail loader, so a single-pass table took
+  `set_filters` and narrowed nothing.
+- `OpCondition::key_fragment` is public, for a consumer keying its own state
+  off the term set.
+
 ## 0.12.5 — 2026-09-05
 
 - `ServoVocab` registers the servo surface (`form.field`, `form.save()`) as
