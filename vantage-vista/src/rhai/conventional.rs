@@ -413,22 +413,9 @@ fn parse_dir(dir: &str) -> std::result::Result<SortDirection, Box<EvalAltResult>
 }
 
 fn parse_op(op: &str) -> std::result::Result<crate::FilterOp, Box<EvalAltResult>> {
-    use crate::FilterOp;
-    Ok(match op.to_ascii_lowercase().as_str() {
-        "eq" | "=" | "==" => FilterOp::Eq,
-        "ne" | "!=" | "<>" => FilterOp::Ne,
-        "gt" | ">" => FilterOp::Gt,
-        "gte" | ">=" => FilterOp::Gte,
-        "lt" | "<" => FilterOp::Lt,
-        "lte" | "<=" => FilterOp::Lte,
-        "in" | "in_set" => FilterOp::InSet,
-        "not_in" | "not_in_set" | "nin" | "!in" => FilterOp::NotInSet,
-        other => {
-            return Err(format!(
-                "invalid filter operator '{other}' (expected eq/ne/gt/gte/lt/lte/in/not_in)"
-            )
-            .into());
-        }
+    crate::FilterOp::parse(op).ok_or_else(|| {
+        format!("invalid filter operator '{op}' (expected eq/ne/gt/gte/lt/lte/in/not_in/like)")
+            .into()
     })
 }
 

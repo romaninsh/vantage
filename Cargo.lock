@@ -5560,7 +5560,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.13"
+version = "0.6.14"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5743,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.12.5"
+version = "0.12.6"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5909,7 +5909,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.22"
+version = "0.6.23"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5938,7 +5938,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.6.18"
+version = "0.6.19"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6024,7 +6024,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.25"
+version = "0.6.26"
 dependencies = [
  "async-stream",
  "async-trait",

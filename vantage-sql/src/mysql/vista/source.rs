@@ -213,6 +213,15 @@ where
                 };
                 self.table.add_condition(condition);
             }
+            // The same `LIKE '%…%' ESCAPE '$'` quicksearch uses, on one column.
+            FilterOp::Like => {
+                let pattern = crate::like_pattern(value);
+                self.table.add_condition(crate::mysql_expr!(
+                    "{} LIKE {} ESCAPE '$'",
+                    (crate::primitives::identifier::ident(field)),
+                    pattern
+                ));
+            }
             _ => {
                 let sql_value = AnyMysqlType::untyped(value.clone());
                 let condition = match op {
@@ -222,7 +231,9 @@ where
                     FilterOp::Gte => column.gte(sql_value),
                     FilterOp::Lt => column.lt(sql_value),
                     FilterOp::Lte => column.lte(sql_value),
-                    FilterOp::InSet | FilterOp::NotInSet => unreachable!("handled above"),
+                    FilterOp::InSet | FilterOp::NotInSet | FilterOp::Like => {
+                        unreachable!("handled above")
+                    }
                 };
                 self.table.add_condition(condition);
             }

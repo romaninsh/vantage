@@ -154,6 +154,15 @@ impl TableShell for GraphqlApiTableShell {
                     FilterOp::Gte => column.gte(native),
                     FilterOp::Lt => column.lt(native),
                     FilterOp::Lte => column.lte(native),
+                    // No GraphQL dialect here spells a pattern match; the
+                    // consumer evaluates it locally.
+                    FilterOp::Like => {
+                        return Err(error!(
+                            "GraphQL add_op_condition: Like has no push-down; filter locally",
+                            method = "add_op_condition"
+                        )
+                        .mark_unimplemented());
+                    }
                     FilterOp::InSet | FilterOp::NotInSet => unreachable!("handled above"),
                 }
             }

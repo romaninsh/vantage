@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.19 — 2026-09-08
+
+- `add_op_condition` handles `FilterOp::Like` as SurrealDB's fuzzy operator
+  (`field ~ 'smith'`), spelled directly since the typed column expressions
+  have no combinator for it.
+
 ## 0.6.18 — 2026-09-05
 
 - The `rhai` feature runs on `vantage-rhai` hosts: `SurrealVocab` is the

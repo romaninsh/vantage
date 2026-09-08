@@ -37,9 +37,102 @@ pub enum FilterOp {
     /// `field ∉ value` — `value` is an array; matches when the cell equals no
     /// element.
     NotInSet,
+    /// `field` contains `value`, case-insensitively. SurrealDB lowercases both
+    /// sides and uses `CONTAINS`; SQL uses `LIKE '%value%'` (`ILIKE` on
+    /// Postgres). A backend with no spelling for it returns Unimplemented and
+    /// the consumer evaluates it locally.
+    ///
+    /// **Case folding is the backend's.** The local fallback and SurrealDB
+    /// fold Unicode; SQLite's `LIKE` folds ASCII only, and MySQL follows the
+    /// column's collation. So `~straße` can match `STRASSE` in one place and
+    /// not another. ASCII text — the overwhelmingly common case — behaves the
+    /// same everywhere.
+    Like,
+}
+
+/// A [`FilterOp::Like`] operand as the text it matches against — the one
+/// spelling every side of the comparison uses, so a pattern pushed into a
+/// query and the same pattern evaluated locally read the operand alike.
+///
+/// Scalars spell themselves; a record id reads as `table:key` rather than its
+/// debug form, which is what a user typing `~client:bristol` means.
+pub fn operand_text(value: &ciborium::Value) -> String {
+    use ciborium::Value;
+    match value {
+        Value::Text(s) => s.clone(),
+        Value::Integer(i) => i128::from(*i).to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Tag(8, inner) => match inner.as_ref() {
+            Value::Array(parts) if parts.len() == 2 => {
+                format!("{}:{}", operand_text(&parts[0]), operand_text(&parts[1]))
+            }
+            other => operand_text(other),
+        },
+        Value::Tag(_, inner) => operand_text(inner),
+        other => format!("{other:?}"),
+    }
 }
 
 impl FilterOp {
+    /// The operator an author or a user wrote: a symbol (`>=`, `!=`, `~`) or
+    /// a word (`gte`, `ne`, `like`). The symbol set is what a filter field
+    /// accepts as a typed prefix, so it must stay short enough to type.
+    pub fn parse(op: &str) -> Option<Self> {
+        Some(match op.trim().to_ascii_lowercase().as_str() {
+            "eq" | "=" | "==" => FilterOp::Eq,
+            "ne" | "!=" | "<>" | "!" => FilterOp::Ne,
+            "gt" | ">" => FilterOp::Gt,
+            "gte" | ">=" => FilterOp::Gte,
+            "lt" | "<" => FilterOp::Lt,
+            "lte" | "<=" => FilterOp::Lte,
+            "in" | "in_set" => FilterOp::InSet,
+            "not_in" | "not_in_set" | "nin" | "!in" => FilterOp::NotInSet,
+            "like" | "~" | "contains" => FilterOp::Like,
+            _ => return None,
+        })
+    }
+
+    /// Split a leading operator off a typed value: `">30"` → `(Gt, "30")`,
+    /// `"~smith"` → `(Like, "smith")`, `"30"` → `(Eq, "30")`.
+    pub fn split_prefix(text: &str) -> (Self, &str) {
+        use FilterOp::*;
+        let text = text.trim_start();
+        // Two-character symbols first, or `>=` reads as `>` then `=30`.
+        for (sym, op) in [
+            (">=", Gte),
+            ("<=", Lte),
+            ("!=", Ne),
+            ("<>", Ne),
+            (">", Gt),
+            ("<", Lt),
+            ("~", Like),
+            ("!", Ne),
+            ("=", Eq),
+        ] {
+            if let Some(rest) = text.strip_prefix(sym) {
+                return (op, rest.trim_start());
+            }
+        }
+        (Eq, text)
+    }
+
+    /// How the operator reads in a chip or a label: nothing for equality —
+    /// `Shop: Bristol` says it — and the symbol otherwise.
+    pub fn display_symbol(&self) -> &'static str {
+        match self {
+            FilterOp::Eq => "",
+            FilterOp::Ne => "≠",
+            FilterOp::Gt => ">",
+            FilterOp::Gte => "≥",
+            FilterOp::Lt => "<",
+            FilterOp::Lte => "≤",
+            FilterOp::InSet => "in",
+            FilterOp::NotInSet => "not in",
+            FilterOp::Like => "~",
+        }
+    }
+
     /// Whether this operator's operand is a list (`InSet` / `NotInSet`) rather
     /// than a scalar. Callers building the CBOR operand use this to know
     /// whether to wrap the value in a [`ciborium::Value::Array`].
@@ -61,6 +154,7 @@ impl FilterOp {
             FilterOp::Lte => "<=",
             FilterOp::InSet => "in",
             FilterOp::NotInSet => "!in",
+            FilterOp::Like => "~",
         }
     }
 
@@ -78,7 +172,9 @@ impl FilterOp {
             // Eq/Ne and the set operators don't use a total order; treat as
             // non-matching here so a misuse fails closed rather than silently
             // passing everything. Callers handle these operators directly.
-            FilterOp::Eq | FilterOp::Ne | FilterOp::InSet | FilterOp::NotInSet => false,
+            FilterOp::Eq | FilterOp::Ne | FilterOp::InSet | FilterOp::NotInSet | FilterOp::Like => {
+                false
+            }
         }
     }
 }

@@ -28,7 +28,7 @@ pub use contained::{
     ContainedRefResolver, ContainedShell, ContainedWriteback, build_contained_vista,
 };
 pub use factory::VistaFactory;
-pub use filter::FilterOp;
+pub use filter::{FilterOp, operand_text};
 pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 #[cfg(feature = "rhai")]

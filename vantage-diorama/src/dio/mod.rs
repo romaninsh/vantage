@@ -765,7 +765,28 @@ impl Dio {
             );
         }
 
-        if (push_sort.is_some() || push_search.is_some())
+        // Filter terms follow the same rule as search: what the master cannot
+        // take is dropped here, loudly, rather than evaluated over one window
+        // (which would filter a slice and present it as the set). Equality
+        // push-down is universal; the richer operators are gated by the
+        // capability flag, and a source may still decline one term with
+        // Unimplemented — SurrealDB has no `NOT IN` — which is also a drop.
+        let mut push_terms = Vec::new();
+        for term in &query.filters {
+            if term.op == vantage_vista::FilterOp::Eq || caps.can_filter_operators {
+                push_terms.push(term.clone());
+            } else {
+                tracing::warn!(
+                    target: "vantage_diorama::filter",
+                    table = %master.name(),
+                    column = %term.column,
+                    op = ?term.op,
+                    "chunk query carries a filter the master cannot push down — ignored",
+                );
+            }
+        }
+
+        if (push_sort.is_some() || push_search.is_some() || !push_terms.is_empty())
             && let Some(shell) = master.source.clone_shell()
         {
             let mut narrowed = Vista::new(master.name(), shell);
@@ -778,6 +799,22 @@ impl Dio {
             }
             if let Some(text) = push_search {
                 narrowed.add_search(text)?;
+            }
+            for term in push_terms {
+                // `add_condition` routes `Eq` to `add_eq_condition` in every
+                // source, so equality needs no separate call here.
+                if let Err(e) =
+                    narrowed.add_condition(term.column.clone(), term.op, term.value.clone())
+                {
+                    tracing::warn!(
+                        target: "vantage_diorama::filter",
+                        table = %master.name(),
+                        column = %term.column,
+                        op = ?term.op,
+                        error = %e,
+                        "the master declined a filter term — ignored",
+                    );
+                }
             }
             return narrowed.fetch_window_counted(offset, limit).await;
         }

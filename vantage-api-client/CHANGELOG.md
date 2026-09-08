@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.14 — 2026-09-08
+
+- `add_op_condition` reports `Unimplemented` for `FilterOp::Like` — no
+  GraphQL dialect here spells a pattern match, so the consumer evaluates it
+  locally rather than having the filter silently dropped.
+
 ## 0.6.13 — 2026-09-05
 
 - Follows vista 0.6.25: a lazy column's script compiles once through

@@ -90,6 +90,15 @@ pub(crate) fn matches_op_conditions(rec: &Record<CborValue>, conds: &[super::OpC
                 .matches_ordering(cbor_cmp(Some(cell), Some(&cond.value))),
             FilterOp::InSet => set_members(&cond.value).any(|m| cbor_eq(cell, m)),
             FilterOp::NotInSet => !set_members(&cond.value).any(|m| cbor_eq(cell, m)),
+            // The one reading every backend's pattern match contains: a
+            // case-insensitive substring test over the cell's text.
+            FilterOp::Like => {
+                let needle = vantage_vista::operand_text(&cond.value).to_lowercase();
+                needle.is_empty()
+                    || vantage_vista::operand_text(cell)
+                        .to_lowercase()
+                        .contains(&needle)
+            }
         }
     })
 }

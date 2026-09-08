@@ -274,6 +274,26 @@ where
             FilterOp::Lte => column.lte(surreal_value),
             // `value` is a CBOR array → a SurrealDB array literal; `field IN [ … ]`.
             FilterOp::InSet => column.in_(surreal_value),
+            // A lowercased `CONTAINS`, which is exactly the contract the
+            // local fallback applies: case-insensitive substring.
+            //
+            // Not the fuzzy `~`: SurrealDB 3.0 removed those operators (3.2.3
+            // answers `Unexpected token '~'`), and fuzzy was never this
+            // operator's meaning anyway.
+            //
+            // The operand is the value's own text, not `surreal_value` — on
+            // the id column that would have coerced the pattern into a Thing
+            // and compared a record id against a substring.
+            FilterOp::Like => {
+                let needle =
+                    AnySurrealType::from(CborValue::Text(vantage_vista::operand_text(value)));
+                self.table.add_condition(crate::surreal_expr!(
+                    "string::lowercase(<string>{}) CONTAINS string::lowercase({})",
+                    (Identifier::new(field)),
+                    needle
+                ));
+                return Ok(());
+            }
             // The SurrealDB expression builder has no `NOT IN` combinator yet.
             // Report Unimplemented so the consumer filters locally (correct,
             // just not pushed) rather than silently dropping the filter.

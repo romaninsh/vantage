@@ -63,3 +63,32 @@ async fn no_op_condition_keeps_all_rows() {
     view.settle_until("all rows", |v| v.row_count() == 3).await;
     assert_eq!(view.row_count(), 3);
 }
+
+/// Runtime terms — the grid's filter panel — narrow an already-open view
+/// and clear back to the full set, and the view reports what is in force.
+#[tokio::test]
+async fn runtime_filter_terms_narrow_and_clear() {
+    use vantage_diorama::OpCondition;
+
+    let dio: Dio = eager_dio(teams_master()).await;
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("all rows", |v| v.row_count() == 3).await;
+
+    view.scenery()
+        .set_filter_terms(vec![OpCondition::new("team", FilterOp::Ne, "red")]);
+    view.settle_until("only non-red rows", |v| v.row_count() == 1)
+        .await;
+    assert_eq!(view.col_at(0, "team").as_deref(), Some("blue"));
+    assert_eq!(view.scenery().filter_terms().len(), 1);
+
+    // A pattern match is evaluated locally: this master pushes nothing.
+    view.scenery()
+        .set_filter_terms(vec![OpCondition::new("team", FilterOp::Like, "RE")]);
+    view.settle_until("case-insensitive substring", |v| v.row_count() == 2)
+        .await;
+
+    view.scenery().set_filter_terms(Vec::new());
+    view.settle_until("back to all rows", |v| v.row_count() == 3)
+        .await;
+    assert!(view.scenery().filter_terms().is_empty());
+}

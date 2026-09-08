@@ -148,6 +148,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
     let ids = index.ids();
     let conditions = state.conditions.read().unwrap().clone();
     let ui_filters = state.ui_filters.read().unwrap().clone();
+    let ui_terms = state.ui_terms.read().unwrap().clone();
     let op_conditions = state.op_conditions.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
 
@@ -163,6 +164,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
             && matches_conditions(&rec, &conditions)
             && matches_conditions(&rec, &ui_filters)
             && matches_op_conditions(&rec, &op_conditions)
+            && matches_op_conditions(&rec, &ui_terms)
         {
             gathered.push((id.clone(), rec, status));
         }
