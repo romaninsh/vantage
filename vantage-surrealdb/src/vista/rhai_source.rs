@@ -28,7 +28,22 @@ pub(crate) fn eval_to_select(
     code: &str,
     base: Option<SurrealSelect>,
 ) -> vantage_core::Result<SurrealSelect> {
-    let mut env = surreal_env(Env::new());
+    eval_to_select_args(code, base, &[])
+}
+
+/// [`eval_to_select`] with an observation-supplied `args` map in scope.
+/// Values are plain strings ("" = not set by convention); anything the
+/// script embeds in the query binds as a parameter like every other scalar.
+pub(crate) fn eval_to_select_args(
+    code: &str,
+    base: Option<SurrealSelect>,
+    args: &[(String, String)],
+) -> vantage_core::Result<SurrealSelect> {
+    let mut map = rhai::Map::new();
+    for (k, v) in args {
+        map.insert(k.as_str().into(), v.clone().into());
+    }
+    let mut env = surreal_env(Env::new()).var("args", rhai::Dynamic::from_map(map));
     if let Some(base) = base {
         env = env.var("base", rhai::Dynamic::from(Sel { inner: base }));
     }
@@ -132,5 +147,41 @@ mod tests {
     fn query_source_is_bounded() {
         let err = eval_to_select("loop {}", None).unwrap_err();
         assert!(err.to_string().contains("limit"), "{err}");
+    }
+
+    #[test]
+    fn args_map_is_in_scope() {
+        use vantage_expressions::Selectable as _;
+        // Observation-supplied args reach the script as a string map; values
+        // the script embeds bind as parameters like every other scalar.
+        let select = eval_to_select_args(
+            r#"
+                let q = select().from("order");
+                if "bakery" in args && args.bakery != "" {
+                    q = q.where(expr("bakery.name = {}", [args.bakery]));
+                }
+                q
+            "#,
+            None,
+            &[("bakery".to_string(), "Breg".to_string())],
+        )
+        .unwrap();
+        let preview = select.preview();
+        assert!(preview.contains("bakery.name = \"Breg\""), "{preview}");
+
+        // Without args the same script skips the condition instead of failing.
+        let bare = eval_to_select_args(
+            r#"
+                let q = select().from("order");
+                if "bakery" in args && args.bakery != "" {
+                    q = q.where(expr("bakery.name = {}", [args.bakery]));
+                }
+                q
+            "#,
+            None,
+            &[],
+        )
+        .unwrap();
+        assert!(!bare.preview().contains("bakery.name"), "{}", bare.preview());
     }
 }

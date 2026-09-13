@@ -43,6 +43,27 @@ pub struct SurrealTableBlock {
     /// `table`/`rhai`/`base` (it runs last). Requires the `rhai` feature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modify: Option<String>,
+    /// Observation-supplied parameters, exposed to the `rhai` script as the
+    /// `args` map (`args.bakery`, …) so a view can apply conditions BEFORE
+    /// aggregation. Set programmatically by the host at open time — never
+    /// from YAML (hence no serde).
+    #[serde(skip)]
+    pub args: Vec<(String, String)>,
+}
+
+/// Observation args carried on the driver block ("" = unset by convention).
+pub trait DriverBlockArgs {
+    fn driver_block_args(&self) -> Vec<(String, String)>;
+}
+
+impl<C, R> DriverBlockArgs for VistaSpec<SurrealTableExtras, C, R> {
+    fn driver_block_args(&self) -> Vec<(String, String)> {
+        self.driver
+            .surreal
+            .as_ref()
+            .map(|b| b.args.clone())
+            .unwrap_or_default()
+    }
 }
 
 /// Selects which parts of a `base` vista a derived vista inherits.
