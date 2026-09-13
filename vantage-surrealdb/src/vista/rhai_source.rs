@@ -161,17 +161,18 @@ mod tests {
             }
             q
         "#;
-        let select = eval_to_select_args(
-            SCRIPT,
-            None,
-            &[("bakery".to_string(), "Breg".to_string())],
-        )
-        .unwrap();
+        let select =
+            eval_to_select_args(SCRIPT, None, &[("bakery".to_string(), "Breg".to_string())])
+                .unwrap();
         let preview = select.preview();
         assert!(preview.contains("bakery.name = \"Breg\""), "{preview}");
 
         // Without args the same script skips the condition instead of failing.
         let bare = eval_to_select_args(SCRIPT, None, &[]).unwrap();
-        assert!(!bare.preview().contains("bakery.name"), "{}", bare.preview());
+        assert!(
+            !bare.preview().contains("bakery.name"),
+            "{}",
+            bare.preview()
+        );
     }
 }
