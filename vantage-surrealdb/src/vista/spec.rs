@@ -46,7 +46,8 @@ pub struct SurrealTableBlock {
     /// Observation-supplied parameters, exposed to the `rhai` script as the
     /// `args` map (`args.bakery`, …) so a view can apply conditions BEFORE
     /// aggregation. Set programmatically by the host at open time — never
-    /// from YAML (hence no serde).
+    /// from YAML (hence no serde). They reach `rhai:` sources and `base:`
+    /// transforms; a `modify:` script runs without them.
     #[serde(skip)]
     pub args: Vec<(String, String)>,
 }

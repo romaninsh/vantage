@@ -154,14 +154,15 @@ mod tests {
         use vantage_expressions::Selectable as _;
         // Observation-supplied args reach the script as a string map; values
         // the script embeds bind as parameters like every other scalar.
+        const SCRIPT: &str = r#"
+            let q = select().from("order");
+            if "bakery" in args && args.bakery != "" {
+                q = q.where(expr("bakery.name = {}", [args.bakery]));
+            }
+            q
+        "#;
         let select = eval_to_select_args(
-            r#"
-                let q = select().from("order");
-                if "bakery" in args && args.bakery != "" {
-                    q = q.where(expr("bakery.name = {}", [args.bakery]));
-                }
-                q
-            "#,
+            SCRIPT,
             None,
             &[("bakery".to_string(), "Breg".to_string())],
         )
@@ -170,18 +171,7 @@ mod tests {
         assert!(preview.contains("bakery.name = \"Breg\""), "{preview}");
 
         // Without args the same script skips the condition instead of failing.
-        let bare = eval_to_select_args(
-            r#"
-                let q = select().from("order");
-                if "bakery" in args && args.bakery != "" {
-                    q = q.where(expr("bakery.name = {}", [args.bakery]));
-                }
-                q
-            "#,
-            None,
-            &[],
-        )
-        .unwrap();
+        let bare = eval_to_select_args(SCRIPT, None, &[]).unwrap();
         assert!(!bare.preview().contains("bakery.name"), "{}", bare.preview());
     }
 }
