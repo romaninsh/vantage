@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.20 — 2026-09-13
+
+- Observation args reach a query-sourced vista's `rhai:` script as the
+  `args` map (`args.bakery`, …), mirroring vantage-sql's driver-block
+  `args`: set programmatically on `SurrealTableBlock.args` (never from
+  YAML), forwarded to `rhai:` sources and `base:` transforms; a
+  `modify:` script runs without them. Values are plain strings ("" =
+  unset by convention) and bind as parameters like every other scalar.
+  `args.get("name") ?? ""` is the one-line read.
+
 ## 0.6.19 — 2026-09-08
 
 - `add_op_condition` handles `FilterOp::Like` as SurrealDB's fuzzy operator
