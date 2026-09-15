@@ -103,6 +103,10 @@ impl ResilientClient {
         result
     }
 
+    // `probe` is a Drop-only guard: the compiler cannot see that clearing it
+    // (or letting it fall out of scope) is what releases the half-open
+    // probe slot, so every assignment to it looks dead without this.
+    #[allow(unused_assignments, unused_variables)]
     async fn attempt_loop<F>(
         &self,
         policy: &CallPolicy,
@@ -114,12 +118,14 @@ impl ResilientClient {
         let mut attempt = 0usize;
         let mut refreshed = false;
         // Holds the half-open probe slot for whichever attempt was granted
-        // it. Dropped on every exit from this function — including an early
-        // `?` and the future being cancelled — which is what guarantees the
-        // slot is freed even when neither `record_success` nor
-        // `record_failure` runs for that attempt. Never read; kept alive
-        // only for its `Drop` side effect.
-        #[allow(unused_assignments, unused_variables)]
+        // it, and ONLY for that attempt's in-flight window: it is reset to
+        // `None` right after the outcome is recorded (success, failure, or
+        // 401), before any retry sleep or `continue`, so a later probe
+        // grant in the same call never drops a stale guard and clears a
+        // flag `gate()` just set for the new grant. For the paths that
+        // don't record anything — an early `?` on auth failure, or the
+        // enclosing future being cancelled — the guard is still alive and
+        // its `Drop` releases the slot.
         let mut probe: Option<breaker::ProbeGuard> = None;
         loop {
             if let Some(b) = &self.breaker {
@@ -127,10 +133,7 @@ impl ResilientClient {
                     match b.gate() {
                         breaker::Gate::Allow { probe: is_probe } => {
                             if is_probe {
-                                #[allow(unused_assignments)]
-                                {
-                                    probe = Some(breaker::ProbeGuard::new(Arc::clone(b)));
-                                }
+                                probe = Some(breaker::ProbeGuard::new(Arc::clone(b)));
                             }
                             break;
                         }
@@ -161,6 +164,11 @@ impl ResilientClient {
                         if status == 401 && !refreshed {
                             if let Some(auth) = self.auth.as_ref() {
                                 refreshed = true;
+                                // A 401 still proves the server answers.
+                                if let Some(b) = &self.breaker {
+                                    b.record_success();
+                                }
+                                probe = None;
                                 auth.reacquire().await.map_err(|e| {
                                     ClientError::new(ErrorKind::Auth(e.to_string()), attempt + 1)
                                 })?;
@@ -178,6 +186,7 @@ impl ResilientClient {
                     if let Some(b) = &self.breaker {
                         b.record_success();
                     }
+                    probe = None;
                     return Ok(resp);
                 }
                 Err((kind, hint)) => {
@@ -199,8 +208,14 @@ impl ResilientClient {
                         if let Some(b) = &self.breaker {
                             b.record_success();
                         }
+                        probe = None;
                         return Err(ClientError::new(kind, attempt + 1));
                     }
+                    // The outcome is recorded; drop the guard now so the
+                    // retry sleep below never holds the probe slot, and so
+                    // a later probe grant in this same call doesn't drop a
+                    // stale guard and clear the flag it just set.
+                    probe = None;
                     let Some(delay) = policy.next_backoff(attempt) else {
                         return Err(ClientError::new(kind, attempt + 1));
                     };

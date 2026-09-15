@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use vantage_api_pool::resilient::{BreakerMode, CallPolicy, ErrorKind, RetryMode};
+use vantage_api_pool::resilient::{AuthRefresher, BreakerMode, CallPolicy, ErrorKind, RetryMode};
 use vantage_api_pool::{ResilientClient, RetryPolicy};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -367,4 +367,93 @@ async fn cancelled_probe_frees_the_slot_for_the_next_caller() {
         ErrorKind::Status(503),
         "the cancelled probe's slot was freed for this call, not left stuck open"
     );
+}
+
+#[tokio::test]
+async fn second_probe_in_one_call_still_excludes_other_callers() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503).set_delay(Duration::from_millis(30)))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(10))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+    for _ in 0..2 {
+        let _ = client.execute_with(&bg, |h| h.get(&url)).await;
+    }
+    // The essential call now waits out the ~10ms cooldown, takes the first
+    // probe (30ms, fails), waits out the re-opened cooldown, and takes a
+    // second probe (another 30ms in flight): roughly a 50..80ms window,
+    // measured from this spawn, in which that second probe is in flight.
+    let task = tokio::spawn({
+        let client = client.clone();
+        let url = url.clone();
+        async move {
+            let _ = client.execute_with(&essential_fast(), |h| h.get(&url)).await;
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(75)).await;
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::BreakerOpen,
+        "the essential call's second probe is still in flight; only one probe at a time"
+    );
+    task.abort();
+    let _ = task.await;
+}
+
+#[tokio::test]
+async fn probe_that_gets_401_refreshes_and_continues_without_jamming() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(2)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(401))
+        .up_to_n_times(1)
+        .with_priority(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let calls2 = calls.clone();
+    let refresher: AuthRefresher = Arc::new(move || {
+        let calls = calls2.clone();
+        Box::pin(async move {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            Ok(format!("token-{n}"))
+        })
+    });
+
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(10))
+        .bearer_auth(refresher)
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+    for _ in 0..2 {
+        let _ = client.execute_with(&bg, |h| h.get(&url)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(12)).await;
+    let resp = client
+        .execute_with(&essential_fast(), |h| h.get(&url))
+        .await
+        .expect("the 401 probe refreshes the token and continues to a 200");
+    assert_eq!(resp.status().as_u16(), 200);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "one lazy acquire plus one refresh on the 401"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 4);
 }
