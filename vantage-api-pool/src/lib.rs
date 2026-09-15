@@ -34,5 +34,6 @@ pub use pool_api::PoolApi;
 
 pub mod resilient;
 pub use resilient::{
-    AuthRefresher, ClientError, ErrorKind, ResilientClient, ResilientClientBuilder, RetryPolicy,
+    AuthRefresher, BreakerMode, CallPolicy, ClientError, ErrorKind, ResilientClient,
+    ResilientClientBuilder, RetryMode, RetryPolicy,
 };

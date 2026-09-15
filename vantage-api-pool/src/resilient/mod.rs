@@ -9,7 +9,9 @@ mod error;
 mod policy;
 
 pub use error::{ClientError, ErrorKind};
+pub use policy::{BreakerMode, CallPolicy, RetryMode};
 pub use policy::RetryPolicy;
+use policy::is_retryable_status;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -67,17 +69,27 @@ impl ResilientClient {
         ResilientClientBuilder::default()
     }
 
-    /// Execute a request with the client's default policies. `build` is
-    /// called once per attempt with the shared `reqwest::Client`.
+    /// Execute a request with the client's default policies (bounded retry,
+    /// fail fast on an open breaker). `build` is called once per attempt.
     pub async fn execute<F>(&self, build: F) -> Result<reqwest::Response, ClientError>
     where
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
-        if let Some(b) = &self.breaker {
-            if !b.allow() {
-                return Err(ClientError::new(ErrorKind::BreakerOpen, 0));
-            }
-        }
+        let policy = CallPolicy::bounded(self.policy.clone());
+        self.execute_with(&policy, build).await
+    }
+
+    /// Execute a request under `policy`. Returns the first `2xx` response,
+    /// or the last attempt's failure. Dropping the returned future cancels
+    /// the in-flight request and any pending back-off.
+    pub async fn execute_with<F>(
+        &self,
+        policy: &CallPolicy,
+        build: F,
+    ) -> Result<reqwest::Response, ClientError>
+    where
+        F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+    {
         let _permit = self
             .semaphore
             .acquire()
@@ -86,26 +98,28 @@ impl ResilientClient {
 
         let cur = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
         self.peak_in_flight.fetch_max(cur, Ordering::SeqCst);
-
-        let result = self.attempt_loop(&build).await;
-
+        let result = self.attempt_loop(policy, &build).await;
         self.in_flight.fetch_sub(1, Ordering::SeqCst);
-        if let Some(b) = &self.breaker {
-            match &result {
-                Ok(_) => b.record_success(),
-                Err(_) => b.record_failure(),
-            }
-        }
         result
     }
 
-    async fn attempt_loop<F>(&self, build: &F) -> Result<reqwest::Response, ClientError>
+    async fn attempt_loop<F>(
+        &self,
+        policy: &CallPolicy,
+        build: &F,
+    ) -> Result<reqwest::Response, ClientError>
     where
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
         let mut attempt = 0usize;
         let mut refreshed = false;
         loop {
+            if let Some(b) = &self.breaker {
+                if !b.allow() {
+                    return Err(ClientError::new(ErrorKind::BreakerOpen, attempt));
+                }
+            }
+
             let mut req = build(&self.http);
             if let Some(auth) = &self.auth {
                 let token = auth
@@ -115,49 +129,52 @@ impl ResilientClient {
                 req = req.header(&auth.header, format!("{}{token}", auth.scheme));
             }
 
-            match req.send().await {
+            let outcome: Result<reqwest::Response, (ErrorKind, Option<Duration>)> =
+                match req.send().await {
+                    Ok(resp) if resp.status().is_success() => Ok(resp),
+                    Ok(resp) => {
+                        let status = resp.status().as_u16();
+                        if status == 401 && !refreshed {
+                            if let Some(auth) = self.auth.as_ref() {
+                                refreshed = true;
+                                auth.reacquire().await.map_err(|e| {
+                                    ClientError::new(ErrorKind::Auth(e.to_string()), attempt + 1)
+                                })?;
+                                continue;
+                            }
+                        }
+                        let hint = retry_after(&resp);
+                        Err((ErrorKind::Status(status), hint))
+                    }
+                    Err(e) => Err((ErrorKind::Transport(e.to_string()), None)),
+                };
+
+            match outcome {
                 Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        return Ok(resp);
+                    if let Some(b) = &self.breaker {
+                        b.record_success();
                     }
-                    if status.as_u16() == 401 && !refreshed {
-                        if let Some(auth) = self.auth.as_ref() {
-                            refreshed = true;
-                            auth.reacquire().await.map_err(|e| {
-                                ClientError::new(ErrorKind::Auth(e.to_string()), attempt + 1)
-                            })?;
-                            continue;
-                        }
-                    }
-                    if status.as_u16() == 429 || status.is_server_error() {
-                        if attempt >= self.policy.max_retries {
-                            return Err(ClientError::new(
-                                ErrorKind::Status(status.as_u16()),
-                                attempt + 1,
-                            ));
-                        }
-                        let delay =
-                            retry_after(&resp).unwrap_or_else(|| self.policy.backoff(attempt));
-                        attempt += 1;
-                        tokio::time::sleep(with_jitter(delay)).await;
-                        continue;
-                    }
-                    return Err(ClientError::new(
-                        ErrorKind::Status(status.as_u16()),
-                        attempt + 1,
-                    ));
+                    return Ok(resp);
                 }
-                Err(e) => {
-                    if attempt >= self.policy.max_retries {
-                        return Err(ClientError::new(
-                            ErrorKind::Transport(e.to_string()),
-                            attempt + 1,
-                        ));
+                Err((kind, hint)) => {
+                    let retryable = match &kind {
+                        ErrorKind::Status(s) => is_retryable_status(*s),
+                        ErrorKind::Transport(_) => true,
+                        _ => false,
+                    };
+                    if let Some(b) = &self.breaker {
+                        if retryable {
+                            b.record_failure();
+                        }
                     }
-                    let delay = self.policy.backoff(attempt);
+                    if !retryable {
+                        return Err(ClientError::new(kind, attempt + 1));
+                    }
+                    let Some(delay) = policy.next_backoff(attempt) else {
+                        return Err(ClientError::new(kind, attempt + 1));
+                    };
                     attempt += 1;
-                    tokio::time::sleep(with_jitter(delay)).await;
+                    tokio::time::sleep(with_jitter(hint.unwrap_or(delay))).await;
                 }
             }
         }

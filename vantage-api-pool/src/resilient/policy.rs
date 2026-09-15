@@ -42,3 +42,82 @@ pub(crate) fn with_jitter(d: Duration) -> Duration {
     let frac = (nanos % 250) as f64 / 1000.0;
     d + d.mul_f64(frac)
 }
+
+/// How many times, and how long apart, a failed attempt is repeated.
+#[derive(Debug, Clone)]
+pub enum RetryMode {
+    /// One attempt. For work nobody is waiting on.
+    None,
+    /// The classic bounded retry.
+    Bounded(RetryPolicy),
+    /// Retry until the caller drops the future; exponential from `base`
+    /// capped at `max`. For work someone is waiting on.
+    UntilCancelled { base: Duration, max: Duration },
+}
+
+/// What an attempt does while the circuit breaker is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BreakerMode {
+    /// Return `ErrorKind::BreakerOpen` at once.
+    FailFast,
+    /// Sleep until the cooldown ends and take the half-open probe slot.
+    WaitForProbe,
+}
+
+/// The policy for one call.
+#[derive(Debug, Clone)]
+pub struct CallPolicy {
+    pub retry: RetryMode,
+    pub breaker: BreakerMode,
+}
+
+impl CallPolicy {
+    /// One attempt, fail fast. Polls, refreshes, hydration.
+    pub fn background() -> Self {
+        Self {
+            retry: RetryMode::None,
+            breaker: BreakerMode::FailFast,
+        }
+    }
+
+    /// Retry until cancelled (250 ms doubling to 10 s), wait for the probe.
+    /// Cold loads, uncached viewports, writes.
+    pub fn essential() -> Self {
+        Self {
+            retry: RetryMode::UntilCancelled {
+                base: Duration::from_millis(250),
+                max: Duration::from_secs(10),
+            },
+            breaker: BreakerMode::FailFast,
+        }
+        .wait_for_probe()
+    }
+
+    /// Bounded retry, fail fast — what `execute` does.
+    pub fn bounded(policy: RetryPolicy) -> Self {
+        Self {
+            retry: RetryMode::Bounded(policy),
+            breaker: BreakerMode::FailFast,
+        }
+    }
+
+    pub fn wait_for_probe(mut self) -> Self {
+        self.breaker = BreakerMode::WaitForProbe;
+        self
+    }
+
+    /// The sleep before retry number `attempt` (0-based count of retries so
+    /// far), or `None` when this mode has no retry left.
+    pub(crate) fn next_backoff(&self, attempt: usize) -> Option<Duration> {
+        match &self.retry {
+            RetryMode::None => None,
+            RetryMode::Bounded(p) => (attempt < p.max_retries).then(|| p.backoff(attempt)),
+            RetryMode::UntilCancelled { base, max } => Some(exponential(*base, *max, attempt)),
+        }
+    }
+}
+
+/// Statuses a retry may fix. Everything else in 4xx is final.
+pub(crate) fn is_retryable_status(status: u16) -> bool {
+    status == 408 || status == 429 || (500..600).contains(&status)
+}
