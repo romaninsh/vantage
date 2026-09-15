@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use vantage_api_pool::resilient::AuthRefresher;
+use vantage_api_pool::resilient::{AuthRefresher, ClientError, ErrorKind};
 use vantage_api_pool::{ResilientClient, RetryPolicy};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -194,4 +194,35 @@ async fn caps_parallelism() {
         peak >= 2,
         "requests did not actually parallelize: peak {peak}"
     );
+}
+
+#[tokio::test]
+async fn error_carries_status_and_attempts() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder().retry(fast_retry(3)).build();
+    let url = server.uri();
+    let err: ClientError = client.execute(|h| h.get(&url)).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Status(404));
+    assert_eq!(err.status(), Some(404));
+    assert_eq!(err.attempts, 1, "4xx is not retried");
+    assert_eq!(err.to_string(), "HTTP 404 after 1 attempt");
+}
+
+#[tokio::test]
+async fn exhausted_retries_report_last_status_and_attempt_count() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder().retry(fast_retry(2)).build();
+    let url = server.uri();
+    let err = client.execute(|h| h.get(&url)).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Status(503));
+    assert_eq!(err.attempts, 3, "1 try + 2 retries");
+    assert_eq!(err.to_string(), "HTTP 503 after 3 attempts");
 }

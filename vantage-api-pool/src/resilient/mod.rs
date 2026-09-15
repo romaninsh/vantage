@@ -1,69 +1,27 @@
 //! `ResilientClient` — an async-native HTTP transport.
 //!
-//! This is the structured-concurrency replacement for the worker-pool +
-//! oneshot-matcher machinery ([`AwwPool`](crate::AwwPool) /
-//! [`HttpClientPool`](crate::HttpClientPool) /
-//! [`EventualRequest`](crate::EventualRequest)). Instead of detaching requests
-//! onto a pool and matching responses back by id, a caller just `.await`s
-//! [`execute`](ResilientClient::execute): concurrency is bounded by a
-//! [`Semaphore`], and the genuinely-valuable policies live as inline middleware:
-//!
-//! - **parallelism cap** — at most `max_parallel` requests in flight per client,
-//! - **retry with backoff + jitter** on `429` / `5xx` / network errors, honoring
-//!   `Retry-After`, bounded by `max_retries`,
-//! - **auth refresh** — a `401` triggers one token re-acquire + replay,
-//! - **circuit breaker** — after N consecutive failures the client fails fast
-//!   for a cooldown, then probes (half-open).
-//!
-//! Cancellation is structural: drop the future and the in-flight request is
-//! dropped with it — no detached task outlives its caller.
+//! One client per remote API. Concurrency is bounded by a semaphore; retry,
+//! auth refresh and a circuit breaker are inline middleware. Cancellation is
+//! structural: drop the future and the in-flight request goes with it.
+
+mod breaker;
+mod error;
+mod policy;
+
+pub use error::{ClientError, ErrorKind};
+pub use policy::RetryPolicy;
 
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tokio::sync::{RwLock, Semaphore};
 
-/// Retry/backoff knobs. Backoff is exponential from `base` (doubling per
-/// attempt), capped at `max`, with jitter added before each sleep.
-#[derive(Debug, Clone)]
-pub struct RetryPolicy {
-    pub max_retries: usize,
-    pub base_backoff: Duration,
-    pub max_backoff: Duration,
-}
-
-impl Default for RetryPolicy {
-    fn default() -> Self {
-        Self {
-            max_retries: 4,
-            base_backoff: Duration::from_millis(50),
-            max_backoff: Duration::from_secs(10),
-        }
-    }
-}
-
-impl RetryPolicy {
-    fn backoff(&self, attempt: usize) -> Duration {
-        let factor = 2u32.saturating_pow(attempt as u32);
-        let raw = self.base_backoff.saturating_mul(factor);
-        raw.min(self.max_backoff)
-    }
-}
-
-/// Add up to +25% jitter so retrying clients don't synchronize (thundering
-/// herd). Entropy is the wall-clock subsecond — cheap and dependency-free.
-fn with_jitter(d: Duration) -> Duration {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|t| t.subsec_nanos())
-        .unwrap_or(0);
-    let frac = (nanos % 250) as f64 / 1000.0; // 0.0..0.25
-    d + d.mul_f64(frac)
-}
+use breaker::CircuitBreaker;
+use policy::with_jitter;
 
 /// Future returned by the auth token refresher.
 pub type AuthFuture = Pin<Box<dyn Future<Output = Result<String>> + Send>>;
@@ -92,47 +50,6 @@ impl AuthState {
     }
 }
 
-#[derive(Default)]
-struct BreakerInner {
-    consecutive_failures: usize,
-    open_until: Option<Instant>,
-}
-
-struct CircuitBreaker {
-    threshold: usize,
-    cooldown: Duration,
-    inner: std::sync::Mutex<BreakerInner>,
-}
-
-impl CircuitBreaker {
-    /// Whether a request may proceed. When the breaker is open and the cooldown
-    /// has elapsed, this returns `true` once (half-open probe) and re-arms.
-    fn allow(&self) -> bool {
-        let mut s = self.inner.lock().unwrap();
-        if let Some(until) = s.open_until {
-            if Instant::now() < until {
-                return false;
-            }
-            s.open_until = None; // half-open: let one through
-        }
-        true
-    }
-
-    fn record_success(&self) {
-        let mut s = self.inner.lock().unwrap();
-        s.consecutive_failures = 0;
-        s.open_until = None;
-    }
-
-    fn record_failure(&self) {
-        let mut s = self.inner.lock().unwrap();
-        s.consecutive_failures += 1;
-        if s.consecutive_failures >= self.threshold {
-            s.open_until = Some(Instant::now() + self.cooldown);
-        }
-    }
-}
-
 /// A cheap-to-clone resilient HTTP client. Build via [`ResilientClient::builder`].
 #[derive(Clone)]
 pub struct ResilientClient {
@@ -150,26 +67,22 @@ impl ResilientClient {
         ResilientClientBuilder::default()
     }
 
-    /// Execute a request with all policies applied. `build` is called once per
-    /// attempt with the shared `reqwest::Client`, so retries and auth re-apply
-    /// against a fresh `RequestBuilder` (a `RequestBuilder` is single-use).
-    ///
-    /// Returns the first successful (`2xx`) response, or an error after retries
-    /// are exhausted / the breaker is open / a non-retryable status.
-    pub async fn execute<F>(&self, build: F) -> Result<reqwest::Response>
+    /// Execute a request with the client's default policies. `build` is
+    /// called once per attempt with the shared `reqwest::Client`.
+    pub async fn execute<F>(&self, build: F) -> Result<reqwest::Response, ClientError>
     where
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
         if let Some(b) = &self.breaker {
             if !b.allow() {
-                return Err(anyhow!("circuit breaker open"));
+                return Err(ClientError::new(ErrorKind::BreakerOpen, 0));
             }
         }
         let _permit = self
             .semaphore
             .acquire()
             .await
-            .map_err(|_| anyhow!("client closed"))?;
+            .map_err(|_| ClientError::new(ErrorKind::Closed, 0))?;
 
         let cur = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
         self.peak_in_flight.fetch_max(cur, Ordering::SeqCst);
@@ -186,7 +99,7 @@ impl ResilientClient {
         result
     }
 
-    async fn attempt_loop<F>(&self, build: &F) -> Result<reqwest::Response>
+    async fn attempt_loop<F>(&self, build: &F) -> Result<reqwest::Response, ClientError>
     where
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
@@ -195,7 +108,10 @@ impl ResilientClient {
         loop {
             let mut req = build(&self.http);
             if let Some(auth) = &self.auth {
-                let token = auth.current().await?;
+                let token = auth
+                    .current()
+                    .await
+                    .map_err(|e| ClientError::new(ErrorKind::Auth(e.to_string()), attempt + 1))?;
                 req = req.header(&auth.header, format!("{}{token}", auth.scheme));
             }
 
@@ -205,19 +121,20 @@ impl ResilientClient {
                     if status.is_success() {
                         return Ok(resp);
                     }
-                    // 401 → refresh the token once and replay (not a retry).
                     if status.as_u16() == 401 && !refreshed {
                         if let Some(auth) = self.auth.as_ref() {
                             refreshed = true;
-                            auth.reacquire().await?;
+                            auth.reacquire().await.map_err(|e| {
+                                ClientError::new(ErrorKind::Auth(e.to_string()), attempt + 1)
+                            })?;
                             continue;
                         }
                     }
-                    // 429 / 5xx → backoff + retry.
                     if status.as_u16() == 429 || status.is_server_error() {
                         if attempt >= self.policy.max_retries {
-                            return Err(anyhow!(
-                                "giving up after {attempt} retries: HTTP {status}"
+                            return Err(ClientError::new(
+                                ErrorKind::Status(status.as_u16()),
+                                attempt + 1,
                             ));
                         }
                         let delay =
@@ -226,12 +143,17 @@ impl ResilientClient {
                         tokio::time::sleep(with_jitter(delay)).await;
                         continue;
                     }
-                    // other 4xx → not retryable.
-                    return Err(anyhow!("HTTP {status}"));
+                    return Err(ClientError::new(
+                        ErrorKind::Status(status.as_u16()),
+                        attempt + 1,
+                    ));
                 }
                 Err(e) => {
                     if attempt >= self.policy.max_retries {
-                        return Err(anyhow!("giving up after {attempt} retries: {e}"));
+                        return Err(ClientError::new(
+                            ErrorKind::Transport(e.to_string()),
+                            attempt + 1,
+                        ));
                     }
                     let delay = self.policy.backoff(attempt);
                     attempt += 1;
@@ -241,14 +163,13 @@ impl ResilientClient {
         }
     }
 
-    /// Highest number of simultaneously in-flight requests this client has
-    /// observed — proves the parallelism cap holds. Test/diagnostic hook.
+    /// Highest number of simultaneously in-flight requests observed.
     pub fn peak_in_flight(&self) -> usize {
         self.peak_in_flight.load(Ordering::SeqCst)
     }
 }
 
-fn retry_after(resp: &reqwest::Response) -> Option<Duration> {
+pub(crate) fn retry_after(resp: &reqwest::Response) -> Option<Duration> {
     let secs: u64 = resp
         .headers()
         .get("retry-after")?
@@ -281,8 +202,7 @@ impl Default for ResilientClientBuilder {
 }
 
 impl ResilientClientBuilder {
-    /// Cap concurrent in-flight requests for this client (the per-API
-    /// parallelism limit). Default 8.
+    /// Cap concurrent in-flight requests for this client. Default 8.
     pub fn max_parallel(mut self, n: usize) -> Self {
         self.max_parallel = n.max(1);
         self
@@ -300,18 +220,13 @@ impl ResilientClientBuilder {
         self
     }
 
-    /// Apply a bearer-style auth token, re-acquired lazily and on `401`.
-    /// `refresher` returns the token value (without the scheme prefix).
+    /// Bearer auth, re-acquired lazily and on `401`.
     pub fn bearer_auth(mut self, refresher: AuthRefresher) -> Self {
-        self.auth = Some((
-            refresher,
-            "Authorization".to_string(),
-            "Bearer ".to_string(),
-        ));
+        self.auth = Some((refresher, "Authorization".to_string(), "Bearer ".to_string()));
         self
     }
 
-    /// Apply auth with a custom header name and scheme prefix.
+    /// Auth with a custom header name and scheme prefix.
     pub fn auth(
         mut self,
         refresher: AuthRefresher,
@@ -332,13 +247,9 @@ impl ResilientClientBuilder {
             http: self.http.unwrap_or_default(),
             semaphore: Arc::new(Semaphore::new(self.max_parallel)),
             policy: self.policy,
-            breaker: self.breaker.map(|(threshold, cooldown)| {
-                Arc::new(CircuitBreaker {
-                    threshold,
-                    cooldown,
-                    inner: std::sync::Mutex::new(BreakerInner::default()),
-                })
-            }),
+            breaker: self
+                .breaker
+                .map(|(threshold, cooldown)| Arc::new(CircuitBreaker::new(threshold, cooldown))),
             auth: self.auth.map(|(refresh, header, scheme)| {
                 Arc::new(AuthState {
                     token: RwLock::new(None),
