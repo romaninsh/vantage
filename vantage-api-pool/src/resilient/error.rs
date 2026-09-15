@@ -37,6 +37,17 @@ impl ClientError {
             _ => None,
         }
     }
+
+    /// A stable lowercase name for the kind, for logs and tests.
+    pub fn kind_name(&self) -> &'static str {
+        match self.kind {
+            ErrorKind::Status(_) => "status",
+            ErrorKind::Transport(_) => "transport",
+            ErrorKind::BreakerOpen => "breaker_open",
+            ErrorKind::Auth(_) => "auth",
+            ErrorKind::Closed => "closed",
+        }
+    }
 }
 
 impl fmt::Display for ClientError {

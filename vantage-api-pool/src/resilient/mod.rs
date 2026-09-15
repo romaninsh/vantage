@@ -6,9 +6,11 @@
 
 mod breaker;
 mod error;
+mod observer;
 mod policy;
 
 pub use error::{ClientError, ErrorKind};
+pub use observer::{TransportEvent, TransportObserver};
 pub use policy::{BreakerMode, CallPolicy, RetryMode};
 pub use policy::RetryPolicy;
 use policy::is_retryable_status;
@@ -62,6 +64,7 @@ pub struct ResilientClient {
     auth: Option<Arc<AuthState>>,
     in_flight: Arc<AtomicUsize>,
     peak_in_flight: Arc<AtomicUsize>,
+    observer: Option<(Arc<str>, Arc<dyn TransportObserver>)>,
 }
 
 impl ResilientClient {
@@ -139,13 +142,18 @@ impl ResilientClient {
                         }
                         breaker::Gate::OpenFor(wait) => match policy.breaker {
                             BreakerMode::FailFast => {
-                                return Err(ClientError::new(ErrorKind::BreakerOpen, attempt));
+                                let error = ClientError::new(ErrorKind::BreakerOpen, attempt);
+                                self.report(TransportEvent::Failed { error: error.clone(), ms: 0 });
+                                return Err(error);
                             }
                             BreakerMode::WaitForProbe => tokio::time::sleep(wait).await,
                         },
                     }
                 }
             }
+
+            self.report(TransportEvent::Started);
+            let started = std::time::Instant::now();
 
             let mut req = build(&self.http);
             if let Some(auth) = &self.auth {
@@ -166,7 +174,9 @@ impl ResilientClient {
                                 refreshed = true;
                                 // A 401 still proves the server answers.
                                 if let Some(b) = &self.breaker {
-                                    b.record_success();
+                                    if b.record_success() {
+                                        self.report(TransportEvent::BreakerClosed);
+                                    }
                                 }
                                 probe = None;
                                 auth.reacquire().await.map_err(|e| {
@@ -183,21 +193,34 @@ impl ResilientClient {
 
             match outcome {
                 Ok(resp) => {
+                    let bytes = resp.content_length();
+                    self.report(TransportEvent::Succeeded {
+                        status: resp.status().as_u16(),
+                        ms: started.elapsed().as_millis() as u64,
+                        bytes,
+                    });
                     if let Some(b) = &self.breaker {
-                        b.record_success();
+                        if b.record_success() {
+                            self.report(TransportEvent::BreakerClosed);
+                        }
                     }
                     probe = None;
                     return Ok(resp);
                 }
                 Err((kind, hint)) => {
+                    let ms = started.elapsed().as_millis() as u64;
                     let retryable = match &kind {
                         ErrorKind::Status(s) => is_retryable_status(*s),
                         ErrorKind::Transport(_) => true,
                         _ => false,
                     };
-                    if let Some(b) = &self.breaker {
-                        if retryable {
-                            b.record_failure();
+                    let error = ClientError::new(kind, attempt + 1);
+                    self.report(TransportEvent::Failed { error: error.clone(), ms });
+                    if retryable {
+                        if let Some(b) = &self.breaker {
+                            if let Some(cooldown) = b.record_failure() {
+                                self.report(TransportEvent::BreakerOpened { cooldown });
+                            }
                         }
                     }
                     if !retryable {
@@ -206,10 +229,12 @@ impl ResilientClient {
                         // correctness, so this closes it (and, if this was
                         // the probe, releases the slot).
                         if let Some(b) = &self.breaker {
-                            b.record_success();
+                            if b.record_success() {
+                                self.report(TransportEvent::BreakerClosed);
+                            }
                         }
                         probe = None;
-                        return Err(ClientError::new(kind, attempt + 1));
+                        return Err(error);
                     }
                     // The outcome is recorded; drop the guard now so the
                     // retry sleep below never holds the probe slot, and so
@@ -217,10 +242,12 @@ impl ResilientClient {
                     // stale guard and clear the flag it just set.
                     probe = None;
                     let Some(delay) = policy.next_backoff(attempt) else {
-                        return Err(ClientError::new(kind, attempt + 1));
+                        return Err(error);
                     };
                     attempt += 1;
-                    tokio::time::sleep(with_jitter(hint.unwrap_or(delay))).await;
+                    let after = with_jitter(hint.unwrap_or(delay));
+                    self.report(TransportEvent::RetryScheduled { after, attempt });
+                    tokio::time::sleep(after).await;
                 }
             }
         }
@@ -229,6 +256,18 @@ impl ResilientClient {
     /// Highest number of simultaneously in-flight requests observed.
     pub fn peak_in_flight(&self) -> usize {
         self.peak_in_flight.load(Ordering::SeqCst)
+    }
+
+    /// The datasource key this client reports under, when it has an observer.
+    pub fn key(&self) -> Option<&str> {
+        self.observer.as_ref().map(|(k, _)| &**k)
+    }
+
+    /// Emit an event on behalf of the caller (`RowsPulled`, `WritePushed`).
+    pub fn report(&self, event: TransportEvent) {
+        if let Some((key, obs)) = &self.observer {
+            obs.on_event(key, event);
+        }
     }
 }
 
@@ -250,6 +289,7 @@ pub struct ResilientClientBuilder {
     policy: RetryPolicy,
     breaker: Option<(usize, Duration, Duration)>,
     auth: Option<(AuthRefresher, String, String)>,
+    observer: Option<(Arc<str>, Arc<dyn TransportObserver>)>,
 }
 
 impl Default for ResilientClientBuilder {
@@ -260,6 +300,7 @@ impl Default for ResilientClientBuilder {
             policy: RetryPolicy::default(),
             breaker: None,
             auth: None,
+            observer: None,
         }
     }
 }
@@ -322,6 +363,16 @@ impl ResilientClientBuilder {
         self
     }
 
+    /// Report every attempt, retry and breaker transition under `key`.
+    pub fn observer(
+        mut self,
+        key: impl Into<Arc<str>>,
+        observer: Arc<dyn TransportObserver>,
+    ) -> Self {
+        self.observer = Some((key.into(), observer));
+        self
+    }
+
     pub fn build(self) -> ResilientClient {
         ResilientClient {
             http: self.http.unwrap_or_default(),
@@ -340,6 +391,7 @@ impl ResilientClientBuilder {
             }),
             in_flight: Arc::new(AtomicUsize::new(0)),
             peak_in_flight: Arc::new(AtomicUsize::new(0)),
+            observer: self.observer,
         }
     }
 }

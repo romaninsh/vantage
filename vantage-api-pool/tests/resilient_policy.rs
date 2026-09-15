@@ -457,3 +457,71 @@ async fn probe_that_gets_401_refreshes_and_continues_without_jamming() {
     );
     assert_eq!(server.received_requests().await.unwrap().len(), 4);
 }
+
+use std::sync::Mutex;
+use vantage_api_pool::resilient::{TransportEvent, TransportObserver};
+
+#[derive(Default)]
+struct Recorder(Mutex<Vec<(String, String)>>);
+
+impl TransportObserver for Recorder {
+    fn on_event(&self, key: &str, event: TransportEvent) {
+        let tag = match event {
+            TransportEvent::Started => "started".to_string(),
+            TransportEvent::Succeeded { status, .. } => format!("ok:{status}"),
+            TransportEvent::Failed { error, .. } => format!("failed:{}", error.kind_name()),
+            TransportEvent::RetryScheduled { attempt, .. } => format!("retry:{attempt}"),
+            TransportEvent::BreakerOpened { .. } => "opened".to_string(),
+            TransportEvent::BreakerClosed => "closed".to_string(),
+            TransportEvent::RowsPulled { n } => format!("rows:{n}"),
+            TransportEvent::WritePushed => "write".to_string(),
+        };
+        self.0.lock().unwrap().push((key.to_string(), tag));
+    }
+}
+
+#[tokio::test]
+async fn observer_sees_every_attempt_retry_and_breaker_transition() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(2)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("abc"))
+        .mount(&server)
+        .await;
+    let rec = Arc::new(Recorder::default());
+    let client = ResilientClient::builder()
+        .observer("local", rec.clone())
+        .circuit_breaker_growing(2, Duration::from_millis(1), Duration::from_millis(1))
+        .build();
+    let url = server.uri();
+    client
+        .execute_with(&essential_fast(), |h| h.get(&url))
+        .await
+        .expect("third attempt succeeds");
+    client.report(TransportEvent::RowsPulled { n: 7 });
+
+    let seen: Vec<String> = rec
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(k, t)| {
+            assert_eq!(k, "local");
+            t.clone()
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            "started", "failed:status", "retry:1",
+            "started", "failed:status", "opened", "retry:2",
+            "started", "ok:200", "closed",
+            "rows:7",
+        ]
+    );
+}
