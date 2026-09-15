@@ -157,3 +157,146 @@ async fn execute_keeps_the_client_default_policy() {
 fn hits(counter: &Arc<AtomicUsize>) -> usize {
     counter.load(Ordering::SeqCst)
 }
+
+#[tokio::test]
+async fn cooldown_doubles_after_each_failed_probe() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(20), Duration::from_millis(80))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+
+    // Two failures open the breaker for 20 ms.
+    for _ in 0..2 {
+        assert_eq!(
+            client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+            ErrorKind::Status(503)
+        );
+    }
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::BreakerOpen
+    );
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    // Probe fails → open for 40 ms now.
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(503)
+    );
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::BreakerOpen,
+        "still inside the doubled cooldown"
+    );
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(503),
+        "probe allowed after 40 ms"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn success_resets_the_cooldown() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(3)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(80))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+    for _ in 0..2 {
+        let _ = client.execute_with(&bg, |h| h.get(&url)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(12)).await;
+    let _ = client.execute_with(&bg, |h| h.get(&url)).await; // failed probe → 20 ms
+    tokio::time::sleep(Duration::from_millis(22)).await;
+    client
+        .execute_with(&bg, |h| h.get(&url))
+        .await
+        .expect("probe succeeds");
+    // Two fresh failures must open for the BASE cooldown again (10 ms), not 40.
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    for _ in 0..2 {
+        let _ = client.execute_with(&bg, |h| h.get(&url)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(12)).await;
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(503),
+        "a probe is allowed after the base cooldown"
+    );
+}
+
+#[tokio::test]
+async fn wait_for_probe_sleeps_through_the_cooldown_and_takes_the_probe() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(2)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(30), Duration::from_millis(30))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+    for _ in 0..2 {
+        let _ = client.execute_with(&bg, |h| h.get(&url)).await;
+    }
+    let started = std::time::Instant::now();
+    let resp = client
+        .execute_with(&essential_fast(), |h| h.get(&url))
+        .await
+        .expect("waited for the probe slot and succeeded");
+    assert_eq!(resp.status().as_u16(), 200);
+    assert!(started.elapsed() >= Duration::from_millis(25), "did not fail fast");
+    assert_eq!(server.received_requests().await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn four_xx_does_not_count_toward_breaker() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(20), Duration::from_millis(20))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+    for _ in 0..3 {
+        assert_eq!(
+            client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+            ErrorKind::Status(404),
+            "4xx must never trip the breaker"
+        );
+    }
+    assert_eq!(server.received_requests().await.unwrap().len(), 3);
+}

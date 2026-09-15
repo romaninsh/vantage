@@ -115,8 +115,16 @@ impl ResilientClient {
         let mut refreshed = false;
         loop {
             if let Some(b) = &self.breaker {
-                if !b.allow() {
-                    return Err(ClientError::new(ErrorKind::BreakerOpen, attempt));
+                loop {
+                    match b.gate() {
+                        breaker::Gate::Allow => break,
+                        breaker::Gate::OpenFor(wait) => match policy.breaker {
+                            BreakerMode::FailFast => {
+                                return Err(ClientError::new(ErrorKind::BreakerOpen, attempt));
+                            }
+                            BreakerMode::WaitForProbe => tokio::time::sleep(wait).await,
+                        },
+                    }
                 }
             }
 
@@ -202,7 +210,7 @@ pub struct ResilientClientBuilder {
     http: Option<reqwest::Client>,
     max_parallel: usize,
     policy: RetryPolicy,
-    breaker: Option<(usize, Duration)>,
+    breaker: Option<(usize, Duration, Duration)>,
     auth: Option<(AuthRefresher, String, String)>,
 }
 
@@ -231,10 +239,27 @@ impl ResilientClientBuilder {
     }
 
     /// Open the breaker after `threshold` consecutive failures; stay open for
-    /// `cooldown`, then allow one half-open probe.
+    /// `cooldown` (fixed), then allow one half-open probe.
     pub fn circuit_breaker(mut self, threshold: usize, cooldown: Duration) -> Self {
-        self.breaker = Some((threshold.max(1), cooldown));
+        self.breaker = Some((threshold, cooldown, cooldown));
         self
+    }
+
+    /// Like `circuit_breaker`, but each failed probe doubles the cooldown up
+    /// to `max_cooldown`; a success resets it to `base_cooldown`.
+    pub fn circuit_breaker_growing(
+        mut self,
+        threshold: usize,
+        base_cooldown: Duration,
+        max_cooldown: Duration,
+    ) -> Self {
+        self.breaker = Some((threshold, base_cooldown, max_cooldown));
+        self
+    }
+
+    /// The spec's default: 5 failures, 5 s doubling to 60 s.
+    pub fn default_breaker(self) -> Self {
+        self.circuit_breaker_growing(5, Duration::from_secs(5), Duration::from_secs(60))
     }
 
     /// Bearer auth, re-acquired lazily and on `401`.
@@ -266,7 +291,7 @@ impl ResilientClientBuilder {
             policy: self.policy,
             breaker: self
                 .breaker
-                .map(|(threshold, cooldown)| Arc::new(CircuitBreaker::new(threshold, cooldown))),
+                .map(|(t, base, max)| Arc::new(CircuitBreaker::new(t, base, max))),
             auth: self.auth.map(|(refresh, header, scheme)| {
                 Arc::new(AuthState {
                     token: RwLock::new(None),
