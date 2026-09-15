@@ -300,3 +300,71 @@ async fn four_xx_does_not_count_toward_breaker() {
     }
     assert_eq!(server.received_requests().await.unwrap().len(), 3);
 }
+
+#[tokio::test]
+async fn probe_that_gets_404_closes_the_breaker() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(2)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(10))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+    for _ in 0..2 {
+        let _ = client.execute_with(&bg, |h| h.get(&url)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(12)).await;
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(404),
+        "the probe reaches the server"
+    );
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(404),
+        "the 404 probe closed the breaker; this call is not fast-failed"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn cancelled_probe_frees_the_slot_for_the_next_caller() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503).set_delay(Duration::from_millis(50)))
+        .mount(&server)
+        .await;
+    let client = ResilientClient::builder()
+        .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(10))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+    for _ in 0..2 {
+        let _ = client.execute_with(&bg, |h| h.get(&url)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(12)).await;
+    let task = tokio::spawn({
+        let client = client.clone();
+        let url = url.clone();
+        async move {
+            let _ = client.execute_with(&essential_fast(), |h| h.get(&url)).await;
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    task.abort();
+    let _ = task.await;
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(503),
+        "the cancelled probe's slot was freed for this call, not left stuck open"
+    );
+}

@@ -7,13 +7,16 @@
 //! the cooldown to its base. This is the per-API back-off: nothing above the
 //! transport schedules its own.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Whether an attempt may proceed right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Gate {
-    Allow,
+    /// `probe` is `true` when this grant is the half-open probe — the
+    /// caller must hold a [`ProbeGuard`] for the duration of that attempt so
+    /// the slot is freed no matter how the attempt ends.
+    Allow { probe: bool },
     /// Open; `Duration` is how long until the next probe may run.
     OpenFor(Duration),
 }
@@ -54,7 +57,7 @@ impl CircuitBreaker {
     pub(crate) fn gate(&self) -> Gate {
         let mut s = self.inner.lock().unwrap();
         match s.open_until {
-            None => Gate::Allow,
+            None => Gate::Allow { probe: false },
             Some(until) => {
                 let now = Instant::now();
                 if now < until {
@@ -64,9 +67,16 @@ impl CircuitBreaker {
                     return Gate::OpenFor(PROBE_POLL);
                 }
                 s.probing = true;
-                Gate::Allow
+                Gate::Allow { probe: true }
             }
         }
+    }
+
+    /// Frees the half-open probe slot without touching `open_until` or the
+    /// cooldown. Idempotent — safe to call even when no probe is in flight,
+    /// which is what lets [`ProbeGuard::drop`] call it unconditionally.
+    pub(crate) fn release_probe(&self) {
+        self.inner.lock().unwrap().probing = false;
     }
 
     /// Returns `true` when this success closed an open breaker.
@@ -102,6 +112,24 @@ impl CircuitBreaker {
     }
 }
 
+/// Holds the half-open probe slot for one attempt. Dropping it — on a
+/// normal return, an early `?`, or the enclosing future being cancelled —
+/// releases the slot, so a probe attempt that never calls `record_success`
+/// or `record_failure` cannot jam the breaker open forever.
+pub(crate) struct ProbeGuard(Arc<CircuitBreaker>);
+
+impl ProbeGuard {
+    pub(crate) fn new(breaker: Arc<CircuitBreaker>) -> Self {
+        Self(breaker)
+    }
+}
+
+impl Drop for ProbeGuard {
+    fn drop(&mut self) {
+        self.0.release_probe();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,16 +137,20 @@ mod tests {
     #[test]
     fn opens_after_threshold_and_doubles_on_failed_probe() {
         let b = CircuitBreaker::new(2, Duration::from_millis(10), Duration::from_millis(25));
-        assert_eq!(b.gate(), Gate::Allow);
+        assert_eq!(b.gate(), Gate::Allow { probe: false });
         assert_eq!(b.record_failure(), None);
         assert_eq!(b.record_failure(), Some(Duration::from_millis(10)));
         assert!(matches!(b.gate(), Gate::OpenFor(_)));
         std::thread::sleep(Duration::from_millis(12));
-        assert_eq!(b.gate(), Gate::Allow, "half-open probe");
+        assert_eq!(
+            b.gate(),
+            Gate::Allow { probe: true },
+            "half-open probe"
+        );
         assert_eq!(b.gate(), Gate::OpenFor(PROBE_POLL), "one probe at a time");
         assert_eq!(b.record_failure(), Some(Duration::from_millis(20)));
         std::thread::sleep(Duration::from_millis(22));
-        assert_eq!(b.gate(), Gate::Allow);
+        assert_eq!(b.gate(), Gate::Allow { probe: true });
         assert_eq!(b.record_failure(), Some(Duration::from_millis(25)), "capped");
     }
 
@@ -127,11 +159,33 @@ mod tests {
         let b = CircuitBreaker::new(1, Duration::from_millis(10), Duration::from_millis(40));
         assert_eq!(b.record_failure(), Some(Duration::from_millis(10)));
         std::thread::sleep(Duration::from_millis(12));
-        assert_eq!(b.gate(), Gate::Allow);
+        assert_eq!(b.gate(), Gate::Allow { probe: true });
         assert_eq!(b.record_failure(), Some(Duration::from_millis(20)));
         std::thread::sleep(Duration::from_millis(22));
-        assert_eq!(b.gate(), Gate::Allow);
+        assert_eq!(b.gate(), Gate::Allow { probe: true });
         assert!(b.record_success());
         assert_eq!(b.record_failure(), Some(Duration::from_millis(10)), "back to base");
+    }
+
+    #[test]
+    fn dropped_probe_guard_releases_the_slot() {
+        let b = Arc::new(CircuitBreaker::new(
+            1,
+            Duration::from_millis(10),
+            Duration::from_millis(10),
+        ));
+        assert_eq!(b.record_failure(), Some(Duration::from_millis(10)));
+        std::thread::sleep(Duration::from_millis(12));
+        let guard = match b.gate() {
+            Gate::Allow { probe: true } => ProbeGuard::new(Arc::clone(&b)),
+            other => panic!("expected a probe grant, got {other:?}"),
+        };
+        assert_eq!(b.gate(), Gate::OpenFor(PROBE_POLL), "the probe is in flight");
+        drop(guard);
+        assert_eq!(
+            b.gate(),
+            Gate::Allow { probe: true },
+            "dropping the guard without recording an outcome frees the slot"
+        );
     }
 }

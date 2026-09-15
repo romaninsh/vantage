@@ -113,11 +113,27 @@ impl ResilientClient {
     {
         let mut attempt = 0usize;
         let mut refreshed = false;
+        // Holds the half-open probe slot for whichever attempt was granted
+        // it. Dropped on every exit from this function — including an early
+        // `?` and the future being cancelled — which is what guarantees the
+        // slot is freed even when neither `record_success` nor
+        // `record_failure` runs for that attempt. Never read; kept alive
+        // only for its `Drop` side effect.
+        #[allow(unused_assignments, unused_variables)]
+        let mut probe: Option<breaker::ProbeGuard> = None;
         loop {
             if let Some(b) = &self.breaker {
                 loop {
                     match b.gate() {
-                        breaker::Gate::Allow => break,
+                        breaker::Gate::Allow { probe: is_probe } => {
+                            if is_probe {
+                                #[allow(unused_assignments)]
+                                {
+                                    probe = Some(breaker::ProbeGuard::new(Arc::clone(b)));
+                                }
+                            }
+                            break;
+                        }
                         breaker::Gate::OpenFor(wait) => match policy.breaker {
                             BreakerMode::FailFast => {
                                 return Err(ClientError::new(ErrorKind::BreakerOpen, attempt));
@@ -176,6 +192,13 @@ impl ResilientClient {
                         }
                     }
                     if !retryable {
+                        // A non-retryable status still proves the server is
+                        // reachable: the breaker tracks reachability, not
+                        // correctness, so this closes it (and, if this was
+                        // the probe, releases the slot).
+                        if let Some(b) = &self.breaker {
+                            b.record_success();
+                        }
                         return Err(ClientError::new(kind, attempt + 1));
                     }
                     let Some(delay) = policy.next_backoff(attempt) else {
