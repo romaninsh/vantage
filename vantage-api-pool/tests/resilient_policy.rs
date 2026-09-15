@@ -462,14 +462,19 @@ use std::sync::Mutex;
 use vantage_api_pool::resilient::{TransportEvent, TransportObserver};
 
 #[derive(Default)]
-struct Recorder(Mutex<Vec<(String, String)>>);
+struct Recorder(Mutex<Vec<(String, String)>>, Mutex<Vec<u64>>);
 
 impl TransportObserver for Recorder {
     fn on_event(&self, key: &str, event: TransportEvent) {
         let tag = match event {
             TransportEvent::Started => "started".to_string(),
             TransportEvent::Succeeded { status, .. } => format!("ok:{status}"),
-            TransportEvent::Failed { error, .. } => format!("failed:{}", error.kind_name()),
+            TransportEvent::Failed { error, ms } => {
+                // Recorded separately, in event order, for tests that need
+                // to assert on the elapsed time of a specific `Failed`.
+                self.1.lock().unwrap().push(ms);
+                format!("failed:{}", error.kind_name())
+            }
             TransportEvent::RetryScheduled { attempt, .. } => format!("retry:{attempt}"),
             TransportEvent::BreakerOpened { .. } => "opened".to_string(),
             TransportEvent::BreakerClosed => "closed".to_string(),
@@ -524,4 +529,96 @@ async fn observer_sees_every_attempt_retry_and_breaker_transition() {
             "rows:7",
         ]
     );
+}
+
+#[tokio::test]
+async fn observer_pairs_the_401_attempt_with_a_failed_event() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(401))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let calls2 = calls.clone();
+    let refresher: AuthRefresher = Arc::new(move || {
+        let calls = calls2.clone();
+        Box::pin(async move {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            Ok(format!("token-{n}"))
+        })
+    });
+
+    let rec = Arc::new(Recorder::default());
+    let client = ResilientClient::builder()
+        .observer("local", rec.clone())
+        .bearer_auth(refresher)
+        .build();
+    let url = server.uri();
+    client
+        .execute(|h| h.get(&url))
+        .await
+        .expect("replays after the refresh");
+
+    let seen: Vec<String> = rec.0.lock().unwrap().iter().map(|(_, t)| t.clone()).collect();
+    assert_eq!(seen, ["started", "failed:status", "started", "ok:200"]);
+    assert_eq!(calls.load(Ordering::SeqCst), 2, "one lazy acquire plus one refresh on the 401");
+}
+
+#[tokio::test]
+async fn observer_reports_fail_fast_and_probe_closing_on_404() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let rec = Arc::new(Recorder::default());
+    let client = ResilientClient::builder()
+        .observer("local", rec.clone())
+        .circuit_breaker_growing(1, Duration::from_millis(20), Duration::from_millis(20))
+        .build();
+    let url = server.uri();
+    let bg = CallPolicy::background();
+
+    // Call 1: the 503 opens the breaker (threshold 1).
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(503)
+    );
+    // Call 2: fails fast on the still-open breaker.
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::BreakerOpen
+    );
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    // Call 3: the probe gets a 404, which closes the breaker.
+    assert_eq!(
+        client.execute_with(&bg, |h| h.get(&url)).await.unwrap_err().kind,
+        ErrorKind::Status(404)
+    );
+
+    let seen: Vec<String> = rec.0.lock().unwrap().iter().map(|(_, t)| t.clone()).collect();
+    assert_eq!(
+        seen,
+        [
+            "started", "failed:status", "opened",
+            "started", "failed:breaker_open",
+            "started", "failed:status", "closed",
+        ]
+    );
+    let failed_ms = rec.1.lock().unwrap();
+    assert_eq!(failed_ms[1], 0, "the fail-fast Failed carries ms: 0");
 }

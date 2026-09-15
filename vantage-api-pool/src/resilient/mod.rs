@@ -131,6 +131,9 @@ impl ResilientClient {
         // its `Drop` releases the slot.
         let mut probe: Option<breaker::ProbeGuard> = None;
         loop {
+            self.report(TransportEvent::Started);
+            let started = std::time::Instant::now();
+
             if let Some(b) = &self.breaker {
                 loop {
                     match b.gate() {
@@ -151,9 +154,6 @@ impl ResilientClient {
                     }
                 }
             }
-
-            self.report(TransportEvent::Started);
-            let started = std::time::Instant::now();
 
             let mut req = build(&self.http);
             if let Some(auth) = &self.auth {
@@ -179,6 +179,11 @@ impl ResilientClient {
                                     }
                                 }
                                 probe = None;
+                                let ms = started.elapsed().as_millis() as u64;
+                                self.report(TransportEvent::Failed {
+                                    error: ClientError::new(ErrorKind::Status(401), attempt + 1),
+                                    ms,
+                                });
                                 auth.reacquire().await.map_err(|e| {
                                     ClientError::new(ErrorKind::Auth(e.to_string()), attempt + 1)
                                 })?;
