@@ -213,12 +213,27 @@ impl RestApi {
             .client
             .execute_with(&policy, |http| {
                 let mut req = http.request(method.clone(), &url);
+                // `HeaderMap::insert` replaces a same-named entry rather than
+                // appending — unlike `RequestBuilder::header` — so a caller
+                // header actually overrides the configured auth instead of
+                // riding alongside it on the wire.
+                let mut map = reqwest::header::HeaderMap::new();
                 if let Some(ref a) = auth {
-                    req = req.header("Authorization", a);
+                    map.insert(
+                        reqwest::header::AUTHORIZATION,
+                        reqwest::header::HeaderValue::from_str(a)
+                            .expect("configured auth header must be a valid header value"),
+                    );
                 }
                 for (k, v) in headers {
-                    req = req.header(*k, *v);
+                    map.insert(
+                        reqwest::header::HeaderName::from_bytes(k.as_bytes())
+                            .expect("header name must be valid"),
+                        reqwest::header::HeaderValue::from_str(v)
+                            .expect("header value must be valid"),
+                    );
                 }
+                req = req.headers(map);
                 if let Some(b) = body {
                     req = req.json(b);
                 }

@@ -167,6 +167,46 @@ async fn http_client_override_travels_with_every_request() {
 }
 
 #[tokio::test]
+async fn caller_authorization_header_replaces_the_configured_one() {
+    let server = MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::header(
+            "Authorization",
+            "Bearer override",
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .auth("Bearer configured")
+        .build();
+
+    api.http_request(
+        reqwest::Method::POST,
+        "things",
+        &[("Authorization", "Bearer override")],
+        None,
+    )
+    .await
+    .unwrap();
+
+    let received = server.received_requests().await.unwrap();
+    assert_eq!(received.len(), 1, "exactly one request matched");
+    let auth_values: Vec<_> = received[0]
+        .headers
+        .get_all("authorization")
+        .iter()
+        .collect();
+    assert_eq!(
+        auth_values.len(),
+        1,
+        "the request must carry a single Authorization header, not two"
+    );
+    assert_eq!(auth_values[0], "Bearer override");
+}
+
+#[tokio::test]
 async fn auth_header_still_travels() {
     let server = MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))
