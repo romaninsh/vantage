@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 — unreleased
+## 0.6.1 — 2026-09-16
 
 - `ResilientClient` — async-native HTTP transport that replaces the worker-pool
   + oneshot-matcher model (`AwwPool` / `HttpClientPool` / `EventualRequest`).
