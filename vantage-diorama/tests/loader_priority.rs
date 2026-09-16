@@ -14,7 +14,7 @@ use vantage_types::Record;
 
 mod support;
 use support::MockView;
-use support::chunk::master;
+use support::chunk::{col_at, master};
 
 type Backend = Arc<Mutex<Vec<(String, Record<CborValue>)>>>;
 
@@ -436,5 +436,83 @@ async fn a_same_range_refresh_runs_after_the_current_load() -> Result<()> {
     }
     assert!(scenery.row(25).is_some());
     assert!(scenery.row(5).is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_cancelled_refresh_over_unchanged_rows_keeps_them() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let gated = Gated {
+        release: Arc::new(tokio::sync::Notify::new()),
+        calls: Arc::new(Mutex::new(Vec::new())),
+        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    };
+    let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().page_size(10).open().await?;
+
+    // The on-open fetch is call 1; let it through and wait for a
+    // remainder-only row, proving the release was actually consumed (see
+    // `a_newer_viewport_cancels_the_in_flight_load` for why row 0 won't do).
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(5).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(col_at(&scenery, 0, "v").as_deref(), Some("v0"));
+
+    // A force_load refresh of the block just loaded: call 2 re-fetches
+    // 0..10. Its early push re-sends rows 0, 1, 2 unchanged — the
+    // identical-fresh-record dedup in `write_chunk_row` skips binding them
+    // (they were already bound, unchanged, by call 1) — then it blocks on
+    // the gate.
+    scenery.request_refresh();
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(gated.calls.lock().unwrap()[1], 0..10);
+
+    // Supersede it with a different range before it finishes: call 2 is
+    // cancelled. Its early-pushed rows (0, 1, 2) were never *bound* — the
+    // dedup skip means `write_chunk_row` returned `false` for them — so
+    // cancelling must not unbind them.
+    scenery.set_viewport(20..30);
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(gated.calls.lock().unwrap()[2], 20..30);
+
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(25).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(scenery.row(25).is_some());
+
+    // Rows 0, 1 and 2 must still be present with their original values — a
+    // cancelled load that only ever touched them through the dedup skip
+    // must not have deleted them.
+    assert!(scenery.row(0).is_some());
+    assert!(scenery.row(1).is_some());
+    assert!(scenery.row(2).is_some());
+    assert_eq!(col_at(&scenery, 0, "v").as_deref(), Some("v0"));
+    assert_eq!(col_at(&scenery, 1, "v").as_deref(), Some("v1"));
+    assert_eq!(col_at(&scenery, 2, "v").as_deref(), Some("v2"));
     Ok(())
 }

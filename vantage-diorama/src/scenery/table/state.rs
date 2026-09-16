@@ -655,7 +655,7 @@ impl SceneryChunkTarget for TableSceneryState {
         self.set_total(Some(total))
     }
 
-    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) {
+    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) -> bool {
         // Count every received row (before the skips below), so the loader can
         // tell a short page (end of set) from a full one.
         self.load_push_count.fetch_add(1, Ordering::SeqCst);
@@ -668,7 +668,7 @@ impl SceneryChunkTarget for TableSceneryState {
         // order (`Dio::fetch_window_ordered`) and there is no client re-sort, so
         // these rows must be written straight through.
         if self.sort.read().unwrap().is_some() && !self.master_capabilities.can_order {
-            return;
+            return false;
         }
         // Skip the write entirely when this slot already holds the same fresh
         // record: a refresh that re-fetches identical data must not look like a
@@ -680,13 +680,14 @@ impl SceneryChunkTarget for TableSceneryState {
                 && existing.status == RowStatus::Fresh
                 && existing.record == record
             {
-                return;
+                return false;
             }
         }
         let enriched = Arc::new(EnrichedRecord::fresh(record));
         self.rows.write().unwrap().insert(idx, enriched);
         self.id_to_idx.write().unwrap().insert(id, idx);
         self.load_dirty.store(true, Ordering::SeqCst);
+        true
     }
 
     fn unbind_chunk_rows(&self, indices: &[usize]) {

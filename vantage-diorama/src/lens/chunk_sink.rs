@@ -12,25 +12,42 @@ use crate::lens::cache_backend::CacheTable;
 /// `ChunkSink` (which lives in `lens`) from the concrete scenery
 /// state type.
 pub trait SceneryChunkTarget: Send + Sync {
-    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>);
+    /// Bind a freshly-fetched row into the scenery's sparse map. Returns
+    /// whether it actually bound the row: `false` when the client-side-sort
+    /// hold-back or the identical-fresh-record dedup skipped the write, in
+    /// which case `idx` was never touched. Callers that track bound indices
+    /// to undo (see [`unbind_chunk_rows`](Self::unbind_chunk_rows)) must only
+    /// record the ones this returned `true` for — undoing a skipped index
+    /// would delete a row this call never wrote.
+    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) -> bool;
 
     /// Record the grand total a chunk fetch reported. Returns whether the
     /// value moved, so the loader can decide to repaint.
     fn set_chunk_total(&self, total: usize) -> bool;
 
     /// Remove these indices from the visible map. Called when a chunk load
-    /// that already bound them (via `write_chunk_row`) is cancelled before it
-    /// could flush its buffered rows to the cache — without this, a bound but
-    /// never-committed row survives the load that produced it, and looks
-    /// cached to anything that checks the visible map afterward.
+    /// that already bound them (via a `write_chunk_row` that returned `true`)
+    /// is cancelled before it could flush its buffered rows to the cache —
+    /// without this, a bound but never-committed row survives the load that
+    /// produced it, and looks cached to anything that checks the visible map
+    /// afterward.
     fn unbind_chunk_rows(&self, indices: &[usize]);
 }
 
-/// Rows a [`ChunkSink`] has accepted but not yet written — see
-/// [`ChunkSink::buffer`]. Keeps the index each row was bound at, so a
-/// cancelled load can unbind exactly the rows it pushed (see
-/// [`ChunkSink::pushed_indices`]).
-type BufferedRows = Arc<std::sync::Mutex<Vec<ChunkRow>>>;
+/// Rows a [`ChunkSink`] has accepted but not yet written, and which of them
+/// `write_chunk_row` actually bound into the visible map — see
+/// [`ChunkSink::buffer`] and [`ChunkSink::bound_indices`].
+#[derive(Default)]
+pub(crate) struct Buffered {
+    rows: Vec<ChunkRow>,
+    /// Indices `write_chunk_row` returned `true` for. A subset of `rows`'
+    /// indices: the client-side-sort hold-back and the identical-fresh-record
+    /// dedup buffer a row for the cache write without binding it, so those
+    /// indices must not appear here — a cancelled load unbinds only these.
+    bound: Vec<usize>,
+}
+
+type BufferedRows = Arc<std::sync::Mutex<Buffered>>;
 
 /// Handle passed to `on_load_chunk` callbacks. Each [`push`](Self::push)
 /// writes one row to the Dio's cache and binds it to a row index in
@@ -111,23 +128,30 @@ impl ChunkSink {
             return Ok(());
         }
         if let Ok(mut buffer) = self.buffer.lock() {
-            buffer.push(ChunkRow {
+            buffer.rows.push(ChunkRow {
                 idx,
                 id: id.clone(),
                 record: record.clone(),
             });
         }
-        target.write_chunk_row(idx, id, record);
+        let bound = target.write_chunk_row(idx, id, record);
+        if bound && let Ok(mut buffer) = self.buffer.lock() {
+            buffer.bound.push(idx);
+        }
         Ok(())
     }
 
-    /// Indices pushed into this chunk's buffer so far, in push order. Read
-    /// by the loader when a load is cancelled mid-flight, to unbind the rows
-    /// this chunk bound (via `write_chunk_row`) but never got to commit.
-    pub(crate) fn pushed_indices(&self) -> Vec<usize> {
+    /// Indices this chunk has actually bound into the visible map so far —
+    /// i.e. `write_chunk_row` returned `true` for them. Not every pushed
+    /// index: the client-side-sort hold-back and the identical-fresh-record
+    /// dedup buffer a row for the cache write without binding it. Read by the
+    /// loader when a load is cancelled mid-flight, to unbind exactly the rows
+    /// this chunk bound but never got to commit — unbinding a skipped index
+    /// would delete a row this chunk never touched.
+    pub(crate) fn bound_indices(&self) -> Vec<usize> {
         self.buffer
             .lock()
-            .map(|buffer| buffer.iter().map(|row| row.idx).collect())
+            .map(|buffer| buffer.bound.clone())
             .unwrap_or_default()
     }
 
@@ -148,7 +172,7 @@ impl ChunkSink {
             let Ok(mut buffer) = self.buffer.lock() else {
                 return Ok(FlushReport::default());
             };
-            std::mem::take(&mut *buffer)
+            std::mem::take(&mut buffer.rows)
                 .into_iter()
                 .map(|row| (row.id, row.record))
                 .collect()

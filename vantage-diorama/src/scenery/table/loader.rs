@@ -245,7 +245,7 @@ struct PendingChunk {
     _in_flight: InFlightMarker,
 }
 
-/// Unbinds a chunk's pushed-but-uncommitted rows if its callback's future is
+/// Unbinds a chunk's bound-but-uncommitted rows if its callback's future is
 /// dropped before the callback returns — i.e. a newer viewport superseded
 /// the load. Disarmed right after the callback returns, whatever the
 /// result: a callback that ran to completion (successfully or not) has its
@@ -261,7 +261,12 @@ impl Drop for CancelOnDrop {
         if !self.armed {
             return;
         }
-        let indices = self.writer.pushed_indices();
+        // Only indices `write_chunk_row` actually bound — not every pushed
+        // one. A row the client-sort hold-back or the identical-fresh-record
+        // dedup skipped was never written into the visible map, so unbinding
+        // it would delete a row this chunk never touched (e.g. a `force_load`
+        // refresh over an unchanged, already-cached range).
+        let indices = self.writer.bound_indices();
         if indices.is_empty() {
             return;
         }
