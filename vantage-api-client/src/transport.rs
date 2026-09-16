@@ -8,6 +8,34 @@ use std::sync::Arc;
 use vantage_api_pool::resilient::{CallPolicy, ClientError, ResilientClient, TransportObserver};
 use vantage_core::{Priority, VantageError, error};
 
+/// A configured `Authorization` header value. Held in its own type so
+/// that `Debug` — derived on every struct that carries one — prints
+/// `Some("<set>")` instead of leaking the token into a log line.
+#[derive(Clone, Default)]
+pub(crate) struct AuthHeader(Option<String>);
+
+impl AuthHeader {
+    pub(crate) fn new(value: impl Into<String>) -> Self {
+        Self(Some(value.into()))
+    }
+
+    /// The value to send, `None` when no auth is configured.
+    pub(crate) fn value(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+
+    /// What a debug dump shows in place of the value.
+    pub(crate) fn masked(&self) -> Option<&'static str> {
+        self.0.as_ref().map(|_| "<set>")
+    }
+}
+
+impl std::fmt::Debug for AuthHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.masked().fmt(f)
+    }
+}
+
 /// What both API builders collect for the shared client.
 #[derive(Clone)]
 pub(crate) struct ClientConfig {

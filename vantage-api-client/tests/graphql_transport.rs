@@ -2,14 +2,17 @@
 
 mod support;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Map;
-use support::{mount, mount_n, recorder, requests};
+use support::{
+    Recorder, client_with_user_agent, mount, mount_n, mount_with_header, recorder, requests,
+};
 use vantage_api_client::{GraphqlApi, Priority};
 use wiremock::MockServer;
 
-fn api(server: &MockServer, rec: &std::sync::Arc<support::Recorder>) -> GraphqlApi {
+fn api(server: &MockServer, rec: &Arc<Recorder>) -> GraphqlApi {
     GraphqlApi::builder(server.uri())
         .observer("gql", rec.clone())
         .build()
@@ -39,7 +42,7 @@ async fn background_post_makes_one_attempt_and_keeps_the_body() {
     );
     assert_eq!(requests(&server).await, 1);
     assert_eq!(rec.tags(), ["started", "failed:status"]);
-    assert!(rec.keys.lock().unwrap().iter().all(|k| k == "gql"));
+    assert!(rec.keys().iter().all(|k| k == "gql"));
 }
 
 #[tokio::test]
@@ -69,18 +72,17 @@ async fn essential_post_retries_5xx() {
 #[tokio::test]
 async fn http_client_override_travels_with_every_request() {
     let server = MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::header("user-agent", "probe-agent"))
-        .respond_with(
-            wiremock::ResponseTemplate::new(200).set_body_string(r#"{"data":{"missions":[]}}"#),
-        )
-        .mount(&server)
-        .await;
-    let custom = reqwest::Client::builder()
-        .user_agent("probe-agent")
-        .build()
-        .unwrap();
-    let api = GraphqlApi::builder(server.uri()).client(custom).build();
+    mount_with_header(
+        &server,
+        "POST",
+        ("user-agent", "probe-agent"),
+        200,
+        r#"{"data":{"missions":[]}}"#,
+    )
+    .await;
+    let api = GraphqlApi::builder(server.uri())
+        .client(client_with_user_agent("probe-agent"))
+        .build();
     let data = api
         .post_graphql("{ missions { id } }", &Map::new())
         .await

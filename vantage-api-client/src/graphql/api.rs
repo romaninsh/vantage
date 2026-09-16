@@ -17,6 +17,7 @@ use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObse
 use vantage_core::{Priority, Result, error};
 
 use crate::graphql::condition::FilterDialect;
+use crate::transport::AuthHeader;
 
 /// GraphQL HTTP data source. Cheap to clone — the inner `ResilientClient`
 /// is `Arc`-wrapped.
@@ -24,31 +25,16 @@ use crate::graphql::condition::FilterDialect;
 /// `dialect` and `filter_arg_name` drive how the `TableSource` impl
 /// renders filter arguments — Hasura's `where:` vs SpaceX-style `find:`,
 /// etc. Both default to the dialect's natural choice (Generic + `find`).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GraphqlApi {
     endpoint: String,
     client: ResilientClient,
-    auth_header: Option<String>,
+    auth_header: AuthHeader,
     pub(crate) dialect: FilterDialect,
     pub(crate) filter_arg_name: Option<String>,
     pub(crate) root_args: Option<Value>,
     pub(crate) response_path: Vec<String>,
     pub(crate) supports: Supports,
-}
-
-impl std::fmt::Debug for GraphqlApi {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GraphqlApi")
-            .field("endpoint", &self.endpoint)
-            .field("client", &self.client)
-            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
-            .field("dialect", &self.dialect)
-            .field("filter_arg_name", &self.filter_arg_name)
-            .field("root_args", &self.root_args)
-            .field("response_path", &self.response_path)
-            .field("supports", &self.supports)
-            .finish()
-    }
 }
 
 /// Per-table overrides for what the server will actually accept, each
@@ -179,15 +165,14 @@ impl GraphqlApi {
         let body = Body { query, variables };
 
         let policy = crate::transport::policy_for(Priority::current());
-        let auth = self.auth_header.clone();
         let response = self
             .client
             .execute_with(&policy, |http| {
-                let mut req = http.post(&self.endpoint).json(&body);
-                if let Some(ref a) = auth {
-                    req = req.header("Authorization", a);
+                let req = http.post(&self.endpoint).json(&body);
+                match self.auth_header.value() {
+                    Some(auth) => req.header(reqwest::header::AUTHORIZATION, auth),
+                    None => req,
                 }
-                req
             })
             .await
             .map_err(|e| {
@@ -223,11 +208,11 @@ impl GraphqlApi {
 }
 
 /// Builder for [`GraphqlApi`]. Use [`GraphqlApi::builder`] to start.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GraphqlApiBuilder {
     endpoint: String,
     transport: crate::transport::ClientConfig,
-    auth_header: Option<String>,
+    auth_header: AuthHeader,
     dialect: FilterDialect,
     filter_arg_name: Option<String>,
     root_args: Option<Value>,
@@ -235,27 +220,12 @@ pub struct GraphqlApiBuilder {
     supports: Supports,
 }
 
-impl std::fmt::Debug for GraphqlApiBuilder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GraphqlApiBuilder")
-            .field("endpoint", &self.endpoint)
-            .field("transport", &self.transport)
-            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
-            .field("dialect", &self.dialect)
-            .field("filter_arg_name", &self.filter_arg_name)
-            .field("root_args", &self.root_args)
-            .field("response_path", &self.response_path)
-            .field("supports", &self.supports)
-            .finish()
-    }
-}
-
 impl GraphqlApiBuilder {
     pub(crate) fn new(endpoint: String) -> Self {
         Self {
             endpoint,
             transport: crate::transport::ClientConfig::default(),
-            auth_header: None,
+            auth_header: AuthHeader::default(),
             dialect: FilterDialect::Generic,
             filter_arg_name: None,
             root_args: None,
@@ -309,7 +279,7 @@ impl GraphqlApiBuilder {
 
     /// Set the `Authorization` header value (e.g. `"Bearer <token>"`).
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = Some(auth.into());
+        self.auth_header = AuthHeader::new(auth);
         self
     }
 

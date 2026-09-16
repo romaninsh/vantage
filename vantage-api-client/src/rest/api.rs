@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObserver};
 use vantage_core::{Priority, error};
 use vantage_dataset::traits::Result;
@@ -9,6 +10,8 @@ use vantage_expressions::Expression;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::pagination::Pagination;
 use vantage_types::Record;
+
+use crate::transport::AuthHeader;
 
 /// How the API wraps its row array in the response body.
 ///
@@ -103,11 +106,11 @@ pub enum FilterStrategy {
     Client,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RestApi {
     base_url: String,
     client: ResilientClient,
-    pub(crate) auth_header: Option<String>,
+    pub(crate) auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
     /// When true, no `_page`/`_limit` query params are appended and
@@ -129,22 +132,6 @@ pub struct RestApi {
     debug: bool,
 }
 
-impl std::fmt::Debug for RestApi {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RestApi")
-            .field("base_url", &self.base_url)
-            .field("client", &self.client)
-            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
-            .field("response_shape", &self.response_shape)
-            .field("pagination", &self.pagination)
-            .field("no_pagination", &self.no_pagination)
-            .field("filter_strategy", &self.filter_strategy)
-            .field("total_key", &self.total_key)
-            .field("debug", &self.debug)
-            .finish()
-    }
-}
-
 impl RestApi {
     /// Create a new REST API pointing at `base_url`. Uses the legacy
     /// default response shape (`{ "data": [...] }`). For other shapes
@@ -162,7 +149,7 @@ impl RestApi {
     /// Provided for backwards compatibility — prefer
     /// `RestApi::builder(...).auth(...)`.
     pub fn with_auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = Some(auth.into());
+        self.auth_header = AuthHeader::new(auth);
         self
     }
 
@@ -207,37 +194,37 @@ impl RestApi {
         body: Option<&serde_json::Value>,
     ) -> vantage_core::Result<reqwest::Response> {
         let url = join_base_path(&self.base_url, path);
-        let auth = self.auth_header.clone();
+
+        // `HeaderMap::insert` replaces a same-named entry rather than
+        // appending — unlike `RequestBuilder::header` — so a caller header
+        // actually overrides the configured auth instead of riding alongside
+        // it on the wire.
+        let mut header_map = HeaderMap::new();
+        if let Some(auth) = self.auth_header.value() {
+            header_map.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(auth)
+                    .expect("configured auth header must be a valid header value"),
+            );
+        }
+        for (name, value) in headers {
+            header_map.insert(
+                HeaderName::from_bytes(name.as_bytes()).expect("header name must be valid"),
+                HeaderValue::from_str(value).expect("header value must be valid"),
+            );
+        }
+
         let policy = crate::transport::policy_for(Priority::current());
         let response = self
             .client
             .execute_with(&policy, |http| {
-                let mut req = http.request(method.clone(), &url);
-                // `HeaderMap::insert` replaces a same-named entry rather than
-                // appending — unlike `RequestBuilder::header` — so a caller
-                // header actually overrides the configured auth instead of
-                // riding alongside it on the wire.
-                let mut map = reqwest::header::HeaderMap::new();
-                if let Some(ref a) = auth {
-                    map.insert(
-                        reqwest::header::AUTHORIZATION,
-                        reqwest::header::HeaderValue::from_str(a)
-                            .expect("configured auth header must be a valid header value"),
-                    );
+                let req = http
+                    .request(method.clone(), &url)
+                    .headers(header_map.clone());
+                match body {
+                    Some(body) => req.json(body),
+                    None => req,
                 }
-                for (k, v) in headers {
-                    map.insert(
-                        reqwest::header::HeaderName::from_bytes(k.as_bytes())
-                            .expect("header name must be valid"),
-                        reqwest::header::HeaderValue::from_str(v)
-                            .expect("header value must be valid"),
-                    );
-                }
-                req = req.headers(map);
-                if let Some(b) = body {
-                    req = req.json(b);
-                }
-                req
             })
             .await
             .map_err(|e| crate::transport::client_error(e, "API request failed", &url))?;
@@ -454,7 +441,7 @@ impl RestApi {
             "driver": "rest-api",
             "method": "GET",
             "url": join_query(&endpoint, &query),
-            "auth_header": self.auth_header.as_ref().map(|_| "<set>"),
+            "auth_header": self.auth_header.masked(),
             // Under `FilterStrategy::Client` these never reach the server: the
             // rows come back unfiltered and are narrowed in memory.
             "client_side_filters": client_filters
@@ -577,8 +564,6 @@ impl RestApi {
             }
         }
 
-        let auth = self.auth_header.clone();
-
         // Time every round trip, unconditionally — a remote API is the one part
         // of a read the process cannot bound, and a slow page is far more often
         // one slow GET than anything local. Reported regardless of `debug` so
@@ -589,11 +574,11 @@ impl RestApi {
         let response = self
             .client
             .execute_with(&policy, |http| {
-                let mut req = http.get(&url);
-                if let Some(ref a) = auth {
-                    req = req.header("Authorization", a);
+                let req = http.get(&url);
+                match self.auth_header.value() {
+                    Some(auth) => req.header(AUTHORIZATION, auth),
+                    None => req,
                 }
-                req
             })
             .await
             .map_err(|e| {
@@ -710,17 +695,20 @@ impl RestApi {
             });
         }
 
+        // Counts the rows this call hands back, so a client-side filter shows
+        // up as fewer rows pulled than the server sent.
         self.client
             .report(TransportEvent::RowsPulled { n: records.len() });
 
-        if client_filters.is_empty() {
-            Ok((records, total))
+        // The envelope counted what the SERVER matched, before any rows were
+        // dropped above — reporting that total now would size a grid to rows it
+        // will never be given. No total is better than a wrong one.
+        let total = if client_filters.is_empty() {
+            total
         } else {
-            // The envelope counted what the SERVER matched, before these rows
-            // were dropped here — reporting the total now would size a grid to
-            // rows it will never be given. No total is better than a wrong one.
-            Ok((records, None))
-        }
+            None
+        };
+        Ok((records, total))
     }
 }
 
@@ -821,10 +809,10 @@ impl RestApi {
 ///     .pagination_params(PaginationParams::skip_limit("skip", "limit"))
 ///     .build();
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RestApiBuilder {
     base_url: String,
-    auth_header: Option<String>,
+    auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
     no_pagination: bool,
@@ -834,27 +822,11 @@ pub struct RestApiBuilder {
     transport: crate::transport::ClientConfig,
 }
 
-impl std::fmt::Debug for RestApiBuilder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RestApiBuilder")
-            .field("base_url", &self.base_url)
-            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
-            .field("response_shape", &self.response_shape)
-            .field("pagination", &self.pagination)
-            .field("no_pagination", &self.no_pagination)
-            .field("filter_strategy", &self.filter_strategy)
-            .field("total_key", &self.total_key)
-            .field("debug", &self.debug)
-            .field("transport", &self.transport)
-            .finish()
-    }
-}
-
 impl RestApiBuilder {
     fn new(base_url: String) -> Self {
         Self {
             base_url,
-            auth_header: None,
+            auth_header: AuthHeader::default(),
             response_shape: ResponseShape::default(),
             pagination: PaginationParams::default(),
             no_pagination: false,
@@ -896,7 +868,7 @@ impl RestApiBuilder {
 
     /// Set the Authorization header value (e.g. "Bearer `<token>`").
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = Some(auth.into());
+        self.auth_header = AuthHeader::new(auth);
         self
     }
 

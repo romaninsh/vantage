@@ -3,16 +3,20 @@
 
 mod support;
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use support::{mount, mount_n, recorder, requests};
+use support::{
+    Recorder, client_with_user_agent, mount, mount_n, mount_with_header, recorder, requests,
+};
 use vantage_api_client::{Priority, ResponseShape, RestApi};
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use wiremock::MockServer;
+use wiremock::matchers::{body_json, header, method};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn api(server: &MockServer, rec: &std::sync::Arc<support::Recorder>) -> RestApi {
+fn api(server: &MockServer, rec: &Arc<Recorder>) -> RestApi {
     RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .observer("local", rec.clone())
@@ -87,7 +91,7 @@ async fn observer_key_is_the_configured_one_and_rows_are_counted() {
     let api = api(&server, &rec);
     assert_eq!(list_rows(&api).await.unwrap(), 2);
     assert_eq!(rec.tags(), ["started", "ok:200", "rows:2"]);
-    assert!(rec.keys.lock().unwrap().iter().all(|k| k == "local"));
+    assert!(rec.keys().iter().all(|k| k == "local"));
     assert_eq!(
         api.breaker_state(),
         Some(vantage_api_client::BreakerState::Closed)
@@ -97,12 +101,10 @@ async fn observer_key_is_the_configured_one_and_rows_are_counted() {
 #[tokio::test]
 async fn http_request_sends_headers_and_body_and_reports_a_write() {
     let server = MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::header("Idempotency-Key", "abc-123"))
-        .and(wiremock::matchers::body_json(
-            serde_json::json!({"name": "widget"}),
-        ))
-        .respond_with(wiremock::ResponseTemplate::new(201))
+    Mock::given(method("POST"))
+        .and(header("Idempotency-Key", "abc-123"))
+        .and(body_json(serde_json::json!({"name": "widget"})))
+        .respond_with(ResponseTemplate::new(201))
         .mount(&server)
         .await;
     let rec = recorder();
@@ -150,18 +152,10 @@ async fn breaker_opens_after_five_background_failures() {
 #[tokio::test]
 async fn http_client_override_travels_with_every_request() {
     let server = MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::header("user-agent", "probe-agent"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("[]"))
-        .mount(&server)
-        .await;
-    let custom = reqwest::Client::builder()
-        .user_agent("probe-agent")
-        .build()
-        .unwrap();
+    mount_with_header(&server, "GET", ("user-agent", "probe-agent"), 200, "[]").await;
     let api = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
-        .http_client(custom)
+        .http_client(client_with_user_agent("probe-agent"))
         .build();
     assert_eq!(list_rows(&api).await.unwrap(), 0);
 }
@@ -169,14 +163,14 @@ async fn http_client_override_travels_with_every_request() {
 #[tokio::test]
 async fn caller_authorization_header_replaces_the_configured_one() {
     let server = MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::header(
-            "Authorization",
-            "Bearer override",
-        ))
-        .respond_with(wiremock::ResponseTemplate::new(200))
-        .mount(&server)
-        .await;
+    mount_with_header(
+        &server,
+        "POST",
+        ("Authorization", "Bearer override"),
+        200,
+        "",
+    )
+    .await;
     let api = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .auth("Bearer configured")
@@ -209,11 +203,7 @@ async fn caller_authorization_header_replaces_the_configured_one() {
 #[tokio::test]
 async fn auth_header_still_travels() {
     let server = MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::header("Authorization", "Bearer t0k"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("[]"))
-        .mount(&server)
-        .await;
+    mount_with_header(&server, "GET", ("Authorization", "Bearer t0k"), 200, "[]").await;
     let api = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .auth("Bearer t0k")
