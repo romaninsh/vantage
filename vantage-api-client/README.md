@@ -17,6 +17,7 @@ use vantage_types::EmptyEntity;
 
 let api = RestApi::builder("https://jsonplaceholder.typicode.com")
     .response_shape(ResponseShape::BareArray)
+    .max_parallel(4)
     .build();
 
 let mut users = Table::<RestApi, EmptyEntity>::new("users", api);
@@ -37,6 +38,7 @@ use vantage_types::EmptyEntity;
 
 let api = GraphqlApi::builder("https://spacex-api.fly.dev/graphql")
     .dialect(FilterDialect::Generic)
+    .max_parallel(4)
     .build();
 
 let mut launches = Table::<GraphqlApi, EmptyEntity>::new("launches", api);
@@ -45,6 +47,8 @@ launches.add_condition(Column::<String>::new("mission_name").eq("FalconSat"));
 // POSTs: query { launches(find: {mission_name: "FalconSat"}) { id mission_name } }
 let rows = launches.list_values().await?;
 ```
+
+The retry policy follows `vantage_core::Priority`: wrap a wait in `Priority::Essential.scope(..)` to retry until it is dropped; everything else makes one attempt.
 
 The query document gets rendered with inline filter values plus typed `$limit` / `$offset` variables. Two dialects ship out of the box:
 
