@@ -5576,6 +5576,7 @@ dependencies = [
  "tracing",
  "urlencoding",
  "uuid",
+ "vantage-api-pool",
  "vantage-cli-util",
  "vantage-core",
  "vantage-dataset",
@@ -5583,6 +5584,7 @@ dependencies = [
  "vantage-table",
  "vantage-types",
  "vantage-vista",
+ "wiremock",
 ]
 
 [[package]]

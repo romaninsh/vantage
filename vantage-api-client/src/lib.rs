@@ -15,6 +15,10 @@
 pub mod graphql;
 pub mod prelude;
 pub mod rest;
+mod transport;
+
+pub use vantage_api_pool::resilient::{BreakerState, TransportEvent, TransportObserver};
+pub use vantage_core::Priority;
 
 pub use graphql::{
     AnyGraphqlType, FieldCondition, FilterDialect, GraphqlApi, GraphqlApiBuilder,

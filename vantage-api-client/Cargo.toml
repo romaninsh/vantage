@@ -24,6 +24,7 @@ serde_yaml_ng = "0.10"
 tracing = "0.1"
 urlencoding = "2.1"
 uuid = { version = "1", features = ["serde"] }
+vantage-api-pool = { version = "0.6.1", path = "../vantage-api-pool" }
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
@@ -37,3 +38,4 @@ tokio = { version = "1.52", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2.1"
 vantage-cli-util = { path = "../vantage-cli-util" }
+wiremock = "0.6"
