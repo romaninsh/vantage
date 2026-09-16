@@ -2,7 +2,9 @@
 //!
 //! Core traits and types used throughout the Vantage framework.
 
+pub mod request;
 pub mod util;
+pub use request::Priority;
 
 // use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub use util::{Context, ErrorKind, IntoVec, Result, VantageError};

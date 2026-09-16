@@ -5690,7 +5690,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "atty",
@@ -5698,6 +5698,7 @@ dependencies = [
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
