@@ -516,3 +516,55 @@ async fn a_cancelled_refresh_over_unchanged_rows_keeps_them() -> Result<()> {
     assert_eq!(col_at(&scenery, 2, "v").as_deref(), Some("v2"));
     Ok(())
 }
+
+#[tokio::test]
+async fn a_failed_background_refresh_keeps_the_rows() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let backend = rows(30);
+    let fail = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let lens = {
+        let total = backend.clone();
+        let b = backend.clone();
+        let fail = fail.clone();
+        Arc::new(
+            Lens::new()
+                .cache_at(tmp.path().join("c.redb"))
+                .total_provider(move |_dio| {
+                    let b = total.clone();
+                    async move { Ok(b.lock().unwrap().len()) }
+                })
+                .on_load_chunk(move |_dio, range, _query, sink| {
+                    let b = b.clone();
+                    let fail = fail.clone();
+                    async move {
+                        if fail.load(std::sync::atomic::Ordering::SeqCst) {
+                            return Err(vantage_core::error!("API request failed", status = 503));
+                        }
+                        let rows = b.lock().unwrap().clone();
+                        for idx in range {
+                            if let Some((id, r)) = rows.get(idx) {
+                                sink.push(idx, id.clone(), r.clone()).await?;
+                            }
+                        }
+                        Ok(())
+                    }
+                })
+                .build()
+                .expect("lens"),
+        )
+    };
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("first page", |v| v.loaded_rows() >= 10)
+        .await;
+    let before: Vec<_> = (0..10).map(|i| view.col_at(i, "v")).collect();
+
+    fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    view.scenery().request_refresh();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let after: Vec<_> = (0..10).map(|i| view.col_at(i, "v")).collect();
+    assert_eq!(before, after, "rows on screen survive a failed refresh");
+    assert_eq!(view.gray_rows(), 0);
+    Ok(())
+}
