@@ -5593,6 +5593,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "futures-core",
+ "futures-util",
  "indexmap 2.14.0",
  "reqwest",
  "rust_decimal",

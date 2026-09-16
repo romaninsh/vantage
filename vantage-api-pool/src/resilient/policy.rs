@@ -2,6 +2,10 @@
 
 use std::time::Duration;
 
+/// The shortest sleep any retry mode may schedule. A policy configured with a
+/// zero base (or a zero ceiling) would otherwise spin.
+const MIN_BACKOFF: Duration = Duration::from_millis(1);
+
 /// Bounded retry: exponential from `base_backoff` (doubling per attempt),
 /// capped at `max_backoff`, with jitter added before each sleep.
 #[derive(Debug, Clone)]
@@ -27,10 +31,13 @@ impl RetryPolicy {
     }
 }
 
-/// `base × 2^attempt`, capped.
-pub(crate) fn exponential(base: Duration, max: Duration, attempt: usize) -> Duration {
+/// `base × 2^attempt`, capped at `max`. Both bounds are floored at
+/// [`MIN_BACKOFF`], so a policy configured with zeros still sleeps.
+fn exponential(base: Duration, max: Duration, attempt: usize) -> Duration {
     let factor = 2u32.saturating_pow(attempt.min(31) as u32);
-    base.saturating_mul(factor).min(max)
+    base.max(MIN_BACKOFF)
+        .saturating_mul(factor)
+        .min(max.max(MIN_BACKOFF))
 }
 
 /// Add up to +25% jitter so retrying clients don't synchronize.
@@ -88,9 +95,8 @@ impl CallPolicy {
                 base: Duration::from_millis(250),
                 max: Duration::from_secs(10),
             },
-            breaker: BreakerMode::FailFast,
+            breaker: BreakerMode::WaitForProbe,
         }
-        .wait_for_probe()
     }
 
     /// Bounded retry, fail fast — what `execute` does.
@@ -115,9 +121,99 @@ impl CallPolicy {
             RetryMode::UntilCancelled { base, max } => Some(exponential(*base, *max, attempt)),
         }
     }
+
+    /// The ceiling a server's `Retry-After` is clamped to under this mode. A
+    /// server asking for two minutes must not park a call whose own policy
+    /// promises to give up — or to retry sooner — well before that.
+    pub(crate) fn retry_after_cap(&self) -> Option<Duration> {
+        match &self.retry {
+            RetryMode::None => None,
+            RetryMode::Bounded(p) => Some(p.max_backoff.max(MIN_BACKOFF)),
+            RetryMode::UntilCancelled { max, .. } => Some((*max).max(MIN_BACKOFF)),
+        }
+    }
 }
 
 /// Statuses a retry may fix. Everything else in 4xx is final.
 pub(crate) fn is_retryable_status(status: u16) -> bool {
     status == 408 || status == 429 || (500..600).contains(&status)
+}
+
+/// What one attempt's answer tells the circuit breaker. Retryability and
+/// health are separate questions: `429` is worth retrying but proves the API
+/// is up, and a `404` is not worth retrying but proves the same thing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Health {
+    /// A `2xx`: the API works. Closes the breaker and clears the failure run.
+    Healthy,
+    /// An answer a retry cannot fix. The API is reachable, so this closes an
+    /// open breaker, but it is not evidence of health: the failure run stands.
+    Reachable,
+    /// `408` / `429`: the server answered, but about its own load. Neither
+    /// opens nor closes the breaker.
+    Inconclusive,
+    /// `5xx`: counts toward opening the breaker.
+    Failing,
+}
+
+pub(crate) fn status_health(status: u16) -> Health {
+    match status {
+        200..=299 => Health::Healthy,
+        408 | 429 => Health::Inconclusive,
+        500..=599 => Health::Failing,
+        _ => Health::Reachable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retryability_and_health_are_separate_questions() {
+        for status in [408, 429] {
+            assert!(is_retryable_status(status));
+            assert_eq!(status_health(status), Health::Inconclusive);
+        }
+        assert!(is_retryable_status(503));
+        assert_eq!(status_health(503), Health::Failing);
+        assert!(!is_retryable_status(404));
+        assert_eq!(status_health(404), Health::Reachable);
+        assert!(!is_retryable_status(200));
+        assert_eq!(status_health(200), Health::Healthy);
+    }
+
+    #[test]
+    fn a_zeroed_policy_still_sleeps() {
+        let p = CallPolicy {
+            retry: RetryMode::UntilCancelled {
+                base: Duration::ZERO,
+                max: Duration::ZERO,
+            },
+            breaker: BreakerMode::FailFast,
+        };
+        assert_eq!(p.next_backoff(0), Some(MIN_BACKOFF));
+        assert_eq!(p.next_backoff(9), Some(MIN_BACKOFF));
+
+        let bounded = CallPolicy::bounded(RetryPolicy {
+            max_retries: 2,
+            base_backoff: Duration::ZERO,
+            max_backoff: Duration::ZERO,
+        });
+        assert_eq!(bounded.next_backoff(0), Some(MIN_BACKOFF));
+        assert_eq!(bounded.next_backoff(2), None, "the budget still runs out");
+    }
+
+    #[test]
+    fn retry_after_is_capped_by_the_mode() {
+        assert_eq!(CallPolicy::background().retry_after_cap(), None);
+        assert_eq!(
+            CallPolicy::essential().retry_after_cap(),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(
+            CallPolicy::bounded(RetryPolicy::default()).retry_after_cap(),
+            Some(Duration::from_secs(10))
+        );
+    }
 }

@@ -13,7 +13,8 @@ pub enum ErrorKind {
     BreakerOpen,
     /// The auth refresher returned an error.
     Auth(String),
-    /// The client's semaphore was closed (the client is being torn down).
+    /// The client's semaphore was closed. Reserved for an explicit client
+    /// shutdown; nothing closes the semaphore today.
     Closed,
 }
 
@@ -23,11 +24,26 @@ pub struct ClientError {
     pub kind: ErrorKind,
     /// Attempts made, including the first one.
     pub attempts: usize,
+    /// The start of the last non-2xx response body (up to 2 KiB, UTF-8
+    /// lossy), for callers that surface the server's own message — an outbox
+    /// entry's `last_error`, a lens log line. `None` when there was no
+    /// response body to read, and for transport, breaker and auth failures.
+    /// Not part of [`Display`](fmt::Display).
+    pub body: Option<String>,
 }
 
 impl ClientError {
     pub(crate) fn new(kind: ErrorKind, attempts: usize) -> Self {
-        Self { kind, attempts }
+        Self {
+            kind,
+            attempts,
+            body: None,
+        }
+    }
+
+    pub(crate) fn with_body(mut self, body: Option<String>) -> Self {
+        self.body = body;
+        self
     }
 
     /// The HTTP status of the last attempt, when there was a response.
@@ -52,7 +68,11 @@ impl ClientError {
 
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let plural = if self.attempts == 1 { "attempt" } else { "attempts" };
+        let plural = if self.attempts == 1 {
+            "attempt"
+        } else {
+            "attempts"
+        };
         match &self.kind {
             ErrorKind::Status(s) => write!(f, "HTTP {s} after {} {plural}", self.attempts),
             ErrorKind::Transport(e) => write!(f, "{e} after {} {plural}", self.attempts),
