@@ -145,7 +145,9 @@ async fn refresh(state: &Arc<TableSceneryState>) {
         // would otherwise never notice a row that appeared (or vanished)
         // server-side. Then re-fetch the current viewport in place.
         state.refresh_total().await;
-        state.refresh_loaded_viewport();
+        // The poll: nobody typed anything and the rows are already on screen,
+        // so this re-pull is background work behind them.
+        state.refresh_loaded_viewport(vantage_core::Priority::Background);
     } else {
         reseed(state).await;
     }

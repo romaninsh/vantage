@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.13.0 — 2026-09-16
+
+- `SceneryChunkTarget` is breaking, hence the minor bump: `write_chunk_row`
+  returns `ChunkWrite::{Bound { previous }, Skipped}` instead of `bool`, and
+  `unbind_chunk_rows(&[usize])` is now
+  `restore_chunk_rows(&[(usize, Option<Arc<EnrichedRecord>>)])`.
+- A cancelled or failed chunk load restores the rows it bound to the records
+  they held, instead of deleting the slots. Cancellation can only happen
+  before the page is committed to the cache: the loader runs the lens
+  callback as a cancellable phase and the commit as an uncancellable one.
+- The table loader declares who is waiting: `set_viewport`,
+  `request_load_more`, `set_search`, `set_filter_terms`, the re-order on an
+  orderable master, a cold on-open fetch and the open-blocking
+  `total_provider` call run under `vantage_core::Priority::Essential`; the
+  refresh poll, a warm on-open re-pull, two-pass detail hydration and the
+  horizon probe run under `Background`. HTTP transports pick their retry
+  policy from it.
+- Coalescing keeps `Essential`: a viewport absorbed with a refresh inside the
+  debounce runs as the wait, not as the poll.
+- A viewport request for a different range cancels the in-flight chunk load;
+  an identical range is absorbed; an identical range with `force_load` runs
+  after the current load.
+- A cancelled load clears its in-flight marker, so the next request for that
+  range is not skipped.
+- `scenery/table/loader.rs` split into `loader/{mod,range,guards,dispatch,commit,telemetry}.rs`.
+
 ## 0.12.6 — 2026-09-08
 
 - `TableScenery::set_filter_terms(Vec<OpCondition>)` / `filter_terms()` — a

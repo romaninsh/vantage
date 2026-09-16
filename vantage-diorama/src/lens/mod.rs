@@ -30,7 +30,7 @@ pub use callbacks::{
     boxed_list_page_callback, boxed_load_chunk_callback, boxed_load_detail_callback,
     boxed_total_provider_callback,
 };
-pub use chunk_sink::{ChunkRow, ChunkSink, SceneryChunkTarget};
+pub use chunk_sink::{ChunkRow, ChunkSink, ChunkWrite, SceneryChunkTarget};
 pub use defaults::LensDefaults;
 pub use memory_cache::{MemoryCache, MemoryCacheTable};
 pub use redb_cache::{RedbCache, RedbCacheTable};

@@ -89,6 +89,11 @@ pub(crate) struct ViewportRequest {
     /// `request_load_more` sets this true so a fully-cached range
     /// still triggers a fetch (paging past the cache end).
     pub(crate) force_load: bool,
+    /// Who is waiting. A viewport or a load-more is someone looking at the
+    /// rows; a refresh over cached rows is nobody. The loader scopes the
+    /// chunk callback with it, so the transport picks its retry policy
+    /// without a parameter.
+    pub(crate) priority: vantage_core::Priority,
 }
 
 /// How much of a scenery's data has arrived.
@@ -358,6 +363,7 @@ impl TableScenery for TableSceneryImpl {
             ViewportRequest {
                 range,
                 force_load: false,
+                priority: vantage_core::Priority::Essential,
             },
         );
     }
@@ -389,6 +395,7 @@ impl TableScenery for TableSceneryImpl {
             ViewportRequest {
                 range: start..end,
                 force_load: true,
+                priority: vantage_core::Priority::Essential,
             },
         );
     }
@@ -481,7 +488,10 @@ impl TableScenery for TableSceneryImpl {
         if self.inner.paged && !self.inner.two_pass {
             // Same stale-while-revalidate as search: keep the rows on screen
             // and refetch the viewport with the new terms in the query.
-            self.inner.refresh_loaded_viewport();
+            // Essential — the rows on screen are the OLD terms' answer, and
+            // the user set these ones and is waiting for theirs.
+            self.inner
+                .refresh_loaded_viewport(vantage_core::Priority::Essential);
         } else {
             // A two-pass view's membership lives in its index, which only
             // `resort` re-derives — refreshing the viewport would re-hydrate
@@ -536,8 +546,12 @@ impl TableScenery for TableSceneryImpl {
             // total, at which point any tail beyond the new (smaller) set falls
             // outside `row_count` and stops being addressed. Clearing here
             // instead would blank the grid for the whole round trip — a
-            // collapse-to-zero on every keystroke.
-            self.inner.refresh_loaded_viewport();
+            // collapse-to-zero on every keystroke. Essential: `force_load`
+            // says "consult the master", not "nobody is waiting" — the rows
+            // on screen answer the previous query, and the user typed this
+            // one.
+            self.inner
+                .refresh_loaded_viewport(vantage_core::Priority::Essential);
         } else {
             // Eager: the reseed applies the predicate over the cache.
             self.inner.reload_notify.notify_one();

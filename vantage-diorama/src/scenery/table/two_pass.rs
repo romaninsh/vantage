@@ -436,8 +436,9 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
     state.bump_generation();
 
     // 4. Restart the detail pass for the last viewport so augmentation resumes
-    //    without waiting for the user to scroll.
-    state.refresh_loaded_viewport();
+    //    without waiting for the user to scroll. Background: this re-drives
+    //    per-row hydration, which fills rows already on screen in outline.
+    state.refresh_loaded_viewport(vantage_core::Priority::Background);
 }
 
 /// Update one row's slot from its current cache state — the two-pass
@@ -578,7 +579,7 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
     state.bump_generation();
 
     // Resume hydration for what's on screen without waiting for a scroll.
-    state.refresh_loaded_viewport();
+    state.refresh_loaded_viewport(vantage_core::Priority::Background);
 }
 
 /// Run the detail pass for `range`: collect each indexed id in the range that

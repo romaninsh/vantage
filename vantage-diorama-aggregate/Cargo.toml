@@ -14,7 +14,7 @@ vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types" }
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 vantage-vista = { version = "0.6.22", path = "../vantage-vista" }
-vantage-diorama = { version = "0.12", path = "../vantage-diorama" }
+vantage-diorama = { version = "0.13", path = "../vantage-diorama" }
 # `TableShell::preview_query` answers with a driver-shaped JSON value.
 serde_json = "1"
 

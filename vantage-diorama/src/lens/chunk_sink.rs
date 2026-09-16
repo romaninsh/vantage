@@ -6,22 +6,70 @@ use vantage_types::Record;
 
 use crate::dio::pending::PendingFlashes;
 use crate::lens::cache_backend::CacheTable;
+use crate::scenery::EnrichedRecord;
+
+/// What a [`SceneryChunkTarget::write_chunk_row`] call did with the row it was
+/// handed — the information a cancelled or failed load needs to put the
+/// visible map back the way it found it.
+#[derive(Debug)]
+pub enum ChunkWrite {
+    /// The row was written into the slot. `previous` is what the slot held
+    /// before, or `None` when it was empty — the difference between "restore
+    /// that record" and "remove the slot again" when the load is undone.
+    Bound {
+        previous: Option<Arc<EnrichedRecord>>,
+    },
+    /// Nothing was written: the client-side-sort hold-back or the
+    /// identical-fresh-record dedup skipped this index, so it still holds
+    /// whatever it held before the call and must not be undone.
+    Skipped,
+}
 
 /// Trait the calling Scenery implements so a `ChunkSink` can stuff a
 /// freshly-fetched row into the right sparse-map slot. Decouples
 /// `ChunkSink` (which lives in `lens`) from the concrete scenery
 /// state type.
 pub trait SceneryChunkTarget: Send + Sync {
-    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>);
+    /// Bind a freshly-fetched row into the scenery's sparse map. Returns
+    /// [`ChunkWrite::Skipped`] when the client-side-sort hold-back or the
+    /// identical-fresh-record dedup skipped the write, in which case `idx` was
+    /// never touched; otherwise [`ChunkWrite::Bound`] carrying whatever the
+    /// slot held before. Callers that track writes to undo (see
+    /// [`restore_chunk_rows`](Self::restore_chunk_rows)) must record only the
+    /// `Bound` ones — undoing a skipped index would overwrite a row this call
+    /// never wrote.
+    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) -> ChunkWrite;
 
     /// Record the grand total a chunk fetch reported. Returns whether the
     /// value moved, so the loader can decide to repaint.
     fn set_chunk_total(&self, total: usize) -> bool;
+
+    /// Put these slots back the way `write_chunk_row` found them: `None`
+    /// removes the slot (it was empty before), `Some(previous)` restores that
+    /// record. Called when a chunk load that already bound rows is cancelled
+    /// or fails before its buffered rows reach the cache — without this, a
+    /// bound but never-committed row survives the load that produced it, and
+    /// looks cached to anything that checks the visible map afterward, while
+    /// simply *deleting* the slot would punch a hole where a good cached row
+    /// was.
+    fn restore_chunk_rows(&self, rows: &[(usize, Option<Arc<EnrichedRecord>>)]);
 }
 
-/// Rows a [`ChunkSink`] has accepted but not yet written — see
-/// [`ChunkSink::buffer`].
-type BufferedRows = Arc<std::sync::Mutex<Vec<(String, Record<CborValue>)>>>;
+/// Rows a [`ChunkSink`] has accepted but not yet written, and which of them
+/// `write_chunk_row` actually bound into the visible map — see
+/// [`ChunkSink::buffer`] and [`ChunkSink::bound_rows`].
+#[derive(Default)]
+pub(crate) struct Buffered {
+    rows: Vec<ChunkRow>,
+    /// One `(idx, previous)` entry per [`ChunkWrite::Bound`], in write order.
+    /// A subset of `rows`' indices: the client-side-sort hold-back and the
+    /// identical-fresh-record dedup buffer a row for the cache write without
+    /// binding it, so those indices must not appear here — an undone load
+    /// restores only these.
+    bound: Vec<(usize, Option<Arc<EnrichedRecord>>)>,
+}
+
+type BufferedRows = Arc<std::sync::Mutex<Buffered>>;
 
 /// Handle passed to `on_load_chunk` callbacks. Each [`push`](Self::push)
 /// writes one row to the Dio's cache and binds it to a row index in
@@ -95,17 +143,56 @@ impl ChunkSink {
         };
         // A row with a flash in flight keeps its staged value: the slot
         // binds to what the cache holds, and the fetched (possibly
-        // pre-write) snapshot is dropped.
-        if self.pending.contains(&id) {
-            let staged = self.cache.get_value(&id).await?.unwrap_or(record);
-            target.write_chunk_row(idx, id, staged);
-            return Ok(());
-        }
-        if let Ok(mut buffer) = self.buffer.lock() {
-            buffer.push((id.clone(), record.clone()));
-        }
-        target.write_chunk_row(idx, id, record);
+        // pre-write) snapshot is dropped. The row is deliberately NOT
+        // buffered for the cache write — the cache already holds the staged
+        // value, and writing the fetched snapshot over it is exactly what
+        // this branch exists to prevent — but the bind is still recorded, so
+        // an undone load puts the slot back rather than leaving this one
+        // write behind.
+        //
+        // With nothing in the cache under this id (a flash staged for a row
+        // this scenery has never fetched), there is no staged value to
+        // prefer, so the fetched record is bound as-is: visible, but — like
+        // the staged value beside it — not written to the cache by this load.
+        // The flash's own commit is what persists the row.
+        let record = if self.pending.contains(&id) {
+            self.cache.get_value(&id).await?.unwrap_or(record)
+        } else {
+            if let Ok(mut buffer) = self.buffer.lock() {
+                buffer.rows.push(ChunkRow {
+                    idx,
+                    id: id.clone(),
+                    record: record.clone(),
+                });
+            }
+            record
+        };
+        self.note_write(idx, target.write_chunk_row(idx, id, record));
         Ok(())
+    }
+
+    /// Remember a [`ChunkWrite::Bound`] so the load that made it can be undone.
+    fn note_write(&self, idx: usize, write: ChunkWrite) {
+        let ChunkWrite::Bound { previous } = write else {
+            return;
+        };
+        if let Ok(mut buffer) = self.buffer.lock() {
+            buffer.bound.push((idx, previous));
+        }
+    }
+
+    /// The slots this chunk has actually bound into the visible map so far,
+    /// each with what it held before — in write order. Not every pushed
+    /// index: the client-side-sort hold-back and the identical-fresh-record
+    /// dedup buffer a row for the cache write without binding it. Read by the
+    /// loader when a load is cancelled mid-flight or fails, to restore exactly
+    /// the rows this chunk bound but never got to commit — touching a skipped
+    /// index would overwrite a row this chunk never wrote.
+    pub(crate) fn bound_rows(&self) -> Vec<(usize, Option<Arc<EnrichedRecord>>)> {
+        self.buffer
+            .lock()
+            .map(|buffer| buffer.bound.clone())
+            .unwrap_or_default()
     }
 
     /// Commit everything pushed so far, in one write, and report a
@@ -125,7 +212,10 @@ impl ChunkSink {
             let Ok(mut buffer) = self.buffer.lock() else {
                 return Ok(FlushReport::default());
             };
-            std::mem::take(&mut *buffer).into_iter().collect()
+            std::mem::take(&mut buffer.rows)
+                .into_iter()
+                .map(|row| (row.id, row.record))
+                .collect()
         };
         if rows.is_empty() {
             return Ok(FlushReport::default());
