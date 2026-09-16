@@ -493,15 +493,15 @@ nothing, and undoing such an index would overwrite a row the cancelled
 load never touched. The same restore runs on the `Err` path in
 `finish_chunk_load`, so a failed refresh that had already pushed rows
 is as invisible to the grid as one that failed before its first push.
-What a cancelled load *can* leave behind is a row bound through the
-flash-pending path: that row is recorded as bound and restored like
-any other, but it was never buffered for the cache write in the first
-place — the staged flash value is what the cache holds, and the
-fetched snapshot must not overwrite it. A request for the *same* range
-is absorbed and the running load continues; a same-range request with
-`force_load` is parked and runs once the current load finishes — and
-if something else supersedes it first, its `force_load` is OR'd onto
-the request that wins. A cancelled load's in-flight marker is cleared
+A row bound through the flash-pending path is recorded and restored
+like any other. What that path never does is buffer the row for the
+cache write: a row with a flash in flight keeps the staged value the
+cache already holds, and the fetched (possibly pre-write) snapshot
+must not overwrite it. A request for the *same* range is absorbed and
+the running load continues; a same-range request with `force_load` is
+parked and runs once the current load finishes — and if something else
+supersedes it first, both its `force_load` and its priority are OR'd
+onto the request that wins. A cancelled load's in-flight marker is cleared
 with it, so the next request for that range is not skipped as a
 duplicate.
 

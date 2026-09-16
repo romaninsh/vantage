@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use ciborium::Value as CborValue;
 use tokio::sync::{Notify, mpsc, watch};
-use vantage_types::Record;
+use vantage_types::{Record, cbor_id_to_string};
 use vantage_vista::VistaCapabilities;
 
 use crate::dio::{DioInner, Generation};
@@ -731,28 +731,31 @@ impl SceneryChunkTarget for TableSceneryState {
         // `id_to_idx` is keyed by id, not index, so the slots this undid are
         // found by value rather than looked up directly. Every mapping into a
         // touched slot goes, including the one the undone load added; the
-        // record put back re-registers below under its own id, when it carries
-        // one. A row whose record does not embed the master's id column loses
-        // its mapping until the next load rebinds the slot — an in-place
+        // record put back re-registers below under its own id, read through
+        // the same `cbor_id_to_string` every other cache key goes through, so
+        // an integer id column maps as readily as a text one. A row whose
+        // record does not embed the master's id column at all loses its
+        // mapping until the next load rebinds the slot — an in-place
         // `RecordChanged` update for it is skipped, which is a miss the next
         // fetch corrects, where a mapping left pointing at a row that is no
         // longer there would write the wrong record into a live slot.
         let mut id_to_idx = self.id_to_idx.write().unwrap();
         id_to_idx.retain(|_, idx| !touched.contains(idx));
-        let id_column = self.dio_weak.upgrade().and_then(|dio| {
+        let id_column = self.dio_weak.upgrade().map(|dio| {
             dio.master
                 .read()
                 .unwrap()
                 .get_id_column()
-                .map(str::to_string)
+                .unwrap_or("id")
+                .to_string()
         });
         if let Some(id_column) = id_column {
             let rows = self.rows.read().unwrap();
             for idx in &touched {
                 if let Some(record) = rows.get(idx)
-                    && let Some(CborValue::Text(id)) = record.record.get(&id_column)
+                    && let Some(id) = record.record.get(&id_column).and_then(cbor_id_to_string)
                 {
-                    id_to_idx.insert(id.clone(), *idx);
+                    id_to_idx.insert(id, *idx);
                 }
             }
         }

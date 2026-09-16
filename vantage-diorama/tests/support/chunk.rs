@@ -21,10 +21,17 @@ pub type Backend = Arc<Mutex<Vec<(String, Record<CborValue>)>>>;
 
 /// Master serving only metadata + the (false) order capability; rows come from
 /// `backend` via `on_load_chunk`. `cols` is the non-id column set (an `id`
-/// String column flagged as the id is always added).
+/// String column flagged as the id is always added — see
+/// [`master_with_id_type`] for a numeric one).
 pub fn master(cols: &[(&str, &str)]) -> Vista {
-    let mut metadata =
-        VistaMetadata::new().with_column(Column::new("id", "String").with_flag("id"));
+    master_with_id_type("String", cols)
+}
+
+/// [`master`] with a declared type for the id column — `"Int"` for a source
+/// whose rows carry a numeric primary key, which is a different shape for
+/// everything that reads an id back out of a record.
+pub fn master_with_id_type(id_ty: &str, cols: &[(&str, &str)]) -> Vista {
+    let mut metadata = VistaMetadata::new().with_column(Column::new("id", id_ty).with_flag("id"));
     for (name, ty) in cols {
         metadata = metadata.with_column(Column::new(*name, *ty));
     }

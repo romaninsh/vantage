@@ -154,9 +154,18 @@ pub(crate) async fn viewport_loop(
                             );
                             // A parked same-range refresh is moot against the
                             // range it was for, but the *intent* — force a
-                            // re-pull rather than trust the cache — still
-                            // applies to whatever range wins next.
-                            req.force_load |= after.as_ref().is_some_and(|a| a.force_load);
+                            // re-pull rather than trust the cache, and the
+                            // wait behind it — still applies to whatever range
+                            // wins next. Same OR as the debounce coalescing,
+                            // for the same reason: dropping an `Essential`
+                            // here would leave the request someone is waiting
+                            // on running as a poll.
+                            if let Some(parked) = after.as_ref() {
+                                req.force_load |= parked.force_load;
+                                if parked.priority.is_essential() {
+                                    req.priority = vantage_core::Priority::Essential;
+                                }
+                            }
                             carried = Some(req);
                             break None; // dropping `load` cancels the callback
                         }
