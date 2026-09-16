@@ -206,27 +206,66 @@ by id, you just `.await` a request; concurrency is bounded by a semaphore and th
 resilience policies are inline middleware.
 
 ```rust
-use std::sync::Arc;
 use std::time::Duration;
-use vantage_api_pool::{ResilientClient, RetryPolicy};
-use vantage_api_pool::resilient::AuthRefresher;
-
-let refresher: AuthRefresher = Arc::new(|| Box::pin(async { Ok(fetch_token().await?) }));
+use vantage_api_pool::{CallPolicy, ResilientClient, TransportObserver};
 
 let client = ResilientClient::builder()
-    .max_parallel(8)                                   // per-API parallelism cap
-    .retry(RetryPolicy::default())                     // 429/5xx/network → backoff + jitter
-    .bearer_auth(refresher)                            // 401 → re-acquire token + replay
-    .circuit_breaker(5, Duration::from_secs(30))       // fail fast after repeated failures
+    .max_parallel(4)                 // per-API parallelism cap
+    .rate_limit(10.0)                // requests per second
+    .default_breaker()               // 5 failures → 5 s, doubling to 60 s
+    .observer("local", my_observer)  // health events keyed by datasource
     .build();
 
-// `build` is called once per attempt, so retries/auth re-apply on a fresh builder:
-let resp = client.execute(|http| http.get("https://api.example.com/cities")).await?;
+// Someone is waiting: retry until this future is dropped.
+let resp = client
+    .execute_with(&CallPolicy::essential(), |http| http.get(url))
+    .await?;
+
+// Nobody is waiting: one attempt, fail fast while the breaker is open.
+let resp = client
+    .execute_with(&CallPolicy::background(), |http| http.get(url))
+    .await?;
 ```
+
+### What counts as what
+
+Retryability and health are separate questions:
+
+| Answer                    | Retried?              | Circuit breaker                                |
+| ------------------------- | --------------------- | ---------------------------------------------- |
+| `2xx`                     | —                     | closes it, clears the failure run              |
+| `5xx`, transport error    | yes, with back-off    | counts toward opening it                       |
+| `408`, `429`              | yes, with back-off    | untouched — the server answered, about its load |
+| other `4xx`               | no, final             | **closes an open breaker**, keeps the failure run |
+| `401`                     | replayed once, after a token refresh | same as other `4xx`             |
+
+A 4xx closes an open breaker because the breaker tracks *reachability*, not
+correctness: a server returning `404` is a server that is up. It keeps the
+failure run so that an API alternating `503` and `404` still trips the
+threshold. A server's `Retry-After` is honoured, clamped to the call policy's
+own back-off ceiling. `ClientError` carries `kind`, `attempts` and `body` —
+the first 2 KiB of the failing response, for callers that surface the server's
+own message. `breaker_state()` reports `Closed` / `Open { until }` /
+`HalfOpen` for consumers that poll.
+
+### Observer contract
+
+`TransportObserver::on_event` is called synchronously on the request path —
+`Started` while the attempt's semaphore permit is held — so it must not block,
+await, or call back into the client. Each `Started` is followed by exactly one
+`Succeeded` or `Failed` — including for a fail-fast rejection, which emits a
+synthetic pair with `ms: 0` and `kind_name() == "breaker_open"` that consumers
+may filter out of request rates. `BreakerOpened` repeats on every failed probe
+with a longer cooldown and no intervening `BreakerClosed`, so treat it as
+"open until now + cooldown" rather than counting events. `ms` covers only
+build, send and the response head — never a cooldown, a token wait, a permit
+wait, a back-off, or the auth round trip.
 
 Fan out with the cap respected automatically — e.g. load many pages or augment
 many rows in parallel via `futures::stream::iter(reqs).map(|r| client.execute(r)).buffer_unordered(n)`;
-the semaphore keeps in-flight requests ≤ `max_parallel`. Cancellation is
+the semaphore keeps in-flight requests ≤ `max_parallel`. A permit is held only
+for the request itself, so a call waiting out a breaker cooldown or a retry
+back-off never blocks a fail-fast caller on the same client. Cancellation is
 structural: drop the future and the in-flight request goes with it.
 
 This is what a Vantage REST datasource (and Diorama's `on_load_chunk` /

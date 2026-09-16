@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 — unreleased
+## 0.6.1 — 2026-09-16
 
 - `ResilientClient` — async-native HTTP transport that replaces the worker-pool
   + oneshot-matcher model (`AwwPool` / `HttpClientPool` / `EventualRequest`).
@@ -13,6 +13,25 @@
   Covered by wiremock contract tests. The old `AwwPool` path is unchanged and
   will be retired once consumers (the Vantage REST datasource, the desktop app)
   migrate onto `ResilientClient`.
+- `ResilientClient::execute_with(&CallPolicy, ..)`: per-call retry mode
+  (`None`, `Bounded`, `UntilCancelled`) and breaker mode (`FailFast`,
+  `WaitForProbe`). `execute` is unchanged.
+- Breaker cooldown doubles after each failed probe (`circuit_breaker_growing`,
+  `default_breaker`); a success resets it.
+- `ClientError { kind, attempts, body }` replaces `anyhow::Error` from
+  `execute`; `body` is the first 2 KiB of the failing response.
+- `TransportObserver` hook: per-attempt start/success/failure, retries and
+  breaker transitions, plus caller-reported `RowsPulled` / `WritePushed`.
+  `on_event` runs on the request path: it must not block, await or re-enter
+  the client. `BreakerOpened` repeats on every failed probe.
+- `rate_limit(per_second)` token bucket per client.
+- `breaker_state() -> Option<BreakerState>` and `in_flight()` for consumers
+  that poll instead of following events.
+- A semaphore permit covers only the request, not breaker cooldowns or retry
+  back-offs, so a fail-fast caller is never queued behind a waiting one.
+- Breaker failures are 5xx and transport errors only. A 4xx closes an open
+  breaker without clearing the failure run; 408 and 429 leave it untouched.
+- `Retry-After` is clamped to the call policy's back-off ceiling.
 
 ## 0.6.0 — unreleased
 
