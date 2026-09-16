@@ -9,13 +9,16 @@
 //! The query language itself is handled by the query builder in the
 //! `select` module — `GraphqlApi` is just transport.
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use serde_json::Value;
-use vantage_core::{Result, error};
+use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObserver};
+use vantage_core::{Priority, Result, error};
 
 use crate::graphql::condition::FilterDialect;
 
-/// GraphQL HTTP data source. Cheap to clone — the inner `reqwest::Client`
+/// GraphQL HTTP data source. Cheap to clone — the inner `ResilientClient`
 /// is `Arc`-wrapped.
 ///
 /// `dialect` and `filter_arg_name` drive how the `TableSource` impl
@@ -24,7 +27,7 @@ use crate::graphql::condition::FilterDialect;
 #[derive(Clone, Debug)]
 pub struct GraphqlApi {
     endpoint: String,
-    client: reqwest::Client,
+    client: ResilientClient,
     auth_header: Option<String>,
     pub(crate) dialect: FilterDialect,
     pub(crate) filter_arg_name: Option<String>,
@@ -126,6 +129,17 @@ impl GraphqlApi {
         self.dialect
     }
 
+    /// What the circuit breaker is doing right now. `None` when the
+    /// underlying client has no breaker configured.
+    pub fn breaker_state(&self) -> Option<vantage_api_pool::resilient::BreakerState> {
+        self.client.breaker_state()
+    }
+
+    /// Report rows decoded from a response to the observer.
+    pub(crate) fn report_rows(&self, n: usize) {
+        self.client.report(TransportEvent::RowsPulled { n });
+    }
+
     /// Send a query document with variables. Returns the `data` payload
     /// from the GraphQL response, or an error if the request failed or
     /// the response carried a top-level `errors` array.
@@ -142,26 +156,21 @@ impl GraphqlApi {
 
         let body = Body { query, variables };
 
-        let mut req = self.client.post(&self.endpoint).json(&body);
-        if let Some(ref auth) = self.auth_header {
-            req = req.header("Authorization", auth);
-        }
-
-        let response = req.send().await.map_err(|e| {
-            error!(
-                "GraphQL request failed",
-                endpoint = self.endpoint.clone(),
-                detail = e.to_string()
-            )
-        })?;
-
-        if !response.status().is_success() {
-            return Err(error!(
-                "GraphQL endpoint returned error status",
-                endpoint = self.endpoint.clone(),
-                status = response.status().as_u16()
-            ));
-        }
+        let policy = crate::transport::policy_for(Priority::current());
+        let auth = self.auth_header.clone();
+        let response = self
+            .client
+            .execute_with(&policy, |http| {
+                let mut req = http.post(&self.endpoint).json(&body);
+                if let Some(ref a) = auth {
+                    req = req.header("Authorization", a);
+                }
+                req
+            })
+            .await
+            .map_err(|e| {
+                crate::transport::client_error(e, "GraphQL request failed", &self.endpoint)
+            })?;
 
         let mut envelope: Value = response.json().await.map_err(|e| {
             error!(
@@ -195,7 +204,7 @@ impl GraphqlApi {
 #[derive(Debug, Clone)]
 pub struct GraphqlApiBuilder {
     endpoint: String,
-    client: Option<reqwest::Client>,
+    transport: crate::transport::ClientConfig,
     auth_header: Option<String>,
     dialect: FilterDialect,
     filter_arg_name: Option<String>,
@@ -208,7 +217,7 @@ impl GraphqlApiBuilder {
     pub(crate) fn new(endpoint: String) -> Self {
         Self {
             endpoint,
-            client: None,
+            transport: crate::transport::ClientConfig::default(),
             auth_header: None,
             dialect: FilterDialect::Generic,
             filter_arg_name: None,
@@ -216,6 +225,29 @@ impl GraphqlApiBuilder {
             response_path: Vec::new(),
             supports: Supports::default(),
         }
+    }
+
+    /// Concurrent requests to this API at most (default 4).
+    pub fn max_parallel(mut self, n: usize) -> Self {
+        self.transport.max_parallel = n.max(1);
+        self
+    }
+
+    /// Requests per second to this API at most.
+    pub fn rate_limit(mut self, per_second: f64) -> Self {
+        self.transport.rate_limit = Some(per_second);
+        self
+    }
+
+    /// Report every attempt, retry and breaker transition under `key`
+    /// (the datasource name).
+    pub fn observer(
+        mut self,
+        key: impl Into<Arc<str>>,
+        observer: Arc<dyn TransportObserver>,
+    ) -> Self {
+        self.transport.observer = Some((key.into(), observer));
+        self
     }
 
     /// Literal arguments always passed to the root field, e.g.
@@ -247,7 +279,7 @@ impl GraphqlApiBuilder {
     /// Use a pre-configured `reqwest::Client` (e.g. one with custom
     /// timeouts or a proxy).
     pub fn client(mut self, client: reqwest::Client) -> Self {
-        self.client = Some(client);
+        self.transport.http = Some(client);
         self
     }
 
@@ -268,7 +300,7 @@ impl GraphqlApiBuilder {
     pub fn build(self) -> GraphqlApi {
         GraphqlApi {
             endpoint: self.endpoint,
-            client: self.client.unwrap_or_default(),
+            client: crate::transport::build_client(self.transport),
             auth_header: self.auth_header,
             dialect: self.dialect,
             filter_arg_name: self.filter_arg_name,
