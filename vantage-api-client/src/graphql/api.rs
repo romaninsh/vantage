@@ -9,13 +9,17 @@
 //! The query language itself is handled by the query builder in the
 //! `select` module — `GraphqlApi` is just transport.
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use serde_json::Value;
-use vantage_core::{Result, error};
+use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObserver};
+use vantage_core::{Priority, Result, error};
 
 use crate::graphql::condition::FilterDialect;
+use crate::transport::AuthHeader;
 
-/// GraphQL HTTP data source. Cheap to clone — the inner `reqwest::Client`
+/// GraphQL HTTP data source. Cheap to clone — the inner `ResilientClient`
 /// is `Arc`-wrapped.
 ///
 /// `dialect` and `filter_arg_name` drive how the `TableSource` impl
@@ -24,8 +28,8 @@ use crate::graphql::condition::FilterDialect;
 #[derive(Clone, Debug)]
 pub struct GraphqlApi {
     endpoint: String,
-    client: reqwest::Client,
-    auth_header: Option<String>,
+    client: ResilientClient,
+    auth_header: AuthHeader,
     pub(crate) dialect: FilterDialect,
     pub(crate) filter_arg_name: Option<String>,
     pub(crate) root_args: Option<Value>,
@@ -126,6 +130,24 @@ impl GraphqlApi {
         self.dialect
     }
 
+    /// What the circuit breaker is doing right now. `None` when the
+    /// underlying client has no breaker configured.
+    pub fn breaker_state(&self) -> Option<crate::BreakerState> {
+        self.client.breaker_state()
+    }
+
+    /// The resilient client backing this API — the pool, breaker and
+    /// observer a caller outside the read path (e.g. an outbox replaying a
+    /// queued write) should share rather than build its own.
+    pub fn client(&self) -> &ResilientClient {
+        &self.client
+    }
+
+    /// Report rows decoded from a response to the observer.
+    pub(crate) fn report_rows(&self, n: usize) {
+        self.client.report(TransportEvent::RowsPulled { n });
+    }
+
     /// Send a query document with variables. Returns the `data` payload
     /// from the GraphQL response, or an error if the request failed or
     /// the response carried a top-level `errors` array.
@@ -142,26 +164,20 @@ impl GraphqlApi {
 
         let body = Body { query, variables };
 
-        let mut req = self.client.post(&self.endpoint).json(&body);
-        if let Some(ref auth) = self.auth_header {
-            req = req.header("Authorization", auth);
-        }
-
-        let response = req.send().await.map_err(|e| {
-            error!(
-                "GraphQL request failed",
-                endpoint = self.endpoint.clone(),
-                detail = e.to_string()
-            )
-        })?;
-
-        if !response.status().is_success() {
-            return Err(error!(
-                "GraphQL endpoint returned error status",
-                endpoint = self.endpoint.clone(),
-                status = response.status().as_u16()
-            ));
-        }
+        let policy = crate::transport::policy_for(Priority::current());
+        let response = self
+            .client
+            .execute_with(&policy, |http| {
+                let req = http.post(&self.endpoint).json(&body);
+                match self.auth_header.value() {
+                    Some(auth) => req.header(reqwest::header::AUTHORIZATION, auth),
+                    None => req,
+                }
+            })
+            .await
+            .map_err(|e| {
+                crate::transport::client_error(e, "GraphQL request failed", &self.endpoint)
+            })?;
 
         let mut envelope: Value = response.json().await.map_err(|e| {
             error!(
@@ -192,11 +208,11 @@ impl GraphqlApi {
 }
 
 /// Builder for [`GraphqlApi`]. Use [`GraphqlApi::builder`] to start.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct GraphqlApiBuilder {
     endpoint: String,
-    client: Option<reqwest::Client>,
-    auth_header: Option<String>,
+    transport: crate::transport::ClientConfig,
+    auth_header: AuthHeader,
     dialect: FilterDialect,
     filter_arg_name: Option<String>,
     root_args: Option<Value>,
@@ -208,14 +224,37 @@ impl GraphqlApiBuilder {
     pub(crate) fn new(endpoint: String) -> Self {
         Self {
             endpoint,
-            client: None,
-            auth_header: None,
+            transport: crate::transport::ClientConfig::default(),
+            auth_header: AuthHeader::default(),
             dialect: FilterDialect::Generic,
             filter_arg_name: None,
             root_args: None,
             response_path: Vec::new(),
             supports: Supports::default(),
         }
+    }
+
+    /// Concurrent requests to this API at most (default 4).
+    pub fn max_parallel(mut self, n: usize) -> Self {
+        self.transport.max_parallel = n.max(1);
+        self
+    }
+
+    /// Requests per second to this API at most.
+    pub fn rate_limit(mut self, per_second: f64) -> Self {
+        self.transport.rate_limit = Some(per_second);
+        self
+    }
+
+    /// Report every attempt, retry and breaker transition under `key`
+    /// (the datasource name).
+    pub fn observer(
+        mut self,
+        key: impl Into<Arc<str>>,
+        observer: Arc<dyn TransportObserver>,
+    ) -> Self {
+        self.transport.observer = Some((key.into(), observer));
+        self
     }
 
     /// Literal arguments always passed to the root field, e.g.
@@ -240,15 +279,20 @@ impl GraphqlApiBuilder {
 
     /// Set the `Authorization` header value (e.g. `"Bearer <token>"`).
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = Some(auth.into());
+        self.auth_header = AuthHeader::new(auth);
         self
     }
 
     /// Use a pre-configured `reqwest::Client` (e.g. one with custom
     /// timeouts or a proxy).
     pub fn client(mut self, client: reqwest::Client) -> Self {
-        self.client = Some(client);
+        self.transport.http = Some(client);
         self
+    }
+
+    /// Alias for [`Self::client`], matching `RestApiBuilder::http_client`.
+    pub fn http_client(self, client: reqwest::Client) -> Self {
+        self.client(client)
     }
 
     /// Pick the filter dialect used to render conditions on tables.
@@ -268,7 +312,7 @@ impl GraphqlApiBuilder {
     pub fn build(self) -> GraphqlApi {
         GraphqlApi {
             endpoint: self.endpoint,
-            client: self.client.unwrap_or_default(),
+            client: crate::transport::build_client(self.transport),
             auth_header: self.auth_header,
             dialect: self.dialect,
             filter_arg_name: self.filter_arg_name,
@@ -306,5 +350,15 @@ mod tests {
             .auth("Bearer abc")
             .build();
         assert_eq!(api.endpoint(), "https://example.test/graphql");
+    }
+
+    #[test]
+    fn debug_masks_auth_header() {
+        let api = GraphqlApi::builder("https://example.test/graphql")
+            .auth("Bearer secret-token")
+            .build();
+        let text = format!("{api:?}");
+        assert!(!text.contains("secret-token"), "{text}");
+        assert!(text.contains("<set>"), "{text}");
     }
 }

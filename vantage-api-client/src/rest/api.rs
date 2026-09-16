@@ -1,11 +1,17 @@
+use std::sync::Arc;
+
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::error;
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObserver};
+use vantage_core::{Priority, error};
 use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::pagination::Pagination;
 use vantage_types::Record;
+
+use crate::transport::AuthHeader;
 
 /// How the API wraps its row array in the response body.
 ///
@@ -103,8 +109,8 @@ pub enum FilterStrategy {
 #[derive(Clone, Debug)]
 pub struct RestApi {
     base_url: String,
-    client: reqwest::Client,
-    pub(crate) auth_header: Option<String>,
+    client: ResilientClient,
+    pub(crate) auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
     /// When true, no `_page`/`_limit` query params are appended and
@@ -143,7 +149,7 @@ impl RestApi {
     /// Provided for backwards compatibility — prefer
     /// `RestApi::builder(...).auth(...)`.
     pub fn with_auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = Some(auth.into());
+        self.auth_header = AuthHeader::new(auth);
         self
     }
 
@@ -151,6 +157,83 @@ impl RestApi {
     /// REST shell can report an exact count and serve `fetch_window`.
     pub fn total_key(&self) -> Option<&str> {
         self.total_key.as_deref()
+    }
+
+    /// What the circuit breaker is doing right now. `None` when the
+    /// underlying client has no breaker configured.
+    pub fn breaker_state(&self) -> Option<crate::BreakerState> {
+        self.client.breaker_state()
+    }
+
+    /// The resilient client backing this API — the pool, breaker and
+    /// observer a caller outside the read path (e.g. an outbox replaying a
+    /// queued write) should share rather than build its own.
+    pub fn client(&self) -> &ResilientClient {
+        &self.client
+    }
+
+    /// The configured base URL requests are joined against.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Issue an arbitrary HTTP request against `base_url`/`path`, through
+    /// the same resilient client and auth header as reads.
+    ///
+    /// `headers` are applied after the configured `Authorization` header, so
+    /// a caller-supplied header of the same name wins. `body`, when given,
+    /// is sent as the JSON request body. The call policy follows
+    /// [`vantage_core::Priority::current`], same as a table read. On success,
+    /// a non-`GET` method reports [`TransportEvent::WritePushed`] to the
+    /// observer.
+    pub async fn http_request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<&serde_json::Value>,
+    ) -> vantage_core::Result<reqwest::Response> {
+        let url = join_base_path(&self.base_url, path);
+
+        // `HeaderMap::insert` replaces a same-named entry rather than
+        // appending — unlike `RequestBuilder::header` — so a caller header
+        // actually overrides the configured auth instead of riding alongside
+        // it on the wire.
+        let mut header_map = HeaderMap::new();
+        if let Some(auth) = self.auth_header.value() {
+            header_map.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(auth)
+                    .expect("configured auth header must be a valid header value"),
+            );
+        }
+        for (name, value) in headers {
+            header_map.insert(
+                HeaderName::from_bytes(name.as_bytes()).expect("header name must be valid"),
+                HeaderValue::from_str(value).expect("header value must be valid"),
+            );
+        }
+
+        let policy = crate::transport::policy_for(Priority::current());
+        let response = self
+            .client
+            .execute_with(&policy, |http| {
+                let req = http
+                    .request(method.clone(), &url)
+                    .headers(header_map.clone());
+                match body {
+                    Some(body) => req.json(body),
+                    None => req,
+                }
+            })
+            .await
+            .map_err(|e| crate::transport::client_error(e, "API request failed", &url))?;
+
+        if method != reqwest::Method::GET {
+            self.client.report(TransportEvent::WritePushed);
+        }
+
+        Ok(response)
     }
 
     /// Build the endpoint path for `table_name`, substituting any
@@ -358,7 +441,7 @@ impl RestApi {
             "driver": "rest-api",
             "method": "GET",
             "url": join_query(&endpoint, &query),
-            "auth_header": self.auth_header.as_ref().map(|_| "<set>"),
+            "auth_header": self.auth_header.masked(),
             // Under `FilterStrategy::Client` these never reach the server: the
             // rows come back unfiltered and are narrowed in memory.
             "client_side_filters": client_filters
@@ -481,35 +564,34 @@ impl RestApi {
             }
         }
 
-        let mut request = self.client.get(&url);
-        if let Some(ref auth) = self.auth_header {
-            request = request.header("Authorization", auth);
-        }
-
         // Time every round trip, unconditionally — a remote API is the one part
         // of a read the process cannot bound, and a slow page is far more often
         // one slow GET than anything local. Reported regardless of `debug` so
         // the cost is attributable from a default log; a request over a second
         // is worth an operator's attention, hence `info` at that point.
         let started = std::time::Instant::now();
-        let response = request.send().await.map_err(|e| {
-            tracing::warn!(
-                target: "vantage_api_client::rest",
-                table = table_name,
-                url = %url,
-                ms = started.elapsed().as_millis() as u64,
-                "REST GET failed",
-            );
-            error!("API request failed", url = url, detail = e)
-        })?;
-
-        if !response.status().is_success() {
-            return Err(error!(
-                "API returned error status",
-                url = url,
-                status = response.status().as_u16()
-            ));
-        }
+        let policy = crate::transport::policy_for(Priority::current());
+        let response = self
+            .client
+            .execute_with(&policy, |http| {
+                let req = http.get(&url);
+                match self.auth_header.value() {
+                    Some(auth) => req.header(AUTHORIZATION, auth),
+                    None => req,
+                }
+            })
+            .await
+            .map_err(|e| {
+                tracing::warn!(
+                    target: "vantage_api_client::rest",
+                    table = table_name,
+                    url = %url,
+                    ms = started.elapsed().as_millis() as u64,
+                    attempts = e.attempts,
+                    "REST GET failed",
+                );
+                crate::transport::client_error(e, "API request failed", &url)
+            })?;
 
         let body: serde_json::Value = response
             .json()
@@ -611,18 +693,37 @@ impl RestApi {
                         None => true,
                     })
             });
-            // The envelope counted what the SERVER matched, before these rows
-            // were dropped here — reporting it now would size a grid to rows
-            // it will never be given. No total is better than a wrong one.
-            return Ok((records, None));
         }
 
+        // Counts the rows this call hands back, so a client-side filter shows
+        // up as fewer rows pulled than the server sent.
+        self.client
+            .report(TransportEvent::RowsPulled { n: records.len() });
+
+        // The envelope counted what the SERVER matched, before any rows were
+        // dropped above — reporting that total now would size a grid to rows it
+        // will never be given. No total is better than a wrong one.
+        let total = if client_filters.is_empty() {
+            total
+        } else {
+            None
+        };
         Ok((records, total))
     }
 }
 
 fn urlencode(s: &str) -> String {
     urlencoding::encode(s).into_owned()
+}
+
+/// Join a base URL and a path with exactly one slash between them,
+/// regardless of whether either side already carries one.
+fn join_base_path(base: &str, path: &str) -> String {
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
 
 /// Append a `build_query_string` result (always opening with `?`, or empty)
@@ -711,32 +812,63 @@ impl RestApi {
 #[derive(Clone, Debug)]
 pub struct RestApiBuilder {
     base_url: String,
-    auth_header: Option<String>,
+    auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
     no_pagination: bool,
     filter_strategy: FilterStrategy,
     total_key: Option<String>,
     debug: bool,
+    transport: crate::transport::ClientConfig,
 }
 
 impl RestApiBuilder {
     fn new(base_url: String) -> Self {
         Self {
             base_url,
-            auth_header: None,
+            auth_header: AuthHeader::default(),
             response_shape: ResponseShape::default(),
             pagination: PaginationParams::default(),
             no_pagination: false,
             filter_strategy: FilterStrategy::default(),
             total_key: None,
             debug: false,
+            transport: crate::transport::ClientConfig::default(),
         }
+    }
+
+    /// Concurrent requests to this API at most (default 4).
+    pub fn max_parallel(mut self, n: usize) -> Self {
+        self.transport.max_parallel = n.max(1);
+        self
+    }
+
+    /// Requests per second to this API at most.
+    pub fn rate_limit(mut self, per_second: f64) -> Self {
+        self.transport.rate_limit = Some(per_second);
+        self
+    }
+
+    /// Report every attempt, retry and breaker transition under `key`
+    /// (the datasource name).
+    pub fn observer(
+        mut self,
+        key: impl Into<Arc<str>>,
+        observer: Arc<dyn TransportObserver>,
+    ) -> Self {
+        self.transport.observer = Some((key.into(), observer));
+        self
+    }
+
+    /// A pre-configured `reqwest::Client` (timeouts, proxies, TLS).
+    pub fn http_client(mut self, client: reqwest::Client) -> Self {
+        self.transport.http = Some(client);
+        self
     }
 
     /// Set the Authorization header value (e.g. "Bearer `<token>`").
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = Some(auth.into());
+        self.auth_header = AuthHeader::new(auth);
         self
     }
 
@@ -790,7 +922,7 @@ impl RestApiBuilder {
     pub fn build(self) -> RestApi {
         RestApi {
             base_url: self.base_url,
-            client: reqwest::Client::new(),
+            client: crate::transport::build_client(self.transport),
             auth_header: self.auth_header,
             response_shape: self.response_shape,
             pagination: self.pagination,
@@ -810,6 +942,16 @@ mod tests {
     /// window → pagination-param mapping.
     fn qs(api: &RestApi, window: Option<(i64, i64)>) -> String {
         api.build_query_string(window, &[], &[])
+    }
+
+    #[test]
+    fn debug_masks_auth_header() {
+        let api = RestApi::builder("http://x")
+            .auth("Bearer secret-token")
+            .build();
+        let text = format!("{api:?}");
+        assert!(!text.contains("secret-token"), "{text}");
+        assert!(text.contains("<set>"), "{text}");
     }
 
     #[test]

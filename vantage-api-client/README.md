@@ -17,6 +17,7 @@ use vantage_types::EmptyEntity;
 
 let api = RestApi::builder("https://jsonplaceholder.typicode.com")
     .response_shape(ResponseShape::BareArray)
+    .max_parallel(4)
     .build();
 
 let mut users = Table::<RestApi, EmptyEntity>::new("users", api);
@@ -37,6 +38,7 @@ use vantage_types::EmptyEntity;
 
 let api = GraphqlApi::builder("https://spacex-api.fly.dev/graphql")
     .dialect(FilterDialect::Generic)
+    .max_parallel(4)
     .build();
 
 let mut launches = Table::<GraphqlApi, EmptyEntity>::new("launches", api);
@@ -45,6 +47,8 @@ launches.add_condition(Column::<String>::new("mission_name").eq("FalconSat"));
 // POSTs: query { launches(find: {mission_name: "FalconSat"}) { id mission_name } }
 let rows = launches.list_values().await?;
 ```
+
+The retry policy follows `vantage_core::Priority`: wrap a wait in `Priority::Essential.scope(..)` to retry until it is dropped; everything else makes one attempt.
 
 The query document gets rendered with inline filter values plus typed `$limit` / `$offset` variables. Two dialects ship out of the box:
 
@@ -139,12 +143,26 @@ let mut users = Table::<RestApi, User>::new("users", api.clone())
     .with_many("albums", "userId", Album::api_table_for_user);
 
 users.add_condition(eq_condition("id", 1i64));
-let albums = users.get_ref_as::<RestApi, Album>("albums")?;
+let albums = users.get_ref_as::<Album>("albums")?;
 // REST: GET /users/1/albums (URI template substitution)
 // GraphQL: posts a single query with a `userId: 1` filter on `albums`
 ```
 
 GraphQL relations are inherently two-round-trip in v1 — the parent fetch produces ids, the child fetch consumes them. Single-round-trip nested selection (rendering `launches { id rocket { id name } }` as one document) is on the roadmap; see the TODO list for status.
+
+## Where to go next
+
+- [Connecting to a REST API](README_rest.md) — response shapes, pagination,
+  templates, traversal, YAML, previewing the URL.
+- [Connecting to a GraphQL API](README_graphql.md) — dialects, filter
+  rendering, `supports` flags, YAML, previewing the document.
+- [Retries, throttling and health](README_transport.md) — who retries, what
+  a status means, the breaker, rate limits, cancellation, the observer, writes.
+- [Using the adapters from business logic](README_rust_dev.md) — handlers,
+  jobs, CLIs, libraries; deciding who is waiting; handling errors by kind.
+- [Architecture](ARCHITECTURE.md) — request lifecycle, layers, capabilities,
+  error catalogue. For maintainers and adapter authors.
+- The transport itself: [vantage-api-pool](../vantage-api-pool/README.md).
 
 ## Examples
 

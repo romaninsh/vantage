@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.15 — 2026-09-16
+
+- REST and GraphQL requests go through `vantage-api-pool`'s `ResilientClient`
+  (parallel cap, growing-cooldown breaker, rate limit, observer hook).
+- The retry policy follows `vantage_core::Priority`: `Essential` retries until
+  the awaiting future is dropped, `Background` (the default) makes one attempt.
+- Errors from a non-2xx response carry `status`, `attempts`, `kind` and the
+  first 500 chars of the server's `body`.
+- `RowsPulled` is reported after each parsed page.
+- Failures are now reported as `API request failed` / `GraphQL request failed`
+  with a `kind` attribute (`status`, `transport`, `breaker_open`, `auth`),
+  replacing the old `… returned error status` messages.
+- Retries sleep on the tokio timer, so the runtime must have time enabled.
+
 ## 0.6.14 — 2026-09-08
 
 - `add_op_condition` reports `Unimplemented` for `FilterOp::Like` — no

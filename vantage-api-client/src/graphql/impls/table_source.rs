@@ -460,6 +460,7 @@ impl TableSource for GraphqlApi {
             }
             out.insert(id, rec);
         }
+        self.report_rows(out.len());
         Ok(out)
     }
 
@@ -509,6 +510,7 @@ impl TableSource for GraphqlApi {
                 ));
             }
         };
+        self.report_rows(arr.len());
         match arr.into_iter().next() {
             Some(row) => {
                 let (_id, rec) = row_to_record(&row, &select.fields, Some(&id_name))?;

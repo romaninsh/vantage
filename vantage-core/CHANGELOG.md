@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.4 — 2026-09-16
+
+- `Priority` (`Background` | `Essential`), a tokio task-local set with
+  `Priority::scope` by whoever owns the wait and read with
+  `Priority::current()` by HTTP transports to pick their retry policy.
+
 ## 0.6.3 — 2026-08-09
 
 - `ErrorKind::NotFound`, with `mark_not_found()` and `is_not_found()`.

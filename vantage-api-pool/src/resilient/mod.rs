@@ -119,6 +119,15 @@ impl ResilientClient {
     }
 }
 
+impl std::fmt::Debug for ResilientClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResilientClient")
+            .field("key", &self.key())
+            .field("in_flight", &self.in_flight())
+            .finish_non_exhaustive()
+    }
+}
+
 struct InFlightGuard(Arc<AtomicUsize>);
 
 impl Drop for InFlightGuard {

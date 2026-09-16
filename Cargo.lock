@@ -5560,7 +5560,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.14"
+version = "0.6.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5576,6 +5576,7 @@ dependencies = [
  "tracing",
  "urlencoding",
  "uuid",
+ "vantage-api-pool",
  "vantage-cli-util",
  "vantage-core",
  "vantage-dataset",
@@ -5583,6 +5584,7 @@ dependencies = [
  "vantage-table",
  "vantage-types",
  "vantage-vista",
+ "wiremock",
 ]
 
 [[package]]
@@ -5690,7 +5692,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "atty",
@@ -5698,6 +5700,7 @@ dependencies = [
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 

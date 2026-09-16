@@ -57,11 +57,17 @@ impl SelectableDataSource<AnyGraphqlType, GraphqlCondition> for GraphqlApi {
         })?;
 
         match rows {
-            Value::Array(arr) => Ok(arr
-                .iter()
-                .map(|v| AnyGraphqlType::untyped(v.clone()))
-                .collect()),
-            Value::Object(_) => Ok(vec![AnyGraphqlType::untyped(rows.clone())]),
+            Value::Array(arr) => {
+                self.report_rows(arr.len());
+                Ok(arr
+                    .iter()
+                    .map(|v| AnyGraphqlType::untyped(v.clone()))
+                    .collect())
+            }
+            Value::Object(_) => {
+                self.report_rows(1);
+                Ok(vec![AnyGraphqlType::untyped(rows.clone())])
+            }
             Value::Null => Ok(Vec::new()),
             other => Err(error!(
                 "Unexpected GraphQL response shape under root field",
