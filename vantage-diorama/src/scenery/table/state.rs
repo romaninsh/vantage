@@ -196,6 +196,18 @@ pub(crate) struct TableSceneryState {
     pub(crate) last_served: Mutex<Option<std::ops::Range<usize>>>,
 }
 
+/// Clears `load_in_flight` when dropped, so a load that is cancelled
+/// mid-flight — its future dropped by the viewport loop — cannot leave its
+/// range marked as still loading and make the next request for that range
+/// skip itself.
+pub(crate) struct InFlightMarker<'a>(pub(crate) &'a TableSceneryState);
+
+impl Drop for InFlightMarker<'_> {
+    fn drop(&mut self) {
+        *self.0.load_in_flight.lock().unwrap() = None;
+    }
+}
+
 impl TableSceneryState {
     /// Whether the visible set is *locally refined* — filtered and ordered over
     /// the cache rather than served in the index's own order.

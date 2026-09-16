@@ -134,3 +134,197 @@ async fn warm_open_refresh_is_background() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(10)).await;
     Ok(())
 }
+
+/// A lens whose chunk callback blocks on a gate until the test releases it,
+/// and records whether its future was dropped before finishing.
+struct Gated {
+    release: Arc<tokio::sync::Notify>,
+    calls: Arc<Mutex<Vec<std::ops::Range<usize>>>>,
+    cancelled: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+struct DropFlag(Arc<std::sync::atomic::AtomicUsize>, bool);
+impl Drop for DropFlag {
+    fn drop(&mut self) {
+        if !self.1 {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+fn gated_lens(cache: std::path::PathBuf, backend: Backend, gated: &Gated) -> Arc<Lens> {
+    let total = backend.clone();
+    let release = gated.release.clone();
+    let calls = gated.calls.clone();
+    let cancelled = gated.cancelled.clone();
+    Arc::new(
+        Lens::new()
+            .cache_at(cache)
+            .total_provider(move |_dio| {
+                let b = total.clone();
+                async move { Ok(b.lock().unwrap().len()) }
+            })
+            .on_load_chunk(move |_dio, range, _query, sink| {
+                let b = backend.clone();
+                let release = release.clone();
+                let calls = calls.clone();
+                let cancelled = cancelled.clone();
+                async move {
+                    calls.lock().unwrap().push(range.clone());
+                    let mut flag = DropFlag(cancelled, false);
+                    release.notified().await;
+                    let rows = b.lock().unwrap().clone();
+                    for idx in range {
+                        if let Some((id, r)) = rows.get(idx) {
+                            sink.push(idx, id.clone(), r.clone()).await?;
+                        }
+                    }
+                    flag.1 = true; // finished: not a cancellation
+                    Ok(())
+                }
+            })
+            .build()
+            .expect("lens"),
+    )
+}
+
+async fn calls_len(g: &Gated) -> usize {
+    g.calls.lock().unwrap().len()
+}
+
+#[tokio::test]
+async fn a_newer_viewport_cancels_the_in_flight_load() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let gated = Gated {
+        release: Arc::new(tokio::sync::Notify::new()),
+        calls: Arc::new(Mutex::new(Vec::new())),
+        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    };
+    let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().page_size(10).open().await?;
+
+    // The on-open fetch is call 1; let it through.
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(0).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    // Scroll to 20..30: call 2 starts and blocks on the gate.
+    scenery.set_viewport(20..30);
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(gated.calls.lock().unwrap()[1], 20..30);
+
+    // Scroll on to 30..40 while call 2 is still blocked: call 2 must be
+    // dropped (not finished) and call 3 must start.
+    scenery.set_viewport(30..40);
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(gated.calls.lock().unwrap()[2], 30..40);
+    assert_eq!(
+        gated.cancelled.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "call 2 was dropped"
+    );
+
+    // Release call 3: rows 30..40 arrive; rows 20..30 never do.
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(35).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(scenery.row(35).is_some());
+    assert!(
+        scenery.row(25).is_none(),
+        "a cancelled load never writes rows"
+    );
+
+    // The in-flight marker was cleared by the cancellation: asking for
+    // 20..30 again fetches it.
+    scenery.set_viewport(20..30);
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 4 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(gated.calls.lock().unwrap()[3], 20..30);
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(25).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(scenery.row(25).is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_identical_viewport_is_absorbed_into_the_running_load() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let gated = Gated {
+        release: Arc::new(tokio::sync::Notify::new()),
+        calls: Arc::new(Mutex::new(Vec::new())),
+        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    };
+    let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().page_size(10).open().await?;
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(0).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    scenery.set_viewport(20..30);
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    // The same range again while it is loading: absorbed, no new call.
+    scenery.set_viewport(20..30);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(calls_len(&gated).await, 2);
+    assert_eq!(gated.cancelled.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(25).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(scenery.row(25).is_some());
+    Ok(())
+}

@@ -19,21 +19,30 @@ pub(crate) async fn viewport_loop(
     mut rx: mpsc::UnboundedReceiver<ViewportRequest>,
     debounce: Duration,
 ) {
+    // A request that superseded a running load is served next without
+    // waiting on the channel again.
+    let mut carried: Option<ViewportRequest> = None;
     loop {
         if state.dio_weak.upgrade().is_none() {
             tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: dio dropped, exiting");
             return;
         }
-        let Some(initial) = rx.recv().await else {
-            tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: channel closed, exiting");
-            return;
+        let initial = match carried.take() {
+            Some(req) => req,
+            None => match rx.recv().await {
+                Some(req) => {
+                    state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
+                    req
+                }
+                None => {
+                    tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: channel closed, exiting");
+                    return;
+                }
+            },
         };
         // Decrement the producer-side counter once per pop so the
         // tracing-visible queue depth tracks what's actually pending.
-        let depth_on_pop = state
-            .viewport_queue_depth
-            .fetch_sub(1, Ordering::SeqCst)
-            .saturating_sub(1);
+        let depth_on_pop = state.viewport_queue_depth.load(Ordering::SeqCst);
         let mut latest = initial;
         let mut absorbed = 0usize;
 
@@ -82,7 +91,44 @@ pub(crate) async fn viewport_loop(
             depth_after,
             "viewport_loop: firing",
         );
-        fire_chunk_load(state.clone(), latest).await;
+        // Run the load, but keep listening: a newer viewport for a different
+        // range drops the load (its sink buffer with it — nothing is written)
+        // and is served next; an identical range is absorbed and the load
+        // continues; an identical range asking for a re-pull runs after it.
+        let load = fire_chunk_load(state.clone(), latest.clone());
+        tokio::pin!(load);
+        let mut after: Option<ViewportRequest> = None;
+        loop {
+            tokio::select! {
+                _ = &mut load => break,
+                next = rx.recv() => match next {
+                    None => {
+                        tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: channel closed mid-load, exiting");
+                        return;
+                    }
+                    Some(req) => {
+                        state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
+                        if req.range != latest.range {
+                            tracing::debug!(
+                                target: "vantage_diorama::viewport",
+                                superseded = ?latest.range,
+                                by = ?req.range,
+                                "viewport_loop: cancelling the in-flight load",
+                            );
+                            carried = Some(req);
+                            break; // dropping `load` cancels it
+                        }
+                        if req.force_load {
+                            after = Some(req);
+                        }
+                        // else: same range, already loading — absorbed.
+                    }
+                },
+            }
+        }
+        if carried.is_none() {
+            carried = after;
+        }
     }
 }
 
@@ -324,6 +370,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         }
         *guard = Some(effective_range.clone());
     }
+    let _in_flight = super::state::InFlightMarker(&state);
 
     // Only allocate a request id when the tap is enabled — it's the one
     // correlator that ties this fetch's "load dispatch" to its "load return"
@@ -457,8 +504,6 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     } else {
         None
     };
-
-    *state.load_in_flight.lock().unwrap() = None;
 
     let cached_after = state.rows.read().unwrap().len();
     match result {
