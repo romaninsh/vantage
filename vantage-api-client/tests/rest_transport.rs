@@ -95,6 +95,78 @@ async fn observer_key_is_the_configured_one_and_rows_are_counted() {
 }
 
 #[tokio::test]
+async fn http_request_sends_headers_and_body_and_reports_a_write() {
+    let server = MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::header("Idempotency-Key", "abc-123"))
+        .and(wiremock::matchers::body_json(
+            serde_json::json!({"name": "widget"}),
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(201))
+        .mount(&server)
+        .await;
+    let rec = recorder();
+    let api = api(&server, &rec);
+    let body = serde_json::json!({"name": "widget"});
+    let response = api
+        .http_request(
+            reqwest::Method::POST,
+            "things",
+            &[("Idempotency-Key", "abc-123")],
+            Some(&body),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 201);
+    assert_eq!(rec.tags(), ["started", "ok:201", "write"]);
+}
+
+#[tokio::test]
+async fn breaker_opens_after_five_background_failures() {
+    let server = MockServer::start().await;
+    mount(&server, "GET", 503, "").await;
+    let rec = recorder();
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .max_parallel(1)
+        .observer("local", rec.clone())
+        .build();
+
+    // `default_breaker` opens after 5 consecutive failures.
+    for _ in 0..5 {
+        let err = list_rows(&api).await.unwrap_err();
+        assert!(err.to_string().contains("503"));
+    }
+
+    let err = list_rows(&api).await.unwrap_err();
+    let text = err.to_string();
+    assert!(text.contains("breaker_open"), "{text}");
+    assert_eq!(
+        rec.tags().last().map(String::as_str),
+        Some("failed:breaker_open")
+    );
+}
+
+#[tokio::test]
+async fn http_client_override_travels_with_every_request() {
+    let server = MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::header("user-agent", "probe-agent"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("[]"))
+        .mount(&server)
+        .await;
+    let custom = reqwest::Client::builder()
+        .user_agent("probe-agent")
+        .build()
+        .unwrap();
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .http_client(custom)
+        .build();
+    assert_eq!(list_rows(&api).await.unwrap(), 0);
+}
+
+#[tokio::test]
 async fn auth_header_still_travels() {
     let server = MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))

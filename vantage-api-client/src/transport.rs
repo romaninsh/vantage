@@ -9,6 +9,7 @@ use vantage_api_pool::resilient::{CallPolicy, ClientError, ResilientClient, Tran
 use vantage_core::{Priority, VantageError, error};
 
 /// What both API builders collect for the shared client.
+#[derive(Clone)]
 pub(crate) struct ClientConfig {
     pub max_parallel: usize,
     pub rate_limit: Option<f64>,
@@ -35,17 +36,6 @@ impl std::fmt::Debug for ClientConfig {
             .field("observer", &self.observer.as_ref().map(|(k, _)| k))
             .field("http", &self.http.is_some())
             .finish()
-    }
-}
-
-impl Clone for ClientConfig {
-    fn clone(&self) -> Self {
-        Self {
-            max_parallel: self.max_parallel,
-            rate_limit: self.rate_limit,
-            observer: self.observer.clone(),
-            http: self.http.clone(),
-        }
     }
 }
 

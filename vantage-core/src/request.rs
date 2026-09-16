@@ -60,6 +60,13 @@ mod tests {
         assert_eq!(Priority::current(), Priority::Background);
     }
 
+    #[test]
+    fn current_outside_a_runtime_is_background() {
+        // No tokio runtime at all here, not just no `scope` — `current()`
+        // must not panic when there is no task to hold the task-local.
+        assert_eq!(Priority::current(), Priority::Background);
+    }
+
     #[tokio::test]
     async fn scope_sets_the_priority_for_nested_awaits() {
         async fn deep() -> Priority {

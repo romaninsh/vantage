@@ -103,7 +103,7 @@ pub enum FilterStrategy {
     Client,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RestApi {
     base_url: String,
     client: ResilientClient,
@@ -127,6 +127,22 @@ pub struct RestApi {
     total_key: Option<String>,
     /// Emit `tracing` events for window/count requests.
     debug: bool,
+}
+
+impl std::fmt::Debug for RestApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RestApi")
+            .field("base_url", &self.base_url)
+            .field("client", &self.client)
+            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
+            .field("response_shape", &self.response_shape)
+            .field("pagination", &self.pagination)
+            .field("no_pagination", &self.no_pagination)
+            .field("filter_strategy", &self.filter_strategy)
+            .field("total_key", &self.total_key)
+            .field("debug", &self.debug)
+            .finish()
+    }
 }
 
 impl RestApi {
@@ -158,8 +174,64 @@ impl RestApi {
 
     /// What the circuit breaker is doing right now. `None` when the
     /// underlying client has no breaker configured.
-    pub fn breaker_state(&self) -> Option<vantage_api_pool::resilient::BreakerState> {
+    pub fn breaker_state(&self) -> Option<crate::BreakerState> {
         self.client.breaker_state()
+    }
+
+    /// The resilient client backing this API — the pool, breaker and
+    /// observer a caller outside the read path (e.g. an outbox replaying a
+    /// queued write) should share rather than build its own.
+    pub fn client(&self) -> &ResilientClient {
+        &self.client
+    }
+
+    /// The configured base URL requests are joined against.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Issue an arbitrary HTTP request against `base_url`/`path`, through
+    /// the same resilient client and auth header as reads.
+    ///
+    /// `headers` are applied after the configured `Authorization` header, so
+    /// a caller-supplied header of the same name wins. `body`, when given,
+    /// is sent as the JSON request body. The call policy follows
+    /// [`vantage_core::Priority::current`], same as a table read. On success,
+    /// a non-`GET` method reports [`TransportEvent::WritePushed`] to the
+    /// observer.
+    pub async fn http_request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<&serde_json::Value>,
+    ) -> vantage_core::Result<reqwest::Response> {
+        let url = join_base_path(&self.base_url, path);
+        let auth = self.auth_header.clone();
+        let policy = crate::transport::policy_for(Priority::current());
+        let response = self
+            .client
+            .execute_with(&policy, |http| {
+                let mut req = http.request(method.clone(), &url);
+                if let Some(ref a) = auth {
+                    req = req.header("Authorization", a);
+                }
+                for (k, v) in headers {
+                    req = req.header(*k, *v);
+                }
+                if let Some(b) = body {
+                    req = req.json(b);
+                }
+                req
+            })
+            .await
+            .map_err(|e| crate::transport::client_error(e, "API request failed", &url))?;
+
+        if method != reqwest::Method::GET {
+            self.client.report(TransportEvent::WritePushed);
+        }
+
+        Ok(response)
     }
 
     /// Build the endpoint path for `table_name`, substituting any
@@ -621,22 +693,34 @@ impl RestApi {
                         None => true,
                     })
             });
-            // The envelope counted what the SERVER matched, before these rows
-            // were dropped here — reporting it now would size a grid to rows
-            // it will never be given. No total is better than a wrong one.
-            self.client
-                .report(TransportEvent::RowsPulled { n: records.len() });
-            return Ok((records, None));
         }
 
         self.client
             .report(TransportEvent::RowsPulled { n: records.len() });
-        Ok((records, total))
+
+        if client_filters.is_empty() {
+            Ok((records, total))
+        } else {
+            // The envelope counted what the SERVER matched, before these rows
+            // were dropped here — reporting the total now would size a grid to
+            // rows it will never be given. No total is better than a wrong one.
+            Ok((records, None))
+        }
     }
 }
 
 fn urlencode(s: &str) -> String {
     urlencoding::encode(s).into_owned()
+}
+
+/// Join a base URL and a path with exactly one slash between them,
+/// regardless of whether either side already carries one.
+fn join_base_path(base: &str, path: &str) -> String {
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
 
 /// Append a `build_query_string` result (always opening with `?`, or empty)
@@ -722,7 +806,7 @@ impl RestApi {
 ///     .pagination_params(PaginationParams::skip_limit("skip", "limit"))
 ///     .build();
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RestApiBuilder {
     base_url: String,
     auth_header: Option<String>,
@@ -733,6 +817,22 @@ pub struct RestApiBuilder {
     total_key: Option<String>,
     debug: bool,
     transport: crate::transport::ClientConfig,
+}
+
+impl std::fmt::Debug for RestApiBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RestApiBuilder")
+            .field("base_url", &self.base_url)
+            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
+            .field("response_shape", &self.response_shape)
+            .field("pagination", &self.pagination)
+            .field("no_pagination", &self.no_pagination)
+            .field("filter_strategy", &self.filter_strategy)
+            .field("total_key", &self.total_key)
+            .field("debug", &self.debug)
+            .field("transport", &self.transport)
+            .finish()
+    }
 }
 
 impl RestApiBuilder {
@@ -855,6 +955,16 @@ mod tests {
     /// window → pagination-param mapping.
     fn qs(api: &RestApi, window: Option<(i64, i64)>) -> String {
         api.build_query_string(window, &[], &[])
+    }
+
+    #[test]
+    fn debug_masks_auth_header() {
+        let api = RestApi::builder("http://x")
+            .auth("Bearer secret-token")
+            .build();
+        let text = format!("{api:?}");
+        assert!(!text.contains("secret-token"), "{text}");
+        assert!(text.contains("<set>"), "{text}");
     }
 
     #[test]

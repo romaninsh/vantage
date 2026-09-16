@@ -17,7 +17,10 @@ pub mod prelude;
 pub mod rest;
 mod transport;
 
-pub use vantage_api_pool::resilient::{BreakerState, TransportEvent, TransportObserver};
+pub use vantage_api_pool::resilient::{
+    BreakerMode, BreakerState, CallPolicy, ClientError, ErrorKind, ResilientClient, RetryMode,
+    TransportEvent, TransportObserver,
+};
 pub use vantage_core::Priority;
 
 pub use graphql::{

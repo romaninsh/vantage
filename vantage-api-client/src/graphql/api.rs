@@ -24,7 +24,7 @@ use crate::graphql::condition::FilterDialect;
 /// `dialect` and `filter_arg_name` drive how the `TableSource` impl
 /// renders filter arguments — Hasura's `where:` vs SpaceX-style `find:`,
 /// etc. Both default to the dialect's natural choice (Generic + `find`).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GraphqlApi {
     endpoint: String,
     client: ResilientClient,
@@ -34,6 +34,21 @@ pub struct GraphqlApi {
     pub(crate) root_args: Option<Value>,
     pub(crate) response_path: Vec<String>,
     pub(crate) supports: Supports,
+}
+
+impl std::fmt::Debug for GraphqlApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GraphqlApi")
+            .field("endpoint", &self.endpoint)
+            .field("client", &self.client)
+            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
+            .field("dialect", &self.dialect)
+            .field("filter_arg_name", &self.filter_arg_name)
+            .field("root_args", &self.root_args)
+            .field("response_path", &self.response_path)
+            .field("supports", &self.supports)
+            .finish()
+    }
 }
 
 /// Per-table overrides for what the server will actually accept, each
@@ -131,8 +146,15 @@ impl GraphqlApi {
 
     /// What the circuit breaker is doing right now. `None` when the
     /// underlying client has no breaker configured.
-    pub fn breaker_state(&self) -> Option<vantage_api_pool::resilient::BreakerState> {
+    pub fn breaker_state(&self) -> Option<crate::BreakerState> {
         self.client.breaker_state()
+    }
+
+    /// The resilient client backing this API — the pool, breaker and
+    /// observer a caller outside the read path (e.g. an outbox replaying a
+    /// queued write) should share rather than build its own.
+    pub fn client(&self) -> &ResilientClient {
+        &self.client
     }
 
     /// Report rows decoded from a response to the observer.
@@ -201,7 +223,7 @@ impl GraphqlApi {
 }
 
 /// Builder for [`GraphqlApi`]. Use [`GraphqlApi::builder`] to start.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GraphqlApiBuilder {
     endpoint: String,
     transport: crate::transport::ClientConfig,
@@ -211,6 +233,21 @@ pub struct GraphqlApiBuilder {
     root_args: Option<Value>,
     response_path: Vec<String>,
     supports: Supports,
+}
+
+impl std::fmt::Debug for GraphqlApiBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GraphqlApiBuilder")
+            .field("endpoint", &self.endpoint)
+            .field("transport", &self.transport)
+            .field("auth_header", &self.auth_header.as_ref().map(|_| "<set>"))
+            .field("dialect", &self.dialect)
+            .field("filter_arg_name", &self.filter_arg_name)
+            .field("root_args", &self.root_args)
+            .field("response_path", &self.response_path)
+            .field("supports", &self.supports)
+            .finish()
+    }
 }
 
 impl GraphqlApiBuilder {
@@ -283,6 +320,11 @@ impl GraphqlApiBuilder {
         self
     }
 
+    /// Alias for [`Self::client`], matching `RestApiBuilder::http_client`.
+    pub fn http_client(self, client: reqwest::Client) -> Self {
+        self.client(client)
+    }
+
     /// Pick the filter dialect used to render conditions on tables.
     /// Defaults to [`FilterDialect::Generic`] — flat-arg schemas like SpaceX.
     pub fn dialect(mut self, dialect: FilterDialect) -> Self {
@@ -338,5 +380,15 @@ mod tests {
             .auth("Bearer abc")
             .build();
         assert_eq!(api.endpoint(), "https://example.test/graphql");
+    }
+
+    #[test]
+    fn debug_masks_auth_header() {
+        let api = GraphqlApi::builder("https://example.test/graphql")
+            .auth("Bearer secret-token")
+            .build();
+        let text = format!("{api:?}");
+        assert!(!text.contains("secret-token"), "{text}");
+        assert!(text.contains("<set>"), "{text}");
     }
 }

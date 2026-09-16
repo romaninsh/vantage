@@ -39,6 +39,7 @@ async fn background_post_makes_one_attempt_and_keeps_the_body() {
     );
     assert_eq!(requests(&server).await, 1);
     assert_eq!(rec.tags(), ["started", "failed:status"]);
+    assert!(rec.keys.lock().unwrap().iter().all(|k| k == "gql"));
 }
 
 #[tokio::test]
@@ -63,6 +64,28 @@ async fn essential_post_retries_5xx() {
     .expect("succeeds");
     assert_eq!(data["missions"][0]["id"], "m1");
     assert_eq!(requests(&server).await, 3);
+}
+
+#[tokio::test]
+async fn http_client_override_travels_with_every_request() {
+    let server = MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::header("user-agent", "probe-agent"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_string(r#"{"data":{"missions":[]}}"#),
+        )
+        .mount(&server)
+        .await;
+    let custom = reqwest::Client::builder()
+        .user_agent("probe-agent")
+        .build()
+        .unwrap();
+    let api = GraphqlApi::builder(server.uri()).client(custom).build();
+    let data = api
+        .post_graphql("{ missions { id } }", &Map::new())
+        .await
+        .unwrap();
+    assert_eq!(data["missions"], serde_json::json!([]));
 }
 
 #[tokio::test]
