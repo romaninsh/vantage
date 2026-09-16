@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::ops::Range;
 
-use crate::dio::DioEvent;
+use crate::dio::{DioEvent, DioInner};
 use crate::scenery::table::state::TableSceneryState;
 
 use super::guards::{PendingChunk, restore_bound_rows};
@@ -12,12 +12,11 @@ use super::telemetry::{tap_cache_write, tap_payload_columns};
 /// and the generation bump. `viewport_loop` only calls this once
 /// `run_chunk_callback`'s future has resolved on its own — never raced
 /// against the viewport channel — so none of it can be cancelled.
-pub(super) async fn finish_chunk_load(state: Arc<TableSceneryState>, pending: PendingChunk) {
+pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: PendingChunk) {
     let PendingChunk {
         dio_inner,
         req,
         effective_range,
-        effective_len,
         effective_cached,
         first_hole,
         total_before,
@@ -28,6 +27,7 @@ pub(super) async fn finish_chunk_load(state: Arc<TableSceneryState>, pending: Pe
         _in_flight,
     } = pending;
     let tap = dio_inner.tap();
+    let effective_len = effective_range.len();
 
     // Commit the page in one write, before anything reads the cache back. A
     // failed commit fails the load: the rows are bound in the visible map but
@@ -51,11 +51,7 @@ pub(super) async fn finish_chunk_load(state: Arc<TableSceneryState>, pending: Pe
     let cached_after = state.rows.read().unwrap().len();
     match result {
         Ok(()) => {
-            // `flush_report` is always `Some` here — flush only fails when
-            // `result` does, which routes to the `Err` arm.
-            if let Some(report) = &flush_report {
-                tap_cache_write(tap, &state, report);
-            }
+            tap_cache_write(tap, state, flush_report.as_ref());
             // The window came back — whatever it contained, this view now has
             // an answer rather than a not-yet.
             state.mark_settled("chunk load succeeded");
@@ -88,107 +84,10 @@ pub(super) async fn finish_chunk_load(state: Arc<TableSceneryState>, pending: Pe
                 crate::debug::dur(ms),
                 if ms >= 1_000 { "  ⚠ slow" } else { "" },
             );
-            tap_payload_columns(tap, &dio_inner, &state, flush_report.as_ref());
-            // Where the grand total came from. A total the source stated in the
-            // same response as the rows (`ChunkSink::set_total`) outranks
-            // anything inferred here: a short page can equally mean "the source
-            // capped the window", and reading that as the end of the set would
-            // cut the grid off at its first screen. With nothing stated, a
-            // short page IS the end of the set, which keeps `total`
-            // self-correcting from a fetch already made — including for a list
-            // opened before its rows existed, counted once at 0.
-            let mut total_changed = if state.take_load_total_reported() {
-                let stated = *state.total.read().unwrap();
-                tracing::debug!(
-                    target: "vantage_diorama::source",
-                    table = %dio_inner.master.read().unwrap().name(),
-                    total = ?stated,
-                    "total stated by the fetch itself — no count request needed",
-                );
-                let changed = stated != total_before;
-                // Only when it MOVES. A source that restates the same total on
-                // every window would otherwise repeat this line per fetch,
-                // burying the times it actually changed.
-                if changed {
-                    crate::debug::tapline!(
-                        tap,
-                        "total",
-                        "{} rows — stated by the source in the same response",
-                        crate::debug::num(stated.unwrap_or_default()),
-                    );
-                }
-                // Remember a stated, un-narrowed total in the cache meta, so
-                // the NEXT open of this view can size its geometry before any
-                // fetch — the difference between a warm reopen appearing
-                // whole and its row count visibly jumping when the first
-                // counted response lands. A total under an active search or
-                // filter describes the narrowed set and must not be
-                // remembered — the next open would restore it as the whole.
-                if changed
-                    && state.search.read().unwrap().is_none()
-                    && state.ui_terms.read().unwrap().is_empty()
-                    && let Some(total) = stated
-                    && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
-                {
-                    tracing::debug!(
-                        target: "vantage_diorama::cache",
-                        error = %e,
-                        "persisting the stated total failed — the next open loses its head start",
-                    );
-                }
-                changed
-            } else if pushed < effective_len {
-                let total = effective_range.start + pushed;
-                // Same rule as the stated branch above: only when it MOVES. A
-                // reload that keeps landing on the same short page would
-                // otherwise repeat this line for a total that never changed.
-                let changed = state.set_total(Some(total));
-                if changed {
-                    crate::debug::tapline!(
-                        tap,
-                        "total",
-                        "{} rows — inferred: the page came back short",
-                        crate::debug::num(total),
-                    );
-                }
-                changed
-            } else {
-                // A FULL page from a source that has never stated a total. If
-                // it reached the advertised end, that end was only ever our
-                // own inference — a horizon, not a wall. Extend it by one
-                // page so the view can keep scrolling and asking (the
-                // grows-as-you-scroll mode); the set's real end arrives as a
-                // short page (exact) or an empty fetch (the hole clamp
-                // below). Without this, a total-less windowed source pinned
-                // its row count at the first page and no scroll could ever
-                // request more.
-                let horizon_reached = total_before.is_none_or(|t| effective_range.end >= t);
-                // Single-pass paged mode only: a two-pass view's list pass
-                // enumerated the whole set — its size is knowledge, not an
-                // inference to extend.
-                if !state.two_pass
-                    && effective_len > 0
-                    && horizon_reached
-                    && !state.total_ever_stated()
-                {
-                    let extended = effective_range.end + effective_len;
-                    tracing::debug!(
-                        target: "vantage_diorama::source",
-                        table = %dio_inner.master.read().unwrap().name(),
-                        extended,
-                        "full page reached the inferred horizon — extending it",
-                    );
-                    crate::debug::tapline!(
-                        tap,
-                        "total",
-                        "{} rows — a full page reached the end we assumed; extending it",
-                        crate::debug::num(extended),
-                    );
-                    state.set_total(Some(extended))
-                } else {
-                    false
-                }
-            };
+            tap_payload_columns(tap, &dio_inner, state, flush_report.as_ref());
+            let mut total_changed =
+                settle_total(state, &dio_inner, &effective_range, pushed, total_before).await;
+
             // A client-side sort can't push down to a paged, non-orderable
             // master, so this load (a viewport fetch, a scroll, or a refresh's
             // in-place refetch) lands rows in the master's native order. Re-impose
@@ -212,54 +111,16 @@ pub(super) async fn finish_chunk_load(state: Arc<TableSceneryState>, pending: Pe
                     false
                 };
 
-            // Rows nobody can deliver.
-            //
-            // A source may claim more rows than it will actually serve — a
-            // stated total counting records its own paging never returns, or an
-            // offset it quietly ignores so every page past a point repeats ids
-            // already held. The grid then advertises slots that no fetch can
-            // fill, and since a hole is exactly what triggers a fetch, it asks
-            // again, and again, for as long as the page is open: one request
-            // per few seconds, forever, against the slowest thing in reach.
-            //
-            // The proof is right here and needs no cooperation from the source:
-            // this load was asked for a range with holes in it and filled NONE
-            // of them. Whatever the total claims, the addressable set ends at
-            // the first of those holes — so say so, and the range stops being
-            // requested. Measured after the resort because a client-side sort
-            // rebuilds the visible map from the cache once the load lands.
-            if let Some(hole) = first_hole {
-                let present_after = {
-                    let rows = state.rows.read().unwrap();
-                    effective_range
-                        .clone()
-                        .filter(|i| rows.contains_key(i))
-                        .count()
-                };
-                if present_after == effective_cached {
-                    let stated = *state.total.read().unwrap();
-                    if stated.map(|t| t > hole).unwrap_or(true) {
-                        tracing::warn!(
-                            target: "vantage_diorama::source",
-                            table = %dio_inner.master.read().unwrap().name(),
-                            range = ?effective_range,
-                            received = pushed,
-                            stated_total = ?stated,
-                            reachable = hole,
-                            "source served none of the requested rows — its total \
-                             promises more than it delivers; capping the set at what \
-                             is reachable so the fetch is not repeated forever",
-                        );
-                        crate::debug::tapline!(
-                            tap,
-                            "total",
-                            "{} rows — capped: the source promises more than it serves",
-                            crate::debug::num(hole),
-                        );
-                        total_changed |= state.set_total(Some(hole));
-                    }
-                }
-            }
+            // Measured after the resort because a client-side sort rebuilds the
+            // visible map from the cache once the load lands.
+            total_changed |= clamp_to_reachable(
+                state,
+                &dio_inner,
+                &effective_range,
+                first_hole,
+                effective_cached,
+                pushed,
+            );
 
             // Drain the dirty flag regardless (so it doesn't leak into the next
             // load). Bump when this was a forced refetch (a refresh or load-more —
@@ -314,4 +175,168 @@ pub(super) async fn finish_chunk_load(state: Arc<TableSceneryState>, pending: Pe
             });
         }
     }
+}
+
+/// Where the grand total came from, given a page that just landed. Returns
+/// whether the total moved.
+///
+/// A total the source stated in the same response as the rows
+/// (`ChunkSink::set_total`) outranks anything inferred here: a short page can
+/// equally mean "the source capped the window", and reading that as the end of
+/// the set would cut the grid off at its first screen. With nothing stated, a
+/// short page IS the end of the set, which keeps `total` self-correcting from a
+/// fetch already made — including for a list opened before its rows existed,
+/// counted once at 0.
+async fn settle_total(
+    state: &TableSceneryState,
+    dio_inner: &DioInner,
+    range: &Range<usize>,
+    pushed: usize,
+    total_before: Option<usize>,
+) -> bool {
+    let tap = dio_inner.tap();
+    let effective_len = range.len();
+    if state.take_load_total_reported() {
+        let stated = *state.total.read().unwrap();
+        tracing::debug!(
+            target: "vantage_diorama::source",
+            table = %dio_inner.master.read().unwrap().name(),
+            total = ?stated,
+            "total stated by the fetch itself — no count request needed",
+        );
+        let changed = stated != total_before;
+        // Only when it MOVES. A source that restates the same total on
+        // every window would otherwise repeat this line per fetch,
+        // burying the times it actually changed.
+        if changed {
+            crate::debug::tapline!(
+                tap,
+                "total",
+                "{} rows — stated by the source in the same response",
+                crate::debug::num(stated.unwrap_or_default()),
+            );
+        }
+        // Remember a stated, un-narrowed total in the cache meta, so
+        // the NEXT open of this view can size its geometry before any
+        // fetch — the difference between a warm reopen appearing
+        // whole and its row count visibly jumping when the first
+        // counted response lands. A total under an active search or
+        // filter describes the narrowed set and must not be
+        // remembered — the next open would restore it as the whole.
+        if changed
+            && state.search.read().unwrap().is_none()
+            && state.ui_terms.read().unwrap().is_empty()
+            && let Some(total) = stated
+            && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
+        {
+            tracing::debug!(
+                target: "vantage_diorama::cache",
+                error = %e,
+                "persisting the stated total failed — the next open loses its head start",
+            );
+        }
+        return changed;
+    }
+
+    if pushed < effective_len {
+        let total = range.start + pushed;
+        // Same rule as the stated branch above: only when it MOVES. A
+        // reload that keeps landing on the same short page would
+        // otherwise repeat this line for a total that never changed.
+        let changed = state.set_total(Some(total));
+        if changed {
+            crate::debug::tapline!(
+                tap,
+                "total",
+                "{} rows — inferred: the page came back short",
+                crate::debug::num(total),
+            );
+        }
+        return changed;
+    }
+
+    // A FULL page from a source that has never stated a total. If it reached
+    // the advertised end, that end was only ever our own inference — a
+    // horizon, not a wall. Extend it by one page so the view can keep
+    // scrolling and asking (the grows-as-you-scroll mode); the set's real end
+    // arrives as a short page (exact) or an empty fetch (the hole clamp in
+    // `clamp_to_reachable`). Without this, a total-less windowed source pinned
+    // its row count at the first page and no scroll could ever request more.
+    let horizon_reached = total_before.is_none_or(|t| range.end >= t);
+    // Single-pass paged mode only: a two-pass view's list pass enumerated the
+    // whole set — its size is knowledge, not an inference to extend.
+    if state.two_pass || effective_len == 0 || !horizon_reached || state.total_ever_stated() {
+        return false;
+    }
+    let extended = range.end + effective_len;
+    tracing::debug!(
+        target: "vantage_diorama::source",
+        table = %dio_inner.master.read().unwrap().name(),
+        extended,
+        "full page reached the inferred horizon — extending it",
+    );
+    crate::debug::tapline!(
+        tap,
+        "total",
+        "{} rows — a full page reached the end we assumed; extending it",
+        crate::debug::num(extended),
+    );
+    state.set_total(Some(extended))
+}
+
+/// Rows nobody can deliver. Returns whether the total moved.
+///
+/// A source may claim more rows than it will actually serve — a stated total
+/// counting records its own paging never returns, or an offset it quietly
+/// ignores so every page past a point repeats ids already held. The grid then
+/// advertises slots that no fetch can fill, and since a hole is exactly what
+/// triggers a fetch, it asks again, and again, for as long as the page is
+/// open: one request per few seconds, forever, against the slowest thing in
+/// reach.
+///
+/// The proof is right here and needs no cooperation from the source: this load
+/// was asked for a range with holes in it and filled NONE of them. Whatever the
+/// total claims, the addressable set ends at the first of those holes — so say
+/// so, and the range stops being requested.
+fn clamp_to_reachable(
+    state: &TableSceneryState,
+    dio_inner: &DioInner,
+    range: &Range<usize>,
+    first_hole: Option<usize>,
+    effective_cached: usize,
+    pushed: usize,
+) -> bool {
+    let Some(hole) = first_hole else {
+        return false;
+    };
+    let tap = dio_inner.tap();
+    let present_after = {
+        let rows = state.rows.read().unwrap();
+        range.clone().filter(|i| rows.contains_key(i)).count()
+    };
+    if present_after != effective_cached {
+        return false;
+    }
+    let stated = *state.total.read().unwrap();
+    if stated.is_some_and(|t| t <= hole) {
+        return false;
+    }
+    tracing::warn!(
+        target: "vantage_diorama::source",
+        table = %dio_inner.master.read().unwrap().name(),
+        range = ?range,
+        received = pushed,
+        stated_total = ?stated,
+        reachable = hole,
+        "source served none of the requested rows — its total \
+         promises more than it delivers; capping the set at what \
+         is reachable so the fetch is not repeated forever",
+    );
+    crate::debug::tapline!(
+        tap,
+        "total",
+        "{} rows — capped: the source promises more than it serves",
+        crate::debug::num(hole),
+    );
+    state.set_total(Some(hole))
 }

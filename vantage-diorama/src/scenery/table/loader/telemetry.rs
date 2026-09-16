@@ -12,11 +12,19 @@ use crate::scenery::table::state::TableSceneryState;
 /// genuinely new vs. rows that already had a cached value and got overwritten,
 /// plus how much of the known total is now cached.
 ///
-/// Says nothing when the page came back empty: `flush_counted` short-circuits
+/// Says nothing without a report (the load failed before the flush), and
+/// nothing when the page came back empty: `flush_counted` short-circuits
 /// before counting, so `cache_rows_after` would read `0` — not the cache's
 /// real size, just "not measured" — and a line for zero rows written is not a
 /// write at all.
-pub(super) fn tap_cache_write(tap: &DebugTap, state: &TableSceneryState, report: &FlushReport) {
+pub(super) fn tap_cache_write(
+    tap: &DebugTap,
+    state: &TableSceneryState,
+    report: Option<&FlushReport>,
+) {
+    let Some(report) = report else {
+        return;
+    };
     if !tap.enabled() || report.written == 0 {
         return;
     }

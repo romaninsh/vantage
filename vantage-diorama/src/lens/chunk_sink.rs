@@ -155,21 +155,19 @@ impl ChunkSink {
         // prefer, so the fetched record is bound as-is: visible, but — like
         // the staged value beside it — not written to the cache by this load.
         // The flash's own commit is what persists the row.
-        if self.pending.contains(&id) {
-            let staged = self.cache.get_value(&id).await?.unwrap_or(record);
-            let write = target.write_chunk_row(idx, id, staged);
-            self.note_write(idx, write);
-            return Ok(());
-        }
-        if let Ok(mut buffer) = self.buffer.lock() {
-            buffer.rows.push(ChunkRow {
-                idx,
-                id: id.clone(),
-                record: record.clone(),
-            });
-        }
-        let write = target.write_chunk_row(idx, id, record);
-        self.note_write(idx, write);
+        let record = if self.pending.contains(&id) {
+            self.cache.get_value(&id).await?.unwrap_or(record)
+        } else {
+            if let Ok(mut buffer) = self.buffer.lock() {
+                buffer.rows.push(ChunkRow {
+                    idx,
+                    id: id.clone(),
+                    record: record.clone(),
+                });
+            }
+            record
+        };
+        self.note_write(idx, target.write_chunk_row(idx, id, record));
         Ok(())
     }
 

@@ -131,42 +131,31 @@ pub(super) async fn run_chunk_callback(
         }
     };
 
-    // An eager lens holds every row already, so it registers no
-    // `on_load_chunk` — a viewport it can't page for is its steady state,
-    // not a fault. Logged at DEBUG like the fully-cached skip above:
-    // anything that re-drives the viewport on a timer (a relation list's
-    // periodic re-pull, `refresh_loaded_viewport`) would otherwise emit a
-    // warning per tick, forever.
-    // Only a paged view fetches windows. An eager one holds every row already
-    // — its viewport moving is its steady state, not a reason to fetch — and
-    // its master may not be able to serve a window at all, which is an error
-    // raised to the user rather than a quiet no-op.
-    let cb = match dio_inner
+    // Only a paged view fetches windows. An eager lens holds every row
+    // already, so it registers no `on_load_chunk` — its viewport moving is its
+    // steady state, not a fault. Logged at DEBUG like the fully-cached skip
+    // above: anything that re-drives the viewport on a timer (a relation
+    // list's periodic re-pull, `refresh_loaded_viewport`) would otherwise emit
+    // a warning per tick, forever.
+    let Some(cb) = dio_inner
         .lens
         .callbacks
         .on_load_chunk
         .as_ref()
         .filter(|_| state.paged)
-    {
-        Some(cb) => cb,
-        None => {
-            tracing::debug!(
-                target: "vantage_diorama::viewport",
-                visible = ?visible,
-                paged = state.paged,
-                "fire_chunk_load: SKIP (this view does not page)",
-            );
-            return None;
-        }
+    else {
+        tracing::debug!(
+            target: "vantage_diorama::viewport",
+            visible = ?visible,
+            paged = state.paged,
+            "fire_chunk_load: SKIP (this view does not page)",
+        );
+        return None;
     };
 
     {
         let mut guard = state.load_in_flight.lock().unwrap();
-        if guard
-            .as_ref()
-            .map(|r| *r == effective_range)
-            .unwrap_or(false)
-        {
+        if guard.as_ref() == Some(&effective_range) {
             tracing::debug!(
                 target: "vantage_diorama::viewport",
                 effective = ?effective_range,
@@ -194,7 +183,7 @@ pub(super) async fn run_chunk_callback(
 
     // Recompute overlap on the effective range so the log shows the
     // shift working.
-    let effective_len = effective_range.end - effective_range.start;
+    let effective_len = effective_range.len();
     let (effective_cached, first_hole) = {
         let rows = state.rows.read().unwrap();
         let present = effective_range
@@ -313,7 +302,6 @@ pub(super) async fn run_chunk_callback(
         dio_inner,
         req,
         effective_range,
-        effective_len,
         effective_cached,
         first_hole,
         total_before,

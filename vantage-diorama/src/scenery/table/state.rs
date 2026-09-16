@@ -741,22 +741,22 @@ impl SceneryChunkTarget for TableSceneryState {
         // longer there would write the wrong record into a live slot.
         let mut id_to_idx = self.id_to_idx.write().unwrap();
         id_to_idx.retain(|_, idx| !touched.contains(idx));
-        let id_column = self.dio_weak.upgrade().map(|dio| {
-            dio.master
-                .read()
-                .unwrap()
-                .get_id_column()
-                .unwrap_or("id")
-                .to_string()
-        });
-        if let Some(id_column) = id_column {
-            let rows = self.rows.read().unwrap();
-            for idx in &touched {
-                if let Some(record) = rows.get(idx)
-                    && let Some(id) = record.record.get(&id_column).and_then(cbor_id_to_string)
-                {
-                    id_to_idx.insert(id, *idx);
-                }
+        let Some(dio) = self.dio_weak.upgrade() else {
+            return;
+        };
+        let id_column = dio
+            .master
+            .read()
+            .unwrap()
+            .get_id_column()
+            .unwrap_or("id")
+            .to_string();
+        let rows = self.rows.read().unwrap();
+        for idx in &touched {
+            if let Some(record) = rows.get(idx)
+                && let Some(id) = record.record.get(&id_column).and_then(cbor_id_to_string)
+            {
+                id_to_idx.insert(id, *idx);
             }
         }
     }

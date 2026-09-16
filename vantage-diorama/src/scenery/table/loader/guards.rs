@@ -16,7 +16,6 @@ pub(super) struct PendingChunk {
     pub(super) dio_inner: Arc<DioInner>,
     pub(super) req: Option<u64>,
     pub(super) effective_range: Range<usize>,
-    pub(super) effective_len: usize,
     pub(super) effective_cached: usize,
     pub(super) first_hole: Option<usize>,
     pub(super) total_before: Option<usize>,

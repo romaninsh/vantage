@@ -14,7 +14,7 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::{Priority, Result};
-use vantage_diorama::Lens;
+use vantage_diorama::{ChunkSink, Lens, LensBuilder};
 use vantage_types::Record;
 
 mod support;
@@ -52,6 +52,32 @@ async fn wait_until(label: &str, mut pred: impl FnMut() -> bool) {
     }
 }
 
+/// Serve the rows of `range` that `snapshot` holds — the body every chunk
+/// callback in this file shares. It takes a snapshot rather than the backend
+/// so a gated callback reads the same rows either side of its gate.
+async fn push_rows(
+    snapshot: &[(String, Record<CborValue>)],
+    range: impl IntoIterator<Item = usize>,
+    sink: &ChunkSink,
+) -> Result<()> {
+    for idx in range {
+        if let Some((id, r)) = snapshot.get(idx) {
+            sink.push(idx, id.clone(), r.clone()).await?;
+        }
+    }
+    Ok(())
+}
+
+/// The `total_provider` every lens here that states a total states: the
+/// backend's current length.
+fn with_backend_total(lens: LensBuilder, backend: &Backend) -> LensBuilder {
+    let backend = backend.clone();
+    lens.total_provider(move |_dio| {
+        let backend = backend.clone();
+        async move { Ok(backend.lock().unwrap().len()) }
+    })
+}
+
 /// A paged lens whose chunk callback records the priority it ran under.
 /// `total_provider` and `debounce` are separate knobs because two rules only
 /// show themselves without one or with a longer other: the horizon probe
@@ -72,13 +98,9 @@ fn build_observing_lens(
     with_total: bool,
     debounce: Option<Duration>,
 ) -> Arc<Lens> {
-    let total = backend.clone();
     let mut lens = Lens::new().cache_at(cache);
     if with_total {
-        lens = lens.total_provider(move |_dio| {
-            let b = total.clone();
-            async move { Ok(b.lock().unwrap().len()) }
-        });
+        lens = with_backend_total(lens, &backend);
     }
     if let Some(debounce) = debounce {
         lens = lens.viewport_debounce(debounce);
@@ -90,12 +112,7 @@ fn build_observing_lens(
             async move {
                 seen.lock().unwrap().push(Priority::current());
                 let rows = b.lock().unwrap().clone();
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
-                Ok(())
+                push_rows(&rows, range, &sink).await
             }
         })
         .build()
@@ -125,8 +142,7 @@ async fn cold_open_and_uncached_viewport_are_essential_refresh_is_background() -
     // A refresh over rows already on screen: background.
     view.scenery().request_refresh();
     let before = seen.lock().unwrap().len();
-    view.settle_until("refresh ran", |_| seen.lock().unwrap().len() > before)
-        .await;
+    wait_until("refresh ran", || seen.lock().unwrap().len() > before).await;
     assert_eq!(seen.lock().unwrap().last(), Some(&Priority::Background));
     Ok(())
 }
@@ -142,8 +158,7 @@ async fn load_more_is_essential() -> Result<()> {
         .await;
     let before = seen.lock().unwrap().len();
     view.scenery().request_load_more();
-    view.settle_until("load more ran", |_| seen.lock().unwrap().len() > before)
-        .await;
+    wait_until("load more ran", || seen.lock().unwrap().len() > before).await;
     assert_eq!(seen.lock().unwrap().last(), Some(&Priority::Essential));
     Ok(())
 }
@@ -195,12 +210,7 @@ async fn the_open_blocking_total_is_essential() -> Result<()> {
                     let b = backend.clone();
                     async move {
                         let rows = b.lock().unwrap().clone();
-                        for idx in range {
-                            if let Some((id, r)) = rows.get(idx) {
-                                sink.push(idx, id.clone(), r.clone()).await?;
-                            }
-                        }
-                        Ok(())
+                        push_rows(&rows, range, &sink).await
                     }
                 })
                 .build()
@@ -302,9 +312,8 @@ async fn warm_open_refresh_is_background() -> Result<()> {
     let seen: Arc<Mutex<Vec<Priority>>> = Arc::new(Mutex::new(Vec::new()));
     let lens = observing_lens(cache, backend, seen.clone());
     let dio = lens.make_dio(master(&[("v", "String")])).await?;
-    let view = MockView::open(&dio, 10).await;
-    view.settle_until("re-pulled", |_| !seen.lock().unwrap().is_empty())
-        .await;
+    let _view = MockView::open(&dio, 10).await;
+    wait_until("re-pulled", || !seen.lock().unwrap().is_empty()).await;
     assert_eq!(seen.lock().unwrap().first(), Some(&Priority::Background));
     Ok(())
 }
@@ -373,23 +382,15 @@ fn gated_lens_rejecting_writes(
     )
 }
 
-fn gated_lens_from(
-    lens: vantage_diorama::LensBuilder,
-    backend: Backend,
-    gated: &Gated,
-) -> Arc<Lens> {
-    let total = backend.clone();
+fn gated_lens_from(lens: LensBuilder, backend: Backend, gated: &Gated) -> Arc<Lens> {
+    let lens = with_backend_total(lens, &backend);
     let release = gated.release.clone();
     let calls = gated.calls.clone();
     let priorities = gated.priorities.clone();
     let cancelled = gated.cancelled.clone();
     let early_push = gated.early_push;
     Arc::new(
-        lens.total_provider(move |_dio| {
-            let b = total.clone();
-            async move { Ok(b.lock().unwrap().len()) }
-        })
-        .on_load_chunk(move |_dio, range, _query, sink| {
+        lens.on_load_chunk(move |_dio, range, _query, sink| {
             let b = backend.clone();
             let release = release.clone();
             let calls = calls.clone();
@@ -405,18 +406,9 @@ fn gated_lens_from(
                 // the range is still pending — and, if this call gets
                 // cancelled, check what happened to them.
                 let mut range = range;
-                let early: Vec<usize> = range.by_ref().take(early_push).collect();
-                for idx in early {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
+                push_rows(&rows, range.by_ref().take(early_push), &sink).await?;
                 release.notified().await;
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
+                push_rows(&rows, range, &sink).await?;
                 flag.1 = true; // finished: not a cancellation
                 Ok(())
             }
@@ -802,42 +794,31 @@ fn failing_lens(
     calls: Arc<AtomicUsize>,
     pushes_first: bool,
 ) -> Arc<Lens> {
-    let total = backend.clone();
+    let lens = with_backend_total(Lens::new().cache_at(cache), &backend);
     Arc::new(
-        Lens::new()
-            .cache_at(cache)
-            .total_provider(move |_dio| {
-                let b = total.clone();
-                async move { Ok(b.lock().unwrap().len()) }
-            })
-            .on_load_chunk(move |_dio, range, _query, sink| {
-                let b = backend.clone();
-                let fail = fail.clone();
-                let calls = calls.clone();
-                async move {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                    if fail.load(Ordering::SeqCst) {
-                        if pushes_first {
-                            // Two rows with genuinely new values, so they bind
-                            // rather than dedup away, and then the fetch dies.
-                            for idx in range.clone().take(2) {
-                                sink.push(idx, format!("r{idx}"), rec(&format!("v{idx}-new")))
-                                    .await?;
-                            }
-                        }
-                        return Err(vantage_core::error!("API request failed", status = 503));
-                    }
-                    let rows = b.lock().unwrap().clone();
-                    for idx in range {
-                        if let Some((id, r)) = rows.get(idx) {
-                            sink.push(idx, id.clone(), r.clone()).await?;
+        lens.on_load_chunk(move |_dio, range, _query, sink| {
+            let b = backend.clone();
+            let fail = fail.clone();
+            let calls = calls.clone();
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                if fail.load(Ordering::SeqCst) {
+                    if pushes_first {
+                        // Two rows with genuinely new values, so they bind
+                        // rather than dedup away, and then the fetch dies.
+                        for idx in range.clone().take(2) {
+                            sink.push(idx, format!("r{idx}"), rec(&format!("v{idx}-new")))
+                                .await?;
                         }
                     }
-                    Ok(())
+                    return Err(vantage_core::error!("API request failed", status = 503));
                 }
-            })
-            .build()
-            .expect("lens"),
+                let rows = b.lock().unwrap().clone();
+                push_rows(&rows, range, &sink).await
+            }
+        })
+        .build()
+        .expect("lens"),
     )
 }
 

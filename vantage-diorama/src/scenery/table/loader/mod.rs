@@ -49,16 +49,14 @@ pub(crate) async fn viewport_loop(
         }
         let initial = match carried.take() {
             Some(req) => req,
-            None => match rx.recv().await {
-                Some(req) => {
-                    state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
-                    req
-                }
-                None => {
+            None => {
+                let Some(req) = rx.recv().await else {
                     tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: channel closed, exiting");
                     return;
-                }
-            },
+                };
+                state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
+                req
+            }
         };
         // The pop above already decremented the producer-side counter (a
         // carried request decremented it back when it first arrived); read
@@ -177,17 +175,15 @@ pub(crate) async fn viewport_loop(
                 },
             }
         };
-        if carried.is_none() {
-            carried = after;
-        }
+        carried = carried.or(after);
         if let Some(pending) = pending {
-            finish_chunk_load(state.clone(), pending).await;
+            finish_chunk_load(&state, pending).await;
         }
     }
 }
 
-/// Convenience wrapper used by `set_viewport` and `request_load_more`
-/// to enqueue a viewport request on the debounce channel.
+/// Put a viewport request on the debounce channel, keeping the queue-depth
+/// counter honest.
 pub(crate) fn enqueue_viewport(state: &TableSceneryState, request: ViewportRequest) {
     // Bump the depth counter *before* sending so a racing consumer
     // can't observe a depth lower than what's actually in the channel.
