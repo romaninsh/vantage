@@ -171,6 +171,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     let ViewportRequest {
         range: visible,
         force_load,
+        priority,
     } = request;
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         tracing::warn!(target: "vantage_diorama::viewport", "fire_chunk_load: dio dropped");
@@ -382,6 +383,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
             0.0
         },
         force_load,
+        priority = ?priority,
         "fire_chunk_load: dispatching on_load_chunk",
     );
     // The counterpart of the CACHE line above: this is the moment a range
@@ -425,7 +427,18 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     // `write_chunk_row` sets it when a row's content actually changes.
     state.reset_load_dirty();
     let total_before = *state.total.read().unwrap();
-    let mut result = cb(&dio, effective_range.clone(), query, sink).await;
+    // The horizon probe asks past the inferred end on the user's behalf but
+    // nobody is waiting on it; everything else runs under the priority the
+    // producer declared. The scope is here, inside the viewport task, so it
+    // reaches the transport; spawning the callback would lose it.
+    let priority = if horizon_probe {
+        vantage_core::Priority::Background
+    } else {
+        priority
+    };
+    let mut result = priority
+        .scope(cb(&dio, effective_range.clone(), query, sink))
+        .await;
     // Commit the page in one write, before anything reads the cache back. A
     // failed commit fails the load: the rows are bound in the visible map but
     // absent from the cache, and the next re-sort would rebuild the map without

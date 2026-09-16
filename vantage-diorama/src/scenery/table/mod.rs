@@ -89,6 +89,11 @@ pub(crate) struct ViewportRequest {
     /// `request_load_more` sets this true so a fully-cached range
     /// still triggers a fetch (paging past the cache end).
     pub(crate) force_load: bool,
+    /// Who is waiting. A viewport or a load-more is someone looking at the
+    /// rows; a refresh over cached rows is nobody. The loader scopes the
+    /// chunk callback with it, so the transport picks its retry policy
+    /// without a parameter.
+    pub(crate) priority: vantage_core::Priority,
 }
 
 /// How much of a scenery's data has arrived.
@@ -358,6 +363,7 @@ impl TableScenery for TableSceneryImpl {
             ViewportRequest {
                 range,
                 force_load: false,
+                priority: vantage_core::Priority::Essential,
             },
         );
     }
@@ -389,6 +395,7 @@ impl TableScenery for TableSceneryImpl {
             ViewportRequest {
                 range: start..end,
                 force_load: true,
+                priority: vantage_core::Priority::Essential,
             },
         );
     }

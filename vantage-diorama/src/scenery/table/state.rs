@@ -612,6 +612,7 @@ impl TableSceneryState {
             ViewportRequest {
                 range,
                 force_load: true,
+                priority: vantage_core::Priority::Background,
             },
         );
     }

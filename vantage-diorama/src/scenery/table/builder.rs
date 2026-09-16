@@ -581,6 +581,14 @@ impl TableSceneryBuilder {
                 ViewportRequest {
                     range,
                     force_load: true,
+                    // An empty cache means the grid shows nothing until this
+                    // returns; a warm one means it is a re-pull behind rows
+                    // already on screen.
+                    priority: if cached_rows == 0 {
+                        vantage_core::Priority::Essential
+                    } else {
+                        vantage_core::Priority::Background
+                    },
                 },
             );
         }
