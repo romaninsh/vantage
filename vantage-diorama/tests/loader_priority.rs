@@ -1,8 +1,13 @@
 //! The loader, not the lens and not the transport, decides who is waiting:
-//! a viewport nobody has cached is essential, a refresh over cached rows is
+//! a viewport nobody has cached is essential, a poll over cached rows is
 //! background, and the priority reaches the chunk callback through the
 //! task-local even though the loader runs on its own task.
+//!
+//! The same file covers what a load leaves behind when it does not finish:
+//! a cancelled or failed load must restore the visible map to what it was,
+//! not delete the rows it happened to overwrite.
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -32,36 +37,69 @@ fn rows(n: usize) -> Backend {
     ))
 }
 
+/// Poll `pred` every 5ms until it holds; panic naming `label` if two seconds
+/// pass first. The budget bounds a *hang* — it is not an assertion about
+/// speed, which is why it is generous — and the label is what turns a timeout
+/// into a diagnosis rather than a stack trace in a loop.
+async fn wait_until(label: &str, mut pred: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !pred() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out after 2s waiting for: {label}",
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
 /// A paged lens whose chunk callback records the priority it ran under.
+/// `total_provider` and `debounce` are separate knobs because two rules only
+/// show themselves without one or with a longer other: the horizon probe
+/// needs a source that never states a total, and the coalescing rule needs a
+/// debounce window wide enough to put two requests into by hand.
 fn observing_lens(
     cache: std::path::PathBuf,
     backend: Backend,
     seen: Arc<Mutex<Vec<Priority>>>,
 ) -> Arc<Lens> {
+    build_observing_lens(cache, backend, seen, true, None)
+}
+
+fn build_observing_lens(
+    cache: std::path::PathBuf,
+    backend: Backend,
+    seen: Arc<Mutex<Vec<Priority>>>,
+    with_total: bool,
+    debounce: Option<Duration>,
+) -> Arc<Lens> {
     let total = backend.clone();
+    let mut lens = Lens::new().cache_at(cache);
+    if with_total {
+        lens = lens.total_provider(move |_dio| {
+            let b = total.clone();
+            async move { Ok(b.lock().unwrap().len()) }
+        });
+    }
+    if let Some(debounce) = debounce {
+        lens = lens.viewport_debounce(debounce);
+    }
     Arc::new(
-        Lens::new()
-            .cache_at(cache)
-            .total_provider(move |_dio| {
-                let b = total.clone();
-                async move { Ok(b.lock().unwrap().len()) }
-            })
-            .on_load_chunk(move |_dio, range, _query, sink| {
-                let b = backend.clone();
-                let seen = seen.clone();
-                async move {
-                    seen.lock().unwrap().push(Priority::current());
-                    let rows = b.lock().unwrap().clone();
-                    for idx in range {
-                        if let Some((id, r)) = rows.get(idx) {
-                            sink.push(idx, id.clone(), r.clone()).await?;
-                        }
+        lens.on_load_chunk(move |_dio, range, _query, sink| {
+            let b = backend.clone();
+            let seen = seen.clone();
+            async move {
+                seen.lock().unwrap().push(Priority::current());
+                let rows = b.lock().unwrap().clone();
+                for idx in range {
+                    if let Some((id, r)) = rows.get(idx) {
+                        sink.push(idx, id.clone(), r.clone()).await?;
                     }
-                    Ok(())
                 }
-            })
-            .build()
-            .expect("lens"),
+                Ok(())
+            }
+        })
+        .build()
+        .expect("lens"),
     )
 }
 
@@ -110,6 +148,143 @@ async fn load_more_is_essential() -> Result<()> {
     Ok(())
 }
 
+/// A search is a `force_load` re-pull of a block already on screen — and a
+/// user waiting on it. `force_load` is not what decides the priority.
+#[tokio::test]
+async fn a_search_refetch_is_essential() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let seen: Arc<Mutex<Vec<Priority>>> = Arc::new(Mutex::new(Vec::new()));
+    let lens = observing_lens(tmp.path().join("c.redb"), rows(30), seen.clone());
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("first page", |v| v.loaded_rows() >= 10)
+        .await;
+
+    let before = seen.lock().unwrap().len();
+    view.scenery().set_search(Some("v2".into()));
+    wait_until("the search refetch ran", || {
+        seen.lock().unwrap().len() > before
+    })
+    .await;
+    assert_eq!(seen.lock().unwrap().last(), Some(&Priority::Essential));
+    Ok(())
+}
+
+/// The grand total the open blocks on is awaited by whoever is mounting the
+/// page, so it is essential — a single failure on it fails the open.
+#[tokio::test]
+async fn the_open_blocking_total_is_essential() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let backend = rows(30);
+    let counted: Arc<Mutex<Vec<Priority>>> = Arc::new(Mutex::new(Vec::new()));
+    let lens = {
+        let total = backend.clone();
+        let observed = counted.clone();
+        Arc::new(
+            Lens::new()
+                .cache_at(tmp.path().join("c.redb"))
+                .total_provider(move |_dio| {
+                    let b = total.clone();
+                    let observed = observed.clone();
+                    async move {
+                        observed.lock().unwrap().push(Priority::current());
+                        Ok(b.lock().unwrap().len())
+                    }
+                })
+                .on_load_chunk(move |_dio, range, _query, sink| {
+                    let b = backend.clone();
+                    async move {
+                        let rows = b.lock().unwrap().clone();
+                        for idx in range {
+                            if let Some((id, r)) = rows.get(idx) {
+                                sink.push(idx, id.clone(), r.clone()).await?;
+                            }
+                        }
+                        Ok(())
+                    }
+                })
+                .build()
+                .expect("lens"),
+        )
+    };
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let _view = MockView::open(&dio, 10).await;
+    assert_eq!(counted.lock().unwrap().first(), Some(&Priority::Essential));
+    Ok(())
+}
+
+/// The probe past the end the loader itself inferred is speculative: nobody
+/// asked for those rows, so it must not hold a retry budget open.
+#[tokio::test]
+async fn the_horizon_probe_runs_background() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let seen: Arc<Mutex<Vec<Priority>>> = Arc::new(Mutex::new(Vec::new()));
+    // No `total_provider`: nothing ever states a total, so the end of the set
+    // is only ever this side's inference — which is what makes a viewport
+    // reaching it a probe rather than a fetch.
+    let lens = build_observing_lens(
+        tmp.path().join("c.redb"),
+        rows(30),
+        seen.clone(),
+        false,
+        None,
+    );
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("first page", |v| v.loaded_rows() >= 10)
+        .await;
+    // The cold on-open fetch is a real wait; the inferred horizon is now 20.
+    assert_eq!(seen.lock().unwrap().as_slice(), [Priority::Essential]);
+    assert_eq!(view.total(), Some(20));
+
+    // A viewport pressed against that inferred end asks past it on the user's
+    // behalf, but the rows beyond it are not known to exist.
+    let before = seen.lock().unwrap().len();
+    view.viewport(10..20);
+    wait_until("the horizon probe ran", || {
+        seen.lock().unwrap().len() > before
+    })
+    .await;
+    assert_eq!(seen.lock().unwrap().last(), Some(&Priority::Background));
+    Ok(())
+}
+
+/// Coalescing merges the *wait*, not just the range: an essential viewport
+/// absorbed together with a background refresh still has someone waiting on
+/// the rows.
+#[tokio::test]
+async fn coalescing_a_refresh_into_a_viewport_keeps_essential() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let seen: Arc<Mutex<Vec<Priority>>> = Arc::new(Mutex::new(Vec::new()));
+    // A wide debounce so both requests land in the same window by hand
+    // rather than by luck.
+    let lens = build_observing_lens(
+        tmp.path().join("c.redb"),
+        rows(30),
+        seen.clone(),
+        true,
+        Some(Duration::from_millis(400)),
+    );
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("first page", |v| v.loaded_rows() >= 10)
+        .await;
+    let before = seen.lock().unwrap().len();
+
+    // An essential viewport over the block already on screen — on its own it
+    // is fully cached and fetches nothing — then, inside the debounce, the
+    // background refresh of the same block, which supplies the `force_load`.
+    // One fetch comes out of the two, and it is the one someone is waiting on.
+    view.viewport(0..10);
+    view.scenery().request_refresh();
+    wait_until("the coalesced fetch ran", || {
+        seen.lock().unwrap().len() > before
+    })
+    .await;
+    assert_eq!(seen.lock().unwrap().last(), Some(&Priority::Essential));
+    Ok(())
+}
+
 #[tokio::test]
 async fn warm_open_refresh_is_background() -> Result<()> {
     let tmp = TempDir::new().unwrap();
@@ -131,7 +306,6 @@ async fn warm_open_refresh_is_background() -> Result<()> {
     view.settle_until("re-pulled", |_| !seen.lock().unwrap().is_empty())
         .await;
     assert_eq!(seen.lock().unwrap().first(), Some(&Priority::Background));
-    tokio::time::sleep(Duration::from_millis(10)).await;
     Ok(())
 }
 
@@ -140,17 +314,22 @@ async fn warm_open_refresh_is_background() -> Result<()> {
 struct Gated {
     release: Arc<tokio::sync::Notify>,
     calls: Arc<Mutex<Vec<std::ops::Range<usize>>>>,
-    cancelled: Arc<std::sync::atomic::AtomicUsize>,
+    cancelled: Arc<AtomicUsize>,
 }
 
-struct DropFlag(Arc<std::sync::atomic::AtomicUsize>, bool);
+struct DropFlag(Arc<AtomicUsize>, bool);
 impl Drop for DropFlag {
     fn drop(&mut self) {
         if !self.1 {
-            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
 }
+
+/// How many rows the gated callback pushes before it blocks. Enough that a
+/// test can change one of them behind the loader's back (row 3) and watch
+/// what a cancellation does to it.
+const EARLY_PUSH: usize = 4;
 
 fn gated_lens(cache: std::path::PathBuf, backend: Backend, gated: &Gated) -> Arc<Lens> {
     let total = backend.clone();
@@ -173,13 +352,12 @@ fn gated_lens(cache: std::path::PathBuf, backend: Backend, gated: &Gated) -> Arc
                     calls.lock().unwrap().push(range.clone());
                     let mut flag = DropFlag(cancelled, false);
                     let rows = b.lock().unwrap().clone();
-                    // Push the first three rows before blocking, so a test
-                    // can observe them bound in the visible map while the
-                    // rest of the range is still pending — and, if this
-                    // call gets cancelled, check that those early rows were
-                    // unbound rather than left behind.
+                    // Push the first few rows before blocking, so a test can
+                    // observe them bound in the visible map while the rest of
+                    // the range is still pending — and, if this call gets
+                    // cancelled, check what happened to them.
                     let mut range = range;
-                    let early: Vec<usize> = range.by_ref().take(3).collect();
+                    let early: Vec<usize> = range.by_ref().take(EARLY_PUSH).collect();
                     for idx in early {
                         if let Some((id, r)) = rows.get(idx) {
                             sink.push(idx, id.clone(), r.clone()).await?;
@@ -200,8 +378,18 @@ fn gated_lens(cache: std::path::PathBuf, backend: Backend, gated: &Gated) -> Arc
     )
 }
 
-async fn calls_len(g: &Gated) -> usize {
+fn calls_len(g: &Gated) -> usize {
     g.calls.lock().unwrap().len()
+}
+
+/// Let the on-open fetch (call 1) through and wait for a row only the
+/// remainder loop writes — unlike an early-pushed row, row 5 cannot already
+/// be present before the release is actually consumed, so waiting on it
+/// proves call 1 finished rather than merely started.
+async fn release_the_open_fetch(gated: &Gated, scenery: &Arc<dyn vantage_diorama::TableScenery>) {
+    wait_until("the on-open fetch to start", || calls_len(gated) >= 1).await;
+    gated.release.notify_one();
+    wait_until("the on-open fetch to finish", || scenery.row(5).is_some()).await;
 }
 
 #[tokio::test]
@@ -210,97 +398,52 @@ async fn a_newer_viewport_cancels_the_in_flight_load() -> Result<()> {
     let gated = Gated {
         release: Arc::new(tokio::sync::Notify::new()),
         calls: Arc::new(Mutex::new(Vec::new())),
-        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        cancelled: Arc::new(AtomicUsize::new(0)),
     };
     let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
     let dio = lens.make_dio(master(&[("v", "String")])).await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;
-
-    // The on-open fetch is call 1; let it through.
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 1 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    gated.release.notify_one();
-    // Row 5 is only written by the remainder loop, after `notified()`
-    // resolves — unlike row 0 (part of the early push), it can't already be
-    // present before the release is actually consumed. Waiting on it (rather
-    // than row 0) proves call 1 truly finished before the test moves on.
-    for _ in 0..200 {
-        if scenery.row(5).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    release_the_open_fetch(&gated, &scenery).await;
 
     // Scroll to 20..30: call 2 starts and blocks on the gate.
     scenery.set_viewport(20..30);
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("the 20..30 load to start", || calls_len(&gated) >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 20..30);
 
     // Scroll on to 30..40 while call 2 is still blocked: call 2 must be
     // dropped (not finished) and call 3 must start.
     scenery.set_viewport(30..40);
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 3 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("the 30..40 load to start", || calls_len(&gated) >= 3).await;
     assert_eq!(gated.calls.lock().unwrap()[2], 30..40);
     assert_eq!(
-        gated.cancelled.load(std::sync::atomic::Ordering::SeqCst),
+        gated.cancelled.load(Ordering::SeqCst),
         1,
         "call 2 was dropped"
     );
 
     // Release call 3: rows 30..40 arrive; rows 20..30 never do.
     gated.release.notify_one();
-    for _ in 0..200 {
-        if scenery.row(35).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(scenery.row(35).is_some());
+    wait_until("row 35", || scenery.row(35).is_some()).await;
     assert!(
         scenery.row(25).is_none(),
         "a cancelled load never writes rows"
     );
     assert!(
         scenery.row(20).is_none(),
-        "the cancelled load's early-pushed rows were unbound, not left bound with nothing in the cache"
+        "the cancelled load's early-pushed rows went back to empty, not left bound with nothing in the cache"
     );
     assert!(
         scenery.row(22).is_none(),
-        "the cancelled load's early-pushed rows were unbound, not left bound with nothing in the cache"
+        "the cancelled load's early-pushed rows went back to empty, not left bound with nothing in the cache"
     );
 
     // The in-flight marker was cleared by the cancellation: asking for
     // 20..30 again fetches it.
     scenery.set_viewport(20..30);
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 4 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("20..30 to be re-requested", || calls_len(&gated) >= 4).await;
     assert_eq!(gated.calls.lock().unwrap()[3], 20..30);
     gated.release.notify_one();
-    for _ in 0..200 {
-        if scenery.row(25).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(scenery.row(25).is_some());
+    wait_until("row 25", || scenery.row(25).is_some()).await;
     Ok(())
 }
 
@@ -310,53 +453,26 @@ async fn an_identical_viewport_is_absorbed_into_the_running_load() -> Result<()>
     let gated = Gated {
         release: Arc::new(tokio::sync::Notify::new()),
         calls: Arc::new(Mutex::new(Vec::new())),
-        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        cancelled: Arc::new(AtomicUsize::new(0)),
     };
     let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
     let dio = lens.make_dio(master(&[("v", "String")])).await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 1 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    gated.release.notify_one();
-    // Row 5 is only written by the remainder loop, after `notified()`
-    // resolves — unlike row 0 (part of the early push), it can't already be
-    // present before the release is actually consumed. Waiting on it (rather
-    // than row 0) proves call 1 truly finished before the test moves on.
-    for _ in 0..200 {
-        if scenery.row(5).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    release_the_open_fetch(&gated, &scenery).await;
 
     scenery.set_viewport(20..30);
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("the 20..30 load to start", || calls_len(&gated) >= 2).await;
     // The same range again while it is loading: absorbed, no new call.
     scenery.set_viewport(20..30);
     // Longer than the default 50 ms debounce, so a would-be regression that
     // routed this through the debounce absorb loop instead of the mid-load
     // select would still have fired call 3 well before this check runs.
     tokio::time::sleep(Duration::from_millis(120)).await;
-    assert_eq!(calls_len(&gated).await, 2);
-    assert_eq!(gated.cancelled.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(calls_len(&gated), 2);
+    assert_eq!(gated.cancelled.load(Ordering::SeqCst), 0);
 
     gated.release.notify_one();
-    for _ in 0..200 {
-        if scenery.row(25).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(scenery.row(25).is_some());
+    wait_until("row 25", || scenery.row(25).is_some()).await;
     Ok(())
 }
 
@@ -366,42 +482,19 @@ async fn a_same_range_refresh_runs_after_the_current_load() -> Result<()> {
     let gated = Gated {
         release: Arc::new(tokio::sync::Notify::new()),
         calls: Arc::new(Mutex::new(Vec::new())),
-        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        cancelled: Arc::new(AtomicUsize::new(0)),
     };
     let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
     let dio = lens.make_dio(master(&[("v", "String")])).await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;
-
-    // The on-open fetch is call 1; let it through.
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 1 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    gated.release.notify_one();
-    // Row 5 is only written by the remainder loop, after `notified()`
-    // resolves — unlike row 0 (part of the early push), it can't already be
-    // present before the release is actually consumed. Waiting on it (rather
-    // than row 0) proves call 1 truly finished before the test moves on.
-    for _ in 0..200 {
-        if scenery.row(5).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    release_the_open_fetch(&gated, &scenery).await;
 
     // Scroll to 20..30: call 2 starts and blocks on the gate. By the time
     // its callback has run at all, `last_viewport` is already 20..30 (it is
     // stamped before the callback is even dispatched), so the refresh below
     // targets this same block, not the one loaded before it.
     scenery.set_viewport(20..30);
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("the 20..30 load to start", || calls_len(&gated) >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 20..30);
 
     // A force_load refresh of the block currently loading: same range, so it
@@ -409,33 +502,60 @@ async fn a_same_range_refresh_runs_after_the_current_load() -> Result<()> {
     scenery.request_refresh();
     tokio::time::sleep(Duration::from_millis(120)).await;
     assert_eq!(
-        calls_len(&gated).await,
+        calls_len(&gated),
         2,
         "a same-range refresh must not preempt the load already in flight"
     );
 
     // Release call 2: its rows commit. The parked refresh then runs as call 3.
     gated.release.notify_one();
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 3 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("the parked refresh to run", || calls_len(&gated) >= 3).await;
     assert_eq!(
         gated.calls.lock().unwrap()[2],
         20..30,
         "the parked refresh re-asks for the block it was for"
     );
     gated.release.notify_one();
-    for _ in 0..200 {
-        if scenery.row(25).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(scenery.row(25).is_some());
+    wait_until("row 25", || scenery.row(25).is_some()).await;
     assert!(scenery.row(5).is_some());
+    Ok(())
+}
+
+/// The parked refresh's *intent* — consult the master, don't trust the cache
+/// — outlives the range it was for: it is OR'd onto whatever request
+/// supersedes it. Proven with a superseding range the cache already holds in
+/// full, which without the carried `force_load` would fetch nothing at all.
+#[tokio::test]
+async fn a_parked_refresh_survives_a_supersede() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let gated = Gated {
+        release: Arc::new(tokio::sync::Notify::new()),
+        calls: Arc::new(Mutex::new(Vec::new())),
+        cancelled: Arc::new(AtomicUsize::new(0)),
+    };
+    let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().page_size(10).open().await?;
+    release_the_open_fetch(&gated, &scenery).await;
+
+    // Call 2 for 20..30 blocks on the gate; the refresh behind it parks.
+    scenery.set_viewport(20..30);
+    wait_until("the 20..30 load to start", || calls_len(&gated) >= 2).await;
+    scenery.request_refresh();
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert_eq!(calls_len(&gated), 2, "the refresh parked behind the load");
+
+    // Supersede both with 0..10 — fully cached by call 1. A plain viewport
+    // for it would be served locally and never reach the callback; call 3
+    // happening at all is the parked refresh's `force_load` arriving on it.
+    scenery.set_viewport(0..10);
+    wait_until("the superseding load to run", || calls_len(&gated) >= 3).await;
+    assert_eq!(
+        gated.calls.lock().unwrap()[2],
+        0..10,
+        "the superseding range was re-pulled from the master although the cache held it",
+    );
+    gated.release.notify_one();
     Ok(())
 }
 
@@ -445,126 +565,213 @@ async fn a_cancelled_refresh_over_unchanged_rows_keeps_them() -> Result<()> {
     let gated = Gated {
         release: Arc::new(tokio::sync::Notify::new()),
         calls: Arc::new(Mutex::new(Vec::new())),
-        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        cancelled: Arc::new(AtomicUsize::new(0)),
     };
     let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
     let dio = lens.make_dio(master(&[("v", "String")])).await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;
-
-    // The on-open fetch is call 1; let it through and wait for a
-    // remainder-only row, proving the release was actually consumed (see
-    // `a_newer_viewport_cancels_the_in_flight_load` for why row 0 won't do).
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 1 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    gated.release.notify_one();
-    for _ in 0..200 {
-        if scenery.row(5).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    release_the_open_fetch(&gated, &scenery).await;
     assert_eq!(col_at(&scenery, 0, "v").as_deref(), Some("v0"));
 
     // A force_load refresh of the block just loaded: call 2 re-fetches
-    // 0..10. Its early push re-sends rows 0, 1, 2 unchanged — the
-    // identical-fresh-record dedup in `write_chunk_row` skips binding them
-    // (they were already bound, unchanged, by call 1) — then it blocks on
-    // the gate.
+    // 0..10. Its early push re-sends the first rows unchanged — the
+    // identical-fresh-record dedup in `write_chunk_row` answers `Skipped`
+    // for them (they were already bound, unchanged, by call 1) — then it
+    // blocks on the gate.
     scenery.request_refresh();
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("the refresh to start", || calls_len(&gated) >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 0..10);
 
     // Supersede it with a different range before it finishes: call 2 is
-    // cancelled. Its early-pushed rows (0, 1, 2) were never *bound* — the
-    // dedup skip means `write_chunk_row` returned `false` for them — so
-    // cancelling must not unbind them.
+    // cancelled. Its early-pushed rows were never *bound*, so the undo must
+    // not touch them.
     scenery.set_viewport(20..30);
-    for _ in 0..200 {
-        if calls_len(&gated).await >= 3 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait_until("the superseding load to start", || calls_len(&gated) >= 3).await;
     assert_eq!(gated.calls.lock().unwrap()[2], 20..30);
 
     gated.release.notify_one();
-    for _ in 0..200 {
-        if scenery.row(25).is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(scenery.row(25).is_some());
+    wait_until("row 25", || scenery.row(25).is_some()).await;
 
     // Rows 0, 1 and 2 must still be present with their original values — a
     // cancelled load that only ever touched them through the dedup skip
     // must not have deleted them.
-    assert!(scenery.row(0).is_some());
-    assert!(scenery.row(1).is_some());
-    assert!(scenery.row(2).is_some());
     assert_eq!(col_at(&scenery, 0, "v").as_deref(), Some("v0"));
     assert_eq!(col_at(&scenery, 1, "v").as_deref(), Some("v1"));
     assert_eq!(col_at(&scenery, 2, "v").as_deref(), Some("v2"));
     Ok(())
 }
 
+/// The case the undo is really about: the cancelled load had already
+/// overwritten a row with a *newer* value. Deleting that slot would punch a
+/// hole in the grid where a perfectly good cached row was; the slot goes back
+/// to the record it held instead.
+#[tokio::test]
+async fn a_cancelled_refresh_over_a_changed_row_restores_the_old_one() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let gated = Gated {
+        release: Arc::new(tokio::sync::Notify::new()),
+        calls: Arc::new(Mutex::new(Vec::new())),
+        cancelled: Arc::new(AtomicUsize::new(0)),
+    };
+    let backend = rows(40);
+    let lens = gated_lens(tmp.path().join("c.redb"), backend.clone(), &gated);
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().page_size(10).open().await?;
+    release_the_open_fetch(&gated, &scenery).await;
+    assert_eq!(col_at(&scenery, 3, "v").as_deref(), Some("v3"));
+
+    // The backend moves under us, then a refresh picks the new value up in
+    // its early push — row 3 is genuinely re-bound, with the old record
+    // handed back as what it replaced.
+    backend.lock().unwrap()[3].1 = rec("v3-new");
+    scenery.request_refresh();
+    wait_until("the refresh to start", || calls_len(&gated) >= 2).await;
+    assert_eq!(gated.calls.lock().unwrap()[1], 0..10);
+    wait_until("row 3 to take the new value", || {
+        col_at(&scenery, 3, "v").as_deref() == Some("v3-new")
+    })
+    .await;
+
+    // Supersede the refresh before it can commit: the new value was never
+    // written to the cache, so the slot must go back to the old record
+    // rather than disappear.
+    scenery.set_viewport(20..30);
+    wait_until("the superseding load to start", || calls_len(&gated) >= 3).await;
+    gated.release.notify_one();
+    wait_until("row 25", || scenery.row(25).is_some()).await;
+
+    assert_eq!(
+        col_at(&scenery, 3, "v").as_deref(),
+        Some("v3"),
+        "the cancelled load's overwrite was rolled back to the cached record",
+    );
+    assert_eq!(col_at(&scenery, 0, "v").as_deref(), Some("v0"));
+    assert_eq!(col_at(&scenery, 1, "v").as_deref(), Some("v1"));
+    assert_eq!(col_at(&scenery, 2, "v").as_deref(), Some("v2"));
+    Ok(())
+}
+
+/// A lens whose chunk callback fails. `pushes_first` decides whether it
+/// fails clean or fails having already bound rows the cache never saw.
+fn failing_lens(
+    cache: std::path::PathBuf,
+    backend: Backend,
+    fail: Arc<AtomicBool>,
+    calls: Arc<AtomicUsize>,
+    pushes_first: bool,
+) -> Arc<Lens> {
+    let total = backend.clone();
+    Arc::new(
+        Lens::new()
+            .cache_at(cache)
+            .total_provider(move |_dio| {
+                let b = total.clone();
+                async move { Ok(b.lock().unwrap().len()) }
+            })
+            .on_load_chunk(move |_dio, range, _query, sink| {
+                let b = backend.clone();
+                let fail = fail.clone();
+                let calls = calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    if fail.load(Ordering::SeqCst) {
+                        if pushes_first {
+                            // Two rows with genuinely new values, so they bind
+                            // rather than dedup away, and then the fetch dies.
+                            for idx in range.clone().take(2) {
+                                sink.push(idx, format!("r{idx}"), rec(&format!("v{idx}-new")))
+                                    .await?;
+                            }
+                        }
+                        return Err(vantage_core::error!("API request failed", status = 503));
+                    }
+                    let rows = b.lock().unwrap().clone();
+                    for idx in range {
+                        if let Some((id, r)) = rows.get(idx) {
+                            sink.push(idx, id.clone(), r.clone()).await?;
+                        }
+                    }
+                    Ok(())
+                }
+            })
+            .build()
+            .expect("lens"),
+    )
+}
+
 #[tokio::test]
 async fn a_failed_background_refresh_keeps_the_rows() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let backend = rows(30);
-    let fail = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let lens = {
-        let total = backend.clone();
-        let b = backend.clone();
-        let fail = fail.clone();
-        Arc::new(
-            Lens::new()
-                .cache_at(tmp.path().join("c.redb"))
-                .total_provider(move |_dio| {
-                    let b = total.clone();
-                    async move { Ok(b.lock().unwrap().len()) }
-                })
-                .on_load_chunk(move |_dio, range, _query, sink| {
-                    let b = b.clone();
-                    let fail = fail.clone();
-                    async move {
-                        if fail.load(std::sync::atomic::Ordering::SeqCst) {
-                            return Err(vantage_core::error!("API request failed", status = 503));
-                        }
-                        let rows = b.lock().unwrap().clone();
-                        for idx in range {
-                            if let Some((id, r)) = rows.get(idx) {
-                                sink.push(idx, id.clone(), r.clone()).await?;
-                            }
-                        }
-                        Ok(())
-                    }
-                })
-                .build()
-                .expect("lens"),
-        )
-    };
+    let fail = Arc::new(AtomicBool::new(false));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let lens = failing_lens(
+        tmp.path().join("c.redb"),
+        rows(30),
+        fail.clone(),
+        calls.clone(),
+        false,
+    );
     let dio = lens.make_dio(master(&[("v", "String")])).await?;
     let view = MockView::open(&dio, 10).await;
     view.settle_until("first page", |v| v.loaded_rows() >= 10)
         .await;
     let before: Vec<_> = (0..10).map(|i| view.col_at(i, "v")).collect();
+    let calls_before = calls.load(Ordering::SeqCst);
 
-    fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    fail.store(true, Ordering::SeqCst);
     view.scenery().request_refresh();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Wait for the failing fetch to have actually run: without this the
+    // assertions below hold vacuously, over a refresh that never dispatched.
+    wait_until("the failing refresh to run", || {
+        calls.load(Ordering::SeqCst) > calls_before
+    })
+    .await;
 
     let after: Vec<_> = (0..10).map(|i| view.col_at(i, "v")).collect();
     assert_eq!(before, after, "rows on screen survive a failed refresh");
+    assert_eq!(view.gray_rows(), 0);
+    Ok(())
+}
+
+/// A failure after the callback has already pushed rows unwinds like a
+/// cancellation: those rows were never committed to the cache, so leaving
+/// them on screen would show values no later read can reproduce.
+#[tokio::test]
+async fn a_failing_refresh_that_pushed_rows_first_restores_them() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let fail = Arc::new(AtomicBool::new(false));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let lens = failing_lens(
+        tmp.path().join("c.redb"),
+        rows(30),
+        fail.clone(),
+        calls.clone(),
+        true,
+    );
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("first page", |v| v.loaded_rows() >= 10)
+        .await;
+    let before: Vec<_> = (0..10).map(|i| view.col_at(i, "v")).collect();
+    let calls_before = calls.load(Ordering::SeqCst);
+
+    fail.store(true, Ordering::SeqCst);
+    view.scenery().request_refresh();
+    wait_until("the failing refresh to run", || {
+        calls.load(Ordering::SeqCst) > calls_before
+    })
+    .await;
+    // The restore happens in the commit half, after the callback returns.
+    wait_until("rows 0 and 1 to be back", || {
+        view.col_at(0, "v").as_deref() == Some("v0") && view.col_at(1, "v").as_deref() == Some("v1")
+    })
+    .await;
+
+    let after: Vec<_> = (0..10).map(|i| view.col_at(i, "v")).collect();
+    assert_eq!(
+        before, after,
+        "the rows the failed fetch had pushed went back to their cached values",
+    );
     assert_eq!(view.gray_rows(), 0);
     Ok(())
 }

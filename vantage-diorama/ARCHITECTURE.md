@@ -455,6 +455,74 @@ When a request fires:
    `DioEvent::LoadFailed { range, error }` and leaves the cache /
    sparse map untouched (no generation bump).
 
+### Chunk loads: priority and cancellation
+
+`viewport_loop` (in `scenery/table/loader/mod.rs`) is the debounce
+loop behind the pipeline above. `run_chunk_callback`
+(`loader/dispatch.rs`) runs the `on_load_chunk` callback and
+`finish_chunk_load` (`loader/commit.rs`) commits its result; the
+tracing and tap lines both emit keep the older `fire_chunk_load:`
+prefix, so a grep for it still finds the whole pipeline.
+
+Every `ViewportRequest` carries a `vantage_core::Priority` set by its
+producer. Essential — someone is waiting on these rows: `set_viewport`,
+`request_load_more`, `set_search`, `set_filter_terms`, the re-order on
+a `can_order` master, a cold on-open fetch (empty cache) and the
+open-blocking `total_provider` call, which is the one round trip an
+open awaits and whose failure fails the open. Background — nobody is:
+the refresh poll, a warm on-open re-pull, two-pass detail hydration,
+and the horizon probe (the past-the-inferred-end check that detects a
+table growing past what `total_provider` last reported). `force_load`
+does not decide this: it says "consult the master rather than the
+cache", which a search does as much as a poll. HTTP transports read
+the priority to pick their retry policy.
+
+When the debounce coalesces a burst, the merged request takes the
+newest *range* but the strongest *wait*: `Essential` if any absorbed
+request carried it. An essential scroll absorbed with a background
+refresh still has a user waiting on the result.
+
+While a chunk callback is in flight, `viewport_loop` races it against
+the viewport channel in a `select!`: a request for a *different* range
+cancels the in-flight load by dropping its future — `CancelOnDrop`
+then restores the slots `write_chunk_row` reported as `Bound`, putting
+back the record each one held (or emptying it again, when it was
+empty). Only those: a client-sort hold-back or an
+identical-fresh-record dedup answers `Skipped`, having written
+nothing, and undoing such an index would overwrite a row the cancelled
+load never touched. The same restore runs on the `Err` path in
+`finish_chunk_load`, so a failed refresh that had already pushed rows
+is as invisible to the grid as one that failed before its first push.
+What a cancelled load *can* leave behind is a row bound through the
+flash-pending path: that row is recorded as bound and restored like
+any other, but it was never buffered for the cache write in the first
+place — the staged flash value is what the cache holds, and the
+fetched snapshot must not overwrite it. A request for the *same* range
+is absorbed and the running load continues; a same-range request with
+`force_load` is parked and runs once the current load finishes — and
+if something else supersedes it first, its `force_load` is OR'd onto
+the request that wins. A cancelled load's in-flight marker is cleared
+with it, so the next request for that range is not skipped as a
+duplicate.
+
+This is why the load is split into two phases. `run_chunk_callback`
+is the cancellable half — it owns the callback's future and the
+`CancelOnDrop` guard. Once it resolves, `finish_chunk_load` — the
+commit, the total inference, the client-side resort and the
+generation bump — runs to completion outside the `select!`: once the
+master has answered, nothing may unwind it.
+
+A two-pass scenery's detail sweep runs inside the cancellable half
+too, so a viewport that moves on drops it mid-flight. That is safe
+because the sweep self-heals: the superseding viewport sweeps its own
+rows and bumps the generation, and hydration dedups against ids
+already `Complete`, so a half-finished sweep costs at most a repeat of
+the rows it did not reach.
+
+The callback itself runs inside the viewport task, never spawned onto
+another task, so the `Priority` scope set around it reaches the
+transport; spawning would lose that task-local.
+
 ### Sparse-map persistence
 
 The id-keyed cache (redb by default) is persisted across restarts;

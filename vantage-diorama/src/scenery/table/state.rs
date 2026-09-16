@@ -9,7 +9,7 @@ use vantage_types::Record;
 use vantage_vista::VistaCapabilities;
 
 use crate::dio::{DioInner, Generation};
-use crate::lens::SceneryChunkTarget;
+use crate::lens::{ChunkWrite, SceneryChunkTarget};
 use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
 use super::helpers::{
@@ -440,7 +440,11 @@ impl TableSceneryState {
             // re-declare its viewport. A grid repaints and re-declares, so it
             // would recover either way; a consumer that holds its viewport
             // still would sit on an empty view forever.
-            self.refresh_loaded_viewport();
+            //
+            // Essential: the positions were just dropped, so this refill is
+            // the only thing that can put rows back in front of the user who
+            // changed the order.
+            self.refresh_loaded_viewport(vantage_core::Priority::Essential);
             return Ok(());
         }
 
@@ -597,7 +601,13 @@ impl TableSceneryState {
     /// duplicate (and another row silently dropped). Overwriting the entire
     /// contiguous block keeps every loaded slot consistent with the master's
     /// current order, so a reorder reshuffles cleanly instead of scrambling.
-    pub(crate) fn refresh_loaded_viewport(&self) {
+    ///
+    /// `priority` is the caller's, because a forced re-fetch of a cached block
+    /// is not one thing: a poll, or the re-drive after a two-pass list page, is
+    /// nobody waiting (`Background`); a search, a filter change or a re-order
+    /// is a user who typed something and is watching for the result
+    /// (`Essential`).
+    pub(crate) fn refresh_loaded_viewport(&self, priority: vantage_core::Priority) {
         let Some(viewport) = self.last_viewport.read().unwrap().clone() else {
             return;
         };
@@ -626,7 +636,7 @@ impl TableSceneryState {
             ViewportRequest {
                 range,
                 force_load: true,
-                priority: vantage_core::Priority::Background,
+                priority,
             },
         );
     }
@@ -655,7 +665,7 @@ impl SceneryChunkTarget for TableSceneryState {
         self.set_total(Some(total))
     }
 
-    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) -> bool {
+    fn write_chunk_row(&self, idx: usize, id: String, record: Record<CborValue>) -> ChunkWrite {
         // Count every received row (before the skips below), so the loader can
         // tell a short page (end of set) from a full one.
         self.load_push_count.fetch_add(1, Ordering::SeqCst);
@@ -668,44 +678,83 @@ impl SceneryChunkTarget for TableSceneryState {
         // order (`Dio::fetch_window_ordered`) and there is no client re-sort, so
         // these rows must be written straight through.
         if self.sort.read().unwrap().is_some() && !self.master_capabilities.can_order {
-            return false;
+            return ChunkWrite::Skipped;
         }
         // Skip the write entirely when this slot already holds the same fresh
         // record: a refresh that re-fetches identical data must not look like a
         // change. Only a new/!Fresh slot or a different record is "dirty", and
-        // only a dirty load bumps the generation (see `loader::fire_chunk_load`).
+        // only a dirty load bumps the generation (see `loader::commit`).
         {
             let rows = self.rows.read().unwrap();
             if let Some(existing) = rows.get(&idx)
                 && existing.status == RowStatus::Fresh
                 && existing.record == record
             {
-                return false;
+                return ChunkWrite::Skipped;
             }
         }
         let enriched = Arc::new(EnrichedRecord::fresh(record));
-        self.rows.write().unwrap().insert(idx, enriched);
+        let previous = self.rows.write().unwrap().insert(idx, enriched);
         self.id_to_idx.write().unwrap().insert(id, idx);
         self.load_dirty.store(true, Ordering::SeqCst);
-        true
+        ChunkWrite::Bound { previous }
     }
 
-    fn unbind_chunk_rows(&self, indices: &[usize]) {
-        if indices.is_empty() {
+    /// Deliberately does NOT bump the generation. It only ever runs as the
+    /// undo of a load that never became visible as a load: the rows it puts
+    /// back are the rows the grid is already painting, so there is nothing new
+    /// to show. Bumping would repaint the identical frame — and, on the cancel
+    /// path, would do so in the middle of the superseding load that is about
+    /// to bump for real.
+    ///
+    /// Applied newest-first so a slot written more than once by the same load
+    /// ends up holding what it held before the load's *first* write, not what
+    /// that first write replaced.
+    fn restore_chunk_rows(&self, entries: &[(usize, Option<Arc<EnrichedRecord>>)]) {
+        if entries.is_empty() {
             return;
         }
+        let touched: std::collections::HashSet<usize> = entries.iter().map(|(i, _)| *i).collect();
         {
             let mut rows = self.rows.write().unwrap();
-            for idx in indices {
-                rows.remove(idx);
+            for (idx, previous) in entries.iter().rev() {
+                match previous {
+                    Some(record) => {
+                        rows.insert(*idx, record.clone());
+                    }
+                    None => {
+                        rows.remove(idx);
+                    }
+                }
             }
         }
-        // `id_to_idx` is keyed by id, not index, so the removed slots are
-        // found by value rather than looked up directly.
-        let removed: std::collections::HashSet<usize> = indices.iter().copied().collect();
-        self.id_to_idx
-            .write()
-            .unwrap()
-            .retain(|_, idx| !removed.contains(&*idx));
+        // `id_to_idx` is keyed by id, not index, so the slots this undid are
+        // found by value rather than looked up directly. Every mapping into a
+        // touched slot goes, including the one the undone load added; the
+        // record put back re-registers below under its own id, when it carries
+        // one. A row whose record does not embed the master's id column loses
+        // its mapping until the next load rebinds the slot — an in-place
+        // `RecordChanged` update for it is skipped, which is a miss the next
+        // fetch corrects, where a mapping left pointing at a row that is no
+        // longer there would write the wrong record into a live slot.
+        let mut id_to_idx = self.id_to_idx.write().unwrap();
+        id_to_idx.retain(|_, idx| !touched.contains(idx));
+        let id_column = self.dio_weak.upgrade().and_then(|dio| {
+            dio.master
+                .read()
+                .unwrap()
+                .get_id_column()
+                .map(str::to_string)
+        });
+        if let Some(id_column) = id_column {
+            let rows = self.rows.read().unwrap();
+            for idx in &touched {
+                if let Some(record) = rows.get(idx)
+                    && let Some(CborValue::Text(id)) = record.record.get(&id_column)
+                {
+                    id_to_idx.insert(id.clone(), *idx);
+                }
+            }
+        }
     }
 }

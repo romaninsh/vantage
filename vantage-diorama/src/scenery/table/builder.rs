@@ -351,7 +351,14 @@ impl TableSceneryBuilder {
         if let Some(cb) = dio.lens.callbacks.total_provider.as_ref() {
             let dio_handle = Dio { inner: dio.clone() };
             let started = std::time::Instant::now();
-            let total = cb(&dio_handle).await?;
+            // Essential: this is the one round trip the open blocks on, and
+            // its `?` fails the open. A transport that only retries what is
+            // awaited must retry this — failing a page open on a single 503
+            // from the count, while the chunk fetch beside it retries, is the
+            // exact asymmetry the priority exists to prevent.
+            let total = vantage_core::Priority::Essential
+                .scope(cb(&dio_handle))
+                .await?;
             let ms = started.elapsed().as_millis() as u64;
             tracing::info!(
                 target: "vantage_diorama::cache",
@@ -415,7 +422,7 @@ impl TableSceneryBuilder {
                     // index and enqueued nothing, so hydration would wait for
                     // the user to scroll. Re-drive it now that there are rows
                     // to hydrate — the same restart the reorder path does.
-                    seed_state.refresh_loaded_viewport();
+                    seed_state.refresh_loaded_viewport(vantage_core::Priority::Background);
                 });
             } else {
                 // A populated shared index costs no query — it is already in

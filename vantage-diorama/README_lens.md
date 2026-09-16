@@ -164,6 +164,16 @@ streaming API trickles in. The scenery only bumps its generation once
 the callback's future returns — UIs get a single repaint per chunk
 rather than one per row, which keeps scroll behaviour predictable.
 
+The callback may read `vantage_core::Priority::current()` to learn whether
+someone is waiting on it (`Essential`) or not (`Background`), e.g. to pick a
+retry policy. The loader may also drop the callback's future entirely if
+the viewport moves on before it resolves, so a callback must not detach
+work it expects to finish. Rows it had already pushed are put back the way
+it found them — the record that was in the slot before, or nothing if the
+slot was empty — rather than left on screen looking cached. A callback that
+returns `Err` unwinds the same way, so a failed re-pull leaves the grid
+showing exactly what it showed before.
+
 By default a TableScenery opens, paints whatever it finds in the
 cache, then fires `set_viewport(0..page_size)` against itself so the
 configured `on_load_chunk` re-fetches the first page in the
