@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::dio::{Dio, DioEvent};
+use crate::dio::{Dio, DioEvent, DioInner};
 use crate::lens::ChunkSink;
 
 use super::ViewportRequest;
-use super::state::TableSceneryState;
+use super::state::{InFlightMarker, TableSceneryState};
 
 /// Debounces viewport requests and fires chunk loads. Restarts the
 /// debounce timer on every new request — rapid scroll bursts coalesce
@@ -40,8 +40,9 @@ pub(crate) async fn viewport_loop(
                 }
             },
         };
-        // Decrement the producer-side counter once per pop so the
-        // tracing-visible queue depth tracks what's actually pending.
+        // The pop above already decremented the producer-side counter (a
+        // carried request decremented it back when it first arrived); read
+        // its current value for the tracing line below.
         let depth_on_pop = state.viewport_queue_depth.load(Ordering::SeqCst);
         let mut latest = initial;
         let mut absorbed = 0usize;
@@ -91,22 +92,27 @@ pub(crate) async fn viewport_loop(
             depth_after,
             "viewport_loop: firing",
         );
-        // Run the load, but keep listening: a newer viewport for a different
-        // range drops the load (its sink buffer with it — nothing is written)
-        // and is served next; an identical range is absorbed and the load
-        // continues; an identical range asking for a re-pull runs after it.
-        let load = fire_chunk_load(state.clone(), latest.clone());
+        // Race the callback against the channel, but only up to the point it
+        // resolves: a newer viewport for a different range drops it (via
+        // `CancelOnDrop`, unbinding whatever rows it had pushed — nothing is
+        // committed) and is served next; an identical range is absorbed and
+        // the callback continues; an identical range asking for a re-pull is
+        // parked in `after` and runs once this one finishes. Once the
+        // callback resolves, its commit and bookkeeping (`finish_chunk_load`)
+        // run to completion outside the select — a supersede can no longer
+        // reach it once the master has answered.
+        let load = run_chunk_callback(state.clone(), latest.clone());
         tokio::pin!(load);
         let mut after: Option<ViewportRequest> = None;
-        loop {
+        let pending = loop {
             tokio::select! {
-                _ = &mut load => break,
+                pending = &mut load => break pending,
                 next = rx.recv() => match next {
                     None => {
                         tracing::warn!(target: "vantage_diorama::viewport", "viewport_loop: channel closed mid-load, exiting");
                         return;
                     }
-                    Some(req) => {
+                    Some(mut req) => {
                         state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
                         if req.range != latest.range {
                             tracing::debug!(
@@ -115,8 +121,13 @@ pub(crate) async fn viewport_loop(
                                 by = ?req.range,
                                 "viewport_loop: cancelling the in-flight load",
                             );
+                            // A parked same-range refresh is moot against the
+                            // range it was for, but the *intent* — force a
+                            // re-pull rather than trust the cache — still
+                            // applies to whatever range wins next.
+                            req.force_load |= after.as_ref().is_some_and(|a| a.force_load);
                             carried = Some(req);
-                            break; // dropping `load` cancels it
+                            break None; // dropping `load` cancels the callback
                         }
                         if req.force_load {
                             after = Some(req);
@@ -125,9 +136,12 @@ pub(crate) async fn viewport_loop(
                     }
                 },
             }
-        }
+        };
         if carried.is_none() {
             carried = after;
+        }
+        if let Some(pending) = pending {
+            finish_chunk_load(state.clone(), pending).await;
         }
     }
 }
@@ -208,12 +222,68 @@ fn compute_fetch_range(
     Some(start..end)
 }
 
+/// What [`run_chunk_callback`] hands to [`finish_chunk_load`] once the
+/// callback has resolved — everything the commit and its bookkeeping need,
+/// carried across the boundary the `select!` in `viewport_loop` cannot
+/// reach: by the time this exists, the master has already answered, so
+/// nothing past this point may be cancelled.
+struct PendingChunk {
+    dio_inner: Arc<DioInner>,
+    req: Option<u64>,
+    effective_range: Range<usize>,
+    effective_len: usize,
+    effective_cached: usize,
+    first_hole: Option<usize>,
+    total_before: Option<usize>,
+    writer: ChunkSink,
+    result: vantage_core::Result<()>,
+    t: std::time::Instant,
+    force_load: bool,
+    /// Held from the moment the range was claimed until `finish_chunk_load`
+    /// returns, so the same-range guard in `run_chunk_callback` covers the
+    /// whole load, not just its network half.
+    _in_flight: InFlightMarker,
+}
+
+/// Unbinds a chunk's pushed-but-uncommitted rows if its callback's future is
+/// dropped before the callback returns — i.e. a newer viewport superseded
+/// the load. Disarmed right after the callback returns, whatever the
+/// result: a callback that ran to completion (successfully or not) has its
+/// rows handled by the ordinary commit/error path in `finish_chunk_load`,
+/// not by this guard.
+struct CancelOnDrop {
+    armed: bool,
+    writer: ChunkSink,
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let indices = self.writer.pushed_indices();
+        if indices.is_empty() {
+            return;
+        }
+        if let Some(target) = self.writer.target.upgrade() {
+            target.unbind_chunk_rows(&indices);
+        }
+    }
+}
+
 /// Always emits `ViewportChanged`. If the range is fully cached or no
-/// `on_load_chunk` callback is registered, returns without touching
-/// the cache. Otherwise dispatches the callback against an
-/// edge-anchored "effective" range (see [`compute_fetch_range`]), then
-/// emits `RangeLoaded` (success) or `LoadFailed` (error).
-async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest) {
+/// `on_load_chunk` callback is registered, returns `None` without touching
+/// the cache. Otherwise dispatches the callback against an edge-anchored
+/// "effective" range (see [`compute_fetch_range`]) and, once it resolves,
+/// returns `Some(PendingChunk)` for [`finish_chunk_load`] to commit — a
+/// `select!` racing this function against the viewport channel can cancel
+/// it (by dropping its future) any time before that `Some` comes back, and
+/// `CancelOnDrop` unbinds whatever rows the callback had pushed so a
+/// cancelled load leaves nothing behind.
+async fn run_chunk_callback(
+    state: Arc<TableSceneryState>,
+    request: ViewportRequest,
+) -> Option<PendingChunk> {
     let ViewportRequest {
         range: visible,
         force_load,
@@ -221,7 +291,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     } = request;
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         tracing::warn!(target: "vantage_diorama::viewport", "fire_chunk_load: dio dropped");
-        return;
+        return None;
     };
     let tap = dio_inner.tap();
 
@@ -244,7 +314,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         if !state.titles_only {
             super::two_pass::run_detail_for_range(state.clone(), visible).await;
         }
-        return;
+        return None;
     }
 
     let total = *state.total.read().unwrap();
@@ -312,7 +382,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                         visible.end,
                     );
                 }
-                return;
+                return None;
             }
         }
     };
@@ -342,7 +412,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 paged = state.paged,
                 "fire_chunk_load: SKIP (this view does not page)",
             );
-            return;
+            return None;
         }
     };
 
@@ -358,7 +428,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
                 effective = ?effective_range,
                 "fire_chunk_load: SKIP (same range already in flight)",
             );
-            return;
+            return None;
         }
         if let Some(prev) = guard.as_ref() {
             tracing::warn!(
@@ -370,7 +440,7 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
         }
         *guard = Some(effective_range.clone());
     }
-    let _in_flight = super::state::InFlightMarker(&state);
+    let in_flight = InFlightMarker(state.clone());
 
     // Only allocate a request id when the tap is enabled — it's the one
     // correlator that ties this fetch's "load dispatch" to its "load return"
@@ -483,9 +553,57 @@ async fn fire_chunk_load(state: Arc<TableSceneryState>, request: ViewportRequest
     } else {
         priority
     };
-    let mut result = priority
+    // Armed for the duration of the callback: if `select!` in `viewport_loop`
+    // drops this future here (a newer viewport superseded it), the guard
+    // unbinds whatever rows the callback had pushed before it finished.
+    let mut cancel_guard = CancelOnDrop {
+        armed: true,
+        writer: writer.clone(),
+    };
+    let result = priority
         .scope(cb(&dio, effective_range.clone(), query, sink))
         .await;
+    cancel_guard.armed = false;
+
+    Some(PendingChunk {
+        dio_inner,
+        req,
+        effective_range,
+        effective_len,
+        effective_cached,
+        first_hole,
+        total_before,
+        writer,
+        result,
+        t,
+        force_load,
+        _in_flight: in_flight,
+    })
+}
+
+/// Commits the rows a resolved chunk callback buffered, then runs the
+/// bookkeeping that depends on the commit having happened — total
+/// inference, the client-side resort, the "rows nobody can deliver" clamp,
+/// and the generation bump. `viewport_loop` only calls this once
+/// `run_chunk_callback`'s future has resolved on its own — never raced
+/// against the viewport channel — so none of it can be cancelled.
+async fn finish_chunk_load(state: Arc<TableSceneryState>, pending: PendingChunk) {
+    let PendingChunk {
+        dio_inner,
+        req,
+        effective_range,
+        effective_len,
+        effective_cached,
+        first_hole,
+        total_before,
+        writer,
+        mut result,
+        t,
+        force_load,
+        _in_flight,
+    } = pending;
+    let tap = dio_inner.tap();
+
     // Commit the page in one write, before anything reads the cache back. A
     // failed commit fails the load: the rows are bound in the visible map but
     // absent from the cache, and the next re-sort would rebuild the map without

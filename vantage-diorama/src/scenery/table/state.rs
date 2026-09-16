@@ -199,10 +199,12 @@ pub(crate) struct TableSceneryState {
 /// Clears `load_in_flight` when dropped, so a load that is cancelled
 /// mid-flight — its future dropped by the viewport loop — cannot leave its
 /// range marked as still loading and make the next request for that range
-/// skip itself.
-pub(crate) struct InFlightMarker<'a>(pub(crate) &'a TableSceneryState);
+/// skip itself. Owns the `Arc` rather than borrowing it so it can travel
+/// inside `PendingChunk` from `run_chunk_callback` to `finish_chunk_load`,
+/// holding the guard for the whole load rather than just its network half.
+pub(crate) struct InFlightMarker(pub(crate) Arc<TableSceneryState>);
 
-impl Drop for InFlightMarker<'_> {
+impl Drop for InFlightMarker {
     fn drop(&mut self) {
         *self.0.load_in_flight.lock().unwrap() = None;
     }
@@ -685,5 +687,24 @@ impl SceneryChunkTarget for TableSceneryState {
         self.rows.write().unwrap().insert(idx, enriched);
         self.id_to_idx.write().unwrap().insert(id, idx);
         self.load_dirty.store(true, Ordering::SeqCst);
+    }
+
+    fn unbind_chunk_rows(&self, indices: &[usize]) {
+        if indices.is_empty() {
+            return;
+        }
+        {
+            let mut rows = self.rows.write().unwrap();
+            for idx in indices {
+                rows.remove(idx);
+            }
+        }
+        // `id_to_idx` is keyed by id, not index, so the removed slots are
+        // found by value rather than looked up directly.
+        let removed: std::collections::HashSet<usize> = indices.iter().copied().collect();
+        self.id_to_idx
+            .write()
+            .unwrap()
+            .retain(|_, idx| !removed.contains(&*idx));
     }
 }

@@ -172,8 +172,20 @@ fn gated_lens(cache: std::path::PathBuf, backend: Backend, gated: &Gated) -> Arc
                 async move {
                     calls.lock().unwrap().push(range.clone());
                     let mut flag = DropFlag(cancelled, false);
-                    release.notified().await;
                     let rows = b.lock().unwrap().clone();
+                    // Push the first three rows before blocking, so a test
+                    // can observe them bound in the visible map while the
+                    // rest of the range is still pending — and, if this
+                    // call gets cancelled, check that those early rows were
+                    // unbound rather than left behind.
+                    let mut range = range;
+                    let early: Vec<usize> = range.by_ref().take(3).collect();
+                    for idx in early {
+                        if let Some((id, r)) = rows.get(idx) {
+                            sink.push(idx, id.clone(), r.clone()).await?;
+                        }
+                    }
+                    release.notified().await;
                     for idx in range {
                         if let Some((id, r)) = rows.get(idx) {
                             sink.push(idx, id.clone(), r.clone()).await?;
@@ -212,8 +224,12 @@ async fn a_newer_viewport_cancels_the_in_flight_load() -> Result<()> {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     gated.release.notify_one();
+    // Row 5 is only written by the remainder loop, after `notified()`
+    // resolves — unlike row 0 (part of the early push), it can't already be
+    // present before the release is actually consumed. Waiting on it (rather
+    // than row 0) proves call 1 truly finished before the test moves on.
     for _ in 0..200 {
-        if scenery.row(0).is_some() {
+        if scenery.row(5).is_some() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -258,6 +274,14 @@ async fn a_newer_viewport_cancels_the_in_flight_load() -> Result<()> {
         scenery.row(25).is_none(),
         "a cancelled load never writes rows"
     );
+    assert!(
+        scenery.row(20).is_none(),
+        "the cancelled load's early-pushed rows were unbound, not left bound with nothing in the cache"
+    );
+    assert!(
+        scenery.row(22).is_none(),
+        "the cancelled load's early-pushed rows were unbound, not left bound with nothing in the cache"
+    );
 
     // The in-flight marker was cleared by the cancellation: asking for
     // 20..30 again fetches it.
@@ -298,8 +322,12 @@ async fn an_identical_viewport_is_absorbed_into_the_running_load() -> Result<()>
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     gated.release.notify_one();
+    // Row 5 is only written by the remainder loop, after `notified()`
+    // resolves — unlike row 0 (part of the early push), it can't already be
+    // present before the release is actually consumed. Waiting on it (rather
+    // than row 0) proves call 1 truly finished before the test moves on.
     for _ in 0..200 {
-        if scenery.row(0).is_some() {
+        if scenery.row(5).is_some() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -314,7 +342,10 @@ async fn an_identical_viewport_is_absorbed_into_the_running_load() -> Result<()>
     }
     // The same range again while it is loading: absorbed, no new call.
     scenery.set_viewport(20..30);
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Longer than the default 50 ms debounce, so a would-be regression that
+    // routed this through the debounce absorb loop instead of the mid-load
+    // select would still have fired call 3 well before this check runs.
+    tokio::time::sleep(Duration::from_millis(120)).await;
     assert_eq!(calls_len(&gated).await, 2);
     assert_eq!(gated.cancelled.load(std::sync::atomic::Ordering::SeqCst), 0);
 
@@ -326,5 +357,84 @@ async fn an_identical_viewport_is_absorbed_into_the_running_load() -> Result<()>
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     assert!(scenery.row(25).is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_same_range_refresh_runs_after_the_current_load() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let gated = Gated {
+        release: Arc::new(tokio::sync::Notify::new()),
+        calls: Arc::new(Mutex::new(Vec::new())),
+        cancelled: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    };
+    let lens = gated_lens(tmp.path().join("c.redb"), rows(40), &gated);
+    let dio = lens.make_dio(master(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().page_size(10).open().await?;
+
+    // The on-open fetch is call 1; let it through.
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    gated.release.notify_one();
+    // Row 5 is only written by the remainder loop, after `notified()`
+    // resolves — unlike row 0 (part of the early push), it can't already be
+    // present before the release is actually consumed. Waiting on it (rather
+    // than row 0) proves call 1 truly finished before the test moves on.
+    for _ in 0..200 {
+        if scenery.row(5).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    // Scroll to 20..30: call 2 starts and blocks on the gate. By the time
+    // its callback has run at all, `last_viewport` is already 20..30 (it is
+    // stamped before the callback is even dispatched), so the refresh below
+    // targets this same block, not the one loaded before it.
+    scenery.set_viewport(20..30);
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(gated.calls.lock().unwrap()[1], 20..30);
+
+    // A force_load refresh of the block currently loading: same range, so it
+    // must park behind the running load rather than race or cancel it.
+    scenery.request_refresh();
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert_eq!(
+        calls_len(&gated).await,
+        2,
+        "a same-range refresh must not preempt the load already in flight"
+    );
+
+    // Release call 2: its rows commit. The parked refresh then runs as call 3.
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if calls_len(&gated).await >= 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(
+        gated.calls.lock().unwrap()[2],
+        20..30,
+        "the parked refresh re-asks for the block it was for"
+    );
+    gated.release.notify_one();
+    for _ in 0..200 {
+        if scenery.row(25).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(scenery.row(25).is_some());
+    assert!(scenery.row(5).is_some());
     Ok(())
 }

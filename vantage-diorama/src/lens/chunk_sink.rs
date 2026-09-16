@@ -17,11 +17,20 @@ pub trait SceneryChunkTarget: Send + Sync {
     /// Record the grand total a chunk fetch reported. Returns whether the
     /// value moved, so the loader can decide to repaint.
     fn set_chunk_total(&self, total: usize) -> bool;
+
+    /// Remove these indices from the visible map. Called when a chunk load
+    /// that already bound them (via `write_chunk_row`) is cancelled before it
+    /// could flush its buffered rows to the cache — without this, a bound but
+    /// never-committed row survives the load that produced it, and looks
+    /// cached to anything that checks the visible map afterward.
+    fn unbind_chunk_rows(&self, indices: &[usize]);
 }
 
 /// Rows a [`ChunkSink`] has accepted but not yet written — see
-/// [`ChunkSink::buffer`].
-type BufferedRows = Arc<std::sync::Mutex<Vec<(String, Record<CborValue>)>>>;
+/// [`ChunkSink::buffer`]. Keeps the index each row was bound at, so a
+/// cancelled load can unbind exactly the rows it pushed (see
+/// [`ChunkSink::pushed_indices`]).
+type BufferedRows = Arc<std::sync::Mutex<Vec<ChunkRow>>>;
 
 /// Handle passed to `on_load_chunk` callbacks. Each [`push`](Self::push)
 /// writes one row to the Dio's cache and binds it to a row index in
@@ -102,10 +111,24 @@ impl ChunkSink {
             return Ok(());
         }
         if let Ok(mut buffer) = self.buffer.lock() {
-            buffer.push((id.clone(), record.clone()));
+            buffer.push(ChunkRow {
+                idx,
+                id: id.clone(),
+                record: record.clone(),
+            });
         }
         target.write_chunk_row(idx, id, record);
         Ok(())
+    }
+
+    /// Indices pushed into this chunk's buffer so far, in push order. Read
+    /// by the loader when a load is cancelled mid-flight, to unbind the rows
+    /// this chunk bound (via `write_chunk_row`) but never got to commit.
+    pub(crate) fn pushed_indices(&self) -> Vec<usize> {
+        self.buffer
+            .lock()
+            .map(|buffer| buffer.iter().map(|row| row.idx).collect())
+            .unwrap_or_default()
     }
 
     /// Commit everything pushed so far, in one write, and report a
@@ -125,7 +148,10 @@ impl ChunkSink {
             let Ok(mut buffer) = self.buffer.lock() else {
                 return Ok(FlushReport::default());
             };
-            std::mem::take(&mut *buffer).into_iter().collect()
+            std::mem::take(&mut *buffer)
+                .into_iter()
+                .map(|row| (row.id, row.record))
+                .collect()
         };
         if rows.is_empty() {
             return Ok(FlushReport::default());
