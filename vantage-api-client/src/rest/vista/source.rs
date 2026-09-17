@@ -51,12 +51,16 @@ pub(crate) enum YamlReferenceKind {
     HasOne,
 }
 
+#[derive(Clone)]
 pub struct RestApiTableShell {
     pub(crate) table: Table<RestApi, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
     pub(crate) yaml_refs: IndexMap<String, YamlReference>,
     pub(crate) resolver: Option<ModelResolver>,
+    /// The sort pushed down by `add_order`, sent as the API's ordering
+    /// query param on every windowed fetch.
+    pub(crate) order: Option<(String, vantage_vista::SortDirection)>,
 }
 
 impl RestApiTableShell {
@@ -71,7 +75,14 @@ impl RestApiTableShell {
             metadata,
             yaml_refs: IndexMap::new(),
             resolver: None,
+            order: None,
         }
+    }
+
+    fn order(&self) -> Option<(&str, vantage_vista::SortDirection)> {
+        self.order
+            .as_ref()
+            .map(|(field, dir)| (field.as_str(), *dir))
     }
 
     pub(crate) fn with_yaml_refs(mut self, refs: IndexMap<String, YamlReference>) -> Self {
@@ -164,6 +175,7 @@ impl TableShell for RestApiTableShell {
                 id_field.as_deref(),
                 offset as i64,
                 limit as i64,
+                self.order(),
                 self.table.conditions(),
             )
             .await?;
@@ -294,6 +306,29 @@ impl TableShell for RestApiTableShell {
         &self.capabilities
     }
 
+    /// Replace-semantics: one sort at a time, rendered as the API's ordering
+    /// query param. Only reachable when the datasource declared one
+    /// (`can_order`), since `Vista::add_order` gates on the column flag.
+    fn add_order(&mut self, field: &str, dir: vantage_vista::SortDirection) -> Result<()> {
+        if !self.table.columns().contains_key(field) {
+            return Err(error!("Unknown column for add_order", field = field));
+        }
+        self.order = Some((field.to_string(), dir));
+        Ok(())
+    }
+
+    fn clear_orders(&mut self) -> Result<()> {
+        self.order = None;
+        Ok(())
+    }
+
+    /// Cheap: the `RestApi` behind the table shares its HTTP client, and the
+    /// copy owns only query state (conditions, order), which is what a
+    /// per-view ordered fetch narrows.
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        Some(Box::new(self.clone()))
+    }
+
     fn driver_name(&self) -> &'static str {
         "rest-api"
     }
@@ -305,6 +340,7 @@ impl TableShell for RestApiTableShell {
         self.table.data_source().preview_request(
             self.table.table_name(),
             window,
+            self.order(),
             self.table.conditions(),
         )
     }

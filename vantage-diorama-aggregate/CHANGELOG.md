@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.8 — 2026-09-16
+
+- Depends on `vantage-diorama` 0.13.
+
 ## 0.6.7 — 2026-08-16
 
 - `AggregateShell` implements `preview_query`, recording that an aggregate is

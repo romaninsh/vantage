@@ -23,6 +23,9 @@ pub(super) struct PendingChunk {
     pub(super) result: vantage_core::Result<()>,
     pub(super) t: std::time::Instant,
     pub(super) force_load: bool,
+    /// The priority the callback ran under; a failed `Background` load is
+    /// logged quietly because the next refresh retries it.
+    pub(super) priority: vantage_core::Priority,
     /// Held from the moment the range was claimed until `finish_chunk_load`
     /// returns, so the same-range guard in `run_chunk_callback` covers the
     /// whole load, not just its network half.

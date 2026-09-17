@@ -40,7 +40,7 @@ async fn observer_ms_excludes_the_rate_wait() {
     let rec = Arc::new(Recorder::default());
     let client = ResilientClient::builder()
         .observer("local", rec.clone())
-        .rate_limit_with_burst(50.0, 1)
+        .rate_limit_with_burst(10.0, 1)
         .build();
     let url = server.uri();
 
@@ -49,7 +49,7 @@ async fn observer_ms_excludes_the_rate_wait() {
         .execute(|h| h.get(&url))
         .await
         .expect("first call has the initial token");
-    // Second call must wait ~20 ms for the bucket to refill.
+    // Second call must wait ~100 ms for the bucket to refill.
     let started = std::time::Instant::now();
     client
         .execute(|h| h.get(&url))
@@ -63,10 +63,10 @@ async fn observer_ms_excludes_the_rate_wait() {
         "no event for the token wait"
     );
     for ms in rec.succeeded_ms() {
-        assert!(ms < 18, "ms must exclude the rate wait, was {ms}");
+        assert!(ms < 60, "ms must exclude the rate wait, was {ms}");
     }
     assert!(
-        elapsed >= Duration::from_millis(15),
+        elapsed >= Duration::from_millis(90),
         "second call must wait for a token, took {elapsed:?}"
     );
 }

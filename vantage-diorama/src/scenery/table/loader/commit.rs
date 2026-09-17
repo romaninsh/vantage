@@ -24,6 +24,7 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
         mut result,
         t,
         force_load,
+        priority,
         _in_flight,
     } = pending;
     let tap = dio_inner.tap();
@@ -154,13 +155,26 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             // slot goes back to the record it held, and a failed refresh is
             // once again invisible to the grid.
             restore_bound_rows(&writer);
-            tracing::error!(
-                target: "vantage_diorama::viewport",
-                effective = ?effective_range,
-                ms = t.elapsed().as_secs_f64() * 1000.0,
-                error = %e,
-                "fire_chunk_load: FAILED",
-            );
+            // A background load gives up on the first transient failure by
+            // design and the next refresh tries again, so its failure is
+            // not worth an error line; a load someone waited for is.
+            if priority.is_essential() {
+                tracing::error!(
+                    target: "vantage_diorama::viewport",
+                    effective = ?effective_range,
+                    ms = t.elapsed().as_secs_f64() * 1000.0,
+                    error = %e,
+                    "fire_chunk_load: FAILED",
+                );
+            } else {
+                tracing::debug!(
+                    target: "vantage_diorama::viewport",
+                    effective = ?effective_range,
+                    ms = t.elapsed().as_secs_f64() * 1000.0,
+                    error = %e,
+                    "fire_chunk_load: background load gave up; the next refresh retries",
+                );
+            }
             crate::debug::tapline!(
                 tap,
                 "dio",

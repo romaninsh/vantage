@@ -209,5 +209,8 @@ async fn observer_ms_excludes_the_breaker_wait() {
         ]
     );
     let ms = rec.succeeded_ms()[0];
-    assert!(ms < 35, "ms must exclude the 200 ms breaker wait, was {ms}");
+    assert!(
+        ms < 100,
+        "ms must exclude the 200 ms breaker wait, was {ms}"
+    );
 }

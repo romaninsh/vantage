@@ -46,6 +46,18 @@ impl ClientError {
         self
     }
 
+    /// Whether no retry, now or later, could change this answer: a `4xx`
+    /// other than `408` / `429`, an auth refresher that failed, or a closed
+    /// client. Everything else (`5xx`, transport, an open breaker) is the
+    /// transient kind a later call may get past, so callers log it quietly.
+    pub fn is_final(&self) -> bool {
+        match self.kind {
+            ErrorKind::Status(s) => !super::policy::is_retryable_status(s),
+            ErrorKind::Auth(_) | ErrorKind::Closed => true,
+            ErrorKind::Transport(_) | ErrorKind::BreakerOpen => false,
+        }
+    }
+
     /// The HTTP status of the last attempt, when there was a response.
     pub fn status(&self) -> Option<u16> {
         match self.kind {

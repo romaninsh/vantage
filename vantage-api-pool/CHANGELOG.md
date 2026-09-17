@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 — 2026-09-16
+
+- `TransportEvent::Cancelled`: reported when a call's future is dropped
+  between `Started` and the attempt landing, so every `Started` has a
+  terminal event.
+
 ## 0.6.1 — 2026-09-16
 
 - `ResilientClient` — async-native HTTP transport that replaces the worker-pool
@@ -33,7 +39,7 @@
   breaker without clearing the failure run; 408 and 429 leave it untouched.
 - `Retry-After` is clamped to the call policy's back-off ceiling.
 
-## 0.6.0 — unreleased
+## 0.6.0 — 2026-06-17
 
 - Coordinated 0.6 release; internal dependencies realigned to 0.6. No public API changes.
 

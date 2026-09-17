@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.16 — 2026-09-16
+
+- `RestApi::builder().ordering(OrderingParams)`: the API's sort query param
+  (`?ordering=col`, prefix for descending). With it the REST vista reports
+  `can_order`, every column is orderable, and a pushed sort is sent with each
+  windowed fetch instead of being applied client-side.
+- A REST call that gives up on a transient failure (5xx, network, open
+  breaker) logs at debug; only a final answer (4xx, auth) warns.
+
 ## 0.6.15 — 2026-09-16
 
 - REST and GraphQL requests go through `vantage-api-pool`'s `ResilientClient`

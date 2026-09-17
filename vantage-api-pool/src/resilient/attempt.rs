@@ -59,6 +59,29 @@ pub(super) struct AttemptLoop<'a, F> {
     /// The token has already been re-acquired once for this call, so another
     /// `401` is a genuine authorization failure and not a stale token.
     refreshed: bool,
+    /// Set between `Started` and the attempt's terminal event. Dropping the
+    /// call's future in that window drops the guard, which reports
+    /// `Cancelled` so the observer never sees a `Started` without an end.
+    pending: Option<PendingAttempt<'a>>,
+}
+
+struct PendingAttempt<'a> {
+    client: &'a ResilientClient,
+    armed: bool,
+}
+
+impl PendingAttempt<'_> {
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PendingAttempt<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.client.report(TransportEvent::Cancelled);
+        }
+    }
 }
 
 impl<'a, F> AttemptLoop<'a, F>
@@ -76,6 +99,7 @@ where
             build,
             attempt: 0,
             refreshed: false,
+            pending: None,
         };
         loop {
             // Held only for this attempt. Every early return below drops it,
@@ -125,7 +149,7 @@ where
     /// Build, authenticate and send one request. The permit and the in-flight
     /// count are held for exactly this window and released before the caller
     /// sleeps for anything.
-    async fn send_once(&self) -> Result<Outcome, ClientError> {
+    async fn send_once(&mut self) -> Result<Outcome, ClientError> {
         let _permit = self
             .client
             .semaphore
@@ -135,6 +159,10 @@ where
         let _in_flight = self.client.enter_flight();
 
         self.client.report(TransportEvent::Started);
+        self.pending = Some(PendingAttempt {
+            client: self.client,
+            armed: true,
+        });
 
         let mut req = (self.build)(&self.client.http);
         if let Some(auth) = &self.client.auth {
@@ -273,11 +301,14 @@ where
     /// what the observer contract promises — the probe slot is free before any
     /// callback runs, and a transition follows the attempt that caused it.
     fn settle_and_report(
-        &self,
+        &mut self,
         probe: Option<ProbeGuard>,
         health: Health,
         terminal: TransportEvent,
     ) {
+        if let Some(pending) = self.pending.take() {
+            pending.disarm();
+        }
         let transition = self.settle(probe, health);
         self.client.report(terminal);
         if let Some(event) = transition {

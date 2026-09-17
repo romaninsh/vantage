@@ -160,9 +160,9 @@ datasource is.
 
 What a consumer may rely on:
 
-- Every `Started` is followed by exactly one `Succeeded` or `Failed` for the
-  same attempt, on every path, unless the caller's future is cancelled
-  mid-send. A fail-fast rejection and a failed token refresh each emit a
+- Every `Started` is followed by exactly one `Succeeded`, `Failed` or
+  `Cancelled` for the same attempt, on every path; `Cancelled` comes from a
+  drop guard when the caller's future is dropped mid-send. A fail-fast rejection and a failed token refresh each emit a
   synthetic `Started` + `Failed { ms: 0 }`; their `error.kind_name()` is
   `breaker_open` or `auth`, so they can be filtered out of request-rate
   figures.
@@ -182,8 +182,10 @@ What a consumer may rely on:
   during a callback.
 
 What a consumer must do: return quickly, never block or `.await`, never
-call back into the client. The `Started` callback runs while the attempt's
-permit is held.
+call back into the client. A `Started` callback normally runs while the
+attempt's permit is held; the one exception is a failed token re-acquisition
+after a `401`, which reports its `Started` / `Failed` pair after the permit
+was released.
 
 ## Errors
 

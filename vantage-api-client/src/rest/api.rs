@@ -106,6 +106,37 @@ pub enum FilterStrategy {
     Client,
 }
 
+/// How the API takes a sort: one query param naming the column, with a
+/// prefix that flips it to descending (`?ordering=-net`, the Django REST
+/// Framework and Launch Library convention). Configuring it makes the REST
+/// vista orderable, so a paged grid asks the server for its sort instead of
+/// re-sorting the rows it happens to hold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OrderingParams {
+    pub param: String,
+    pub desc_prefix: String,
+}
+
+impl OrderingParams {
+    pub fn new(param: impl Into<String>, desc_prefix: impl Into<String>) -> Self {
+        Self {
+            param: param.into(),
+            desc_prefix: desc_prefix.into(),
+        }
+    }
+
+    /// The value for `param`: the column, prefixed when descending.
+    pub fn value(&self, field: &str, dir: vantage_vista::SortDirection) -> String {
+        match dir {
+            vantage_vista::SortDirection::Ascending => field.to_string(),
+            vantage_vista::SortDirection::Descending => format!("{}{field}", self.desc_prefix),
+        }
+    }
+}
+
+/// A sort pushed down to the API: column and direction.
+pub(crate) type Order<'a> = Option<(&'a str, vantage_vista::SortDirection)>;
+
 #[derive(Clone, Debug)]
 pub struct RestApi {
     base_url: String,
@@ -128,6 +159,9 @@ pub struct RestApi {
     /// advertises `can_fetch_window` for lazy/scroll loading; when `None`
     /// it falls back to counting fetched rows.
     total_key: Option<String>,
+    /// The sort query param, when the API has one. Unset means the API
+    /// cannot sort and consumers order fetched rows themselves.
+    ordering: Option<OrderingParams>,
     /// Emit `tracing` events for window/count requests.
     debug: bool,
 }
@@ -157,6 +191,11 @@ impl RestApi {
     /// REST shell can report an exact count and serve `fetch_window`.
     pub fn total_key(&self) -> Option<&str> {
         self.total_key.as_deref()
+    }
+
+    /// The sort query param, when configured.
+    pub fn ordering(&self) -> Option<&OrderingParams> {
+        self.ordering.as_ref()
     }
 
     /// What the circuit breaker is doing right now. `None` when the
@@ -328,6 +367,7 @@ impl RestApi {
         window: Option<(i64, i64)>,
         conditions: &[&Expression<CborValue>],
         consumed: &[usize],
+        order: Order<'_>,
     ) -> String {
         let mut params: Vec<(String, String)> = Vec::new();
 
@@ -352,6 +392,12 @@ impl RestApi {
             };
             params.push((self.pagination.page.clone(), page_value));
             params.push((self.pagination.limit.clone(), limit.to_string()));
+        }
+
+        // A sort reaches the query only when the API declared how it takes
+        // one; the vista never offers `add_order` otherwise.
+        if let (Some(spec), Some((field, dir))) = (&self.ordering, order) {
+            params.push((spec.param.clone(), spec.value(field, dir)));
         }
 
         // Conditions: each `eq` becomes `?field=value`. Multiple
@@ -397,6 +443,7 @@ impl RestApi {
         &self,
         table_name: &str,
         window: Option<(i64, i64)>,
+        order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> serde_json::Value {
         let conds: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
@@ -435,7 +482,7 @@ impl RestApi {
         };
 
         let (query_consumed, client_filters) = self.split_filters(&conds, consumed);
-        let query = self.build_query_string(window, &conds, &query_consumed);
+        let query = self.build_query_string(window, &conds, &query_consumed, order);
 
         serde_json::json!({
             "driver": "rest-api",
@@ -469,7 +516,7 @@ impl RestApi {
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
         let window = pagination.map(|p| (p.skip(), p.limit()));
-        self.fetch_windowed(table_name, id_field, window, conditions)
+        self.fetch_windowed(table_name, id_field, window, None, conditions)
             .await
             .map(|(records, _total)| records)
     }
@@ -491,10 +538,17 @@ impl RestApi {
         id_field: Option<&str>,
         offset: i64,
         limit: i64,
+        order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
-        self.fetch_windowed(table_name, id_field, Some((offset, limit)), conditions)
-            .await
+        self.fetch_windowed(
+            table_name,
+            id_field,
+            Some((offset, limit)),
+            order,
+            conditions,
+        )
+        .await
     }
 
     /// Read the grand total of matching rows from the response envelope's
@@ -511,7 +565,7 @@ impl RestApi {
             return Ok(None);
         };
         let (body, _client_filters) = self
-            .fetch_raw_body(table_name, Some((0, 1)), conditions)
+            .fetch_raw_body(table_name, Some((0, 1)), None, conditions)
             .await?;
         let total = body
             .get(total_key.as_str())
@@ -536,6 +590,7 @@ impl RestApi {
         &self,
         table_name: &str,
         window: Option<(i64, i64)>,
+        order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<(serde_json::Value, Vec<(String, String)>)> {
         // Conditions may carry `DeferredFn` values — typically from
@@ -551,7 +606,7 @@ impl RestApi {
         let (endpoint, consumed) = self.endpoint_url(table_name, &conds)?;
 
         let (query_consumed, client_filters) = self.split_filters(&conds, consumed);
-        let query = self.build_query_string(window, &conds, &query_consumed);
+        let query = self.build_query_string(window, &conds, &query_consumed, order);
         let url = join_query(&endpoint, &query);
 
         // The `(0, 1)` window is the count probe (reads only the envelope's
@@ -582,14 +637,31 @@ impl RestApi {
             })
             .await
             .map_err(|e| {
-                tracing::warn!(
-                    target: "vantage_api_client::rest",
-                    table = table_name,
-                    url = %url,
-                    ms = started.elapsed().as_millis() as u64,
-                    attempts = e.attempts,
-                    "REST GET failed",
-                );
+                let ms = started.elapsed().as_millis() as u64;
+                // A transient failure (5xx, network, open breaker) is visible
+                // in the datasource's health and will be tried again by a
+                // later call; only an answer no retry can change is worth a
+                // warning.
+                if e.is_final() {
+                    tracing::warn!(
+                        target: "vantage_api_client::rest",
+                        table = table_name,
+                        url = %url,
+                        ms,
+                        attempts = e.attempts,
+                        "REST GET failed",
+                    );
+                } else {
+                    tracing::debug!(
+                        target: "vantage_api_client::rest",
+                        table = table_name,
+                        url = %url,
+                        ms,
+                        attempts = e.attempts,
+                        kind = e.kind_name(),
+                        "REST GET gave up on a transient failure",
+                    );
+                }
                 crate::transport::client_error(e, "API request failed", &url)
             })?;
 
@@ -632,6 +704,7 @@ impl RestApi {
         table_name: &str,
         id_field: Option<&str>,
         window: Option<(i64, i64)>,
+        order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
         // Non-paginating endpoints return the whole list on the first
@@ -643,7 +716,9 @@ impl RestApi {
             return Ok((IndexMap::new(), None));
         }
 
-        let (body, client_filters) = self.fetch_raw_body(table_name, window, conditions).await?;
+        let (body, client_filters) = self
+            .fetch_raw_body(table_name, window, order, conditions)
+            .await?;
         let total = self
             .total_key
             .as_deref()
@@ -818,6 +893,7 @@ pub struct RestApiBuilder {
     no_pagination: bool,
     filter_strategy: FilterStrategy,
     total_key: Option<String>,
+    ordering: Option<OrderingParams>,
     debug: bool,
     transport: crate::transport::ClientConfig,
 }
@@ -832,6 +908,7 @@ impl RestApiBuilder {
             no_pagination: false,
             filter_strategy: FilterStrategy::default(),
             total_key: None,
+            ordering: None,
             debug: false,
             transport: crate::transport::ClientConfig::default(),
         }
@@ -913,6 +990,13 @@ impl RestApiBuilder {
         self
     }
 
+    /// The API's sort query param (see [`OrderingParams`]). With it set the
+    /// vista reports `can_order` and every column is orderable.
+    pub fn ordering(mut self, ordering: OrderingParams) -> Self {
+        self.ordering = Some(ordering);
+        self
+    }
+
     /// Emit `tracing` events for window/count requests.
     pub fn debug(mut self, debug: bool) -> Self {
         self.debug = debug;
@@ -929,6 +1013,7 @@ impl RestApiBuilder {
             no_pagination: self.no_pagination,
             filter_strategy: self.filter_strategy,
             total_key: self.total_key,
+            ordering: self.ordering,
             debug: self.debug,
         }
     }
@@ -941,7 +1026,7 @@ mod tests {
     /// `build_query_string` with no conditions, exercising only the
     /// window → pagination-param mapping.
     fn qs(api: &RestApi, window: Option<(i64, i64)>) -> String {
-        api.build_query_string(window, &[], &[])
+        api.build_query_string(window, &[], &[], None)
     }
 
     #[test]
@@ -1031,7 +1116,7 @@ mod tests {
         assert!(total.is_some_and(|n| n > 0), "expected a positive count");
 
         let (rows, window_total) = api
-            .fetch_window_records_counted("launches/?mode=detailed", Some("id"), 0, 3, [])
+            .fetch_window_records_counted("launches/?mode=detailed", Some("id"), 0, 3, None, [])
             .await
             .expect("fetch_window_records_counted");
         assert_eq!(rows.len(), 3, "expected the requested 3-row window");

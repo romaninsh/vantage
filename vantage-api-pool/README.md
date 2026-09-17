@@ -72,7 +72,8 @@ rule are in [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Observing traffic
 
 `observer(key, Arc<dyn TransportObserver>)` reports every attempt as
-`Started` then `Succeeded { status, ms, bytes }` or `Failed { error, ms }`,
+`Started` then `Succeeded { status, ms, bytes }`, `Failed { error, ms }` or
+`Cancelled` (the caller dropped the future mid-send),
 every retry as `RetryScheduled`, and every breaker transition as
 `BreakerOpened { cooldown }` / `BreakerClosed`. Callers add `RowsPulled { n }`
 and `WritePushed` through `client.report(..)` once they know. `ms` is one
