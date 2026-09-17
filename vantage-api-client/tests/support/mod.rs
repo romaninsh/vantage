@@ -21,6 +21,7 @@ impl TransportObserver for Recorder {
             TransportEvent::Started => "started".to_string(),
             TransportEvent::Succeeded { status, .. } => format!("ok:{status}"),
             TransportEvent::Failed { error, .. } => format!("failed:{}", error.kind_name()),
+            TransportEvent::Cancelled => "cancelled".to_string(),
             TransportEvent::RetryScheduled { attempt, .. } => format!("retry:{attempt}"),
             TransportEvent::BreakerOpened { .. } => "opened".to_string(),
             TransportEvent::BreakerClosed => "closed".to_string(),

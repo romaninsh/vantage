@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 — 2026-09-16
+
+- Depends on `vantage-diorama` 0.13.
+
 ## 0.6.1 — 2026-08-16
 
 - Its `TableShell` test fixture implements the new required

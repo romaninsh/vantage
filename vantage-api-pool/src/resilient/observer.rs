@@ -24,6 +24,10 @@ pub enum TransportEvent {
         error: ClientError,
         ms: u64,
     },
+    /// The call's future was dropped after `Started` and before the attempt
+    /// landed: the request is abandoned, and nothing is known about how the
+    /// server would have answered.
+    Cancelled,
     /// A retry will run after `after`; `attempt` is its 1-based number.
     RetryScheduled {
         after: Duration,
@@ -52,8 +56,8 @@ pub trait TransportObserver: Send + Sync {
     ///   delays the call that reported it.
     /// - **Do not call back into the client** (`execute`, `execute_with`,
     ///   `breaker_state`). The call path is holding client state.
-    /// - `Started` pairs with exactly one terminal event — `Succeeded` or
-    ///   `Failed` — per attempt, including for a fail-fast rejection, which
+    /// - `Started` pairs with exactly one terminal event — `Succeeded`,
+    ///   `Failed` or `Cancelled` — per attempt, including for a fail-fast rejection, which
     ///   emits a synthetic `Started` followed by `Failed { ms: 0 }` whose
     ///   error has `kind_name() == "breaker_open"`. Those two never touched
     ///   the network; filter them out of request-rate figures.

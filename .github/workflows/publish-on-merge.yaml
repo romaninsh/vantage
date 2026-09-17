@@ -3,6 +3,12 @@ name: Publish on merge
 on:
   push:
     branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      crates:
+        description: "Crate directories to publish, space-separated (e.g. vantage-api-pool vantage-api-client). Use when a merge's publish was skipped or failed."
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,8 +29,19 @@ jobs:
         env:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.after }}
+          MANUAL_CRATES: ${{ inputs.crates }}
         run: |
           set -euo pipefail
+          # A manual run names its crates explicitly; skip the diff.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            printf 'Manual publish: %s\n' "${MANUAL_CRATES}"
+            {
+              echo "crates<<EOF"
+              printf '%s\n' ${MANUAL_CRATES}
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # Skip the empty-before case (initial push, branch create, force-push to a new sha that has no parent on main).
           if [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] || [ -z "${BEFORE}" ]; then
             echo "No before-sha — skipping."
@@ -105,11 +122,14 @@ jobs:
             vantage-redb
             vantage-sql
             vantage-surrealdb
-            vantage-api-client
             vantage-api-pool
+            vantage-api-client
             vantage-aws
             vantage-cmd
             vantage-diorama
+            vantage-diorama-aggregate
+            vantage-api-adapters
+            vantage-faker
           )
 
           # Project the bumped crates onto the canonical order. Anything

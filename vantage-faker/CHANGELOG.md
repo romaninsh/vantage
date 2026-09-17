@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.16 — 2026-09-16
+
+- Depends on `vantage-diorama` 0.13.
+
 ## 0.6.15 — 2026-09-05
 
 - The `rhai` effect compiles its mutation script **once**, when the effect

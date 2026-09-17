@@ -274,6 +274,7 @@ impl TransportObserver for Recorder {
                 self.failed_ms.lock().unwrap().push(ms);
                 format!("failed:{}", error.kind_name())
             }
+            TransportEvent::Cancelled => "cancelled".to_string(),
             TransportEvent::RetryScheduled { attempt, .. } => format!("retry:{attempt}"),
             TransportEvent::BreakerOpened { .. } => "opened".to_string(),
             TransportEvent::BreakerClosed => "closed".to_string(),

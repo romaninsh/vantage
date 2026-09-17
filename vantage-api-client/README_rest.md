@@ -112,6 +112,20 @@ its scrollbar from the envelope total. `get_count()` sends a one-row window
 and reads the total. Without `total_key` every read is one request for the
 server's default page and `get_count()` counts what came back.
 
+A paged grid is only as ordered as the server's pages. If the API takes a
+sort param, declare it and the Vista becomes orderable:
+
+```rust
+RestApi::builder(url)
+    .total_key("count")
+    .ordering(OrderingParams::new("ordering", "-"))   // ?ordering=net / -net
+```
+
+`vista.add_order("net", SortDirection::Descending)` then travels with every
+window as `?ordering=-net`, and the first page is the real top of the sorted
+set. Without `ordering` no column is orderable (`can_order: false`) and a
+consumer sorts the rows it has loaded.
+
 ## 6. From YAML
 
 The same table as a Vista spec, for admin UIs and CLIs:

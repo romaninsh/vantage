@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.1 — 2026-09-16
+
+- A failed `Background` chunk load logs at debug instead of error; the next
+  refresh retries it. `Essential` loads still log at error.
+
 ## 0.13.0 — 2026-09-16
 
 - `SceneryChunkTarget` is breaking, hence the minor bump: `write_chunk_row`

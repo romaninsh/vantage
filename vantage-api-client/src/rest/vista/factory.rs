@@ -100,6 +100,7 @@ impl RestApiVistaFactory {
         // A configured `total_key` lets the shell serve absolute-offset
         // windows (and an exact count) — advertise it before erasing the table.
         let can_fetch_window = table.data_source().total_key().is_some();
+        let can_order = table.data_source().ordering().is_some();
         let any_table = table.into_entity::<EmptyEntity>();
 
         let source = RestApiTableShell::new(
@@ -108,6 +109,7 @@ impl RestApiVistaFactory {
                 can_count: true,
                 can_traverse_to_record: true,
                 can_fetch_window,
+                can_order,
                 ..VistaCapabilities::default()
             },
             metadata,
@@ -190,12 +192,14 @@ impl VistaFactory for RestApiVistaFactory {
         }
 
         let can_fetch_window = table.data_source().total_key().is_some();
+        let can_order = table.data_source().ordering().is_some();
         let source = RestApiTableShell::new(
             table,
             VistaCapabilities {
                 can_count: true,
                 can_traverse_to_record: true,
                 can_fetch_window,
+                can_order,
                 ..VistaCapabilities::default()
             },
             metadata,
@@ -335,10 +339,16 @@ where
     E: Entity<CborValue> + 'static,
 {
     let mut metadata = VistaMetadata::new();
+    // An API with a sort param is assumed to sort on any column it returns;
+    // without one, no column is orderable and consumers sort client-side.
+    let orderable = table.data_source().ordering().is_some();
     for (name, col) in table.columns() {
         let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
         if col.flags().contains(&ColumnFlag::Hidden) {
             vc = vc.with_flag(vista_flags::HIDDEN);
+        }
+        if orderable {
+            vc = vc.with_flag(vista_flags::ORDERABLE);
         }
         metadata = metadata.with_column(vc);
     }

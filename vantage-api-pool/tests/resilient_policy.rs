@@ -4,11 +4,12 @@
 
 mod support;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use support::{
     cancel, essential_fast, fast_retry, mount_delayed, mount_script, mount_status, requests,
-    scripted_refresher, spawn_essential, wait_for_requests, wait_until, within,
+    scripted_refresher, spawn_essential, wait_for_requests, wait_until, within, Recorder,
 };
 use vantage_api_pool::resilient::{CallPolicy, ErrorKind};
 use vantage_api_pool::{ResilientClient, RetryPolicy};
@@ -80,6 +81,26 @@ async fn cancelled_call_leaves_nothing_in_flight() {
     )
     .await;
     assert_eq!(client.peak_in_flight(), 1);
+}
+
+#[tokio::test]
+async fn a_cancelled_call_reports_cancelled_as_its_terminal_event() {
+    let server = MockServer::start().await;
+    mount_delayed(&server, 200, Duration::from_millis(300)).await;
+    let rec = Arc::new(Recorder::default());
+    let client = ResilientClient::builder()
+        .observer("local", rec.clone())
+        .build();
+    let url = server.uri();
+    let task = spawn_essential(&client, &url);
+    wait_for_requests(&server, 1, Duration::from_secs(2)).await;
+    cancel(task).await;
+    wait_until(
+        Duration::from_secs(2),
+        "the observer hears the cancellation",
+        || rec.tags() == ["started", "cancelled"],
+    )
+    .await;
 }
 
 #[tokio::test]

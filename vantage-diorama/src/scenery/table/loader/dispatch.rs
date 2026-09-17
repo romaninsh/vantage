@@ -309,6 +309,7 @@ pub(super) async fn run_chunk_callback(
         result,
         t,
         force_load,
+        priority,
         _in_flight: in_flight,
     })
 }
