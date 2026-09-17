@@ -5,10 +5,10 @@
 //! Cancellation is structural: drop the future and the in-flight request goes
 //! with it.
 //!
-//! The pieces live in one file each: [`builder`] assembles a client,
-//! [`attempt`] runs one call's attempt loop, [`breaker`] is the circuit
-//! breaker, [`rate`] the token bucket, [`policy`] the retry knobs, and
-//! [`auth`], [`error`] and [`observer`] the types those exchange.
+//! The pieces live in one file each: `builder` assembles a client, `attempt`
+//! runs one call's attempt loop, `breaker` is the circuit breaker, `rate` the
+//! token bucket, `policy` the retry knobs, and `auth`, `error` and `observer`
+//! the types those exchange.
 
 mod attempt;
 mod auth;
