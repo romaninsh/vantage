@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3 — 2026-09-19
+
+- A template holding one `${ … }` hole surrounded only by whitespace keeps
+  the hole's value (a map, a number) instead of rendering it to text — the
+  newline a YAML block scalar leaves after the hole no longer turns a
+  `#{ text, color }` label into its debug string.
+
 ## 0.6.2 — 2026-09-05
 
 Additions made while the data layer and vantage-ui moved onto the host.

@@ -148,6 +148,19 @@ impl Slot for Template {
                 }
             }
         }
+        // A lone hole keeps its value (a map, a number) instead of rendering
+        // to text. Whitespace around it must not change that: a YAML block
+        // scalar leaves a newline after `${ … }`.
+        let holes = parts
+            .iter()
+            .filter(|p| matches!(p, TPart::Hole { .. }))
+            .count();
+        let only_blank_text = parts
+            .iter()
+            .all(|p| !matches!(p, TPart::Lit(s) if !s.trim().is_empty()));
+        if holes == 1 && only_blank_text {
+            parts.retain(|p| matches!(p, TPart::Hole { .. }));
+        }
         Ok(Pieces::Parts(parts))
     }
     fn src(&self) -> &str {
@@ -427,6 +440,20 @@ mod tests {
 
         let mixed = h.compile(&Template::from("n=${n} u=[${u}]")).unwrap();
         assert_eq!(mixed.eval(&env).unwrap().to_string(), "n=7 u=[]");
+    }
+
+    /// The newline a YAML block scalar leaves after a lone hole does not
+    /// turn its value into text; visible text around the hole still does.
+    #[test]
+    fn whitespace_around_a_lone_hole_keeps_its_value() {
+        let h = host();
+        let env = Env::new().var("n", 7_i64);
+        let block = h.compile(&Template::from("${ n }\n")).unwrap();
+        assert_eq!(block.eval(&env).unwrap().as_int().unwrap(), 7);
+        let padded = h.compile(&Template::from("  ${ n }  \n")).unwrap();
+        assert_eq!(padded.eval(&env).unwrap().as_int().unwrap(), 7);
+        let text = h.compile(&Template::from(" ${ n } x")).unwrap();
+        assert_eq!(text.eval(&env).unwrap().to_string(), " 7 x");
     }
 
     #[test]

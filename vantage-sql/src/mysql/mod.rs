@@ -10,7 +10,8 @@ pub mod types;
 pub mod vista;
 
 use ciborium::Value as CborValue;
-use sqlx::mysql::MySqlPool;
+use sqlx::Connection as _;
+use sqlx::mysql::{MySqlConnection, MySqlPool, MySqlPoolOptions};
 
 pub use types::{AnyMysqlType, MysqlType};
 
@@ -28,8 +29,13 @@ pub struct MysqlDB {
 }
 
 impl MysqlDB {
+    /// Fails at once when the server refuses or is unreachable. The
+    /// pool's own `connect` would retry a failed handshake with backoff
+    /// until its 30-second acquire deadline, so one probe connection
+    /// goes first and the pool is built lazily behind it.
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = MySqlPool::connect(url).await?;
+        MySqlConnection::connect(url).await?.close().await?;
+        let pool = MySqlPoolOptions::new().connect_lazy(url)?;
         Ok(Self { pool })
     }
 

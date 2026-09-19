@@ -10,7 +10,8 @@ pub mod types;
 pub mod vista;
 
 use ciborium::Value as CborValue;
-use sqlx::postgres::PgPool;
+use sqlx::Connection as _;
+use sqlx::postgres::{PgConnection, PgPool, PgPoolOptions};
 
 pub use types::{AnyPostgresType, PostgresType};
 
@@ -28,8 +29,13 @@ pub struct PostgresDB {
 }
 
 impl PostgresDB {
+    /// Fails at once when the server refuses or is unreachable. The
+    /// pool's own `connect` would retry a failed handshake with backoff
+    /// until its 30-second acquire deadline, so one probe connection
+    /// goes first and the pool is built lazily behind it.
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = PgPool::connect(url).await?;
+        PgConnection::connect(url).await?.close().await?;
+        let pool = PgPoolOptions::new().connect_lazy(url)?;
         Ok(Self { pool })
     }
 

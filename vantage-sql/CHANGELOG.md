@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.24 — 2026-09-19
+
+- `PostgresDB::connect` and `MysqlDB::connect` fail immediately on a refused
+  or unreachable server instead of retrying for the pool's 30-second acquire
+  deadline: one probe connection, then a lazily built pool.
+
 ## 0.6.23 — 2026-09-08
 
 - `add_op_condition` handles `FilterOp::Like`: `LIKE '%…%' ESCAPE '$'` on

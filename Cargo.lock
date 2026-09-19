@@ -5901,7 +5901,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "rhai",
  "schemars",
@@ -5913,7 +5913,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.23"
+version = "0.6.24"
 dependencies = [
  "async-stream",
  "async-trait",
