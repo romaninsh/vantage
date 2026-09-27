@@ -280,6 +280,7 @@ impl GraphqlApiBuilder {
     /// Set the `Authorization` header value (e.g. `"Bearer <token>"`).
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
         self.auth_header = AuthHeader::new(auth);
+        self.transport.auth_refresher = None;
         self
     }
 

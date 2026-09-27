@@ -46,6 +46,60 @@ async fn paging_params_without_a_total_serve_windows_by_page() {
     assert_eq!(total, None);
 }
 
+fn paged_vista(server: &MockServer) -> vantage_vista::Vista {
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .pagination_params(PaginationParams::page_limit("page", "per_page"))
+        .build();
+    let spec: RestApiVistaSpec = serde_yaml_ng::from_str(SPEC).unwrap();
+    RestApiVistaFactory::new(api)
+        .build_from_spec(spec)
+        .expect("build")
+}
+
+async fn mount_page(server: &MockServer, page: &str, body: serde_json::Value) {
+    Mock::given(method("GET"))
+        .and(query_param("page", page))
+        .and(query_param("per_page", "3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn a_window_off_a_page_boundary_returns_the_rows_it_asks_for() {
+    let server = MockServer::start().await;
+    mount_page(&server, "2", rows(3..6)).await;
+    mount_page(&server, "3", rows(6..9)).await;
+
+    let (window, _) = paged_vista(&server)
+        .fetch_window_counted(5, 3)
+        .await
+        .expect("fetch");
+    let ids: Vec<&str> = window.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["5", "6", "7"]);
+}
+
+#[tokio::test]
+async fn rows_lost_from_a_full_page_do_not_end_the_set() {
+    let server = MockServer::start().await;
+    // Page 1 repeats an id: three rows from the server, two after keying by id.
+    mount_page(
+        &server,
+        "1",
+        serde_json::json!([{ "id": 1 }, { "id": 1 }, { "id": 2 }]),
+    )
+    .await;
+    mount_page(&server, "2", rows(3..5)).await;
+
+    let (window, _) = paged_vista(&server)
+        .fetch_window_counted(0, 3)
+        .await
+        .expect("fetch");
+    let ids: Vec<&str> = window.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["1", "2", "3"], "a full window, not a short one");
+}
+
 #[test]
 fn without_paging_params_or_a_total_there_are_no_windows() {
     let plain = RestApi::builder("http://example.invalid").build();

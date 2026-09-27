@@ -1,7 +1,7 @@
 //! Sugar: display-only columns merged into the rows one scenery reads.
 //!
 //! A scenery opened with a [`Sugar`] reads the Dio's cache through
-//! [`SugaredCache`], which passes rows through the sugar closure and merges
+//! `SugaredCache`, which passes rows through the sugar closure and merges
 //! the declared outputs in. Nothing it adds reaches the cache — writes
 //! through the wrapper strip the outputs — and other sceneries on the same
 //! Dio read plain rows. A memo keyed by row id and a fingerprint of the row
@@ -93,6 +93,8 @@ impl SugaredCache {
         let answers = (self.sugar.apply)(inputs).await;
         let mut memo = self.memo.lock().unwrap();
         for ((i, print), answer) in misses.into_iter().zip(answers) {
+            // A failed row reads without outputs and is not memoized, so the
+            // next read tries it again.
             let outputs = match answer {
                 Ok(emitted) => {
                     let mut kept = Record::new();
@@ -109,7 +111,7 @@ impl SugaredCache {
                 }
                 Err(e) => {
                     self.log_once(format!("sugar failed on a row: {e}"));
-                    Record::new()
+                    continue;
                 }
             };
             let (id, row) = &mut rows[i];
@@ -333,5 +335,32 @@ mod tests {
         let row = sugared.get_value("a").await.unwrap().unwrap();
         assert!(row.get("twice").is_none());
         assert!(row.get("n").is_some());
+    }
+
+    #[tokio::test]
+    async fn a_failed_row_is_tried_again_on_the_next_read() {
+        let inner = table().await;
+        inner.insert_value("a", &rec(3)).await.unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let apply: SugarFn = Arc::new(move |rows| {
+            let first = counter.fetch_add(1, Ordering::SeqCst) == 0;
+            Box::pin(async move {
+                rows.iter()
+                    .map(|_| {
+                        if first {
+                            return Err(vantage_core::error!("boom"));
+                        }
+                        let mut out = Record::new();
+                        out.insert("twice".into(), CborValue::Integer(6.into()));
+                        Ok(out)
+                    })
+                    .collect()
+            })
+        });
+        let sugared = SugaredCache::wrap(inner, Sugar::new(apply, ["twice"]));
+        sugared.get_value("a").await.unwrap();
+        let row = sugared.get_value("a").await.unwrap().unwrap();
+        assert_eq!(row.get("twice"), Some(&CborValue::Integer(6.into())));
     }
 }

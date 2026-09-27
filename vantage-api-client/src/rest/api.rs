@@ -137,6 +137,14 @@ impl OrderingParams {
 /// A sort pushed down to the API: column and direction.
 pub(crate) type Order<'a> = Option<(&'a str, vantage_vista::SortDirection)>;
 
+/// One response's rows, see [`RestApi::fetch_page`].
+struct Page {
+    rows: IndexMap<String, Record<CborValue>>,
+    total: Option<i64>,
+    server_rows: usize,
+    lossy: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct RestApi {
     base_url: String,
@@ -710,6 +718,9 @@ impl RestApi {
     /// body carries it. Unlike [`Self::fetch_total`] this never errors on a
     /// missing total: the rows are the point here, and a caller that needs a
     /// definitive count can still ask for one.
+    ///
+    /// A window comes back short only when the server ran out: callers take a
+    /// short window as the end of the set.
     async fn fetch_windowed<'a>(
         &self,
         table_name: &str,
@@ -726,9 +737,91 @@ impl RestApi {
         if self.no_pagination && window.is_some_and(|(offset, _)| offset > 0) {
             return Ok((IndexMap::new(), None));
         }
+        let conditions: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
+        let Some((offset, limit)) = window.filter(|_| !self.no_pagination) else {
+            let page = self
+                .fetch_page(table_name, id_field, window, order, &conditions)
+                .await?;
+            return Ok((page.rows, page.total));
+        };
+        let (offset, limit) = (offset.max(0), limit.max(1));
 
+        // Page-based APIs are addressed by whole pages: start at the page
+        // holding `offset`.
+        let start = if self.pagination.skip_based {
+            offset
+        } else {
+            offset - offset % limit
+        };
+        let first = self
+            .fetch_page(
+                table_name,
+                id_field,
+                Some((start, limit)),
+                order,
+                &conditions,
+            )
+            .await?;
+        if start == offset && !first.lossy {
+            return Ok((first.rows, first.total));
+        }
+
+        // Assemble the window page by page until it is full or the server
+        // runs out. When rows were dropped (client filters, repeated ids) a
+        // row's place in the result is only known by walking from the start.
+        let (mut server_offset, mut skip) = if first.lossy {
+            (0, offset)
+        } else {
+            (start, offset - start)
+        };
+        let mut page = (server_offset == start).then_some(first);
+        let mut rows = IndexMap::new();
+        let mut total = None;
+        let mut lossy = false;
+        loop {
+            let current = match page.take() {
+                Some(p) => p,
+                None => {
+                    self.fetch_page(
+                        table_name,
+                        id_field,
+                        Some((server_offset, limit)),
+                        order,
+                        &conditions,
+                    )
+                    .await?
+                }
+            };
+            total = total.or(current.total);
+            lossy |= current.lossy;
+            for (id, row) in current.rows {
+                if skip > 0 {
+                    skip -= 1;
+                } else if (rows.len() as i64) < limit {
+                    rows.insert(id, row);
+                }
+            }
+            if rows.len() as i64 >= limit || (current.server_rows as i64) < limit {
+                break;
+            }
+            server_offset += limit;
+        }
+        Ok((rows, if lossy { None } else { total }))
+    }
+
+    /// One request: the page's rows keyed by id, the envelope total, and how
+    /// many rows the server sent — more than `rows` holds when client filters
+    /// or repeated ids dropped some (`lossy`).
+    async fn fetch_page(
+        &self,
+        table_name: &str,
+        id_field: Option<&str>,
+        window: Option<(i64, i64)>,
+        order: Order<'_>,
+        conditions: &[&Expression<CborValue>],
+    ) -> Result<Page> {
         let (body, client_filters) = self
-            .fetch_raw_body(table_name, window, order, conditions)
+            .fetch_raw_body(table_name, window, order, conditions.iter().copied())
             .await?;
         let total = self
             .total_key
@@ -794,7 +887,12 @@ impl RestApi {
         } else {
             None
         };
-        Ok((records, total))
+        Ok(Page {
+            lossy: records.len() < data.len(),
+            server_rows: data.len(),
+            rows: records,
+            total,
+        })
     }
 }
 
@@ -971,6 +1069,7 @@ impl RestApiBuilder {
     /// Set the Authorization header value (e.g. "Bearer `<token>`").
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
         self.auth_header = AuthHeader::new(auth);
+        self.transport.auth_refresher = None;
         self
     }
 
