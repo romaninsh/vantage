@@ -283,6 +283,16 @@ impl GraphqlApiBuilder {
         self
     }
 
+    /// Get the bearer token from `refresher` instead of a fixed header: it
+    /// is asked on the first request, and again when the API answers `401`.
+    /// A request waits for it, so a refresher may run an interactive
+    /// sign-in. Replaces [`auth`](Self::auth).
+    pub fn auth_refresher(mut self, refresher: crate::AuthRefresher) -> Self {
+        self.auth_header = AuthHeader::default();
+        self.transport.auth_refresher = Some(refresher);
+        self
+    }
+
     /// Use a pre-configured `reqwest::Client` (e.g. one with custom
     /// timeouts or a proxy).
     pub fn client(mut self, client: reqwest::Client) -> Self {

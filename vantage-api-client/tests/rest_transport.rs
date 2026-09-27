@@ -210,3 +210,37 @@ async fn auth_header_still_travels() {
         .build();
     assert_eq!(list_rows(&api).await.unwrap(), 0);
 }
+
+#[tokio::test]
+async fn auth_refresher_supplies_the_token_and_is_asked_again_on_401() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = MockServer::start().await;
+    mount_with_header(&server, "GET", ("Authorization", "Bearer stale"), 401, "").await;
+    mount_with_header(
+        &server,
+        "GET",
+        ("Authorization", "Bearer fresh"),
+        200,
+        r#"[{"id":"a"}]"#,
+    )
+    .await;
+    let asked = Arc::new(AtomicUsize::new(0));
+    let counter = asked.clone();
+    let refresher: vantage_api_client::AuthRefresher = Arc::new(move || {
+        let n = counter.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move { Ok(if n == 0 { "stale" } else { "fresh" }.to_string()) })
+    });
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .auth_refresher(refresher)
+        .build();
+
+    assert_eq!(list_rows(&api).await.unwrap(), 1);
+    assert_eq!(list_rows(&api).await.unwrap(), 1);
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        2,
+        "once to start, once on the 401"
+    );
+}

@@ -631,6 +631,29 @@ impl Dio {
             id,
             initial_record,
             initial_status,
+            None,
+        ))
+    }
+
+    /// [`record_scenery`](Self::record_scenery) with `sugar`'s outputs
+    /// merged into the row it reads; nothing reaches the cache.
+    pub async fn record_scenery_sugared(
+        &self,
+        id: impl Into<String>,
+        sugar: crate::Sugar,
+    ) -> Result<Arc<dyn RecordScenery>> {
+        let reader = crate::scenery::sugar::SugaredCache::wrap(self.inner.cache.clone(), sugar);
+        let id = id.into();
+        let (initial_record, initial_status) = match reader.get_value(&id).await? {
+            Some(rec) => (Some(rec), RecordStatus::Fresh),
+            None => (None, RecordStatus::NotFound),
+        };
+        Ok(spawn_record_scenery(
+            &self.inner,
+            id,
+            initial_record,
+            initial_status,
+            Some(reader),
         ))
     }
 
@@ -667,7 +690,13 @@ impl Dio {
         id: impl Into<String>,
         record: Record<CborValue>,
     ) -> Arc<dyn RecordScenery> {
-        spawn_record_scenery(&self.inner, id.into(), Some(record), RecordStatus::Fresh)
+        spawn_record_scenery(
+            &self.inner,
+            id.into(),
+            Some(record),
+            RecordStatus::Fresh,
+            None,
+        )
     }
 
     /// Start a [`ValueScenery`](crate::scenery::ValueScenery) builder.

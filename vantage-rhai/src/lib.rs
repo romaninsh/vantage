@@ -24,6 +24,7 @@ mod host;
 mod json;
 mod limits;
 mod resolver;
+mod row_pipe;
 mod slot;
 pub mod template;
 
@@ -33,4 +34,5 @@ pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Mode, Vocab, background_host,
 pub use json::{from_json, to_json};
 pub use limits::{BACKGROUND_MAX_OPERATIONS, Limits, UI_MAX_OPERATIONS};
 pub use resolver::{Lookup, Resolver};
+pub use row_pipe::{RowAnswer, RowPipe};
 pub use slot::{Block, Expr, Template};

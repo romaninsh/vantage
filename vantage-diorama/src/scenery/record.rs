@@ -58,6 +58,9 @@ pub(crate) struct RecordSceneryState {
     pub(crate) _tally: crate::stats::Tally,
     pub(crate) dio_weak: Weak<DioInner>,
     pub(crate) id: String,
+    /// A sugared wrapper this view reads its row through, when opened with
+    /// [`Dio::record_scenery_sugared`](crate::Dio::record_scenery_sugared).
+    pub(crate) read_cache: Option<Arc<dyn crate::lens::cache_backend::CacheTable>>,
 
     pub(crate) record: RwLock<Option<Arc<EnrichedRecord>>>,
     pub(crate) status: RwLock<RecordStatus>,
@@ -67,12 +70,19 @@ pub(crate) struct RecordSceneryState {
 }
 
 impl RecordSceneryState {
+    /// The cache this view reads from: the Dio's own, or the sugared wrapper.
+    fn reader(&self, dio_inner: &DioInner) -> Arc<dyn crate::lens::cache_backend::CacheTable> {
+        self.read_cache
+            .clone()
+            .unwrap_or_else(|| dio_inner.cache.clone())
+    }
+
     /// Re-read the row from cache, update record + status, bump generation.
     async fn reload(&self) -> Result<()> {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return Ok(());
         };
-        match dio_inner.cache.get_value(&self.id).await {
+        match self.reader(&dio_inner).get_value(&self.id).await {
             Ok(Some(rec)) => self.set_loaded(rec),
             Ok(None) => self.set_not_found(),
             Err(e) => self.set_error(e.to_string()),
@@ -102,7 +112,7 @@ impl RecordSceneryState {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return;
         };
-        if let Ok(Some(rec)) = dio_inner.cache.get_value(&self.id).await {
+        if let Ok(Some(rec)) = self.reader(&dio_inner).get_value(&self.id).await {
             *self.record.write().unwrap() = Some(Arc::new(EnrichedRecord::pending_write(rec)));
             self.bump_generation();
         }
@@ -114,7 +124,7 @@ impl RecordSceneryState {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return;
         };
-        match dio_inner.cache.get_value(&self.id).await {
+        match self.reader(&dio_inner).get_value(&self.id).await {
             Ok(Some(rec)) => {
                 *self.record.write().unwrap() =
                     Some(Arc::new(EnrichedRecord::write_failed(rec, error)));
@@ -237,12 +247,14 @@ pub(crate) fn spawn_record_scenery(
     id: String,
     initial_record: Option<Record<ciborium::Value>>,
     initial_status: RecordStatus,
+    read_cache: Option<Arc<dyn crate::lens::cache_backend::CacheTable>>,
 ) -> Arc<dyn RecordScenery> {
     let (gen_tx, _gen_rx) = watch::channel(Generation::default());
     let state = Arc::new(RecordSceneryState {
         _tally: crate::stats::Tally::record_scenery(),
         dio_weak: Arc::downgrade(dio),
         id,
+        read_cache,
         record: RwLock::new(initial_record.map(|r| Arc::new(EnrichedRecord::fresh(r)))),
         status: RwLock::new(initial_status),
         generation: AtomicU64::new(0),

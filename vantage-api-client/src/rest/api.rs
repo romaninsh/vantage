@@ -144,6 +144,9 @@ pub struct RestApi {
     pub(crate) auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
+    /// Paging params were configured explicitly, so windows can be fetched
+    /// even with no `total_key` — the end of the set shows as a short page.
+    paged: bool,
     /// When true, no `_page`/`_limit` query params are appended and
     /// list endpoints are assumed to return the full result set in
     /// one shot. Caller-side requests for page > 1 short-circuit to
@@ -191,6 +194,14 @@ impl RestApi {
     /// REST shell can report an exact count and serve `fetch_window`.
     pub fn total_key(&self) -> Option<&str> {
         self.total_key.as_deref()
+    }
+
+    /// Whether the shell can serve absolute-offset windows: the API pages
+    /// (explicit `pagination_params`, or a `total_key`) and pagination isn't
+    /// switched off. Without a total the loader learns the end of the set
+    /// from a short page.
+    pub fn serves_windows(&self) -> bool {
+        !self.no_pagination && (self.paged || self.total_key.is_some())
     }
 
     /// The sort query param, when configured.
@@ -841,28 +852,39 @@ fn resolve_deferreds(
 
 impl RestApi {
     /// Pull the row array out of the response body, according to the
-    /// configured `ResponseShape`.
+    /// configured `ResponseShape`. A bare-array API answers a single-record
+    /// endpoint (`activities/{id}`) with one object: that reads as one row.
     fn extract_array<'a>(
         &self,
         body: &'a serde_json::Value,
         table_name: &str,
-    ) -> Result<&'a Vec<serde_json::Value>> {
+    ) -> Result<&'a [serde_json::Value]> {
         match &self.response_shape {
-            ResponseShape::BareArray => body.as_array().ok_or_else(|| {
-                error!("Expected response body to be a JSON array (BareArray shape)")
-            }),
-            ResponseShape::Wrapped { array_key } => body[array_key].as_array().ok_or_else(|| {
-                error!(
-                    "Response missing array under wrapper key",
-                    array_key = array_key
-                )
-            }),
-            ResponseShape::WrappedByTableName => body[table_name].as_array().ok_or_else(|| {
-                error!(
-                    "Response missing array under table-name key",
-                    table_name = table_name
-                )
-            }),
+            ResponseShape::BareArray => match body {
+                serde_json::Value::Array(rows) => Ok(rows),
+                serde_json::Value::Object(_) => Ok(std::slice::from_ref(body)),
+                _ => Err(error!(
+                    "Expected response body to be a JSON array or object (BareArray shape)"
+                )),
+            },
+            ResponseShape::Wrapped { array_key } => body[array_key]
+                .as_array()
+                .map(Vec::as_slice)
+                .ok_or_else(|| {
+                    error!(
+                        "Response missing array under wrapper key",
+                        array_key = array_key
+                    )
+                }),
+            ResponseShape::WrappedByTableName => body[table_name]
+                .as_array()
+                .map(Vec::as_slice)
+                .ok_or_else(|| {
+                    error!(
+                        "Response missing array under table-name key",
+                        table_name = table_name
+                    )
+                }),
         }
     }
 }
@@ -890,6 +912,8 @@ pub struct RestApiBuilder {
     auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
+    /// `pagination_params` was called: the API is known to page.
+    paged: bool,
     no_pagination: bool,
     filter_strategy: FilterStrategy,
     total_key: Option<String>,
@@ -905,6 +929,7 @@ impl RestApiBuilder {
             auth_header: AuthHeader::default(),
             response_shape: ResponseShape::default(),
             pagination: PaginationParams::default(),
+            paged: false,
             no_pagination: false,
             filter_strategy: FilterStrategy::default(),
             total_key: None,
@@ -949,6 +974,16 @@ impl RestApiBuilder {
         self
     }
 
+    /// Get the bearer token from `refresher` instead of a fixed header: it
+    /// is asked on the first request, and again when the API answers `401`.
+    /// A request waits for it, so a refresher may run an interactive
+    /// sign-in. Replaces [`auth`](Self::auth).
+    pub fn auth_refresher(mut self, refresher: crate::AuthRefresher) -> Self {
+        self.auth_header = AuthHeader::default();
+        self.transport.auth_refresher = Some(refresher);
+        self
+    }
+
     /// Choose how the API wraps its row array. Defaults to
     /// `Wrapped { array_key: "data" }` for backwards compat.
     pub fn response_shape(mut self, shape: ResponseShape) -> Self {
@@ -960,6 +995,7 @@ impl RestApiBuilder {
     /// `("_page", "_limit")` (JSON Server convention).
     pub fn pagination_params(mut self, pagination: PaginationParams) -> Self {
         self.pagination = pagination;
+        self.paged = true;
         self
     }
 
@@ -1010,6 +1046,7 @@ impl RestApiBuilder {
             auth_header: self.auth_header,
             response_shape: self.response_shape,
             pagination: self.pagination,
+            paged: self.paged,
             no_pagination: self.no_pagination,
             filter_strategy: self.filter_strategy,
             total_key: self.total_key,

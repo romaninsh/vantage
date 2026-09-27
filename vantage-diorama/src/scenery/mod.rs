@@ -1,5 +1,6 @@
 pub mod enriched_record;
 pub mod record;
+pub mod sugar;
 pub mod table;
 pub mod value;
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.4 — 2026-09-27
+
+- `RowPipe`: a long-lived script that reads rows with `next_row()` and
+  answers each with `emit(...)`, under a per-row operation budget. A script
+  that throws is restarted.
+
 ## 0.6.3 — 2026-09-19
 
 - A template holding one `${ … }` hole surrounded only by whitespace keeps

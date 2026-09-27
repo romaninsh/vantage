@@ -18,7 +18,7 @@ pub trait Vocab {
 /// `FnOnce` with no `Send`/`'static` bounds, so a caller can move a resolver
 /// or a limit into it.
 pub struct HostBuilder {
-    limits: Limits,
+    pub(crate) limits: Limits,
     engine: Engine,
 }
 

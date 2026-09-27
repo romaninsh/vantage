@@ -5560,7 +5560,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.16"
+version = "0.6.17"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5747,7 +5747,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.13.1"
+version = "0.13.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5901,7 +5901,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "rhai",
  "schemars",
