@@ -97,9 +97,9 @@ impl RestApiVistaFactory {
     {
         let metadata = metadata_from_table(&table);
         let name = table.table_name().to_string();
-        // A configured `total_key` lets the shell serve absolute-offset
-        // windows (and an exact count) — advertise it before erasing the table.
-        let can_fetch_window = table.data_source().total_key().is_some();
+        // A paging API serves absolute-offset windows (a `total_key` adds an
+        // exact count) — advertise it before erasing the table.
+        let can_fetch_window = table.data_source().serves_windows();
         let can_order = table.data_source().ordering().is_some();
         let any_table = table.into_entity::<EmptyEntity>();
 
@@ -191,7 +191,7 @@ impl VistaFactory for RestApiVistaFactory {
             );
         }
 
-        let can_fetch_window = table.data_source().total_key().is_some();
+        let can_fetch_window = table.data_source().serves_windows();
         let can_order = table.data_source().ordering().is_some();
         let source = RestApiTableShell::new(
             table,

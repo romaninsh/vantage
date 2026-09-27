@@ -28,6 +28,7 @@ pub use lens::{
     MemoryCacheTable, RedbCache, RedbCacheTable,
 };
 pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashRejection, QueryDescriptor};
+pub use scenery::sugar::{Sugar, SugarFn, SugarFuture};
 pub use scenery::{
     Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, LoadState, OpCondition,
     RecordScenery, RecordStatus, RowStatus, RowStatusSummary, SortDir, TableScenery,

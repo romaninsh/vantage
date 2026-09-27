@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.17 — 2026-09-27
+
+- `auth_refresher(AuthRefresher)` on the REST and GraphQL builders: the
+  bearer token is fetched lazily and fetched again after a 401.
+- A REST vista built with `pagination_params(...)` serves windowed fetches
+  without a `total_key`; a short page marks the end of the data.
+- Fix: a window starting mid-page on a page-numbered API returned the page's
+  first rows, and a page that lost rows to client-side filters or repeated
+  ids came back short, ending the data early.
+- `auth(...)` set after `auth_refresher(...)` replaces the refresher.
+- A bare JSON object response is read as one row.
+
 ## 0.6.16 — 2026-09-16
 
 - `RestApi::builder().ordering(OrderingParams)`: the API's sort query param

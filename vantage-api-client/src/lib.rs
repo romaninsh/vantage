@@ -18,8 +18,8 @@ pub mod rest;
 mod transport;
 
 pub use vantage_api_pool::resilient::{
-    BreakerMode, BreakerState, CallPolicy, ClientError, ErrorKind, ResilientClient, RetryMode,
-    TransportEvent, TransportObserver,
+    AuthFuture, AuthRefresher, BreakerMode, BreakerState, CallPolicy, ClientError, ErrorKind,
+    ResilientClient, RetryMode, TransportEvent, TransportObserver,
 };
 pub use vantage_core::Priority;
 

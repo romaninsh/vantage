@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
-use vantage_api_pool::resilient::{CallPolicy, ClientError, ResilientClient, TransportObserver};
+use vantage_api_pool::resilient::{
+    AuthRefresher, CallPolicy, ClientError, ResilientClient, TransportObserver,
+};
 use vantage_core::{Priority, VantageError, error};
 
 /// A configured `Authorization` header value. Held in its own type so
@@ -43,6 +45,8 @@ pub(crate) struct ClientConfig {
     pub rate_limit: Option<f64>,
     pub observer: Option<(Arc<str>, Arc<dyn TransportObserver>)>,
     pub http: Option<reqwest::Client>,
+    /// Bearer token source, asked on the first request and again on a `401`.
+    pub auth_refresher: Option<AuthRefresher>,
 }
 
 impl Default for ClientConfig {
@@ -52,6 +56,7 @@ impl Default for ClientConfig {
             rate_limit: None,
             observer: None,
             http: None,
+            auth_refresher: None,
         }
     }
 }
@@ -63,6 +68,7 @@ impl std::fmt::Debug for ClientConfig {
             .field("rate_limit", &self.rate_limit)
             .field("observer", &self.observer.as_ref().map(|(k, _)| k))
             .field("http", &self.http.is_some())
+            .field("auth_refresher", &self.auth_refresher.is_some())
             .finish()
     }
 }
@@ -79,6 +85,9 @@ pub(crate) fn build_client(cfg: ClientConfig) -> ResilientClient {
     }
     if let Some(http) = cfg.http {
         b = b.http_client(http);
+    }
+    if let Some(refresher) = cfg.auth_refresher {
+        b = b.bearer_auth(refresher);
     }
     b.build()
 }

@@ -137,6 +137,14 @@ impl OrderingParams {
 /// A sort pushed down to the API: column and direction.
 pub(crate) type Order<'a> = Option<(&'a str, vantage_vista::SortDirection)>;
 
+/// One response's rows, see [`RestApi::fetch_page`].
+struct Page {
+    rows: IndexMap<String, Record<CborValue>>,
+    total: Option<i64>,
+    server_rows: usize,
+    lossy: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct RestApi {
     base_url: String,
@@ -144,6 +152,9 @@ pub struct RestApi {
     pub(crate) auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
+    /// Paging params were configured explicitly, so windows can be fetched
+    /// even with no `total_key` — the end of the set shows as a short page.
+    paged: bool,
     /// When true, no `_page`/`_limit` query params are appended and
     /// list endpoints are assumed to return the full result set in
     /// one shot. Caller-side requests for page > 1 short-circuit to
@@ -191,6 +202,14 @@ impl RestApi {
     /// REST shell can report an exact count and serve `fetch_window`.
     pub fn total_key(&self) -> Option<&str> {
         self.total_key.as_deref()
+    }
+
+    /// Whether the shell can serve absolute-offset windows: the API pages
+    /// (explicit `pagination_params`, or a `total_key`) and pagination isn't
+    /// switched off. Without a total the loader learns the end of the set
+    /// from a short page.
+    pub fn serves_windows(&self) -> bool {
+        !self.no_pagination && (self.paged || self.total_key.is_some())
     }
 
     /// The sort query param, when configured.
@@ -699,6 +718,9 @@ impl RestApi {
     /// body carries it. Unlike [`Self::fetch_total`] this never errors on a
     /// missing total: the rows are the point here, and a caller that needs a
     /// definitive count can still ask for one.
+    ///
+    /// A window comes back short only when the server ran out: callers take a
+    /// short window as the end of the set.
     async fn fetch_windowed<'a>(
         &self,
         table_name: &str,
@@ -715,9 +737,91 @@ impl RestApi {
         if self.no_pagination && window.is_some_and(|(offset, _)| offset > 0) {
             return Ok((IndexMap::new(), None));
         }
+        let conditions: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
+        let Some((offset, limit)) = window.filter(|_| !self.no_pagination) else {
+            let page = self
+                .fetch_page(table_name, id_field, window, order, &conditions)
+                .await?;
+            return Ok((page.rows, page.total));
+        };
+        let (offset, limit) = (offset.max(0), limit.max(1));
 
+        // Page-based APIs are addressed by whole pages: start at the page
+        // holding `offset`.
+        let start = if self.pagination.skip_based {
+            offset
+        } else {
+            offset - offset % limit
+        };
+        let first = self
+            .fetch_page(
+                table_name,
+                id_field,
+                Some((start, limit)),
+                order,
+                &conditions,
+            )
+            .await?;
+        if start == offset && !first.lossy {
+            return Ok((first.rows, first.total));
+        }
+
+        // Assemble the window page by page until it is full or the server
+        // runs out. When rows were dropped (client filters, repeated ids) a
+        // row's place in the result is only known by walking from the start.
+        let (mut server_offset, mut skip) = if first.lossy {
+            (0, offset)
+        } else {
+            (start, offset - start)
+        };
+        let mut page = (server_offset == start).then_some(first);
+        let mut rows = IndexMap::new();
+        let mut total = None;
+        let mut lossy = false;
+        loop {
+            let current = match page.take() {
+                Some(p) => p,
+                None => {
+                    self.fetch_page(
+                        table_name,
+                        id_field,
+                        Some((server_offset, limit)),
+                        order,
+                        &conditions,
+                    )
+                    .await?
+                }
+            };
+            total = total.or(current.total);
+            lossy |= current.lossy;
+            for (id, row) in current.rows {
+                if skip > 0 {
+                    skip -= 1;
+                } else if (rows.len() as i64) < limit {
+                    rows.insert(id, row);
+                }
+            }
+            if rows.len() as i64 >= limit || (current.server_rows as i64) < limit {
+                break;
+            }
+            server_offset += limit;
+        }
+        Ok((rows, if lossy { None } else { total }))
+    }
+
+    /// One request: the page's rows keyed by id, the envelope total, and how
+    /// many rows the server sent — more than `rows` holds when client filters
+    /// or repeated ids dropped some (`lossy`).
+    async fn fetch_page(
+        &self,
+        table_name: &str,
+        id_field: Option<&str>,
+        window: Option<(i64, i64)>,
+        order: Order<'_>,
+        conditions: &[&Expression<CborValue>],
+    ) -> Result<Page> {
         let (body, client_filters) = self
-            .fetch_raw_body(table_name, window, order, conditions)
+            .fetch_raw_body(table_name, window, order, conditions.iter().copied())
             .await?;
         let total = self
             .total_key
@@ -783,7 +887,12 @@ impl RestApi {
         } else {
             None
         };
-        Ok((records, total))
+        Ok(Page {
+            lossy: records.len() < data.len(),
+            server_rows: data.len(),
+            rows: records,
+            total,
+        })
     }
 }
 
@@ -841,28 +950,39 @@ fn resolve_deferreds(
 
 impl RestApi {
     /// Pull the row array out of the response body, according to the
-    /// configured `ResponseShape`.
+    /// configured `ResponseShape`. A bare-array API answers a single-record
+    /// endpoint (`activities/{id}`) with one object: that reads as one row.
     fn extract_array<'a>(
         &self,
         body: &'a serde_json::Value,
         table_name: &str,
-    ) -> Result<&'a Vec<serde_json::Value>> {
+    ) -> Result<&'a [serde_json::Value]> {
         match &self.response_shape {
-            ResponseShape::BareArray => body.as_array().ok_or_else(|| {
-                error!("Expected response body to be a JSON array (BareArray shape)")
-            }),
-            ResponseShape::Wrapped { array_key } => body[array_key].as_array().ok_or_else(|| {
-                error!(
-                    "Response missing array under wrapper key",
-                    array_key = array_key
-                )
-            }),
-            ResponseShape::WrappedByTableName => body[table_name].as_array().ok_or_else(|| {
-                error!(
-                    "Response missing array under table-name key",
-                    table_name = table_name
-                )
-            }),
+            ResponseShape::BareArray => match body {
+                serde_json::Value::Array(rows) => Ok(rows),
+                serde_json::Value::Object(_) => Ok(std::slice::from_ref(body)),
+                _ => Err(error!(
+                    "Expected response body to be a JSON array or object (BareArray shape)"
+                )),
+            },
+            ResponseShape::Wrapped { array_key } => body[array_key]
+                .as_array()
+                .map(Vec::as_slice)
+                .ok_or_else(|| {
+                    error!(
+                        "Response missing array under wrapper key",
+                        array_key = array_key
+                    )
+                }),
+            ResponseShape::WrappedByTableName => body[table_name]
+                .as_array()
+                .map(Vec::as_slice)
+                .ok_or_else(|| {
+                    error!(
+                        "Response missing array under table-name key",
+                        table_name = table_name
+                    )
+                }),
         }
     }
 }
@@ -890,6 +1010,8 @@ pub struct RestApiBuilder {
     auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
+    /// `pagination_params` was called: the API is known to page.
+    paged: bool,
     no_pagination: bool,
     filter_strategy: FilterStrategy,
     total_key: Option<String>,
@@ -905,6 +1027,7 @@ impl RestApiBuilder {
             auth_header: AuthHeader::default(),
             response_shape: ResponseShape::default(),
             pagination: PaginationParams::default(),
+            paged: false,
             no_pagination: false,
             filter_strategy: FilterStrategy::default(),
             total_key: None,
@@ -946,6 +1069,17 @@ impl RestApiBuilder {
     /// Set the Authorization header value (e.g. "Bearer `<token>`").
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
         self.auth_header = AuthHeader::new(auth);
+        self.transport.auth_refresher = None;
+        self
+    }
+
+    /// Get the bearer token from `refresher` instead of a fixed header: it
+    /// is asked on the first request, and again when the API answers `401`.
+    /// A request waits for it, so a refresher may run an interactive
+    /// sign-in. Replaces [`auth`](Self::auth).
+    pub fn auth_refresher(mut self, refresher: crate::AuthRefresher) -> Self {
+        self.auth_header = AuthHeader::default();
+        self.transport.auth_refresher = Some(refresher);
         self
     }
 
@@ -960,6 +1094,7 @@ impl RestApiBuilder {
     /// `("_page", "_limit")` (JSON Server convention).
     pub fn pagination_params(mut self, pagination: PaginationParams) -> Self {
         self.pagination = pagination;
+        self.paged = true;
         self
     }
 
@@ -1010,6 +1145,7 @@ impl RestApiBuilder {
             auth_header: self.auth_header,
             response_shape: self.response_shape,
             pagination: self.pagination,
+            paged: self.paged,
             no_pagination: self.no_pagination,
             filter_strategy: self.filter_strategy,
             total_key: self.total_key,

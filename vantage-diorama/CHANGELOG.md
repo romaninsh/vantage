@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.2 — 2026-09-27
+
+- `TableSceneryBuilder::sugar(Sugar)` and `Dio::record_scenery_sugared`:
+  rows are read through an async function that adds computed columns. The
+  columns are merged on read and stripped on write; they never reach the
+  cache.
+
 ## 0.13.1 — 2026-09-16
 
 - A failed `Background` chunk load logs at debug instead of error; the next

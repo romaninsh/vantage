@@ -280,6 +280,17 @@ impl GraphqlApiBuilder {
     /// Set the `Authorization` header value (e.g. `"Bearer <token>"`).
     pub fn auth(mut self, auth: impl Into<String>) -> Self {
         self.auth_header = AuthHeader::new(auth);
+        self.transport.auth_refresher = None;
+        self
+    }
+
+    /// Get the bearer token from `refresher` instead of a fixed header: it
+    /// is asked on the first request, and again when the API answers `401`.
+    /// A request waits for it, so a refresher may run an interactive
+    /// sign-in. Replaces [`auth`](Self::auth).
+    pub fn auth_refresher(mut self, refresher: crate::AuthRefresher) -> Self {
+        self.auth_header = AuthHeader::default();
+        self.transport.auth_refresher = Some(refresher);
         self
     }
 

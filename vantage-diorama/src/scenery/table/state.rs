@@ -25,6 +25,9 @@ pub(crate) struct TableSceneryState {
     /// Weak so the Scenery doesn't pin the Dio alive — the spawned
     /// tasks exit when the last user-held Dio drops.
     pub(crate) dio_weak: std::sync::Weak<DioInner>,
+    /// A sugared wrapper this view reads rows through, when opened with
+    /// [`sugar`](super::TableSceneryBuilder::sugar). See [`Self::reader`].
+    pub(crate) read_cache: Option<Arc<dyn crate::lens::cache_backend::CacheTable>>,
 
     pub(crate) conditions: RwLock<Vec<(String, CborValue)>>,
     /// Non-equality filters applied locally over the cache (see
@@ -211,6 +214,18 @@ impl Drop for InFlightMarker {
 }
 
 impl TableSceneryState {
+    /// The cache this view reads rows from: the Dio's own, or the sugared
+    /// wrapper over it. Writes — and read-backs that feed a write — always
+    /// use the Dio's cache, so sugar never reaches it.
+    pub(crate) fn reader(
+        &self,
+        dio_inner: &DioInner,
+    ) -> Arc<dyn crate::lens::cache_backend::CacheTable> {
+        self.read_cache
+            .clone()
+            .unwrap_or_else(|| dio_inner.cache.clone())
+    }
+
     /// Whether the visible set is *locally refined* — filtered and ordered over
     /// the cache rather than served in the index's own order.
     ///
@@ -367,7 +382,7 @@ impl TableSceneryState {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return Ok(());
         };
-        let all = dio_inner.cache.list_values().await?;
+        let all = self.reader(&dio_inner).list_values().await?;
 
         let conditions = self.conditions.read().unwrap().clone();
         let op_conditions = self.op_conditions.read().unwrap().clone();
@@ -531,7 +546,7 @@ impl TableSceneryState {
             Some(i) => i,
             None => return Ok(()),
         };
-        let Some(rec) = dio_inner.cache.get_value(id).await? else {
+        let Some(rec) = self.reader(&dio_inner).get_value(id).await? else {
             return Ok(());
         };
         self.rows
@@ -553,7 +568,7 @@ impl TableSceneryState {
         let Some(idx) = self.id_to_idx.read().unwrap().get(id).copied() else {
             return;
         };
-        let Ok(Some(rec)) = dio_inner.cache.get_value(id).await else {
+        let Ok(Some(rec)) = self.reader(&dio_inner).get_value(id).await else {
             return;
         };
         let enriched = EnrichedRecord {

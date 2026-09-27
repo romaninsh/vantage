@@ -29,6 +29,7 @@ pub struct TableSceneryBuilder {
     pub(crate) titles_only: bool,
     pub(crate) demand: Option<Vec<String>>,
     pub(crate) exclusive: bool,
+    pub(crate) sugar: Option<crate::scenery::sugar::Sugar>,
 }
 
 impl TableSceneryBuilder {
@@ -43,7 +44,18 @@ impl TableSceneryBuilder {
             titles_only: false,
             demand: None,
             exclusive: false,
+            sugar: None,
         }
+    }
+
+    /// Read rows through `sugar`: its outputs are merged into every row
+    /// this view reads — sort and filter included — and nothing reaches the
+    /// cache. A sugared view is always exclusive, so it never shares a
+    /// plain view of the same query.
+    pub fn sugar(mut self, sugar: crate::scenery::sugar::Sugar) -> Self {
+        self.sugar = Some(sugar);
+        self.exclusive = true;
+        self
     }
 
     pub fn where_eq(mut self, col: impl Into<String>, value: impl Into<CborValue>) -> Self {
@@ -143,7 +155,10 @@ impl TableSceneryBuilder {
             titles_only,
             demand,
             exclusive,
+            sugar,
         } = self;
+        let read_cache =
+            sugar.map(|s| crate::scenery::sugar::SugaredCache::wrap(dio.cache.clone(), s));
 
         // Inherit the Dio's base query semantics. The Dio owns "what this table
         // is" (base conditions + default order); this view layers its own
@@ -257,6 +272,7 @@ impl TableSceneryBuilder {
         let state = Arc::new(TableSceneryState {
             _tally: crate::stats::Tally::table_scenery(),
             dio_weak: Arc::downgrade(&dio),
+            read_cache,
             conditions: RwLock::new(conditions),
             op_conditions: RwLock::new(op_conditions),
             sort: RwLock::new(sort),

@@ -47,8 +47,8 @@ async fn seed_rows(
 ) {
     for (i, id) in ids.iter().enumerate() {
         let idx = base + i;
-        let entry = dio_inner
-            .cache
+        let entry = state
+            .reader(dio_inner)
             .get_value_with_status(id)
             .await
             .ok()
@@ -81,8 +81,8 @@ async fn publish_index_order(
     let mut rows = std::collections::BTreeMap::new();
     let mut id_to_idx = std::collections::HashMap::new();
     for (i, id) in ids.iter().enumerate() {
-        let Some((rec, status)) = dio_inner
-            .cache
+        let Some((rec, status)) = state
+            .reader(dio_inner)
             .get_value_with_status(id)
             .await
             .ok()
@@ -155,8 +155,8 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
     let mut gathered: Vec<(String, vantage_types::Record<ciborium::Value>, CacheStatus)> =
         Vec::with_capacity(ids.len());
     for id in &ids {
-        if let Some((rec, status)) = dio_inner
-            .cache
+        if let Some((rec, status)) = state
+            .reader(&dio_inner)
             .get_value_with_status(id)
             .await
             .ok()
@@ -467,8 +467,8 @@ pub(crate) async fn update_row_from_cache(state: &Arc<TableSceneryState>, id: &s
     let Some(i) = state.id_to_idx.read().unwrap().get(id).copied() else {
         return;
     };
-    let Some((rec, status)) = dio_inner
-        .cache
+    let Some((rec, status)) = state
+        .reader(&dio_inner)
         .get_value_with_status(id)
         .await
         .ok()
@@ -677,8 +677,8 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
                 continue;
             }
         }
-        let cached = dio_inner
-            .cache
+        let cached = state
+            .reader(&dio_inner)
             .get_value_with_status(&id)
             .await
             .ok()
