@@ -78,9 +78,30 @@ impl Default for FlightsConfig {
 }
 
 impl FlightsConfig {
-    /// Report settings the sim cannot run with: a non-positive or non-finite
+    /// Largest accepted `fleet`.
+    pub const MAX_FLEET: usize = 2000;
+    /// Largest accepted `board`.
+    pub const MAX_BOARD: usize = 500;
+
+    /// Report settings the sim cannot run with: a `fleet` above
+    /// [`MAX_FLEET`](Self::MAX_FLEET), a `board` above
+    /// [`MAX_BOARD`](Self::MAX_BOARD), a non-positive or non-finite
     /// `time_scale`, or a zero `tick`.
     pub fn validate(&self) -> Result<(), String> {
+        if self.fleet > Self::MAX_FLEET {
+            return Err(format!(
+                "flights: fleet {} is above the maximum of {}",
+                self.fleet,
+                Self::MAX_FLEET
+            ));
+        }
+        if self.board > Self::MAX_BOARD {
+            return Err(format!(
+                "flights: board {} is above the maximum of {}",
+                self.board,
+                Self::MAX_BOARD
+            ));
+        }
         if !self.time_scale.is_finite() || self.time_scale <= 0.0 {
             return Err(format!(
                 "flights: time_scale {} must be finite and positive",
@@ -102,11 +123,14 @@ pub struct FlightsEffect {
 }
 
 impl FlightsEffect {
-    /// An effect running `cfg`. An invalid `time_scale` falls back to the
-    /// default and a zero `tick` to one second; call
-    /// [`FlightsConfig::validate`] to report them instead.
+    /// An effect running `cfg`. `fleet` and `board` are clamped to their
+    /// maximums, an invalid `time_scale` falls back to the default and a zero
+    /// `tick` to one second; call [`FlightsConfig::validate`] to report them
+    /// instead.
     pub fn new(mut cfg: FlightsConfig) -> Self {
         let defaults = FlightsConfig::default();
+        cfg.fleet = cfg.fleet.min(FlightsConfig::MAX_FLEET);
+        cfg.board = cfg.board.min(FlightsConfig::MAX_BOARD);
         if !cfg.time_scale.is_finite() || cfg.time_scale <= 0.0 {
             cfg.time_scale = defaults.time_scale;
         }

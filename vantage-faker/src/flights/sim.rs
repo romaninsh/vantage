@@ -76,33 +76,40 @@ impl FlightSim {
 
     /// Schedule departures until `board` flights are waiting to leave at sim
     /// time `t`. Returns the ids of the flights added.
+    ///
+    /// One scan counts the waiting and in-air flights; every added flight
+    /// departs after `t`, so it only bumps the waiting count.
     pub fn top_up(&mut self, t: f64) -> Vec<String> {
+        let (mut waiting, mut in_air) = (0usize, 0u32);
+        for f in self.flights.values() {
+            match f.phase_at(t) {
+                p if p <= Phase::Boarding => waiting += 1,
+                Phase::Landed => {}
+                _ => in_air += 1,
+            }
+        }
+        let fleet = self.fleet.max(1) as f64;
+        let pressure = (f64::from(in_air) / fleet).clamp(0.5, 2.0);
+        let gap = self.mean_airborne_s / fleet * pressure;
         let mut added = Vec::new();
-        while self.waiting(t) < self.board {
-            let in_air = self.count(t, |p| (Phase::Taxiing..Phase::Landed).contains(&p));
-            let fleet = self.fleet.max(1) as f64;
-            let pressure = (in_air as f64 / fleet).clamp(0.5, 2.0);
-            let gap = self.mean_airborne_s / fleet * pressure;
+        while waiting < self.board {
             // Never schedule into the past, or inside the boarding window
             // of a flight that should still appear as Scheduled.
             let base = self.last_scheduled.max(t + BOARDING_S / 2.0);
             self.last_scheduled = base + gap;
             let f = self.draw(self.last_scheduled);
             added.push(self.admit(f));
+            waiting += 1;
         }
         added
     }
 
     /// Drop a flight (after its landed row has been retired).
     pub fn remove(&mut self, id: &str) {
-        self.flights.shift_remove(id);
+        self.flights.swap_remove(id);
     }
 
-    /// Flights not yet off-block at `t`.
-    fn waiting(&self, t: f64) -> usize {
-        self.count(t, |p| p <= Phase::Boarding)
-    }
-
+    #[cfg(test)]
     pub fn count(&self, t: f64, pred: impl Fn(Phase) -> bool) -> usize {
         self.flights
             .values()
