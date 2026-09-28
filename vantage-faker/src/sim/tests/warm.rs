@@ -79,6 +79,33 @@ fn warm_window_is_sim_time_on_a_fast_clock() {
 }
 
 #[test]
+fn warm_progress_reports_each_window_and_skips_no_warm() {
+    let started = |def: SimDef| {
+        let (log, _) = table(&["id", "who", "step", "at"]);
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        let _engine = SimEngine::builder()
+            .table("log", &log)
+            .sim(def)
+            .manual_clock(start())
+            .on_warm_progress(move |p| sink.lock().unwrap().push(p))
+            .start()
+            .unwrap();
+        let seen = seen.lock().unwrap().clone();
+        seen
+    };
+
+    let seen = started(warm_def(1.0));
+    assert_eq!(seen.len(), 256);
+    assert!(seen[0] > 0.0);
+    assert!(seen.windows(2).all(|w| w[0] < w[1]), "{seen:?}");
+    assert_eq!(seen.last(), Some(&1.0));
+
+    let cold = SimDef::new("w", "log", LIFE).with_spawn(0, 1.0, 100);
+    assert!(started(cold).is_empty());
+}
+
+#[test]
 fn warm_start_on_the_system_clock_goes_live() {
     let (log, _) = table(&["id", "who", "step", "at"]);
     let def = SimDef::new(

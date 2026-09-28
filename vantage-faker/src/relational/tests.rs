@@ -111,8 +111,11 @@ fn fan_out_is_deterministic_for_a_seed() {
 fn tree_column_scales_to_the_relational_row_count() {
     let mut cols = columns();
     cols.push(
-        FakerColumn::new("parent_id", "string")
-            .with_generator(ColumnGen::Tree { roots: 2, depth: 3 }),
+        FakerColumn::new("parent_id", "string").with_generator(ColumnGen::Tree {
+            roots: 2,
+            depth: 3,
+            min_depth: None,
+        }),
     );
     let rows = relational_rows(&ValueGen::seeded(1), &cols, "id", 50, &[], None);
     let roots = rows

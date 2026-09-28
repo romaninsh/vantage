@@ -22,6 +22,7 @@ pub struct SimEngineBuilder {
     defs: Vec<SimDef>,
     seed: Option<u64>,
     manual: Option<SystemTime>,
+    warm_progress: Option<Box<spawn::Progress>>,
 }
 
 impl SimEngineBuilder {
@@ -49,6 +50,14 @@ impl SimEngineBuilder {
     /// [`SimEngine::advance`] — for tests and scripted demos.
     pub fn manual_clock(mut self, start: SystemTime) -> Self {
         self.manual = Some(start);
+        self
+    }
+
+    /// Call `f` from [`start`](Self::start) as the warm start runs, with the
+    /// fraction done (`0 < p ≤ 1`) after each of its windows. Never called
+    /// when no def has a warm span.
+    pub fn on_warm_progress(mut self, f: impl Fn(f32) + Send + Sync + 'static) -> Self {
+        self.warm_progress = Some(Box::new(f));
         self
     }
 
@@ -110,7 +119,7 @@ impl SimEngineBuilder {
 
         let mut plan = spawn::Plan::new(&inner);
         inner.set_quiet(true);
-        spawn::warm(&inner, &mut plan);
+        spawn::warm(&inner, &mut plan, self.warm_progress.as_deref());
         inner.set_quiet(false);
         let driver = spawn::start_driver(inner.clone(), plan);
         Ok(SimEngine::new(inner, driver))

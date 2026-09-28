@@ -70,10 +70,17 @@ impl FakerCtx {
         }
     }
 
-    /// Stop (or resume) broadcasting mutations.
-    #[cfg(feature = "rhai")]
-    pub(crate) fn set_quiet(&self, quiet: bool) {
+    /// Stop (or resume) broadcasting mutations. While quiet, mutations still
+    /// change the store; pair a quiet batch with [`invalidate`](Self::invalidate)
+    /// so subscribers re-list once instead of receiving every delta.
+    pub fn set_quiet(&self, quiet: bool) {
         self.quiet.store(quiet, Ordering::SeqCst);
+    }
+
+    /// Broadcast [`ChangeEvent::Invalidated`], telling subscribers to re-list
+    /// from the store. Sent even while quiet.
+    pub fn invalidate(&self) {
+        let _ = self.events.send(ChangeEvent::Invalidated);
     }
 
     fn send(&self, event: ChangeEvent) {
@@ -458,6 +465,29 @@ mod tests {
         ctx.expire(&id);
         assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Deleted { id: got } if got == id));
         assert_eq!(count_store(&ctx), 0);
+    }
+
+    #[tokio::test]
+    async fn quiet_mutations_store_without_broadcasting() {
+        let (ctx, mut rx) = ctx();
+        ctx.set_quiet(true);
+        let id = ctx.push();
+        ctx.expire(&id);
+        ctx.push();
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+        assert_eq!(count_store(&ctx), 1);
+        ctx.set_quiet(false);
+        ctx.push();
+        assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Inserted { .. }));
+    }
+
+    #[test]
+    fn invalidate_broadcasts_even_while_quiet() {
+        let (ctx, mut rx) = ctx();
+        ctx.set_quiet(true);
+        ctx.invalidate();
+        assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Invalidated));
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
     }
 
     #[test]

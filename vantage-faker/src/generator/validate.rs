@@ -8,7 +8,7 @@ impl ColumnGen {
     /// Check the parameters a generator cannot use as written: an empty pick
     /// list or mismatched/degenerate weights, non-finite or inverted bounds
     /// (range, walk, sentence, date), an unparsable date, and a tree with no
-    /// roots or no levels.
+    /// roots, no levels, or a `min_depth` of 0 or above `depth`.
     pub fn validate(&self) -> Result<(), String> {
         match self {
             Self::Pick { values, weights } => {
@@ -81,6 +81,13 @@ impl ColumnGen {
             Self::Tree { depth: 0, .. } => {
                 Err("tree: `depth` must be at least 1 (1 = every row is a root)".into())
             }
+            Self::Tree {
+                depth,
+                min_depth: Some(min),
+                ..
+            } if *min == 0 || min > depth => Err(format!(
+                "tree: `min_depth` {min} must be between 1 and `depth` {depth}"
+            )),
             _ => Ok(()),
         }
     }

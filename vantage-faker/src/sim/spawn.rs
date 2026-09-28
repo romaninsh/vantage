@@ -14,6 +14,10 @@ use super::{MAX_LIVE, SIM_STACK_BYTES, current};
 /// exact to one window (1/256 of the warm span).
 const WARM_WINDOWS: u32 = 256;
 
+/// Warm-start progress callback; see
+/// [`SimEngineBuilder::on_warm_progress`](super::SimEngineBuilder::on_warm_progress).
+pub(super) type Progress = dyn Fn(f32) + Send + Sync;
+
 /// Park id of the driver; sim ids start at 1.
 const DRIVER_ID: u64 = 0;
 
@@ -125,8 +129,9 @@ pub(super) fn spawn_sim(inner: &Arc<Inner>, kind: usize, vt: f64, args: RhaiMap)
 }
 
 /// Run the warm start: every spawner event and sim step before the engine
-/// start, window by window, as fast as the sims compute.
-pub(super) fn warm(inner: &Arc<Inner>, plan: &mut Plan) {
+/// start, window by window, as fast as the sims compute, reporting the
+/// fraction done to `progress` after each window.
+pub(super) fn warm(inner: &Arc<Inner>, plan: &mut Plan, progress: Option<&Progress>) {
     let begin = plan.earliest();
     let end = inner.origin;
     if begin >= end {
@@ -139,14 +144,11 @@ pub(super) fn warm(inner: &Arc<Inner>, plan: &mut Plan) {
         } else {
             begin + (end - begin) * f64::from(w) / f64::from(WARM_WINDOWS)
         };
-        let t0 = std::time::Instant::now();
         plan.run_due(inner, until, false);
-        let t1 = t0.elapsed();
         inner.sched.set_barrier(until);
-        let t2 = t0.elapsed();
         inner.sched.settle();
-        if w % 32 == 0 {
-            eprintln!("DBG w={w} run_due={t1:?} barrier={t2:?} settle={:?}", t0.elapsed());
+        if let Some(progress) = progress {
+            progress(w as f32 / WARM_WINDOWS as f32);
         }
         if inner.sched.is_stopped() {
             break;

@@ -19,6 +19,7 @@ pub mod effect;
 pub mod flights;
 pub mod generator;
 pub mod geo;
+mod handle;
 pub mod live_folder;
 pub mod pulse;
 pub mod relational;
@@ -30,16 +31,17 @@ pub mod sim;
 pub mod value_gen;
 
 use tokio::sync::broadcast;
-use tokio::task::JoinHandle;
 use vantage_diorama::ChangeEvent;
 use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
-// `clone_shell` on the seeded store, in `build_shaped`.
-use vantage_vista::source::TableShell as _;
+use vantage_vista::source::TableShell;
+
+use handle::AbortOnDrop;
 
 pub use effect::{FakerCtx, FakerEffect, FifoEffect, StaticEffect};
 pub use flights::{FLIGHT_COLUMNS, FlightsConfig, FlightsEffect};
 pub use generator::{ColumnGen, Spread};
+pub use handle::FakerHandle;
 pub use live_folder::{
     EVENT_TYPES, Entry, EntryKind, LiveFolderConfig, LiveFolderSim, PushMode, format_ts,
 };
@@ -97,6 +99,8 @@ pub struct FakerTable {
     pub events: broadcast::Sender<ChangeEvent>,
     /// The shared store and broadcast sender the effect writes through.
     ctx: std::sync::Arc<FakerCtx>,
+    /// Unfiltered clone of `vista`'s shell, for [`FakerHandle::vista`].
+    shell: Box<dyn TableShell>,
     /// The live mutation loop, `None` for static effects. Held only for its
     /// abort-on-drop guard — dropping the table stops the loop.
     _task: Option<AbortOnDrop>,
@@ -167,10 +171,15 @@ impl FakerTable {
                 effect.run(ctx).await;
             }))
         });
+        let shell = vista
+            .source
+            .clone_shell()
+            .expect("faker shells always clone");
         Self {
             vista,
             events,
             ctx,
+            shell,
             _task: task,
         }
     }
@@ -227,27 +236,18 @@ impl FakerTable {
             vista,
             events,
             ctx,
+            shell,
             _task,
         } = self;
-        (vista, FakerHandle { events, ctx, _task })
-    }
-}
-
-/// The live half of a [`FakerTable`] once its [`Vista`](FakerTable::split) has
-/// been handed to a Dio: the delta [`Sender`](broadcast::Sender) and the
-/// abort-on-drop mutation-loop guard.
-pub struct FakerHandle {
-    /// Subscribe to receive [`ChangeEvent`]s and forward them into a Dio.
-    pub events: broadcast::Sender<ChangeEvent>,
-    ctx: std::sync::Arc<FakerCtx>,
-    /// Held only for its abort-on-drop guard — dropping the handle stops the loop.
-    _task: Option<AbortOnDrop>,
-}
-
-impl FakerHandle {
-    /// The table's store handle — see [`FakerTable::ctx`].
-    pub fn ctx(&self) -> &std::sync::Arc<FakerCtx> {
-        &self.ctx
+        let name = vista.name().to_string();
+        let handle = FakerHandle {
+            events,
+            ctx,
+            name,
+            shell,
+            _task,
+        };
+        (vista, handle)
     }
 }
 
@@ -255,15 +255,6 @@ impl FakerHandle {
 /// behind gets a `Lagged` error and should resync via a Vista `list`; the store
 /// is the source of truth, so no delta is truly lost.
 const EVENT_CAPACITY: usize = 1024;
-
-/// Aborts its task when dropped, so a dropped [`FakerTable`] stops mutating.
-struct AbortOnDrop(JoinHandle<()>);
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -298,6 +289,24 @@ mod tests {
         );
         let rows = table.vista.list_values().await.unwrap();
         assert_eq!(rows.len(), 20);
+    }
+
+    #[tokio::test]
+    async fn handle_vista_reads_the_same_store_after_the_first_drops() {
+        let table = FakerTable::build(
+            "events",
+            columns(),
+            "id",
+            Box::new(StaticEffect { count: 20 }),
+        );
+        let (first, handle) = table.split();
+        let first_columns = first.get_column_names().len();
+        drop(first);
+        handle.ctx().push();
+        let again = handle.vista();
+        assert_eq!(again.name(), "events");
+        assert_eq!(again.get_column_names().len(), first_columns);
+        assert_eq!(again.list_values().await.unwrap().len(), 21);
     }
 
     #[tokio::test]

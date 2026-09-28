@@ -23,6 +23,11 @@
 - Sim scripts get data, spawn, random, time and geo verbs; examples in `examples/sims/`.
 - `FakerTable::ctx` / `FakerHandle::ctx` expose the store handle.
 - `geo` module: great-circle distance, bearing and interpolation.
+- `FakerCtx::set_quiet` is public in every feature set; `FakerCtx::invalidate` broadcasts
+  `Invalidated`, even while quiet.
+- `FakerHandle::vista` opens a new master `Vista` over the same store.
+- `SimEngineBuilder::on_warm_progress` reports warm-start progress per window.
+- `tree` generator takes `min_depth`, so branches end at levels between it and `depth`.
 
 ## 0.6.16 — 2026-09-16
 
