@@ -11,6 +11,8 @@
   per-parent fan-out.
 - `ColumnGen::validate`, `FanOut::validate` and `check_plan` report bad generator and fan-out
   config at load time.
+- `ColumnGen::validate` rejects non-finite range/walk bounds and pick weights; generation no
+  longer panics on them even unvalidated.
 
 ## 0.6.16 — 2026-09-16
 

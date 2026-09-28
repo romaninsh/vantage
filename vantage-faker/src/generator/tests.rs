@@ -173,6 +173,62 @@ fn validate_rejects_inverted_dates() {
 }
 
 #[test]
+fn validate_rejects_non_finite_range_bounds() {
+    for (min, max) in [
+        (f64::NEG_INFINITY, f64::INFINITY),
+        (f64::NAN, 5.0),
+        (1.0, f64::NAN),
+        (f64::INFINITY, f64::INFINITY),
+    ] {
+        let err = ColumnGen::Range {
+            min,
+            max,
+            decimals: Some(2),
+        }
+        .validate()
+        .unwrap_err();
+        assert!(err.contains("finite"), "{err}");
+    }
+}
+
+#[test]
+fn validate_rejects_non_finite_walk_bounds() {
+    let walk = |start, step, min, max| ColumnGen::Walk {
+        start,
+        step,
+        min,
+        max,
+        decimals: None,
+    };
+    for g in [
+        walk(f64::NAN, 1.0, None, None),
+        walk(1.0, f64::INFINITY, None, None),
+        walk(1.0, 1.0, Some(f64::NEG_INFINITY), None),
+        walk(1.0, 1.0, None, Some(f64::NAN)),
+    ] {
+        let err = g.validate().unwrap_err();
+        assert!(err.contains("finite"), "{err}");
+    }
+    assert!(walk(1.0, 1.0, Some(0.0), Some(10.0)).validate().is_ok());
+}
+
+#[test]
+fn validate_rejects_bad_pick_weights() {
+    let pick = |weights: Vec<f64>| ColumnGen::Pick {
+        values: vec!["a".into(), "b".into()],
+        weights: Some(weights),
+    };
+    // non-finite, negative, and all-zero weights.
+    assert!(pick(vec![f64::NAN, 1.0]).validate().is_err());
+    assert!(pick(vec![-1.0, 1.0]).validate().is_err());
+    assert!(pick(vec![0.0, 0.0]).validate().is_err());
+    // individually finite but a sum that overflows to infinity.
+    let err = pick(vec![f64::MAX, f64::MAX]).validate().unwrap_err();
+    assert!(err.contains("finite"), "{err}");
+    assert!(pick(vec![1.0, 3.0]).validate().is_ok());
+}
+
+#[test]
 fn validate_rejects_empty_trees() {
     let err = ColumnGen::Tree { roots: 0, depth: 3 }
         .validate()

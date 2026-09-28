@@ -19,6 +19,19 @@ pub(crate) fn number(v: f64, decimals: Option<u8>) -> CborValue {
 }
 
 pub(crate) fn range(rng: &mut StdRng, min: f64, max: f64, decimals: Option<u8>) -> CborValue {
+    if !min.is_finite() || !max.is_finite() {
+        // `validate()` should have caught this; a raw config that skips it
+        // has no meaningful draw to make, so fall back to whichever bound is
+        // usable instead of handing rand an empty/infinite range.
+        let fallback = if min.is_finite() {
+            min
+        } else if max.is_finite() {
+            max
+        } else {
+            0.0
+        };
+        return number(fallback, decimals);
+    }
     let (lo, hi) = if min <= max { (min, max) } else { (max, min) };
     match decimals {
         None | Some(0) => {
@@ -54,14 +67,17 @@ pub(crate) fn pick(
     if values.is_empty() {
         return CborValue::Null;
     }
-    let weights = weights.filter(|w| {
-        w.len() == values.len()
-            && w.iter().all(|x| x.is_finite() && *x >= 0.0)
-            && w.iter().sum::<f64>() > 0.0
+    // A weight set only drives the draw when every weight is finite and
+    // non-negative and the total neither is zero nor overflows to infinity —
+    // any of those would hand rand an empty or non-finite range to draw from.
+    let weights = weights.filter(|w| w.len() == values.len()).and_then(|w| {
+        let sum = w.iter().sum::<f64>();
+        (w.iter().all(|x| x.is_finite() && *x >= 0.0) && sum.is_finite() && sum > 0.0)
+            .then_some((w, sum))
     });
     let idx = match weights {
-        Some(w) => {
-            let mut r = rng.random_range(0.0..w.iter().sum::<f64>());
+        Some((w, sum)) => {
+            let mut r = rng.random_range(0.0..sum);
             w.iter()
                 .position(|x| {
                     r -= x;
@@ -157,6 +173,36 @@ mod tests {
             }
         }
         assert!(a > 800, "weights should favour `a`, got {a}/1000");
+    }
+
+    #[test]
+    fn range_falls_back_instead_of_panicking_on_non_finite_bounds() {
+        let mut r = rng();
+        // Both bounds gone: no finite bound to fall back to.
+        assert_eq!(
+            range(&mut r, f64::NEG_INFINITY, f64::INFINITY, Some(2)),
+            CborValue::Float(0.0)
+        );
+        // One finite bound survives.
+        assert_eq!(
+            range(&mut r, 3.0, f64::NAN, None),
+            CborValue::Integer(3.into())
+        );
+        assert_eq!(range(&mut r, f64::NAN, 7.0, Some(1)), CborValue::Float(7.0));
+    }
+
+    #[test]
+    fn pick_ignores_weights_whose_sum_overflows_to_infinity() {
+        let values = vec!["a".to_string(), "b".to_string()];
+        let mut r = rng();
+        // Individually finite weights whose sum overflows f64::MAX; must not
+        // panic, and falls back to an unweighted draw.
+        for _ in 0..50 {
+            match pick(&mut r, &values, Some(&[f64::MAX, f64::MAX]), "string") {
+                CborValue::Text(s) => assert!(s == "a" || s == "b"),
+                other => panic!("unlisted value {other:?}"),
+            }
+        }
     }
 
     #[test]

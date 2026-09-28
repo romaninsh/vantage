@@ -230,8 +230,19 @@ impl FakerCtx {
         self.rng.lock().unwrap().random_range(lo..=hi)
     }
 
-    /// Draw from `[lo, hi)` on the effect-side rng.
+    /// Draw from `[lo, hi)` on the effect-side rng. A non-finite bound (a
+    /// script can hand this any float) has no meaningful draw, so it falls
+    /// back to whichever bound is finite instead of reaching `random_range`.
     pub fn rand_float(&self, lo: f64, hi: f64) -> f64 {
+        if !lo.is_finite() || !hi.is_finite() {
+            return if lo.is_finite() {
+                lo
+            } else if hi.is_finite() {
+                hi
+            } else {
+                0.0
+            };
+        }
         if hi <= lo {
             return lo;
         }
@@ -389,6 +400,16 @@ mod tests {
         ctx.expire(&id);
         assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Deleted { id: got } if got == id));
         assert_eq!(count_store(&ctx), 0);
+    }
+
+    #[test]
+    fn rand_float_falls_back_instead_of_panicking_on_non_finite_bounds() {
+        let (ctx, _rx) = ctx();
+        assert_eq!(ctx.rand_float(f64::NAN, f64::INFINITY), 0.0);
+        assert_eq!(ctx.rand_float(3.0, f64::NAN), 3.0);
+        assert_eq!(ctx.rand_float(f64::NEG_INFINITY, 7.0), 7.0);
+        let v = ctx.rand_float(1.0, 2.0);
+        assert!((1.0..2.0).contains(&v), "{v}");
     }
 
     #[test]

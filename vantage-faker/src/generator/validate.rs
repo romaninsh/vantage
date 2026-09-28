@@ -6,8 +6,9 @@ use super::{ColumnGen, date};
 
 impl ColumnGen {
     /// Check the parameters a generator cannot use as written: an empty pick
-    /// list or mismatched weights, inverted bounds (range, walk, sentence,
-    /// date), an unparsable date, and a tree with no roots or no levels.
+    /// list or mismatched/degenerate weights, non-finite or inverted bounds
+    /// (range, walk, sentence, date), an unparsable date, and a tree with no
+    /// roots or no levels.
     pub fn validate(&self) -> Result<(), String> {
         match self {
             Self::Pick { values, weights } => {
@@ -22,15 +23,36 @@ impl ColumnGen {
                             values.len()
                         ));
                     }
-                    if w.iter().any(|x| !x.is_finite() || *x < 0.0) || w.iter().sum::<f64>() <= 0.0
-                    {
-                        return Err("pick: weights must be non-negative with a positive sum".into());
+                    if w.iter().any(|x| !x.is_finite() || *x < 0.0) {
+                        return Err("pick: weights must be finite and non-negative".into());
+                    }
+                    let sum = w.iter().sum::<f64>();
+                    if !sum.is_finite() || sum <= 0.0 {
+                        return Err("pick: weights must have a finite, positive sum".into());
                     }
                 }
                 Ok(())
             }
+            Self::Range { min, max, .. } if !min.is_finite() || !max.is_finite() => Err(format!(
+                "range: min {min} and max {max} must both be finite"
+            )),
             Self::Range { min, max, .. } if min > max => {
                 Err(format!("range: min {min} is above max {max}"))
+            }
+            Self::Walk {
+                start,
+                step,
+                min,
+                max,
+                ..
+            } if !start.is_finite()
+                || !step.is_finite()
+                || min.is_some_and(|lo| !lo.is_finite())
+                || max.is_some_and(|hi| !hi.is_finite()) =>
+            {
+                Err(format!(
+                    "walk: start {start}, step {step}, min {min:?} and max {max:?} must all be finite"
+                ))
             }
             Self::Date { from, to, .. } => {
                 // Relative bounds shift together, so any shared `now` will do.
