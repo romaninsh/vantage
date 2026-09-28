@@ -14,7 +14,12 @@
 //! let id = insert(#{ status: "Booked" });
 //! sleep(minutes(20));
 //! patch(id, #{ status: "Picked up" });
-//! while get(id).progress < 100.0 { patch(id, #{ progress: get(id).progress + 5.0 }); sleep(seconds(30)); }
+//! let progress = 0.0;
+//! while progress < 100.0 {
+//!     progress += 5.0;
+//!     patch(id, #{ progress: progress });
+//!     sleep(seconds(30));
+//! }
 //! sleep(minutes(1));
 //! delete(id);
 //! ```
@@ -27,7 +32,21 @@
 //! **Warm start.** A def with `warm: Some(d)` begins `d` of sim time in the
 //! past: its burst and its rate spawns within that window run instantly, in
 //! virtual time, before [`SimEngineBuilder::start`] returns, so tables open
-//! mid-life. Warm writes do not broadcast, like an effect's `seed`.
+//! mid-life. Warm writes do not broadcast, like an effect's `seed`; the
+//! mute is per table, so a live effect writing the same table is muted for
+//! the warm start too.
+//!
+//! The warm span is cut into windows; sims run in parallel within one and
+//! wait for each other at its end. So within a window a sim may read another
+//! sim's row a little ahead of or behind its own clock, and `max` is checked
+//! against the sims alive at the window start plus those spawned since — a
+//! sim ending mid-window frees its slot only at the next window, which can
+//! skip a spawn the live run would have made.
+//!
+//! A sleep that does not move the sim's clock forward (`sleep(0)`, a
+//! negative duration, a past `wait_until`) returns at once but does not
+//! renew the operation budget, and a run of them ends the sim, so such a
+//! loop cannot stall the warm start or spin a core.
 //!
 //! **Spawning.** `burst` sims start at the beginning (of the warm window, or
 //! of the live run), then `rate_per_min` more per sim minute, never more than
@@ -37,9 +56,11 @@
 //! See the `vocab` module docs for the verbs scripts can call, and
 //! `examples/sims/*.rhai` for complete scripts.
 
+mod builder;
 mod clock;
 mod current;
 mod engine;
+mod kind;
 mod sched;
 mod spawn;
 #[cfg(test)]
@@ -49,7 +70,8 @@ mod vocab;
 
 use std::time::Duration;
 
-pub use engine::{SimEngine, SimEngineBuilder};
+pub use builder::SimEngineBuilder;
+pub use engine::SimEngine;
 
 /// Most sims one engine runs at once; also the ceiling on the sum of every
 /// def's `max`.

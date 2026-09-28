@@ -211,6 +211,9 @@ impl FakerCtx {
         for (field, value) in partial {
             self.shell.set_field(id, field, value.clone());
         }
+        if self.quiet.load(Ordering::SeqCst) {
+            return;
+        }
         if let Some(record) = self.shell.get_record(id) {
             self.send(ChangeEvent::Updated {
                 id: id.to_string(),
@@ -245,6 +248,19 @@ impl FakerCtx {
                 new: Some(record),
             });
         }
+    }
+
+    /// Store `record` under `id`, broadcasting `Updated` if a row with that
+    /// id existed and `Inserted` if not.
+    pub fn upsert_record(&self, id: &str, record: Record<CborValue>) {
+        let existed = self.shell.get_record(id).is_some();
+        self.shell.set_record(id, record.clone());
+        let (id, new) = (id.to_string(), Some(record));
+        self.send(if existed {
+            ChangeEvent::Updated { id, new }
+        } else {
+            ChangeEvent::Inserted { id, new }
+        });
     }
 
     /// Insert a scripted record (id assigned, id column filled) and broadcast

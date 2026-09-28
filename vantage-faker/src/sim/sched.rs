@@ -1,24 +1,47 @@
 //! Shared scheduling state: who is running, who sleeps until when, the warm
-//! barrier and the stop flag. Sleepers block on one condvar and are woken by
-//! a stop, a raised barrier, a manual clock advance or their own timeout.
+//! barrier and the stop flag.
+//!
+//! Each sleeper parks its own thread. Whoever makes it due (a raised
+//! barrier, a manual clock advance, a stop) takes it off the parked list,
+//! counts it as running again and unparks exactly that thread; on the
+//! system clock a sleeper also wakes itself when its deadline passes.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::thread::Thread;
 use std::time::Duration;
 
 use super::clock::Clock;
 
-/// Longest single condvar wait; a sleeper re-checks the clock at least this
+/// Longest single timed park; a sleeper re-checks the clock at least this
 /// often.
 const MAX_WAIT: Duration = Duration::from_secs(3600);
 /// How often `settle` re-checks for sleepers that became due on the system
 /// clock, which wakes nobody.
 const SETTLE_POLL: Duration = Duration::from_millis(20);
 
+const WAITING: u8 = 0;
+const WOKEN: u8 = 1;
+const STOPPED: u8 = 2;
+
 /// The engine is stopping; the sleeper must end its script.
 #[derive(Debug)]
 pub(super) struct Stopped;
+
+/// A parked sleeper: its deadline, its thread and how it was woken.
+struct Waiter {
+    target: f64,
+    thread: Thread,
+    state: Arc<AtomicU8>,
+}
+
+impl Waiter {
+    fn wake(self, how: u8) {
+        self.state.store(how, Ordering::Release);
+        self.thread.unpark();
+    }
+}
 
 pub(super) struct State {
     pub clock: Clock,
@@ -33,29 +56,50 @@ pub(super) struct State {
     pub threads: usize,
     pub stopped: bool,
     pub next_id: u64,
-    /// Parked sims (and the driver) by id, with the wall time they wait for.
-    parked: HashMap<u64, f64>,
+    /// Parked sims (and the driver) by id.
+    parked: HashMap<u64, Waiter>,
 }
 
 impl State {
-    /// Whether any parked sleeper is due to run now.
+    /// Sleepers with a target at or before this may run.
+    fn limit(&self) -> f64 {
+        self.barrier.min(self.clock.now())
+    }
+
     fn any_due(&self) -> bool {
-        let limit = self.barrier.min(self.clock.now());
-        self.parked.values().any(|t| *t <= limit)
+        let limit = self.limit();
+        self.parked.values().any(|w| w.target <= limit)
+    }
+
+    /// Wake every due sleeper; each counts as running again.
+    fn wake_due(&mut self) {
+        let limit = self.limit();
+        let due: Vec<u64> = self
+            .parked
+            .iter()
+            .filter(|(_, w)| w.target <= limit)
+            .map(|(id, _)| *id)
+            .collect();
+        self.running += due.len();
+        for id in due {
+            if let Some(w) = self.parked.remove(&id) {
+                w.wake(WOKEN);
+            }
+        }
     }
 }
 
 pub(super) struct Sched {
     state: Mutex<State>,
-    /// Wakes sleepers and the driver.
-    wake: Condvar,
-    /// Wakes `settle` and `stop` when a sim parks or ends.
+    /// Wakes `settle` and `stop` when nothing runs or a thread ends.
     idle: Condvar,
     stop: Arc<AtomicBool>,
     /// `State::barrier` as f64 bits, for the lock-free fast path of `park`.
     barrier: AtomicU64,
     /// Wall time the engine started at; the warm barrier never passes it.
     origin: f64,
+    /// Whether the clock is the system clock, which sleepers read unlocked.
+    system: Option<Clock>,
 }
 
 impl Sched {
@@ -72,11 +116,11 @@ impl Sched {
                 next_id: 1,
                 parked: HashMap::new(),
             }),
-            wake: Condvar::new(),
             idle: Condvar::new(),
             stop,
             barrier: AtomicU64::new(f64::INFINITY.to_bits()),
             origin,
+            system: matches!(clock, Clock::System { .. }).then_some(clock),
         }
     }
 
@@ -103,32 +147,47 @@ impl Sched {
         if target <= barrier.min(self.origin) {
             return Ok(());
         }
-        let mut st = self.lock();
-        st.parked.insert(id, target);
-        self.ended(&mut st);
-        let result = loop {
+        let state = Arc::new(AtomicU8::new(WAITING));
+        {
+            let mut st = self.lock();
             if st.stopped {
-                break Err(Stopped);
+                return Err(Stopped);
             }
-            let now = st.clock.now();
-            if target <= st.barrier && target <= now {
-                break Ok(());
+            if target <= st.limit() {
+                return Ok(());
             }
-            let timed = target <= st.barrier && matches!(st.clock, Clock::System);
-            st = if timed {
-                let secs = (target - now).clamp(0.0, MAX_WAIT.as_secs_f64());
-                let wait = Duration::from_secs_f64(secs);
-                self.wake
-                    .wait_timeout(st, wait)
-                    .unwrap_or_else(|e| e.into_inner())
-                    .0
-            } else {
-                self.wake.wait(st).unwrap_or_else(|e| e.into_inner())
+            let waiter = Waiter {
+                target,
+                thread: std::thread::current(),
+                state: state.clone(),
             };
-        };
-        st.parked.remove(&id);
-        st.running += 1;
-        result
+            st.parked.insert(id, waiter);
+            self.ended(&mut st);
+        }
+        loop {
+            match state.load(Ordering::Acquire) {
+                WOKEN => return Ok(()),
+                STOPPED => return Err(Stopped),
+                _ => {}
+            }
+            // Only a future deadline on the system clock needs a timeout:
+            // everything else is woken by whoever makes it due.
+            let wait = self
+                .system
+                .map(|c| target - c.now())
+                .filter(|secs| *secs > 0.0);
+            let Some(secs) = wait else {
+                std::thread::park();
+                continue;
+            };
+            std::thread::park_timeout(Duration::from_secs_f64(secs.min(MAX_WAIT.as_secs_f64())));
+            let mut st = self.lock();
+            if state.load(Ordering::Acquire) == WAITING && target <= st.limit() {
+                st.parked.remove(&id);
+                st.running += 1;
+                return Ok(());
+            }
+        }
     }
 
     /// Let warm sims run up to wall time `barrier`.
@@ -136,7 +195,7 @@ impl Sched {
         let mut st = self.lock();
         st.barrier = barrier;
         self.barrier.store(barrier.to_bits(), Ordering::Release);
-        self.wake.notify_all();
+        st.wake_due();
     }
 
     /// Wait until nothing is running and no sleeper is due, or the engine
@@ -155,15 +214,15 @@ impl Sched {
             .0
     }
 
-    /// Move a manual clock forward and wake sleepers. `false` on the system
-    /// clock.
+    /// Move a manual clock forward and wake the sleepers now due. `false`
+    /// on the system clock.
     pub fn advance(&self, secs: f64) -> bool {
         let mut st = self.lock();
         let Clock::Manual(t) = st.clock else {
             return false;
         };
         st.clock = Clock::Manual(t + secs);
-        self.wake.notify_all();
+        st.wake_due();
         true
     }
 
@@ -176,12 +235,24 @@ impl Sched {
         }
     }
 
+    /// A sim thread is gone.
+    pub fn thread_ended(&self, st: &mut State) {
+        st.threads -= 1;
+        if st.threads == 0 {
+            self.idle.notify_all();
+        }
+    }
+
     /// Raise the stop flag and wake every sleeper.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
         let mut st = self.lock();
         st.stopped = true;
-        self.wake.notify_all();
+        let parked: Vec<Waiter> = st.parked.drain().map(|(_, w)| w).collect();
+        st.running += parked.len();
+        for w in parked {
+            w.wake(STOPPED);
+        }
         self.idle.notify_all();
     }
 

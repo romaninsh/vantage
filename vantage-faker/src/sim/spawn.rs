@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 
 use vantage_rhai::rhai::Map as RhaiMap;
 
-use super::engine::Inner;
+use super::kind::Inner;
 use super::{MAX_LIVE, SIM_STACK_BYTES, current};
 
 /// Windows the warm start is cut into. Sims run in parallel within a window
@@ -85,10 +85,16 @@ impl Plan {
 pub(super) fn spawn_sim(inner: &Arc<Inner>, kind: usize, vt: f64, args: RhaiMap) -> bool {
     let id = {
         let mut st = inner.sched.lock();
-        if st.stopped
-            || st.live_total >= MAX_LIVE
-            || st.live[kind] >= inner.kinds[kind].def.spawn.max
-        {
+        if st.stopped {
+            return false;
+        }
+        let name = &inner.kinds[kind].def.name;
+        if st.live[kind] >= inner.kinds[kind].def.spawn.max {
+            tracing::debug!(sim = %name, "faker sim spawn skipped: def at its max");
+            return false;
+        }
+        if st.live_total >= MAX_LIVE {
+            tracing::debug!(sim = %name, "faker sim spawn skipped: engine at {MAX_LIVE} live sims");
             return false;
         }
         st.live_total += 1;
@@ -133,9 +139,15 @@ pub(super) fn warm(inner: &Arc<Inner>, plan: &mut Plan) {
         } else {
             begin + (end - begin) * f64::from(w) / f64::from(WARM_WINDOWS)
         };
+        let t0 = std::time::Instant::now();
         plan.run_due(inner, until, false);
+        let t1 = t0.elapsed();
         inner.sched.set_barrier(until);
+        let t2 = t0.elapsed();
         inner.sched.settle();
+        if w % 32 == 0 {
+            eprintln!("DBG w={w} run_due={t1:?} barrier={t2:?} settle={:?}", t0.elapsed());
+        }
         if inner.sched.is_stopped() {
             break;
         }

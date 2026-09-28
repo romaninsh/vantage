@@ -10,13 +10,17 @@ use fake::rand::rngs::StdRng;
 use vantage_rhai::BACKGROUND_MAX_OPERATIONS;
 use vantage_rhai::rhai::{Dynamic, EvalAltResult, Map as RhaiMap, Position, Scope};
 
-use super::engine::{Inner, Kind};
+use super::kind::{Inner, Kind};
 
 /// A verb's result.
 pub(super) type VerbResult<T> = Result<T, Box<EvalAltResult>>;
 
 /// Rhai operations a sim may spend between two sleeps.
 const OPS_BETWEEN_SLEEPS: u64 = BACKGROUND_MAX_OPERATIONS;
+
+/// Sleeps in a row that may leave the sim's clock where it is before the
+/// sim is ended as a runaway loop.
+pub(super) const MAX_STILL_SLEEPS: u32 = 1000;
 
 pub(super) struct Current {
     pub inner: Arc<Inner>,
@@ -32,6 +36,8 @@ pub(super) struct Current {
     pub done: bool,
     ops_base: u64,
     last_ops: u64,
+    /// Sleeps in a row that did not move `vt`.
+    still_sleeps: u32,
 }
 
 thread_local! {
@@ -76,17 +82,34 @@ impl Current {
         &self.inner.kinds[self.kind]
     }
 
-    /// Block until this sim's clock reaches `target` (sim seconds). A target
-    /// in the past returns at once and leaves the clock where it is.
+    /// Block until this sim's clock reaches `target` (sim seconds).
+    ///
+    /// A target at or before the sim's clock returns at once and leaves the
+    /// clock and the operation budget as they are; [`MAX_STILL_SLEEPS`] of
+    /// those in a row end the sim.
     pub fn sleep_until(&mut self, target: f64) -> VerbResult<()> {
         if !target.is_finite() {
             return Err(format!("sleep target {target} is not a finite time").into());
         }
+        if self.inner.sched.is_stopped() {
+            return Err(terminate("sim engine stopped"));
+        }
+        if target <= self.vt {
+            self.still_sleeps += 1;
+            if self.still_sleeps >= MAX_STILL_SLEEPS {
+                return Err(format!(
+                    "sim slept {MAX_STILL_SLEEPS} times in a row without its clock moving"
+                )
+                .into());
+            }
+            return Ok(());
+        }
+        self.still_sleeps = 0;
         let wall = self.kind().clock.wall(target);
         if self.inner.sched.park(self.id, wall).is_err() {
             return Err(terminate("sim engine stopped"));
         }
-        self.vt = self.vt.max(target);
+        self.vt = target;
         self.ops_base = self.last_ops;
         if !self.inner.tables_alive() {
             self.inner.sched.stop();
@@ -102,7 +125,7 @@ pub(super) fn release(inner: &Inner, kind: usize) {
     let mut st = inner.sched.lock();
     st.live[kind] -= 1;
     st.live_total -= 1;
-    st.threads -= 1;
+    inner.sched.thread_ended(&mut st);
     inner.sched.ended(&mut st);
 }
 
@@ -136,6 +159,7 @@ pub(super) fn run_sim(inner: Arc<Inner>, kind: usize, id: u64, vt: f64, args: Rh
         done: false,
         ops_base: 0,
         last_ops: 0,
+        still_sleeps: 0,
     }));
     let mut scope = Scope::new();
     scope.push("args", args);

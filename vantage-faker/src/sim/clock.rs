@@ -1,12 +1,13 @@
 //! Wall clock (real or manual) and each def's sim clock on top of it.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Where the engine reads the wall-clock time from.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Clock {
-    /// The system clock.
-    System,
+    /// The system clock, read as `wall` plus the monotonic time since
+    /// `since`, so a wall-clock step cannot move the sims.
+    System { wall: f64, since: Instant },
     /// A clock that stands still until [`SimEngine::advance`] moves it.
     ///
     /// [`SimEngine::advance`]: super::SimEngine::advance
@@ -14,10 +15,18 @@ pub(super) enum Clock {
 }
 
 impl Clock {
+    /// The system clock, starting now.
+    pub fn system() -> Self {
+        Self::System {
+            wall: unix_secs(SystemTime::now()),
+            since: Instant::now(),
+        }
+    }
+
     /// Wall-clock unix seconds.
     pub fn now(&self) -> f64 {
         match self {
-            Self::System => unix_secs(SystemTime::now()),
+            Self::System { wall, since } => wall + since.elapsed().as_secs_f64(),
             Self::Manual(t) => *t,
         }
     }

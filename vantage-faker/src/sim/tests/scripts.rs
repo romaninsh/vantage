@@ -84,6 +84,28 @@ fn flight_script_opens_a_board_mid_flight() {
     assert!(moved >= 20, "{moved} moved");
 }
 
+/// Demo scale: about 200 flights over a 12 h warm start. Run with
+/// `cargo test --release --all-features -- --ignored warm_start_at_demo_scale --nocapture`.
+#[test]
+#[ignore = "benchmark; run in release"]
+fn warm_start_at_demo_scale() {
+    let (flights, _) = table(FLIGHT_COLUMNS);
+    let def = SimDef::new("flight", "flights", FLIGHT)
+        .with_spawn(0, 0.3, 260)
+        .with_clock(10.0)
+        .with_warm(Duration::from_secs(12 * 3600));
+    let t = std::time::Instant::now();
+    let engine = SimEngine::builder()
+        .table("flights", &flights)
+        .sim(def)
+        .seed(5)
+        .start()
+        .unwrap();
+    let took = t.elapsed();
+    eprintln!("warm start: {took:?}, {} flights", rows(&flights).len());
+    assert!(engine.live() >= 150, "{} live", engine.live());
+}
+
 #[test]
 fn shipment_script_writes_shipments_and_their_tracking_events() {
     let (shipments, _) = table(&[

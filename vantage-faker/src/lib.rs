@@ -175,8 +175,9 @@ impl FakerTable {
         }
     }
 
-    /// The table's store handle. A sim engine (`rhai` feature) writes to the table through it; the engine keeps only a weak
-    /// reference, so dropping the table ends the sims writing to it.
+    /// The table's store handle. A sim engine (`rhai` feature) writes to the
+    /// table through it; the engine keeps only a weak reference, so dropping
+    /// the table ends the sims writing to it.
     pub fn ctx(&self) -> &std::sync::Arc<FakerCtx> {
         &self.ctx
     }

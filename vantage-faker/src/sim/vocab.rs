@@ -5,7 +5,8 @@
 //! `ChangeEvent`s (except during the warm start).
 //! - `insert(table?, #{…}) -> id` — a new row. Declared columns missing from
 //!   the map are null. The map's id column, if set, is the row id (an
-//!   existing row with it is replaced); otherwise an id is assigned.
+//!   existing row with it is replaced, broadcast as `Updated`); otherwise an
+//!   id is assigned.
 //! - `patch(table?, id, #{…})`, `set(table?, id, field, value)` — change a row.
 //! - `delete(table?, id)`, `get(table?, id) -> map or ()`, `ids(table?)`,
 //!   `count(table?)`.

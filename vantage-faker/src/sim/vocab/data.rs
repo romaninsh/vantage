@@ -52,7 +52,7 @@ fn insert(c: &mut Current, t: Option<&str>, map: RhaiMap) -> VerbResult<String> 
     Ok(match given {
         Some(id) => {
             rec.insert(id_column, CborValue::Text(id.clone()));
-            ctx.put_record(&id, rec, true);
+            ctx.upsert_record(&id, rec);
             id
         }
         None => ctx.insert_record(rec),

@@ -12,6 +12,7 @@ use vantage_vista::mocks::MockShell;
 use super::*;
 use crate::{FakerColumn, FakerCtx};
 
+mod edges;
 mod flow;
 mod scripts;
 mod spawner;
