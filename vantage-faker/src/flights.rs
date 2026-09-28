@@ -3,20 +3,28 @@
 //! [`FlightsEffect`] is a [`FakerEffect`]: build it into a table with
 //! [`FakerTable::build`](crate::FakerTable::build) like any other effect. Each
 //! row is one flight moving through [`Phase`]s: `Scheduled → Boarding →
-//! Taxiing → Climbing → Cruising → Descending → Landed`. The table opens with
-//! `fleet` flights already in the air at random points of their journeys and
-//! `board` departures waiting; new departures keep being scheduled so the
-//! board stays full and the in-air count hovers around `fleet`.
+//! Taxiing → Takeoff → Climbing → Cruising → Descending → Landing → Landed`.
+//! The table opens with `fleet` flights already in the air at random points of
+//! their journeys and `board` departures waiting; new departures keep being
+//! scheduled so the board stays full and the in-air count hovers around
+//! `fleet`.
 //!
-//! Flights run between ~35 built-in airports along great circles, flown by a
+//! Flights run between ~50 built-in airports along great circles, flown by a
 //! small set of aircraft types at their cruise speeds with a climb, cruise and
-//! descent profile. See [`FLIGHT_COLUMNS`] for the columns the sim fills;
-//! every other declared column is generated once when the row is created.
+//! descent profile. The route mix is long-haul: 3–16 hour flights averaging
+//! about 11 hours, so with the default fleet of 200 at 10× about one or two
+//! flights are taking off and one or two landing at any moment. Takeoff and
+//! Landing each last 5 sim minutes (30 s real at 10×). See [`FLIGHT_COLUMNS`]
+//! for the columns the sim fills; every other declared column is generated
+//! once when the row is created.
 //!
 //! **Clocks.** The sim clock starts at the wall-clock time the table is built
-//! and runs `time_scale` times faster than real time. Every timestamp column
-//! (`scheduled_departure`, `actual_departure`, `eta`) is RFC 3339 UTC on the
-//! sim clock. Landed-row retention and the tick run on real time.
+//! and runs `time_scale` times faster than real time. The timestamp columns
+//! (`scheduled_departure`, `actual_departure`, `eta`) are RFC 3339 UTC
+//! **wall-clock** instants, now plus the real time left until the event, so a
+//! UI can show them relative ("lands in 4 min"). `flight_time` (`11h 10m`) and
+//! `flight_time_min` give the off-block-to-touchdown duration in sim time.
+//! Landed-row retention and the tick run on real time.
 //!
 //! **Deltas.** New flights broadcast `Inserted`; each tick patches (`Updated`)
 //! only the rows whose values changed; a row that shows `Landed` is frozen and
@@ -40,6 +48,7 @@ use tokio::time::{Instant, interval};
 use crate::effect::{FakerCtx, FakerEffect};
 use crate::value_gen::ValueGen;
 use board::Board;
+use columns::Clock;
 use sim::FlightSim;
 
 pub use columns::{FLIGHT_COLUMNS, is_flight_column};
@@ -67,9 +76,9 @@ pub struct FlightsConfig {
 impl Default for FlightsConfig {
     fn default() -> Self {
         Self {
-            fleet: 40,
-            board: 8,
-            time_scale: 60.0,
+            fleet: 200,
+            board: 10,
+            time_scale: 10.0,
             tick: Duration::from_secs(1),
             landed_retention: Duration::from_secs(60),
             seed: None,
@@ -174,14 +183,11 @@ impl FakerEffect for FlightsEffect {
             Some(seed) => ValueGen::seeded(seed ^ 0xF11_6475).with_now(t0 as i64),
             None => ctx.values().clone(),
         };
-        let mut board = Board::new(
-            sim,
+        let clock = Clock {
             t0,
-            self.cfg.time_scale,
-            self.cfg.landed_retention,
-            ctx,
-            values,
-        );
+            scale: self.cfg.time_scale,
+        };
+        let mut board = Board::new(sim, clock, self.cfg.landed_retention, ctx, values);
         board.seed(ctx);
         *self.state.lock().unwrap() = Some(board);
     }

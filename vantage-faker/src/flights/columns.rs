@@ -27,6 +27,8 @@ pub const FLIGHT_COLUMNS: &[&str] = &[
     "scheduled_departure",
     "actual_departure",
     "eta",
+    "flight_time",
+    "flight_time_min",
     "delay_minutes",
     "gate",
     "pax",
@@ -55,8 +57,37 @@ fn float(v: f64, places: i32) -> CborValue {
     CborValue::Float((v * k).round() / k)
 }
 
-fn ts(sim_secs: f64) -> CborValue {
-    CborValue::Text(rfc3339(sim_secs.round() as i64))
+/// Maps sim-clock instants onto the wall clock. The sim clock equals the
+/// wall clock at `t0` and runs `scale` times faster.
+#[derive(Clone, Copy, Debug)]
+pub struct Clock {
+    /// Unix seconds where both clocks meet.
+    pub t0: f64,
+    /// Sim seconds per real second.
+    pub scale: f64,
+}
+
+impl Clock {
+    /// Sim time after `elapsed_real` seconds.
+    pub fn sim(&self, elapsed_real: f64) -> f64 {
+        self.t0 + elapsed_real * self.scale
+    }
+
+    /// The wall-clock instant the sim reaches `sim_secs`: now plus the real
+    /// time left until then.
+    pub fn wall(&self, sim_secs: f64) -> f64 {
+        self.t0 + (sim_secs - self.t0) / self.scale
+    }
+
+    fn ts(&self, sim_secs: f64) -> CborValue {
+        CborValue::Text(rfc3339(self.wall(sim_secs).round() as i64))
+    }
+}
+
+/// A sim duration as `11h 10m`, rounded to the minute.
+pub fn hours_minutes(secs: f64) -> String {
+    let min = (secs / 60.0).round().max(0.0) as u64;
+    format!("{}h {}m", min / 60, min % 60)
 }
 
 /// Ascending sort key for a departures-then-arrivals board: flights waiting
@@ -72,14 +103,15 @@ pub fn board_order(f: &Flight, s: &State, t: f64) -> f64 {
             let done = (t - f.departure()) / super::flight::TAXI_S * 100.0;
             2000.0 + rounded(done.clamp(0.0, 100.0))
         }
-        Phase::Climbing | Phase::Cruising | Phase::Descending => 3000.0 + rounded(f.progress(s)),
         Phase::Landed => 4000.0,
+        _ => 3000.0 + rounded(f.progress(s)),
     }
 }
 
 /// The value of sim column `name` for flight `f` in state `s` at sim time
-/// `t`, or `None` if the sim does not know the name.
-pub fn flight_value(f: &Flight, s: &State, t: f64, name: &str) -> Option<CborValue> {
+/// `t`, or `None` if the sim does not know the name. Timestamps are
+/// wall-clock instants through `clock`.
+pub fn flight_value(f: &Flight, s: &State, t: f64, clock: &Clock, name: &str) -> Option<CborValue> {
     let remaining = f.distance_nm - s.flown_nm;
     Some(match name {
         "id" => text(&f.id),
@@ -98,10 +130,12 @@ pub fn flight_value(f: &Flight, s: &State, t: f64, name: &str) -> Option<CborVal
         "heading" => int(s.heading.round() % 360.0),
         "distance_total_nm" => int(f.distance_nm),
         "distance_remaining_nm" => int(remaining.max(0.0)),
-        "scheduled_departure" => ts(f.scheduled),
-        "actual_departure" if s.phase >= Phase::Taxiing => ts(f.departure()),
+        "scheduled_departure" => clock.ts(f.scheduled),
+        "actual_departure" if s.phase >= Phase::Taxiing => clock.ts(f.departure()),
         "actual_departure" => CborValue::Null,
-        "eta" => ts(f.eta()),
+        "eta" => clock.ts(f.eta()),
+        "flight_time" => text(&hours_minutes(f.flight_time_s())),
+        "flight_time_min" => int(f.flight_time_s() / 60.0),
         "delay_minutes" => int(f64::from(f.delay_minutes)),
         "gate" => text(&f.gate),
         "pax" => int(f64::from(f.pax)),

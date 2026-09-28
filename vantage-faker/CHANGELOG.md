@@ -14,6 +14,9 @@
 - `ColumnGen::validate` rejects non-finite range/walk bounds and pick weights; generation no
   longer panics on them even unvalidated.
 - `FlightsEffect` / `FlightsConfig`: a live fleet of flights taking off, flying and landing.
+- Flights default to `fleet: 200`, `board: 10`, `time_scale: 10` and a long-haul route mix.
+- Flights gain `Takeoff` and `Landing` phases, 5 sim minutes each.
+- Flight timestamps are wall-clock; `flight_time` and `flight_time_min` hold the sim duration.
 - `FakerCtx` exposes `columns`, `id_column`, `values` and `put_record`.
 
 ## 0.6.16 — 2026-09-16

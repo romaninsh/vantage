@@ -107,4 +107,13 @@ pub static CARRIERS: &[Carrier] = &[
     cr("AS", "SEA", "N###AS"),
     cr("AM", "MEX", "XA-???"),
     cr("LA", "GRU", "PR-???"),
+    cr("AR", "EZE", "LV-???"),
+    cr("AV", "BOG", "N###AV"),
+    cr("NZ", "AKL", "ZK-???"),
+    cr("TG", "BKK", "HS-???"),
+    cr("MH", "KUL", "9M-M??"),
+    cr("CI", "TPE", "B-18###"),
+    cr("PR", "MNL", "RP-C####"),
+    cr("ET", "ADD", "ET-???"),
+    cr("KQ", "NBO", "5Y-???"),
 ];

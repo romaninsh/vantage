@@ -12,6 +12,10 @@ use super::airports::{Airport, bearing, distance_nm, interpolate};
 pub const BOARDING_S: f64 = 30.0 * 60.0;
 /// Pushback to take-off.
 pub const TAXI_S: f64 = 12.0 * 60.0;
+/// Take-off roll and initial climb: the first part of the climb.
+pub const TAKEOFF_S: f64 = 5.0 * 60.0;
+/// Final approach and touchdown: the last part of the descent.
+pub const LANDING_S: f64 = 5.0 * 60.0;
 /// Climb and descent rates, feet per minute.
 const CLIMB_FPM: f64 = 2_000.0;
 const DESCENT_FPM: f64 = 1_500.0;
@@ -24,9 +28,11 @@ pub enum Phase {
     Scheduled,
     Boarding,
     Taxiing,
+    Takeoff,
     Climbing,
     Cruising,
     Descending,
+    Landing,
     Landed,
 }
 
@@ -36,15 +42,17 @@ impl Phase {
             Self::Scheduled => "Scheduled",
             Self::Boarding => "Boarding",
             Self::Taxiing => "Taxiing",
+            Self::Takeoff => "Takeoff",
             Self::Climbing => "Climbing",
             Self::Cruising => "Cruising",
             Self::Descending => "Descending",
+            Self::Landing => "Landing",
             Self::Landed => "Landed",
         }
     }
 
     pub fn airborne(self) -> bool {
-        matches!(self, Self::Climbing | Self::Cruising | Self::Descending)
+        (Self::Takeoff..=Self::Landing).contains(&self)
     }
 }
 
@@ -144,15 +152,23 @@ impl Flight {
         let dep = self.departure();
         let up = self.takeoff();
         let p = &self.profile;
+        let eta = self.eta();
         match t {
             t if t < dep - BOARDING_S => Phase::Scheduled,
             t if t < dep => Phase::Boarding,
             t if t < up => Phase::Taxiing,
+            t if t < up + TAKEOFF_S.min(p.climb_s) => Phase::Takeoff,
             t if t < up + p.climb_s => Phase::Climbing,
             t if t < up + p.climb_s + p.cruise_s => Phase::Cruising,
-            t if t < self.eta() => Phase::Descending,
+            t if t < eta - LANDING_S.min(p.descent_s) => Phase::Descending,
+            t if t < eta => Phase::Landing,
             _ => Phase::Landed,
         }
+    }
+
+    /// Off-block to touchdown, sim seconds.
+    pub fn flight_time_s(&self) -> f64 {
+        self.eta() - self.departure()
     }
 
     pub fn state_at(&self, t: f64) -> State {
@@ -170,7 +186,7 @@ impl Flight {
         let (flown_nm, altitude_ft, ground_speed_kts) = match phase {
             Phase::Scheduled | Phase::Boarding => (0.0, 0.0, 0.0),
             Phase::Taxiing => (0.0, 0.0, 15.0),
-            Phase::Climbing => {
+            Phase::Takeoff | Phase::Climbing => {
                 let f = frac(air, p.climb_s);
                 (f * p.climb_nm, f * self.peak_ft, 160.0 + (v - 160.0) * f)
             }
@@ -179,7 +195,7 @@ impl Flight {
                 let wobble = 1.0 + 0.03 * (t / 600.0 + self.wobble).sin();
                 (p.climb_nm + cruised * v / 3600.0, self.peak_ft, v * wobble)
             }
-            Phase::Descending => {
+            Phase::Descending | Phase::Landing => {
                 let f = frac(air - p.climb_s - p.cruise_s, p.descent_s);
                 let before = self.distance_nm - p.descent_nm;
                 let alt = (1.0 - f) * self.peak_ft;
