@@ -9,6 +9,8 @@
 - `ValueGen::record_at` generates row `seq`; `with_rows`, `with_now`, `from_seed`.
 - `relational_rows`, `Reference`, `FanOut` and `seed_id` for static relational tables with
   per-parent fan-out.
+- `ColumnGen::validate`, `FanOut::validate` and `check_plan` report bad generator and fan-out
+  config at load time.
 
 ## 0.6.16 — 2026-09-16
 

@@ -39,7 +39,7 @@ pub use live_folder::{
     EVENT_TYPES, Entry, EntryKind, LiveFolderConfig, LiveFolderSim, PushMode, format_ts,
 };
 pub use pulse::{PulseConfig, PulseKey, PulseRole, PulseSim};
-pub use relational::{FanOut, Reference, relational_rows, seed_id};
+pub use relational::{FanOut, Reference, check_plan, relational_rows, seed_id};
 #[cfg(feature = "rhai")]
 pub use rhai_effect::RhaiEffect;
 pub use shape::{

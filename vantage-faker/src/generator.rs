@@ -18,6 +18,7 @@ mod scalar;
 #[cfg(test)]
 mod tests;
 mod tree;
+mod validate;
 mod walk;
 mod wire;
 
@@ -100,58 +101,6 @@ pub enum Spread {
     /// Row `seq` of `n` sits at step `seq` of `n - 1` from `from` to `to`,
     /// with a jitter of under half a step — a time series ordered by id.
     Even,
-}
-
-impl ColumnGen {
-    /// Check the parameters a generator cannot recover from at draw time
-    /// (unparsable dates, empty pick lists, inverted bounds). Generation never
-    /// panics — a bad generator emits null — so call this at load time to
-    /// report the mistake instead.
-    pub fn validate(&self) -> Result<(), String> {
-        match self {
-            Self::Pick { values, weights } => {
-                if values.is_empty() {
-                    return Err("pick: `values` is empty".into());
-                }
-                if let Some(w) = weights {
-                    if w.len() != values.len() {
-                        return Err(format!(
-                            "pick: {} weights for {} values",
-                            w.len(),
-                            values.len()
-                        ));
-                    }
-                    if w.iter().any(|x| !x.is_finite() || *x < 0.0) || w.iter().sum::<f64>() <= 0.0
-                    {
-                        return Err("pick: weights must be non-negative with a positive sum".into());
-                    }
-                }
-                Ok(())
-            }
-            Self::Range { min, max, .. } if min > max => {
-                Err(format!("range: min {min} is above max {max}"))
-            }
-            Self::Date { from, to, .. } => {
-                for end in [from, to] {
-                    date::parse_when(end, 0)
-                        .ok_or_else(|| format!("date: cannot parse `{end}`"))?;
-                }
-                Ok(())
-            }
-            Self::Sentence {
-                min_words,
-                max_words,
-            } if min_words > max_words => Err(format!(
-                "sentence: min_words {min_words} is above max_words {max_words}"
-            )),
-            Self::Walk {
-                min: Some(lo),
-                max: Some(hi),
-                ..
-            } if lo > hi => Err(format!("walk: min {lo} is above max {hi}")),
-            _ => Ok(()),
-        }
-    }
 }
 
 /// Per-[`ValueGen`](crate::ValueGen) cache for positional generators, shared

@@ -121,3 +121,48 @@ fn tree_column_scales_to_the_relational_row_count() {
         .count();
     assert_eq!(roots, 2);
 }
+
+fn fan(min: usize, max: usize) -> FanOut {
+    FanOut {
+        column: "club".into(),
+        min,
+        max,
+    }
+}
+
+fn club_ref(parent_count: usize) -> Vec<Reference> {
+    vec![Reference {
+        column: "club".into(),
+        parent_count,
+    }]
+}
+
+#[test]
+fn fan_out_validate_rejects_inverted_range() {
+    let err = fan(5, 2).validate().unwrap_err();
+    assert!(err.contains("min 5 is above max 2"), "{err}");
+    assert!(fan(2, 2).validate().is_ok());
+    assert!(check_plan(&club_ref(3), Some(&fan(5, 2))).is_err());
+}
+
+#[test]
+fn check_plan_rejects_fan_out_on_a_non_reference_column() {
+    let refs = [Reference {
+        column: "region".into(),
+        parent_count: 3,
+    }];
+    let err = check_plan(&refs, Some(&fan(1, 2))).unwrap_err();
+    assert!(err.contains("not a reference column"), "{err}");
+}
+
+#[test]
+fn check_plan_rejects_fan_out_over_an_empty_pool() {
+    let err = check_plan(&club_ref(0), Some(&fan(1, 2))).unwrap_err();
+    assert!(err.contains("no rows"), "{err}");
+}
+
+#[test]
+fn check_plan_accepts_good_plans() {
+    assert!(check_plan(&club_ref(0), None).is_ok());
+    assert!(check_plan(&club_ref(4), Some(&fan(0, 3))).is_ok());
+}

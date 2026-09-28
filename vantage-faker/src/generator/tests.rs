@@ -153,3 +153,34 @@ fn validate_rejects_bad_parameters() {
         assert!(g.validate().is_err(), "{g:?}");
     }
 }
+
+fn date(from: &str, to: &str) -> ColumnGen {
+    ColumnGen::Date {
+        from: from.into(),
+        to: to.into(),
+        spread: Spread::Even,
+    }
+}
+
+#[test]
+fn validate_rejects_inverted_dates() {
+    let err = date("now", "-30d").validate().unwrap_err();
+    assert!(err.contains("later than"), "{err}");
+    assert!(date("2026-02-01", "2026-01-01").validate().is_err());
+    assert!(date("+1d", "2000-01-01").validate().is_err());
+    assert!(date("-30d", "now").validate().is_ok());
+    assert!(date("2000-01-01", "+1d").validate().is_ok());
+}
+
+#[test]
+fn validate_rejects_empty_trees() {
+    let err = ColumnGen::Tree { roots: 0, depth: 3 }
+        .validate()
+        .unwrap_err();
+    assert!(err.contains("roots"), "{err}");
+    let err = ColumnGen::Tree { roots: 3, depth: 0 }
+        .validate()
+        .unwrap_err();
+    assert!(err.contains("depth"), "{err}");
+    assert!(ColumnGen::Tree { roots: 1, depth: 1 }.validate().is_ok());
+}

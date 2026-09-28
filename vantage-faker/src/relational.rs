@@ -41,6 +41,42 @@ pub struct FanOut {
     pub max: usize,
 }
 
+impl FanOut {
+    /// Reject an inverted range (`min > max`).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.min > self.max {
+            return Err(format!(
+                "fan_out `{}`: min {} is above max {}",
+                self.column, self.min, self.max
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Load-time check of a [`relational_rows`] plan: `fan_out` must be
+/// [valid](FanOut::validate) and name a [`Reference`] column with a non-empty
+/// parent pool. `relational_rows` does not fail — it ignores such a fan-out
+/// and swaps an inverted `min`/`max` — so call this first to report those
+/// mistakes.
+pub fn check_plan(refs: &[Reference], fan_out: Option<&FanOut>) -> Result<(), String> {
+    let Some(fan) = fan_out else {
+        return Ok(());
+    };
+    fan.validate()?;
+    match refs.iter().find(|r| r.column == fan.column) {
+        None => Err(format!(
+            "fan_out `{}` is not a reference column",
+            fan.column
+        )),
+        Some(r) if r.parent_count == 0 => Err(format!(
+            "fan_out `{}` references a table with no rows",
+            fan.column
+        )),
+        Some(_) => Ok(()),
+    }
+}
+
 /// Generate the rows of a static relational table as `(id, record)` pairs in
 /// `seq` order, ids being [`seed_id`]`(seq)`.
 ///
@@ -52,7 +88,9 @@ pub struct FanOut {
 /// - With `fan_out` on a reference column, parent `p` gets a deterministic
 ///   (per salt) child count in `[min, max]`, its children are contiguous in
 ///   `seq`, the row count is the sum and `count` is ignored. Other reference
-///   columns still stride. A `fan_out` naming no reference column is ignored.
+///   columns still stride. A `fan_out` naming no reference column, or one
+///   whose pool is empty, is ignored (`count` rows are generated);
+///   [`check_plan`] reports both.
 ///
 /// `values` supplies every other cell — pass
 /// [`ValueGen::from_seed`] for a reproducible table. It is told the final row
