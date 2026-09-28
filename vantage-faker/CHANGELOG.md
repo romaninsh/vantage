@@ -13,6 +13,8 @@
   config at load time.
 - `ColumnGen::validate` rejects non-finite range/walk bounds and pick weights; generation no
   longer panics on them even unvalidated.
+- `FlightsEffect` / `FlightsConfig`: a live fleet of flights taking off, flying and landing.
+- `FakerCtx` exposes `columns`, `id_column`, `values` and `put_record`.
 
 ## 0.6.16 — 2026-09-16
 

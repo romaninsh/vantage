@@ -29,7 +29,8 @@ use ciborium::Value as CborValue;
 use fake::rand::rngs::StdRng;
 use serde::Deserialize;
 
-pub(crate) use date::now_unix;
+pub(crate) use date::{now_unix, rfc3339};
+pub(crate) use pattern::expand as expand_pattern;
 
 /// Table size that even-spread dates and trees assume when the generator was
 /// not told one (see [`ValueGen::with_rows`](crate::ValueGen::with_rows)).

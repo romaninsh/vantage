@@ -16,6 +16,7 @@
 //! broadcast [`Sender`](broadcast::Sender) to subscribe to for live deltas.
 
 pub mod effect;
+pub mod flights;
 pub mod generator;
 pub mod live_folder;
 pub mod pulse;
@@ -34,6 +35,7 @@ use vantage_vista::mocks::MockShell;
 use vantage_vista::source::TableShell as _;
 
 pub use effect::{FakerCtx, FakerEffect, FifoEffect, StaticEffect};
+pub use flights::{FLIGHT_COLUMNS, FlightsConfig, FlightsEffect};
 pub use generator::{ColumnGen, Spread};
 pub use live_folder::{
     EVENT_TYPES, Entry, EntryKind, LiveFolderConfig, LiveFolderSim, PushMode, format_ts,

@@ -205,6 +205,34 @@ impl FakerCtx {
         }
     }
 
+    /// The table's declared columns.
+    pub fn columns(&self) -> &[FakerColumn] {
+        &self.columns
+    }
+
+    /// Name of the id column.
+    pub fn id_column(&self) -> &str {
+        &self.id_column
+    }
+
+    /// The table's value generator (seeded / weird as configured).
+    pub fn values(&self) -> &ValueGen {
+        &self.values
+    }
+
+    /// Store `record` under a caller-chosen `id`. Broadcasts an `Inserted`
+    /// when `broadcast` is set; seeding passes `false`, since no subscriber
+    /// exists yet.
+    pub fn put_record(&self, id: &str, record: Record<CborValue>, broadcast: bool) {
+        self.shell.set_record(id, record.clone());
+        if broadcast {
+            let _ = self.events.send(ChangeEvent::Inserted {
+                id: id.to_string(),
+                new: Some(record),
+            });
+        }
+    }
+
     /// Insert a scripted record (id assigned, id column filled) and broadcast
     /// an `Inserted`. Returns the new id.
     pub fn insert_record(&self, mut record: Record<CborValue>) -> String {
