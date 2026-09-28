@@ -1,0 +1,100 @@
+//! Warm start: sims catch up on virtual time before the engine goes live.
+
+use std::time::Instant;
+
+use super::*;
+
+/// Born every sim minute; steps every 10 minutes; gone after 50.
+const LIFE: &str = r#"
+    let id = insert(#{ who: "w", step: 0, at: now_secs() });
+    for i in 1..=5 {
+        sleep(minutes(10));
+        patch(id, #{ step: i });
+    }
+    delete(id);
+"#;
+
+fn warm_def(clock: f64) -> SimDef {
+    SimDef::new("w", "log", LIFE)
+        .with_spawn(0, 1.0, 100)
+        .with_clock(clock)
+        .with_warm(Duration::from_secs(3600))
+}
+
+/// After the warm start and the first live spawn (at age 0).
+fn assert_mid_life(engine: &SimEngine, log: &FakerCtx) {
+    engine.settle();
+    let rows = rows(log);
+    // Born at -59..=0 min; the ones born 50+ minutes ago are gone.
+    assert_eq!(rows.len(), 50);
+    for row in &rows {
+        let age_min = (T0 as f64 - num(row, "at")) / 60.0;
+        assert!((0.0..50.0).contains(&age_min), "age {age_min}");
+        assert_eq!(num(row, "step"), (age_min / 10.0).floor(), "age {age_min}");
+    }
+    assert_eq!(engine.live(), 50);
+}
+
+#[test]
+fn warm_start_opens_mid_life_instantly_and_quietly() {
+    let (log, mut rx) = table(&["id", "who", "step", "at"]);
+    let t = Instant::now();
+    let engine = SimEngine::builder()
+        .table("log", &log)
+        .sim(warm_def(1.0))
+        .manual_clock(start())
+        .start()
+        .unwrap();
+    assert!(
+        t.elapsed() < Duration::from_secs(5),
+        "warm took {:?}",
+        t.elapsed()
+    );
+    assert_mid_life(&engine, &log);
+    let mut events = 0;
+    while rx.try_recv().is_ok() {
+        events += 1;
+    }
+    assert_eq!(events, 1, "only the live spawn at age 0 broadcasts");
+
+    // Born at 1..=10 min; gone: the ones born at -49..=-40 min.
+    run_for(&engine, 600, 10);
+    assert!(rx.try_recv().is_ok());
+    assert_eq!(rows(&log).len(), 50);
+}
+
+#[test]
+fn warm_window_is_sim_time_on_a_fast_clock() {
+    let (log, _) = table(&["id", "who", "step", "at"]);
+    let engine = SimEngine::builder()
+        .table("log", &log)
+        .sim(warm_def(60.0))
+        .manual_clock(start())
+        .start()
+        .unwrap();
+    assert_mid_life(&engine, &log);
+    // Ten sim minutes are ten real seconds at 60x.
+    run_for(&engine, 10, 1);
+    assert_eq!(rows(&log).len(), 50);
+}
+
+#[test]
+fn warm_start_on_the_system_clock_goes_live() {
+    let (log, _) = table(&["id", "who", "step", "at"]);
+    let def = SimDef::new(
+        "w",
+        "log",
+        r#"insert(#{ who: "w", at: now_secs() }); sleep(days(1));"#,
+    )
+    .with_spawn(1, 60.0, 1000)
+    .with_warm(Duration::from_secs(600));
+    let engine = SimEngine::builder()
+        .table("log", &log)
+        .sim(def)
+        .start()
+        .unwrap();
+    // A burst at -10 min plus one a second after it, then live ones.
+    let n = rows(&log).len();
+    assert!((600..610).contains(&n), "{n} rows");
+    assert!(engine.live() >= 600);
+}

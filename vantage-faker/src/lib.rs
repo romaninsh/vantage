@@ -18,12 +18,15 @@
 pub mod effect;
 pub mod flights;
 pub mod generator;
+pub mod geo;
 pub mod live_folder;
 pub mod pulse;
 pub mod relational;
 #[cfg(feature = "rhai")]
 pub mod rhai_effect;
 pub mod shape;
+#[cfg(feature = "rhai")]
+pub mod sim;
 pub mod value_gen;
 
 use tokio::sync::broadcast;
@@ -47,6 +50,8 @@ pub use rhai_effect::RhaiEffect;
 pub use shape::{
     BackendShape, ExtraFields, FaultSchedule, Latency, LatencyModel, Offline, ShapedShell,
 };
+#[cfg(feature = "rhai")]
+pub use sim::{SimDef, SimEngine, SimEngineBuilder, Spawn};
 pub use value_gen::ValueGen;
 
 /// One column of a faker table: a name, a declared type, free-form flags
@@ -90,6 +95,8 @@ pub struct FakerTable {
     /// Subscribe with [`Sender::subscribe`](broadcast::Sender::subscribe) to
     /// receive [`ChangeEvent`]s and forward them into a Dio.
     pub events: broadcast::Sender<ChangeEvent>,
+    /// The shared store and broadcast sender the effect writes through.
+    ctx: std::sync::Arc<FakerCtx>,
     /// The live mutation loop, `None` for static effects. Held only for its
     /// abort-on-drop guard — dropping the table stops the loop.
     _task: Option<AbortOnDrop>,
@@ -144,18 +151,34 @@ impl FakerTable {
         effect.seed(&ctx);
 
         let vista = Vista::new(name, Box::new(shell));
+        Self::finish(vista, events, ctx, effect)
+    }
 
+    /// Spawn the effect's loop if it is live and assemble the table.
+    fn finish(
+        vista: Vista,
+        events: broadcast::Sender<ChangeEvent>,
+        ctx: std::sync::Arc<FakerCtx>,
+        effect: Box<dyn FakerEffect>,
+    ) -> Self {
         let task = effect.is_live().then(|| {
+            let ctx = ctx.clone();
             AbortOnDrop(tokio::spawn(async move {
                 effect.run(ctx).await;
             }))
         });
-
         Self {
             vista,
             events,
+            ctx,
             _task: task,
         }
+    }
+
+    /// The table's store handle. A sim engine (`rhai` feature) writes to the table through it; the engine keeps only a weak
+    /// reference, so dropping the table ends the sims writing to it.
+    pub fn ctx(&self) -> &std::sync::Arc<FakerCtx> {
+        &self.ctx
     }
 
     /// [`build`](Self::build) with a [`BackendShape`]: the store is the same,
@@ -189,18 +212,7 @@ impl FakerTable {
             .clone_shell()
             .expect("MockShell::clone_shell always succeeds");
         let vista = Vista::new(name, Box::new(ShapedShell::new(inner, shape)));
-
-        let task = effect.is_live().then(|| {
-            AbortOnDrop(tokio::spawn(async move {
-                effect.run(ctx).await;
-            }))
-        });
-
-        Self {
-            vista,
-            events,
-            _task: task,
-        }
+        Self::finish(vista, events, ctx, effect)
     }
 
     /// Split into the master [`Vista`] and a live [`FakerHandle`].
@@ -213,9 +225,10 @@ impl FakerTable {
         let Self {
             vista,
             events,
+            ctx,
             _task,
         } = self;
-        (vista, FakerHandle { events, _task })
+        (vista, FakerHandle { events, ctx, _task })
     }
 }
 
@@ -225,8 +238,16 @@ impl FakerTable {
 pub struct FakerHandle {
     /// Subscribe to receive [`ChangeEvent`]s and forward them into a Dio.
     pub events: broadcast::Sender<ChangeEvent>,
+    ctx: std::sync::Arc<FakerCtx>,
     /// Held only for its abort-on-drop guard — dropping the handle stops the loop.
     _task: Option<AbortOnDrop>,
+}
+
+impl FakerHandle {
+    /// The table's store handle — see [`FakerTable::ctx`].
+    pub fn ctx(&self) -> &std::sync::Arc<FakerCtx> {
+        &self.ctx
+    }
 }
 
 /// Broadcast backlog for a lagged subscriber. A subscriber that falls this far

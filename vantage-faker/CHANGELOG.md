@@ -18,6 +18,11 @@
 - Flights gain `Takeoff` and `Landing` phases, 5 sim minutes each.
 - Flight timestamps are wall-clock; `flight_time` and `flight_time_min` hold the sim duration.
 - `FakerCtx` exposes `columns`, `id_column`, `values` and `put_record`.
+- `SimEngine` / `SimDef` (`rhai` feature): linear Rhai sim scripts, one thread each, with
+  spawners (`burst`, `rate_per_min`, `max`), per-def clocks and warm start.
+- Sim scripts get data, spawn, random, time and geo verbs; examples in `examples/sims/`.
+- `FakerTable::ctx` / `FakerHandle::ctx` expose the store handle.
+- `geo` module: great-circle distance, bearing and interpolation.
 
 ## 0.6.16 — 2026-09-16
 

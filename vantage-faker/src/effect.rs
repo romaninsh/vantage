@@ -7,7 +7,7 @@
 //! match statement to edit.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -45,6 +45,9 @@ pub struct FakerCtx {
     /// `values`' stream so a seed replays both independently.
     rng: Mutex<StdRng>,
     seq: AtomicU64,
+    /// While set, mutations change the store without broadcasting — a sim
+    /// engine's warm start fills tables the way `seed` does.
+    quiet: AtomicBool,
 }
 
 impl FakerCtx {
@@ -63,6 +66,19 @@ impl FakerCtx {
             extra: None,
             rng: Mutex::new(crate::value_gen::entropy_rng()),
             seq: AtomicU64::new(0),
+            quiet: AtomicBool::new(false),
+        }
+    }
+
+    /// Stop (or resume) broadcasting mutations.
+    #[cfg(feature = "rhai")]
+    pub(crate) fn set_quiet(&self, quiet: bool) {
+        self.quiet.store(quiet, Ordering::SeqCst);
+    }
+
+    fn send(&self, event: ChangeEvent) {
+        if !self.quiet.load(Ordering::SeqCst) {
+            let _ = self.events.send(event);
         }
     }
 
@@ -143,7 +159,7 @@ impl FakerCtx {
         let (id, seq) = self.next_fifo_id();
         let record = self.generate(&self.values, &id, seq);
         self.shell.set_record(&id, record.clone());
-        let _ = self.events.send(ChangeEvent::Inserted {
+        self.send(ChangeEvent::Inserted {
             id: id.clone(),
             new: Some(record),
         });
@@ -153,9 +169,7 @@ impl FakerCtx {
     /// Remove a row: drop it from the store and broadcast a `Deleted`.
     pub fn expire(&self, id: &str) {
         self.shell.remove_record(id);
-        let _ = self
-            .events
-            .send(ChangeEvent::Deleted { id: id.to_string() });
+        self.send(ChangeEvent::Deleted { id: id.to_string() });
     }
 
     // ---- Store reads + scripted mutation verbs -----------------------------
@@ -185,7 +199,7 @@ impl FakerCtx {
     pub fn update_field(&self, id: &str, field: &str, value: CborValue) {
         self.shell.set_field(id, field, value);
         if let Some(record) = self.shell.get_record(id) {
-            let _ = self.events.send(ChangeEvent::Updated {
+            self.send(ChangeEvent::Updated {
                 id: id.to_string(),
                 new: Some(record),
             });
@@ -198,7 +212,7 @@ impl FakerCtx {
             self.shell.set_field(id, field, value.clone());
         }
         if let Some(record) = self.shell.get_record(id) {
-            let _ = self.events.send(ChangeEvent::Updated {
+            self.send(ChangeEvent::Updated {
                 id: id.to_string(),
                 new: Some(record),
             });
@@ -226,7 +240,7 @@ impl FakerCtx {
     pub fn put_record(&self, id: &str, record: Record<CborValue>, broadcast: bool) {
         self.shell.set_record(id, record.clone());
         if broadcast {
-            let _ = self.events.send(ChangeEvent::Inserted {
+            self.send(ChangeEvent::Inserted {
                 id: id.to_string(),
                 new: Some(record),
             });
@@ -239,7 +253,7 @@ impl FakerCtx {
         let (id, _) = self.next_fifo_id();
         record.insert(self.id_column.clone(), CborValue::Text(id.clone()));
         self.shell.set_record(&id, record.clone());
-        let _ = self.events.send(ChangeEvent::Inserted {
+        self.send(ChangeEvent::Inserted {
             id: id.clone(),
             new: Some(record),
         });
