@@ -2145,7 +2145,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.13.0"
+version = "0.13.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -2182,14 +2182,16 @@ dependencies = [
 
 [[package]]
 name = "vantage-faker"
-version = "0.6.16"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "ciborium",
  "cucumber",
  "fake",
  "indexmap",
+ "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tempfile",
  "tokio",
  "tracing",
@@ -2205,7 +2207,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "0.6.2"
+version = "0.6.4"
 dependencies = [
  "rhai",
  "serde",

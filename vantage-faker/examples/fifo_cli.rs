@@ -20,6 +20,7 @@ fn col(name: &str, ty: &str, is_id: bool) -> FakerColumn {
         name: name.into(),
         ty: ty.into(),
         flags: if is_id { vec!["id".into()] } else { vec![] },
+        generator: None,
     }
 }
 

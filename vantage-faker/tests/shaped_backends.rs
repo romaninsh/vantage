@@ -18,26 +18,31 @@ fn columns() -> Vec<FakerColumn> {
             name: "id".into(),
             ty: "string".into(),
             flags: vec!["id".into()],
+            generator: None,
         },
         FakerColumn {
             name: "name".into(),
             ty: "string".into(),
             flags: vec![],
+            generator: None,
         },
         FakerColumn {
             name: "surname".into(),
             ty: "string".into(),
             flags: vec![],
+            generator: None,
         },
         FakerColumn {
             name: "age".into(),
             ty: "int".into(),
             flags: vec![],
+            generator: None,
         },
         FakerColumn {
             name: "balance".into(),
             ty: "money".into(),
             flags: vec![],
+            generator: None,
         },
     ]
 }

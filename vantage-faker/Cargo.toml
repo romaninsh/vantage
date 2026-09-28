@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "0.6.16"
+version = "0.7.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -21,6 +21,8 @@ vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
 vantage-diorama = { version = "0.13", path = "../vantage-diorama" }
 # `TableShell::preview_query` answers with a driver-shaped JSON value.
 serde_json = "1"
+# `ColumnGen` deserializes from table config.
+serde = { version = "1", features = ["derive"] }
 
 # Universal value carrier across the type-erased Vista / ChangeEvent boundary.
 ciborium = "0.2"
@@ -54,6 +56,8 @@ vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
 # `test-util` for the paused-clock latency/offline/cursor-expiry tests.
 tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
+# `ColumnGen`'s YAML shape, as vantage-ui table configs write it.
+serde_yaml_ng = "0.10"
 cucumber = { version = "0.21", default-features = false, features = ["macros"] }
 
 [[test]]

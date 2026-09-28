@@ -87,8 +87,8 @@ impl FakerCtx {
         self
     }
 
-    fn generate(&self, id: &str) -> Record<CborValue> {
-        let mut rec = self.values.record_for(&self.columns, &self.id_column, id);
+    fn generate(&self, values: &ValueGen, id: &str, seq: u64) -> Record<CborValue> {
+        let mut rec = values.record_at(&self.columns, &self.id_column, id, seq as usize);
         if let Some(extra) = self.extra {
             for i in 1..=extra.count {
                 // Deterministic filler, prefixed per row/field so nothing
@@ -109,28 +109,39 @@ impl FakerCtx {
     /// Reverse-monotonic id: newest rows get the *smallest* key, so the cache's
     /// ascending key order surfaces the latest record first — the "newest on
     /// top" fifo look, with no explicit ORDER BY.
-    fn next_fifo_id(&self) -> String {
+    fn next_fifo_id(&self) -> (String, u64) {
         let seq = self.seq.fetch_add(1, Ordering::SeqCst);
-        format!("{:020}", u64::MAX - seq)
+        (format!("{:020}", u64::MAX - seq), seq)
     }
 
-    fn next_seed_id(&self) -> String {
+    fn next_seed_id(&self) -> (String, u64) {
         let seq = self.seq.fetch_add(1, Ordering::SeqCst);
-        format!("{seq:020}")
+        (format!("{seq:020}"), seq)
     }
 
     /// Seed one row directly into the store, *without* broadcasting — used
     /// before any subscriber exists (the lens seeds the cache from this snapshot).
     pub fn seed_one(&self) -> String {
-        let id = self.next_seed_id();
-        self.shell.set_record(&id, self.generate(&id));
+        let (id, seq) = self.next_seed_id();
+        self.shell
+            .set_record(&id, self.generate(&self.values, &id, seq));
         id
+    }
+
+    /// Seed `count` rows like [`seed_one`](Self::seed_one), telling the
+    /// generator the table size so trees and even-spread dates scale to it.
+    pub fn seed_rows(&self, count: usize) {
+        let values = self.values.clone().with_rows(count);
+        for _ in 0..count {
+            let (id, seq) = self.next_seed_id();
+            self.shell.set_record(&id, self.generate(&values, &id, seq));
+        }
     }
 
     /// Generate a live row: store it and broadcast an `Inserted`. Returns its id.
     pub fn push(&self) -> String {
-        let id = self.next_fifo_id();
-        let record = self.generate(&id);
+        let (id, seq) = self.next_fifo_id();
+        let record = self.generate(&self.values, &id, seq);
         self.shell.set_record(&id, record.clone());
         let _ = self.events.send(ChangeEvent::Inserted {
             id: id.clone(),
@@ -197,7 +208,7 @@ impl FakerCtx {
     /// Insert a scripted record (id assigned, id column filled) and broadcast
     /// an `Inserted`. Returns the new id.
     pub fn insert_record(&self, mut record: Record<CborValue>) -> String {
-        let id = self.next_fifo_id();
+        let (id, _) = self.next_fifo_id();
         record.insert(self.id_column.clone(), CborValue::Text(id.clone()));
         self.shell.set_record(&id, record.clone());
         let _ = self.events.send(ChangeEvent::Inserted {
@@ -210,11 +221,7 @@ impl FakerCtx {
     /// One value in the style of [`ValueGen`] — `kind` matched as a column
     /// name first, then as a type.
     pub fn fake_value(&self, kind: &str) -> CborValue {
-        self.values.value_for(&FakerColumn {
-            name: kind.to_string(),
-            ty: kind.to_string(),
-            flags: vec![],
-        })
+        self.values.value_for(&FakerColumn::new(kind, kind))
     }
 
     /// Inclusive integer draw from the effect-side rng.
@@ -265,9 +272,7 @@ pub struct StaticEffect {
 #[async_trait]
 impl FakerEffect for StaticEffect {
     fn seed(&self, ctx: &FakerCtx) {
-        for _ in 0..self.count {
-            ctx.seed_one();
-        }
+        ctx.seed_rows(self.count);
     }
 }
 
@@ -334,11 +339,13 @@ mod tests {
                 name: "id".into(),
                 ty: "string".into(),
                 flags: vec!["id".into()],
+                generator: None,
             },
             FakerColumn {
                 name: "email".into(),
                 ty: "string".into(),
                 flags: vec![],
+                generator: None,
             },
         ]
     }

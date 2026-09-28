@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 — 2026-09-28
+
+- `FakerColumn` gains `generator: Option<ColumnGen>` (breaking for struct literals; use
+  `FakerColumn::new` or `..Default::default()`).
+- `ColumnGen`: `pick`, `range`, `date`, `sentence`, `pattern`, `walk` and `tree` generators,
+  deserializable from a single-key map.
+- `ValueGen::record_at` generates row `seq`; `with_rows`, `with_now`, `from_seed`.
+- `relational_rows`, `Reference`, `FanOut` and `seed_id` for static relational tables with
+  per-parent fan-out.
+
 ## 0.6.16 — 2026-09-16
 
 - Depends on `vantage-diorama` 0.13.

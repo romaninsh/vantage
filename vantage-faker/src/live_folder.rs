@@ -195,7 +195,7 @@ impl LiveFolderSim {
     }
 
     /// Build the listing vista for `path`. The returned `Vista` wraps a
-    /// [`FolderListingShell`] that reads the live tree on every list, so it
+    /// `FolderListingShell` that reads the live tree on every list, so it
     /// always reflects the current state — no per-path snapshot to sync.
     ///
     /// The broadcast sender emits [`ChangeEvent::Invalidated`] on every tick;

@@ -1,8 +1,9 @@
 //! Realistic value generation for a faker column.
 //!
-//! Two-tier strategy: match the column *name* against common patterns first
-//! (an `email` column gets a real email, `city` a city, …), then fall back to
-//! the declared *type*. All values come from the third-party `fake` crate — we
+//! A column's explicit [`ColumnGen`] wins; otherwise a two-tier strategy
+//! matches the column *name* against common patterns first (an `email` column
+//! gets a real email, `city` a city, …), then falls back to the declared
+//! *type*. All realistic values come from the third-party `fake` crate — we
 //! never hand-maintain name lists.
 //!
 //! The generator owns its rng. [`ValueGen::new`] seeds from the OS (the
@@ -10,6 +11,7 @@
 //! of the seed, so a scenario replays identically — the property the shaped
 //! backends and their tests depend on.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
@@ -25,6 +27,7 @@ use fake::rand::{RngExt as _, SeedableRng as _};
 use vantage_types::Record;
 
 use crate::FakerColumn;
+use crate::generator::{self, Cell, ColumnGen, Memo, column_salt, now_unix};
 
 /// Rows this fraction of `record_for` calls draw a value from the anomaly
 /// pool instead of the realistic generator — see [`ValueGen::with_weirdness`].
@@ -43,6 +46,17 @@ pub struct ValueGen {
     rng: Arc<Mutex<StdRng>>,
     /// Fraction of string cells drawn from the anomaly pool (0.0 = never).
     weirdness: f64,
+    /// Seed of the positional generators (walk, tree, even dates): the seed
+    /// itself, or entropy for an unseeded generator.
+    salt: u64,
+    /// Rows in the table being generated, if known — see [`Self::with_rows`].
+    rows: Option<usize>,
+    /// Unix seconds that relative dates resolve against.
+    now: i64,
+    /// Walk series and tree plans, shared across clones.
+    memo: Arc<Mutex<Memo>>,
+    /// Row counter for [`Self::record_for`], which is not told a `seq`.
+    next_seq: Arc<AtomicUsize>,
 }
 
 impl Default for ValueGen {
@@ -52,20 +66,53 @@ impl Default for ValueGen {
 }
 
 impl ValueGen {
-    /// Entropy-seeded: fresh values every run, like the thread-rng original.
-    pub fn new() -> Self {
+    fn with_rng(rng: StdRng, salt: u64) -> Self {
         Self {
-            rng: Arc::new(Mutex::new(entropy_rng())),
+            rng: Arc::new(Mutex::new(rng)),
             weirdness: 0.0,
+            salt,
+            rows: None,
+            now: now_unix(),
+            memo: Arc::default(),
+            next_seq: Arc::default(),
         }
     }
 
-    /// Deterministic: every draw is a pure function of `seed`.
+    /// Entropy-seeded: fresh values every run, like the thread-rng original.
+    pub fn new() -> Self {
+        Self::with_rng(entropy_rng(), fake::rand::random())
+    }
+
+    /// Deterministic: every draw is a pure function of `seed`. Relative dates
+    /// still move with the wall clock unless pinned with [`Self::with_now`].
     pub fn seeded(seed: u64) -> Self {
-        Self {
-            rng: Arc::new(Mutex::new(StdRng::seed_from_u64(seed))),
-            weirdness: 0.0,
-        }
+        Self::with_rng(StdRng::seed_from_u64(seed), seed)
+    }
+
+    /// [`seeded`](Self::seeded) when `seed` is given, [`new`](Self::new)
+    /// otherwise — the shape a config's optional `seed:` arrives in.
+    pub fn from_seed(seed: Option<u64>) -> Self {
+        seed.map_or_else(Self::new, Self::seeded)
+    }
+
+    /// Declare how many rows the table will have. Even-spread dates and trees
+    /// scale to it; without it they assume 100 rows. The returned clone
+    /// shares the rng stream and memo with `self`.
+    pub fn with_rows(mut self, rows: usize) -> Self {
+        self.rows = Some(rows);
+        self
+    }
+
+    /// Seed for stateless per-column draws (see `generator::hash`).
+    pub(crate) fn column_salt(&self, column: &str) -> u64 {
+        column_salt(self.salt, column)
+    }
+
+    /// Pin the instant that `now` and relative offsets (`-90d`) resolve to,
+    /// in unix seconds. Defaults to the moment the generator was created.
+    pub fn with_now(mut self, unix_secs: i64) -> Self {
+        self.now = unix_secs;
+        self
     }
 
     /// Make this fraction of string cells anomalous: ~200-char labels, blank
@@ -76,10 +123,41 @@ impl ValueGen {
         self
     }
 
-    /// Generate a single value appropriate for `col`, name-pattern first.
+    /// Generate a single value appropriate for `col`: its generator if set,
+    /// else name-pattern first. Positional generators read the next
+    /// [`record_for`](Self::record_for) row number as their `seq`.
     pub fn value_for(&self, col: &FakerColumn) -> CborValue {
         let rng = &mut *self.rng.lock().unwrap();
-        Self::value_for_with(rng, col)
+        self.cell_value(rng, col, self.next_seq.load(Ordering::Relaxed))
+    }
+
+    fn cell_value(&self, rng: &mut StdRng, col: &FakerColumn, seq: usize) -> CborValue {
+        match &col.generator {
+            Some(generator) => self.generated(rng, generator, col, seq),
+            None => Self::value_for_with(rng, col),
+        }
+    }
+
+    fn generated(
+        &self,
+        rng: &mut StdRng,
+        generator: &ColumnGen,
+        col: &FakerColumn,
+        seq: usize,
+    ) -> CborValue {
+        generator::generate(
+            generator,
+            Cell {
+                rng,
+                memo: &self.memo,
+                salt: self.column_salt(&col.name),
+                column: &col.name,
+                ty: &col.ty,
+                seq,
+                rows: self.rows.unwrap_or(generator::DEFAULT_ROWS),
+                now: self.now,
+            },
+        )
     }
 
     fn value_for_with(rng: &mut StdRng, col: &FakerColumn) -> CborValue {
@@ -165,13 +243,33 @@ impl ValueGen {
     }
 
     /// Build a full record for `id`, filling every column. The id column is set
-    /// to `id` verbatim; all others are generated — each string cell standing a
-    /// `weirdness` chance of drawing from the anomaly pool instead.
+    /// to `id` verbatim; all others are generated — each string cell of a
+    /// column without a generator standing a `weirdness` chance of drawing
+    /// from the anomaly pool instead.
+    ///
+    /// Positional generators see the number of `record_for` calls made so far
+    /// on this generator (and its clones) as the row's `seq`; use
+    /// [`record_at`](Self::record_at) to say it explicitly.
     pub fn record_for(
         &self,
         columns: &[FakerColumn],
         id_column: &str,
         id: &str,
+    ) -> Record<CborValue> {
+        let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
+        self.record_at(columns, id_column, id, seq)
+    }
+
+    /// [`record_for`](Self::record_for) for row `seq` of the table: walks,
+    /// trees and even-spread dates take their position from `seq`. Columns
+    /// without a generator draw exactly as `record_for` does, so the rng
+    /// stream — and a seeded table's output — is unchanged by the choice.
+    pub fn record_at(
+        &self,
+        columns: &[FakerColumn],
+        id_column: &str,
+        id: &str,
+        seq: usize,
     ) -> Record<CborValue> {
         let rng = &mut *self.rng.lock().unwrap();
         let mut rec = Record::new();
@@ -180,6 +278,9 @@ impl ValueGen {
             if col.name == id_column {
                 rec.insert(col.name.clone(), CborValue::Text(id.to_string()));
                 wrote_id = true;
+            } else if let Some(generator) = &col.generator {
+                let value = self.generated(rng, generator, col, seq);
+                rec.insert(col.name.clone(), value);
             } else {
                 let mut value = Self::value_for_with(rng, col);
                 if self.weirdness > 0.0
@@ -199,126 +300,4 @@ impl ValueGen {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn col(name: &str, ty: &str) -> FakerColumn {
-        FakerColumn {
-            name: name.to_string(),
-            ty: ty.to_string(),
-            flags: vec![],
-        }
-    }
-
-    fn text(v: &CborValue) -> &str {
-        match v {
-            CborValue::Text(s) => s,
-            other => panic!("expected text, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn email_column_is_email_shaped() {
-        let g = ValueGen::new();
-        let v = g.value_for(&col("email", "string"));
-        assert!(text(&v).contains('@'), "expected an email, got {v:?}");
-    }
-
-    #[test]
-    fn name_column_is_nonempty_text() {
-        let g = ValueGen::new();
-        let v = g.value_for(&col("full_name", "string"));
-        assert!(!text(&v).is_empty());
-    }
-
-    #[test]
-    fn type_fallback_maps_scalars() {
-        let g = ValueGen::new();
-        assert!(matches!(
-            g.value_for(&col("qty", "int")),
-            CborValue::Integer(_)
-        ));
-        assert!(matches!(
-            g.value_for(&col("balance", "decimal")),
-            CborValue::Float(_)
-        ));
-        assert!(matches!(
-            g.value_for(&col("active", "bool")),
-            CborValue::Bool(_)
-        ));
-    }
-
-    #[test]
-    fn record_sets_id_column_and_fills_rest() {
-        let g = ValueGen::new();
-        let cols = [
-            col("id", "string"),
-            col("email", "string"),
-            col("age", "int"),
-        ];
-        let rec = g.record_for(&cols, "id", "abc");
-        assert_eq!(rec.get("id"), Some(&CborValue::Text("abc".into())));
-        assert!(text(rec.get("email").unwrap()).contains('@'));
-        assert!(matches!(rec.get("age"), Some(CborValue::Integer(_))));
-    }
-
-    #[test]
-    fn same_seed_replays_the_same_records() {
-        let cols = [
-            col("id", "string"),
-            col("name", "string"),
-            col("age", "int"),
-        ];
-        let a: Vec<_> = {
-            let g = ValueGen::seeded(42);
-            (0..5)
-                .map(|i| g.record_for(&cols, "id", &i.to_string()))
-                .collect()
-        };
-        let b: Vec<_> = {
-            let g = ValueGen::seeded(42);
-            (0..5)
-                .map(|i| g.record_for(&cols, "id", &i.to_string()))
-                .collect()
-        };
-        assert_eq!(a, b, "a seed is a promise");
-    }
-
-    #[test]
-    fn weirdness_one_makes_every_string_cell_anomalous() {
-        let g = ValueGen::seeded(7).with_weirdness(1.0);
-        let cols = [col("id", "string"), col("name", "string")];
-        let anomalies: Vec<String> = (0..40)
-            .map(|i| {
-                text(
-                    g.record_for(&cols, "id", &i.to_string())
-                        .get("name")
-                        .unwrap(),
-                )
-                .to_string()
-            })
-            .collect();
-        // Every value came from the pool: blank, John Smith, unicode, or long.
-        for v in &anomalies {
-            let from_pool = v.is_empty() || v == "John Smith" || v.contains('Ž') || v.len() >= 200;
-            assert!(from_pool, "unexpected non-anomalous value {v:?}");
-        }
-        // And the pool cycles — more than one kind appears over 40 draws.
-        assert!(anomalies.iter().any(|v| v.is_empty()));
-        assert!(anomalies.iter().any(|v| v.len() >= 200));
-    }
-
-    #[test]
-    fn weirdness_zero_never_draws_anomalies() {
-        let g = ValueGen::seeded(7);
-        let cols = [col("id", "string"), col("name", "string")];
-        for i in 0..40 {
-            let rec = g.record_for(&cols, "id", &i.to_string());
-            let v = text(rec.get("name").unwrap()).to_string();
-            assert!(
-                !v.is_empty() && v != "John Smith" && v.len() < 200,
-                "anomaly leaked: {v:?}"
-            );
-        }
-    }
-}
+mod tests;
