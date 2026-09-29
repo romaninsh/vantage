@@ -20,6 +20,11 @@
 //! - `row(table?) -> map` — a generated value for each of the table's
 //!   declared columns ([`SimEngineBuilder::columns`](super::SimEngineBuilder::columns)),
 //!   skipping the id column; a table with none declared gives an empty map.
+//!   `walk` and even-spread `date` columns advance one step per call, kept
+//!   per sim per table; a `tree` column is not meaningful here — it plans a
+//!   whole table's parent links from a row count `row()` never has, so each
+//!   call just walks further into that fixed plan and can return a parent id
+//!   no row `row()` ever produced.
 //!
 //! **Spawn** — `spawn_sim(name, #{args}?) -> bool` starts a sim of def
 //! `name` at this sim's current time; `false` when the def is at its `max`

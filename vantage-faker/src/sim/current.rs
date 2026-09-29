@@ -2,8 +2,9 @@
 //! body of a sim thread.
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use fake::rand::SeedableRng as _;
 use fake::rand::rngs::StdRng;
@@ -12,6 +13,7 @@ use vantage_rhai::rhai::{Dynamic, EvalAltResult, Map as RhaiMap, Position, Scope
 use super::DEFAULT_OPS;
 use super::kind::{Inner, Kind};
 use super::stats::Counters;
+use crate::generator::Memo;
 
 /// A verb's result.
 pub(super) type VerbResult<T> = Result<T, Box<EvalAltResult>>;
@@ -19,6 +21,16 @@ pub(super) type VerbResult<T> = Result<T, Box<EvalAltResult>>;
 /// Sleeps in a row that may leave the sim's clock where it is before the
 /// sim is ended as a runaway loop.
 pub(super) const MAX_STILL_SLEEPS: u32 = 1000;
+
+/// One table's state across a sim's `row()` calls: the `seq` its next call
+/// generates at, and the [`Memo`] a positional generator (`walk`, even-spread
+/// `date`) builds up across calls. Both are scoped to this sim and this
+/// table, so two sims (or two tables) never share a walk's history.
+#[derive(Default)]
+pub(super) struct RowCalls {
+    pub seq: usize,
+    pub memo: Mutex<Memo>,
+}
 
 pub(super) struct Current {
     pub inner: Arc<Inner>,
@@ -32,6 +44,8 @@ pub(super) struct Current {
     pub rng: StdRng,
     /// Set by `done()`: the script is ending on purpose.
     pub done: bool,
+    /// `row()`'s state, by table.
+    pub row_calls: HashMap<String, RowCalls>,
     /// Rhai operations allowed between two sleeps: the def's `ops`.
     ops_budget: u64,
     ops_base: u64,
@@ -158,6 +172,7 @@ pub(super) fn run_sim(inner: Arc<Inner>, kind: usize, id: u64, vt: f64, args: Rh
         started: vt,
         rng,
         done: false,
+        row_calls: HashMap::new(),
         ops_budget: inner.kinds[kind].def.ops.unwrap_or(DEFAULT_OPS),
         ops_base: 0,
         last_ops: 0,

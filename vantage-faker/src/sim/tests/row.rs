@@ -40,6 +40,43 @@ fn row_generates_declared_columns_without_id() {
 }
 
 #[test]
+fn row_walk_column_varies_across_calls_in_one_sim() {
+    let store = store_with(&["log"]);
+    let engine = SimEngine::builder()
+        .store(&store)
+        .columns(
+            "log",
+            vec![
+                FakerColumn::new("id", "string"),
+                FakerColumn::new("score", "int").with_generator(ColumnGen::Walk {
+                    start: 0.0,
+                    step: 1000.0,
+                    min: None,
+                    max: None,
+                    decimals: None,
+                }),
+            ],
+        )
+        .sim(SimDef::new(
+            "r",
+            "log",
+            "let a = row().score; let b = row().score; let c = row().score; \
+             insert(#{ id: \"x\", a: a, b: b, c: c });",
+        ))
+        .manual_clock(start())
+        .seed(4)
+        .start()
+        .unwrap();
+    run_for(&engine, 1, 1);
+    let rec = store.table("log").get("x").unwrap();
+    let (a, b, c) = (num(&rec, "a"), num(&rec, "b"), num(&rec, "c"));
+    assert!(
+        a != b || b != c,
+        "walk did not vary across calls: {a} {b} {c}"
+    );
+}
+
+#[test]
 fn row_on_a_table_without_columns_is_empty() {
     let store = store_with(&["log", "bare"]);
     let engine = SimEngine::builder()
