@@ -3,6 +3,7 @@
 pub mod factory;
 mod refs;
 mod shell;
+mod watch;
 mod writes;
 
 use vantage_vista::{VistaCapabilities, VistaMetadata};

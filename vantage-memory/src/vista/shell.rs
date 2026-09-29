@@ -7,9 +7,10 @@ use vantage_core::{Result, error};
 use vantage_types::Record;
 use vantage_vista::{
     Column, FilterOp, Reference, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaChangeStream,
 };
 
-use super::{MemoryTableShell, describe};
+use super::{MemoryTableShell, describe, watch};
 use crate::eval::matches_all;
 use crate::{MemoryCondition, Row};
 
@@ -200,5 +201,9 @@ impl TableShell for MemoryTableShell {
 
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
+    }
+
+    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+        Ok(watch::stream(self.table().clone(), self.query().clone()))
     }
 }
