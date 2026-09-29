@@ -5854,6 +5854,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantage-memory"
+version = "0.6.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "ciborium",
+ "futures-core",
+ "futures-util",
+ "indexmap 2.14.0",
+ "parking_lot",
+ "paste",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tempfile",
+ "tokio",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-diorama",
+ "vantage-expressions",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
+]
+
+[[package]]
 name = "vantage-mongodb"
 version = "0.6.6"
 dependencies = [
