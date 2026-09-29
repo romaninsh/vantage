@@ -48,7 +48,9 @@ vantage-faker-stress/
   src/scenario/tests.rs          unit tests for the three files above            ~180
   src/runner.rs                  builds FakerTables and the SimEngine, runs one pass  ~100
   src/sampler.rs                 samples CPU, RSS, threads and counters once a second  ~170
-  src/load.rs                    table consumers: counting subscriber, optional Dio  ~200
+  src/load.rs                    table consumers: counting subscriber, optional Dio  ~170
+  src/load/drain.rs              drain-time probe behind `lag ms`                ~135
+  src/load/tests.rs              subscriber and lag tests                        ~85
   src/report.rs                  live table, final summary, JSON report          ~170
   src/report/compare.rs          two reports side by side with per-metric deltas ~55
   src/report/tests.rs            unit tests for summary maths and compare        ~70
@@ -127,7 +129,7 @@ A sampler reads everything once a second and prints one row per sample:
 | `lagged` | subscribers' `RecvError::Lagged` | events dropped because a subscriber fell behind |
 | `lag ms` | see below | how far event consumers trail the writers |
 
-Lag is measured the same way with or without `--dio`. Each table has one subscriber task. It records the backlog (`Sender::len()`) and its own apply rate, and estimates `lag ms = backlog / apply rate`. Without `--dio`, the subscriber only counts events. With `--dio`, it calls `dio.handle_event` for each one. So `--dio` shows the cost of the Dio's apply and re-list work on top of the raw broadcast.
+Lag is measured the same way with or without `--dio`: a drain-time probe per table. Each table has one subscriber task, which counts every event it receives, plus `n` for each `Lagged(n)` (skipped events count as drained). At each sample, for each table: if a probe is armed, lag is the time since it was armed and the probe stays armed; otherwise lag is the last recorded drain time (0 if the table had no backlog at the previous sample). Then, if the backlog (`Sender::len()`) is above 0 and no probe is armed, a probe is armed with target "events seen so far + backlog" and the current time; with no backlog, the recorded drain time resets to 0. The subscriber checks the probe after each receive and, once it has seen the target, records the elapsed time and disarms it. A drain is therefore reported one tick late, and a consumer that never catches up shows lag growing each tick. The sample's `lag ms` is the maximum over tables. Without `--dio`, the subscriber only counts events. With `--dio`, it calls `dio.handle_event` for each one before counting it. So `--dio` shows the cost of the Dio's apply and re-list work on top of the raw broadcast.
 
 With `--dio`, the Dio's lens lists the master table into its cache once, on start (`on_start` calls `list_values` then `insert_values`); a table's seeded rows reach the cache this way, not as broadcast events. From then on the lens applies each `ChangeEvent` to the cache directly.
 

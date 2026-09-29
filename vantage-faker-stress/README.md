@@ -81,11 +81,18 @@ Each sample is one row, printed once a second:
 | `lagged` | subscribers' `RecvError::Lagged` | events dropped because a subscriber fell behind |
 | `lag ms` | see below | how far event consumers trail the writers |
 
-Each table has one subscriber task that tracks its own backlog (queued,
-undelivered events) and its own delivery rate, and estimates
-`lag ms = backlog ÷ apply rate`. Without `--dio` the rate is raw broadcast
-receives; with `--dio` it's events actually applied to a `Dio`, so `--dio`
-lag reflects the Dio's apply and re-list cost on top of the broadcast.
+`lag ms` is a drain-time probe. Each table has one subscriber task. When a
+sample finds events queued for it, the harness notes the backlog and the
+time, then waits for the subscriber to get through that many events
+(events it skips with `Lagged` count as got through). The time that took
+shows up in the next sample, so the column runs one tick late. If the
+subscriber still hasn't caught up by the next sample, the column shows the
+time waited so far, so a consumer that never catches up shows lag growing
+by about 1000 ms a tick. A tick with nothing queued reads 0 on the tick
+after it. The column is the slowest table's figure, not a sum. Without
+`--dio` the subscriber only counts events; with `--dio` it applies each one
+to a `Dio`, so `--dio` lag includes the Dio's apply and re-list cost on top
+of the broadcast.
 
 At the end of a run the harness prints peak and mean of each column, the
 warm-start time when the scenario sets `warm:`, and cost per sim: CPU

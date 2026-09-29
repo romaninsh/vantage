@@ -23,7 +23,8 @@ pub struct Sample {
     pub events_per_s: f64,
     /// Events dropped so far because a subscriber fell behind.
     pub lagged: u64,
-    /// Estimated time for subscribers to drain their backlog.
+    /// Slowest table's drain time for the backlog seen one tick earlier, or
+    /// time elapsed so far if that backlog is still not drained.
     pub lag_ms: f64,
 }
 
@@ -34,6 +35,8 @@ pub struct EventTotals {
     pub lagged: u64,
     /// Events queued in the broadcast channels, not yet received.
     pub backlog: usize,
+    /// Largest drain-probe reading over the tables (see `load::drain`).
+    pub lag_ms: f64,
 }
 
 pub struct Sampler {
@@ -89,7 +92,6 @@ impl Sampler {
             None => (0.0, 0.0),
         };
         self.last = Some((now, stats.writes, events.delivered));
-        let lag_ms = events.backlog as f64 / events_per_s.max(1.0) * 1000.0;
         Sample {
             t: now.duration_since(self.started).as_secs_f64(),
             live: stats.live,
@@ -102,7 +104,7 @@ impl Sampler {
             writes_per_s,
             events_per_s,
             lagged: events.lagged,
-            lag_ms,
+            lag_ms: events.lag_ms,
         }
     }
 }
@@ -133,8 +135,7 @@ mod tests {
             },
             EventTotals {
                 delivered: 5,
-                lagged: 0,
-                backlog: 0,
+                ..Default::default()
             },
         );
         assert_eq!(first.writes_per_s, 0.0, "first sample has no previous one");
@@ -148,6 +149,7 @@ mod tests {
                 delivered: 55,
                 lagged: 2,
                 backlog: 10,
+                lag_ms: 42.0,
             },
         );
         assert!(
@@ -157,7 +159,7 @@ mod tests {
         );
         assert!((80.0..=120.0).contains(&second.events_per_s));
         assert_eq!(second.lagged, 2);
-        assert!(second.lag_ms > 0.0);
+        assert_eq!(second.lag_ms, 42.0, "lag is the subscribers' probe reading");
         assert!(second.rss_mb > 0.0);
     }
 

@@ -15,23 +15,30 @@ use vantage_vista::Vista;
 
 use crate::sampler::EventTotals;
 
+mod drain;
+use drain::Drain;
+
 /// Rows a scenery keeps materialized, like a grid's visible page.
 const VIEWPORT: usize = 50;
 
 pub struct TableLoad {
     delivered: Arc<AtomicU64>,
     lagged: Arc<AtomicU64>,
+    drain: Arc<Drain>,
     events: broadcast::Sender<ChangeEvent>,
     scenery: Option<Arc<dyn TableScenery>>,
     task: JoinHandle<()>,
 }
 
 impl TableLoad {
+    /// Counters plus a drain-probe reading; call once per sample tick.
     pub fn totals(&self) -> EventTotals {
+        let (lag_ms, backlog) = self.drain.tick(|| self.events.len());
         EventTotals {
             delivered: self.delivered.load(Ordering::Relaxed),
             lagged: self.lagged.load(Ordering::Relaxed),
-            backlog: self.events.len(),
+            backlog,
+            lag_ms,
         }
     }
 
@@ -55,6 +62,7 @@ pub fn sum(loads: &[TableLoad]) -> EventTotals {
             delivered: a.delivered + b.delivered,
             lagged: a.lagged + b.lagged,
             backlog: a.backlog + b.backlog,
+            lag_ms: a.lag_ms.max(b.lag_ms),
         })
 }
 
@@ -125,7 +133,8 @@ pub async fn attach(
         }
         None => (None, None),
     };
-    let (d, l) = (delivered.clone(), lagged.clone());
+    let drain = Arc::new(Drain::default());
+    let (d, l, dr) = (delivered.clone(), lagged.clone(), drain.clone());
     let task = tokio::spawn(async move {
         loop {
             match rx.recv().await {
@@ -134,9 +143,11 @@ pub async fn attach(
                         let _ = dio.handle_event(evt).await;
                     }
                     d.fetch_add(1, Ordering::Relaxed);
+                    dr.advance(1);
                 }
                 Err(RecvError::Lagged(n)) => {
                     l.fetch_add(n, Ordering::Relaxed);
+                    dr.advance(n);
                 }
                 Err(RecvError::Closed) => break,
             }
@@ -145,6 +156,7 @@ pub async fn attach(
     Ok(TableLoad {
         delivered,
         lagged,
+        drain,
         events: handle.events.clone(),
         scenery,
         task,
@@ -152,48 +164,4 @@ pub async fn attach(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-    use vantage_faker::{FakerColumn, FakerTable, StaticEffect};
-
-    fn table() -> FakerTable {
-        let mut id = FakerColumn::new("id", "string");
-        id.flags.push("id".into());
-        FakerTable::build(
-            "t",
-            vec![id, FakerColumn::new("note", "string")],
-            "id",
-            Box::new(StaticEffect { count: 5 }),
-        )
-    }
-
-    async fn push_three(handle: &vantage_faker::FakerHandle) {
-        for _ in 0..3 {
-            handle.ctx().push();
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn counting_subscriber_sees_every_event() {
-        let (vista, handle) = table().split();
-        let load = attach(vista, &handle, None).await.unwrap();
-        push_three(&handle).await;
-        let t = load.totals();
-        assert_eq!(t.delivered, 3);
-        assert_eq!(t.backlog, 0);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn dio_subscriber_applies_events() {
-        let dir = tempfile::tempdir().unwrap();
-        let lens = lens(dir.path()).unwrap();
-        let (vista, handle) = table().split();
-        let load = attach(vista, &handle, Some(&lens)).await.unwrap();
-        push_three(&handle).await;
-        assert_eq!(load.totals().delivered, 3);
-        assert_eq!(load.scenery_rows(), Some(8));
-    }
-}
+mod tests;
