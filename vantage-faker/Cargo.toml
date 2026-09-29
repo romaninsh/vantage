@@ -44,6 +44,7 @@ tracing = "0.1"
 
 [features]
 sim = ["dep:vantage-rhai"]
+serde = []
 
 [dev-dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }

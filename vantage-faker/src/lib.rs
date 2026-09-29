@@ -15,6 +15,8 @@
 //! less forgiving than a plain in-memory table.
 
 mod column;
+#[cfg(feature = "serde")]
+pub mod config;
 pub mod dataset;
 pub mod generator;
 pub mod geo;
