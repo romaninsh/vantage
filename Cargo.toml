@@ -42,6 +42,7 @@ exclude = [
     "test-api-server",
     "vantage-cmd",
     "vantage-faker",
+    "vantage-faker-stress",
     "vantage-spacetimedb",
 ]
 resolver = "2"
