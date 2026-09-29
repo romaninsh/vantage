@@ -1,0 +1,17 @@
+# The common app pattern: rows arrive, change a couple of times, leave.
+seed: 7
+tables:
+  ticket:
+    count: 200
+    columns:
+      status: { faker: { pick: { values: [Open, Pending, Closed], weights: [3, 1, 1] } } }
+      amount: { type: int, faker: { range: { min: 1, max: 500 } } }
+sims:
+  ticket:
+    table: ticket
+    script: !include ticket.rhai
+    clock: 10
+    spawn: { burst: 100, rate: 30, max: 400 }
+stress:
+  duration: 30s
+  limits: { cpu_pct: 400, event_lag_ms: 250 }

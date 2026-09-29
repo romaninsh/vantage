@@ -1,0 +1,14 @@
+# lifecycle, opened twelve hours into its life: warm-start time and memory.
+seed: 11
+tables:
+  shipment: { count: 0, columns: { status: {}, hub: {} } }
+  event: { count: 0, columns: { shipment: {}, what: {} } }
+sims:
+  parcel:
+    table: shipment
+    script: !include ../lifecycle/parcel.rhai
+    clock: 60
+    warm: 12h
+    spawn: { burst: 50, rate: 10, max: 300 }
+stress:
+  duration: 20s

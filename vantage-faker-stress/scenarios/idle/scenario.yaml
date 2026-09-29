@@ -1,0 +1,12 @@
+# Parked threads and nothing else: what a sim costs while it sleeps.
+seed: 1
+tables:
+  slot: { count: 0, columns: { note: {} } }
+sims:
+  sleeper:
+    table: slot
+    script: !include sleeper.rhai
+    spawn: { burst: 200, max: 200 }
+stress:
+  duration: 20s
+  limits: { cpu_pct: 400, rss_mb: 4096 }
