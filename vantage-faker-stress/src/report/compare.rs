@@ -4,7 +4,10 @@ use std::fmt::Write as _;
 
 use super::{Report, Summary};
 
-const ROWS: &[(&str, fn(&Summary) -> f64)] = &[
+/// A row label and the summary value it shows.
+type Row = (&'static str, fn(&Summary) -> f64);
+
+const ROWS: &[Row] = &[
     ("mean cpu%", |s| s.mean_cpu_pct),
     ("peak rss MB", |s| s.peak_rss_mb),
     ("peak threads", |s| s.peak_threads),
