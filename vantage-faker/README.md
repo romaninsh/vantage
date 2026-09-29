@@ -45,12 +45,13 @@ cargo run --example live_folder_cli
 
 ```rust
 use std::time::Duration;
-use vantage_faker::{FakerColumn, FakerTable, FifoEffect};
+use vantage_faker::{ColumnGen, FakerColumn, FakerTable, FifoEffect};
 
 let columns = vec![
-    FakerColumn { name: "id".into(),    ty: "string".into(),  flags: vec!["id".into()] },
-    FakerColumn { name: "email".into(), ty: "string".into(),  flags: vec![] },
-    FakerColumn { name: "amount".into(), ty: "decimal".into(), flags: vec![] },
+    FakerColumn { flags: vec!["id".into()], ..FakerColumn::new("id", "string") },
+    FakerColumn::new("email", "string"),
+    FakerColumn::new("amount", "decimal"),
+    FakerColumn::new("flight", "string").with_generator(ColumnGen::Pattern("BA####".into())),
 ];
 
 let table = FakerTable::build(
@@ -68,7 +69,12 @@ let table = FakerTable::build(
 ```
 
 Values are drawn from the [`fake`](https://crates.io/crates/fake) crate: the column name is matched
-first (`email`, `name`, `phone`, `city`, …), then the declared type.
+first (`email`, `name`, `phone`, `city`, …), then the declared type. A column's `ColumnGen`
+overrides both: `pick`, `range`, `date` (relative bounds, random or even spread), `sentence`,
+`pattern`, `walk` (a time-series random walk) and `tree` (same-table parent links).
+
+`relational_rows` builds a static table whose reference columns hold ids of other static tables,
+optionally with a `FanOut` giving each parent a bounded number of contiguous children.
 
 ## License
 

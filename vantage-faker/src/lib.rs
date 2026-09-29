@@ -16,8 +16,11 @@
 //! broadcast [`Sender`](broadcast::Sender) to subscribe to for live deltas.
 
 pub mod effect;
+pub mod flights;
+pub mod generator;
 pub mod live_folder;
 pub mod pulse;
+pub mod relational;
 #[cfg(feature = "rhai")]
 pub mod rhai_effect;
 pub mod shape;
@@ -32,10 +35,13 @@ use vantage_vista::mocks::MockShell;
 use vantage_vista::source::TableShell as _;
 
 pub use effect::{FakerCtx, FakerEffect, FifoEffect, StaticEffect};
+pub use flights::{FLIGHT_COLUMNS, FlightsConfig, FlightsEffect};
+pub use generator::{ColumnGen, Spread};
 pub use live_folder::{
     EVENT_TYPES, Entry, EntryKind, LiveFolderConfig, LiveFolderSim, PushMode, format_ts,
 };
 pub use pulse::{PulseConfig, PulseKey, PulseRole, PulseSim};
+pub use relational::{FanOut, Reference, check_plan, relational_rows, seed_id};
 #[cfg(feature = "rhai")]
 pub use rhai_effect::RhaiEffect;
 pub use shape::{
@@ -43,13 +49,32 @@ pub use shape::{
 };
 pub use value_gen::ValueGen;
 
-/// One column of a faker table: a name, a declared type, and free-form flags
-/// (e.g. `"id"`). [`ValueGen`] uses `name` first, then `ty`, to pick a value.
-#[derive(Clone, Debug)]
+/// One column of a faker table: a name, a declared type, free-form flags
+/// (e.g. `"id"`) and an optional explicit generator. [`ValueGen`] uses
+/// `generator` if set, else `name`, then `ty`, to pick a value.
+#[derive(Clone, Debug, Default)]
 pub struct FakerColumn {
     pub name: String,
     pub ty: String,
     pub flags: Vec<String>,
+    pub generator: Option<ColumnGen>,
+}
+
+impl FakerColumn {
+    /// A column with no flags and no generator.
+    pub fn new(name: impl Into<String>, ty: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ty: ty.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Generate this column's values with `generator`.
+    pub fn with_generator(mut self, generator: ColumnGen) -> Self {
+        self.generator = Some(generator);
+        self
+    }
 }
 
 /// A materialized faker table: a [`Vista`] to read from, the broadcast
@@ -149,11 +174,7 @@ impl FakerTable {
         let shell = MockShell::new().with_metadata(faker_metadata(&columns, &id_column));
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
 
-        let values = match shape.seed {
-            Some(seed) => ValueGen::seeded(seed),
-            None => ValueGen::new(),
-        }
-        .with_weirdness(shape.weirdness);
+        let values = ValueGen::from_seed(shape.seed).with_weirdness(shape.weirdness);
 
         let ctx = std::sync::Arc::new(
             FakerCtx::new(shell.clone(), events.clone(), columns, id_column)
@@ -234,11 +255,13 @@ mod tests {
                 name: "id".into(),
                 ty: "string".into(),
                 flags: vec!["id".into()],
+                generator: None,
             },
             FakerColumn {
                 name: "email".into(),
                 ty: "string".into(),
                 flags: vec![],
+                generator: None,
             },
         ]
     }

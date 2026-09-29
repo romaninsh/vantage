@@ -43,9 +43,7 @@ pub struct RhaiEffect {
 #[async_trait]
 impl FakerEffect for RhaiEffect {
     fn seed(&self, ctx: &FakerCtx) {
-        for _ in 0..self.count {
-            ctx.seed_one();
-        }
+        ctx.seed_rows(self.count);
     }
 
     fn is_live(&self) -> bool {
@@ -237,16 +235,19 @@ mod tests {
                 name: "id".into(),
                 ty: "string".into(),
                 flags: vec!["id".into()],
+                generator: None,
             },
             FakerColumn {
                 name: "name".into(),
                 ty: "string".into(),
                 flags: vec![],
+                generator: None,
             },
             FakerColumn {
                 name: "balance".into(),
                 ty: "money".into(),
                 flags: vec![],
+                generator: None,
             },
         ];
         let ctx = Arc::new(
@@ -358,11 +359,13 @@ mod tests {
                     name: "id".into(),
                     ty: "string".into(),
                     flags: vec!["id".into()],
+                    generator: None,
                 },
                 FakerColumn {
                     name: "name".into(),
                     ty: "string".into(),
                     flags: vec![],
+                    generator: None,
                 },
             ],
             "id",

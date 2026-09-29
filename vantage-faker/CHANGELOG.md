@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.0 — 2026-09-28
+
+- `FakerColumn` gains `generator: Option<ColumnGen>` (breaking for struct literals; use
+  `FakerColumn::new` or `..Default::default()`).
+- `ColumnGen`: `pick`, `range`, `date`, `sentence`, `pattern`, `walk` and `tree` generators,
+  deserializable from a single-key map.
+- `ValueGen::record_at` generates row `seq`; `with_rows`, `with_now`, `from_seed`.
+- `relational_rows`, `Reference`, `FanOut` and `seed_id` for static relational tables with
+  per-parent fan-out.
+- `ColumnGen::validate`, `FanOut::validate` and `check_plan` report bad generator and fan-out
+  config at load time.
+- `ColumnGen::validate` rejects non-finite range/walk bounds and pick weights; generation no
+  longer panics on them even unvalidated.
+- `FlightsEffect` / `FlightsConfig`: a live fleet of flights taking off, flying and landing.
+- `FakerCtx` exposes `columns`, `id_column`, `values` and `put_record`.
+
 ## 0.6.16 — 2026-09-16
 
 - Depends on `vantage-diorama` 0.13.
