@@ -15,7 +15,7 @@ use vantage_types::{Entity, Record};
 use vantage_vista::FilterOp;
 
 use super::MemoryDB;
-use super::convert::{column_values, from_cbor_record, table_query, to_cbor_record};
+use super::convert::{column_values, from_cbor_record, table_query, to_cbor_record, with_id_forms};
 use crate::eval::{MemoryCondition, matches_all};
 use crate::types::AnyMemoryType;
 
@@ -107,7 +107,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let Some(row) = self.store_table(table).get(id) else {
+        let Some(row) = self.store_table(table)?.get(id) else {
             return Ok(None);
         };
         let q = table_query(table).await?;
@@ -123,7 +123,7 @@ impl TableSource for MemoryDB {
     {
         let mut q = table_query(table).await?;
         q.limit = Some(1);
-        let rows = self.store_table(table).query(&q)?;
+        let rows = self.store_table(table)?.query(&q)?;
         Ok(rows
             .into_iter()
             .next()
@@ -135,7 +135,7 @@ impl TableSource for MemoryDB {
         E: Entity<Self::Value>,
     {
         let q = table_query(table).await?;
-        Ok(self.store_table(table).count(&q)? as i64)
+        Ok(self.store_table(table)?.count(&q)? as i64)
     }
 
     async fn get_table_sum<E>(
@@ -204,7 +204,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let store = self.store_table(table);
+        let store = self.store_table(table)?;
         let row = match store.patch(id, &to_cbor_record(partial)) {
             true => store.get(id),
             false => None,
@@ -223,7 +223,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        match self.store_table(table).delete(id) {
+        match self.store_table(table)?.delete(id) {
             true => Ok(()),
             false => Err(error!(
                 "Row not found",
@@ -237,7 +237,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let store = self.store_table(table);
+        let store = self.store_table(table)?;
         for (id, _) in self.rows(table, false).await? {
             store.delete(&id);
         }
@@ -252,7 +252,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.store_table(table).insert(to_cbor_record(record))
+        self.store_table(table)?.insert(to_cbor_record(record))
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
@@ -274,7 +274,7 @@ impl TableSource for MemoryDB {
             async move {
                 let rows = db.rows(&source, true).await?;
                 let id_column = db.id_column(&source);
-                let values = column_values(&rows, &col, &id_column);
+                let values = with_id_forms(column_values(&rows, &col, &id_column));
                 let payload =
                     CborValue::Array(vec![CborValue::Text(target), CborValue::Array(values)]);
                 Ok(AnyMemoryType::untyped(payload))

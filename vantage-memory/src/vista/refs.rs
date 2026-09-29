@@ -10,6 +10,7 @@ use vantage_types::Record;
 use vantage_vista::{FilterOp, Reference, ReferenceKind, Vista, VistaMetadata};
 
 use super::MemoryTableShell;
+use crate::store::ids::{id_forms, supplied_id};
 use crate::{MemoryCondition, MemoryStore};
 
 /// The store plus the metadata of every vista built over it, so a
@@ -60,32 +61,43 @@ impl MemoryTableShell {
     }
 
     /// The target of `relation`, narrowed to the rows related to `row`.
-    /// `HasMany`: `target[foreign_key] == row[id]`.
-    /// `HasOne`: `target[target id] == row[foreign_key]`.
+    /// `HasMany`: `target[foreign_key]` is `row[id]` as text or integer.
+    /// `HasOne`: `target[target id] == row[foreign_key]` as an id string.
+    /// Stored ids are text, but foreign keys (seed files especially) are
+    /// often integers, so both sides are normalised through the id's forms.
     pub(super) fn traverse(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
         let reference = self.reference(relation)?;
         let mut target = self.target_shell(reference);
-        let (source_col, target_col) = match reference.kind {
-            ReferenceKind::HasMany => (
-                self.id_column_name().to_string(),
-                reference.foreign_key.clone(),
-            ),
-            ReferenceKind::HasOne => (
-                reference.foreign_key.clone(),
-                target.id_column_name().to_string(),
-            ),
+        let source_col = match reference.kind {
+            ReferenceKind::HasMany => self.id_column_name().to_string(),
+            ReferenceKind::HasOne => reference.foreign_key.clone(),
         };
-        let value = row.get(&source_col).cloned().ok_or_else(|| {
+        let id = supplied_id(row.get(&source_col)).ok_or_else(|| {
             error!(
                 "Source row is missing the join field",
                 relation = relation,
                 field = source_col
             )
         })?;
-        target
-            .query
-            .conditions
-            .push(MemoryCondition::cmp(target_col, FilterOp::Eq, value));
+        let condition = match reference.kind {
+            ReferenceKind::HasMany => {
+                let mut forms = id_forms(&id);
+                match forms.len() {
+                    1 => {
+                        MemoryCondition::cmp(&reference.foreign_key, FilterOp::Eq, forms.remove(0))
+                    }
+                    _ => MemoryCondition::cmp(
+                        &reference.foreign_key,
+                        FilterOp::InSet,
+                        CborValue::Array(forms),
+                    ),
+                }
+            }
+            ReferenceKind::HasOne => {
+                MemoryCondition::cmp(target.id_column_name(), FilterOp::Eq, CborValue::Text(id))
+            }
+        };
+        target.query.conditions.push(condition);
         Ok(Vista::new(reference.target.clone(), Box::new(target)))
     }
 

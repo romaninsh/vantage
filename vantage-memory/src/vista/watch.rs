@@ -53,5 +53,6 @@ fn to_vista_change(query: &Query, change: MemoryChange) -> Result<Option<VistaCh
         MemoryChange::Deleted { id, old } => {
             matches_all(query, &old)?.then_some(VistaChange::Deleted { id })
         }
+        MemoryChange::Reset => Some(VistaChange::Invalidated),
     })
 }

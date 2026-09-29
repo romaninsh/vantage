@@ -44,6 +44,12 @@ fn key(v: &CborValue) -> Option<String> {
     }
 }
 
+fn cell_key(row: &Record<CborValue>, column: &str) -> Option<String> {
+    key(lookup(row, column).unwrap_or(&CborValue::Null))
+}
+
+/// Bucket order is not kept (removal swaps); callers restore row order by
+/// sorting candidates on their position in the row map.
 #[derive(Default)]
 struct HashIndex {
     by_key: HashMap<String, IndexSet<String>>,
@@ -52,14 +58,26 @@ struct HashIndex {
 }
 
 impl HashIndex {
-    fn add(&mut self, column: &str, id: &str, row: &Record<CborValue>) {
-        let cell = lookup(row, column).unwrap_or(&CborValue::Null);
-        match key(cell) {
+    fn add(&mut self, k: Option<String>, id: &str) {
+        let bucket = match k {
+            Some(k) => self.by_key.entry(k).or_default(),
+            None => &mut self.unkeyed,
+        };
+        bucket.insert(id.to_string());
+    }
+
+    fn remove(&mut self, k: Option<String>, id: &str) {
+        match k {
             Some(k) => {
-                self.by_key.entry(k).or_default().insert(id.to_string());
+                if let Some(set) = self.by_key.get_mut(&k) {
+                    set.swap_remove(id);
+                    if set.is_empty() {
+                        self.by_key.remove(&k);
+                    }
+                }
             }
             None => {
-                self.unkeyed.insert(id.to_string());
+                self.unkeyed.swap_remove(id);
             }
         }
     }
@@ -81,7 +99,25 @@ impl Indexes {
 
     pub fn add(&mut self, id: &str, row: &Record<CborValue>) {
         for (col, ix) in self.columns.iter_mut() {
-            ix.add(col, id, row);
+            ix.add(cell_key(row, col), id);
+        }
+    }
+
+    pub fn remove(&mut self, id: &str, row: &Record<CborValue>) {
+        for (col, ix) in self.columns.iter_mut() {
+            ix.remove(cell_key(row, col), id);
+        }
+    }
+
+    /// Move row `id` from `old`'s buckets to `new`'s, skipping every column
+    /// whose cell keys the same in both.
+    pub fn update(&mut self, id: &str, old: &Record<CborValue>, new: &Record<CborValue>) {
+        for (col, ix) in self.columns.iter_mut() {
+            let (was, is) = (cell_key(old, col), cell_key(new, col));
+            if was != is {
+                ix.remove(was, id);
+                ix.add(is, id);
+            }
         }
     }
 
@@ -100,34 +136,15 @@ impl Indexes {
         }
         let mut ix = HashIndex::default();
         for (id, row) in rows {
-            ix.add(column, id, row);
+            ix.add(cell_key(row, column), id);
         }
         self.columns.insert(column.to_string(), ix);
     }
 
-    pub fn remove(&mut self, id: &str, row: &Record<CborValue>) {
-        for (col, ix) in self.columns.iter_mut() {
-            let cell = lookup(row, col).unwrap_or(&CborValue::Null);
-            match key(cell) {
-                Some(k) => {
-                    if let Some(set) = ix.by_key.get_mut(&k) {
-                        set.shift_remove(id);
-                        if set.is_empty() {
-                            ix.by_key.remove(&k);
-                        }
-                    }
-                }
-                None => {
-                    ix.unkeyed.shift_remove(id);
-                }
-            }
-        }
-    }
-
     /// Candidate ids from the first top-level `Eq` / `InSet` condition on an
-    /// indexed column, or `None` when no index applies. The caller still
-    /// evaluates every condition on the candidates.
-    pub fn candidates(&self, q: &Query) -> Option<IndexSet<String>> {
+    /// indexed column, or `None` when no index applies. Ids are unordered and
+    /// may repeat; the caller still evaluates every condition on them.
+    pub fn candidates(&self, q: &Query) -> Option<Vec<&str>> {
         q.conditions.iter().find_map(|c| {
             let MemoryCondition::Cmp { path, op, value } = c else {
                 return None;
@@ -138,11 +155,11 @@ impl Indexes {
                 (FilterOp::InSet, CborValue::Array(items)) => items.iter().collect(),
                 _ => return None,
             };
-            let mut out: IndexSet<String> = ix.unkeyed.clone();
+            let mut out: Vec<&str> = ix.unkeyed.iter().map(String::as_str).collect();
             for v in values {
                 let k = key(v)?;
                 if let Some(set) = ix.by_key.get(&k) {
-                    out.extend(set.iter().cloned());
+                    out.extend(set.iter().map(String::as_str));
                 }
             }
             Some(out)
@@ -169,7 +186,7 @@ mod tests {
             CborValue::Text("Open".into()),
         ));
         let c = ix.candidates(&q).unwrap();
-        assert_eq!(c.into_iter().collect::<Vec<_>>(), vec!["a".to_string()]);
+        assert_eq!(c, vec!["a"]);
         let q = Query::new().filter(MemoryCondition::cmp("other", FilterOp::Eq, CborValue::Null));
         assert!(ix.candidates(&q).is_none());
     }

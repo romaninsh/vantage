@@ -2,49 +2,45 @@
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use super::MemoryTableShell;
+use crate::UpsertOutcome;
 
 type Rec = Record<CborValue>;
 
 impl MemoryTableShell {
-    fn stored(&self, id: &str) -> Result<Rec> {
-        self.table
-            .get(id)
-            .map(|row| (*row).clone())
-            .ok_or_else(|| error!("Row not found", table = self.table.name(), id = id))
+    fn not_found(&self, id: &str) -> VantageError {
+        error!("Row not found", table = self.table.name(), id = id)
     }
 
     pub(super) fn insert_row(&self, id: &str, record: &Rec) -> Result<Rec> {
-        if self.table.get(id).is_some() {
-            return Err(error!(
-                "Row already exists",
-                table = self.table.name(),
-                id = id
-            ));
-        }
-        self.table.upsert(id, record.clone());
-        self.stored(id)
+        let row = self.table.insert_as(id, record.clone())?;
+        Ok((*row).clone())
     }
 
     pub(super) fn replace_row(&self, id: &str, record: &Rec) -> Result<Rec> {
-        self.stored(id)?;
-        self.table.upsert(id, record.clone());
-        self.stored(id)
+        let row = self
+            .table
+            .replace(id, record.clone())
+            .ok_or_else(|| self.not_found(id))?;
+        Ok((*row).clone())
     }
 
     pub(super) fn patch_row(&self, id: &str, partial: &Rec) -> Result<Rec> {
         if !self.table.patch(id, partial) {
-            return Err(error!("Row not found", table = self.table.name(), id = id));
+            return Err(self.not_found(id));
         }
-        self.stored(id)
+        self.table
+            .get(id)
+            .map(|row| (*row).clone())
+            .ok_or_else(|| self.not_found(id))
     }
 
     pub(super) fn delete_row(&self, id: &str) -> Result<()> {
         if !self.table.delete(id) {
-            return Err(error!("Row not found", table = self.table.name(), id = id));
+            return Err(self.not_found(id));
         }
         Ok(())
     }
@@ -61,10 +57,9 @@ impl MemoryTableShell {
     pub(super) fn import_rows(&self, records: &IndexMap<String, Rec>) -> usize {
         let mut inserted = 0;
         for (id, record) in records {
-            if self.table.get(id).is_none() {
+            if self.table.upsert(id, record.clone()) == UpsertOutcome::Inserted {
                 inserted += 1;
             }
-            self.table.upsert(id, record.clone());
         }
         inserted
     }

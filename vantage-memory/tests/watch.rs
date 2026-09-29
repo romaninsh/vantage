@@ -99,3 +99,46 @@ async fn lag_becomes_invalidated() {
     }
     assert!(saw_invalidated);
 }
+
+#[tokio::test]
+async fn unquiet_after_quiet_writes_invalidates() {
+    let store = MemoryStore::new();
+    let v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
+    let mut w = v.watch().await.unwrap();
+    let t = store.table("t");
+    t.set_quiet(true);
+    t.upsert("a", status("Open"));
+    t.set_quiet(false);
+    assert!(matches!(next(&mut w).await, VistaChange::Invalidated));
+    nothing(&mut w).await;
+}
+
+#[tokio::test]
+async fn typed_writes_reach_the_watch() {
+    use vantage_memory::MemoryDB;
+    use vantage_memory::prelude::*;
+    use vantage_table::prelude::*;
+    use vantage_types::EmptyEntity;
+
+    let store = MemoryStore::new();
+    let v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
+    let mut w = v.watch().await.unwrap();
+    let db = MemoryDB::from_store(store);
+    let t = Table::<MemoryDB, EmptyEntity>::new("t", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("status");
+    let r: vantage_types::Record<AnyMemoryType> =
+        [("status".to_string(), AnyMemoryType::from("Open"))]
+            .into_iter()
+            .collect();
+    db.insert_table_value(&t, &"a".to_string(), &r)
+        .await
+        .unwrap();
+    assert!(matches!(next(&mut w).await, VistaChange::Inserted { id, .. } if id == "a"));
+    db.patch_table_value(&t, &"a".to_string(), &r)
+        .await
+        .unwrap();
+    nothing(&mut w).await;
+    db.delete_table_value(&t, &"a".to_string()).await.unwrap();
+    assert!(matches!(next(&mut w).await, VistaChange::Deleted { id } if id == "a"));
+}

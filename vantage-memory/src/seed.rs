@@ -29,7 +29,9 @@ pub fn load(
         };
         let record: Record<CborValue> = cbor.into();
         match crate::store::ids::supplied_id(record.get(table.id_column())) {
-            Some(id) => table.upsert(&id, record),
+            Some(id) => {
+                table.upsert(&id, record);
+            }
             None => {
                 table.insert(record)?;
             }
@@ -67,17 +69,22 @@ pub fn load_file(table: &MemoryTable, path: &Path) -> vantage_core::Result<usize
     load(table, rows)
 }
 
-/// Every row in `table`, as JSON objects in insertion order.
-pub fn dump(table: &MemoryTable) -> Vec<serde_json::Value> {
+/// Every row in `table`, as JSON objects in insertion order. A row holding
+/// a cell JSON cannot express (bytes, tags, non-text map keys) is an error.
+pub fn dump(table: &MemoryTable) -> vantage_core::Result<Vec<serde_json::Value>> {
     table
-        .query(&Query::new())
-        .expect("a query with no conditions cannot fail")
+        .query(&Query::new())?
         .into_iter()
-        .map(|(_, row)| {
+        .map(|(id, row)| {
             let value: CborValue = (*row).clone().into();
-            value
-                .deserialized()
-                .expect("a stored row deserializes back to a JSON object")
+            value.deserialized().map_err(|e| {
+                error!(
+                    "Cannot dump row as JSON",
+                    table = table.name(),
+                    id = id,
+                    detail = e.to_string()
+                )
+            })
         })
         .collect()
 }
@@ -106,7 +113,17 @@ mod tests {
             json!({"id": "a", "ok": true}),
         ];
         load(&t, rows.clone()).unwrap();
-        assert_eq!(dump(&t), rows);
+        assert_eq!(dump(&t).unwrap(), rows);
+    }
+
+    #[test]
+    fn dump_errors_on_bytes() {
+        let t = MemoryStore::new().table("t");
+        let row: Record<CborValue> = [("b".to_string(), CborValue::Bytes(vec![1, 2]))]
+            .into_iter()
+            .collect();
+        t.upsert("a", row);
+        assert!(dump(&t).is_err());
     }
 
     #[test]

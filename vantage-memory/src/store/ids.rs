@@ -33,6 +33,17 @@ impl IdGen {
     }
 }
 
+/// The cell values that can refer to row `id`: its text form and, when it
+/// parses as an integer, its integer form. Seed files often hold foreign
+/// keys as integers while stored ids are always text.
+pub(crate) fn id_forms(id: &str) -> Vec<CborValue> {
+    let mut forms = vec![CborValue::Text(id.to_string())];
+    if let Ok(n) = id.parse::<i64>() {
+        forms.push(CborValue::Integer(n.into()));
+    }
+    forms
+}
+
 /// The id a row supplies in its id column: non-empty text or an integer.
 pub(crate) fn supplied_id(value: Option<&CborValue>) -> Option<String> {
     match value {

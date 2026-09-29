@@ -8,6 +8,9 @@ mod query;
 mod table;
 #[cfg(test)]
 mod tests;
+mod write;
+#[cfg(test)]
+mod write_tests;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,6 +21,7 @@ use vantage_types::Record;
 
 pub use events::MemoryChange;
 pub use table::MemoryTable;
+pub use write::UpsertOutcome;
 
 /// A stored row, shared between the table, readers and change events.
 pub type Row = Arc<Record<CborValue>>;

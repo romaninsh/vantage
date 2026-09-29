@@ -38,21 +38,32 @@ impl MemoryDB {
     }
 
     /// The store table behind `table`. A table seen for the first time is
-    /// created with the typed table's id column.
+    /// created with the typed table's id column; an existing table whose id
+    /// column differs from the typed table's is an error.
     pub(crate) fn store_table<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
-    ) -> MemoryTableHandle {
-        match table.id_field() {
-            Some(id) => self.store.define(
+    ) -> Result<MemoryTableHandle> {
+        let Some(id) = table.id_field() else {
+            return Ok(self.store.table(table.table_name()));
+        };
+        let id_column = ColumnLike::name(id);
+        let store = self.store.define(
+            table.table_name(),
+            TableDef {
+                id_column: id_column.to_string(),
+                ..TableDef::default()
+            },
+        );
+        if store.id_column() != id_column {
+            return Err(error!(format!(
+                "table {} already exists with id column {}, typed table says {}",
                 table.table_name(),
-                TableDef {
-                    id_column: ColumnLike::name(id).to_string(),
-                    ..TableDef::default()
-                },
-            ),
-            None => self.store.table(table.table_name()),
+                store.id_column(),
+                id_column
+            )));
         }
+        Ok(store)
     }
 
     /// Rows matching the table's conditions and orders; `windowed` also
@@ -66,7 +77,7 @@ impl MemoryDB {
         if !windowed {
             q = q.window(0, None);
         }
-        self.store_table(table).query(&q)
+        self.store_table(table)?.query(&q)
     }
 
     /// Store `record` as row `id` and return the stored row. The row must
@@ -78,24 +89,14 @@ impl MemoryDB {
         record: &Record<AnyMemoryType>,
         replace: bool,
     ) -> Result<Record<AnyMemoryType>> {
-        let store = self.store_table(table);
-        match (store.get(id).is_some(), replace) {
-            (true, false) => {
-                return Err(error!(
-                    "Row already exists",
-                    table = table.table_name(),
-                    id = id
-                ));
-            }
-            (false, true) => {
-                return Err(error!("Row not found", table = table.table_name(), id = id));
-            }
-            _ => {}
-        }
-        store.upsert(id, to_cbor_record(record));
-        let row = store
-            .get(id)
-            .ok_or_else(|| error!("Row not found", id = id))?;
+        let store = self.store_table(table)?;
+        let record = to_cbor_record(record);
+        let row = match replace {
+            false => store.insert_as(id, record)?,
+            true => store
+                .replace(id, record)
+                .ok_or_else(|| error!("Row not found", table = table.table_name(), id = id))?,
+        };
         Ok(from_cbor_record(&row))
     }
 
@@ -103,7 +104,7 @@ impl MemoryDB {
     pub(crate) fn id_column<E: Entity<AnyMemoryType>>(&self, table: &Table<Self, E>) -> String {
         match table.id_field() {
             Some(id) => ColumnLike::name(id).to_string(),
-            None => self.store_table(table).id_column().to_string(),
+            None => self.store.table(table.table_name()).id_column().to_string(),
         }
     }
 }

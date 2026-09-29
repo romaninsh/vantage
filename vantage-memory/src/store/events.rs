@@ -6,16 +6,33 @@ use crate::store::Row;
 pub(crate) const EVENT_CAPACITY: usize = 4096;
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum MemoryChange {
-    Inserted { id: String, row: Row },
-    Updated { id: String, row: Row, old: Row },
-    Deleted { id: String, old: Row },
+    Inserted {
+        id: String,
+        row: Row,
+    },
+    Updated {
+        id: String,
+        row: Row,
+        old: Row,
+    },
+    Deleted {
+        id: String,
+        old: Row,
+    },
+    /// Rows changed while the table was quiet; subscribers must re-list.
+    Reset,
 }
 
 impl MemoryChange {
-    pub fn id(&self) -> &str {
+    /// The row the change is about; `None` for `Reset`.
+    pub fn id(&self) -> Option<&str> {
         match self {
-            Self::Inserted { id, .. } | Self::Updated { id, .. } | Self::Deleted { id, .. } => id,
+            Self::Inserted { id, .. } | Self::Updated { id, .. } | Self::Deleted { id, .. } => {
+                Some(id)
+            }
+            Self::Reset => None,
         }
     }
 }

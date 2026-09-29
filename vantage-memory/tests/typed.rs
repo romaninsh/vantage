@@ -139,3 +139,40 @@ async fn related_in_condition_narrows_by_source_rows() {
     let rows = o.data_source().list_table_values(&o).await.unwrap();
     assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["o1"]);
 }
+
+#[tokio::test]
+async fn related_in_condition_matches_integer_foreign_keys() {
+    let db = seeded().await;
+    let clients = db.store().table("client");
+    for id in ["1", "2"] {
+        clients.upsert(id, Record::new());
+    }
+    let orders = db.store().table("order");
+    for (id, client) in [("o1", 1), ("o2", 2)] {
+        orders.upsert(
+            id,
+            [(
+                "client_id".to_string(),
+                ciborium::Value::Integer(client.into()),
+            )]
+            .into_iter()
+            .collect(),
+        );
+    }
+    let mut src = Table::<MemoryDB, EmptyEntity>::new("client", db.clone()).with_id_column("id");
+    src.add_condition(src["id"].eq("2"));
+    let mut o = Table::<MemoryDB, EmptyEntity>::new("order", db.clone())
+        .with_id_column("id")
+        .with_column_of::<i64>("client_id");
+    let c = db.related_in_condition("client_id", &src, "id");
+    o.add_condition(c);
+    let rows = o.data_source().list_table_values(&o).await.unwrap();
+    assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["o2"]);
+}
+
+#[tokio::test]
+async fn id_column_mismatch_with_existing_table_errors() {
+    let db = seeded().await;
+    let t = Table::<MemoryDB, EmptyEntity>::new("product", db.clone()).with_id_column("sku");
+    assert!(t.data_source().list_table_values(&t).await.is_err());
+}

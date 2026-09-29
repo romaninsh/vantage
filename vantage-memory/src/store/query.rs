@@ -30,13 +30,17 @@ impl MemoryTable {
         let mut out = Vec::new();
         match rows.indexes.candidates(q) {
             Some(ids) => {
-                let mut candidates: Vec<(usize, &String)> = ids
-                    .iter()
-                    .filter_map(|id| rows.map.get_index_of(id).map(|pos| (pos, id)))
+                let mut positions: Vec<usize> = ids
+                    .into_iter()
+                    .filter_map(|id| rows.map.get_index_of(id))
                     .collect();
-                candidates.sort_by_key(|(pos, _)| *pos);
-                for (_, id) in candidates {
-                    let row = rows.map.get(id).expect("id came from rows.map");
+                positions.sort_unstable();
+                positions.dedup();
+                for pos in positions {
+                    let (id, row) = rows
+                        .map
+                        .get_index(pos)
+                        .expect("position came from rows.map");
                     if matches_all(q, row)? {
                         out.push((id.clone(), row.clone()));
                     }

@@ -212,6 +212,19 @@ fn ordering_ties_keep_insertion_order_and_nulls_first() {
 }
 
 #[test]
+fn nan_sorts_after_every_number() {
+    let t = MemoryStore::new().table("t");
+    for (id, n) in [("a", f64::NAN), ("b", 2.0), ("c", f64::NAN), ("d", -1.0)] {
+        t.upsert(id, rec(&[("n", CborValue::Float(n))]));
+    }
+    t.upsert("e", rec(&[("n", int(5))]));
+    let q = Query::new().order_by("n", SortDirection::Ascending);
+    assert_eq!(ids(t.query(&q).unwrap()), ["d", "b", "e", "a", "c"]);
+    let q = Query::new().order_by("n", SortDirection::Descending);
+    assert_eq!(ids(t.query(&q).unwrap()), ["a", "c", "e", "b", "d"]);
+}
+
+#[test]
 fn offset_past_end_is_empty() {
     let t = filled();
     assert!(

@@ -1,4 +1,5 @@
 //! One table: rows under a single lock, id generation and the change channel.
+//! The write operations live in `write.rs`.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -10,7 +11,7 @@ use tokio::sync::broadcast;
 use vantage_types::Record;
 
 use super::events::{EVENT_CAPACITY, MemoryChange};
-use super::ids::{IdGen, supplied_id};
+use super::ids::IdGen;
 use super::index::Indexes;
 use super::{Row, TableDef};
 
@@ -20,12 +21,15 @@ pub(super) struct Rows {
 }
 
 pub struct MemoryTable {
-    name: String,
-    def: TableDef,
+    pub(super) name: String,
+    pub(super) def: TableDef,
     pub(super) rows: RwLock<Rows>,
-    ids: IdGen,
+    pub(super) ids: IdGen,
     events: broadcast::Sender<MemoryChange>,
     quiet: AtomicBool,
+    /// Set when a write happens while quiet; cleared by `set_quiet(false)`,
+    /// which then sends `Reset`.
+    missed: AtomicBool,
     writes: AtomicU64,
 }
 
@@ -42,6 +46,7 @@ impl MemoryTable {
             def,
             events,
             quiet: AtomicBool::new(false),
+            missed: AtomicBool::new(false),
             writes: AtomicU64::new(0),
         }
     }
@@ -54,106 +59,19 @@ impl MemoryTable {
         &self.def.id_column
     }
 
-    fn with_id(&self, mut record: Record<CborValue>, id: &str) -> Row {
+    pub(super) fn with_id(&self, mut record: Record<CborValue>, id: &str) -> Row {
         record.insert(self.def.id_column.clone(), CborValue::Text(id.to_string()));
         Arc::new(record)
     }
 
-    fn changed(&self, change: MemoryChange) {
+    /// Count a write and broadcast it, unless the table is quiet.
+    pub(super) fn changed(&self, change: MemoryChange) {
         self.writes.fetch_add(1, Ordering::Relaxed);
-        if !self.quiet.load(Ordering::Relaxed) {
+        if self.quiet.load(Ordering::Relaxed) {
+            self.missed.store(true, Ordering::Relaxed);
+        } else {
             let _ = self.events.send(change);
         }
-    }
-
-    /// Insert a new row. The id comes from the id column when supplied,
-    /// else from the table's counter. An existing id is an error.
-    pub fn insert(&self, record: Record<CborValue>) -> vantage_core::Result<String> {
-        let mut rows = self.rows.write();
-        let id = match supplied_id(record.get(&self.def.id_column)) {
-            Some(id) if rows.map.contains_key(&id) => {
-                return Err(vantage_core::error!(
-                    "Row already exists",
-                    table = self.name,
-                    id = id
-                ));
-            }
-            Some(id) => id,
-            None => self.ids.next(|candidate| rows.map.contains_key(candidate)),
-        };
-        let row = self.with_id(record, &id);
-        rows.map.insert(id.clone(), row.clone());
-        rows.indexes.add(&id, &row);
-        self.changed(MemoryChange::Inserted {
-            id: id.clone(),
-            row,
-        });
-        Ok(id)
-    }
-
-    /// Insert or replace the row `id`. Replacing with an identical row is a no-op.
-    pub fn upsert(&self, id: &str, record: Record<CborValue>) {
-        let row = self.with_id(record, id);
-        let mut rows = self.rows.write();
-        let old = rows.map.insert(id.to_string(), row.clone());
-        match old {
-            None => {
-                rows.indexes.add(id, &row);
-                self.changed(MemoryChange::Inserted {
-                    id: id.to_string(),
-                    row,
-                });
-            }
-            Some(old) if old == row => {}
-            Some(old) => {
-                rows.indexes.remove(id, &old);
-                rows.indexes.add(id, &row);
-                self.changed(MemoryChange::Updated {
-                    id: id.to_string(),
-                    row,
-                    old,
-                });
-            }
-        }
-    }
-
-    /// Merge `partial` into row `id`. `false` when the row is missing.
-    pub fn patch(&self, id: &str, partial: &Record<CborValue>) -> bool {
-        let mut rows = self.rows.write();
-        let Some(old) = rows.map.get(id).cloned() else {
-            return false;
-        };
-        let mut next = (*old).clone();
-        for (k, v) in partial.iter() {
-            next.insert(k.clone(), v.clone());
-        }
-        if next == *old {
-            return true;
-        }
-        let row = Arc::new(next);
-        rows.map.insert(id.to_string(), row.clone());
-        rows.indexes.remove(id, &old);
-        rows.indexes.add(id, &row);
-        self.changed(MemoryChange::Updated {
-            id: id.to_string(),
-            row,
-            old,
-        });
-        true
-    }
-
-    /// Remove row `id`. `false` when it is missing.
-    pub fn delete(&self, id: &str) -> bool {
-        let mut rows = self.rows.write();
-        let Some(old) = rows.map.shift_remove(id) else {
-            return false;
-        };
-        rows.indexes.remove(id, &old);
-        self.changed(MemoryChange::Deleted {
-            id: id.to_string(),
-            old,
-        });
-        true
     }
 
     pub fn get(&self, id: &str) -> Option<Row> {
@@ -173,8 +91,12 @@ impl MemoryTable {
     }
 
     /// Stop (or resume) broadcasting changes. Writes still apply and count.
+    /// Resuming after writes were withheld sends one `MemoryChange::Reset`.
     pub fn set_quiet(&self, quiet: bool) {
         self.quiet.store(quiet, Ordering::Relaxed);
+        if !quiet && self.missed.swap(false, Ordering::Relaxed) {
+            let _ = self.events.send(MemoryChange::Reset);
+        }
     }
 
     pub fn is_quiet(&self) -> bool {

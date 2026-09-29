@@ -82,7 +82,11 @@ impl VistaFactory for MemoryVistaFactory {
         for column in &block.indexed {
             table.add_index(column);
         }
-        if let Some(path) = &block.seed {
+        // Seed only an empty table, so rebuilding the vista neither reverts
+        // edits made since nor duplicates rows without an id.
+        if let Some(path) = &block.seed
+            && table.is_empty()
+        {
             seed::load_file(&table, path)?;
         }
         self.catalog.register(spec.name.clone(), metadata.clone());

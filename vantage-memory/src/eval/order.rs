@@ -1,5 +1,6 @@
-//! Multi-key stable ordering. Nulls sort first ascending; descending
-//! reverses the whole comparison.
+//! Multi-key stable ordering. Nulls sort first ascending and NaN after every
+//! other number, so the order is total; descending reverses the whole
+//! comparison.
 
 use std::cmp::Ordering;
 
@@ -13,9 +14,10 @@ fn rank(v: Option<&CborValue>) -> u8 {
     match v {
         None | Some(CborValue::Null) => 0,
         Some(CborValue::Bool(_)) => 1,
+        Some(CborValue::Float(f)) if f.is_nan() => 3,
         Some(CborValue::Integer(_) | CborValue::Float(_)) => 2,
-        Some(CborValue::Text(_)) => 3,
-        Some(_) => 4,
+        Some(CborValue::Text(_)) => 4,
+        Some(_) => 5,
     }
 }
 

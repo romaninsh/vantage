@@ -11,6 +11,7 @@ use vantage_vista::SortDirection;
 use super::MemoryDB;
 use crate::eval::{MemoryCondition, Query};
 use crate::store::Row;
+use crate::store::ids::{id_forms, supplied_id};
 use crate::types::AnyMemoryType;
 
 pub(crate) fn to_cbor_record(record: &Record<AnyMemoryType>) -> Record<CborValue> {
@@ -37,6 +38,18 @@ pub(crate) fn column_values(
         .filter_map(|(id, row)| match column == id_column {
             true => Some(CborValue::Text(id.clone())),
             false => row.get(column).cloned(),
+        })
+        .collect()
+}
+
+/// `values` with every id-like cell (non-empty text or an integer) widened
+/// to all its [`id_forms`], so a join matches integer and text keys alike.
+pub(crate) fn with_id_forms(values: Vec<CborValue>) -> Vec<CborValue> {
+    values
+        .into_iter()
+        .flat_map(|v| match supplied_id(Some(&v)) {
+            Some(id) => id_forms(&id),
+            None => vec![v],
         })
         .collect()
 }

@@ -8,7 +8,9 @@ pub mod types;
 pub mod vista;
 
 pub use eval::{MemoryCondition, Query};
-pub use store::{MemoryChange, MemoryStore, MemoryTable, MemoryTableHandle, Row, TableDef};
+pub use store::{
+    MemoryChange, MemoryStore, MemoryTable, MemoryTableHandle, Row, TableDef, UpsertOutcome,
+};
 pub use typed::{MemoryDB, operation::MemoryOperation};
 pub use types::{AnyMemoryType, MemoryType, MemoryTypeVariants};
 pub use vista::{
