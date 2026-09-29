@@ -183,18 +183,18 @@ A chaos scenario has a `stress.expect:` block with `errored_min` (the fewest sim
 | `chaos/spin` | `loop {}` with no sleep | The operation budget ends it (`errored` +1) |
 | `chaos/throw` | `throw` on its third step, while healthy sims run beside it | It ends and is counted; the healthy sims keep writing |
 | `chaos/stale` | Patches and deletes ids that another sim has already deleted | No panic; stale writes don't count as `writes` |
-| `chaos/flood` | 10k inserts with no sleep | Well under the 50M-operation budget, so it completes normally (`errored_min: 0`); the finding to look for is `lagged`, the lag estimate and the consumer's re-list, not an error |
+| `chaos/flood` | 10k inserts with no sleep | Well under the 50M-operation budget, so it completes normally (`errored_min: 0`); the finding to look for is `lagged`, `lag ms` and the consumer's re-list, not an error |
 | `chaos/spawn-bomb` | Each sim `spawn_sim`s two copies of itself | Bounded by `max` and `MAX_LIVE`; the thread count levels off |
 | `chaos/recurse` | Unbounded recursion | The call-level limit ends it; no stack overflow |
 
-On 0.7, a result that differs from the expected one is recorded as a finding, not fixed here. The findings feed the isolation and idempotency design in sub-project 2. Confirmed findings from the 0.7 baseline: `chaos/stale` shows `events/s` above `writes/s`, because `FakerCtx::expire` broadcasts a `Deleted` event even when the id is already gone; `chaos/flood` completes normally but the consumer falls far behind (`lagged` in the thousands, peak lag in the tens of seconds).
+On 0.7, a result that differs from the expected one is recorded as a finding, not fixed here. The findings feed the isolation and idempotency design in sub-project 2. Confirmed findings from the 0.7 baseline: `chaos/stale` shows `events/s` above `writes/s`, because `FakerCtx::expire` broadcasts a `Deleted` event even when the id is already gone; `chaos/flood` completes normally but the consumer falls far behind (`lagged` in the thousands, peak lag of several seconds).
 
 ## README outline
 
 1. What the harness is for, and what it isn't: numbers are relative, not benchmarks.
 2. Quick start: `cargo run -- run churn`.
 3. CLI reference.
-4. Reading the output: each column, the lag estimate, the cost per sim, and why CPU can exceed 100.
+4. Reading the output: each column, the drain-time lag probe, the cost per sim, and why CPU can exceed 100.
 5. Writing a scenario: its format, `!include`, and `stress:` limits and expectations.
 6. Chaos scenarios and verdicts.
 7. Comparing runs across faker versions.

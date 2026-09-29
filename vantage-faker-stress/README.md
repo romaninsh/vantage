@@ -166,7 +166,7 @@ working.
 | `chaos/spin` | `loop {}` with no sleep | the operation budget ends it (`errored` +1) |
 | `chaos/throw` | throws on its third step | it ends and is counted; the healthy sims keep writing |
 | `chaos/stale` | inserts a row, deletes it, then keeps patching, setting and deleting that same gone id | no panic; stale writes don't count as `writes` |
-| `chaos/flood` | 10k inserts with no sleep | well under the operation budget, so it completes normally (`errored_min: 0`); watch `lagged`, the lag estimate and the Dio re-list cost |
+| `chaos/flood` | 10k inserts with no sleep | well under the operation budget, so it completes normally (`errored_min: 0`); watch `lagged`, `lag ms` and the Dio re-list cost |
 | `chaos/spawn-bomb` | each sim spawns two copies of itself | bounded by `max` and `MAX_LIVE`; the thread count levels off |
 | `chaos/recurse` | unbounded recursion | the call-depth limit ends it; no stack overflow |
 
@@ -226,15 +226,18 @@ compare that against a fresh run.
 Recorded in `baseline-0.7.json`, a debug build, one scenario at a time.
 
 - `idle` at 1000 parked sims: 98 MB peak RSS, 1018 threads, peak CPU under 6%.
-- `churn`'s ramp reaches its top step, 800 live sims, without breaching
-  either limit: mean CPU 25%, peak 90%, peak lag 201 ms.
-- `swarm` and `sweeper` both stop their ramp after the first step (100
-  live/rows): every def writes on the same clock tick, and the per-second
-  `lag ms` estimate spikes to the tens of seconds for that one sample
-  (63000 ms / 59000 ms) even though `lagged` stays 0, tripping the 250 ms
-  limit. At the step both reach, `swarm`'s one-thread-per-row design costs
-  119 threads against `sweeper`'s 20 for close to the same CPU (mean 4.8%
-  vs 3.9%) — the two designs differ in threads, not CPU.
+- `churn`'s ramp runs all four steps without breaching either limit. Its
+  top step (800) peaks at 299 live sims, since sims end as others spawn:
+  mean CPU 29%, peak 78%, peak lag 20 ms.
+- `swarm` stops after step 250 (peak lag 833 ms) and `sweeper` after
+  step 100 (peak lag 397 ms). Both write their rows in bursts, and with
+  `--dio` a burst of a few hundred events takes hundreds of milliseconds
+  to drain; `lagged` stays 0. One sample decides the stop, so where a tick
+  lands against a burst moves the stopping step. At step 100, the step
+  both reach, `swarm`'s one-thread-per-row design costs 119 threads
+  against `sweeper`'s 20 for the same mean CPU (8.0% each), so the two
+  designs differ in threads, not CPU. Peak lag there is 127 ms for
+  `swarm` and 397 ms for `sweeper`.
 - `warm` fast-forwards `lifecycle`'s 12-hour warm span in 1.65 s wall
   time, landing at 300 live sims and 49 MB RSS.
 - Chaos verdicts: all six `contained` (`spin`, `throw`, `stale`, `flood`,
@@ -249,6 +252,7 @@ Recorded in `baseline-0.7.json`, a debug build, one scenario at a time.
   is already gone, so repeated deletes of a dead id emit events that are
   never counted as writes.
 - `chaos/flood`'s 10k-insert burst ends normally (`errored: 0`), but the
-  consumer falls badly behind: `lagged` reaches 8951 dropped events, peak
-  lag hits ~19 s, and mean `events/s` (75) trails mean `writes/s` (671) by
-  close to 9x while the burst is in flight.
+  consumer falls badly behind: `lagged` reaches 8956 dropped events, the
+  backlog from the burst takes 3.2 s to get through (peak lag 3227 ms,
+  skipped events included), and mean `events/s` (74) trails mean
+  `writes/s` (672) by about 9x.
