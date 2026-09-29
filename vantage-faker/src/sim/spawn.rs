@@ -171,9 +171,6 @@ pub(super) fn start_driver(inner: Arc<Inner>, mut plan: Plan) -> Option<JoinHand
             loop {
                 let now = inner.sched.now();
                 plan.run_due(&inner, now, true);
-                if !inner.tables_alive() {
-                    inner.sched.stop();
-                }
                 if inner.sched.park(DRIVER_ID, plan.earliest()).is_err() {
                     break;
                 }

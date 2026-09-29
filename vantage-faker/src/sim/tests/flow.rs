@@ -118,18 +118,15 @@ fn unknown_table_is_a_script_error() {
 
 #[test]
 fn stop_ends_sleepers_promptly_on_the_system_clock() {
-    let (log, _) = table(&["id", "who"]);
+    let store = store_with(&["log"]);
+    let log = store.table("log");
     let def = SimDef::new(
         "nap",
         "log",
         "sleep(hours(10)); insert(#{ who: \"late\" });",
     )
     .with_spawn(50, 0.0, 50);
-    let engine = SimEngine::builder()
-        .table("log", &log)
-        .sim(def)
-        .start()
-        .unwrap();
+    let engine = SimEngine::builder().store(&store).sim(def).start().unwrap();
     engine.settle();
     assert_eq!(engine.threads(), 50);
     let t = Instant::now();
@@ -149,7 +146,8 @@ fn stop_ends_sleepers_promptly_on_the_system_clock() {
 /// an untimed park that nothing live ever wakes.
 #[test]
 fn short_sleeps_on_the_system_clock_never_strand_a_sim() {
-    let (log, _) = table(&["id", "who"]);
+    let store = store_with(&["log"]);
+    let log = store.table("log");
     let def = SimDef::new(
         "tick",
         "log",
@@ -157,11 +155,7 @@ fn short_sleeps_on_the_system_clock_never_strand_a_sim() {
     )
     .with_spawn(60, 0.0, 60)
     .with_clock(240.0);
-    let engine = SimEngine::builder()
-        .table("log", &log)
-        .sim(def)
-        .start()
-        .unwrap();
+    let engine = SimEngine::builder().store(&store).sim(def).start().unwrap();
     // 40 sim seconds at 240x is about 0.17 s real; allow plenty.
     let deadline = Instant::now() + Duration::from_secs(10);
     while rows(&log).len() < 60 && Instant::now() < deadline {
@@ -188,10 +182,9 @@ fn stop_ends_a_busy_script() {
 
 #[test]
 fn dropping_the_engine_joins_its_threads() {
-    let (log, _) = table(&["id", "who"]);
     let def = SimDef::new("nap", "log", "sleep(hours(1));").with_spawn(20, 0.0, 20);
     let engine = SimEngine::builder()
-        .table("log", &log)
+        .store(&store_with(&["log"]))
         .sim(def)
         .manual_clock(start())
         .start()
@@ -204,27 +197,6 @@ fn dropping_the_engine_joins_its_threads() {
         0,
         "no sim thread still holds the engine"
     );
-}
-
-#[test]
-fn dropping_the_tables_ends_the_sims() {
-    let (log, _) = table(&["id", "who"]);
-    let def = SimDef::new("tick", "log", "loop { sleep(seconds(1)); }").with_spawn(5, 0.0, 5);
-    let engine = SimEngine::builder()
-        .table("log", &log)
-        .sim(def)
-        .manual_clock(start())
-        .start()
-        .unwrap();
-    engine.settle();
-    assert_eq!(engine.live(), 5);
-    drop(log);
-    engine.advance(Duration::from_secs(1));
-    let t = Instant::now();
-    while engine.live() > 0 && t.elapsed() < Duration::from_secs(2) {
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    assert_eq!(engine.live(), 0);
 }
 
 #[test]

@@ -5,19 +5,19 @@ use std::time::Instant;
 use super::*;
 
 /// A warm start over `script` on the manual clock; returns how long it took.
-fn warm(script: &str) -> (SimEngine, Arc<FakerCtx>, Duration) {
-    let (log, _) = table(&["id", "who", "step", "at"]);
+fn warm(script: &str) -> (SimEngine, MemoryTableHandle, Duration) {
+    let store = store_with(&["log"]);
     let def = SimDef::new("w", "log", script)
         .with_spawn(3, 0.0, 3)
         .with_warm(Duration::from_secs(7200));
     let t = Instant::now();
     let engine = SimEngine::builder()
-        .table("log", &log)
+        .store(&store)
         .sim(def)
         .manual_clock(start())
         .start()
         .unwrap();
-    (engine, log, t.elapsed())
+    (engine, store.table("log"), t.elapsed())
 }
 
 fn wait_for_no_sims(engine: &SimEngine) {
@@ -48,9 +48,8 @@ fn still_sleep_loops_end_the_sim_during_a_warm_start() {
 #[test]
 fn still_sleep_loops_end_the_sim_when_live() {
     for script in ["loop { sleep(0); }", "loop { sleep(-1); }"] {
-        let (log, _) = table(&["id", "who"]);
         let engine = SimEngine::builder()
-            .table("log", &log)
+            .store(&store_with(&["log"]))
             .sim(SimDef::new("spin", "log", script).with_spawn(2, 0.0, 2))
             .start()
             .unwrap();
@@ -74,22 +73,25 @@ fn an_occasional_still_sleep_is_harmless() {
 }
 
 #[test]
-fn inserting_an_existing_id_broadcasts_updated() {
-    let (log, mut rx) = table(&["id", "who"]);
+fn inserting_an_existing_id_is_a_script_error() {
+    let store = store_with(&["log"]);
+    let log = store.table("log");
+    let mut rx = log.subscribe();
     let script = r#"
         insert(#{ id: "x", who: "first" });
         insert(#{ id: "x", who: "second" });
     "#;
     let engine = SimEngine::builder()
-        .table("log", &log)
+        .store(&store)
         .sim(SimDef::new("u", "log", script))
         .manual_clock(start())
         .start()
         .unwrap();
     engine.settle();
-    assert!(matches!(rx.try_recv(), Ok(ChangeEvent::Inserted { .. })));
-    assert!(matches!(rx.try_recv(), Ok(ChangeEvent::Updated { .. })));
+    assert!(matches!(rx.try_recv(), Ok(MemoryChange::Inserted { .. })));
+    assert!(rx.try_recv().is_err());
     let rows = rows(&log);
     assert_eq!(rows.len(), 1);
-    assert_eq!(text(&rows[0], "who"), "second");
+    assert_eq!(text(&rows[0], "who"), "first");
+    assert_eq!(engine.stats().errored, 1);
 }

@@ -1,15 +1,19 @@
 //! The verbs a sim script can call.
 //!
 //! **Data** — `table` is optional everywhere and defaults to the def's table;
-//! it can name any table added to the engine. Writes broadcast the usual
-//! `ChangeEvent`s (except during the warm start).
-//! - `insert(table?, #{…}) -> id` — a new row. Declared columns missing from
-//!   the map are null. The map's id column, if set, is the row id (an
-//!   existing row with it is replaced, broadcast as `Updated`); otherwise an
-//!   id is assigned.
-//! - `patch(table?, id, #{…})`, `set(table?, id, field, value)` — change a row.
+//! it can name any table of the engine's store; a missing table is a script
+//! error. Writes broadcast the store's `MemoryChange`s (during the warm start
+//! each written table sends one `Reset` instead, at its end).
+//! - `insert(table?, #{…}) -> id` — a new row, stored as the map gives it.
+//!   The map's id column, if set, is the row id (an existing row with it is
+//!   a script error); otherwise an id is assigned.
+//! - `upsert(table?, id, #{…})` — insert or replace row `id`.
+//! - `patch(table?, id, #{…})`, `set(table?, id, field, value)` — change a
+//!   row; a missing row is ignored.
 //! - `delete(table?, id)`, `get(table?, id) -> map or ()`, `ids(table?)`,
 //!   `count(table?)`.
+//! - `find(table?, #{col: value, …}) -> [id]` — ids of the rows equal to
+//!   every entry, in insertion order; an empty map gives every id.
 //!
 //! **Spawn** — `spawn_sim(name, #{args}?) -> bool` starts a sim of def
 //! `name` at this sim's current time; `false` when the def is at its `max`
@@ -40,6 +44,7 @@
 //! **Misc** — `sim_id()`, `sim_name()`; `print` / `debug` go to the log.
 //! The spawner's (or `spawn` caller's) args are the variable `args`.
 
+pub(crate) mod convert;
 mod data;
 mod random;
 mod time;

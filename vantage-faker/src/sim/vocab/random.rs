@@ -4,10 +4,10 @@ use fake::rand::RngExt as _;
 use fake::rand::rngs::StdRng;
 use vantage_rhai::rhai::{Array, Dynamic, Engine};
 
+use super::convert::cbor_to_dynamic;
 use super::num;
 use crate::FakerColumn;
 use crate::generator::{expand_pattern, parse_when, rfc3339, sentence};
-use crate::rhai_effect::cbor_to_dynamic;
 use crate::sim::current::{VerbResult, with};
 use crate::value_gen::ValueGen;
 

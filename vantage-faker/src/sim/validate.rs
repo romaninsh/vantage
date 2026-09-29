@@ -11,7 +11,7 @@ impl SimDef {
     /// Report a def the engine cannot run: an empty name, table or script, a
     /// script that does not compile, `max: 0`, a `burst` above `max`, a
     /// negative or non-finite `rate_per_min`, a non-positive or non-finite
-    /// `clock`, or a `max` above [`MAX_LIVE`].
+    /// `clock`, `ops: 0`, or a `max` above [`MAX_LIVE`].
     pub fn validate(&self) -> Result<(), String> {
         let name = &self.name;
         if name.trim().is_empty() {
@@ -51,6 +51,9 @@ impl SimDef {
                 self.clock
             ));
         }
+        if self.ops == Some(0) {
+            return Err(format!("sim {name}: ops must be greater than 0"));
+        }
         compile_host()
             .ast_uncached(Mode::Script, &self.script)
             .map_err(|e| format!("sim {name}: script does not compile: {e}"))?;
@@ -72,7 +75,7 @@ fn compile_host() -> &'static Host {
 
 /// Check a whole engine config: every def valid, names unique, every default
 /// table known, and the sum of `max` within [`MAX_LIVE`].
-pub(super) fn validate_all(defs: &[SimDef], tables: &HashSet<&str>) -> Result<(), String> {
+pub(super) fn validate_all(defs: &[SimDef], tables: &HashSet<String>) -> Result<(), String> {
     let mut names = HashSet::new();
     for def in defs {
         def.validate()?;
@@ -81,7 +84,7 @@ pub(super) fn validate_all(defs: &[SimDef], tables: &HashSet<&str>) -> Result<()
         }
         if !tables.contains(def.table.as_str()) {
             return Err(format!(
-                "sim {}: table {} is not a table of this datasource",
+                "sim {}: table {} does not exist",
                 def.name, def.table
             ));
         }

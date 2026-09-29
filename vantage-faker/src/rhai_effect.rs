@@ -24,14 +24,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use ciborium::Value as CborValue;
 use tokio::time::interval;
 use vantage_rhai::rhai;
 use vantage_rhai::rhai::{Dynamic, Engine, Map as RhaiMap};
 use vantage_rhai::{Block, Compiled, Env, Host, Limits, Vocab};
-use vantage_types::Record;
 
 use crate::effect::{FakerCtx, FakerEffect};
+use crate::sim::vocab::convert::{cbor_to_dynamic, dynamic_to_cbor, map_to_record, record_to_map};
 
 /// Seed `count` rows, then run `script` every `interval`.
 pub struct RhaiEffect {
@@ -177,50 +176,10 @@ fn register_verbs(engine: &mut Engine, ctx: &Arc<FakerCtx>) {
     });
 }
 
-// ---- Value round-tripping (the scalar subset scripts touch) ---------------
-
-pub(crate) fn dynamic_to_cbor(v: &Dynamic) -> CborValue {
-    if v.is_unit() {
-        CborValue::Null
-    } else if let Ok(i) = v.as_int() {
-        CborValue::Integer(i.into())
-    } else if let Ok(f) = v.as_float() {
-        CborValue::Float(f)
-    } else if let Ok(b) = v.as_bool() {
-        CborValue::Bool(b)
-    } else {
-        CborValue::Text(v.to_string())
-    }
-}
-
-pub(crate) fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
-    match v {
-        CborValue::Text(s) => Dynamic::from(s.clone()),
-        CborValue::Integer(i) => Dynamic::from(i128::from(*i) as i64),
-        CborValue::Float(f) => Dynamic::from(*f),
-        CborValue::Bool(b) => Dynamic::from(*b),
-        CborValue::Null => Dynamic::UNIT,
-        other => Dynamic::from(format!("{other:?}")),
-    }
-}
-
-pub(crate) fn record_to_map(rec: &Record<CborValue>) -> RhaiMap {
-    rec.iter()
-        .map(|(k, v)| (k.as_str().into(), cbor_to_dynamic(v)))
-        .collect()
-}
-
-pub(crate) fn map_to_record(map: &RhaiMap) -> Record<CborValue> {
-    let mut rec = Record::new();
-    for (k, v) in map {
-        rec.insert(k.to_string(), dynamic_to_cbor(v));
-    }
-    rec
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ciborium::Value as CborValue;
     use tokio::sync::broadcast;
     use vantage_diorama::ChangeEvent;
     use vantage_vista::mocks::MockShell;

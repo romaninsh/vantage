@@ -1,17 +1,17 @@
 //! One compiled def, and the state every sim thread shares.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use vantage_memory::{MemoryStore, MemoryTableHandle};
 use vantage_rhai::rhai::{AST, Engine, Map as RhaiMap};
 
 use super::SimDef;
 use super::clock::SimClock;
 use super::sched::Sched;
 use super::stats::Counters;
-use crate::FakerCtx;
 
 /// Least real time between two error logs of one def.
 const ERROR_LOG_EVERY: Duration = Duration::from_secs(60);
@@ -52,7 +52,9 @@ pub(super) struct Inner {
     pub engine: Arc<Engine>,
     pub kinds: Vec<Kind>,
     pub by_name: HashMap<String, usize>,
-    pub tables: HashMap<String, Weak<FakerCtx>>,
+    pub store: MemoryStore,
+    /// Store tables the verbs have resolved, by name.
+    pub tables: RwLock<HashMap<String, MemoryTableHandle>>,
     pub sched: Sched,
     pub seed: Option<u64>,
     /// Wall time the engine started at; every sim clock meets it there.
@@ -62,20 +64,33 @@ pub(super) struct Inner {
 }
 
 impl Inner {
-    /// The live store handle of `table`, if the table still exists.
-    pub fn table(&self, table: &str) -> Option<Arc<FakerCtx>> {
-        self.tables.get(table)?.upgrade()
+    /// Table `name` of the store, if it exists. Never creates one. Found
+    /// tables are cached; a store never loses a table.
+    pub fn table(&self, name: &str) -> Option<MemoryTableHandle> {
+        if let Some(t) = self
+            .tables
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(name)
+        {
+            return Some(t.clone());
+        }
+        if !self.store.table_names().iter().any(|n| n == name) {
+            return None;
+        }
+        let t = self.store.table(name);
+        self.tables
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(name.to_string(), t.clone());
+        Some(t)
     }
 
-    /// Whether any table is still alive.
-    pub fn tables_alive(&self) -> bool {
-        self.tables.values().any(|t| t.strong_count() > 0)
-    }
-
-    /// Mute (or unmute) every table's broadcasts — during the warm start.
+    /// Mute (or unmute) every store table's broadcasts — during the warm
+    /// start. Unmuting a table written while quiet sends one `Reset`.
     pub fn set_quiet(&self, quiet: bool) {
-        for ctx in self.tables.values().filter_map(Weak::upgrade) {
-            ctx.set_quiet(quiet);
+        for name in self.store.table_names() {
+            self.store.table(&name).set_quiet(quiet);
         }
     }
 }

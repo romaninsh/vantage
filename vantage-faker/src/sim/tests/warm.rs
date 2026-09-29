@@ -22,7 +22,7 @@ fn warm_def(clock: f64) -> SimDef {
 }
 
 /// After the warm start and the first live spawn (at age 0).
-fn assert_mid_life(engine: &SimEngine, log: &FakerCtx) {
+fn assert_mid_life(engine: &SimEngine, log: &MemoryTable) {
     engine.settle();
     let rows = rows(log);
     // Born at -59..=0 min; the ones born 50+ minutes ago are gone.
@@ -37,10 +37,12 @@ fn assert_mid_life(engine: &SimEngine, log: &FakerCtx) {
 
 #[test]
 fn warm_start_opens_mid_life_instantly_and_quietly() {
-    let (log, mut rx) = table(&["id", "who", "step", "at"]);
+    let store = store_with(&["log"]);
+    let log = store.table("log");
+    let mut rx = log.subscribe();
     let t = Instant::now();
     let engine = SimEngine::builder()
-        .table("log", &log)
+        .store(&store)
         .sim(warm_def(1.0))
         .manual_clock(start())
         .start()
@@ -51,11 +53,14 @@ fn warm_start_opens_mid_life_instantly_and_quietly() {
         t.elapsed()
     );
     assert_mid_life(&engine, &log);
-    let mut events = 0;
-    while rx.try_recv().is_ok() {
-        events += 1;
-    }
-    assert_eq!(events, 1, "only the live spawn at age 0 broadcasts");
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            events.as_slice(),
+            [MemoryChange::Reset, MemoryChange::Inserted { .. }]
+        ),
+        "one Reset for the warm start, then the live spawn at age 0: {events:?}"
+    );
 
     // Born at 1..=10 min; gone: the ones born at -49..=-40 min.
     run_for(&engine, 600, 10);
@@ -65,9 +70,10 @@ fn warm_start_opens_mid_life_instantly_and_quietly() {
 
 #[test]
 fn warm_window_is_sim_time_on_a_fast_clock() {
-    let (log, _) = table(&["id", "who", "step", "at"]);
+    let store = store_with(&["log"]);
+    let log = store.table("log");
     let engine = SimEngine::builder()
-        .table("log", &log)
+        .store(&store)
         .sim(warm_def(60.0))
         .manual_clock(start())
         .start()
@@ -81,11 +87,10 @@ fn warm_window_is_sim_time_on_a_fast_clock() {
 #[test]
 fn warm_progress_reports_each_window_and_skips_no_warm() {
     let started = |def: SimDef| {
-        let (log, _) = table(&["id", "who", "step", "at"]);
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = seen.clone();
         let _engine = SimEngine::builder()
-            .table("log", &log)
+            .store(&store_with(&["log"]))
             .sim(def)
             .manual_clock(start())
             .on_warm_progress(move |p| sink.lock().unwrap().push(p))
@@ -106,7 +111,8 @@ fn warm_progress_reports_each_window_and_skips_no_warm() {
 
 #[test]
 fn warm_start_on_the_system_clock_goes_live() {
-    let (log, _) = table(&["id", "who", "step", "at"]);
+    let store = store_with(&["log"]);
+    let log = store.table("log");
     let def = SimDef::new(
         "w",
         "log",
@@ -114,11 +120,7 @@ fn warm_start_on_the_system_clock_goes_live() {
     )
     .with_spawn(1, 60.0, 1000)
     .with_warm(Duration::from_secs(600));
-    let engine = SimEngine::builder()
-        .table("log", &log)
-        .sim(def)
-        .start()
-        .unwrap();
+    let engine = SimEngine::builder().store(&store).sim(def).start().unwrap();
     // A burst at -10 min plus one a second after it, then live ones.
     let n = rows(&log).len();
     assert!((600..610).contains(&n), "{n} rows");

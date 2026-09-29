@@ -39,6 +39,7 @@ fn bad_defs_are_rejected_with_a_clear_message() {
         (ok().with_clock(0.0), "clock 0 must be finite and positive"),
         (ok().with_clock(-2.0), "clock -2 must be"),
         (ok().with_clock(f64::INFINITY), "clock inf must be"),
+        (ok().with_ops(0), "ops must be greater than 0"),
         (
             ok().with_spawn(1, 0.0, MAX_LIVE + 1),
             "max 1001 is above the limit of 1000",
@@ -59,9 +60,8 @@ fn bad_defs_are_rejected_with_a_clear_message() {
 }
 
 fn start_err(defs: Vec<SimDef>) -> String {
-    let (log, _) = table(&["id"]);
     let mut b = SimEngine::builder()
-        .table("log", &log)
+        .store(&store_with(&["log"]))
         .manual_clock(start());
     for d in defs {
         b = b.sim(d);
@@ -78,7 +78,7 @@ fn engine_config_is_checked_as_a_whole() {
     assert!(e.contains("defined twice"), "{e}");
 
     let e = start_err(vec![SimDef::new("s", "elsewhere", "1")]);
-    assert!(e.contains("table elsewhere is not a table"), "{e}");
+    assert!(e.contains("table elsewhere does not exist"), "{e}");
 
     let big = |name: &str| SimDef::new(name, "log", "1").with_spawn(0, 0.0, 600);
     let e = start_err(vec![big("a"), big("b")]);

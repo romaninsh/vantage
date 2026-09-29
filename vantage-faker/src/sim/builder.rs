@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use vantage_rhai::rhai::Map as RhaiMap;
@@ -13,12 +13,12 @@ use super::engine::SimEngine;
 use super::kind::{Inner, Kind};
 use super::sched::Sched;
 use super::{SimDef, spawn, validate, vocab};
-use crate::FakerCtx;
+use vantage_memory::MemoryStore;
 
 /// Configures and starts a [`SimEngine`].
 #[derive(Default)]
 pub struct SimEngineBuilder {
-    tables: Vec<(String, Weak<FakerCtx>)>,
+    store: MemoryStore,
     defs: Vec<SimDef>,
     seed: Option<u64>,
     manual: Option<SystemTime>,
@@ -26,10 +26,10 @@ pub struct SimEngineBuilder {
 }
 
 impl SimEngineBuilder {
-    /// Make `ctx` (a [`FakerTable::ctx`](crate::FakerTable::ctx)) writable
-    /// as `name`. The engine holds it weakly.
-    pub fn table(mut self, name: impl Into<String>, ctx: &Arc<FakerCtx>) -> Self {
-        self.tables.push((name.into(), Arc::downgrade(ctx)));
+    /// Run the sims against `store`'s tables. The engine keeps the store
+    /// alive; without this call it gets an empty store of its own.
+    pub fn store(mut self, store: &MemoryStore) -> Self {
+        self.store = store.clone();
         self
     }
 
@@ -64,11 +64,11 @@ impl SimEngineBuilder {
     /// Validate, compile, run the warm start to completion and go live.
     ///
     /// Blocks until the warm start is done. Fails on the first invalid def
-    /// (see [`SimDef::validate`]), a duplicate name, a default table that
-    /// was not added, or `max`es adding up to more than
+    /// (see [`SimDef::validate`]), a duplicate name, a default table the
+    /// store does not have, or `max`es adding up to more than
     /// [`MAX_LIVE`](super::MAX_LIVE).
     pub fn start(self) -> Result<SimEngine, String> {
-        let names: HashSet<&str> = self.tables.iter().map(|(n, _)| n.as_str()).collect();
+        let names: HashSet<String> = self.store.table_names().into_iter().collect();
         validate::validate_all(&self.defs, &names)?;
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -111,7 +111,8 @@ impl SimEngineBuilder {
             sched: Sched::new(clock, origin, kinds.len(), stop),
             kinds,
             by_name,
-            tables: self.tables.into_iter().collect(),
+            store: self.store,
+            tables: Default::default(),
             seed: self.seed,
             origin,
             handles: Mutex::default(),

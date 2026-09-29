@@ -17,7 +17,7 @@ pub struct SimStats {
     /// Sims ended by a Rhai error (a thrown exception or a budget, depth or
     /// call-level limit) or by a verb panicking.
     pub errored: u64,
-    /// `insert`, `set`, `patch` and `delete` calls that changed a row.
+    /// `insert`, `upsert`, `set`, `patch` and `delete` calls that changed a row.
     pub writes: u64,
 }
 
