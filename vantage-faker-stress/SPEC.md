@@ -35,21 +35,32 @@ Settled decisions this spec relies on:
 ```
 vantage-faker-stress/
   README.md
-  SPEC.md                    this file
+  SPEC.md                        this file
   Cargo.toml
-  baseline-0.7.json          first recorded run (see Deliverables)
+  baseline-0.7.json              first recorded run (see Deliverables)
   scenarios/<name>/scenario.yaml   + the .rhai files it includes
   scenarios/chaos/<name>/scenario.yaml
-  src/main.rs       CLI parsing and dispatch                           ~80 LOC
-  src/scenario.rs   YAML → table specs + SimDefs; !include, durations, --scale  ~180
-  src/runner.rs     builds FakerTables and the SimEngine, runs one pass  ~150
-  src/sampler.rs    samples CPU, RSS, threads and counters once a second  ~120
-  src/dio_load.rs   optional Dio per table fed from the table's events  ~120
-  src/report.rs     live table, final summary, JSON output, compare  ~150
-  tests/            parsing unit tests live next to scenario.rs; smoke test here
+  src/lib.rs                     module list                                     ~10 LOC
+  src/main.rs                    CLI parsing and dispatch                        ~240
+  src/scenario.rs                scenario struct: tables, sims, stress, loading  ~160
+  src/scenario/build.rs          durations, --scale/ramp scaling, SimDefs, FakerColumns  ~120
+  src/scenario/include.rs        !include resolution and confinement to scenarios/  ~50
+  src/scenario/tests.rs          unit tests for the three files above            ~180
+  src/runner.rs                  builds FakerTables and the SimEngine, runs one pass  ~100
+  src/sampler.rs                 samples CPU, RSS, threads and counters once a second  ~170
+  src/load.rs                    table consumers: counting subscriber, optional Dio  ~200
+  src/report.rs                  live table, final summary, JSON report          ~170
+  src/report/compare.rs          two reports side by side with per-metric deltas ~55
+  src/report/tests.rs            unit tests for summary maths and compare        ~70
+  src/ramp.rs                    ramp step scaling and stress.limits stop conditions  ~105
+  src/verdict.rs                 chaos containment verdict                       ~110
+  src/panics.rs                  process-wide panic counter                      ~25
+  src/threads.rs                 OS thread count (sysinfo, or the kernel directly on macOS)  ~40
+  tests/runner.rs                integration test: a short run samples live sims and events  ~40
+  tests/smoke.rs                 every load scenario runs briefly; chaos suite (ignored)  ~80
 ```
 
-Dependencies: `vantage-faker` (path `../vantage-faker`, feature `rhai`), `vantage-diorama`, `vantage-vista`, `serde`, `serde_yaml_ng`, `serde_json`, `clap`, `sysinfo`, `tokio`, `tracing-subscriber`.
+Dependencies: `vantage-faker` (path `../vantage-faker`, feature `rhai`), `vantage-diorama`, `vantage-vista`, `vantage-core`, `vantage-dataset`, `serde`, `serde_yaml_ng`, `serde_json`, `indexmap`, `clap`, `sysinfo`, `libc`, `tokio`, `tracing-subscriber`, `tempfile`.
 
 ## CLI
 
