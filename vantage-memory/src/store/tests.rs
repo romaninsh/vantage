@@ -2,6 +2,8 @@ use ciborium::Value as CborValue;
 use vantage_types::Record;
 
 use super::*;
+use crate::eval::{MemoryCondition, Query};
+use vantage_vista::FilterOp;
 
 fn rec(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
     pairs
@@ -206,4 +208,67 @@ fn concurrent_patches_broadcast_in_apply_order() {
         };
         assert_eq!(row, old, "events out of order relative to writes");
     }
+}
+
+fn indexed() -> MemoryTableHandle {
+    let s = MemoryStore::new();
+    s.define(
+        "t",
+        TableDef {
+            indexed: vec!["status".into(), "n".into()],
+            ..TableDef::default()
+        },
+    )
+}
+
+fn all_ids(t: &MemoryTableHandle, q: &Query) -> Vec<String> {
+    t.query(q).unwrap().into_iter().map(|(id, _)| id).collect()
+}
+
+#[test]
+fn indexed_eq_agrees_with_scan_through_writes() {
+    let t = indexed();
+    for (id, status) in [("a", "Open"), ("b", "Closed"), ("c", "Open")] {
+        t.upsert(id, rec(&[("status", text(status))]));
+    }
+    t.patch("a", &rec(&[("status", text("Closed"))]));
+    t.delete("c");
+    t.upsert("d", rec(&[("status", text("Open"))]));
+    let q = Query::new().filter(MemoryCondition::cmp("status", FilterOp::Eq, text("Closed")));
+    assert_eq!(all_ids(&t, &q), ["a", "b"]);
+    let q = Query::new().filter(MemoryCondition::cmp("status", FilterOp::Eq, text("Open")));
+    assert_eq!(all_ids(&t, &q), ["d"]);
+}
+
+#[test]
+fn indexed_in_set_keeps_insertion_order() {
+    let t = indexed();
+    for (id, status) in [("a", "x"), ("b", "y"), ("c", "z"), ("d", "x")] {
+        t.upsert(id, rec(&[("status", text(status))]));
+    }
+    let set = CborValue::Array(vec![text("x"), text("z")]);
+    let q = Query::new().filter(MemoryCondition::cmp("status", FilterOp::InSet, set));
+    assert_eq!(all_ids(&t, &q), ["a", "c", "d"]);
+}
+
+#[test]
+fn index_matches_int_and_integral_float() {
+    let t = indexed();
+    t.upsert("a", rec(&[("n", CborValue::Float(1.0))]));
+    t.upsert("b", rec(&[("n", CborValue::Integer(2.into()))]));
+    let q = Query::new().filter(MemoryCondition::cmp(
+        "n",
+        FilterOp::Eq,
+        CborValue::Integer(1.into()),
+    ));
+    assert_eq!(all_ids(&t, &q), ["a"]);
+}
+
+#[test]
+fn unkeyable_values_still_found_via_index_path() {
+    let t = indexed();
+    let map = CborValue::Map(vec![(text("k"), text("v"))]);
+    t.upsert("a", rec(&[("status", map.clone())]));
+    let q = Query::new().filter(MemoryCondition::cmp("status", FilterOp::Eq, map));
+    assert_eq!(all_ids(&t, &q), ["a"]);
 }

@@ -3,6 +3,8 @@
 
 mod events;
 mod ids;
+mod index;
+mod query;
 mod table;
 #[cfg(test)]
 mod tests;

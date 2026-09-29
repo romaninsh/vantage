@@ -11,16 +11,18 @@ use vantage_types::Record;
 
 use super::events::{EVENT_CAPACITY, MemoryChange};
 use super::ids::{IdGen, supplied_id};
+use super::index::Indexes;
 use super::{Row, TableDef};
 
-struct Rows {
-    map: IndexMap<String, Row>,
+pub(super) struct Rows {
+    pub(super) map: IndexMap<String, Row>,
+    pub(super) indexes: Indexes,
 }
 
 pub struct MemoryTable {
     name: String,
     def: TableDef,
-    rows: RwLock<Rows>,
+    pub(super) rows: RwLock<Rows>,
     ids: IdGen,
     events: broadcast::Sender<MemoryChange>,
     quiet: AtomicBool,
@@ -34,6 +36,7 @@ impl MemoryTable {
             ids: IdGen::new(def.id_prefix.clone()),
             rows: RwLock::new(Rows {
                 map: IndexMap::new(),
+                indexes: Indexes::new(&def.indexed),
             }),
             name,
             def,
@@ -80,6 +83,7 @@ impl MemoryTable {
         };
         let row = self.with_id(record, &id);
         rows.map.insert(id.clone(), row.clone());
+        rows.indexes.add(&id, &row);
         self.changed(MemoryChange::Inserted {
             id: id.clone(),
             row,
@@ -93,16 +97,23 @@ impl MemoryTable {
         let mut rows = self.rows.write();
         let old = rows.map.insert(id.to_string(), row.clone());
         match old {
-            None => self.changed(MemoryChange::Inserted {
-                id: id.to_string(),
-                row,
-            }),
+            None => {
+                rows.indexes.add(id, &row);
+                self.changed(MemoryChange::Inserted {
+                    id: id.to_string(),
+                    row,
+                });
+            }
             Some(old) if old == row => {}
-            Some(old) => self.changed(MemoryChange::Updated {
-                id: id.to_string(),
-                row,
-                old,
-            }),
+            Some(old) => {
+                rows.indexes.remove(id, &old);
+                rows.indexes.add(id, &row);
+                self.changed(MemoryChange::Updated {
+                    id: id.to_string(),
+                    row,
+                    old,
+                });
+            }
         }
     }
 
@@ -121,6 +132,8 @@ impl MemoryTable {
         }
         let row = Arc::new(next);
         rows.map.insert(id.to_string(), row.clone());
+        rows.indexes.remove(id, &old);
+        rows.indexes.add(id, &row);
         self.changed(MemoryChange::Updated {
             id: id.to_string(),
             row,
@@ -135,6 +148,7 @@ impl MemoryTable {
         let Some(old) = rows.map.shift_remove(id) else {
             return false;
         };
+        rows.indexes.remove(id, &old);
         self.changed(MemoryChange::Deleted {
             id: id.to_string(),
             old,
@@ -174,36 +188,5 @@ impl MemoryTable {
 
     pub fn subscribe(&self) -> broadcast::Receiver<MemoryChange> {
         self.events.subscribe()
-    }
-
-    /// Rows matching `q`, ordered and windowed.
-    pub fn query(&self, q: &crate::eval::Query) -> vantage_core::Result<Vec<(String, Row)>> {
-        let mut out = Vec::new();
-        {
-            let rows = self.rows.read();
-            for (id, row) in rows.map.iter() {
-                if crate::eval::matches_all(q, row)? {
-                    out.push((id.clone(), row.clone()));
-                }
-            }
-        }
-        crate::eval::sort_rows(&mut out, &q.order);
-        let end = q
-            .limit
-            .map_or(out.len(), |l| q.offset.saturating_add(l).min(out.len()));
-        let start = q.offset.min(end);
-        Ok(out.drain(start..end).collect())
-    }
-
-    /// How many rows match `q`'s conditions and search (order and window ignored).
-    pub fn count(&self, q: &crate::eval::Query) -> vantage_core::Result<usize> {
-        let rows = self.rows.read();
-        let mut n = 0;
-        for row in rows.map.values() {
-            if crate::eval::matches_all(q, row)? {
-                n += 1;
-            }
-        }
-        Ok(n)
     }
 }
