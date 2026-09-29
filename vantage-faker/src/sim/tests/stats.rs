@@ -33,6 +33,18 @@ fn stats_count_errors_apart_from_ends() {
 }
 
 #[test]
+fn sim_running_at_stop_counts_as_ended() {
+    let (engine, _log) = engine_with(vec![
+        SimDef::new("a", "log", "sleep(seconds(100));").with_spawn(2, 0.0, 2),
+    ]);
+    run_for(&engine, 5, 1);
+    assert_eq!(engine.stats().live, 2);
+    engine.stop();
+    let s = engine.stats();
+    assert_eq!((s.live, s.spawned, s.ended, s.errored), (0, 2, 2, 0));
+}
+
+#[test]
 fn stale_writes_are_not_counted() {
     let script = r#"
         patch("nope", #{ step: "1" });

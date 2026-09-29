@@ -3,6 +3,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A snapshot of an engine's counters.
+///
+/// Each total is read independently, so a sample is not a consistent
+/// snapshot: `ended + errored + live` can briefly exceed `spawned`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SimStats {
     /// Sims running now.
