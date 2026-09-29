@@ -10,6 +10,8 @@ use vantage_types::Record;
 use super::*;
 
 mod builtins_fifo;
+mod builtins_flight;
+mod builtins_folder;
 mod builtins_pulse;
 mod datasets;
 mod edges;

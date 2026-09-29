@@ -56,7 +56,8 @@
 //! `max`. At most [`MAX_LIVE`] sims run per engine.
 //!
 //! See the `vocab` module docs for the verbs scripts can call, and
-//! `examples/sims/*.rhai` for complete scripts.
+//! `sims/*.rhai` (the built-ins) and `examples/sims/*.rhai` for complete
+//! scripts.
 
 mod builder;
 pub mod builtin;

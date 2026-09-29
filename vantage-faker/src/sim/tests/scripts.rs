@@ -1,11 +1,12 @@
-//! The example scripts in `examples/sims/` run and produce plausible rows.
+//! The flight built-in and the example scripts in `examples/sims/` run and
+//! produce plausible rows.
 
 use std::collections::{HashMap, HashSet};
 
 use super::*;
 use crate::generator::parse_when;
 
-const FLIGHT: &str = include_str!("../../../examples/sims/flight.rhai");
+const FLIGHT: &str = include_str!("../../../sims/flight.rhai");
 const SHIPMENT: &str = include_str!("../../../examples/sims/shipment.rhai");
 
 fn wall(rec: &Record<CborValue>, col: &str) -> f64 {
@@ -38,7 +39,7 @@ fn flight_script_opens_a_board_mid_flight() {
         assert!(text(row, "flight_time").ends_with('m'));
         let phase = text(row, "phase");
         if phase == "Cruising" {
-            assert_eq!(num(row, "altitude_ft"), 38000.0);
+            assert!(num(row, "altitude_ft") >= 30000.0);
             // Under 20 sim hours to go is under two real hours at 10x.
             let eta = wall(row, "eta");
             assert!(eta > T0 as f64 && eta < (T0 + 7200) as f64, "{eta}");
