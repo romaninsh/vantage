@@ -175,4 +175,35 @@ impl MemoryTable {
     pub fn subscribe(&self) -> broadcast::Receiver<MemoryChange> {
         self.events.subscribe()
     }
+
+    /// Rows matching `q`, ordered and windowed.
+    pub fn query(&self, q: &crate::eval::Query) -> vantage_core::Result<Vec<(String, Row)>> {
+        let mut out = Vec::new();
+        {
+            let rows = self.rows.read();
+            for (id, row) in rows.map.iter() {
+                if crate::eval::matches_all(q, row)? {
+                    out.push((id.clone(), row.clone()));
+                }
+            }
+        }
+        crate::eval::sort_rows(&mut out, &q.order);
+        let end = q
+            .limit
+            .map_or(out.len(), |l| q.offset.saturating_add(l).min(out.len()));
+        let start = q.offset.min(end);
+        Ok(out.drain(start..end).collect())
+    }
+
+    /// How many rows match `q`'s conditions and search (order and window ignored).
+    pub fn count(&self, q: &crate::eval::Query) -> vantage_core::Result<usize> {
+        let rows = self.rows.read();
+        let mut n = 0;
+        for row in rows.map.values() {
+            if crate::eval::matches_all(q, row)? {
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
 }
