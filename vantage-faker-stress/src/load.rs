@@ -1,17 +1,18 @@
-//! Consumers for each table's events. Without a Dio a subscriber only
-//! counts; with one it applies every event to a Dio and keeps a sorted
+//! Consumers for each store table's changes. A subscriber always counts
+//! them; with a lens the table also backs a watching Dio with a sorted
 //! TableScenery open, which is the work a vantage-ui grid does.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tokio::sync::broadcast::{self, error::RecvError};
+use tokio::sync::broadcast::{Receiver, error::RecvError};
 use tokio::task::JoinHandle;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{ChangeEvent, Lens, SortDir, TableScenery};
-use vantage_faker::FakerHandle;
-use vantage_vista::Vista;
+use vantage_diorama::{Dio, Lens, SortDir, TableScenery};
+use vantage_memory::vista::Catalog;
+use vantage_memory::{MemoryChange, MemoryStore, MemoryTableHandle, MemoryTableShell};
+use vantage_vista::{Vista, VistaMetadata};
 
 use crate::sampler::EventTotals;
 
@@ -25,7 +26,12 @@ pub struct TableLoad {
     delivered: Arc<AtomicU64>,
     lagged: Arc<AtomicU64>,
     drain: Arc<Drain>,
-    events: broadcast::Sender<ChangeEvent>,
+    /// Subscribed with the counting subscriber and never read, so its
+    /// `len()` is every change sent since; minus what the subscriber has
+    /// seen, that is the subscriber's backlog.
+    sent: Receiver<MemoryChange>,
+    /// Keeps the Dio (and so its watch task) alive for the run.
+    _dio: Option<Dio>,
     scenery: Option<Arc<dyn TableScenery>>,
     task: JoinHandle<()>,
 }
@@ -33,7 +39,10 @@ pub struct TableLoad {
 impl TableLoad {
     /// Counters plus a drain-probe reading; call once per sample tick.
     pub fn totals(&self) -> EventTotals {
-        let (lag_ms, backlog) = self.drain.tick(|| self.events.len());
+        let seen = || self.delivered.load(Ordering::Relaxed) + self.lagged.load(Ordering::Relaxed);
+        let (lag_ms, backlog) = self
+            .drain
+            .tick(|| (self.sent.len() as u64).saturating_sub(seen()) as usize);
         EventTotals {
             delivered: self.delivered.load(Ordering::Relaxed),
             lagged: self.lagged.load(Ordering::Relaxed),
@@ -66,8 +75,8 @@ pub fn sum(loads: &[TableLoad]) -> EventTotals {
         })
 }
 
-/// A lens whose Dios warm their cache from the master at start, then apply
-/// faker events in place, as vantage-ui's do.
+/// A lens whose Dios warm their cache from the master at start; `watch`
+/// keeps them live from there.
 pub fn lens(cache_dir: &Path) -> Result<Arc<Lens>, String> {
     let lens = Lens::new()
         .cache_at(cache_dir.join("cache.redb"))
@@ -79,52 +88,37 @@ pub fn lens(cache_dir: &Path) -> Result<Arc<Lens>, String> {
                 Ok(())
             }
         })
-        .on_event(|dio, evt| {
-            let dio = dio.clone();
-            async move {
-                match evt {
-                    ChangeEvent::Inserted {
-                        id,
-                        new: Some(record),
-                    }
-                    | ChangeEvent::Updated {
-                        id,
-                        new: Some(record),
-                    } => dio.patched(id, record).await?,
-                    ChangeEvent::Deleted { id } => dio.removed(id).await?,
-                    ChangeEvent::Invalidated => {
-                        dio.cache().clear().await?;
-                        dio.notify_dataset_changed();
-                    }
-                    _ => {}
-                }
-                Ok(())
-            }
-        })
         .build()
         .map_err(|e| format!("lens: {e}"))?;
     Ok(Arc::new(lens))
 }
 
-/// Subscribe to `handle`'s events. With a `lens`, `vista` becomes a Dio and
-/// every event is applied to it.
+/// Count `table`'s changes. With a `lens`, the table also backs a Dio that
+/// watches it.
 pub async fn attach(
-    vista: Vista,
-    handle: &FakerHandle,
+    table: MemoryTableHandle,
+    metadata: VistaMetadata,
+    store: &MemoryStore,
     lens: Option<&Arc<Lens>>,
 ) -> Result<TableLoad, String> {
-    let mut rx = handle.events.subscribe();
+    let mut rx = table.subscribe();
+    let sent = table.subscribe();
     let delivered = Arc::new(AtomicU64::new(0));
     let lagged = Arc::new(AtomicU64::new(0));
     let (dio, scenery) = match lens {
         Some(lens) => {
+            let name = table.name().to_string();
+            let id = table.id_column().to_string();
+            let shell = MemoryTableShell::new(table, metadata, Catalog::new(store.clone()));
+            let vista = Vista::new(name, Box::new(shell));
             let dio = lens
                 .make_dio(vista)
                 .await
                 .map_err(|e| format!("dio: {e}"))?;
+            dio.watch().await.map_err(|e| format!("watch: {e}"))?;
             let scenery: Arc<dyn TableScenery> = dio
                 .table_scenery()
-                .sort("id", SortDir::Asc)
+                .sort(&id, SortDir::Asc)
                 .open()
                 .await
                 .map_err(|e| format!("scenery: {e}"))?;
@@ -138,10 +132,7 @@ pub async fn attach(
     let task = tokio::spawn(async move {
         loop {
             match rx.recv().await {
-                Ok(evt) => {
-                    if let Some(dio) = &dio {
-                        let _ = dio.handle_event(evt).await;
-                    }
+                Ok(_) => {
                     d.fetch_add(1, Ordering::Relaxed);
                     dr.advance(1);
                 }
@@ -157,7 +148,8 @@ pub async fn attach(
         delivered,
         lagged,
         drain,
-        events: handle.events.clone(),
+        sent,
+        _dio: dio,
         scenery,
         task,
     })

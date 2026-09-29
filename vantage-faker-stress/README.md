@@ -42,7 +42,7 @@ directory down, which is how the chaos scenarios are organized.
 |---|---|---|
 | `--duration <dur>` | the scenario's `stress.duration` | how long to sample |
 | `--scale <N>` | `1.0` | multiplies every sim's `burst`, `rate` and `max`, and every table's `count`, by `N`. Decimals are allowed. `burst`, `max` and `count` are rounded, a zero stays 0, and every other result is kept at least 1; `rate` is not rounded, and a sim with no `rate` keeps none |
-| `--dio` | off | attaches a `Dio` to every table, so lag and event throughput measure `Dio::handle_event` and re-list cost, not just the raw broadcast |
+| `--dio` | off | attaches a watching `Dio` with an open sorted scenery to every table, so CPU and RSS include the cache and re-list cost; lag still measures the counting subscriber, not the Dio |
 | `--json <path>` | none | writes the run's report to a JSON file |
 
 `run` always applies the scenario's `warm:` settings, if it has any.
@@ -135,14 +135,20 @@ stress:
   limits: { cpu_pct: 400, event_lag_ms: 250 }
 ```
 
-- `tables.<name>.columns.<col>` is `{ type, faker }`, the same shape a
-  vantage-ui table file uses. `type` defaults to `string`. `faker` is a
-  `ColumnGen` (`pick`, `range`, and the rest). A column with no generator,
-  `{}`, falls back to `ValueGen`'s heuristics by column name and type.
+- `seed`, `tables` and `sims` are vantage-faker's `DatasetSpec`
+  (`vantage_faker::config`), as a vantage-ui faker datasource declares it.
+  The tables are seeded into a `MemoryStore` before any sim starts.
+- `tables.<name>` takes `count`, `columns`, `id_column`, `indexed`,
+  `references` (column to target table) and `fan_out { column, min, max }`.
+- `tables.<name>.columns.<col>` is `{ type, faker }`. `type` defaults to
+  `string`. `faker` is a `ColumnGen` (`pick`, `range`, and the rest). A
+  column with no generator, `{}`, falls back to `ValueGen`'s heuristics by
+  column name and type.
 - `!include <path>` reads a file relative to the scenario's own directory
   (here, `scenarios/churn/`) and can't resolve outside `scenarios/`.
-- `sims.<name>` takes the same fields as vantage-ui's `SimSpec`/`SpawnSpec`:
-  `table`, `script`, `clock`, `warm`, and `spawn { burst, rate, max, args }`.
+- `sims.<name>` is a `SimSpec`: `table`, `script`, `clock`, `warm`, `ops`
+  (Rhai operations allowed between two sleeps) and
+  `spawn { burst, rate, max, args }`.
 - `stress:` keys:
   - `duration`: how long a plain `run` samples for, unless `--duration`
     overrides it.

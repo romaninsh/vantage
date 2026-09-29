@@ -2,43 +2,86 @@ use std::time::Duration;
 
 use super::*;
 use crate::sampler::Sampler;
-use vantage_faker::{FakerColumn, FakerTable, SimStats, StaticEffect};
+use ciborium::Value as CborValue;
+use vantage_faker::SimStats;
+use vantage_memory::{MemoryStore, MemoryTableHandle};
+use vantage_types::Record;
+use vantage_vista::{Column, flags};
 
-fn table() -> FakerTable {
-    let mut id = FakerColumn::new("id", "string");
-    id.flags.push("id".into());
-    FakerTable::build(
-        "t",
-        vec![id, FakerColumn::new("note", "string")],
-        "id",
-        Box::new(StaticEffect { count: 5 }),
-    )
+fn metadata() -> VistaMetadata {
+    VistaMetadata::new()
+        .with_id_column("id")
+        .with_column(
+            Column::new("id", "string")
+                .with_flag(flags::ID)
+                .with_flag(flags::ORDERABLE),
+        )
+        .with_column(Column::new("note", "string"))
 }
 
-async fn push_three(handle: &vantage_faker::FakerHandle) {
-    for _ in 0..3 {
-        handle.ctx().push();
+/// A store with table `t` holding five rows.
+fn store() -> (MemoryStore, MemoryTableHandle) {
+    let store = MemoryStore::new();
+    let table = store.table("t");
+    for _ in 0..5 {
+        table.insert(note()).unwrap();
     }
+    (store, table)
+}
+
+fn note() -> Record<CborValue> {
+    let mut r = Record::new();
+    r.insert("note".to_string(), CborValue::Text("x".into()));
+    r
+}
+
+async fn attach_to(store: &MemoryStore, table: &MemoryTableHandle) -> TableLoad {
+    attach(table.clone(), metadata(), store, None)
+        .await
+        .unwrap()
+}
+
+fn push(table: &MemoryTableHandle, n: usize) {
+    for _ in 0..n {
+        table.insert(note()).unwrap();
+    }
+}
+
+async fn push_three(table: &MemoryTableHandle) {
+    push(table, 3);
     tokio::time::sleep(Duration::from_millis(300)).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn counting_subscriber_sees_every_event() {
-    let (vista, handle) = table().split();
-    let load = attach(vista, &handle, None).await.unwrap();
-    push_three(&handle).await;
+    let (store, table) = store();
+    let load = attach_to(&store, &table).await;
+    push_three(&table).await;
     let t = load.totals();
     assert_eq!(t.delivered, 3);
     assert_eq!(t.backlog, 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn dio_subscriber_applies_events() {
+async fn reset_counts_as_delivered() {
+    let (store, table) = store();
+    let load = attach_to(&store, &table).await;
+    table.set_quiet(true);
+    push(&table, 2);
+    table.set_quiet(false);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(load.totals().delivered, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dio_watches_the_table() {
     let dir = tempfile::tempdir().unwrap();
     let lens = lens(dir.path()).unwrap();
-    let (vista, handle) = table().split();
-    let load = attach(vista, &handle, Some(&lens)).await.unwrap();
-    push_three(&handle).await;
+    let (store, table) = store();
+    let load = attach(table.clone(), metadata(), &store, Some(&lens))
+        .await
+        .unwrap();
+    push_three(&table).await;
     assert_eq!(load.totals().delivered, 3);
     assert_eq!(load.scenery_rows(), Some(8));
 }
@@ -49,14 +92,12 @@ async fn dio_subscriber_applies_events() {
 /// burst tick always sees the full backlog.
 #[tokio::test]
 async fn burst_after_idle_second_reads_short_lag() {
-    let (vista, handle) = table().split();
-    let loads = vec![attach(vista, &handle, None).await.unwrap()];
+    let (store, table) = store();
+    let loads = vec![attach_to(&store, &table).await];
     let mut sampler = Sampler::new();
     sampler.sample(SimStats::default(), sum(&loads));
     tokio::time::sleep(Duration::from_secs(1)).await;
-    for _ in 0..63 {
-        handle.ctx().push();
-    }
+    push(&table, 63);
     let burst = sampler.sample(SimStats::default(), sum(&loads));
     tokio::time::sleep(Duration::from_secs(1)).await;
     let next = sampler.sample(SimStats::default(), sum(&loads));
@@ -68,12 +109,10 @@ async fn burst_after_idle_second_reads_short_lag() {
 /// so its lag keeps growing from one tick to the next.
 #[tokio::test]
 async fn blocked_subscriber_shows_growing_lag() {
-    let (vista, handle) = table().split();
-    let loads = vec![attach(vista, &handle, None).await.unwrap()];
+    let (store, table) = store();
+    let loads = vec![attach_to(&store, &table).await];
     let mut sampler = Sampler::new();
-    for _ in 0..10 {
-        handle.ctx().push();
-    }
+    push(&table, 10);
     sampler.sample(SimStats::default(), sum(&loads));
     std::thread::sleep(Duration::from_millis(300));
     let first = sampler.sample(SimStats::default(), sum(&loads));
