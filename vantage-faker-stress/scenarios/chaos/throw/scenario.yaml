@@ -1,0 +1,10 @@
+# Sims that throw on their third step while healthy ones keep writing.
+seed: 32
+tables:
+  row: { count: 0, columns: { note: {} } }
+sims:
+  steady: { table: row, script: !include ../steady.rhai, spawn: { burst: 5, max: 5 } }
+  bad: { table: row, script: !include bad.rhai, spawn: { burst: 5, max: 5 } }
+stress:
+  duration: 10s
+  expect: { errored_min: 5 }

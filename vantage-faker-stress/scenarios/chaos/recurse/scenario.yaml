@@ -1,0 +1,10 @@
+# Unbounded recursion. The call-level limit should end it before the stack does.
+seed: 36
+tables:
+  row: { count: 0, columns: { note: {} } }
+sims:
+  steady: { table: row, script: !include ../steady.rhai, spawn: { burst: 5, max: 5 } }
+  bad: { table: row, script: !include bad.rhai }
+stress:
+  duration: 10s
+  expect: { errored_min: 1 }

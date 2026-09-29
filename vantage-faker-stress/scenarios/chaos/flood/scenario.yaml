@@ -1,0 +1,11 @@
+# Ten thousand inserts with no pause, against a Dio. Watch `lagged` and the lag.
+seed: 34
+tables:
+  row: { count: 0, columns: { note: {} } }
+sims:
+  steady: { table: row, script: !include ../steady.rhai, spawn: { burst: 5, max: 5 } }
+  bad: { table: row, script: !include bad.rhai }
+stress:
+  duration: 15s
+  dio: true
+  expect: { errored_min: 0 }

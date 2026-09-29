@@ -1,0 +1,10 @@
+# Writes to rows that are already gone. Nothing should panic or count as a write.
+seed: 33
+tables:
+  row: { count: 0, columns: { note: {} } }
+sims:
+  steady: { table: row, script: !include ../steady.rhai, spawn: { burst: 5, max: 5 } }
+  bad: { table: row, script: !include bad.rhai, spawn: { burst: 20, max: 20 } }
+stress:
+  duration: 10s
+  expect: { errored_min: 0 }

@@ -1,0 +1,13 @@
+# Every sim starts two more. `max` should hold the thread count flat.
+# max_threads allows 205 sim threads plus non-sim overhead. Measured baseline
+# (idle scenario, 200 live sims, release build) was ~18 non-sim threads, well
+# under the 115 headroom 320 gives; no need to raise it.
+seed: 35
+tables:
+  row: { count: 0, columns: { note: {} } }
+sims:
+  steady: { table: row, script: !include ../steady.rhai, spawn: { burst: 5, max: 5 } }
+  bomb: { table: row, script: !include bad.rhai, spawn: { burst: 1, max: 200 } }
+stress:
+  duration: 15s
+  expect: { errored_min: 0, max_threads: 320 }
