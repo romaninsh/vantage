@@ -4,7 +4,9 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista::{Column, Reference, SortDirection, TableShell, Vista, VistaCapabilities};
+use vantage_vista::{
+    Column, Reference, SortDirection, TableShell, Vista, VistaCapabilities, VistaChangeStream,
+};
 
 use crate::dio::shell::DioShell;
 use crate::ops::ChangeFlash;
@@ -185,6 +187,14 @@ impl TableShell for DioShell {
         self.enqueue(ChangeFlash::clear()).await
     }
 
+    // ---- Live subscription ------------------------------------------------------
+
+    /// Follows the Dio's event bus, re-evaluated through this handle's
+    /// narrowing — see `dio/shell/watch.rs`.
+    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+        self.follow().await
+    }
+
     // ---- Capability + identity ------------------------------------------------
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -247,19 +257,14 @@ impl DioShell {
     /// asks the master for whatever the master can answer — that result is
     /// authoritative over the whole set, not over whatever the cache happens to
     /// hold — and applies the rest here. See [`DioShell::plan`] for the routing.
-    async fn read(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+    pub(crate) async fn read(&self) -> Result<IndexMap<String, Record<CborValue>>> {
         let (narrowed, local) = self.plan();
         let mut rows = match narrowed {
             Some(master) => master.list_values().await?,
             None => self.dio.cache.list_values().await?,
         };
 
-        rows.retain(|_, row| {
-            local
-                .conditions
-                .iter()
-                .all(|(field, expected)| record_get(row, field) == Some(expected))
-        });
+        rows.retain(|_, row| local.matches(row));
         if let Some((column, direction)) = &local.order {
             let descending = matches!(direction, SortDirection::Descending);
             let mut ordered: Vec<(String, Record<CborValue>)> = rows.into_iter().collect();
@@ -316,7 +321,7 @@ impl DioShell {
 
 /// Resolve a column, descending dotted paths into nested CBOR maps so a
 /// belongs-to leaf (`client.name`) narrows like any other column.
-fn record_get<'a>(record: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
+pub(crate) fn record_get<'a>(record: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
     if let Some(value) = record.get(path) {
         return Some(value);
     }

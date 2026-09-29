@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.3 — 2026-09-29
+
+- `DioShell` implements `watch_vista`: a Dio built over another Dio's facade
+  follows it live, rows entering or leaving the filter included.
+
 ## 0.13.2 — 2026-09-27
 
 - `TableSceneryBuilder::sugar(Sugar)` and `Dio::record_scenery_sugared`:
