@@ -17,9 +17,6 @@ pub fn load(
 ) -> vantage_core::Result<usize> {
     let mut n = 0;
     for (i, value) in rows.into_iter().enumerate() {
-        let serde_json::Value::Object(_) = &value else {
-            return Err(error!("Seed row is not an object", position = i));
-        };
         let cbor = CborValue::serialized(&value).map_err(|e| {
             error!(
                 "Cannot convert seed row to CBOR",
@@ -27,8 +24,11 @@ pub fn load(
                 detail = e.to_string()
             )
         })?;
-        let record = object_to_record(cbor);
-        match supplied_id(record.get(table.id_column())) {
+        let CborValue::Map(_) = &cbor else {
+            return Err(error!("Seed row is not an object", position = i));
+        };
+        let record: Record<CborValue> = cbor.into();
+        match crate::store::ids::supplied_id(record.get(table.id_column())) {
             Some(id) => table.upsert(&id, record),
             None => {
                 table.insert(record)?;
@@ -73,40 +73,13 @@ pub fn dump(table: &MemoryTable) -> Vec<serde_json::Value> {
         .query(&Query::new())
         .expect("a query with no conditions cannot fail")
         .into_iter()
-        .map(|(_, row)| record_to_object(&row))
+        .map(|(_, row)| {
+            let value: CborValue = (*row).clone().into();
+            value
+                .deserialized()
+                .expect("a stored row deserializes back to a JSON object")
+        })
         .collect()
-}
-
-/// A CBOR map produced from a JSON object, as a `Record`.
-fn object_to_record(value: CborValue) -> Record<CborValue> {
-    let mut record = Record::new();
-    if let CborValue::Map(entries) = value {
-        for (k, v) in entries {
-            if let CborValue::Text(key) = k {
-                record.insert(key, v);
-            }
-        }
-    }
-    record
-}
-
-fn record_to_object(record: &Record<CborValue>) -> serde_json::Value {
-    let entries: Vec<(CborValue, CborValue)> = record
-        .iter()
-        .map(|(k, v)| (CborValue::Text(k.clone()), v.clone()))
-        .collect();
-    CborValue::Map(entries)
-        .deserialized()
-        .expect("a stored row deserializes back to a JSON object")
-}
-
-/// The id an object's id-column value supplies: non-empty text or an integer.
-fn supplied_id(value: Option<&CborValue>) -> Option<String> {
-    match value {
-        Some(CborValue::Text(s)) if !s.is_empty() => Some(s.clone()),
-        Some(CborValue::Integer(i)) => Some(i128::from(*i).to_string()),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

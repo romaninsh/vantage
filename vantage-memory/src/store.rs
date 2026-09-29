@@ -2,7 +2,7 @@
 //! call it directly; the async trait layers wrap it.
 
 mod events;
-mod ids;
+pub(crate) mod ids;
 mod index;
 mod query;
 mod table;
