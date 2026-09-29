@@ -19,8 +19,14 @@ cargo run -- list
 cargo run -- run churn
 cargo run -- run churn --dio --json /tmp/churn.json
 cargo run -- ramp swarm --steps 100,250,500,1000 --hold 15s
-cargo run -- compare baseline-0.7.json /tmp/churn.json
+cargo run -- ramp churn --steps 100,200,400,800 --hold 20s --dio --json /tmp/churn-ramp.json
+jq '.[1]' baseline-0.7.json > /tmp/churn-0.7.json
+cargo run -- compare /tmp/churn-0.7.json /tmp/churn-ramp.json
 ```
+
+The last three lines rerun the baseline's `churn` ramp and compare it with
+the recorded one. `baseline-0.7.json` holds six reports, so `jq` pulls out
+`churn` (see Comparing versions).
 
 ## CLI reference
 
