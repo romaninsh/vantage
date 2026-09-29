@@ -10,6 +10,8 @@ use vantage_core::{Result, error};
 #[cfg(feature = "sim")]
 use super::DatasetSpec;
 #[cfg(feature = "sim")]
+use crate::sim::builtin;
+#[cfg(feature = "sim")]
 use crate::{SimDef, SimEngine, SimEngineBuilder};
 #[cfg(feature = "sim")]
 use vantage_memory::MemoryStore;
@@ -70,7 +72,8 @@ impl DatasetSpec {
                     ))
                 })?,
             };
-            let mut def = SimDef::new(name.clone(), table, spec.script.clone())
+            let script = resolve_script(name, &spec.script)?;
+            let mut def = SimDef::new(name.clone(), table, script)
                 .with_spawn(
                     spec.spawn.burst.unwrap_or(1),
                     spec.spawn.rate.unwrap_or(0.0),
@@ -93,14 +96,18 @@ impl DatasetSpec {
     }
 
     /// A [`SimEngineBuilder`] over `store` with every [`sim_defs`](Self::sim_defs)
-    /// def added and [`DatasetSpec::seed`] applied, for a caller that wants to
-    /// set more (a manual clock, a warm-progress callback) before starting.
-    /// `None` when there are no `sims:`.
+    /// def added, every table's columns declared (for the `row()` verb) and
+    /// [`DatasetSpec::seed`] applied, for a caller that wants to set more (a
+    /// manual clock, a warm-progress callback) before starting. `None` when
+    /// there are no `sims:`.
     pub fn sim_builder(&self, store: &MemoryStore) -> Result<Option<SimEngineBuilder>> {
         if self.sims.is_empty() {
             return Ok(None);
         }
         let mut builder = SimEngine::builder().store(store);
+        for (name, table) in &self.tables {
+            builder = builder.columns(name.clone(), super::sim_columns(table));
+        }
         for def in self.sim_defs()? {
             builder = builder.sim(def);
         }
@@ -117,6 +124,22 @@ impl DatasetSpec {
             .map(SimEngineBuilder::start)
             .transpose()
     }
+}
+
+/// `script` verbatim, or the named script when it is `builtin:<name>`.
+#[cfg(feature = "sim")]
+fn resolve_script(sim_name: &str, script: &str) -> Result<String> {
+    let Some(builtin_name) = script.strip_prefix("builtin:") else {
+        return Ok(script.to_string());
+    };
+    builtin::builtin(builtin_name)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            error!(format!(
+                "sim {sim_name}: unknown builtin {builtin_name} (known: {})",
+                builtin::BUILTINS.join(", ")
+            ))
+        })
 }
 
 /// `500ms`, `1.5s`, `2m`, `6h`, `3d`, or bare seconds. Minutes, hours and

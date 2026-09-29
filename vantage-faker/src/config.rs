@@ -132,13 +132,28 @@ fn table_gen(name: &str, spec: &TableSpec) -> TableGen {
     if let Some(extra) = spec.extra_fields {
         table = table.extra_fields(extra);
     }
-    for (name, column) in &spec.columns {
-        let ty = column.ty.as_deref().unwrap_or("string");
-        let mut col = FakerColumn::new(name.clone(), ty);
-        if let Some(generator) = &column.faker {
-            col = col.with_generator(generator.clone());
-        }
-        table = table.column(col);
+    table.columns(spec.columns.iter().map(column_gen))
+}
+
+/// One `columns:` entry as a [`FakerColumn`].
+fn column_gen((name, column): (&String, &ColumnSpec)) -> FakerColumn {
+    let ty = column.ty.as_deref().unwrap_or("string");
+    let mut col = FakerColumn::new(name.clone(), ty);
+    if let Some(generator) = &column.faker {
+        col = col.with_generator(generator.clone());
     }
-    table
+    col
+}
+
+/// `spec`'s columns for the `row()` sim verb: every declared column except a
+/// `references` column with no generator of its own — a bare reference has
+/// no plausible fake value, only [`DatasetSpec::generate`]'s static
+/// relational fill picks a real parent id.
+#[cfg(feature = "sim")]
+pub(crate) fn sim_columns(spec: &TableSpec) -> Vec<FakerColumn> {
+    spec.columns
+        .iter()
+        .filter(|(name, column)| column.faker.is_some() || !spec.references.contains_key(*name))
+        .map(column_gen)
+        .collect()
 }

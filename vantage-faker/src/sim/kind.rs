@@ -12,6 +12,7 @@ use super::SimDef;
 use super::clock::SimClock;
 use super::sched::Sched;
 use super::stats::Counters;
+use crate::FakerColumn;
 
 /// Least real time between two error logs of one def.
 const ERROR_LOG_EVERY: Duration = Duration::from_secs(60);
@@ -55,6 +56,9 @@ pub(super) struct Inner {
     pub store: MemoryStore,
     /// Store tables the verbs have resolved, by name.
     pub tables: RwLock<HashMap<String, MemoryTableHandle>>,
+    /// A table's declared columns, for the `row()` verb. A table with no
+    /// entry here has no declared columns, and `row()` on it is empty.
+    pub columns: HashMap<String, Vec<FakerColumn>>,
     pub sched: Sched,
     pub seed: Option<u64>,
     /// Wall time the engine started at; every sim clock meets it there.

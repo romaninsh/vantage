@@ -121,6 +121,24 @@ fn table_spec_carries_weirdness_and_extra_fields() {
     assert!(row.contains_key("extra_0003"), "{row:?}");
 }
 
+#[cfg(feature = "sim")]
+#[test]
+fn builtin_script_resolves_in_sim_defs() {
+    let s: DatasetSpec =
+        serde_yaml_ng::from_str("tables: { t: {} }\nsims: { a: { script: \"builtin:fifo\" } }")
+            .unwrap();
+    let defs = s.sim_defs().unwrap();
+    assert_eq!(
+        defs[0].script,
+        crate::sim::builtin::builtin("fifo").unwrap()
+    );
+    let bad: DatasetSpec =
+        serde_yaml_ng::from_str("tables: { t: {} }\nsims: { a: { script: \"builtin:nope\" } }")
+            .unwrap();
+    let err = bad.sim_defs().unwrap_err().to_string();
+    assert!(err.contains("nope") && err.contains("fifo"), "{err}");
+}
+
 #[test]
 fn new_matches_deserialized() {
     let parsed = spec();

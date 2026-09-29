@@ -59,6 +59,7 @@
 //! `examples/sims/*.rhai` for complete scripts.
 
 mod builder;
+pub mod builtin;
 mod clock;
 mod current;
 mod engine;
@@ -74,6 +75,7 @@ pub(crate) mod vocab;
 use std::time::Duration;
 
 pub use builder::SimEngineBuilder;
+pub use builtin::BUILTINS;
 pub use engine::SimEngine;
 pub use stats::SimStats;
 

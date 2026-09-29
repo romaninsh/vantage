@@ -17,6 +17,9 @@
 //!   `count(table?)`.
 //! - `find(table?, #{col: value, …}) -> [id]` — ids of the rows equal to
 //!   every entry, in insertion order; an empty map gives every id.
+//! - `row(table?) -> map` — a generated value for each of the table's
+//!   declared columns ([`SimEngineBuilder::columns`](super::SimEngineBuilder::columns)),
+//!   skipping the id column; a table with none declared gives an empty map.
 //!
 //! **Spawn** — `spawn_sim(name, #{args}?) -> bool` starts a sim of def
 //! `name` at this sim's current time; `false` when the def is at its `max`
@@ -50,6 +53,7 @@
 pub(crate) mod convert;
 mod data;
 mod random;
+mod row;
 mod time;
 
 use std::sync::Arc;
@@ -71,6 +75,7 @@ pub(super) fn register(engine: &mut Engine, stop: Arc<AtomicBool>) {
     engine.on_debug(|s, _, _| tracing::debug!(target: "faker_sim", "{s}"));
     data::register(engine);
     random::register(engine);
+    row::register(engine);
     time::register(engine);
 }
 

@@ -1,6 +1,6 @@
 //! Configuring and starting a [`SimEngine`].
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -14,6 +14,7 @@ use super::engine::SimEngine;
 use super::kind::{Inner, Kind};
 use super::sched::Sched;
 use super::{SimDef, spawn, validate, vocab};
+use crate::FakerColumn;
 use vantage_memory::MemoryStore;
 
 /// Configures and starts a [`SimEngine`].
@@ -24,6 +25,7 @@ pub struct SimEngineBuilder {
     seed: Option<u64>,
     manual: Option<SystemTime>,
     warm_progress: Option<Box<spawn::Progress>>,
+    columns: HashMap<String, Vec<FakerColumn>>,
 }
 
 impl SimEngineBuilder {
@@ -37,6 +39,14 @@ impl SimEngineBuilder {
     /// Add a sim def.
     pub fn sim(mut self, def: SimDef) -> Self {
         self.defs.push(def);
+        self
+    }
+
+    /// Declare `table`'s columns, so the `row()` verb can generate a value
+    /// for each. A table with no call here has no declared columns, and
+    /// `row()` on it always returns an empty map.
+    pub fn columns(mut self, table: impl Into<String>, columns: Vec<FakerColumn>) -> Self {
+        self.columns.insert(table.into(), columns);
         self
     }
 
@@ -120,6 +130,7 @@ impl SimEngineBuilder {
             by_name,
             store: self.store,
             tables: Default::default(),
+            columns: self.columns,
             seed: self.seed,
             origin,
             handles: Mutex::default(),

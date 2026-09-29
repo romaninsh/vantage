@@ -12,6 +12,7 @@ use super::*;
 mod datasets;
 mod edges;
 mod flow;
+mod row;
 mod scripts;
 mod spawner;
 mod stats;
