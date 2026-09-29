@@ -187,3 +187,29 @@ async fn seed_file_is_loaded_by_the_factory() {
     let v = f.from_yaml(&yaml).unwrap();
     assert_eq!(ids(&v).await, ["c1"]);
 }
+
+#[tokio::test]
+async fn spec_indexes_apply_to_a_pre_existing_table() {
+    let (s, f) = setup();
+    assert!(!s.table("product").is_indexed("category"));
+    f.from_yaml(PRODUCT).unwrap();
+    assert!(s.table("product").is_indexed("category"));
+}
+
+#[tokio::test]
+async fn id_column_mismatch_with_existing_table_errors() {
+    let (_s, f) = setup();
+    let yaml = PRODUCT
+        .replace("id_column: id", "id_column: sku")
+        .replace("  id: {", "  sku: {");
+    assert!(f.from_yaml(&yaml).is_err());
+}
+
+#[tokio::test]
+async fn computed_columns_are_rejected() {
+    let (_s, f) = setup();
+    let lazy = PRODUCT.replace("price: { type: int }", "price: { type: int, lazy: \"1\" }");
+    assert!(f.from_yaml(&lazy).is_err());
+    let expr = PRODUCT.replace("price: { type: int }", "price: { type: int, expr: \"1\" }");
+    assert!(f.from_yaml(&expr).is_err());
+}

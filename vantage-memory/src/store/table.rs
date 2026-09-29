@@ -186,6 +186,18 @@ impl MemoryTable {
         self.writes.load(Ordering::Relaxed)
     }
 
+    /// Add a hash index on `column`, covering every existing row. A no-op
+    /// when the column is already indexed.
+    pub fn add_index(&self, column: &str) {
+        let mut rows = self.rows.write();
+        let Rows { map, indexes } = &mut *rows;
+        indexes.add_column(column, map.iter().map(|(id, row)| (id, &**row)));
+    }
+
+    pub fn is_indexed(&self, column: &str) -> bool {
+        self.rows.read().indexes.has(column)
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<MemoryChange> {
         self.events.subscribe()
     }

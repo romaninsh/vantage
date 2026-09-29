@@ -241,6 +241,28 @@ fn indexed_eq_agrees_with_scan_through_writes() {
 }
 
 #[test]
+fn add_index_covers_existing_rows_and_later_writes() {
+    let t = MemoryStore::new().table("t");
+    for (id, status) in [("a", "Open"), ("b", "Closed"), ("c", "Open")] {
+        t.upsert(id, rec(&[("status", text(status))]));
+    }
+    assert!(!t.is_indexed("status"));
+    t.add_index("status");
+    assert!(t.is_indexed("status"));
+    let open = Query::new().filter(MemoryCondition::cmp("status", FilterOp::Eq, text("Open")));
+    assert!(t.rows.read().indexes.candidates(&open).is_some());
+    assert_eq!(all_ids(&t, &open), ["a", "c"]);
+
+    t.patch("a", &rec(&[("status", text("Closed"))]));
+    t.upsert("d", rec(&[("status", text("Open"))]));
+    t.delete("c");
+    t.add_index("status");
+    assert_eq!(all_ids(&t, &open), ["d"]);
+    let closed = Query::new().filter(MemoryCondition::cmp("status", FilterOp::Eq, text("Closed")));
+    assert_eq!(all_ids(&t, &closed), ["a", "b"]);
+}
+
+#[test]
 fn indexed_in_set_keeps_insertion_order() {
     let t = indexed();
     for (id, status) in [("a", "x"), ("b", "y"), ("c", "z"), ("d", "x")] {

@@ -60,16 +60,28 @@ impl VistaFactory for MemoryVistaFactory {
             ));
         }
         let metadata = metadata_from_spec(&spec)?;
-        let id_column = metadata.id_column.clone().unwrap_or_else(|| "id".into());
+        let id_column = id_column(&spec);
         let block = spec.driver.memory;
         let table = self.store().define(
             &spec.name,
             TableDef {
-                id_column,
-                indexed: block.indexed,
+                id_column: id_column.clone(),
+                indexed: block.indexed.clone(),
                 id_prefix: None,
             },
         );
+        // The table may predate the spec, keeping its original definition.
+        if table.id_column() != id_column {
+            return Err(error!(format!(
+                "table {} already exists with id column {}, spec says {}",
+                spec.name,
+                table.id_column(),
+                id_column
+            )));
+        }
+        for column in &block.indexed {
+            table.add_index(column);
+        }
         if let Some(path) = &block.seed {
             seed::load_file(&table, path)?;
         }
@@ -93,6 +105,12 @@ fn id_column(spec: &MemoryVistaSpec) -> String {
 fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
     let mut metadata = VistaMetadata::new().with_id_column(id_column(spec));
     for (name, col) in &spec.columns {
+        if col.lazy.is_some() || col.expr.is_some() {
+            return Err(error!(
+                "Computed columns (lazy / expr) are not supported by vantage-memory",
+                column = name
+            ));
+        }
         let mut column = Column::new(name, col.col_type.as_deref().unwrap_or("string"));
         column.flags = col.flags.clone();
         if !column.has_flag(flags::ORDERABLE) {

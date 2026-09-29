@@ -51,6 +51,20 @@ struct HashIndex {
     unkeyed: IndexSet<String>,
 }
 
+impl HashIndex {
+    fn add(&mut self, column: &str, id: &str, row: &Record<CborValue>) {
+        let cell = lookup(row, column).unwrap_or(&CborValue::Null);
+        match key(cell) {
+            Some(k) => {
+                self.by_key.entry(k).or_default().insert(id.to_string());
+            }
+            None => {
+                self.unkeyed.insert(id.to_string());
+            }
+        }
+    }
+}
+
 pub(crate) struct Indexes {
     columns: HashMap<String, HashIndex>,
 }
@@ -67,16 +81,28 @@ impl Indexes {
 
     pub fn add(&mut self, id: &str, row: &Record<CborValue>) {
         for (col, ix) in self.columns.iter_mut() {
-            let cell = lookup(row, col).unwrap_or(&CborValue::Null);
-            match key(cell) {
-                Some(k) => {
-                    ix.by_key.entry(k).or_default().insert(id.to_string());
-                }
-                None => {
-                    ix.unkeyed.insert(id.to_string());
-                }
-            }
+            ix.add(col, id, row);
         }
+    }
+
+    pub fn has(&self, column: &str) -> bool {
+        self.columns.contains_key(column)
+    }
+
+    /// Index `column` over `rows`. A column already indexed is left alone.
+    pub fn add_column<'a>(
+        &mut self,
+        column: &str,
+        rows: impl IntoIterator<Item = (&'a String, &'a Record<CborValue>)>,
+    ) {
+        if self.has(column) {
+            return;
+        }
+        let mut ix = HashIndex::default();
+        for (id, row) in rows {
+            ix.add(column, id, row);
+        }
+        self.columns.insert(column.to_string(), ix);
     }
 
     pub fn remove(&mut self, id: &str, row: &Record<CborValue>) {
