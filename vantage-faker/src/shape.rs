@@ -98,17 +98,10 @@ pub struct FaultSchedule {
     pub boundary_skew: bool,
 }
 
-/// Undeclared payload riding along on every record: `count` extra fields of
-/// `size`-char strings — the fat API response the query didn't ask for.
-/// Recorded here so a shape is the complete personality description; a
-/// caller applies it to the store at generation time.
-#[derive(Clone, Copy, Debug)]
-pub struct ExtraFields {
-    pub count: usize,
-    pub size: usize,
-}
-
-/// The complete personality of one shaped backend.
+/// The transport personality of one shaped backend: what it advertises, how
+/// it pages, how slow and how faulty it is. Row content — weirdness, extra
+/// fields — is a generation setting on
+/// [`TableGen`](crate::TableGen), not part of the shape.
 #[derive(Clone, Debug)]
 pub struct BackendShape {
     /// Exactly what the backend advertises; everything else is refused.
@@ -118,11 +111,8 @@ pub struct BackendShape {
     pub page_size: usize,
     pub latency: LatencyModel,
     pub faults: FaultSchedule,
-    pub extra_fields: Option<ExtraFields>,
-    /// Fraction of generated string cells drawn from the anomaly pool.
-    pub weirdness: f64,
-    /// Deterministic replay when set — drives value generation, fault draws
-    /// and latency jitter alike.
+    /// Deterministic replay of latency jitter, fault draws and boundary
+    /// skew when set; fresh entropy when `None`. Does not affect row values.
     pub seed: Option<u64>,
 }
 
@@ -143,8 +133,6 @@ impl Default for BackendShape {
             page_size: 25,
             latency: LatencyModel::default(),
             faults: FaultSchedule::default(),
-            extra_fields: None,
-            weirdness: 0.0,
             seed: None,
         }
     }

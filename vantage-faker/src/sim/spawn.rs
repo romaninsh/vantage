@@ -130,10 +130,34 @@ pub(super) fn spawn_sim(inner: &Arc<Inner>, kind: usize, vt: f64, args: RhaiMap)
     }
 }
 
+/// Keeps every store table quiet while alive, and unquiets them all on
+/// drop. Dropped by an unwind (a panicking progress callback), it first
+/// stops the warm sims and joins their threads, so a failed start leaves
+/// no sim running and no table muted.
+struct QuietGuard<'a>(&'a Inner);
+
+impl<'a> QuietGuard<'a> {
+    fn new(inner: &'a Inner) -> Self {
+        inner.set_quiet(true);
+        Self(inner)
+    }
+}
+
+impl Drop for QuietGuard<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.stop_sims();
+        }
+        self.0.set_quiet(false);
+    }
+}
+
 /// Run the warm start: every spawner event and sim step before the engine
 /// start, window by window, as fast as the sims compute, reporting the
-/// fraction done to `progress` after each window.
+/// fraction done to `progress` after each window. Every store table is
+/// quiet throughout and unquieted at the end.
 pub(super) fn warm(inner: &Arc<Inner>, plan: &mut Plan, progress: Option<&Progress>) {
+    let _quiet = QuietGuard::new(inner);
     let begin = plan.earliest();
     let end = inner.origin;
     if begin >= end {

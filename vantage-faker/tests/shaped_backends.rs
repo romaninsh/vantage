@@ -16,41 +16,15 @@ use vantage_faker::{
 };
 use vantage_memory::vista::Catalog;
 use vantage_memory::{MemoryStore, MemoryTableShell};
-use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, flags};
 
 fn columns() -> Vec<FakerColumn> {
     vec![
-        FakerColumn {
-            name: "id".into(),
-            ty: "string".into(),
-            flags: vec!["id".into()],
-            generator: None,
-        },
-        FakerColumn {
-            name: "name".into(),
-            ty: "string".into(),
-            flags: vec![],
-            generator: None,
-        },
-        FakerColumn {
-            name: "surname".into(),
-            ty: "string".into(),
-            flags: vec![],
-            generator: None,
-        },
-        FakerColumn {
-            name: "age".into(),
-            ty: "int".into(),
-            flags: vec![],
-            generator: None,
-        },
-        FakerColumn {
-            name: "balance".into(),
-            ty: "money".into(),
-            flags: vec![],
-            generator: None,
-        },
+        FakerColumn::new("id", "string"),
+        FakerColumn::new("name", "string"),
+        FakerColumn::new("surname", "string"),
+        FakerColumn::new("age", "int"),
+        FakerColumn::new("balance", "money"),
     ]
 }
 
@@ -71,26 +45,6 @@ fn metadata(columns: &[FakerColumn], id_column: &str) -> VistaMetadata {
     meta
 }
 
-/// Ride `extra.count` fields of `extra.size`-char filler on every row —
-/// the fat API response the query didn't ask for.
-fn apply_extra_fields(store: &MemoryStore, table: &str, extra: ExtraFields) {
-    let handle = store.table(table);
-    for id in handle.ids() {
-        let mut patch = Record::new();
-        for i in 1..=extra.count {
-            let head = format!("{id}:{i}:");
-            let mut s = String::with_capacity(extra.size);
-            s.push_str(&head);
-            while s.len() < extra.size {
-                s.push('x');
-            }
-            s.truncate(extra.size);
-            patch.insert(format!("extra_{i:04}"), CborValue::Text(s));
-        }
-        handle.patch(&id, &patch);
-    }
-}
-
 fn windowed_caps() -> VistaCapabilities {
     VistaCapabilities {
         can_count: true,
@@ -101,25 +55,20 @@ fn windowed_caps() -> VistaCapabilities {
 }
 
 fn shaped(count: usize, shape: BackendShape) -> Vista {
+    shaped_rows(TableGen::new("shaped").count(count), shape)
+}
+
+/// Seed `table` (named `shaped`, given the fixture columns) from the
+/// shape's seed, then wrap it in the shape.
+fn shaped_rows(table: TableGen, shape: BackendShape) -> Vista {
     let store = MemoryStore::new();
     let cols = columns();
     let meta = metadata(&cols, "id");
-    let seed = shape.seed;
-    let extra = shape.extra_fields;
 
-    DatasetGen::new(seed)
-        .table(
-            TableGen::new("shaped")
-                .id_column("id")
-                .columns(cols)
-                .count(count),
-        )
+    DatasetGen::new(shape.seed)
+        .table(table.columns(cols))
         .generate(&store)
         .expect("dataset generates");
-
-    if let Some(extra) = extra {
-        apply_extra_fields(&store, "shaped", extra);
-    }
 
     let catalog = Catalog::new(store.clone());
     catalog.register("shaped", meta.clone());
@@ -322,13 +271,12 @@ async fn error_rate_one_fails_everything_and_totals_lie() {
 
 #[tokio::test]
 async fn extra_fields_ride_along_undeclared() {
-    let vista = shaped(
-        3,
+    let vista = shaped_rows(
+        TableGen::new("shaped").count(3).extra_fields(ExtraFields {
+            count: 50,
+            size: 1000,
+        }),
         BackendShape {
-            extra_fields: Some(ExtraFields {
-                count: 50,
-                size: 1000,
-            }),
             seed: Some(6),
             ..BackendShape::default()
         },
@@ -345,14 +293,18 @@ async fn extra_fields_ride_along_undeclared() {
 
 #[tokio::test]
 async fn a_seed_replays_the_same_backend() {
-    let shape = || BackendShape {
-        capabilities: windowed_caps(),
-        weirdness: 0.2,
-        seed: Some(42),
-        ..BackendShape::default()
+    let shaped = || {
+        shaped_rows(
+            TableGen::new("shaped").count(25).weirdness(0.2),
+            BackendShape {
+                capabilities: windowed_caps(),
+                seed: Some(42),
+                ..BackendShape::default()
+            },
+        )
     };
-    let a = shaped(25, shape()).list_values().await.unwrap();
-    let b = shaped(25, shape()).list_values().await.unwrap();
+    let a = shaped().list_values().await.unwrap();
+    let b = shaped().list_values().await.unwrap();
     assert_eq!(
         a, b,
         "same seed, same rows — a scenario replays identically"

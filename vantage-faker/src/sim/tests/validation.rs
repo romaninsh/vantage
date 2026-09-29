@@ -68,7 +68,7 @@ fn start_err(defs: Vec<SimDef>) -> String {
     }
     match b.start() {
         Ok(_) => panic!("engine started"),
-        Err(e) => e,
+        Err(e) => e.to_string(),
     }
 }
 

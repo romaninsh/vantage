@@ -93,4 +93,15 @@ impl Inner {
             self.store.table(&name).set_quiet(quiet);
         }
     }
+
+    /// Stop every sim, wait for their threads to end and join them. The
+    /// driver thread, if any, is the caller's to join.
+    pub fn stop_sims(&self) {
+        self.sched.stop();
+        self.sched.wait_no_threads();
+        let handles = std::mem::take(&mut *self.handles.lock().unwrap_or_else(|e| e.into_inner()));
+        for handle in handles {
+            let _ = handle.join();
+        }
+    }
 }

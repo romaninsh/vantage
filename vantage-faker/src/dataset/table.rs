@@ -1,11 +1,16 @@
-//! [`TableGen`]: one table's generation plan — columns, row count, and links
-//! to the other tables it references.
+//! [`TableGen`]: one table's generation plan — columns, row count, row
+//! content settings, and links to the other tables it references.
 
+use ciborium::Value as CborValue;
+use vantage_types::Record;
+
+use super::ExtraFields;
+use crate::relational::{Reference, relational_rows};
+use crate::value_gen::ValueGen;
 use crate::{FakerColumn, FanOut};
 
 /// A declared reference: `column` holds ids of `target`, resolved to a
-/// [`Reference`](crate::relational::Reference) once `target`'s row count is
-/// known.
+/// [`Reference`] once `target`'s row count is known.
 #[derive(Clone, Debug)]
 pub(super) struct DeclaredRef {
     pub column: String,
@@ -23,6 +28,8 @@ pub struct TableGen {
     pub(super) refs: Vec<DeclaredRef>,
     pub(super) fan_out: Option<FanOut>,
     pub(super) indexed: Vec<String>,
+    weirdness: f64,
+    extra_fields: Option<ExtraFields>,
 }
 
 impl TableGen {
@@ -85,5 +92,41 @@ impl TableGen {
     pub fn indexed(mut self, columns: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.indexed = columns.into_iter().map(Into::into).collect();
         self
+    }
+
+    /// Fraction (`0..=1`) of generated string cells drawn from the anomaly
+    /// pool — see [`ValueGen::with_weirdness`]. Default 0.
+    pub fn weirdness(mut self, weirdness: f64) -> Self {
+        self.weirdness = weirdness;
+        self
+    }
+
+    /// Ride [`ExtraFields`] filler on every generated row.
+    pub fn extra_fields(mut self, extra: ExtraFields) -> Self {
+        self.extra_fields = Some(extra);
+        self
+    }
+
+    /// This table's rows, drawn from `seed` with `refs` resolved.
+    pub(super) fn rows(
+        &self,
+        seed: Option<u64>,
+        refs: &[Reference],
+    ) -> Vec<(String, Record<CborValue>)> {
+        let values = ValueGen::from_seed(seed).with_weirdness(self.weirdness);
+        let mut rows = relational_rows(
+            &values,
+            &self.columns,
+            &self.id_column,
+            self.count,
+            refs,
+            self.fan_out.as_ref(),
+        );
+        if let Some(extra) = &self.extra_fields {
+            for (id, record) in &mut rows {
+                extra.apply(id, record);
+            }
+        }
+        rows
     }
 }

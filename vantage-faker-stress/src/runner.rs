@@ -47,7 +47,10 @@ pub async fn run(
     };
 
     let store = MemoryStore::new();
-    scenario.dataset().generate(&store)?;
+    scenario
+        .dataset()
+        .generate(&store)
+        .map_err(|e| e.to_string())?;
     let mut loads: Vec<TableLoad> = Vec::new();
     for name in scenario.tables.keys() {
         let metadata = scenario.vista_metadata(name);
@@ -68,7 +71,8 @@ pub async fn run(
     let started = Instant::now();
     let engine = tokio::task::spawn_blocking(move || builder.start())
         .await
-        .map_err(|e| format!("engine start panicked: {e}"))??;
+        .map_err(|e| format!("engine start panicked: {e}"))?
+        .map_err(|e| e.to_string())?;
     let warm_secs = warms.then(|| started.elapsed().as_secs_f64());
 
     let mut samples = Vec::new();

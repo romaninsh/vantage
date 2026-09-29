@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Each total is read independently, so a sample is not a consistent
 /// snapshot: `ended + errored + live` can briefly exceed `spawned`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SimStats {
     /// Sims running now.
     pub live: usize,
@@ -17,7 +18,9 @@ pub struct SimStats {
     /// Sims ended by a Rhai error (a thrown exception or a budget, depth or
     /// call-level limit) or by a verb panicking.
     pub errored: u64,
-    /// `insert`, `upsert`, `set`, `patch` and `delete` calls that changed a row.
+    /// Sim write calls: every successful `insert`; an `upsert` that did not leave the
+    /// row unchanged; a `patch`, `set` or `delete` whose row existed, even
+    /// if the values it wrote were already there.
     pub writes: u64,
 }
 

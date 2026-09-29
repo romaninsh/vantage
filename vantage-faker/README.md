@@ -3,12 +3,9 @@
 Synthetic data for Vantage: column generators that seed `vantage-memory` tables, and Rhai sims
 that mutate them live.
 
-> Incubating: API may change.
-
 ## Generators and `DatasetGen`
 
-A `FakerColumn` names a column, its declared type and free-form flags (`"id"`, …), with an
-optional `ColumnGen` override. `ValueGen` decides what a cell contains: the generator if one is
+A `FakerColumn` names a column and its declared type, with an optional `ColumnGen` override. `ValueGen` decides what a cell contains: the generator if one is
 set, else the column name (`email`, `name`, `city`, …), then the declared type as a fallback.
 `ColumnGen` covers `pick` (weighted choice), `range`, `date` (relative bounds, random or even
 spread), `sentence`, `pattern` (`BA####`) and the positional `walk` (a time-series random walk) and
@@ -16,7 +13,10 @@ spread), `sentence`, `pattern` (`BA####`) and the positional `walk` (a time-seri
 
 `TableGen` declares one table — its columns, row count, id column and any reference columns
 pointing at another table in the same `DatasetGen`, optionally with a `FanOut` giving each parent
-a bounded, contiguous run of children. `DatasetGen::generate` seeds every declared table into a
+a bounded, contiguous run of children. `TableGen::weirdness(f)` draws that fraction of string
+cells from an anomaly pool (very long labels, blanks, duplicates, emoji), and
+`TableGen::extra_fields(ExtraFields { count, size })` rides undeclared filler columns on every row.
+`DatasetGen::generate` checks the whole plan first, then seeds every declared table into a
 `vantage_memory::MemoryStore`, referenced tables before the tables that reference them, quietly —
 each table sends a single `Reset` once its rows are in, rather than one change per row.
 
@@ -66,7 +66,8 @@ sim ends when the script does, when it calls `done()`, or on its first Rhai erro
 exception, or the operations budget (`SimDef::with_ops`, default `DEFAULT_OPS`) run out between two
 sleeps. A failed sim just ends; it doesn't stop the others or the engine.
 
-Scripts write through data verbs, `table` optional everywhere (defaults to the def's table):
+Scripts write through data verbs, `table` optional everywhere (defaults to the def's table). Row
+ids are strings, both returned and taken:
 
 | verb | does |
 |---|---|
@@ -88,13 +89,16 @@ during it broadcasts one `Reset` when the start ends, instead of one change per 
 a real backend: paged or cursor-driven, sluggish or flaky, honest or lying about its counts. A
 `BackendShape` is the whole personality — the `VistaCapabilities` it advertises (everything else
 is refused), a `LatencyModel` per operation class, a `FaultSchedule` (error rate, scheduled
-outages, cursor expiry, boundary skew) and a `seed` that replays the same draws. See
+outages, cursor expiry, boundary skew) and a `seed` that replays the same jitter and fault draws.
+Row content is not part of the shape: set weirdness and extra fields on the `TableGen`. See
 `tests/shaped_backends.rs` for the full contract.
 
 ## Features
 
 - default — generators, `DatasetGen`, `ShapedShell`.
 - `sim` — the Rhai sim engine (pulls in `vantage-rhai`).
+- `serde` — `config::DatasetSpec`, a whole datasource (tables and sims) as YAML;
+  `DatasetSpec::generate` seeds it, and `sim_builder` / `start_sims` build or start its engine.
 
 ## License
 

@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use vantage_core::{Result, error};
 use vantage_rhai::rhai::Map as RhaiMap;
 use vantage_rhai::{Host, Limits, Mode, from_json};
 
@@ -63,13 +64,19 @@ impl SimEngineBuilder {
 
     /// Validate, compile, run the warm start to completion and go live.
     ///
-    /// Blocks until the warm start is done. Fails on the first invalid def
-    /// (see [`SimDef::validate`]), a duplicate name, a default table the
-    /// store does not have, or `max`es adding up to more than
-    /// [`MAX_LIVE`](super::MAX_LIVE).
-    pub fn start(self) -> Result<SimEngine, String> {
+    /// Blocks until the warm start is done. The warm start quiets every
+    /// store table and unquiets them all when it ends, so a table the
+    /// caller had quieted comes out unquieted. If the warm start unwinds (a
+    /// panicking [`on_warm_progress`](Self::on_warm_progress) callback), its
+    /// sims are stopped and joined and the tables unquieted before the
+    /// panic propagates.
+    ///
+    /// Fails on the first invalid def (see [`SimDef::validate`]), a
+    /// duplicate name, a default table the store does not have, or `max`es
+    /// adding up to more than [`MAX_LIVE`](super::MAX_LIVE).
+    pub fn start(self) -> Result<SimEngine> {
         let names: HashSet<String> = self.store.table_names().into_iter().collect();
-        validate::validate_all(&self.defs, &names)?;
+        validate::validate_all(&self.defs, &names).map_err(|e| error!(e))?;
 
         let stop = Arc::new(AtomicBool::new(false));
         let progress_stop = stop.clone();
@@ -86,7 +93,7 @@ impl SimEngineBuilder {
         for def in self.defs {
             let ast = host
                 .ast_uncached(Mode::Script, &def.script)
-                .map_err(|e| format!("sim {}: script does not compile: {e}", def.name))?;
+                .map_err(|e| error!(format!("sim {}: script does not compile: {e}", def.name)))?;
             let args = from_json(&serde_json::Value::Object(def.spawn.args.clone()))
                 .try_cast::<RhaiMap>()
                 .unwrap_or_default();
@@ -120,9 +127,7 @@ impl SimEngineBuilder {
         });
 
         let mut plan = spawn::Plan::new(&inner);
-        inner.set_quiet(true);
         spawn::warm(&inner, &mut plan, self.warm_progress.as_deref());
-        inner.set_quiet(false);
         let driver = spawn::start_driver(inner.clone(), plan);
         Ok(SimEngine::new(inner, driver))
     }

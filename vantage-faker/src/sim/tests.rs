@@ -9,6 +9,7 @@ use vantage_types::Record;
 
 use super::*;
 
+mod datasets;
 mod edges;
 mod flow;
 mod scripts;

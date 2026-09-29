@@ -2,6 +2,19 @@
 
 ## 1.0.0 — 2026-09-29
 
+- Storage is `vantage-memory`: `DatasetGen` / `TableGen` seed `MemoryTable`s in reference order,
+  quietly and reproducibly.
+- Removed `FakerTable`, `FakerCtx`, `FakerHandle`, `FakerEffect`, flights, `PulseSim`,
+  `LiveFolderSim` and `RhaiEffect`.
+- `SimEngine` runs over a `MemoryStore` (`SimEngine::builder().store(..)`).
+- New sim verbs `upsert` and `find`; `insert` stores the map as given and errors on an existing id.
+- Warm start ends with one `Reset` per written table.
+- Sim ops budget: 5M per stretch between sleeps by default, per def via `ops`.
+- Feature `rhai` renamed to `sim`.
+- Feature `serde` adds `config::{DatasetSpec, TableSpec, SimSpec}` and `DatasetSpec::sim_builder`.
+- Errors are `vantage_core::Result`.
+- `weirdness` and `extra_fields` moved from `BackendShape` to `TableGen` / `TableSpec`.
+- `FakerColumn.flags` removed.
 - `SimEngine::stats` reports live sims and spawned, ended, errored and write totals.
 
 ## 0.7.1 — 2026-09-29

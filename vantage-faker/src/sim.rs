@@ -33,7 +33,8 @@
 //! past: its burst and its rate spawns within that window run instantly, in
 //! virtual time, before [`SimEngineBuilder::start`] returns, so tables open
 //! mid-life. Every store table is quiet during the warm start, so a table
-//! written then broadcasts one `Reset` when it ends instead of each write.
+//! written then broadcasts one `Reset` when it ends instead of each write;
+//! every table is unquieted at its end, whatever its state before.
 //!
 //! The warm span is cut into windows; sims run in parallel within one and
 //! wait for each other at its end. So within a window a sim may read another
@@ -86,7 +87,7 @@ pub const DEFAULT_OPS: u64 = 5_000_000;
 
 /// Stack size of a sim thread. Unoptimised Rhai needs about ten times the
 /// stack per call level, so debug builds get more.
-pub const SIM_STACK_BYTES: usize = if cfg!(debug_assertions) {
+pub(crate) const SIM_STACK_BYTES: usize = if cfg!(debug_assertions) {
     4 * 1024 * 1024
 } else {
     512 * 1024
@@ -160,7 +161,7 @@ impl SimDef {
         }
     }
 
-    /// Replace the spawner.
+    /// Set the spawner's burst, rate and max; keeps its `args`.
     pub fn with_spawn(mut self, burst: usize, rate_per_min: f64, max: usize) -> Self {
         self.spawn.burst = burst;
         self.spawn.rate_per_min = rate_per_min;
@@ -168,7 +169,8 @@ impl SimDef {
         self
     }
 
-    /// Set the spawner's `args`.
+    /// Set the spawner's `args` from a JSON object. Any other JSON value is
+    /// ignored and the args stay as they were.
     pub fn with_args(mut self, args: serde_json::Value) -> Self {
         if let serde_json::Value::Object(map) = args {
             self.spawn.args = map;

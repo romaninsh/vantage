@@ -5,17 +5,19 @@ use std::time::Duration;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
+use vantage_core::{Result, error};
 
 #[cfg(feature = "sim")]
 use super::DatasetSpec;
 #[cfg(feature = "sim")]
-use crate::{SimDef, SimEngine};
+use crate::{SimDef, SimEngine, SimEngineBuilder};
 #[cfg(feature = "sim")]
 use vantage_memory::MemoryStore;
 
 /// One `sims:` entry — a [`SimDef`](crate::SimDef) plan in YAML shape.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct SimSpec {
     /// Default: the dataset's first declared table.
     #[serde(default)]
@@ -38,6 +40,7 @@ pub struct SimSpec {
 /// The spawner of one sim kind.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields, default)]
+#[non_exhaustive]
 pub struct SpawnSpec {
     /// Sims started at once. Default 1.
     pub burst: Option<usize>,
@@ -55,14 +58,16 @@ impl DatasetSpec {
     /// defaults `burst: 1`, `rate: 0`, `max: 1`, `clock: 1`. A sim with no
     /// `table:` uses this dataset's first declared table; with no tables at
     /// all, a missing `table:` is an error.
-    pub fn sim_defs(&self) -> Result<Vec<SimDef>, String> {
+    pub fn sim_defs(&self) -> Result<Vec<SimDef>> {
         let default_table = self.tables.keys().next();
         let mut defs = Vec::with_capacity(self.sims.len());
         for (name, spec) in &self.sims {
             let table = match &spec.table {
                 Some(t) => t.clone(),
                 None => default_table.cloned().ok_or_else(|| {
-                    format!("sim {name}: no `table:`, and the dataset declares no tables")
+                    error!(format!(
+                        "sim {name}: no `table:`, and the dataset declares no tables"
+                    ))
                 })?,
             };
             let mut def = SimDef::new(name.clone(), table, spec.script.clone())
@@ -87,9 +92,11 @@ impl DatasetSpec {
         Ok(defs)
     }
 
-    /// Build and start the sim engine over `store`'s tables, seeded with
-    /// [`DatasetSpec::seed`]. `None` when there are no `sims:`.
-    pub fn start_sims(&self, store: &MemoryStore) -> Result<Option<SimEngine>, String> {
+    /// A [`SimEngineBuilder`] over `store` with every [`sim_defs`](Self::sim_defs)
+    /// def added and [`DatasetSpec::seed`] applied, for a caller that wants to
+    /// set more (a manual clock, a warm-progress callback) before starting.
+    /// `None` when there are no `sims:`.
+    pub fn sim_builder(&self, store: &MemoryStore) -> Result<Option<SimEngineBuilder>> {
         if self.sims.is_empty() {
             return Ok(None);
         }
@@ -100,13 +107,21 @@ impl DatasetSpec {
         if let Some(seed) = self.seed {
             builder = builder.seed(seed);
         }
-        builder.start().map(Some)
+        Ok(Some(builder))
+    }
+
+    /// [`sim_builder`](Self::sim_builder), started. `None` when there are no
+    /// `sims:`.
+    pub fn start_sims(&self, store: &MemoryStore) -> Result<Option<SimEngine>> {
+        self.sim_builder(store)?
+            .map(SimEngineBuilder::start)
+            .transpose()
     }
 }
 
 /// `500ms`, `1.5s`, `2m`, `6h`, `3d`, or bare seconds. Minutes, hours and
 /// days are whole numbers.
-pub fn parse_duration(s: &str) -> Result<Duration, String> {
+pub fn parse_duration(s: &str) -> Result<Duration> {
     let trimmed = s.trim();
     let parsed = if let Some(ms) = trimmed.strip_suffix("ms") {
         ms.trim().parse::<u64>().ok().map(Duration::from_millis)
@@ -137,6 +152,9 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
     } else {
         trimmed.parse::<u64>().ok().map(Duration::from_secs)
     };
-    parsed
-        .ok_or_else(|| format!("`{s}` is not a duration (e.g. `500ms`, `1.5s`, `2m`, `6h`, `3d`)"))
+    parsed.ok_or_else(|| {
+        error!(format!(
+            "`{s}` is not a duration (e.g. `500ms`, `1.5s`, `2m`, `6h`, `3d`)"
+        ))
+    })
 }

@@ -1,18 +1,25 @@
 //! Reproducible seeding: [`DatasetGen`] generates each declared
-//! [`TableGen`](table::TableGen)'s rows into a [`MemoryStore`], referenced
-//! tables before the tables that reference them, quietly so no subscriber
-//! sees the seed rows trickle in one at a time.
+//! [`TableGen`]'s rows into a [`MemoryStore`], referenced tables before the
+//! tables that reference them, quietly so no subscriber sees the seed rows
+//! trickle in one at a time.
 
+mod extra;
 mod order;
-pub mod table;
+mod table;
 #[cfg(test)]
 mod tests;
+mod validate;
 
+use std::collections::HashMap;
+
+use ciborium::Value as CborValue;
+use vantage_core::{Result, error};
 use vantage_memory::{MemoryStore, MemoryTableHandle, TableDef};
+use vantage_types::Record;
 
 use crate::generator::hash;
-use crate::relational::{Reference, check_plan, relational_rows};
-use crate::value_gen::ValueGen;
+use crate::relational::{Reference, check_plan};
+pub use extra::ExtraFields;
 pub use table::TableGen;
 
 /// A set of tables to generate together, in reference order, from one
@@ -41,72 +48,69 @@ impl DatasetGen {
     /// Generate every declared table into `store` and return the created
     /// (or pre-existing) tables in generation order.
     ///
-    /// Each table's columns are validated, then its reference columns are
-    /// checked against the already-generated row count of the table they
-    /// point at. The table is defined in `store`, seeded quietly with
-    /// [`relational_rows`], then unquieted — a single `Reset` follows, since
-    /// no one is watching a table mid-seed.
-    pub fn generate(&self, store: &MemoryStore) -> Result<Vec<MemoryTableHandle>, String> {
-        let order = order::generation_order(&self.tables)?;
-        let mut generated = Vec::with_capacity(order.len());
+    /// The whole plan is checked and every table's rows are generated
+    /// before any table is touched, so an error leaves `store` as it was.
+    /// Errors: a table name declared twice, an invalid column generator or
+    /// fan-out, a fan-out on a non-reference column or over a parent that
+    /// generated no rows, a reference to an undeclared table, a reference
+    /// cycle, or a table already in `store` with another id column.
+    ///
+    /// A reference column draws from the rows its target generated in this
+    /// call; rows the target table held before are never picked. Each table
+    /// is then defined in `store` (with its `indexed` columns indexed, even
+    /// if it existed), seeded quietly and unquieted — a single `Reset`
+    /// follows, since no one is watching a table mid-seed.
+    pub fn generate(&self, store: &MemoryStore) -> Result<Vec<MemoryTableHandle>> {
+        let order = validate::check(&self.tables, store).map_err(|e| error!(e))?;
 
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        let mut planned = Vec::with_capacity(order.len());
         for i in order {
             let plan = &self.tables[i];
-            for col in &plan.columns {
-                if let Some(generator) = &col.generator {
-                    generator
-                        .validate()
-                        .map_err(|e| format!("table {}: column {}: {e}", plan.name, col.name))?;
-                }
-            }
-
             let refs: Vec<Reference> = plan
                 .refs
                 .iter()
                 .map(|r| Reference {
                     column: r.column.clone(),
-                    parent_count: store.table(&r.target).len(),
+                    parent_count: counts.get(r.target.as_str()).copied().unwrap_or(0),
                 })
                 .collect();
             check_plan(&refs, plan.fan_out.as_ref())
-                .map_err(|e| format!("table {}: {e}", plan.name))?;
-
-            let table = store.define(
-                &plan.name,
-                TableDef {
-                    id_column: plan.id_column.clone(),
-                    indexed: plan.indexed.clone(),
-                    id_prefix: None,
-                },
-            );
-            if table.id_column() != plan.id_column.as_str() {
-                return Err(format!(
-                    "table {}: existing table's id column is `{}`, not `{}`",
-                    plan.name,
-                    table.id_column(),
-                    plan.id_column
-                ));
-            }
-
-            table.set_quiet(true);
-            let values = ValueGen::from_seed(seed_for(self.seed, &plan.name));
-            let rows = relational_rows(
-                &values,
-                &plan.columns,
-                &plan.id_column,
-                plan.count,
-                &refs,
-                plan.fan_out.as_ref(),
-            );
-            for (id, record) in rows {
-                table.upsert(&id, record);
-            }
-            table.set_quiet(false);
-
-            generated.push(table);
+                .map_err(|e| error!(format!("table {}: {e}", plan.name)))?;
+            let rows = plan.rows(seed_for(self.seed, &plan.name), &refs);
+            counts.insert(&plan.name, rows.len());
+            planned.push((plan, rows));
         }
-        Ok(generated)
+
+        Ok(planned
+            .into_iter()
+            .map(|(plan, rows)| seed_table(store, plan, rows))
+            .collect())
     }
+}
+
+/// Define `plan`'s table in `store` and write `rows` into it quietly.
+fn seed_table(
+    store: &MemoryStore,
+    plan: &TableGen,
+    rows: Vec<(String, Record<CborValue>)>,
+) -> MemoryTableHandle {
+    let table = store.define(
+        &plan.name,
+        TableDef {
+            id_column: plan.id_column.clone(),
+            ..TableDef::default()
+        },
+    );
+    for column in &plan.indexed {
+        table.add_index(column);
+    }
+    table.set_quiet(true);
+    for (id, record) in rows {
+        table.upsert(&id, record);
+    }
+    table.set_quiet(false);
+    table
 }
 
 /// Fold `name` into `seed` (FNV-1a over its bytes, XORed in) so every table

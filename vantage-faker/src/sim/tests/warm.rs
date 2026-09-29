@@ -110,6 +110,28 @@ fn warm_progress_reports_each_window_and_skips_no_warm() {
 }
 
 #[test]
+fn a_panicking_progress_callback_stops_the_sims_and_unquiets() {
+    let store = store_with(&["log", "other"]);
+    let log = store.table("log");
+    // The store's handle and ours; a live engine caches a third.
+    let handles = Arc::strong_count(&log);
+    let builder = SimEngine::builder()
+        .store(&store)
+        .sim(warm_def(1.0))
+        .manual_clock(start())
+        .on_warm_progress(|p| assert!(p < 0.5, "progress callback fails"));
+    let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.start()));
+    assert!(started.is_err());
+    assert!(!log.is_empty(), "sims ran before the panic");
+    assert_eq!(
+        Arc::strong_count(&log),
+        handles,
+        "no sim thread outlives the failed start"
+    );
+    assert!(!log.is_quiet() && !store.table("other").is_quiet());
+}
+
+#[test]
 fn warm_start_on_the_system_clock_goes_live() {
     let store = store_with(&["log"]);
     let log = store.table("log");

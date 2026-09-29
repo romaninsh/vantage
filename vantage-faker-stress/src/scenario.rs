@@ -7,12 +7,16 @@ mod include;
 mod tests;
 
 use std::path::Path;
+use std::time::Duration;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
 use vantage_faker::config::{SimSpec, TableSpec};
 
-pub use vantage_faker::config::parse_duration;
+/// vantage-faker's `parse_duration`, with the error as a string.
+pub fn parse_duration(s: &str) -> Result<Duration, String> {
+    vantage_faker::config::parse_duration(s).map_err(|e| e.to_string())
+}
 
 /// `DatasetSpec`'s fields spelled out rather than flattened: serde's
 /// `flatten` does not combine with `deny_unknown_fields`.

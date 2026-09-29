@@ -2,7 +2,6 @@
 //! operations budget and write counting.
 
 use super::*;
-use crate::dataset::TableGen;
 
 #[test]
 fn upsert_is_idempotent_across_spawns() {
@@ -39,32 +38,30 @@ fn find_edge_cases() {
 }
 
 #[test]
-fn sims_write_a_relational_table() {
-    let store = MemoryStore::new();
-    crate::dataset::DatasetGen::new(Some(5))
-        .table(TableGen::new("client").count(3))
-        .table(
-            TableGen::new("invoice")
-                .column(crate::FakerColumn::new("client_id", "string"))
-                .reference("client_id", "client")
-                .count(4),
-        )
-        .generate(&store)
-        .unwrap();
-    let script = r#"for id in ids() { patch(id, #{ paid: true }); }"#;
+fn find_uses_an_indexed_column() {
+    let store = store_with(&[]);
+    store.define(
+        "log",
+        vantage_memory::TableDef {
+            indexed: vec!["k".into()],
+            ..Default::default()
+        },
+    );
+    let script = r#"
+        insert(#{ id: "a", k: "x" }); insert(#{ id: "b", k: "y" }); insert(#{ id: "c", k: "x" });
+        let hits = find(#{ k: "x" });
+        insert(#{ id: "result", step: hits[0] + "," + hits[1] });
+    "#;
     let engine = SimEngine::builder()
         .store(&store)
-        .sim(SimDef::new("payer", "invoice", script))
+        .sim(SimDef::new("a", "log", script))
         .manual_clock(start())
         .start()
         .unwrap();
     run_for(&engine, 1, 1);
-    let inv = store.table("invoice");
-    assert!(
-        inv.ids()
-            .iter()
-            .all(|id| inv.get(id).unwrap().get("paid") == Some(&CborValue::Bool(true)))
-    );
+    let log = store.table("log");
+    assert!(log.is_indexed("k"));
+    assert_eq!(text(&log.get("result").unwrap(), "step"), "a,c");
 }
 
 #[test]
@@ -75,7 +72,8 @@ fn missing_default_table_fails_start() {
         .manual_clock(start())
         .start()
         .err()
-        .expect("start fails");
+        .expect("start fails")
+        .to_string();
     assert!(err.contains("nope"), "{err}");
 }
 
@@ -125,6 +123,22 @@ fn ops_budget_ends_a_spinning_sim() {
     run_for(&engine, 1, 1);
     let s = engine.stats();
     assert_eq!((s.live, s.errored), (0, 1));
+}
+
+#[test]
+fn ops_budget_is_per_def() {
+    // Some hundreds of thousands of operations, then a write.
+    let script = r#"let n = 0; while n < 100000 { n += 1; } insert(#{ id: "done" });"#;
+    let run = |def: SimDef| {
+        let (engine, log) = engine_with(vec![def]);
+        run_for(&engine, 1, 1);
+        (engine.stats().errored, log.get("done").is_some())
+    };
+    assert_eq!(run(SimDef::new("roomy", "log", script)), (0, true));
+    assert_eq!(
+        run(SimDef::new("tight", "log", script).with_ops(100_000)),
+        (1, false)
+    );
 }
 
 #[test]

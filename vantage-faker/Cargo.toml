@@ -46,12 +46,14 @@ tracing = "0.1"
 sim = ["dep:vantage-rhai"]
 serde = []
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dev-dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
 # `list_values` in tests reads back through the Vista's dataset traits.
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
 # `test-util` for the paused-clock latency/offline/cursor-expiry tests.
 tokio = { version = "1", features = ["full", "test-util"] }
-tempfile = "3"
 # `ColumnGen`'s YAML shape, as vantage-ui table configs write it.
 serde_yaml_ng = "0.10"

@@ -52,16 +52,12 @@ impl Scenario {
     }
 
     pub fn dataset(&self) -> DatasetSpec {
-        DatasetSpec {
-            seed: self.seed,
-            tables: self.tables.clone(),
-            sims: self.sims.clone(),
-        }
+        DatasetSpec::new(self.seed, self.tables.clone(), self.sims.clone())
     }
 
     /// One `SimDef` per sim, with faker's defaults.
     pub fn sim_defs(&self) -> Result<Vec<SimDef>, String> {
-        self.dataset().sim_defs()
+        self.dataset().sim_defs().map_err(|e| e.to_string())
     }
 
     /// The id column first (unless declared), then the declared columns in

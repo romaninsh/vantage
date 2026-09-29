@@ -114,6 +114,7 @@ fn unknown_table_is_a_script_error() {
     engine.settle();
     assert!(rows(&log).is_empty());
     assert_eq!(engine.live(), 0);
+    assert_eq!(engine.stats().errored, 1);
 }
 
 #[test]

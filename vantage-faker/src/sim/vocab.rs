@@ -3,7 +3,10 @@
 //! **Data** — `table` is optional everywhere and defaults to the def's table;
 //! it can name any table of the engine's store; a missing table is a script
 //! error. Writes broadcast the store's `MemoryChange`s (during the warm start
-//! each written table sends one `Reset` instead, at its end).
+//! each written table sends one `Reset` instead, at its end). Row ids are
+//! strings: the verbs return them as strings and take them as strings (a
+//! number is not an id; an `insert` map's id column is stored under its
+//! string form).
 //! - `insert(table?, #{…}) -> id` — a new row, stored as the map gives it.
 //!   The map's id column, if set, is the row id (an existing row with it is
 //!   a script error); otherwise an id is assigned.

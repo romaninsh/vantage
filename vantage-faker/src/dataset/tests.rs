@@ -1,7 +1,10 @@
+use ciborium::Value as CborValue;
 use vantage_memory::MemoryStore;
 
-use super::{DatasetGen, table::TableGen};
+use super::{DatasetGen, ExtraFields, table::TableGen};
 use crate::{ColumnGen, FakerColumn, FanOut};
+
+mod errors;
 
 fn pick(values: &[&str]) -> ColumnGen {
     serde_yaml_ng::from_str(&format!("pick: {{ values: [{}] }}", values.join(", "))).unwrap()
@@ -31,6 +34,13 @@ fn r#gen() -> DatasetGen {
         )
 }
 
+fn text(row: &vantage_types::Record<CborValue>, col: &str) -> String {
+    match row.get(col) {
+        Some(CborValue::Text(s)) => s.clone(),
+        other => panic!("{col} is not text: {other:?}"),
+    }
+}
+
 #[test]
 fn referenced_tables_are_generated_first() {
     let store = MemoryStore::new();
@@ -43,12 +53,45 @@ fn referenced_tables_are_generated_first() {
     assert!(invoices.is_indexed("client_id"));
     let client_ids: Vec<String> = store.table("client").ids();
     for id in invoices.ids() {
-        let row = invoices.get(&id).unwrap();
-        let Some(ciborium::Value::Text(c)) = row.get("client_id") else {
-            panic!("{row:?}")
-        };
-        assert!(client_ids.contains(c), "{c} is not a client id");
+        let c = text(&invoices.get(&id).unwrap(), "client_id");
+        assert!(client_ids.contains(&c), "{c} is not a client id");
     }
+}
+
+#[test]
+fn references_pick_only_rows_this_call_generated() {
+    let store = MemoryStore::new();
+    let client = store.table("client");
+    for i in 0..50 {
+        client.upsert(&format!("old-{i}"), vantage_types::Record::new());
+    }
+    let tables = DatasetGen::new(Some(8))
+        .table(TableGen::new("client").count(3))
+        .table(
+            TableGen::new("invoice")
+                .column(FakerColumn::new("client_id", "string"))
+                .reference("client_id", "client")
+                .count(40),
+        )
+        .generate(&store)
+        .unwrap();
+    let generated: Vec<String> = (0..3).map(crate::seed_id).collect();
+    let invoices = &tables[1];
+    for id in invoices.ids() {
+        let c = text(&invoices.get(&id).unwrap(), "client_id");
+        assert!(generated.contains(&c), "{c} was not generated in this call");
+    }
+}
+
+#[test]
+fn existing_table_gets_its_indexes() {
+    let store = MemoryStore::new();
+    store.table("t");
+    DatasetGen::new(None)
+        .table(TableGen::new("t").indexed(["k"]).count(1))
+        .generate(&store)
+        .unwrap();
+    assert!(store.table("t").is_indexed("k"));
 }
 
 #[test]
@@ -57,19 +100,11 @@ fn same_seed_same_rows() {
     r#gen().generate(&a).unwrap();
     r#gen().generate(&b).unwrap();
     for t in ["client", "invoice"] {
-        let ra: Vec<_> = a
-            .table(t)
-            .ids()
-            .into_iter()
-            .map(|id| a.table(t).get(&id))
-            .collect();
-        let rb: Vec<_> = b
-            .table(t)
-            .ids()
-            .into_iter()
-            .map(|id| b.table(t).get(&id))
-            .collect();
-        assert_eq!(ra, rb, "{t}");
+        let read = |s: &MemoryStore| -> Vec<_> {
+            let table = s.table(t);
+            table.ids().iter().map(|id| table.get(id)).collect()
+        };
+        assert_eq!(read(&a), read(&b), "{t}");
     }
 }
 
@@ -82,45 +117,9 @@ fn seeding_is_quiet_then_resets() {
         .table(TableGen::new("client").count(3))
         .generate(&store)
         .unwrap();
-    let mut events = Vec::new();
-    while let Ok(c) = rx.try_recv() {
-        events.push(c);
-    }
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
     assert_eq!(events.len(), 1, "{events:?}");
     assert!(matches!(events[0], vantage_memory::MemoryChange::Reset));
-}
-
-#[test]
-fn cycle_is_an_error() {
-    let err = DatasetGen::new(None)
-        .table(
-            TableGen::new("a")
-                .column(FakerColumn::new("b_id", "string"))
-                .reference("b_id", "b"),
-        )
-        .table(
-            TableGen::new("b")
-                .column(FakerColumn::new("a_id", "string"))
-                .reference("a_id", "a"),
-        )
-        .generate(&MemoryStore::new())
-        .err()
-        .unwrap();
-    assert!(err.contains("cycle"), "{err}");
-}
-
-#[test]
-fn unknown_reference_is_an_error() {
-    let err = DatasetGen::new(None)
-        .table(
-            TableGen::new("a")
-                .column(FakerColumn::new("x_id", "string"))
-                .reference("x_id", "x"),
-        )
-        .generate(&MemoryStore::new())
-        .err()
-        .unwrap();
-    assert!(err.contains("a") && err.contains("x"), "{err}");
 }
 
 #[test]
@@ -132,39 +131,6 @@ fn count_zero_creates_an_empty_table() {
         .unwrap();
     assert!(store.table_names().contains(&"empty".to_string()));
     assert_eq!(store.table("empty").len(), 0);
-}
-
-#[test]
-fn existing_table_with_other_id_column_is_an_error() {
-    let store = MemoryStore::new();
-    store.define(
-        "t",
-        vantage_memory::TableDef {
-            id_column: "code".into(),
-            ..Default::default()
-        },
-    );
-    let err = DatasetGen::new(None)
-        .table(TableGen::new("t").count(1))
-        .generate(&store)
-        .err()
-        .unwrap();
-    assert!(err.contains("code"), "{err}");
-}
-
-#[test]
-fn invalid_generator_names_table_and_column() {
-    let bad: ColumnGen = serde_yaml_ng::from_str("range: { min: 5, max: 1 }").unwrap();
-    let err = DatasetGen::new(None)
-        .table(
-            TableGen::new("t")
-                .column(FakerColumn::new("n", "int").with_generator(bad))
-                .count(1),
-        )
-        .generate(&MemoryStore::new())
-        .err()
-        .unwrap();
-    assert!(err.contains("t") && err.contains("n"), "{err}");
 }
 
 #[test]
@@ -181,4 +147,45 @@ fn id_column_generator_is_ignored() {
     let ids = store.table("t").ids();
     assert_eq!(ids.len(), 2);
     assert!(ids.iter().all(|id| id != "x"));
+}
+
+#[test]
+fn extra_fields_ride_on_every_row() {
+    let store = MemoryStore::new();
+    DatasetGen::new(Some(1))
+        .table(
+            TableGen::new("t")
+                .column(FakerColumn::new("name", "string"))
+                .extra_fields(ExtraFields { count: 2, size: 8 })
+                .count(2),
+        )
+        .generate(&store)
+        .unwrap();
+    let row = store.table("t").get(&crate::seed_id(0)).unwrap();
+    assert_eq!(row.len(), 4, "id, name and two extras");
+    // "{id}:{i}:" cut to 8 bytes.
+    assert_eq!(text(&row, "extra_0002"), "00000000");
+}
+
+#[test]
+fn weirdness_changes_the_rows() {
+    let names = |weirdness: f64| {
+        let store = MemoryStore::new();
+        DatasetGen::new(Some(4))
+            .table(
+                TableGen::new("t")
+                    .column(FakerColumn::new("name", "string"))
+                    .weirdness(weirdness)
+                    .count(30),
+            )
+            .generate(&store)
+            .unwrap();
+        let t = store.table("t");
+        t.ids()
+            .iter()
+            .map(|id| text(&t.get(id).unwrap(), "name"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(0.0), names(0.0));
+    assert_ne!(names(0.0), names(1.0));
 }

@@ -81,12 +81,7 @@ impl SimEngine {
         if let Some(driver) = driver {
             let _ = driver.join();
         }
-        self.inner.sched.wait_no_threads();
-        let handles =
-            std::mem::take(&mut *self.inner.handles.lock().unwrap_or_else(|e| e.into_inner()));
-        for handle in handles {
-            let _ = handle.join();
-        }
+        self.inner.stop_sims();
     }
 }
 

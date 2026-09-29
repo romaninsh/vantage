@@ -54,7 +54,7 @@ fn unknown_reference_is_an_error() {
         "tables: { a: { count: 1, references: { x_id: x }, columns: { x_id: {} } } }",
     )
     .unwrap();
-    let err = s.generate(&MemoryStore::new()).unwrap_err();
+    let err = s.generate(&MemoryStore::new()).unwrap_err().to_string();
     assert!(err.contains("a") && err.contains("x"), "{err}");
 }
 
@@ -101,9 +101,57 @@ fn start_sims_runs_after_generate() {
     .unwrap();
     s.generate(&store).unwrap();
     let engine = s.start_sims(&store).unwrap().expect("an engine");
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    engine.settle();
     assert_eq!(store.table("log").len(), 1);
     drop(engine);
     let empty: DatasetSpec = serde_yaml_ng::from_str("tables: { t: {} }").unwrap();
     assert!(empty.start_sims(&store).unwrap().is_none());
+}
+
+#[test]
+fn table_spec_carries_weirdness_and_extra_fields() {
+    let s: DatasetSpec = serde_yaml_ng::from_str(
+        "seed: 1\ntables: { t: { count: 2, weirdness: 1.0, extra_fields: { count: 3, size: 16 } } }",
+    )
+    .unwrap();
+    assert_eq!(s.tables["t"].weirdness, Some(1.0));
+    let store = MemoryStore::new();
+    s.generate(&store).unwrap();
+    let row = store.table("t").get(&crate::seed_id(1)).unwrap();
+    assert!(row.contains_key("extra_0003"), "{row:?}");
+}
+
+#[test]
+fn new_matches_deserialized() {
+    let parsed = spec();
+    let built = DatasetSpec::new(parsed.seed, parsed.tables.clone(), parsed.sims.clone());
+    assert_eq!(format!("{built:?}"), format!("{parsed:?}"));
+}
+
+#[cfg(feature = "sim")]
+#[test]
+fn sim_builder_takes_more_settings_before_start() {
+    let store = MemoryStore::new();
+    let s: DatasetSpec = serde_yaml_ng::from_str(
+        "tables: { log: {} }\nsims: { w: { script: \"sleep(seconds(10)); insert(#{ who: 1 });\" } }",
+    )
+    .unwrap();
+    s.generate(&store).unwrap();
+    let start = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_790_553_600);
+    let engine = s
+        .sim_builder(&store)
+        .unwrap()
+        .expect("a builder")
+        .manual_clock(start)
+        .start()
+        .unwrap();
+    engine.settle();
+    assert_eq!(
+        store.table("log").len(),
+        0,
+        "the manual clock has not moved"
+    );
+    engine.advance(std::time::Duration::from_secs(10));
+    engine.settle();
+    assert_eq!(store.table("log").len(), 1);
 }
