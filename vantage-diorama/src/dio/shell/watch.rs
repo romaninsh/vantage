@@ -13,7 +13,6 @@ use std::sync::{Arc, Weak};
 use futures::stream;
 use tokio::sync::broadcast::{self, error::RecvError};
 use vantage_core::Result;
-use vantage_dataset::traits::ReadableValueSet;
 use vantage_vista::{VistaChange, VistaChangeStream};
 
 use super::{DioShell, FacadeQuery};
