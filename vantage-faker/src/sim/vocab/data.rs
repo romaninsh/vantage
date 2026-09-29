@@ -9,6 +9,7 @@ use vantage_types::Record;
 use crate::FakerCtx;
 use crate::rhai_effect::{dynamic_to_cbor, map_to_record, record_to_map};
 use crate::sim::current::{Current, VerbResult, with};
+use crate::sim::stats::Counters;
 
 /// The store of `table`, or of the def's default table.
 fn table(c: &Current, table: Option<&str>) -> VerbResult<Arc<FakerCtx>> {
@@ -40,6 +41,11 @@ fn shaped(ctx: &FakerCtx, map: &RhaiMap) -> Record<CborValue> {
     rec
 }
 
+/// Bump the write counter of the sim's engine.
+fn wrote(c: &Current) {
+    Counters::bump(&c.inner.counters.writes);
+}
+
 fn insert(c: &mut Current, t: Option<&str>, map: RhaiMap) -> VerbResult<String> {
     let ctx = table(c, t)?;
     let mut rec = shaped(&ctx, &map);
@@ -49,33 +55,50 @@ fn insert(c: &mut Current, t: Option<&str>, map: RhaiMap) -> VerbResult<String> 
         .filter(|v| !v.is_unit())
         .map(|v| v.to_string())
         .filter(|s| !s.is_empty());
-    Ok(match given {
+    let id = match given {
         Some(id) => {
             rec.insert(id_column, CborValue::Text(id.clone()));
             ctx.upsert_record(&id, rec);
             id
         }
         None => ctx.insert_record(rec),
-    })
+    };
+    wrote(c);
+    Ok(id)
 }
 
 fn patch(t: Option<&str>, id: &str, map: &RhaiMap) -> VerbResult<()> {
     with(|c| {
-        table(c, t)?.patch_record(id, &map_to_record(map));
+        let ctx = table(c, t)?;
+        let existed = ctx.get_record(id).is_some();
+        ctx.patch_record(id, &map_to_record(map));
+        if existed {
+            wrote(c);
+        }
         Ok(())
     })
 }
 
 fn set(t: Option<&str>, id: &str, field: &str, v: &Dynamic) -> VerbResult<()> {
     with(|c| {
-        table(c, t)?.update_field(id, field, dynamic_to_cbor(v));
+        let ctx = table(c, t)?;
+        let existed = ctx.get_record(id).is_some();
+        ctx.update_field(id, field, dynamic_to_cbor(v));
+        if existed {
+            wrote(c);
+        }
         Ok(())
     })
 }
 
 fn delete(t: Option<&str>, id: &str) -> VerbResult<()> {
     with(|c| {
-        table(c, t)?.expire(id);
+        let ctx = table(c, t)?;
+        let existed = ctx.get_record(id).is_some();
+        ctx.expire(id);
+        if existed {
+            wrote(c);
+        }
         Ok(())
     })
 }

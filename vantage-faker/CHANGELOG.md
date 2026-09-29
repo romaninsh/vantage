@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2 — 2026-09-29
+
+- `SimEngine::stats` reports live sims and spawned, ended, errored and write totals.
+
 ## 0.7.1 — 2026-09-29
 
 - Flights default to `fleet: 200`, `board: 10`, `time_scale: 10` and a long-haul route mix.

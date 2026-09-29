@@ -10,6 +10,7 @@ use vantage_rhai::rhai::{AST, Engine, Map as RhaiMap};
 use super::SimDef;
 use super::clock::SimClock;
 use super::sched::Sched;
+use super::stats::Counters;
 use crate::FakerCtx;
 
 /// Least real time between two error logs of one def.
@@ -57,6 +58,7 @@ pub(super) struct Inner {
     /// Wall time the engine started at; every sim clock meets it there.
     pub origin: f64,
     pub handles: Mutex<Vec<JoinHandle<()>>>,
+    pub counters: Counters,
 }
 
 impl Inner {

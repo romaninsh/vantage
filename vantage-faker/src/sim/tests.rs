@@ -16,6 +16,7 @@ mod edges;
 mod flow;
 mod scripts;
 mod spawner;
+mod stats;
 mod validation;
 mod warm;
 

@@ -53,7 +53,7 @@ pub use shape::{
     BackendShape, ExtraFields, FaultSchedule, Latency, LatencyModel, Offline, ShapedShell,
 };
 #[cfg(feature = "rhai")]
-pub use sim::{SimDef, SimEngine, SimEngineBuilder, Spawn};
+pub use sim::{SimDef, SimEngine, SimEngineBuilder, SimStats, Spawn};
 pub use value_gen::ValueGen;
 
 /// One column of a faker table: a name, a declared type, free-form flags

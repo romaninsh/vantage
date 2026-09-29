@@ -11,6 +11,7 @@ use vantage_rhai::BACKGROUND_MAX_OPERATIONS;
 use vantage_rhai::rhai::{Dynamic, EvalAltResult, Map as RhaiMap, Position, Scope};
 
 use super::kind::{Inner, Kind};
+use super::stats::Counters;
 
 /// A verb's result.
 pub(super) type VerbResult<T> = Result<T, Box<EvalAltResult>>;
@@ -166,10 +167,13 @@ pub(super) fn run_sim(inner: Arc<Inner>, kind: usize, id: u64, vt: f64, args: Rh
     let k = &inner.kinds[kind];
     let result = inner.engine.run_ast_with_scope(&mut scope, &k.ast);
     let done = CURRENT.with_borrow(|c| c.as_ref().is_some_and(|c| c.done));
-    if let Err(e) = result
-        && !done
-        && !inner.sched.is_stopped()
-    {
+    let failed = result.is_err() && !done && !inner.sched.is_stopped();
+    if failed && let Err(e) = &result {
         k.report(&e.to_string());
     }
+    Counters::bump(if failed {
+        &inner.counters.errored
+    } else {
+        &inner.counters.ended
+    });
 }
