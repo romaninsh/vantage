@@ -170,22 +170,34 @@ impl Sched {
                 STOPPED => return Err(Stopped),
                 _ => {}
             }
-            // Only a future deadline on the system clock needs a timeout:
-            // everything else is woken by whoever makes it due.
-            let wait = self
-                .system
-                .map(|c| target - c.now())
-                .filter(|secs| *secs > 0.0);
-            let Some(secs) = wait else {
-                std::thread::park();
-                continue;
-            };
-            std::thread::park_timeout(Duration::from_secs_f64(secs.min(MAX_WAIT.as_secs_f64())));
+            // On the system clock a sleeper wakes itself at its deadline; a
+            // deadline that passed since it registered (the clock moves
+            // between the check under the lock and here) is due now, and
+            // must not park untimed — nothing else wakes a live sleeper.
+            // A manual clock's sleepers are woken by whoever makes them due.
+            let left = self.system.map(|c| target - c.now());
+            match left {
+                Some(secs) if secs > 0.0 => std::thread::park_timeout(Duration::from_secs_f64(
+                    secs.min(MAX_WAIT.as_secs_f64()),
+                )),
+                Some(_) => {}
+                None => {
+                    std::thread::park();
+                    continue;
+                }
+            }
             let mut st = self.lock();
             if state.load(Ordering::Acquire) == WAITING && target <= st.limit() {
                 st.parked.remove(&id);
                 st.running += 1;
                 return Ok(());
+            }
+            // Past its deadline but held back by the warm barrier: wait for
+            // the barrier to move (raising it wakes due sleepers) instead of
+            // spinning. An unpark that lands first is kept for this park.
+            if left.is_some_and(|secs| secs <= 0.0) {
+                drop(st);
+                std::thread::park();
             }
         }
     }

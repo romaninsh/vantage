@@ -144,6 +144,33 @@ fn stop_ends_sleepers_promptly_on_the_system_clock() {
     assert!(rows(&log).is_empty());
 }
 
+/// Short sleeps on a fast system clock keep every sim moving: a deadline
+/// that passes between a sleeper registering and parking is due at once, not
+/// an untimed park that nothing live ever wakes.
+#[test]
+fn short_sleeps_on_the_system_clock_never_strand_a_sim() {
+    let (log, _) = table(&["id", "who"]);
+    let def = SimDef::new(
+        "tick",
+        "log",
+        "for i in 0..40 { sleep(seconds(1)); } insert(#{ who: \"done\" });",
+    )
+    .with_spawn(60, 0.0, 60)
+    .with_clock(240.0);
+    let engine = SimEngine::builder()
+        .table("log", &log)
+        .sim(def)
+        .start()
+        .unwrap();
+    // 40 sim seconds at 240x is about 0.17 s real; allow plenty.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rows(&log).len() < 60 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(rows(&log).len(), 60, "every sim finished its sleeps");
+    engine.stop();
+}
+
 #[test]
 fn stop_ends_a_busy_script() {
     let (engine, _log) = engine_with(vec![SimDef::new("spin", "log", "loop { }")]);
