@@ -75,10 +75,10 @@ faker-stress compare <a.json> <b.json>
 
 - `<scenario>` is a path under `scenarios/`, for example `churn` or `chaos/spin`.
 - `run` does one pass for the scenario's `stress.duration`, or for `--duration` if given.
-- `--scale N` multiplies every `burst` and `max` in the scenario, and the table `count`s. Decimals are allowed; each result is rounded and kept at least 1.
+- `--scale N` multiplies every `burst`, `rate` and `max` in the scenario, and the table `count`s. Decimals are allowed. `burst`, `max` and `count` are rounded, a zero stays 0 and any other result is kept at least 1; `rate` is not rounded, and an absent `rate` stays absent.
 - `--dio` attaches a Dio to every table (see Metrics).
 - `run` always honours the scenario's `warm:` settings. `ramp` strips them so each step starts cold, unless `--warm` is passed.
-- `ramp` runs one fresh engine per step. Step `N` applies a scale factor `N / base`: by default `base` is the sum of every def's `max`, and the factor scales `burst`, `max` and table `count` — the same as `--scale`. A scenario may set `stress.ramp: { base: <n>, sims: false }` to scale only the table `count`s, leaving sim counts alone; `sweeper` uses this, because it ramps rows, not sims. A step is held for `--hold`, then stopped before the next step starts. `ramp` stops early at the first step that breaks a `stress.limits` value, or when the next step would go past `MAX_LIVE` (1000). The reason it stopped is part of the report.
+- `ramp` runs one fresh engine per step. Step `N` applies a scale factor `N / base`: by default `base` is the sum of every def's `max`, and the factor scales `burst`, `rate`, `max` and table `count` — the same as `--scale`. A scenario may set `stress.ramp: { base: <n>, sims: false }` to scale only the table `count`s, leaving sim counts alone; `sweeper` uses this, because it ramps rows, not sims. A step is held for `--hold`, then stopped before the next step starts. `ramp` stops early at the first step that breaks a `stress.limits` value, or when the next step would go past `MAX_LIVE` (1000). The reason it stopped is part of the report.
 - `compare` prints two reports side by side with per-metric deltas. It is meant for comparing the same scenario across faker versions.
 
 ## Scenario format

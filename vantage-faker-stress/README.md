@@ -35,7 +35,7 @@ directory down, which is how the chaos scenarios are organized.
 | Flag | Default | What it does |
 |---|---|---|
 | `--duration <dur>` | the scenario's `stress.duration` | how long to sample |
-| `--scale <N>` | `1.0` | multiplies every sim's `burst` and `max`, and every table's `count`, by `N`. Decimals are allowed; a zero value stays 0, and every other result is rounded and kept at least 1 |
+| `--scale <N>` | `1.0` | multiplies every sim's `burst`, `rate` and `max`, and every table's `count`, by `N`. Decimals are allowed. `burst`, `max` and `count` are rounded, a zero stays 0, and every other result is kept at least 1; `rate` is not rounded, and a sim with no `rate` keeps none |
 | `--dio` | off | attaches a `Dio` to every table, so lag and event throughput measure `Dio::handle_event` and re-list cost, not just the raw broadcast |
 | `--json <path>` | none | writes the run's report to a JSON file |
 
@@ -50,6 +50,10 @@ directory down, which is how the chaos scenarios are organized.
 | `--dio` | off | same as `run --dio` |
 | `--warm` | off | keeps the scenario's `warm:` settings. By default `ramp` strips them so every step starts cold |
 | `--json <path>` | none | writes every step's report to a JSON file |
+
+Each step scales the scenario the way `--scale` does, by the step's target
+divided by `stress.ramp.base`, so `burst`, `rate`, `max` and row counts
+grow together. With `stress.ramp.sims: false` only row counts are scaled.
 
 `ramp` stops early in two ways. If a step's scaled sim count would exceed
 `MAX_LIVE` (1000), that's caught before the step runs, so it never runs at

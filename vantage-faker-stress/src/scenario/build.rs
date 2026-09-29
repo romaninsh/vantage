@@ -36,12 +36,14 @@ impl Scenario {
         parse_duration(&self.stress.duration)
     }
 
-    /// Multiply every `burst` and `max` by `sims` and every table `count` by `rows`.
+    /// Multiply every `burst`, `rate` and `max` by `sims` and every table
+    /// `count` by `rows`. `rate` is not rounded; an absent `rate` stays absent.
     pub fn scaled(&self, sims: f64, rows: f64) -> Scenario {
         let mut s = self.clone();
         for spec in s.sims.values_mut() {
             let spawn = &mut spec.spawn;
             spawn.burst = Some(scale(spawn.burst.unwrap_or(1), sims));
+            spawn.rate = spawn.rate.map(|r| r * sims);
             spawn.max = Some(scale(spawn.max.unwrap_or(1), sims));
         }
         for table in s.tables.values_mut() {

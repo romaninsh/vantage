@@ -146,7 +146,23 @@ fn scale_multiplies_sims_and_rows() {
     let s = load(root.path(), "basic").unwrap().scaled(2.0, 3.0);
     let churn = &s.sims["churn"].spawn;
     assert_eq!((churn.burst, churn.max), (Some(6), Some(20)));
+    assert_eq!(churn.rate, Some(3.0));
+    assert_eq!(
+        s.sims["audit"].spawn.rate, None,
+        "an absent rate stays absent"
+    );
     assert_eq!(s.tables["ticket"].count, 60);
+}
+
+#[test]
+fn scale_multiplies_rate_without_rounding() {
+    let root = tempfile::tempdir().unwrap();
+    write(root.path(), "basic/scenario.yaml", BASIC);
+    write(root.path(), "basic/churn.rhai", "");
+    let mut s = load(root.path(), "basic").unwrap();
+    assert_eq!(s.scaled(0.01, 1.0).sims["churn"].spawn.rate, Some(0.015));
+    s.sims.get_mut("churn").unwrap().spawn.rate = Some(0.0);
+    assert_eq!(s.scaled(5.0, 1.0).sims["churn"].spawn.rate, Some(0.0));
 }
 
 #[test]
