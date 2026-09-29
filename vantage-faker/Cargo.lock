@@ -2199,10 +2199,34 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-diorama",
+ "vantage-memory",
  "vantage-rhai",
  "vantage-types",
  "vantage-vista",
  "vantage-vista-factory",
+]
+
+[[package]]
+name = "vantage-memory"
+version = "0.6.1"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "ciborium",
+ "futures-core",
+ "indexmap",
+ "parking_lot",
+ "paste",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tokio",
+ "vantage-core",
+ "vantage-dataset",
+ "vantage-expressions",
+ "vantage-table",
+ "vantage-types",
+ "vantage-vista",
 ]
 
 [[package]]

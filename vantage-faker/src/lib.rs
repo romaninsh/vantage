@@ -15,6 +15,8 @@
 //! loop. The returned handle exposes both the [`Vista`] to list from and a
 //! broadcast [`Sender`](broadcast::Sender) to subscribe to for live deltas.
 
+mod column;
+pub mod dataset;
 pub mod effect;
 pub mod flights;
 pub mod generator;
@@ -38,6 +40,7 @@ use vantage_vista::source::TableShell;
 
 use handle::AbortOnDrop;
 
+pub use column::FakerColumn;
 pub use effect::{FakerCtx, FakerEffect, FifoEffect, StaticEffect};
 pub use flights::{FLIGHT_COLUMNS, FlightsConfig, FlightsEffect};
 pub use generator::{ColumnGen, Spread};
@@ -55,34 +58,6 @@ pub use shape::{
 #[cfg(feature = "rhai")]
 pub use sim::{SimDef, SimEngine, SimEngineBuilder, SimStats, Spawn};
 pub use value_gen::ValueGen;
-
-/// One column of a faker table: a name, a declared type, free-form flags
-/// (e.g. `"id"`) and an optional explicit generator. [`ValueGen`] uses
-/// `generator` if set, else `name`, then `ty`, to pick a value.
-#[derive(Clone, Debug, Default)]
-pub struct FakerColumn {
-    pub name: String,
-    pub ty: String,
-    pub flags: Vec<String>,
-    pub generator: Option<ColumnGen>,
-}
-
-impl FakerColumn {
-    /// A column with no flags and no generator.
-    pub fn new(name: impl Into<String>, ty: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            ty: ty.into(),
-            ..Self::default()
-        }
-    }
-
-    /// Generate this column's values with `generator`.
-    pub fn with_generator(mut self, generator: ColumnGen) -> Self {
-        self.generator = Some(generator);
-        self
-    }
-}
 
 /// A materialized faker table: a [`Vista`] to read from, the broadcast
 /// [`broadcast::Sender`] carrying live deltas, and the handle of the effect's
