@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.1 — 2026-09-29
+
+- Flights default to `fleet: 200`, `board: 10`, `time_scale: 10` and a long-haul route mix.
+- Flights gain `Takeoff` and `Landing` phases, 5 sim minutes each.
+- Flight timestamps are wall-clock; `flight_time` and `flight_time_min` hold the sim duration.
+- `SimEngine` / `SimDef` (`rhai` feature): linear Rhai sim scripts, one thread each, with
+  spawners (`burst`, `rate_per_min`, `max`), per-def clocks and warm start.
+- Sim scripts get data, spawn, random, time and geo verbs; examples in `examples/sims/`.
+- `FakerTable::ctx` / `FakerHandle::ctx` expose the store handle.
+- `geo` module: great-circle distance, bearing and interpolation.
+- `FakerCtx::set_quiet` is public in every feature set; `FakerCtx::invalidate` broadcasts
+  `Invalidated`, even while quiet.
+- `FakerHandle::vista` opens a new master `Vista` over the same store.
+- `SimEngineBuilder::on_warm_progress` reports warm-start progress per window.
+- `tree` generator takes `min_depth`, so branches end at levels between it and `depth`.
+
 ## 0.7.0 — 2026-09-28
 
 - `FakerColumn` gains `generator: Option<ColumnGen>` (breaking for struct literals; use
@@ -14,20 +30,7 @@
 - `ColumnGen::validate` rejects non-finite range/walk bounds and pick weights; generation no
   longer panics on them even unvalidated.
 - `FlightsEffect` / `FlightsConfig`: a live fleet of flights taking off, flying and landing.
-- Flights default to `fleet: 200`, `board: 10`, `time_scale: 10` and a long-haul route mix.
-- Flights gain `Takeoff` and `Landing` phases, 5 sim minutes each.
-- Flight timestamps are wall-clock; `flight_time` and `flight_time_min` hold the sim duration.
 - `FakerCtx` exposes `columns`, `id_column`, `values` and `put_record`.
-- `SimEngine` / `SimDef` (`rhai` feature): linear Rhai sim scripts, one thread each, with
-  spawners (`burst`, `rate_per_min`, `max`), per-def clocks and warm start.
-- Sim scripts get data, spawn, random, time and geo verbs; examples in `examples/sims/`.
-- `FakerTable::ctx` / `FakerHandle::ctx` expose the store handle.
-- `geo` module: great-circle distance, bearing and interpolation.
-- `FakerCtx::set_quiet` is public in every feature set; `FakerCtx::invalidate` broadcasts
-  `Invalidated`, even while quiet.
-- `FakerHandle::vista` opens a new master `Vista` over the same store.
-- `SimEngineBuilder::on_warm_progress` reports warm-start progress per window.
-- `tree` generator takes `min_depth`, so branches end at levels between it and `depth`.
 
 ## 0.6.16 — 2026-09-16
 
