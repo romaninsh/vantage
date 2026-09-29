@@ -11,16 +11,33 @@ use vantage_vista::FilterOp;
 use crate::eval::compare::lookup;
 use crate::eval::{MemoryCondition, Query};
 
+/// The largest magnitude an `i128` and an `f64` can both represent exactly,
+/// so an integer key and a float key agree whenever `values_eq` (which
+/// compares integers and floats as `f64`) would call them equal.
+const MAX_EXACT: i128 = 1 << 53;
+
 /// A hashable form of a cell. Integers and integral floats share a key so
-/// `1` and `1.0` meet. Maps, arrays and bytes have no key.
+/// `1` and `1.0` meet; a value outside `MAX_EXACT` keys by its `f64` bit
+/// pattern instead, since that is what `values_eq` compares by at that
+/// magnitude. This can key unequal huge integers alike (a false-positive
+/// candidate that `matches_all` filters out) but never keys equal values
+/// apart. Maps, arrays and bytes have no key.
 fn key(v: &CborValue) -> Option<String> {
     match v {
         CborValue::Null => Some("null".into()),
         CborValue::Bool(b) => Some(format!("b:{b}")),
-        CborValue::Integer(i) => Some(format!("n:{}", i128::from(*i))),
-        CborValue::Float(f) if f.fract() == 0.0 && f.is_finite() && f.abs() < 1e30 => {
+        CborValue::Integer(i) => {
+            let n = i128::from(*i);
+            if n.unsigned_abs() <= MAX_EXACT as u128 {
+                Some(format!("n:{n}"))
+            } else {
+                Some(format!("f:{}", (n as f64).to_bits()))
+            }
+        }
+        CborValue::Float(f) if f.is_finite() && f.fract() == 0.0 && f.abs() <= MAX_EXACT as f64 => {
             Some(format!("n:{}", *f as i128))
         }
+        CborValue::Float(f) if *f == 0.0 => Some("n:0".into()),
         CborValue::Float(f) => Some(format!("f:{}", f.to_bits())),
         CborValue::Text(s) => Some(format!("s:{s}")),
         _ => None,

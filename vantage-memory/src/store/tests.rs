@@ -272,3 +272,59 @@ fn unkeyable_values_still_found_via_index_path() {
     let q = Query::new().filter(MemoryCondition::cmp("status", FilterOp::Eq, map));
     assert_eq!(all_ids(&t, &q), ["a"]);
 }
+
+#[test]
+fn huge_integral_float_found_by_indexed_eq_on_equal_huge_integer() {
+    let t = indexed();
+    // ciborium's `Integer` only holds magnitudes up to `u64::MAX`; this is
+    // still well past `MAX_EXACT` (2^53), which is what the index cares about.
+    let n: i128 = 1 << 60;
+    t.upsert("a", rec(&[("n", CborValue::Float(n as f64))]));
+    let big = ciborium::value::Integer::try_from(n).unwrap();
+    let q = Query::new().filter(MemoryCondition::cmp(
+        "n",
+        FilterOp::Eq,
+        CborValue::Integer(big),
+    ));
+    assert_eq!(all_ids(&t, &q), ["a"]);
+}
+
+#[test]
+fn negative_zero_float_found_by_indexed_eq_zero() {
+    let t = indexed();
+    t.upsert("a", rec(&[("n", CborValue::Float(-0.0))]));
+    let q = Query::new().filter(MemoryCondition::cmp(
+        "n",
+        FilterOp::Eq,
+        CborValue::Integer(0.into()),
+    ));
+    assert_eq!(all_ids(&t, &q), ["a"]);
+}
+
+#[test]
+fn distinct_huge_integers_sharing_an_index_key_are_filtered_exactly() {
+    let t = indexed();
+    let a: i128 = 1 << 60;
+    let b = a + 1; // rounds to the same f64 as `a`, so they share an index key
+    assert_eq!(a as f64, b as f64);
+    t.upsert(
+        "a",
+        rec(&[(
+            "n",
+            CborValue::Integer(ciborium::value::Integer::try_from(a).unwrap()),
+        )]),
+    );
+    t.upsert(
+        "b",
+        rec(&[(
+            "n",
+            CborValue::Integer(ciborium::value::Integer::try_from(b).unwrap()),
+        )]),
+    );
+    let q = Query::new().filter(MemoryCondition::cmp(
+        "n",
+        FilterOp::Eq,
+        CborValue::Integer(ciborium::value::Integer::try_from(a).unwrap()),
+    ));
+    assert_eq!(all_ids(&t, &q), ["a"]);
+}
