@@ -18,6 +18,7 @@
 - `SimEngine::stats` reports live sims and spawned, ended, errored and write totals.
 - `sims:` scripts can name a built-in: `script: "builtin:fifo"` (`fifo`, `pulse`, `flight`, `folder_tree`).
 - `SimEngineBuilder::columns` declares a table's columns for the new `row()` sim verb.
+- `ShapedShell` passes `watch` through to the shell it wraps.
 
 ## 0.7.1 — 2026-09-29
 

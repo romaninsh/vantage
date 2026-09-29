@@ -340,3 +340,31 @@ async fn search_gates_and_narrows_when_advertised() {
     assert!(!narrowed.is_empty());
     assert!(narrowed.len() <= all.len());
 }
+
+#[tokio::test]
+async fn a_shaped_memory_table_pushes_changes() {
+    use futures_util::StreamExt;
+    let store = MemoryStore::new();
+    let t = store.table("t");
+    let shell = MemoryTableShell::new(
+        t.clone(),
+        VistaMetadata::new()
+            .with_column(Column::new("id", "string").with_flag("id"))
+            .with_id_column("id"),
+        Catalog::new(store.clone()),
+    );
+    let shaped = ShapedShell::new(Box::new(shell), BackendShape::default());
+    let vista = Vista::new("t", Box::new(shaped));
+    assert!(vista.can_watch());
+    let mut w = vista.watch().await.unwrap();
+    t.upsert("a", Default::default());
+    let change = tokio::time::timeout(std::time::Duration::from_secs(2), w.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        change,
+        vantage_vista::VistaChange::Inserted { .. }
+    ));
+}
