@@ -50,7 +50,7 @@ impl Sampler {
     pub fn new() -> Self {
         let mut s = Self {
             sys: System::new(),
-            pid: sysinfo::get_current_pid().expect("own pid"),
+            pid: sysinfo::get_current_pid().unwrap_or_else(|_| Pid::from_u32(std::process::id())),
             started: Instant::now(),
             last: None,
         };
