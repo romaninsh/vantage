@@ -2,6 +2,7 @@
 
 pub mod load;
 pub mod panics;
+pub mod runner;
 pub mod sampler;
 pub mod scenario;
 pub mod threads;
