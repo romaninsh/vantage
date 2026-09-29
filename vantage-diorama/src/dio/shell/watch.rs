@@ -67,11 +67,9 @@ impl Follow {
                     | DioEvent::WritePending { id, .. }
                     | DioEvent::WriteReverted { id, .. },
                 ) => self.reconcile(&dio, id).await.transpose(),
-                None | Some(DioEvent::DatasetChanged | DioEvent::Seeded) => Some(
-                    self.relist(dio)
-                        .await
-                        .map(|()| VistaChange::Invalidated),
-                ),
+                None | Some(DioEvent::DatasetChanged | DioEvent::Seeded) => {
+                    Some(self.relist(dio).await.map(|()| VistaChange::Invalidated))
+                }
                 Some(_) => None,
             };
             if change.is_some() {

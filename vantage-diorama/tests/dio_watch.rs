@@ -55,7 +55,10 @@ async fn wait_for(dio: &Dio, id: &str, present: bool) -> Result<Option<Record<Cb
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("{id} never became {}", if present { "present" } else { "absent" });
+    panic!(
+        "{id} never became {}",
+        if present { "present" } else { "absent" }
+    );
 }
 
 #[tokio::test]
