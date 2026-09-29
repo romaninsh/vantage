@@ -11,7 +11,8 @@ pub struct SimStats {
     pub spawned: u64,
     /// Sims whose script ran to its end, called `done()`, or stopped with the engine.
     pub ended: u64,
-    /// Sims ended by a Rhai error: a thrown exception or a budget, depth or call-level limit.
+    /// Sims ended by a Rhai error (a thrown exception or a budget, depth or
+    /// call-level limit) or by a verb panicking.
     pub errored: u64,
     /// `insert`, `set`, `patch` and `delete` calls that changed a row.
     pub writes: u64,

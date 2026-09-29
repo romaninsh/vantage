@@ -136,6 +136,11 @@ struct Release(Arc<Inner>, usize);
 impl Drop for Release {
     fn drop(&mut self) {
         CURRENT.with_borrow_mut(|c| c.take());
+        // A panicking verb unwinds straight through run_sim, past its own
+        // ended/errored bump, so count it here instead.
+        if std::thread::panicking() {
+            Counters::bump(&self.0.counters.errored);
+        }
         release(&self.0, self.1);
     }
 }
