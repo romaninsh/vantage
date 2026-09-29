@@ -100,8 +100,8 @@ pub struct FaultSchedule {
 
 /// Undeclared payload riding along on every record: `count` extra fields of
 /// `size`-char strings — the fat API response the query didn't ask for.
-/// Applied at generation time (see `FakerCtx`), recorded here so a shape is
-/// the complete personality description.
+/// Recorded here so a shape is the complete personality description; a
+/// caller applies it to the store at generation time.
 #[derive(Clone, Copy, Debug)]
 pub struct ExtraFields {
     pub count: usize,
@@ -127,7 +127,7 @@ pub struct BackendShape {
 }
 
 impl Default for BackendShape {
-    /// The classic `MockShell` profile: full CRUD, order, search, no paging,
+    /// The classic in-memory profile: full CRUD, order, search, no paging,
     /// no faults, instant.
     fn default() -> Self {
         Self {
@@ -160,7 +160,7 @@ enum OpClass {
 }
 
 /// [`TableShell`] decorator enforcing a [`BackendShape`] over an inner shell
-/// (in practice a `MockShell` clone sharing the effect's store).
+/// (in practice a store-backed shell sharing the same table).
 pub struct ShapedShell {
     inner: Box<dyn TableShell>,
     shape: Arc<BackendShape>,

@@ -31,7 +31,7 @@ use serde::Deserialize;
 
 pub(crate) use date::{now_unix, rfc3339};
 pub(crate) use pattern::expand as expand_pattern;
-#[cfg(feature = "rhai")]
+#[cfg(feature = "sim")]
 pub(crate) use {date::parse_when, scalar::sentence};
 
 /// Table size that even-spread dates and trees assume when the generator was

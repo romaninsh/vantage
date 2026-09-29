@@ -1,16 +1,23 @@
 //! The `ShapedShell` contract: a shape's capabilities are enforced, its
 //! pagination styles serve the same store, its faults fire on schedule, and
 //! a seed replays the whole personality deterministically.
+//!
+//! The store underneath is a plain [`MemoryStore`] table, seeded through
+//! [`DatasetGen`] — the same path an app uses — then wrapped in
+//! [`ShapedShell`] to layer the personality on top.
 
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::ReadableValueSet as _;
 use vantage_faker::{
-    BackendShape, ExtraFields, FakerColumn, FakerTable, FaultSchedule, Latency, LatencyModel,
-    Offline, StaticEffect,
+    BackendShape, DatasetGen, ExtraFields, FakerColumn, FaultSchedule, Latency, LatencyModel,
+    Offline, ShapedShell, TableGen,
 };
-use vantage_vista::VistaCapabilities;
+use vantage_memory::vista::Catalog;
+use vantage_memory::{MemoryStore, MemoryTableShell};
+use vantage_types::Record;
+use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, flags};
 
 fn columns() -> Vec<FakerColumn> {
     vec![
@@ -47,6 +54,43 @@ fn columns() -> Vec<FakerColumn> {
     ]
 }
 
+/// Mirror of the metadata a real table config would declare: every generated
+/// column is orderable and searchable, and the id column carries the `id`
+/// flag `MemoryTableShell` needs to answer traversal and title queries.
+fn metadata(columns: &[FakerColumn], id_column: &str) -> VistaMetadata {
+    let mut meta = VistaMetadata::new().with_id_column(id_column);
+    for c in columns {
+        let mut col = Column::new(&c.name, &c.ty)
+            .with_flag(flags::ORDERABLE)
+            .with_flag(flags::SEARCHABLE);
+        if c.name == id_column {
+            col = col.with_flag(flags::ID);
+        }
+        meta.columns.insert(c.name.clone(), col);
+    }
+    meta
+}
+
+/// Ride `extra.count` fields of `extra.size`-char filler on every row —
+/// the fat API response the query didn't ask for.
+fn apply_extra_fields(store: &MemoryStore, table: &str, extra: ExtraFields) {
+    let handle = store.table(table);
+    for id in handle.ids() {
+        let mut patch = Record::new();
+        for i in 1..=extra.count {
+            let head = format!("{id}:{i}:");
+            let mut s = String::with_capacity(extra.size);
+            s.push_str(&head);
+            while s.len() < extra.size {
+                s.push('x');
+            }
+            s.truncate(extra.size);
+            patch.insert(format!("extra_{i:04}"), CborValue::Text(s));
+        }
+        handle.patch(&id, &patch);
+    }
+}
+
 fn windowed_caps() -> VistaCapabilities {
     VistaCapabilities {
         can_count: true,
@@ -56,19 +100,36 @@ fn windowed_caps() -> VistaCapabilities {
     }
 }
 
-fn shaped(count: usize, shape: BackendShape) -> FakerTable {
-    FakerTable::build_shaped(
-        "shaped",
-        columns(),
-        "id",
-        Box::new(StaticEffect { count }),
-        shape,
-    )
+fn shaped(count: usize, shape: BackendShape) -> Vista {
+    let store = MemoryStore::new();
+    let cols = columns();
+    let meta = metadata(&cols, "id");
+    let seed = shape.seed;
+    let extra = shape.extra_fields;
+
+    DatasetGen::new(seed)
+        .table(
+            TableGen::new("shaped")
+                .id_column("id")
+                .columns(cols)
+                .count(count),
+        )
+        .generate(&store)
+        .expect("dataset generates");
+
+    if let Some(extra) = extra {
+        apply_extra_fields(&store, "shaped", extra);
+    }
+
+    let catalog = Catalog::new(store.clone());
+    catalog.register("shaped", meta.clone());
+    let table = MemoryTableShell::new(store.table("shaped"), meta, catalog);
+    Vista::new("shaped", Box::new(ShapedShell::new(Box::new(table), shape)))
 }
 
 #[tokio::test]
 async fn advertised_window_serves_and_counts_with_total() {
-    let table = shaped(
+    let vista = shaped(
         30,
         BackendShape {
             capabilities: windowed_caps(),
@@ -77,18 +138,18 @@ async fn advertised_window_serves_and_counts_with_total() {
         },
     );
 
-    let (rows, total) = table.vista.fetch_window_counted(5, 10).await.unwrap();
+    let (rows, total) = vista.fetch_window_counted(5, 10).await.unwrap();
     assert_eq!(rows.len(), 10);
     assert_eq!(total, Some(30));
 
     // Windows tile without overlap when no skew is configured.
-    let (next, _) = table.vista.fetch_window_counted(15, 10).await.unwrap();
+    let (next, _) = vista.fetch_window_counted(15, 10).await.unwrap();
     assert!(rows.iter().all(|(id, _)| next.iter().all(|(n, _)| n != id)));
 }
 
 #[tokio::test]
 async fn unadvertised_operations_refuse_as_unsupported() {
-    let table = shaped(
+    let vista = shaped(
         10,
         BackendShape {
             capabilities: windowed_caps(), // no fetch_page, no fetch_next, no search
@@ -97,18 +158,18 @@ async fn unadvertised_operations_refuse_as_unsupported() {
         },
     );
 
-    let page = table.vista.fetch_page(1).await;
+    let page = vista.fetch_page(1).await;
     assert!(page.is_err(), "fetch_page must refuse when not advertised");
-    let next = table.vista.fetch_next(None).await;
+    let next = vista.fetch_next(None).await;
     assert!(next.is_err(), "fetch_next must refuse when not advertised");
 
-    let caps = table.vista.capabilities();
+    let caps = vista.capabilities();
     assert!(!caps.can_search && !caps.can_fetch_page && !caps.can_fetch_next);
 }
 
 #[tokio::test]
 async fn cursor_pagination_walks_the_whole_set_in_fixed_pages() {
-    let table = shaped(
+    let vista = shaped(
         60,
         BackendShape {
             capabilities: VistaCapabilities {
@@ -124,7 +185,7 @@ async fn cursor_pagination_walks_the_whole_set_in_fixed_pages() {
     let mut token = None;
     let mut seen = Vec::new();
     loop {
-        let (rows, next) = table.vista.fetch_next(token).await.unwrap();
+        let (rows, next) = vista.fetch_next(token).await.unwrap();
         seen.extend(rows.into_iter().map(|(id, _)| id));
         match next {
             Some(t) => token = Some(t),
@@ -140,7 +201,7 @@ async fn cursor_pagination_walks_the_whole_set_in_fixed_pages() {
 
 #[tokio::test(start_paused = true)]
 async fn expired_cursor_tokens_die() {
-    let table = shaped(
+    let vista = shaped(
         60,
         BackendShape {
             capabilities: VistaCapabilities {
@@ -157,11 +218,11 @@ async fn expired_cursor_tokens_die() {
         },
     );
 
-    let (_, token) = table.vista.fetch_next(None).await.unwrap();
+    let (_, token) = vista.fetch_next(None).await.unwrap();
     let token = token.expect("more pages exist");
 
     tokio::time::advance(Duration::from_secs(31)).await;
-    let err = table.vista.fetch_next(Some(token)).await.unwrap_err();
+    let err = vista.fetch_next(Some(token)).await.unwrap_err();
     assert!(
         err.to_string().contains("expired"),
         "expected token expiry, got: {err}"
@@ -170,7 +231,7 @@ async fn expired_cursor_tokens_die() {
 
 #[tokio::test(start_paused = true)]
 async fn latency_is_paid_per_operation_class() {
-    let table = shaped(
+    let vista = shaped(
         10,
         BackendShape {
             capabilities: windowed_caps(),
@@ -185,7 +246,7 @@ async fn latency_is_paid_per_operation_class() {
     );
 
     let started = tokio::time::Instant::now();
-    let fetched = table.vista.fetch_window(0, 5);
+    let fetched = vista.fetch_window(0, 5);
     tokio::pin!(fetched);
     // The paused clock only advances past the sleep when we let it.
     let rows = fetched.await.unwrap();
@@ -198,7 +259,7 @@ async fn latency_is_paid_per_operation_class() {
 
 #[tokio::test(start_paused = true)]
 async fn offline_windows_refuse_on_schedule() {
-    let table = shaped(
+    let vista = shaped(
         10,
         BackendShape {
             capabilities: windowed_caps(),
@@ -215,21 +276,21 @@ async fn offline_windows_refuse_on_schedule() {
     );
 
     // t=0: online (windows start online).
-    assert!(table.vista.fetch_window(0, 5).await.is_ok());
+    assert!(vista.fetch_window(0, 5).await.is_ok());
 
     // t=55s: inside the final 10s of the period — down.
     tokio::time::advance(Duration::from_secs(55)).await;
-    let err = table.vista.fetch_window(0, 5).await.unwrap_err();
+    let err = vista.fetch_window(0, 5).await.unwrap_err();
     assert!(err.to_string().contains("offline"), "got: {err}");
 
     // t=65s: next period, online again.
     tokio::time::advance(Duration::from_secs(10)).await;
-    assert!(table.vista.fetch_window(0, 5).await.is_ok());
+    assert!(vista.fetch_window(0, 5).await.is_ok());
 }
 
 #[tokio::test]
 async fn error_rate_one_fails_everything_and_totals_lie() {
-    let table = shaped(
+    let vista = shaped(
         20,
         BackendShape {
             capabilities: windowed_caps(),
@@ -241,8 +302,8 @@ async fn error_rate_one_fails_everything_and_totals_lie() {
             ..BackendShape::default()
         },
     );
-    assert!(table.vista.fetch_window(0, 5).await.is_err());
-    assert!(table.vista.list_values().await.is_err());
+    assert!(vista.fetch_window(0, 5).await.is_err());
+    assert!(vista.list_values().await.is_err());
 
     let honest_free = shaped(
         20,
@@ -256,12 +317,12 @@ async fn error_rate_one_fails_everything_and_totals_lie() {
             ..BackendShape::default()
         },
     );
-    assert_eq!(honest_free.vista.get_count().await.unwrap(), 7);
+    assert_eq!(honest_free.get_count().await.unwrap(), 7);
 }
 
 #[tokio::test]
 async fn extra_fields_ride_along_undeclared() {
-    let table = shaped(
+    let vista = shaped(
         3,
         BackendShape {
             extra_fields: Some(ExtraFields {
@@ -272,7 +333,7 @@ async fn extra_fields_ride_along_undeclared() {
             ..BackendShape::default()
         },
     );
-    let rows = table.vista.list_values().await.unwrap();
+    let rows = vista.list_values().await.unwrap();
     let (_, rec) = rows.iter().next().unwrap();
     // 5 declared columns + 50 riders.
     assert_eq!(rec.len(), 55);
@@ -290,8 +351,8 @@ async fn a_seed_replays_the_same_backend() {
         seed: Some(42),
         ..BackendShape::default()
     };
-    let a = shaped(25, shape()).vista.list_values().await.unwrap();
-    let b = shaped(25, shape()).vista.list_values().await.unwrap();
+    let a = shaped(25, shape()).list_values().await.unwrap();
+    let b = shaped(25, shape()).list_values().await.unwrap();
     assert_eq!(
         a, b,
         "same seed, same rows — a scenario replays identically"
@@ -302,7 +363,7 @@ async fn a_seed_replays_the_same_backend() {
 async fn search_gates_and_narrows_when_advertised() {
     let mut caps = windowed_caps();
     caps.can_search = true;
-    let table = shaped(
+    let vista = shaped(
         40,
         BackendShape {
             capabilities: caps,
@@ -311,7 +372,7 @@ async fn search_gates_and_narrows_when_advertised() {
         },
     );
 
-    let all = table.vista.list_values().await.unwrap();
+    let all = vista.list_values().await.unwrap();
     // Pick a needle from a real row so the search must hit at least once.
     let needle = all
         .values()
@@ -321,7 +382,7 @@ async fn search_gates_and_narrows_when_advertised() {
         })
         .expect("a generated name to search for");
 
-    let mut vista = table.vista;
+    let mut vista = vista;
     vista.add_search(&needle).unwrap();
     let narrowed = vista.list_values().await.unwrap();
     assert!(!narrowed.is_empty());

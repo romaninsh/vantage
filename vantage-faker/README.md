@@ -1,80 +1,100 @@
 # vantage-faker
 
-Synthetic, optionally-live datasource for Vantage. Generates realistic rows and — for live effects —
-keeps mutating them, pushing genuine change-events so a subscribed Dio animates inserts and
-expiries. For testing and demos, without a real backend.
+Synthetic data for Vantage: column generators that seed `vantage-memory` tables, and Rhai sims
+that mutate them live.
 
 > Incubating: API may change.
 
-## Effects
+## Generators and `DatasetGen`
 
-- `static` — generate rows once; never change.
-- `fifo` — insert one row at a time (newest-first), expire each after a random retention.
-- `PulseSim` — a config-driven live aggregate feed driving three coupled tables.
-- `LiveFolderSim` — a synthetic, constantly-mutating multi-layer log tree.
+A `FakerColumn` names a column, its declared type and free-form flags (`"id"`, …), with an
+optional `ColumnGen` override. `ValueGen` decides what a cell contains: the generator if one is
+set, else the column name (`email`, `name`, `city`, …), then the declared type as a fallback.
+`ColumnGen` covers `pick` (weighted choice), `range`, `date` (relative bounds, random or even
+spread), `sentence`, `pattern` (`BA####`) and the positional `walk` (a time-series random walk) and
+`tree` (same-table parent links).
 
-## `LiveFolderSim`
-
-Models a "live" log folder structure that grows in real time, all in memory:
-
-- `{date}/access_logs_{HH}/chunk_{NN}.log` — high-volume access log. The active chunk bumps every
-  second by `requests_per_sec × bytes_per_request` bytes; when it crosses `chunk_threshold`, a new
-  chunk starts (the old stays).
-- `{date}/error_logs/{HH:MM:SS}-errors.log` — rare; one file per error occurrence, gated by
-  `error_pct_per_sec`.
-- `{date}/events/{event_type}.log` — ten event types each with its own 1–10% per-second probability
-  of bumping its file by 2000–4000 bytes.
-
-Each folder and file carries `created`/`modified`; modifying a file touches its parent folder (and
-ancestors up to the root) so a parent reflects its newest child. `backfill` replays the algorithm at
-full speed from `now − backfill` to `now` on construction before real-time ticks begin.
-
-Two Vistas come out of one shared run loop:
-
-- **Listing** (`listing_vista(path)`): one row per child of a path —
-  `{name, kind, size, created, modified}`. Patched in place on each tick via `ChangeEvent`s so a
-  subscribed Dio doesn't re-list.
-- **Folder size** (`size_vista()`): `{path, size, file_count}` — **get-only**, no list. Fetched with
-  100ms–1s latency scaled by file count, the exact slow-get shape viewport debounce tests need.
-
-```sh
-cargo run --example live_folder_cli
-```
-
-## Example
+`TableGen` declares one table — its columns, row count, id column and any reference columns
+pointing at another table in the same `DatasetGen`, optionally with a `FanOut` giving each parent
+a bounded, contiguous run of children. `DatasetGen::generate` seeds every declared table into a
+`vantage_memory::MemoryStore`, referenced tables before the tables that reference them, quietly —
+each table sends a single `Reset` once its rows are in, rather than one change per row.
 
 ```rust
-use std::time::Duration;
-use vantage_faker::{ColumnGen, FakerColumn, FakerTable, FifoEffect};
+use vantage_faker::{ColumnGen, DatasetGen, FakerColumn, TableGen};
+use vantage_memory::MemoryStore;
 
-let columns = vec![
-    FakerColumn { flags: vec!["id".into()], ..FakerColumn::new("id", "string") },
-    FakerColumn::new("email", "string"),
-    FakerColumn::new("amount", "decimal"),
-    FakerColumn::new("flight", "string").with_generator(ColumnGen::Pattern("BA####".into())),
-];
-
-let table = FakerTable::build(
-    "events",
-    columns,
-    "id",
-    Box::new(FifoEffect {
-        interval: Duration::from_secs(1),
-        retention_lo: Duration::from_secs(30),
-        retention_hi: Duration::from_secs(60),
-    }),
-);
-
-// `table.vista` lists the current rows; `table.events.subscribe()` streams live deltas.
+let store = MemoryStore::new();
+DatasetGen::new(Some(42))
+    .table(TableGen::new("client").column(FakerColumn::new("name", "string")).count(5))
+    .table(
+        TableGen::new("invoice")
+            .column(FakerColumn::new("client_id", "string"))
+            .column(FakerColumn::new("status", "string").with_generator(ColumnGen::Pick {
+                values: vec!["Open".into(), "Paid".into()],
+                weights: None,
+            }))
+            .reference("client_id", "client")
+            .count(20),
+    )
+    .generate(&store)
+    .unwrap();
 ```
 
-Values are drawn from the [`fake`](https://crates.io/crates/fake) crate: the column name is matched
-first (`email`, `name`, `phone`, `city`, …), then the declared type. A column's `ColumnGen`
-overrides both: `pick`, `range`, `date` (relative bounds, random or even spread), `sentence`,
-`pattern`, `walk` (a time-series random walk) and `tree` (same-table parent links).
+A `seed` makes the whole dataset reproducible; `None` draws fresh entropy per table.
 
-`relational_rows` builds a static table whose reference columns hold ids of other static tables,
-optionally with a `FanOut` giving each parent a bounded number of contiguous children.
+## Sims
+
+The `sim` feature adds `SimEngine`: a set of Rhai scripts that mutate a `MemoryStore`'s tables
+live, one thread per running sim. A `SimDef` names a script, the table it writes to by default, a
+`Spawn`er (`burst`, `rate_per_min`, `max`), a clock speed and an optional warm start:
+
+```rust,ignore
+use vantage_faker::{SimDef, SimEngine};
+
+let engine = SimEngine::builder()
+    .store(&store)
+    .sim(SimDef::new("shipment", "shipments", include_str!("shipment.rhai")))
+    .seed(42)
+    .start()
+    .unwrap();
+```
+
+Each live sim runs its script top to bottom on its own small thread; the script's locals are its
+state, and `sleep(d)` / `wait_until(t)` block it until its own sim clock reaches the target. The
+sim ends when the script does, when it calls `done()`, or on its first Rhai error — a thrown
+exception, or the operations budget (`SimDef::with_ops`, default `DEFAULT_OPS`) run out between two
+sleeps. A failed sim just ends; it doesn't stop the others or the engine.
+
+Scripts write through data verbs, `table` optional everywhere (defaults to the def's table):
+
+| verb | does |
+|---|---|
+| `insert(table?, #{…}) -> id` | new row; an explicit id that already exists is a script error |
+| `upsert(table?, id, #{…})` | insert or replace |
+| `patch(table?, id, #{…})`, `set(table?, id, field, value)` | change a row; missing row is ignored |
+| `delete(table?, id)` | remove a row |
+| `get(table?, id) -> map or ()` | read one row |
+| `ids(table?)`, `count(table?)` | every id, or how many |
+| `find(table?, #{col: value, …}) -> [id]` | ids matching every entry, in insertion order |
+
+A def with `warm: Some(d)` runs `d` of sim time before the engine goes live, so a table opens
+mid-life instead of empty. Every store table stays quiet for the whole warm start; a table written
+during it broadcasts one `Reset` when the start ends, instead of one change per row.
+
+## `ShapedShell`
+
+`ShapedShell` wraps any `vantage_vista::source::TableShell` to make an in-memory table behave like
+a real backend: paged or cursor-driven, sluggish or flaky, honest or lying about its counts. A
+`BackendShape` is the whole personality — the `VistaCapabilities` it advertises (everything else
+is refused), a `LatencyModel` per operation class, a `FaultSchedule` (error rate, scheduled
+outages, cursor expiry, boundary skew) and a `seed` that replays the same draws. See
+`tests/shaped_backends.rs` for the full contract.
+
+## Features
+
+- default — generators, `DatasetGen`, `ShapedShell`.
+- `sim` — the Rhai sim engine (pulls in `vantage-rhai`).
 
 ## License
 

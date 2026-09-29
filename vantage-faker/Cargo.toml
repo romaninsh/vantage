@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
-description = "Synthetic, optionally-live datasource for Vantage — generates fake rows and mutates them over time for testing and demos — incubating"
+description = "Synthetic data for Vantage: column generators seeding vantage-memory tables, and Rhai sims that mutate them live"
 documentation = "https://docs.rs/vantage-faker"
 homepage = "https://romaninsh.github.io/vantage"
 repository = "https://github.com/romaninsh/vantage"
@@ -18,49 +18,39 @@ readme = "README.md"
 vantage-core = { version = "0.6", path = "../vantage-core" }
 vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
 vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
-vantage-diorama = { version = "0.13", path = "../vantage-diorama" }
 vantage-memory = { version = "0.6.1", path = "../vantage-memory" }
 # `TableShell::preview_query` answers with a driver-shaped JSON value.
 serde_json = "1"
 # `ColumnGen` deserializes from table config.
 serde = { version = "1", features = ["derive"] }
 
-# Universal value carrier across the type-erased Vista / ChangeEvent boundary.
+# Universal value carrier across the type-erased Vista boundary.
 ciborium = "0.2"
 indexmap = { version = "2", features = ["serde"] }
 async-trait = "0.1"
 
-# Live effects run on the async runtime; `broadcast` fans deltas out to every
-# subscribed Dio, `time` drives the fifo ticker + row expiry.
-tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+# `ShapedShell` sleeps out its configured latency and reads the clock for
+# offline schedules and cursor-token ages.
+tokio = { version = "1", features = ["time"] }
 
 # Third-party realistic value generation (names, emails, addresses, …).
 fake = "5"
 
-# `effect: rhai` — scripted mutation loops. Same rhai as vantage-vista's
+# The `sim` engine's scripted mutation loops. Same rhai as vantage-vista's
 # scripting feature, kept optional so the default build stays light.
 vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
 
 tracing = "0.1"
 
 [features]
-rhai = ["dep:vantage-rhai"]
+sim = ["dep:vantage-rhai"]
 
 [dev-dependencies]
 vantage-core = { version = "0.6", path = "../vantage-core" }
 # `list_values` in tests reads back through the Vista's dataset traits.
 vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
-# `Dio::augment` takes a catalog; the size-augment test passes an empty one.
-vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
-# Styled table output for the `fifo_cli` example.
-vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
 # `test-util` for the paused-clock latency/offline/cursor-expiry tests.
 tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
 # `ColumnGen`'s YAML shape, as vantage-ui table configs write it.
 serde_yaml_ng = "0.10"
-cucumber = { version = "0.21", default-features = false, features = ["macros"] }
-
-[[test]]
-name = "bdd"
-harness = false
