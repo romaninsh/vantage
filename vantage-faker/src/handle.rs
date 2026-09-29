@@ -37,10 +37,7 @@ impl FakerHandle {
     /// store. Use it to feed a fresh Dio after the first one is dropped; the
     /// new Vista starts without the old one's conditions or ordering.
     pub fn vista(&self) -> Vista {
-        let shell = self
-            .shell
-            .clone_shell()
-            .expect("faker shells always clone");
+        let shell = self.shell.clone_shell().expect("faker shells always clone");
         Vista::new(self.name.clone(), shell)
     }
 }

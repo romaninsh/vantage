@@ -11,8 +11,7 @@ fn stats_count_spawned_ended_and_writes() {
         sleep(seconds(10));
         delete(id);
     "#;
-    let (engine, _log) =
-        engine_with(vec![SimDef::new("a", "log", script).with_spawn(3, 0.0, 3)]);
+    let (engine, _log) = engine_with(vec![SimDef::new("a", "log", script).with_spawn(3, 0.0, 3)]);
     run_for(&engine, 20, 5);
     let s = engine.stats();
     assert_eq!(s.live, 0);
@@ -40,8 +39,7 @@ fn stale_writes_are_not_counted() {
         set("nope", "step", "2");
         delete("nope");
     "#;
-    let (engine, _log) =
-        engine_with(vec![SimDef::new("a", "log", script).with_spawn(1, 0.0, 1)]);
+    let (engine, _log) = engine_with(vec![SimDef::new("a", "log", script).with_spawn(1, 0.0, 1)]);
     run_for(&engine, 2, 1);
     let s = engine.stats();
     assert_eq!(s.writes, 0);

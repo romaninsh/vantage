@@ -478,7 +478,10 @@ mod tests {
         assert_eq!(count_store(&ctx), 1);
         ctx.set_quiet(false);
         ctx.push();
-        assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Inserted { .. }));
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ChangeEvent::Inserted { .. }
+        ));
     }
 
     #[test]

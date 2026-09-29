@@ -178,9 +178,10 @@ pub(crate) fn generate(generator: &ColumnGen, mut cell: Cell<'_>) -> CborValue {
             let count = cell.rows;
             let key = format!("{}|{roots}|{depth}|{min_depth:?}|{count}", cell.column);
             let mut memo = cell.memo.lock().unwrap();
-            let plan = memo.trees.entry(key).or_insert_with(|| {
-                tree::Plan::new(*roots, *depth, *min_depth, count, cell.salt)
-            });
+            let plan = memo
+                .trees
+                .entry(key)
+                .or_insert_with(|| tree::Plan::new(*roots, *depth, *min_depth, count, cell.salt));
             match plan.parent_of(cell.seq, cell.salt) {
                 Some(parent) => CborValue::Text(crate::seed_id(parent)),
                 None => CborValue::Null,
