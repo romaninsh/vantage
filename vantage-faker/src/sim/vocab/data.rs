@@ -67,40 +67,31 @@ fn insert(c: &mut Current, t: Option<&str>, map: RhaiMap) -> VerbResult<String> 
     Ok(id)
 }
 
-fn patch(t: Option<&str>, id: &str, map: &RhaiMap) -> VerbResult<()> {
+/// Apply `write` to row `id` of table `t`, counting it as a write only if
+/// the row existed beforehand. The presence check clones the row, since
+/// `MockShell` has no non-cloning lookup.
+fn write_existing(t: Option<&str>, id: &str, write: impl FnOnce(&FakerCtx)) -> VerbResult<()> {
     with(|c| {
         let ctx = table(c, t)?;
         let existed = ctx.get_record(id).is_some();
-        ctx.patch_record(id, &map_to_record(map));
+        write(&ctx);
         if existed {
             wrote(c);
         }
         Ok(())
     })
+}
+
+fn patch(t: Option<&str>, id: &str, map: &RhaiMap) -> VerbResult<()> {
+    write_existing(t, id, |ctx| ctx.patch_record(id, &map_to_record(map)))
 }
 
 fn set(t: Option<&str>, id: &str, field: &str, v: &Dynamic) -> VerbResult<()> {
-    with(|c| {
-        let ctx = table(c, t)?;
-        let existed = ctx.get_record(id).is_some();
-        ctx.update_field(id, field, dynamic_to_cbor(v));
-        if existed {
-            wrote(c);
-        }
-        Ok(())
-    })
+    write_existing(t, id, |ctx| ctx.update_field(id, field, dynamic_to_cbor(v)))
 }
 
 fn delete(t: Option<&str>, id: &str) -> VerbResult<()> {
-    with(|c| {
-        let ctx = table(c, t)?;
-        let existed = ctx.get_record(id).is_some();
-        ctx.expire(id);
-        if existed {
-            wrote(c);
-        }
-        Ok(())
-    })
+    write_existing(t, id, |ctx| ctx.expire(id))
 }
 
 fn get(c: &mut Current, t: Option<&str>, id: &str) -> VerbResult<Dynamic> {
