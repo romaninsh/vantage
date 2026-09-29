@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.2 — 2026-09-29
+## 1.0.0 — 2026-09-29
 
 - `SimEngine::stats` reports live sims and spawned, ended, errored and write totals.
 
