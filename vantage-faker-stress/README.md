@@ -187,6 +187,11 @@ Both runs need to be the same scenario, the same mode (`run` or `ramp`),
 and the same build profile — `compare` doesn't adjust for a debug/release
 difference, and neither does the harness.
 
+`compare` takes two single reports, but `baseline-0.7.json` is a JSON array
+of six (one per scenario recorded for the baseline). Pull the one you want
+out first, for example `jq '.[1]' baseline-0.7.json > churn-0.7.json`, then
+compare that against a fresh run.
+
 ## Known limits
 
 - `MAX_LIVE` is 1000 live sims per engine; `ramp` stops before a step that
@@ -201,4 +206,32 @@ difference, and neither does the harness.
 
 ## Baseline (0.7)
 
-Filled in from `baseline-0.7.json`, recorded on the 0.7 engine.
+Recorded in `baseline-0.7.json`, a debug build, one scenario at a time.
+
+- `idle` at 1000 parked sims: 98 MB peak RSS, 1018 threads, peak CPU under 6%.
+- `churn`'s ramp reaches its top step, 800 live sims, without breaching
+  either limit: mean CPU 25%, peak 90%, peak lag 201 ms.
+- `swarm` and `sweeper` both stop their ramp after the first step (100
+  live/rows): every def writes on the same clock tick, and the per-second
+  `lag ms` estimate spikes to the tens of seconds for that one sample
+  (63000 ms / 59000 ms) even though `lagged` stays 0, tripping the 250 ms
+  limit. At the step both reach, `swarm`'s one-thread-per-row design costs
+  119 threads against `sweeper`'s 20 for close to the same CPU (mean 4.8%
+  vs 3.9%) — the two designs differ in threads, not CPU.
+- `warm` fast-forwards `lifecycle`'s 12-hour warm span in 1.65 s wall
+  time, landing at 300 live sims and 49 MB RSS.
+- Chaos verdicts: all six `contained` (`spin`, `throw`, `stale`, `flood`,
+  `spawn-bomb`, `recurse`), unchanged from the earlier smoke run.
+
+### Findings for 0.8
+
+- `chaos/spin` pins a core near 100% CPU for about 8 s (samples t=4
+  through t=11) before the operation budget ends it and `errored` reaches 1.
+- `chaos/stale` does show `events/s` above `writes/s` at every sample
+  (mean 59 vs 41): `FakerCtx::expire` broadcasts `Deleted` even when the id
+  is already gone, so repeated deletes of a dead id emit events that are
+  never counted as writes.
+- `chaos/flood`'s 10k-insert burst ends normally (`errored: 0`), but the
+  consumer falls badly behind: `lagged` reaches 8951 dropped events, peak
+  lag hits ~19 s, and mean `events/s` (75) trails mean `writes/s` (671) by
+  close to 9x while the burst is in flight.

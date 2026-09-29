@@ -65,7 +65,7 @@ faker-stress compare <a.json> <b.json>
 - `--scale N` multiplies every `burst` and `max` in the scenario, and the table `count`s. Decimals are allowed; each result is rounded and kept at least 1.
 - `--dio` attaches a Dio to every table (see Metrics).
 - `run` always honours the scenario's `warm:` settings. `ramp` strips them so each step starts cold, unless `--warm` is passed.
-- `ramp` runs one fresh engine per step. Each step value is the target number of live sims, applied by setting every def's `max` in proportion and giving the burst enough to reach it. A step is held for `--hold`, then stopped before the next step starts. `ramp` stops early at the first step that breaks a `stress.limits` value, or when the next step would go past `MAX_LIVE` (1000). The reason it stopped is part of the report.
+- `ramp` runs one fresh engine per step. Step `N` applies a scale factor `N / base`: by default `base` is the sum of every def's `max`, and the factor scales `burst`, `max` and table `count` — the same as `--scale`. A scenario may set `stress.ramp: { base: <n>, sims: false }` to scale only the table `count`s, leaving sim counts alone; `sweeper` uses this, because it ramps rows, not sims. A step is held for `--hold`, then stopped before the next step starts. `ramp` stops early at the first step that breaks a `stress.limits` value, or when the next step would go past `MAX_LIVE` (1000). The reason it stopped is part of the report.
 - `compare` prints two reports side by side with per-metric deltas. It is meant for comparing the same scenario across faker versions.
 
 ## Scenario format
@@ -79,8 +79,8 @@ tables:
   ticket:
     count: 200
     columns:
-      status: { pick: { values: [Open, Pending, Closed], weights: [3, 1, 1] } }
-      amount: { range: { min: 1, max: 500 } }
+      status: { faker: { pick: { values: [Open, Pending, Closed], weights: [3, 1, 1] } } }
+      amount: { type: int, faker: { range: { min: 1, max: 500 } } }
 sims:
   churn:
     table: ticket
@@ -92,11 +92,12 @@ stress:
   limits: { cpu_pct: 400, event_lag_ms: 250 }
 ```
 
-- `tables.<name>.columns.<col>` deserialize straight into `vantage_faker::ColumnGen`. Columns with no generator are listed as `<col>: {}` and fall back to `ValueGen`'s heuristics by column name and type. A column may take an optional `type:` (default `string`).
+- `tables.<name>.columns.<col>` is `{ type?, faker? }`, the same shape a vantage-ui table column uses. `type` defaults to `string`. `faker` deserializes into `vantage_faker::ColumnGen` (`pick`, `range`, and the rest); a column with no generator, `{}`, falls back to `ValueGen`'s heuristics by column name and type. It is not a bare generator map — `note: {}` reads as "no generator", not as an empty `ColumnGen`.
 - `sims.<name>` has the same fields as vantage-ui's `SimSpec`/`SpawnSpec`: `table`, `script`, `clock`, `warm`, and `spawn { burst, rate, max, args }`. The harness keeps its own copy of those serde types, about 40 lines. Sub-project 2 moves them into vantage-faker behind a `serde` feature, and the harness then drops its copy.
-- `!include` reads a file relative to the scenario directory and can't reach outside it.
+- `!include` resolves relative to the scenario's own directory, but may reach anywhere under `scenarios/` — `chaos/*` scenarios share `chaos/steady.rhai`, and `warm` reuses `lifecycle/parcel.rhai`. It can't resolve outside `scenarios/`.
 - Durations use the same format as vantage-ui (`30s`, `5m`, `12h`, `3d`).
 - `stress.limits` sets the thresholds `ramp` stops at. Supported keys are `cpu_pct`, `event_lag_ms` and `rss_mb`.
+- `stress.dio: true` attaches a Dio to every table, the same as always passing `--dio`. `chaos/flood` sets it.
 
 ## Metrics
 
@@ -117,6 +118,8 @@ A sampler reads everything once a second and prints one row per sample:
 
 Lag is measured the same way with or without `--dio`. Each table has one subscriber task. It records the backlog (`Sender::len()`) and its own apply rate, and estimates `lag ms = backlog / apply rate`. Without `--dio`, the subscriber only counts events. With `--dio`, it calls `dio.handle_event` for each one. So `--dio` shows the cost of the Dio's apply and re-list work on top of the raw broadcast.
 
+With `--dio`, the Dio's lens lists the master table into its cache once, on start (`on_start` calls `list_values` then `insert_values`); a table's seeded rows reach the cache this way, not as broadcast events. From then on the lens applies each `ChangeEvent` to the cache directly.
+
 At the end of a run the harness prints a summary: peak and mean of each column, warm-start time (when warm is on), steady-state cost per sim (`rss / live` and `cpu% / live`, averaged over the last half of the run), and the chaos verdict when there is one.
 
 `--json` writes the summary, every sample, the scenario name, the git revision of the vantage checkout, the build profile, and the vantage-faker version.
@@ -134,7 +137,7 @@ pub struct SimStats { pub live: usize, pub spawned: u64, pub ended: u64, pub err
 
 - `live` and `spawned` come from state the scheduler already keeps.
 - `ended` counts scripts that finished or called `done()`.
-- `errored` counts scripts that stopped because of a Rhai error. That includes budget, call-depth and expression-depth limits, and thrown exceptions.
+- `errored` counts scripts that stopped because of a Rhai error (budget, call-depth and expression-depth limits, and thrown exceptions) or because a sim's thread panicked.
 - `writes` counts `insert`, `set`, `patch` and `delete` calls that changed a table, as atomic increments in the data vocabulary.
 
 The method stays in 0.8 so that `compare` keeps working across versions. It also gets a CHANGELOG line in vantage-faker. That line goes in the 0.7.0 block if PR #405 hasn't been released when this merges, and in a new patch block if it has.
@@ -159,7 +162,7 @@ The method stays in 0.8 so that `compare` keeps working across versions. It also
 
 A chaos scenario has a `stress.expect:` block with `errored_min` (the fewest sims that must end in error) and optionally `max_threads` (a ceiling the thread count must level off under). The run ends with a verdict:
 
-- `contained`: the process stayed up, `errored` reached `errored_min`, the thread count stayed under `max_threads`, and CPU returned to within 10 points of the pre-chaos baseline within 5 s of the last misbehaving sim ending.
+- `contained`: the process stayed up, `errored` reached `errored_min`, the thread count stayed under `max_threads`, and CPU — averaged over the last 3 samples of the run — is within 10 points of the 1 s idle baseline taken before the engine started. The run lasts the scenario's `stress.duration`.
 - `NOT contained: <reason>`: anything else. Examples: CPU stays pinned, the thread count keeps growing, a panic is logged, or the run times out.
 
 | Scenario | Misbehaviour | Expected on 0.7 |
@@ -167,11 +170,11 @@ A chaos scenario has a `stress.expect:` block with `errored_min` (the fewest sim
 | `chaos/spin` | `loop {}` with no sleep | The operation budget ends it (`errored` +1) |
 | `chaos/throw` | `throw` on its third step, while healthy sims run beside it | It ends and is counted; the healthy sims keep writing |
 | `chaos/stale` | Patches and deletes ids that another sim has already deleted | No panic; stale writes don't count as `writes` |
-| `chaos/flood` | 10k inserts with no sleep | The budget ends it; `lagged` and the Dio re-list are visible |
+| `chaos/flood` | 10k inserts with no sleep | Well under the 50M-operation budget, so it completes normally (`errored_min: 0`); the finding to look for is `lagged`, the lag estimate and the consumer's re-list, not an error |
 | `chaos/spawn-bomb` | Each sim `spawn_sim`s two copies of itself | Bounded by `max` and `MAX_LIVE`; the thread count levels off |
 | `chaos/recurse` | Unbounded recursion | The call-level limit ends it; no stack overflow |
 
-On 0.7, a result that differs from the expected one is recorded as a finding, not fixed here. The findings feed the isolation and idempotency design in sub-project 2.
+On 0.7, a result that differs from the expected one is recorded as a finding, not fixed here. The findings feed the isolation and idempotency design in sub-project 2. Confirmed findings from the 0.7 baseline: `chaos/stale` shows `events/s` above `writes/s`, because `FakerCtx::expire` broadcasts a `Deleted` event even when the id is already gone; `chaos/flood` completes normally but the consumer falls far behind (`lagged` in the thousands, peak lag in the tens of seconds).
 
 ## README outline
 
@@ -189,14 +192,15 @@ On 0.7, a result that differs from the expected one is recorded as a finding, no
 
 - Unit tests in `scenario.rs`: parsing, `!include` resolution and confinement, durations, `--scale` rounding, and errors that name the file and key for unknown fields.
 - Unit tests in `report.rs`: summary maths (peak, mean, cost per sim), and `compare` on two fixture JSON files.
-- `tests/smoke.rs`: runs every scenario under `scenarios/` for 2 s at `--scale 0.1` on the system clock. It checks that each one starts, produces at least one sample and stops cleanly, and that every chaos scenario returns `contained`. It never asserts absolute numbers.
+- `tests/smoke.rs`, `every_load_scenario_runs_briefly`: runs every scenario directly under `scenarios/` (the load scenarios; `chaos/` itself has no `scenario.yaml`, so its nested scenarios aren't picked up here) for 2 s at `--scale 0.1` on the system clock. It checks that each one starts, produces at least one sample and stops cleanly, without a panic. It never asserts absolute numbers.
+- `tests/smoke.rs`, `every_chaos_scenario_is_contained`: `#[ignore]`d, since a chaos scenario needs its full `stress.duration` to reach a verdict and each run measures the whole process's CPU. Runs on request, one scenario at a time: `cargo test --test smoke -- --ignored --nocapture`. Asserts every `scenarios/chaos/*` scenario comes back `contained`.
 - vantage-faker gets tests for `SimEngine::stats()` (live, ended, errored and writes counts) next to the existing sim tests.
 
 ## Deliverables
 
 1. The `vantage-faker-stress` crate, its README, and the scenarios listed above.
 2. `SimEngine::stats()` in vantage-faker, with tests and a CHANGELOG line.
-3. `baseline-0.7.json`: `ramp` on `idle`, `churn`, `swarm` and `sweeper`, plus a `run` of every chaos scenario, all on a debug build, with a short summary in the README.
+3. `baseline-0.7.json`: `ramp` on `idle`, `churn`, `swarm` and `sweeper`, a `run` of `warm` and of `chaos/flood`, all on a debug build, with a short summary in the README. The full chaos suite (`cargo test --test smoke -- --ignored`) is run separately and its verdicts recorded in the README, not saved to the JSON.
 
 ## Out of scope
 
