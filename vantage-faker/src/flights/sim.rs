@@ -14,8 +14,13 @@ use super::airports::{AIRPORTS, airport};
 use super::flight::{BOARDING_S, Flight, Phase, Profile};
 use crate::generator::expand_pattern;
 
+/// Shortest and longest airborne time of a route, hours.
+const ROUTE_HOURS: (f64, f64) = (3.0, 16.0);
+/// Routes in range are kept with probability `(hours / 16) ^ ROUTE_BIAS`,
+/// weighting the mix to long-haul (mean about 11 h).
+const ROUTE_BIAS: f64 = 1.0;
 /// Longest airborne time the size-biased initial draw expects, seconds.
-const MAX_AIRBORNE_S: f64 = 20.0 * 3600.0;
+const MAX_AIRBORNE_S: f64 = ROUTE_HOURS.1 * 3600.0;
 /// Routes sampled to estimate the mean airborne time.
 const ESTIMATE_SAMPLES: usize = 64;
 /// Chance a flight is delayed, and the delay range in minutes.
@@ -159,7 +164,7 @@ impl FlightSim {
                 char::from(b'A' + rng.random_range(0..6u8)),
                 rng.random_range(1..=60u32)
             );
-            return Flight {
+            let flight = Flight {
                 id: String::new(),
                 seq: 0,
                 flight_no: format!("{}{}", carrier.code, rng.random_range(10..=2999u32)),
@@ -178,6 +183,12 @@ impl FlightSim {
                 wobble: rng.random_range(0.0..std::f64::consts::TAU),
             }
             .plan();
+            let hours = flight.airborne_s() / 3600.0;
+            if (ROUTE_HOURS.0..=ROUTE_HOURS.1).contains(&hours)
+                && rng.random_range(0.0..1.0) < (hours / ROUTE_HOURS.1).powf(ROUTE_BIAS)
+            {
+                return flight;
+            }
         }
     }
 }

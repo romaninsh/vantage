@@ -31,6 +31,8 @@ use serde::Deserialize;
 
 pub(crate) use date::{now_unix, rfc3339};
 pub(crate) use pattern::expand as expand_pattern;
+#[cfg(feature = "rhai")]
+pub(crate) use {date::parse_when, scalar::sentence};
 
 /// Table size that even-spread dates and trees assume when the generator was
 /// not told one (see [`ValueGen::with_rows`](crate::ValueGen::with_rows)).
@@ -89,7 +91,15 @@ pub enum ColumnGen {
     /// row a [`seed_id`](crate::seed_id) of a row with a smaller `seq`.
     /// `depth` counts levels including the roots, so `depth: 1` makes every
     /// row a root. Rows are laid out breadth-first with an even fan-out.
-    Tree { roots: usize, depth: u8 },
+    ///
+    /// With `min_depth`, each branch ends at a level in `min_depth..=depth`
+    /// (drawn per row from the seed) instead of every branch reaching
+    /// `depth`; `None` fills every branch to `depth`.
+    Tree {
+        roots: usize,
+        depth: u8,
+        min_depth: Option<u8>,
+    },
 }
 
 /// How [`ColumnGen::Date`] places rows between `from` and `to`.
@@ -160,14 +170,17 @@ pub(crate) fn generate(generator: &ColumnGen, mut cell: Cell<'_>) -> CborValue {
             let v = walk::value_at(series, &params, cell.salt, cell.seq);
             scalar::number(v, *decimals)
         }
-        ColumnGen::Tree { roots, depth } => {
+        ColumnGen::Tree {
+            roots,
+            depth,
+            min_depth,
+        } => {
             let count = cell.rows;
-            let key = format!("{}|{roots}|{depth}|{count}", cell.column);
+            let key = format!("{}|{roots}|{depth}|{min_depth:?}|{count}", cell.column);
             let mut memo = cell.memo.lock().unwrap();
-            let plan = memo
-                .trees
-                .entry(key)
-                .or_insert_with(|| tree::Plan::new(*roots, *depth, count, cell.salt));
+            let plan = memo.trees.entry(key).or_insert_with(|| {
+                tree::Plan::new(*roots, *depth, *min_depth, count, cell.salt)
+            });
             match plan.parent_of(cell.seq, cell.salt) {
                 Some(parent) => CborValue::Text(crate::seed_id(parent)),
                 None => CborValue::Null,

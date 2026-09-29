@@ -7,7 +7,7 @@
 //! match statement to edit.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -45,6 +45,9 @@ pub struct FakerCtx {
     /// `values`' stream so a seed replays both independently.
     rng: Mutex<StdRng>,
     seq: AtomicU64,
+    /// While set, mutations change the store without broadcasting — a sim
+    /// engine's warm start fills tables the way `seed` does.
+    quiet: AtomicBool,
 }
 
 impl FakerCtx {
@@ -63,6 +66,26 @@ impl FakerCtx {
             extra: None,
             rng: Mutex::new(crate::value_gen::entropy_rng()),
             seq: AtomicU64::new(0),
+            quiet: AtomicBool::new(false),
+        }
+    }
+
+    /// Stop (or resume) broadcasting mutations. While quiet, mutations still
+    /// change the store; pair a quiet batch with [`invalidate`](Self::invalidate)
+    /// so subscribers re-list once instead of receiving every delta.
+    pub fn set_quiet(&self, quiet: bool) {
+        self.quiet.store(quiet, Ordering::SeqCst);
+    }
+
+    /// Broadcast [`ChangeEvent::Invalidated`], telling subscribers to re-list
+    /// from the store. Sent even while quiet.
+    pub fn invalidate(&self) {
+        let _ = self.events.send(ChangeEvent::Invalidated);
+    }
+
+    fn send(&self, event: ChangeEvent) {
+        if !self.quiet.load(Ordering::SeqCst) {
+            let _ = self.events.send(event);
         }
     }
 
@@ -143,7 +166,7 @@ impl FakerCtx {
         let (id, seq) = self.next_fifo_id();
         let record = self.generate(&self.values, &id, seq);
         self.shell.set_record(&id, record.clone());
-        let _ = self.events.send(ChangeEvent::Inserted {
+        self.send(ChangeEvent::Inserted {
             id: id.clone(),
             new: Some(record),
         });
@@ -153,9 +176,7 @@ impl FakerCtx {
     /// Remove a row: drop it from the store and broadcast a `Deleted`.
     pub fn expire(&self, id: &str) {
         self.shell.remove_record(id);
-        let _ = self
-            .events
-            .send(ChangeEvent::Deleted { id: id.to_string() });
+        self.send(ChangeEvent::Deleted { id: id.to_string() });
     }
 
     // ---- Store reads + scripted mutation verbs -----------------------------
@@ -185,7 +206,7 @@ impl FakerCtx {
     pub fn update_field(&self, id: &str, field: &str, value: CborValue) {
         self.shell.set_field(id, field, value);
         if let Some(record) = self.shell.get_record(id) {
-            let _ = self.events.send(ChangeEvent::Updated {
+            self.send(ChangeEvent::Updated {
                 id: id.to_string(),
                 new: Some(record),
             });
@@ -197,8 +218,11 @@ impl FakerCtx {
         for (field, value) in partial {
             self.shell.set_field(id, field, value.clone());
         }
+        if self.quiet.load(Ordering::SeqCst) {
+            return;
+        }
         if let Some(record) = self.shell.get_record(id) {
-            let _ = self.events.send(ChangeEvent::Updated {
+            self.send(ChangeEvent::Updated {
                 id: id.to_string(),
                 new: Some(record),
             });
@@ -226,11 +250,24 @@ impl FakerCtx {
     pub fn put_record(&self, id: &str, record: Record<CborValue>, broadcast: bool) {
         self.shell.set_record(id, record.clone());
         if broadcast {
-            let _ = self.events.send(ChangeEvent::Inserted {
+            self.send(ChangeEvent::Inserted {
                 id: id.to_string(),
                 new: Some(record),
             });
         }
+    }
+
+    /// Store `record` under `id`, broadcasting `Updated` if a row with that
+    /// id existed and `Inserted` if not.
+    pub fn upsert_record(&self, id: &str, record: Record<CborValue>) {
+        let existed = self.shell.get_record(id).is_some();
+        self.shell.set_record(id, record.clone());
+        let (id, new) = (id.to_string(), Some(record));
+        self.send(if existed {
+            ChangeEvent::Updated { id, new }
+        } else {
+            ChangeEvent::Inserted { id, new }
+        });
     }
 
     /// Insert a scripted record (id assigned, id column filled) and broadcast
@@ -239,7 +276,7 @@ impl FakerCtx {
         let (id, _) = self.next_fifo_id();
         record.insert(self.id_column.clone(), CborValue::Text(id.clone()));
         self.shell.set_record(&id, record.clone());
-        let _ = self.events.send(ChangeEvent::Inserted {
+        self.send(ChangeEvent::Inserted {
             id: id.clone(),
             new: Some(record),
         });
@@ -428,6 +465,29 @@ mod tests {
         ctx.expire(&id);
         assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Deleted { id: got } if got == id));
         assert_eq!(count_store(&ctx), 0);
+    }
+
+    #[tokio::test]
+    async fn quiet_mutations_store_without_broadcasting() {
+        let (ctx, mut rx) = ctx();
+        ctx.set_quiet(true);
+        let id = ctx.push();
+        ctx.expire(&id);
+        ctx.push();
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+        assert_eq!(count_store(&ctx), 1);
+        ctx.set_quiet(false);
+        ctx.push();
+        assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Inserted { .. }));
+    }
+
+    #[test]
+    fn invalidate_broadcasts_even_while_quiet() {
+        let (ctx, mut rx) = ctx();
+        ctx.set_quiet(true);
+        ctx.invalidate();
+        assert!(matches!(rx.try_recv().unwrap(), ChangeEvent::Invalidated));
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
     }
 
     #[test]

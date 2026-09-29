@@ -73,6 +73,8 @@ struct Walk {
 struct Tree {
     roots: usize,
     depth: u8,
+    #[serde(default)]
+    min_depth: Option<u8>,
 }
 
 fn default_to() -> String {
@@ -128,8 +130,17 @@ impl TryFrom<Wire> for ColumnGen {
                 decimals,
             });
         }
-        if let Some(Tree { roots, depth }) = w.tree {
-            found.push(ColumnGen::Tree { roots, depth });
+        if let Some(Tree {
+            roots,
+            depth,
+            min_depth,
+        }) = w.tree
+        {
+            found.push(ColumnGen::Tree {
+                roots,
+                depth,
+                min_depth,
+            });
         }
         match found.len() {
             1 => Ok(found.remove(0)),

@@ -5,6 +5,10 @@ use indexmap::IndexMap;
 use vantage_vista::{Column, Reference, SortDirection, Vista, VistaCapabilities, flags};
 
 use super::DioInner;
+use super::impls::table_shell::record_get;
+use vantage_types::Record;
+
+mod watch;
 
 /// Narrowing applied to a facade handle.
 ///
@@ -20,6 +24,13 @@ pub(crate) struct FacadeQuery {
 impl FacadeQuery {
     pub(crate) fn is_empty(&self) -> bool {
         self.conditions.is_empty() && self.order.is_none()
+    }
+
+    /// Whether `row` satisfies every condition, evaluated locally.
+    pub(crate) fn matches(&self, row: &Record<CborValue>) -> bool {
+        self.conditions
+            .iter()
+            .all(|(field, expected)| record_get(row, field) == Some(expected))
     }
 }
 
@@ -73,7 +84,7 @@ impl DioShell {
 
         // Capability lifting rules (architecture doc):
         //   can_insert/update/delete = Dio::write_capabilities (master OR route)
-        //   can_subscribe            = always true (Dio fans out events)
+        //   can_subscribe            = always true (the event bus backs `watch_vista`)
         //   can_invalidate           = master.can_invalidate OR on_event registered
         //   can_count                = always true (cache answers locally)
         let capabilities = VistaCapabilities {
@@ -127,6 +138,19 @@ impl DioShell {
             references,
             id_column,
             query: FacadeQuery::default(),
+        }
+    }
+
+    /// A handle over `dio` narrowed by `query`, with no schema or
+    /// capabilities — enough to read the narrowed set and nothing else.
+    fn reader(dio: Arc<DioInner>, query: FacadeQuery) -> Self {
+        Self {
+            dio,
+            capabilities: VistaCapabilities::default(),
+            columns: IndexMap::new(),
+            references: IndexMap::new(),
+            id_column: None,
+            query,
         }
     }
 

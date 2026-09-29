@@ -179,7 +179,7 @@ fn register_verbs(engine: &mut Engine, ctx: &Arc<FakerCtx>) {
 
 // ---- Value round-tripping (the scalar subset scripts touch) ---------------
 
-fn dynamic_to_cbor(v: &Dynamic) -> CborValue {
+pub(crate) fn dynamic_to_cbor(v: &Dynamic) -> CborValue {
     if v.is_unit() {
         CborValue::Null
     } else if let Ok(i) = v.as_int() {
@@ -193,7 +193,7 @@ fn dynamic_to_cbor(v: &Dynamic) -> CborValue {
     }
 }
 
-fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
+pub(crate) fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
     match v {
         CborValue::Text(s) => Dynamic::from(s.clone()),
         CborValue::Integer(i) => Dynamic::from(i128::from(*i) as i64),
@@ -204,13 +204,13 @@ fn cbor_to_dynamic(v: &CborValue) -> Dynamic {
     }
 }
 
-fn record_to_map(rec: &Record<CborValue>) -> RhaiMap {
+pub(crate) fn record_to_map(rec: &Record<CborValue>) -> RhaiMap {
     rec.iter()
         .map(|(k, v)| (k.as_str().into(), cbor_to_dynamic(v)))
         .collect()
 }
 
-fn map_to_record(map: &RhaiMap) -> Record<CborValue> {
+pub(crate) fn map_to_record(map: &RhaiMap) -> Record<CborValue> {
     let mut rec = Record::new();
     for (k, v) in map {
         rec.insert(k.to_string(), dynamic_to_cbor(v));

@@ -85,7 +85,7 @@ fn lifecycle_runs_in_order_with_monotonic_progress() {
     }
     use Phase::*;
     let expected = [
-        Scheduled, Boarding, Taxiing, Climbing, Cruising, Descending, Landed,
+        Scheduled, Boarding, Taxiing, Takeoff, Climbing, Cruising, Descending, Landing, Landed,
     ];
     assert_eq!(phases, expected);
     assert_eq!(last_progress, 100.0);
@@ -253,6 +253,39 @@ fn seeded_runs_are_identical() {
     assert_ne!(snapshot(7), snapshot(8));
 }
 
+#[test]
+fn timestamps_are_wall_clock_and_flight_time_is_sim() {
+    let (ctx, _rx) = ctx(columns(&[
+        "id",
+        "eta",
+        "scheduled_departure",
+        "flight_time",
+        "flight_time_min",
+    ]));
+    let fx = effect(10, 4, 11);
+    fx.seed(&ctx);
+    let state = fx.state.lock().unwrap();
+    let sim = &state.as_ref().unwrap().sim;
+    let scale = FlightsConfig::default().time_scale;
+    for (id, f) in &sim.flights {
+        let rec = ctx.get_record(id).unwrap();
+        let wall_eta = T0 + (f.eta() - T0) / scale;
+        let expected = crate::generator::rfc3339(wall_eta.round() as i64);
+        assert_eq!(text(&rec, "eta"), expected);
+        let minutes = num(&rec, "flight_time_min");
+        assert_eq!(minutes, (f.flight_time_s() / 60.0).round());
+        let m = minutes as u64;
+        assert_eq!(
+            text(&rec, "flight_time"),
+            format!("{}h {}m", m / 60, m % 60)
+        );
+    }
+    assert_eq!(
+        super::columns::hours_minutes(11.0 * 3600.0 + 600.0),
+        "11h 10m"
+    );
+}
+
 #[tokio::test]
 async fn live_table_broadcasts_patches() {
     let table = crate::FakerTable::build(
@@ -280,3 +313,4 @@ async fn live_table_broadcasts_patches() {
 }
 
 mod limits;
+mod traffic;

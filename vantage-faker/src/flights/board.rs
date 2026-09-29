@@ -7,7 +7,7 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
-use super::columns::{flight_value, is_flight_column};
+use super::columns::{Clock, flight_value, is_flight_column};
 use super::flight::{Flight, Phase};
 use super::sim::FlightSim;
 use crate::value_gen::ValueGen;
@@ -22,9 +22,7 @@ struct Row {
 
 pub struct Board {
     pub sim: FlightSim,
-    /// Sim-clock unix seconds at real elapsed zero.
-    t0: f64,
-    time_scale: f64,
+    clock: Clock,
     retention: Duration,
     columns: Vec<FakerColumn>,
     id_column: String,
@@ -35,16 +33,14 @@ pub struct Board {
 impl Board {
     pub fn new(
         sim: FlightSim,
-        t0: f64,
-        time_scale: f64,
+        clock: Clock,
         retention: Duration,
         ctx: &FakerCtx,
         values: ValueGen,
     ) -> Self {
         Self {
             sim,
-            t0,
-            time_scale,
+            clock,
             retention,
             columns: ctx.columns().to_vec(),
             id_column: ctx.id_column().to_string(),
@@ -55,12 +51,12 @@ impl Board {
 
     /// Sim time after `elapsed` of real time.
     pub fn sim_time(&self, elapsed: Duration) -> f64 {
-        self.t0 + elapsed.as_secs_f64() * self.time_scale
+        self.clock.sim(elapsed.as_secs_f64())
     }
 
     /// Store every current flight without broadcasting.
     pub fn seed(&mut self, ctx: &FakerCtx) {
-        let t = self.t0;
+        let t = self.clock.t0;
         let ids: Vec<String> = self.sim.flights.keys().cloned().collect();
         for id in ids {
             self.insert(ctx, &id, t, Duration::ZERO, false);
@@ -86,7 +82,7 @@ impl Board {
             let Some(flight) = self.sim.flights.get(id) else {
                 continue;
             };
-            let (now, landed) = project(&self.columns, flight, t);
+            let (now, landed) = project(&self.columns, flight, t, &self.clock);
             let changed: Record<CborValue> = now
                 .iter()
                 .filter(|(k, v)| row.sim.get(*k) != Some(*v))
@@ -109,7 +105,7 @@ impl Board {
 
     fn insert(&mut self, ctx: &FakerCtx, id: &str, t: f64, elapsed: Duration, broadcast: bool) {
         let flight = &self.sim.flights[id];
-        let (sim, landed) = project(&self.columns, flight, t);
+        let (sim, landed) = project(&self.columns, flight, t, &self.clock);
         let extras: Vec<FakerColumn> = self
             .columns
             .iter()
@@ -141,11 +137,19 @@ impl Board {
 
 /// The declared sim columns of `flight` at sim time `t`, and whether it has
 /// landed.
-fn project(columns: &[FakerColumn], flight: &Flight, t: f64) -> (Record<CborValue>, bool) {
+fn project(
+    columns: &[FakerColumn],
+    flight: &Flight,
+    t: f64,
+    clock: &Clock,
+) -> (Record<CborValue>, bool) {
     let state = flight.state_at(t);
     let record = columns
         .iter()
-        .filter_map(|c| Some((c.name.clone(), flight_value(flight, &state, t, &c.name)?)))
+        .filter_map(|c| {
+            let value = flight_value(flight, &state, t, clock, &c.name)?;
+            Some((c.name.clone(), value))
+        })
         .collect();
     (record, state.phase == Phase::Landed)
 }

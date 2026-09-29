@@ -87,7 +87,12 @@ fn walk_is_deterministic_across_builds() {
 #[test]
 fn tree_roots_are_null_and_parents_precede_children() {
     let values = ValueGen::seeded(3).with_rows(40);
-    let parents = series(&values, ColumnGen::Tree { roots: 4, depth: 3 }, 40);
+    let tree = ColumnGen::Tree {
+        roots: 4,
+        depth: 3,
+        min_depth: None,
+    };
+    let parents = series(&values, tree, 40);
     for (seq, p) in parents.iter().enumerate() {
         match p {
             CborValue::Null => assert!(seq < 4),
@@ -128,7 +133,15 @@ fn deserializes_from_yaml() {
         assert!(serde_yaml_ng::from_str::<ColumnGen>(bad).is_err(), "{bad}");
     }
     let json: ColumnGen = serde_json::from_str(r#"{"tree":{"roots":3,"depth":2}}"#).unwrap();
-    assert_eq!(json, ColumnGen::Tree { roots: 3, depth: 2 });
+    assert_eq!(json, tree(3, 2, None));
+}
+
+fn tree(roots: usize, depth: u8, min_depth: Option<u8>) -> ColumnGen {
+    ColumnGen::Tree {
+        roots,
+        depth,
+        min_depth,
+    }
 }
 
 #[test]
@@ -230,13 +243,22 @@ fn validate_rejects_bad_pick_weights() {
 
 #[test]
 fn validate_rejects_empty_trees() {
-    let err = ColumnGen::Tree { roots: 0, depth: 3 }
-        .validate()
-        .unwrap_err();
+    let err = tree(0, 3, None).validate().unwrap_err();
     assert!(err.contains("roots"), "{err}");
-    let err = ColumnGen::Tree { roots: 3, depth: 0 }
-        .validate()
-        .unwrap_err();
+    let err = tree(3, 0, None).validate().unwrap_err();
     assert!(err.contains("depth"), "{err}");
-    assert!(ColumnGen::Tree { roots: 1, depth: 1 }.validate().is_ok());
+    assert!(tree(1, 1, None).validate().is_ok());
+}
+
+#[test]
+fn tree_min_depth_parses_and_validates() {
+    let parsed: ColumnGen =
+        serde_yaml_ng::from_str("tree: { roots: 5, depth: 5, min_depth: 2 }").unwrap();
+    assert_eq!(parsed, tree(5, 5, Some(2)));
+    assert!(parsed.validate().is_ok());
+    assert!(tree(5, 5, Some(5)).validate().is_ok());
+    for min in [0, 6] {
+        let err = tree(5, 5, Some(min)).validate().unwrap_err();
+        assert!(err.contains("min_depth"), "{err}");
+    }
 }

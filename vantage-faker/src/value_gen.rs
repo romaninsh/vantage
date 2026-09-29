@@ -160,7 +160,7 @@ impl ValueGen {
         )
     }
 
-    fn value_for_with(rng: &mut StdRng, col: &FakerColumn) -> CborValue {
+    pub(crate) fn value_for_with(rng: &mut StdRng, col: &FakerColumn) -> CborValue {
         let name = col.name.to_lowercase();
 
         // --- name-aware ------------------------------------------------------

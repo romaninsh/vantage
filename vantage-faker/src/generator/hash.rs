@@ -33,6 +33,7 @@ pub(crate) const STREAM_WALK: u64 = 1;
 pub(crate) const STREAM_DATE: u64 = 2;
 pub(crate) const STREAM_TREE: u64 = 3;
 pub(crate) const STREAM_FAN_OUT: u64 = 4;
+pub(crate) const STREAM_TREE_END: u64 = 5;
 
 #[cfg(test)]
 mod tests {
