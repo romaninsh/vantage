@@ -49,7 +49,7 @@ async fn eager_dio(master: Vista) -> Result<Dio> {
 /// a background task, so the change lands shortly after the parent write.
 async fn wait_for(dio: &Dio, id: &str, present: bool) -> Result<Option<Record<CborValue>>> {
     for _ in 0..200 {
-        let row = dio.cache().get_value(&id.to_string()).await?;
+        let row = dio.cache().get_value(id).await?;
         if row.is_some() == present {
             return Ok(row);
         }

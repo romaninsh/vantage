@@ -91,8 +91,7 @@ fn warm_progress_reports_each_window_and_skips_no_warm() {
             .on_warm_progress(move |p| sink.lock().unwrap().push(p))
             .start()
             .unwrap();
-        let seen = seen.lock().unwrap().clone();
-        seen
+        seen.lock().unwrap().clone()
     };
 
     let seen = started(warm_def(1.0));
