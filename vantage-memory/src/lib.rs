@@ -1,6 +1,7 @@
 //! Fast in-memory datasource for Vantage. See SPEC.md.
 
 pub mod eval;
+pub mod seed;
 pub mod store;
 pub mod types;
 
