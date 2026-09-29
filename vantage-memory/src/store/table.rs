@@ -80,7 +80,6 @@ impl MemoryTable {
         };
         let row = self.with_id(record, &id);
         rows.map.insert(id.clone(), row.clone());
-        drop(rows);
         self.changed(MemoryChange::Inserted {
             id: id.clone(),
             row,
@@ -93,7 +92,6 @@ impl MemoryTable {
         let row = self.with_id(record, id);
         let mut rows = self.rows.write();
         let old = rows.map.insert(id.to_string(), row.clone());
-        drop(rows);
         match old {
             None => self.changed(MemoryChange::Inserted {
                 id: id.to_string(),
@@ -123,7 +121,6 @@ impl MemoryTable {
         }
         let row = Arc::new(next);
         rows.map.insert(id.to_string(), row.clone());
-        drop(rows);
         self.changed(MemoryChange::Updated {
             id: id.to_string(),
             row,
@@ -138,7 +135,6 @@ impl MemoryTable {
         let Some(old) = rows.map.shift_remove(id) else {
             return false;
         };
-        drop(rows);
         self.changed(MemoryChange::Deleted {
             id: id.to_string(),
             old,

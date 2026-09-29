@@ -167,3 +167,43 @@ fn store_returns_the_same_table_by_name() {
     assert_eq!(s.table("a").len(), 1);
     assert_eq!(s.table_names(), vec!["a"]);
 }
+
+#[test]
+fn concurrent_patches_broadcast_in_apply_order() {
+    let t = MemoryStore::new().table("ticket");
+    let mut rx = t.subscribe();
+    t.upsert("a", Record::new());
+
+    let handles: Vec<_> = (0..4u32)
+        .map(|thread| {
+            let t = t.clone();
+            std::thread::spawn(move || {
+                for i in 0..200u32 {
+                    let v = thread * 1000 + i;
+                    t.patch("a", &rec(&[("n", CborValue::Integer(v.into()))]));
+                }
+            })
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    let mut events = Vec::new();
+    while let Ok(change) = rx.try_recv() {
+        events.push(change);
+    }
+    assert_eq!(events.len(), 1 + 4 * 200);
+
+    for pair in events.windows(2) {
+        let row = match &pair[0] {
+            MemoryChange::Inserted { row, .. } | MemoryChange::Updated { row, .. } => row,
+            other => panic!("{other:?}"),
+        };
+        let old = match &pair[1] {
+            MemoryChange::Updated { old, .. } => old,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(row, old, "events out of order relative to writes");
+    }
+}
