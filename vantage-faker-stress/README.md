@@ -35,7 +35,7 @@ directory down, which is how the chaos scenarios are organized.
 | Flag | Default | What it does |
 |---|---|---|
 | `--duration <dur>` | the scenario's `stress.duration` | how long to sample |
-| `--scale <N>` | `1.0` | multiplies every sim's `burst` and `max`, and every table's `count`, by `N`. Decimals are allowed; each result is rounded and kept at least 1 |
+| `--scale <N>` | `1.0` | multiplies every sim's `burst` and `max`, and every table's `count`, by `N`. Decimals are allowed; a zero value stays 0, and every other result is rounded and kept at least 1 |
 | `--dio` | off | attaches a `Dio` to every table, so lag and event throughput measure `Dio::handle_event` and re-list cost, not just the raw broadcast |
 | `--json <path>` | none | writes the run's report to a JSON file |
 
@@ -51,10 +51,12 @@ directory down, which is how the chaos scenarios are organized.
 | `--warm` | off | keeps the scenario's `warm:` settings. By default `ramp` strips them so every step starts cold |
 | `--json <path>` | none | writes every step's report to a JSON file |
 
-`ramp` stops early, before running the step that broke it: at the first step
-whose summary crosses a `stress.limits` threshold, or before a step whose
-scaled sim count would exceed `MAX_LIVE` (1000). The reason is printed and
-recorded on the last completed step.
+`ramp` stops early in two ways. If a step's scaled sim count would exceed
+`MAX_LIVE` (1000), that's caught before the step runs, so it never runs at
+all; the reason is printed and recorded on the last step that did
+complete. If a step's own summary crosses a `stress.limits` threshold,
+that's caught after the step finishes; the step is recorded with the
+reason attached, and no further steps run.
 
 ### `compare <a.json> <b.json>`
 
@@ -146,8 +148,8 @@ working.
 |---|---|---|
 | `chaos/spin` | `loop {}` with no sleep | the operation budget ends it (`errored` +1) |
 | `chaos/throw` | throws on its third step | it ends and is counted; the healthy sims keep writing |
-| `chaos/stale` | patches and deletes ids another sim already deleted | no panic; stale writes don't count as `writes` |
-| `chaos/flood` | 10k inserts with no sleep | the budget ends it; `lagged` and the Dio re-list cost are visible |
+| `chaos/stale` | inserts a row, deletes it, then keeps patching, setting and deleting that same gone id | no panic; stale writes don't count as `writes` |
+| `chaos/flood` | 10k inserts with no sleep | well under the operation budget, so it completes normally (`errored_min: 0`); watch `lagged`, the lag estimate and the Dio re-list cost |
 | `chaos/spawn-bomb` | each sim spawns two copies of itself | bounded by `max` and `MAX_LIVE`; the thread count levels off |
 | `chaos/recurse` | unbounded recursion | the call-depth limit ends it; no stack overflow |
 
