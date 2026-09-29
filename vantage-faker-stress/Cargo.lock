@@ -1598,6 +1598,7 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "vantage-core",
+ "vantage-dataset",
  "vantage-diorama",
  "vantage-faker",
  "vantage-vista",
