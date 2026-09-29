@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — 2026-09-29
+
+- `set_quiet` takes the table's write lock, so a write never loses its event or strands a `Reset` while quiet mode flips.
+
 ## 0.6.0 — 2026-09-29
 
 - In-memory datasource: sync store with per-table locks, `Arc`-shared rows and hash indexes.
