@@ -2,7 +2,7 @@
 //! operations budget and write counting.
 
 use super::*;
-use crate::dataset::table::TableGen;
+use crate::dataset::TableGen;
 
 #[test]
 fn upsert_is_idempotent_across_spawns() {

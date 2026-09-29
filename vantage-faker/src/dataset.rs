@@ -10,9 +10,10 @@ mod tests;
 
 use vantage_memory::{MemoryStore, MemoryTableHandle, TableDef};
 
+use crate::generator::hash;
 use crate::relational::{Reference, check_plan, relational_rows};
 use crate::value_gen::ValueGen;
-use table::TableGen;
+pub use table::TableGen;
 
 /// A set of tables to generate together, in reference order, from one
 /// optional seed.
@@ -112,12 +113,5 @@ impl DatasetGen {
 /// draws an independent but reproducible stream from one dataset seed.
 /// `None` stays `None` — each run gets fresh values.
 fn seed_for(seed: Option<u64>, name: &str) -> Option<u64> {
-    seed.map(|s| {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for b in name.bytes() {
-            h ^= u64::from(b);
-            h = h.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-        s ^ h
-    })
+    seed.map(|s| s ^ hash::fnv1a(name.as_bytes()))
 }
