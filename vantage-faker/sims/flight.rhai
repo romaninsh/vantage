@@ -5,12 +5,15 @@
 //   landed_retention  number, sim seconds the Landed row stays, default 600
 //
 // Writes one row to the def's table, with these columns:
-//   id (8-digit sim id), flight_no, carrier, aircraft_type, registration,
+//   flight_no, carrier, aircraft_type, registration,
 //   origin, origin_city, destination, destination_city, phase, progress (0-100),
 //   altitude_ft, ground_speed_kts, heading, distance_total_nm,
 //   distance_remaining_nm, scheduled_departure, actual_departure, eta,
 //   flight_time ("11h 10m"), flight_time_min, delay_minutes, gate, pax,
 //   seats, lat, lon, board_order.
+// The row's id is an 8-digit sim id, written via `upsert` into the table's
+// id column, whatever it is named. `patch`/`delete` below take the same id,
+// so the phase updates and the eventual removal work the same way.
 // Any other declared column of the table is filled once from row().
 //
 // Phases: Scheduled, Boarding (30 min before off-block), Taxiing (12 min),
@@ -171,7 +174,6 @@ let wobble = rand_float(0.0, 6.2832);
 
 let id = pad(sim_id(), 8);
 let r = row();
-r.id = id;
 r.flight_no = carrier[0] + rand_int(10, 2999);
 r.carrier = carrier[0];
 r.aircraft_type = ac[0];
@@ -199,7 +201,7 @@ r.seats = ac[1];
 r.lat = round_by(origin.lat, 10000.0);
 r.lon = round_by(origin.lon, 10000.0);
 r.board_order = scheduled.to_int();
-insert(r);
+upsert(id, r);
 
 wait_until(off_block - boarding);
 patch(id, #{ phase: "Boarding" });

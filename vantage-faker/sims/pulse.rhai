@@ -20,8 +20,8 @@
 //      - value += delta, clamped to baseline ± band%;
 //      - upsert(aggregate, key, #{key_column: key, value_column: value,
 //          vs_baseline: round((value - baseline) / baseline * 100), live: "Live"});
-//      - insert a feed row #{key_column: key, delta, updated: <iso now>}
-//        with the descending id, remembering its expiry;
+//      - upsert a feed row #{key_column: key, delta, updated: <iso now>}
+//        at the descending id, remembering its expiry;
 //      - if delta > 0, add it into the current bucket
 //        minute = floor(now / bucket) * bucket (id = pad(minute, 12),
 //        row #{minute: <HH:MM>, attendees}) via get, then upsert.
@@ -31,7 +31,13 @@
 //   4. sleep until the earliest next_at (at least 0.1 s).
 //
 // Feed ids are pad(10_000_000_000_000 - ms, 13) + "-" + key, so sorting them
-// ascending lists the newest change first.
+// ascending lists the newest change first. The feed and minutes tables need
+// their own id column (not `key_column` or `minute`): upsert writes the
+// row's id into whatever column the table names as its id, so pointing
+// that at a data column overwrites it with the id.
+//
+// Throws at start on an empty `keys` list, or a key whose `baseline` is 0
+// (it divides vs_baseline).
 //
 // Suggested def: spawn: { burst: 1, max: 1 }
 
@@ -75,9 +81,16 @@ let window = arg(args, "window", 10);
 let offline = arg(args, "offline", []);
 
 // Every key is due on the first wake.
+let raw_keys = arg(args, "keys", []);
+if raw_keys.len() == 0 {
+    throw "pulse: keys must not be empty";
+}
 let state = [];
-for k in arg(args, "keys", []) {
+for k in raw_keys {
     let baseline = 0.0 + k.baseline;
+    if baseline == 0.0 {
+        throw "pulse: key " + k.name + ": baseline must not be 0";
+    }
     state.push(#{ name: k.name, baseline: baseline, value: baseline, next_at: now_secs() });
 }
 
@@ -113,9 +126,9 @@ loop {
         if !dropped {
             let ms = (now * 1000.0).to_int();
             let id = pad(10_000_000_000_000 - ms, 13) + "-" + s.name;
-            let entry = #{ id: id, delta: delta, updated: now() };
+            let entry = #{ delta: delta, updated: now() };
             entry[key_column] = s.name;
-            insert(feed_table, entry);
+            upsert(feed_table, id, entry);
             feed.push([id, now + feed_retention]);
 
             if delta > 0 {

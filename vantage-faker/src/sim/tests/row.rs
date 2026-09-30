@@ -76,6 +76,69 @@ fn row_walk_column_varies_across_calls_in_one_sim() {
     );
 }
 
+/// A one-sim-per-row def, like `builtin:fifo`, calling `row()` on a `walk`
+/// column thousands of times over its lifetime. The walk's memo is shared
+/// per table (`Kind::row_state`), so growing it costs O(1) per call rather
+/// than replaying the series from scratch each time: this checks the walk
+/// stays continuous and that 5k sims still run quickly.
+#[test]
+fn row_walk_column_stays_continuous_and_cheap_across_many_sims() {
+    let store = store_with(&["log"]);
+    let step = 5.0;
+    let engine = SimEngine::builder()
+        .store(&store)
+        .columns(
+            "log",
+            vec![
+                FakerColumn::new("id", "string"),
+                FakerColumn::new("score", "int").with_generator(ColumnGen::Walk {
+                    start: 0.0,
+                    step,
+                    min: Some(0.0),
+                    max: Some(1000.0),
+                    decimals: None,
+                }),
+            ],
+        )
+        .sim(
+            SimDef::new(
+                "r",
+                "log",
+                "let r = row(); insert(#{ id: sim_id().to_string(), score: r.score });",
+            )
+            .with_spawn(0, 60.0, 50),
+        )
+        .manual_clock(start())
+        .seed(4)
+        .start()
+        .unwrap();
+
+    let began = std::time::Instant::now();
+    run_for(&engine, 5000, 1);
+    let elapsed = began.elapsed();
+    assert!(elapsed < Duration::from_secs(10), "took {elapsed:?}");
+
+    let log = store.table("log");
+    let mut ids = log.ids();
+    assert!(ids.len() >= 4000, "only {} sims ran", ids.len());
+    ids.sort_by_key(|id| id.parse::<u64>().unwrap());
+    let scores: Vec<f64> = ids
+        .iter()
+        .map(|id| {
+            let rec = log.get(id).unwrap();
+            num(&rec, "score")
+        })
+        .collect();
+    for w in scores.windows(2) {
+        assert!(
+            (w[0] - w[1]).abs() <= step + 2.0,
+            "walk jumped {} -> {}, not a continuing series",
+            w[0],
+            w[1]
+        );
+    }
+}
+
 #[test]
 fn row_on_a_table_without_columns_is_empty() {
     let store = store_with(&["log", "bare"]);

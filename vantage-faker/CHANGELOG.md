@@ -19,6 +19,13 @@
 - `sims:` scripts can name a built-in: `script: "builtin:fifo"` (`fifo`, `pulse`, `flight`, `folder_tree`).
 - `SimEngineBuilder::columns` declares a table's columns for the new `row()` sim verb.
 - `ShapedShell` passes `watch` through to the shell it wraps.
+- `SimEngineBuilder::on_sim_error` reports every failing sim's def name and error message.
+- `builtin:fifo` and `builtin:flight` write their row with `upsert`, so they work with any id column name.
+- `builtin:fifo`'s tie-break id is fixed-width, so arrivals in the same millisecond still sort newest first.
+- `builtin:pulse` writes its feed row with `upsert`, and rejects an empty `keys` or a zero `baseline` at start.
+- `builtin:folder_tree` coerces `bytes_per_request` to whole bytes.
+- `row()`'s sequence counter and positional-generator memo are shared per table across a def's sims; even-spread `date` wraps past `DEFAULT_ROWS` calls instead of pinning at `to`.
+- `DatasetSpec::sim_defs` names the sim and the key in a bad `warm:` duration error.
 
 ## 0.7.1 — 2026-09-29
 

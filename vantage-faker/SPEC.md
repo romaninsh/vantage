@@ -43,7 +43,7 @@ The app reads and edits the same store through vantage-memory's Vista layer, and
 | `BackendShape` / `ShapedShell` (a test wrapper over any Vista) | The `rhai` feature is renamed to `sim` | `rhai_effect.rs` and its duplicate vocabulary |
 | `SimEngine::stats` | `writes` comes from the store's write counters | the `fifo_cli`, `scenery_cli`, `scenery_folder_cli` and `live_folder_cli` examples, and the `live_folder` BDD test |
 
-`examples/sims/flight.rhai` and `shipment.rhai` stay as example scripts and are updated to the verbs below.
+`sims/flight.rhai` (a builtin) and `examples/sims/shipment.rhai` (an example script) are updated to the verbs below.
 
 ## Features
 

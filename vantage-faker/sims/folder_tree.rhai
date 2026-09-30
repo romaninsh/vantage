@@ -3,7 +3,7 @@
 // Args:
 //   requests_per_sec   number, default 100
 //   bytes_per_request  [lo, hi] or a number, bytes per access-log line,
-//                      default [60, 100]
+//                      default [60, 100] (coerced to whole bytes)
 //   chunk_threshold    number, bytes an access chunk grows to before the
 //                      next one opens, default 288000 (about 100 chunks/hour)
 //   error_pct          number, percent chance per second of an error file,
@@ -99,6 +99,7 @@ let per_request = arg(args, "bytes_per_request", [60, 100]);
 if type_of(per_request) != "array" {
     per_request = [per_request, per_request];
 }
+per_request = [per_request[0].to_int(), per_request[1].to_int()];
 let chunk_threshold = arg(args, "chunk_threshold", 288000);
 let error_pct = 0.0 + arg(args, "error_pct", 1.0);
 

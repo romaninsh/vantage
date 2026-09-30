@@ -47,7 +47,7 @@ fn feed_rows_expire_and_buckets_are_windowed() {
         "feed keeps ~retention worth"
     );
     assert!(store.table("minutes").len() <= 3, "window trims buckets");
-    assert!(store.table("minutes").len() >= 1);
+    assert!(!store.table("minutes").is_empty());
 }
 
 #[test]

@@ -81,7 +81,9 @@ impl DatasetSpec {
                 )
                 .with_clock(spec.clock.unwrap_or(1.0));
             if let Some(warm) = &spec.warm {
-                def = def.with_warm(parse_duration(warm)?);
+                let dur =
+                    parse_duration(warm).map_err(|e| error!(format!("sim {name}: warm: {e}")))?;
+                def = def.with_warm(dur);
             }
             if let Some(ops) = spec.ops {
                 def = def.with_ops(ops);

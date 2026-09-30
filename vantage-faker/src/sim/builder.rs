@@ -11,7 +11,7 @@ use vantage_rhai::{Host, Limits, Mode, from_json};
 
 use super::clock::{Clock, SimClock, unix_secs};
 use super::engine::SimEngine;
-use super::kind::{Inner, Kind};
+use super::kind::{Inner, Kind, OnSimError};
 use super::sched::Sched;
 use super::{SimDef, spawn, validate, vocab};
 use crate::FakerColumn;
@@ -26,6 +26,7 @@ pub struct SimEngineBuilder {
     manual: Option<SystemTime>,
     warm_progress: Option<Box<spawn::Progress>>,
     columns: HashMap<String, Vec<FakerColumn>>,
+    on_error: Option<Arc<OnSimError>>,
 }
 
 impl SimEngineBuilder {
@@ -69,6 +70,15 @@ impl SimEngineBuilder {
     /// when no def has a warm span.
     pub fn on_warm_progress(mut self, f: impl Fn(f32) + Send + Sync + 'static) -> Self {
         self.warm_progress = Some(Box::new(f));
+        self
+    }
+
+    /// Call `f(def_name, error)` from a sim's own thread every time a sim
+    /// of that def ends in error, live or during the warm start. Every
+    /// error calls `f`, unlike the tracing log next to it, which is
+    /// rate-limited per def.
+    pub fn on_sim_error(mut self, f: impl Fn(&str, &str) + Send + Sync + 'static) -> Self {
+        self.on_error = Some(Arc::new(f));
         self
     }
 
@@ -116,6 +126,7 @@ impl SimEngineBuilder {
                 args,
                 def,
                 errors: Mutex::default(),
+                row_state: Mutex::default(),
             });
         }
         let by_name = kinds
@@ -135,6 +146,7 @@ impl SimEngineBuilder {
             origin,
             handles: Mutex::default(),
             counters: Default::default(),
+            on_error: self.on_error,
         });
 
         let mut plan = spawn::Plan::new(&inner);

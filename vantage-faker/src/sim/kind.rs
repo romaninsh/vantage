@@ -1,6 +1,7 @@
 //! One compiled def, and the state every sim thread shares.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -13,6 +14,7 @@ use super::clock::SimClock;
 use super::sched::Sched;
 use super::stats::Counters;
 use crate::FakerColumn;
+use crate::generator::Memo;
 
 /// Least real time between two error logs of one def.
 const ERROR_LOG_EVERY: Duration = Duration::from_secs(60);
@@ -25,6 +27,28 @@ pub(super) struct Kind {
     /// The spawner's args as a Rhai map.
     pub args: RhaiMap,
     pub errors: Mutex<ErrorLog>,
+    /// `row()`'s state per table, shared by every sim spawned from this def,
+    /// so a one-sim-per-row def (`builtin:fifo`) still walks a `walk` or
+    /// even-spread `date` generator forward across sims instead of every
+    /// sim rebuilding it from row zero.
+    pub(super) row_state: Mutex<HashMap<String, Arc<RowTableState>>>,
+}
+
+/// `row()`'s state for one table: the next sequence number, and the
+/// positional generators' memo (walk series, tree plans) built from it.
+/// Growing the memo at index `seq` only ever reads index `seq - 1`, so it
+/// makes no difference which sim's call grows it first; the seq and the
+/// memo can be, and are, guarded separately.
+#[derive(Default)]
+pub(super) struct RowTableState {
+    seq: AtomicUsize,
+    pub(super) memo: Mutex<Memo>,
+}
+
+impl RowTableState {
+    pub(super) fn next_seq(&self) -> usize {
+        self.seq.fetch_add(1, Ordering::Relaxed)
+    }
 }
 
 #[derive(Default)]
@@ -46,6 +70,17 @@ impl Kind {
         log.last = Some(Instant::now());
         tracing::error!(sim = %self.def.name, suppressed, %error, "faker sim failed; it ended");
     }
+
+    /// `row()`'s shared state for `table`: the next sequence number, and
+    /// the memo it grows. One state per table, kept for the def's lifetime.
+    pub fn row_state(&self, table: &str) -> Arc<RowTableState> {
+        self.row_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(table.to_string())
+            .or_insert_with(|| Arc::new(RowTableState::default()))
+            .clone()
+    }
 }
 
 /// Everything the sim threads share.
@@ -65,7 +100,13 @@ pub(super) struct Inner {
     pub origin: f64,
     pub handles: Mutex<Vec<JoinHandle<()>>>,
     pub counters: Counters,
+    /// Called with (def name, error message) for every sim that ends in
+    /// error, in addition to the def's own rate-limited log.
+    pub on_error: Option<Arc<OnSimError>>,
 }
+
+/// Callback taking (def name, error message).
+pub type OnSimError = dyn Fn(&str, &str) + Send + Sync;
 
 impl Inner {
     /// Table `name` of the store, if it exists. Never creates one. Found

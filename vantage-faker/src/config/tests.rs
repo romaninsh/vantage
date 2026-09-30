@@ -93,6 +93,20 @@ fn sim_defs_apply_defaults() {
 
 #[cfg(feature = "sim")]
 #[test]
+fn bad_warm_duration_names_the_sim_and_key() {
+    let s: DatasetSpec = serde_yaml_ng::from_str(
+        "tables: { t: {} }\nsims: { courier: { script: \"sleep(seconds(1));\", warm: soon } }",
+    )
+    .unwrap();
+    let err = s.sim_defs().unwrap_err().to_string();
+    assert!(
+        err.contains("courier") && err.contains("warm") && err.contains("soon"),
+        "{err}"
+    );
+}
+
+#[cfg(feature = "sim")]
+#[test]
 fn start_sims_runs_after_generate() {
     let store = MemoryStore::new();
     let s: DatasetSpec = serde_yaml_ng::from_str(

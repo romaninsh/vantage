@@ -4,15 +4,19 @@
 //   retention_lo  number, seconds, default 20
 //   retention_hi  number, seconds, default 35
 //
-// Id: pad(10_000_000_000_000 - ms, 13) + "-" + sim_id(),
+// Id: pad(10_000_000_000_000 - ms, 13) + "-" + pad(1_000_000_000 - sim_id(), 9),
 //     where ms = (now_secs() * 1000.0).to_int()
 // The id counts down with time, so sorting ids ascending lists the newest
-// row first; the sim id keeps two arrivals in the same millisecond apart.
+// row first. The sim id component also counts down and is fixed-width, so
+// two arrivals in the same millisecond still sort newest (highest sim id)
+// first regardless of how many digits either sim id has.
 //
 // Steps:
-//   1. let r = row(); r.id = <id>; insert(r);
+//   1. let r = row(); upsert(<id>, r);
 //   2. sleep(seconds(rand_float(lo, hi)))
 //   3. delete(id)
+//
+// `upsert` writes the id into the table's id column, whatever it is named.
 //
 // Suggested def: spawn: { burst: 0, rate: <arrivals per sim minute>, max: 200 }
 // The table's declared columns fill the row, so the def's table should list
@@ -46,11 +50,10 @@ let lo = seconds_arg(args, "retention_lo", 20);
 let hi = seconds_arg(args, "retention_hi", 35);
 
 let ms = (now_secs() * 1000.0).to_int();
-let id = pad(10_000_000_000_000 - ms, 13) + "-" + sim_id();
+let id = pad(10_000_000_000_000 - ms, 13) + "-" + pad(1_000_000_000 - sim_id(), 9);
 
 let r = row();
-r.id = id;
-insert(r);
+upsert(id, r);
 
 sleep(seconds(rand_float(lo, hi)));
 
