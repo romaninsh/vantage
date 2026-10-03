@@ -3,6 +3,7 @@
 ## 0.6.22 — 2026-10-03
 
 - `count()` on a grouped query table counts the grouped rows instead of returning 0.
+- Deleting an existing row no longer reports it as not found (`DELETE … RETURN BEFORE`).
 
 ## 0.6.21 — 2026-10-03
 
