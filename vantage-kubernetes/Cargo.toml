@@ -45,7 +45,7 @@ ciborium = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 
 [dev-dependencies]
-vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
+vantage-cli-util = { version = "0.6.2",path = "../vantage-cli-util" }
 ciborium = "0.2"
 
 anyhow = "1"

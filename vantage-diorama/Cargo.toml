@@ -13,7 +13,7 @@ doctest = false
 vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-types = { version = "1.0.0", path = "../vantage-types" }
 vantage-vista = { version = "1.0.0", path = "../vantage-vista" }
-vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
+vantage-vista-factory = { version = "0.6.3",path = "../vantage-vista-factory" }
 vantage-table = { version = "1.0.0", path = "../vantage-table" }
 vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 # `TableShell::preview_query` answers with a driver-shaped JSON value.

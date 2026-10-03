@@ -18,7 +18,7 @@
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_dataset::{ReadableValueSet, WritableValueSet};
+use vantage_dataset::WritableValueSet;
 use vantage_rhai::rhai::{ImmutableString, Map as RhaiMap};
 use vantage_rhai::template::{Part, split};
 use vantage_types::{Record, cbor_id_to_string};
@@ -26,7 +26,7 @@ use vantage_types::{Record, cbor_id_to_string};
 use super::bridge::block_on;
 use super::convert::dynamic_to_cbor;
 use super::handle::Handle;
-use super::read::{RhaiResult, rhai_err, run};
+use super::read::{RhaiResult, fetch_capped, rhai_err, run};
 use super::vocab::TargetResolver;
 use crate::vista::Vista;
 
@@ -56,7 +56,8 @@ pub(crate) fn import_rows_mapped(
 
 fn source_rows(source: &Handle, resolver: Option<&TargetResolver>) -> RhaiResult<Rows> {
     let vista = source.resolve(resolver).map_err(rhai_err)?;
-    run(vista.list_values())
+    let rows = run(fetch_capped(&vista, source.row_limit()))?;
+    Ok(rows.into_iter().collect())
 }
 
 /// Bulk import when the backend can, one insert per row otherwise.

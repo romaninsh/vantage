@@ -16,6 +16,10 @@
   `get_ref` and `get_some`.
 - **Breaking:** `run_script` takes a `Writes`; `preview_script` and slot scripts end on a handle.
 - **Breaking:** backend extension verbs register on `Handle` and work on `self` only.
+- `limit(n)` applies to `ref` traversal and to `import_from` sources.
+- A `ref` from an empty parent set reads nothing.
+- Errors from narrowing steps name the step.
+- Extension verbs no longer change a stored handle.
 - Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-dataset` 1.0.0,
   `vantage-rhai` 1.0.0.
 

@@ -47,7 +47,8 @@ let invoices = table("client").ref("invoices");   // nothing resolves yet
 invoices.count()                                  // throws here
 ```
 
-The error names the step: `no reference named "invoices"`.
+The error names the step: `Step can't be applied (step: Ref("invoices")): No reference with this
+name (relation: "invoices")`.
 
 ## Reads
 

@@ -1,6 +1,6 @@
 //! One-shot runners for agent tools: [`run_script`] evaluates a data script
 //! and returns its value as JSON; [`preview_script`] renders the query a
-//! script describes without reading anything.
+//! script describes without reading its rows.
 //!
 //! Rhai is synchronous and Vista reads are async. [`run_script`] evaluates
 //! inside [`tokio::task::spawn_blocking`], so each terminal verb can drive its
@@ -65,7 +65,9 @@ pub async fn run_script(
 ///
 /// Returns the driver-shaped JSON from
 /// [`TableShell::preview_query`](crate::TableShell::preview_query). A `ref`
-/// step still reads the rows it traverses from, through the resolver.
+/// step still reads the rows it traverses from, through the resolver and the
+/// [bridge](super::block_on), so an async caller runs this under
+/// [`tokio::task::spawn_blocking`].
 pub fn preview_script(
     script: String,
     resolver: TargetResolver,

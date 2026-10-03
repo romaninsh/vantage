@@ -8,7 +8,7 @@
 use std::sync::{Arc, OnceLock};
 
 use ciborium::Value as CborValue;
-use vantage_core::{Result, error};
+use vantage_core::{Context, Result, VantageError, error};
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Compiled, Env, Host, Limits};
 use vantage_types::Record;
@@ -43,15 +43,15 @@ pub fn eval_ref_script(
         .map_err(|e| error!(format!("{WHAT} failed: {e}")))?;
     result
         .try_cast::<Handle>()
-        .ok_or_else(|| error!(format!("{WHAT} did not return a table handle")))?
+        .ok_or_else(|| error!("Script did not return a table handle", script = WHAT))?
         .resolve(None)
 }
 
 /// Evaluate a `modify:` script against a built Vista, exposed as `self`.
 ///
 /// When the script ends on a table handle (`self.where("vip", true)`), that
-/// handle is resolved and returned. Otherwise `self`'s Vista is returned,
-/// including any change a backend extension made to it in place:
+/// handle is resolved and returned. Otherwise the latest handle a backend
+/// extension verb made from `self` is used, else `self` as given:
 ///
 /// ```rhai
 /// self.with_condition(ident("is_paying_client") == true);
@@ -100,11 +100,15 @@ fn eval_augment_compiled(
     finish(base, result)
 }
 
-/// The script's handle resolved, or else the base it was given.
+/// The script's handle resolved; else the latest handle an extension verb
+/// made from `self`; else the base it was given.
 fn finish(base: Handle, result: Dynamic) -> Result<Vista> {
     match result.try_cast::<Handle>() {
         Some(handle) => handle.resolve(None),
-        None => base.take_base(),
+        None => match base.latest_extended() {
+            Some(handle) => handle.resolve(None),
+            None => base.take_base(),
+        },
     }
 }
 
@@ -113,7 +117,10 @@ fn finish(base: Handle, result: Dynamic) -> Result<Vista> {
 /// host is built on the first call and reused: one augmentation always narrows
 /// the same detail table.
 pub fn augment_source_closure(resolver: TargetResolver, code: String) -> AugmentSourceFn {
-    let compiled: OnceLock<Result<Compiled<Block>>> = OnceLock::new();
+    // The compile error is shared by every later call, so it is kept in an
+    // `Arc` and attached as each call's source.
+    let compiled: OnceLock<std::result::Result<Compiled<Block>, Arc<VantageError>>> =
+        OnceLock::new();
     Arc::new(
         move |row: &Record<CborValue>, base: Vista| -> Result<Vista> {
             let script = compiled.get_or_init(|| {
@@ -121,11 +128,12 @@ pub fn augment_source_closure(resolver: TargetResolver, code: String) -> Augment
                     .vocab_fn(|engine| base.source.register_rhai_extensions(engine))
                     .vocab(DataVocab::describe(Some(resolver.clone())))
                     .build();
-                compile(&host, "rhai augment source script", &code)
+                compile(&host, "rhai augment source script", &code).map_err(Arc::new)
             });
             match script {
                 Ok(script) => eval_augment_compiled(script, base, row),
-                Err(e) => Err(error!(e.to_string())),
+                Err(e) => Err::<Vista, _>(e.clone())
+                    .context(error!("Augment source script can't be used")),
             }
         },
     )

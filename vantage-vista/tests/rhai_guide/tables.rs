@@ -118,5 +118,9 @@ invoices.count()                                  // throws here
 fn late_error() {
     let host = read_write(&shop());
     let err = run(&host, LATE_ERROR).unwrap_err();
-    assert!(err.contains("no reference named \"invoices\""), "{err}");
+    assert!(
+        err.contains("Step can't be applied (step: Ref(\"invoices\"))"),
+        "{err}"
+    );
+    assert!(err.contains("No reference with this name"), "{err}");
 }

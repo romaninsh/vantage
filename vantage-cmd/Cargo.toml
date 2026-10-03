@@ -44,7 +44,7 @@ tracing = "0.1"
 tokio = { version = "1", features = ["rt", "macros"] }
 
 [dev-dependencies]
-vantage-cli-util = { version = "0.6", path = "../vantage-cli-util" }
+vantage-cli-util = { version = "0.6.2",path = "../vantage-cli-util" }
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 

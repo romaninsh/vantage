@@ -14,7 +14,7 @@ doctest = false
 # so nothing here needs to know which database is behind it.
 vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-vista = { version = "1.0.0", path = "../vantage-vista" }
-vantage-action = { version = "0.6", path = "../vantage-action" }
+vantage-action = { version = "0.6.1",path = "../vantage-action" }
 
 async-trait = "0.1"
 serde_json = "1"

@@ -9,7 +9,7 @@
   Dio Vista inserts without an id.
 - **Breaking:** `rhai::dynamic_to_cbor` is vantage-vista's, taking the `Dynamic` by value.
 - Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-dataset` 1.0.0,
-  `vantage-table` 1.0.0, `vantage-vista` 1.0.0, `vantage-rhai` 1.0.0.
+  `vantage-table` 1.0.0, `vantage-vista` 1.0.0, `vantage-rhai` 1.0.0, `vantage-vista-factory` 0.6.3.
 
 ## 0.13.3 — 2026-09-29
 

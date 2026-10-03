@@ -231,16 +231,17 @@ fn get_field(r: &RecordDraft, col: &str) -> Dynamic {
 }
 
 fn id_column(r: &RecordDraft) -> RhaiResult<String> {
-    let mut guard = r.inner.lock().unwrap();
-    if let Some(col) = &guard.id_column {
-        return Ok(col.clone());
-    }
-    let vista = guard
-        .handle
-        .write_target(guard.resolver.as_ref())
-        .map_err(rhai_err)?;
+    let (handle, resolver) = {
+        let guard = r.inner.lock().unwrap();
+        if let Some(col) = &guard.id_column {
+            return Ok(col.clone());
+        }
+        (guard.handle.clone(), guard.resolver.clone())
+    };
+    // Resolved without the lock: the resolver may block on I/O.
+    let vista = handle.write_target(resolver.as_ref()).map_err(rhai_err)?;
     let col = vista.get_id_column().unwrap_or("id").to_string();
-    guard.id_column = Some(col.clone());
+    r.inner.lock().unwrap().id_column = Some(col.clone());
     Ok(col)
 }
 

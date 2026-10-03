@@ -33,6 +33,69 @@ fn modify_script_narrows_self() {
     assert_eq!(ids(&vista), ["r3", "r1"]);
 }
 
+/// A Describe host over `store` with extension verbs `only_a1` and
+/// `only_n2` that narrow the Vista in hand to `a == 1` / `n == 2`.
+fn host_with_extension(store: &vantage_memory::MemoryStore) -> vantage_rhai::Host {
+    use vantage_rhai::rhai::EvalAltResult;
+    use vantage_vista::{CborValue, DataVocab, FilterOp, Handle};
+    vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+        .vocab_fn(|engine| {
+            for (verb, col, value) in [("only_a1", "a", 1), ("only_n2", "n", 2)] {
+                engine.register_fn(
+                    verb,
+                    move |h: &mut Handle| -> Result<Handle, Box<EvalAltResult>> {
+                        h.with_base_vista(verb, |v| {
+                            v.add_condition(col, FilterOp::Eq, CborValue::Integer(value.into()))
+                        })
+                        .map_err(|e| e.to_string().into())
+                    },
+                );
+            }
+        })
+        .vocab(DataVocab {
+            resolver: Some(resolver(store)),
+            terminals: Terminals::Describe,
+        })
+        .build()
+}
+
+#[test]
+fn extension_verb_leaves_stored_handle_unchanged() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let base = || resolver(&store)("t").unwrap();
+    let all = eval_modify_script(
+        &host,
+        "let all = self; let mine = all.only_a1(); all",
+        base(),
+    )
+    .unwrap();
+    assert_eq!(ids(&all), ["r1", "r2", "r3"]);
+    let mine = eval_modify_script(&host, "self.only_a1()", base()).unwrap();
+    assert_eq!(ids(&mine), ["r1", "r3"]);
+}
+
+#[test]
+fn extension_verb_as_a_statement_still_applies() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let base = || resolver(&store)("t").unwrap();
+    let modified = eval_modify_script(&host, "self.only_a1();", base()).unwrap();
+    assert_eq!(ids(&modified), ["r1", "r3"]);
+    let augmented =
+        vantage_vista::eval_augment_source(&host, "self.only_a1();", base(), &rec(&[])).unwrap();
+    assert_eq!(ids(&augmented), ["r1", "r3"]);
+}
+
+#[test]
+fn two_extension_statements_both_apply() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let base = || resolver(&store)("t").unwrap();
+    let modified = eval_modify_script(&host, "self.only_a1(); self.only_n2();", base()).unwrap();
+    assert_eq!(ids(&modified), ["r3"]);
+}
+
 #[test]
 fn ref_script_builds_target_from_row() {
     let store = store();

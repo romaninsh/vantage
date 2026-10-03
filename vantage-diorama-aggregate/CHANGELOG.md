@@ -3,7 +3,7 @@
 ## 0.6.9 — 2026-10-03
 
 - Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-dataset` 1.0.0,
-  `vantage-vista` 1.0.0.
+  `vantage-vista` 1.0.0, `vantage-diorama` 0.13.4.
 
 ## 0.6.8 — 2026-09-16
 

@@ -25,6 +25,7 @@ mod import;
 mod introspect;
 mod lazy;
 mod narrow;
+mod no_rows;
 mod read;
 mod record;
 mod runtime;

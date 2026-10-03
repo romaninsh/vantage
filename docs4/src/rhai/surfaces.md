@@ -79,8 +79,9 @@ self.where("vip", true).sort("name", "desc")
 ```
 
 When the script ends on a handle, that handle is resolved and becomes the table. When it ends on
-anything else, `self`'s Vista is used as it stands, including changes a backend extension made to
-it in place. `modify:` narrows a real table, so the Vista stays writable.
+anything else, the latest handle a backend extension verb made from `self` is used, so
+`self.with_condition(..);` still applies; otherwise `self` as given. A stored handle never changes.
+`modify:` narrows a real table, so the Vista stays writable.
 
 ### Backend extensions
 

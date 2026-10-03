@@ -5,6 +5,7 @@ mod rhai_vocab {
     mod read;
     mod record;
     mod support;
+    mod traverse;
     mod vocab;
     mod write;
 }

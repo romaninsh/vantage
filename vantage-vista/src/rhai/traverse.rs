@@ -2,30 +2,35 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
-use vantage_dataset::ReadableValueSet;
 
 use super::bridge::block_on;
+use super::no_rows::NoRowsShell;
+use super::read::fetch_capped;
 use crate::{FilterOp, reference::ReferenceKind, vista::Vista};
 
 /// Most rows a multi-row `ref` step will collect keys from.
 const REF_ROW_CAP: usize = 1000;
 
-/// Follow `rel` from every row of `vista`. One row goes through
-/// [`Vista::get_ref`], keeping backend-specific traversal; several rows narrow
-/// the bare target with an `in` condition on the join column.
-pub(crate) fn traverse(vista: &Vista, rel: &str) -> Result<Vista> {
-    let rows = block_on(vista.list_values())??;
+/// Follow `rel` from the rows of `vista`, at most `limit` of them. One row
+/// goes through [`Vista::get_ref`], keeping backend-specific traversal;
+/// several rows narrow the bare target with an `in` condition on the join
+/// column; no rows give the target as an empty set.
+pub(crate) fn traverse(vista: &Vista, rel: &str, limit: Option<usize>) -> Result<Vista> {
+    let cap = limit.map_or(REF_ROW_CAP + 1, |n| n.min(REF_ROW_CAP + 1));
+    let rows = block_on(fetch_capped(vista, Some(cap)))??;
     if rows.len() > REF_ROW_CAP {
-        return Err(error!(format!("ref over more than {REF_ROW_CAP} rows")));
+        return Err(error!("ref over too many rows", limit = REF_ROW_CAP));
     }
-    if rows.len() == 1 {
-        let (_, row) = rows.first().expect("one row");
+    if let [(_, row)] = rows.as_slice() {
         return vista.get_ref(rel, row);
     }
     let reference = vista
         .get_reference(rel)
-        .ok_or_else(|| error!(format!("no reference named \"{rel}\"")))?;
+        .ok_or_else(|| error!("No reference with this name", relation = rel))?;
     let mut target = vista.get_ref_target(rel)?;
+    if rows.is_empty() {
+        return Ok(NoRowsShell::wrap(target));
+    }
     let (column, keys): (String, Vec<CborValue>) = match reference.kind {
         // Target rows point at ours: match their foreign key against our ids.
         ReferenceKind::HasMany => {
@@ -44,13 +49,16 @@ pub(crate) fn traverse(vista: &Vista, rel: &str) -> Result<Vista> {
         ReferenceKind::HasOne => {
             let id_col = target
                 .get_id_column()
-                .ok_or_else(|| error!(format!("target of \"{rel}\" has no id column")))?
+                .ok_or_else(|| error!("Reference target has no id column", relation = rel))?
                 .to_string();
-            let fks = rows
-                .values()
-                .filter_map(|row| row.get(&reference.foreign_key).cloned())
+            let fks: Vec<CborValue> = rows
+                .iter()
+                .filter_map(|(_, row)| row.get(&reference.foreign_key).cloned())
                 .filter(|v| !matches!(v, CborValue::Null))
                 .collect();
+            if fks.is_empty() {
+                return Ok(NoRowsShell::wrap(target));
+            }
             (id_col, fks)
         }
     };

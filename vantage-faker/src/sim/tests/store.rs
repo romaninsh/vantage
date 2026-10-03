@@ -147,6 +147,26 @@ fn ops_budget_is_per_def() {
 }
 
 #[test]
+fn import_counts_each_inserted_row() {
+    let store = store_with(&["log", "copy"]);
+    let script = r#"
+        table().insert(#{ id: "a" });           // 1
+        table().insert(#{ id: "b" });           // 1
+        table("copy").import_from(table());     // 2
+    "#;
+    let engine = SimEngine::builder()
+        .store(&store)
+        .manual_clock(start())
+        .seed(1)
+        .sim(SimDef::new("a", "log", script))
+        .start()
+        .expect("engine starts");
+    run_for(&engine, 1, 1);
+    assert_eq!(store.table("copy").len(), 2);
+    assert_eq!(engine.stats().writes, 4);
+}
+
+#[test]
 fn writes_count_only_changing_sim_writes() {
     let script = r#"
         table().insert(#{ id: "a" });           // 1
