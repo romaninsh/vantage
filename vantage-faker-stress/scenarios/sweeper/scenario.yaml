@@ -1,0 +1,14 @@
+# The same load as swarm from a single sim: it ramps rows, not sims.
+seed: 21
+tables:
+  plane:
+    count: 1000
+    columns:
+      lat: { type: float, faker: { range: { min: -60, max: 60, decimals: 4 } } }
+      lon: { type: float, faker: { range: { min: -180, max: 180, decimals: 4 } } }
+sims:
+  tower: { table: plane, script: !include tower.rhai, clock: 10 }
+stress:
+  duration: 30s
+  limits: { cpu_pct: 400, event_lag_ms: 250 }
+  ramp: { base: 1000, sims: false }

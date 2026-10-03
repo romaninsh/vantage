@@ -63,6 +63,7 @@ mod engine;
 mod kind;
 mod sched;
 mod spawn;
+mod stats;
 #[cfg(test)]
 mod tests;
 mod validate;
@@ -72,6 +73,7 @@ use std::time::Duration;
 
 pub use builder::SimEngineBuilder;
 pub use engine::SimEngine;
+pub use stats::SimStats;
 
 /// Most sims one engine runs at once; also the ceiling on the sum of every
 /// def's `max`.

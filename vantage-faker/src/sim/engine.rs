@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use super::builder::SimEngineBuilder;
 use super::kind::Inner;
+use super::stats::{Counters, SimStats};
 
 /// Runs the sims of one datasource. Dropping it stops every sim and joins
 /// their threads.
@@ -42,6 +43,18 @@ impl SimEngine {
     /// Sim threads not yet ended.
     pub fn threads(&self) -> usize {
         self.inner.sched.lock().threads
+    }
+
+    /// Live sims and the engine's running totals.
+    pub fn stats(&self) -> SimStats {
+        let c = &self.inner.counters;
+        SimStats {
+            live: self.live(),
+            spawned: Counters::read(&c.spawned),
+            ended: Counters::read(&c.ended),
+            errored: Counters::read(&c.errored),
+            writes: Counters::read(&c.writes),
+        }
     }
 
     /// Wait until every sim is asleep or ended and no sleeper is due.

@@ -1,0 +1,13 @@
+# One sim per aircraft: a thread each, at the engine's cap.
+seed: 21
+tables:
+  plane: { count: 0, columns: { lat: { type: float }, lon: { type: float } } }
+sims:
+  aircraft:
+    table: plane
+    script: !include aircraft.rhai
+    clock: 10
+    spawn: { burst: 1000, max: 1000 }
+stress:
+  duration: 30s
+  limits: { cpu_pct: 400, event_lag_ms: 250 }

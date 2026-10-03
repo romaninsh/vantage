@@ -1,0 +1,14 @@
+# A realistic story across two tables: parcels and their tracking events.
+seed: 11
+tables:
+  shipment: { count: 0, columns: { status: {}, hub: {} } }
+  event: { count: 0, columns: { shipment: {}, what: {} } }
+sims:
+  parcel:
+    table: shipment
+    script: !include parcel.rhai
+    clock: 60
+    spawn: { burst: 50, rate: 10, max: 300 }
+stress:
+  duration: 30s
+  limits: { cpu_pct: 400, event_lag_ms: 250 }

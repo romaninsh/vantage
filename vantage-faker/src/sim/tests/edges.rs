@@ -37,7 +37,10 @@ fn still_sleep_loops_end_the_sim_during_a_warm_start() {
         "sleep(minutes(5)); loop { sleep(0); }",
     ] {
         let (engine, _log, took) = warm(script);
-        assert!(took < Duration::from_secs(5), "{script}: warm took {took:?}");
+        assert!(
+            took < Duration::from_secs(5),
+            "{script}: warm took {took:?}"
+        );
         assert_eq!(engine.live(), 0, "{script}");
     }
 }

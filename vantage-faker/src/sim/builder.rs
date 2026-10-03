@@ -115,6 +115,7 @@ impl SimEngineBuilder {
             seed: self.seed,
             origin,
             handles: Mutex::default(),
+            counters: Default::default(),
         });
 
         let mut plan = spawn::Plan::new(&inner);

@@ -9,6 +9,7 @@ use vantage_types::Record;
 use crate::FakerCtx;
 use crate::rhai_effect::{dynamic_to_cbor, map_to_record, record_to_map};
 use crate::sim::current::{Current, VerbResult, with};
+use crate::sim::stats::Counters;
 
 /// The store of `table`, or of the def's default table.
 fn table(c: &Current, table: Option<&str>) -> VerbResult<Arc<FakerCtx>> {
@@ -40,6 +41,11 @@ fn shaped(ctx: &FakerCtx, map: &RhaiMap) -> Record<CborValue> {
     rec
 }
 
+/// Bump the write counter of the sim's engine.
+fn wrote(c: &Current) {
+    Counters::bump(&c.inner.counters.writes);
+}
+
 fn insert(c: &mut Current, t: Option<&str>, map: RhaiMap) -> VerbResult<String> {
     let ctx = table(c, t)?;
     let mut rec = shaped(&ctx, &map);
@@ -49,35 +55,43 @@ fn insert(c: &mut Current, t: Option<&str>, map: RhaiMap) -> VerbResult<String> 
         .filter(|v| !v.is_unit())
         .map(|v| v.to_string())
         .filter(|s| !s.is_empty());
-    Ok(match given {
+    let id = match given {
         Some(id) => {
             rec.insert(id_column, CborValue::Text(id.clone()));
             ctx.upsert_record(&id, rec);
             id
         }
         None => ctx.insert_record(rec),
+    };
+    wrote(c);
+    Ok(id)
+}
+
+/// Apply `write` to row `id` of table `t`, counting it as a write only if
+/// the row existed beforehand. The presence check clones the row, since
+/// `MockShell` has no non-cloning lookup.
+fn write_existing(t: Option<&str>, id: &str, write: impl FnOnce(&FakerCtx)) -> VerbResult<()> {
+    with(|c| {
+        let ctx = table(c, t)?;
+        let existed = ctx.get_record(id).is_some();
+        write(&ctx);
+        if existed {
+            wrote(c);
+        }
+        Ok(())
     })
 }
 
 fn patch(t: Option<&str>, id: &str, map: &RhaiMap) -> VerbResult<()> {
-    with(|c| {
-        table(c, t)?.patch_record(id, &map_to_record(map));
-        Ok(())
-    })
+    write_existing(t, id, |ctx| ctx.patch_record(id, &map_to_record(map)))
 }
 
 fn set(t: Option<&str>, id: &str, field: &str, v: &Dynamic) -> VerbResult<()> {
-    with(|c| {
-        table(c, t)?.update_field(id, field, dynamic_to_cbor(v));
-        Ok(())
-    })
+    write_existing(t, id, |ctx| ctx.update_field(id, field, dynamic_to_cbor(v)))
 }
 
 fn delete(t: Option<&str>, id: &str) -> VerbResult<()> {
-    with(|c| {
-        table(c, t)?.expire(id);
-        Ok(())
-    })
+    write_existing(t, id, |ctx| ctx.expire(id))
 }
 
 fn get(c: &mut Current, t: Option<&str>, id: &str) -> VerbResult<Dynamic> {

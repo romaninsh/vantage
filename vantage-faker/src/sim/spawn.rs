@@ -7,6 +7,7 @@ use std::thread::JoinHandle;
 use vantage_rhai::rhai::Map as RhaiMap;
 
 use super::kind::Inner;
+use super::stats::Counters;
 use super::{MAX_LIVE, SIM_STACK_BYTES, current};
 
 /// Windows the warm start is cut into. Sims run in parallel within a window
@@ -115,6 +116,7 @@ pub(super) fn spawn_sim(inner: &Arc<Inner>, kind: usize, vt: f64, args: RhaiMap)
         .spawn(move || current::run_sim(for_thread, kind, id, vt, args));
     match spawned {
         Ok(handle) => {
+            Counters::bump(&inner.counters.spawned);
             let mut handles = inner.handles.lock().unwrap_or_else(|e| e.into_inner());
             handles.retain(|h| !h.is_finished());
             handles.push(handle);

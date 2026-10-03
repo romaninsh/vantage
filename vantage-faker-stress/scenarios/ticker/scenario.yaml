@@ -1,0 +1,11 @@
+# One hot loop: a single sim nudging every row ten times a second.
+seed: 2
+tables:
+  stock:
+    count: 200
+    columns:
+      balance: { type: int, faker: { range: { min: 100, max: 1000 } } }
+sims:
+  ticker: { table: stock, script: !include nudge.rhai }
+stress:
+  duration: 20s

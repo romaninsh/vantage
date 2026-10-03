@@ -1,0 +1,10 @@
+# A sim that never sleeps. The operation budget (50M between sleeps) should end it.
+seed: 31
+tables:
+  row: { count: 0, columns: { note: {} } }
+sims:
+  steady: { table: row, script: !include ../steady.rhai, spawn: { burst: 5, max: 5 } }
+  bad: { table: row, script: !include bad.rhai }
+stress:
+  duration: 60s
+  expect: { errored_min: 1 }
