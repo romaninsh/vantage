@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.22 — 2026-10-03
+
+- `count()` on a grouped query table counts the grouped rows instead of returning 0.
+
 ## 0.6.21 — 2026-10-03
 
 - Rhai scripts use vantage-vista's `DataVocab`: `table("t").where(..)` replaces

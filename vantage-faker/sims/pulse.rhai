@@ -17,7 +17,8 @@
 //      upsert its aggregate with live: "Offline" and the value unchanged.
 //      Otherwise:
 //      - delta = rand_int(-step, step), step = max(1, baseline * band / 100 / 4);
-//      - value += delta, clamped to baseline ± band%;
+//      - value += delta, clamped to baseline ± band% (bounds rounded inward
+//        when the baseline is an integer, so the value stays an integer);
 //      - table(aggregate).upsert(key, #{key_column: key, value_column: value,
 //          vs_baseline: round((value - baseline) / baseline * 100), live: "Live"});
 //      - upsert a feed row #{key_column: key, delta, updated: <iso now>}
@@ -112,7 +113,13 @@ loop {
             if step < 1 { step = 1; }
             delta = rand_int(-step, step);
             let spread = s.baseline * band / 100.0;
-            s.value = (s.value + delta).max(s.baseline - spread).min(s.baseline + spread);
+            let lo = s.baseline - spread;
+            let hi = s.baseline + spread;
+            if s.baseline == s.baseline.floor() {
+                lo = lo.ceiling();
+                hi = hi.floor();
+            }
+            s.value = (s.value + delta).max(lo).min(hi);
         }
 
         let agg = #{

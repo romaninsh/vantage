@@ -96,10 +96,15 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
 
     fn as_count(&self) -> Expr {
         let mut count_select = self.clone();
-        count_select.fields.clear();
-        count_select
-            .fields
-            .push(SelectField::new(Identifier::new("id")));
+        // A grouped select yields one row per group; swapping its fields for
+        // `id` would collapse them to nulls, so keep the projection and count
+        // the grouped rows.
+        if !(count_select.group_all || !count_select.group_by.is_empty()) {
+            count_select.fields.clear();
+            count_select
+                .fields
+                .push(SelectField::new(Identifier::new("id")));
+        }
         count_select.order_by.clear();
         let subquery = count_select.render();
         Fx::new("count", vec![subquery]).into()

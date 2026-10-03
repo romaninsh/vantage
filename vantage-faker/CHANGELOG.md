@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 — 2026-10-03
+
+- `builtin:pulse` keeps integer values integers when the baseline is an integer.
+
 ## 1.0.1 — 2026-10-03
 
 - The 1.0.0 on crates.io was published from an earlier branch state, built on the 0.6 crates. This
