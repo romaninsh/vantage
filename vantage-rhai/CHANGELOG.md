@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0 — 2026-10-03
+
+- Stable release. The API hasn't changed since 2026-09-27 (1 week); no code changes.
+
 ## 0.6.4 — 2026-09-27
 
 - `RowPipe`: a long-lived script that reads rows with `next_row()` and

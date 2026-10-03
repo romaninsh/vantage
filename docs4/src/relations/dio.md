@@ -94,9 +94,9 @@ augment:
 ```
 
 ```admonish info title="Script sources"
-A `{ kind: script, code: "self.add_condition_eq(\"key\", row.key)" }` source lowers (under the
-`rhai` feature) to a `Build` closure — the same machinery as a reference build-script, pointed at a
-possibly different persistence.
+A `{ kind: script, code: "self.where(\"key\", row.key)" }` source lowers (under the `rhai`
+feature) to a `Build` closure — the same machinery as a reference build-script, pointed at a
+possibly different persistence. See [Surfaces](../rhai/surfaces.md#augmentation-sources).
 ```
 
 To see the two passes run, try the example — two in-memory Vistas, list pass then detail pass:

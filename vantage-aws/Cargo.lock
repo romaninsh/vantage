@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -2156,19 +2156,20 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.6.3"
+version = "1.0.0"
 dependencies = [
  "atty",
  "indexmap",
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "vantage-dataset"
-version = "0.6.3"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2187,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.6.1"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -2200,7 +2201,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.16"
+version = "1.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2224,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.8"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "ciborium",
@@ -2238,7 +2239,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types-entity"
-version = "0.6.0"
+version = "1.0.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2247,7 +2248,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.22"
+version = "1.0.0"
 dependencies = [
  "async-stream",
  "async-trait",

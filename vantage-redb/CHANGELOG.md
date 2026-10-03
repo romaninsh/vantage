@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 — 2026-10-03
+
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,
+  `vantage-dataset` 1.0.0, `vantage-table` 1.0.0.
+
 ## 0.6.1 — 2026-06-25
 
 - `AnyRedbType` declares `null_when: ciborium::Value::Null`, so it implements `InvariantValue`

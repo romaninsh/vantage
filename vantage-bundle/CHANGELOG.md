@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — 2026-10-03
+
+- Depends on `vantage-core` 1.0.0, `vantage-vista` 1.0.0, `vantage-action` 0.6.1.
+
 ## 0.6.0 — 2026-08-09
 
 Initial release. The contract a compiled-in model crate implements to

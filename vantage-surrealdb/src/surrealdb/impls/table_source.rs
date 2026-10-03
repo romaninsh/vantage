@@ -70,8 +70,7 @@ fn parse_cbor_row(
 fn extract_first_map(
     result: AnySurrealType,
 ) -> vantage_dataset::traits::Result<Vec<(ciborium::Value, ciborium::Value)>> {
-    let value = result.into_value();
-    match value {
+    match result.into_value() {
         ciborium::Value::Map(m) => Ok(m),
         ciborium::Value::Array(arr) => arr
             .into_iter()
@@ -82,6 +81,15 @@ fn extract_first_map(
             .ok_or_else(|| error!("expected map in array result")),
         _ => Err(error!("expected map or array result")),
     }
+}
+
+/// UPDATE and DELETE on a specific record id don't fail when nothing exists
+/// at that id — they return an empty array. Report that as not-found.
+fn ensure_row_affected(result: &AnySurrealType, table_name: &str, id: &Thing) -> Result<()> {
+    if matches!(result.value(), ciborium::Value::Array(arr) if arr.is_empty()) {
+        return Err(error!("Row not found", table = table_name, id = id.clone()).mark_not_found());
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -448,6 +456,7 @@ impl TableSource for SurrealDB {
     {
         let update = SurrealUpdate::new(id.clone()).merge().with_record(partial);
         let result = self.execute(&update.expr()).await?;
+        ensure_row_affected(&result, table.table_name(), id)?;
         let map = extract_first_map(result)?;
         let id_field = table
             .id_field()
@@ -457,13 +466,13 @@ impl TableSource for SurrealDB {
         Ok(rec)
     }
 
-    async fn delete_table_value<E>(&self, _table: &Table<Self, E>, id: &Self::Id) -> Result<()>
+    async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
         let delete = SurrealDelete::new(id.clone());
-        self.execute(&delete.expr()).await?;
-        Ok(())
+        let result = self.execute(&delete.expr()).await?;
+        ensure_row_affected(&result, table.table_name(), id)
     }
 
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>

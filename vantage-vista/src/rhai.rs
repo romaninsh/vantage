@@ -1,39 +1,57 @@
 //! Rhai scripting surface over the type-erased [`Vista`](crate::vista::Vista).
 //!
-//! vantage-vista owns the *backend-agnostic* Rhai vocabulary, as
-//! [`vantage_rhai::Vocab`] impls a host assembles, in two layers:
+//! Scripts touch data through one vocabulary, [`DataVocab`]:
 //!
-//! - [`conventional`] — the chainable query *builder*: `table(name)` resolves a
-//!   fresh target through an injected [`TargetResolver`], and builder verbs
-//!   (`add_condition_eq`, `add_order`, `get_ref`…) narrow it in place. Backends
-//!   layer vendor-specific verbs on top via
-//!   [`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions).
-//! - [`fetch`] — the read-only *terminal* verbs (`list`, `get_some`, `count`,
-//!   `capabilities`, `columns`, `references`) that actually read data, plus the
-//!   [`runtime::run_script`] runner that drives their async fetches from
-//!   synchronous Rhai.
+//! - `table(name)` returns a [`Handle`], an immutable description of a set;
+//!   `where`, `sort`, `search`, `limit` and `ref` narrow it into new handles
+//!   (see `narrow`);
+//! - read terminals (`list`, `get`, `first`, `count`, `ids`, `columns`,
+//!   `references`, `capabilities`) resolve the handle and read;
+//! - write terminals (`insert`, `upsert`, `patch`, `delete`, `import_from`) write
+//!   to the handle's table.
 //!
-//! [`runtime::preview_script`] is the third combination: the builder layer with
-//! *no* terminal verbs, rendering the query a script built instead of running
-//! it. An engine that cannot fetch is a stronger guarantee than an engine that
-//! merely isn't asked to.
+//! [`Terminals`] picks which terminals a host gets. Backends add their own verbs
+//! through [`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions).
+//! Terminal futures run through [`block_on`].
 //!
-//! [`convert`] and [`introspect`] are shared internals (value round-tripping and
-//! schema/capability map building).
+//! [`run_script`] and [`preview_script`] are the agent-tool runners; the
+//! `eval_*` functions evaluate YAML script slots into Vistas.
 
-mod conventional;
+mod bridge;
 mod convert;
-mod fetch;
+mod eval;
+mod handle;
+mod import;
 mod introspect;
+mod lazy;
+mod narrow;
+mod no_rows;
+mod read;
+mod record;
 mod runtime;
+mod traverse;
+mod vocab;
+mod write;
 
-pub use conventional::{
-    AugmentSourceFn, ConventionalVocab, LazyValueFn, RhaiVista, ShellVocab, TargetResolver,
-    augment_source_closure, eval_augment_source, eval_lazy_expression, eval_modify_script,
-    eval_ref_script, lazy_value_closure, register_conventional_onto,
-};
+pub use bridge::block_on;
 pub use convert::{
     cbor_to_dynamic, dynamic_to_cbor, map_to_record, record_to_dynamic, record_to_map,
 };
-pub use fetch::{FetchVerbs, register_fetch_verbs};
+pub use eval::{
+    AugmentSourceFn, augment_source_closure, eval_augment_source, eval_modify_script,
+    eval_ref_script,
+};
+pub use handle::{Handle, Step};
+pub use import::{IMPORT_CANCELLED, IMPORT_CANCELLED_SKIPPED};
+pub use lazy::{LazyValueFn, eval_lazy_expression, lazy_value_closure};
+pub use record::RecordDraft;
 pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, preview_script, run_script};
+pub use vocab::{DataVocab, TargetResolver, Terminals, Writes};
+
+#[cfg(test)]
+mod tests {
+    mod bridge;
+    mod eval;
+    mod narrow;
+    mod runtime;
+}

@@ -1,8 +1,36 @@
 # Changelog
 
-## 1.0.0 — 2026-09-29
+## 1.0.0 — 2026-10-03
 
+- Storage is `vantage-memory`: `DatasetGen` / `TableGen` seed `MemoryTable`s in reference order,
+  quietly and reproducibly.
+- Removed `FakerTable`, `FakerCtx`, `FakerHandle`, `FakerEffect`, flights, `PulseSim`,
+  `LiveFolderSim` and `RhaiEffect`.
+- `SimEngine` runs over a `MemoryStore` (`SimEngine::builder().store(..)`).
+- Sim data verbs are vantage-vista's `DataVocab` over the store: `table()` (the def's table) or
+  `table(name)`, then `where`/`sort`/`limit`/`ref` and `get`/`list`/`count`/`ids`/`insert`/
+  `upsert`/`patch`/`delete`/`import_from`. The free functions `insert`, `upsert`, `patch`, `set`,
+  `delete`, `get`, `ids`, `count`, `find` and `row` are removed.
+- `insert` stores the map as given and errors on an existing id.
+- Warm start ends with one `Reset` per written table.
+- Sim ops budget: 5M per stretch between sleeps by default, per def via `ops`.
+- Feature `rhai` renamed to `sim`.
+- Feature `serde` adds `config::{DatasetSpec, TableSpec, SimSpec}` and `DatasetSpec::sim_builder`.
+- Errors are `vantage_core::Result`.
+- `weirdness` and `extra_fields` moved from `BackendShape` to `TableGen` / `TableSpec`.
+- `FakerColumn.flags` removed.
 - `SimEngine::stats` reports live sims and spawned, ended, errored and write totals.
+- `sims:` scripts can name a built-in: `script: "builtin:fifo"` (`fifo`, `pulse`, `flight`, `folder_tree`).
+- `SimEngineBuilder::columns` declares a table's columns for the new `fake_row()` sim verb (`table().fake_row()`).
+- `ShapedShell` passes `watch` through to the shell it wraps.
+- `SimEngineBuilder::on_sim_error` reports every failing sim's def name and error message.
+- `builtin:fifo` and `builtin:flight` write their row with `upsert`, so they work with any id column name.
+- `builtin:fifo`'s tie-break id is fixed-width, so arrivals in the same millisecond still sort newest first.
+- `builtin:pulse` writes its feed row with `upsert`, and rejects an empty `keys` or a zero `baseline` at start.
+- `builtin:folder_tree` coerces `bytes_per_request` to whole bytes.
+- `fake_row()`'s sequence counter and positional-generator memo are shared per table across a def's sims; even-spread `date` wraps past `DEFAULT_ROWS` calls instead of pinning at `to`.
+- `DatasetSpec::sim_defs` names the sim and the key in a bad `warm:` duration error.
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-vista` 1.0.0, `vantage-memory` 1.0.0, `vantage-rhai` 1.0.0.
 
 ## 0.7.1 — 2026-09-29
 

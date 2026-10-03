@@ -14,7 +14,8 @@ name = "faker-stress"
 path = "src/main.rs"
 
 [dependencies]
-vantage-faker = { path = "../vantage-faker", features = ["rhai"] }
+vantage-faker = { path = "../vantage-faker", features = ["sim", "serde"] }
+vantage-memory = { version = "1.0.0", path = "../vantage-memory" }
 vantage-diorama = { path = "../vantage-diorama" }
 vantage-vista = { path = "../vantage-vista" }
 vantage-core = { path = "../vantage-core" }
@@ -29,3 +30,7 @@ libc = "0.2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
+
+[dev-dependencies]
+ciborium = "0.2"
+vantage-types = { path = "../vantage-types" }

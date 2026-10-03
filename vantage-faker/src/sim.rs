@@ -3,7 +3,7 @@
 //! A [`SimDef`] names a script, the table it writes to by default, a
 //! [`Spawn`]er that decides how many copies run, a clock speed and an
 //! optional warm start. A [`SimEngine`] runs every def of one datasource
-//! against that datasource's tables.
+//! against the tables of its [`MemoryStore`](vantage_memory::MemoryStore).
 //!
 //! **Linear scripts.** Each live sim is one run of its script, top to bottom,
 //! on its own small thread. The script's local variables are its state;
@@ -11,17 +11,17 @@
 //! target, and the sim ends when the script does (or calls `done()`):
 //!
 //! ```rhai
-//! let id = insert(#{ status: "Booked" });
+//! let id = table().insert(#{ status: "Booked" });
 //! sleep(minutes(20));
-//! patch(id, #{ status: "Picked up" });
+//! table().patch(id, #{ status: "Picked up" });
 //! let progress = 0.0;
 //! while progress < 100.0 {
 //!     progress += 5.0;
-//!     patch(id, #{ progress: progress });
+//!     table().patch(id, #{ progress: progress });
 //!     sleep(seconds(30));
 //! }
 //! sleep(minutes(1));
-//! delete(id);
+//! table().delete(id);
 //! ```
 //!
 //! **Clocks.** Each def runs on its own sim clock: `sim = start + elapsed ×
@@ -32,9 +32,9 @@
 //! **Warm start.** A def with `warm: Some(d)` begins `d` of sim time in the
 //! past: its burst and its rate spawns within that window run instantly, in
 //! virtual time, before [`SimEngineBuilder::start`] returns, so tables open
-//! mid-life. Warm writes do not broadcast, like an effect's `seed`; the
-//! mute is per table, so a live effect writing the same table is muted for
-//! the warm start too.
+//! mid-life. Every store table is quiet during the warm start, so a table
+//! written then broadcasts one `Reset` when it ends instead of each write;
+//! every table is unquieted at its end, whatever its state before.
 //!
 //! The warm span is cut into windows; sims run in parallel within one and
 //! wait for each other at its end. So within a window a sim may read another
@@ -43,10 +43,12 @@
 //! sim ending mid-window frees its slot only at the next window, which can
 //! skip a spawn the live run would have made.
 //!
-//! A sleep that does not move the sim's clock forward (`sleep(0)`, a
-//! negative duration, a past `wait_until`) returns at once but does not
-//! renew the operation budget, and a run of them ends the sim, so such a
-//! loop cannot stall the warm start or spin a core.
+//! A sim may run `ops` Rhai operations (default [`DEFAULT_OPS`]) between two
+//! sleeps; one that runs more ends as an error. A sleep that does not move
+//! the sim's clock forward (`sleep(0)`, a negative duration, a past
+//! `wait_until`) returns at once but does not renew that budget, and a run
+//! of them ends the sim, so such a loop cannot stall the warm start or spin
+//! a core.
 //!
 //! **Spawning.** `burst` sims start at the beginning (of the warm window, or
 //! of the live run), then `rate_per_min` more per sim minute, never more than
@@ -54,9 +56,11 @@
 //! `max`. At most [`MAX_LIVE`] sims run per engine.
 //!
 //! See the `vocab` module docs for the verbs scripts can call, and
-//! `examples/sims/*.rhai` for complete scripts.
+//! `sims/*.rhai` (the built-ins) and `examples/sims/*.rhai` for complete
+//! scripts.
 
 mod builder;
+pub mod builtin;
 mod clock;
 mod current;
 mod engine;
@@ -67,11 +71,12 @@ mod stats;
 #[cfg(test)]
 mod tests;
 mod validate;
-mod vocab;
+pub(crate) mod vocab;
 
 use std::time::Duration;
 
 pub use builder::SimEngineBuilder;
+pub use builtin::BUILTINS;
 pub use engine::SimEngine;
 pub use stats::SimStats;
 
@@ -79,9 +84,13 @@ pub use stats::SimStats;
 /// def's `max`.
 pub const MAX_LIVE: usize = 1000;
 
+/// Rhai operations a sim may run between two sleeps when its def sets no
+/// `ops`.
+pub const DEFAULT_OPS: u64 = 5_000_000;
+
 /// Stack size of a sim thread. Unoptimised Rhai needs about ten times the
 /// stack per call level, so debug builds get more.
-pub const SIM_STACK_BYTES: usize = if cfg!(debug_assertions) {
+pub(crate) const SIM_STACK_BYTES: usize = if cfg!(debug_assertions) {
     4 * 1024 * 1024
 } else {
     512 * 1024
@@ -133,6 +142,8 @@ pub struct SimDef {
     pub clock: f64,
     /// Sim time to run instantly before going live. Default none.
     pub warm: Option<Duration>,
+    /// Rhai operations allowed between two sleeps. Default [`DEFAULT_OPS`].
+    pub ops: Option<u64>,
 }
 
 impl SimDef {
@@ -149,10 +160,11 @@ impl SimDef {
             spawn: Spawn::default(),
             clock: 1.0,
             warm: None,
+            ops: None,
         }
     }
 
-    /// Replace the spawner.
+    /// Set the spawner's burst, rate and max; keeps its `args`.
     pub fn with_spawn(mut self, burst: usize, rate_per_min: f64, max: usize) -> Self {
         self.spawn.burst = burst;
         self.spawn.rate_per_min = rate_per_min;
@@ -160,7 +172,8 @@ impl SimDef {
         self
     }
 
-    /// Set the spawner's `args`.
+    /// Set the spawner's `args` from a JSON object. Any other JSON value is
+    /// ignored and the args stay as they were.
     pub fn with_args(mut self, args: serde_json::Value) -> Self {
         if let serde_json::Value::Object(map) = args {
             self.spawn.args = map;
@@ -177,6 +190,12 @@ impl SimDef {
     /// Start `warm` of sim time in the past.
     pub fn with_warm(mut self, warm: Duration) -> Self {
         self.warm = Some(warm);
+        self
+    }
+
+    /// Set the operations budget between sleeps.
+    pub fn with_ops(mut self, ops: u64) -> Self {
+        self.ops = Some(ops);
         self
     }
 }

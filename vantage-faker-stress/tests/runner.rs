@@ -10,7 +10,7 @@ tables:
   row: { count: 10, columns: { note: {} } }
 sims:
   tick:
-    script: "loop { let id = insert(#{ note: \"x\" }); sleep(seconds(0.2)); delete(id); }"
+    script: "loop { let id = table().insert(#{ note: \"x\" }); sleep(seconds(0.2)); table().delete(id); }"
     spawn: { burst: 5, max: 5 }
 "#;
 

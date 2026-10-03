@@ -7,7 +7,7 @@ fn burst_then_rate_over_a_simulated_minute() {
     let def = SimDef::new(
         "s",
         "log",
-        r#"insert(#{ who: "s", at: now_secs() }); sleep(hours(1));"#,
+        r#"table().insert(#{ who: "s", at: now_secs() }); sleep(hours(1));"#,
     )
     .with_spawn(3, 6.0, 100);
     let (engine, log) = engine_with(vec![def]);
@@ -26,9 +26,13 @@ fn burst_then_rate_over_a_simulated_minute() {
 
 #[test]
 fn rate_follows_the_sim_clock() {
-    let def = SimDef::new("s", "log", r#"insert(#{ who: "s" }); sleep(hours(1));"#)
-        .with_spawn(0, 1.0, 100)
-        .with_clock(60.0);
+    let def = SimDef::new(
+        "s",
+        "log",
+        r#"table().insert(#{ who: "s" }); sleep(hours(1));"#,
+    )
+    .with_spawn(0, 1.0, 100)
+    .with_clock(60.0);
     let (engine, log) = engine_with(vec![def]);
     // One per sim minute at 60x is one per real second.
     run_for(&engine, 10, 1);
@@ -37,8 +41,12 @@ fn rate_follows_the_sim_clock() {
 
 #[test]
 fn max_caps_concurrent_sims() {
-    let def = SimDef::new("s", "log", r#"insert(#{ who: "s" }); sleep(seconds(10));"#)
-        .with_spawn(0, 60.0, 3);
+    let def = SimDef::new(
+        "s",
+        "log",
+        r#"table().insert(#{ who: "s" }); sleep(seconds(10));"#,
+    )
+    .with_spawn(0, 60.0, 3);
     let (engine, log) = engine_with(vec![def]);
     let mut peak = 0;
     for _ in 0..40 {
@@ -60,13 +68,13 @@ fn spawn_verb_respects_the_child_max_and_passes_args() {
         r#"
             let got = [];
             for i in 0..4 { got.push(spawn_sim("child", #{ n: i })); }
-            insert(#{ who: "parent", step: got.filter(|x| x).len() });
+            table().insert(#{ who: "parent", step: got.filter(|x| x).len() });
         "#,
     );
     let child = SimDef::new(
         "child",
         "log",
-        r#"insert(#{ who: "child", step: args.n }); sleep(hours(1));"#,
+        r#"table().insert(#{ who: "child", step: args.n }); sleep(hours(1));"#,
     )
     .with_spawn(0, 0.0, 2);
     let (engine, log) = engine_with(vec![parent, child]);
@@ -86,8 +94,12 @@ fn spawn_verb_respects_the_child_max_and_passes_args() {
 
 #[test]
 fn spawner_args_are_in_scope() {
-    let def = SimDef::new("a", "log", r#"insert(#{ who: args.name, step: args.n });"#)
-        .with_args(serde_json::json!({ "name": "argued", "n": 7 }));
+    let def = SimDef::new(
+        "a",
+        "log",
+        r#"table().insert(#{ who: args.name, step: args.n });"#,
+    )
+    .with_args(serde_json::json!({ "name": "argued", "n": 7 }));
     let (engine, log) = engine_with(vec![def]);
     engine.settle();
     let row = &rows(&log)[0];

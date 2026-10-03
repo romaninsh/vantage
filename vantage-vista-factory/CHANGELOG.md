@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.6.2 — unreleased
+## 0.6.3 — 2026-10-03
+
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-vista` 1.0.0.
+
+## 0.6.2 — 2026-06-28
 
 - Test only: a characterization test pinning that an unreachable reference
   target is conflated with a missing reference at the traversal layer — the

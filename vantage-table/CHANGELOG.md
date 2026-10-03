@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0 — 2026-10-03
+
+- Stable release. The API hasn't changed since 2026-08-22 (6 weeks); no code changes.
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,
+  `vantage-dataset` 1.0.0, `vantage-vista` 1.0.0.
+
 ## 0.6.17 — 2026-08-22
 
 - `TableSource::delete_table_all_values` documents that implementations must

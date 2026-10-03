@@ -29,10 +29,11 @@ use ciborium::Value as CborValue;
 use fake::rand::rngs::StdRng;
 use serde::Deserialize;
 
-pub(crate) use date::{now_unix, rfc3339};
-pub(crate) use pattern::expand as expand_pattern;
-#[cfg(feature = "rhai")]
-pub(crate) use {date::parse_when, scalar::sentence};
+pub(crate) use date::now_unix;
+#[cfg(feature = "sim")]
+pub(crate) use {
+    date::parse_when, date::rfc3339, pattern::expand as expand_pattern, scalar::sentence,
+};
 
 /// Table size that even-spread dates and trees assume when the generator was
 /// not told one (see [`ValueGen::with_rows`](crate::ValueGen::with_rows)).
@@ -109,8 +110,11 @@ pub enum Spread {
     /// Independent uniform draw per row.
     #[default]
     Random,
-    /// Row `seq` of `n` sits at step `seq` of `n - 1` from `from` to `to`,
-    /// with a jitter of under half a step — a time series ordered by id.
+    /// Row `seq` of `n` sits at step `seq % n` of `n - 1` from `from` to
+    /// `to`, with a jitter of under half a step — a time series ordered by
+    /// id. `n` is [`DEFAULT_ROWS`] unless the caller says otherwise; a
+    /// `seq` past `n` wraps and repeats the same spread rather than pinning
+    /// at `to`.
     Even,
 }
 

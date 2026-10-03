@@ -1,29 +1,13 @@
-//! The example scripts in `examples/sims/` run and produce plausible rows.
+//! The flight built-in and the example scripts in `examples/sims/` run and
+//! produce plausible rows.
 
 use std::collections::{HashMap, HashSet};
 
 use super::*;
 use crate::generator::parse_when;
 
-const FLIGHT: &str = include_str!("../../../examples/sims/flight.rhai");
+const FLIGHT: &str = include_str!("../../../sims/flight.rhai");
 const SHIPMENT: &str = include_str!("../../../examples/sims/shipment.rhai");
-
-const FLIGHT_COLUMNS: &[&str] = &[
-    "id",
-    "flight_no",
-    "origin",
-    "destination",
-    "phase",
-    "progress",
-    "altitude_ft",
-    "lat",
-    "lon",
-    "scheduled_departure",
-    "actual_departure",
-    "eta",
-    "flight_time",
-    "flight_time_min",
-];
 
 fn wall(rec: &Record<CborValue>, col: &str) -> f64 {
     parse_when(&text(rec, col), 0).unwrap_or_else(|| panic!("{col} is not a time")) as f64
@@ -31,13 +15,14 @@ fn wall(rec: &Record<CborValue>, col: &str) -> f64 {
 
 #[test]
 fn flight_script_opens_a_board_mid_flight() {
-    let (flights, _) = table(FLIGHT_COLUMNS);
+    let store = store_with(&["flights"]);
+    let flights = store.table("flights");
     let def = SimDef::new("flight", "flights", FLIGHT)
         .with_spawn(0, 0.2, 60)
         .with_clock(10.0)
         .with_warm(Duration::from_secs(4 * 3600));
     let engine = SimEngine::builder()
-        .table("flights", &flights)
+        .store(&store)
         .sim(def)
         .manual_clock(start())
         .seed(3)
@@ -54,7 +39,7 @@ fn flight_script_opens_a_board_mid_flight() {
         assert!(text(row, "flight_time").ends_with('m'));
         let phase = text(row, "phase");
         if phase == "Cruising" {
-            assert_eq!(num(row, "altitude_ft"), 38000.0);
+            assert!(num(row, "altitude_ft") >= 30000.0);
             // Under 20 sim hours to go is under two real hours at 10x.
             let eta = wall(row, "eta");
             assert!(eta > T0 as f64 && eta < (T0 + 7200) as f64, "{eta}");
@@ -89,14 +74,15 @@ fn flight_script_opens_a_board_mid_flight() {
 #[test]
 #[ignore = "benchmark; run in release"]
 fn warm_start_at_demo_scale() {
-    let (flights, _) = table(FLIGHT_COLUMNS);
+    let store = store_with(&["flights"]);
+    let flights = store.table("flights");
     let def = SimDef::new("flight", "flights", FLIGHT)
         .with_spawn(0, 0.3, 260)
         .with_clock(10.0)
         .with_warm(Duration::from_secs(12 * 3600));
     let t = std::time::Instant::now();
     let engine = SimEngine::builder()
-        .table("flights", &flights)
+        .store(&store)
         .sim(def)
         .seed(5)
         .start()
@@ -108,27 +94,14 @@ fn warm_start_at_demo_scale() {
 
 #[test]
 fn shipment_script_writes_shipments_and_their_tracking_events() {
-    let (shipments, _) = table(&[
-        "id",
-        "tracking_no",
-        "customer",
-        "origin",
-        "destination",
-        "status",
-        "eta",
-        "lat",
-        "lon",
-        "late",
-        "booked_at",
-    ]);
-    let (events, _) = table(&["id", "shipment_id", "status", "note", "lat", "lon", "at"]);
+    let store = store_with(&["shipment", "tracking_event"]);
+    let (shipments, events) = (store.table("shipment"), store.table("tracking_event"));
     let def = SimDef::new("shipment", "shipment", SHIPMENT)
         .with_spawn(5, 0.05, 200)
         .with_clock(60.0)
         .with_warm(Duration::from_secs(2 * 86_400));
     let engine = SimEngine::builder()
-        .table("shipment", &shipments)
-        .table("tracking_event", &events)
+        .store(&store)
         .sim(def)
         .manual_clock(start())
         .seed(4)

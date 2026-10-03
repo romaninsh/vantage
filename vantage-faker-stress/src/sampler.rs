@@ -120,6 +120,12 @@ mod tests {
     use super::*;
     use vantage_faker::SimStats;
 
+    fn writes(n: u64) -> SimStats {
+        let mut stats = SimStats::default();
+        stats.writes = n;
+        stats
+    }
+
     #[test]
     fn thread_count_sees_this_process() {
         assert!(crate::threads::process_threads() >= 1);
@@ -129,10 +135,7 @@ mod tests {
     fn rates_are_deltas_per_second() {
         let mut s = Sampler::new();
         let first = s.sample(
-            SimStats {
-                writes: 10,
-                ..Default::default()
-            },
+            writes(10),
             EventTotals {
                 delivered: 5,
                 ..Default::default()
@@ -141,10 +144,7 @@ mod tests {
         assert_eq!(first.writes_per_s, 0.0, "first sample has no previous one");
         std::thread::sleep(std::time::Duration::from_millis(500));
         let second = s.sample(
-            SimStats {
-                writes: 60,
-                ..Default::default()
-            },
+            writes(60),
             EventTotals {
                 delivered: 55,
                 lagged: 2,

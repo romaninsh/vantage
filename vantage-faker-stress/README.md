@@ -42,7 +42,7 @@ directory down, which is how the chaos scenarios are organized.
 |---|---|---|
 | `--duration <dur>` | the scenario's `stress.duration` | how long to sample |
 | `--scale <N>` | `1.0` | multiplies every sim's `burst`, `rate` and `max`, and every table's `count`, by `N`. Decimals are allowed. `burst`, `max` and `count` are rounded, a zero stays 0, and every other result is kept at least 1; `rate` is not rounded, and a sim with no `rate` keeps none |
-| `--dio` | off | attaches a `Dio` to every table, so lag and event throughput measure `Dio::handle_event` and re-list cost, not just the raw broadcast |
+| `--dio` | off | attaches a watching `Dio` with an open sorted scenery to every table, so CPU and RSS include the cache and re-list cost; lag still measures the counting subscriber, not the Dio |
 | `--json <path>` | none | writes the run's report to a JSON file |
 
 `run` always applies the scenario's `warm:` settings, if it has any.
@@ -99,10 +99,12 @@ shows up in the next sample, so the column runs one tick late. If the
 subscriber still hasn't caught up by the next sample, the column shows the
 time waited so far, so a consumer that never catches up shows lag growing
 by about 1000 ms a tick. A tick with nothing queued reads 0 on the tick
-after it. The column is the slowest table's figure, not a sum. Without
-`--dio` the subscriber only counts events; with `--dio` it applies each one
-to a `Dio`, so `--dio` lag includes the Dio's apply and re-list cost on top
-of the broadcast.
+after it. The column is the slowest table's figure, not a sum. The
+subscriber only ever counts events. With `--dio` each table also backs a
+`Dio` with a sorted scenery open, but the Dio follows the table through its
+own native `watch`, not through this subscriber, so `events/s`, `lagged`
+and `lag ms` still measure the counting subscriber alone. The Dio's apply
+and re-list cost shows up in `cpu%` and `rss` instead.
 
 At the end of a run the harness prints peak and mean of each column, the
 warm-start time when the scenario sets `warm:`, and cost per sim: CPU
@@ -135,14 +137,20 @@ stress:
   limits: { cpu_pct: 400, event_lag_ms: 250 }
 ```
 
-- `tables.<name>.columns.<col>` is `{ type, faker }`, the same shape a
-  vantage-ui table file uses. `type` defaults to `string`. `faker` is a
-  `ColumnGen` (`pick`, `range`, and the rest). A column with no generator,
-  `{}`, falls back to `ValueGen`'s heuristics by column name and type.
+- `seed`, `tables` and `sims` are vantage-faker's `DatasetSpec`
+  (`vantage_faker::config`), as a vantage-ui faker datasource declares it.
+  The tables are seeded into a `MemoryStore` before any sim starts.
+- `tables.<name>` takes `count`, `columns`, `id_column`, `indexed`,
+  `references` (column to target table) and `fan_out { column, min, max }`.
+- `tables.<name>.columns.<col>` is `{ type, faker }`. `type` defaults to
+  `string`. `faker` is a `ColumnGen` (`pick`, `range`, and the rest). A
+  column with no generator, `{}`, falls back to `ValueGen`'s heuristics by
+  column name and type.
 - `!include <path>` reads a file relative to the scenario's own directory
   (here, `scenarios/churn/`) and can't resolve outside `scenarios/`.
-- `sims.<name>` takes the same fields as vantage-ui's `SimSpec`/`SpawnSpec`:
-  `table`, `script`, `clock`, `warm`, and `spawn { burst, rate, max, args }`.
+- `sims.<name>` is a `SimSpec`: `table`, `script`, `clock`, `warm`, `ops`
+  (Rhai operations allowed between two sleeps) and
+  `spawn { burst, rate, max, args }`.
 - `stress:` keys:
   - `duration`: how long a plain `run` samples for, unless `--duration`
     overrides it.
@@ -256,3 +264,27 @@ Recorded in `baseline-0.7.json`, a debug build, one scenario at a time.
   backlog from the burst takes 3.2 s to get through (peak lag 3227 ms,
   skipped events included), and mean `events/s` (74) trails mean
   `writes/s` (672) by about 9x.
+
+## Baseline (1.0)
+
+Recorded in `baseline-1.0.json`, the same way as 0.7 (debug build, one
+scenario at a time).
+
+- `idle` is unchanged: 1000 parked sims at 100 MB RSS and 1018 threads.
+- `swarm` and `sweeper` now both reach step 1000 (0.7 stopped at 250 and
+  100). At 1000, `swarm` runs at 112% CPU, 131 MB, 1020 threads and
+  `sweeper` at 107%, 36 MB, 21 threads: the same CPU, so the
+  thread-per-sim design costs memory and threads, not CPU.
+- `churn` is unchanged at its top step: 32% mean CPU (0.7: 29%) and 47
+  writes/s in both.
+- `warm` fast-forwards in 1.84 s (0.7: 1.65 s), landing at 300 live sims.
+- `chaos/flood` now delivers every event: 671 events/s with 0 lagged
+  (0.7: 74 events/s, 8956 lagged).
+- `chaos/flood` is **not contained**, though: CPU is still 107% at the
+  end. The Dio applies all 10k inserts one by one through its native
+  watch, about 18 s pinned in a debug build, then around 15% steady at
+  10k rows. That per-event Dio and scenery cost is worth batching.
+- The other chaos scenarios (`spin`, `throw`, `stale`, `spawn-bomb`,
+  `recurse`) are contained.
+- The lag columns under `--dio` are not comparable with 0.7: 0.7 measured
+  the Dio's apply, 1.0 measures only the counting subscriber.

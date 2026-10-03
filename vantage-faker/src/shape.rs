@@ -30,7 +30,7 @@ use vantage_vista::Vista;
 use vantage_vista::capabilities::VistaCapabilities;
 use vantage_vista::column::Column;
 use vantage_vista::reference::Reference;
-use vantage_vista::source::TableShell;
+use vantage_vista::source::{TableShell, VistaChangeStream};
 
 /// A latency band: each request draws uniformly from `[min, max]`.
 #[derive(Clone, Copy, Debug)]
@@ -98,17 +98,10 @@ pub struct FaultSchedule {
     pub boundary_skew: bool,
 }
 
-/// Undeclared payload riding along on every record: `count` extra fields of
-/// `size`-char strings — the fat API response the query didn't ask for.
-/// Applied at generation time (see `FakerCtx`), recorded here so a shape is
-/// the complete personality description.
-#[derive(Clone, Copy, Debug)]
-pub struct ExtraFields {
-    pub count: usize,
-    pub size: usize,
-}
-
-/// The complete personality of one shaped backend.
+/// The transport personality of one shaped backend: what it advertises, how
+/// it pages, how slow and how faulty it is. Row content — weirdness, extra
+/// fields — is a generation setting on
+/// [`TableGen`](crate::TableGen), not part of the shape.
 #[derive(Clone, Debug)]
 pub struct BackendShape {
     /// Exactly what the backend advertises; everything else is refused.
@@ -118,17 +111,14 @@ pub struct BackendShape {
     pub page_size: usize,
     pub latency: LatencyModel,
     pub faults: FaultSchedule,
-    pub extra_fields: Option<ExtraFields>,
-    /// Fraction of generated string cells drawn from the anomaly pool.
-    pub weirdness: f64,
-    /// Deterministic replay when set — drives value generation, fault draws
-    /// and latency jitter alike.
+    /// Deterministic replay of latency jitter, fault draws and boundary
+    /// skew when set; fresh entropy when `None`. Does not affect row values.
     pub seed: Option<u64>,
 }
 
 impl Default for BackendShape {
-    /// The classic `MockShell` profile: full CRUD, order, search, no paging,
-    /// no faults, instant.
+    /// The classic in-memory profile: full CRUD, order, search, watch, no
+    /// paging, no faults, instant.
     fn default() -> Self {
         Self {
             capabilities: VistaCapabilities {
@@ -138,13 +128,12 @@ impl Default for BackendShape {
                 can_delete: true,
                 can_order: true,
                 can_search: true,
+                can_subscribe: true,
                 ..VistaCapabilities::default()
             },
             page_size: 25,
             latency: LatencyModel::default(),
             faults: FaultSchedule::default(),
-            extra_fields: None,
-            weirdness: 0.0,
             seed: None,
         }
     }
@@ -160,10 +149,15 @@ enum OpClass {
 }
 
 /// [`TableShell`] decorator enforcing a [`BackendShape`] over an inner shell
-/// (in practice a `MockShell` clone sharing the effect's store).
+/// (in practice a store-backed shell sharing the same table).
 pub struct ShapedShell {
     inner: Box<dyn TableShell>,
     shape: Arc<BackendShape>,
+    /// What this shell actually advertises: the shape's list, with
+    /// `can_subscribe` narrowed to what the wrapped shell truly supports — a
+    /// shape may only remove capabilities, never grant one the inner shell
+    /// lacks.
+    capabilities: VistaCapabilities,
     /// One stream for jitter and fault draws, shared across clones so a
     /// seeded run is a single deterministic sequence.
     rng: Arc<Mutex<StdRng>>,
@@ -186,9 +180,12 @@ impl ShapedShell {
             None => crate::value_gen::entropy_rng(),
         };
         let page_size = shape.page_size.max(1);
+        let mut capabilities = shape.capabilities.clone();
+        capabilities.can_subscribe &= inner.capabilities().can_subscribe;
         Self {
             inner,
             shape: Arc::new(shape),
+            capabilities,
             rng: Arc::new(Mutex::new(rng)),
             epoch: Instant::now(),
             page_size,
@@ -314,7 +311,7 @@ impl TableShell for ShapedShell {
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
-        &self.shape.capabilities
+        &self.capabilities
     }
 
     fn driver_name(&self) -> &'static str {
@@ -443,6 +440,18 @@ impl TableShell for ShapedShell {
         tracing::debug!(target: "vantage_faker::shape", op = "count", "request");
         self.toll(OpClass::Count).await?;
         self.lied_total(vista).await
+    }
+
+    /// Shaping does not touch push delivery — no toll, no fault draw — so a
+    /// subscribed Dio sees the wrapped shell's changes exactly as it emits
+    /// them.
+    async fn watch_vista(&self, vista: &Vista) -> Result<VistaChangeStream> {
+        self.gate(
+            self.capabilities.can_subscribe,
+            "watch_vista",
+            "can_subscribe",
+        )?;
+        self.inner.watch_vista(vista).await
     }
 
     // ---- Writes: forwarded when advertised, no toll — the scenarios stress
@@ -583,6 +592,7 @@ impl TableShell for ShapedShell {
         Some(Box::new(Self {
             inner,
             shape: self.shape.clone(),
+            capabilities: self.capabilities.clone(),
             rng: self.rng.clone(),
             epoch: self.epoch,
             page_size: self.page_size,

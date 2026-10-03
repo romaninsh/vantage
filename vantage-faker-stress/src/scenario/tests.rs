@@ -37,11 +37,15 @@ stress:
 fn loads_tables_sims_and_includes() {
     let root = tempfile::tempdir().unwrap();
     write(root.path(), "basic/scenario.yaml", BASIC);
-    write(root.path(), "basic/churn.rhai", "let id = insert(#{});");
+    write(
+        root.path(),
+        "basic/churn.rhai",
+        "let id = table().insert(#{});",
+    );
     let s = load(root.path(), "basic").unwrap();
     assert_eq!(s.seed, Some(7));
     assert_eq!(s.tables["ticket"].count, 20);
-    assert_eq!(s.sims["churn"].script, "let id = insert(#{});");
+    assert_eq!(s.sims["churn"].script, "let id = table().insert(#{});");
     assert_eq!(s.duration().unwrap(), Duration::from_secs(5));
     assert_eq!(s.stress.limits.cpu_pct, Some(400.0));
 }
@@ -187,13 +191,15 @@ fn without_warm_clears_every_warm() {
 }
 
 #[test]
-fn faker_columns_put_id_first() {
+fn vista_metadata_puts_id_first() {
     let root = tempfile::tempdir().unwrap();
     write(root.path(), "basic/scenario.yaml", BASIC);
     write(root.path(), "basic/churn.rhai", "");
-    let cols = load(root.path(), "basic").unwrap().faker_columns("ticket");
-    let names: Vec<_> = cols.iter().map(|c| c.name.as_str()).collect();
+    let meta = load(root.path(), "basic").unwrap().vista_metadata("ticket");
+    let names: Vec<_> = meta.columns.keys().map(String::as_str).collect();
     assert_eq!(names, ["id", "status", "amount", "note"]);
-    assert_eq!(cols[2].ty, "int");
-    assert!(cols[1].generator.is_some() && cols[3].generator.is_none());
+    assert_eq!(meta.id_column.as_deref(), Some("id"));
+    assert_eq!(meta.columns["amount"].original_type, "int");
+    assert!(meta.columns["id"].has_flag(vantage_vista::flags::ID));
+    assert!(!meta.columns["note"].has_flag(vantage_vista::flags::ID));
 }

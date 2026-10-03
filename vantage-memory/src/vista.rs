@@ -61,7 +61,8 @@ impl MemoryTableShell {
         &self.query
     }
 
-    pub(crate) fn table(&self) -> &MemoryTableHandle {
+    /// The store table this shell reads and writes.
+    pub fn table(&self) -> &MemoryTableHandle {
         &self.table
     }
 

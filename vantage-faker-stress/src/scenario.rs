@@ -1,6 +1,5 @@
-//! Scenario files: tables, sims and stress settings, in the shape of a
-//! vantage-ui faker datasource. `SimSpec` and `SpawnSpec` mirror
-//! vantage-ui's `crates/inventory/src/faker_sims.rs`.
+//! Scenario files: a faker dataset (`seed`, `tables`, `sims`, as
+//! vantage-faker's `DatasetSpec` reads them) plus `stress` settings.
 
 mod build;
 mod include;
@@ -8,13 +7,19 @@ mod include;
 mod tests;
 
 use std::path::Path;
+use std::time::Duration;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
-use vantage_faker::ColumnGen;
+use vantage_faker::config::{SimSpec, TableSpec};
 
-pub use build::parse_duration;
+/// vantage-faker's `parse_duration`, with the error as a string.
+pub fn parse_duration(s: &str) -> Result<Duration, String> {
+    vantage_faker::config::parse_duration(s).map_err(|e| e.to_string())
+}
 
+/// `DatasetSpec`'s fields spelled out rather than flattened: serde's
+/// `flatten` does not combine with `deny_unknown_fields`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
@@ -26,52 +31,6 @@ pub struct Scenario {
     pub sims: IndexMap<String, SimSpec>,
     #[serde(default)]
     pub stress: StressSpec,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TableSpec {
-    #[serde(default)]
-    pub count: usize,
-    #[serde(default)]
-    pub columns: IndexMap<String, ColumnSpec>,
-}
-
-/// A column as a vantage-ui table declares it: a type and an optional generator.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ColumnSpec {
-    #[serde(default, rename = "type")]
-    pub ty: Option<String>,
-    #[serde(default)]
-    pub faker: Option<ColumnGen>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SimSpec {
-    #[serde(default)]
-    pub table: Option<String>,
-    pub script: String,
-    #[serde(default)]
-    pub clock: Option<f64>,
-    #[serde(default)]
-    pub warm: Option<String>,
-    #[serde(default)]
-    pub spawn: SpawnSpec,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SpawnSpec {
-    #[serde(default)]
-    pub burst: Option<usize>,
-    #[serde(default)]
-    pub rate: Option<f64>,
-    #[serde(default)]
-    pub max: Option<usize>,
-    #[serde(default)]
-    pub args: IndexMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

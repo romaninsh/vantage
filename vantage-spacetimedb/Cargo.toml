@@ -11,9 +11,9 @@ repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
 
 [dependencies]
-vantage-core = { version = "0.6" }
-vantage-types = { version = "0.6", features = ["serde"] }
-vantage-vista = { version = "0.6" }
+vantage-core = { version = "1.0.0" }
+vantage-types = { version = "1.0.0", features = ["serde"] }
+vantage-vista = { version = "1.0.0" }
 
 # Official SpacetimeDB crates, used for the *wire format only* — we own the
 # connection. The typed `spacetimedb-sdk` is deliberately not a dependency: it
@@ -53,6 +53,6 @@ ciborium = "0.2"
 [dev-dependencies]
 # The value-set traits (`list_values`, `get_value`) live here; the Vista
 # facade implements them.
-vantage-dataset = "0.6"
+vantage-dataset = "1.0.0"
 pretty_assertions = "1"
 tokio = { version = "1", features = ["full"] }

@@ -26,15 +26,15 @@ pub(crate) fn generate(cell: &mut Cell<'_>, from: &str, to: &str, spread: Spread
         Spread::Random if lo < hi => cell.rng.random_range(lo..=hi),
         Spread::Random => lo,
         Spread::Even => {
+            // `seq` wraps at `rows`: a `fake_row()` caller has no fixed row
+            // count, so past the first `rows` calls the spread repeats
+            // instead of pinning at `to` forever.
             let rows = cell.rows.max(1);
-            if cell.seq >= rows {
-                b
-            } else {
-                let step = (b - a) as f64 / (rows.saturating_sub(1).max(1)) as f64;
-                let jitter = hash::unit(cell.salt, cell.seq as u64, STREAM_DATE) * 0.5 * step;
-                let t = a as f64 + cell.seq as f64 * step + jitter;
-                (t.floor() as i64).clamp(lo, hi)
-            }
+            let seq = cell.seq % rows;
+            let step = (b - a) as f64 / (rows.saturating_sub(1).max(1)) as f64;
+            let jitter = hash::unit(cell.salt, seq as u64, STREAM_DATE) * 0.5 * step;
+            let t = a as f64 + seq as f64 * step + jitter;
+            (t.floor() as i64).clamp(lo, hi)
         }
     };
     CborValue::Text(rfc3339(secs))

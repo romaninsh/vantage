@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6 — 2026-10-03
+
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,
+  `vantage-dataset` 1.0.0, `vantage-table` 1.0.0, `vantage-vista` 1.0.0, `vantage-rhai` 1.0.0,
+  `vantage-cli-util` 0.6.2.
+
 ## 0.6.5 — 2026-09-05
 
 - Scripts run on a `vantage-rhai` host. The direct `rhai = "1.21"` pin — the

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.18 — 2026-10-03
+
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,
+  `vantage-dataset` 1.0.0, `vantage-table` 1.0.0, `vantage-vista` 1.0.0, `vantage-api-pool` 0.6.3.
+
 ## 0.6.17 — 2026-09-27
 
 - `auth_refresher(AuthRefresher)` on the REST and GraphQL builders: the

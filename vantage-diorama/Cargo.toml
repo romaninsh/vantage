@@ -1,6 +1,6 @@
 [package]
 name = "vantage-diorama"
-version = "0.13.3"
+version = "0.13.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cached, composable, reactive surface for Vantage Vistas"
@@ -10,21 +10,18 @@ repository = "https://github.com/romaninsh/vantage"
 doctest = false
 
 [dependencies]
-vantage-core = { version = "0.6", path = "../vantage-core" }
-vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
-vantage-vista-factory = { version = "0.6", path = "../vantage-vista-factory" }
-vantage-table = { version = "0.6", path = "../vantage-table" }
-vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+vantage-core = { version = "1.0.0", path = "../vantage-core" }
+vantage-types = { version = "1.0.0", path = "../vantage-types" }
+vantage-vista = { version = "1.0.0", path = "../vantage-vista" }
+vantage-vista-factory = { version = "0.6.3",path = "../vantage-vista-factory" }
+vantage-table = { version = "1.0.0", path = "../vantage-table" }
+vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 # `TableShell::preview_query` answers with a driver-shaped JSON value.
 serde_json = "1"
 
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
-# Rhai scripts hand `dynamic_to_cbor` chrono instants (`now()`), which
-# land as the standard CBOR datetime tag.
-chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
-vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "1.0.0", path = "../vantage-rhai", optional = true }
 futures = "0.3"
 indexmap = "2"
 redb = "2.6"
@@ -39,7 +36,7 @@ uuid = { version = "1", features = ["v7"] }
 # `rhai` feature gives queries. See `src/rhai.rs`. Pulls vista's `rhai`
 # for the shared CBOR ⇄ Dynamic converters, so a value round-trips the same
 # way in a servo script as in a vista script.
-rhai = ["dep:vantage-rhai", "dep:chrono", "vantage-vista/rhai"]
+rhai = ["dep:vantage-rhai", "vantage-vista/rhai"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

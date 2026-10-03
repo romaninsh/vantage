@@ -1,15 +1,25 @@
 //! The verbs a sim script can call.
 //!
-//! **Data** — `table` is optional everywhere and defaults to the def's table;
-//! it can name any table added to the engine. Writes broadcast the usual
-//! `ChangeEvent`s (except during the warm start).
-//! - `insert(table?, #{…}) -> id` — a new row. Declared columns missing from
-//!   the map are null. The map's id column, if set, is the row id (an
-//!   existing row with it is replaced, broadcast as `Updated`); otherwise an
-//!   id is assigned.
-//! - `patch(table?, id, #{…})`, `set(table?, id, field, value)` — change a row.
-//! - `delete(table?, id)`, `get(table?, id) -> map or ()`, `ids(table?)`,
-//!   `count(table?)`.
+//! **Data** — `table()` and `table(name)` return a
+//! [`Handle`](vantage_vista::Handle) over the engine's store; `table()`
+//! defaults to the def's own table. Either form narrows (`where`, `sort`,
+//! `search`, `limit`) and resolves (`insert`, `upsert`, `patch`, `delete`,
+//! `get`, `ids`, `count`, `list`, `first`) exactly like vantage-vista's
+//! `DataVocab` elsewhere; a missing table is a script error. Writes
+//! broadcast the store's `MemoryChange`s (during the warm start each
+//! written table sends one `Reset` instead, at its end). Row ids are
+//! strings: the verbs return them as strings and take them as strings (a
+//! number is not an id; an `insert` map's id column is stored under its
+//! string form).
+//! - `table().fake_row()` / `table(name).fake_row() -> map` — a generated
+//!   value for each of the table's declared columns
+//!   ([`SimEngineBuilder::columns`](super::SimEngineBuilder::columns)),
+//!   skipping the id column; a table with none declared gives an empty map.
+//!   `walk` and even-spread `date` columns advance one step per call, kept
+//!   per def and table; a `tree` column is not meaningful here — it plans a
+//!   whole table's parent links from a row count `fake_row()` never has, so
+//!   each call just walks further into that fixed plan and can return a
+//!   parent id no row `fake_row()` ever produced.
 //!
 //! **Spawn** — `spawn_sim(name, #{args}?) -> bool` starts a sim of def
 //! `name` at this sim's current time; `false` when the def is at its `max`
@@ -40,29 +50,53 @@
 //! **Misc** — `sim_id()`, `sim_name()`; `print` / `debug` go to the log.
 //! The spawner's (or `spawn` caller's) args are the variable `args`.
 
-mod data;
+mod counted;
 mod random;
+mod row;
+mod tables;
 mod time;
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
+use vantage_memory::MemoryStore;
+use vantage_memory::vista::Catalog;
+use vantage_rhai::Vocab;
 use vantage_rhai::rhai::{Dynamic, Engine};
+use vantage_vista::DataVocab;
 
 use super::current::{self, VerbResult};
+use crate::FakerColumn;
 
 /// Register every verb and the progress hook on `engine`. The operation
 /// budget is per stretch between sleeps, enforced by the hook, so the
 /// engine-wide ceiling is lifted.
-pub(super) fn register(engine: &mut Engine, stop: Arc<AtomicBool>) {
+pub(super) fn register(
+    engine: &mut Engine,
+    stop: Arc<AtomicBool>,
+    store: MemoryStore,
+    catalog: Catalog,
+    columns: Arc<HashMap<String, Vec<FakerColumn>>>,
+    write_counter: Arc<AtomicU64>,
+) {
     engine.set_max_operations(0);
     engine.set_max_call_levels(super::SIM_CALL_LEVELS);
     engine.set_max_expr_depths(super::SIM_EXPR_DEPTHS.0, super::SIM_EXPR_DEPTHS.1);
     engine.on_progress(move |ops| current::progress(ops, &stop));
     engine.on_print(|s| tracing::info!(target: "faker_sim", "{s}"));
     engine.on_debug(|s, _, _| tracing::debug!(target: "faker_sim", "{s}"));
-    data::register(engine);
+
+    DataVocab::read_write(Some(tables::memory_resolver(
+        store,
+        catalog,
+        columns,
+        write_counter,
+    )))
+    .register(engine);
+    tables::register(engine);
     random::register(engine);
+    row::register(engine);
     time::register(engine);
 }
 

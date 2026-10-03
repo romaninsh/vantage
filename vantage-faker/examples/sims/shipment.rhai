@@ -43,7 +43,7 @@ let delivery_window = hours(6);
 let due = now_secs() + pickup_wait + transit + delivery_window;
 let late = false;
 
-let id = insert(#{
+let id = table().insert(#{
     tracking_no: pattern("SH-########"),
     customer: fake("company"),
     origin: origin.city,
@@ -57,7 +57,7 @@ let id = insert(#{
 });
 
 let track = |status, lat, lon, note| {
-    insert("tracking_event", #{
+    table("tracking_event").insert(#{
         shipment_id: id,
         status: status,
         note: note,
@@ -69,7 +69,7 @@ let track = |status, lat, lon, note| {
 track.call("Booked", origin.lat, origin.lon, "Label created");
 
 sleep(pickup_wait);
-patch(id, #{ status: "Picked up" });
+table().patch(id, #{ status: "Picked up" });
 track.call("Picked up", origin.lat, origin.lon, "Collected from sender");
 
 let legs = rand_int(3, 6);
@@ -82,26 +82,26 @@ for leg in 1..=legs {
         let reason = pick(["Address query", "Customs hold", "Damaged label", "Weather delay"]);
         late = true;
         due += hold;
-        patch(id, #{ status: "Exception", late: true, lat: p.lat, lon: p.lon, eta: wall_in(due - now_secs()) });
+        table().patch(id, #{ status: "Exception", late: true, lat: p.lat, lon: p.lon, eta: wall_in(due - now_secs()) });
         track.call("Exception", p.lat, p.lon, reason);
         sleep(hold);
     }
-    patch(id, #{ status: "In transit", lat: p.lat, lon: p.lon });
+    table().patch(id, #{ status: "In transit", lat: p.lat, lon: p.lon });
     track.call("In transit", p.lat, p.lon, if leg == legs { "Arrived at delivery depot" } else { "Departed hub" });
 }
 
-patch(id, #{ status: "Out for delivery", lat: dest.lat, lon: dest.lon });
+table().patch(id, #{ status: "Out for delivery", lat: dest.lat, lon: dest.lon });
 track.call("Out for delivery", dest.lat, dest.lon, "With courier");
 sleep(hours(rand_float(1.0, 8.0)));
 late = late || now_secs() > due;
-patch(id, #{ status: "Delivered", late: late, eta: wall_now() });
+table().patch(id, #{ status: "Delivered", late: late, eta: wall_now() });
 track.call("Delivered", dest.lat, dest.lon, "Signed for");
 
 sleep(days(2));
-for e in ids("tracking_event") {
-    let ev = get("tracking_event", e);
+for e in table("tracking_event").ids() {
+    let ev = table("tracking_event").get(e);
     if type_of(ev) == "map" && ev.shipment_id == id {
-        delete("tracking_event", e);
+        table("tracking_event").delete(e);
     }
 }
-delete(id);
+table().delete(id);

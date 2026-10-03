@@ -2,15 +2,28 @@
 //! of `(salt, seq, stream)`, so any row can be computed without drawing the
 //! rows before it.
 
-/// Fold a column name into a generator seed (FNV-1a, stable across builds —
-/// unlike `std`'s hasher, whose algorithm is unspecified).
-pub(crate) fn column_salt(seed: u64, column: &str) -> u64 {
-    let mut h = 0xcbf2_9ce4_8422_2325_u64 ^ seed;
-    for b in column.bytes() {
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+/// FNV-1a over `bytes`, stable across builds — unlike `std`'s hasher, whose
+/// algorithm is unspecified.
+pub(crate) fn fnv1a(bytes: &[u8]) -> u64 {
+    fnv1a_from(FNV_OFFSET, bytes)
+}
+
+/// FNV-1a starting from `h` instead of the standard offset basis, so a seed
+/// can be folded in before the first byte.
+fn fnv1a_from(mut h: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
         h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        h = h.wrapping_mul(FNV_PRIME);
     }
     h
+}
+
+/// Fold a column name into a generator seed: FNV-1a seeded with `seed`.
+pub(crate) fn column_salt(seed: u64, column: &str) -> u64 {
+    fnv1a_from(FNV_OFFSET ^ seed, column.as_bytes())
 }
 
 /// SplitMix64 over the combined inputs.

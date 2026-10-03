@@ -58,6 +58,9 @@ CBOR value, and the schema travels with the handle rather than with your types. 
 `VistaFactory` that can materialize a Vista from a declarative YAML spec, with Rhai scripts for the
 expressions YAML can't state. That path has its own guide —
 [Config-Driven Vistas](../config-driven-vistas.md) — and this chapter stays on the typed one.
+Scripts read and write Vistas through their own short vocabulary (`table("product").where(…)`),
+taught in [Scripting with Rhai](../rhai.md); the methods below are the Rust side of the same
+operations.
 
 ```admonish info title="CBOR, not JSON"
 Vista uses [`ciborium::Value`](https://docs.rs/ciborium) as its carrier type — a CBOR value. CBOR preserves type fidelity that JSON loses (integer vs float, binary blobs, precise decimals). You'll see `CborValue` in every Vista method signature.

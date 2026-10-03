@@ -62,6 +62,10 @@ impl TableShell for MemoryTableShell {
         self.replace_row(id, record)
     }
 
+    async fn upsert_vista_value(&self, _vista: &Vista, id: &String, record: &Rec) -> Result<Rec> {
+        self.upsert_row(id, record)
+    }
+
     async fn patch_vista_value(&self, _vista: &Vista, id: &String, partial: &Rec) -> Result<Rec> {
         self.patch_row(id, partial)
     }

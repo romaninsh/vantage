@@ -391,6 +391,22 @@ impl LensBuilderState {
                                 }
                                 dio.cache().insert_value(&id, &record).await?;
                             }
+                            FlashKind::Upsert => {
+                                let id = id.expect("upsert flash has an id");
+                                let record = flash.patch().clone();
+                                if bridge {
+                                    let dio_io = dio.clone();
+                                    let id_io = id.clone();
+                                    let record_io = record.clone();
+                                    dispatch(async move {
+                                        dio_io.master().upsert_value(&id_io, &record_io).await
+                                    })
+                                    .await?;
+                                } else {
+                                    dio.master().upsert_value(&id, &record).await?;
+                                }
+                                dio.cache().insert_value(&id, &record).await?;
+                            }
                             FlashKind::Patch => {
                                 let id = id.expect("patch flash has an id");
                                 let partial = flash.patch().clone();

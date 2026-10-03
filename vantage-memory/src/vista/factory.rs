@@ -72,12 +72,12 @@ impl VistaFactory for MemoryVistaFactory {
         );
         // The table may predate the spec, keeping its original definition.
         if table.id_column() != id_column {
-            return Err(error!(format!(
-                "table {} already exists with id column {}, spec says {}",
-                spec.name,
-                table.id_column(),
-                id_column
-            )));
+            return Err(error!(
+                "Table already exists with another id column",
+                table = spec.name,
+                existing = table.id_column(),
+                requested = id_column
+            ));
         }
         for column in &block.indexed {
             table.add_index(column);

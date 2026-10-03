@@ -41,6 +41,11 @@ pub struct MockShell {
     /// in-memory analogue of a driver that owns its key space and qualifies
     /// what a caller hands it. See [`Self::with_id_prefix`].
     id_prefix: Option<String>,
+    /// While set, `replace_vista_value` fails with `NotFound` on a missing
+    /// key instead of creating it — the in-memory analogue of a driver
+    /// (e.g. vantage-memory) whose native replace only updates an existing
+    /// row. See [`Self::with_replace_requires_existing`].
+    replace_requires_existing: bool,
 }
 
 impl MockShell {
@@ -64,6 +69,7 @@ impl MockShell {
             ref_targets: IndexMap::new(),
             fail_reads: Arc::new(AtomicBool::new(false)),
             id_prefix: None,
+            replace_requires_existing: false,
         }
     }
 
@@ -99,6 +105,7 @@ impl MockShell {
             ref_targets: self.ref_targets.clone(),
             fail_reads: self.fail_reads.clone(),
             id_prefix: self.id_prefix.clone(),
+            replace_requires_existing: self.replace_requires_existing,
         }
     }
 
@@ -118,6 +125,15 @@ impl MockShell {
     /// through, so a caller can address a row in either form.
     pub fn with_id_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.id_prefix = Some(prefix.into());
+        self
+    }
+
+    /// Make `replace_vista_value` fail with `NotFound` on a missing key
+    /// instead of creating it — exercises `TableShell::upsert_vista_value`'s
+    /// default insert-on-`NotFound` fallback the way a driver whose native
+    /// replace only updates would.
+    pub fn with_replace_requires_existing(mut self) -> Self {
+        self.replace_requires_existing = true;
         self
     }
 
@@ -412,6 +428,7 @@ impl TableShell for MockShell {
             ref_targets: self.ref_targets.clone(),
             fail_reads: self.fail_reads.clone(),
             id_prefix: self.id_prefix.clone(),
+            replace_requires_existing: self.replace_requires_existing,
         }))
     }
 
@@ -469,6 +486,9 @@ impl TableShell for MockShell {
         let key = self.key(id);
         let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
         let mut data = self.data.lock().unwrap();
+        if self.replace_requires_existing && !data.contains_key(&key) {
+            return Err(vantage_core::error!("Record not found", id = id).mark_not_found());
+        }
         let mut stored = record.clone();
         stored.insert(id_field.to_string(), CborValue::Text(key.clone()));
         data.insert(key, stored.clone());
@@ -789,6 +809,27 @@ mod tests {
             .unwrap();
         vista.delete_all().await.unwrap();
         assert_eq!(vista.list_values().await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn upsert_value_falls_back_to_insert_on_not_found() {
+        // MockShell's default replace creates a missing row, so a shell
+        // whose `replace_vista_value` returns NotFound instead — the
+        // memory/SQL shape — is what actually exercises
+        // `TableShell::upsert_vista_value`'s default fallback.
+        let vista = build_user_vista(MockShell::new().with_replace_requires_existing());
+
+        let created = vista
+            .upsert_value("alice", &record(&[("name", cbor_text("Alice"))]))
+            .await
+            .unwrap();
+        assert_eq!(created.get("name"), Some(&cbor_text("Alice")));
+
+        let updated = vista
+            .upsert_value("alice", &record(&[("name", cbor_text("Alicia"))]))
+            .await
+            .unwrap();
+        assert_eq!(updated.get("name"), Some(&cbor_text("Alicia")));
     }
 
     #[tokio::test]

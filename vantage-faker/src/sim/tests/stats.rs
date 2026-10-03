@@ -1,15 +1,17 @@
 //! `SimEngine::stats`: spawn, end, error and write counters.
 
+use std::sync::{Arc, Mutex};
+
 use super::*;
 
 #[test]
 fn stats_count_spawned_ended_and_writes() {
     let script = r#"
-        let id = insert(#{ who: "a" });
-        patch(id, #{ step: "1" });
-        set(id, "step", "2");
+        let id = table().insert(#{ who: "a" });
+        table().patch(id, #{ step: "1" });
+        table().patch(id, #{ step: "2" });
         sleep(seconds(10));
-        delete(id);
+        table().delete(id);
     "#;
     let (engine, _log) = engine_with(vec![SimDef::new("a", "log", script).with_spawn(3, 0.0, 3)]);
     run_for(&engine, 20, 5);
@@ -45,11 +47,42 @@ fn sim_running_at_stop_counts_as_ended() {
 }
 
 #[test]
+fn on_sim_error_reports_every_failure_uncapped() {
+    let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_in_cb = seen.clone();
+    let store = store_with(&["log"]);
+    let engine = SimEngine::builder()
+        .store(&store)
+        .manual_clock(start())
+        .seed(1)
+        .on_sim_error(move |def, error| {
+            seen_in_cb
+                .lock()
+                .unwrap()
+                .push((def.to_string(), error.to_string()));
+        })
+        .sim(SimDef::new("bad", "log", r#"throw "boom";"#).with_spawn(3, 0.0, 3))
+        .start()
+        .unwrap();
+    run_for(&engine, 1, 1);
+    let calls = seen.lock().unwrap();
+    assert_eq!(
+        calls.len(),
+        3,
+        "every failing sim reported, not rate-limited"
+    );
+    for (def, error) in calls.iter() {
+        assert_eq!(def, "bad");
+        assert!(error.contains("boom"), "{error}");
+    }
+}
+
+#[test]
 fn stale_writes_are_not_counted() {
     let script = r#"
-        patch("nope", #{ step: "1" });
-        set("nope", "step", "2");
-        delete("nope");
+        table().patch("nope", #{ step: "1" });
+        table().patch("nope", #{ step: "2" });
+        table().delete("nope");
     "#;
     let (engine, _log) = engine_with(vec![SimDef::new("a", "log", script).with_spawn(1, 0.0, 1)]);
     run_for(&engine, 2, 1);

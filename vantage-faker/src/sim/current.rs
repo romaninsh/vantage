@@ -7,17 +7,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use fake::rand::SeedableRng as _;
 use fake::rand::rngs::StdRng;
-use vantage_rhai::BACKGROUND_MAX_OPERATIONS;
 use vantage_rhai::rhai::{Dynamic, EvalAltResult, Map as RhaiMap, Position, Scope};
 
+use super::DEFAULT_OPS;
 use super::kind::{Inner, Kind};
 use super::stats::Counters;
 
 /// A verb's result.
 pub(super) type VerbResult<T> = Result<T, Box<EvalAltResult>>;
-
-/// Rhai operations a sim may spend between two sleeps.
-const OPS_BETWEEN_SLEEPS: u64 = BACKGROUND_MAX_OPERATIONS;
 
 /// Sleeps in a row that may leave the sim's clock where it is before the
 /// sim is ended as a runaway loop.
@@ -35,6 +32,8 @@ pub(super) struct Current {
     pub rng: StdRng,
     /// Set by `done()`: the script is ending on purpose.
     pub done: bool,
+    /// Rhai operations allowed between two sleeps: the def's `ops`.
+    ops_budget: u64,
     ops_base: u64,
     last_ops: u64,
     /// Sleeps in a row that did not move `vt`.
@@ -73,7 +72,7 @@ pub(super) fn progress(ops: u64, stop: &AtomicBool) -> Option<Dynamic> {
         if c.done {
             return Some("done".into());
         }
-        (ops.saturating_sub(c.ops_base) > OPS_BETWEEN_SLEEPS)
+        (ops.saturating_sub(c.ops_base) > c.ops_budget)
             .then(|| "sim ran too many operations without sleeping".into())
     })
 }
@@ -112,10 +111,6 @@ impl Current {
         }
         self.vt = target;
         self.ops_base = self.last_ops;
-        if !self.inner.tables_alive() {
-            self.inner.sched.stop();
-            return Err(terminate("tables dropped"));
-        }
         Ok(())
     }
 }
@@ -163,6 +158,7 @@ pub(super) fn run_sim(inner: Arc<Inner>, kind: usize, id: u64, vt: f64, args: Rh
         started: vt,
         rng,
         done: false,
+        ops_budget: inner.kinds[kind].def.ops.unwrap_or(DEFAULT_OPS),
         ops_base: 0,
         last_ops: 0,
         still_sleeps: 0,
@@ -174,7 +170,11 @@ pub(super) fn run_sim(inner: Arc<Inner>, kind: usize, id: u64, vt: f64, args: Rh
     let done = CURRENT.with_borrow(|c| c.as_ref().is_some_and(|c| c.done));
     let failed = result.is_err() && !done && !inner.sched.is_stopped();
     if failed && let Err(e) = &result {
-        k.report(&e.to_string());
+        let msg = e.to_string();
+        if let Some(on_error) = &inner.on_error {
+            on_error(&k.def.name, &msg);
+        }
+        k.report(&msg);
     }
     Counters::bump(if failed {
         &inner.counters.errored

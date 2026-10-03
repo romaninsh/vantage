@@ -83,6 +83,39 @@ fn unquiet_after_quiet_writes_sends_reset() {
 }
 
 #[test]
+fn quiet_toggles_never_lose_a_write() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let t = MemoryStore::new().table("t");
+    let mut rx = t.subscribe();
+    let stop = Arc::new(AtomicBool::new(false));
+    let writer = {
+        let (t, stop) = (t.clone(), stop.clone());
+        std::thread::spawn(move || {
+            let mut n = 0u64;
+            while !stop.load(Ordering::Relaxed) && n < 3000 {
+                t.upsert(&n.to_string(), Record::new());
+                n += 1;
+            }
+            n
+        })
+    };
+    for i in 0..400 {
+        t.set_quiet(i % 2 == 0);
+    }
+    t.set_quiet(false);
+    stop.store(true, Ordering::Relaxed);
+    writer.join().unwrap();
+    while rx.try_recv().is_ok() {}
+    // The race strands `missed = true` after quiet mode has ended, so an
+    // empty quiet cycle would then send a spurious Reset.
+    t.set_quiet(true);
+    t.set_quiet(false);
+    assert!(rx.try_recv().is_err(), "an empty quiet cycle sent an event");
+    assert!(!t.is_quiet());
+}
+
+#[test]
 fn index_follows_changed_cells_only() {
     let s = MemoryStore::new();
     let t = s.define(

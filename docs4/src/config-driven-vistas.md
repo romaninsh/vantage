@@ -176,7 +176,8 @@ small, embeddable scripting language whose Vantage vocabulary compiles to native
 expression primitives are shared across backends where the concept overlaps (`count`, `avg`,
 `coalesce`, `case_when`, `date_format` …) — see [SQL Primitives](./sql/primitives.md) and
 [SurrealDB Primitives](./surrealdb/primitives.md) for the full vocabularies. Rhai appears in a spec
-in four places, each with a distinct job.
+in four places, each with a distinct job. The first two build native queries; the last two use the
+data vocabulary taught in [Scripting with Rhai](./rhai.md).
 
 ### 1. Query-sourced vistas — `rhai:`
 
@@ -223,8 +224,8 @@ same spec resolver as references. Derived vistas are query-sourced, hence read-o
 
 ### 3. Post-build tweaks — `modify:` (SurrealDB)
 
-A script applied to the *finished* vista, exposed as `self`, using the builder verbs plus vendor
-expressions YAML keys can't state:
+A script applied to the *finished* vista, exposed as `self`, using the
+[table handle's verbs](./rhai/tables.md) plus vendor expressions YAML keys can't state:
 
 ```yaml
 name: active_products
@@ -235,7 +236,7 @@ surreal:
   table: product
   modify: |
     self.with_condition(ident("is_deleted") == false)
-        .add_order("name", "asc")
+        .sort("name", "asc")
 ```
 
 Unlike a query source, `modify:` narrows a real table — so the vista **stays writable**. It runs
@@ -255,10 +256,10 @@ references:
     foreign_key: category
     surreal:
       rhai: |
-        table("product").add_condition_eq("category", row.id)
+        table("product").where("category", row.id)
 ```
 
-The script returns the narrowed target vista; `foreign_key` remains as metadata for consumers that
+The script ends on a table handle, which becomes the narrowed target vista; `foreign_key` remains as metadata for consumers that
 introspect the relation.
 
 ```admonish note title="YAML primary, Rhai targeted"
@@ -327,22 +328,11 @@ table's configuration is this same machinery pointed at row enrichment.
 ## Sealed at runtime: data scripts
 
 Once vistas are config-defined, the last step of the story is *consuming* them from config too.
-`vantage-vista`'s `rhai` feature ships `run_script` — a sandboxed evaluator where `table(name)`
-resolves through a catalog-style resolver and a handful of read verbs fetch data:
-
-```rhai
-let o = table("orders").add_condition_eq("status", "unpaid").get_some();
-if o != () {
-    table("orders").get_ref("client", o).get_some()
-}
-```
-
-The vocabulary is deliberately small: builder verbs (`add_condition_eq`, `add_order`, `get_ref` …)
-plus terminals — `list`, `get_some`, `count`, `capabilities`, `columns`, `references`. Every
-`list()` is capped (50 rows hard ceiling) — this is an inspection and automation surface, not a
-bulk reader. It's the surface an AI agent or an MCP tool drives: the schema it sees, the
-capabilities it must respect, and the rows it reads all come from the same sealed handles this
-page built.
+`vantage-vista`'s `rhai` feature ships `run_script`, a sandboxed evaluator where `table(name)`
+resolves through a catalog-style resolver. It's the surface an AI agent or an MCP tool drives: the schema it sees, the capabilities it must
+respect, and the rows it reads all come from the same sealed handles this page built. The
+vocabulary, its limits and every other place it runs are covered in
+[Scripting with Rhai](./rhai.md).
 
 ---
 

@@ -4,7 +4,8 @@
 
 use std::time::{Duration, Instant};
 
-use vantage_faker::{FakerHandle, FakerTable, SimEngine, StaticEffect};
+use vantage_faker::SimEngine;
+use vantage_memory::MemoryStore;
 
 use crate::load::{self, TableLoad};
 use crate::panics;
@@ -45,28 +46,22 @@ pub async fn run(
         None
     };
 
-    let mut handles: Vec<(String, FakerHandle)> = Vec::new();
+    let store = MemoryStore::new();
+    scenario
+        .dataset()
+        .generate(&store)
+        .map_err(|e| e.to_string())?;
     let mut loads: Vec<TableLoad> = Vec::new();
-    for (name, spec) in &scenario.tables {
-        let table = FakerTable::build(
-            name.clone(),
-            scenario.faker_columns(name),
-            "id",
-            Box::new(StaticEffect { count: spec.count }),
-        );
-        let (vista, handle) = table.split();
-        loads.push(load::attach(vista, &handle, lens.as_ref()).await?);
-        handles.push((name.clone(), handle));
+    for name in scenario.tables.keys() {
+        let metadata = scenario.vista_metadata(name);
+        loads.push(load::attach(store.table(name), metadata, &store, lens.as_ref()).await?);
     }
 
     let mut sampler = Sampler::new();
     tokio::time::sleep(TICK).await;
     let baseline_cpu = sampler.cpu_now();
 
-    let mut builder = SimEngine::builder();
-    for (name, handle) in &handles {
-        builder = builder.table(name.clone(), handle.ctx());
-    }
+    let mut builder = SimEngine::builder().store(&store);
     for def in defs {
         builder = builder.sim(def);
     }
@@ -76,7 +71,8 @@ pub async fn run(
     let started = Instant::now();
     let engine = tokio::task::spawn_blocking(move || builder.start())
         .await
-        .map_err(|e| format!("engine start panicked: {e}"))??;
+        .map_err(|e| format!("engine start panicked: {e}"))?
+        .map_err(|e| e.to_string())?;
     let warm_secs = warms.then(|| started.elapsed().as_secs_f64());
 
     let mut samples = Vec::new();
@@ -94,7 +90,6 @@ pub async fn run(
         .await
         .map_err(|e| format!("engine stop panicked: {e}"))?;
     drop(loads);
-    drop(handles);
     Ok(RunOutput {
         samples,
         warm_secs,

@@ -95,6 +95,10 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<Option<Record<Cb
             .replace_value(need_id()?, flash.patch())
             .await
             .map(|_| None),
+        FlashKind::Upsert => master
+            .upsert_value(need_id()?, flash.patch())
+            .await
+            .map(|_| None),
         FlashKind::Patch => master
             .patch_value(need_id()?, flash.patch())
             .await

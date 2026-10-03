@@ -92,7 +92,12 @@ impl MemoryTable {
 
     /// Stop (or resume) broadcasting changes. Writes still apply and count.
     /// Resuming after writes were withheld sends one `MemoryChange::Reset`.
+    ///
+    /// Holds the rows write lock across the toggle and the `Reset` send, so
+    /// it cannot interleave with `changed()`, which also runs under that
+    /// lock: a write can never be missed by the toggle nor stranded after it.
     pub fn set_quiet(&self, quiet: bool) {
+        let _guard = self.rows.write();
         self.quiet.store(quiet, Ordering::Relaxed);
         if !quiet && self.missed.swap(false, Ordering::Relaxed) {
             let _ = self.events.send(MemoryChange::Reset);

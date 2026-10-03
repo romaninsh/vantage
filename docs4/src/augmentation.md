@@ -109,12 +109,13 @@ the closure with `vantage_vista::augment_source_closure` (vista's `rhai`
 feature) and hands the result to `Source::Build`:
 
 ```rhai
-self.add_condition_eq("key", row.key)
+self.where("key", row.key)
 ```
 
 This is the same machinery a reference build-script uses, pointed at a possibly
 different persistence. The diorama core never sees a script string; all engine
-assembly stays in `vantage-vista`.
+assembly stays in `vantage-vista`. The script's vocabulary is the table handle's,
+covered in [Scripting with Rhai](./rhai/surfaces.md#augmentation-sources).
 
 ## Merging
 
@@ -147,7 +148,7 @@ than degrading silently:
   scatter the results back, for `Id`/`Column` sources.
 - **Detail-key cache** — dedupe fetches across master rows that share a key
   (non-unique `Column` sources).
-- **Scripted fetch** — Rhai fetch verbs choosing how to pull.
+- **Scripted fetch** — a script choosing how to pull.
 
 ## Checklist
 

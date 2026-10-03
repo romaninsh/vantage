@@ -4,19 +4,24 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ciborium::Value as CborValue;
-use tokio::sync::broadcast;
-use vantage_diorama::ChangeEvent;
+use vantage_memory::{MemoryChange, MemoryStore, MemoryTable, MemoryTableHandle};
 use vantage_types::Record;
-use vantage_vista::mocks::MockShell;
 
 use super::*;
-use crate::{FakerColumn, FakerCtx};
 
+mod builtins_fifo;
+mod builtins_flight;
+mod builtins_folder;
+mod builtins_pulse;
+mod datasets;
 mod edges;
 mod flow;
+mod guide;
+mod row;
 mod scripts;
 mod spawner;
 mod stats;
+mod store;
 mod validation;
 mod warm;
 
@@ -27,21 +32,20 @@ fn start() -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(T0)
 }
 
-/// A table store with `columns` (the first is the id).
-fn table(columns: &[&str]) -> (Arc<FakerCtx>, broadcast::Receiver<ChangeEvent>) {
-    let (tx, rx) = broadcast::channel(1 << 16);
-    let cols = columns
-        .iter()
-        .map(|c| FakerColumn::new(*c, "string"))
-        .collect();
-    let id = columns[0].to_string();
-    (Arc::new(FakerCtx::new(MockShell::new(), tx, cols, id)), rx)
+fn store_with(tables: &[&str]) -> MemoryStore {
+    let store = MemoryStore::new();
+    for t in tables {
+        store.table(t);
+    }
+    store
 }
 
-fn rows(ctx: &FakerCtx) -> Vec<Record<CborValue>> {
-    ctx.record_ids()
+fn rows(table: &MemoryTable) -> Vec<Record<CborValue>> {
+    table
+        .ids()
         .iter()
-        .filter_map(|id| ctx.get_record(id))
+        .filter_map(|id| table.get(id))
+        .map(|r| (*r).clone())
         .collect()
 }
 
@@ -61,16 +65,16 @@ fn num(rec: &Record<CborValue>, col: &str) -> f64 {
 }
 
 /// An engine on the manual clock over one `log` table.
-fn engine_with(defs: Vec<SimDef>) -> (SimEngine, Arc<FakerCtx>) {
-    let (log, _) = table(&["id", "who", "step", "at"]);
+fn engine_with(defs: Vec<SimDef>) -> (SimEngine, MemoryTableHandle) {
+    let store = store_with(&["log"]);
     let mut b = SimEngine::builder()
-        .table("log", &log)
+        .store(&store)
         .manual_clock(start())
         .seed(1);
     for d in defs {
         b = b.sim(d);
     }
-    (b.start().expect("engine starts"), log)
+    (b.start().expect("engine starts"), store.table("log"))
 }
 
 /// Advance the manual clock `secs` in `step`-second steps, settling after

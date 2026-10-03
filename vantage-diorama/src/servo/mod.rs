@@ -371,33 +371,22 @@ impl Servo {
     }
 
     /// The [`IdStrategy::Auto`] insert: no id exists until the master
-    /// returns one, so this runs the master's returning insert directly,
-    /// seeds the cache with the created row, and binds the servo to it.
+    /// returns one, so this runs [`Dio::insert_returning_id`] — which
+    /// writes to the master and seeds the cache, bypassing the write
+    /// queue and any `on_flash` route — and binds the servo to the id it
+    /// reports.
     ///
-    /// **Contract:** this path writes to the master and **bypasses any
-    /// `on_flash` route** — a returning insert has no id to stage
-    /// optimistically or to route. Route-side validation and
-    /// route-granted write capability do not apply to `Auto` creates;
-    /// use [`IdStrategy::Uuid`] where the route must own the write.
+    /// **Contract:** route-side validation and route-granted write
+    /// capability do not apply to `Auto` creates; use
+    /// [`IdStrategy::Uuid`] where the route must own the write.
     async fn flash_auto_insert(&self) -> Result<ChangeFlash> {
-        use vantage_dataset::traits::InsertableValueSet as _;
-
         let record = self.state.data.read().unwrap().clone();
         *self.state.status.write().unwrap() = ServoStatus::Pending;
         self.state.in_flight.fetch_add(1, Ordering::SeqCst);
         self.state.bump_generation();
 
-        let master = self.dio.master();
-        let inserted = master.insert_return_id_value(&record).await;
-        let id = match inserted {
-            Ok(id) => {
-                // The row exists upstream from THIS moment — bind the
-                // identity immediately, before anything else can fail,
-                // so a retry targets the same row instead of running a
-                // second returning insert (a duplicate).
-                *self.state.id.write().unwrap() = Some(id.clone());
-                id
-            }
+        let (id, with_id) = match self.dio.insert_returning_id(&record).await {
+            Ok(pair) => pair,
             Err(e) => {
                 self.state.in_flight.fetch_sub(1, Ordering::SeqCst);
                 self.state
@@ -407,30 +396,23 @@ impl Servo {
                 return Err(e);
             }
         };
+        // Bind before absorbing: `absorb_now` reads the row through
+        // `self.state.id`, and the row (cache included) already exists
+        // upstream by the time `insert_returning_id` returns.
+        *self.state.id.write().unwrap() = Some(id.clone());
 
-        let id_column = master.get_id_column().unwrap_or("id").to_string();
-        let mut with_id = record.clone();
-        with_id.insert(id_column, CborValue::Text(id.clone()));
-        let seeded = self.dio.patched(id.clone(), with_id.clone()).await;
         let last = self.state.in_flight.fetch_sub(1, Ordering::SeqCst) == 1;
         if last {
-            self.absorb_now().await;
+            // The cache holds the created row unless seeding it failed;
+            // then the stored record stands in, so the servo still tracks
+            // the row and its next flash patches it rather than inserting
+            // it again.
+            let row = self.dio.inner.cache.get_value(&id).await.ok().flatten();
+            self.state
+                .absorb(Some(row.unwrap_or_else(|| with_id.clone())));
+            self.state.set_status(ServoStatus::Tracking);
         }
-        match seeded {
-            Ok(()) => {
-                if last {
-                    self.state.set_status(ServoStatus::Tracking);
-                }
-                Ok(ChangeFlash::insert(id, with_id))
-            }
-            Err(e) => {
-                self.state
-                    .set_status(ServoStatus::Failed(FlashRejection::from_error_or_message(
-                        &e,
-                    )));
-                Err(e)
-            }
-        }
+        Ok(ChangeFlash::insert(id, with_id))
     }
 
     /// Emit a delete flash for the bound record, carrying the baseline
@@ -544,7 +526,10 @@ async fn track_loop(
                 // delete is not this servo's write in flight.
                 if matches!(
                     kind,
-                    crate::FlashKind::Patch | crate::FlashKind::Replace | crate::FlashKind::Insert
+                    crate::FlashKind::Patch
+                        | crate::FlashKind::Replace
+                        | crate::FlashKind::Upsert
+                        | crate::FlashKind::Insert
                 ) {
                     state.set_status(ServoStatus::Pending);
                 }
@@ -556,7 +541,10 @@ async fn track_loop(
                 // save failure. The restored pre-image is absorbed either way.
                 if matches!(
                     kind,
-                    crate::FlashKind::Patch | crate::FlashKind::Replace | crate::FlashKind::Insert
+                    crate::FlashKind::Patch
+                        | crate::FlashKind::Replace
+                        | crate::FlashKind::Upsert
+                        | crate::FlashKind::Insert
                 ) {
                     state.set_status(ServoStatus::Failed(FlashRejection::new(error)));
                 }

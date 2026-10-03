@@ -1,6 +1,6 @@
 [package]
 name = "vantage-table"
-version = "0.6.17"
+version = "1.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Table, Column, and operation traits for the Vantage data framework"
@@ -16,11 +16,11 @@ doctest = false
 
 
 [dependencies]
-vantage-core = { version = "0.6", path = "../vantage-core" }
-vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
-vantage-vista = { version = "0.6", path = "../vantage-vista" }
-vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+vantage-core = { version = "1.0.0", path = "../vantage-core" }
+vantage-types = { version = "1.0.0", path = "../vantage-types" }
+vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
+vantage-vista = { version = "1.0.0", path = "../vantage-vista" }
+vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 async-stream = "0.3"
 async-trait = "0.1"
 futures-core = "0.3"
@@ -38,9 +38,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync"] }
 serde_json = "1.0"
-vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
+vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
 # vantage-surrealdb = { path = "../vantage-surrealdb" }
-surreal-client = { version = "0.6", path = "../surreal-client" }
+surreal-client = { version = "0.6.5",path = "../surreal-client" }
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
 url = { version = "2.5", features = ["serde"] }

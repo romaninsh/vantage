@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "0.6.26"
+version = "1.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -10,9 +10,9 @@ repository = "https://github.com/romaninsh/vantage"
 doctest = false
 
 [dependencies]
-vantage-core = { version = "0.6", path = "../vantage-core" }
-vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+vantage-core = { version = "1.0.0", path = "../vantage-core" }
+vantage-types = { version = "1.0.0", path = "../vantage-types" }
+vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = { version = "2.14", features = ["serde"] }
 async-stream = "0.3"
@@ -21,22 +21,33 @@ futures-core = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
-vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "1.0.0", path = "../vantage-rhai", optional = true }
 # Not optional: `TableShell::preview_query` returns a driver-shaped
 # `serde_json::Value`, so the type is part of the trait every driver implements.
 serde_json = "1"
 # `rt`/`rt-multi-thread` for the spawn_blocking + Handle::block_on bridge that
 # drives the async Vista fetches from the synchronous Rhai engine.
 tokio = { version = "1.52", features = ["rt", "rt-multi-thread"], optional = true }
+# Scripts hand `dynamic_to_cbor` chrono instants (a host's `now()`).
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 
 [features]
-# Rhai scripting over the type-erased `Vista`: the conventional builder verbs
-# (`table`/`add_condition_eq`/`add_order`/`get_ref`…) that back scripted
-# reference traversal, plus the read-only terminal fetch verbs
-# (`list`/`get_some`/`count`/`capabilities`/`columns`/`references`) and the
-# `run_script` runner. Backends layer their vendor expression vocabulary on top
-# via `TableShell::register_rhai_extensions`.
-rhai = ["dep:vantage-rhai", "dep:tokio", "vantage-types/serde"]
+# Rhai scripting over the type-erased `Vista`: `DataVocab`, the table handle
+# (`table`/`where`/`sort`/`search`/`limit`/`ref`) with read and write terminals,
+# the script-slot evaluators and the `run_script` runner. Backends layer their
+# vendor expression vocabulary on top via `TableShell::register_rhai_extensions`.
+rhai = ["dep:vantage-rhai", "dep:tokio", "dep:chrono", "vantage-types/serde"]
 
 [dev-dependencies]
-tokio = { version = "1.52", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }
+# Memory-backed Vistas for the script vocabulary tests. Integration tests only:
+# vantage-memory depends on this crate, so unit tests would see two copies.
+vantage-memory = { path = "../vantage-memory" }
+
+[[test]]
+name = "rhai_vocab"
+required-features = ["rhai"]
+
+[[test]]
+name = "rhai_guide"
+required-features = ["rhai"]

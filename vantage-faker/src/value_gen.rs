@@ -238,7 +238,7 @@ impl ValueGen {
             }
             "blank" => String::new(),
             "duplicate" => "John Smith".to_string(),
-            _ => "Žofia 🌸 Ōkami".to_string(),
+            _ => "Tachibana 🌸 Mamoru".to_string(),
         })
     }
 

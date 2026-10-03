@@ -179,7 +179,7 @@ impl VistaFactory for SurrealVistaFactory {
 #[cfg(feature = "rhai")]
 impl SurrealVistaFactory {
     /// Run a `surreal: { modify }` script against an already-built vista,
-    /// layering SurrealDB's expression vocabulary plus the conventional verbs
+    /// layering SurrealDB's expression vocabulary plus the table handle verbs
     /// onto a host. `table(name)` inside the script resolves through the
     /// factory's spec resolver (if attached); `self` is the built vista, `me`
     /// comes from the shell.
@@ -197,11 +197,14 @@ impl SurrealVistaFactory {
                 .build_from_spec(spec)
         });
 
-        // Vendor vocab first, conventional second (so `table` resolves a Vista,
+        // Vendor vocab first, data vocab second (so `table` is a table handle,
         // not SurrealDB's `ident` alias — same ordering as scripted traversal).
         let host = Host::builder(Limits::background())
-            .vocab(vantage_vista::ShellVocab(&vista))
-            .vocab(vantage_vista::ConventionalVocab(target_resolver))
+            .vocab_fn(|engine| vista.source.register_rhai_extensions(engine))
+            .vocab(vantage_vista::DataVocab {
+                resolver: Some(target_resolver),
+                terminals: vantage_vista::Terminals::Describe,
+            })
             .build();
         vantage_vista::eval_modify_script(&host, code, vista)
     }
@@ -904,7 +907,7 @@ references:
     foreign_key: bakery
     surreal:
       rhai: |
-        table("product").add_condition_eq("bakery", row.id)
+        table("product").where("bakery", row.id)
 "#;
         let product_yaml = r#"
 name: product
@@ -949,11 +952,9 @@ columns:
 
     #[cfg(feature = "rhai")]
     #[test]
-    fn scripted_reference_routes_vendor_condition() {
-        // `with_condition(<surreal expr>)` boxes an `Expression<AnySurrealType>`
-        // and routes it through the type-erased `add_raw_condition`. A clean eval
-        // proves the boxed type and the downcast type match (a mismatch would
-        // surface as an `Unimplemented` error here).
+    fn scripted_reference_refuses_vendor_condition_on_table() {
+        // `with_condition` needs a Vista in hand (`self`); on a handle from
+        // `table(name)` it is an error naming the verb.
         let bakery_yaml = r#"
 name: bakery
 columns:
@@ -987,10 +988,11 @@ columns:
             "id".into(),
             ciborium::Value::Text("bakery:hill_valley".into()),
         );
-        let child = bakery
+        let err = bakery
             .get_ref("products", &row)
-            .expect("vendor-condition traverse");
-        assert_eq!(child.name(), "product");
+            .err()
+            .expect("with_condition on table(...) must fail");
+        assert!(err.to_string().contains("`with_condition`"), "{err}");
     }
 
     #[cfg(feature = "rhai")]
@@ -1010,7 +1012,7 @@ surreal:
   table: clients
   modify: |
     self.with_condition(ident("is_paying_client") == true)
-       .add_order("name", "asc")
+       .sort("name", "asc")
 "#;
         let spec = parse(yaml);
         let factory = SurrealVistaFactory::new(test_db());

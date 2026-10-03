@@ -1,6 +1,6 @@
 [package]
 name = "vantage-redb"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -11,11 +11,11 @@ repository = "https://github.com/romaninsh/vantage"
 readme = "../README.md"
 
 [dependencies]
-vantage-core = { version = "0.6", path = "../vantage-core" }
-vantage-types = { version = "0.6", path = "../vantage-types" }
-vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
-vantage-table = { version = "0.6", path = "../vantage-table" }
-vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+vantage-core = { version = "1.0.0", path = "../vantage-core" }
+vantage-types = { version = "1.0.0", path = "../vantage-types" }
+vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
+vantage-table = { version = "1.0.0", path = "../vantage-table" }
+vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 
 redb = "2.6"
 ciborium = { version = "0.2", features = ["std"] }
