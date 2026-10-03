@@ -1,6 +1,6 @@
 [package]
 name = "vantage-action"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Model-level actions: typed business operations exposed uniformly to UI, HTTP and scripting"
@@ -10,7 +10,7 @@ repository = "https://github.com/romaninsh/vantage"
 doctest = false
 
 [dependencies]
-vantage-core = { version = "0.6", path = "../vantage-core" }
+vantage-core = { version = "1.0.0", path = "../vantage-core" }
 # The `#[actions]` attribute. A proc-macro crate cannot also export
 # ordinary items, so it stays a separate compilation unit — but it is an
 # implementation detail: `vantage_action::actions` is the only path

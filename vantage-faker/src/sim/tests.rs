@@ -16,6 +16,7 @@ mod builtins_pulse;
 mod datasets;
 mod edges;
 mod flow;
+mod guide;
 mod row;
 mod scripts;
 mod spawner;

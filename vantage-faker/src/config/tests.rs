@@ -110,7 +110,7 @@ fn bad_warm_duration_names_the_sim_and_key() {
 fn start_sims_runs_after_generate() {
     let store = MemoryStore::new();
     let s: DatasetSpec = serde_yaml_ng::from_str(
-        "tables: { log: { count: 0 } }\nsims: { w: { script: \"insert(#{ who: 1 }); sleep(minutes(5));\" } }",
+        "tables: { log: { count: 0 } }\nsims: { w: { script: \"table().insert(#{ who: 1 }); sleep(minutes(5));\" } }",
     )
     .unwrap();
     s.generate(&store).unwrap();
@@ -165,7 +165,7 @@ fn new_matches_deserialized() {
 fn sim_builder_takes_more_settings_before_start() {
     let store = MemoryStore::new();
     let s: DatasetSpec = serde_yaml_ng::from_str(
-        "tables: { log: {} }\nsims: { w: { script: \"sleep(seconds(10)); insert(#{ who: 1 });\" } }",
+        "tables: { log: {} }\nsims: { w: { script: \"sleep(seconds(10)); table().insert(#{ who: 1 });\" } }",
     )
     .unwrap();
     s.generate(&store).unwrap();

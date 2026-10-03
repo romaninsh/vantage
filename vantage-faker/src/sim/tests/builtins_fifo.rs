@@ -96,7 +96,7 @@ fn fifo_population_settles_and_lists_newest_first() {
     assert!(newest < oldest);
     assert!(
         t.get(newest).unwrap().get("name").is_some(),
-        "rows come from row()"
+        "rows come from fake_row()"
     );
 }
 

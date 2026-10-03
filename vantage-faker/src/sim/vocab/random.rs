@@ -4,12 +4,12 @@ use fake::rand::RngExt as _;
 use fake::rand::rngs::StdRng;
 use vantage_rhai::rhai::{Array, Dynamic, Engine};
 
-use super::convert::cbor_to_dynamic;
 use super::num;
 use crate::FakerColumn;
 use crate::generator::{expand_pattern, parse_when, rfc3339, sentence};
 use crate::sim::current::{VerbResult, with};
 use crate::value_gen::ValueGen;
+use vantage_vista::rhai::cbor_to_dynamic;
 
 /// Index into `weights` drawn in proportion to them.
 fn weighted(rng: &mut StdRng, weights: &[f64]) -> VerbResult<usize> {

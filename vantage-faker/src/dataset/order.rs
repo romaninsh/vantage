@@ -4,12 +4,14 @@
 
 use std::collections::HashMap;
 
+use vantage_core::{Result, VantageError, error};
+
 use super::table::TableGen;
 
 /// Indices into `tables`, in generation order: every table comes after every
 /// table it [`reference`](super::table::TableGen::reference)s, and among
 /// tables with no unmet dependency, declaration order is kept.
-pub(super) fn generation_order(tables: &[TableGen]) -> Result<Vec<usize>, String> {
+pub(super) fn generation_order(tables: &[TableGen]) -> Result<Vec<usize>> {
     let index: HashMap<&str, usize> = tables
         .iter()
         .enumerate()
@@ -20,10 +22,13 @@ pub(super) fn generation_order(tables: &[TableGen]) -> Result<Vec<usize>, String
     for (i, t) in tables.iter().enumerate() {
         for r in &t.refs {
             let Some(&j) = index.get(r.target.as_str()) else {
-                return Err(format!(
-                    "table {}: column {} references unknown table {}",
-                    t.name, r.column, r.target
-                ));
+                return Err(error!(
+                    "Column references an unknown table",
+                    table = t.name,
+                    column = r.column,
+                    target = r.target
+                )
+                .mark_not_found());
             };
             deps[i].push(j);
         }
@@ -47,7 +52,7 @@ pub(super) fn generation_order(tables: &[TableGen]) -> Result<Vec<usize>, String
 /// A cycle leaves every table on it permanently unready. Walk one dependency
 /// edge at a time from an unplaced table until a table repeats, and report
 /// that loop.
-fn cycle_error(tables: &[TableGen], deps: &[Vec<usize>], placed: &[bool]) -> String {
+fn cycle_error(tables: &[TableGen], deps: &[Vec<usize>], placed: &[bool]) -> VantageError {
     let mut cur = (0..tables.len())
         .find(|&i| !placed[i])
         .expect("no progress means at least one table is unplaced");
@@ -60,7 +65,7 @@ fn cycle_error(tables: &[TableGen], deps: &[Vec<usize>], placed: &[bool]) -> Str
                 .map(|&i| tables[i].name.as_str())
                 .collect();
             names.push(tables[cur].name.as_str());
-            return format!("reference cycle: {}", names.join(" -> "));
+            return error!("Tables form a reference cycle", cycle = names.join(" -> "));
         }
         seen_at.insert(cur, path.len());
         path.push(cur);

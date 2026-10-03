@@ -37,11 +37,15 @@ stress:
 fn loads_tables_sims_and_includes() {
     let root = tempfile::tempdir().unwrap();
     write(root.path(), "basic/scenario.yaml", BASIC);
-    write(root.path(), "basic/churn.rhai", "let id = insert(#{});");
+    write(
+        root.path(),
+        "basic/churn.rhai",
+        "let id = table().insert(#{});",
+    );
     let s = load(root.path(), "basic").unwrap();
     assert_eq!(s.seed, Some(7));
     assert_eq!(s.tables["ticket"].count, 20);
-    assert_eq!(s.sims["churn"].script, "let id = insert(#{});");
+    assert_eq!(s.sims["churn"].script, "let id = table().insert(#{});");
     assert_eq!(s.duration().unwrap(), Duration::from_secs(5));
     assert_eq!(s.stress.limits.cpu_pct, Some(400.0));
 }

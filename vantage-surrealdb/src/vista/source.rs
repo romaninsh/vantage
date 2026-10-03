@@ -602,21 +602,23 @@ where
         })
     }
 
-    /// Layer SurrealDB's expression vocabulary on top of vantage-vista's
-    /// conventional `Vista` verbs, plus a `with_condition(<expr>)` builder that
-    /// routes a native `Expression` through [`add_raw_condition`](Self::add_raw_condition).
+    /// Layer SurrealDB's expression vocabulary beside vantage-vista's table
+    /// handle verbs, plus `self.with_condition(<expr>)`, which routes a native
+    /// `Expression` through [`add_raw_condition`](Self::add_raw_condition) on
+    /// the handle's Vista.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, engine: &mut rhai::Engine) {
-        use vantage_vista::RhaiVista;
+        use vantage_vista::Handle;
 
         crate::rhai_engine::register_surreal_onto(engine);
 
         engine.register_fn(
             "with_condition",
-            |v: &mut RhaiVista,
+            |h: &mut Handle,
              cond: crate::rhai_engine::RhaiExpr|
-             -> std::result::Result<RhaiVista, Box<rhai::EvalAltResult>> {
-                v.apply(|vista| vista.add_raw_condition(cond.0))
+             -> std::result::Result<Handle, Box<rhai::EvalAltResult>> {
+                h.with_base_vista("with_condition", |vista| vista.add_raw_condition(cond.0))
+                    .map_err(|e| e.to_string().into())
             },
         );
     }
@@ -635,10 +637,10 @@ where
     E: Entity<AnySurrealType> + 'static,
 {
     /// Build a reference's traversal target by evaluating its Rhai
-    /// `build_script`. The conventional `Vista` vocabulary plus SurrealDB's
-    /// vendor extensions go onto a host; `table(name)` resolves a fresh target
-    /// through the shell's spec resolver, and the parent `row` (and `me`) are
-    /// exposed to the script.
+    /// `build_script`. SurrealDB's vendor extensions plus vantage-vista's
+    /// describe-only data vocabulary go onto a host; `table(name)` resolves a
+    /// fresh target through the shell's spec resolver, and the parent `row`
+    /// (and `me`) are exposed to the script.
     fn get_ref_via_script(&self, script: &str, row: &Record<CborValue>) -> Result<Vista> {
         use vantage_vista::VistaFactory;
 
@@ -656,13 +658,15 @@ where
                 .build_from_spec(spec)
         });
 
-        // Vendor vocab first, conventional second: this makes the conventional
-        // `table(name) -> Vista` win over SurrealDB's `table` alias for `ident`
-        // (which stays reachable as `ident(...)`), so a build-script's
-        // `table("order")` resolves a Vista rather than an identifier.
+        // Vendor vocab first, data vocab second: this makes `table(name)` a
+        // table handle rather than SurrealDB's `table` alias for `ident`
+        // (which stays reachable as `ident(...)`).
         let host = Host::builder(Limits::background())
             .vocab_fn(|engine| self.register_rhai_extensions(engine))
-            .vocab(vantage_vista::ConventionalVocab(target_resolver))
+            .vocab(vantage_vista::DataVocab {
+                resolver: Some(target_resolver),
+                terminals: vantage_vista::Terminals::Describe,
+            })
             .build();
         vantage_vista::eval_ref_script(&host, script, self.rhai_env(Env::new()), row)
     }

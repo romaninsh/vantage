@@ -12,9 +12,9 @@
 // first regardless of how many digits either sim id has.
 //
 // Steps:
-//   1. let r = row(); upsert(<id>, r);
+//   1. let r = table().fake_row(); table().upsert(<id>, r);
 //   2. sleep(seconds(rand_float(lo, hi)))
-//   3. delete(id)
+//   3. table().delete(id)
 //
 // `upsert` writes the id into the table's id column, whatever it is named.
 //
@@ -52,9 +52,9 @@ let hi = seconds_arg(args, "retention_hi", 35);
 let ms = (now_secs() * 1000.0).to_int();
 let id = pad(10_000_000_000_000 - ms, 13) + "-" + pad(1_000_000_000 - sim_id(), 9);
 
-let r = row();
-upsert(id, r);
+let r = table().fake_row();
+table().upsert(id, r);
 
 sleep(seconds(rand_float(lo, hi)));
 
-delete(id);
+table().delete(id);

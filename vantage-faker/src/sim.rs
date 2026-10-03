@@ -11,17 +11,17 @@
 //! target, and the sim ends when the script does (or calls `done()`):
 //!
 //! ```rhai
-//! let id = insert(#{ status: "Booked" });
+//! let id = table().insert(#{ status: "Booked" });
 //! sleep(minutes(20));
-//! patch(id, #{ status: "Picked up" });
+//! table().patch(id, #{ status: "Picked up" });
 //! let progress = 0.0;
 //! while progress < 100.0 {
 //!     progress += 5.0;
-//!     patch(id, #{ progress: progress });
+//!     table().patch(id, #{ progress: progress });
 //!     sleep(seconds(30));
 //! }
 //! sleep(minutes(1));
-//! delete(id);
+//! table().delete(id);
 //! ```
 //!
 //! **Clocks.** Each def runs on its own sim clock: `sim = start + elapsed ×

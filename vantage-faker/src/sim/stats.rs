@@ -1,5 +1,6 @@
 //! Running totals an engine keeps, read through [`SimEngine::stats`](super::SimEngine::stats).
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A snapshot of an engine's counters.
@@ -19,8 +20,7 @@ pub struct SimStats {
     /// call-level limit) or by a verb panicking.
     pub errored: u64,
     /// Sim write calls: every successful `insert`; an `upsert` that did not leave the
-    /// row unchanged; a `patch`, `set` or `delete` whose row existed, even
-    /// if the values it wrote were already there.
+    /// row unchanged; a `patch` or `delete` whose row existed.
     pub writes: u64,
 }
 
@@ -29,7 +29,9 @@ pub(super) struct Counters {
     pub spawned: AtomicU64,
     pub ended: AtomicU64,
     pub errored: AtomicU64,
-    pub writes: AtomicU64,
+    /// Shared with the `CountedShell` wrapping every resolved memory Vista,
+    /// so writes made through the data vocabulary still count.
+    pub writes: Arc<AtomicU64>,
 }
 
 impl Counters {

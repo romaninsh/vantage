@@ -109,6 +109,21 @@ Vista implements `ValueSet`, `ReadableValueSet`, `WritableValueSet`, and `Insert
 same trait family `Table<T, E>` does, so code written against those traits works against a `Vista`
 unchanged.
 
+## Scripting with Rhai
+
+The `rhai` feature adds `DataVocab`, the one data vocabulary every Vantage script uses:
+
+```rhai
+let due = table("order").where("status", "due");
+due.ref("client").list()
+```
+
+`table(name)` returns a handle that narrows (`where`, `sort`, `search`, `limit`, `ref`) and then
+reads (`list`, `get`, `first`, `count`, `ids`), writes (`insert`, `upsert`, `patch`, `delete`,
+`import_from`) or opens a `record` draft. A host picks the tables behind `table(name)` and which
+verbs exist. The full guide is
+[Scripting with Rhai](https://romaninsh.github.io/vantage/rhai.html) in the Vantage book.
+
 ## Status
 
 Incubating. Ships `Vista`, `TableShell`, `VistaMetadata`, `VistaCapabilities`, `Column`,

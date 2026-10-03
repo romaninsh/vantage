@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.4 — 2026-10-03
+
+- **Breaking:** `FlashKind::Upsert` and `ChangeFlash::upsert`; `DioShell` implements
+  `upsert_vista_value`.
+- `DioShell` patch and delete of a missing row fail with `ErrorKind::NotFound`.
+- `DioShell::insert_vista_return_id_value` writes to the master and seeds the cache, so a
+  Dio Vista inserts without an id.
+- **Breaking:** `rhai::dynamic_to_cbor` is vantage-vista's, taking the `Dynamic` by value.
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-dataset` 1.0.0,
+  `vantage-table` 1.0.0, `vantage-vista` 1.0.0, `vantage-rhai` 1.0.0.
+
 ## 0.13.3 — 2026-09-29
 
 - `DioShell` implements `watch_vista`: a Dio built over another Dio's facade

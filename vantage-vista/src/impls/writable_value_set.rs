@@ -44,3 +44,18 @@ impl WritableValueSet for Vista {
         self.source.delete_vista_all_values(self).await
     }
 }
+
+impl Vista {
+    /// Insert `id`, or replace it if it exists.
+    ///
+    /// Inherent rather than on [`WritableValueSet`] — that trait is shared
+    /// with `ImTable` and `Table<T, E>`, and `upsert` is a `Vista`-only verb.
+    pub async fn upsert_value(
+        &self,
+        id: impl Into<String> + Send,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        let id = id.into();
+        self.source.upsert_vista_value(self, &id, record).await
+    }
+}

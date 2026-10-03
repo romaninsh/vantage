@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.6.4 — unreleased
+## 0.6.5 — 2026-10-03
+
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0.
+
+## 0.6.4 — 2026-08-07
 
 - A DSN can select the authentication scope: `?auth=namespace` or `?auth=database`
   signs in at that level instead of as a root user. Cloud instances have no root

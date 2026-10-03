@@ -18,7 +18,7 @@
 //      Otherwise:
 //      - delta = rand_int(-step, step), step = max(1, baseline * band / 100 / 4);
 //      - value += delta, clamped to baseline ± band%;
-//      - upsert(aggregate, key, #{key_column: key, value_column: value,
+//      - table(aggregate).upsert(key, #{key_column: key, value_column: value,
 //          vs_baseline: round((value - baseline) / baseline * 100), live: "Live"});
 //      - upsert a feed row #{key_column: key, delta, updated: <iso now>}
 //        at the descending id, remembering its expiry;
@@ -121,26 +121,26 @@ loop {
         };
         agg[key_column] = s.name;
         agg[value_column] = tidy(s.value);
-        upsert(aggregate, s.name, agg);
+        table(aggregate).upsert(s.name, agg);
 
         if !dropped {
             let ms = (now * 1000.0).to_int();
             let id = pad(10_000_000_000_000 - ms, 13) + "-" + s.name;
             let entry = #{ delta: delta, updated: now() };
             entry[key_column] = s.name;
-            upsert(feed_table, id, entry);
+            table(feed_table).upsert(id, entry);
             feed.push([id, now + feed_retention]);
 
             if delta > 0 {
                 let minute = (now / bucket).floor() * bucket;
                 let bid = pad(minute.to_int(), 12);
-                let row = get(minutes_table, bid);
+                let row = table(minutes_table).get(bid);
                 if row == () {
                     row = #{ minute: hh_mm(minute), attendees: 0 };
                     buckets.push(bid);
                 }
                 row.attendees += delta;
-                upsert(minutes_table, bid, row);
+                table(minutes_table).upsert(bid, row);
             }
         }
 
@@ -149,12 +149,12 @@ loop {
     }
 
     while feed.len() > 0 && feed[0][1] <= now {
-        delete(feed_table, feed[0][0]);
+        table(feed_table).delete(feed[0][0]);
         feed.remove(0);
     }
 
     while buckets.len() > window {
-        delete(minutes_table, buckets[0]);
+        table(minutes_table).delete(buckets[0]);
         buckets.remove(0);
     }
 

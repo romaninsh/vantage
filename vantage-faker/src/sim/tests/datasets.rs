@@ -24,7 +24,7 @@ fn clients_and_invoices(fan_out: Option<FanOut>) -> MemoryStore {
 }
 
 fn pay_every_invoice(store: &MemoryStore) {
-    let script = r#"for id in ids() { patch(id, #{ paid: true }); }"#;
+    let script = r#"for id in table().ids() { table().patch(id, #{ paid: true }); }"#;
     let engine = SimEngine::builder()
         .store(store)
         .sim(SimDef::new("payer", "invoice", script))
@@ -70,9 +70,9 @@ fn sims_insert_and_find_by_a_custom_id_column() {
         .generate(&store)
         .unwrap();
     let script = r#"
-        let id = insert(#{ code: "x", name: "new" });
-        let hits = find(#{ code: "x" });
-        insert(#{ code: "result", name: id + ":" + hits.len() + ":" + hits[0] });
+        let id = table().insert(#{ code: "x", name: "new" });
+        let hits = table().where("code", "x").ids();
+        table().insert(#{ code: "result", name: id + ":" + hits.len() + ":" + hits[0] });
     "#;
     let engine = SimEngine::builder()
         .store(&store)

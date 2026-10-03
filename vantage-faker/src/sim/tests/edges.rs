@@ -61,7 +61,7 @@ fn still_sleep_loops_end_the_sim_when_live() {
 fn an_occasional_still_sleep_is_harmless() {
     let script = r#"
         for i in 0..(current::MAX_STILL * 3) { sleep(0); sleep(seconds(1)); }
-        insert(#{ who: "finished", at: now_secs() });
+        table().insert(#{ who: "finished", at: now_secs() });
         sleep(hours(10));
     "#
     .replace("current::MAX_STILL", &current::MAX_STILL_SLEEPS.to_string());
@@ -78,8 +78,8 @@ fn inserting_an_existing_id_is_a_script_error() {
     let log = store.table("log");
     let mut rx = log.subscribe();
     let script = r#"
-        insert(#{ id: "x", who: "first" });
-        insert(#{ id: "x", who: "second" });
+        table().insert(#{ id: "x", who: "first" });
+        table().insert(#{ id: "x", who: "second" });
     "#;
     let engine = SimEngine::builder()
         .store(&store)

@@ -61,7 +61,7 @@ impl DatasetGen {
     /// if it existed), seeded quietly and unquieted — a single `Reset`
     /// follows, since no one is watching a table mid-seed.
     pub fn generate(&self, store: &MemoryStore) -> Result<Vec<MemoryTableHandle>> {
-        let order = validate::check(&self.tables, store).map_err(|e| error!(e))?;
+        let order = validate::check(&self.tables, store)?;
 
         let mut counts: HashMap<&str, usize> = HashMap::new();
         let mut planned = Vec::with_capacity(order.len());
@@ -75,8 +75,9 @@ impl DatasetGen {
                     parent_count: counts.get(r.target.as_str()).copied().unwrap_or(0),
                 })
                 .collect();
-            check_plan(&refs, plan.fan_out.as_ref())
-                .map_err(|e| error!(format!("table {}: {e}", plan.name)))?;
+            check_plan(&refs, plan.fan_out.as_ref()).map_err(|reason| {
+                error!("Table plan is invalid", table = plan.name, reason = reason)
+            })?;
             let rows = plan.rows(seed_for(self.seed, &plan.name), &refs);
             counts.insert(&plan.name, rows.len());
             planned.push((plan, rows));

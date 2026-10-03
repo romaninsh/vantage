@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.0 — 2026-10-03
+
+- `DataVocab { resolver, terminals }`: one script vocabulary. `table(name)` returns an immutable
+  `Handle` narrowed by `where`, `sort`, `search`, `limit` and `ref`.
+- Script reads `list`, `get`, `first`, `count`, `ids`; writes `insert`, `upsert`, `patch`,
+  `delete`, `import_from`. `patch` / `delete` return `false` for a missing row.
+- `record()` / `record(id)` drafts (`RecordDraft`) that save only changed fields.
+- `Terminals::{Describe, Read, ReadWrite}` and `Writes::{Allowed, Denied}` pick what a host allows.
+- `rhai::block_on` runs script futures with or without a tokio runtime.
+- `TableShell::upsert_vista_value` and `Vista::upsert_value`.
+- **Breaking:** `ConventionalVocab`, `ShellVocab`, `FetchVerbs`, `RhaiVista`,
+  `register_conventional_onto` and `register_fetch_verbs` are removed, with the script verbs
+  `add_condition_eq`, `add_condition`, `add_order`, `add_search`, `set_page_size`, `with_id`,
+  `get_ref` and `get_some`.
+- **Breaking:** `run_script` takes a `Writes`; `preview_script` and slot scripts end on a handle.
+- **Breaking:** backend extension verbs register on `Handle` and work on `self` only.
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-dataset` 1.0.0,
+  `vantage-rhai` 1.0.0.
+
 ## 0.6.26 — 2026-09-08
 
 - **Breaking:** `FilterOp` gains a `Like` variant — a pattern match on text,

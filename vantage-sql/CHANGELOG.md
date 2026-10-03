@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.25 — 2026-10-03
+
+- A patch that finds no row fails with `ErrorKind::NotFound` on SQLite, Postgres and MySQL.
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,
+  `vantage-dataset` 1.0.0, `vantage-table` 1.0.0, `vantage-vista` 1.0.0, `vantage-rhai` 1.0.0.
+
 ## 0.6.24 — 2026-09-19
 
 - `PostgresDB::connect` and `MysqlDB::connect` fail immediately on a refused

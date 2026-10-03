@@ -56,6 +56,11 @@ async fn main() -> Result<()> {
                                 .await?;
                             dio.cache().insert_value(&id, flash.patch()).await?;
                         }
+                        FlashKind::Upsert => {
+                            let id = flash.id().expect("upsert has id").to_string();
+                            dio.master().upsert_value(id.clone(), flash.patch()).await?;
+                            dio.cache().insert_value(&id, flash.patch()).await?;
+                        }
                         FlashKind::Patch => {
                             let id = flash.id().expect("patch has id").to_string();
                             dio.master().patch_value(id.clone(), flash.patch()).await?;

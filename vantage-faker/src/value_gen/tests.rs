@@ -94,7 +94,7 @@ fn weirdness_one_makes_every_string_cell_anomalous() {
         .collect();
     // Every value came from the pool: blank, John Smith, unicode, or long.
     for v in &anomalies {
-        let from_pool = v.is_empty() || v == "John Smith" || v.contains('Ž') || v.len() >= 200;
+        let from_pool = v.is_empty() || v == "John Smith" || v.contains('🌸') || v.len() >= 200;
         assert!(from_pool, "unexpected non-anomalous value {v:?}");
     }
     // And the pool cycles — more than one kind appears over 40 draws.

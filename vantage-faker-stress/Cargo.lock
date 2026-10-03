@@ -1544,7 +1544,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-core"
-version = "0.6.4"
+version = "1.0.0"
 dependencies = [
  "atty",
  "indexmap",
@@ -1557,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.6.3"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1576,7 +1576,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.13.3"
+version = "0.13.4"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.6.1"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -1656,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "0.6.1"
+version = "1.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1679,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "0.6.4"
+version = "1.0.0"
 dependencies = [
  "rhai",
  "serde",
@@ -1689,7 +1689,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.6.17"
+version = "1.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1713,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.8"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "ciborium",
@@ -1727,7 +1727,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types-entity"
-version = "0.6.0"
+version = "1.0.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1736,10 +1736,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.26"
+version = "1.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
+ "chrono",
  "ciborium",
  "futures-core",
  "indexmap",
@@ -1747,14 +1748,16 @@ dependencies = [
  "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.21",
+ "tokio",
  "vantage-core",
  "vantage-dataset",
+ "vantage-rhai",
  "vantage-types",
 ]
 
 [[package]]
 name = "vantage-vista-factory"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ciborium",
  "indexmap",

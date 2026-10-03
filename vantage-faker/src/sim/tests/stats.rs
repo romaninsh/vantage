@@ -7,11 +7,11 @@ use super::*;
 #[test]
 fn stats_count_spawned_ended_and_writes() {
     let script = r#"
-        let id = insert(#{ who: "a" });
-        patch(id, #{ step: "1" });
-        set(id, "step", "2");
+        let id = table().insert(#{ who: "a" });
+        table().patch(id, #{ step: "1" });
+        table().patch(id, #{ step: "2" });
         sleep(seconds(10));
-        delete(id);
+        table().delete(id);
     "#;
     let (engine, _log) = engine_with(vec![SimDef::new("a", "log", script).with_spawn(3, 0.0, 3)]);
     run_for(&engine, 20, 5);
@@ -80,9 +80,9 @@ fn on_sim_error_reports_every_failure_uncapped() {
 #[test]
 fn stale_writes_are_not_counted() {
     let script = r#"
-        patch("nope", #{ step: "1" });
-        set("nope", "step", "2");
-        delete("nope");
+        table().patch("nope", #{ step: "1" });
+        table().patch("nope", #{ step: "2" });
+        table().delete("nope");
     "#;
     let (engine, _log) = engine_with(vec![SimDef::new("a", "log", script).with_spawn(1, 0.0, 1)]);
     run_for(&engine, 2, 1);

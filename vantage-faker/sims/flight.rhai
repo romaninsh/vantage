@@ -14,7 +14,7 @@
 // The row's id is an 8-digit sim id, written via `upsert` into the table's
 // id column, whatever it is named. `patch`/`delete` below take the same id,
 // so the phase updates and the eventual removal work the same way.
-// Any other declared column of the table is filled once from row().
+// Any other declared column of the table is filled once from fake_row().
 //
 // Phases: Scheduled, Boarding (30 min before off-block), Taxiing (12 min),
 // Takeoff, Climbing, Cruising, Descending, Landing, Landed. While airborne
@@ -173,7 +173,7 @@ let kts = ac[2];
 let wobble = rand_float(0.0, 6.2832);
 
 let id = pad(sim_id(), 8);
-let r = row();
+let r = table().fake_row();
 r.flight_no = carrier[0] + rand_int(10, 2999);
 r.carrier = carrier[0];
 r.aircraft_type = ac[0];
@@ -201,12 +201,12 @@ r.seats = ac[1];
 r.lat = round_by(origin.lat, 10000.0);
 r.lon = round_by(origin.lon, 10000.0);
 r.board_order = scheduled.to_int();
-upsert(id, r);
+table().upsert(id, r);
 
 wait_until(off_block - boarding);
-patch(id, #{ phase: "Boarding" });
+table().patch(id, #{ phase: "Boarding" });
 wait_until(off_block);
-patch(id, #{ phase: "Taxiing", ground_speed_kts: 15, actual_departure: wall_now() });
+table().patch(id, #{ phase: "Taxiing", ground_speed_kts: 15, actual_departure: wall_now() });
 wait_until(takeoff);
 
 // Airborne: distance flown, altitude and speed from the planned profile.
@@ -230,7 +230,7 @@ while now_secs() < eta {
     }
     flown = flown.min(nm);
     let at = interpolate(origin.lat, origin.lon, dest.lat, dest.lon, flown / nm);
-    patch(id, #{
+    table().patch(id, #{
         phase: phase,
         progress: round_by(flown / nm * 100.0, 10.0),
         altitude_ft: ((alt / 100.0).round() * 100.0).to_int(),
@@ -243,7 +243,7 @@ while now_secs() < eta {
     sleep((eta - t).min(30.0));
 }
 
-patch(id, #{
+table().patch(id, #{
     phase: "Landed",
     progress: 100.0,
     altitude_ft: 0,
@@ -254,4 +254,4 @@ patch(id, #{
     lon: round_by(dest.lon, 10000.0),
 });
 sleep(retention);
-delete(id);
+table().delete(id);

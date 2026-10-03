@@ -373,7 +373,7 @@ impl TableSource for MysqlDB {
 
         self.get_table_value(table, id)
             .await?
-            .ok_or_else(|| error!("Row not found after patch", id = id.clone()))
+            .ok_or_else(|| error!("Row not found after patch", id = id.clone()).mark_not_found())
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>

@@ -156,6 +156,43 @@ impl Dio {
         self.flash(ChangeFlash::delete(id)).await
     }
 
+    /// Insert `record` with no id, and report the id the master assigned
+    /// plus the record as stored (id column included).
+    ///
+    /// **Bypasses the write queue and any `on_flash` route**: there is no
+    /// id yet to stage optimistically or to route. Writes straight to the
+    /// master, then seeds the cache with the assigned row so it's visible
+    /// to an immediate read. Shared by [`DioShell`](crate::dio::shell::DioShell)'s
+    /// `TableShell::insert_vista_return_id_value` and `Servo`'s
+    /// `IdStrategy::Auto` insert, which layers its own status bookkeeping
+    /// around the call.
+    ///
+    /// Once the master insert succeeds the id is returned even if seeding
+    /// the cache fails (logged at warn): the row exists upstream, and a
+    /// caller that lost its id would insert it again on retry. The row then
+    /// shows in the cache after the next refresh.
+    pub(crate) async fn insert_returning_id(
+        &self,
+        record: &Record<CborValue>,
+    ) -> Result<(String, Record<CborValue>)> {
+        use vantage_dataset::traits::InsertableValueSet as _;
+
+        let master = self.master();
+        let id = master.insert_return_id_value(record).await?;
+        let id_column = master.get_id_column().unwrap_or("id");
+        let mut stored = record.clone();
+        stored.insert(id_column.to_string(), CborValue::Text(id.clone()));
+        if let Err(e) = self.patched(id.clone(), stored.clone()).await {
+            tracing::warn!(
+                target: "vantage_diorama",
+                id = %id,
+                error = %e,
+                "inserted row not seeded into the cache; it shows after the next refresh",
+            );
+        }
+        Ok((id, stored))
+    }
+
     /// The id the master reports for a record it stored: its id column,
     /// read in the same form every other cache key takes. `None` when the
     /// record carries no readable id — the caller then keeps the id it
@@ -179,7 +216,7 @@ async fn reassert_confirmed(inner: &DioInner, flash: &ChangeFlash) -> Result<()>
         return Ok(());
     };
     match flash.kind() {
-        FlashKind::Insert | FlashKind::Replace | FlashKind::Patch => {
+        FlashKind::Insert | FlashKind::Replace | FlashKind::Upsert | FlashKind::Patch => {
             let mut merged = inner.cache.get_value(id).await?.unwrap_or_default();
             for (k, v) in flash.patch() {
                 merged.insert(k.clone(), v.clone());
@@ -202,7 +239,9 @@ async fn stage_in_cache(
         return Ok(());
     };
     match flash.kind() {
-        FlashKind::Insert | FlashKind::Replace => inner.cache.insert_value(id, flash.patch()).await,
+        FlashKind::Insert | FlashKind::Replace | FlashKind::Upsert => {
+            inner.cache.insert_value(id, flash.patch()).await
+        }
         FlashKind::Patch => {
             let mut merged = pre.cloned().unwrap_or_default();
             for (k, v) in flash.patch() {

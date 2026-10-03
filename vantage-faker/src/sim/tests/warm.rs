@@ -6,12 +6,12 @@ use super::*;
 
 /// Born every sim minute; steps every 10 minutes; gone after 50.
 const LIFE: &str = r#"
-    let id = insert(#{ who: "w", step: 0, at: now_secs() });
+    let id = table().insert(#{ who: "w", step: 0, at: now_secs() });
     for i in 1..=5 {
         sleep(minutes(10));
-        patch(id, #{ step: i });
+        table().patch(id, #{ step: i });
     }
-    delete(id);
+    table().delete(id);
 "#;
 
 fn warm_def(clock: f64) -> SimDef {
@@ -138,7 +138,7 @@ fn warm_start_on_the_system_clock_goes_live() {
     let def = SimDef::new(
         "w",
         "log",
-        r#"insert(#{ who: "w", at: now_secs() }); sleep(days(1));"#,
+        r#"table().insert(#{ who: "w", at: now_secs() }); sleep(days(1));"#,
     )
     .with_spawn(1, 60.0, 1000)
     .with_warm(Duration::from_secs(600));

@@ -1,5 +1,5 @@
 //! Schema/capability introspection builders backing the `capabilities()`,
-//! `columns()`, and `references()` fetch verbs. Each turns a [`Vista`]'s
+//! `columns()`, and `references()` read verbs. Each turns a [`Vista`]'s
 //! metadata into a plain Rhai value the script can read.
 
 use vantage_rhai::rhai::{Array, Dynamic, Map as RhaiMap};
@@ -17,6 +17,7 @@ pub(crate) fn capabilities_map(vista: &Vista) -> RhaiMap {
     put("can_insert", c.can_insert);
     put("can_update", c.can_update);
     put("can_delete", c.can_delete);
+    put("can_import", c.can_import);
     put("can_subscribe", c.can_subscribe);
     put("can_invalidate", c.can_invalidate);
     put("can_order", c.can_order);

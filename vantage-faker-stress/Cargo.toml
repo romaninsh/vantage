@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 vantage-faker = { path = "../vantage-faker", features = ["sim", "serde"] }
-vantage-memory = { version = "0.6.1", path = "../vantage-memory" }
+vantage-memory = { version = "1.0.0", path = "../vantage-memory" }
 vantage-diorama = { path = "../vantage-diorama" }
 vantage-vista = { path = "../vantage-vista" }
 vantage-core = { path = "../vantage-core" }

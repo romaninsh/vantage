@@ -26,7 +26,7 @@ pub(crate) fn generate(cell: &mut Cell<'_>, from: &str, to: &str, spread: Spread
         Spread::Random if lo < hi => cell.rng.random_range(lo..=hi),
         Spread::Random => lo,
         Spread::Even => {
-            // `seq` wraps at `rows`: a `row()` caller has no fixed row
+            // `seq` wraps at `rows`: a `fake_row()` caller has no fixed row
             // count, so past the first `rows` calls the spread repeats
             // instead of pinning at `to` forever.
             let rows = cell.rows.max(1);

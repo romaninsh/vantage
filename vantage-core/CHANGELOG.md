@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0 — 2026-10-03
+
+- Stable release. The API hasn't changed since 2026-09-16 (2 weeks); no code changes.
+
 ## 0.6.4 — 2026-09-16
 
 - `Priority` (`Background` | `Essential`), a tokio task-local set with

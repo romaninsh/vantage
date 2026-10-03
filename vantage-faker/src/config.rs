@@ -145,7 +145,7 @@ fn column_gen((name, column): (&String, &ColumnSpec)) -> FakerColumn {
     col
 }
 
-/// `spec`'s columns for the `row()` sim verb: every declared column except a
+/// `spec`'s columns for the `fake_row()` sim verb: every declared column except a
 /// `references` column with no generator of its own — a bare reference has
 /// no plausible fake value, only [`DatasetSpec::generate`]'s static
 /// relational fill picks a real parent id.

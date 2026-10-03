@@ -56,12 +56,12 @@ impl MemoryDB {
             },
         );
         if store.id_column() != id_column {
-            return Err(error!(format!(
-                "table {} already exists with id column {}, typed table says {}",
-                table.table_name(),
-                store.id_column(),
-                id_column
-            )));
+            return Err(error!(
+                "Table already exists with another id column",
+                table = table.table_name(),
+                existing = store.id_column(),
+                requested = id_column
+            ));
         }
         Ok(store)
     }

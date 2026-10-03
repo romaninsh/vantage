@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
+use fake::Fake;
 use fake::faker::address::en::{CityName, CountryName, StreetName};
 use fake::faker::company::en::CompanyName;
 use fake::faker::internet::en::{SafeEmail, Username};
@@ -23,11 +24,10 @@ use fake::faker::name::en::{FirstName, LastName, Name};
 use fake::faker::phone_number::en::PhoneNumber;
 use fake::rand::rngs::StdRng;
 use fake::rand::{RngExt as _, SeedableRng as _};
-use fake::Fake;
 use vantage_types::Record;
 
-use crate::generator::{self, column_salt, now_unix, Cell, ColumnGen, Memo};
 use crate::FakerColumn;
+use crate::generator::{self, Cell, ColumnGen, Memo, column_salt, now_unix};
 
 /// Rows this fraction of `record_for` calls draw a value from the anomaly
 /// pool instead of the realistic generator — see [`ValueGen::with_weirdness`].

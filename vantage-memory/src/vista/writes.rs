@@ -12,7 +12,7 @@ type Rec = Record<CborValue>;
 
 impl MemoryTableShell {
     fn not_found(&self, id: &str) -> VantageError {
-        error!("Row not found", table = self.table.name(), id = id)
+        error!("Row not found", table = self.table.name(), id = id).mark_not_found()
     }
 
     pub(super) fn insert_row(&self, id: &str, record: &Rec) -> Result<Rec> {
@@ -26,6 +26,15 @@ impl MemoryTableShell {
             .replace(id, record.clone())
             .ok_or_else(|| self.not_found(id))?;
         Ok((*row).clone())
+    }
+
+    /// Insert `id`, or replace it if it exists, and return the stored row.
+    pub(super) fn upsert_row(&self, id: &str, record: &Rec) -> Result<Rec> {
+        self.table.upsert(id, record.clone());
+        self.table
+            .get(id)
+            .map(|row| (*row).clone())
+            .ok_or_else(|| self.not_found(id))
     }
 
     pub(super) fn patch_row(&self, id: &str, partial: &Rec) -> Result<Rec> {

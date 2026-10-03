@@ -15,7 +15,17 @@ use vantage_types::Record;
 /// Convert a Rhai value into the universal CBOR carrier. Scalars, arrays and
 /// maps pass through (an array is what an `in` condition takes); a value with
 /// no CBOR story — a closure, a custom type — is an error naming the type.
+///
+/// An instant (a host's `now()`) travels as the standard CBOR datetime — tag
+/// 0 over RFC 3339 text — which every driver with a datetime type reads as
+/// one.
 pub fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
+    if let Some(dt) = d.clone().try_cast::<chrono::DateTime<chrono::Utc>>() {
+        return Ok(CborValue::Tag(
+            0,
+            Box::new(CborValue::Text(dt.to_rfc3339())),
+        ));
+    }
     if d.is_unit() {
         Ok(CborValue::Null)
     } else if d.is::<bool>() {
@@ -170,6 +180,17 @@ mod tests {
         assert!(matches!(&pairs[0].1, CborValue::Array(a) if a.len() == 2));
         let back = cbor_to_dynamic(&cbor);
         assert!(back.is_map());
+    }
+
+    #[test]
+    fn an_instant_stores_as_a_cbor_datetime() {
+        let at = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        assert_eq!(
+            dynamic_to_cbor(Dynamic::from(at)).unwrap(),
+            CborValue::Tag(0, Box::new(CborValue::Text(at.to_rfc3339())))
+        );
     }
 
     #[test]

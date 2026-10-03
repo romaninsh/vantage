@@ -21,9 +21,9 @@ pub mod types;
 pub use types::{RhaiCase, RhaiExpr, RhaiIdent, RhaiSelect};
 
 /// The SurrealDB query-building vocabulary as a [`vantage_rhai::Vocab`].
-/// Register it *before* vantage-vista's `ConventionalVocab` so the
-/// conventional `table(name) -> Vista` wins over this vocabulary's `table`
-/// alias for `ident` (which stays reachable as `ident(...)`).
+/// Register it *before* vantage-vista's `DataVocab` so its
+/// `table(name)` handle wins over this vocabulary's `table` alias for
+/// `ident` (which stays reachable as `ident(...)`).
 #[cfg(feature = "rhai")]
 pub struct SurrealVocab;
 

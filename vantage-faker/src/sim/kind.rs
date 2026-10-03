@@ -27,14 +27,14 @@ pub(super) struct Kind {
     /// The spawner's args as a Rhai map.
     pub args: RhaiMap,
     pub errors: Mutex<ErrorLog>,
-    /// `row()`'s state per table, shared by every sim spawned from this def,
-    /// so a one-sim-per-row def (`builtin:fifo`) still walks a `walk` or
-    /// even-spread `date` generator forward across sims instead of every
+    /// `fake_row()`'s state per table, shared by every sim spawned from this
+    /// def, so a one-sim-per-row def (`builtin:fifo`) still walks a `walk`
+    /// or even-spread `date` generator forward across sims instead of every
     /// sim rebuilding it from row zero.
     pub(super) row_state: Mutex<HashMap<String, Arc<RowTableState>>>,
 }
 
-/// `row()`'s state for one table: the next sequence number, and the
+/// `fake_row()`'s state for one table: the next sequence number, and the
 /// positional generators' memo (walk series, tree plans) built from it.
 /// Growing the memo at index `seq` only ever reads index `seq - 1`, so it
 /// makes no difference which sim's call grows it first; the seq and the
@@ -71,7 +71,7 @@ impl Kind {
         tracing::error!(sim = %self.def.name, suppressed, %error, "faker sim failed; it ended");
     }
 
-    /// `row()`'s shared state for `table`: the next sequence number, and
+    /// `fake_row()`'s shared state for `table`: the next sequence number, and
     /// the memo it grows. One state per table, kept for the def's lifetime.
     pub fn row_state(&self, table: &str) -> Arc<RowTableState> {
         self.row_state
@@ -91,8 +91,8 @@ pub(super) struct Inner {
     pub store: MemoryStore,
     /// Store tables the verbs have resolved, by name.
     pub tables: RwLock<HashMap<String, MemoryTableHandle>>,
-    /// A table's declared columns, for the `row()` verb. A table with no
-    /// entry here has no declared columns, and `row()` on it is empty.
+    /// A table's declared columns, for the `fake_row()` verb. A table with no
+    /// entry here has no declared columns, and `fake_row()` on it is empty.
     pub columns: HashMap<String, Vec<FakerColumn>>,
     pub sched: Sched,
     pub seed: Option<u64>,

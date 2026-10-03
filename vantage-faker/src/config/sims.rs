@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
-use vantage_core::{Result, error};
+use vantage_core::{Context, Result, error};
 
 #[cfg(feature = "sim")]
 use super::DatasetSpec;
@@ -67,9 +67,10 @@ impl DatasetSpec {
             let table = match &spec.table {
                 Some(t) => t.clone(),
                 None => default_table.cloned().ok_or_else(|| {
-                    error!(format!(
-                        "sim {name}: no `table:`, and the dataset declares no tables"
-                    ))
+                    error!(
+                        "Sim has no `table:`, and the dataset declares no tables",
+                        sim = name
+                    )
                 })?,
             };
             let script = resolve_script(name, &spec.script)?;
@@ -81,8 +82,8 @@ impl DatasetSpec {
                 )
                 .with_clock(spec.clock.unwrap_or(1.0));
             if let Some(warm) = &spec.warm {
-                let dur =
-                    parse_duration(warm).map_err(|e| error!(format!("sim {name}: warm: {e}")))?;
+                let dur = parse_duration(warm)
+                    .with_context(|| error!("Sim `warm:` is invalid", sim = name))?;
                 def = def.with_warm(dur);
             }
             if let Some(ops) = spec.ops {
@@ -98,7 +99,7 @@ impl DatasetSpec {
     }
 
     /// A [`SimEngineBuilder`] over `store` with every [`sim_defs`](Self::sim_defs)
-    /// def added, every table's columns declared (for the `row()` verb) and
+    /// def added, every table's columns declared (for the `fake_row()` verb) and
     /// [`DatasetSpec::seed`] applied, for a caller that wants to set more (a
     /// manual clock, a warm-progress callback) before starting. `None` when
     /// there are no `sims:`.
@@ -137,10 +138,13 @@ fn resolve_script(sim_name: &str, script: &str) -> Result<String> {
     builtin::builtin(builtin_name)
         .map(str::to_string)
         .ok_or_else(|| {
-            error!(format!(
-                "sim {sim_name}: unknown builtin {builtin_name} (known: {})",
-                builtin::BUILTINS.join(", ")
-            ))
+            error!(
+                "Sim names an unknown builtin script",
+                sim = sim_name,
+                builtin = builtin_name,
+                known = builtin::BUILTINS.join(", ")
+            )
+            .mark_not_found()
         })
 }
 
@@ -178,8 +182,9 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
         trimmed.parse::<u64>().ok().map(Duration::from_secs)
     };
     parsed.ok_or_else(|| {
-        error!(format!(
-            "`{s}` is not a duration (e.g. `500ms`, `1.5s`, `2m`, `6h`, `3d`)"
-        ))
+        error!(
+            "Not a duration (e.g. `500ms`, `1.5s`, `2m`, `6h`, `3d`)",
+            value = s
+        )
     })
 }

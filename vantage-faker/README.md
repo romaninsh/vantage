@@ -165,11 +165,11 @@ use std::time::{Duration, SystemTime};
 use vantage_faker::{DatasetGen, SimDef, SimEngine, TableGen};
 
 const ORDER: &str = r#"
-    let id = insert(#{ customer: fake("name"), total: rand_float(5.0, 80.0), status: "Placed" });
+    let id = table().insert(#{ customer: fake("name"), total: rand_float(5.0, 80.0), status: "Placed" });
     sleep(minutes(rand_int(5, 20)));
-    patch(id, #{ status: "Shipped" });
+    table().patch(id, #{ status: "Shipped" });
     sleep(hours(2));
-    delete(id);
+    table().delete(id);
 "#;
 
 DatasetGen::new(Some(7)).table(TableGen::new("order")).generate(&store)?;
@@ -190,13 +190,16 @@ assert!(store.table("order").len() > 0); // the warm hour already ran
 engine.advance(Duration::from_secs(1));
 ```
 
-The verbs a script can call. `t?` is an optional table name; it defaults to the def's table.
+The verbs a script can call:
 
-- **Data:** `insert(t?, map) -> id`, `upsert(t?, id, map)`, `patch(t?, id, map)`,
-  `set(t?, id, field, value)`, `delete(t?, id)`, `get(t?, id)`, `ids(t?)`, `count(t?)`,
-  `find(t?, #{col: value}) -> [id]`, and `row(t?)`: a generated value for each column declared
-  with `SimEngineBuilder::columns`. Ids are strings. `patch`, `set` and `delete` ignore a missing
-  row; `insert` with an existing id is an error, so use `upsert` for stable ids.
+- **Data:** Vantage's data vocabulary over the engine's store. `table()` is the def's own table
+  and `table(name)` any other; both narrow (`where`, `sort`, `search`, `limit`, `ref`), read
+  (`get`, `list`, `first`, `count`, `ids`) and write (`insert`, `upsert`, `patch`, `delete`,
+  `import_from`), and open `record` drafts. `table().fake_row()` returns a generated value for
+  each column declared with `SimEngineBuilder::columns`. Ids are strings. `patch` and `delete`
+  return `false` for a missing row; `insert` with an existing id is an error, so use `upsert` for
+  stable ids. The vocabulary is described in
+  [Scripting with Rhai](https://romaninsh.github.io/vantage/rhai.html).
 - **Random:** `pick`, `pick_weighted`, `rand_int`, `rand_float`, `chance(p)`, `pattern`,
   `sentence`, `fake(kind)` (a value as a column named `kind` would get), `date_between`.
 - **Time:** `seconds`, `minutes`, `hours`, `days`, `sleep`, `wait_until`, `now`, `now_secs`,

@@ -148,6 +148,37 @@ async fn writes_through_the_vista_reach_the_store() {
 }
 
 #[tokio::test]
+async fn upsert_inserts_then_replaces() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+
+    v.upsert_value("new1", &record(&[("name", text("Bun"))]))
+        .await
+        .unwrap();
+    let row = v.get_value("new1").await.unwrap().unwrap();
+    assert_eq!(row.get("name"), Some(&text("Bun")));
+
+    v.upsert_value("new1", &record(&[("name", text("Bun v2"))]))
+        .await
+        .unwrap();
+    let row = v.get_value("new1").await.unwrap().unwrap();
+    assert_eq!(row.get("name"), Some(&text("Bun v2")));
+}
+
+#[tokio::test]
+async fn patch_and_delete_of_a_missing_row_are_not_found() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+    let err = v
+        .patch_value("nope", &record(&[("name", text("x"))]))
+        .await
+        .unwrap_err();
+    assert!(err.is_not_found(), "{err}");
+    let err = v.delete("nope").await.unwrap_err();
+    assert!(err.is_not_found(), "{err}");
+}
+
+#[tokio::test]
 async fn clone_shell_isolates_query_state() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();

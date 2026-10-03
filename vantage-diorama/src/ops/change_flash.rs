@@ -20,12 +20,15 @@ use vantage_types::Record;
 /// What kind of change this flash carries.
 ///
 /// `Replace` exists because a patch-merge cannot express field removal;
-/// `Clear` (id-less, "delete every row") keeps its historical
-/// no-optimism special-casing in the pipeline.
+/// `Upsert` is `Replace` for a row that may not exist yet — unlike
+/// `Replace`, a missing row is not a failure; `Clear` (id-less, "delete
+/// every row") keeps its historical no-optimism special-casing in the
+/// pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlashKind {
     Insert,
     Replace,
+    Upsert,
     Patch,
     Delete,
     Clear,
@@ -63,6 +66,11 @@ impl ChangeFlash {
     /// Full-record overwrite (drops fields absent from `record`).
     pub fn replace(id: impl Into<String>, record: Record<CborValue>) -> Self {
         Self::new(FlashKind::Replace, Some(id.into()), record)
+    }
+
+    /// Full-record overwrite that creates the row if it doesn't exist.
+    pub fn upsert(id: impl Into<String>, record: Record<CborValue>) -> Self {
+        Self::new(FlashKind::Upsert, Some(id.into()), record)
     }
 
     /// Remove the row at `id`.
@@ -120,11 +128,11 @@ impl ChangeFlash {
     }
 
     /// The merged result of applying this flash: the record itself for
-    /// `Insert`/`Replace`, `before + patch` for `Patch`, `None` for
-    /// `Delete`/`Clear` (nothing remains).
+    /// `Insert`/`Replace`/`Upsert`, `before + patch` for `Patch`, `None`
+    /// for `Delete`/`Clear` (nothing remains).
     pub fn after(&self) -> Option<Record<CborValue>> {
         match self.kind {
-            FlashKind::Insert | FlashKind::Replace => Some(self.patch.clone()),
+            FlashKind::Insert | FlashKind::Replace | FlashKind::Upsert => Some(self.patch.clone()),
             FlashKind::Patch => {
                 let mut merged = self.before.clone().unwrap_or_default();
                 for (k, v) in &self.patch {

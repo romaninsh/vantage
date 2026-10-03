@@ -14,7 +14,7 @@
 //! ```
 //!
 //! Rhai is synchronous; [`Servo::flash`] is async. `save()` runs the
-//! flash via `Handle::current().block_on(…)`, which is only legal on a
+//! flash via `vantage_vista::rhai::block_on`, which is only legal on a
 //! thread with a runtime *context* but no async *frame* — the same
 //! contract as vantage-vista's fetch verbs (see
 //! `vantage-vista/src/rhai/runtime.rs`): evaluate scripts under
@@ -22,12 +22,11 @@
 
 use std::sync::Arc;
 
-use ciborium::Value as CborValue;
 use vantage_rhai::Vocab;
 use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 // One converter for the whole data layer: a record id renders as `table:id`
 // in a servo script exactly as it does in a vista script.
-pub use vantage_vista::{cbor_to_dynamic, record_to_map};
+pub use vantage_vista::{cbor_to_dynamic, dynamic_to_cbor, record_to_map};
 
 use crate::servo::{Servo, ServoStatus};
 
@@ -58,7 +57,7 @@ pub fn register_servo_onto(engine: &mut Engine) {
     engine.register_fn(
         "set",
         |servo: &mut Arc<Servo>, field: &str, value: Dynamic| -> Result<(), Box<EvalAltResult>> {
-            servo.set(field, dynamic_to_cbor(&value)?);
+            servo.set(field, dynamic_to_cbor(value)?);
             Ok(())
         },
     );
@@ -136,32 +135,10 @@ pub fn register_servo_onto(engine: &mut Engine) {
     engine.register_fn(
         "save",
         |servo: &mut Arc<Servo>| -> Result<Dynamic, Box<EvalAltResult>> {
-            let handle = tokio::runtime::Handle::try_current().map_err(|_| {
-                Box::<EvalAltResult>::from(
-                    "servo save() needs a tokio runtime context (run the script via spawn_blocking)",
-                )
-            })?;
-            handle
-                .block_on(servo.flash())
+            vantage_vista::rhai::block_on(servo.flash())
+                .and_then(|flashed| flashed)
                 .map_err(|e| Box::<EvalAltResult>::from(format!("save failed: {e}")))?;
             Ok(servo.id().map(Dynamic::from).unwrap_or(Dynamic::UNIT))
         },
     );
-}
-
-/// Dynamic → CBOR. An instant (a host's `now()`) travels as the standard
-/// CBOR datetime — tag 0 over RFC 3339 text — which every driver that has a
-/// datetime type reads as one; the SurrealDB driver accepts it beside its
-/// own compact tag 12. That case is diorama's (it owns `chrono` under the
-/// `rhai` feature); everything else is vista's one converter, which errors
-/// on types with no CBOR story — a script setting a closure on a servo is a
-/// bug worth naming.
-pub fn dynamic_to_cbor(value: &Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
-    if let Some(dt) = value.clone().try_cast::<chrono::DateTime<chrono::Utc>>() {
-        return Ok(CborValue::Tag(
-            0,
-            Box::new(CborValue::Text(dt.to_rfc3339())),
-        ));
-    }
-    vantage_vista::dynamic_to_cbor(value.clone())
 }

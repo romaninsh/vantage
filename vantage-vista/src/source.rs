@@ -174,6 +174,20 @@ pub trait TableShell: Send + Sync + 'static {
         Err(self.default_error("replace_vista_value", "can_update"))
     }
 
+    /// Insert row `id`, or replace it if it exists. The default replaces and
+    /// falls back to insert on `NotFound`; stores with a native upsert override it.
+    async fn upsert_vista_value(
+        &self,
+        vista: &Vista,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        match self.replace_vista_value(vista, id, record).await {
+            Err(e) if e.is_not_found() => self.insert_vista_value(vista, id, record).await,
+            other => other,
+        }
+    }
+
     async fn patch_vista_value(
         &self,
         _vista: &Vista,
@@ -600,16 +614,15 @@ pub trait TableShell: Send + Sync + 'static {
 
     // ---- Scripting ---------------------------------------------------------
 
-    /// Contribute backend-specific vocabulary to a Rhai engine that
-    /// vantage-vista has already seeded with the conventional `Vista` verbs
-    /// (see the `rhai_conventional` module). Backends with an expression engine
+    /// Contribute backend-specific vocabulary to a Rhai engine, registered
+    /// before vantage-vista's `DataVocab`. Backends with an expression engine
     /// (SurrealDB, SQL) override this to register `ident`/`==`/`fx`/graph
-    /// constructors plus a `with_condition(<backend expr>)` builder that routes
-    /// a boxed native condition through [`add_raw_condition`](Self::add_raw_condition).
+    /// constructors plus a `with_condition(<backend expr>)` verb on the table
+    /// handle (see `Handle::with_base_vista`) that routes a boxed native
+    /// condition through [`add_raw_condition`](Self::add_raw_condition).
     ///
     /// Default is a no-op: engine-less datasources (CSV/Mongo/REST) still get
-    /// the conventional verbs and only lose the vendor expression syntax —
-    /// graceful degradation, not all-or-nothing.
+    /// the table handle verbs and only lose the vendor expression syntax.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, _engine: &mut rhai::Engine) {}
 

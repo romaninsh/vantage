@@ -51,8 +51,8 @@ fn pad(n, width) {
 
 // Create folder `path` under `parent` unless it exists.
 fn ensure_folder(path, parent, name, ts) {
-    if get(path) == () {
-        upsert(path, #{
+    if table().get(path) == () {
+        table().upsert(path, #{
             path: path, parent: parent, name: name, kind: "folder",
             size: 0, created: ts, modified: ts,
         });
@@ -63,14 +63,14 @@ fn ensure_folder(path, parent, name, ts) {
 // return its new size.
 fn grow(dir, name, bytes, ts) {
     let path = dir + "/" + name;
-    let old = get(path);
+    let old = table().get(path);
     let size = bytes;
     let created = ts;
     if old != () {
         size += old.size;
         created = old.created;
     }
-    upsert(path, #{
+    table().upsert(path, #{
         path: path, parent: dir, name: name, kind: "file",
         size: size, created: created, modified: ts,
     });
@@ -80,10 +80,10 @@ fn grow(dir, name, bytes, ts) {
 // Set folder `path`'s size to the sum of its children's and touch it.
 fn refresh(path, ts) {
     let total = 0;
-    for child in find(#{ parent: path }) {
-        total += get(child).size;
+    for child in table().where("parent", path).ids() {
+        total += table().get(child).size;
     }
-    patch(path, #{ size: total, modified: ts });
+    table().patch(path, #{ size: total, modified: ts });
 }
 
 // [event type, percent chance per second]

@@ -8,11 +8,11 @@ use super::*;
 fn linear_script_keeps_its_locals_across_sleeps() {
     let script = r#"
         let n = 0;
-        let id = insert(#{ who: "a", step: n, at: now_secs() });
+        let id = table().insert(#{ who: "a", step: n, at: now_secs() });
         while n < 3 {
             sleep(seconds(10));
             n += 1;
-            patch(id, #{ step: n, at: now_secs() });
+            table().patch(id, #{ step: n, at: now_secs() });
         }
     "#;
     let (engine, log) = engine_with(vec![SimDef::new("a", "log", script)]);
@@ -37,7 +37,9 @@ fn sleepers_wake_in_time_order_across_sims() {
         SimDef::new(
             name,
             "log",
-            format!(r#"sleep(seconds({secs})); insert(#{{ who: "{name}", at: now_secs() }});"#),
+            format!(
+                r#"sleep(seconds({secs})); table().insert(#{{ who: "{name}", at: now_secs() }});"#
+            ),
         )
     };
     let (engine, log) = engine_with(vec![
@@ -53,9 +55,9 @@ fn sleepers_wake_in_time_order_across_sims() {
 #[test]
 fn done_ends_the_sim_early_and_keeps_its_rows() {
     let script = r#"
-        insert(#{ who: "kept" });
+        table().insert(#{ who: "kept" });
         done();
-        insert(#{ who: "never" });
+        table().insert(#{ who: "never" });
     "#;
     let (engine, log) = engine_with(vec![SimDef::new("d", "log", script)]);
     engine.settle();
@@ -68,7 +70,7 @@ fn done_ends_the_sim_early_and_keeps_its_rows() {
 fn done_cannot_be_caught() {
     let script = r#"
         try { done(); } catch { }
-        insert(#{ who: "escaped" });
+        table().insert(#{ who: "escaped" });
     "#;
     let (engine, log) = engine_with(vec![SimDef::new("d", "log", script)]);
     engine.settle();
@@ -82,7 +84,7 @@ fn a_failing_sim_ends_without_stopping_the_others() {
     let good = SimDef::new(
         "good",
         "log",
-        r#"sleep(seconds(5)); insert(#{ who: "good" });"#,
+        r#"sleep(seconds(5)); table().insert(#{ who: "good" });"#,
     );
     let (engine, log) = engine_with(vec![bad, good]);
     run_for(&engine, 2, 1);
@@ -96,9 +98,9 @@ fn a_failing_sim_ends_without_stopping_the_others() {
 fn deep_recursion_fails_the_sim_within_its_small_stack() {
     let script = r#"
         fn deep(n) { if n == 0 { 0 } else { 1 + deep(n - 1) } }
-        insert(#{ who: "before" });
+        table().insert(#{ who: "before" });
         deep(10000);
-        insert(#{ who: "after" });
+        table().insert(#{ who: "after" });
     "#;
     let (engine, log) = engine_with(vec![SimDef::new("r", "log", script)]);
     engine.settle();
@@ -109,7 +111,7 @@ fn deep_recursion_fails_the_sim_within_its_small_stack() {
 
 #[test]
 fn unknown_table_is_a_script_error() {
-    let script = r#"insert("nope", #{ who: "x" }); insert(#{ who: "unreached" });"#;
+    let script = r#"table("nope").insert(#{ who: "x" }); table().insert(#{ who: "unreached" });"#;
     let (engine, log) = engine_with(vec![SimDef::new("t", "log", script)]);
     engine.settle();
     assert!(rows(&log).is_empty());
@@ -124,7 +126,7 @@ fn stop_ends_sleepers_promptly_on_the_system_clock() {
     let def = SimDef::new(
         "nap",
         "log",
-        "sleep(hours(10)); insert(#{ who: \"late\" });",
+        "sleep(hours(10)); table().insert(#{ who: \"late\" });",
     )
     .with_spawn(50, 0.0, 50);
     let engine = SimEngine::builder().store(&store).sim(def).start().unwrap();
@@ -152,7 +154,7 @@ fn short_sleeps_on_the_system_clock_never_strand_a_sim() {
     let def = SimDef::new(
         "tick",
         "log",
-        "for i in 0..40 { sleep(seconds(1)); } insert(#{ who: \"done\" });",
+        "for i in 0..40 { sleep(seconds(1)); } table().insert(#{ who: \"done\" });",
     )
     .with_spawn(60, 0.0, 60)
     .with_clock(240.0);
@@ -208,7 +210,7 @@ fn the_deepest_allowed_nesting_fits_the_stack() {
         format!(
             r#"
             fn deep(n) {{ if n == 0 {{ {nested} }} else {{ 1 + deep(n - 1) }} }}
-            insert(#{{ who: "r", step: deep({levels}) }});
+            table().insert(#{{ who: "r", step: deep({levels}) }});
             "#
         )
     };

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.0 — 2026-10-03
+
+- Stable release. The API hasn't changed since 2026-08-09 (8 weeks); no code changes.
+- Depends on `vantage-core` 1.0.0, `vantage-types-entity` 1.0.0.
+
 ## 0.6.8 — 2026-08-09
 
 - `Record::changes_from(&before)` returns the fields that differ — the

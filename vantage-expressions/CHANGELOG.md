@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.6.1 — unreleased
+## 1.0.0 — 2026-10-03
+
+- Stable release. The API hasn't changed since 2026-06-17 (4 months); no code changes.
+- Depends on `vantage-core` 1.0.0, `vantage-dataset` 1.0.0, `vantage-vista` 1.0.0.
+
+## 0.6.1 — 2026-06-17
 
 - Internal dependency realignment for the coordinated 0.6 release; no public API changes.
 

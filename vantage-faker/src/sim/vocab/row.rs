@@ -1,17 +1,18 @@
-//! `row()` / `row(t)`: a generated row for a table's declared columns
-//! ([`SimEngineBuilder::columns`](crate::sim::SimEngineBuilder::columns)).
+//! `fake_row()`: a generated row for a table's declared columns, called on
+//! a [`Handle`] from `table()` or `table(name)`.
 
 use std::sync::Mutex;
 
 use ciborium::Value as CborValue;
 use fake::rand::rngs::StdRng;
 use vantage_rhai::rhai::{Engine, Map as RhaiMap};
+use vantage_vista::Handle;
 
-use super::convert::cbor_to_dynamic;
 use crate::FakerColumn;
 use crate::generator::{self, Cell, Memo, column_salt, now_unix};
 use crate::sim::current::{Current, VerbResult, with};
 use crate::value_gen::ValueGen;
+use vantage_vista::rhai::cbor_to_dynamic;
 
 /// One column's value: `col`'s generator if set, else the name/type guess
 /// [`ValueGen`] uses when seeding tables. `seq` and `memo` both come from
@@ -50,20 +51,18 @@ fn value_for(
     }
 }
 
-/// Table `t`'s (or the def's default table's) declared columns, generated
-/// into a map. The id column is never produced — the caller supplies it to
-/// `insert` or `upsert`. A table with no declared columns returns an empty
-/// map.
-fn row(c: &mut Current, t: Option<&str>) -> VerbResult<RhaiMap> {
-    let name = t.unwrap_or(&c.kind().def.table).to_string();
-    let Some(columns) = c.inner.columns.get(&name).cloned() else {
+/// Table `name`'s declared columns, generated into a map. The id column is
+/// never produced — the caller supplies it to `insert` or `upsert`. A table
+/// with no declared columns returns an empty map.
+fn row(c: &mut Current, name: &str) -> VerbResult<RhaiMap> {
+    let Some(columns) = c.inner.columns.get(name).cloned() else {
         return Ok(RhaiMap::new());
     };
-    let id_column = c.inner.table(&name).map(|t| t.id_column().to_string());
+    let id_column = c.inner.table(name).map(|t| t.id_column().to_string());
     // Salted per engine, not per sim: the series is shared, so whichever
     // sim grows it must grow the same values.
     let salt = c.inner.seed.unwrap_or_default();
-    let state = c.kind().row_state(&name);
+    let state = c.kind().row_state(name);
     let seq = state.next_seq();
     let rng = &mut c.rng;
     let mut map = RhaiMap::new();
@@ -78,6 +77,11 @@ fn row(c: &mut Current, t: Option<&str>) -> VerbResult<RhaiMap> {
 }
 
 pub(super) fn register(engine: &mut Engine) {
-    engine.register_fn("row", || with(|c| row(c, None)));
-    engine.register_fn("row", |t: &str| with(|c| row(c, Some(t))));
+    engine.register_fn("fake_row", |h: &mut Handle| -> VerbResult<RhaiMap> {
+        let name = h
+            .table_name()
+            .ok_or("fake_row only works on a handle from table(...)")?
+            .to_string();
+        with(|c| row(c, &name))
+    });
 }

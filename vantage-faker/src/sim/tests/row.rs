@@ -1,4 +1,4 @@
-//! `row()` / `row(t)` and `builtin:` script names.
+//! `fake_row()` and `builtin:` script names.
 
 use super::*;
 use crate::{ColumnGen, FakerColumn};
@@ -30,7 +30,7 @@ fn engine_with_columns(script: &str) -> (SimEngine, MemoryTableHandle) {
 #[test]
 fn row_generates_declared_columns_without_id() {
     let (engine, log) = engine_with_columns(
-        "let r = row(); insert(#{ id: \"x\", has_id: r.contains(\"id\"), status: r.status, n: r.n });",
+        "let r = table().fake_row(); table().insert(#{ id: \"x\", has_id: r.contains(\"id\"), status: r.status, n: r.n });",
     );
     run_for(&engine, 1, 1);
     let rec = log.get("x").unwrap();
@@ -60,8 +60,8 @@ fn row_walk_column_varies_across_calls_in_one_sim() {
         .sim(SimDef::new(
             "r",
             "log",
-            "let a = row().score; let b = row().score; let c = row().score; \
-             insert(#{ id: \"x\", a: a, b: b, c: c });",
+            "let a = table().fake_row().score; let b = table().fake_row().score; let c = table().fake_row().score; \
+             table().insert(#{ id: \"x\", a: a, b: b, c: c });",
         ))
         .manual_clock(start())
         .seed(4)
@@ -76,7 +76,7 @@ fn row_walk_column_varies_across_calls_in_one_sim() {
     );
 }
 
-/// A one-sim-per-row def, like `builtin:fifo`, calling `row()` on a `walk`
+/// A one-sim-per-row def, like `builtin:fifo`, calling `fake_row()` on a `walk`
 /// column thousands of times over its lifetime. The walk's memo is shared
 /// per table (`Kind::row_state`), so growing it costs O(1) per call rather
 /// than replaying the series from scratch each time: this checks the walk
@@ -104,7 +104,7 @@ fn row_walk_column_stays_continuous_and_cheap_across_many_sims() {
             SimDef::new(
                 "r",
                 "log",
-                "let r = row(); insert(#{ id: sim_id().to_string(), score: r.score });",
+                "let r = table().fake_row(); table().insert(#{ id: sim_id().to_string(), score: r.score });",
             )
             .with_spawn(0, 60.0, 50),
         )
@@ -147,7 +147,7 @@ fn row_on_a_table_without_columns_is_empty() {
         .sim(SimDef::new(
             "r",
             "log",
-            "insert(#{ id: \"x\", n: row(\"bare\").len() });",
+            "table().insert(#{ id: \"x\", n: table(\"bare\").fake_row().len() });",
         ))
         .manual_clock(start())
         .start()

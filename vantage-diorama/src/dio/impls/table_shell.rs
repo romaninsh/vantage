@@ -9,7 +9,7 @@ use vantage_vista::{
 };
 
 use crate::dio::shell::DioShell;
-use crate::ops::ChangeFlash;
+use crate::ops::{ChangeFlash, FlashKind};
 
 #[async_trait]
 impl TableShell for DioShell {
@@ -148,9 +148,8 @@ impl TableShell for DioShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue(ChangeFlash::insert(id.clone(), record.clone()))
-            .await?;
-        Ok(with_injected_id(record, id))
+        self.enqueue_full_record(FlashKind::Insert, id, record)
+            .await
     }
 
     async fn replace_vista_value(
@@ -159,9 +158,20 @@ impl TableShell for DioShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue(ChangeFlash::replace(id.clone(), record.clone()))
-            .await?;
-        Ok(with_injected_id(record, id))
+        self.enqueue_full_record(FlashKind::Replace, id, record)
+            .await
+    }
+
+    /// Unlike `patch`/`delete`, upsert has no missing-row failure to guard
+    /// against, so no `ensure_row_exists` check is needed here.
+    async fn upsert_vista_value(
+        &self,
+        _vista: &Vista,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        self.enqueue_full_record(FlashKind::Upsert, id, record)
+            .await
     }
 
     async fn patch_vista_value(
@@ -170,6 +180,7 @@ impl TableShell for DioShell {
         id: &String,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        self.ensure_row_exists(id).await?;
         self.enqueue(ChangeFlash::new(
             crate::ops::FlashKind::Patch,
             Some(id.clone()),
@@ -180,11 +191,29 @@ impl TableShell for DioShell {
     }
 
     async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
+        self.ensure_row_exists(id).await?;
         self.enqueue(ChangeFlash::delete(id.clone())).await
     }
 
     async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
         self.enqueue(ChangeFlash::clear()).await
+    }
+
+    /// No id exists until the master assigns one — see
+    /// [`Dio::insert_returning_id`](crate::Dio::insert_returning_id), which
+    /// bypasses the write queue and any `on_flash` route and seeds the
+    /// cache, so the id returned here is visible to an immediate
+    /// `get_value`.
+    async fn insert_vista_return_id_value(
+        &self,
+        _vista: &Vista,
+        record: &Record<CborValue>,
+    ) -> Result<String> {
+        let dio = crate::Dio {
+            inner: self.dio.clone(),
+        };
+        let (id, _stored) = dio.insert_returning_id(record).await?;
+        Ok(id)
     }
 
     // ---- Live subscription ------------------------------------------------------
@@ -302,6 +331,36 @@ impl DioShell {
             inner: self.dio.clone(),
         };
         crate::dio::augment_passes::hydrate_gaps(&dio, rows).await
+    }
+
+    /// `patch`/`delete` return before the write-through queue drains, so a
+    /// write to a nonexistent id would only fail later via
+    /// [`DioEvent::WriteFailed`], never reaching the caller. Check the cache
+    /// first, then the master on a miss — a lazily-populated cache must not
+    /// report not-found for a row the master holds.
+    async fn ensure_row_exists(&self, id: &str) -> Result<()> {
+        if self.dio.cache.get_value(id).await?.is_some() {
+            return Ok(());
+        }
+        let master = self.dio.master.read().unwrap().clone();
+        if master.get_value(id).await?.is_some() {
+            return Ok(());
+        }
+        Err(error!("Row not found", table = self.dio.cache_table_name, id = id).mark_not_found())
+    }
+
+    /// `insert`/`replace`/`upsert` share one shape: enqueue the whole
+    /// record under `id` as the given flash kind, then hand back the
+    /// synthesized record — see the module doc above `insert_vista_value`.
+    async fn enqueue_full_record(
+        &self,
+        kind: FlashKind,
+        id: &str,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        self.enqueue(ChangeFlash::new(kind, Some(id.to_string()), record.clone()))
+            .await?;
+        Ok(with_injected_id(record, id))
     }
 
     async fn enqueue(&self, flash: ChangeFlash) -> Result<()> {

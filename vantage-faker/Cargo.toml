@@ -15,10 +15,10 @@ readme = "README.md"
 [workspace]
 
 [dependencies]
-vantage-core = { version = "0.6", path = "../vantage-core" }
-vantage-types = { version = "0.6", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "0.6.25", path = "../vantage-vista" }
-vantage-memory = { version = "0.6.1", path = "../vantage-memory" }
+vantage-core = { version = "1.0.0", path = "../vantage-core" }
+vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
+vantage-vista = { version = "1.0.0", path = "../vantage-vista" }
+vantage-memory = { version = "1.0.0", path = "../vantage-memory" }
 # `TableShell::preview_query` answers with a driver-shaped JSON value.
 serde_json = "1"
 # `ColumnGen` deserializes from table config.
@@ -38,21 +38,21 @@ fake = "5"
 
 # The `sim` engine's scripted mutation loops. Same rhai as vantage-vista's
 # scripting feature, kept optional so the default build stays light.
-vantage-rhai = { version = "0.6.2", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "1.0.0", path = "../vantage-rhai", optional = true }
 
 tracing = "0.1"
 
 [features]
-sim = ["dep:vantage-rhai"]
+sim = ["dep:vantage-rhai", "vantage-vista/rhai"]
 serde = []
 
 [package.metadata.docs.rs]
 all-features = true
 
 [dev-dependencies]
-vantage-core = { version = "0.6", path = "../vantage-core" }
+vantage-core = { version = "1.0.0", path = "../vantage-core" }
 # `list_values` in tests reads back through the Vista's dataset traits.
-vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 # `StreamExt::next` polls a `watch()` stream in tests.
 futures-util = "0.3"
 # `test-util` for the paused-clock latency/offline/cursor-expiry tests.

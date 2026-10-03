@@ -1,11 +1,12 @@
 //! Configuring and starting a [`SimEngine`].
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use vantage_core::{Result, error};
+use vantage_core::{Context, Result, error};
+use vantage_memory::vista::Catalog;
 use vantage_rhai::rhai::Map as RhaiMap;
 use vantage_rhai::{Host, Limits, Mode, from_json};
 
@@ -13,6 +14,7 @@ use super::clock::{Clock, SimClock, unix_secs};
 use super::engine::SimEngine;
 use super::kind::{Inner, Kind, OnSimError};
 use super::sched::Sched;
+use super::stats::Counters;
 use super::{SimDef, spawn, validate, vocab};
 use crate::FakerColumn;
 use vantage_memory::MemoryStore;
@@ -43,9 +45,9 @@ impl SimEngineBuilder {
         self
     }
 
-    /// Declare `table`'s columns, so the `row()` verb can generate a value
-    /// for each. A table with no call here has no declared columns, and
-    /// `row()` on it always returns an empty map.
+    /// Declare `table`'s columns, so the `fake_row()` verb can generate a
+    /// value for each. A table with no call here has no declared columns, and
+    /// `fake_row()` on it always returns an empty map.
     pub fn columns(mut self, table: impl Into<String>, columns: Vec<FakerColumn>) -> Self {
         self.columns.insert(table.into(), columns);
         self
@@ -96,12 +98,29 @@ impl SimEngineBuilder {
     /// adding up to more than [`MAX_LIVE`](super::MAX_LIVE).
     pub fn start(self) -> Result<SimEngine> {
         let names: HashSet<String> = self.store.table_names().into_iter().collect();
-        validate::validate_all(&self.defs, &names).map_err(|e| error!(e))?;
+        validate::validate_all(&self.defs, &names)?;
 
         let stop = Arc::new(AtomicBool::new(false));
         let progress_stop = stop.clone();
+        let catalog = Catalog::new(self.store.clone());
+        let write_counter = Arc::new(AtomicU64::new(0));
+        let counters = Counters {
+            writes: write_counter.clone(),
+            ..Default::default()
+        };
+        let store = self.store.clone();
+        let columns = Arc::new(self.columns.clone());
         let host = Host::builder(Limits::background())
-            .vocab_fn(move |engine| vocab::register(engine, progress_stop))
+            .vocab_fn(move |engine| {
+                vocab::register(
+                    engine,
+                    progress_stop,
+                    store,
+                    catalog,
+                    columns,
+                    write_counter,
+                )
+            })
             .build();
 
         let clock = match self.manual {
@@ -113,7 +132,7 @@ impl SimEngineBuilder {
         for def in self.defs {
             let ast = host
                 .ast_uncached(Mode::Script, &def.script)
-                .map_err(|e| error!(format!("sim {}: script does not compile: {e}", def.name)))?;
+                .with_context(|| error!("Sim script does not compile", sim = def.name))?;
             let args = from_json(&serde_json::Value::Object(def.spawn.args.clone()))
                 .try_cast::<RhaiMap>()
                 .unwrap_or_default();
@@ -145,7 +164,7 @@ impl SimEngineBuilder {
             seed: self.seed,
             origin,
             handles: Mutex::default(),
-            counters: Default::default(),
+            counters,
             on_error: self.on_error,
         });
 

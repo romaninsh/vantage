@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.21 — 2026-10-03
+
+- Rhai scripts use vantage-vista's `DataVocab`: `table("t").where(..)` replaces
+  `add_condition_eq` and the other conventional verbs in `modify:` and reference scripts.
+- `with_condition(expr)` works on `self` only; on `table(name)` it is an error naming the verb.
+- Update and delete of a missing record fail with `ErrorKind::NotFound`.
+- Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,
+  `vantage-dataset` 1.0.0, `vantage-table` 1.0.0, `vantage-vista` 1.0.0, `vantage-rhai` 1.0.0.
+
 ## 0.6.20 — 2026-09-13
 
 - Observation args reach a query-sourced vista's `rhai:` script as the
