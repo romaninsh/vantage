@@ -10,6 +10,7 @@ impl SurrealDelete {
         Self {
             target: Identifier::new(table).expr(),
             conditions: Vec::new(),
+            return_before: false,
         }
     }
 
@@ -18,7 +19,14 @@ impl SurrealDelete {
         Self {
             target: target.expr(),
             conditions: Vec::new(),
+            return_before: false,
         }
+    }
+
+    /// Return the deleted rows (`RETURN BEFORE`). A missing target yields `[]`.
+    pub fn return_before(mut self) -> Self {
+        self.return_before = true;
+        self
     }
 
     /// Add a WHERE condition. Multiple conditions are combined with AND.

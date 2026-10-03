@@ -39,4 +39,7 @@ pub struct SurrealDelete {
     pub target: Expr,
     /// Optional WHERE conditions (combined with AND).
     pub conditions: Vec<Expr>,
+    /// Append `RETURN BEFORE`, so the statement yields the deleted rows
+    /// (a plain `DELETE` always returns an empty array).
+    pub return_before: bool,
 }

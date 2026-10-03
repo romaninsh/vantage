@@ -112,7 +112,7 @@ pub enum Spread {
     Random,
     /// Row `seq` of `n` sits at step `seq % n` of `n - 1` from `from` to
     /// `to`, with a jitter of under half a step — a time series ordered by
-    /// id. `n` is [`DEFAULT_ROWS`] unless the caller says otherwise; a
+    /// id. `n` is `DEFAULT_ROWS` unless the caller says otherwise; a
     /// `seq` past `n` wraps and repeats the same spread rather than pinning
     /// at `to`.
     Even,

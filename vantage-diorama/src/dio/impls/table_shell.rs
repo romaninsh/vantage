@@ -200,7 +200,7 @@ impl TableShell for DioShell {
     }
 
     /// No id exists until the master assigns one — see
-    /// [`Dio::insert_returning_id`](crate::Dio::insert_returning_id), which
+    /// `Dio::insert_returning_id`, which
     /// bypasses the write queue and any `on_flash` route and seeds the
     /// cache, so the id returned here is visible to an immediate
     /// `get_value`.
@@ -335,7 +335,7 @@ impl DioShell {
 
     /// `patch`/`delete` return before the write-through queue drains, so a
     /// write to a nonexistent id would only fail later via
-    /// [`DioEvent::WriteFailed`], never reaching the caller. Check the cache
+    /// [`DioEvent::WriteFailed`](crate::DioEvent::WriteFailed), never reaching the caller. Check the cache
     /// first, then the master on a miss — a lazily-populated cache must not
     /// report not-found for a row the master holds.
     async fn ensure_row_exists(&self, id: &str) -> Result<()> {

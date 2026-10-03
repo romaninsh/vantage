@@ -31,6 +31,11 @@ impl SurrealSelect<result::Rows> {
         SurrealReturn::new(Fx::new("math::min", vec![query.expr()]).into())
     }
     pub fn as_count(self) -> SurrealReturn {
+        // A grouped select yields one row per group; projecting `id` would
+        // collapse them to nulls, so count the grouped rows as selected.
+        if self.group_all || !self.group_by.is_empty() {
+            return SurrealReturn::new(Fx::new("count", vec![self.expr()]).into());
+        }
         let result = self.only("id");
         SurrealReturn::new(Fx::new("count", vec![result.expr()]).into())
     }

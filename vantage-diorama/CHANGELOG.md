@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.5 — 2026-10-03
+
+- Doc links fixed so the crate documents with warnings denied.
+
 ## 0.13.4 — 2026-10-03
 
 - **Breaking:** `FlashKind::Upsert` and `ChangeFlash::upsert`; `DioShell` implements

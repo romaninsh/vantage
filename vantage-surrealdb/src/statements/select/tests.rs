@@ -89,6 +89,30 @@ fn test_select_with_group_by() {
 }
 
 #[test]
+fn test_as_count_counts_grouped_rows() {
+    let select = SurrealSelect::new()
+        .from("users")
+        .field("department")
+        .with_expression(surreal_expr!("count()"), Some("count".to_string()))
+        .with_group_by(surreal_expr!("department"));
+
+    assert_eq!(
+        select.as_count().preview(),
+        "RETURN count(SELECT department, count() AS count FROM users GROUP BY department)"
+    );
+}
+
+#[test]
+fn test_as_count_ungrouped_projects_id() {
+    let select = SurrealSelect::new().from("users").field("name");
+
+    assert_eq!(
+        select.as_count().preview(),
+        "RETURN count(SELECT VALUE id FROM users)"
+    );
+}
+
+#[test]
 fn test_select_with_group_all() {
     let select = SurrealSelect::new()
         .with_value()

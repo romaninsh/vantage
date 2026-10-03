@@ -39,6 +39,24 @@ fn aggregate_values_stay_in_band() {
 }
 
 #[test]
+fn aggregate_values_are_integers_for_integer_baselines() {
+    // A 433-style baseline with a band whose edge is fractional (±5% of 433).
+    let mut a = args();
+    a["keys"] = serde_json::json!([{ "name": "North", "baseline": 433 }]);
+    let (engine, store) = pulse_engine(a);
+    for _ in 0..300 {
+        run_for(&engine, 1, 1);
+        if let Some(r) = store.table("top").get("North") {
+            assert!(
+                matches!(r.get("visitors"), Some(CborValue::Integer(_))),
+                "{:?}",
+                r.get("visitors")
+            );
+        }
+    }
+}
+
+#[test]
 fn feed_rows_expire_and_buckets_are_windowed() {
     let (engine, store) = pulse_engine(args());
     run_for(&engine, 600, 1);
