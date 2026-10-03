@@ -421,8 +421,10 @@ Two notes worth dwelling on:
 #### Native conditions from outside: `add_raw_condition`
 
 Universal eq-conditions cover the CBOR vocabulary, but some callers hold a condition already in
-your backend's *native* type — the Rhai layer is the in-tree case: a `modify:` or traversal script
-builds a vendor `Expression` that no `(field, value)` pair can carry.
+your backend's *native* type — the Rhai layer is the in-tree case: a `modify:` script builds a
+vendor `Expression` that no `(field, value)` pair can carry, and hands it over through an extension
+verb your shell registers in `register_rhai_extensions` (SurrealDB's `self.with_condition(expr)`;
+see [Backend extensions](../rhai/surfaces.md#backend-extensions)).
 `TableShell::add_raw_condition` is the hatch for exactly that: it receives a `Box<dyn Any>`,
 downcasts to the driver's native condition type, and pushes it onto the wrapped table — SurrealDB's
 shell is the worked example (it rejects anything that isn't an `Expression<AnySurrealType>`, with a

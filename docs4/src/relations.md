@@ -400,5 +400,6 @@ one thread further:
 - **[Implicit References](relations/implicit-references.md)** — dotted column names, the
   declarative way to pull a field across a relation.
 - **[Vista, YAML and Rhai](relations/vistas.md)** — vista factories, traversal after type
-  erasure, capability checks, and declaring relations in YAML and Rhai.
+  erasure, capability checks, and declaring relations in YAML and Rhai. Scripts traverse with
+  `ref(relation)`, covered in [Scripting with Rhai](rhai/tables.md#following-relations).
 - **[Relations and Dio](relations/dio.md)** — where cross-datasource enrichment lives.

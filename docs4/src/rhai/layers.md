@@ -1,0 +1,152 @@
+# Layers
+
+The data vocabulary acts on Vistas and nothing else. Three parts of the framework sit above Vista
+and give scripts words of their own: Servo drafts in `vantage-diorama`, Scenery shapes in Vantage
+UI, and faker sims. This chapter shows how each one relates to the data vocabulary, and why they
+stay separate.
+
+<!-- toc -->
+
+---
+
+## The rule
+
+`vantage-vista` never refers to Dio, Servo or Scenery. Each upper layer either hands scripts a plain
+Vista or registers its own vocabulary next to `DataVocab` on the same host. A host for a form's
+`on_submit` script, for example, registers both `ServoVocab` and `DataVocab`, so the script has
+`form` (a Servo) and `table(name)` (Vistas) side by side.
+
+Where an upper layer means the same thing as a data verb, it uses the same word: `where`, `sort`,
+`limit`, `ref`, `save`, `is_dirty`. Where it means something different, it uses its own word, even
+if a data verb looks close.
+
+## Dio: no vocabulary of its own
+
+A Dio doesn't add script words. [`Dio::vista()`](vantage_diorama::Dio::vista) returns a Vista whose
+reads come from the Dio's cache and whose writes are queued as flashes and written through to the
+master. A host that resolves `table(name)` to Dio Vistas gives scripts cached reads and optimistic
+writes, and the scripts are the same ones that would run against the bare backend. Vantage UI's
+action bodies work this way.
+
+## Servo: a form draft
+
+A [Servo](vantage_diorama::Servo) is a draft of one record bound to a Dio. It tracks a baseline,
+staged edits, a status and per-field rejections from the Dio's flash route. Forms and wizards in
+Vantage UI hand one to their scripts as `form`. `ServoVocab` (`vantage_diorama::rhai`) registers
+its words:
+
+<!-- tested: vantage-diorama rhai_servo::set_save_settles_a_new_record -->
+```rhai
+servo.set("id", "tag:AB12-CD34");
+servo.set("status", "unregistered");
+if !servo.is_dirty() { throw "draft should be dirty"; }
+if !servo.dirty("status") { throw "field should be dirty"; }
+servo.save()
+```
+
+A Servo and a data-vocabulary [record](./records.md) look alike, and some words match:
+
+| | record (`table(t).record(id)`) | Servo |
+|---|---|---|
+| read a field | `r.col`, `r["col"]` | `servo.get("col")` |
+| stage a field | `r.col = v`, `r.set(map)` | `servo.set("col", v)` |
+| id | `r.id` | `servo.id()` |
+| the whole draft | (field reads) | `servo.record()` |
+| baseline | `r.baseline()` | `servo.baseline()` |
+| dirty | `r.is_dirty()`, `r.dirty(col)` | `servo.is_dirty()`, `servo.dirty(col)` |
+| revert | `r.revert(col)`, `r.revert()` | `servo.revert(col)`, `servo.revert_all()` |
+| fields that differ from the baseline | | `servo.error()` |
+| save | `r.save()`: a patch or insert, now | `servo.save()`: a flash, waits for it to settle |
+| status | `r.status()`, `r.rejection()` | `servo.status()`, `servo.rejection()` with per-field errors |
+
+They stay separate because they are different objects. A record is a script's own short-lived
+draft over any Vista, and is gone when the script ends. A Servo lives in the Dio and outlasts the
+script. The form's widgets are bound to it, its flash goes through the Dio's write queue and route,
+and a route can reject single fields. Folding the two into one type would make the record depend
+on the Dio, or hide the Servo's lifecycle behind data-vocabulary words.
+
+`servo.save()` needs a tokio runtime context and blocks on the flash, so Servo scripts run under
+`spawn_blocking`, like any data script with a network backend.
+
+## Scenery: the shape of a view
+
+A Vantage UI component's `table:` binding can be a plain key or a short script that shapes a live
+view (a Scenery). The script builds a description that the page resolves when it mounts:
+
+<!-- tested: vantage-ui scenery_script::tests::chain_builds_a_spec -->
+```rhai
+scenery("top").sort("visitors", "desc").limit(10)
+```
+
+A child view through a relation, for the row selected in a grid:
+
+<!-- tested: vantage-ui scenery_script::tests::scenery_ref_builds_the_same_related_shape -->
+```rhai
+scenery("launches").where("id", "42").ref("payloads")
+```
+
+In a page this reads `launches_grid.selected_id` instead of `"42"`, and the page remounts the
+binding when the selection changes.
+
+Shared words, with the same meaning as on a table handle:
+
+- `where(col, value)`: equality only. Values carry as text, so a page number needs no
+  `to_string()`.
+- `sort(col, dir)`: the direction is required, `"asc"` or `"desc"`.
+- `limit(n)`: at most `n` rows.
+- `ref(relation)`: the related rows. On a Scenery it must follow exactly one `where` on the
+  parent's id and nothing else, because the binding follows one parent row.
+
+Scenery-only words:
+
+- `tail(n)`: follow the last `n` rows as they arrive, for append-only feeds.
+- `arg(name, value)` and `args(#{ … })`: parameters passed to the table's own `rhai:` query
+  script as its `args` map, which reshape the query itself rather than filtering its result.
+
+Scenery has no reads or writes: it describes a view, and the page's Dio opens it. The vocabulary
+lives in Vantage UI (`SceneryVocab` in `crates/app/src/infra/scenery_script.rs`), runs under
+`Limits::Ui`, and records every page value the script reads as a dependency of the binding.
+
+## Faker sims
+
+A faker sim is a Rhai script that runs from top to bottom on its own thread, with its own sim
+clock. Its local variables are its state, and `sleep` pauses it. The data vocabulary is there in
+full, over the engine's memory store, and `table()` with no name is the sim's own table:
+
+<!-- tested: vantage-faker sim::tests::guide::order_sim_from_the_guide -->
+```rhai
+if table().where("status", "Placed").count() >= 40 {
+    done();
+}
+
+let id = table().insert(#{ customer: fake("name"), total: rand_float(5.0, 80.0), status: "Placed" });
+sleep(minutes(rand_int(5, 20)));
+
+table().patch(id, #{ status: "Shipped" });
+table("order_event").insert(#{ order: id, note: "shipped" });
+sleep(hours(2));
+
+table().delete(id);
+```
+
+On top of the data vocabulary, sims get:
+
+- **data**: `fake_row()` on a handle (`table().fake_row()`, `table("t").fake_row()`) returns a map
+  with a generated value for each column the table declares through `SimEngineBuilder::columns`,
+  without the id column. Sequential generators (`walk`, evenly spread `date`) advance one step per
+  call, shared by every sim of the def.
+- **time**: `seconds(n)`, `minutes(n)`, `hours(n)`, `days(n)`, `sleep(d)`, `wait_until(t)`,
+  `now()`, `now_secs()`, `wall_now()`, `wall_in(d)`, `elapsed()`, `clock()`, `done()`.
+- **random**: `pick`, `pick_weighted`, `rand_int`, `rand_float`, `chance(p)`, `pattern("BA####")`,
+  `sentence(min, max)`, `fake(kind)`, `date_between(from, to)`.
+- **spawn**: `spawn_sim(name, args?)`, `sim_id()`, `sim_name()`, and the spawner's `args`.
+- **geo**: `great_circle`, `bearing`, `interpolate`.
+
+A sim's tables are memory Vistas, so reads and writes finish on the first poll and sims run
+without tokio (see [the bridge](./hosts.md#async-reads-from-a-synchronous-script)). Writes
+broadcast the store's change events to any watching Dio. During a warm start, each written table
+stays quiet and sends one `Reset` at the end. A missing table is a script error: the store's
+tables are created by the dataset, not by the sim.
+
+The `vantage-faker` README covers defs, spawners, clocks, the operations budget and the built-in
+sims.

@@ -91,17 +91,10 @@ through JSON or a script still traverses correctly.
 
 ### The scripting surface
 
-The same traversal is exposed to Rhai data scripts (the `vantage-vista` rhai feature). A script
-holding a row can hop a relation:
-
-```rhai
-let t = table("tag");
-let row = t.get_some();
-let course = t.get_ref("golf_course", row);
-```
-
-There's no separate scripting implementation here — the erased `Vista` is what the script engine
-wraps, and `get_ref` there follows the same metadata.
+Rhai data scripts (the `vantage-vista` rhai feature) traverse with `ref(relation)` on a table
+handle, which follows the relation from every row of a set. A one-row set goes through `get_ref`,
+so it follows the same metadata and backend traversal described here. See
+[The Table Handle](../rhai/tables.md#following-relations).
 
 ### Capabilities: the honest contract
 
@@ -200,12 +193,12 @@ references:
     kind: has_many
     foreign_key: client
     rhai: |
-      table("order").add_condition_eq("client", row.id).add_order("created_at", "desc")
+      table("order").where("client", row.id).sort("created_at", "desc")
 ```
 
 The script runs lazily when the relation is traversed, with the parent record in scope as `row`,
-and must return a Vista — start it with `table("<name>")` and chain the conventional verbs
-(`add_condition_eq`, `add_order`, `add_search`, `set_page_size`, `with_id`). Without `rhai:`, the
+and must end on a table handle: start it with `table("<name>")` and chain the
+[narrowing verbs](../rhai/tables.md#narrowing). Without `rhai:`, the
 relation falls back to the plain `foreign_key` match. This is the `can_build_ref_via_script` path
 from the capabilities list — the reference resolves through the script engine instead of the
 fixed eq-condition.
