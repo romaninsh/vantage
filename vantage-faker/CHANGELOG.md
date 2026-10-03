@@ -1,7 +1,9 @@
 # Changelog
 
-## 1.0.0 — 2026-10-03
+## 1.0.1 — 2026-10-03
 
+- The 1.0.0 on crates.io was published from an earlier branch state, built on the 0.6 crates. This
+  release is the 1.0 described below, on vantage-core 1.0.0.
 - Storage is `vantage-memory`: `DatasetGen` / `TableGen` seed `MemoryTable`s in reference order,
   quietly and reproducibly.
 - Removed `FakerTable`, `FakerCtx`, `FakerHandle`, `FakerEffect`, flights, `PulseSim`,
