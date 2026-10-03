@@ -15,6 +15,23 @@ fn test_delete_record() {
 }
 
 #[test]
+fn test_delete_return_before() {
+    let del = SurrealDelete::new(Thing::new("users", "john")).return_before();
+    assert_eq!(del.preview(), "DELETE users:john RETURN BEFORE");
+}
+
+#[test]
+fn test_delete_condition_return_before() {
+    let del = SurrealDelete::table("users")
+        .with_condition(crate::surreal_expr!("active = {}", false))
+        .return_before();
+    assert_eq!(
+        del.preview(),
+        "DELETE users WHERE active = false RETURN BEFORE"
+    );
+}
+
+#[test]
 fn test_delete_with_condition() {
     let del =
         SurrealDelete::table("users").with_condition(crate::surreal_expr!("active = {}", false));

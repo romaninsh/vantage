@@ -470,7 +470,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let delete = SurrealDelete::new(id.clone());
+        let delete = SurrealDelete::new(id.clone()).return_before();
         let result = self.execute(&delete.expr()).await?;
         ensure_row_affected(&result, table.table_name(), id)
     }

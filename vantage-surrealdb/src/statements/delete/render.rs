@@ -13,18 +13,23 @@ impl SurrealDelete {
 
 impl Expressive<AnySurrealType> for SurrealDelete {
     fn expr(&self) -> Expr {
-        if self.conditions.is_empty() {
-            return crate::surreal_expr!("DELETE {}", (self.target));
-        }
-
-        let combined = self
+        let base = match self
             .conditions
             .iter()
             .cloned()
             .reduce(|a, b| crate::surreal_expr!("{} AND {}", (a), (b)))
-            .unwrap();
+        {
+            None => crate::surreal_expr!("DELETE {}", (self.target)),
+            Some(combined) => {
+                crate::surreal_expr!("DELETE {} WHERE {}", (self.target), (combined))
+            }
+        };
 
-        crate::surreal_expr!("DELETE {} WHERE {}", (self.target), (combined))
+        if self.return_before {
+            crate::surreal_expr!("{} RETURN BEFORE", (base))
+        } else {
+            base
+        }
     }
 }
 

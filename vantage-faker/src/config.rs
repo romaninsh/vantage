@@ -3,7 +3,7 @@
 //! the examples.
 //!
 //! [`DatasetSpec`] mirrors [`DatasetGen`]/[`TableGen`] one-for-one, plus
-//! [`SimSpec`](sims::SimSpec) for the `sim` feature. Every struct rejects
+//! [`SimSpec`] for the `sim` feature. Every struct rejects
 //! unknown keys and fills the rest from vantage-ui's own defaults. The
 //! structs are `#[non_exhaustive]`: build them with `Default` (or
 //! [`DatasetSpec::new`]) and assign fields.
