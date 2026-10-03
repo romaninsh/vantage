@@ -1,0 +1,36 @@
+[package]
+name = "vantage-memory"
+version = "0.6.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Romans Malinovskis <me@nearly.guru>"]
+description = "Fast in-memory datasource for Vantage: typed tables, Vista shells and live change events"
+documentation = "https://docs.rs/vantage-memory"
+homepage = "https://romaninsh.github.io/vantage"
+repository = "https://github.com/romaninsh/vantage"
+readme = "README.md"
+
+[dependencies]
+vantage-core = { version = "0.6", path = "../vantage-core" }
+vantage-types = { version = "0.6", path = "../vantage-types" }
+vantage-expressions = { version = "0.6", path = "../vantage-expressions" }
+vantage-dataset = { version = "0.6", path = "../vantage-dataset" }
+vantage-table = { version = "0.6", path = "../vantage-table" }
+vantage-vista = { version = "0.6", path = "../vantage-vista" }
+ciborium = { version = "0.2", features = ["std"] }
+indexmap = { version = "2", features = ["serde"] }
+parking_lot = "0.12"
+tokio = { version = "1", features = ["sync"] }
+async-trait = "0.1"
+async-stream = "0.3"
+futures-core = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+paste = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+vantage-diorama = { version = "0.13", path = "../vantage-diorama" }
+futures-util = "0.3"
+tempfile = "3"
