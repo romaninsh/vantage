@@ -333,10 +333,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         row: &Record<T::Value>,
     ) -> Result<Table<T, E2>> {
         let (reference, _) = self.lookup_ref(relation)?;
-        let source_id = self
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let source_id = self.id_field_name();
 
         let target_dyn = reference.resolve_from_row(
             self.data_source() as &dyn std::any::Any,
@@ -367,10 +364,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     ) -> Result<Table<T, E2>> {
         let (reference, relation_str) = self.lookup_ref(relation)?;
 
-        let source_id = self
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let source_id = self.id_field_name();
 
         let mut target: Table<T, E2> = *reference
             .build_target(self.data_source() as &dyn std::any::Any)
@@ -382,10 +376,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                 )
             })?;
 
-        let target_id = target
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let target_id = target.id_field_name();
 
         let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
 
@@ -449,14 +440,8 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         reference: &dyn Reference,
         target: &mut Table<T, E2>,
     ) {
-        let source_id = self
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
-        let target_id = target
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let source_id = self.id_field_name();
+        let target_id = target.id_field_name();
         let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
         let condition = self.data_source().related_correlated_condition(
             target.table_name(),

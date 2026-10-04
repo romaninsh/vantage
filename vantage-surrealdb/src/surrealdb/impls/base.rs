@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 use surreal_client::{LiveStream, SurrealClient};
-use vantage_core::{Result, error};
+use vantage_core::{Context, Result, error};
 use vantage_expressions::{Expression, ExpressionFlattener, Flatten};
 
 use crate::{AnySurrealType, surrealdb::SurrealDB};
@@ -20,12 +20,10 @@ impl SurrealDB {
     /// waits.
     pub async fn live(&self, resource: &str) -> Result<LiveStream> {
         let client = self.inner.lock().await.clone();
-        client.live(resource).await.map_err(|e| {
-            error!(
-                format!("surrealdb live query failed: {e}"),
-                resource = resource
-            )
-        })
+        client
+            .live(resource)
+            .await
+            .context(error!("surrealdb live query failed", resource = resource))
     }
 
     /// Convert {} placeholders to $_arg1, $_arg2, etc. and extract parameters

@@ -6,14 +6,10 @@ use bson::oid::ObjectId;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::column::flags::ColumnFlag;
-use vantage_table::table::Table;
+use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{
-    Column as VistaColumn, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
-    flags as vista_flags,
-};
+use vantage_vista::{NoExtras, Vista, VistaCapabilities, VistaFactory};
 
 use crate::mongodb::MongoDB;
 use crate::types::AnyMongoType;
@@ -53,7 +49,13 @@ impl MongoVistaFactory {
         column_paths: IndexMap<String, Vec<String>>,
         name: String,
     ) -> Vista {
-        let metadata = metadata_from_table(&table);
+        // MongoDB sorts on any field.
+        let metadata = table.vista_metadata(VistaMetadataOptions {
+            orderable: Orderable::All,
+            references: true,
+            contained: true,
+            ..VistaMetadataOptions::default()
+        });
         let source = MongoTableShell::new(
             table,
             VistaCapabilities {
@@ -104,58 +106,20 @@ impl MongoVistaFactory {
             .unwrap_or_else(|| spec.name.clone());
 
         let mut table = Table::<MongoDB, EmptyEntity>::new(collection, self.mongo.clone());
-
-        for (name, col_spec) in &spec.columns {
-            if table.add_lazy_spec_column(col_spec, name)? {
-                continue;
-            }
-            table.add_column(build_column(name, col_spec)?);
-            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-                table.add_title_field(name);
-            }
-        }
-
-        let id_column = resolve_id_column(spec);
-        if !table.columns().contains_key(&id_column) {
-            return Err(error!(
-                "id column not present in spec.columns",
-                id = id_column
-            ));
-        }
-        table.set_id_field(&id_column);
-
-        let table = table.with_contained_specs(&spec.contained, build_column)?;
-        Ok(table)
+        table.add_spec_columns(&spec.columns, build_column)?;
+        table.set_spec_id_field(&spec.resolve_id_column_or("_id"))?;
+        table.with_contained_specs(&spec.contained, build_column)
     }
 }
 
-pub(crate) fn resolve_id_column(spec: &MongoVistaSpec) -> String {
-    if let Some(id) = &spec.id_column {
-        return id.clone();
-    }
-    for (name, col_spec) in &spec.columns {
-        if col_spec.flags.iter().any(|f| f == vista_flags::ID) {
-            return name.clone();
-        }
-    }
-    "_id".to_string()
-}
-
+/// The vista source layer handles read/write/filter via `column_paths` —
+/// we deliberately don't push BSON renames down via `with_alias`, since
+/// Mongo's `doc_to_record` doesn't honour aliases anyway.
 pub(crate) fn build_column(
     name: &str,
     col_spec: &vantage_vista::ColumnSpec<MongoColumnExtras>,
 ) -> Result<TableColumn<AnyMongoType>> {
-    let ty = col_spec.col_type.as_deref().unwrap_or("string");
-    let hidden = col_spec.flags.iter().any(|f| f == vista_flags::HIDDEN);
-
-    // The vista source layer handles read/write/filter via `column_paths` —
-    // we deliberately don't push BSON renames down via `with_alias`, since
-    // Mongo's `doc_to_record` doesn't honour aliases anyway.
-    let mut col = column_for_type(name, ty)?;
-    if hidden {
-        col = col.with_flag(ColumnFlag::Hidden);
-    }
-    Ok(col)
+    TableColumn::from_spec(name, col_spec, None, column_for_type)
 }
 
 /// YAML type alias → typed `Column` (then erased to `Column<AnyMongoType>`).
@@ -199,40 +163,6 @@ where
         paths.insert(name.clone(), path);
     }
     paths
-}
-
-pub(crate) fn metadata_from_table<T, E>(table: &Table<T, E>) -> VistaMetadata
-where
-    T: vantage_table::traits::table_source::TableSource,
-    E: Entity<T::Value>,
-    T::Column<T::AnyType>: ColumnLike<T::AnyType>,
-{
-    let mut metadata = VistaMetadata::new();
-    for (name, col) in table.columns() {
-        // MongoDB sorts on any field; flag every column ORDERABLE.
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
-            .with_flag(vista_flags::ORDERABLE);
-        if col.flags().contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(vista_flags::HIDDEN);
-        }
-        metadata = metadata.with_column(vc);
-    }
-    metadata = metadata.with_columns_at(table.computed_columns());
-    if let Some(id_field) = table.id_field() {
-        metadata = metadata.with_id_column(id_field.name().to_string());
-    }
-    for title in table.title_fields() {
-        if let Some(col) = metadata.columns.get_mut(title) {
-            col.flags.push(vista_flags::TITLE.to_string());
-        }
-    }
-    for reference in table.vista_references() {
-        metadata = metadata.with_reference(reference);
-    }
-    for spec in table.vista_contained() {
-        metadata = metadata.with_contained(spec);
-    }
-    metadata
 }
 
 impl VistaFactory for MongoVistaFactory {

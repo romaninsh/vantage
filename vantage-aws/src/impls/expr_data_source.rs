@@ -6,13 +6,10 @@
 //! this backend, so they fall back to a stable null/template result for
 //! the relationship machinery to tolerate without panicking.
 
-use std::future::Future;
-use std::pin::Pin;
-
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_expressions::{
-    Expression,
+    Expression, resolve_param,
     traits::datasource::ExprDataSource,
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
@@ -24,7 +21,9 @@ impl ExprDataSource<CborValue> for AwsAccount {
         if expr.parameters.is_empty() {
             Ok(CborValue::Text(expr.template.clone()))
         } else if expr.parameters.len() == 1 {
-            resolve_param(&expr.parameters[0]).await
+            // Collapses a `column_table_values_expr` chain
+            // (Nested → Deferred → Scalar) to the projected array.
+            resolve_param(&expr.parameters[0], |t| CborValue::Text(t.to_string())).await
         } else {
             // Not a shape this backend produces; surface stably so the
             // relationship machinery isn't tripped by trivial probes.
@@ -43,34 +42,4 @@ impl ExprDataSource<CborValue> for AwsAccount {
             })
         })
     }
-}
-
-/// Recursively unwrap an `ExpressiveEnum` into the underlying value.
-/// Same shape as `vantage-csv`'s `resolve_param` — needed so a
-/// `column_table_values_expr` chain (Nested → Deferred → Scalar)
-/// collapses to the projected `CborValue::Array`.
-pub(crate) fn resolve_param(
-    param: &ExpressiveEnum<CborValue>,
-) -> Pin<Box<dyn Future<Output = Result<CborValue>> + Send + '_>> {
-    Box::pin(async move {
-        match param {
-            ExpressiveEnum::Scalar(v) => Ok(v.clone()),
-            ExpressiveEnum::Deferred(deferred) => {
-                let result = deferred.call().await?;
-                match result {
-                    ExpressiveEnum::Scalar(v) => Ok(v),
-                    other => resolve_param(&other).await,
-                }
-            }
-            ExpressiveEnum::Nested(expr) => {
-                if expr.parameters.is_empty() {
-                    Ok(CborValue::Text(expr.template.clone()))
-                } else if expr.parameters.len() == 1 {
-                    resolve_param(&expr.parameters[0]).await
-                } else {
-                    Ok(CborValue::Text(expr.template.clone()))
-                }
-            }
-        }
-    })
 }

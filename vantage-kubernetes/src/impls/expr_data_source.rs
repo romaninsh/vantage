@@ -5,13 +5,10 @@
 //! wrapping a column projection), so `with_one` / `with_many` traversal
 //! via the subquery path works.
 
-use std::future::Future;
-use std::pin::Pin;
-
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_expressions::{
-    Expression,
+    Expression, resolve_param,
     traits::datasource::ExprDataSource,
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
@@ -23,7 +20,7 @@ impl ExprDataSource<CborValue> for KubernetesCluster {
         if expr.parameters.is_empty() {
             Ok(CborValue::Text(expr.template.clone()))
         } else if expr.parameters.len() == 1 {
-            resolve_param(&expr.parameters[0]).await
+            resolve_param(&expr.parameters[0], |t| CborValue::Text(t.to_string())).await
         } else {
             Ok(CborValue::Null)
         }
@@ -40,31 +37,4 @@ impl ExprDataSource<CborValue> for KubernetesCluster {
             })
         })
     }
-}
-
-/// Recursively unwrap an `ExpressiveEnum` into the underlying value.
-pub(crate) fn resolve_param(
-    param: &ExpressiveEnum<CborValue>,
-) -> Pin<Box<dyn Future<Output = Result<CborValue>> + Send + '_>> {
-    Box::pin(async move {
-        match param {
-            ExpressiveEnum::Scalar(v) => Ok(v.clone()),
-            ExpressiveEnum::Deferred(deferred) => {
-                let result = deferred.call().await?;
-                match result {
-                    ExpressiveEnum::Scalar(v) => Ok(v),
-                    other => resolve_param(&other).await,
-                }
-            }
-            ExpressiveEnum::Nested(expr) => {
-                if expr.parameters.is_empty() {
-                    Ok(CborValue::Text(expr.template.clone()))
-                } else if expr.parameters.len() == 1 {
-                    resolve_param(&expr.parameters[0]).await
-                } else {
-                    Ok(CborValue::Text(expr.template.clone()))
-                }
-            }
-        }
-    })
 }

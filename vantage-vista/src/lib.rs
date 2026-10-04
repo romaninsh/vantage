@@ -6,6 +6,7 @@ pub mod capabilities;
 pub mod column;
 mod computed;
 pub mod contained;
+mod empty;
 pub mod factory;
 pub mod filter;
 pub mod flags;
@@ -29,8 +30,10 @@ pub use column::Column;
 pub use contained::{
     ContainedRefResolver, ContainedShell, ContainedWriteback, build_contained_vista,
 };
+pub use empty::EmptyShell;
 pub use factory::VistaFactory;
 pub use filter::{FilterOp, operand_text};
+pub use forward::ForwardShell;
 pub use metadata::VistaMetadata;
 pub use reference::{ContainedKind, ContainedSpec, Reference, ReferenceKind};
 #[cfg(feature = "rhai")]
@@ -42,9 +45,10 @@ pub use rhai::{
     record_to_map, run_script,
 };
 pub use sort::SortDirection;
-pub use source::{TableShell, VistaChange, VistaChangeStream};
+pub use source::{TableShell, VistaChange, VistaChangeStream, VistaRowStream, stream_from_list};
 pub use spec::{
-    ColumnSpec, ContainedYaml, JoinKey, NoExtras, ReferenceSpec, ReferenceSugar, VistaSpec,
+    ColumnSpec, ContainedYaml, JoinKey, NoExtras, ReferenceSpec, ReferenceSugar, SpecResolver,
+    VistaSpec, resolve_base_spec,
 };
 pub use vista::Vista;
 
@@ -55,13 +59,6 @@ pub type CborValue = ciborium::Value;
 #[doc(hidden)]
 pub mod __private {
     pub use async_trait::async_trait;
-    pub use indexmap::IndexMap;
-    pub use serde_json;
-    pub use vantage_core::Result;
-    #[cfg(feature = "rhai")]
-    pub use vantage_rhai;
-
-    pub type Rec = vantage_types::Record<crate::CborValue>;
 }
 
 /// Common imports for working with vantage-vista.

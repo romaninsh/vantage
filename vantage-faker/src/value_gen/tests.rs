@@ -1,4 +1,5 @@
 use super::*;
+use crate::ColumnGen;
 
 fn col(name: &str, ty: &str) -> FakerColumn {
     FakerColumn::new(name, ty)

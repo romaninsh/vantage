@@ -8,11 +8,7 @@ use std::{any::Any, marker::PhantomData, sync::Arc};
 use vantage_core::{Result, error};
 use vantage_types::{EmptyEntity, Entity, Record};
 
-use crate::{
-    references::Reference,
-    table::Table,
-    traits::{column_like::ColumnLike, table_source::TableSource},
-};
+use crate::{references::Reference, table::Table, traits::table_source::TableSource};
 
 pub struct HasOne<T: TableSource, SourceE: Entity<T::Value>, TargetE: Entity<T::Value>> {
     /// Foreign key column on the source table (e.g. "bakery_id")
@@ -108,10 +104,7 @@ where
             .ok_or_else(|| error!("source row type mismatch in HasOne::resolve_from_row"))?;
 
         let mut target = (self.build_target)(ds.clone());
-        let target_id = target
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let target_id = target.id_field_name();
 
         let (src_col, tgt_col) = self.columns("", &target_id);
         let join_value = row.get(&src_col).cloned().ok_or_else(|| {

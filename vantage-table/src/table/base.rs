@@ -369,6 +369,15 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             .and_then(|name| self.columns.get(name))
     }
 
+    /// Name of the [`id_field`](Self::id_field) column, or `"id"` when there
+    /// is none.
+    pub fn id_field_name(&self) -> String {
+        use crate::traits::column_like::ColumnLike;
+        self.id_field()
+            .map(|c| c.name().to_string())
+            .unwrap_or_else(|| "id".to_string())
+    }
+
     /// Mark an already-added column as the id field.
     ///
     /// Use this when the id column has been added via [`Self::add_column`]

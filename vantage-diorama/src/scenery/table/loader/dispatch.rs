@@ -174,6 +174,7 @@ pub(super) async fn run_chunk_callback(
         *guard = Some(effective_range.clone());
     }
     let in_flight = InFlightMarker(state.clone());
+    state.publish_view_stats();
 
     // Only allocate a request id when the tap is enabled — it's the one
     // correlator that ties this fetch's "load dispatch" to its "load return"

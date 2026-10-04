@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.1 — 2026-10-04
+
+- Error messages carry context fields instead of formatted text.
+- `VistaSpec::resolve_id_column(_or)`, `ColumnSpec::has_flag`, `ReferenceSpec::foreign_key_or`,
+  `SpecResolver<S>` and `resolve_base_spec` for driver factories.
+- `ForwardShell`: a wrapper shell forwards every `TableShell` method to its inner shell unless it
+  overrides it, `columns()` included. `forward_table_shell!` implements it; `clone_shell` is
+  required, and methods the block leaves out now forward instead of keeping the trait defaults.
+- `Vista::empty(name)` over the new `EmptyShell`: no columns, rows or capabilities.
+- `stream_from_list` and `VistaRowStream`, the default `stream_vista_values` for any shell.
+- `ForwardShell` streams and upserts through the wrapper's own list, replace and insert.
+
 ## 1.1.0 — 2026-10-03
 
 - Computed columns: `Column::with_expression(code)` (Rhai over `row`), `is_computed()`,

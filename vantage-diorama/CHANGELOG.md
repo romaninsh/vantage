@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.7 — 2026-10-04
+
+- Error messages carry context fields instead of formatted text.
+- `TableScenery::view_stats` / `subscribe_view_stats`: a `ViewStats` snapshot (total, loaded,
+  showing, order, search, filters, live state) and `ViewStats::count_text` for the default count.
+- A total restored from the cache reports as an estimate until the source restates it.
+- `TableScenery::set_shown_range`: `ViewStats::showing` follows it, not `set_viewport`.
+- `ViewStats::showing_len`.
+- Row status counts are kept as rows change, so publishing `ViewStats` no longer scans the rows.
+
 ## 0.13.6 — 2026-10-04
 
 - Test and doc: `DioShell` patch/delete reads the master only on a cache miss.

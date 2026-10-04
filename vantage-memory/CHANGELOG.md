@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 — 2026-10-04
+
+- The vista factory uses the shared spec helpers.
+- Depends on `vantage-table` 1.1.1, `vantage-vista` 1.1.1.
+
 ## 1.1.0 — 2026-10-03
 
 - Spec `lazy:` columns, computed by the Vista (`rhai` feature).

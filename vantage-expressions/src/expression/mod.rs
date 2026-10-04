@@ -56,3 +56,6 @@ pub mod core;
 pub mod flatten;
 pub mod macros;
 pub mod mapping;
+mod resolve;
+
+pub use resolve::resolve_param;

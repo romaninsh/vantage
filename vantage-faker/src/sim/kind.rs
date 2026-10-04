@@ -14,7 +14,7 @@ use super::clock::SimClock;
 use super::sched::Sched;
 use super::stats::Counters;
 use crate::FakerColumn;
-use crate::generator::Memo;
+use crate::generator::{DEFAULT_ROWS, Memo};
 
 /// Least real time between two error logs of one def.
 const ERROR_LOG_EVERY: Duration = Duration::from_secs(60);
@@ -48,6 +48,23 @@ pub(super) struct RowTableState {
 impl RowTableState {
     pub(super) fn next_seq(&self) -> usize {
         self.seq.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+/// How `fake_row()` generates for one table: the row count positional
+/// generators scale to, and the anomaly chance of string cells.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct FakeRows {
+    pub rows: usize,
+    pub weirdness: f64,
+}
+
+impl Default for FakeRows {
+    fn default() -> Self {
+        Self {
+            rows: DEFAULT_ROWS,
+            weirdness: 0.0,
+        }
     }
 }
 
@@ -94,6 +111,8 @@ pub(super) struct Inner {
     /// A table's declared columns, for the `fake_row()` verb. A table with no
     /// entry here has no declared columns, and `fake_row()` on it is empty.
     pub columns: HashMap<String, Vec<FakerColumn>>,
+    /// A table's `fake_row()` settings; [`FakeRows::default`] when absent.
+    pub fake_rows: HashMap<String, FakeRows>,
     pub sched: Sched,
     pub seed: Option<u64>,
     /// Wall time the engine started at; every sim clock meets it there.

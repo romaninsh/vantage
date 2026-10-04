@@ -295,7 +295,10 @@ async fn settle_total(
         "{} rows — a full page reached the end we assumed; extending it",
         crate::debug::num(extended),
     );
-    state.set_total(Some(extended))
+    state.set_total_as(
+        Some(extended),
+        crate::scenery::table::view_stats::TotalKind::Horizon,
+    )
 }
 
 /// Rows nobody can deliver. Returns whether the total moved.

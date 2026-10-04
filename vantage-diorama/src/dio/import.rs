@@ -15,7 +15,7 @@ use std::ops::ControlFlow;
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::{Context, Result, error};
 use vantage_dataset::traits::ReadableValueSet as _;
 use vantage_types::Record;
 
@@ -110,18 +110,12 @@ impl Dio {
             });
         }
 
-        let stopped_at = |index: usize, id: &str, e: vantage_core::VantageError| {
+        let stopped_at = |index: usize, id: &str| {
             error!(
-                format!(
-                    "import stopped at row {} of {} (id '{}'): {}",
-                    index + 1,
-                    total,
-                    id,
-                    e
-                ),
+                "import stopped",
                 row = index + 1,
-                id = id.to_string(),
-                detail = e.to_string()
+                of = total,
+                id = id.to_string()
             )
         };
         let mut outcome = ImportOutcome::default();
@@ -133,14 +127,14 @@ impl Dio {
             let exists = master
                 .get_value(id)
                 .await
-                .map_err(|e| stopped_at(index, id, e))?
+                .with_context(|| stopped_at(index, id))?
                 .is_some();
             if exists {
                 outcome.skipped += 1;
             } else {
                 self.flash_insert(id.clone(), record.clone())
                     .await
-                    .map_err(|e| stopped_at(index, id, e))?;
+                    .with_context(|| stopped_at(index, id))?;
                 outcome.inserted += 1;
             }
             if progress(index + 1, total).is_break() {

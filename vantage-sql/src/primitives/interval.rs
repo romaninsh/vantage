@@ -31,6 +31,7 @@ impl Interval {
     }
 
     /// Convert to approximate days for SQLite (which has no INTERVAL type).
+    #[cfg(feature = "sqlite")]
     fn to_days(&self) -> i64 {
         match self.unit.as_str() {
             "year" | "years" => self.amount * 365,

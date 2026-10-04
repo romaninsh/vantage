@@ -1,6 +1,6 @@
 //! Realistic value generation for a faker column.
 //!
-//! A column's explicit [`ColumnGen`] wins; otherwise a two-tier strategy
+//! A column's explicit [`ColumnGen`](crate::ColumnGen) wins; otherwise a two-tier strategy
 //! matches the column *name* against common patterns first (an `email` column
 //! gets a real email, `city` a city, …), then falls back to the declared
 //! *type*. All realistic values come from the third-party `fake` crate — we
@@ -27,7 +27,7 @@ use fake::rand::{RngExt as _, SeedableRng as _};
 use vantage_types::Record;
 
 use crate::FakerColumn;
-use crate::generator::{self, Cell, ColumnGen, Memo, column_salt, now_unix, rfc3339};
+use crate::generator::{self, Cell, Memo, column_salt, now_unix, rfc3339};
 
 mod name;
 use name::{has_any, name_words};
@@ -42,6 +42,23 @@ const RECENT_DAYS: i64 = 90;
 /// A fresh rng seeded from the thread rng — the "no seed given" path.
 pub(crate) fn entropy_rng() -> StdRng {
     StdRng::seed_from_u64(fake::rand::random())
+}
+
+/// What one generated cell draws on beyond its column: the rng, the
+/// positional generators' memo and salt, the row's `seq`, the table's row
+/// count, `now` and the anomaly chance. A [`ValueGen`] fills it from its own
+/// state; a sim's `fake_row()` from the per-table state it keeps.
+pub(crate) struct Draw<'a> {
+    pub rng: &'a mut StdRng,
+    pub memo: &'a Mutex<Memo>,
+    /// Mixed with each column's name (see `generator::column_salt`).
+    pub salt: u64,
+    pub seq: usize,
+    pub rows: usize,
+    pub now: i64,
+    /// Chance (`0..=1`) that a text value from the name/type guess is
+    /// swapped for an anomaly.
+    pub weirdness: f64,
 }
 
 /// Column-aware value generator with an owned, optionally-seeded rng.
@@ -134,36 +151,50 @@ impl ValueGen {
     /// [`record_for`](Self::record_for) row number as their `seq`.
     pub fn value_for(&self, col: &FakerColumn) -> CborValue {
         let rng = &mut *self.rng.lock().unwrap();
-        self.cell_value(rng, col, self.next_seq.load(Ordering::Relaxed))
+        let seq = self.next_seq.load(Ordering::Relaxed);
+        Self::cell(&mut self.draw(rng, seq, 0.0), col)
     }
 
-    fn cell_value(&self, rng: &mut StdRng, col: &FakerColumn, seq: usize) -> CborValue {
-        match &col.generator {
-            Some(generator) => self.generated(rng, generator, col, seq),
-            None => Self::value_for_with(rng, col, self.now),
+    /// A [`Draw`] from this generator's own memo, salt, row count and `now`.
+    fn draw<'a>(&'a self, rng: &'a mut StdRng, seq: usize, weirdness: f64) -> Draw<'a> {
+        Draw {
+            rng,
+            memo: &self.memo,
+            salt: self.salt,
+            seq,
+            rows: self.rows.unwrap_or(generator::DEFAULT_ROWS),
+            now: self.now,
+            weirdness,
         }
     }
 
-    fn generated(
-        &self,
-        rng: &mut StdRng,
-        generator: &ColumnGen,
-        col: &FakerColumn,
-        seq: usize,
-    ) -> CborValue {
-        generator::generate(
-            generator,
-            Cell {
-                rng,
-                memo: &self.memo,
-                salt: self.column_salt(&col.name),
-                column: &col.name,
-                ty: &col.ty,
-                seq,
-                rows: self.rows.unwrap_or(generator::DEFAULT_ROWS),
-                now: self.now,
-            },
-        )
+    /// One cell of `col`: its generator if set, else the name/type guess,
+    /// whose text values stand a `draw.weirdness` chance of an anomaly.
+    pub(crate) fn cell(draw: &mut Draw<'_>, col: &FakerColumn) -> CborValue {
+        if let Some(generator) = &col.generator {
+            return generator::generate(
+                generator,
+                Cell {
+                    rng: &mut *draw.rng,
+                    memo: draw.memo,
+                    salt: column_salt(draw.salt, &col.name),
+                    column: &col.name,
+                    ty: &col.ty,
+                    seq: draw.seq,
+                    rows: draw.rows,
+                    now: draw.now,
+                },
+            );
+        }
+        let rng = &mut *draw.rng;
+        let value = Self::value_for_with(rng, col, draw.now);
+        if draw.weirdness > 0.0
+            && matches!(value, CborValue::Text(_))
+            && rng.random_range(0.0..1.0) < draw.weirdness
+        {
+            return Self::anomaly(rng);
+        }
+        value
     }
 
     /// Name guess, then type fallback. `now` anchors the fallback's
@@ -281,24 +312,15 @@ impl ValueGen {
         seq: usize,
     ) -> Record<CborValue> {
         let rng = &mut *self.rng.lock().unwrap();
+        let mut draw = self.draw(rng, seq, self.weirdness);
         let mut rec = Record::new();
         let mut wrote_id = false;
         for col in columns {
             if col.name == id_column {
                 rec.insert(col.name.clone(), CborValue::Text(id.to_string()));
                 wrote_id = true;
-            } else if let Some(generator) = &col.generator {
-                let value = self.generated(rng, generator, col, seq);
-                rec.insert(col.name.clone(), value);
             } else {
-                let mut value = Self::value_for_with(rng, col, self.now);
-                if self.weirdness > 0.0
-                    && matches!(value, CborValue::Text(_))
-                    && rng.random_range(0.0..1.0) < self.weirdness
-                {
-                    value = Self::anomaly(rng);
-                }
-                rec.insert(col.name.clone(), value);
+                rec.insert(col.name.clone(), Self::cell(&mut draw, col));
             }
         }
         if !wrote_id {

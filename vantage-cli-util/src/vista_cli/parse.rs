@@ -52,9 +52,11 @@ fn parse_selector_sort(inner: &str) -> Result<(Option<(String, Direction)>, &str
         } else {
             "-"
         };
-        return Err(error!(format!(
-            "Bracket `[{sign}…]` needs a field name, got `[{inner}]`"
-        )));
+        return Err(error!(
+            "Bracket `[±…]` needs a field name",
+            sign = sign,
+            bracket = inner
+        ));
     }
     Ok((Some((field.to_string(), dir)), rest))
 }
@@ -68,9 +70,10 @@ fn strip_sort_separator<'a>(inner: &str, rest: &'a str, has_sort: bool) -> Resul
     match rest.strip_prefix(':') {
         Some(s) => Ok(s),
         None if rest.is_empty() => Ok(""),
-        None => Err(error!(format!(
-            "Bracket `[{inner}]`: expected `:` after sort field"
-        ))),
+        None => Err(error!(
+            "Bracket expected `:` after sort field",
+            bracket = inner
+        )),
     }
 }
 
@@ -89,9 +92,11 @@ fn parse_selector_slice(inner: &str, slice_text: &str) -> Result<Option<Slice>> 
         return Ok(Some(Slice::Range { start, end }));
     }
     let n = slice_text.parse::<usize>().map_err(|_| {
-        error!(format!(
-            "Bracket `[{inner}]`: index `{slice_text}` must be a non-negative integer"
-        ))
+        error!(
+            "Bracket index must be a non-negative integer",
+            bracket = inner,
+            index = slice_text
+        )
     })?;
     Ok(Some(Slice::Index(n)))
 }
@@ -100,8 +105,14 @@ fn parse_slice_index(inner: &str, raw: &str, edge: &str, default_empty: usize) -
     if raw.is_empty() {
         return Ok(default_empty);
     }
-    raw.parse::<usize>()
-        .map_err(|_| error!(format!("Bracket `[{inner}]`: bad slice {edge} `{raw}`")))
+    raw.parse::<usize>().map_err(|_| {
+        error!(
+            "Bracket has a bad slice bound",
+            bracket = inner,
+            edge = edge,
+            value = raw
+        )
+    })
 }
 
 /// Take alphanumeric/underscore field-name characters from the front of
@@ -145,7 +156,7 @@ pub fn parse_token(arg: &str) -> Result<Token> {
 fn parse_relation_token(arg: &str, rest: &str) -> Result<Token> {
     let (rel, sel) = split_bracket_suffix(rest)?;
     if rel.is_empty() {
-        return Err(error!(format!("Empty relation name in token `{arg}`")));
+        return Err(error!("Empty relation name in token", token = arg));
     }
     Ok(Token::Relation(rel.to_string(), sel))
 }
@@ -155,18 +166,19 @@ fn parse_standalone_bracket(arg: &str) -> Result<Token> {
     let (stem, sel) = split_bracket_suffix(arg)?;
     if !stem.is_empty() {
         // Shouldn't reach — `[` at position 0 means stem is "".
-        return Err(error!(format!("Malformed bracket token `{arg}`")));
+        return Err(error!("Malformed bracket token", token = arg));
     }
-    let sel = sel.ok_or_else(|| error!(format!("Empty bracket in token `{arg}`")))?;
+    let sel = sel.ok_or_else(|| error!("Empty bracket in token", token = arg))?;
     Ok(Token::Bracket(sel))
 }
 
 fn parse_columns_token(arg: &str, rest: &str) -> Result<Token> {
     let (cols_part, sel) = split_bracket_suffix(rest)?;
     if cols_part.is_empty() {
-        return Err(error!(format!(
-            "Empty column list in token `{arg}` — write `=col1,col2`"
-        )));
+        return Err(error!(
+            "Empty column list in token — write `=col1,col2`",
+            token = arg
+        ));
     }
     let cols: Vec<String> = cols_part
         .split(',')
@@ -174,7 +186,7 @@ fn parse_columns_token(arg: &str, rest: &str) -> Result<Token> {
         .filter(|s| !s.is_empty())
         .collect();
     if cols.is_empty() {
-        return Err(error!(format!("Empty column list in token `{arg}`")));
+        return Err(error!("Empty column list in token", token = arg));
     }
     Ok(Token::Columns(cols, sel))
 }
@@ -182,7 +194,7 @@ fn parse_columns_token(arg: &str, rest: &str) -> Result<Token> {
 fn parse_search_token(arg: &str, rest: &str) -> Result<Token> {
     let query = strip_quotes(rest);
     if query.is_empty() {
-        return Err(error!(format!("Empty search query in token `{arg}`")));
+        return Err(error!("Empty search query in token", token = arg));
     }
     Ok(Token::Search(query.to_string()))
 }
@@ -193,14 +205,13 @@ fn parse_aggregate_token(rest: &str) -> Result<Token> {
         None => (rest, None),
     };
     let op = AggregateOp::parse(op_str)
-        .ok_or_else(|| error!(format!("Unknown aggregate `@{op_str}`")))?;
+        .ok_or_else(|| error!("Unknown aggregate", aggregate = op_str))?;
     // `@count` may omit the field; everything else requires one.
     if !matches!(op, AggregateOp::Count) && field_str.is_none() {
-        return Err(error!(format!(
-            "`@{}` needs a field — write `@{}:<column>`",
-            op.name(),
-            op.name()
-        )));
+        return Err(error!(
+            "Aggregate needs a field — write `@<aggregate>:<column>`",
+            aggregate = op.name()
+        ));
     }
     Ok(Token::Aggregate {
         op,
@@ -215,7 +226,7 @@ fn parse_condition_token(arg: &str, eq_pos: usize) -> Result<Token> {
     let field_part = &arg[..eq_pos];
     let value_part = &arg[eq_pos + 1..];
     if field_part.is_empty() {
-        return Err(error!(format!("Empty field name in token `{arg}`")));
+        return Err(error!("Empty field name in token", token = arg));
     }
     let (field, op) = parse_field_and_op(field_part)?;
     let (value_str, sel) = split_value_and_bracket(value_part)?;
@@ -277,7 +288,7 @@ fn parse_name_or_locator(arg: &str) -> Result<Token> {
     // token into the locator branch.
     let (stem, sel) = split_bracket_suffix(arg)?;
     if stem.is_empty() {
-        return Err(error!(format!("Empty model name in token `{arg}`")));
+        return Err(error!("Empty model name in token", token = arg));
     }
     if stem.contains(':') {
         // Locator with a bracket-glued suffix is semantically odd (a
@@ -294,17 +305,19 @@ fn parse_name_or_locator(arg: &str) -> Result<Token> {
 fn parse_field_and_op(field_part: &str) -> Result<(String, Op)> {
     match field_part.split_once(':') {
         Some((field, op_str)) => {
-            let op = Op::parse(op_str)
-                .ok_or_else(|| error!(format!("Unknown operator `:{op_str}=`")))?;
+            let op =
+                Op::parse(op_str).ok_or_else(|| error!("Unknown operator", operator = op_str))?;
             if op.is_nullary() {
-                return Err(error!(format!(
-                    "Operator `:{op_str}` is nullary — drop the `=` and value"
-                )));
+                return Err(error!(
+                    "Operator is nullary — drop the `=` and value",
+                    operator = op_str
+                ));
             }
             if field.is_empty() {
-                return Err(error!(format!(
-                    "Empty field name before operator `:{op_str}=`"
-                )));
+                return Err(error!(
+                    "Empty field name before operator",
+                    operator = op_str
+                ));
             }
             Ok((field.to_string(), op))
         }

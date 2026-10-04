@@ -215,10 +215,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let select = table.select();
         let result = self.execute(&select.expr()).await?;
@@ -234,10 +231,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let condition = {
             let id_val = id_param(table, id);
@@ -257,10 +251,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let mut select = table.select();
         select.set_limit(Some(1), None);
@@ -328,10 +319,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let insert = crate::postgres::statements::PostgresInsert::new(table.table_name())
             .with_record(record)
@@ -355,10 +343,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         // PostgreSQL: INSERT ... ON CONFLICT (id) DO UPDATE SET ...
         let insert = crate::postgres::statements::PostgresInsert::new(table.table_name())
@@ -409,10 +394,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let id_condition = {
             let id_val = id_param(table, id);
@@ -423,19 +405,14 @@ impl TableSource for PostgresDB {
             .with_condition(id_condition);
         self.execute(&update.expr()).await?;
 
-        self.get_table_value(table, id)
-            .await?
-            .ok_or_else(|| error!("Row not found after patch", id = id.clone()).mark_not_found())
+        crate::table_writes::refetch_after_patch(self, table, id).await
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let id_condition = {
             let id_val = id_param(table, id);
@@ -470,10 +447,7 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let insert = crate::postgres::statements::PostgresInsert::new(table.table_name())
             .with_record(record);

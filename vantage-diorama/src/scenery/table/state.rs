@@ -36,9 +36,13 @@ pub(crate) struct TableSceneryState {
     pub(crate) op_conditions: RwLock<Vec<super::OpCondition>>,
     pub(crate) sort: RwLock<Option<(String, SortDir)>>,
 
-    pub(crate) rows: RwLock<BTreeMap<usize, Arc<EnrichedRecord>>>,
+    pub(crate) rows: RwLock<super::row_map::RowMap>,
     pub(crate) id_to_idx: RwLock<HashMap<String, usize>>,
     pub(crate) total: RwLock<Option<usize>>,
+    /// How far `total` can be trusted — see [`TotalKind`](super::view_stats::TotalKind).
+    pub(crate) total_kind: RwLock<super::view_stats::TotalKind>,
+    /// The published [`ViewStats`](super::ViewStats) snapshot.
+    pub(crate) stats: super::view_stats::StatsCell,
 
     /// The most recent viewport range handed to the loader. A refresh on a
     /// chunk-loaded scenery re-fetches exactly this range in place (see
@@ -210,6 +214,7 @@ pub(crate) struct InFlightMarker(pub(crate) Arc<TableSceneryState>);
 impl Drop for InFlightMarker {
     fn drop(&mut self) {
         *self.0.load_in_flight.lock().unwrap() = None;
+        self.0.publish_view_stats();
     }
 }
 
@@ -279,6 +284,7 @@ impl TableSceneryState {
                 "scenery settled — the grid now shows this as the answer",
             );
             self.note_state(reason);
+            self.publish_view_stats();
         }
     }
 
@@ -311,6 +317,14 @@ impl TableSceneryState {
     pub(crate) fn bump_generation(&self) {
         let next = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let _ = self.generation_tx.send_replace(Generation(next));
+        self.publish_view_stats();
+    }
+
+    /// Release the two-pass list single-flight and republish, so the
+    /// snapshot stops reporting a fetch in flight.
+    pub(crate) fn clear_list_in_flight(&self) {
+        *self.list_in_flight.lock().unwrap() = false;
+        self.publish_view_stats();
     }
 
     pub(crate) fn current_generation(&self) -> u64 {
@@ -346,13 +360,71 @@ impl TableSceneryState {
         self.load_push_count.load(Ordering::SeqCst)
     }
 
-    /// Overwrite the cached grand total. Returns `true` if it changed (so the
-    /// loader can bump the generation for `row_count` consumers).
+    /// Overwrite the cached grand total with an exact one. Returns `true` if
+    /// it changed (so the loader can bump the generation for `row_count`
+    /// consumers).
     pub(crate) fn set_total(&self, total: Option<usize>) -> bool {
-        let mut guard = self.total.write().unwrap();
-        let changed = *guard != total;
-        *guard = total;
+        self.set_total_as(total, super::view_stats::TotalKind::Exact)
+    }
+
+    /// [`set_total`](Self::set_total) for a total that is not a count. The
+    /// return value tracks the number only; a change of kind alone still
+    /// republishes the snapshot.
+    pub(crate) fn set_total_as(
+        &self,
+        total: Option<usize>,
+        kind: super::view_stats::TotalKind,
+    ) -> bool {
+        let changed = {
+            let mut guard = self.total.write().unwrap();
+            let changed = *guard != total;
+            *guard = total;
+            changed
+        };
+        *self.total_kind.write().unwrap() = kind;
+        self.publish_view_stats();
         changed
+    }
+
+    /// See [`TableScenery::row_count`](super::TableScenery::row_count).
+    pub(crate) fn row_count(&self) -> usize {
+        // A locally-refined view's visible map is authoritative — the index may
+        // hold more ids than match the filter.
+        if self.local_refine() {
+            return self.rows.read().unwrap().len();
+        }
+        if let Some(index) = self.index() {
+            return index.len();
+        }
+        if let Some(t) = *self.total.read().unwrap() {
+            return t;
+        }
+        self.rows.read().unwrap().len()
+    }
+
+    /// See [`TableScenery::has_more`](super::TableScenery::has_more).
+    pub(crate) fn has_more(&self) -> bool {
+        // A locally-refined view materializes its whole visible set from the
+        // (already-listed) index, so there is no further page to ask for.
+        if self.local_refine() {
+            return false;
+        }
+        // Two-pass / sequential no-total: more pages exist until the list pass
+        // sees a short or empty page.
+        if let Some(index) = self.index() {
+            return !index.is_complete();
+        }
+        let total = *self.total.read().unwrap();
+        let loaded = self.rows.read().unwrap().len();
+        match total {
+            Some(t) => loaded < t,
+            None => false,
+        }
+    }
+
+    /// See [`TableScenery::status_summary`](super::TableScenery::status_summary).
+    pub(crate) fn status_summary(&self) -> super::RowStatusSummary {
+        self.rows.read().unwrap().summary()
     }
 
     /// Current two-pass index (cloned `Arc`), or `None` in single-pass mode.
@@ -487,7 +559,7 @@ impl TableSceneryState {
             rows.insert(idx, Arc::new(EnrichedRecord::fresh(rec)));
             id_to_idx.insert(id, idx);
         }
-        *self.rows.write().unwrap() = rows;
+        *self.rows.write().unwrap() = super::row_map::RowMap::from_map(rows);
         *self.id_to_idx.write().unwrap() = id_to_idx;
         Ok(())
     }

@@ -475,10 +475,7 @@ impl TableSource for GraphqlApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let id_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_name = table.id_field_name();
         let mut select = select_from_table(table);
         select
             .conditions

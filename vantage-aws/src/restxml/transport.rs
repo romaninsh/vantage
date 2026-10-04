@@ -20,7 +20,7 @@
 
 use std::time::SystemTime;
 
-use vantage_core::{Result, error};
+use vantage_core::{Result, VantageError, error};
 
 use crate::account::AwsAccount;
 use crate::condition::AwsCondition;
@@ -225,8 +225,8 @@ pub(crate) async fn restxml_call(
         .map_err(|e| error!("Failed to read AWS REST-XML response body", detail = e))?;
 
     if !status.is_success() {
-        if let Some(hint) = s3_permanent_redirect_hint(status.as_u16(), &response_text) {
-            return Err(error!(hint));
+        if let Some(err) = s3_permanent_redirect_error(status.as_u16(), &response_text) {
+            return Err(err);
         }
         return Err(error!(
             "AWS REST-XML request returned error status",
@@ -243,9 +243,9 @@ pub(crate) async fn restxml_call(
 /// to the wrong region. SigV4 binds the signature to the original host,
 /// so transparent redirect-following isn't viable — but the response
 /// body names the correct endpoint, which we surface as an actionable
-/// message ("re-run with --region eu-west-2") instead of dumping raw
+/// error ("re-run with --region eu-west-2") instead of dumping raw
 /// XML at the user.
-fn s3_permanent_redirect_hint(status: u16, body: &str) -> Option<String> {
+fn s3_permanent_redirect_error(status: u16, body: &str) -> Option<VantageError> {
     if status != 301 || !body.contains("<Code>PermanentRedirect</Code>") {
         return None;
     }
@@ -253,10 +253,12 @@ fn s3_permanent_redirect_hint(status: u16, body: &str) -> Option<String> {
     let endpoint = xml_inner(body, "Endpoint")?;
     let region = parse_s3_endpoint_region(endpoint)?;
     let bucket_label = bucket.unwrap_or("(unknown)");
-    Some(format!(
-        "S3 bucket `{bucket_label}` lives in region `{region}`, \
-         not the one currently configured. Re-run with `--region {region}` \
-         (or set AWS_REGION={region}). Original endpoint: {endpoint}."
+    Some(error!(
+        "S3 bucket lives in a different region than the one configured — \
+         re-run with `--region <region>` or set AWS_REGION",
+        bucket = bucket_label,
+        region = region,
+        endpoint = endpoint
     ))
 }
 
@@ -417,13 +419,13 @@ mod tests {
     }
 
     #[test]
-    fn s3_permanent_redirect_hint_names_bucket_and_region() {
+    fn s3_permanent_redirect_error_names_bucket_and_region() {
         let body = r#"<?xml version="1.0" encoding="UTF-8"?>
 <Error><Code>PermanentRedirect</Code><Message>The bucket you are attempting to access must be addressed using the specified endpoint. Please send all future requests to this endpoint.</Message><Endpoint>ba-coruscant-dev-bucket1.s3.eu-west-2.amazonaws.com</Endpoint><Bucket>ba-coruscant-dev-bucket1</Bucket><RequestId>X</RequestId><HostId>Y</HostId></Error>"#;
-        let hint = s3_permanent_redirect_hint(301, body).expect("hint should fire");
-        assert!(hint.contains("ba-coruscant-dev-bucket1"));
-        assert!(hint.contains("eu-west-2"));
-        assert!(hint.contains("--region eu-west-2"));
+        let err = s3_permanent_redirect_error(301, body).expect("hint should fire");
+        assert!(err.message().contains("different region"));
+        assert_eq!(err.context["bucket"], "\"ba-coruscant-dev-bucket1\"");
+        assert_eq!(err.context["region"], "\"eu-west-2\"");
     }
 
     #[test]
@@ -453,9 +455,9 @@ mod tests {
     }
 
     #[test]
-    fn s3_permanent_redirect_hint_ignores_unrelated_errors() {
+    fn s3_permanent_redirect_error_ignores_unrelated_errors() {
         let body = r#"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"#;
-        assert!(s3_permanent_redirect_hint(403, body).is_none());
-        assert!(s3_permanent_redirect_hint(301, body).is_none());
+        assert!(s3_permanent_redirect_error(403, body).is_none());
+        assert!(s3_permanent_redirect_error(301, body).is_none());
     }
 }

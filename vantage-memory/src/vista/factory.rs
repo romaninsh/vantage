@@ -60,7 +60,7 @@ impl VistaFactory for MemoryVistaFactory {
             ));
         }
         let metadata = metadata_from_spec(&spec)?;
-        let id_column = id_column(&spec);
+        let id_column = spec.resolve_id_column();
         let block = spec.driver.memory;
         let table = self.store().define(
             &spec.name,
@@ -95,20 +95,10 @@ impl VistaFactory for MemoryVistaFactory {
     }
 }
 
-/// The spec's `id_column`, else the column flagged `id`, else `"id"`.
-fn id_column(spec: &MemoryVistaSpec) -> String {
-    spec.id_column.clone().unwrap_or_else(|| {
-        spec.columns
-            .iter()
-            .find(|(_, c)| c.flags.iter().any(|f| f == flags::ID))
-            .map_or_else(|| "id".to_string(), |(name, _)| name.clone())
-    })
-}
-
 /// Every stored column is orderable: the store sorts on any field. A `lazy:`
 /// column is computed by the Vista.
 fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
-    let mut metadata = VistaMetadata::new().with_id_column(id_column(spec));
+    let mut metadata = VistaMetadata::new().with_id_column(spec.resolve_id_column());
     for (name, col) in &spec.columns {
         if col.expr.is_some() {
             return Err(error!(
@@ -138,7 +128,7 @@ fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
                 ));
             }
             Some(ReferenceSugar::Full(r)) => {
-                let fk = r.foreign_key.as_deref().unwrap_or(name);
+                let fk = r.foreign_key_or(name);
                 metadata = metadata.with_reference(Reference::new(name, &r.table, r.kind, fk));
             }
             None => {}
@@ -151,7 +141,7 @@ fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
                 reference = name
             ));
         }
-        let fk = r.foreign_key.as_deref().unwrap_or(name);
+        let fk = r.foreign_key_or(name);
         metadata = metadata.with_reference(Reference::new(name, &r.table, r.kind, fk));
     }
     Ok(metadata)

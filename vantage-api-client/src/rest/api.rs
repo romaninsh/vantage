@@ -7,7 +7,6 @@ use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObse
 use vantage_core::{Priority, error};
 use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
-use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::pagination::Pagination;
 use vantage_types::Record;
 
@@ -619,7 +618,7 @@ impl RestApi {
         let raw: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
         let mut resolved: Vec<Expression<CborValue>> = Vec::with_capacity(raw.len());
         for cond in raw {
-            resolved.push(resolve_deferreds(cond.clone()).await?);
+            resolved.push(cond.resolve_deferred().await?);
         }
         let conds: Vec<&Expression<CborValue>> = resolved.iter().collect();
         let (endpoint, consumed) = self.endpoint_url(table_name, &conds)?;
@@ -919,33 +918,6 @@ fn join_query(endpoint: &str, query: &str) -> String {
         Some(rest) if endpoint.contains('?') => format!("{endpoint}&{rest}"),
         _ => format!("{endpoint}{query}"),
     }
-}
-
-/// Walk an `Expression`'s parameter tree and force any `Deferred`
-/// branches to their resolved form. Used at the `fetch_records`
-/// boundary so the URL builder only sees sync scalars.
-///
-/// Recursion lives on the heap (boxed) because the future's body
-/// contains another `async` call of the same shape — Rust can't size
-/// a directly-recursive `async fn` without indirection.
-fn resolve_deferreds(
-    mut expr: Expression<CborValue>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Expression<CborValue>>> + Send>> {
-    Box::pin(async move {
-        for param in expr.parameters.iter_mut() {
-            match param {
-                ExpressiveEnum::Deferred(deferred) => {
-                    *param = deferred.call().await?;
-                }
-                ExpressiveEnum::Nested(inner) => {
-                    let resolved = resolve_deferreds(inner.clone()).await?;
-                    *inner = resolved;
-                }
-                ExpressiveEnum::Scalar(_) => {}
-            }
-        }
-        Ok(expr)
-    })
 }
 
 impl RestApi {

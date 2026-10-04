@@ -22,8 +22,10 @@ mod capped;
 mod helpers;
 mod loader;
 mod reactor;
+mod row_map;
 mod state;
 mod two_pass;
+mod view_stats;
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -38,6 +40,7 @@ use super::enriched_record::EnrichedRecord;
 pub use builder::TableSceneryBuilder;
 pub use capped::CappedScenery;
 pub(crate) use state::TableSceneryState;
+pub use view_stats::{FilterOrigin, ViewCount, ViewFilter, ViewState, ViewStats};
 
 /// UI-side sort direction. Mirrors `vantage_vista::SortDirection` but
 /// kept distinct so Scenery callers don't need to import vista types.
@@ -129,8 +132,8 @@ impl LoadState {
 }
 
 /// Breakdown of the row statuses currently materialized in a scenery's sparse
-/// map. Cheap to compute (iterates only loaded rows, not the full row count) —
-/// the per-scenery slice of the diagnostics surface.
+/// map, kept current as rows are written, so reading it costs nothing per
+/// row. The per-scenery slice of the diagnostics surface.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RowStatusSummary {
     /// Rows actually present in the sparse map (a paged scenery's `row_count`
@@ -169,7 +172,19 @@ pub trait TableScenery: Send + Sync {
     fn estimated_total(&self) -> Option<usize>;
     fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>>;
 
+    /// Declare the rows to hydrate. Any consumer may call it — a grid, a
+    /// dashboard counter, an observation probe — and it does not change what
+    /// [`ViewStats::showing`] reports; see [`set_shown_range`](Self::set_shown_range).
     fn set_viewport(&self, range: Range<usize>);
+
+    /// Declare the rows a displaying consumer (a grid) has on screen, or
+    /// `None` when it shows none — closed, hidden or scrolled to nothing.
+    /// The only input to [`ViewStats::showing`]. Kept apart from
+    /// [`set_viewport`](Self::set_viewport) so a consumer that loads rows
+    /// without displaying them doesn't claim the status bar's "Showing a–b".
+    /// A grid typically calls both with the same range. Default no-op.
+    fn set_shown_range(&self, _range: Option<Range<usize>>) {}
+
     fn request_load_more(&self);
     fn request_refresh(&self);
     fn set_sort(&self, column: Option<String>, dir: SortDir);
@@ -210,6 +225,21 @@ pub trait TableScenery: Send + Sync {
     }
 
     fn subscribe(&self) -> watch::Receiver<Generation>;
+
+    /// The view's current [`ViewStats`]: totals, loaded and visible rows,
+    /// order, search, filters and live state. Cheap — a clone of the last
+    /// published snapshot, never a fetch.
+    fn view_stats(&self) -> ViewStats {
+        ViewStats::from_scenery(self)
+    }
+
+    /// Signals each time [`view_stats`](Self::view_stats) changes. Separate
+    /// from [`subscribe`](Self::subscribe): a viewport move or a fetch
+    /// starting changes the snapshot without changing any row, and a row
+    /// hydrating changes a row without changing the snapshot.
+    fn subscribe_view_stats(&self) -> watch::Receiver<Generation> {
+        self.subscribe()
+    }
 
     /// Snapshot of the master Vista's capability flags taken at open
     /// time. UI delegates branch on these to pick the right page
@@ -286,53 +316,15 @@ impl TableScenery for TableSceneryImpl {
     }
 
     fn row_count(&self) -> usize {
-        // A locally-refined view's visible map is authoritative — the index may
-        // hold more ids than match the filter.
-        if self.inner.local_refine() {
-            return self.inner.rows.read().unwrap().len();
-        }
-        if let Some(index) = self.inner.index() {
-            return index.len();
-        }
-        if let Some(t) = *self.inner.total.read().unwrap() {
-            return t;
-        }
-        self.inner.rows.read().unwrap().len()
+        self.inner.row_count()
     }
 
     fn status_summary(&self) -> RowStatusSummary {
-        use super::enriched_record::RowStatus;
-        let mut s = RowStatusSummary::default();
-        for row in self.inner.rows.read().unwrap().values() {
-            s.loaded += 1;
-            match &row.status {
-                RowStatus::Fresh => s.fresh += 1,
-                RowStatus::Incomplete => s.incomplete += 1,
-                RowStatus::PendingWrite => s.pending_write += 1,
-                RowStatus::LoadFailed { .. } | RowStatus::WriteFailed { .. } => s.failed += 1,
-                _ => {}
-            }
-        }
-        s
+        self.inner.status_summary()
     }
 
     fn has_more(&self) -> bool {
-        // A locally-refined view materializes its whole visible set from the
-        // (already-listed) index, so there is no further page to ask for.
-        if self.inner.local_refine() {
-            return false;
-        }
-        // Two-pass / sequential no-total: more pages exist until the list pass
-        // sees a short or empty page.
-        if let Some(index) = self.inner.index() {
-            return !index.is_complete();
-        }
-        let total = *self.inner.total.read().unwrap();
-        let loaded = self.inner.rows.read().unwrap().len();
-        match total {
-            Some(t) => loaded < t,
-            None => false,
-        }
+        self.inner.has_more()
     }
 
     fn estimated_total(&self) -> Option<usize> {
@@ -355,6 +347,10 @@ impl TableScenery for TableSceneryImpl {
             return None;
         }
         self.inner.rows.read().unwrap().get(&idx).cloned()
+    }
+
+    fn set_shown_range(&self, range: Option<Range<usize>>) {
+        self.inner.set_shown_range(range);
     }
 
     fn set_viewport(&self, range: Range<usize>) {
@@ -448,13 +444,15 @@ impl TableScenery for TableSceneryImpl {
         }
         self.inner.deregister();
         *self.inner.sort.write().unwrap() = column.map(|c| (c, dir));
+        self.inner.publish_view_stats();
         self.inner.reload_notify.notify_one();
     }
 
     fn set_filters(&self, filters: Vec<(String, ciborium::Value)>) {
         self.inner.deregister();
         *self.inner.ui_filters.write().unwrap() = filters;
-        // The cached total belongs to the unfiltered set.
+        // The cached total belongs to the unfiltered set. Clearing it also
+        // republishes the snapshot with the new filters.
         self.inner.set_total(None);
         self.inner.reload_notify.notify_one();
     }
@@ -483,7 +481,8 @@ impl TableScenery for TableSceneryImpl {
         );
         self.inner.deregister();
         *self.inner.ui_terms.write().unwrap() = terms;
-        // The cached total belongs to the unfiltered set.
+        // The cached total belongs to the unfiltered set. Clearing it also
+        // republishes the snapshot with the new terms.
         self.inner.set_total(None);
         if self.inner.paged && !self.inner.two_pass {
             // Same stale-while-revalidate as search: keep the rows on screen
@@ -538,6 +537,7 @@ impl TableScenery for TableSceneryImpl {
         // as `set_sort`/`set_filters`.
         self.inner.deregister();
         *self.inner.search.write().unwrap() = normalized;
+        self.inner.publish_view_stats();
         if self.inner.paged {
             // Stale-while-revalidate: keep the current rows and count on
             // screen and refetch the viewport in place. The refetch reads the
@@ -568,6 +568,14 @@ impl TableScenery for TableSceneryImpl {
 
     fn subscribe(&self) -> watch::Receiver<Generation> {
         self.inner.generation_tx.subscribe()
+    }
+
+    fn view_stats(&self) -> ViewStats {
+        self.inner.stats.snapshot()
+    }
+
+    fn subscribe_view_stats(&self) -> watch::Receiver<Generation> {
+        self.inner.stats.subscribe()
     }
 
     fn master_capabilities(&self) -> &VistaCapabilities {

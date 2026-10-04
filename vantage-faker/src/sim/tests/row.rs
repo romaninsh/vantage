@@ -140,6 +140,63 @@ fn row_walk_column_stays_continuous_and_cheap_across_many_sims() {
 }
 
 #[test]
+fn row_takes_the_tables_weirdness() {
+    let store = store_with(&["log"]);
+    let engine = SimEngine::builder()
+        .store(&store)
+        .columns("log", vec![FakerColumn::new("title", "string")])
+        .fake_rows("log", 10, 1.0)
+        .sim(SimDef::new(
+            "r",
+            "log",
+            "table().insert(#{ id: \"x\", title: table().fake_row().title });",
+        ))
+        .manual_clock(start())
+        .seed(4)
+        .start()
+        .unwrap();
+    run_for(&engine, 1, 1);
+    let title = text(&store.table("log").get("x").unwrap(), "title");
+    assert!(
+        title.is_empty() || title.len() >= 200 || title == "John Smith" || title.contains('🌸'),
+        "not an anomaly: {title:?}"
+    );
+}
+
+#[test]
+fn row_even_dates_spread_over_the_tables_count() {
+    let store = store_with(&["log"]);
+    let engine = SimEngine::builder()
+        .store(&store)
+        .columns(
+            "log",
+            vec![
+                FakerColumn::new("at", "datetime").with_generator(ColumnGen::Date {
+                    from: "2026-01-01".into(),
+                    to: "2026-01-11".into(),
+                    spread: crate::Spread::Even,
+                }),
+            ],
+        )
+        .fake_rows("log", 2, 0.0)
+        .sim(SimDef::new(
+            "r",
+            "log",
+            "let a = table().fake_row().at; let b = table().fake_row().at; \
+             table().insert(#{ id: \"x\", a: a, b: b });",
+        ))
+        .manual_clock(start())
+        .seed(4)
+        .start()
+        .unwrap();
+    run_for(&engine, 1, 1);
+    let rec = store.table("log").get("x").unwrap();
+    assert!(text(&rec, "a").starts_with("2026-01-0"), "{rec:?}");
+    // Row 1 of 2 sits at `to`; of the default 100 it would sit a day in.
+    assert!(text(&rec, "b").starts_with("2026-01-1"), "{rec:?}");
+}
+
+#[test]
 fn row_on_a_table_without_columns_is_empty() {
     let store = store_with(&["log", "bare"]);
     let engine = SimEngine::builder()

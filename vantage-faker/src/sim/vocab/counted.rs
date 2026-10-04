@@ -2,9 +2,9 @@
 //! that actually changes the store, so `SimEngine::stats().writes` counts the
 //! writes scripts make through vantage-vista's `DataVocab` terminals.
 //!
-//! Reads forward through [`forward_table_shell!`]; writes the counter does
-//! not see (`delete_vista_all_values`) forward too. Copies and `ref(...)`
-//! targets stay wrapped, so their writes count as well.
+//! Everything else forwards through [`forward_table_shell!`], including the
+//! write the counter does not see (`delete_vista_all_values`). Copies and
+//! `ref(...)` targets stay wrapped, so their writes count as well.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_memory::{MemoryTableHandle, MemoryTableShell};
 use vantage_types::Record;
-use vantage_vista::{TableShell, Vista, VistaCapabilities, forward_table_shell};
+use vantage_vista::{TableShell, Vista, forward_table_shell};
 
 use crate::sim::stats::Counters;
 
@@ -53,10 +53,6 @@ impl CountedShell {
 }
 
 forward_table_shell!(CountedShell, inner, {
-    fn capabilities(&self) -> &VistaCapabilities {
-        self.inner.capabilities()
-    }
-
     fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
         Some(Box::new(CountedShell {
             inner: self.inner.clone_shell()?,
@@ -106,10 +102,6 @@ forward_table_shell!(CountedShell, inner, {
         self.inner.delete_vista_value(vista, id).await?;
         self.bump();
         Ok(())
-    }
-
-    async fn delete_vista_all_values(&self, vista: &Vista) -> Result<()> {
-        self.inner.delete_vista_all_values(vista).await
     }
 
     async fn insert_vista_return_id_value(&self, vista: &Vista, record: &Rec) -> Result<String> {

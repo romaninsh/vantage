@@ -601,7 +601,9 @@ impl LensBuilderState {
             b = b.refresh_on_open(enabled);
         }
 
-        let lens = b.build().map_err(|e| vantage_core::error!(e.to_string()))?;
+        let lens = b
+            .build()
+            .map_err(|e| vantage_core::error!("lens build failed", detail = e.to_string()))?;
         Ok(Arc::new(lens))
     }
 }

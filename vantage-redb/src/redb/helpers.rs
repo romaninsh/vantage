@@ -5,20 +5,10 @@ use std::collections::HashSet;
 
 use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
-use vantage_table::traits::column_like::ColumnLike;
-use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::redb::Redb;
 use crate::types::AnyRedbType;
-
-/// Resolve the table's id column name, falling back to `"id"`.
-pub(crate) fn id_column_name<T: TableSource, E: Entity<T::Value>>(table: &Table<T, E>) -> String {
-    table
-        .id_field()
-        .map(|c| ColumnLike::name(c).to_string())
-        .unwrap_or_else(|| "id".to_string())
-}
 
 /// Set of column names that carry the `Indexed` flag. The id column is
 /// implicitly available without the flag because the main table is already

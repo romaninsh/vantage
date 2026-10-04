@@ -279,6 +279,8 @@ impl TableSceneryBuilder {
             rows: RwLock::new(Default::default()),
             id_to_idx: RwLock::new(HashMap::new()),
             total: RwLock::new(None),
+            total_kind: RwLock::new(super::view_stats::TotalKind::Exact),
+            stats: super::view_stats::StatsCell::new(),
             last_viewport: RwLock::new(None),
             page_size,
             generation: AtomicU64::new(0),
@@ -637,14 +639,18 @@ impl TableSceneryBuilder {
 /// (see `CacheTable::meta_total`), so a warm reopen advertises its final row
 /// count before any fetch runs. Latched as stated — it WAS stated, last time
 /// — so the unknown-total horizon rule stays out of the way; the on-open
-/// refetch re-states (and re-persists) the current truth.
+/// refetch re-states (and re-persists) the current truth. Until then the
+/// view reports it as an estimate.
 async fn restore_meta_total(state: &Arc<TableSceneryState>, dio: &Arc<DioInner>) {
     match dio.cache.meta_total().await {
         Ok(Some(total)) => {
             state
                 .total_ever_stated
                 .store(true, std::sync::atomic::Ordering::SeqCst);
-            state.set_total(Some(total as usize));
+            state.set_total_as(
+                Some(total as usize),
+                super::view_stats::TotalKind::Remembered,
+            );
             tracing::debug!(
                 target: "vantage_diorama::cache",
                 table = %dio.master.read().unwrap().name(),

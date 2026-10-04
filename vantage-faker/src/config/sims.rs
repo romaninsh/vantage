@@ -10,11 +10,11 @@ use vantage_core::{Result, error};
 #[cfg(feature = "sim")]
 use super::DatasetSpec;
 #[cfg(feature = "sim")]
-use vantage_core::Context;
-#[cfg(feature = "sim")]
 use crate::sim::builtin;
 #[cfg(feature = "sim")]
 use crate::{SimDef, SimEngine, SimEngineBuilder};
+#[cfg(feature = "sim")]
+use vantage_core::Context;
 #[cfg(feature = "sim")]
 use vantage_memory::MemoryStore;
 
@@ -101,7 +101,8 @@ impl DatasetSpec {
     }
 
     /// A [`SimEngineBuilder`] over `store` with every [`sim_defs`](Self::sim_defs)
-    /// def added, every table's columns declared (for the `fake_row()` verb) and
+    /// def added, every table's columns, count and weirdness declared (for the
+    /// `fake_row()` verb) and
     /// [`DatasetSpec::seed`] applied, for a caller that wants to set more (a
     /// manual clock, a warm-progress callback) before starting. `None` when
     /// there are no `sims:`.
@@ -111,7 +112,9 @@ impl DatasetSpec {
         }
         let mut builder = SimEngine::builder().store(store);
         for (name, table) in &self.tables {
-            builder = builder.columns(name.clone(), super::sim_columns(table));
+            builder = builder
+                .columns(name.clone(), super::sim_columns(table))
+                .fake_rows(name.clone(), table.count, table.weirdness.unwrap_or(0.0));
         }
         for def in self.sim_defs()? {
             builder = builder.sim(def);

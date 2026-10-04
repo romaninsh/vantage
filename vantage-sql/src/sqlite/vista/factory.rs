@@ -1,30 +1,25 @@
 //! `SqliteVistaFactory` — typed-table and YAML entry points, plus the
 //! `VistaFactory` trait impl. SQLite advertises full read/write/count.
 
-use std::sync::Arc;
-
 use super::spec::DriverBlockArgs;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
-use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Column as VistaColumn, NoExtras, ReferenceKind, Vista, VistaCapabilities, VistaFactory,
-    VistaMetadata, flags as vista_flags,
+    ColumnSpec, NoExtras, SpecResolver, Vista, VistaCapabilities, VistaFactory, resolve_base_spec,
 };
 
+use crate::sql_vista::{column_for_type, metadata_options};
 use crate::sqlite::SqliteDB;
 use crate::sqlite::statements::SqliteSelect;
 use crate::sqlite::types::AnySqliteType;
 use crate::sqlite::vista::source::SqliteTableShell;
 use crate::sqlite::vista::spec::{SqliteColumnExtras, SqliteTableExtras, SqliteVistaSpec};
 
-/// Resolves a YAML spec by table name. The factory hands clones of this into
-/// each `with_one` / `with_many` closure so child tables can be rebuilt from
-/// the live spec at traversal time. Mirrors `SurrealSpecResolver`.
-pub type SqliteSpecResolver = Arc<dyn Fn(&str) -> Option<SqliteVistaSpec> + Send + Sync>;
+/// Resolves a YAML spec by table name, so references and `base:` can rebuild
+/// their tables from the live spec.
+pub type SqliteSpecResolver = SpecResolver<SqliteVistaSpec>;
 
 pub struct SqliteVistaFactory {
     db: SqliteDB,
@@ -63,7 +58,7 @@ impl SqliteVistaFactory {
     where
         E: Entity<AnySqliteType> + 'static,
     {
-        let metadata = metadata_from_table(&table);
+        let metadata = table.vista_metadata(metadata_options());
         let source = SqliteTableShell::new(
             table,
             VistaCapabilities {
@@ -114,14 +109,9 @@ impl VistaFactory for SqliteVistaFactory {
     }
 }
 
-/// Build a `Table<SqliteDB, EmptyEntity>` from a spec, registering each
-/// `references:` entry as a typed `with_one` / `with_many` on the parent.
-///
-/// Each reference closure captures a clone of the resolver `Arc` and the target
-/// table name; at traversal time it asks the resolver for the target's current
-/// spec and rebuilds the child table. On a resolver miss it falls back to an
-/// empty `Table::new(target_name, db)` — the next query then fails loudly when
-/// it discovers no columns are defined. Mirrors `build_surreal_table`.
+/// Build a `Table<SqliteDB, EmptyEntity>` from a spec. Each `references:`
+/// entry rebuilds its target through `resolver` at traversal time (see
+/// `Table::with_spec_references`).
 pub(crate) fn build_sqlite_table(
     spec: &SqliteVistaSpec,
     db: SqliteDB,
@@ -149,48 +139,12 @@ pub(crate) fn build_sqlite_table(
     // `with_active_columns` below, after the references they traverse are
     // registered.
     let has_dotted = spec.columns.keys().any(|n| n.contains('.'));
-    for (name, col_spec) in &spec.columns {
-        if name.contains('.') || table.add_lazy_spec_column(col_spec, name)? {
-            continue;
-        }
-        table.add_column(build_column(name, col_spec)?);
-        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-            table.add_title_field(name);
-        }
+    for (name, col_spec) in spec.columns.iter().filter(|(n, _)| !n.contains('.')) {
+        table.add_spec_column(name, col_spec, build_column)?;
     }
+    table.set_spec_id_field(&spec.resolve_id_column())?;
 
-    let id_column = resolve_id_column(spec);
-    if !table.columns().contains_key(&id_column) {
-        return Err(error!(
-            "id column not present in spec.columns",
-            id = id_column
-        ));
-    }
-    table.set_id_field(&id_column);
-
-    for (rel_name, ref_spec) in &spec.references {
-        let target_name = ref_spec.table.clone();
-        let fk = ref_spec
-            .foreign_key
-            .clone()
-            .unwrap_or_else(|| rel_name.clone());
-        let resolver_clone = resolver.clone();
-
-        let build_child = move |db: SqliteDB| -> Table<SqliteDB, EmptyEntity> {
-            if let Some(r) = &resolver_clone
-                && let Some(child_spec) = r(&target_name)
-                && let Ok(child) = build_sqlite_table(&child_spec, db.clone(), Some(r.clone()))
-            {
-                return child;
-            }
-            Table::<SqliteDB, EmptyEntity>::new(target_name.clone(), db)
-        };
-
-        table = match ref_spec.kind {
-            ReferenceKind::HasOne => table.with_one::<EmptyEntity>(rel_name, &fk, build_child),
-            ReferenceKind::HasMany => table.with_many::<EmptyEntity>(rel_name, &fk, build_child),
-        };
-    }
+    let mut table = table.with_spec_references(&spec.references, resolver, build_sqlite_table);
 
     if has_dotted {
         // Lower the dotted imports now that their relations are declared.
@@ -206,8 +160,7 @@ pub(crate) fn build_sqlite_table(
         table = table.with_active_columns(&names)?;
     }
 
-    let table = table.with_contained_specs(&spec.contained, build_column)?;
-    Ok(table)
+    table.with_contained_specs(&spec.contained, build_column)
 }
 
 /// Build a query-sourced table from a `rhai:` script.
@@ -231,7 +184,7 @@ fn table_from_rhai(
     _code: &str,
     _db: SqliteDB,
 ) -> Result<Table<SqliteDB, EmptyEntity>> {
-    Err(error!(
+    Err(vantage_core::error!(
         "vista declares a `rhai:` source but vantage-sql was built without the `rhai` feature"
     ))
 }
@@ -239,62 +192,30 @@ fn table_from_rhai(
 /// Build a derived table: resolve `base_name` eagerly via the resolver, build
 /// the base table, optionally transform its `select()` through a `rhai:` script
 /// (transform mode — `base` is seeded into the engine scope), and inherit the
-/// listed columns/relations via [`Table::derive_from`]. The derived vista's own
-/// `columns:` (e.g. aggregate outputs) are added on top.
+/// listed columns/relations (see `Table::derive_from_spec`).
 fn build_derived_table(
     spec: &SqliteVistaSpec,
     base_name: &str,
     db: SqliteDB,
     resolver: Option<SqliteSpecResolver>,
 ) -> Result<Table<SqliteDB, EmptyEntity>> {
-    let resolver = resolver.ok_or_else(|| {
-        error!(
-            "vista declares `base:` but no spec resolver is attached to the factory",
-            base = base_name
-        )
-    })?;
-    let base_spec = resolver(base_name)
-        .ok_or_else(|| error!("base vista not found via resolver", base = base_name))?;
-    let base_table = build_sqlite_table(&base_spec, db.clone(), Some(resolver.clone()))?;
+    let (resolver, base_spec) = resolve_base_spec(resolver, base_name)?;
+    let base_table = build_sqlite_table(&base_spec, db, Some(resolver))?;
 
     let block = spec.driver.sqlite.as_ref();
-    let transformed = match block.and_then(|m| m.rhai.clone()) {
+    let select = match block.and_then(|m| m.rhai.clone()) {
         Some(code) => eval_transform(&code, base_table.select(), &spec.driver_block_args())?,
         None => base_table.select(),
     };
-
     let inherit = block.and_then(|m| m.inherit.clone()).unwrap_or_default();
-    let cols: Vec<&str> = inherit.columns.iter().map(String::as_str).collect();
-    let rels: Vec<&str> = inherit.relations.iter().map(String::as_str).collect();
-
-    let mut table = Table::derive_from(
+    Table::derive_from_spec(
         &base_table,
-        spec.name.clone(),
-        move |_| transformed,
-        &cols,
-        &rels,
-    );
-
-    // The derived vista's own declared columns (e.g. aggregate outputs).
-    for (name, col_spec) in &spec.columns {
-        if table.add_lazy_spec_column(col_spec, name)? {
-            continue;
-        }
-        if !table.columns().contains_key(name) {
-            table.add_column(build_column(name, col_spec)?);
-        }
-        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-            table.add_title_field(name);
-        }
-    }
-
-    // Explicit id override; otherwise the id inherited from the base stands.
-    if let Some(id) = &spec.id_column {
-        table.set_id_field(id);
-    }
-
-    let table = table.with_contained_specs(&spec.contained, build_column)?;
-    Ok(table)
+        spec,
+        select,
+        &inherit.columns,
+        &inherit.relations,
+        build_column,
+    )
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like
@@ -314,115 +235,20 @@ fn eval_transform(
     _base: SqliteSelect,
     _args: &[(String, String)],
 ) -> Result<SqliteSelect> {
-    Err(error!(
+    Err(vantage_core::error!(
         "vista declares a `rhai:` transform but vantage-sql was built without the `rhai` feature"
     ))
 }
 
-pub(crate) fn resolve_id_column(spec: &SqliteVistaSpec) -> String {
-    if let Some(id) = &spec.id_column {
-        return id.clone();
-    }
-    for (name, col_spec) in &spec.columns {
-        if col_spec.flags.iter().any(|f| f == vista_flags::ID) {
-            return name.clone();
-        }
-    }
-    "id".to_string()
-}
-
+/// The `sqlite.column` block names the physical column.
 pub(crate) fn build_column(
     name: &str,
-    col_spec: &vantage_vista::ColumnSpec<SqliteColumnExtras>,
+    col_spec: &ColumnSpec<SqliteColumnExtras>,
 ) -> Result<TableColumn<AnySqliteType>> {
-    let ty = col_spec.col_type.as_deref().unwrap_or("string");
-    let alias = col_spec
+    let physical = col_spec
         .driver
         .sqlite
         .as_ref()
-        .and_then(|b| b.column.clone())
-        .filter(|s| s != name);
-    let hidden = col_spec.flags.iter().any(|f| f == vista_flags::HIDDEN);
-
-    let mut col = column_for_type(name, ty)?;
-    if let Some(alias) = alias {
-        col = col.with_alias(alias);
-    }
-    if hidden {
-        col = col.with_flag(ColumnFlag::Hidden);
-    }
-    Ok(col)
-}
-
-/// YAML type alias → typed `Column` (then erased to `Column<AnySqliteType>`).
-pub(crate) fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnySqliteType>> {
-    let col: TableColumn<AnySqliteType> = match ty {
-        "int" | "integer" | "i64" | "i32" => {
-            TableColumn::from_column(TableColumn::<i64>::new(name))
-        }
-        "float" | "double" | "f64" | "f32" => {
-            TableColumn::from_column(TableColumn::<f64>::new(name))
-        }
-        "bool" | "boolean" => TableColumn::from_column(TableColumn::<bool>::new(name)),
-        "string" | "text" | "str" => TableColumn::from_column(TableColumn::<String>::new(name)),
-        "decimal" | "numeric" => {
-            TableColumn::from_column(TableColumn::<rust_decimal::Decimal>::new(name))
-        }
-        "date" => TableColumn::from_column(TableColumn::<chrono::NaiveDate>::new(name)),
-        "time" => TableColumn::from_column(TableColumn::<chrono::NaiveTime>::new(name)),
-        "datetime" => TableColumn::from_column(TableColumn::<chrono::NaiveDateTime>::new(name)),
-        "timestamp" => {
-            TableColumn::from_column(TableColumn::<chrono::DateTime<chrono::Utc>>::new(name))
-        }
-        other => {
-            return Err(error!(
-                "Unknown YAML column type",
-                column = name,
-                ty = other.to_string()
-            ));
-        }
-    };
-    Ok(col)
-}
-
-pub(crate) fn metadata_from_table<T, E>(table: &Table<T, E>) -> VistaMetadata
-where
-    T: vantage_table::traits::table_source::TableSource,
-    E: Entity<T::Value>,
-    T::Column<T::AnyType>: ColumnLike<T::AnyType>,
-{
-    let mut metadata = VistaMetadata::new();
-    for (name, col) in table.columns() {
-        // SQLite can ORDER BY any column server-side — including computed
-        // ones, which resolve via their output alias. Every column gets
-        // the ORDERABLE flag at construction; consumers branch on it
-        // before calling `Vista::add_order`.
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
-            .with_flag(vista_flags::ORDERABLE);
-        // Computed columns (implicit-reference imports, expression, lazy)
-        // are read-only for consumers.
-        if table.is_calculated_column(name) {
-            vc = vc.with_flag(vista_flags::CALCULATED);
-        }
-        if col.flags().contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(vista_flags::HIDDEN);
-        }
-        metadata = metadata.with_column(vc);
-    }
-    if let Some(id_field) = table.id_field() {
-        metadata = metadata.with_id_column(id_field.name().to_string());
-    }
-    for title in table.title_fields() {
-        if let Some(col) = metadata.columns.get_mut(title) {
-            col.flags.push(vista_flags::TITLE.to_string());
-        }
-    }
-    metadata = metadata.with_columns_at(table.computed_columns());
-    for reference in table.vista_references() {
-        metadata = metadata.with_reference(reference);
-    }
-    for spec in table.vista_contained() {
-        metadata = metadata.with_contained(spec);
-    }
-    metadata
+        .and_then(|b| b.column.clone());
+    TableColumn::from_spec(name, col_spec, physical, column_for_type)
 }

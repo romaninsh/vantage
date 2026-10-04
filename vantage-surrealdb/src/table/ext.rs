@@ -1,5 +1,5 @@
 use serde_json::{Value, from_value};
-use vantage_core::{Result, vantage_error};
+use vantage_core::{Context, Result, error, vantage_error};
 use vantage_expressions::protocol::selectable::Selectable;
 use vantage_table::{Entity, Table};
 
@@ -44,7 +44,7 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
                 .ok_or_else(|| vantage_error!("ID field is not a string"))?
                 .to_string();
             let entity = from_value(v.into())
-                .map_err(|e| vantage_error!(format!("Failed to deserialize entity: {}", e)))?;
+                .context(error!("Failed to deserialize entity"))?;
             results.push((id, entity));
         }
 
@@ -63,11 +63,10 @@ impl<E: Entity> SurrealTableExt<E> for Table<SurrealDB, E> {
             let new_entity = fx(entity.clone());
 
             // Serialize both entities to Value for comparison
-            let original_value = serde_json::to_value(&entity).map_err(|e| {
-                vantage_error!(format!("Failed to serialize original entity: {}", e))
-            })?;
+            let original_value = serde_json::to_value(&entity)
+                .context(error!("Failed to serialize original entity"))?;
             let new_value = serde_json::to_value(&new_entity)
-                .map_err(|e| vantage_error!("Failed to serialize new entity: {}", e))?;
+                .context(error!("Failed to serialize new entity"))?;
 
             // Find differences between original and new entity
             let mut patch = serde_json::Map::new();

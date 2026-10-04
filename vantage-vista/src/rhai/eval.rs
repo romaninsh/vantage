@@ -21,7 +21,7 @@ use crate::vista::Vista;
 /// Compile a script slot through the host's cache, naming the slot on error.
 pub(crate) fn compile(host: &Host, what: &str, code: &str) -> Result<Compiled<Block>> {
     host.compile(&Block::from(code))
-        .map_err(|e| error!(format!("{what} failed to compile: {e}")))
+        .context(error!("rhai script failed to compile", script = what))
 }
 
 /// Evaluate a reference build-script and return the Vista it describes.
@@ -40,7 +40,7 @@ pub fn eval_ref_script(
     let script = compile(host, WHAT, code)?;
     let result = script
         .eval(&env.var("row", record_to_dynamic(row)))
-        .map_err(|e| error!(format!("{WHAT} failed: {e}")))?;
+        .context(error!("rhai script failed", script = WHAT))?;
     result
         .try_cast::<Handle>()
         .ok_or_else(|| error!("Script did not return a table handle", script = WHAT))?
@@ -63,7 +63,7 @@ pub fn eval_modify_script(host: &Host, code: &str, vista: Vista) -> Result<Vista
     let base = Handle::over(vista);
     let result = script
         .eval(&env.var("self", Dynamic::from(base.clone())))
-        .map_err(|e| error!(format!("{WHAT} failed: {e}")))?;
+        .context(error!("rhai script failed", script = WHAT))?;
     finish(base, result)
 }
 
@@ -96,7 +96,10 @@ fn eval_augment_compiled(
             &env.var("self", Dynamic::from(base.clone()))
                 .var("row", record_to_dynamic(row)),
         )
-        .map_err(|e| error!(format!("rhai augment source script failed: {e}")))?;
+        .context(error!(
+            "rhai script failed",
+            script = "rhai augment source script"
+        ))?;
     finish(base, result)
 }
 

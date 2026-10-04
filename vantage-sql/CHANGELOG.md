@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.27 — 2026-10-04
+
+- SQLite, Postgres and MySQL share one statement path (deferred parameters, placeholders,
+  binding, `execute_affected`) and one patch re-read.
+- Postgres and MySQL query errors carry the SQL, as SQLite's do.
+- Postgres and MySQL share one `defer`, and `aggregate` uses the same first-cell rule.
+- MySQL insert-return-id errors carry the SQL.
+- SQLite-only builds compile without dead-code warnings.
+- The vista factories use the spec helpers of `vantage-table` 1.1.1.
+- Depends on `vantage-expressions` 1.0.1, `vantage-table` 1.1.1, `vantage-vista` 1.1.1.
+
 ## 0.6.26 — 2026-10-03
 
 - Deleting a missing row fails with `ErrorKind::NotFound` on SQLite, Postgres and MySQL.

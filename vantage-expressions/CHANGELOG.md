@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-10-04
+
+- `resolve_param()`: collapses a scalar, deferred or nested parameter to one value.
+- `Expression::resolve_deferred()`: calls every deferred parameter, nested ones included.
+  `MockBuilder` uses it, so it now also resolves deferred parameters inside nested expressions.
+
 ## 1.0.0 — 2026-10-03
 
 - Stable release. The API hasn't changed since 2026-06-17 (4 months); no code changes.

@@ -93,27 +93,6 @@ impl MockBuilder {
         }
     }
 
-    async fn resolve_deferred_expression(
-        &self,
-        expr: &Expression<Value>,
-    ) -> Result<Expression<Value>> {
-        let mut resolved_params = Vec::new();
-
-        for param in &expr.parameters {
-            match param {
-                ExpressiveEnum::Deferred(deferred_fn) => {
-                    let result = deferred_fn.call().await?;
-                    resolved_params.push(result);
-                }
-                other => {
-                    resolved_params.push(other.clone());
-                }
-            }
-        }
-
-        Ok(Expression::new(expr.template.clone(), resolved_params))
-    }
-
     fn find_matching_response(&self, query: &str) -> Option<Value> {
         self.patterns.get(query).cloned()
     }
@@ -130,7 +109,7 @@ impl DataSource for MockBuilder {}
 impl ExprDataSource<Value> for MockBuilder {
     async fn execute(&self, expr: &Expression<Value>) -> Result<Value> {
         // First resolve any deferred functions
-        let resolved_expr = self.resolve_deferred_expression(expr).await?;
+        let resolved_expr = expr.resolve_deferred().await?;
 
         // Then process (flatten if enabled)
         let processed_expr = self.process_expression(&resolved_expr);

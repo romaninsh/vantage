@@ -9,7 +9,6 @@ pub mod types;
 #[cfg(feature = "vista")]
 pub mod vista;
 
-use ciborium::Value as CborValue;
 use sqlx::Connection as _;
 use sqlx::postgres::{PgConnection, PgPool, PgPoolOptions};
 
@@ -53,17 +52,6 @@ impl PostgresDB {
         use vantage_expressions::ExprDataSource;
         let expr = select.as_aggregate(func, column);
         let result = self.execute(&expr).await?;
-        Ok(match result.value() {
-            CborValue::Array(arr) => arr
-                .first()
-                .and_then(|row| match row {
-                    CborValue::Map(map) => map
-                        .first()
-                        .map(|(_, v)| AnyPostgresType::untyped(v.clone())),
-                    _ => None,
-                })
-                .unwrap_or(result),
-            _ => result,
-        })
+        Ok(crate::sql_exec::first_cell::<Self>(result))
     }
 }

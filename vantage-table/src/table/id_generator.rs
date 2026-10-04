@@ -19,7 +19,6 @@ use vantage_core::Result;
 use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
 
 use crate::table::{BeforeFn, Hook, Phase, Table};
-use crate::traits::column_like::ColumnLike;
 use crate::traits::table_source::TableSource;
 
 /// How a missing id is minted when a new record is inserted.
@@ -105,10 +104,7 @@ where
         move |rec: &mut Record<T::Value>,
               table: &Table<T, EmptyEntity>|
               -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            let id_field = table
-                .id_field()
-                .map(|c| c.name().to_string())
-                .unwrap_or_else(|| "id".to_string());
+            let id_field = table.id_field_name();
             let generator = generator.clone();
             Box::pin(async move {
                 let absent_or_null = match rec.get(id_field.as_str()) {

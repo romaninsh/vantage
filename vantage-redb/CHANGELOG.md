@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3 — 2026-10-04
+
+- Id column name comes from `Table::id_field_name()`.
+
 ## 0.6.2 — 2026-10-03
 
 - Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,

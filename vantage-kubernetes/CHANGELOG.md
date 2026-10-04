@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4 — 2026-10-04
+
+- Parameters resolve through `vantage_expressions::resolve_param`.
+
+- Vista metadata comes from `Table::vista_metadata`.
+- Depends on `vantage-expressions` 1.0.1, `vantage-table` 1.1.1, `vantage-vista` 1.1.1.
+
 ## 0.6.3 — 2026-10-03
 
 - `Table::add_computed_column` columns reach the Vista.

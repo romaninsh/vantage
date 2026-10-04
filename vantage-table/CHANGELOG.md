@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 — 2026-10-04
+
+- Spec lowering for driver factories: `Column::from_spec`, `Table::add_spec_column(s)`,
+  `set_spec_id_field`, `with_spec_references`, `derive_from_spec`.
+- `Table::vista_metadata(VistaMetadataOptions)` builds a driver's `VistaMetadata`.
+- `Table::id_field_name()`: the id column's name, or `"id"`.
+- Depends on `vantage-vista` 1.1.1.
+
 ## 1.1.0 — 2026-10-03
 
 - `Table::add_computed_column` / `computed_columns`: carries Vista computed columns for driver
