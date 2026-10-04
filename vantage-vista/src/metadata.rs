@@ -43,6 +43,17 @@ impl VistaMetadata {
         self
     }
 
+    /// [`with_column_at`](Self::with_column_at) for each `(position, column)`,
+    /// in order — the shape of `Table::computed_columns`.
+    pub fn with_columns_at<'a>(
+        self,
+        columns: impl IntoIterator<Item = (usize, &'a Column)>,
+    ) -> Self {
+        columns.into_iter().fold(self, |metadata, (at, column)| {
+            metadata.with_column_at(at, column.clone())
+        })
+    }
+
     pub fn with_reference(mut self, reference: Reference) -> Self {
         self.references.insert(reference.name.clone(), reference);
         self

@@ -4,6 +4,7 @@
 
 - `Table::add_computed_column` / `computed_columns`: carries Vista computed columns for driver
   factories. A computed column replaces a stored one of the same name.
+- `Table::add_lazy_spec_column(&col_spec, name)` registers a spec `lazy:` column as computed.
 - Depends on `vantage-vista` 1.1.0.
 
 ## 1.0.0 — 2026-10-03

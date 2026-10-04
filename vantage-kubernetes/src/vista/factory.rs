@@ -110,8 +110,5 @@ where
     }
     // Computed columns go in after the flag passes above: the Vista holds
     // their values, so they are neither orderable nor searchable.
-    for (at, column) in table.computed_columns() {
-        metadata = metadata.with_column_at(at, column.clone());
-    }
-    metadata
+    metadata.with_columns_at(table.computed_columns())
 }

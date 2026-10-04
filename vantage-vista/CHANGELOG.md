@@ -5,7 +5,8 @@
 - Computed columns: `Column::with_expression(code)` (Rhai over `row`), `is_computed()`,
   `expression()`. The Vista fills them on every read, drops them from writes, and refuses them
   in conditions, ordering, aggregates, has-many joins and nested-insert links.
-- `ColumnSpec::lazy_column(name)` lowers a spec `lazy:` column; `VistaMetadata::with_column_at`.
+- `ColumnSpec::lazy_column(name)` lowers a spec `lazy:` column; `VistaMetadata::with_column_at`,
+  `with_columns_at`.
 - **Breaking:** `Column` is `#[non_exhaustive]` and gains a private field, so it can no longer be
   built with a struct literal; use `Column::new` and its builders.
 - Script `count()` respects `limit(n)`.

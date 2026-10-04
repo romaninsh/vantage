@@ -240,8 +240,7 @@ pub(crate) fn build_surreal_table(
     };
 
     for (name, col_spec) in &spec.columns {
-        if let Some(column) = col_spec.lazy_column(name)? {
-            table.add_computed_column(column);
+        if table.add_lazy_spec_column(col_spec, name)? {
             continue;
         }
         table.add_column(build_column(name, col_spec)?);
@@ -392,8 +391,7 @@ fn build_derived_table(
 
     // The derived vista's own declared columns (e.g. aggregate outputs).
     for (name, col_spec) in &spec.columns {
-        if let Some(column) = col_spec.lazy_column(name)? {
-            table.add_computed_column(column);
+        if table.add_lazy_spec_column(col_spec, name)? {
             continue;
         }
         if !table.columns().contains_key(name) {
@@ -536,9 +534,7 @@ where
         }
         metadata = metadata.with_column(vc);
     }
-    for (at, column) in table.computed_columns() {
-        metadata = metadata.with_column_at(at, column.clone());
-    }
+    metadata = metadata.with_columns_at(table.computed_columns());
     if let Some(id_field) = table.id_field() {
         metadata = metadata.with_id_column(id_field.name().to_string());
     }

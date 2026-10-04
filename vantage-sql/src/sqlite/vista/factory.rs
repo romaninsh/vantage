@@ -150,11 +150,7 @@ pub(crate) fn build_sqlite_table(
     // registered.
     let has_dotted = spec.columns.keys().any(|n| n.contains('.'));
     for (name, col_spec) in &spec.columns {
-        if name.contains('.') {
-            continue;
-        }
-        if let Some(column) = col_spec.lazy_column(name)? {
-            table.add_computed_column(column);
+        if name.contains('.') || table.add_lazy_spec_column(col_spec, name)? {
             continue;
         }
         table.add_column(build_column(name, col_spec)?);
@@ -281,8 +277,7 @@ fn build_derived_table(
 
     // The derived vista's own declared columns (e.g. aggregate outputs).
     for (name, col_spec) in &spec.columns {
-        if let Some(column) = col_spec.lazy_column(name)? {
-            table.add_computed_column(column);
+        if table.add_lazy_spec_column(col_spec, name)? {
             continue;
         }
         if !table.columns().contains_key(name) {
@@ -422,9 +417,7 @@ where
             col.flags.push(vista_flags::TITLE.to_string());
         }
     }
-    for (at, column) in table.computed_columns() {
-        metadata = metadata.with_column_at(at, column.clone());
-    }
+    metadata = metadata.with_columns_at(table.computed_columns());
     for reference in table.vista_references() {
         metadata = metadata.with_reference(reference);
     }

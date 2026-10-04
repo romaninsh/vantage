@@ -151,9 +151,12 @@ impl Vista {
                 }
                 Ok(())
             }
-            ReferenceKind::HasMany => {
-                self.check_has_many_key(relation, &self.get_ref_target(relation)?)
-            }
+            // A target the shell can't resolve declares no computed columns.
+            ReferenceKind::HasMany => match self.get_ref_target(relation) {
+                Ok(target) => self.check_has_many_key(relation, &target),
+                Err(e) if e.is_unimplemented() || e.is_unsupported() => Ok(()),
+                Err(e) => Err(e),
+            },
         }
     }
 }

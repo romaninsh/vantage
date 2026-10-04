@@ -247,10 +247,47 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// derived table) is replaced, so the column is never both read and
     /// computed.
     pub fn add_computed_column(&mut self, column: vantage_vista::Column) {
-        self.columns.shift_remove(&column.name);
+        if let Some((stored_index, _, _)) = self.columns.shift_remove_full(&column.name) {
+            let removed = self.position_of_stored(stored_index);
+            for (at, _) in self.computed_columns.values_mut() {
+                if *at > removed {
+                    *at -= 1;
+                }
+            }
+        }
         let at = self.columns.len() + self.computed_columns.len();
         self.computed_columns
             .insert(column.name.clone(), (at, column));
+    }
+
+    /// Register `spec`'s column as computed when it declares a `lazy:` script
+    /// (see [`vantage_vista::ColumnSpec::lazy_column`]). Returns `false` for a
+    /// stored column, leaving the caller to add it.
+    pub fn add_lazy_spec_column<C>(
+        &mut self,
+        spec: &vantage_vista::ColumnSpec<C>,
+        name: &str,
+    ) -> vantage_core::Result<bool> {
+        let Some(column) = spec.lazy_column(name)? else {
+            return Ok(false);
+        };
+        self.add_computed_column(column);
+        Ok(true)
+    }
+
+    /// Position among all columns of the stored column at `stored_index`:
+    /// computed columns occupy their recorded positions, stored columns fill
+    /// the remaining slots in order.
+    fn position_of_stored(&self, stored_index: usize) -> usize {
+        let mut computed: Vec<usize> = self.computed_columns.values().map(|(at, _)| *at).collect();
+        computed.sort_unstable();
+        let mut at = stored_index;
+        for position in computed {
+            if position <= at {
+                at += 1;
+            }
+        }
+        at
     }
 
     /// Columns registered via [`Self::add_computed_column`], in order, each
@@ -401,5 +438,39 @@ impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
             )
             .field("expressions_count", &self.expressions.len())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mocks::mock_table_source::MockTableSource;
+
+    #[test]
+    fn computed_column_replacing_a_stored_one_keeps_positions() {
+        let mut table = Table::<MockTableSource, EmptyEntity>::new("t", MockTableSource::new())
+            .with_column_of::<String>("a")
+            .with_column_of::<String>("b");
+        table.add_computed_column(vantage_vista::Column::new("x", "string"));
+        table.add_column_of::<String>("c");
+        assert_eq!(
+            table
+                .computed_columns()
+                .map(|(at, c)| (at, c.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(2, "x")]
+        );
+
+        table.add_computed_column(vantage_vista::Column::new("a", "string"));
+
+        let stored: Vec<&str> = table.columns().keys().map(String::as_str).collect();
+        assert_eq!(stored, vec!["b", "c"]);
+        assert_eq!(
+            table
+                .computed_columns()
+                .map(|(at, c)| (at, c.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(1, "x"), (3, "a")]
+        );
     }
 }
