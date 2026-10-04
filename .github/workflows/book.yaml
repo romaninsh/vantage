@@ -6,10 +6,12 @@ on:
       - main
     paths:
       - "docs4/**"
+      - ".github/workflows/book.yaml"
 
   pull_request:
     paths:
       - "docs4/**"
+      - ".github/workflows/book.yaml"
 
 jobs:
   deploy:
@@ -23,24 +25,22 @@ jobs:
       - name: Setup mdBook
         uses: peaceiris/actions-mdbook@v2
         with:
-          mdbook-version: "0.5.2"
+          mdbook-version: "0.5.4"
 
+      # The key names every preprocessor version: changing one must miss the
+      # cache, or `command -v` below keeps the old binary.
       - name: Cache cargo bin
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin
-          key: mdbook-preprocessors-${{ runner.os }}-v3
-
-      - name: Install Rust toolchain
-        run: rustup component add rust-analyzer
+          key: mdbook-preprocessors-${{ runner.os }}-toc0.15.4-mermaid0.17.1-rustdoclinks3.0.2
 
       - name: Install preprocessors
         run: |
-          command -v mdbook-toc || cargo install mdbook-toc --locked
-          command -v mdbook-mermaid || cargo install mdbook-mermaid --locked
+          command -v mdbook-toc || cargo install mdbook-toc --version 0.15.4 --locked
+          command -v mdbook-mermaid || cargo install mdbook-mermaid --version 0.17.1 --locked
           command -v mdbook-admonish || cargo install mdbook-admonish --git https://github.com/padamson/mdbook-admonish --branch feat/mdbook-0.5-compat --locked
-          # Pinned: 3.x resolves no links against this crate layout.
-          command -v mdbook-rustdoc-links || cargo install mdbook-rustdoc-links --version 2.0.1 --locked
+          command -v mdbook-rustdoc-links || cargo install mdbook-rustdoc-links --version 3.0.2 --locked
 
       - name: Install assets
         working-directory: ./docs4
@@ -53,6 +53,7 @@ jobs:
         run: |
           sed -i 's/^# \[preprocessor\.rustdoc-links\]/[preprocessor.rustdoc-links]/' book.toml
           sed -i 's/^# manifest-dir = "."/manifest-dir = "."/' book.toml
+          sed -i 's/^# build\.packages = /build.packages = /' book.toml
 
       - name: Build
         working-directory: ./docs4
