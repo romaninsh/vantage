@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8ddbe4c8.js";
+            window.path_to_searchindex_js = "../searchindex-ed4d36fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-8d4429da.js"></script>
+        <script src="../toc-aa92909c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -542,13 +542,15 @@ Mongo drivers avoid by shipping both from day one.</p>
 each hop fetches a row and traverses from it without falling out of Vista.</li>
 <li>Traversal here is strictly <strong>same-persistence</strong> — a Vista describes one backend. Cross-backend
 relations live one layer up in <code>vantage-vista-factory</code>’s
-<a href="vantage_vista_factory"><code>VistaCatalog</code></a>, which resolves the target by name in <em>its</em> driver and
+<a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/index.html"><code>VistaCatalog</code></a>, which resolves the target by name in <em>its</em> driver and
 narrows it with universal eq-conditions. Your shell doesn’t need any code for that to work.</li>
 </ul>
 <h4 id="native-conditions-from-outside-add_raw_condition"><a class="header" href="#native-conditions-from-outside-add_raw_condition">Native conditions from outside: <code>add_raw_condition</code></a></h4>
 <p>Universal eq-conditions cover the CBOR vocabulary, but some callers hold a condition already in
-your backend’s <em>native</em> type — the Rhai layer is the in-tree case: a <code>modify:</code> or traversal script
-builds a vendor <code>Expression</code> that no <code>(field, value)</code> pair can carry.
+your backend’s <em>native</em> type — the Rhai layer is the in-tree case: a <code>modify:</code> script builds a
+vendor <code>Expression</code> that no <code>(field, value)</code> pair can carry, and hands it over through an extension
+verb your shell registers in <code>register_rhai_extensions</code> (SurrealDB’s <code>self.with_condition(expr)</code>;
+see <a href="../rhai/surfaces.html#backend-extensions">Backend extensions</a>).
 <code>TableShell::add_raw_condition</code> is the hatch for exactly that: it receives a <code>Box&lt;dyn Any&gt;</code>,
 downcasts to the driver’s native condition type, and pushes it onto the wrapped table — SurrealDB’s
 shell is the worked example (it rejects anything that isn’t an <code>Expression&lt;AnySurrealType&gt;</code>, with a

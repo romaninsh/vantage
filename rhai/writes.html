@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Faults: Errors, Outages &amp; Lies - Vantage Framework</title>
+        <title>Writes - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,155 +175,180 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="faults-errors-outages--lies"><a class="header" href="#faults-errors-outages--lies">Faults: Errors, Outages &amp; Lies</a></h1>
-<p>Each source until now answered, and its answers were true. Production sources are not always honest.
-A source can fail one request while the user scrolls. It can stop for ten seconds. It can also
-report a row count that it will not serve.</p>
-<p>Here the cache stops being an optimisation. It becomes the component that keeps your application
-usable.</p>
-<h2 id="a-source-with-faults"><a class="header" href="#a-source-with-faults">A source with faults</a></h2>
-<pre><code class="language-yaml"># datasource/flaky.yaml
-type: faker
-effect: static
-debug: true
-count: 1000
-seed: 107
-shape:
-  capabilities: [count, fetch_window, order]
-  latency:
-    window: 100ms..300ms
-  faults:
-    error_rate: 0.2      # one request in five fails
-    offline: 10s/60s     # &lt;down&gt;/&lt;period&gt;: down for 10s in each 60s
-    total_lie: -13       # reports 13 fewer rows than it will serve
-</code></pre>
-<p>There are three independent faults, and each one repeats because the shape has a seed.</p>
-<h2 id="what-a-failure-looks-like"><a class="header" href="#what-a-failure-looks-like">What a failure looks like</a></h2>
-<pre><code class="language-text">22:08:05.813  flaky  dio  fetch #1 asks for rows 0..200 — 200 missing, 0 already held
-22:08:05.978  flaky  dio  fetch #1 failed after 164ms — shaped source request failed (injected fault)
-</code></pre>
-<p>The request identifier connects the two lines. The duration tells you how long you waited for the
-failure. The message is the error from the source.</p>
-<p>What is <strong>absent</strong> is more important. There is no state line, no cache line, and no total line.</p>
-<p><strong>A failed fetch changes nothing.</strong> The rows that the view already had are still present, still in
-their correct positions, and still on screen. A failed refresh costs freshness, not data.</p>
-<h2 id="the-viewport-causes-the-retry"><a class="header" href="#the-viewport-causes-the-retry">The viewport causes the retry</a></h2>
-<p>Nothing retries on a timer, and this is deliberate. The rows are still absent. The next time that a
-view declares a viewport that includes those rows, the loader asks again. A scroll, a repaint, or a
-window that gets focus each cause this.</p>
-<pre><code class="language-text">flaky  dio  fetch #2 asks for rows 0..200 — 200 missing, 0 already held
-flaky  dio  fetch #2 got 200 rows in 210ms
-flaky  cache +200 new, 0 updated — now holding 200 of 987 (20.3%)
-flaky  total 987 rows — stated by the source in the same response
-</code></pre>
-<p>The retry is a result of demand. It is not a policy. It therefore needs no backoff configuration,
-and it cannot flood the source: if no view looks at a range, the loader sends no request for it.</p>
-<div id="admonition-the-one-failure-that-does-flood-the-source" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-one-failure-that-does-flood-the-source-title">
-<div class="admonition-title">
-<div id="admonition-the-one-failure-that-does-flood-the-source-title">
-<p>The one failure that does flood the source</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-one-failure-that-does-flood-the-source"></a>
-</div>
-
-<div>
-<p>There is an exception, and the <code>optimising</code> project produced it.</p>
-<p>A fetch can fail <em>immediately</em> and always — a rejected query, and not an unreliable connection. Each
-viewport movement then sends a request, each request fails immediately, and the application uses all
-available CPU.</p>
-<p>During the writing of this guide, a faker datasource advertised <code>order</code> while the source refused
-every ordered query. Vantage UI appeared to stop responding.</p>
-<p>The lesson is not about retry policy. <strong>A capability that a source advertises but cannot do is worse
-than a capability that it never claims</strong>, because nothing limits the rate of the failure.</p>
-</div>
-
-</div>
-
-<h2 id="the-dishonest-total"><a class="header" href="#the-dishonest-total">The dishonest total</a></h2>
-<p>Read the two last lines above again. The table has <strong>1,000</strong> rows. The source says 987.</p>
-<p>The grid uses the total from the source, because the source is the authority on how many rows it
-has. One condition overrides this rule, and the next paragraph gives it.</p>
-<p>A total that is too small is the safe direction. The grid makes its scrollbar 13 rows short, and the
-user cannot reach the last rows.</p>
-<p>A total that is too large is the dangerous direction. If a fetch asks for a range with missing rows,
-and it fills <strong>none</strong> of them, then the set ends at the first missing row, whatever the total says.
-The framework caps the total and reports the cap with the message <em>“capped: the source promises more
-than it serves”</em>.</p>
-<p>Without this rule, the grid shows rows that no fetch can fill. A missing row causes a fetch.
-Therefore the application asks the source again, one request each few seconds, for as long as the
-page stays open.</p>
-<h2 id="outages"><a class="header" href="#outages">Outages</a></h2>
-<p><code>offline: 10s/60s</code> stops the source on a schedule. In the stream, an outage looks like a sequence of
-failures. There is no separate offline state to handle, no reconnect procedure, and no separate path
-in your code.</p>
+                        <h1 id="writes"><a class="header" href="#writes">Writes</a></h1>
+<p>On a host with <code>Terminals::ReadWrite</code>, a handle also writes. Every write goes through the resolved
+Vista, so it follows the backend’s rules and whatever policy the host’s resolver wrapped around it.</p>
 <ul>
-<li>Cached rows continue on screen, and they do not change.</li>
-<li>Ranges that the application has not fetched stay empty. The loader asks for them again when a view
-looks at them.</li>
-<li>When the source returns, the next viewport succeeds and fills the empty rows.</li>
+<li><a href="#the-write-verbs">The write verbs</a></li>
+<li><a href="#ids">Ids</a></li>
+<li><a href="#narrowing-doesnt-filter-writes">Narrowing doesn’t filter writes</a></li>
+<li><a href="#capabilities">Capabilities</a></li>
+<li><a href="#importing">Importing</a></li>
+<li><a href="#writes-through-a-dio">Writes through a Dio</a></li>
 </ul>
-<p>The difficult condition is the first open with an empty cache during an outage. There is nothing to
-show and nothing to fetch. This is one more reason to measure the cold run and the warm run
-separately.</p>
-<h2 id="what-to-check-under-faults"><a class="header" href="#what-to-check-under-faults">What to check under faults</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Question</th><th>Where to look</th></tr>
-</thead>
-<tbody>
-<tr><td>Did a failure delete data?</td><td>No <code>cache</code> line after the <code>failed</code> line, and rows still on screen</td></tr>
-<tr><td>Did the retry behave correctly?</td><td>One <code>asks for</code> line for each viewport movement, and not a sequence of them</td></tr>
-<tr><td>Is the total correct?</td><td>The <code>total</code> line, and whether the framework ever caps it</td></tr>
-<tr><td>Did recovery need a restart?</td><td>A <code>got</code> line after the failures, with no restart</td></tr>
-</tbody>
-</table>
-</div>
-<p>An application that handles faults well produces a stream that looks normal: some failures, some
-retries when a view looks at the rows, and rows that never disappear.</p>
 <hr>
-<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<h2 id="the-write-verbs"><a class="header" href="#the-write-verbs">The write verbs</a></h2>
+<!-- tested: rhai_guide::writes::write_verbs -->
+<pre><code class="language-rhai">let orders = table("order");
+
+let id = orders.insert(#{ client: "c2", total: 30, status: "due" });
+orders.patch(id, #{ status: "paid" });
+
+let deleted = orders.delete("o4");   // true: the row was there
+let again = orders.delete("o4");     // false: nothing left to delete
+let patched = orders.patch("o99", #{ status: "paid" });   // false
+
+#{
+    status: orders.get(id).status,
+    deleted: deleted,
+    again: again,
+    patched: patched,
+}
+</code></pre>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Item</th><th>What it does</th></tr>
+<tr><th>Verb</th><th>Returns</th><th>When the row is missing</th></tr>
 </thead>
 <tbody>
-<tr><td><code>faults.error_rate</code></td><td>Makes a fraction of the requests fail</td></tr>
-<tr><td><code>faults.offline</code></td><td>Stops the source on a schedule, in the form <code>&lt;down&gt;/&lt;period&gt;</code></td></tr>
-<tr><td><code>faults.total_lie</code></td><td>Changes the number that the grid uses to set its size</td></tr>
-<tr><td><code>failed after …</code></td><td>The request that did not complete, with its cost and the error from the source</td></tr>
-<tr><td><em>capped: promises more than it serves</em></td><td>The defence against a total that no fetch can fill</td></tr>
+<tr><td><code>insert(map)</code></td><td>the new row’s id</td><td>n/a</td></tr>
+<tr><td><code>upsert(id, map)</code></td><td><code>id</code></td><td>inserts it</td></tr>
+<tr><td><code>patch(id, map)</code></td><td><code>true</code></td><td>returns <code>false</code></td></tr>
+<tr><td><code>delete(id)</code></td><td><code>true</code></td><td>returns <code>false</code></td></tr>
+<tr><td><code>import_from(source)</code>, <code>import_from(source, mapping)</code></td><td><code>#{ inserted, skipped, cancelled }</code></td><td>n/a</td></tr>
 </tbody>
 </table>
 </div>
-<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
-<div class="admonition-title">
-<div id="admonition-what-is-next-title">
-<p>What is next</p>
-</div>
+<p><code>patch</code> and <code>delete</code> return <code>false</code> only for a missing row: the backend reported
+<code>ErrorKind::NotFound</code>. Any other failure throws. Drivers report not-found for these cases:
+vantage-memory, SQL on SQLite, PostgreSQL and MySQL (a patch or delete that matched no row) and
+SurrealDB (an update or delete that affected nothing). A Dio Vista checks its cache and then its
+master before it queues the write. A backend that doesn’t report not-found returns <code>true</code> for a
+missing row.</p>
+<p><code>patch</code> changes only the fields in the map. <code>upsert</code> replaces the whole row, so fields left out of
+the map are gone afterwards. <a href="./computed.html">Computed columns</a> in the map are dropped before the
+write reaches the backend.</p>
+<h2 id="ids"><a class="header" href="#ids">Ids</a></h2>
+<p><code>insert</code> looks at the map’s id column. With a value there, that id is used as given, and an
+existing row with that id is an error. Without one, the backend assigns the id and <code>insert</code>
+returns it.</p>
+<!-- tested: rhai_guide::writes::explicit_ids -->
+<pre><code class="language-rhai">let orders = table("order");
 
-<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
-</div>
+orders.insert(#{ id: "o10", client: "c3", total: 55, status: "due" });
+orders.upsert("o10", #{ client: "c3", total: 60, status: "due" });   // replaces
+orders.upsert("o11", #{ client: "c3", total: 5, status: "due" });    // inserts
 
-<div>
-<p>The last section makes assertions from what you read. A number that becomes worse then makes a test
-fail, instead of nobody noticing.</p>
-</div>
+table("client").where("id", "c3").ref("orders").ids()
+</code></pre>
+<p>Inserting an id that already exists throws:</p>
+<!-- tested: rhai_guide::writes::duplicate_insert -->
+<pre><code class="language-rhai">table("order").insert(#{ id: "o1", client: "c2", total: 1, status: "due" })
+</code></pre>
+<p>Use <code>upsert</code> when a script owns stable ids and may run more than once.</p>
+<h2 id="narrowing-doesnt-filter-writes"><a class="header" href="#narrowing-doesnt-filter-writes">Narrowing doesn’t filter writes</a></h2>
+<p>A write goes to the handle’s table. <code>where</code>, <code>sort</code>, <code>search</code> and <code>limit</code> decide what reads
+return, not which rows a write may touch:</p>
+<!-- tested: rhai_guide::writes::writes_ignore_narrowing -->
+<pre><code class="language-rhai">let paid = table("order").where("status", "paid");
+paid.delete("o2");   // o2 is due, and is deleted all the same
 
-</div>
+let ada = table("client").where("id", "c1");
+ada.ref("orders").insert(#{ id: "o20", client: "c1", total: 9, status: "due" });
 
+#{
+    orders: table("order").ids(),
+    clients: table("client").count(),
+}
+</code></pre>
+<p>The exception is <code>ref</code>: after a <code>ref</code> step, writes go to the relation’s target table. Steps before
+the last <code>ref</code> are read (to find the related rows); steps after it are ignored for writes.</p>
+<p><code>insert</code> through a <code>ref</code> doesn’t fill the foreign key. Set it in the map, as above.</p>
+<h2 id="capabilities"><a class="header" href="#capabilities">Capabilities</a></h2>
+<p>Each write checks the target Vista’s capabilities before it runs, and throws an error naming the
+verb and the table when the backend can’t do it:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verb</th><th>Needs</th></tr>
+</thead>
+<tbody>
+<tr><td><code>insert</code></td><td><code>can_insert</code></td></tr>
+<tr><td><code>upsert</code></td><td><code>can_insert</code> and <code>can_update</code></td></tr>
+<tr><td><code>patch</code></td><td><code>can_update</code></td></tr>
+<tr><td><code>delete</code></td><td><code>can_delete</code></td></tr>
+<tr><td><code>import_from</code></td><td><code>can_import</code>, or <code>can_insert</code> for row-by-row inserts</td></tr>
+</tbody>
+</table>
+</div>
+<p>A host can also turn writes off for every table with <code>Writes::Denied(message)</code>. The verbs are
+still there, and each throws <code>message</code>. Vantage UI does this for MCP agents unless the “Allow MCP
+agents to write data” setting is on.</p>
+<h2 id="importing"><a class="header" href="#importing">Importing</a></h2>
+<p><code>import_from(source)</code> copies every row of another handle into this table. <code>source</code> is read through
+its narrowing, so it can be any set: a filtered table, the target of a <code>ref</code>, a table on another
+datasource. A <code>limit(n)</code> on the source copies only its first <code>n</code> rows:</p>
+<!-- tested: rhai_guide::writes::import_limited -->
+<pre><code class="language-rhai">let biggest = table("order").sort("total", "desc").limit(2);
+let report = table("archive").import_from(biggest);
+
+[report.inserted, table("archive").ids()]
+</code></pre>
+<p>returns <code>[2, ["o1", "o3"]]</code>. Without a mapping, each row keeps its id.</p>
+<p>With a mapping, each imported row is built from a source row. String values in the mapping may
+reference source columns as <code>${row.&lt;col&gt;}</code>:</p>
+<!-- tested: rhai_guide::writes::import_mapped -->
+<pre><code class="language-rhai">let report = table("archive").import_from(
+    table("order").where("status", "paid"),
+    #{ id: "a-${row.id}", amount: "${row.total}", note: "paid by ${row.client}" }
+);
+
+#{ report: report, rows: table("archive").list() }
+</code></pre>
+<ul>
+<li>A value that is exactly one reference (<code>"${row.total}"</code>) copies the column’s value with its
+type: <code>amount</code> stays an integer.</li>
+<li>Any other string interpolates into text (<code>"paid by ${row.client}"</code>).</li>
+<li>Non-string values are literals.</li>
+<li>The mapping must set the target’s id column. Two source rows mapping to the same id are an
+error, and so is an id whose <code>table:</code> prefix names a different table.</li>
+</ul>
+<p>An id the target already holds is never overwritten; it counts as <code>skipped</code>. When the target can
+import (<code>can_import</code>), the rows go through <code>import_values</code> in one call and the backend decides
+which ids it already holds. Otherwise each row is looked up with <code>get</code> first and inserted only if
+it is missing; any insert failure stops the import and throws. A target narrowed by <code>ref</code> only
+sees its own rows in that lookup, so an id held outside the narrowing is sent as an insert, which a
+backend that rejects duplicate ids refuses. Importing the same rows twice into a memory table:</p>
+<!-- tested: rhai_guide::writes::import_twice -->
+<pre><code class="language-rhai">let first = table("backup").import_from(table("client"));
+let second = table("backup").import_from(table("client"));
+
+[first.inserted, second.inserted, second.skipped]
+</code></pre>
+<p>returns <code>[3, 0, 3]</code>.</p>
+<p><code>cancelled</code> is <code>true</code> when the backend stopped part-way: a host’s import can be cancellable (Vantage
+UI shows a progress dialog with a cancel button). <code>inserted</code> then counts the rows written before
+the stop. A backend signals this by returning an error carrying the
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/import/constant.IMPORT_CANCELLED.html"><code>IMPORT_CANCELLED</code></a> context key (the rows inserted), and
+optionally <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/import/constant.IMPORT_CANCELLED_SKIPPED.html"><code>IMPORT_CANCELLED_SKIPPED</code></a> (the rows
+skipped).</p>
+<h2 id="writes-through-a-dio"><a class="header" href="#writes-through-a-dio">Writes through a Dio</a></h2>
+<p>A host may hand scripts Vistas whose writes go through a Dio: <code>Dio::vista()</code> is a Vista over the
+Dio’s cache whose inserts, patches and deletes are queued as flashes and written through to the
+master. To the script it is just a Vista. It is how action bodies in Vantage UI write: the page
+sees the change at once, and the master write follows.</p>
+<p>An <code>insert</code> without an id on a Dio Vista goes straight to the master (there is no id to stage
+until the master assigns one) and then seeds the cache, so an immediate <code>get(id)</code> finds the row.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../optimising-diorama/waste.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rhai/tables.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../optimising-diorama/regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rhai/computed.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -333,11 +358,11 @@ fail, instead of nobody noticing.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../optimising-diorama/waste.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rhai/tables.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../optimising-diorama/regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rhai/computed.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

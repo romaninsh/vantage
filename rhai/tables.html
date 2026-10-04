@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Faults: Errors, Outages &amp; Lies - Vantage Framework</title>
+        <title>The Table Handle - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,155 +175,181 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="faults-errors-outages--lies"><a class="header" href="#faults-errors-outages--lies">Faults: Errors, Outages &amp; Lies</a></h1>
-<p>Each source until now answered, and its answers were true. Production sources are not always honest.
-A source can fail one request while the user scrolls. It can stop for ten seconds. It can also
-report a row count that it will not serve.</p>
-<p>Here the cache stops being an optimisation. It becomes the component that keeps your application
-usable.</p>
-<h2 id="a-source-with-faults"><a class="header" href="#a-source-with-faults">A source with faults</a></h2>
-<pre><code class="language-yaml"># datasource/flaky.yaml
-type: faker
-effect: static
-debug: true
-count: 1000
-seed: 107
-shape:
-  capabilities: [count, fetch_window, order]
-  latency:
-    window: 100ms..300ms
-  faults:
-    error_rate: 0.2      # one request in five fails
-    offline: 10s/60s     # &lt;down&gt;/&lt;period&gt;: down for 10s in each 60s
-    total_lie: -13       # reports 13 fewer rows than it will serve
-</code></pre>
-<p>There are three independent faults, and each one repeats because the shape has a seed.</p>
-<h2 id="what-a-failure-looks-like"><a class="header" href="#what-a-failure-looks-like">What a failure looks like</a></h2>
-<pre><code class="language-text">22:08:05.813  flaky  dio  fetch #1 asks for rows 0..200 — 200 missing, 0 already held
-22:08:05.978  flaky  dio  fetch #1 failed after 164ms — shaped source request failed (injected fault)
-</code></pre>
-<p>The request identifier connects the two lines. The duration tells you how long you waited for the
-failure. The message is the error from the source.</p>
-<p>What is <strong>absent</strong> is more important. There is no state line, no cache line, and no total line.</p>
-<p><strong>A failed fetch changes nothing.</strong> The rows that the view already had are still present, still in
-their correct positions, and still on screen. A failed refresh costs freshness, not data.</p>
-<h2 id="the-viewport-causes-the-retry"><a class="header" href="#the-viewport-causes-the-retry">The viewport causes the retry</a></h2>
-<p>Nothing retries on a timer, and this is deliberate. The rows are still absent. The next time that a
-view declares a viewport that includes those rows, the loader asks again. A scroll, a repaint, or a
-window that gets focus each cause this.</p>
-<pre><code class="language-text">flaky  dio  fetch #2 asks for rows 0..200 — 200 missing, 0 already held
-flaky  dio  fetch #2 got 200 rows in 210ms
-flaky  cache +200 new, 0 updated — now holding 200 of 987 (20.3%)
-flaky  total 987 rows — stated by the source in the same response
-</code></pre>
-<p>The retry is a result of demand. It is not a policy. It therefore needs no backoff configuration,
-and it cannot flood the source: if no view looks at a range, the loader sends no request for it.</p>
-<div id="admonition-the-one-failure-that-does-flood-the-source" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-one-failure-that-does-flood-the-source-title">
-<div class="admonition-title">
-<div id="admonition-the-one-failure-that-does-flood-the-source-title">
-<p>The one failure that does flood the source</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-one-failure-that-does-flood-the-source"></a>
-</div>
-
-<div>
-<p>There is an exception, and the <code>optimising</code> project produced it.</p>
-<p>A fetch can fail <em>immediately</em> and always — a rejected query, and not an unreliable connection. Each
-viewport movement then sends a request, each request fails immediately, and the application uses all
-available CPU.</p>
-<p>During the writing of this guide, a faker datasource advertised <code>order</code> while the source refused
-every ordered query. Vantage UI appeared to stop responding.</p>
-<p>The lesson is not about retry policy. <strong>A capability that a source advertises but cannot do is worse
-than a capability that it never claims</strong>, because nothing limits the rate of the failure.</p>
-</div>
-
-</div>
-
-<h2 id="the-dishonest-total"><a class="header" href="#the-dishonest-total">The dishonest total</a></h2>
-<p>Read the two last lines above again. The table has <strong>1,000</strong> rows. The source says 987.</p>
-<p>The grid uses the total from the source, because the source is the authority on how many rows it
-has. One condition overrides this rule, and the next paragraph gives it.</p>
-<p>A total that is too small is the safe direction. The grid makes its scrollbar 13 rows short, and the
-user cannot reach the last rows.</p>
-<p>A total that is too large is the dangerous direction. If a fetch asks for a range with missing rows,
-and it fills <strong>none</strong> of them, then the set ends at the first missing row, whatever the total says.
-The framework caps the total and reports the cap with the message <em>“capped: the source promises more
-than it serves”</em>.</p>
-<p>Without this rule, the grid shows rows that no fetch can fill. A missing row causes a fetch.
-Therefore the application asks the source again, one request each few seconds, for as long as the
-page stays open.</p>
-<h2 id="outages"><a class="header" href="#outages">Outages</a></h2>
-<p><code>offline: 10s/60s</code> stops the source on a schedule. In the stream, an outage looks like a sequence of
-failures. There is no separate offline state to handle, no reconnect procedure, and no separate path
-in your code.</p>
+                        <h1 id="the-table-handle"><a class="header" href="#the-table-handle">The Table Handle</a></h1>
+<p><code>table(name)</code> returns a handle: a table plus an ordered list of narrowing steps. Narrowing verbs
+add steps. Terminal verbs resolve the handle into a Vista, apply the steps, and read or write.</p>
 <ul>
-<li>Cached rows continue on screen, and they do not change.</li>
-<li>Ranges that the application has not fetched stay empty. The loader asks for them again when a view
-looks at them.</li>
-<li>When the source returns, the next viewport succeeds and fills the empty rows.</li>
+<li><a href="#narrowing">Narrowing</a></li>
+<li><a href="#reads">Reads</a></li>
+<li><a href="#following-relations">Following relations</a></li>
+<li><a href="#introspection">Introspection</a></li>
+<li><a href="#handles-in-rust">Handles in Rust</a></li>
 </ul>
-<p>The difficult condition is the first open with an empty cache during an outage. There is nothing to
-show and nothing to fetch. This is one more reason to measure the cold run and the warm run
-separately.</p>
-<h2 id="what-to-check-under-faults"><a class="header" href="#what-to-check-under-faults">What to check under faults</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Question</th><th>Where to look</th></tr>
-</thead>
-<tbody>
-<tr><td>Did a failure delete data?</td><td>No <code>cache</code> line after the <code>failed</code> line, and rows still on screen</td></tr>
-<tr><td>Did the retry behave correctly?</td><td>One <code>asks for</code> line for each viewport movement, and not a sequence of them</td></tr>
-<tr><td>Is the total correct?</td><td>The <code>total</code> line, and whether the framework ever caps it</td></tr>
-<tr><td>Did recovery need a restart?</td><td>A <code>got</code> line after the failures, with no restart</td></tr>
-</tbody>
-</table>
-</div>
-<p>An application that handles faults well produces a stream that looks normal: some failures, some
-retries when a view looks at the rows, and rows that never disappear.</p>
 <hr>
-<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<h2 id="narrowing"><a class="header" href="#narrowing">Narrowing</a></h2>
+<!-- tested: rhai_guide::tables::narrowing -->
+<pre><code class="language-rhai">let paid = table("order").where("status", "paid");
+let big = paid.where("total", "&gt;", 100);
+let top = paid.sort("total", "desc").first();
+
+#{
+    paid: paid.count(),
+    big: big.ids(),
+    top: top.id,
+}
+</code></pre>
+<p>Each narrowing verb returns a <strong>new</strong> handle and leaves the one it was called on alone. <code>big</code> and
+the sorted handle both start from <code>paid</code>, and <code>paid.count()</code> still counts every paid order. You can
+keep a base handle in a variable and branch from it as often as you like.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Item</th><th>What it does</th></tr>
+<tr><th>Verb</th><th>Meaning</th></tr>
 </thead>
 <tbody>
-<tr><td><code>faults.error_rate</code></td><td>Makes a fraction of the requests fail</td></tr>
-<tr><td><code>faults.offline</code></td><td>Stops the source on a schedule, in the form <code>&lt;down&gt;/&lt;period&gt;</code></td></tr>
-<tr><td><code>faults.total_lie</code></td><td>Changes the number that the grid uses to set its size</td></tr>
-<tr><td><code>failed after …</code></td><td>The request that did not complete, with its cost and the error from the source</td></tr>
-<tr><td><em>capped: promises more than it serves</em></td><td>The defence against a total that no fetch can fill</td></tr>
+<tr><td><code>where(col, value)</code></td><td>rows whose <code>col</code> equals <code>value</code></td></tr>
+<tr><td><code>where(col, op, value)</code></td><td><code>op</code> is <code>=</code>/<code>==</code>/<code>eq</code>, <code>!=</code>/<code>ne</code>, <code>&gt;</code>/<code>gt</code>, <code>&gt;=</code>/<code>gte</code>, <code>&lt;</code>/<code>lt</code>, <code>&lt;=</code>/<code>lte</code>, <code>in</code>, <code>not_in</code> or <code>like</code>; <code>in</code> and <code>not_in</code> take an array</td></tr>
+<tr><td><code>sort(col)</code>, <code>sort(col, "asc" | "desc")</code></td><td>order by <code>col</code>; the column must be flagged orderable</td></tr>
+<tr><td><code>search(text)</code></td><td>the backend’s quicksearch</td></tr>
+<tr><td><code>limit(n)</code></td><td>at most <code>n</code> rows, the first <code>n</code> in sort order; <code>n</code> must be above 0</td></tr>
+<tr><td><code>ref(relation)</code></td><td>the related rows of every row in the set</td></tr>
 </tbody>
 </table>
 </div>
-<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
-<div class="admonition-title">
-<div id="admonition-what-is-next-title">
-<p>What is next</p>
-</div>
+<p>Conditions add up: every <code>where</code> narrows further. Sorting keeps one column. A later <code>sort</code>
+replaces an earlier one, as <code>Vista::add_order</code> does. Several <code>limit</code> steps keep the smallest.</p>
+<p><code>limit(n)</code> limits the set itself, not just one read: <code>list()</code>, <code>ids()</code> and <code>count()</code> all see at
+most <code>n</code> rows, a <code>ref</code> after it follows only those <code>n</code> rows, and <code>import_from</code> copies only those
+<code>n</code> (see <a href="#following-relations">Following relations</a>). A <code>limit</code> before a <code>ref</code> doesn’t carry over
+to the target; limit the target again if you need to.</p>
+<p>The column in <code>where</code> and <code>sort</code> must be one the backend stores. A
+<a href="./computed.html">computed column</a> is refused with an error naming it.</p>
+<p>Nothing is checked while you narrow. A step the resolved Vista can’t apply (an unknown relation, a
+column that isn’t orderable, <code>search</code> on a backend without search) fails at the terminal verb:</p>
+<!-- tested: rhai_guide::tables::late_error -->
+<pre><code class="language-rhai">let invoices = table("client").ref("invoices");   // nothing resolves yet
+invoices.count()                                  // throws here
+</code></pre>
+<p>The error names the step: <code>Step can't be applied (step: Ref("invoices")): No reference with this name (relation: "invoices")</code>.</p>
+<h2 id="reads"><a class="header" href="#reads">Reads</a></h2>
+<!-- tested: rhai_guide::tables::reads -->
+<pre><code class="language-rhai">let clients = table("client");
+let ada = clients.get("c1");
+let ghost = clients.get("c9");
 
-<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
+#{
+    name: ada.name,
+    missing: ghost == (),
+    first_two: clients.sort("name").limit(2).list().map(|c| c.name),
+}
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verb</th><th>Returns</th></tr>
+</thead>
+<tbody>
+<tr><td><code>list()</code></td><td>an array of row maps, capped by the host’s limit and any <code>limit(n)</code></td></tr>
+<tr><td><code>get(id)</code></td><td>the row map, or <code>()</code> when no row has that id</td></tr>
+<tr><td><code>first()</code></td><td>the first row map in sort order, or <code>()</code> for an empty set</td></tr>
+<tr><td><code>count()</code></td><td>the number of rows, as an integer, at most <code>n</code> after <code>limit(n)</code>; needs <code>can_count</code></td></tr>
+<tr><td><code>ids()</code></td><td>an array of id strings, in sort order (insertion order when unsorted)</td></tr>
+</tbody>
+</table>
 </div>
+<p>Row maps always include the id column, filled from the row’s key when the backend doesn’t return
+it as a field. Ids are strings. <code>get</code>, and every verb that takes an id, also accepts an integer
+and uses its decimal form.</p>
+<p>A missing row is not an error for reads: <code>get</code> returns <code>()</code>. Compare with <code>()</code> as above, or use
+Rhai’s <code>??</code>.</p>
+<p><code>list()</code> reads through <code>fetch_window</code> when the backend has it, so a capped read fetches only the
+rows it returns. Otherwise it reads the whole set and truncates.</p>
+<h2 id="following-relations"><a class="header" href="#following-relations">Following relations</a></h2>
+<p><code>ref(relation)</code> works on sets, not single rows. The result is every row related to any row of the
+current set:</p>
+<!-- tested: rhai_guide::tables::ref_sets -->
+<pre><code class="language-rhai">// The orders of one client...
+let ada_orders = table("client").where("id", "c1").ref("orders");
+// ...and the clients behind every due order.
+let owing = table("order").where("status", "due").ref("client");
 
-<div>
-<p>The last section makes assertions from what you read. A number that becomes worse then makes a test
-fail, instead of nobody noticing.</p>
-</div>
+#{
+    ada: ada_orders.ids(),
+    owing: owing.sort("name").list().map(|c| c.name),
+}
+</code></pre>
+<p>Relations come from the Vista’s metadata: the YAML <code>references:</code> block, or the typed table’s
+<code>with_one</code> / <code>with_many</code>. A <code>ref</code> step reads the rows it starts from when the handle resolves:</p>
+<ul>
+<li>When the set has exactly one row, the step calls <code>Vista::get_ref(relation, row)</code>, so a backend’s
+own traversal applies (SurrealDB record links, scripted references, cross-datasource
+references).</li>
+<li>When it has several, the step takes the bare target and adds an <code>in</code> condition: on the foreign
+key for has-many (the target rows point at ours), on the target’s id for has-one (our rows point
+at the target).</li>
+<li>When it has none, or none of the rows has a has-one key, the target is an empty set. Nothing is
+queried: reads return nothing, <code>count()</code> is 0, and a preview reports <code>"query": null</code>. The target
+keeps its columns and still takes writes.</li>
+<li>A <code>limit(n)</code> before the <code>ref</code> caps the rows it follows. Without one, a <code>ref</code> over more than
+1,000 rows is an error. Narrow first.</li>
+</ul>
+<!-- tested: rhai_guide::tables::limit_and_ref -->
+<pre><code class="language-rhai">let biggest = table("order").sort("total", "desc").limit(2);
+let nobody = table("client").where("name", "Nobody");
 
-</div>
+#{
+    count: biggest.count(),
+    clients: biggest.ref("client").sort("name").list().map(|c| c.name),
+    none: nobody.ref("orders").count(),
+}
+</code></pre>
+<p>The two biggest orders are <code>o1</code> (Ada) and <code>o3</code> (Ben), so this returns <code>count: 2</code>, <code>clients: ["Ada", "Ben"]</code> and <code>none: 0</code>.</p>
+<p>Steps after <code>ref</code> narrow the target, so <code>ref("orders").where("status", "due")</code> is the due orders
+of the set. A relation keyed on a <a href="./computed.html#relations-through-a-computed-column">computed column</a>
+works for has-one and is refused for has-many.</p>
+<h2 id="introspection"><a class="header" href="#introspection">Introspection</a></h2>
+<p>Three reads describe the table instead of its rows:</p>
+<!-- tested: rhai_guide::tables::introspection -->
+<pre><code class="language-rhai">let orders = table("order");
 
+#{
+    can_insert: orders.capabilities().can_insert,
+    columns: orders.columns().map(|c| c.name),
+    references: orders.references().map(|r| r.name + " " + r.kind),
+}
+</code></pre>
+<ul>
+<li><code>capabilities()</code> is a map of every <code>VistaCapabilities</code> flag: <code>can_count</code>, <code>can_insert</code>,
+<code>can_update</code>, <code>can_delete</code>, <code>can_import</code>, <code>can_order</code>, <code>can_search</code>, <code>can_fetch_window</code> and
+the rest. A script that may run against different backends can check before it writes.</li>
+<li><code>columns()</code> is an array of <code>#{ name, type, flags }</code>.</li>
+<li><code>references()</code> is an array of <code>#{ name, kind, contained }</code>. <code>kind</code> is <code>"HasOne"</code> or <code>"HasMany"</code>;
+<code>contained</code> marks relations stored inside the row (see
+<a href="../new-persistence/step9-contained-relations.html">Contained Relations</a>).</li>
+</ul>
+<p>These resolve the handle, so they describe the table as narrowed. Capabilities rarely change with
+narrowing, but a query-sourced table reports no write capabilities at all.</p>
+<h2 id="handles-in-rust"><a class="header" href="#handles-in-rust">Handles in Rust</a></h2>
+<p>A host that gets a handle back from a script reads it through
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/handle/struct.Handle.html"><code>Handle</code></a>: <code>table_name()</code> is the starting table (<code>None</code> for a handle over a
+Vista), <code>steps()</code> is the list of <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/handle/enum.Step.html"><code>Step</code></a>s, and <code>resolve(resolver)</code> builds the
+Vista. Query preview works this way: the script returns a handle, and the host renders the resolved
+Vista’s query.</p>
+<p>A handle can also start from a Vista instead of a name (<code>Handle::over(vista)</code>), which is how <code>self</code>
+reaches <code>modify:</code> scripts. Since a Vista isn’t <code>Clone</code>, each resolve copies it with
+<code>TableShell::clone_shell()</code>. A backend that can’t copy its shell hands the Vista over once, and a
+second resolve of the same handle fails with “this handle’s backend can’t be copied; build it
+again from <code>table(...)</code>”.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../optimising-diorama/waste.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rhai/hosts.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../optimising-diorama/regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rhai/writes.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -333,11 +359,11 @@ fail, instead of nobody noticing.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../optimising-diorama/waste.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rhai/hosts.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../optimising-diorama/regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rhai/writes.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

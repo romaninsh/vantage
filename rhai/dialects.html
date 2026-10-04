@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Faults: Errors, Outages &amp; Lies - Vantage Framework</title>
+        <title>Expression Dialects - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,155 +175,96 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="faults-errors-outages--lies"><a class="header" href="#faults-errors-outages--lies">Faults: Errors, Outages &amp; Lies</a></h1>
-<p>Each source until now answered, and its answers were true. Production sources are not always honest.
-A source can fail one request while the user scrolls. It can stop for ten seconds. It can also
-report a row count that it will not serve.</p>
-<p>Here the cache stops being an optimisation. It becomes the component that keeps your application
-usable.</p>
-<h2 id="a-source-with-faults"><a class="header" href="#a-source-with-faults">A source with faults</a></h2>
-<pre><code class="language-yaml"># datasource/flaky.yaml
-type: faker
-effect: static
-debug: true
-count: 1000
-seed: 107
-shape:
-  capabilities: [count, fetch_window, order]
-  latency:
-    window: 100ms..300ms
-  faults:
-    error_rate: 0.2      # one request in five fails
-    offline: 10s/60s     # &lt;down&gt;/&lt;period&gt;: down for 10s in each 60s
-    total_lie: -13       # reports 13 fewer rows than it will serve
-</code></pre>
-<p>There are three independent faults, and each one repeats because the shape has a seed.</p>
-<h2 id="what-a-failure-looks-like"><a class="header" href="#what-a-failure-looks-like">What a failure looks like</a></h2>
-<pre><code class="language-text">22:08:05.813  flaky  dio  fetch #1 asks for rows 0..200 — 200 missing, 0 already held
-22:08:05.978  flaky  dio  fetch #1 failed after 164ms — shaped source request failed (injected fault)
-</code></pre>
-<p>The request identifier connects the two lines. The duration tells you how long you waited for the
-failure. The message is the error from the source.</p>
-<p>What is <strong>absent</strong> is more important. There is no state line, no cache line, and no total line.</p>
-<p><strong>A failed fetch changes nothing.</strong> The rows that the view already had are still present, still in
-their correct positions, and still on screen. A failed refresh costs freshness, not data.</p>
-<h2 id="the-viewport-causes-the-retry"><a class="header" href="#the-viewport-causes-the-retry">The viewport causes the retry</a></h2>
-<p>Nothing retries on a timer, and this is deliberate. The rows are still absent. The next time that a
-view declares a viewport that includes those rows, the loader asks again. A scroll, a repaint, or a
-window that gets focus each cause this.</p>
-<pre><code class="language-text">flaky  dio  fetch #2 asks for rows 0..200 — 200 missing, 0 already held
-flaky  dio  fetch #2 got 200 rows in 210ms
-flaky  cache +200 new, 0 updated — now holding 200 of 987 (20.3%)
-flaky  total 987 rows — stated by the source in the same response
-</code></pre>
-<p>The retry is a result of demand. It is not a policy. It therefore needs no backoff configuration,
-and it cannot flood the source: if no view looks at a range, the loader sends no request for it.</p>
-<div id="admonition-the-one-failure-that-does-flood-the-source" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-one-failure-that-does-flood-the-source-title">
-<div class="admonition-title">
-<div id="admonition-the-one-failure-that-does-flood-the-source-title">
-<p>The one failure that does flood the source</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-one-failure-that-does-flood-the-source"></a>
-</div>
-
-<div>
-<p>There is an exception, and the <code>optimising</code> project produced it.</p>
-<p>A fetch can fail <em>immediately</em> and always — a rejected query, and not an unreliable connection. Each
-viewport movement then sends a request, each request fails immediately, and the application uses all
-available CPU.</p>
-<p>During the writing of this guide, a faker datasource advertised <code>order</code> while the source refused
-every ordered query. Vantage UI appeared to stop responding.</p>
-<p>The lesson is not about retry policy. <strong>A capability that a source advertises but cannot do is worse
-than a capability that it never claims</strong>, because nothing limits the rate of the failure.</p>
-</div>
-
-</div>
-
-<h2 id="the-dishonest-total"><a class="header" href="#the-dishonest-total">The dishonest total</a></h2>
-<p>Read the two last lines above again. The table has <strong>1,000</strong> rows. The source says 987.</p>
-<p>The grid uses the total from the source, because the source is the authority on how many rows it
-has. One condition overrides this rule, and the next paragraph gives it.</p>
-<p>A total that is too small is the safe direction. The grid makes its scrollbar 13 rows short, and the
-user cannot reach the last rows.</p>
-<p>A total that is too large is the dangerous direction. If a fetch asks for a range with missing rows,
-and it fills <strong>none</strong> of them, then the set ends at the first missing row, whatever the total says.
-The framework caps the total and reports the cap with the message <em>“capped: the source promises more
-than it serves”</em>.</p>
-<p>Without this rule, the grid shows rows that no fetch can fill. A missing row causes a fetch.
-Therefore the application asks the source again, one request each few seconds, for as long as the
-page stays open.</p>
-<h2 id="outages"><a class="header" href="#outages">Outages</a></h2>
-<p><code>offline: 10s/60s</code> stops the source on a schedule. In the stream, an outage looks like a sequence of
-failures. There is no separate offline state to handle, no reconnect procedure, and no separate path
-in your code.</p>
+                        <h1 id="expression-dialects"><a class="header" href="#expression-dialects">Expression Dialects</a></h1>
+<p>Not every script in a Vantage configuration is a data script. Some build a backend’s native query,
+some compute one value from one row, and some are text with a few holes in it. They run on the same
+<code>vantage-rhai</code> hosts with the same limits, but their vocabularies are separate from the data
+vocabulary, and from each other. This chapter tells them apart and points to where each is
+documented.</p>
 <ul>
-<li>Cached rows continue on screen, and they do not change.</li>
-<li>Ranges that the application has not fetched stay empty. The loader asks for them again when a view
-looks at them.</li>
-<li>When the source returns, the next viewport succeeds and fills the empty rows.</li>
+<li><a href="#data-scripts-and-expression-scripts">Data scripts and expression scripts</a></li>
+<li><a href="#sql-query-builders">SQL query builders</a></li>
+<li><a href="#surrealdb-expressions">SurrealDB expressions</a></li>
+<li><a href="#lazy-columns"><code>lazy:</code> columns</a></li>
+<li><a href="#templates">Templates</a></li>
+<li><a href="#command-scripts">Command scripts</a></li>
 </ul>
-<p>The difficult condition is the first open with an empty cache during an outage. There is nothing to
-show and nothing to fetch. This is one more reason to measure the cold run and the warm run
-separately.</p>
-<h2 id="what-to-check-under-faults"><a class="header" href="#what-to-check-under-faults">What to check under faults</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Question</th><th>Where to look</th></tr>
-</thead>
-<tbody>
-<tr><td>Did a failure delete data?</td><td>No <code>cache</code> line after the <code>failed</code> line, and rows still on screen</td></tr>
-<tr><td>Did the retry behave correctly?</td><td>One <code>asks for</code> line for each viewport movement, and not a sequence of them</td></tr>
-<tr><td>Is the total correct?</td><td>The <code>total</code> line, and whether the framework ever caps it</td></tr>
-<tr><td>Did recovery need a restart?</td><td>A <code>got</code> line after the failures, with no restart</td></tr>
-</tbody>
-</table>
-</div>
-<p>An application that handles faults well produces a stream that looks normal: some failures, some
-retries when a view looks at the rows, and rows that never disappear.</p>
 <hr>
-<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Item</th><th>What it does</th></tr>
-</thead>
-<tbody>
-<tr><td><code>faults.error_rate</code></td><td>Makes a fraction of the requests fail</td></tr>
-<tr><td><code>faults.offline</code></td><td>Stops the source on a schedule, in the form <code>&lt;down&gt;/&lt;period&gt;</code></td></tr>
-<tr><td><code>faults.total_lie</code></td><td>Changes the number that the grid uses to set its size</td></tr>
-<tr><td><code>failed after …</code></td><td>The request that did not complete, with its cost and the error from the source</td></tr>
-<tr><td><em>capped: promises more than it serves</em></td><td>The defence against a total that no fetch can fill</td></tr>
-</tbody>
-</table>
-</div>
-<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
-<div class="admonition-title">
-<div id="admonition-what-is-next-title">
-<p>What is next</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
-</div>
-
-<div>
-<p>The last section makes assertions from what you read. A number that becomes worse then makes a test
-fail, instead of nobody noticing.</p>
-</div>
-
-</div>
-
+<h2 id="data-scripts-and-expression-scripts"><a class="header" href="#data-scripts-and-expression-scripts">Data scripts and expression scripts</a></h2>
+<p>A data script works on sets of rows through Vistas: <code>table</code>, <code>where</code>, <code>list</code>, <code>insert</code>. It doesn’t
+know which backend it talks to.</p>
+<p>An expression script builds a query in one backend’s own terms: a SQL <code>SELECT</code>, a SurrealQL
+condition, a graph path. It runs once, when a Vista is built, and its result becomes part of that
+Vista’s query. It reads no rows itself.</p>
+<p>The two meet in one place: a backend’s extension verbs on a data handle, such as SurrealDB’s
+<code>self.with_condition(expr)</code>, take an expression built with the backend’s vocabulary (see
+<a href="./surfaces.html#backend-extensions">Backend extensions</a>).</p>
+<h2 id="sql-query-builders"><a class="header" href="#sql-query-builders">SQL query builders</a></h2>
+<p>A YAML spec for a SQL table can replace its source with a script-built <code>SELECT</code>. The script uses
+<code>vantage-sql</code>’s builder (<code>select</code>, <code>from</code>, <code>field</code>, <code>where</code>, <code>group_by</code>, <code>expr</code>) and the shared
+primitives (<code>count</code>, <code>avg</code>, <code>coalesce</code>, <code>case_when</code>, <code>date_format</code>, …):</p>
+<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_rhai_source_is_read_only_and_filters -->
+<pre><code class="language-yaml">name: expensive_products
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+sqlite:
+  rhai: |
+    select().from("product").field("id").field("name").where(expr("price &gt; 15"))
+</code></pre>
+<p>A query-sourced Vista is read-only. A derived Vista (<code>base:</code> plus <code>rhai:</code>) gets the base’s
+<code>select()</code> as <code>base</code> and transforms it. Both are described in
+<a href="../config-driven-vistas.html#the-rhai-layer">Config-Driven Vistas</a>, and the primitives in
+<a href="../sql/primitives.html">SQL Primitives</a>.</p>
+<p><code>where</code> here is the SQL builder’s method and takes an expression. On a data handle, <code>where</code> takes a
+column and a value. The name is the same because both narrow, but the two vocabularies never share
+a host.</p>
+<h2 id="surrealdb-expressions"><a class="header" href="#surrealdb-expressions">SurrealDB expressions</a></h2>
+<p><code>vantage-surrealdb</code> registers the same builder shape for SurrealQL, the same primitive names where
+the concept exists in both, and SurrealDB’s own terms where it doesn’t (graph paths, <code>SPLIT</code>,
+<code>me</code>). It backs <code>rhai:</code> sources, <code>base:</code> transforms, and the expressions handed to
+<code>with_condition</code>. See <a href="../surrealdb/primitives.html">SurrealDB Primitives</a>.</p>
+<p>The SQL and SurrealDB builders are two copies of a similar grammar. Merging them is a known
+follow-up and not part of the data vocabulary.</p>
+<p>A SurrealDB column spec may also carry <code>expr:</code>, a server-side computed column: the script is
+evaluated once with this vocabulary, and the backend projects the result as <code>(&lt;expr&gt;) AS &lt;column&gt;</code>
+on every read. Unlike a <code>lazy:</code> column it is part of the query, so it can follow record links and
+call SurrealDB functions. Other backends reject or ignore it.</p>
+<h2 id="lazy-columns"><a class="header" href="#lazy-columns"><code>lazy:</code> columns</a></h2>
+<p>A column’s <code>lazy:</code> script is a third kind: it computes one value from one row, in the Vista, after
+the backend has returned the row. It uses neither the data vocabulary nor a query builder, only
+<code>row</code>. <a href="./computed.html">Computed columns</a> covers it.</p>
+<h2 id="templates"><a class="header" href="#templates">Templates</a></h2>
+<p>Many YAML strings are templates: text with <code>${ … }</code> holes. <code>vantage-rhai</code>’s
+<a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/slot/struct.Template.html"><code>Template</code></a> slot evaluates each hole as a Rhai expression against the
+host’s scope and joins the results. A template that is exactly one hole (surrounded by whitespace
+at most) keeps the hole’s value with its type, so <code>"${ row.total }"</code> stays a number and a map stays
+a map.</p>
+<p>Two look-alikes are not Rhai:</p>
+<ul>
+<li><code>import_from</code>’s mapping (see <a href="./writes.html#importing">Writes</a>) only understands
+<code>${row.&lt;col&gt;}</code> column references. Other holes stay in the text as written.</li>
+<li>Vantage UI’s action texts (<code>title:</code>, <code>description:</code>, <code>terminal.args</code>) substitute <code>${row.x}</code> and
+<code>${form.x}</code> paths, with no expressions.</li>
+</ul>
+<h2 id="command-scripts"><a class="header" href="#command-scripts">Command scripts</a></h2>
+<p><code>vantage-cmd</code> tables read by running a Rhai script that calls <code>run(...)</code> for a subprocess and
+<code>parse_json</code> / <code>parse_jsonl</code> on its output, then returns an array of row maps. The script sees the
+read’s conditions, columns, limit and offset as variables. It is a third dialect, for shaping
+command output into rows, and is documented in the <code>vantage-cmd</code> crate.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../optimising-diorama/waste.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rhai/layers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../optimising-diorama/regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../live-data.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -333,11 +274,11 @@ fail, instead of nobody noticing.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../optimising-diorama/waste.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rhai/layers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../optimising-diorama/regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../live-data.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

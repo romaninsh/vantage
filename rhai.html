@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Model-Driven Architecture - Vantage Framework</title>
+        <title>Scripting with Rhai - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,333 +175,206 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="model-driven-architecture"><a class="header" href="#model-driven-architecture">Model-Driven Architecture</a></h1>
-<p>Vantage is opinionated about how you structure business software. The framework prescribes a
-<strong>Model-Driven Architecture</strong> (MDA) where entities, relationships, and business rules live in a
-shared model crate — decoupled from any specific persistence, UI, or API layer.</p>
+                        <h1 id="scripting-with-rhai"><a class="header" href="#scripting-with-rhai">Scripting with Rhai</a></h1>
+<p>A Vantage application can keep much of its behaviour in configuration: YAML table specs, page
+definitions, action bodies, faker sims. Some of that configuration needs logic: a column derived
+from other columns, a filter that depends on the selected row, a write after a form is submitted,
+a simulated order that ships after twenty minutes. That logic is written in
+<a href="https://rhai.rs">Rhai</a>, a small scripting language embedded in Rust.</p>
+<p>This part of the book is the one place that teaches scripting across the framework. Other chapters
+link here instead of repeating the verbs.</p>
 <ul>
-<li><a href="#the-idea">The idea</a></li>
-<li><a href="#anatomy-of-a-model-crate">Anatomy of a model crate</a></li>
-<li><a href="#defining-entities">Defining entities</a></li>
-<li><a href="#table-constructors">Table constructors</a></li>
-<li><a href="#relationships">Relationships</a></li>
-<li><a href="#computed-fields">Computed fields</a></li>
-<li><a href="#implicit-references--dotted-columns">Implicit references — dotted columns</a></li>
-<li><a href="#connection-management">Connection management</a></li>
-<li><a href="#using-the-model">Using the model</a></li>
-<li><a href="#type-erased-access">Type-erased access</a></li>
-<li><a href="#the-layered-architecture">The layered architecture</a></li>
+<li><a href="#why-scripts">Why scripts</a></li>
+<li><a href="#what-a-script-can-do">What a script can do</a></li>
+<li><a href="#where-scripts-run">Where scripts run</a></li>
+<li><a href="#rhai-in-two-minutes">Rhai in two minutes</a></li>
+<li><a href="#a-first-script">A first script</a></li>
+<li><a href="#the-layers">The layers</a></li>
+<li><a href="#what-this-part-covers">What this part covers</a></li>
+<li><a href="#words-at-a-glance">Words at a glance</a></li>
 </ul>
 <hr>
-<h2 id="the-idea"><a class="header" href="#the-idea">The idea</a></h2>
-<p>Most Rust projects scatter database queries across handlers, services, and utilities. When the
-schema changes or a new backend is needed, you’re hunting through dozens of files.</p>
-<p>Vantage inverts this. You define your entities <strong>once</strong> in a model crate, then every consumer — REST
-API, CLI, desktop UI, background worker — uses the same <code>Table</code> and <code>DataSet</code> interfaces. The model
-is the source of truth.</p>
-<pre class="mermaid">graph TD
-    M[Model Crate] --&gt; API[Axum API]
-    M --&gt; CLI[CLI Tool]
-    M --&gt; UI[Desktop UI]
-    M --&gt; Worker[Background Worker]
-    M --&gt; Test[Mock Tests]
-    style M fill:#4a7c59,color:#fff
-</pre>
+<h2 id="why-scripts"><a class="header" href="#why-scripts">Why scripts</a></h2>
+<p>Configuration is data. A user, an agent or a hot-reloading inventory can change it while the
+application runs, and nothing gets recompiled. Rust code can’t follow it there, so the logic that
+travels with the configuration has to be data too: text that the application compiles and runs
+when it loads the YAML.</p>
+<p>Rhai fits that job:</p>
+<ul>
+<li><strong>It runs in the process.</strong> There is no interpreter to install and no subprocess. A script
+calls straight into the same Vistas the Rust code uses.</li>
+<li><strong>It can only do what the host allows.</strong> A Rhai script has no file system, network or process
+access of its own. It sees the functions the host registered and nothing else.</li>
+<li><strong>It can’t hang the caller.</strong> Every host caps the number of operations a script may run. A
+script that loops forever fails with an error.</li>
+<li><strong>It is backend-neutral.</strong> Data scripts act on <a href="./intro/step4-vista.html">Vistas</a>, so the same
+script runs over SQLite, SurrealDB, a REST API or an in-memory store.</li>
+</ul>
+<h2 id="what-a-script-can-do"><a class="header" href="#what-a-script-can-do">What a script can do</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Task</th><th>Example</th><th>Chapter</th></tr>
+</thead>
+<tbody>
+<tr><td>Read a set of rows, count it, follow a relation</td><td><code>table("client").where("vip", true).ref("orders").count()</code></td><td><a href="./rhai/tables.html">The table handle</a></td></tr>
+<tr><td>Insert, patch, delete, copy rows between tables</td><td><code>table("order").patch(id, #{ status: "paid" })</code></td><td><a href="./rhai/writes.html">Writes</a></td></tr>
+<tr><td>Compute a column from the other columns of a row</td><td><code>lazy: "row.net + row.vat"</code></td><td><a href="./rhai/computed.html">Computed columns</a></td></tr>
+<tr><td>Edit one row field by field and save what changed</td><td><code>row.status = "paid"; row.save();</code></td><td><a href="./rhai/records.html">Records</a></td></tr>
+<tr><td>Narrow a table in YAML, or build a relation’s target</td><td><code>self.where("vip", true)</code></td><td><a href="./rhai/surfaces.html">Surfaces</a></td></tr>
+<tr><td>Build a backend’s native query</td><td><code>select().from("product").field("id")</code></td><td><a href="./rhai/dialects.html">Expression dialects</a></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="where-scripts-run"><a class="header" href="#where-scripts-run">Where scripts run</a></h2>
+<p>A script always runs inside a <strong>host</strong>: a Rhai engine with fixed operation limits, a compile cache,
+and the vocabularies the host chose to register. The host decides what <code>table(name)</code> resolves to,
+whether writes are allowed, and how many rows a <code>list()</code> may return. The same script text can be
+legal in one place and refused in another.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Surface</th><th>Example</th><th>What the script can do</th></tr>
+</thead>
+<tbody>
+<tr><td>Agent data scripts (<code>run_script</code>)</td><td>an MCP tool reading or fixing data</td><td>read, and write if the host allows it</td></tr>
+<tr><td>Query preview (<code>preview_script</code>)</td><td>an MCP tool showing the query a script would run</td><td>describe a set, never read it</td></tr>
+<tr><td>YAML <code>modify:</code>, reference build scripts, augmentation sources</td><td><code>self.where("vip", true)</code></td><td>describe a set</td></tr>
+<tr><td>YAML <code>lazy:</code> columns</td><td><code>row.net / 5</code></td><td>compute one value from one row</td></tr>
+<tr><td>Form <code>options:</code></td><td>a dropdown filled from another table</td><td>read</td></tr>
+<tr><td>Action bodies, form <code>on_submit</code>, wizard workers</td><td><code>row.status = "paid"; row.save();</code></td><td>read and write</td></tr>
+<tr><td>Faker sims</td><td>an order that ships, then disappears</td><td>read and write a memory store, plus time and random verbs</td></tr>
+</tbody>
+</table>
+</div>
+<p><a href="./rhai/hosts.html">Hosts</a> explains how a host is put together, and <a href="./rhai/surfaces.html">Surfaces</a>
+walks through each row of this table with a working example.</p>
+<h2 id="rhai-in-two-minutes"><a class="header" href="#rhai-in-two-minutes">Rhai in two minutes</a></h2>
+<p>Rhai reads like a mix of Rust and JavaScript. The parts these chapters use:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Rhai</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>let x = 5;</code></td><td>a variable; no type annotations</td></tr>
+<tr><td><code>#{ name: "Ada", vip: true }</code></td><td>an object map; read with <code>m.name</code> or <code>m["name"]</code></td></tr>
+<tr><td><code>[1, 2, 3]</code></td><td>an array</td></tr>
+<tr><td><code>|c| c.name</code></td><td>a closure, as in <code>rows.map(|c| c.name)</code> and <code>rows.filter(|c| c.vip)</code></td></tr>
+<tr><td><code>()</code></td><td>“nothing”: a missing field, a row that wasn’t found</td></tr>
+<tr><td><code>a ?? b</code></td><td><code>a</code>, or <code>b</code> when <code>a</code> is <code>()</code></td></tr>
+<tr><td><code>`total: ${t}`</code></td><td>string interpolation</td></tr>
+<tr><td><code>if c { a } else { b }</code></td><td>an expression; it has a value</td></tr>
+<tr><td><code>try { … } catch (err) { … }</code>, <code>throw "message"</code></td><td>catching and raising errors</td></tr>
+</tbody>
+</table>
+</div>
+<p>A script’s value is its last expression, with no <code>return</code> and no trailing <code>;</code>. Methods chain, so
+<code>table("order").where("status", "due").count()</code> is three calls on the result of the one before.
+The <a href="https://rhai.rs/book/">Rhai book</a> covers the full language.</p>
+<h2 id="a-first-script"><a class="header" href="#a-first-script">A first script</a></h2>
+<p>Every data script uses the same handful of words. <code>table(name)</code> names a table, a chain of
+narrowing verbs describes a set of its rows, and a terminal verb reads or writes:</p>
+<!-- tested: rhai_guide::tables::first_script -->
+<pre><code class="language-rhai">let vips = table("client").where("vip", true);
+let due = vips.ref("orders").where("status", "due");
 
-<hr>
-<h2 id="anatomy-of-a-model-crate"><a class="header" href="#anatomy-of-a-model-crate">Anatomy of a model crate</a></h2>
-<p>The <code>bakery_model3</code> crate in the Vantage repo demonstrates the pattern. Here’s how it’s structured:</p>
-<pre><code class="language-text">bakery_model3/
- ├── src/
- │    ├── lib.rs          ← re-exports, DB connection helpers
- │    ├── bakery.rs       ← Bakery entity + table constructors
- │    ├── client.rs       ← Client entity + table constructors
- │    ├── order.rs        ← Order entity + table constructors
- │    └── product.rs      ← Product entity + table constructors
- └── examples/
-      ├── cli.rs          ← multi-source CLI using Vista
-      └── 0-intro.rs      ← direct SurrealDB queries
+#{
+    vips: vips.count(),
+    due: due.ids(),
+}
 </code></pre>
-<p>Each entity file follows the same pattern: <strong>struct → trait impls → table constructors</strong>.</p>
-<hr>
-<h2 id="defining-entities"><a class="header" href="#defining-entities">Defining entities</a></h2>
-<p>An entity is a plain Rust struct. The <code>#[entity(...)]</code> macro generates <code>Record</code> conversions for each
-persistence’s type system:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType)]
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Client {
-    pub name: String,
-    pub email: String,
-    pub contact_details: String,
-    pub is_paying_client: bool,
-    pub bakery_id: Option&lt;String&gt;,
-}
-<span class="boring">}</span></code></pre>
-<p>One struct, five type systems. The same <code>Client</code> works with CSV files, SurrealDB, SQLite, Postgres,
-and MongoDB — each using its own native <code>Record&lt;AnyType&gt;</code> representation.</p>
-<div id="admonition-no-id-field-in-the-struct" class="admonition admonish-tip" role="note" aria-labelledby="admonition-no-id-field-in-the-struct-title">
-<div class="admonition-title">
-<div id="admonition-no-id-field-in-the-struct-title">
-<p>No id field in the struct</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-no-id-field-in-the-struct"></a>
-</div>
-
-<div>
-<p>The entity struct does <strong>not</strong> include an <code>id</code> field. IDs are managed by the table via
-<code>with_id_column()</code> — keeping the entity focused on business data.</p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="table-constructors"><a class="header" href="#table-constructors">Table constructors</a></h2>
-<p>Each entity provides table constructors per persistence. These are plain functions that return
-<code>Table&lt;DB, Entity&gt;</code> with columns, relationships, and computed fields pre-configured:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Client {
-    pub fn csv_table(csv: Csv) -&gt; Table&lt;Csv, Client&gt; {
-        Table::new("client", csv)
-            .with_column_of::&lt;String&gt;("name")
-            .with_column_of::&lt;String&gt;("email")
-            .with_column_of::&lt;bool&gt;("is_paying_client")
-            .with_column_of::&lt;String&gt;("bakery_id")
-            .with_one("bakery", "bakery_id", Bakery::csv_table)
-            .with_many("orders", "client_id", Order::csv_table)
-    }
-
-    pub fn surreal_table(db: SurrealDB) -&gt; Table&lt;SurrealDB, Client&gt; {
-        Table::new("client", db)
-            .with_id_column("id")
-            .with_column_of::&lt;String&gt;("name")
-            .with_column_of::&lt;String&gt;("email")
-            .with_column_of::&lt;bool&gt;("is_paying_client")
-            .with_one("bakery", "bakery", Bakery::surreal_table)
-            .with_many("orders", "client", Order::surreal_table)
-            .with_expression("order_count", |t| {
-                let orders = t.get_subquery_as::&lt;Order&gt;("orders").unwrap();
-                orders.get_count_query()
-            })
-    }
-
-    pub fn sqlite_table(db: SqliteDB) -&gt; Table&lt;SqliteDB, Client&gt; {
-        Table::new("client", db)
-            .with_id_column("id")
-            .with_column_of::&lt;String&gt;("name")
-            .with_column_of::&lt;String&gt;("email")
-            .with_column_of::&lt;bool&gt;("is_paying_client")
-            .with_column_of::&lt;String&gt;("bakery_id")
-            .with_one("bakery", "bakery_id", Bakery::sqlite_table)
-            .with_many("orders", "client_id", Order::sqlite_table)
-    }
-}
-<span class="boring">}</span></code></pre>
-<p>Notice how the shape is consistent but details differ — SurrealDB uses embedded document references
-(<code>"bakery"</code> not <code>"bakery_id"</code>), and only SurrealDB gets the computed <code>order_count</code> expression field
-(which requires correlated subquery support).</p>
-<hr>
-<h2 id="relationships"><a class="header" href="#relationships">Relationships</a></h2>
-<p>Relationships are declared on the table, not the entity. Two methods:</p>
-<ul>
-<li><strong><code>with_one("name", "fk_field", constructor)</code></strong> — foreign key to parent (many-to-one)</li>
-<li><strong><code>with_many("name", "fk_field", constructor)</code></strong> — parent to children (one-to-many)</li>
-</ul>
-<p>Traversal is synchronous and returns a new <code>Table</code> with conditions applied:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let paying = Client::surreal_table(db)
-    .with_condition(clients["is_paying_client"].eq(true));
-
-// Traverse — returns Table&lt;SurrealDB, Order&gt; with subquery condition
-let orders = paying.get_ref_as::&lt;SurrealDB, Order&gt;("orders").unwrap();
-
-// The generated query filters orders by paying clients automatically
-for (id, order) in orders.list().await? {
-    println!("{}: {}", id, order.total);
-}
-<span class="boring">}</span></code></pre>
-<hr>
-<h2 id="computed-fields"><a class="header" href="#computed-fields">Computed fields</a></h2>
-<p><code>with_expression</code> adds fields that don’t exist in the database — they’re computed via correlated
-subqueries:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>.with_expression("order_count", |t| {
-    let orders = t.get_subquery_as::&lt;Order&gt;("orders").unwrap();
-    orders.get_count_query()
-})
-// SELECT *, (SELECT COUNT(*) FROM order WHERE order.client = client.id)
-//   AS order_count FROM client
-<span class="boring">}</span></code></pre>
-<p>These fields appear in <code>ReadableValueSet</code> results alongside physical columns.</p>
-<hr>
-<h2 id="implicit-references--dotted-columns"><a class="header" href="#implicit-references--dotted-columns">Implicit references — dotted columns</a></h2>
-<p>Surfacing a related row’s field is common enough that it has a declarative form. A <strong>dotted name</strong> in
-<code>with_active_columns</code> traverses declared <code>has_one</code> relations and imports the target’s field as a
-read-only column, aliased under the literal dotted name — no hand-written expression:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let orders = Order::sqlite_table(db)
-    .with_active_columns(&amp;["id", "client.name", "client.bakery.name"])?;
-// SELECT id,
-//   (SELECT name FROM client WHERE client.id = client_order.client_id) AS "client.name",
-//   (SELECT (SELECT name FROM bakery WHERE bakery.id = client.bakery_id)
-//      FROM client WHERE client.id = client_order.client_id)           AS "client.bakery.name"
-// FROM client_order
-<span class="boring">}</span></code></pre>
-<p><code>client.name</code> is one hop; <code>client.bakery.name</code> recurses through two. Each backend lowers the
-traversal into its own query — SQL nests correlated scalar subqueries, SurrealDB emits a native idiom
-path (<code>client.name</code>, each segment escaped separately). The row comes back with a <strong>flat key</strong> equal to
-the dotted name (<code>row.get("client.bakery.name")</code>).</p>
-<p>A plain (non-dotted) entry simply restricts projection to that column — <code>with_active_columns</code> is also
-how you narrow a wide table to the columns you actually read. Everything is validated when the table
-is built, so mistakes surface immediately rather than at fetch time:</p>
-<ul>
-<li>an unknown column or relation is a <strong>build-time error</strong>;</li>
-<li>a <code>has_many</code> hop is rejected (traversal is <code>has_one</code>-only — a to-many field is a set, not a value);</li>
-<li>a backend that can lower neither a subquery nor an idiom path (e.g. MongoDB, CSV, REST) refuses
-dotted names up front; same-datasource only.</li>
-</ul>
-<p>Imported columns are read-only: they are flagged <code>calculated</code> for consumers, stripped from
-full-record write payloads (insert, replace, generated-id insert) so a read-modify-save round-trip
-never tries to persist <code>client.name</code> as a real field, and rejected outright in a <code>patch</code> — a partial
-payload naming a read-only column is explicit intent, and silently dropping it would turn the patch
-into a successful no-op.
-This is the declarative counterpart to the manual <code>with_expression</code> + <code>get_subquery_as</code> recipe above —
-reach for <code>with_expression</code> when you need an arbitrary expression, and a dotted column when you just
-want a related field. The full treatment — traversal forms, validation, write semantics, per-backend
-lowering, and how relations surface on Vistas and Dio — is the
-<a href="relations.html">Relations &amp; Traversal</a> guide.</p>
-<hr>
-<h2 id="connection-management"><a class="header" href="#connection-management">Connection management</a></h2>
-<p>The model crate owns database connections. <code>bakery_model3</code> uses a <code>OnceLock&lt;SurrealDB&gt;</code> pattern for
-global access, with a DSN-based connection function:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub async fn connect_surrealdb() -&gt; Result&lt;()&gt; {
-    let dsn = std::env::var("SURREALDB_URL")
-        .unwrap_or_else(|_| "cbor://root:root@localhost:8000/bakery/v2".into());
-
-    let client = SurrealConnection::dsn(&amp;dsn)?
-        .connect().await?;
-
-    set_surrealdb(SurrealDB::new(client))
-}
-<span class="boring">}</span></code></pre>
-<p>Consumers call <code>connect_surrealdb()</code> once at startup, then use <code>Client::surreal_table(surrealdb())</code>
-anywhere.</p>
-<hr>
-<h2 id="using-the-model"><a class="header" href="#using-the-model">Using the model</a></h2>
-<p>Once the model crate exists, consumers are simple. They don’t know or care about SQL, SurrealQL, or
-BSON — they work with entities and tables:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// In an Axum handler
-async fn list_clients() -&gt; Json&lt;Vec&lt;Client&gt;&gt; {
-    let clients = Client::surreal_table(surrealdb())
-        .with_condition(clients["is_paying_client"].eq(true));
-    Json(clients.list().await.unwrap().into_values().collect())
-}
-
-// In a CLI tool
-let table = Client::sqlite_table(db);
-println!("{} clients", table.get_count().await?);
-
-// In a test — no database needed
-let mock = MockTableSource::new()
-    .with_data("client", test_data).await;
-let table = Table::&lt;MockTableSource, Client&gt;::new("client", mock);
-assert_eq!(table.get_count().await?, 3);
-<span class="boring">}</span></code></pre>
-<div id="admonition-multi-persistence-models" class="admonition admonish-info" role="note" aria-labelledby="admonition-multi-persistence-models-title">
-<div class="admonition-title">
-<div id="admonition-multi-persistence-models-title">
-<p>Multi-persistence models</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-multi-persistence-models"></a>
-</div>
-
-<div>
-<p>The same model crate can expose table constructors for multiple persistences. Your production
-code uses Postgres, your CLI reads CSV exports, your tests use mocks — all sharing the same
-entity definitions and business rules.</p>
-</div>
-
-</div>
-
-<hr>
-<h2 id="type-erased-access"><a class="header" href="#type-erased-access">Type-erased access</a></h2>
-<p>For truly generic code (UI grids, admin panels, config-driven tools), wrap tables in a
-<a href="./new-persistence/step8-vista-integration.html"><code>Vista</code></a> — the schema-bearing handle that replaced
-the removed <code>AnyTable</code> in 0.5:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let vistas = vec![
-    db.vista_factory().from_table(Client::surreal_table(db.clone()))?,
-    sqlite.vista_factory().from_table(Product::sqlite_table(sqlite.clone()))?,
-    csv.vista_factory().from_table(Order::csv_table(csv.clone()))?,
-];
-
-// Same code handles all three — different databases, same interface
-for v in &amp;vistas {
-    println!("{} records", v.list_values().await?.len());
-}
-<span class="boring">}</span></code></pre>
-<p>See also: <code>bakery_model3/examples/cli.rs</code> for a complete multi-source CLI built on this pattern.</p>
-<hr>
-<h2 id="the-layered-architecture"><a class="header" href="#the-layered-architecture">The layered architecture</a></h2>
-<p>Putting it all together, Vantage prescribes four layers:</p>
-<pre><code class="language-text">┌─────────────────────────────────────────────────┐
-│  4. Consumers                                   │
-│     Axum API · CLI · egui · Tauri · gRPC        │
-├─────────────────────────────────────────────────┤
-│  3. Business Logic                              │
-│     Traits on Table · custom methods · rules    │
-├─────────────────────────────────────────────────┤
-│  2. Model Crate                                 │
-│     Entities · Table constructors · Relations   │
-├─────────────────────────────────────────────────┤
-│  1. Persistence                                 │
-│     SurrealDB · Postgres · SQLite · CSV · API   │
-└─────────────────────────────────────────────────┘
+<p><code>vips</code> and <code>due</code> are <strong>handles</strong>: descriptions of a set. Nothing is read until <code>count()</code> or
+<code>ids()</code> runs, and the handle is then resolved into a <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> and read
+through it. <code>ref("orders")</code> follows a relation from every row of the set, so <code>due</code> is the due orders
+of every VIP client. The script’s last expression is its result; here a map, which a host can turn
+into JSON.</p>
+<p>The script never mentions SQL, SurrealDB or HTTP. The words act on Vistas, and every backend can be
+wrapped as a Vista.</p>
+<h2 id="the-layers"><a class="header" href="#the-layers">The layers</a></h2>
+<p>Vista is the universal data handle: any backend, one type-erased interface. The data vocabulary
+lives in <code>vantage-vista</code> (behind its <code>rhai</code> feature) and knows nothing except Vistas. Three things
+sit above Vista, and each has its own scripting words:</p>
+<pre><code class="language-text">  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
+  │ Servo        │  │ Scenery      │  │ faker sims       │
+  │ form drafts  │  │ view shapes  │  │ time, random,    │
+  │ (diorama)    │  │ (vantage-ui) │  │ fake_row (faker) │
+  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘
+         │                 │                   │
+  ┌──────┴─────────────────┴───────────────────┴─────────┐
+  │ Vista data vocabulary: table, where, sort, ref,      │
+  │ list, get, insert, patch, record, ...                │
+  └──────────────────────────────────────────────────────┘
 </code></pre>
-<p>Layer 1 is implemented once per database (or use an existing Vantage crate). Layer 2 is your model
-crate — entity definitions, relationships, computed fields. Layer 3 adds business-specific traits
-and methods on top of <code>Table</code>. Layer 4 is any number of consumers that import the model and don’t
-think about persistence.</p>
-<div id="admonition-why-this-works" class="admonition admonish-success" role="note" aria-labelledby="admonition-why-this-works-title">
+<p>The lower layer never refers to the upper ones. A Dio can hand a script a Vista whose writes go
+through its write queue, and the script can’t tell the difference. Servo and Scenery keep their own
+words on purpose, because they describe different things: a form draft bound to one record, and the
+shape of a live view. <a href="./rhai/layers.html">Layers</a> covers how they relate and which words they share.</p>
+<p>There is also a second kind of script: <strong>expressions</strong> that build a backend’s native query, such as
+a SQL <code>select()</code> or a SurrealDB condition. They aren’t data scripts and have their own chapters.
+<a href="./rhai/dialects.html">Expression dialects</a> points to them.</p>
+<h2 id="what-this-part-covers"><a class="header" href="#what-this-part-covers">What this part covers</a></h2>
+<ul>
+<li><a href="./rhai/hosts.html">Hosts</a>: <code>Host</code>, <code>Vocab</code>, <code>Limits</code>, the <code>DataVocab</code> configuration, the resolver
+behind <code>table(name)</code>, and how async reads run from synchronous scripts.</li>
+<li><a href="./rhai/tables.html">The table handle</a>: narrowing verbs, reads, relations, introspection, and
+errors.</li>
+<li><a href="./rhai/writes.html">Writes</a>: <code>insert</code>, <code>upsert</code>, <code>patch</code>, <code>delete</code> and <code>import_from</code>, and what
+each returns when a row is missing.</li>
+<li><a href="./rhai/computed.html">Computed columns</a>: <code>lazy:</code> columns that the Vista fills on every read, and
+what they refuse.</li>
+<li><a href="./rhai/records.html">Records</a>: drafts of one row that stage edits and save only what changed.</li>
+<li><a href="./rhai/surfaces.html">Surfaces</a>: every place the vocabulary runs, with a tested example for each,
+plus backend extensions such as SurrealDB’s <code>with_condition</code>.</li>
+<li><a href="./rhai/layers.html">Layers</a>: Servo, Scenery and faker sims next to the data vocabulary.</li>
+<li><a href="./rhai/dialects.html">Expression dialects</a>: query builders, templates and command scripts.</li>
+</ul>
+<div id="admonition-tested-examples" class="admonition admonish-note" role="note" aria-labelledby="admonition-tested-examples-title">
 <div class="admonition-title">
-<div id="admonition-why-this-works-title">
-<p>Why this works</p>
+<div id="admonition-tested-examples-title">
+<p>Tested examples</p>
 </div>
 
-<a class="admonition-anchor-link" href="#admonition-why-this-works"></a>
+<a class="admonition-anchor-link" href="#admonition-tested-examples"></a>
 </div>
 
 <div>
-<p>The model is the only place that knows about database structure. Business logic works against
-abstract <code>Table</code> and <code>DataSet</code> interfaces. Consumers work against business logic traits. Change
-the database — only layer 1 and 2 change. Add a new UI — only layer 4 changes. The architecture
-scales to hundreds of entities and dozens of developers without coupling.</p>
+<p>Every script in this part is copied from a test. The comment above a snippet names the test, for
+example <code>rhai_guide::tables::first_script</code> in <code>vantage-vista/tests/rhai_guide/</code>. Run them with
+<code>cargo nextest run -p vantage-vista --all-features -E 'binary(rhai_guide)'</code>.</p>
 </div>
 
 </div>
 
+<h2 id="words-at-a-glance"><a class="header" href="#words-at-a-glance">Words at a glance</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Group</th><th>Words</th></tr>
+</thead>
+<tbody>
+<tr><td>Start</td><td><code>table(name)</code>; <code>self</code> in slot scripts; <code>table()</code> in faker sims</td></tr>
+<tr><td>Narrow</td><td><code>where(col, value)</code>, <code>where(col, op, value)</code>, <code>sort(col)</code>, <code>sort(col, dir)</code>, <code>search(text)</code>, <code>limit(n)</code>, <code>ref(relation)</code></td></tr>
+<tr><td>Read</td><td><code>list()</code>, <code>get(id)</code>, <code>first()</code>, <code>count()</code>, <code>ids()</code>, <code>columns()</code>, <code>references()</code>, <code>capabilities()</code></td></tr>
+<tr><td>Write</td><td><code>insert(map)</code>, <code>upsert(id, map)</code>, <code>patch(id, map)</code>, <code>delete(id)</code>, <code>import_from(source)</code>, <code>import_from(source, mapping)</code></td></tr>
+<tr><td>Record</td><td><code>record()</code>, <code>record(id)</code>; on a record: <code>r.col</code>, <code>r["col"]</code>, <code>set(map)</code>, <code>id</code>, <code>is_dirty()</code>, <code>dirty(col)</code>, <code>baseline()</code>, <code>revert()</code>, <code>revert(col)</code>, <code>save()</code>, <code>delete()</code>, <code>status()</code>, <code>rejection()</code></td></tr>
+<tr><td>Computed column</td><td><code>row</code> (the record as read); the last expression is the value</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>where</code> takes the operators <code>=</code> / <code>==</code> / <code>eq</code>, <code>!=</code> / <code>ne</code>, <code>&gt;</code> / <code>gt</code>, <code>&gt;=</code> / <code>gte</code>, <code>&lt;</code> / <code>lt</code>,
+<code>&lt;=</code> / <code>lte</code>, <code>in</code>, <code>not_in</code> and <code>like</code>, plus a few aliases (<code>&lt;&gt;</code>, <code>nin</code>, <code>contains</code>). <code>sort</code> takes <code>"asc"</code> or <code>"desc"</code> (or <code>"ascending"</code> /
+<code>"descending"</code>).</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="relations/dio.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="config-driven-vistas.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="three-paths.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="rhai/hosts.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -511,11 +384,11 @@ scales to hundreds of entities and dozens of developers without coupling.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="relations/dio.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="config-driven-vistas.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="three-paths.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="rhai/hosts.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

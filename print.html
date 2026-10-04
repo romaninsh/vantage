@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8ddbe4c8.js";
+            window.path_to_searchindex_js = "searchindex-ed4d36fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8d4429da.js"></script>
+        <script src="toc-aa92909c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -429,8 +429,8 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few things going on here:</p>
 <ul>
-<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="intro/vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a>,
-<a href="intro/vantage_sql::sqlite::statements::SqliteSelect"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
+<li><strong><code>use vantage_sql::prelude::*</code></strong> brings in everything we need for this chapter — <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>,
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a>, the <code>sqlite_expr!</code> macro, error types, and the traits that make builder and
 execution methods work.</li>
 <li><strong><code>VantageResult&lt;()&gt;</code></strong> is Vantage’s own Result type. It uses <code>VantageError</code>, which tracks context
 and error chains for readable diagnostics.</li>
@@ -496,11 +496,11 @@ any <code>Result</code> with a standard error type.</p>
 
 <hr>
 <h2 id="build-a-select"><a class="header" href="#build-a-select">Build a SELECT</a></h2>
-<p><a href="intro/vantage_sql::sqlite::statements::SqliteSelect"><code>SqliteSelect</code></a> is the query builder for SQLite.
+<p><a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
-<a href="intro/vantage_sql::postgres::statements::PostgresSelect"><code>PostgresSelect</code></a>,
-<a href="intro/vantage_mongodb::select::MongoSelect"><code>MongoSelect</code></a> — and they all implement the
-<a href="intro/vantage_expressions::Selectable"><code>Selectable</code></a> trait, so the interface is identical apart from
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/postgres/statements/select/struct.PostgresSelect.html"><code>PostgresSelect</code></a>,
+<a href="https://docs.rs/vantage_mongodb/0.6.9/vantage_mongodb/select/struct.MongoSelect.html"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -553,10 +553,10 @@ you’re building a query conditionally in a loop.</p>
 </span>let result = db.execute(&amp;select.expr()).await?;
 println!("{:?}", result);
 <span class="boring">}</span></code></pre>
-<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="intro/vantage_expressions::Expression"><code>Expression</code></a>
+<p>Two steps here: <code>.expr()</code> turns the builder into an <a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a>
 — Vantage’s internal representation that keeps parameters separate from the SQL template. Then
-<a href="intro/vantage_expressions::ExprDataSource::execute"><code>db.execute()</code></a> sends it to the database.</p>
-<p>The result is <a href="intro/vantage_sql::sqlite::AnySqliteType"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
+<a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html#tymethod.execute"><code>db.execute()</code></a> sends it to the database.</p>
+<p>The result is <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> — a type-tagged wrapper around whatever came back. The <code>Debug</code> output
 isn’t pretty, but you should see all 6 product rows in there.</p>
 <div id="admonition-when-does-vantage-hit-the-database" class="admonition admonish-tip" role="note" aria-labelledby="admonition-when-does-vantage-hit-the-database-title">
 <div class="admonition-title">
@@ -591,13 +591,13 @@ let select = SqliteSelect::new()
 println!("{}", select.preview());
 // SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0
 <span class="boring">}</span></code></pre>
-<p><code>sqlite_expr!</code> creates an <a href="intro/vantage_expressions::Expression"><code>Expression</code></a> — a SQL template with
+<p><code>sqlite_expr!</code> creates an <a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a> — a SQL template with
 typed, bound parameters. That <code>{}</code> is <strong>not</strong> Rust’s <code>format!</code>: the value <code>false</code> is stored
 separately and bound through sqlx’s parameterized query interface at execution time — no injection
 risk, ever. The preview shows it inline for readability.</p>
 <p>In SQL persistences, a condition is just an expression. When you pass it to <code>.with_condition()</code>,
 it’s nested inside the select’s own expression tree. At execution time the whole tree is
-<a href="intro/vantage_expressions::ExpressionFlattener">flattened</a> into a single template + parameter list that
+<a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/expression/flatten/struct.ExpressionFlattener.html">flattened</a> into a single template + parameter list that
 the database driver can bind safely.</p>
 <p>Run it — you should see 5 rows, with “A Stale Cake” filtered out.</p>
 <div id="admonition-types-and-persistence-rendering" class="admonition admonish-info" role="note" aria-labelledby="admonition-types-and-persistence-rendering-title">
@@ -622,8 +622,8 @@ See <a href="#persistence-aligned-type-system">Persistence-aligned Type System</
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="intro/vantage_table::column::core::Column"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
-<a href="intro/vantage_sql::sqlite::operation::SqliteOperation"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
+<a href="https://docs.rs/vantage_table/1.1.1/vantage_table/column/core/struct.Column.html"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition. (<code>Column</code> lives in the <code>vantage-table</code> crate, but the <code>vantage_sql</code> prelude re-exports
 it — no new dependency needed.)</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -634,7 +634,7 @@ let condition = is_deleted.eq(false);
 <p>Same result, but the type parameter <code>&lt;bool&gt;</code> ensures you can only compare against matching types.
 Try <code>is_deleted.eq(42)</code> — it won’t compile. Other operators — <code>.gt()</code>, <code>.lt()</code>, <code>.ne()</code>, <code>.in_()</code> —
 enforce the same type safety.</p>
-<p>The result is a <a href="intro/vantage_sql::condition::SqliteCondition"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
+<p>The result is a <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/condition/struct.SqliteCondition.html"><code>SqliteCondition</code></a> — the backend’s native condition type — ready to be passed
 directly to <code>.with_condition()</code>.</p>
 <div id="admonition-type-safety-and-backend-specific-operations" class="admonition admonish-info" role="note" aria-labelledby="admonition-type-safety-and-backend-specific-operations-title">
 <div class="admonition-title">
@@ -702,7 +702,7 @@ SQLite, <code>AnyMongoType</code> for MongoDB). That shared trait is what makes 
 parameter inside any expression.</p>
 <hr>
 <h2 id="working-with-any-types"><a class="header" href="#working-with-any-types">Working with Any-types</a></h2>
-<p><a href="intro/vantage_types::Record"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
+<p><a href="https://docs.rs/vantage_types/1.0.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a> is an ordered map (<code>IndexMap&lt;String, V&gt;</code>) — one record per row,
 with column names as keys. It lives in the <code>vantage-types</code> crate, so add that dependency and import
 its prelude:</p>
 <pre><code class="language-sh">cargo add vantage-types --features serde
@@ -713,7 +713,7 @@ its prelude:</p>
 <span class="boring">}</span></code></pre>
 <p>So far we’ve been printing raw <code>AnySqliteType</code> with <code>Debug</code>. That works for verifying queries, but
 it’s useless for real work. When <code>db.execute()</code> returns a multi-row result, the
-<a href="intro/vantage_sql::sqlite::AnySqliteType"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a> holds an array of maps internally. Convert it
 to <code>Vec&lt;Record&lt;AnySqliteType&gt;&gt;</code> to work with individual rows:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -772,7 +772,7 @@ println!("{:?}", price_cbor);
 <hr>
 <h2 id="mapping-rows-to-structs"><a class="header" href="#mapping-rows-to-structs">Mapping rows to structs</a></h2>
 <p>Calling <code>.try_get::&lt;T&gt;()</code> on every field gets tedious. The <code>#[entity]</code> macro generates
-<a href="intro/vantage_types::TryFromRecord"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
+<a href="https://docs.rs/vantage_types/1.0.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord&lt;AnySqliteType&gt;</code></a> for your struct, so conversion
 happens in one call with no type information lost:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -871,13 +871,13 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 <tr><th>Concept</th><th>What it does</th><th>More info</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="intro/vantage_sql::sqlite::statements::SqliteSelect"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="intro/vantage_expressions::Selectable"><code>Selectable</code></a></td></tr>
-<tr><td><a href="intro/vantage_table::column::core::Column"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
-<tr><td><a href="intro/vantage_sql::sqlite::operation::SqliteOperation"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
-<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="intro/vantage_expressions::Expression"><code>Expression</code></a></td></tr>
-<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="intro/vantage_sql::sqlite::AnySqliteType"><code>AnySqliteType</code></a></td><td><a href="intro/vantage_expressions::ExprDataSource"><code>ExprDataSource</code></a></td></tr>
-<tr><td><a href="intro/vantage_types::Record"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
-<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="intro/vantage_types::TryFromRecord"><code>TryFromRecord</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/traits/selectable/trait.Selectable.html"><code>Selectable</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_table/1.1.1/vantage_table/column/core/struct.Column.html"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/operation/trait.SqliteOperation.html"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
+<tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/expression/core/struct.Expression.html"><code>Expression</code></a></td></tr>
+<tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/types/struct.AnySqliteType.html"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage_expressions/1.0.1/vantage_expressions/traits/datasource/trait.ExprDataSource.html"><code>ExprDataSource</code></a></td></tr>
+<tr><td><a href="https://docs.rs/vantage_types/1.0.0/vantage_types/record/struct.Record.html"><code>Record&lt;V&gt;</code></a></td><td>Ordered map of column names to values — row-level access</td><td><code>.try_get::&lt;T&gt;()</code></td></tr>
+<tr><td><code>#[entity(SqliteType)]</code></td><td>Generates lossless record-to-struct conversion</td><td><a href="https://docs.rs/vantage_types/1.0.0/vantage_types/record/trait.TryFromRecord.html"><code>TryFromRecord</code></a></td></tr>
 </tbody>
 </table>
 </div>
@@ -985,7 +985,7 @@ important differences:</p>
 </tbody>
 </table>
 </div>
-<p>A <a href="intro/vantage_table::table::Table"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1634,7 +1634,7 @@ chapter we <strong>migrate</strong> them to MongoDB. That migration is a change 
 and routes don’t know the difference.</li>
 </ul>
 <p>The handler functions are each written <strong>once</strong> and mounted against any
-<a href="intro/vantage_table::table::Table"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
+<a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html"><code>Table&lt;Backend, Entity&gt;</code></a> the router has on hand — one <code>list</code>, one
 <code>get</code>, one <code>post</code>, one <code>patch</code>, one <code>delete</code>, parameterised over the backend and entity types.
 Adding another entity is a route registration, not a new handler.</p>
 <hr>
@@ -1650,7 +1650,7 @@ compose</em> callout showed <code>Category</code> gaining a computed <code>title
 subqueries — great for display, but they don’t
 round-trip cleanly through a <code>POST</code> body because the JSON would try to write columns that don’t
 exist. For a writable API we replace the computed fields with the plain FK column that sits under
-them. (See <a href="intro/vantage_table::table::Table::with_expression"><code>with_expression</code></a> for the chapter-2
+them. (See <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.with_expression"><code>with_expression</code></a> for the chapter-2
 computed-field setup we’re walking away from here.)</p>
 <p><code>src/category.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -1748,7 +1748,7 @@ async fn main() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few notes on what this is doing:</p>
 <ul>
-<li><strong><code>static DB: OnceLock&lt;</code><a href="intro/vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
 database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
 is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
 <li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
@@ -1790,17 +1790,17 @@ of <code>Category::table</code>:</p>
 <ul>
 <li><strong>Return type is <code>&amp;'static Table&lt;...&gt;</code> instead of <code>Table&lt;...&gt;</code>.</strong> The cache owns the definition;
 callers get a shared reference. Most table operations
-(<a href="intro/vantage_dataset::traits::ReadableDataSet::list"><code>list</code></a>,
-<a href="intro/vantage_dataset::traits::ReadableDataSet::get"><code>get</code></a>,
-<a href="intro/vantage_dataset::traits::WritableDataSet::insert"><code>insert</code></a>,
-<a href="intro/vantage_dataset::traits::WritableDataSet::replace"><code>replace</code></a>,
-<a href="intro/vantage_dataset::traits::WritableValueSet::delete"><code>delete</code></a>,
-<a href="intro/vantage_table::table::Table::get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
+(<a href="https://docs.rs/vantage_dataset/1.0.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.list"><code>list</code></a>,
+<a href="https://docs.rs/vantage_dataset/1.0.0/vantage_dataset/traits/dataset/trait.ReadableDataSet.html#tymethod.get"><code>get</code></a>,
+<a href="https://docs.rs/vantage_dataset/1.0.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.insert"><code>insert</code></a>,
+<a href="https://docs.rs/vantage_dataset/1.0.0/vantage_dataset/traits/dataset/trait.WritableDataSet.html#tymethod.replace"><code>replace</code></a>,
+<a href="https://docs.rs/vantage_dataset/1.0.0/vantage_dataset/traits/valueset/trait.WritableValueSet.html#tymethod.delete"><code>delete</code></a>,
+<a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>) take <code>&amp;self</code>, so they work on the
 reference without any clone.</li>
 <li><strong><code>static CACHE: OnceLock&lt;...&gt;</code> lives inside the function.</strong> A function-local static is still a
 program-wide single instance — Rust allows this and it keeps the cache private to the table that
 owns it.</li>
-<li><strong>The <a href="intro/vantage_table::table::Table::with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
+<li><strong>The <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> callback is a closure: <code>|db| Product::table(db).clone()</code>.</strong> The framework still hands us a db and expects an owned
 <code>Table&lt;SqliteDB, Product&gt;</code> back, so we call the cached accessor and clone the reference. On the
 first call this triggers Product’s cache to build; every subsequent call just clones a pre-built
 definition.</li>
@@ -1838,7 +1838,7 @@ return a new <code>Table</code>. If a handler needs to narrow the cached definit
 
 <hr>
 <h2 id="products-of-a-category"><a class="header" href="#products-of-a-category">Products of a category</a></h2>
-<p>The <a href="intro/vantage_table::table::Table::with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
+<p>The <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.with_many"><code>with_many</code></a> relationship we kept from chapter 2 lets
 us serve a nested route — <code>/categories/{id}/products</code>. Before writing the handler, give the
 relationship a proper name with an extension trait on <code>Table&lt;SqliteDB, Category&gt;</code>. Add this to
 <code>src/category.rs</code>:</p>
@@ -1877,13 +1877,13 @@ async fn list_category_products(Path(id): Path&lt;i64&gt;) -&gt; Json&lt;Vec&lt;
 <span class="boring">}</span></code></pre>
 <p>Three things going on:</p>
 <ul>
-<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="intro/vantage_table::table::Table"><code>Table</code></a> to
-chain <a href="intro/vantage_table::table::Table::with_condition"><code>with_condition</code></a> onto, so we clone the cached
+<li><strong><code>Category::table(db()).clone()</code></strong> — we need an owned <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> to
+chain <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.with_condition"><code>with_condition</code></a> onto, so we clone the cached
 definition — the shape, not any rows.</li>
 <li><strong><code>with_condition(id_col.eq(id))</code></strong> — narrows the category table to one row: the one we’re asking
 for. Nothing hits the database yet.</li>
 <li><strong><code>ref_products()</code></strong> — traverses the <code>with_many</code> relationship we registered on Category in
-chapter 2, via <a href="intro/vantage_table::table::Table::get_ref_as"><code>get_ref_as</code></a>. The returned table is
+chapter 2, via <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.get_ref_as"><code>get_ref_as</code></a>. The returned table is
 <code>Table&lt;SqliteDB, Product&gt;</code>, already scoped to products whose <code>category_id</code> matches the narrowed
 category set. Chapter 2 walked through what the emitted SQL looks like; it’s the same here.</li>
 </ul>
@@ -2133,7 +2133,7 @@ dropped and the client sees an empty reply, with no status code and no body to e
 <li>Everything else returns <strong>500</strong> but with a structured JSON body, not silence.</li>
 </ul>
 <p>Axum already gives us the middle one for free — it rejects malformed <code>Json&lt;E&gt;</code> bodies with 400.
-The other two come down to converting <a href="intro/vantage_core::VantageError"><code>VantageError</code></a> into an HTTP
+The other two come down to converting <a href="https://docs.rs/vantage_core/1.0.0/vantage_core/util/error/struct.VantageError.html"><code>VantageError</code></a> into an HTTP
 response. Add an <code>ApiError</code> type to <code>main.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -2322,11 +2322,11 @@ table with whatever the caller asked for, and lists:</p>
 <span class="boring">}</span></code></pre>
 <p>Two things happen:</p>
 <ul>
-<li><strong><a href="intro/vantage_table::table::Table::set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="intro/vantage_table::pagination::Pagination::new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
+<li><strong><a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.set_pagination"><code>set_pagination</code></a><code>(Some(</code><a href="https://docs.rs/vantage_table/1.1.1/vantage_table/pagination/struct.Pagination.html#method.new"><code>Pagination::new</code></a><code>(page, per_page)))</code></strong>
 takes a page number and a page size. Vantage applies these as <code>LIMIT … OFFSET …</code> on the SELECT.
 Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
 don’t touch pagination at all, so the unfiltered list still hits the whole set.</li>
-<li><strong><a href="intro/vantage_table::table::Table::add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
+<li><strong><a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html#method.add_search"><code>add_search</code></a><code>(term)</code></strong> is the <code>.with_search</code> we used
 in chapter 2 to add a LIKE filter across all columns. Both end up as extra <code>WHERE</code> clauses on the
 query that vantage already compiles for us.</li>
 </ul>
@@ -2402,7 +2402,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="intro/vantage_mongodb::MongoDB"><code>MongoDB</code></a> instead of <a href="intro/vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage_mongodb/0.6.9/vantage_mongodb/mongodb/struct.MongoDB.html"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/sqlite/struct.SqliteDB.html"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -2513,7 +2513,7 @@ URL’s <code>cat_id</code> string directly:</p>
 })
 <span class="boring">}</span></code></pre>
 <p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
-<a href="intro/vantage_mongodb::AnyMongoType"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<a href="https://docs.rs/vantage_mongodb/0.6.9/vantage_mongodb/types/struct.AnyMongoType.html"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
 <code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
 whichever <code>_id</code> convention the collection uses.</p>
 <h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
@@ -2684,7 +2684,7 @@ already showed the limitation — it could only exist because we erased the enti
 data grid that works with whatever you point it at — none of these know your <code>Product</code> struct. They
 need a handle that carries its own schema, speaks a single value type, and works regardless of which
 database sits underneath.</p>
-<p>That handle is <a href="intro/vantage_vista::Vista"><code>Vista</code></a>.</p>
+<p>That handle is <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a>.</p>
 <div id="admonition-why-vista" class="admonition admonish-question" role="note" aria-labelledby="admonition-why-vista-title">
 <div class="admonition-title">
 <div id="admonition-why-vista-title">
@@ -2746,7 +2746,10 @@ CBOR value, and the schema travels with the handle rather than with your types. 
 <code>Table</code> — this chapter’s path — is also not the only way to get one: every driver ships a
 <code>VistaFactory</code> that can materialize a Vista from a declarative YAML spec, with Rhai scripts for the
 expressions YAML can’t state. That path has its own guide —
-<a href="#config-driven-vistas-yaml--rhai">Config-Driven Vistas</a> — and this chapter stays on the typed one.</p>
+<a href="#config-driven-vistas-yaml--rhai">Config-Driven Vistas</a> — and this chapter stays on the typed one.
+Scripts read and write Vistas through their own short vocabulary (<code>table("product").where(…)</code>),
+taught in <a href="#scripting-with-rhai">Scripting with Rhai</a>; the methods below are the Rust side of the same
+operations.</p>
 <div id="admonition-cbor-not-json" class="admonition admonish-info" role="note" aria-labelledby="admonition-cbor-not-json-title">
 <div class="admonition-title">
 <div id="admonition-cbor-not-json-title">
@@ -2808,7 +2811,7 @@ for (name, kind) in vista.list_references() {
 }
 // ref: products (HasMany)
 <span class="boring">}</span></code></pre>
-<p><a href="intro/vantage_vista::Column"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/column/struct.Column.html"><code>Column</code></a> carries an <code>original_type</code> string (preserved from the typed column
 definition) and a set of flags. The standard flag vocabulary:</p>
 <div class="table-wrapper">
 <table>
@@ -2829,7 +2832,7 @@ definition) and a set of flags. The standard flag vocabulary:</p>
 <hr>
 <h2 id="adding-conditions-1"><a class="header" href="#adding-conditions-1">Adding conditions</a></h2>
 <p>Vista doesn’t carry its own condition type. Instead, it delegates to a
-<a href="intro/vantage_vista::TableShell"><code>TableShell</code></a> — the per-driver executor every Vista wraps, and the
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a> — the per-driver executor every Vista wraps, and the
 piece each factory actually builds — which translates the value into whatever the backend speaks:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -2880,7 +2883,7 @@ preserve. The mutability rules:</p>
 v.with_id("7")?;
 let row = v.get_some_value().await?;
 <span class="boring">}</span></code></pre>
-<p><a href="intro/vantage_vista::Vista::with_id"><code>with_id</code></a> reads the id column name from the schema and calls
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html#method.with_id"><code>with_id</code></a> reads the id column name from the schema and calls
 <code>add_condition_eq</code> for you. Returns <code>&amp;mut Self</code> so you can chain.</p>
 <hr>
 <h2 id="search-and-ordering"><a class="header" href="#search-and-ordering">Search and ordering</a></h2>
@@ -2995,14 +2998,14 @@ surface.</p>
 <p>What if your categories live in PostgreSQL and your products in MongoDB? That is deliberately
 <em>not</em> a Vista’s job — a Vista honestly describes one backend, and there is no engine that could
 execute a join across two. Cross-persistence traversal lives one layer up, in
-<code>vantage-vista-factory</code>’s <a href="intro/vantage_vista_factory"><code>VistaCatalog</code></a>: register a loader per model
+<code>vantage-vista-factory</code>’s <a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/index.html"><code>VistaCatalog</code></a>: register a loader per model
 name, declare the relation, and <code>catalog.traverse_from("category", "products", &amp;row)</code> resolves the
 target in <em>its</em> backend and narrows it by values read from the parent row. The consumer still just
 receives a Vista — see <a href="#config-driven-vistas-yaml--rhai">Config-Driven Vistas</a> for the catalog in
 action.</p>
 <hr>
 <h2 id="capabilities--the-explicit-contract"><a class="header" href="#capabilities--the-explicit-contract">Capabilities — the explicit contract</a></h2>
-<p><a href="intro/vantage_vista::VistaCapabilities"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> is a struct of booleans. The driver sets
 each flag to reflect what it actually implements:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -3084,16 +3087,16 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.</p>
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="intro/vantage_vista::Vista"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
-<tr><td><a href="intro/vantage_vista::TableShell"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
-<tr><td><a href="intro/vantage_vista::VistaCapabilities"><code>VistaCapabilities</code></a></td><td>Explicit contract of what the driver supports</td></tr>
-<tr><td><a href="intro/vantage_vista::Column"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a></td><td>Universal schema-bearing data handle, wraps any <code>Table</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a></td><td>Per-driver executor that Vista delegates to</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a></td><td>Explicit contract of what the driver supports</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/column/struct.Column.html"><code>Column</code></a></td><td>Column metadata with name, type, and flags</td></tr>
 <tr><td><code>add_condition_eq</code></td><td>Narrow results to field == value</td></tr>
 <tr><td><code>with_id</code></td><td>Convenience: narrow by primary key</td></tr>
 <tr><td><code>add_search</code> / <code>add_order</code></td><td>Quicksearch and sorting (replace semantics)</td></tr>
 <tr><td><code>fetch_page</code> / <code>fetch_next</code></td><td>Offset and cursor pagination</td></tr>
 <tr><td><code>get_ref</code></td><td>Traverse a relationship from a parent row</td></tr>
-<tr><td><a href="intro/vantage_vista_factory"><code>VistaCatalog</code></a></td><td>Cross-persistence traversal, one layer above Vista</td></tr>
+<tr><td><a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/index.html"><code>VistaCatalog</code></a></td><td>Cross-persistence traversal, one layer above Vista</td></tr>
 </tbody>
 </table>
 </div>
@@ -3605,7 +3608,7 @@ for when persistence isn’t wanted.</li>
 <li><strong><code>.on_start(...)</code></strong> fires once, inside <code>make_dio</code>. Callbacks receive <code>&amp;Dio</code> and clone it to
 hold across <code>.await</code> — a cheap <code>Arc</code> bump; every Lens callback follows this shape.</li>
 <li><strong><code>make_dio</code></strong> does the rest in one call: opens a cache table named after the master, spawns
-the write worker, runs <code>on_start</code>, and hands back the <a href="intro/vantage_diorama::Dio"><code>Dio</code></a>.</li>
+the write worker, runs <code>on_start</code>, and hands back the <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a>.</li>
 </ul>
 <p><code>sync</code> is where the cursor pays off. Instead of one big <code>list_values()</code>, it pulls the listing
 <strong>one page at a time</strong> and seeds the cursor from the cache:</p>
@@ -3697,7 +3700,7 @@ escape hatch back to the truth.</p>
 <hr>
 <h2 id="the-event-bus"><a class="header" href="#the-event-bus">The event bus</a></h2>
 <p>One more thing <code>make_dio</code> set up, invisibly: every Dio carries a <strong>broadcast event bus</strong>.
-Anything that changes data announces it there as a <a href="intro/vantage_diorama::DioEvent"><code>DioEvent</code></a> —
+Anything that changes data announces it there as a <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a> —
 <code>DatasetChanged</code> when the set of records was rewritten wholesale, <code>RecordChanged</code> /
 <code>RecordInserted</code> / <code>RecordRemoved</code> for row-level changes, <code>Refreshing</code> when a reconcile starts,
 <code>WriteFailed</code> when a queued write fails. Nothing in this chapter listens yet; chapter 7’s
@@ -3722,7 +3725,7 @@ everything” announcement. Chapter 7’s live view does exactly that.</p>
 <p>Our S3 listing has no way to notify us, so freshness is <em>pulled</em>: <code>sync</code> on start,
 <code>--invalidate</code> by hand, or <code>refresh_every(duration)</code> on a timer (chapter 7’s live view uses it).
 Backends that can push — a SurrealDB live query, a Kafka topic, a webhook — feed
-<a href="intro/vantage_diorama::ChangeEvent"><code>ChangeEvent</code></a>s into <code>dio.handle_event(...)</code> and reconcile through
+<a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/ops/change_event/enum.ChangeEvent.html"><code>ChangeEvent</code></a>s into <code>dio.handle_event(...)</code> and reconcile through
 an <code>on_event</code> callback instead, using the same row-level helpers. Same cache, same events — only
 the trigger differs.</p>
 </div>
@@ -3777,13 +3780,13 @@ ops are applied to the master directly, and a master that can’t take them surf
 <tbody>
 <tr><td><code>AwsAccount::public(region)</code></td><td>Unsigned requests — public buckets, no credentials</td></tr>
 <tr><td>Cursor in the table name (<code>@req=resp</code>)</td><td>Auto-pagination: one <code>list()</code>, as many requests as needed</td></tr>
-<tr><td><a href="intro/vantage_diorama::Lens"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, refresh policy</td></tr>
-<tr><td><a href="intro/vantage_diorama::Dio"><code>Dio</code></a></td><td>Binding of master Vista + Lens; owns cache, queue, event bus</td></tr>
-<tr><td><code>cache_at</code> / <a href="intro/vantage_diorama::CacheBackend"><code>CacheBackend</code></a></td><td>Persistent (redb) or in-memory storage for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/lens/struct.Lens.html"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, refresh policy</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/struct.Dio.html"><code>Dio</code></a></td><td>Binding of master Vista + Lens; owns cache, queue, event bus</td></tr>
+<tr><td><code>cache_at</code> / <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/lens/cache_backend/trait.CacheBackend.html"><code>CacheBackend</code></a></td><td>Persistent (redb) or in-memory storage for cached rows</td></tr>
 <tr><td><code>fetch_next(token)</code></td><td>One page per call; S3’s token is the last key — durable</td></tr>
 <tr><td><code>dio.cache()</code> / <code>dio.master()</code></td><td>The two sides of the Dio, directly addressable from callbacks</td></tr>
 <tr><td><code>dio.vista()</code></td><td>Facade Vista: reads from cache, writes through the queue</td></tr>
-<tr><td><a href="intro/vantage_diorama::DioEvent"><code>DioEvent</code></a></td><td>Bus event: invalidated, record-level changes, write failures</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/event_bus/enum.DioEvent.html"><code>DioEvent</code></a></td><td>Bus event: invalidated, record-level changes, write failures</td></tr>
 </tbody>
 </table>
 </div>
@@ -3918,7 +3921,8 @@ a column on the table, so the derived fields are part of its schema like any oth
 <p>Like most things declared on a table, lazy columns have a config-driven form: a column spec may
 carry <code>lazy: &lt;rhai script&gt;</code>, where the script sees the record built so far as <code>row</code> and its
 final expression becomes the value — <code>row.contents.split("\n").len() - 1</code>. Declaration order
-chains the same way. See <a href="#config-driven-vistas-yaml--rhai">Config-Driven Vistas</a>.</p>
+chains the same way. A <code>lazy:</code> script can’t do I/O, so it suits the <code>rows</code> and <code>latest</code> steps but
+not the download. See <a href="#computed-columns">Computed Columns</a>.</p>
 </div>
 
 </div>
@@ -3962,11 +3966,11 @@ let dio = lens.make_dio(master).await?.augment(
     }],
 );
 <span class="boring">}</span></code></pre>
-<p>An <a href="intro/vantage_diorama::Augmentation"><code>Augmentation</code></a> answers four questions:</p>
+<p>An <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/augment/struct.Augmentation.html"><code>Augmentation</code></a> answers four questions:</p>
 <ul>
 <li><strong><code>detail</code></strong> — <em>where do detail records come from?</em> <code>Detail::Fixed</code> holds our augmenter Vista
 directly. (<code>Detail::Catalog(name)</code> resolves one by name instead — the config-driven form,
-which is also why <code>augment</code> takes a <a href="intro/vantage_vista_factory::VistaCatalog"><code>VistaCatalog</code></a>.
+which is also why <code>augment</code> takes a <a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/struct.VistaCatalog.html"><code>VistaCatalog</code></a>.
 Building an empty catalog just to satisfy the signature is admittedly awkward; the parameter
 earns its place only in the catalog form.)</li>
 <li><strong><code>source</code></strong> — <em>how does a master row select its detail record?</em> <code>Source::Column</code> maps the
@@ -4116,7 +4120,7 @@ the fetch is retried the next time the viewport reaches for it.</p>
 <tbody>
 <tr><td><code>with_lazy_expression(name, callback)</code></td><td>A column computed in Rust on the returned record; chains in order</td></tr>
 <tr><td><code>s3::get_object</code></td><td>Raw object fetch through the same (unsigned) driver</td></tr>
-<tr><td><a href="intro/vantage_diorama::Augmentation"><code>Augmentation</code></a></td><td>Declares detail source, row→detail mapping, fetch style, merge</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/augment/struct.Augmentation.html"><code>Augmentation</code></a></td><td>Declares detail source, row→detail mapping, fetch style, merge</td></tr>
 <tr><td><code>Detail::Fixed</code> / <code>Detail::Catalog</code></td><td>Detail Vista held directly, or resolved by name from a catalog</td></tr>
 <tr><td><code>Source::Column { from, to }</code></td><td>Master column → detail condition (our <code>Key</code> → <code>prefix</code>)</td></tr>
 <tr><td><code>MergeRule</code></td><td>Which detail columns land on the master row — and which don’t</td></tr>
@@ -4172,11 +4176,11 @@ screen changes.</p>
 <p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio, exposing one access
 pattern:</p>
 <ul>
-<li><a href="intro/vantage_diorama::TableScenery"><code>TableScenery</code></a> — ordered rows by index, with a viewport</li>
-<li><a href="intro/vantage_diorama::RecordScenery"><code>RecordScenery</code></a> — a single record by id</li>
-<li><a href="intro/vantage_diorama::ValueScenery"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+<li><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a> — ordered rows by index, with a viewport</li>
+<li><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
 </ul>
-<p>All three share one reactivity mechanism: a <a href="intro/vantage_diorama::Generation"><code>Generation</code></a> counter
+<p>All three share one reactivity mechanism: a <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> counter
 that bumps whenever the view’s state changes. Consumers <code>subscribe()</code> to a <code>watch</code> channel and
 redraw on each bump — the channel only ever holds the <em>latest</em> generation, so a burst of changes
 costs one repaint, not one per change.</p>
@@ -4398,7 +4402,7 @@ viewport reaches them. The passes are separately pluggable. The detail pass is a
 it’s chapter 6’s augmentation. The list pass, left alone, would ask the master — a full
 122-request S3 walk every time a view (re)builds its spine. But chapter 5 built something better:
 a cache that <em>is</em> the listing. Registering <code>on_list_page</code> overrides the list pass; the
-<a href="intro/vantage_diorama::QueryDescriptor"><code>QueryDescriptor</code></a> argument carries the window (<code>offset</code>,
+<a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/ops/query_descriptor/struct.QueryDescriptor.html"><code>QueryDescriptor</code></a> argument carries the window (<code>offset</code>,
 <code>limit</code> — plus conditions, sort, and search when the view has them), and our implementation is a
 window over the cache. The scenery’s spine now costs zero network.</p>
 <p><strong><code>refresh_every</code></strong> completes the freshness story. Once a minute the Dio reconciles its cache
@@ -4420,7 +4424,7 @@ let scenery = dio.table_scenery().page_size(200_000).open().await?;
 event bus), and hands back <code>Arc&lt;dyn TableScenery&gt;</code>. What you get is deliberately small and
 synchronous:</p>
 <ul>
-<li><code>row_count()</code> and <code>row(idx)</code> — an <a href="intro/vantage_diorama::EnrichedRecord"><code>EnrichedRecord</code></a>: the
+<li><code>row_count()</code> and <code>row(idx)</code> — an <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/enriched_record/struct.EnrichedRecord.html"><code>EnrichedRecord</code></a>: the
 record plus a per-row status;</li>
 <li><code>set_viewport(range)</code> — more on this in a moment;</li>
 <li><code>subscribe()</code> — the generation channel from the start of the chapter.</li>
@@ -4535,10 +4539,10 @@ real UI binds to Vantage.</p>
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="intro/vantage_diorama::TableScenery"><code>TableScenery</code></a></td><td>Ordered rows by index; sort/search/filter served locally</td></tr>
-<tr><td><a href="intro/vantage_diorama::ValueScenery"><code>ValueScenery</code></a></td><td>Reactive aggregate — <code>count</code>, <code>sum</code>, <code>max</code>, <code>min</code>, or <code>custom</code></td></tr>
-<tr><td><a href="intro/vantage_diorama::RecordScenery"><code>RecordScenery</code></a></td><td>One record by id, same subscribe/redraw contract</td></tr>
-<tr><td><a href="intro/vantage_diorama::Generation"><code>Generation</code></a> / <code>subscribe()</code></td><td>Latest-value watch channel — one bump, one repaint</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/table/trait.TableScenery.html"><code>TableScenery</code></a></td><td>Ordered rows by index; sort/search/filter served locally</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/value/trait.ValueScenery.html"><code>ValueScenery</code></a></td><td>Reactive aggregate — <code>count</code>, <code>sum</code>, <code>max</code>, <code>min</code>, or <code>custom</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/record/trait.RecordScenery.html"><code>RecordScenery</code></a></td><td>One record by id, same subscribe/redraw contract</td></tr>
+<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/struct.Generation.html"><code>Generation</code></a> / <code>subscribe()</code></td><td>Latest-value watch channel — one bump, one repaint</td></tr>
 <tr><td>Two-pass loading</td><td>List pass builds the spine; detail pass hydrates rows in view</td></tr>
 <tr><td><code>on_list_page</code></td><td>Plug the list pass — ours serves pages from the chapter-5 cache</td></tr>
 <tr><td><code>set_viewport(range)</code></td><td>Declares what’s visible — and thereby what hydrates</td></tr>
@@ -6384,11 +6388,11 @@ data handle, and builds an entire reactive stack on top of it.</p>
 </ul>
 <hr>
 <h2 id="vista--the-universal-data-handle-1"><a class="header" href="#vista--the-universal-data-handle-1">Vista — the universal data handle</a></h2>
-<p>A <a href="vantage_vista::Vista"><code>Vista</code></a> wraps any typed <code>Table&lt;DB, E&gt;</code> and erases <strong>both</strong> the backend and
+<p>A <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> wraps any typed <code>Table&lt;DB, E&gt;</code> and erases <strong>both</strong> the backend and
 the entity. All data flows through <code>Record&lt;CborValue&gt;</code> — an ordered map of string keys to CBOR
 values. All schema lives on the Vista itself: columns (with types and flags), references, the id
 column, and a set of capability flags. Execution is delegated to a per-driver
-<a href="vantage_vista::TableShell"><code>TableShell</code></a>.</p>
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/source/trait.TableShell.html"><code>TableShell</code></a>.</p>
 <pre><code class="language-text">Table&lt;SqliteDB, Product&gt;   — typed entity, typed backend, compile-time safe
 Vista                      — fully erased: schema-bearing, CborValue, no generics
 </code></pre>
@@ -6456,7 +6460,7 @@ stores BSON), so wrapping a typed table into a Vista no longer crosses a JSON fu
 <p>Not every backend can do everything. A CSV file can’t sort or search server-side; DynamoDB orders
 only by its declared sort key; a token-paginated REST API offers a forward cursor but no page
 numbers. Vista makes this explicit with
-<a href="vantage_vista::VistaCapabilities"><code>VistaCapabilities</code></a> — a struct of booleans where each driver
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>VistaCapabilities</code></a> — a struct of booleans where each driver
 declares exactly what it supports:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -6492,7 +6496,7 @@ scrollbar (random access) and a “load more” button (cursor-based).</p>
 <hr>
 <h2 id="config-driven-yaml-specs-and-rhai-scripting-1"><a class="header" href="#config-driven-yaml-specs-and-rhai-scripting-1">Config-driven: YAML specs and Rhai scripting</a></h2>
 <p>A Vista no longer needs a hand-written Rust definition. Tables, columns, and relations can be
-declared in a <strong>YAML spec</strong> (<a href="vantage_vista::VistaSpec"><code>VistaSpec</code></a>) and materialized by the
+declared in a <strong>YAML spec</strong> (<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a>) and materialized by the
 driver’s factory:</p>
 <pre><code class="language-yaml">table: product
 columns:
@@ -7472,7 +7476,8 @@ relation-derived expressions compose.</li>
 <li><strong><a href="#implicit-references">Implicit References</a></strong> — dotted column names, the
 declarative way to pull a field across a relation.</li>
 <li><strong><a href="#vista-yaml-and-rhai">Vista, YAML and Rhai</a></strong> — vista factories, traversal after type
-erasure, capability checks, and declaring relations in YAML and Rhai.</li>
+erasure, capability checks, and declaring relations in YAML and Rhai. Scripts traverse with
+<code>ref(relation)</code>, covered in <a href="#following-relations">Scripting with Rhai</a>.</li>
 <li><strong><a href="#relations-and-dio">Relations and Dio</a></strong> — where cross-datasource enrichment lives.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -8090,14 +8095,16 @@ through JSON or a script still traverses correctly.</p>
 </div>
 
 <h3 id="the-scripting-surface"><a class="header" href="#the-scripting-surface">The scripting surface</a></h3>
-<p>The same traversal is exposed to Rhai data scripts (the <code>vantage-vista</code> rhai feature). A script
-holding a row can hop a relation:</p>
-<pre><code class="language-rhai">let t = table("tag");
-let row = t.get_some();
-let course = t.get_ref("golf_course", row);
-</code></pre>
-<p>There’s no separate scripting implementation here — the erased <code>Vista</code> is what the script engine
-wraps, and <code>get_ref</code> there follows the same metadata.</p>
+<p>Rhai data scripts (the <code>vantage-vista</code> rhai feature) traverse with <code>ref(relation)</code> on a table
+handle, which follows the relation from every row of a set. A one-row set goes through <code>get_ref</code>,
+so it follows the same metadata and backend traversal described here. Several rows become an <code>in</code>
+condition on the target, a <code>limit(n)</code> before the <code>ref</code> caps the rows it follows, and an empty set
+gives an empty target without a query. See
+<a href="#following-relations">The Table Handle</a>.</p>
+<p>A relation’s foreign key may be a <a href="#computed-columns">computed column</a> (a <code>lazy:</code> column). A
+has-one through one works, because the parent row carries the computed value. A has-many whose key
+is a computed column of the child is refused by <code>get_ref</code> with an error naming the relation and
+column, since the backend can’t filter the child by a value it doesn’t store.</p>
 <h3 id="capabilities-the-honest-contract"><a class="header" href="#capabilities-the-honest-contract">Capabilities: the honest contract</a></h3>
 <p>Not every backend serves every traversal form — the <a href="#traversing-sets-and-records">traversal chapter</a> already
 showed that set-level traversal needs subqueries. At the typed layer, you knew that when you wrote
@@ -8174,18 +8181,22 @@ references:
 the common case. The full form (<code>references: { table, kind, foreign_key, name }</code>) can name it
 differently — you need that when two relations point at the same table.</p>
 <p>When a relation needs more than a plain foreign-key match — extra conditions, ordering, a search —
-give the reference a <code>rhai:</code> build script:</p>
+give the reference a <code>rhai:</code> build script in its driver block (SurrealDB supports this today, and
+reports <code>can_build_ref_via_script</code>):</p>
+<!-- tested: rhai_guide::surfaces::ref_build (the script) -->
 <pre><code class="language-yaml">references:
-  recent_orders:
+  due_orders:
     table: order
     kind: has_many
     foreign_key: client
-    rhai: |
-      table("order").add_condition_eq("client", row.id).add_order("created_at", "desc")
+    surreal:
+      rhai: |
+        table("order").where("client", row.id).where("status", "due")
 </code></pre>
 <p>The script runs lazily when the relation is traversed, with the parent record in scope as <code>row</code>,
-and must return a Vista — start it with <code>table("&lt;name&gt;")</code> and chain the conventional verbs
-(<code>add_condition_eq</code>, <code>add_order</code>, <code>add_search</code>, <code>set_page_size</code>, <code>with_id</code>). Without <code>rhai:</code>, the
+and must end on a table handle: start it with <code>table("&lt;name&gt;")</code> and chain the
+<a href="#narrowing">narrowing verbs</a> (see
+<a href="#reference-build-scripts">Reference build scripts</a>). Without <code>rhai:</code>, the
 relation falls back to the plain <code>foreign_key</code> match. This is the <code>can_build_ref_via_script</code> path
 from the capabilities list — the reference resolves through the script engine instead of the
 fixed eq-condition.</p>
@@ -8194,7 +8205,8 @@ fixed eq-condition.</p>
 Rust API, with the same construction-time validation: a bad dotted column fails the spec load,
 not the first fetch. They arrive in metadata flagged <code>calculated</code>. That flag means read-only for
 consumers: the value comes from a traversal, not from a column you can write. This is how a UI
-knows not to offer editing on them.</p>
+knows not to offer editing on them. <a href="#computed-columns">Computed columns</a> (<code>lazy:</code>) carry the
+same flag for the same reason.</p>
 <p>The key difference: at the typed layer <em>you</em> know which traversal forms are safe — you wrote the
 code against a backend you chose. At the erased layer, the <em>capabilities</em> say so. Same relations,
 discovered instead of known.</p>
@@ -8309,9 +8321,9 @@ wins.</li>
 </div>
 
 <div>
-<p>A <code>{ kind: script, code: "self.add_condition_eq(\"key\", row.key)" }</code> source lowers (under the
-<code>rhai</code> feature) to a <code>Build</code> closure — the same machinery as a reference build-script, pointed at a
-possibly different persistence.</p>
+<p>A <code>{ kind: script, code: "self.where(\"key\", row.key)" }</code> source lowers (under the <code>rhai</code>
+feature) to a <code>Build</code> closure — the same machinery as a reference build-script, pointed at a
+possibly different persistence. See <a href="#augmentation-sources">Surfaces</a>.</p>
 </div>
 
 </div>
@@ -8944,6 +8956,7 @@ compiles to native queries.</p>
 <li><a href="#2-derived-vistas--base--inherit--transform">2. Derived vistas — <code>base:</code> + <code>inherit</code> + transform</a></li>
 <li><a href="#3-post-build-tweaks--modify-surrealdb">3. Post-build tweaks — <code>modify:</code> (SurrealDB)</a></li>
 <li><a href="#4-scripted-reference-traversal--reference-level-rhai-surrealdb">4. Scripted reference traversal — reference-level <code>rhai:</code> (SurrealDB)</a></li>
+<li><a href="#5-computed-columns--column-level-lazy-every-driver">5. Computed columns — column-level <code>lazy:</code> (every driver)</a></li>
 </ul>
 </li>
 <li><a href="#contained-relations-1">Contained relations</a></li>
@@ -8953,7 +8966,7 @@ compiles to native queries.</p>
 </ul>
 <hr>
 <h2 id="one-page-of-yaml-one-working-vista"><a class="header" href="#one-page-of-yaml-one-working-vista">One page of YAML, one working Vista</a></h2>
-<p>Every driver’s factory implements <a href="vantage_vista::VistaFactory"><code>VistaFactory</code></a>, whose <code>from_yaml</code>
+<p>Every driver’s factory implements <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/factory/trait.VistaFactory.html"><code>VistaFactory</code></a>, whose <code>from_yaml</code>
 parses a spec and lowers it:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -8992,7 +9005,7 @@ explicit key exists so a YAML author can correct a wrong flag without touching a
 </ul>
 <hr>
 <h2 id="anatomy-of-a-spec"><a class="header" href="#anatomy-of-a-spec">Anatomy of a spec</a></h2>
-<p>A <a href="vantage_vista::VistaSpec"><code>VistaSpec</code></a> has a uniform core that every driver understands, plus
+<p>A <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a> has a uniform core that every driver understands, plus
 one driver-named block at each level:</p>
 <div class="table-wrapper">
 <table>
@@ -9003,7 +9016,7 @@ one driver-named block at each level:</p>
 <tr><td><code>name</code></td><td>The vista’s public name (catalog key, UI label)</td></tr>
 <tr><td><code>datasource</code></td><td>Optional datasource key, for inventories that manage several</td></tr>
 <tr><td><code>id_column</code></td><td>Explicit id override (see resolution order above)</td></tr>
-<tr><td><code>columns</code></td><td>Ordered map of column name → <code>{ type, flags, references, &lt;driver&gt; }</code></td></tr>
+<tr><td><code>columns</code></td><td>Ordered map of column name → <code>{ type, flags, references, lazy, &lt;driver&gt; }</code></td></tr>
 <tr><td><code>references</code></td><td>Named relations to other vistas (see below)</td></tr>
 <tr><td><code>contained</code></td><td>Embedded-in-row relations (see below)</td></tr>
 <tr><td><code>&lt;driver&gt;</code></td><td>The driver’s table-level block: <code>sqlite:</code>, <code>surreal:</code>, <code>mongo:</code>, <code>csv:</code></td></tr>
@@ -9110,7 +9123,9 @@ small, embeddable scripting language whose Vantage vocabulary compiles to native
 expression primitives are shared across backends where the concept overlaps (<code>count</code>, <code>avg</code>,
 <code>coalesce</code>, <code>case_when</code>, <code>date_format</code> …) — see <a href="#sql-primitives">SQL Primitives</a> and
 <a href="#surrealdb-primitives">SurrealDB Primitives</a> for the full vocabularies. Rhai appears in a spec
-in four places, each with a distinct job.</p>
+in five places, each with a distinct job. The first two build native queries; the next two use the
+data vocabulary taught in <a href="#scripting-with-rhai">Scripting with Rhai</a>; the last computes a column from one
+row.</p>
 <h3 id="1-query-sourced-vistas--rhai"><a class="header" href="#1-query-sourced-vistas--rhai">1. Query-sourced vistas — <code>rhai:</code></a></h3>
 <p>Replace the physical table with a script-built SELECT:</p>
 <pre><code class="language-yaml">name: expensive_products
@@ -9145,8 +9160,9 @@ sqlite:
 derived vista’s own <code>columns:</code>, and re-key with <code>id_column</code>. <code>base:</code> resolves eagerly through the
 same spec resolver as references. Derived vistas are query-sourced, hence read-only.</p>
 <h3 id="3-post-build-tweaks--modify-surrealdb"><a class="header" href="#3-post-build-tweaks--modify-surrealdb">3. Post-build tweaks — <code>modify:</code> (SurrealDB)</a></h3>
-<p>A script applied to the <em>finished</em> vista, exposed as <code>self</code>, using the builder verbs plus vendor
-expressions YAML keys can’t state:</p>
+<p>A script applied to the <em>finished</em> vista, exposed as <code>self</code>, using the
+<a href="#the-table-handle">table handle’s verbs</a> plus vendor expressions YAML keys can’t state (see
+<a href="#modify-scripts"><code>modify:</code> scripts</a>):</p>
 <pre><code class="language-yaml">name: active_products
 columns:
   id: { type: thing, flags: [id] }
@@ -9155,7 +9171,7 @@ surreal:
   table: product
   modify: |
     self.with_condition(ident("is_deleted") == false)
-        .add_order("name", "asc")
+        .sort("name", "asc")
 </code></pre>
 <p>Unlike a query source, <code>modify:</code> narrows a real table — so the vista <strong>stays writable</strong>. It runs
 last, composing with <code>table:</code>, <code>rhai:</code>, or <code>base:</code>.</p>
@@ -9170,10 +9186,21 @@ scope:</p>
     foreign_key: category
     surreal:
       rhai: |
-        table("product").add_condition_eq("category", row.id)
+        table("product").where("category", row.id)
 </code></pre>
-<p>The script returns the narrowed target vista; <code>foreign_key</code> remains as metadata for consumers that
-introspect the relation.</p>
+<p>The script ends on a table handle, which becomes the narrowed target vista; <code>foreign_key</code> remains as metadata for consumers that
+introspect the relation. See <a href="#reference-build-scripts">Reference build scripts</a>.</p>
+<h3 id="5-computed-columns--column-level-lazy-every-driver"><a class="header" href="#5-computed-columns--column-level-lazy-every-driver">5. Computed columns — column-level <code>lazy:</code> (every driver)</a></h3>
+<p>A column whose value no backend stores, computed by the Vista from the row it read:</p>
+<!-- tested: rhai_guide::computed::declare_in_yaml (excerpt) -->
+<pre><code class="language-yaml">columns:
+  net: { type: int }
+  vat: { type: int, lazy: "row.net / 5" }
+</code></pre>
+<p>The script sees the row as <code>row</code>, and its last expression is the value. Columns compute in
+declaration order, writes drop them, and filtering, ordering or aggregating on one is an error
+naming the column. A has-one reference may use one as its foreign key; a has-many may not. Full
+details in <a href="#computed-columns">Computed Columns</a>.</p>
 <div id="admonition-yaml-primary-rhai-targeted-1" class="admonition admonish-note" role="note" aria-labelledby="admonition-yaml-primary-rhai-targeted-title">
 <div class="admonition-title">
 <div id="admonition-yaml-primary-rhai-targeted-title-1">
@@ -9215,7 +9242,7 @@ mechanics — and the sharp edges — are covered in
 <hr>
 <h2 id="cross-persistence-the-vistacatalog"><a class="header" href="#cross-persistence-the-vistacatalog">Cross-persistence: the VistaCatalog</a></h2>
 <p>A single Vista is strictly single-backend. When a system spans several — categories in Postgres,
-products behind a REST API — <a href="vantage_vista_factory"><code>VistaCatalog</code></a> sits one layer up: it holds a
+products behind a REST API — <a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/index.html"><code>VistaCatalog</code></a> sits one layer up: it holds a
 loader per model name and traverses relations whose target lives in a <em>different</em> persistence:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -9239,19 +9266,11 @@ table’s configuration is this same machinery pointed at row enrichment.</p>
 <hr>
 <h2 id="sealed-at-runtime-data-scripts"><a class="header" href="#sealed-at-runtime-data-scripts">Sealed at runtime: data scripts</a></h2>
 <p>Once vistas are config-defined, the last step of the story is <em>consuming</em> them from config too.
-<code>vantage-vista</code>’s <code>rhai</code> feature ships <code>run_script</code> — a sandboxed evaluator where <code>table(name)</code>
-resolves through a catalog-style resolver and a handful of read verbs fetch data:</p>
-<pre><code class="language-rhai">let o = table("orders").add_condition_eq("status", "unpaid").get_some();
-if o != () {
-    table("orders").get_ref("client", o).get_some()
-}
-</code></pre>
-<p>The vocabulary is deliberately small: builder verbs (<code>add_condition_eq</code>, <code>add_order</code>, <code>get_ref</code> …)
-plus terminals — <code>list</code>, <code>get_some</code>, <code>count</code>, <code>capabilities</code>, <code>columns</code>, <code>references</code>. Every
-<code>list()</code> is capped (50 rows hard ceiling) — this is an inspection and automation surface, not a
-bulk reader. It’s the surface an AI agent or an MCP tool drives: the schema it sees, the
-capabilities it must respect, and the rows it reads all come from the same sealed handles this
-page built.</p>
+<code>vantage-vista</code>’s <code>rhai</code> feature ships <code>run_script</code>, a sandboxed evaluator where <code>table(name)</code>
+resolves through a catalog-style resolver. It’s the surface an AI agent or an MCP tool drives: the schema it sees, the capabilities it must
+respect, and the rows it reads all come from the same sealed handles this page built. The
+vocabulary, its limits and every other place it runs are covered in
+<a href="#scripting-with-rhai">Scripting with Rhai</a>.</p>
 <hr>
 <h2 id="choosing-a-path"><a class="header" href="#choosing-a-path">Choosing a path</a></h2>
 <p>Both construction paths produce the same <code>Vista</code> — the choice is about who edits the definition:</p>
@@ -9266,6 +9285,1421 @@ way.</li>
 <p>They mix freely — a catalog can hold typed-table loaders next to YAML loaders, and a YAML spec’s
 reference can resolve to either. If you’re implementing this machinery for a new backend, the
 driver-side walkthrough is <a href="#step-8-vista-integration">Adding a New Persistence, Step 8</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="scripting-with-rhai"><a class="header" href="#scripting-with-rhai">Scripting with Rhai</a></h1>
+<p>A Vantage application can keep much of its behaviour in configuration: YAML table specs, page
+definitions, action bodies, faker sims. Some of that configuration needs logic: a column derived
+from other columns, a filter that depends on the selected row, a write after a form is submitted,
+a simulated order that ships after twenty minutes. That logic is written in
+<a href="https://rhai.rs">Rhai</a>, a small scripting language embedded in Rust.</p>
+<p>This part of the book is the one place that teaches scripting across the framework. Other chapters
+link here instead of repeating the verbs.</p>
+<ul>
+<li><a href="#why-scripts">Why scripts</a></li>
+<li><a href="#what-a-script-can-do">What a script can do</a></li>
+<li><a href="#where-scripts-run">Where scripts run</a></li>
+<li><a href="#rhai-in-two-minutes">Rhai in two minutes</a></li>
+<li><a href="#a-first-script">A first script</a></li>
+<li><a href="#the-layers">The layers</a></li>
+<li><a href="#what-this-part-covers">What this part covers</a></li>
+<li><a href="#words-at-a-glance">Words at a glance</a></li>
+</ul>
+<hr>
+<h2 id="why-scripts"><a class="header" href="#why-scripts">Why scripts</a></h2>
+<p>Configuration is data. A user, an agent or a hot-reloading inventory can change it while the
+application runs, and nothing gets recompiled. Rust code can’t follow it there, so the logic that
+travels with the configuration has to be data too: text that the application compiles and runs
+when it loads the YAML.</p>
+<p>Rhai fits that job:</p>
+<ul>
+<li><strong>It runs in the process.</strong> There is no interpreter to install and no subprocess. A script
+calls straight into the same Vistas the Rust code uses.</li>
+<li><strong>It can only do what the host allows.</strong> A Rhai script has no file system, network or process
+access of its own. It sees the functions the host registered and nothing else.</li>
+<li><strong>It can’t hang the caller.</strong> Every host caps the number of operations a script may run. A
+script that loops forever fails with an error.</li>
+<li><strong>It is backend-neutral.</strong> Data scripts act on <a href="#vista--the-universal-data-handle">Vistas</a>, so the same
+script runs over SQLite, SurrealDB, a REST API or an in-memory store.</li>
+</ul>
+<h2 id="what-a-script-can-do"><a class="header" href="#what-a-script-can-do">What a script can do</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Task</th><th>Example</th><th>Chapter</th></tr>
+</thead>
+<tbody>
+<tr><td>Read a set of rows, count it, follow a relation</td><td><code>table("client").where("vip", true).ref("orders").count()</code></td><td><a href="#the-table-handle">The table handle</a></td></tr>
+<tr><td>Insert, patch, delete, copy rows between tables</td><td><code>table("order").patch(id, #{ status: "paid" })</code></td><td><a href="#writes">Writes</a></td></tr>
+<tr><td>Compute a column from the other columns of a row</td><td><code>lazy: "row.net + row.vat"</code></td><td><a href="#computed-columns">Computed columns</a></td></tr>
+<tr><td>Edit one row field by field and save what changed</td><td><code>row.status = "paid"; row.save();</code></td><td><a href="#records">Records</a></td></tr>
+<tr><td>Narrow a table in YAML, or build a relation’s target</td><td><code>self.where("vip", true)</code></td><td><a href="#surfaces">Surfaces</a></td></tr>
+<tr><td>Build a backend’s native query</td><td><code>select().from("product").field("id")</code></td><td><a href="#expression-dialects">Expression dialects</a></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="where-scripts-run"><a class="header" href="#where-scripts-run">Where scripts run</a></h2>
+<p>A script always runs inside a <strong>host</strong>: a Rhai engine with fixed operation limits, a compile cache,
+and the vocabularies the host chose to register. The host decides what <code>table(name)</code> resolves to,
+whether writes are allowed, and how many rows a <code>list()</code> may return. The same script text can be
+legal in one place and refused in another.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Surface</th><th>Example</th><th>What the script can do</th></tr>
+</thead>
+<tbody>
+<tr><td>Agent data scripts (<code>run_script</code>)</td><td>an MCP tool reading or fixing data</td><td>read, and write if the host allows it</td></tr>
+<tr><td>Query preview (<code>preview_script</code>)</td><td>an MCP tool showing the query a script would run</td><td>describe a set, never read it</td></tr>
+<tr><td>YAML <code>modify:</code>, reference build scripts, augmentation sources</td><td><code>self.where("vip", true)</code></td><td>describe a set</td></tr>
+<tr><td>YAML <code>lazy:</code> columns</td><td><code>row.net / 5</code></td><td>compute one value from one row</td></tr>
+<tr><td>Form <code>options:</code></td><td>a dropdown filled from another table</td><td>read</td></tr>
+<tr><td>Action bodies, form <code>on_submit</code>, wizard workers</td><td><code>row.status = "paid"; row.save();</code></td><td>read and write</td></tr>
+<tr><td>Faker sims</td><td>an order that ships, then disappears</td><td>read and write a memory store, plus time and random verbs</td></tr>
+</tbody>
+</table>
+</div>
+<p><a href="#hosts">Hosts</a> explains how a host is put together, and <a href="#surfaces">Surfaces</a>
+walks through each row of this table with a working example.</p>
+<h2 id="rhai-in-two-minutes"><a class="header" href="#rhai-in-two-minutes">Rhai in two minutes</a></h2>
+<p>Rhai reads like a mix of Rust and JavaScript. The parts these chapters use:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Rhai</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>let x = 5;</code></td><td>a variable; no type annotations</td></tr>
+<tr><td><code>#{ name: "Ada", vip: true }</code></td><td>an object map; read with <code>m.name</code> or <code>m["name"]</code></td></tr>
+<tr><td><code>[1, 2, 3]</code></td><td>an array</td></tr>
+<tr><td><code>|c| c.name</code></td><td>a closure, as in <code>rows.map(|c| c.name)</code> and <code>rows.filter(|c| c.vip)</code></td></tr>
+<tr><td><code>()</code></td><td>“nothing”: a missing field, a row that wasn’t found</td></tr>
+<tr><td><code>a ?? b</code></td><td><code>a</code>, or <code>b</code> when <code>a</code> is <code>()</code></td></tr>
+<tr><td><code>`total: ${t}`</code></td><td>string interpolation</td></tr>
+<tr><td><code>if c { a } else { b }</code></td><td>an expression; it has a value</td></tr>
+<tr><td><code>try { … } catch (err) { … }</code>, <code>throw "message"</code></td><td>catching and raising errors</td></tr>
+</tbody>
+</table>
+</div>
+<p>A script’s value is its last expression, with no <code>return</code> and no trailing <code>;</code>. Methods chain, so
+<code>table("order").where("status", "due").count()</code> is three calls on the result of the one before.
+The <a href="https://rhai.rs/book/">Rhai book</a> covers the full language.</p>
+<h2 id="a-first-script"><a class="header" href="#a-first-script">A first script</a></h2>
+<p>Every data script uses the same handful of words. <code>table(name)</code> names a table, a chain of
+narrowing verbs describes a set of its rows, and a terminal verb reads or writes:</p>
+<!-- tested: rhai_guide::tables::first_script -->
+<pre><code class="language-rhai">let vips = table("client").where("vip", true);
+let due = vips.ref("orders").where("status", "due");
+
+#{
+    vips: vips.count(),
+    due: due.ids(),
+}
+</code></pre>
+<p><code>vips</code> and <code>due</code> are <strong>handles</strong>: descriptions of a set. Nothing is read until <code>count()</code> or
+<code>ids()</code> runs, and the handle is then resolved into a <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> and read
+through it. <code>ref("orders")</code> follows a relation from every row of the set, so <code>due</code> is the due orders
+of every VIP client. The script’s last expression is its result; here a map, which a host can turn
+into JSON.</p>
+<p>The script never mentions SQL, SurrealDB or HTTP. The words act on Vistas, and every backend can be
+wrapped as a Vista.</p>
+<h2 id="the-layers"><a class="header" href="#the-layers">The layers</a></h2>
+<p>Vista is the universal data handle: any backend, one type-erased interface. The data vocabulary
+lives in <code>vantage-vista</code> (behind its <code>rhai</code> feature) and knows nothing except Vistas. Three things
+sit above Vista, and each has its own scripting words:</p>
+<pre><code class="language-text">  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
+  │ Servo        │  │ Scenery      │  │ faker sims       │
+  │ form drafts  │  │ view shapes  │  │ time, random,    │
+  │ (diorama)    │  │ (vantage-ui) │  │ fake_row (faker) │
+  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘
+         │                 │                   │
+  ┌──────┴─────────────────┴───────────────────┴─────────┐
+  │ Vista data vocabulary: table, where, sort, ref,      │
+  │ list, get, insert, patch, record, ...                │
+  └──────────────────────────────────────────────────────┘
+</code></pre>
+<p>The lower layer never refers to the upper ones. A Dio can hand a script a Vista whose writes go
+through its write queue, and the script can’t tell the difference. Servo and Scenery keep their own
+words on purpose, because they describe different things: a form draft bound to one record, and the
+shape of a live view. <a href="#layers">Layers</a> covers how they relate and which words they share.</p>
+<p>There is also a second kind of script: <strong>expressions</strong> that build a backend’s native query, such as
+a SQL <code>select()</code> or a SurrealDB condition. They aren’t data scripts and have their own chapters.
+<a href="#expression-dialects">Expression dialects</a> points to them.</p>
+<h2 id="what-this-part-covers"><a class="header" href="#what-this-part-covers">What this part covers</a></h2>
+<ul>
+<li><a href="#hosts">Hosts</a>: <code>Host</code>, <code>Vocab</code>, <code>Limits</code>, the <code>DataVocab</code> configuration, the resolver
+behind <code>table(name)</code>, and how async reads run from synchronous scripts.</li>
+<li><a href="#the-table-handle">The table handle</a>: narrowing verbs, reads, relations, introspection, and
+errors.</li>
+<li><a href="#writes">Writes</a>: <code>insert</code>, <code>upsert</code>, <code>patch</code>, <code>delete</code> and <code>import_from</code>, and what
+each returns when a row is missing.</li>
+<li><a href="#computed-columns">Computed columns</a>: <code>lazy:</code> columns that the Vista fills on every read, and
+what they refuse.</li>
+<li><a href="#records">Records</a>: drafts of one row that stage edits and save only what changed.</li>
+<li><a href="#surfaces">Surfaces</a>: every place the vocabulary runs, with a tested example for each,
+plus backend extensions such as SurrealDB’s <code>with_condition</code>.</li>
+<li><a href="#layers">Layers</a>: Servo, Scenery and faker sims next to the data vocabulary.</li>
+<li><a href="#expression-dialects">Expression dialects</a>: query builders, templates and command scripts.</li>
+</ul>
+<div id="admonition-tested-examples" class="admonition admonish-note" role="note" aria-labelledby="admonition-tested-examples-title">
+<div class="admonition-title">
+<div id="admonition-tested-examples-title">
+<p>Tested examples</p>
+</div>
+
+<a class="admonition-anchor-link" href="#admonition-tested-examples"></a>
+</div>
+
+<div>
+<p>Every script in this part is copied from a test. The comment above a snippet names the test, for
+example <code>rhai_guide::tables::first_script</code> in <code>vantage-vista/tests/rhai_guide/</code>. Run them with
+<code>cargo nextest run -p vantage-vista --all-features -E 'binary(rhai_guide)'</code>.</p>
+</div>
+
+</div>
+
+<h2 id="words-at-a-glance"><a class="header" href="#words-at-a-glance">Words at a glance</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Group</th><th>Words</th></tr>
+</thead>
+<tbody>
+<tr><td>Start</td><td><code>table(name)</code>; <code>self</code> in slot scripts; <code>table()</code> in faker sims</td></tr>
+<tr><td>Narrow</td><td><code>where(col, value)</code>, <code>where(col, op, value)</code>, <code>sort(col)</code>, <code>sort(col, dir)</code>, <code>search(text)</code>, <code>limit(n)</code>, <code>ref(relation)</code></td></tr>
+<tr><td>Read</td><td><code>list()</code>, <code>get(id)</code>, <code>first()</code>, <code>count()</code>, <code>ids()</code>, <code>columns()</code>, <code>references()</code>, <code>capabilities()</code></td></tr>
+<tr><td>Write</td><td><code>insert(map)</code>, <code>upsert(id, map)</code>, <code>patch(id, map)</code>, <code>delete(id)</code>, <code>import_from(source)</code>, <code>import_from(source, mapping)</code></td></tr>
+<tr><td>Record</td><td><code>record()</code>, <code>record(id)</code>; on a record: <code>r.col</code>, <code>r["col"]</code>, <code>set(map)</code>, <code>id</code>, <code>is_dirty()</code>, <code>dirty(col)</code>, <code>baseline()</code>, <code>revert()</code>, <code>revert(col)</code>, <code>save()</code>, <code>delete()</code>, <code>status()</code>, <code>rejection()</code></td></tr>
+<tr><td>Computed column</td><td><code>row</code> (the record as read); the last expression is the value</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>where</code> takes the operators <code>=</code> / <code>==</code> / <code>eq</code>, <code>!=</code> / <code>ne</code>, <code>&gt;</code> / <code>gt</code>, <code>&gt;=</code> / <code>gte</code>, <code>&lt;</code> / <code>lt</code>,
+<code>&lt;=</code> / <code>lte</code>, <code>in</code>, <code>not_in</code> and <code>like</code>, plus a few aliases (<code>&lt;&gt;</code>, <code>nin</code>, <code>contains</code>). <code>sort</code> takes <code>"asc"</code> or <code>"desc"</code> (or <code>"ascending"</code> /
+<code>"descending"</code>).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="hosts"><a class="header" href="#hosts">Hosts</a></h1>
+<p>A script never runs on a bare Rhai engine. It runs in a <a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/host/struct.Host.html"><code>Host</code></a> from
+<code>vantage-rhai</code>: one engine with fixed limits, a bounded cache of compiled scripts, and the
+vocabularies registered on it. This chapter is for the Rust side: how an application builds a host
+for the data vocabulary and what each setting decides.</p>
+<ul>
+<li><a href="#host-vocab-env">Host, Vocab, Env</a></li>
+<li><a href="#datavocab"><code>DataVocab</code></a></li>
+<li><a href="#the-resolver">The resolver</a></li>
+<li><a href="#async-reads-from-a-synchronous-script">Async reads from a synchronous script</a></li>
+<li><a href="#errors">Errors</a></li>
+</ul>
+<hr>
+<h2 id="host-vocab-env"><a class="header" href="#host-vocab-env">Host, Vocab, Env</a></h2>
+<p>A host is built once and reused. Compiling through it is cached, so evaluating the same script on
+every row costs one parse:</p>
+<!-- tested: rhai_guide::hosts::build_a_host -->
+<pre><code class="language-rust ignore">let host = Host::builder(Limits::background())
+    .vocab(DataVocab::read_write_with(
+        Some(resolver(&amp;store)),
+        Some(50),
+        Writes::Allowed,
+    ))
+    .build();
+
+let script = host
+    .compile(&amp;Block::from(
+        r#"table("order").where("status", "due").count()"#,
+    ))
+    .unwrap();
+let due = script.eval(&amp;Env::new()).unwrap();</code></pre>
+<p>The three pieces:</p>
+<ul>
+<li><strong><a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/host/trait.Vocab.html"><code>Vocab</code></a></strong>: anything that registers functions and types on an engine.
+<code>DataVocab</code> is the data vocabulary. <code>ServoVocab</code> (diorama) and <code>SceneryVocab</code> (vantage-ui) are
+others. A host can carry several. When two register the same name, the one registered last wins,
+so register a backend’s extensions first and <code>DataVocab</code> after them (SurrealDB has its own <code>table</code>
+function, an alias for <code>ident</code>, which <code>DataVocab</code>’s <code>table(name)</code> must override).</li>
+<li><strong><a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/limits/enum.Limits.html"><code>Limits</code></a></strong>: <code>Limits::Ui</code> caps a script at 500,000 operations, for
+anything the UI thread waits on. <code>Limits::background()</code> allows 50 million, for scripts on worker
+threads: agent tools, imports, faker sims. A script that runs past its limit fails instead of
+hanging the caller.</li>
+<li><strong><a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/compiled/struct.Env.html"><code>Env</code></a></strong>: the variables one evaluation sees. Slot evaluators push <code>row</code> and
+<code>self</code> this way. A host builds its <code>Env</code> per call, so the compiled script is shared and the
+variables are not.</li>
+</ul>
+<h2 id="datavocab"><a class="header" href="#datavocab"><code>DataVocab</code></a></h2>
+<pre><code class="language-rust ignore">pub struct DataVocab {
+    pub resolver: Option&lt;TargetResolver&gt;,
+    pub terminals: Terminals,
+}</code></pre>
+<p><code>resolver</code> backs <code>table(name)</code>. Without one, <code>table</code> isn’t registered at all, and scripts can only
+work with handles the host gives them (<code>self</code>, <code>row</code>).</p>
+<p><code>terminals</code> picks which verbs exist on top of the narrowing verbs:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>Terminals</code></th><th>Constructor</th><th>Verbs</th><th>Used by</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Describe</code></td><td><code>DataVocab::describe(resolver)</code></td><td>none: the script returns a handle and the host reads its description</td><td><code>modify:</code>, reference build scripts, augmentation sources, query preview</td></tr>
+<tr><td><code>Read { limit }</code></td><td><code>DataVocab::read(resolver, limit)</code></td><td>reads, and <code>record(id)</code> drafts whose <code>save()</code>/<code>delete()</code> throw</td><td>form <code>options:</code>, action predicates</td></tr>
+<tr><td><code>ReadWrite { limit, writes }</code></td><td><code>DataVocab::read_write(resolver)</code>, <code>DataVocab::read_write_with(resolver, limit, writes)</code></td><td>reads, writes, and records</td><td>agent scripts, action bodies, form and wizard scripts, faker sims</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>limit</code> caps every <code>list()</code> and <code>ids()</code>. A script’s own <code>limit(n)</code> still applies below it. <code>None</code>
+means no cap. <code>count()</code> isn’t capped by the host’s limit: it counts the whole set, or at most <code>n</code>
+when the script narrowed with <code>limit(n)</code>. <code>read_write(resolver)</code> is uncapped with writes allowed.</p>
+<p><code>writes</code> is <code>Writes::Allowed</code> or <code>Writes::Denied(message)</code>. A denied host still registers every
+write verb, but each one throws <code>message</code>. That keeps the error readable: a script that calls
+<code>delete</code> on a host with writes turned off gets the host’s explanation (“writes are off for
+agents”) instead of Rhai’s “function not found”. A <code>Describe</code> host, by contrast, has no <code>count()</code>
+or <code>list()</code>, and calling one is a “function not found” error.</p>
+<h2 id="the-resolver"><a class="header" href="#the-resolver">The resolver</a></h2>
+<p><code>TargetResolver</code> is <code>Arc&lt;dyn Fn(&amp;str) -&gt; Result&lt;Vista&gt; + Send + Sync&gt;</code>. It is called each time a
+handle resolves, and must return a <strong>fresh, unconditioned</strong> Vista: the handle applies its own steps
+on top. This is the resolver the guide’s tests use, over an in-memory store:</p>
+<!-- tested: rhai_guide::support::resolver (used by every rhai_guide test) -->
+<pre><code class="language-rust ignore">pub fn resolver(store: &amp;MemoryStore) -&gt; TargetResolver {
+    let catalog = catalog(store);
+    Arc::new(move |name: &amp;str| {
+        let metadata = catalog
+            .get(name)
+            .unwrap_or_else(|| VistaMetadata::new().with_id_column("id"));
+        let table = catalog.store().table(name);
+        let shell = MemoryTableShell::new(table, metadata, catalog.clone());
+        Ok(Vista::new(name, Box::new(shell)))
+    })
+}</code></pre>
+<p>The resolver is where an application puts its policy, because <code>vantage-vista</code> only calls it. Some
+examples from the codebase:</p>
+<ul>
+<li>A YAML catalog resolves through its spec resolver, so <code>table("order")</code> in a reference build
+script is the same Vista the spec declares.</li>
+<li>Faker sims resolve over the sim’s memory store, and wrap each Vista so writes are counted for
+the engine’s stats.</li>
+<li>Vantage UI’s page resolver accepts a full catalog key or its leaf name, reads from the data
+source rather than a cache, and wraps every Vista in a write guard. The guard refuses writes on
+read-only tables, coerces reference columns, gives an id-less insert a generated id, sends writes
+through the table’s Dio (so they reach open pages), and wraps every <code>ref(...)</code> target in the
+target table’s own guard.</li>
+</ul>
+<p>None of that is visible to the script. It calls <code>insert</code>, and the Vista it resolved decides what an
+insert means.</p>
+<h2 id="async-reads-from-a-synchronous-script"><a class="header" href="#async-reads-from-a-synchronous-script">Async reads from a synchronous script</a></h2>
+<p>Rhai is synchronous. Vista reads and writes are <code>async</code>. Every terminal verb runs its future through
+one function, vista’s <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/bridge/fn.block_on.html"><code>block_on</code></a>:</p>
+<ul>
+<li>With a tokio runtime available (<code>Handle::try_current()</code> succeeds), it blocks on the runtime.</li>
+<li>Without one, it polls the future once on the current thread. Memory Vistas finish on the first
+poll, so faker sims and tests run with no runtime at all.</li>
+<li>A future that is still pending with no runtime (any network backend) is an error, “this data
+source needs a tokio runtime; run the script under spawn_blocking”. It never hangs.</li>
+</ul>
+<p>Blocking on a runtime from inside an async task panics in tokio, so a host that has a runtime
+evaluates scripts on a blocking thread:</p>
+<!-- tested: rhai_guide::hosts::under_spawn_blocking -->
+<pre><code class="language-rust ignore">let rows = tokio::task::spawn_blocking(move || {
+    let host = Host::builder(Limits::background())
+        .vocab(DataVocab::read(Some(resolver), Some(2)))
+        .build();
+    host.compile(&amp;Block::from(r#"table("order").list()"#))
+        .and_then(|s| s.eval(&amp;Env::new()))
+        .map(|v| vantage_rhai::to_json(&amp;v))
+})
+.await
+.unwrap()
+.unwrap();</code></pre>
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/runtime/fn.run_script.html"><code>run_script</code></a> does exactly this for you. Action bodies in Vantage UI
+run under <code>Limits::Ui</code> on a background executor thread that has a runtime handle, which the bridge
+also accepts.</p>
+<h2 id="errors"><a class="header" href="#errors">Errors</a></h2>
+<p>Script errors come back as Rhai errors whose text names what failed:</p>
+<ul>
+<li>a narrowing step the backend can’t apply (an unknown relation, a column that isn’t orderable, a
+computed column) fails when the handle resolves, at the terminal verb, not where the step was
+written. The error names the step: <code>Step can't be applied (step: Ref("invoices")): …</code>;</li>
+<li>a verb the Vista’s capabilities don’t cover names the verb and the table:
+“<code>delete</code> isn’t supported by table <code>x</code>”;</li>
+<li>backend errors keep their message.</li>
+</ul>
+<p>Hosts that return JSON, like <code>run_script</code>, flatten all of these into the error string.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="the-table-handle"><a class="header" href="#the-table-handle">The Table Handle</a></h1>
+<p><code>table(name)</code> returns a handle: a table plus an ordered list of narrowing steps. Narrowing verbs
+add steps. Terminal verbs resolve the handle into a Vista, apply the steps, and read or write.</p>
+<ul>
+<li><a href="#narrowing">Narrowing</a></li>
+<li><a href="#reads">Reads</a></li>
+<li><a href="#following-relations">Following relations</a></li>
+<li><a href="#introspection">Introspection</a></li>
+<li><a href="#handles-in-rust">Handles in Rust</a></li>
+</ul>
+<hr>
+<h2 id="narrowing"><a class="header" href="#narrowing">Narrowing</a></h2>
+<!-- tested: rhai_guide::tables::narrowing -->
+<pre><code class="language-rhai">let paid = table("order").where("status", "paid");
+let big = paid.where("total", "&gt;", 100);
+let top = paid.sort("total", "desc").first();
+
+#{
+    paid: paid.count(),
+    big: big.ids(),
+    top: top.id,
+}
+</code></pre>
+<p>Each narrowing verb returns a <strong>new</strong> handle and leaves the one it was called on alone. <code>big</code> and
+the sorted handle both start from <code>paid</code>, and <code>paid.count()</code> still counts every paid order. You can
+keep a base handle in a variable and branch from it as often as you like.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verb</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>where(col, value)</code></td><td>rows whose <code>col</code> equals <code>value</code></td></tr>
+<tr><td><code>where(col, op, value)</code></td><td><code>op</code> is <code>=</code>/<code>==</code>/<code>eq</code>, <code>!=</code>/<code>ne</code>, <code>&gt;</code>/<code>gt</code>, <code>&gt;=</code>/<code>gte</code>, <code>&lt;</code>/<code>lt</code>, <code>&lt;=</code>/<code>lte</code>, <code>in</code>, <code>not_in</code> or <code>like</code>; <code>in</code> and <code>not_in</code> take an array</td></tr>
+<tr><td><code>sort(col)</code>, <code>sort(col, "asc" | "desc")</code></td><td>order by <code>col</code>; the column must be flagged orderable</td></tr>
+<tr><td><code>search(text)</code></td><td>the backend’s quicksearch</td></tr>
+<tr><td><code>limit(n)</code></td><td>at most <code>n</code> rows, the first <code>n</code> in sort order; <code>n</code> must be above 0</td></tr>
+<tr><td><code>ref(relation)</code></td><td>the related rows of every row in the set</td></tr>
+</tbody>
+</table>
+</div>
+<p>Conditions add up: every <code>where</code> narrows further. Sorting keeps one column. A later <code>sort</code>
+replaces an earlier one, as <code>Vista::add_order</code> does. Several <code>limit</code> steps keep the smallest.</p>
+<p><code>limit(n)</code> limits the set itself, not just one read: <code>list()</code>, <code>ids()</code> and <code>count()</code> all see at
+most <code>n</code> rows, a <code>ref</code> after it follows only those <code>n</code> rows, and <code>import_from</code> copies only those
+<code>n</code> (see <a href="#following-relations">Following relations</a>). A <code>limit</code> before a <code>ref</code> doesn’t carry over
+to the target; limit the target again if you need to.</p>
+<p>The column in <code>where</code> and <code>sort</code> must be one the backend stores. A
+<a href="#computed-columns">computed column</a> is refused with an error naming it.</p>
+<p>Nothing is checked while you narrow. A step the resolved Vista can’t apply (an unknown relation, a
+column that isn’t orderable, <code>search</code> on a backend without search) fails at the terminal verb:</p>
+<!-- tested: rhai_guide::tables::late_error -->
+<pre><code class="language-rhai">let invoices = table("client").ref("invoices");   // nothing resolves yet
+invoices.count()                                  // throws here
+</code></pre>
+<p>The error names the step: <code>Step can't be applied (step: Ref("invoices")): No reference with this name (relation: "invoices")</code>.</p>
+<h2 id="reads"><a class="header" href="#reads">Reads</a></h2>
+<!-- tested: rhai_guide::tables::reads -->
+<pre><code class="language-rhai">let clients = table("client");
+let ada = clients.get("c1");
+let ghost = clients.get("c9");
+
+#{
+    name: ada.name,
+    missing: ghost == (),
+    first_two: clients.sort("name").limit(2).list().map(|c| c.name),
+}
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verb</th><th>Returns</th></tr>
+</thead>
+<tbody>
+<tr><td><code>list()</code></td><td>an array of row maps, capped by the host’s limit and any <code>limit(n)</code></td></tr>
+<tr><td><code>get(id)</code></td><td>the row map, or <code>()</code> when no row has that id</td></tr>
+<tr><td><code>first()</code></td><td>the first row map in sort order, or <code>()</code> for an empty set</td></tr>
+<tr><td><code>count()</code></td><td>the number of rows, as an integer, at most <code>n</code> after <code>limit(n)</code>; needs <code>can_count</code></td></tr>
+<tr><td><code>ids()</code></td><td>an array of id strings, in sort order (insertion order when unsorted)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Row maps always include the id column, filled from the row’s key when the backend doesn’t return
+it as a field. Ids are strings. <code>get</code>, and every verb that takes an id, also accepts an integer
+and uses its decimal form.</p>
+<p>A missing row is not an error for reads: <code>get</code> returns <code>()</code>. Compare with <code>()</code> as above, or use
+Rhai’s <code>??</code>.</p>
+<p><code>list()</code> reads through <code>fetch_window</code> when the backend has it, so a capped read fetches only the
+rows it returns. Otherwise it reads the whole set and truncates.</p>
+<h2 id="following-relations"><a class="header" href="#following-relations">Following relations</a></h2>
+<p><code>ref(relation)</code> works on sets, not single rows. The result is every row related to any row of the
+current set:</p>
+<!-- tested: rhai_guide::tables::ref_sets -->
+<pre><code class="language-rhai">// The orders of one client...
+let ada_orders = table("client").where("id", "c1").ref("orders");
+// ...and the clients behind every due order.
+let owing = table("order").where("status", "due").ref("client");
+
+#{
+    ada: ada_orders.ids(),
+    owing: owing.sort("name").list().map(|c| c.name),
+}
+</code></pre>
+<p>Relations come from the Vista’s metadata: the YAML <code>references:</code> block, or the typed table’s
+<code>with_one</code> / <code>with_many</code>. A <code>ref</code> step reads the rows it starts from when the handle resolves:</p>
+<ul>
+<li>When the set has exactly one row, the step calls <code>Vista::get_ref(relation, row)</code>, so a backend’s
+own traversal applies (SurrealDB record links, scripted references, cross-datasource
+references).</li>
+<li>When it has several, the step takes the bare target and adds an <code>in</code> condition: on the foreign
+key for has-many (the target rows point at ours), on the target’s id for has-one (our rows point
+at the target).</li>
+<li>When it has none, or none of the rows has a has-one key, the target is an empty set. Nothing is
+queried: reads return nothing, <code>count()</code> is 0, and a preview reports <code>"query": null</code>. The target
+keeps its columns and still takes writes.</li>
+<li>A <code>limit(n)</code> before the <code>ref</code> caps the rows it follows. Without one, a <code>ref</code> over more than
+1,000 rows is an error. Narrow first.</li>
+</ul>
+<!-- tested: rhai_guide::tables::limit_and_ref -->
+<pre><code class="language-rhai">let biggest = table("order").sort("total", "desc").limit(2);
+let nobody = table("client").where("name", "Nobody");
+
+#{
+    count: biggest.count(),
+    clients: biggest.ref("client").sort("name").list().map(|c| c.name),
+    none: nobody.ref("orders").count(),
+}
+</code></pre>
+<p>The two biggest orders are <code>o1</code> (Ada) and <code>o3</code> (Ben), so this returns <code>count: 2</code>, <code>clients: ["Ada", "Ben"]</code> and <code>none: 0</code>.</p>
+<p>Steps after <code>ref</code> narrow the target, so <code>ref("orders").where("status", "due")</code> is the due orders
+of the set. A relation keyed on a <a href="#relations-through-a-computed-column">computed column</a>
+works for has-one and is refused for has-many.</p>
+<h2 id="introspection"><a class="header" href="#introspection">Introspection</a></h2>
+<p>Three reads describe the table instead of its rows:</p>
+<!-- tested: rhai_guide::tables::introspection -->
+<pre><code class="language-rhai">let orders = table("order");
+
+#{
+    can_insert: orders.capabilities().can_insert,
+    columns: orders.columns().map(|c| c.name),
+    references: orders.references().map(|r| r.name + " " + r.kind),
+}
+</code></pre>
+<ul>
+<li><code>capabilities()</code> is a map of every <code>VistaCapabilities</code> flag: <code>can_count</code>, <code>can_insert</code>,
+<code>can_update</code>, <code>can_delete</code>, <code>can_import</code>, <code>can_order</code>, <code>can_search</code>, <code>can_fetch_window</code> and
+the rest. A script that may run against different backends can check before it writes.</li>
+<li><code>columns()</code> is an array of <code>#{ name, type, flags }</code>.</li>
+<li><code>references()</code> is an array of <code>#{ name, kind, contained }</code>. <code>kind</code> is <code>"HasOne"</code> or <code>"HasMany"</code>;
+<code>contained</code> marks relations stored inside the row (see
+<a href="#step-9-contained-relations-1">Contained Relations</a>).</li>
+</ul>
+<p>These resolve the handle, so they describe the table as narrowed. Capabilities rarely change with
+narrowing, but a query-sourced table reports no write capabilities at all.</p>
+<h2 id="handles-in-rust"><a class="header" href="#handles-in-rust">Handles in Rust</a></h2>
+<p>A host that gets a handle back from a script reads it through
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/handle/struct.Handle.html"><code>Handle</code></a>: <code>table_name()</code> is the starting table (<code>None</code> for a handle over a
+Vista), <code>steps()</code> is the list of <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/handle/enum.Step.html"><code>Step</code></a>s, and <code>resolve(resolver)</code> builds the
+Vista. Query preview works this way: the script returns a handle, and the host renders the resolved
+Vista’s query.</p>
+<p>A handle can also start from a Vista instead of a name (<code>Handle::over(vista)</code>), which is how <code>self</code>
+reaches <code>modify:</code> scripts. Since a Vista isn’t <code>Clone</code>, each resolve copies it with
+<code>TableShell::clone_shell()</code>. A backend that can’t copy its shell hands the Vista over once, and a
+second resolve of the same handle fails with “this handle’s backend can’t be copied; build it
+again from <code>table(...)</code>”.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="writes"><a class="header" href="#writes">Writes</a></h1>
+<p>On a host with <code>Terminals::ReadWrite</code>, a handle also writes. Every write goes through the resolved
+Vista, so it follows the backend’s rules and whatever policy the host’s resolver wrapped around it.</p>
+<ul>
+<li><a href="#the-write-verbs">The write verbs</a></li>
+<li><a href="#ids">Ids</a></li>
+<li><a href="#narrowing-doesnt-filter-writes">Narrowing doesn’t filter writes</a></li>
+<li><a href="#capabilities">Capabilities</a></li>
+<li><a href="#importing">Importing</a></li>
+<li><a href="#writes-through-a-dio">Writes through a Dio</a></li>
+</ul>
+<hr>
+<h2 id="the-write-verbs"><a class="header" href="#the-write-verbs">The write verbs</a></h2>
+<!-- tested: rhai_guide::writes::write_verbs -->
+<pre><code class="language-rhai">let orders = table("order");
+
+let id = orders.insert(#{ client: "c2", total: 30, status: "due" });
+orders.patch(id, #{ status: "paid" });
+
+let deleted = orders.delete("o4");   // true: the row was there
+let again = orders.delete("o4");     // false: nothing left to delete
+let patched = orders.patch("o99", #{ status: "paid" });   // false
+
+#{
+    status: orders.get(id).status,
+    deleted: deleted,
+    again: again,
+    patched: patched,
+}
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verb</th><th>Returns</th><th>When the row is missing</th></tr>
+</thead>
+<tbody>
+<tr><td><code>insert(map)</code></td><td>the new row’s id</td><td>n/a</td></tr>
+<tr><td><code>upsert(id, map)</code></td><td><code>id</code></td><td>inserts it</td></tr>
+<tr><td><code>patch(id, map)</code></td><td><code>true</code></td><td>returns <code>false</code></td></tr>
+<tr><td><code>delete(id)</code></td><td><code>true</code></td><td>returns <code>false</code></td></tr>
+<tr><td><code>import_from(source)</code>, <code>import_from(source, mapping)</code></td><td><code>#{ inserted, skipped, cancelled }</code></td><td>n/a</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>patch</code> and <code>delete</code> return <code>false</code> only for a missing row: the backend reported
+<code>ErrorKind::NotFound</code>. Any other failure throws. Drivers report not-found for these cases:
+vantage-memory, SQL on SQLite, PostgreSQL and MySQL (a patch or delete that matched no row) and
+SurrealDB (an update or delete that affected nothing). A Dio Vista checks its cache and then its
+master before it queues the write. A backend that doesn’t report not-found returns <code>true</code> for a
+missing row.</p>
+<p><code>patch</code> changes only the fields in the map. <code>upsert</code> replaces the whole row, so fields left out of
+the map are gone afterwards. <a href="#computed-columns">Computed columns</a> in the map are dropped before the
+write reaches the backend.</p>
+<h2 id="ids"><a class="header" href="#ids">Ids</a></h2>
+<p><code>insert</code> looks at the map’s id column. With a value there, that id is used as given, and an
+existing row with that id is an error. Without one, the backend assigns the id and <code>insert</code>
+returns it.</p>
+<!-- tested: rhai_guide::writes::explicit_ids -->
+<pre><code class="language-rhai">let orders = table("order");
+
+orders.insert(#{ id: "o10", client: "c3", total: 55, status: "due" });
+orders.upsert("o10", #{ client: "c3", total: 60, status: "due" });   // replaces
+orders.upsert("o11", #{ client: "c3", total: 5, status: "due" });    // inserts
+
+table("client").where("id", "c3").ref("orders").ids()
+</code></pre>
+<p>Inserting an id that already exists throws:</p>
+<!-- tested: rhai_guide::writes::duplicate_insert -->
+<pre><code class="language-rhai">table("order").insert(#{ id: "o1", client: "c2", total: 1, status: "due" })
+</code></pre>
+<p>Use <code>upsert</code> when a script owns stable ids and may run more than once.</p>
+<h2 id="narrowing-doesnt-filter-writes"><a class="header" href="#narrowing-doesnt-filter-writes">Narrowing doesn’t filter writes</a></h2>
+<p>A write goes to the handle’s table. <code>where</code>, <code>sort</code>, <code>search</code> and <code>limit</code> decide what reads
+return, not which rows a write may touch:</p>
+<!-- tested: rhai_guide::writes::writes_ignore_narrowing -->
+<pre><code class="language-rhai">let paid = table("order").where("status", "paid");
+paid.delete("o2");   // o2 is due, and is deleted all the same
+
+let ada = table("client").where("id", "c1");
+ada.ref("orders").insert(#{ id: "o20", client: "c1", total: 9, status: "due" });
+
+#{
+    orders: table("order").ids(),
+    clients: table("client").count(),
+}
+</code></pre>
+<p>The exception is <code>ref</code>: after a <code>ref</code> step, writes go to the relation’s target table. Steps before
+the last <code>ref</code> are read (to find the related rows); steps after it are ignored for writes.</p>
+<p><code>insert</code> through a <code>ref</code> doesn’t fill the foreign key. Set it in the map, as above.</p>
+<h2 id="capabilities"><a class="header" href="#capabilities">Capabilities</a></h2>
+<p>Each write checks the target Vista’s capabilities before it runs, and throws an error naming the
+verb and the table when the backend can’t do it:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verb</th><th>Needs</th></tr>
+</thead>
+<tbody>
+<tr><td><code>insert</code></td><td><code>can_insert</code></td></tr>
+<tr><td><code>upsert</code></td><td><code>can_insert</code> and <code>can_update</code></td></tr>
+<tr><td><code>patch</code></td><td><code>can_update</code></td></tr>
+<tr><td><code>delete</code></td><td><code>can_delete</code></td></tr>
+<tr><td><code>import_from</code></td><td><code>can_import</code>, or <code>can_insert</code> for row-by-row inserts</td></tr>
+</tbody>
+</table>
+</div>
+<p>A host can also turn writes off for every table with <code>Writes::Denied(message)</code>. The verbs are
+still there, and each throws <code>message</code>. Vantage UI does this for MCP agents unless the “Allow MCP
+agents to write data” setting is on.</p>
+<h2 id="importing"><a class="header" href="#importing">Importing</a></h2>
+<p><code>import_from(source)</code> copies every row of another handle into this table. <code>source</code> is read through
+its narrowing, so it can be any set: a filtered table, the target of a <code>ref</code>, a table on another
+datasource. A <code>limit(n)</code> on the source copies only its first <code>n</code> rows:</p>
+<!-- tested: rhai_guide::writes::import_limited -->
+<pre><code class="language-rhai">let biggest = table("order").sort("total", "desc").limit(2);
+let report = table("archive").import_from(biggest);
+
+[report.inserted, table("archive").ids()]
+</code></pre>
+<p>returns <code>[2, ["o1", "o3"]]</code>. Without a mapping, each row keeps its id.</p>
+<p>With a mapping, each imported row is built from a source row. String values in the mapping may
+reference source columns as <code>${row.&lt;col&gt;}</code>:</p>
+<!-- tested: rhai_guide::writes::import_mapped -->
+<pre><code class="language-rhai">let report = table("archive").import_from(
+    table("order").where("status", "paid"),
+    #{ id: "a-${row.id}", amount: "${row.total}", note: "paid by ${row.client}" }
+);
+
+#{ report: report, rows: table("archive").list() }
+</code></pre>
+<ul>
+<li>A value that is exactly one reference (<code>"${row.total}"</code>) copies the column’s value with its
+type: <code>amount</code> stays an integer.</li>
+<li>Any other string interpolates into text (<code>"paid by ${row.client}"</code>).</li>
+<li>Non-string values are literals.</li>
+<li>The mapping must set the target’s id column. Two source rows mapping to the same id are an
+error, and so is an id whose <code>table:</code> prefix names a different table.</li>
+</ul>
+<p>An id the target already holds is never overwritten; it counts as <code>skipped</code>. When the target can
+import (<code>can_import</code>), the rows go through <code>import_values</code> in one call and the backend decides
+which ids it already holds. Otherwise each row is looked up with <code>get</code> first and inserted only if
+it is missing; any insert failure stops the import and throws. A target narrowed by <code>ref</code> only
+sees its own rows in that lookup, so an id held outside the narrowing is sent as an insert, which a
+backend that rejects duplicate ids refuses. Importing the same rows twice into a memory table:</p>
+<!-- tested: rhai_guide::writes::import_twice -->
+<pre><code class="language-rhai">let first = table("backup").import_from(table("client"));
+let second = table("backup").import_from(table("client"));
+
+[first.inserted, second.inserted, second.skipped]
+</code></pre>
+<p>returns <code>[3, 0, 3]</code>.</p>
+<p><code>cancelled</code> is <code>true</code> when the backend stopped part-way: a host’s import can be cancellable (Vantage
+UI shows a progress dialog with a cancel button). <code>inserted</code> then counts the rows written before
+the stop. A backend signals this by returning an error carrying the
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/import/constant.IMPORT_CANCELLED.html"><code>IMPORT_CANCELLED</code></a> context key (the rows inserted), and
+optionally <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/import/constant.IMPORT_CANCELLED_SKIPPED.html"><code>IMPORT_CANCELLED_SKIPPED</code></a> (the rows
+skipped).</p>
+<h2 id="writes-through-a-dio"><a class="header" href="#writes-through-a-dio">Writes through a Dio</a></h2>
+<p>A host may hand scripts Vistas whose writes go through a Dio: <code>Dio::vista()</code> is a Vista over the
+Dio’s cache whose inserts, patches and deletes are queued as flashes and written through to the
+master. To the script it is just a Vista. It is how action bodies in Vantage UI write: the page
+sees the change at once, and the master write follows.</p>
+<p>An <code>insert</code> without an id on a Dio Vista goes straight to the master (there is no id to stage
+until the master assigns one) and then seeds the cache, so an immediate <code>get(id)</code> finds the row.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="computed-columns"><a class="header" href="#computed-columns">Computed Columns</a></h1>
+<p>A computed column is a column whose value no backend stores. It is a short Rhai expression over
+<code>row</code>, the record as the backend returned it, and its last expression is the column’s value. The
+expression lives in the Vista’s metadata, and the Vista fills the column on every read, so it works
+the same over SQLite, SurrealDB, a REST API, a CSV file or a memory store.</p>
+<p>In YAML it is the <code>lazy:</code> key on a column. This chapter covers what a computed column does, how to
+declare one, what it refuses, and how relations treat it.</p>
+<ul>
+<li><a href="#an-example">An example</a></li>
+<li><a href="#how-the-value-is-computed">How the value is computed</a></li>
+<li><a href="#declaring-one">Declaring one</a></li>
+<li><a href="#what-they-refuse">What they refuse</a></li>
+<li><a href="#relations-through-a-computed-column">Relations through a computed column</a></li>
+<li><a href="#lazy-and-sugar"><code>lazy:</code> and <code>sugar:</code></a></li>
+</ul>
+<hr>
+<h2 id="an-example"><a class="header" href="#an-example">An example</a></h2>
+<p>The examples run over two memory tables built from YAML. An order stores an invoice <code>code</code> and a
+<code>net</code> amount. Its client key is buried in the code, and its tax and gross amounts are derived:</p>
+<!-- tested: rhai_guide::computed::declare_in_yaml (the fixture of every rhai_guide::computed test) -->
+<pre><code class="language-yaml">name: order
+columns:
+  id: { type: string, flags: [id] }
+  code: { type: string }
+  net: { type: int }
+  client:
+    type: string
+    references: client
+    lazy: |
+      let parts = row.code.split("-");   // "INV-c1-0001"
+      parts[1]
+  vat: { type: int, lazy: "row.net / 5" }
+  gross: { type: int, lazy: "row.net + row.vat" }
+</code></pre>
+<!-- tested: rhai_guide::computed::declare_in_yaml (the fixture of every rhai_guide::computed test) -->
+<pre><code class="language-yaml">name: client
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string }
+  vip: { type: bool }
+  badge:
+    type: string
+    lazy: |
+      if row.vip { "★ " + row.name } else { row.name }
+references:
+  orders: { table: order, kind: has_many, foreign_key: client }
+</code></pre>
+<p>A script reads computed columns like any other:</p>
+<!-- tested: rhai_guide::computed::reads -->
+<pre><code class="language-rhai">let o1 = table("order").get("o1");
+
+#{
+    o1: [o1.client, o1.vat, o1.gross],
+    badges: table("client").list().map(|c| c.badge),
+    computed: table("order").columns()
+        .filter(|c| c.flags.contains("calculated"))
+        .map(|c| c.name),
+}
+</code></pre>
+<p>For order <code>INV-c1-0001</code> with <code>net: 100</code> this returns <code>o1: ["c1", 20, 120]</code>, the badges
+<code>["★ Ada", "Ben"]</code>, and <code>computed: ["client", "vat", "gross"]</code>.</p>
+<h2 id="how-the-value-is-computed"><a class="header" href="#how-the-value-is-computed">How the value is computed</a></h2>
+<ul>
+<li>Columns compute in declaration order, and each sees the values of those declared before it.
+<code>gross</code> reads <code>row.vat</code>, which <code>vat</code> has just added.</li>
+<li><code>row</code> is the record as the backend returned it. Nested records keep their shape
+(<code>row.Message.Headers.Subject</code>), and a missing field is <code>()</code>. The id column may not be in the
+record: memory and several other backends keep the id as the row’s key, not as a field.</li>
+<li>The script is a block: <code>let</code> statements and helper expressions are fine, and the last expression
+is the value.</li>
+<li>It compiles once, when the column is declared. A script that doesn’t parse fails the table build,
+not the first read. A script that throws on a row fails that read with “Computed column failed”,
+naming the column.</li>
+<li>It runs under the background operation limit (50 million), so a runaway loop errors instead of
+hanging the read.</li>
+<li>There is no <code>table(name)</code> in scope. A computed column sees one row. To bring in data from another
+table, use <a href="#augmentation">augmentation</a>.</li>
+</ul>
+<p>Every read path fills computed columns: <code>list_values</code>, <code>get_value</code>, <code>get_some_value</code>, streams,
+<code>fetch_page</code>, <code>fetch_next</code>, <code>fetch_window</code>, and watched changes. Anything built on a Vista sees them
+without knowing they exist: data scripts, Dio caches, grids.</p>
+<h2 id="declaring-one"><a class="header" href="#declaring-one">Declaring one</a></h2>
+<p>In YAML, <code>lazy:</code> goes on the column, next to <code>type:</code> and <code>flags:</code>. Every driver’s factory lowers it
+through <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/spec/struct.ColumnSpec.html#method.lazy_column"><code>ColumnSpec::lazy_column</code></a>. The script can be
+inline, as above, or in a file. A loader that supports <code>!include</code>, as Vantage UI’s does, replaces
+<code>lazy: !include ../script/client_key.rhai</code> with the file’s text before the spec is parsed, so
+<code>vantage-vista</code> only ever sees the script.</p>
+<p>In Rust, <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/column/struct.Column.html#method.with_expression"><code>Column::with_expression</code></a> turns a column into a
+computed one:</p>
+<!-- tested: rhai_guide::computed::declare_in_rust -->
+<pre><code class="language-rust ignore">let gross = Column::new("gross", "int")
+    .with_flag("orderable")
+    .with_expression("row.net + row.vat")
+    .unwrap();
+
+assert!(gross.is_computed());
+assert_eq!(gross.expression(), Some("row.net + row.vat"));
+assert!(gross.has_flag(flags::CALCULATED));
+assert!(!gross.has_flag(flags::ORDERABLE));</code></pre>
+<p><code>with_expression</code> needs the <code>rhai</code> feature and returns an error, naming the column, when the
+script doesn’t compile. It flags the column <code>calculated</code> and removes <code>orderable</code> and <code>searchable</code>.
+A shell then reports the column in its <code>VistaMetadata</code> like any other. Typed tables take spec
+columns through <code>Table::add_spec_column</code>, which registers a <code>lazy:</code> column as computed. That is how
+the SQL, SurrealDB, MongoDB, CSV, REST and GraphQL factories fold <code>lazy:</code> into a Vista.</p>
+<p>The expression isn’t serialized. A <code>Column</code> that goes through serde comes back as a stored column
+that keeps only its <code>calculated</code> flag.</p>
+<p>If you only need the closure, <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/lazy/fn.lazy_value_closure.html"><code>lazy_value_closure</code></a>
+compiles a script into an <code>Fn(&amp;Record) -&gt; Result&lt;CborValue&gt;</code>:</p>
+<!-- tested: rhai_guide::computed::closure -->
+<pre><code class="language-rhai">row.contents.split("\n").len() - 1
+</code></pre>
+<h2 id="what-they-refuse"><a class="header" href="#what-they-refuse">What they refuse</a></h2>
+<p>The backend holds no values for a computed column, so anything that would ask the backend about it
+is refused.</p>
+<p><strong>Writes drop them.</strong> Inserts, patches, upserts and imports remove computed columns from the record
+before it reaches the backend:</p>
+<!-- tested: rhai_guide::computed::writes -->
+<pre><code class="language-rhai">let orders = table("order");
+orders.insert(#{ id: "o4", code: "INV-c2-0004", net: 50, gross: 1 });
+orders.patch("o1", #{ net: 200, vat: 0 });
+
+[orders.get("o4").gross, orders.get("o1").vat]
+</code></pre>
+<p>This returns <code>[60, 40]</code>: the <code>gross: 1</code> and <code>vat: 0</code> were dropped, and the read computed both
+from the new <code>net</code>. Vantage UI keeps computed columns out of its forms for the same reason.</p>
+<p><strong>Filters, orders and aggregates error</strong>, naming the column:</p>
+<!-- tested: rhai_guide::computed::refused -->
+<pre><code class="language-rhai">table("order").where("gross", "&gt;", 100).count()   // throws
+</code></pre>
+<!-- tested: rhai_guide::computed::refused -->
+<pre><code class="language-rhai">table("order").sort("gross", "desc").list()   // throws
+</code></pre>
+<p>The first fails with <code>Step can't be applied (step: Where { col: "gross", … }): Computed column can't be used to filter, order or aggregate; the backend doesn't hold its values (column: "gross", operation: "condition")</code>. The error is marked unsupported, like any other narrowing a backend can’t
+do. In Rust, <code>Vista::add_condition</code>, <code>add_condition_eq</code> and <code>add_order</code> refuse the same way, and so
+does <code>aggregate</code> for a computed column or group key:</p>
+<!-- tested: rhai_guide::computed::aggregate_refused -->
+<pre><code class="language-rust ignore">let sum = orders.aggregate(&amp;AggregateSpec::new("sum", "total").column("gross"));
+assert!(sum.is_err());
+let by_client = orders.aggregate(&amp;AggregateSpec::new("count", "n").group_by("client"));
+assert!(by_client.is_err());</code></pre>
+<p>To filter on a derived value, filter on the stored columns it comes from (<code>net</code> rather than
+<code>gross</code>), or compute it in the backend’s query: a query-sourced table or SurrealDB’s <code>expr:</code>
+column (see <a href="#expression-dialects">Expression dialects</a>).</p>
+<h2 id="relations-through-a-computed-column"><a class="header" href="#relations-through-a-computed-column">Relations through a computed column</a></h2>
+<p>A has-one relation whose foreign key is a computed column of the parent works. The parent row
+already carries the computed value, and the target is narrowed by its own id, which it stores.
+<code>order.client</code> above is such a key. A has-many relation whose foreign key is a computed column of
+the child can’t work: the child table would have to be filtered by a value it doesn’t store.</p>
+<!-- tested: rhai_guide::computed::relations -->
+<pre><code class="language-rhai">let big = table("order").where("net", "&gt;", 50);
+
+#{
+    one: table("order").where("id", "o3").ref("client").first().name,
+    many: big.ref("client").sort("name").list().map(|c| c.name),
+}
+</code></pre>
+<p>Both forms of <code>ref</code> work for has-one: from one row (<code>"Ben"</code>), and from several (<code>["Ada", "Ben"]</code>),
+where the parents’ computed keys become an <code>in</code> condition on the client id. The reverse direction
+throws:</p>
+<!-- tested: rhai_guide::computed::relations -->
+<pre><code class="language-rhai">table("client").where("id", "c1").ref("orders").ids()   // throws
+</code></pre>
+<p>with <code>Has-many relation can't join on a computed column of its target (relation: "orders", column: "client")</code>. <code>Vista::get_ref</code> makes the same check. A nested insert that would have to write a
+computed foreign key (into the parent for has-one, into each child for has-many) is refused before
+anything is written.</p>
+<h2 id="lazy-and-sugar"><a class="header" href="#lazy-and-sugar"><code>lazy:</code> and <code>sugar:</code></a></h2>
+<p>Vantage UI has a second way to add derived columns: <code>sugar:</code> on a grid, binder or other component.
+The two look similar and are used for different things.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th><code>lazy:</code> (computed column)</th><th><code>sugar:</code> (Vantage UI)</th></tr>
+</thead>
+<tbody>
+<tr><td>Declared on</td><td>the table</td><td>one component on one page</td></tr>
+<tr><td>Seen by</td><td>every reader of the Vista: pages, relations, data scripts, Dio caches</td><td>that component only</td></tr>
+<tr><td>Runs</td><td>inside the Vista, on each read</td><td>on its own thread, over the rows the component reads</td></tr>
+<tr><td>Script shape</td><td>one expression over <code>row</code></td><td>a loop over <code>next_row()</code> that calls <code>emit(#{ … })</code>, with helper functions and setup before the first row</td></tr>
+<tr><td>Relations</td><td>has-one can follow it</td><td>none</td></tr>
+</tbody>
+</table>
+</div>
+<p>Use <code>lazy:</code> for a value that is part of the data, such as a key, an amount or a status that
+relations and scripts need. Use <code>sugar:</code> for presentation on one page, or when the script needs
+setup (a lookup map, helpers) before the first row. Sugar is built on
+diorama’s <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/scenery/sugar/struct.Sugar.html"><code>Sugar</code></a>, which merges the outputs into the rows one
+Scenery reads and strips them from anything written back. Its YAML is documented in Vantage UI’s
+skills.</p>
+<p>The third look-alike is the typed table’s <code>with_lazy_expression</code>, an async Rust closure per row
+(the intro’s <a href="#augmentation--enriching-rows">Augmentation step</a> uses it to download a file and
+derive columns from it). It runs inside the typed table, before the Vista sees the row, and it can
+do I/O, which a <code>lazy:</code> script can’t. The Vista reports its column as <code>calculated</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="records"><a class="header" href="#records">Records</a></h1>
+<p>A record is a draft of one row. It reads like a map, stages edits, and saves only what changed.
+Use it when a script edits a row field by field, or when a host hands a script “the current row”
+(Vantage UI’s action bodies receive <code>row</code> as a record).</p>
+<ul>
+<li><a href="#editing-an-existing-row">Editing an existing row</a></li>
+<li><a href="#a-new-row">A new row</a></li>
+<li><a href="#dirty-state-and-revert">Dirty state and revert</a></li>
+<li><a href="#status-and-failures">Status and failures</a></li>
+<li><a href="#deleting">Deleting</a></li>
+<li><a href="#permissions">Permissions</a></li>
+<li><a href="#records-in-rust">Records in Rust</a></li>
+</ul>
+<hr>
+<h2 id="editing-an-existing-row"><a class="header" href="#editing-an-existing-row">Editing an existing row</a></h2>
+<p><code>record(id)</code> loads the row through the handle and throws if no row has that id:</p>
+<!-- tested: rhai_guide::records::edit_existing -->
+<pre><code class="language-rhai">let o = table("order").record("o2");
+o.status = "paid";
+o["total"] = 45;
+
+let was = o.baseline().status;
+let staged = [o.dirty("status"), o.dirty("client")];
+o.save();   // patches `status` and `total`, nothing else
+
+#{
+    was: was,
+    staged: staged,
+    dirty: o.is_dirty(),
+    stored: table("order").get("o2"),
+}
+</code></pre>
+<p>A record keeps two layers:</p>
+<ul>
+<li>the <strong>baseline</strong>: the row as last loaded or saved (<code>baseline()</code> returns it as a map);</li>
+<li>the <strong>changes</strong>: fields set since then.</li>
+</ul>
+<p>Reading a field (<code>o.status</code>, <code>o["status"]</code>) returns the change if there is one, else the baseline
+value, else <code>()</code>. Setting a field stages a change. <code>save()</code> sends a <code>patch</code> with the changed fields
+only, then folds them into the baseline. A record with no changes saves nothing and returns its id.</p>
+<h2 id="a-new-row"><a class="header" href="#a-new-row">A new row</a></h2>
+<p><code>record()</code> with no id starts a draft of a row that doesn’t exist yet:</p>
+<!-- tested: rhai_guide::records::new_row -->
+<pre><code class="language-rhai">let n = table("client").record();
+n.set(#{ name: "Dee", vip: false });
+let id = n.save();   // an insert; the backend picks the id
+
+#{
+    same_id: n.id == id,
+    status: n.status(),
+    stored: table("client").get(id).name,
+}
+</code></pre>
+<p>The first <code>save()</code> of a new record is an <code>insert</code>. After it, the record has an id and later saves
+are patches. <code>set(map)</code> stages several fields at once and returns the record, so
+<code>table("t").record().set(#{ … }).save()</code> works in one line. A key with dots (<code>"inventory.stock"</code>)
+writes into a nested map, which is how a form field bound to an embedded object reaches the right
+place.</p>
+<p>The id column can’t be set on a record. <code>n.id</code> is read-only, and setting the id column through
+<code>set</code> or an index throws:</p>
+<!-- tested: rhai_guide::records::id_is_read_only -->
+<pre><code class="language-rhai">let n = table("client").record();
+n.set(#{ id: "c9", name: "Eve" })   // throws: `id` is the id column
+</code></pre>
+<p>To insert under an id you choose, use <code>insert(#{ id: …, … })</code> or <code>upsert(id, map)</code> on the handle.</p>
+<p>The record finds out which column is the id column on the first field set, by resolving its
+table, and keeps the answer, so later sets don’t resolve the table again. A table with no id
+column falls back to <code>id</code>.</p>
+<h2 id="dirty-state-and-revert"><a class="header" href="#dirty-state-and-revert">Dirty state and revert</a></h2>
+<!-- tested: rhai_guide::records::revert -->
+<pre><code class="language-rhai">let c = table("client").record("c2");
+c.name = "Benjamin";
+c.vip = true;
+
+c.revert("vip");
+let still_dirty = c.is_dirty();   // `name` is still staged
+c.revert();
+
+[still_dirty, c.is_dirty(), c.name]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verb</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>is_dirty()</code></td><td>any field staged</td></tr>
+<tr><td><code>dirty(col)</code></td><td><code>col</code> staged</td></tr>
+<tr><td><code>revert(col)</code></td><td>drop the staged change to <code>col</code></td></tr>
+<tr><td><code>revert()</code></td><td>drop every staged change</td></tr>
+<tr><td><code>baseline()</code></td><td>the last saved row, as a map (empty for a new record)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="status-and-failures"><a class="header" href="#status-and-failures">Status and failures</a></h2>
+<p><code>status()</code> is <code>"tracking"</code> normally, <code>"pending"</code> while <code>save()</code> or <code>delete()</code> runs, and <code>"failed"</code>
+when the last one failed. A failed save throws, and the record keeps its staged changes, so the
+script can fix them and try again. <code>rejection()</code> then returns <code>#{ message, fields }</code>, and returns
+<code>()</code> while the record isn’t failed.</p>
+<!-- tested: rhai_guide::records::failed_save -->
+<pre><code class="language-rhai">let o = table("order").record("o3");
+table("order").delete("o3");   // the row goes away underneath the draft
+
+o.status = "refunded";
+let threw = false;
+try { o.save(); } catch (err) { threw = true; }
+
+#{
+    threw: threw,
+    status: o.status(),
+    message: o.rejection().message,
+    staged: o.dirty("status"),
+}
+</code></pre>
+<p>Saving a record whose row has gone fails with “record <code>o3</code> no longer exists”. <code>fields</code> is
+always empty for the data vocabulary’s records. Servo drafts, which carry per-field validation
+errors from a Dio’s flash route, fill it in (see <a href="#layers">Layers</a>).</p>
+<h2 id="deleting"><a class="header" href="#deleting">Deleting</a></h2>
+<p><code>delete()</code> deletes the record’s row and returns <code>true</code>, or <code>false</code> if the row was already gone.
+A new record that was never saved has nothing to delete and throws.</p>
+<h2 id="permissions"><a class="header" href="#permissions">Permissions</a></h2>
+<p>Records save through the same checks as the write verbs: the target’s capabilities (<code>can_insert</code>
+for a new record, <code>can_update</code> for an existing one, <code>can_delete</code> for <code>delete()</code>), and the host’s
+<code>Writes</code> setting. On a <code>Terminals::Read</code> host, <code>record(id)</code> still loads and reads, and <code>save()</code> or
+<code>delete()</code> throws “writes aren’t available here”. Vantage UI uses this for action predicates
+(<code>when:</code>), which see <code>row</code> but must not change it.</p>
+<h2 id="records-in-rust"><a class="header" href="#records-in-rust">Records in Rust</a></h2>
+<p>A host that already holds a row can give it to a script without a second fetch:
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/record/struct.RecordDraft.html#method.from_row"><code>RecordDraft::from_row(handle, resolver, writes, id, row)</code></a>.
+After the script runs, <code>changes()</code> returns what it staged and <code>values()</code> the row as the script
+last saw it. Vantage UI builds the action body’s <code>row</code> this way, over the page’s Dio Vista.</p>
+<p>A row that belongs to no table, such as the <code>row</code> an action predicate reads, still needs a
+resolver: the first field set asks it for the id column. <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html#method.empty"><code>Vista::empty(name)</code></a>
+is a Vista with no columns, no rows and no capabilities, made for this:</p>
+<!-- tested: rhai_guide::records::row_without_table -->
+<pre><code class="language-rust ignore">let no_table: TargetResolver = Arc::new(|_| Ok(Vista::empty("row")));
+let row = RecordDraft::from_row(
+    Handle::named("row"),
+    Some(no_table),
+    Writes::Denied("this row is read-only".into()),
+    "o1".into(),
+    values,
+);</code></pre>
+<p>A script given this <code>row</code> can read it and stage fields, and every save throws the denial:</p>
+<!-- tested: rhai_guide::records::row_without_table -->
+<pre><code class="language-rhai">row.status = "void";   // staged on the draft
+let saved = true;
+try { row.save(); } catch (err) { saved = false; }
+
+#{ status: row.status, was: row.baseline().status, saved: saved }
+</code></pre>
+<p>returns <code>status: "void"</code>, <code>was: "paid"</code> and <code>saved: false</code>. Setting <code>row["id"]</code> still throws,
+because the empty table has no id column and the draft falls back to <code>id</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="surfaces"><a class="header" href="#surfaces">Surfaces</a></h1>
+<p>The data vocabulary is the same everywhere. What changes from one place to the next is the host:
+which tables <code>table(name)</code> reaches, which terminal verbs exist, and what the script is given in
+scope. This chapter goes through each surface with a tested example.</p>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#agent-scripts-run_script">Agent scripts: <code>run_script</code></a></li>
+<li><a href="#query-preview-preview_script">Query preview: <code>preview_script</code></a></li>
+<li><a href="#modify-scripts"><code>modify:</code> scripts</a>
+<ul>
+<li><a href="#backend-extensions">Backend extensions</a></li>
+</ul>
+</li>
+<li><a href="#reference-build-scripts">Reference build scripts</a></li>
+<li><a href="#augmentation-sources">Augmentation sources</a></li>
+<li><a href="#computed-columns-1">Computed columns</a></li>
+<li><a href="#read-only-hosts">Read-only hosts</a></li>
+<li><a href="#read-write-hosts-in-vantage-ui">Read-write hosts in Vantage UI</a></li>
+<li><a href="#faker-sims">Faker sims</a></li>
+</ul>
+<hr>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Surface</th><th><code>table(name)</code> resolves</th><th>Terminals</th><th>Limits</th><th>In scope</th></tr>
+</thead>
+<tbody>
+<tr><td><code>run_script</code> (agent tools)</td><td>the caller’s resolver</td><td>ReadWrite, <code>list()</code> capped at 1 to 50 rows</td><td>Background</td><td></td></tr>
+<tr><td><code>preview_script</code></td><td>the caller’s resolver</td><td>Describe</td><td>Background</td><td></td></tr>
+<tr><td>YAML <code>modify:</code></td><td>the backend’s spec resolver</td><td>Describe</td><td>Background</td><td><code>self</code></td></tr>
+<tr><td>reference build script</td><td>the backend’s spec resolver</td><td>Describe</td><td>Background</td><td><code>row</code></td></tr>
+<tr><td>augmentation source</td><td>the catalog</td><td>Describe</td><td>Background</td><td><code>self</code>, <code>row</code></td></tr>
+<tr><td><code>lazy:</code> computed column</td><td>none</td><td>none: no data vocabulary</td><td>Background</td><td><code>row</code></td></tr>
+<tr><td>Vantage UI form <code>options:</code></td><td>the app’s tables</td><td>Read, capped</td><td></td><td>form values</td></tr>
+<tr><td>Vantage UI action predicates (<code>when:</code>)</td><td>none</td><td>Read</td><td>Ui</td><td><code>row</code></td></tr>
+<tr><td>Vantage UI action bodies</td><td>the app’s tables, writes through Dio</td><td>ReadWrite</td><td>Ui</td><td><code>row</code>, <code>actions</code></td></tr>
+<tr><td>Vantage UI form <code>on_submit</code>, wizard forms</td><td>the app’s tables, writes through Dio</td><td>ReadWrite</td><td>Background</td><td><code>form</code> (a Servo), <code>wizard</code></td></tr>
+<tr><td>Vantage UI wizard <code>worker:</code></td><td>the app’s tables</td><td>ReadWrite, 50 rows</td><td>Background</td><td><code>wizard</code>, <code>state</code></td></tr>
+<tr><td>faker sims</td><td>the sim’s memory store</td><td>ReadWrite</td><td>the sim’s own budget</td><td><code>args</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="agent-scripts-run_script"><a class="header" href="#agent-scripts-run_script">Agent scripts: <code>run_script</code></a></h2>
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/runtime/fn.run_script.html"><code>run_script</code></a> evaluates a script with every read and write verb and
+returns its last value as JSON. It runs under <code>spawn_blocking</code> for you:</p>
+<!-- tested: rhai_guide::surfaces::agent_script -->
+<pre><code class="language-rhai">let due = table("order").where("status", "due");
+#{ count: due.count(), rows: due.sort("total", "desc").list() }
+</code></pre>
+<pre><code class="language-rust ignore">let out = run_script(
+    AGENT_SCRIPT.to_string(),
+    resolver(&amp;store),
+    1,
+    Writes::Denied("writing data is turned off".into()),
+)
+.await
+.unwrap();</code></pre>
+<p>The limit is clamped to <code>MIN_LIMIT..=MAX_LIMIT</code> (1 to 50; <code>DEFAULT_LIMIT</code> is 5) and caps every
+<code>list()</code>, so <code>rows</code> above holds one row while <code>count</code> is 2. This is an inspection surface, not a
+bulk reader. Compile, runtime and backend errors all come back as the error string.</p>
+<p>Vantage UI’s MCP <code>run_data_script</code> tool is this function. Its writes stay <code>Denied</code> unless the user
+turns on “Allow MCP agents to write data”, a setting separate from the one that lets agents read.</p>
+<h2 id="query-preview-preview_script"><a class="header" href="#query-preview-preview_script">Query preview: <code>preview_script</code></a></h2>
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/runtime/fn.preview_script.html"><code>preview_script</code></a> runs a script on a <code>Describe</code> host, so it can
+build a handle but never read rows. The script must end on the handle. The resolved Vista renders
+its query through <code>TableShell::preview_query</code>:</p>
+<!-- tested: rhai_guide::surfaces::preview -->
+<pre><code class="language-rhai">table("order").where("status", "paid").sort("total", "desc")
+</code></pre>
+<p>The result is driver-shaped JSON. The memory store, for example, reports its driver, table,
+conditions and order. One exception to “never reads”: a <code>ref</code> step still reads the rows it starts
+from, because the target’s condition depends on them. When it finds none, the preview reports
+<code>"query": null</code> with a note, because nothing would be queried.</p>
+<h2 id="modify-scripts"><a class="header" href="#modify-scripts"><code>modify:</code> scripts</a></h2>
+<p>A YAML spec’s <code>modify:</code> script runs on the finished Vista, exposed as <code>self</code>. A <code>Describe</code> host
+evaluates it with <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/eval/fn.eval_modify_script.html"><code>eval_modify_script</code></a>:</p>
+<!-- tested: rhai_guide::surfaces::modify -->
+<pre><code class="language-rhai">self.where("vip", true).sort("name", "desc")
+</code></pre>
+<p>When the script ends on a handle, that handle is resolved and becomes the table. When it ends on
+anything else (a statement with <code>;</code>, say), the result of the last verb called on <code>self</code> is used;
+otherwise <code>self</code> as given. <code>modify:</code> narrows a real table, so the Vista stays
+writable. Augmentation sources finish the same way.</p>
+<h3 id="backend-extensions"><a class="header" href="#backend-extensions">Backend extensions</a></h3>
+<p>A backend can add its own verbs to handles through
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/source/trait.TableShell.html#method.register_rhai_extensions"><code>TableShell::register_rhai_extensions</code></a>, and
+its own variables through <code>TableShell::rhai_env</code>. SurrealDB adds its whole expression vocabulary,
+plus <code>with_condition(expr)</code>, which narrows by a native SurrealQL expression that <code>where</code> can’t
+spell:</p>
+<!-- tested: vantage-surrealdb vista::factory::tests::modify_script_tweaks_built_vista_with_vendor_condition -->
+<pre><code class="language-rhai">self.with_condition(ident("is_paying_client") == true)
+   .sort("name", "asc")
+</code></pre>
+<p>and <code>me</code>, the current-record anchor for graph paths.</p>
+<p>An extension verb changes a Vista in hand, not a list of steps, so it works on <code>self</code> only. On a
+handle from <code>table(name)</code>, or after a <code>ref</code> step, it throws an error naming the verb. A backend
+implements one with <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/handle/struct.Handle.html#method.with_base_vista"><code>Handle::with_base_vista</code></a>. This
+stand-in verb narrows by equality:</p>
+<!-- tested: rhai_guide::surfaces::extension_statements -->
+<pre><code class="language-rust ignore">fn only(h: &amp;mut Handle, col: &amp;str, value: Dynamic) -&gt; Result&lt;Handle, Box&lt;EvalAltResult&gt;&gt; {
+    let (col, value) = (col.to_string(), dynamic_to_cbor(value)?);
+    h.with_base_vista("only", |vista| {
+        vista.add_condition(col, FilterOp::Eq, value)
+    })
+    .map_err(|e| e.to_string().into())
+}</code></pre>
+<p><code>with_base_vista</code> works on a copy of the Vista and returns a new handle over it, so like every
+other verb it leaves the handle it was called on alone: <code>let all = self; all.only("vip", true); all</code> still ends on every client. (A backend whose shell can’t be copied is changed in place.)</p>
+<p>Statements on <code>self</code> accumulate, whichever verb they use:</p>
+<!-- tested: rhai_guide::surfaces::extension_statements -->
+<pre><code class="language-rhai">self.only("vip", true);
+self.only("name", "Cy");
+</code></pre>
+<p>leaves only Cy, and</p>
+<!-- tested: rhai_guide::surfaces::extension_statements -->
+<pre><code class="language-rhai">self.only("vip", true);
+self.sort("name", "desc");
+</code></pre>
+<p>leaves Cy and Ada, in that order. Each statement builds on the result of the one before, and the
+script, ending on a statement, finishes with the last result. Chaining works too:
+<code>self.only("vip", true).sort("name", "desc")</code> gives the same table. A handle from <code>table(name)</code>
+doesn’t accumulate: <code>let x = table("client").where("vip", true); x.sort("name"); x</code> ends on <code>x</code>
+unsorted.</p>
+<p>Backends without a scripting vocabulary (CSV, MongoDB, REST) keep the default no-op and get the
+data vocabulary alone.</p>
+<h2 id="reference-build-scripts"><a class="header" href="#reference-build-scripts">Reference build scripts</a></h2>
+<p>A reference whose join isn’t a plain foreign key can carry a <code>rhai:</code> build script. It runs at
+traversal time with the parent row as <code>row</code>, and must end on a handle:</p>
+<!-- tested: rhai_guide::surfaces::ref_build -->
+<pre><code class="language-rhai">table("order").where("client", row.id).where("status", "due")
+</code></pre>
+<p>In YAML:</p>
+<pre><code class="language-yaml">references:
+  due_orders:
+    table: order
+    kind: has_many
+    foreign_key: client
+    surreal:
+      rhai: |
+        table("order").where("client", row.id).where("status", "due")
+</code></pre>
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/eval/fn.eval_ref_script.html"><code>eval_ref_script</code></a> evaluates it. Drivers report the
+<code>can_build_ref_via_script</code> capability when they support it.</p>
+<h2 id="augmentation-sources"><a class="header" href="#augmentation-sources">Augmentation sources</a></h2>
+<p>An augmentation joins a detail table onto each master row at the Dio layer (see
+<a href="#augmentation">Augmentation</a>). A script source narrows the detail table, given as <code>self</code>, for
+the master <code>row</code>:</p>
+<!-- tested: rhai_guide::surfaces::augment -->
+<pre><code class="language-rhai">self.where("client", row.id)
+</code></pre>
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/eval/fn.augment_source_closure.html"><code>augment_source_closure(resolver, code)</code></a> turns the script
+into the <code>Fn(&amp;row, base) -&gt; Vista</code> closure the Dio calls per row. It compiles once, on first use,
+with the detail Vista’s backend extensions registered.</p>
+<h2 id="computed-columns-1"><a class="header" href="#computed-columns-1">Computed columns</a></h2>
+<p>A <code>lazy:</code> column script runs on the shared background host, with no data vocabulary at all: no
+<code>table(name)</code>, no handles, only <code>row</code>. It computes one value from one row, every time the Vista
+reads that row. <a href="#computed-columns">Computed columns</a> covers it.</p>
+<h2 id="read-only-hosts"><a class="header" href="#read-only-hosts">Read-only hosts</a></h2>
+<p><code>Terminals::Read</code> hosts read freely and refuse every write. Records still load, so a script can
+read <code>row.status</code>, but saving throws:</p>
+<!-- tested: rhai_guide::surfaces::read_host -->
+<pre><code class="language-rhai">let o = table("order").record("o1");
+o.status = "void";
+o.save()   // throws: this host only reads
+</code></pre>
+<p>Write verbs such as <code>delete</code> don’t exist on a read host at all, and calling one is a “function not
+found” error. Vantage UI uses read hosts for form <code>options:</code> scripts, and for action predicates,
+which get <code>row</code> but no <code>table(name)</code>.</p>
+<h2 id="read-write-hosts-in-vantage-ui"><a class="header" href="#read-write-hosts-in-vantage-ui">Read-write hosts in Vantage UI</a></h2>
+<p>Action bodies and form <code>on_submit</code> scripts get <code>table(name)</code> over the app’s tables and, for row
+actions, <code>row</code> as a <a href="#records">record</a>:</p>
+<pre><code class="language-rhai">let r = actions.cancel_order(row);
+row.status = "cancelled";
+row.cancellation_reason = r.reason;
+row.save();
+</code></pre>
+<p>The resolver behind <code>table(name)</code> sends writes through each table’s Dio, so open pages see them
+at once, and applies the app’s write rules (read-only tables, reference coercion, generated ids).
+Form and wizard scripts also see Servo drafts, which have their own vocabulary
+(<a href="#layers">Layers</a>). The action and form vocabularies themselves (<code>actions.*</code>, <code>notify</code>,
+<code>form</code>) are documented in Vantage UI’s skills.</p>
+<h2 id="faker-sims"><a class="header" href="#faker-sims">Faker sims</a></h2>
+<p>Sims are covered in <a href="#faker-sims-1">Layers</a>: they use this vocabulary over a memory store,
+with <code>table()</code> naming the sim’s own table, plus time and random verbs.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="layers"><a class="header" href="#layers">Layers</a></h1>
+<p>The data vocabulary acts on Vistas and nothing else. Three parts of the framework sit above Vista
+and give scripts words of their own: Servo drafts in <code>vantage-diorama</code>, Scenery shapes in Vantage
+UI, and faker sims. This chapter shows how each one relates to the data vocabulary, and why they
+stay separate.</p>
+<ul>
+<li><a href="#the-rule">The rule</a></li>
+<li><a href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></li>
+<li><a href="#servo-a-form-draft">Servo: a form draft</a></li>
+<li><a href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></li>
+<li><a href="#faker-sims-1">Faker sims</a></li>
+</ul>
+<hr>
+<h2 id="the-rule"><a class="header" href="#the-rule">The rule</a></h2>
+<p><code>vantage-vista</code> never refers to Dio, Servo or Scenery. Each upper layer either hands scripts a plain
+Vista or registers its own vocabulary next to <code>DataVocab</code> on the same host. A host for a form’s
+<code>on_submit</code> script, for example, registers both <code>ServoVocab</code> and <code>DataVocab</code>, so the script has
+<code>form</code> (a Servo) and <code>table(name)</code> (Vistas) side by side.</p>
+<p>Where an upper layer means the same thing as a data verb, it uses the same word: <code>where</code>, <code>sort</code>,
+<code>limit</code>, <code>ref</code>, <code>save</code>, <code>is_dirty</code>. Where it means something different, it uses its own word, even
+if a data verb looks close.</p>
+<h2 id="dio-no-vocabulary-of-its-own"><a class="header" href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></h2>
+<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/struct.Dio.html#method.vista"><code>Dio::vista()</code></a> returns a Vista whose
+reads come from the Dio’s cache and whose writes are queued as flashes and written through to the
+master. A host that resolves <code>table(name)</code> to Dio Vistas gives scripts cached reads and optimistic
+writes, and the scripts are the same ones that would run against the bare backend. Vantage UI’s
+action bodies work this way.</p>
+<h2 id="servo-a-form-draft"><a class="header" href="#servo-a-form-draft">Servo: a form draft</a></h2>
+<p>A <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/servo/struct.Servo.html">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
+staged edits, a status and per-field rejections from the Dio’s flash route. Forms and wizards in
+Vantage UI hand one to their scripts as <code>form</code>. <code>ServoVocab</code> (<code>vantage_diorama::rhai</code>) registers
+its words:</p>
+<!-- tested: vantage-diorama rhai_servo::set_save_settles_a_new_record -->
+<pre><code class="language-rhai">servo.set("id", "tag:AB12-CD34");
+servo.set("status", "unregistered");
+if !servo.is_dirty() { throw "draft should be dirty"; }
+if !servo.dirty("status") { throw "field should be dirty"; }
+servo.save()
+</code></pre>
+<p>A Servo and a data-vocabulary <a href="#records">record</a> look alike, and some words match:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>record (<code>table(t).record(id)</code>)</th><th>Servo</th></tr>
+</thead>
+<tbody>
+<tr><td>read a field</td><td><code>r.col</code>, <code>r["col"]</code></td><td><code>servo.get("col")</code></td></tr>
+<tr><td>stage a field</td><td><code>r.col = v</code>, <code>r.set(map)</code></td><td><code>servo.set("col", v)</code></td></tr>
+<tr><td>id</td><td><code>r.id</code></td><td><code>servo.id()</code></td></tr>
+<tr><td>the whole draft</td><td>(field reads)</td><td><code>servo.record()</code></td></tr>
+<tr><td>baseline</td><td><code>r.baseline()</code></td><td><code>servo.baseline()</code></td></tr>
+<tr><td>dirty</td><td><code>r.is_dirty()</code>, <code>r.dirty(col)</code></td><td><code>servo.is_dirty()</code>, <code>servo.dirty(col)</code></td></tr>
+<tr><td>revert</td><td><code>r.revert(col)</code>, <code>r.revert()</code></td><td><code>servo.revert(col)</code>, <code>servo.revert_all()</code></td></tr>
+<tr><td>fields that differ from the baseline</td><td></td><td><code>servo.error()</code></td></tr>
+<tr><td>save</td><td><code>r.save()</code>: a patch or insert, now</td><td><code>servo.save()</code>: a flash, waits for it to settle</td></tr>
+<tr><td>status</td><td><code>r.status()</code>, <code>r.rejection()</code></td><td><code>servo.status()</code>, <code>servo.rejection()</code> with per-field errors</td></tr>
+</tbody>
+</table>
+</div>
+<p>They stay separate because they are different objects. A record is a script’s own short-lived
+draft over any Vista, and is gone when the script ends. A Servo lives in the Dio and outlasts the
+script. The form’s widgets are bound to it, its flash goes through the Dio’s write queue and route,
+and a route can reject single fields. Folding the two into one type would make the record depend
+on the Dio, or hide the Servo’s lifecycle behind data-vocabulary words.</p>
+<p><code>servo.save()</code> needs a tokio runtime context and blocks on the flash, so Servo scripts run under
+<code>spawn_blocking</code>, like any data script with a network backend.</p>
+<h2 id="scenery-the-shape-of-a-view"><a class="header" href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></h2>
+<p>A Vantage UI component’s <code>table:</code> binding can be a plain key or a short script that shapes a live
+view (a Scenery). The script builds a description that the page resolves when it mounts:</p>
+<!-- tested: vantage-ui scenery_script::tests::chain_builds_a_spec -->
+<pre><code class="language-rhai">scenery("top").sort("visitors", "desc").limit(10)
+</code></pre>
+<p>A child view through a relation, for the row selected in a grid:</p>
+<!-- tested: vantage-ui scenery_script::tests::scenery_ref_builds_the_same_related_shape -->
+<pre><code class="language-rhai">scenery("launches").where("id", "42").ref("payloads")
+</code></pre>
+<p>In a page this reads <code>launches_grid.selected_id</code> instead of <code>"42"</code>, and the page remounts the
+binding when the selection changes.</p>
+<p>Shared words, with the same meaning as on a table handle:</p>
+<ul>
+<li><code>where(col, value)</code>: equality only. Values carry as text, so a page number needs no
+<code>to_string()</code>.</li>
+<li><code>sort(col, dir)</code>: the direction is required, <code>"asc"</code> or <code>"desc"</code>.</li>
+<li><code>limit(n)</code>: at most <code>n</code> rows.</li>
+<li><code>ref(relation)</code>: the related rows. On a Scenery it must follow exactly one <code>where</code> on the
+parent’s id and nothing else, because the binding follows one parent row.</li>
+</ul>
+<p>Scenery-only words:</p>
+<ul>
+<li><code>tail(n)</code>: follow the last <code>n</code> rows as they arrive, for append-only feeds.</li>
+<li><code>arg(name, value)</code> and <code>args(#{ … })</code>: parameters passed to the table’s own <code>rhai:</code> query
+script as its <code>args</code> map, which reshape the query itself rather than filtering its result.</li>
+</ul>
+<p>Scenery has no reads or writes: it describes a view, and the page’s Dio opens it. The vocabulary
+lives in Vantage UI (<code>SceneryVocab</code> in <code>crates/app/src/infra/scenery_script.rs</code>), runs under
+<code>Limits::Ui</code>, and records every page value the script reads as a dependency of the binding.</p>
+<h2 id="faker-sims-1"><a class="header" href="#faker-sims-1">Faker sims</a></h2>
+<p>A faker sim is a Rhai script that runs from top to bottom on its own thread, with its own sim
+clock. Its local variables are its state, and <code>sleep</code> pauses it. The data vocabulary is there in
+full, over the engine’s memory store, and <code>table()</code> with no name is the sim’s own table:</p>
+<!-- tested: vantage-faker sim::tests::guide::order_sim_from_the_guide -->
+<pre><code class="language-rhai">if table().where("status", "Placed").count() &gt;= 40 {
+    done();
+}
+
+let id = table().insert(#{ customer: fake("name"), total: rand_float(5.0, 80.0), status: "Placed" });
+sleep(minutes(rand_int(5, 20)));
+
+table().patch(id, #{ status: "Shipped" });
+table("order_event").insert(#{ order: id, note: "shipped" });
+sleep(hours(2));
+
+table().delete(id);
+</code></pre>
+<p>On top of the data vocabulary, sims get:</p>
+<ul>
+<li><strong>data</strong>: <code>fake_row()</code> on a handle (<code>table().fake_row()</code>, <code>table("t").fake_row()</code>) returns a map
+with a generated value for each column the table declares through <code>SimEngineBuilder::columns</code>,
+without the id column. Sequential generators (<code>walk</code>, evenly spread <code>date</code>) advance one step per
+call, shared by every sim of the def.</li>
+<li><strong>time</strong>: <code>seconds(n)</code>, <code>minutes(n)</code>, <code>hours(n)</code>, <code>days(n)</code>, <code>sleep(d)</code>, <code>wait_until(t)</code>,
+<code>now()</code>, <code>now_secs()</code>, <code>wall_now()</code>, <code>wall_in(d)</code>, <code>elapsed()</code>, <code>clock()</code>, <code>done()</code>.</li>
+<li><strong>random</strong>: <code>pick</code>, <code>pick_weighted</code>, <code>rand_int</code>, <code>rand_float</code>, <code>chance(p)</code>, <code>pattern("BA####")</code>,
+<code>sentence(min, max)</code>, <code>fake(kind)</code>, <code>date_between(from, to)</code>.</li>
+<li><strong>spawn</strong>: <code>spawn_sim(name, args?)</code>, <code>sim_id()</code>, <code>sim_name()</code>, and the spawner’s <code>args</code>.</li>
+<li><strong>geo</strong>: <code>great_circle</code>, <code>bearing</code>, <code>interpolate</code>.</li>
+</ul>
+<p>A sim’s tables are memory Vistas, so reads and writes finish on the first poll and sims run
+without tokio (see <a href="#async-reads-from-a-synchronous-script">the bridge</a>). Writes
+broadcast the store’s change events to any watching Dio. During a warm start, each written table
+stays quiet and sends one <code>Reset</code> at the end. A missing table is a script error: the store’s
+tables are created by the dataset, not by the sim.</p>
+<p>The <code>vantage-faker</code> README covers defs, spawners, clocks, the operations budget and the built-in
+sims.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="expression-dialects"><a class="header" href="#expression-dialects">Expression Dialects</a></h1>
+<p>Not every script in a Vantage configuration is a data script. Some build a backend’s native query,
+some compute one value from one row, and some are text with a few holes in it. They run on the same
+<code>vantage-rhai</code> hosts with the same limits, but their vocabularies are separate from the data
+vocabulary, and from each other. This chapter tells them apart and points to where each is
+documented.</p>
+<ul>
+<li><a href="#data-scripts-and-expression-scripts">Data scripts and expression scripts</a></li>
+<li><a href="#sql-query-builders">SQL query builders</a></li>
+<li><a href="#surrealdb-expressions">SurrealDB expressions</a></li>
+<li><a href="#lazy-columns"><code>lazy:</code> columns</a></li>
+<li><a href="#templates">Templates</a></li>
+<li><a href="#command-scripts">Command scripts</a></li>
+</ul>
+<hr>
+<h2 id="data-scripts-and-expression-scripts"><a class="header" href="#data-scripts-and-expression-scripts">Data scripts and expression scripts</a></h2>
+<p>A data script works on sets of rows through Vistas: <code>table</code>, <code>where</code>, <code>list</code>, <code>insert</code>. It doesn’t
+know which backend it talks to.</p>
+<p>An expression script builds a query in one backend’s own terms: a SQL <code>SELECT</code>, a SurrealQL
+condition, a graph path. It runs once, when a Vista is built, and its result becomes part of that
+Vista’s query. It reads no rows itself.</p>
+<p>The two meet in one place: a backend’s extension verbs on a data handle, such as SurrealDB’s
+<code>self.with_condition(expr)</code>, take an expression built with the backend’s vocabulary (see
+<a href="#backend-extensions">Backend extensions</a>).</p>
+<h2 id="sql-query-builders"><a class="header" href="#sql-query-builders">SQL query builders</a></h2>
+<p>A YAML spec for a SQL table can replace its source with a script-built <code>SELECT</code>. The script uses
+<code>vantage-sql</code>’s builder (<code>select</code>, <code>from</code>, <code>field</code>, <code>where</code>, <code>group_by</code>, <code>expr</code>) and the shared
+primitives (<code>count</code>, <code>avg</code>, <code>coalesce</code>, <code>case_when</code>, <code>date_format</code>, …):</p>
+<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_rhai_source_is_read_only_and_filters -->
+<pre><code class="language-yaml">name: expensive_products
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+sqlite:
+  rhai: |
+    select().from("product").field("id").field("name").where(expr("price &gt; 15"))
+</code></pre>
+<p>A query-sourced Vista is read-only. A derived Vista (<code>base:</code> plus <code>rhai:</code>) gets the base’s
+<code>select()</code> as <code>base</code> and transforms it. Both are described in
+<a href="#the-rhai-layer">Config-Driven Vistas</a>, and the primitives in
+<a href="#sql-primitives">SQL Primitives</a>.</p>
+<p><code>where</code> here is the SQL builder’s method and takes an expression. On a data handle, <code>where</code> takes a
+column and a value. The name is the same because both narrow, but the two vocabularies never share
+a host.</p>
+<h2 id="surrealdb-expressions"><a class="header" href="#surrealdb-expressions">SurrealDB expressions</a></h2>
+<p><code>vantage-surrealdb</code> registers the same builder shape for SurrealQL, the same primitive names where
+the concept exists in both, and SurrealDB’s own terms where it doesn’t (graph paths, <code>SPLIT</code>,
+<code>me</code>). It backs <code>rhai:</code> sources, <code>base:</code> transforms, and the expressions handed to
+<code>with_condition</code>. See <a href="#surrealdb-primitives">SurrealDB Primitives</a>.</p>
+<p>The SQL and SurrealDB builders are two copies of a similar grammar. Merging them is a known
+follow-up and not part of the data vocabulary.</p>
+<p>A SurrealDB column spec may also carry <code>expr:</code>, a server-side computed column: the script is
+evaluated once with this vocabulary, and the backend projects the result as <code>(&lt;expr&gt;) AS &lt;column&gt;</code>
+on every read. Unlike a <code>lazy:</code> column it is part of the query, so it can follow record links and
+call SurrealDB functions. Other backends reject or ignore it.</p>
+<h2 id="lazy-columns"><a class="header" href="#lazy-columns"><code>lazy:</code> columns</a></h2>
+<p>A column’s <code>lazy:</code> script is a third kind: it computes one value from one row, in the Vista, after
+the backend has returned the row. It uses neither the data vocabulary nor a query builder, only
+<code>row</code>. <a href="#computed-columns">Computed columns</a> covers it.</p>
+<h2 id="templates"><a class="header" href="#templates">Templates</a></h2>
+<p>Many YAML strings are templates: text with <code>${ … }</code> holes. <code>vantage-rhai</code>’s
+<a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/slot/struct.Template.html"><code>Template</code></a> slot evaluates each hole as a Rhai expression against the
+host’s scope and joins the results. A template that is exactly one hole (surrounded by whitespace
+at most) keeps the hole’s value with its type, so <code>"${ row.total }"</code> stays a number and a map stays
+a map.</p>
+<p>Two look-alikes are not Rhai:</p>
+<ul>
+<li><code>import_from</code>’s mapping (see <a href="#importing">Writes</a>) only understands
+<code>${row.&lt;col&gt;}</code> column references. Other holes stay in the text as written.</li>
+<li>Vantage UI’s action texts (<code>title:</code>, <code>description:</code>, <code>terminal.args</code>) substitute <code>${row.x}</code> and
+<code>${form.x}</code> paths, with no expressions.</li>
+</ul>
+<h2 id="command-scripts"><a class="header" href="#command-scripts">Command scripts</a></h2>
+<p><code>vantage-cmd</code> tables read by running a Rhai script that calls <code>run(...)</code> for a subprocess and
+<code>parse_json</code> / <code>parse_jsonl</code> on its output, then returns an array of row maps. The script sees the
+read’s conditions, columns, limit and offset as variables. It is a third dialect, for shaping
+command output into rows, and is documented in the <code>vantage-cmd</code> crate.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="live-data-push-poll--freshness"><a class="header" href="#live-data-push-poll--freshness">Live Data: Push, Poll &amp; Freshness</a></h1>
 <p>A cache only stays correct if it finds out when the underlying data changes. There are two ways it
@@ -9334,7 +10768,7 @@ of the set arrives as a delete. Membership stops being something anyone has to r
 </div>
 <p>Only three drivers implement <code>watch_vista</code> at all. Everything in the poll rows inherits the trait
 default, which reports the capability as unsupported and leaves
-<a href="vantage_vista::VistaCapabilities"><code>can_subscribe</code></a> <code>false</code> — so <code>dio.watch()</code> on those is a no-op
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>can_subscribe</code></a> <code>false</code> — so <code>dio.watch()</code> on those is a no-op
 and a <code>refresh_every</code> timer carries the load.</p>
 <div id="admonition-poll-is-a-supported-answer-not-a-failure" class="admonition admonish-note" role="note" aria-labelledby="admonition-poll-is-a-supported-answer-not-a-failure-title">
 <div class="admonition-title">
@@ -9442,7 +10876,7 @@ changed.</li>
 <li><strong>The stream ending is normal.</strong> Connections drop; consumers resubscribe with backoff and reconcile
 the gap. <code>Dio::watch()</code> already does this for you.</li>
 </ul>
-<p>The consequence worth internalising: <a href="vantage_vista::VistaCapabilities"><code>can_subscribe</code></a> advertises
+<p>The consequence worth internalising: <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/capabilities/struct.VistaCapabilities.html"><code>can_subscribe</code></a> advertises
 an <em>attempt</em> to push, not a guarantee of delivery. No shipped backend is lossless, so anything that
 must not miss a change keeps a reconcile path — a slow timer, a refresh on reconnect — rather than
 trusting push alone.</p>
@@ -9542,7 +10976,7 @@ monitor it.</p>
 <p>Vantage UI works well with its default behaviour. This chapter starts from that default, and then
 adjusts it.</p>
 <hr>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<h2 id="overview-1"><a class="header" href="#overview-1">Overview</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -10702,7 +12136,7 @@ let people = stats.iter().find(|s| s.table == "people").expect("the table was re
 assert_eq!(people.repeats, 0, "the application fetched a window more than one time");
 assert_eq!(people.rows_redundant, 0, "rows arrived that the cache already held");
 <span class="boring">}</span></code></pre>
-<p><a href="optimising-diorama/vantage_diorama::stats::reset_fetch_stats"><code>reset_fetch_stats</code></a> makes the measurement local to one
+<p><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/stats/fn.reset_fetch_stats.html"><code>reset_fetch_stats</code></a> makes the measurement local to one
 test. The counters are global to the process and they accumulate. A test that does not reset them
 measures each test before it.</p>
 <p>To assert on the count of fetches, first measure the count for your interaction, then write that
@@ -10761,7 +12195,7 @@ advertised.</p>
 incremental steps — each one unlocks more framework features. You don’t have to implement all
 nine; stop whenever your persistence has enough capability for your use case.</p>
 <ul>
-<li><a href="#overview-1">Overview</a></li>
+<li><a href="#overview-2">Overview</a></li>
 <li><a href="#step-1-type-system">Step 1: Type System</a></li>
 <li><a href="#step-2-expressions">Step 2: Expressions</a></li>
 <li><a href="#step-3-operators">Step 3: Operators</a></li>
@@ -10773,7 +12207,7 @@ nine; stop whenever your persistence has enough capability for your use case.</p
 <li><a href="#step-9-contained-relations">Step 9: Contained Relations</a></li>
 </ul>
 <hr>
-<h2 id="overview-1"><a class="header" href="#overview-1">Overview</a></h2>
+<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -12381,13 +13815,15 @@ Mongo drivers avoid by shipping both from day one.</p>
 each hop fetches a row and traverses from it without falling out of Vista.</li>
 <li>Traversal here is strictly <strong>same-persistence</strong> — a Vista describes one backend. Cross-backend
 relations live one layer up in <code>vantage-vista-factory</code>’s
-<a href="new-persistence/vantage_vista_factory"><code>VistaCatalog</code></a>, which resolves the target by name in <em>its</em> driver and
+<a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/index.html"><code>VistaCatalog</code></a>, which resolves the target by name in <em>its</em> driver and
 narrows it with universal eq-conditions. Your shell doesn’t need any code for that to work.</li>
 </ul>
 <h4 id="native-conditions-from-outside-add_raw_condition"><a class="header" href="#native-conditions-from-outside-add_raw_condition">Native conditions from outside: <code>add_raw_condition</code></a></h4>
 <p>Universal eq-conditions cover the CBOR vocabulary, but some callers hold a condition already in
-your backend’s <em>native</em> type — the Rhai layer is the in-tree case: a <code>modify:</code> or traversal script
-builds a vendor <code>Expression</code> that no <code>(field, value)</code> pair can carry.
+your backend’s <em>native</em> type — the Rhai layer is the in-tree case: a <code>modify:</code> script builds a
+vendor <code>Expression</code> that no <code>(field, value)</code> pair can carry, and hands it over through an extension
+verb your shell registers in <code>register_rhai_extensions</code> (SurrealDB’s <code>self.with_condition(expr)</code>;
+see <a href="#backend-extensions">Backend extensions</a>).
 <code>TableShell::add_raw_condition</code> is the hatch for exactly that: it receives a <code>Box&lt;dyn Any&gt;</code>,
 downcasts to the driver’s native condition type, and pushes it onto the wrapped table — SurrealDB’s
 shell is the worked example (it rejects anything that isn’t an <code>Expression&lt;AnySurrealType&gt;</code>, with a
@@ -12909,7 +14345,7 @@ rest of the page hydrates normally.</p>
 <p><code>Id</code> and id-keyed <code>Column</code> sources read by key through <code>get_value</code> — the uniform
 “one record by key” primitive (a <code>cmd</code> detail script, a SQL <code>WHERE id =</code>, a REST
 <code>GET /{id}</code>). <code>Build</code> returns an arbitrary narrowed Vista, so it is per-row only.</p>
-<h3 id="declaring-one"><a class="header" href="#declaring-one">Declaring one</a></h3>
+<h3 id="declaring-one-1"><a class="header" href="#declaring-one-1">Declaring one</a></h3>
 <p>An <code>Augmentation</code> is built in Rust. There is no serde mirror of these types: a
 consumer already has its own config vocabulary — vantage-ui reads an <code>augment:</code>
 block naming a source table, a key and a column list — and maps that onto
@@ -12921,11 +14357,12 @@ more spelling of the same idea for each consumer to ignore.</p>
 hand-written Rust is another. A consumer that wants a scripted narrowing builds
 the closure with <code>vantage_vista::augment_source_closure</code> (vista’s <code>rhai</code>
 feature) and hands the result to <code>Source::Build</code>:</p>
-<pre><code class="language-rhai">self.add_condition_eq("key", row.key)
+<pre><code class="language-rhai">self.where("key", row.key)
 </code></pre>
 <p>This is the same machinery a reference build-script uses, pointed at a possibly
 different persistence. The diorama core never sees a script string; all engine
-assembly stays in <code>vantage-vista</code>.</p>
+assembly stays in <code>vantage-vista</code>. The script’s vocabulary is the table handle’s,
+covered in <a href="#augmentation-sources">Scripting with Rhai</a>.</p>
 <h2 id="merging"><a class="header" href="#merging">Merging</a></h2>
 <p><code>merge.columns</code> lists the detail columns to lift; an empty list lifts all of
 them. The detail record is the authoritative hydration of the row, so on a name
@@ -12951,7 +14388,7 @@ than degrading silently:</p>
 scatter the results back, for <code>Id</code>/<code>Column</code> sources.</li>
 <li><strong>Detail-key cache</strong> — dedupe fetches across master rows that share a key
 (non-unique <code>Column</code> sources).</li>
-<li><strong>Scripted fetch</strong> — Rhai fetch verbs choosing how to pull.</li>
+<li><strong>Scripted fetch</strong> — a script choosing how to pull.</li>
 </ul>
 <h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
 <p>To augment a master with a second source:</p>
@@ -13076,7 +14513,7 @@ the underlying struct directly.</p>
 
 <h2 id="or_--and_--logical-combinators"><a class="header" href="#or_--and_--logical-combinators"><code>or_()</code> / <code>and_()</code> — Logical Combinators</a></h2>
 <p>By default, multiple calls to <code>.with_condition()</code> combine with <code>AND</code>. When you need <code>OR</code>, use
-<a href="sql/vantage_sql::primitives::logical::or_"><code>or_()</code></a>:</p>
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/logical/fn.or_.html"><code>or_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>use vantage_sql::primitives::*;
@@ -13084,7 +14521,7 @@ the underlying struct directly.</p>
 // role = 'admin' OR role = 'superuser'
 let cond = or_(ident("role").eq("admin"), ident("role").eq("superuser"));
 <span class="boring">}</span></code></pre>
-<p>For nested logic, combine with <a href="sql/vantage_sql::primitives::logical::and_"><code>and_()</code></a>:</p>
+<p>For nested logic, combine with <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/logical/fn.and_.html"><code>and_()</code></a>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>// (price &gt; 100 AND in_stock = 1) OR (featured = 1)
@@ -13103,8 +14540,8 @@ for MySQL).</p>
 let qualified = ident("name").dot_of("u");    // "u"."name"
 let aliased = ident("total").with_alias("t"); // "total" AS "t"
 <span class="boring">}</span></code></pre>
-<p><a href="sql/vantage_sql::primitives::identifier::ident"><code>ident()</code></a> is a shorthand for
-<a href="sql/vantage_sql::primitives::identifier::Identifier::new"><code>Identifier::new()</code></a>. Reserved words and
+<p><a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/identifier/fn.ident.html"><code>ident()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/identifier/struct.Identifier.html#method.new"><code>Identifier::new()</code></a>. Reserved words and
 names with spaces are quoted automatically.</p>
 <p>Each backend also has a <strong>typed</strong> identifier — <code>sqlite_ident()</code>, <code>pg_ident()</code>, <code>mysql_ident()</code> —
 returning a backend-pinned wrapper so operations like <code>.eq()</code> and <code>.gt()</code> resolve without
@@ -13112,7 +14549,7 @@ ambiguity. The generic <code>ident()</code> works when the backend can be inferr
 <code>sqlite_expr!()</code>, or passed where a specific <code>Expressive&lt;T&gt;</code> is expected); reach for the typed
 variant when calling operations directly.</p>
 <h2 id="fx--function-calls"><a class="header" href="#fx--function-calls"><code>fx!</code> — Function Calls</a></h2>
-<p>The <a href="sql/vantage_sql::fx"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
+<p>The <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/macro.fx.html"><code>fx!</code></a> macro builds a SQL function call. Arguments are passed directly —
 <code>.expr()</code> is called on each one automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -13131,7 +14568,7 @@ fx!("round", fx!("avg", ident("price")), 2i64)
 // =&gt; ROUND(AVG("price"), 2)
 <span class="boring">}</span></code></pre>
 <p>If you need to build arguments programmatically (e.g. from a <code>Vec</code>), use
-<a href="sql/vantage_sql::primitives::fx::Fx::new"><code>Fx::new()</code></a> directly:</p>
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/fx/struct.Fx.html#method.new"><code>Fx::new()</code></a> directly:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let args: Vec&lt;Expression&lt;AnySqliteType&gt;&gt; = columns.iter().map(|c| c.expr()).collect();
@@ -13148,10 +14585,10 @@ let f = Fx::new("coalesce", args);
     "sold out",
 );
 <span class="boring">}</span></code></pre>
-<p><a href="sql/vantage_sql::primitives::ternary::ternary"><code>ternary()</code></a> is a shorthand for
-<a href="sql/vantage_sql::primitives::ternary::Ternary::new"><code>Ternary::new()</code></a>.</p>
+<p><a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/ternary/fn.ternary.html"><code>ternary()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/ternary/struct.Ternary.html#method.new"><code>Ternary::new()</code></a>.</p>
 <h2 id="case--case-expressions"><a class="header" href="#case--case-expressions"><code>Case</code> — CASE Expressions</a></h2>
-<p>For more than two branches, use <a href="sql/vantage_sql::primitives::case::Case"><code>Case</code></a> to build a full
+<p>For more than two branches, use <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/case/struct.Case.html"><code>Case</code></a> to build a full
 <code>CASE WHEN ... END</code> block:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -13162,12 +14599,12 @@ let f = Fx::new("coalesce", args);
 <span class="boring">}</span></code></pre>
 <h2 id="concat_--string-concatenation"><a class="header" href="#concat_--string-concatenation"><code>concat_!</code> — String Concatenation</a></h2>
 <p>Concatenates expressions. Renders as <code>||</code> on SQLite/Postgres, <code>CONCAT()</code> on MySQL. The
-<a href="sql/vantage_sql::concat_"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/macro.concat_.html"><code>concat_!</code></a> macro calls <code>.expr()</code> on each argument automatically:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>concat_!(ident("first_name"), " ", ident("last_name"))
 <span class="boring">}</span></code></pre>
-<p>Use <a href="sql/vantage_sql::primitives::concat::Concat::ws"><code>.ws()</code></a> for a separator — it accepts any
+<p>Use <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/concat/struct.Concat.html#method.ws"><code>.ws()</code></a> for a separator — it accepts any
 <code>Expressive&lt;T&gt;</code>, including string literals:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -13184,7 +14621,7 @@ let f = Fx::new("coalesce", args);
 // MySQL:    INTERVAL 30 DAY
 // Postgres: INTERVAL '30 days'
 <span class="boring">}</span></code></pre>
-<p>See <a href="sql/vantage_sql::primitives::interval::Interval"><code>Interval</code></a> for available constructors (<code>days</code>,
+<p>See <a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/interval/struct.Interval.html"><code>Interval</code></a> for available constructors (<code>days</code>,
 <code>hours</code>, <code>months</code>, etc.).</p>
 <h2 id="date_format--date-formatting"><a class="header" href="#date_format--date-formatting"><code>date_format()</code> — Date Formatting</a></h2>
 <p>Portable strftime-style formatting. Translates format tokens per backend:</p>
@@ -13195,9 +14632,9 @@ let f = Fx::new("coalesce", args);
 // MySQL:    DATE_FORMAT("created_at", '%Y-%m-%d')
 // Postgres: TO_CHAR("created_at", 'YYYY-MM-DD')
 <span class="boring">}</span></code></pre>
-<p><a href="sql/vantage_sql::primitives::date_format::date_format"><code>date_format()</code></a> is a shorthand for
-<a href="sql/vantage_sql::primitives::date_format::DateFormat::new"><code>DateFormat::new()</code></a>. Use
-<a href="sql/vantage_sql::primitives::date_format::DateFormat::raw_format"><code>.raw_format()</code></a> to skip token
+<p><a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/date_format/fn.date_format.html"><code>date_format()</code></a> is a shorthand for
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/date_format/struct.DateFormat.html#method.new"><code>DateFormat::new()</code></a>. Use
+<a href="https://docs.rs/vantage_sql/0.6.28/vantage_sql/primitives/date_format/struct.DateFormat.html#method.raw_format"><code>.raw_format()</code></a> to skip token
 translation and pass a native format string.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="type-conversions"><a class="header" href="#type-conversions">Type Conversions</a></h1>

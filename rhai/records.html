@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Faults: Errors, Outages &amp; Lies - Vantage Framework</title>
+        <title>Records - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,155 +175,169 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="faults-errors-outages--lies"><a class="header" href="#faults-errors-outages--lies">Faults: Errors, Outages &amp; Lies</a></h1>
-<p>Each source until now answered, and its answers were true. Production sources are not always honest.
-A source can fail one request while the user scrolls. It can stop for ten seconds. It can also
-report a row count that it will not serve.</p>
-<p>Here the cache stops being an optimisation. It becomes the component that keeps your application
-usable.</p>
-<h2 id="a-source-with-faults"><a class="header" href="#a-source-with-faults">A source with faults</a></h2>
-<pre><code class="language-yaml"># datasource/flaky.yaml
-type: faker
-effect: static
-debug: true
-count: 1000
-seed: 107
-shape:
-  capabilities: [count, fetch_window, order]
-  latency:
-    window: 100ms..300ms
-  faults:
-    error_rate: 0.2      # one request in five fails
-    offline: 10s/60s     # &lt;down&gt;/&lt;period&gt;: down for 10s in each 60s
-    total_lie: -13       # reports 13 fewer rows than it will serve
-</code></pre>
-<p>There are three independent faults, and each one repeats because the shape has a seed.</p>
-<h2 id="what-a-failure-looks-like"><a class="header" href="#what-a-failure-looks-like">What a failure looks like</a></h2>
-<pre><code class="language-text">22:08:05.813  flaky  dio  fetch #1 asks for rows 0..200 — 200 missing, 0 already held
-22:08:05.978  flaky  dio  fetch #1 failed after 164ms — shaped source request failed (injected fault)
-</code></pre>
-<p>The request identifier connects the two lines. The duration tells you how long you waited for the
-failure. The message is the error from the source.</p>
-<p>What is <strong>absent</strong> is more important. There is no state line, no cache line, and no total line.</p>
-<p><strong>A failed fetch changes nothing.</strong> The rows that the view already had are still present, still in
-their correct positions, and still on screen. A failed refresh costs freshness, not data.</p>
-<h2 id="the-viewport-causes-the-retry"><a class="header" href="#the-viewport-causes-the-retry">The viewport causes the retry</a></h2>
-<p>Nothing retries on a timer, and this is deliberate. The rows are still absent. The next time that a
-view declares a viewport that includes those rows, the loader asks again. A scroll, a repaint, or a
-window that gets focus each cause this.</p>
-<pre><code class="language-text">flaky  dio  fetch #2 asks for rows 0..200 — 200 missing, 0 already held
-flaky  dio  fetch #2 got 200 rows in 210ms
-flaky  cache +200 new, 0 updated — now holding 200 of 987 (20.3%)
-flaky  total 987 rows — stated by the source in the same response
-</code></pre>
-<p>The retry is a result of demand. It is not a policy. It therefore needs no backoff configuration,
-and it cannot flood the source: if no view looks at a range, the loader sends no request for it.</p>
-<div id="admonition-the-one-failure-that-does-flood-the-source" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-one-failure-that-does-flood-the-source-title">
-<div class="admonition-title">
-<div id="admonition-the-one-failure-that-does-flood-the-source-title">
-<p>The one failure that does flood the source</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-one-failure-that-does-flood-the-source"></a>
-</div>
-
-<div>
-<p>There is an exception, and the <code>optimising</code> project produced it.</p>
-<p>A fetch can fail <em>immediately</em> and always — a rejected query, and not an unreliable connection. Each
-viewport movement then sends a request, each request fails immediately, and the application uses all
-available CPU.</p>
-<p>During the writing of this guide, a faker datasource advertised <code>order</code> while the source refused
-every ordered query. Vantage UI appeared to stop responding.</p>
-<p>The lesson is not about retry policy. <strong>A capability that a source advertises but cannot do is worse
-than a capability that it never claims</strong>, because nothing limits the rate of the failure.</p>
-</div>
-
-</div>
-
-<h2 id="the-dishonest-total"><a class="header" href="#the-dishonest-total">The dishonest total</a></h2>
-<p>Read the two last lines above again. The table has <strong>1,000</strong> rows. The source says 987.</p>
-<p>The grid uses the total from the source, because the source is the authority on how many rows it
-has. One condition overrides this rule, and the next paragraph gives it.</p>
-<p>A total that is too small is the safe direction. The grid makes its scrollbar 13 rows short, and the
-user cannot reach the last rows.</p>
-<p>A total that is too large is the dangerous direction. If a fetch asks for a range with missing rows,
-and it fills <strong>none</strong> of them, then the set ends at the first missing row, whatever the total says.
-The framework caps the total and reports the cap with the message <em>“capped: the source promises more
-than it serves”</em>.</p>
-<p>Without this rule, the grid shows rows that no fetch can fill. A missing row causes a fetch.
-Therefore the application asks the source again, one request each few seconds, for as long as the
-page stays open.</p>
-<h2 id="outages"><a class="header" href="#outages">Outages</a></h2>
-<p><code>offline: 10s/60s</code> stops the source on a schedule. In the stream, an outage looks like a sequence of
-failures. There is no separate offline state to handle, no reconnect procedure, and no separate path
-in your code.</p>
+                        <h1 id="records"><a class="header" href="#records">Records</a></h1>
+<p>A record is a draft of one row. It reads like a map, stages edits, and saves only what changed.
+Use it when a script edits a row field by field, or when a host hands a script “the current row”
+(Vantage UI’s action bodies receive <code>row</code> as a record).</p>
 <ul>
-<li>Cached rows continue on screen, and they do not change.</li>
-<li>Ranges that the application has not fetched stay empty. The loader asks for them again when a view
-looks at them.</li>
-<li>When the source returns, the next viewport succeeds and fills the empty rows.</li>
+<li><a href="#editing-an-existing-row">Editing an existing row</a></li>
+<li><a href="#a-new-row">A new row</a></li>
+<li><a href="#dirty-state-and-revert">Dirty state and revert</a></li>
+<li><a href="#status-and-failures">Status and failures</a></li>
+<li><a href="#deleting">Deleting</a></li>
+<li><a href="#permissions">Permissions</a></li>
+<li><a href="#records-in-rust">Records in Rust</a></li>
 </ul>
-<p>The difficult condition is the first open with an empty cache during an outage. There is nothing to
-show and nothing to fetch. This is one more reason to measure the cold run and the warm run
-separately.</p>
-<h2 id="what-to-check-under-faults"><a class="header" href="#what-to-check-under-faults">What to check under faults</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Question</th><th>Where to look</th></tr>
-</thead>
-<tbody>
-<tr><td>Did a failure delete data?</td><td>No <code>cache</code> line after the <code>failed</code> line, and rows still on screen</td></tr>
-<tr><td>Did the retry behave correctly?</td><td>One <code>asks for</code> line for each viewport movement, and not a sequence of them</td></tr>
-<tr><td>Is the total correct?</td><td>The <code>total</code> line, and whether the framework ever caps it</td></tr>
-<tr><td>Did recovery need a restart?</td><td>A <code>got</code> line after the failures, with no restart</td></tr>
-</tbody>
-</table>
-</div>
-<p>An application that handles faults well produces a stream that looks normal: some failures, some
-retries when a view looks at the rows, and rows that never disappear.</p>
 <hr>
-<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<h2 id="editing-an-existing-row"><a class="header" href="#editing-an-existing-row">Editing an existing row</a></h2>
+<p><code>record(id)</code> loads the row through the handle and throws if no row has that id:</p>
+<!-- tested: rhai_guide::records::edit_existing -->
+<pre><code class="language-rhai">let o = table("order").record("o2");
+o.status = "paid";
+o["total"] = 45;
+
+let was = o.baseline().status;
+let staged = [o.dirty("status"), o.dirty("client")];
+o.save();   // patches `status` and `total`, nothing else
+
+#{
+    was: was,
+    staged: staged,
+    dirty: o.is_dirty(),
+    stored: table("order").get("o2"),
+}
+</code></pre>
+<p>A record keeps two layers:</p>
+<ul>
+<li>the <strong>baseline</strong>: the row as last loaded or saved (<code>baseline()</code> returns it as a map);</li>
+<li>the <strong>changes</strong>: fields set since then.</li>
+</ul>
+<p>Reading a field (<code>o.status</code>, <code>o["status"]</code>) returns the change if there is one, else the baseline
+value, else <code>()</code>. Setting a field stages a change. <code>save()</code> sends a <code>patch</code> with the changed fields
+only, then folds them into the baseline. A record with no changes saves nothing and returns its id.</p>
+<h2 id="a-new-row"><a class="header" href="#a-new-row">A new row</a></h2>
+<p><code>record()</code> with no id starts a draft of a row that doesn’t exist yet:</p>
+<!-- tested: rhai_guide::records::new_row -->
+<pre><code class="language-rhai">let n = table("client").record();
+n.set(#{ name: "Dee", vip: false });
+let id = n.save();   // an insert; the backend picks the id
+
+#{
+    same_id: n.id == id,
+    status: n.status(),
+    stored: table("client").get(id).name,
+}
+</code></pre>
+<p>The first <code>save()</code> of a new record is an <code>insert</code>. After it, the record has an id and later saves
+are patches. <code>set(map)</code> stages several fields at once and returns the record, so
+<code>table("t").record().set(#{ … }).save()</code> works in one line. A key with dots (<code>"inventory.stock"</code>)
+writes into a nested map, which is how a form field bound to an embedded object reaches the right
+place.</p>
+<p>The id column can’t be set on a record. <code>n.id</code> is read-only, and setting the id column through
+<code>set</code> or an index throws:</p>
+<!-- tested: rhai_guide::records::id_is_read_only -->
+<pre><code class="language-rhai">let n = table("client").record();
+n.set(#{ id: "c9", name: "Eve" })   // throws: `id` is the id column
+</code></pre>
+<p>To insert under an id you choose, use <code>insert(#{ id: …, … })</code> or <code>upsert(id, map)</code> on the handle.</p>
+<p>The record finds out which column is the id column on the first field set, by resolving its
+table, and keeps the answer, so later sets don’t resolve the table again. A table with no id
+column falls back to <code>id</code>.</p>
+<h2 id="dirty-state-and-revert"><a class="header" href="#dirty-state-and-revert">Dirty state and revert</a></h2>
+<!-- tested: rhai_guide::records::revert -->
+<pre><code class="language-rhai">let c = table("client").record("c2");
+c.name = "Benjamin";
+c.vip = true;
+
+c.revert("vip");
+let still_dirty = c.is_dirty();   // `name` is still staged
+c.revert();
+
+[still_dirty, c.is_dirty(), c.name]
+</code></pre>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Item</th><th>What it does</th></tr>
+<tr><th>Verb</th><th>Meaning</th></tr>
 </thead>
 <tbody>
-<tr><td><code>faults.error_rate</code></td><td>Makes a fraction of the requests fail</td></tr>
-<tr><td><code>faults.offline</code></td><td>Stops the source on a schedule, in the form <code>&lt;down&gt;/&lt;period&gt;</code></td></tr>
-<tr><td><code>faults.total_lie</code></td><td>Changes the number that the grid uses to set its size</td></tr>
-<tr><td><code>failed after …</code></td><td>The request that did not complete, with its cost and the error from the source</td></tr>
-<tr><td><em>capped: promises more than it serves</em></td><td>The defence against a total that no fetch can fill</td></tr>
+<tr><td><code>is_dirty()</code></td><td>any field staged</td></tr>
+<tr><td><code>dirty(col)</code></td><td><code>col</code> staged</td></tr>
+<tr><td><code>revert(col)</code></td><td>drop the staged change to <code>col</code></td></tr>
+<tr><td><code>revert()</code></td><td>drop every staged change</td></tr>
+<tr><td><code>baseline()</code></td><td>the last saved row, as a map (empty for a new record)</td></tr>
 </tbody>
 </table>
 </div>
-<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
-<div class="admonition-title">
-<div id="admonition-what-is-next-title">
-<p>What is next</p>
-</div>
+<h2 id="status-and-failures"><a class="header" href="#status-and-failures">Status and failures</a></h2>
+<p><code>status()</code> is <code>"tracking"</code> normally, <code>"pending"</code> while <code>save()</code> or <code>delete()</code> runs, and <code>"failed"</code>
+when the last one failed. A failed save throws, and the record keeps its staged changes, so the
+script can fix them and try again. <code>rejection()</code> then returns <code>#{ message, fields }</code>, and returns
+<code>()</code> while the record isn’t failed.</p>
+<!-- tested: rhai_guide::records::failed_save -->
+<pre><code class="language-rhai">let o = table("order").record("o3");
+table("order").delete("o3");   // the row goes away underneath the draft
 
-<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
-</div>
+o.status = "refunded";
+let threw = false;
+try { o.save(); } catch (err) { threw = true; }
 
-<div>
-<p>The last section makes assertions from what you read. A number that becomes worse then makes a test
-fail, instead of nobody noticing.</p>
-</div>
+#{
+    threw: threw,
+    status: o.status(),
+    message: o.rejection().message,
+    staged: o.dirty("status"),
+}
+</code></pre>
+<p>Saving a record whose row has gone fails with “record <code>o3</code> no longer exists”. <code>fields</code> is
+always empty for the data vocabulary’s records. Servo drafts, which carry per-field validation
+errors from a Dio’s flash route, fill it in (see <a href="./layers.html">Layers</a>).</p>
+<h2 id="deleting"><a class="header" href="#deleting">Deleting</a></h2>
+<p><code>delete()</code> deletes the record’s row and returns <code>true</code>, or <code>false</code> if the row was already gone.
+A new record that was never saved has nothing to delete and throws.</p>
+<h2 id="permissions"><a class="header" href="#permissions">Permissions</a></h2>
+<p>Records save through the same checks as the write verbs: the target’s capabilities (<code>can_insert</code>
+for a new record, <code>can_update</code> for an existing one, <code>can_delete</code> for <code>delete()</code>), and the host’s
+<code>Writes</code> setting. On a <code>Terminals::Read</code> host, <code>record(id)</code> still loads and reads, and <code>save()</code> or
+<code>delete()</code> throws “writes aren’t available here”. Vantage UI uses this for action predicates
+(<code>when:</code>), which see <code>row</code> but must not change it.</p>
+<h2 id="records-in-rust"><a class="header" href="#records-in-rust">Records in Rust</a></h2>
+<p>A host that already holds a row can give it to a script without a second fetch:
+<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/record/struct.RecordDraft.html#method.from_row"><code>RecordDraft::from_row(handle, resolver, writes, id, row)</code></a>.
+After the script runs, <code>changes()</code> returns what it staged and <code>values()</code> the row as the script
+last saw it. Vantage UI builds the action body’s <code>row</code> this way, over the page’s Dio Vista.</p>
+<p>A row that belongs to no table, such as the <code>row</code> an action predicate reads, still needs a
+resolver: the first field set asks it for the id column. <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html#method.empty"><code>Vista::empty(name)</code></a>
+is a Vista with no columns, no rows and no capabilities, made for this:</p>
+<!-- tested: rhai_guide::records::row_without_table -->
+<pre><code class="language-rust ignore">let no_table: TargetResolver = Arc::new(|_| Ok(Vista::empty("row")));
+let row = RecordDraft::from_row(
+    Handle::named("row"),
+    Some(no_table),
+    Writes::Denied("this row is read-only".into()),
+    "o1".into(),
+    values,
+);</code></pre>
+<p>A script given this <code>row</code> can read it and stage fields, and every save throws the denial:</p>
+<!-- tested: rhai_guide::records::row_without_table -->
+<pre><code class="language-rhai">row.status = "void";   // staged on the draft
+let saved = true;
+try { row.save(); } catch (err) { saved = false; }
 
-</div>
-
+#{ status: row.status, was: row.baseline().status, saved: saved }
+</code></pre>
+<p>returns <code>status: "void"</code>, <code>was: "paid"</code> and <code>saved: false</code>. Setting <code>row["id"]</code> still throws,
+because the empty table has no id column and the draft falls back to <code>id</code>.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../optimising-diorama/waste.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rhai/computed.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../optimising-diorama/regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rhai/surfaces.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -333,11 +347,11 @@ fail, instead of nobody noticing.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../optimising-diorama/waste.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rhai/computed.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../optimising-diorama/regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rhai/surfaces.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

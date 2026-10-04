@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8ddbe4c8.js";
+            window.path_to_searchindex_js = "searchindex-ed4d36fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8d4429da.js"></script>
+        <script src="toc-aa92909c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -290,11 +290,12 @@ more spelling of the same idea for each consumer to ignore.</p>
 hand-written Rust is another. A consumer that wants a scripted narrowing builds
 the closure with <code>vantage_vista::augment_source_closure</code> (vista’s <code>rhai</code>
 feature) and hands the result to <code>Source::Build</code>:</p>
-<pre><code class="language-rhai">self.add_condition_eq("key", row.key)
+<pre><code class="language-rhai">self.where("key", row.key)
 </code></pre>
 <p>This is the same machinery a reference build-script uses, pointed at a possibly
 different persistence. The diorama core never sees a script string; all engine
-assembly stays in <code>vantage-vista</code>.</p>
+assembly stays in <code>vantage-vista</code>. The script’s vocabulary is the table handle’s,
+covered in <a href="./rhai/surfaces.html#augmentation-sources">Scripting with Rhai</a>.</p>
 <h2 id="merging"><a class="header" href="#merging">Merging</a></h2>
 <p><code>merge.columns</code> lists the detail columns to lift; an empty list lifts all of
 them. The detail record is the authoritative hydration of the row, so on a name
@@ -320,7 +321,7 @@ than degrading silently:</p>
 scatter the results back, for <code>Id</code>/<code>Column</code> sources.</li>
 <li><strong>Detail-key cache</strong> — dedupe fetches across master rows that share a key
 (non-unique <code>Column</code> sources).</li>
-<li><strong>Scripted fetch</strong> — Rhai fetch verbs choosing how to pull.</li>
+<li><strong>Scripted fetch</strong> — a script choosing how to pull.</li>
 </ul>
 <h2 id="checklist"><a class="header" href="#checklist">Checklist</a></h2>
 <p>To augment a master with a second source:</p>

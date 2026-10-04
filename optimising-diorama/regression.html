@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8ddbe4c8.js";
+            window.path_to_searchindex_js = "../searchindex-ed4d36fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-8d4429da.js"></script>
+        <script src="../toc-aa92909c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -269,7 +269,7 @@ let people = stats.iter().find(|s| s.table == "people").expect("the table was re
 assert_eq!(people.repeats, 0, "the application fetched a window more than one time");
 assert_eq!(people.rows_redundant, 0, "rows arrived that the cache already held");
 <span class="boring">}</span></code></pre>
-<p><a href="vantage_diorama::stats::reset_fetch_stats"><code>reset_fetch_stats</code></a> makes the measurement local to one
+<p><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/stats/fn.reset_fetch_stats.html"><code>reset_fetch_stats</code></a> makes the measurement local to one
 test. The counters are global to the process and they accumulate. A test that does not reset them
 measures each test before it.</p>
 <p>To assert on the count of fetches, first measure the count for your interaction, then write that

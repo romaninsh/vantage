@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Faults: Errors, Outages &amp; Lies - Vantage Framework</title>
+        <title>Hosts - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,155 +175,159 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="faults-errors-outages--lies"><a class="header" href="#faults-errors-outages--lies">Faults: Errors, Outages &amp; Lies</a></h1>
-<p>Each source until now answered, and its answers were true. Production sources are not always honest.
-A source can fail one request while the user scrolls. It can stop for ten seconds. It can also
-report a row count that it will not serve.</p>
-<p>Here the cache stops being an optimisation. It becomes the component that keeps your application
-usable.</p>
-<h2 id="a-source-with-faults"><a class="header" href="#a-source-with-faults">A source with faults</a></h2>
-<pre><code class="language-yaml"># datasource/flaky.yaml
-type: faker
-effect: static
-debug: true
-count: 1000
-seed: 107
-shape:
-  capabilities: [count, fetch_window, order]
-  latency:
-    window: 100ms..300ms
-  faults:
-    error_rate: 0.2      # one request in five fails
-    offline: 10s/60s     # &lt;down&gt;/&lt;period&gt;: down for 10s in each 60s
-    total_lie: -13       # reports 13 fewer rows than it will serve
-</code></pre>
-<p>There are three independent faults, and each one repeats because the shape has a seed.</p>
-<h2 id="what-a-failure-looks-like"><a class="header" href="#what-a-failure-looks-like">What a failure looks like</a></h2>
-<pre><code class="language-text">22:08:05.813  flaky  dio  fetch #1 asks for rows 0..200 — 200 missing, 0 already held
-22:08:05.978  flaky  dio  fetch #1 failed after 164ms — shaped source request failed (injected fault)
-</code></pre>
-<p>The request identifier connects the two lines. The duration tells you how long you waited for the
-failure. The message is the error from the source.</p>
-<p>What is <strong>absent</strong> is more important. There is no state line, no cache line, and no total line.</p>
-<p><strong>A failed fetch changes nothing.</strong> The rows that the view already had are still present, still in
-their correct positions, and still on screen. A failed refresh costs freshness, not data.</p>
-<h2 id="the-viewport-causes-the-retry"><a class="header" href="#the-viewport-causes-the-retry">The viewport causes the retry</a></h2>
-<p>Nothing retries on a timer, and this is deliberate. The rows are still absent. The next time that a
-view declares a viewport that includes those rows, the loader asks again. A scroll, a repaint, or a
-window that gets focus each cause this.</p>
-<pre><code class="language-text">flaky  dio  fetch #2 asks for rows 0..200 — 200 missing, 0 already held
-flaky  dio  fetch #2 got 200 rows in 210ms
-flaky  cache +200 new, 0 updated — now holding 200 of 987 (20.3%)
-flaky  total 987 rows — stated by the source in the same response
-</code></pre>
-<p>The retry is a result of demand. It is not a policy. It therefore needs no backoff configuration,
-and it cannot flood the source: if no view looks at a range, the loader sends no request for it.</p>
-<div id="admonition-the-one-failure-that-does-flood-the-source" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-one-failure-that-does-flood-the-source-title">
-<div class="admonition-title">
-<div id="admonition-the-one-failure-that-does-flood-the-source-title">
-<p>The one failure that does flood the source</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-one-failure-that-does-flood-the-source"></a>
-</div>
-
-<div>
-<p>There is an exception, and the <code>optimising</code> project produced it.</p>
-<p>A fetch can fail <em>immediately</em> and always — a rejected query, and not an unreliable connection. Each
-viewport movement then sends a request, each request fails immediately, and the application uses all
-available CPU.</p>
-<p>During the writing of this guide, a faker datasource advertised <code>order</code> while the source refused
-every ordered query. Vantage UI appeared to stop responding.</p>
-<p>The lesson is not about retry policy. <strong>A capability that a source advertises but cannot do is worse
-than a capability that it never claims</strong>, because nothing limits the rate of the failure.</p>
-</div>
-
-</div>
-
-<h2 id="the-dishonest-total"><a class="header" href="#the-dishonest-total">The dishonest total</a></h2>
-<p>Read the two last lines above again. The table has <strong>1,000</strong> rows. The source says 987.</p>
-<p>The grid uses the total from the source, because the source is the authority on how many rows it
-has. One condition overrides this rule, and the next paragraph gives it.</p>
-<p>A total that is too small is the safe direction. The grid makes its scrollbar 13 rows short, and the
-user cannot reach the last rows.</p>
-<p>A total that is too large is the dangerous direction. If a fetch asks for a range with missing rows,
-and it fills <strong>none</strong> of them, then the set ends at the first missing row, whatever the total says.
-The framework caps the total and reports the cap with the message <em>“capped: the source promises more
-than it serves”</em>.</p>
-<p>Without this rule, the grid shows rows that no fetch can fill. A missing row causes a fetch.
-Therefore the application asks the source again, one request each few seconds, for as long as the
-page stays open.</p>
-<h2 id="outages"><a class="header" href="#outages">Outages</a></h2>
-<p><code>offline: 10s/60s</code> stops the source on a schedule. In the stream, an outage looks like a sequence of
-failures. There is no separate offline state to handle, no reconnect procedure, and no separate path
-in your code.</p>
+                        <h1 id="hosts"><a class="header" href="#hosts">Hosts</a></h1>
+<p>A script never runs on a bare Rhai engine. It runs in a <a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/host/struct.Host.html"><code>Host</code></a> from
+<code>vantage-rhai</code>: one engine with fixed limits, a bounded cache of compiled scripts, and the
+vocabularies registered on it. This chapter is for the Rust side: how an application builds a host
+for the data vocabulary and what each setting decides.</p>
 <ul>
-<li>Cached rows continue on screen, and they do not change.</li>
-<li>Ranges that the application has not fetched stay empty. The loader asks for them again when a view
-looks at them.</li>
-<li>When the source returns, the next viewport succeeds and fills the empty rows.</li>
+<li><a href="#host-vocab-env">Host, Vocab, Env</a></li>
+<li><a href="#datavocab"><code>DataVocab</code></a></li>
+<li><a href="#the-resolver">The resolver</a></li>
+<li><a href="#async-reads-from-a-synchronous-script">Async reads from a synchronous script</a></li>
+<li><a href="#errors">Errors</a></li>
 </ul>
-<p>The difficult condition is the first open with an empty cache during an outage. There is nothing to
-show and nothing to fetch. This is one more reason to measure the cold run and the warm run
-separately.</p>
-<h2 id="what-to-check-under-faults"><a class="header" href="#what-to-check-under-faults">What to check under faults</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Question</th><th>Where to look</th></tr>
-</thead>
-<tbody>
-<tr><td>Did a failure delete data?</td><td>No <code>cache</code> line after the <code>failed</code> line, and rows still on screen</td></tr>
-<tr><td>Did the retry behave correctly?</td><td>One <code>asks for</code> line for each viewport movement, and not a sequence of them</td></tr>
-<tr><td>Is the total correct?</td><td>The <code>total</code> line, and whether the framework ever caps it</td></tr>
-<tr><td>Did recovery need a restart?</td><td>A <code>got</code> line after the failures, with no restart</td></tr>
-</tbody>
-</table>
-</div>
-<p>An application that handles faults well produces a stream that looks normal: some failures, some
-retries when a view looks at the rows, and rows that never disappear.</p>
 <hr>
-<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<h2 id="host-vocab-env"><a class="header" href="#host-vocab-env">Host, Vocab, Env</a></h2>
+<p>A host is built once and reused. Compiling through it is cached, so evaluating the same script on
+every row costs one parse:</p>
+<!-- tested: rhai_guide::hosts::build_a_host -->
+<pre><code class="language-rust ignore">let host = Host::builder(Limits::background())
+    .vocab(DataVocab::read_write_with(
+        Some(resolver(&amp;store)),
+        Some(50),
+        Writes::Allowed,
+    ))
+    .build();
+
+let script = host
+    .compile(&amp;Block::from(
+        r#"table("order").where("status", "due").count()"#,
+    ))
+    .unwrap();
+let due = script.eval(&amp;Env::new()).unwrap();</code></pre>
+<p>The three pieces:</p>
+<ul>
+<li><strong><a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/host/trait.Vocab.html"><code>Vocab</code></a></strong>: anything that registers functions and types on an engine.
+<code>DataVocab</code> is the data vocabulary. <code>ServoVocab</code> (diorama) and <code>SceneryVocab</code> (vantage-ui) are
+others. A host can carry several. When two register the same name, the one registered last wins,
+so register a backend’s extensions first and <code>DataVocab</code> after them (SurrealDB has its own <code>table</code>
+function, an alias for <code>ident</code>, which <code>DataVocab</code>’s <code>table(name)</code> must override).</li>
+<li><strong><a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/limits/enum.Limits.html"><code>Limits</code></a></strong>: <code>Limits::Ui</code> caps a script at 500,000 operations, for
+anything the UI thread waits on. <code>Limits::background()</code> allows 50 million, for scripts on worker
+threads: agent tools, imports, faker sims. A script that runs past its limit fails instead of
+hanging the caller.</li>
+<li><strong><a href="https://docs.rs/vantage_rhai/1.0.0/vantage_rhai/compiled/struct.Env.html"><code>Env</code></a></strong>: the variables one evaluation sees. Slot evaluators push <code>row</code> and
+<code>self</code> this way. A host builds its <code>Env</code> per call, so the compiled script is shared and the
+variables are not.</li>
+</ul>
+<h2 id="datavocab"><a class="header" href="#datavocab"><code>DataVocab</code></a></h2>
+<pre><code class="language-rust ignore">pub struct DataVocab {
+    pub resolver: Option&lt;TargetResolver&gt;,
+    pub terminals: Terminals,
+}</code></pre>
+<p><code>resolver</code> backs <code>table(name)</code>. Without one, <code>table</code> isn’t registered at all, and scripts can only
+work with handles the host gives them (<code>self</code>, <code>row</code>).</p>
+<p><code>terminals</code> picks which verbs exist on top of the narrowing verbs:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Item</th><th>What it does</th></tr>
+<tr><th><code>Terminals</code></th><th>Constructor</th><th>Verbs</th><th>Used by</th></tr>
 </thead>
 <tbody>
-<tr><td><code>faults.error_rate</code></td><td>Makes a fraction of the requests fail</td></tr>
-<tr><td><code>faults.offline</code></td><td>Stops the source on a schedule, in the form <code>&lt;down&gt;/&lt;period&gt;</code></td></tr>
-<tr><td><code>faults.total_lie</code></td><td>Changes the number that the grid uses to set its size</td></tr>
-<tr><td><code>failed after …</code></td><td>The request that did not complete, with its cost and the error from the source</td></tr>
-<tr><td><em>capped: promises more than it serves</em></td><td>The defence against a total that no fetch can fill</td></tr>
+<tr><td><code>Describe</code></td><td><code>DataVocab::describe(resolver)</code></td><td>none: the script returns a handle and the host reads its description</td><td><code>modify:</code>, reference build scripts, augmentation sources, query preview</td></tr>
+<tr><td><code>Read { limit }</code></td><td><code>DataVocab::read(resolver, limit)</code></td><td>reads, and <code>record(id)</code> drafts whose <code>save()</code>/<code>delete()</code> throw</td><td>form <code>options:</code>, action predicates</td></tr>
+<tr><td><code>ReadWrite { limit, writes }</code></td><td><code>DataVocab::read_write(resolver)</code>, <code>DataVocab::read_write_with(resolver, limit, writes)</code></td><td>reads, writes, and records</td><td>agent scripts, action bodies, form and wizard scripts, faker sims</td></tr>
 </tbody>
 </table>
 </div>
-<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
-<div class="admonition-title">
-<div id="admonition-what-is-next-title">
-<p>What is next</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
-</div>
-
-<div>
-<p>The last section makes assertions from what you read. A number that becomes worse then makes a test
-fail, instead of nobody noticing.</p>
-</div>
-
-</div>
-
+<p><code>limit</code> caps every <code>list()</code> and <code>ids()</code>. A script’s own <code>limit(n)</code> still applies below it. <code>None</code>
+means no cap. <code>count()</code> isn’t capped by the host’s limit: it counts the whole set, or at most <code>n</code>
+when the script narrowed with <code>limit(n)</code>. <code>read_write(resolver)</code> is uncapped with writes allowed.</p>
+<p><code>writes</code> is <code>Writes::Allowed</code> or <code>Writes::Denied(message)</code>. A denied host still registers every
+write verb, but each one throws <code>message</code>. That keeps the error readable: a script that calls
+<code>delete</code> on a host with writes turned off gets the host’s explanation (“writes are off for
+agents”) instead of Rhai’s “function not found”. A <code>Describe</code> host, by contrast, has no <code>count()</code>
+or <code>list()</code>, and calling one is a “function not found” error.</p>
+<h2 id="the-resolver"><a class="header" href="#the-resolver">The resolver</a></h2>
+<p><code>TargetResolver</code> is <code>Arc&lt;dyn Fn(&amp;str) -&gt; Result&lt;Vista&gt; + Send + Sync&gt;</code>. It is called each time a
+handle resolves, and must return a <strong>fresh, unconditioned</strong> Vista: the handle applies its own steps
+on top. This is the resolver the guide’s tests use, over an in-memory store:</p>
+<!-- tested: rhai_guide::support::resolver (used by every rhai_guide test) -->
+<pre><code class="language-rust ignore">pub fn resolver(store: &amp;MemoryStore) -&gt; TargetResolver {
+    let catalog = catalog(store);
+    Arc::new(move |name: &amp;str| {
+        let metadata = catalog
+            .get(name)
+            .unwrap_or_else(|| VistaMetadata::new().with_id_column("id"));
+        let table = catalog.store().table(name);
+        let shell = MemoryTableShell::new(table, metadata, catalog.clone());
+        Ok(Vista::new(name, Box::new(shell)))
+    })
+}</code></pre>
+<p>The resolver is where an application puts its policy, because <code>vantage-vista</code> only calls it. Some
+examples from the codebase:</p>
+<ul>
+<li>A YAML catalog resolves through its spec resolver, so <code>table("order")</code> in a reference build
+script is the same Vista the spec declares.</li>
+<li>Faker sims resolve over the sim’s memory store, and wrap each Vista so writes are counted for
+the engine’s stats.</li>
+<li>Vantage UI’s page resolver accepts a full catalog key or its leaf name, reads from the data
+source rather than a cache, and wraps every Vista in a write guard. The guard refuses writes on
+read-only tables, coerces reference columns, gives an id-less insert a generated id, sends writes
+through the table’s Dio (so they reach open pages), and wraps every <code>ref(...)</code> target in the
+target table’s own guard.</li>
+</ul>
+<p>None of that is visible to the script. It calls <code>insert</code>, and the Vista it resolved decides what an
+insert means.</p>
+<h2 id="async-reads-from-a-synchronous-script"><a class="header" href="#async-reads-from-a-synchronous-script">Async reads from a synchronous script</a></h2>
+<p>Rhai is synchronous. Vista reads and writes are <code>async</code>. Every terminal verb runs its future through
+one function, vista’s <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/bridge/fn.block_on.html"><code>block_on</code></a>:</p>
+<ul>
+<li>With a tokio runtime available (<code>Handle::try_current()</code> succeeds), it blocks on the runtime.</li>
+<li>Without one, it polls the future once on the current thread. Memory Vistas finish on the first
+poll, so faker sims and tests run with no runtime at all.</li>
+<li>A future that is still pending with no runtime (any network backend) is an error, “this data
+source needs a tokio runtime; run the script under spawn_blocking”. It never hangs.</li>
+</ul>
+<p>Blocking on a runtime from inside an async task panics in tokio, so a host that has a runtime
+evaluates scripts on a blocking thread:</p>
+<!-- tested: rhai_guide::hosts::under_spawn_blocking -->
+<pre><code class="language-rust ignore">let rows = tokio::task::spawn_blocking(move || {
+    let host = Host::builder(Limits::background())
+        .vocab(DataVocab::read(Some(resolver), Some(2)))
+        .build();
+    host.compile(&amp;Block::from(r#"table("order").list()"#))
+        .and_then(|s| s.eval(&amp;Env::new()))
+        .map(|v| vantage_rhai::to_json(&amp;v))
+})
+.await
+.unwrap()
+.unwrap();</code></pre>
+<p><a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/runtime/fn.run_script.html"><code>run_script</code></a> does exactly this for you. Action bodies in Vantage UI
+run under <code>Limits::Ui</code> on a background executor thread that has a runtime handle, which the bridge
+also accepts.</p>
+<h2 id="errors"><a class="header" href="#errors">Errors</a></h2>
+<p>Script errors come back as Rhai errors whose text names what failed:</p>
+<ul>
+<li>a narrowing step the backend can’t apply (an unknown relation, a column that isn’t orderable, a
+computed column) fails when the handle resolves, at the terminal verb, not where the step was
+written. The error names the step: <code>Step can't be applied (step: Ref("invoices")): …</code>;</li>
+<li>a verb the Vista’s capabilities don’t cover names the verb and the table:
+“<code>delete</code> isn’t supported by table <code>x</code>”;</li>
+<li>backend errors keep their message.</li>
+</ul>
+<p>Hosts that return JSON, like <code>run_script</code>, flatten all of these into the error string.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../optimising-diorama/waste.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rhai.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../optimising-diorama/regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rhai/tables.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -333,11 +337,11 @@ fail, instead of nobody noticing.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../optimising-diorama/waste.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rhai.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../optimising-diorama/regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rhai/tables.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

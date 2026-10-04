@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Faults: Errors, Outages &amp; Lies - Vantage Framework</title>
+        <title>Layers - Vantage Framework</title>
 
 
         <!-- Custom HTML head -->
@@ -175,155 +175,150 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="faults-errors-outages--lies"><a class="header" href="#faults-errors-outages--lies">Faults: Errors, Outages &amp; Lies</a></h1>
-<p>Each source until now answered, and its answers were true. Production sources are not always honest.
-A source can fail one request while the user scrolls. It can stop for ten seconds. It can also
-report a row count that it will not serve.</p>
-<p>Here the cache stops being an optimisation. It becomes the component that keeps your application
-usable.</p>
-<h2 id="a-source-with-faults"><a class="header" href="#a-source-with-faults">A source with faults</a></h2>
-<pre><code class="language-yaml"># datasource/flaky.yaml
-type: faker
-effect: static
-debug: true
-count: 1000
-seed: 107
-shape:
-  capabilities: [count, fetch_window, order]
-  latency:
-    window: 100ms..300ms
-  faults:
-    error_rate: 0.2      # one request in five fails
-    offline: 10s/60s     # &lt;down&gt;/&lt;period&gt;: down for 10s in each 60s
-    total_lie: -13       # reports 13 fewer rows than it will serve
-</code></pre>
-<p>There are three independent faults, and each one repeats because the shape has a seed.</p>
-<h2 id="what-a-failure-looks-like"><a class="header" href="#what-a-failure-looks-like">What a failure looks like</a></h2>
-<pre><code class="language-text">22:08:05.813  flaky  dio  fetch #1 asks for rows 0..200 — 200 missing, 0 already held
-22:08:05.978  flaky  dio  fetch #1 failed after 164ms — shaped source request failed (injected fault)
-</code></pre>
-<p>The request identifier connects the two lines. The duration tells you how long you waited for the
-failure. The message is the error from the source.</p>
-<p>What is <strong>absent</strong> is more important. There is no state line, no cache line, and no total line.</p>
-<p><strong>A failed fetch changes nothing.</strong> The rows that the view already had are still present, still in
-their correct positions, and still on screen. A failed refresh costs freshness, not data.</p>
-<h2 id="the-viewport-causes-the-retry"><a class="header" href="#the-viewport-causes-the-retry">The viewport causes the retry</a></h2>
-<p>Nothing retries on a timer, and this is deliberate. The rows are still absent. The next time that a
-view declares a viewport that includes those rows, the loader asks again. A scroll, a repaint, or a
-window that gets focus each cause this.</p>
-<pre><code class="language-text">flaky  dio  fetch #2 asks for rows 0..200 — 200 missing, 0 already held
-flaky  dio  fetch #2 got 200 rows in 210ms
-flaky  cache +200 new, 0 updated — now holding 200 of 987 (20.3%)
-flaky  total 987 rows — stated by the source in the same response
-</code></pre>
-<p>The retry is a result of demand. It is not a policy. It therefore needs no backoff configuration,
-and it cannot flood the source: if no view looks at a range, the loader sends no request for it.</p>
-<div id="admonition-the-one-failure-that-does-flood-the-source" class="admonition admonish-note" role="note" aria-labelledby="admonition-the-one-failure-that-does-flood-the-source-title">
-<div class="admonition-title">
-<div id="admonition-the-one-failure-that-does-flood-the-source-title">
-<p>The one failure that does flood the source</p>
-</div>
-
-<a class="admonition-anchor-link" href="#admonition-the-one-failure-that-does-flood-the-source"></a>
-</div>
-
-<div>
-<p>There is an exception, and the <code>optimising</code> project produced it.</p>
-<p>A fetch can fail <em>immediately</em> and always — a rejected query, and not an unreliable connection. Each
-viewport movement then sends a request, each request fails immediately, and the application uses all
-available CPU.</p>
-<p>During the writing of this guide, a faker datasource advertised <code>order</code> while the source refused
-every ordered query. Vantage UI appeared to stop responding.</p>
-<p>The lesson is not about retry policy. <strong>A capability that a source advertises but cannot do is worse
-than a capability that it never claims</strong>, because nothing limits the rate of the failure.</p>
-</div>
-
-</div>
-
-<h2 id="the-dishonest-total"><a class="header" href="#the-dishonest-total">The dishonest total</a></h2>
-<p>Read the two last lines above again. The table has <strong>1,000</strong> rows. The source says 987.</p>
-<p>The grid uses the total from the source, because the source is the authority on how many rows it
-has. One condition overrides this rule, and the next paragraph gives it.</p>
-<p>A total that is too small is the safe direction. The grid makes its scrollbar 13 rows short, and the
-user cannot reach the last rows.</p>
-<p>A total that is too large is the dangerous direction. If a fetch asks for a range with missing rows,
-and it fills <strong>none</strong> of them, then the set ends at the first missing row, whatever the total says.
-The framework caps the total and reports the cap with the message <em>“capped: the source promises more
-than it serves”</em>.</p>
-<p>Without this rule, the grid shows rows that no fetch can fill. A missing row causes a fetch.
-Therefore the application asks the source again, one request each few seconds, for as long as the
-page stays open.</p>
-<h2 id="outages"><a class="header" href="#outages">Outages</a></h2>
-<p><code>offline: 10s/60s</code> stops the source on a schedule. In the stream, an outage looks like a sequence of
-failures. There is no separate offline state to handle, no reconnect procedure, and no separate path
-in your code.</p>
+                        <h1 id="layers"><a class="header" href="#layers">Layers</a></h1>
+<p>The data vocabulary acts on Vistas and nothing else. Three parts of the framework sit above Vista
+and give scripts words of their own: Servo drafts in <code>vantage-diorama</code>, Scenery shapes in Vantage
+UI, and faker sims. This chapter shows how each one relates to the data vocabulary, and why they
+stay separate.</p>
 <ul>
-<li>Cached rows continue on screen, and they do not change.</li>
-<li>Ranges that the application has not fetched stay empty. The loader asks for them again when a view
-looks at them.</li>
-<li>When the source returns, the next viewport succeeds and fills the empty rows.</li>
+<li><a href="#the-rule">The rule</a></li>
+<li><a href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></li>
+<li><a href="#servo-a-form-draft">Servo: a form draft</a></li>
+<li><a href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></li>
+<li><a href="#faker-sims">Faker sims</a></li>
 </ul>
-<p>The difficult condition is the first open with an empty cache during an outage. There is nothing to
-show and nothing to fetch. This is one more reason to measure the cold run and the warm run
-separately.</p>
-<h2 id="what-to-check-under-faults"><a class="header" href="#what-to-check-under-faults">What to check under faults</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Question</th><th>Where to look</th></tr>
-</thead>
-<tbody>
-<tr><td>Did a failure delete data?</td><td>No <code>cache</code> line after the <code>failed</code> line, and rows still on screen</td></tr>
-<tr><td>Did the retry behave correctly?</td><td>One <code>asks for</code> line for each viewport movement, and not a sequence of them</td></tr>
-<tr><td>Is the total correct?</td><td>The <code>total</code> line, and whether the framework ever caps it</td></tr>
-<tr><td>Did recovery need a restart?</td><td>A <code>got</code> line after the failures, with no restart</td></tr>
-</tbody>
-</table>
-</div>
-<p>An application that handles faults well produces a stream that looks normal: some failures, some
-retries when a view looks at the rows, and rows that never disappear.</p>
 <hr>
-<h2 id="what-we-covered"><a class="header" href="#what-we-covered">What we covered</a></h2>
+<h2 id="the-rule"><a class="header" href="#the-rule">The rule</a></h2>
+<p><code>vantage-vista</code> never refers to Dio, Servo or Scenery. Each upper layer either hands scripts a plain
+Vista or registers its own vocabulary next to <code>DataVocab</code> on the same host. A host for a form’s
+<code>on_submit</code> script, for example, registers both <code>ServoVocab</code> and <code>DataVocab</code>, so the script has
+<code>form</code> (a Servo) and <code>table(name)</code> (Vistas) side by side.</p>
+<p>Where an upper layer means the same thing as a data verb, it uses the same word: <code>where</code>, <code>sort</code>,
+<code>limit</code>, <code>ref</code>, <code>save</code>, <code>is_dirty</code>. Where it means something different, it uses its own word, even
+if a data verb looks close.</p>
+<h2 id="dio-no-vocabulary-of-its-own"><a class="header" href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></h2>
+<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/dio/struct.Dio.html#method.vista"><code>Dio::vista()</code></a> returns a Vista whose
+reads come from the Dio’s cache and whose writes are queued as flashes and written through to the
+master. A host that resolves <code>table(name)</code> to Dio Vistas gives scripts cached reads and optimistic
+writes, and the scripts are the same ones that would run against the bare backend. Vantage UI’s
+action bodies work this way.</p>
+<h2 id="servo-a-form-draft"><a class="header" href="#servo-a-form-draft">Servo: a form draft</a></h2>
+<p>A <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/servo/struct.Servo.html">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
+staged edits, a status and per-field rejections from the Dio’s flash route. Forms and wizards in
+Vantage UI hand one to their scripts as <code>form</code>. <code>ServoVocab</code> (<code>vantage_diorama::rhai</code>) registers
+its words:</p>
+<!-- tested: vantage-diorama rhai_servo::set_save_settles_a_new_record -->
+<pre><code class="language-rhai">servo.set("id", "tag:AB12-CD34");
+servo.set("status", "unregistered");
+if !servo.is_dirty() { throw "draft should be dirty"; }
+if !servo.dirty("status") { throw "field should be dirty"; }
+servo.save()
+</code></pre>
+<p>A Servo and a data-vocabulary <a href="./records.html">record</a> look alike, and some words match:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Item</th><th>What it does</th></tr>
+<tr><th></th><th>record (<code>table(t).record(id)</code>)</th><th>Servo</th></tr>
 </thead>
 <tbody>
-<tr><td><code>faults.error_rate</code></td><td>Makes a fraction of the requests fail</td></tr>
-<tr><td><code>faults.offline</code></td><td>Stops the source on a schedule, in the form <code>&lt;down&gt;/&lt;period&gt;</code></td></tr>
-<tr><td><code>faults.total_lie</code></td><td>Changes the number that the grid uses to set its size</td></tr>
-<tr><td><code>failed after …</code></td><td>The request that did not complete, with its cost and the error from the source</td></tr>
-<tr><td><em>capped: promises more than it serves</em></td><td>The defence against a total that no fetch can fill</td></tr>
+<tr><td>read a field</td><td><code>r.col</code>, <code>r["col"]</code></td><td><code>servo.get("col")</code></td></tr>
+<tr><td>stage a field</td><td><code>r.col = v</code>, <code>r.set(map)</code></td><td><code>servo.set("col", v)</code></td></tr>
+<tr><td>id</td><td><code>r.id</code></td><td><code>servo.id()</code></td></tr>
+<tr><td>the whole draft</td><td>(field reads)</td><td><code>servo.record()</code></td></tr>
+<tr><td>baseline</td><td><code>r.baseline()</code></td><td><code>servo.baseline()</code></td></tr>
+<tr><td>dirty</td><td><code>r.is_dirty()</code>, <code>r.dirty(col)</code></td><td><code>servo.is_dirty()</code>, <code>servo.dirty(col)</code></td></tr>
+<tr><td>revert</td><td><code>r.revert(col)</code>, <code>r.revert()</code></td><td><code>servo.revert(col)</code>, <code>servo.revert_all()</code></td></tr>
+<tr><td>fields that differ from the baseline</td><td></td><td><code>servo.error()</code></td></tr>
+<tr><td>save</td><td><code>r.save()</code>: a patch or insert, now</td><td><code>servo.save()</code>: a flash, waits for it to settle</td></tr>
+<tr><td>status</td><td><code>r.status()</code>, <code>r.rejection()</code></td><td><code>servo.status()</code>, <code>servo.rejection()</code> with per-field errors</td></tr>
 </tbody>
 </table>
 </div>
-<div id="admonition-what-is-next" class="admonition admonish-tip" role="note" aria-labelledby="admonition-what-is-next-title">
-<div class="admonition-title">
-<div id="admonition-what-is-next-title">
-<p>What is next</p>
-</div>
+<p>They stay separate because they are different objects. A record is a script’s own short-lived
+draft over any Vista, and is gone when the script ends. A Servo lives in the Dio and outlasts the
+script. The form’s widgets are bound to it, its flash goes through the Dio’s write queue and route,
+and a route can reject single fields. Folding the two into one type would make the record depend
+on the Dio, or hide the Servo’s lifecycle behind data-vocabulary words.</p>
+<p><code>servo.save()</code> needs a tokio runtime context and blocks on the flash, so Servo scripts run under
+<code>spawn_blocking</code>, like any data script with a network backend.</p>
+<h2 id="scenery-the-shape-of-a-view"><a class="header" href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></h2>
+<p>A Vantage UI component’s <code>table:</code> binding can be a plain key or a short script that shapes a live
+view (a Scenery). The script builds a description that the page resolves when it mounts:</p>
+<!-- tested: vantage-ui scenery_script::tests::chain_builds_a_spec -->
+<pre><code class="language-rhai">scenery("top").sort("visitors", "desc").limit(10)
+</code></pre>
+<p>A child view through a relation, for the row selected in a grid:</p>
+<!-- tested: vantage-ui scenery_script::tests::scenery_ref_builds_the_same_related_shape -->
+<pre><code class="language-rhai">scenery("launches").where("id", "42").ref("payloads")
+</code></pre>
+<p>In a page this reads <code>launches_grid.selected_id</code> instead of <code>"42"</code>, and the page remounts the
+binding when the selection changes.</p>
+<p>Shared words, with the same meaning as on a table handle:</p>
+<ul>
+<li><code>where(col, value)</code>: equality only. Values carry as text, so a page number needs no
+<code>to_string()</code>.</li>
+<li><code>sort(col, dir)</code>: the direction is required, <code>"asc"</code> or <code>"desc"</code>.</li>
+<li><code>limit(n)</code>: at most <code>n</code> rows.</li>
+<li><code>ref(relation)</code>: the related rows. On a Scenery it must follow exactly one <code>where</code> on the
+parent’s id and nothing else, because the binding follows one parent row.</li>
+</ul>
+<p>Scenery-only words:</p>
+<ul>
+<li><code>tail(n)</code>: follow the last <code>n</code> rows as they arrive, for append-only feeds.</li>
+<li><code>arg(name, value)</code> and <code>args(#{ … })</code>: parameters passed to the table’s own <code>rhai:</code> query
+script as its <code>args</code> map, which reshape the query itself rather than filtering its result.</li>
+</ul>
+<p>Scenery has no reads or writes: it describes a view, and the page’s Dio opens it. The vocabulary
+lives in Vantage UI (<code>SceneryVocab</code> in <code>crates/app/src/infra/scenery_script.rs</code>), runs under
+<code>Limits::Ui</code>, and records every page value the script reads as a dependency of the binding.</p>
+<h2 id="faker-sims"><a class="header" href="#faker-sims">Faker sims</a></h2>
+<p>A faker sim is a Rhai script that runs from top to bottom on its own thread, with its own sim
+clock. Its local variables are its state, and <code>sleep</code> pauses it. The data vocabulary is there in
+full, over the engine’s memory store, and <code>table()</code> with no name is the sim’s own table:</p>
+<!-- tested: vantage-faker sim::tests::guide::order_sim_from_the_guide -->
+<pre><code class="language-rhai">if table().where("status", "Placed").count() &gt;= 40 {
+    done();
+}
 
-<a class="admonition-anchor-link" href="#admonition-what-is-next"></a>
-</div>
+let id = table().insert(#{ customer: fake("name"), total: rand_float(5.0, 80.0), status: "Placed" });
+sleep(minutes(rand_int(5, 20)));
 
-<div>
-<p>The last section makes assertions from what you read. A number that becomes worse then makes a test
-fail, instead of nobody noticing.</p>
-</div>
+table().patch(id, #{ status: "Shipped" });
+table("order_event").insert(#{ order: id, note: "shipped" });
+sleep(hours(2));
 
-</div>
-
+table().delete(id);
+</code></pre>
+<p>On top of the data vocabulary, sims get:</p>
+<ul>
+<li><strong>data</strong>: <code>fake_row()</code> on a handle (<code>table().fake_row()</code>, <code>table("t").fake_row()</code>) returns a map
+with a generated value for each column the table declares through <code>SimEngineBuilder::columns</code>,
+without the id column. Sequential generators (<code>walk</code>, evenly spread <code>date</code>) advance one step per
+call, shared by every sim of the def.</li>
+<li><strong>time</strong>: <code>seconds(n)</code>, <code>minutes(n)</code>, <code>hours(n)</code>, <code>days(n)</code>, <code>sleep(d)</code>, <code>wait_until(t)</code>,
+<code>now()</code>, <code>now_secs()</code>, <code>wall_now()</code>, <code>wall_in(d)</code>, <code>elapsed()</code>, <code>clock()</code>, <code>done()</code>.</li>
+<li><strong>random</strong>: <code>pick</code>, <code>pick_weighted</code>, <code>rand_int</code>, <code>rand_float</code>, <code>chance(p)</code>, <code>pattern("BA####")</code>,
+<code>sentence(min, max)</code>, <code>fake(kind)</code>, <code>date_between(from, to)</code>.</li>
+<li><strong>spawn</strong>: <code>spawn_sim(name, args?)</code>, <code>sim_id()</code>, <code>sim_name()</code>, and the spawner’s <code>args</code>.</li>
+<li><strong>geo</strong>: <code>great_circle</code>, <code>bearing</code>, <code>interpolate</code>.</li>
+</ul>
+<p>A sim’s tables are memory Vistas, so reads and writes finish on the first poll and sims run
+without tokio (see <a href="./hosts.html#async-reads-from-a-synchronous-script">the bridge</a>). Writes
+broadcast the store’s change events to any watching Dio. During a warm start, each written table
+stays quiet and sends one <code>Reset</code> at the end. A missing table is a script error: the store’s
+tables are created by the dataset, not by the sim.</p>
+<p>The <code>vantage-faker</code> README covers defs, spawners, clocks, the operations budget and the built-in
+sims.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../optimising-diorama/waste.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rhai/surfaces.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../optimising-diorama/regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rhai/dialects.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -333,11 +328,11 @@ fail, instead of nobody noticing.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../optimising-diorama/waste.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rhai/surfaces.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../optimising-diorama/regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rhai/dialects.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

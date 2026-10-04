@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8ddbe4c8.js";
+            window.path_to_searchindex_js = "../searchindex-ed4d36fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-8d4429da.js"></script>
+        <script src="../toc-aa92909c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -269,14 +269,16 @@ through JSON or a script still traverses correctly.</p>
 </div>
 
 <h3 id="the-scripting-surface"><a class="header" href="#the-scripting-surface">The scripting surface</a></h3>
-<p>The same traversal is exposed to Rhai data scripts (the <code>vantage-vista</code> rhai feature). A script
-holding a row can hop a relation:</p>
-<pre><code class="language-rhai">let t = table("tag");
-let row = t.get_some();
-let course = t.get_ref("golf_course", row);
-</code></pre>
-<p>There’s no separate scripting implementation here — the erased <code>Vista</code> is what the script engine
-wraps, and <code>get_ref</code> there follows the same metadata.</p>
+<p>Rhai data scripts (the <code>vantage-vista</code> rhai feature) traverse with <code>ref(relation)</code> on a table
+handle, which follows the relation from every row of a set. A one-row set goes through <code>get_ref</code>,
+so it follows the same metadata and backend traversal described here. Several rows become an <code>in</code>
+condition on the target, a <code>limit(n)</code> before the <code>ref</code> caps the rows it follows, and an empty set
+gives an empty target without a query. See
+<a href="../rhai/tables.html#following-relations">The Table Handle</a>.</p>
+<p>A relation’s foreign key may be a <a href="../rhai/computed.html">computed column</a> (a <code>lazy:</code> column). A
+has-one through one works, because the parent row carries the computed value. A has-many whose key
+is a computed column of the child is refused by <code>get_ref</code> with an error naming the relation and
+column, since the backend can’t filter the child by a value it doesn’t store.</p>
 <h3 id="capabilities-the-honest-contract"><a class="header" href="#capabilities-the-honest-contract">Capabilities: the honest contract</a></h3>
 <p>Not every backend serves every traversal form — the <a href="./traversal.html">traversal chapter</a> already
 showed that set-level traversal needs subqueries. At the typed layer, you knew that when you wrote
@@ -353,18 +355,22 @@ references:
 the common case. The full form (<code>references: { table, kind, foreign_key, name }</code>) can name it
 differently — you need that when two relations point at the same table.</p>
 <p>When a relation needs more than a plain foreign-key match — extra conditions, ordering, a search —
-give the reference a <code>rhai:</code> build script:</p>
+give the reference a <code>rhai:</code> build script in its driver block (SurrealDB supports this today, and
+reports <code>can_build_ref_via_script</code>):</p>
+<!-- tested: rhai_guide::surfaces::ref_build (the script) -->
 <pre><code class="language-yaml">references:
-  recent_orders:
+  due_orders:
     table: order
     kind: has_many
     foreign_key: client
-    rhai: |
-      table("order").add_condition_eq("client", row.id).add_order("created_at", "desc")
+    surreal:
+      rhai: |
+        table("order").where("client", row.id).where("status", "due")
 </code></pre>
 <p>The script runs lazily when the relation is traversed, with the parent record in scope as <code>row</code>,
-and must return a Vista — start it with <code>table("&lt;name&gt;")</code> and chain the conventional verbs
-(<code>add_condition_eq</code>, <code>add_order</code>, <code>add_search</code>, <code>set_page_size</code>, <code>with_id</code>). Without <code>rhai:</code>, the
+and must end on a table handle: start it with <code>table("&lt;name&gt;")</code> and chain the
+<a href="../rhai/tables.html#narrowing">narrowing verbs</a> (see
+<a href="../rhai/surfaces.html#reference-build-scripts">Reference build scripts</a>). Without <code>rhai:</code>, the
 relation falls back to the plain <code>foreign_key</code> match. This is the <code>can_build_ref_via_script</code> path
 from the capabilities list — the reference resolves through the script engine instead of the
 fixed eq-condition.</p>
@@ -373,7 +379,8 @@ fixed eq-condition.</p>
 Rust API, with the same construction-time validation: a bad dotted column fails the spec load,
 not the first fetch. They arrive in metadata flagged <code>calculated</code>. That flag means read-only for
 consumers: the value comes from a traversal, not from a column you can write. This is how a UI
-knows not to offer editing on them.</p>
+knows not to offer editing on them. <a href="../rhai/computed.html">Computed columns</a> (<code>lazy:</code>) carry the
+same flag for the same reason.</p>
 <p>The key difference: at the typed layer <em>you</em> know which traversal forms are safe — you wrote the
 code against a backend you chose. At the erased layer, the <em>capabilities</em> say so. Same relations,
 discovered instead of known.</p>

@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8ddbe4c8.js";
+            window.path_to_searchindex_js = "searchindex-ed4d36fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8d4429da.js"></script>
+        <script src="toc-aa92909c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -205,6 +205,7 @@ compiles to native queries.</p>
 <li><a href="#2-derived-vistas--base--inherit--transform">2. Derived vistas — <code>base:</code> + <code>inherit</code> + transform</a></li>
 <li><a href="#3-post-build-tweaks--modify-surrealdb">3. Post-build tweaks — <code>modify:</code> (SurrealDB)</a></li>
 <li><a href="#4-scripted-reference-traversal--reference-level-rhai-surrealdb">4. Scripted reference traversal — reference-level <code>rhai:</code> (SurrealDB)</a></li>
+<li><a href="#5-computed-columns--column-level-lazy-every-driver">5. Computed columns — column-level <code>lazy:</code> (every driver)</a></li>
 </ul>
 </li>
 <li><a href="#contained-relations">Contained relations</a></li>
@@ -214,7 +215,7 @@ compiles to native queries.</p>
 </ul>
 <hr>
 <h2 id="one-page-of-yaml-one-working-vista"><a class="header" href="#one-page-of-yaml-one-working-vista">One page of YAML, one working Vista</a></h2>
-<p>Every driver’s factory implements <a href="vantage_vista::VistaFactory"><code>VistaFactory</code></a>, whose <code>from_yaml</code>
+<p>Every driver’s factory implements <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/factory/trait.VistaFactory.html"><code>VistaFactory</code></a>, whose <code>from_yaml</code>
 parses a spec and lowers it:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -253,7 +254,7 @@ explicit key exists so a YAML author can correct a wrong flag without touching a
 </ul>
 <hr>
 <h2 id="anatomy-of-a-spec"><a class="header" href="#anatomy-of-a-spec">Anatomy of a spec</a></h2>
-<p>A <a href="vantage_vista::VistaSpec"><code>VistaSpec</code></a> has a uniform core that every driver understands, plus
+<p>A <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a> has a uniform core that every driver understands, plus
 one driver-named block at each level:</p>
 <div class="table-wrapper">
 <table>
@@ -264,7 +265,7 @@ one driver-named block at each level:</p>
 <tr><td><code>name</code></td><td>The vista’s public name (catalog key, UI label)</td></tr>
 <tr><td><code>datasource</code></td><td>Optional datasource key, for inventories that manage several</td></tr>
 <tr><td><code>id_column</code></td><td>Explicit id override (see resolution order above)</td></tr>
-<tr><td><code>columns</code></td><td>Ordered map of column name → <code>{ type, flags, references, &lt;driver&gt; }</code></td></tr>
+<tr><td><code>columns</code></td><td>Ordered map of column name → <code>{ type, flags, references, lazy, &lt;driver&gt; }</code></td></tr>
 <tr><td><code>references</code></td><td>Named relations to other vistas (see below)</td></tr>
 <tr><td><code>contained</code></td><td>Embedded-in-row relations (see below)</td></tr>
 <tr><td><code>&lt;driver&gt;</code></td><td>The driver’s table-level block: <code>sqlite:</code>, <code>surreal:</code>, <code>mongo:</code>, <code>csv:</code></td></tr>
@@ -371,7 +372,9 @@ small, embeddable scripting language whose Vantage vocabulary compiles to native
 expression primitives are shared across backends where the concept overlaps (<code>count</code>, <code>avg</code>,
 <code>coalesce</code>, <code>case_when</code>, <code>date_format</code> …) — see <a href="./sql/primitives.html">SQL Primitives</a> and
 <a href="./surrealdb/primitives.html">SurrealDB Primitives</a> for the full vocabularies. Rhai appears in a spec
-in four places, each with a distinct job.</p>
+in five places, each with a distinct job. The first two build native queries; the next two use the
+data vocabulary taught in <a href="./rhai.html">Scripting with Rhai</a>; the last computes a column from one
+row.</p>
 <h3 id="1-query-sourced-vistas--rhai"><a class="header" href="#1-query-sourced-vistas--rhai">1. Query-sourced vistas — <code>rhai:</code></a></h3>
 <p>Replace the physical table with a script-built SELECT:</p>
 <pre><code class="language-yaml">name: expensive_products
@@ -406,8 +409,9 @@ sqlite:
 derived vista’s own <code>columns:</code>, and re-key with <code>id_column</code>. <code>base:</code> resolves eagerly through the
 same spec resolver as references. Derived vistas are query-sourced, hence read-only.</p>
 <h3 id="3-post-build-tweaks--modify-surrealdb"><a class="header" href="#3-post-build-tweaks--modify-surrealdb">3. Post-build tweaks — <code>modify:</code> (SurrealDB)</a></h3>
-<p>A script applied to the <em>finished</em> vista, exposed as <code>self</code>, using the builder verbs plus vendor
-expressions YAML keys can’t state:</p>
+<p>A script applied to the <em>finished</em> vista, exposed as <code>self</code>, using the
+<a href="./rhai/tables.html">table handle’s verbs</a> plus vendor expressions YAML keys can’t state (see
+<a href="./rhai/surfaces.html#modify-scripts"><code>modify:</code> scripts</a>):</p>
 <pre><code class="language-yaml">name: active_products
 columns:
   id: { type: thing, flags: [id] }
@@ -416,7 +420,7 @@ surreal:
   table: product
   modify: |
     self.with_condition(ident("is_deleted") == false)
-        .add_order("name", "asc")
+        .sort("name", "asc")
 </code></pre>
 <p>Unlike a query source, <code>modify:</code> narrows a real table — so the vista <strong>stays writable</strong>. It runs
 last, composing with <code>table:</code>, <code>rhai:</code>, or <code>base:</code>.</p>
@@ -431,10 +435,21 @@ scope:</p>
     foreign_key: category
     surreal:
       rhai: |
-        table("product").add_condition_eq("category", row.id)
+        table("product").where("category", row.id)
 </code></pre>
-<p>The script returns the narrowed target vista; <code>foreign_key</code> remains as metadata for consumers that
-introspect the relation.</p>
+<p>The script ends on a table handle, which becomes the narrowed target vista; <code>foreign_key</code> remains as metadata for consumers that
+introspect the relation. See <a href="./rhai/surfaces.html#reference-build-scripts">Reference build scripts</a>.</p>
+<h3 id="5-computed-columns--column-level-lazy-every-driver"><a class="header" href="#5-computed-columns--column-level-lazy-every-driver">5. Computed columns — column-level <code>lazy:</code> (every driver)</a></h3>
+<p>A column whose value no backend stores, computed by the Vista from the row it read:</p>
+<!-- tested: rhai_guide::computed::declare_in_yaml (excerpt) -->
+<pre><code class="language-yaml">columns:
+  net: { type: int }
+  vat: { type: int, lazy: "row.net / 5" }
+</code></pre>
+<p>The script sees the row as <code>row</code>, and its last expression is the value. Columns compute in
+declaration order, writes drop them, and filtering, ordering or aggregating on one is an error
+naming the column. A has-one reference may use one as its foreign key; a has-many may not. Full
+details in <a href="./rhai/computed.html">Computed Columns</a>.</p>
 <div id="admonition-yaml-primary-rhai-targeted" class="admonition admonish-note" role="note" aria-labelledby="admonition-yaml-primary-rhai-targeted-title">
 <div class="admonition-title">
 <div id="admonition-yaml-primary-rhai-targeted-title">
@@ -476,7 +491,7 @@ mechanics — and the sharp edges — are covered in
 <hr>
 <h2 id="cross-persistence-the-vistacatalog"><a class="header" href="#cross-persistence-the-vistacatalog">Cross-persistence: the VistaCatalog</a></h2>
 <p>A single Vista is strictly single-backend. When a system spans several — categories in Postgres,
-products behind a REST API — <a href="vantage_vista_factory"><code>VistaCatalog</code></a> sits one layer up: it holds a
+products behind a REST API — <a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/index.html"><code>VistaCatalog</code></a> sits one layer up: it holds a
 loader per model name and traverses relations whose target lives in a <em>different</em> persistence:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -500,19 +515,11 @@ table’s configuration is this same machinery pointed at row enrichment.</p>
 <hr>
 <h2 id="sealed-at-runtime-data-scripts"><a class="header" href="#sealed-at-runtime-data-scripts">Sealed at runtime: data scripts</a></h2>
 <p>Once vistas are config-defined, the last step of the story is <em>consuming</em> them from config too.
-<code>vantage-vista</code>’s <code>rhai</code> feature ships <code>run_script</code> — a sandboxed evaluator where <code>table(name)</code>
-resolves through a catalog-style resolver and a handful of read verbs fetch data:</p>
-<pre><code class="language-rhai">let o = table("orders").add_condition_eq("status", "unpaid").get_some();
-if o != () {
-    table("orders").get_ref("client", o).get_some()
-}
-</code></pre>
-<p>The vocabulary is deliberately small: builder verbs (<code>add_condition_eq</code>, <code>add_order</code>, <code>get_ref</code> …)
-plus terminals — <code>list</code>, <code>get_some</code>, <code>count</code>, <code>capabilities</code>, <code>columns</code>, <code>references</code>. Every
-<code>list()</code> is capped (50 rows hard ceiling) — this is an inspection and automation surface, not a
-bulk reader. It’s the surface an AI agent or an MCP tool drives: the schema it sees, the
-capabilities it must respect, and the rows it reads all come from the same sealed handles this
-page built.</p>
+<code>vantage-vista</code>’s <code>rhai</code> feature ships <code>run_script</code>, a sandboxed evaluator where <code>table(name)</code>
+resolves through a catalog-style resolver. It’s the surface an AI agent or an MCP tool drives: the schema it sees, the capabilities it must
+respect, and the rows it reads all come from the same sealed handles this page built. The
+vocabulary, its limits and every other place it runs are covered in
+<a href="./rhai.html">Scripting with Rhai</a>.</p>
 <hr>
 <h2 id="choosing-a-path"><a class="header" href="#choosing-a-path">Choosing a path</a></h2>
 <p>Both construction paths produce the same <code>Vista</code> — the choice is about who edits the definition:</p>
@@ -536,7 +543,7 @@ driver-side walkthrough is <a href="./new-persistence/step8-vista-integration.ht
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="live-data.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="rhai.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -550,7 +557,7 @@ driver-side walkthrough is <a href="./new-persistence/step8-vista-integration.ht
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="live-data.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="rhai.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
