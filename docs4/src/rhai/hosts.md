@@ -117,7 +117,7 @@ insert means.
 ## Async reads from a synchronous script
 
 Rhai is synchronous. Vista reads and writes are `async`. Every terminal verb runs its future through
-one function, [`vantage_vista::rhai::block_on`](vantage_vista::rhai::block_on):
+one function, vista's [`block_on`](vantage_vista::rhai::block_on):
 
 - With a tokio runtime available (`Handle::try_current()` succeeds), it blocks on the runtime.
 - Without one, it polls the future once on the current thread. Memory Vistas finish on the first
