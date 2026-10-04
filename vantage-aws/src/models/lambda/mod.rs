@@ -1,6 +1,6 @@
 //! Ready-made Lambda tables — functions, aliases, versions.
 //!
-//! Lambda speaks REST-JSON (see [`crate::restjson`]). The control
+//! Lambda speaks REST-JSON (see `crate::restjson`). The control
 //! plane URL pattern is `/2015-03-31/functions/...` — old version
 //! prefix, never going to change.
 //!

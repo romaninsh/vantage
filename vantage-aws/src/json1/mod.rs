@@ -39,7 +39,7 @@ pub(crate) use transport::{json_aws_call, json1_call};
 /// response that `parse_records` can fold as if it came back in one
 /// shot.
 ///
-/// Cap at [`MAX_PAGES`] to avoid runaway loops if AWS keeps issuing
+/// Cap at `MAX_PAGES` to avoid runaway loops if AWS keeps issuing
 /// tokens — that case shouldn't happen, but the safety belt is cheap.
 pub(crate) async fn execute(
     account: &AwsAccount,

@@ -445,7 +445,7 @@ impl Vista {
         self.capabilities.can_subscribe
     }
 
-    /// Subscribe to changes and stream them as [`VistaChange`](crate::source::VistaChange)s.
+    /// Subscribe to changes and stream them as [`VistaChange`]s.
     ///
     /// Each change carries the record in the same projected shape as
     /// `list_values`, so it can be applied to a cache without a re-read.

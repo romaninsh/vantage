@@ -1,7 +1,7 @@
 //! Ready-made IAM tables.
 //!
 //! IAM speaks the older AWS Query protocol (form-encoded request,
-//! XML response), which the [`crate::query`] module handles. From the
+//! XML response), which the `crate::query` module handles. From the
 //! caller's perspective these are no different from the JSON-1.1
 //! tables — same `AwsAccount`, same `eq` filters, same `with_many`
 //! relations.

@@ -102,7 +102,7 @@ impl Factory {
     ///   - `s3.bucket ... :objects`           (ListObjectsV2 needs Bucket)
     ///   - `lambda.function ... :aliases`     (ListAliases needs FunctionName)
     ///   - `lambda.function ... :versions`    (ListVersionsByFunction needs FunctionName)
-    ///   - `lambda.function ... :log_group`   (CloudWatch group at /aws/lambda/<name>)
+    ///   - `lambda.function ... :log_group`   (CloudWatch group at `/aws/lambda/<name>`)
     ///
     /// Per-resource ARNs still work as the first argument for any of
     /// these — see [`Factory::from_arn`].

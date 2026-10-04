@@ -17,7 +17,7 @@ pub enum FulltextMode {
     QueryExpansion,
 }
 
-/// MySQL MATCH(...) AGAINST('...' [mode]) fulltext search expression.
+/// MySQL MATCH(...) AGAINST('...' \[mode\]) fulltext search expression.
 ///
 /// # Examples
 ///

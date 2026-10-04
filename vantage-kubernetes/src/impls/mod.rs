@@ -1,4 +1,4 @@
-//! Trait impls for [`KubernetesCluster`]: `DataSource`, `ExprDataSource`
+//! Trait impls for `KubernetesCluster`: `DataSource`, `ExprDataSource`
 //! (for relation traversal), and the central `TableSource`.
 
 mod data_source;

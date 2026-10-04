@@ -1,7 +1,7 @@
 //! Entry points that evaluate a script slot into a [`Vista`]: reference
 //! build-scripts, `modify:` scripts, and augmentation sources.
 //!
-//! Each host carries [`DataVocab`] with [`Terminals::Describe`] plus any
+//! Each host carries [`DataVocab`] with [`Terminals::Describe`](super::Terminals::Describe) plus any
 //! backend extensions. The script narrows a handle; the handle it ends on is
 //! resolved and returned.
 

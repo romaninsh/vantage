@@ -1,7 +1,7 @@
 //! Value conversions between the CBOR carrier and Rhai `Dynamic`.
 //!
-//! Shared by [`conventional`](super::conventional) (which seeds the parent
-//! `row` map and lowers condition scalars) and [`fetch`](super::fetch) (which
+//! Shared by the conventional-reference code (which seeds the parent
+//! `row` map and lowers condition scalars) and the fetch code (which
 //! materialises fetched records). Public so the other data-layer crates
 //! (diorama's servo, the faker effects) round-trip values the same way — one
 //! converter, so a record id renders as `"table:id"` in every script.

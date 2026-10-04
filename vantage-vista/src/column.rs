@@ -23,7 +23,7 @@ pub struct Column {
     pub original_type: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flags: Vec<String>,
-    /// Set on a computed column; see [`Column::with_expression`].
+    /// Set on a computed column; see `Column::with_expression` (`rhai` feature).
     #[serde(skip)]
     computed: Option<Computed>,
 }

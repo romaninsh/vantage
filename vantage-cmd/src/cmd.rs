@@ -70,7 +70,7 @@ pub struct Cmd {
     scripts: Arc<IndexMap<String, CmdSpec>>,
     /// Memoized compiled scripts, keyed by script name. Shared across
     /// clones so a per-row detail loop reuses one engine + AST. Built
-    /// lazily on first use (see [`Cmd::compiled_script`]).
+    /// lazily on first use (see `Cmd::compiled_script`).
     compiled: Arc<Mutex<HashMap<String, Arc<CompiledScript>>>>,
     /// How many times each named script has actually been compiled —
     /// diagnostics / test instrumentation for the reuse guarantee.

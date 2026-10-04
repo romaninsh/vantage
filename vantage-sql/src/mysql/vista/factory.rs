@@ -79,7 +79,7 @@ impl MysqlVistaFactory {
     }
 
     /// Build a `Table<MysqlDB, EmptyEntity>` from a spec, resolving any
-    /// `references:` against the attached resolver. See [`build_mysql_table`].
+    /// `references:` against the attached resolver. See `build_mysql_table`.
     pub fn table_from_spec(&self, spec: &MysqlVistaSpec) -> Result<Table<MysqlDB, EmptyEntity>> {
         build_mysql_table(spec, self.db.clone(), self.resolver.clone())
     }

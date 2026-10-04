@@ -1,7 +1,7 @@
 //! Computed columns at the `Vista` boundary: filled on every read, dropped
 //! from every write, refused as a filter, order or has-many join key. A
 //! column becomes computed through
-//! [`Column::with_expression`](crate::Column::with_expression).
+//! `Column::with_expression` (`rhai` feature).
 
 use std::borrow::Cow;
 
