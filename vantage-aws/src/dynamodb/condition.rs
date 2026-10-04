@@ -5,7 +5,7 @@
 //! placeholders, plus the maps that bind them. `In` is deferred so
 //! relationship traversal can run a source query at execution time.
 //!
-//! Multiple conditions on a `Table` get combined via [`resolve`], which
+//! Multiple conditions on a `Table` get combined via `resolve`, which
 //! mangles placeholders to be globally unique within one Scan request
 //! and joins the rendered fragments with ` AND `.
 

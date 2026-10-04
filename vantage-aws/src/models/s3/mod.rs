@@ -1,6 +1,6 @@
 //! Ready-made S3 tables — buckets, objects — plus a raw content fetch.
 //!
-//! S3 speaks REST-XML (see [`crate::restxml`]). Listing is shallow:
+//! S3 speaks REST-XML (see `crate::restxml`). Listing is shallow:
 //! `ListBuckets` returns one row per bucket with name + creation
 //! timestamp; `ListObjectsV2` returns one row per object key under a
 //! given bucket, auto-paginating via its continuation-token cursor.

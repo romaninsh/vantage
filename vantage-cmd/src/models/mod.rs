@@ -4,7 +4,7 @@
 //!
 //! The YAML vistas are bundled with the crate and used as the `aws-cli`
 //! example's model set. Add a model by dropping a `*.yaml` in `vistas/`
-//! and adding it to [`CmdModelFactory::yaml_for`] / [`known_names`].
+//! and adding it to `CmdModelFactory::yaml_for` / `known_names`.
 
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
@@ -131,7 +131,7 @@ impl CmdModelFactory {
     /// Resolve a model name to a `Vista` plus its natural mode.
     ///
     /// The vista's references are lowered onto the wrapped `Table<Cmd>` (see
-    /// [`build_table`](Self::build_table)), so the CLI's `:relation`
+    /// `build_table`), so the CLI's `:relation`
     /// traversal flows through the built-in `Table::get_ref_from_row` path.
     pub fn for_name(&self, name: &str) -> Option<(Vista, FactoryMode)> {
         let table = Self::build_table(self.cmd.clone(), name)?;
@@ -145,7 +145,7 @@ impl CmdModelFactory {
     }
 
     /// Build a fully-referenced `Table<Cmd>` for a model from its bundled
-    /// YAML. Columns / id come from [`CmdVistaFactory::build_columns_table`];
+    /// YAML. Columns / id come from `CmdVistaFactory::build_columns_table`;
     /// each YAML `references:` entry becomes a real `with_many` / `with_one`
     /// registration whose target is resolved (lazily, on traversal) by name
     /// through this same builder.

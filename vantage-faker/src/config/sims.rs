@@ -1,14 +1,16 @@
-//! `sims:` on a [`DatasetSpec`](super::DatasetSpec): one [`SimSpec`] per Rhai
+//! `sims:` on a `DatasetSpec`: one [`SimSpec`] per Rhai
 //! sim, and the durations they parse their `warm:` from.
 
 use std::time::Duration;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
-use vantage_core::{Context, Result, error};
+use vantage_core::{Result, error};
 
 #[cfg(feature = "sim")]
 use super::DatasetSpec;
+#[cfg(feature = "sim")]
+use vantage_core::Context;
 #[cfg(feature = "sim")]
 use crate::sim::builtin;
 #[cfg(feature = "sim")]
@@ -16,7 +18,7 @@ use crate::{SimDef, SimEngine, SimEngineBuilder};
 #[cfg(feature = "sim")]
 use vantage_memory::MemoryStore;
 
-/// One `sims:` entry — a [`SimDef`](crate::SimDef) plan in YAML shape.
+/// One `sims:` entry — a `SimDef` plan in YAML shape.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]

@@ -164,7 +164,7 @@ fn bind_by_cbor<'q>(
     }
 }
 
-/// Convert a MySqlRow to Record<AnyMysqlType>.
+/// Convert a MySqlRow to `Record<AnyMysqlType>`.
 ///
 /// Each value is stored as CBOR with the type variant inferred from the
 /// MySQL column type, preserving full type fidelity.

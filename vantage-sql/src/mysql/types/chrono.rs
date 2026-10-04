@@ -6,7 +6,7 @@
 //!   Tag(0)   = DateTime
 //!
 //! **Format**: MySQL uses `"2025-01-10 12:00:00"` (space separator, no T,
-//! no timezone). DateTime<Utc> drops the timezone since MySQL DATETIME
+//! no timezone). `DateTime<Utc>` drops the timezone since MySQL DATETIME
 //! doesn't store it (TIMESTAMP handles UTC conversion internally).
 //!
 //! `from_cbor` accepts both tagged and plain Text values, so values from

@@ -1,7 +1,7 @@
 //! Hand-rolled AWS Signature V4 for HTTP requests.
 //!
 //! Implements the algorithm documented at
-//! https://docs.aws.amazon.com/general/latest/gr/sigv4-signing.html for
+//! <https://docs.aws.amazon.com/general/latest/gr/sigv4-signing.html> for
 //! the simple non-streaming, non-presigned case — which is all the
 //! JSON-1.1 transport needs.
 //!

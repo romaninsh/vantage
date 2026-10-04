@@ -115,7 +115,7 @@ async fn resolve_deferred(
     Ok(Expression::new(expr.template.clone(), resolved_params))
 }
 
-/// Flatten an Expression<AnyMysqlType> and convert `{}` placeholders to `?`.
+/// Flatten an `Expression<AnyMysqlType>` and convert `{}` placeholders to `?`.
 fn prepare_typed_query(
     expr: &Expression<AnyMysqlType>,
 ) -> vantage_core::Result<(String, Vec<AnyMysqlType>)> {

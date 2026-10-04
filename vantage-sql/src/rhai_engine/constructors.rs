@@ -12,7 +12,7 @@ use vantage_rhai::rhai::Array;
 
 use super::{RhaiExpr, RhaiIdent};
 
-/// Extract Expression<V> from a Dynamic that is either RhaiExpr or RhaiIdent.
+/// Extract `Expression<V>` from a Dynamic that is either RhaiExpr or RhaiIdent.
 fn unwrap_expr<V: Clone + 'static>(
     val: rhai::Dynamic,
 ) -> Result<Expression<V>, Box<rhai::EvalAltResult>>

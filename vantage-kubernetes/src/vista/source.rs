@@ -8,7 +8,7 @@
 //!
 //! The Kubernetes list API has no server-side ordering, pagination, or
 //! free-text search, so those capabilities are honoured **client-side**:
-//! [`materialize`](KubeTableShell::materialize) lists the (cluster-sized)
+//! `materialize` lists the (cluster-sized)
 //! collection once, applies the quicksearch filter and the sort, and the
 //! window / page / cursor methods slice the result. Writes stay unsupported
 //! in v1 — only the read capabilities are advertised.

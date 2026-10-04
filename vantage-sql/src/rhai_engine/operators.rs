@@ -10,7 +10,7 @@ use vantage_rhai::rhai::Dynamic;
 
 use super::{RhaiExpr, RhaiIdent};
 
-/// Convert a Dynamic value into an Expression<V>.
+/// Convert a Dynamic value into an `Expression<V>`.
 /// Accepts RhaiExpr, RhaiIdent, i64, f64, bool, string.
 pub fn to_expr<V>(val: Dynamic) -> Result<Expression<V>, Box<rhai::EvalAltResult>>
 where

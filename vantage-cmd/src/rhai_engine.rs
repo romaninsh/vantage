@@ -63,7 +63,7 @@ pub(crate) struct CmdVocab {
 }
 
 /// A script compiled once, on a host carrying its [`CmdVocab`], and reused
-/// for every evaluation. Cached on the (clone-shared) [`Cmd`] and evaluated
+/// for every evaluation. Cached on the (clone-shared) `Cmd` and evaluated
 /// across `spawn_blocking` threads — `vantage-rhai` builds rhai with `sync`,
 /// so the compiled script is `Send + Sync`.
 pub(crate) struct CompiledScript {

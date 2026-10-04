@@ -148,7 +148,7 @@ impl<C: Default> ColumnSpec<C> {
 
 impl<C> ColumnSpec<C> {
     /// The Vista column for a `lazy:` column — its type and flags, computed
-    /// by its script (see [`Column::with_expression`]) — or `None` for a
+    /// by its script (see `Column::with_expression`) — or `None` for a
     /// stored column. Errors when the script doesn't compile, or when this
     /// crate was built without the `rhai` feature.
     pub fn lazy_column(&self, name: &str) -> Result<Option<Column>> {

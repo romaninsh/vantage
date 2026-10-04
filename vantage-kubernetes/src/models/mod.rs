@@ -3,7 +3,7 @@
 //!
 //! Each resource module exposes `PATH` (its API list path), a `*_table`
 //! constructor (columns + relations), and a `project` function (raw object
-//! → flat record). [`project_for`] routes a fetched object to the right
+//! → flat record). `project_for` routes a fetched object to the right
 //! projector by API path; [`Factory`] routes a dotted name (`core.pods`,
 //! `apps.deployments`) to a fully-built `Vista`.
 

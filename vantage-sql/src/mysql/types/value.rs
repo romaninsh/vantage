@@ -284,7 +284,7 @@ impl TryFrom<AnyMysqlType> for vantage_types::Record<AnyMysqlType> {
     }
 }
 
-/// Convert a CBOR Map into a Record<AnyMysqlType>.
+/// Convert a CBOR Map into a `Record<AnyMysqlType>`.
 fn cbor_map_to_record(map: Vec<(CborValue, CborValue)>) -> vantage_types::Record<AnyMysqlType> {
     map.into_iter()
         .map(|(k, v)| {

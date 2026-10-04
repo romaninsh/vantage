@@ -6,7 +6,7 @@
 //!   guess isn't enough. [`DatasetGen`] seeds a whole [`TableGen`] set into a
 //!   [`vantage_memory::MemoryStore`], in reference order.
 //!   [`TableGen::weirdness`] and [`TableGen::extra_fields`] roughen the rows.
-//! - the `sim` feature adds a Rhai-scripted [`SimEngine`] that mutates a
+//! - the `sim` feature adds a Rhai-scripted `SimEngine` that mutates a
 //!   seeded store live: insert/upsert/patch/set/delete/find. A sim ends when
 //!   its script does; a Rhai error ends it as errored, and so does running
 //!   more than its operations budget in one stretch between two sleeps.
