@@ -4,6 +4,9 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use vantage_core::{Result, error};
+use vantage_rhai::rhai::Map as RhaiMap;
+
 use super::builder::SimEngineBuilder;
 use super::kind::Inner;
 use super::stats::{Counters, SimStats};
@@ -43,6 +46,20 @@ impl SimEngine {
     /// Sim threads not yet ended.
     pub fn threads(&self) -> usize {
         self.inner.sched.lock().threads
+    }
+
+    /// Start one sim of def `name` at the engine's current instant with
+    /// `args`, or the def's `spawn.args` when `None`. `Ok(false)` when the
+    /// def is at its `max`, the engine runs its limit of sims, or the engine
+    /// has stopped; an error when no def is named `name`.
+    pub fn spawn(&self, name: &str, args: Option<RhaiMap>) -> Result<bool> {
+        let Some(&kind) = self.inner.by_name.get(name) else {
+            return Err(error!("Unknown sim", sim = name));
+        };
+        let k = &self.inner.kinds[kind];
+        let vt = k.clock.sim(self.inner.sched.now());
+        let args = args.unwrap_or_else(|| k.args.clone());
+        Ok(super::spawn::spawn_sim(&self.inner, kind, vt, args))
     }
 
     /// Live sims and the engine's running totals.

@@ -117,3 +117,39 @@ fn an_engine_runs_up_to_max_live_sims() {
     engine.stop();
     assert_eq!(engine.threads(), 0);
 }
+
+#[test]
+fn engine_spawn_starts_a_sim_with_args_and_respects_max() {
+    let def = SimDef::new(
+        "nurse",
+        "log",
+        r#"table().insert(#{ who: args.name, step: 1 }); sleep(hours(1));"#,
+    )
+    .with_spawn(0, 0.0, 2)
+    .with_args(serde_json::json!({ "name": "default" }));
+    let (engine, log) = engine_with(vec![def]);
+    engine.settle();
+    assert!(rows(&log).is_empty(), "no burst, no rate");
+
+    let mut args = vantage_rhai::rhai::Map::new();
+    args.insert("name".into(), "ada".into());
+    assert!(engine.spawn("nurse", Some(args)).unwrap());
+    assert!(engine.spawn("nurse", None).unwrap());
+    assert!(!engine.spawn("nurse", None).unwrap(), "at max");
+    engine.settle();
+
+    let mut who: Vec<String> = rows(&log).iter().map(|r| text(r, "who")).collect();
+    who.sort();
+    assert_eq!(who, ["ada", "default"]);
+    assert_eq!(engine.live_of("nurse"), 2);
+}
+
+#[test]
+fn engine_spawn_rejects_an_unknown_name_and_a_stopped_engine() {
+    let def = SimDef::new("nurse", "log", "sleep(hours(1));").with_spawn(0, 0.0, 5);
+    let (engine, _log) = engine_with(vec![def]);
+    let err = engine.spawn("doctor", None).unwrap_err().to_string();
+    assert!(err.contains("doctor"), "{err}");
+    engine.stop();
+    assert!(!engine.spawn("nurse", None).unwrap());
+}

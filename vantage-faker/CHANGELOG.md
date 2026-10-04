@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 — 2026-10-04
+
+- `SimEngine::spawn(name, args)` starts a sim from outside the engine.
+
 ## 1.0.5 — 2026-10-04
 
 - `ShapedShell`'s `TableShell` impl moved to `shape/shell.rs`.
