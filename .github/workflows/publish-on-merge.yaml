@@ -125,8 +125,11 @@ jobs:
             vantage-api-pool
             vantage-api-client
             vantage-aws
+            vantage-kubernetes
             vantage-cmd
             vantage-diorama
+            # Dev-depends on vantage-diorama.
+            vantage-memory
             vantage-diorama-aggregate
             vantage-api-adapters
             vantage-faker
