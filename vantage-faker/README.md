@@ -102,14 +102,17 @@ A `FakerColumn` is a name, a declared type and an optional generator. Each cell 
 first rule that applies:
 
 1. **An explicit `ColumnGen`**, set with `with_generator`.
-2. **The column name.** Names containing `email`, `first`+`name`, `last`+`name` or `surname`,
-   `username` / `login` / `handle`, `name`, `phone` / `mobile` / `tel`, `city`, `country`,
-   `street` / `address`, or `company` / `employer` / `organization` get a realistic value from
-   `fake`. The match is a case-insensitive substring, so `hotel` counts as `tel`.
+2. **The column name.** The name is split into lowercase words on `_`, `-`, `.` and camelCase,
+   and adjacent words also match joined (`first_name`, `firstName` and `firstname` are the same).
+   A word of `email`, `firstname`, `lastname` / `surname`, `username` / `login` / `handle`,
+   `name`, `phone` / `mobile` / `tel` / `telephone`, `city`, `country`, `street` / `address`, or
+   `company` / `employer` / `organization` / `organisation` gets a realistic value from `fake`.
+   Whole words only: `contact_email` is an email, `hostname` and `hotel` are not matched.
 3. **The declared type.** Integers (`int`, `integer`, `number`, `i64`, `bigint`) get
    0..10 000, decimals (`decimal`, `float`, `double`, `money`, `amount`, `f64`) two-place
-   numbers below 10 000, `bool` a boolean, `date` / `datetime` / `timestamp` a time in January
-   2026. Anything else gets a lorem word.
+   numbers below 10 000, `bool` a boolean, `date` / `datetime` / `timestamp` a random time in
+   the 90 days before the generator's `now` (pin it with `ValueGen::with_now` for repeatable
+   output). Anything else gets a lorem word.
 
 The generators, shown in their YAML form:
 
@@ -229,7 +232,7 @@ returns the source, whose header lists the arguments and columns.
   altitude and ETA updated every 30 sim seconds.
 - `folder_tree`: one sim growing a day's folder of access, error and event log files.
 
-## YAML config (`serde` feature)
+## YAML config
 
 `config::DatasetSpec` is a whole dataset (seed, tables, sims) in YAML shape. Unknown keys are
 rejected.
@@ -289,7 +292,8 @@ offset skew. The seed replays jitter and faults; it does not affect row values.
 
 - default: generators, `DatasetGen`, `ShapedShell`.
 - `sim`: the Rhai sim engine; adds `vantage-rhai`.
-- `serde`: the `config` module. `ColumnGen` and `ExtraFields` deserialize in every build.
+- `serde`: no effect. The `config` module and the `ColumnGen` / `ExtraFields` deserializers are
+  always built; the feature stays so existing `features = ["serde"]` requirements resolve.
 
 ## License
 

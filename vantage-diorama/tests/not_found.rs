@@ -33,8 +33,9 @@ fn metadata() -> VistaMetadata {
         .with_id_column("id")
 }
 
-/// A Dio over one seeded row, cache warmed from the master.
-async fn dio_with_one_row() -> Result<Dio> {
+/// A Dio over one seeded row, cache warmed from the master. The returned
+/// shell is the master's, to make its reads fail.
+async fn dio_with_one_row() -> Result<(Dio, MockShell)> {
     let shell = MockShell::new()
         .with_capabilities(VistaCapabilities {
             can_count: true,
@@ -45,19 +46,40 @@ async fn dio_with_one_row() -> Result<Dio> {
         })
         .with_metadata(metadata())
         .with_record("1", rec(&[("id", "1"), ("name", "a")]));
-    let master = Vista::new("items", Box::new(shell));
+    let master = Vista::new("items", Box::new(shell.clone()));
 
     let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
     let dio = lens.make_dio(master).await?;
     for (id, row) in dio.master().list_values().await? {
         dio.cache().insert_value(&id, &row).await?;
     }
-    Ok(dio)
+    Ok((dio, shell))
+}
+
+/// A row found in the cache is never looked up in the master: with every
+/// master read failing, patch and delete of a cached row still succeed,
+/// while an id absent from the cache has to ask the master and so fails.
+#[tokio::test]
+async fn cached_row_skips_the_master_read() -> Result<()> {
+    let (dio, master) = dio_with_one_row().await?;
+    let vista = dio.vista();
+    master.set_fail_reads(true);
+
+    vista.patch_value("1", &rec(&[("name", "b")])).await?;
+    vista.delete("1").await?;
+
+    let err = vista
+        .patch_value("nope", &rec(&[("name", "x")]))
+        .await
+        .unwrap_err();
+    assert!(!err.is_not_found(), "a cache miss reads the master: {err}");
+
+    Ok(())
 }
 
 #[tokio::test]
 async fn patch_and_delete_of_a_missing_row_are_not_found() -> Result<()> {
-    let dio = dio_with_one_row().await?;
+    let (dio, _master) = dio_with_one_row().await?;
     let vista = dio.vista();
 
     let err = vista

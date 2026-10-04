@@ -10,8 +10,8 @@
 //!   seeded store live: insert/upsert/patch/set/delete/find. A sim ends when
 //!   its script does; a Rhai error ends it as errored, and so does running
 //!   more than its operations budget in one stretch between two sleeps.
-//! - the `serde` feature adds `config::DatasetSpec`, the YAML shape of a
-//!   whole datasource (tables and sims).
+//! - [`config::DatasetSpec`] is the YAML shape of a whole datasource (tables
+//!   and sims).
 //!
 //! [`ShapedShell`] wraps a store-backed [`vantage_vista::source::TableShell`]
 //! to make it behave like a real backend — paged or cursor-driven, sluggish
@@ -19,7 +19,6 @@
 //! less forgiving than a plain in-memory table.
 
 mod column;
-#[cfg(feature = "serde")]
 pub mod config;
 pub mod dataset;
 pub mod generator;

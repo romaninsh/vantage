@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.4 — 2026-10-04
+
+- The column-name guess matches whole words (split on `_`, `-`, `.`, camelCase): `hostname`,
+  `filename` and `hotel` no longer get names or phone numbers.
+- Type-fallback `date` / `datetime` / `timestamp` values fall in the 90 days before the
+  generator's `now`, not January 2026.
+- `config` is always built; the `serde` feature is now a no-op.
+
 ## 1.0.3 — 2026-10-04
 
 - Depends on `vantage-vista` 1.1.0, `vantage-memory` 1.1.0. Sim scripts get `count()` respecting

@@ -337,7 +337,9 @@ impl DioShell {
     /// write to a nonexistent id would only fail later via
     /// [`DioEvent::WriteFailed`](crate::DioEvent::WriteFailed), never reaching the caller. Check the cache
     /// first, then the master on a miss — a lazily-populated cache must not
-    /// report not-found for a row the master holds.
+    /// report not-found for a row the master holds. A cache hit returns
+    /// without touching the master, so the extra master read is paid only
+    /// on a cache miss.
     async fn ensure_row_exists(&self, id: &str) -> Result<()> {
         if self.dio.cache.get_value(id).await?.is_some() {
             return Ok(());

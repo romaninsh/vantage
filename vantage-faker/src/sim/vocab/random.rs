@@ -90,7 +90,10 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn("fake", |kind: &str| {
         with(|c| {
             let col = FakerColumn::new(kind, kind);
-            Ok(cbor_to_dynamic(&ValueGen::value_for_with(&mut c.rng, &col)))
+            let now = c.vt as i64;
+            Ok(cbor_to_dynamic(&ValueGen::value_for_with(
+                &mut c.rng, &col, now,
+            )))
         })
     });
 

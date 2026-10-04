@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.6 — 2026-10-04
+
+- Test and doc: `DioShell` patch/delete reads the master only on a cache miss.
+
 ## 0.13.5 — 2026-10-03
 
 - Doc links fixed so the crate documents with warnings denied.

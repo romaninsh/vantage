@@ -1,19 +1,19 @@
 # vantage-faker 1.0 on vantage-memory — design spec
 
-Date: 2026-09-29 · Branch: `faker/memory` · Status: as built for 1.0.0, final-review rulings folded in
+Date: 2026-09-29 · Status: released as 1.0.x (1.0.0 and 1.0.1 on 2026-10-03; later patches in the CHANGELOG), final-review rulings folded in
 
 ## Context
 
 This is sub-project 2 of the faker rework:
 
 0. Stress harness (done: `vantage-faker-stress`, baseline-0.7)
-1. In-memory datasource (done: `vantage-memory` 0.6.0)
+1. In-memory datasource (done: `vantage-memory`)
 2. **vantage-faker 1.0 on vantage-memory** (this spec)
 3. Port the remaining mutators to Rhai sims; migrate vantage-ui and the example apps
 4. vantage-ui action kind that runs Rhai or spawns sims
 5. Hospital sim game demo
 
-vantage-faker 1.0.0 is not released yet. It is still in PR #407, which adds `SimEngine::stats`. This work goes into the same 1.0.0 release, and its CHANGELOG block grows to cover it.
+vantage-faker 1.0 is released: 1.0.0 was published from an earlier branch state, and 1.0.1 (2026-10-03) is the release that matches this spec. See the CHANGELOG for later patches.
 
 Today faker keeps its rows in `MockShell` (a test mock) and pushes changes through its own broadcast channel. It has four live-data mechanisms (effects, `PulseSim`, `LiveFolderSim`, the sim engine), and relational tables that sims cannot write. After this change, faker does three things:
 
@@ -28,7 +28,7 @@ The app reads and edits the same store through vantage-memory's Vista layer, and
 - **Storage is vantage-memory only.** There is no pluggable storage and no cross-persistence (no SQLite or other backends).
 - **A failed sim ends.** A sim that throws, exceeds a limit or panics inside a verb is counted as `errored` and stops. Nothing restarts it, and the rows it wrote stay. Idempotency means that scripts can write with `upsert` and stable ids, so a sim spawned twice with the same `args` doesn't duplicate data.
 - **Linear scripts, one thread per sim.** No step engine. Both styles stay supported: one sim per row, and one sim looping over many rows.
-- **Version 1.0.0** (unreleased), a breaking change from 0.7.x. Because 1.0 is the moment for breaking changes, the public API is settled now:
+- **Version 1.0** (released 2026-10-03), a breaking change from 0.7.x. Because 1.0 is the moment for breaking changes, the public API is settled now:
   - **Errors are `vantage_core::Result`** (`VantageError`), matching vantage-memory: `DatasetGen::generate`, `SimEngineBuilder::start`, `DatasetSpec::{generate, sim_defs, sim_builder, start_sims}` and `parse_duration`. The messages are the same text as before; callers that want a string use `.to_string()`.
   - **`SimStats` and the config structs are `#[non_exhaustive]` and `Default`**, so fields can be added later. Callers outside the crate build them from `Default` (or `DatasetSpec::new`) and assign fields.
   - **`FakerColumn.flags` is removed.** Nothing read it.
@@ -49,7 +49,7 @@ The app reads and edits the same store through vantage-memory's Vista layer, and
 
 - Default: generators and seeding. Dependencies are vantage-memory, vantage-types, vantage-vista (for `ShapedShell`), `fake`, `ciborium` and `indexmap`.
 - `sim`: the Rhai sim engine. It adds `vantage-rhai`.
-- `serde`: gates only the `config` module — the types in [Config types](#config-types). `serde` itself stays a normal dependency, and `ColumnGen` (and `ExtraFields`) deserialize in every feature set.
+- `serde`: no effect since 1.0.3. The `config` module (the types in [Config types](#config-types)) is always built, and `ColumnGen` and `ExtraFields` deserialize in every feature set. The feature stays so existing `features = ["serde"]` requirements resolve.
 
 ## Seeding
 
@@ -144,7 +144,7 @@ Row ids are strings throughout: verbs return them as strings and take them as st
 
 ## Config types
 
-These are the faker part of a datasource definition, deserialized from YAML with the `serde` feature. vantage-ui, the stress harness and the examples share them.
+These are the faker part of a datasource definition, deserialized from YAML. vantage-ui, the stress harness and the examples share them.
 
 Every struct below is `#[non_exhaustive]` and `Default`; `DatasetSpec::new(seed, tables, sims)` builds the top level.
 

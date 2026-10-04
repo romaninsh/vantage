@@ -26,6 +26,99 @@ fn name_column_is_nonempty_text() {
 }
 
 #[test]
+fn name_words_split_on_separators_and_case() {
+    assert_eq!(
+        name::name_words("lastName"),
+        ["last", "name", "lastname"].map(String::from)
+    );
+    assert_eq!(
+        name::name_words("billing.phone-number"),
+        ["billing", "phone", "number", "billingphone", "phonenumber"].map(String::from)
+    );
+    assert_eq!(
+        name::name_words("userID"),
+        ["user", "id", "userid"].map(String::from)
+    );
+}
+
+#[test]
+fn name_guess_ignores_words_that_merely_contain_a_keyword() {
+    let g = ValueGen::seeded(1);
+    // Fell through to the type fallback: a lorem word, never a person name,
+    // phone number or other multi-word value.
+    for name in ["hostname", "filename", "hotel", "cityscape", "telescope"] {
+        let v = g.value_for(&col(name, "string"));
+        let word = text(&v);
+        assert!(
+            word.chars().all(|c| c.is_ascii_lowercase()),
+            "{name} should fall through to a lorem word, got {word:?}"
+        );
+    }
+}
+
+#[test]
+fn name_guess_matches_whole_words() {
+    let g = ValueGen::seeded(2);
+    for name in ["email", "contact_email", "billingEmail", "user-email"] {
+        assert!(
+            text(&g.value_for(&col(name, "string"))).contains('@'),
+            "{name}"
+        );
+    }
+    for name in ["phone", "mobile", "tel", "phone_number", "mobilePhone"] {
+        let v = g.value_for(&col(name, "string"));
+        assert!(
+            text(&v).chars().any(|c| c.is_ascii_digit()),
+            "{name}: {v:?}"
+        );
+    }
+    for name in [
+        "first_name",
+        "firstName",
+        "lastName",
+        "surname",
+        "username",
+        "login",
+        "name",
+    ] {
+        let v = g.value_for(&col(name, "string"));
+        assert!(!text(&v).is_empty(), "{name}");
+    }
+    // `first_name` is a first name only: no space, unlike `Name()`'s "Dr. A B".
+    let first = g.value_for(&col("first_name", "string"));
+    assert!(!text(&first).contains(' '), "{first:?}");
+}
+
+#[test]
+fn type_fallback_datetime_is_within_the_last_90_days_of_now() {
+    // 2026-09-28T00:00:00Z
+    let now = 1_790_553_600;
+    let g = ValueGen::seeded(5).with_now(now);
+    let lo = rfc3339(now - 90 * 86_400);
+    let hi = rfc3339(now);
+    for ty in ["date", "datetime", "timestamp"] {
+        for _ in 0..50 {
+            let v = g.value_for(&col("created", ty));
+            let at = text(&v);
+            assert!(
+                at >= lo.as_str() && at <= hi.as_str(),
+                "{at} outside {lo}..{hi}"
+            );
+        }
+    }
+}
+
+#[test]
+fn type_fallback_datetime_replays_under_a_pinned_now() {
+    let draw = || {
+        ValueGen::seeded(8)
+            .with_now(1_790_553_600)
+            .value_for(&col("created", "datetime"))
+    };
+    assert_eq!(draw(), draw());
+}
+
+#[test]
 fn type_fallback_maps_scalars() {
     let g = ValueGen::new();
     assert!(matches!(
