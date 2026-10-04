@@ -370,7 +370,9 @@ impl TableSource for SqliteDB {
         let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
         let delete = crate::sqlite::statements::SqliteDelete::new(table.table_name())
             .with_condition(id_condition);
-        self.execute(&delete.expr()).await?;
+        if self.execute_affected(&delete.expr()).await? == 0 {
+            return Err(error!("Row not found for delete", id = id.clone()).mark_not_found());
+        }
         Ok(())
     }
 

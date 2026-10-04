@@ -34,6 +34,15 @@ impl VistaMetadata {
         self
     }
 
+    /// [`with_column`](Self::with_column) at position `index` (clamped to the
+    /// end), shifting later columns along.
+    pub fn with_column_at(mut self, index: usize, column: Column) -> Self {
+        let index = index.min(self.columns.len());
+        self.columns
+            .shift_insert(index, column.name.clone(), column);
+        self
+    }
+
     pub fn with_reference(mut self, reference: Reference) -> Self {
         self.references.insert(reference.name.clone(), reference);
         self

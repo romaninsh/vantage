@@ -37,9 +37,14 @@ fn ports(item: &JsonValue) -> Option<String> {
 
 pub fn project(item: &JsonValue) -> (String, Record<CborValue>) {
     let id = project::str_at(item, "metadata.uid")
-        .or_else(|| match (project::str_at(item, "metadata.namespace"), project::str_at(item, "metadata.name")) {
-            (Some(ns), Some(name)) => Some(format!("{ns}/{name}")),
-            _ => None,
+        .or_else(|| {
+            match (
+                project::str_at(item, "metadata.namespace"),
+                project::str_at(item, "metadata.name"),
+            ) {
+                (Some(ns), Some(name)) => Some(format!("{ns}/{name}")),
+                _ => None,
+            }
         })
         .unwrap_or_default();
     let record = Row::new()

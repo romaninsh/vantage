@@ -2,6 +2,8 @@ use ciborium::Value as CborValue;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
+use vantage_core::Context;
+
 use crate::mysql::MysqlDB;
 use crate::mysql::row::{bind_mysql_value, row_to_record};
 use crate::mysql::types::AnyMysqlType;
@@ -64,6 +66,29 @@ impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
                 })
             })
         })
+    }
+}
+
+impl MysqlDB {
+    /// Run a statement that returns no rows (DELETE, UPDATE) and report how
+    /// many rows it changed. [`ExprDataSource::execute`](vantage_expressions::ExprDataSource::execute)
+    /// returns the fetched rows instead, so it can't tell "deleted one" from
+    /// "matched nothing".
+    pub async fn execute_affected(
+        &self,
+        expr: &Expression<AnyMysqlType>,
+    ) -> vantage_core::Result<u64> {
+        let resolved = resolve_deferred(expr).await?;
+        let (sql, params) = prepare_typed_query(&resolved)?;
+        let mut query = sqlx::query(&sql);
+        for value in &params {
+            query = bind_mysql_value(query, value);
+        }
+        let done = query
+            .execute(self.pool())
+            .await
+            .with_context(|| vantage_core::error!("MySQL statement failed", sql = sql.clone()))?;
+        Ok(done.rows_affected())
     }
 }
 

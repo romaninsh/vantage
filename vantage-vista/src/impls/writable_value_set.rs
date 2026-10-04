@@ -6,6 +6,7 @@ use vantage_types::Record;
 
 use crate::vista::Vista;
 
+/// Every write drops the record's computed columns before the backend sees it.
 #[async_trait]
 impl WritableValueSet for Vista {
     async fn insert_value(
@@ -23,7 +24,8 @@ impl WritableValueSet for Vista {
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let id = id.into();
-        self.source.replace_vista_value(self, &id, record).await
+        let record = self.without_computed(record);
+        self.source.replace_vista_value(self, &id, &record).await
     }
 
     async fn patch_value(
@@ -32,7 +34,8 @@ impl WritableValueSet for Vista {
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let id = id.into();
-        self.source.patch_vista_value(self, &id, partial).await
+        let partial = self.without_computed(partial);
+        self.source.patch_vista_value(self, &id, &partial).await
     }
 
     async fn delete(&self, id: impl Into<String> + Send) -> Result<()> {
@@ -56,6 +59,7 @@ impl Vista {
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let id = id.into();
-        self.source.upsert_vista_value(self, &id, record).await
+        let record = self.without_computed(record);
+        self.source.upsert_vista_value(self, &id, &record).await
     }
 }

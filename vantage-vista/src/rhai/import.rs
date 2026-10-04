@@ -18,7 +18,7 @@
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_dataset::WritableValueSet;
+use vantage_dataset::{ReadableValueSet, WritableValueSet};
 use vantage_rhai::rhai::{ImmutableString, Map as RhaiMap};
 use vantage_rhai::template::{Part, split};
 use vantage_types::{Record, cbor_id_to_string};
@@ -62,7 +62,7 @@ fn source_rows(source: &Handle, resolver: Option<&TargetResolver>) -> RhaiResult
 
 /// Bulk import when the backend can, one insert per row otherwise.
 ///
-/// A bulk import reports how many rows were new; the rest count as skipped.
+/// Either way, rows the target already held count as skipped.
 /// A backend whose import was cancelled part-way returns an error carrying
 /// [`IMPORT_CANCELLED`]; that becomes a `cancelled` report, not a throw.
 fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
@@ -86,10 +86,18 @@ fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
             },
         };
     }
+    // An id the target already holds is skipped, as the bulk path counts it;
+    // any insert failure stops the import. A target narrowed by `.ref()` only
+    // sees its own rows, so an id held outside the narrowing is inserted.
+    let mut inserted = 0;
     for (id, record) in records {
+        if run(vista.get_value(id.clone()))?.is_some() {
+            continue;
+        }
         run(vista.insert_value(id.clone(), record))?;
+        inserted += 1;
     }
-    Ok(report(records.len(), 0, false))
+    Ok(report(inserted, records.len() - inserted, false))
 }
 
 /// Context key a backend sets on the error it returns from

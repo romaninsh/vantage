@@ -28,10 +28,21 @@ pub fn store() -> MemoryStore {
     store
 }
 
-/// Memory Vistas over `store`; `nocount` is a mock that can't count.
+/// Memory Vistas over `store`; `nocount` is a mock that can't count, `mock`
+/// a mock without bulk import that already holds `r1 {a:7}`.
 pub fn resolver(store: &MemoryStore) -> TargetResolver {
     let store = store.clone();
+    let mock = MockShell::new()
+        .with_metadata(
+            VistaMetadata::new()
+                .with_column(Column::new("id", "String").with_flag("id"))
+                .with_id_column("id"),
+        )
+        .with_record("r1", rec(&[("a", 7)]));
     Arc::new(move |name: &str| {
+        if name == "mock" {
+            return Ok(Vista::new(name, Box::new(mock.clone())));
+        }
         if name == "nocount" {
             let caps = VistaCapabilities {
                 can_count: false,

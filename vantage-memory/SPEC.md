@@ -190,9 +190,10 @@ The evaluator is a public module. Diorama's and MockShell's copies stay as they 
 - **`MemoryVistaFactory`** implements `VistaFactory` and is built from a `MemoryStore` handle. `MemoryVistaSpec` (`VistaSpec<MemoryTableExtras, NoExtras, NoExtras>`) carries the table name, columns, id column, references and the driver extras `MemoryTableExtras { memory: MemoryBlock }`, where `MemoryBlock { indexed: Vec<String>, seed: Option<PathBuf> }` — YAML `memory: { indexed: [..], seed: <file>? }`.
   - `indexed` columns are applied to the table with `add_index`, including a table that already existed under another spec; only the id column has to agree — a mismatch between the spec's `id_column` and an existing table's is an error, since the table can't be given a second id column after rows exist.
   - `seed`, when set, is loaded into the table via `seed::load_file` when the vista is built and the table is empty, so rebuilding a vista neither reverts edits nor duplicates rows. A relative path resolves against the process working directory.
-  - Rejected: `contained:` relations, multi-key `references:` (non-empty `keys:`), and columns with `lazy:` or `expr:` — all return an error naming the offending vista/column/reference.
+  - `lazy:` columns become Vista computed columns (needs the `rhai` feature).
+  - Rejected: `contained:` relations, multi-key `references:` (non-empty `keys:`), and columns with `expr:` — all return an error naming the offending vista/column/reference.
   - A column's `references:` accepts the shorthand `references: <target_table>` (a `HasOne` keyed on the column itself) alongside the full form `{ table, kind, foreign_key }`; a table-level `references:` entry needs the same `table:`/`kind:`/`foreign_key:` shape. `foreign_key` defaults to the column or reference name when omitted.
-  - Every column gets the `orderable` flag, whether or not the spec set it, since the store can sort on any field.
+  - Every stored column gets the `orderable` flag, whether or not the spec set it, since the store can sort on any field. A `lazy:` column is computed by the Vista and is not orderable.
   - The id column is `spec.id_column` if set, else the column carrying the `id` flag, else `"id"`.
   - The vantage-ui kind that uses these specs comes in sub-project 3.
 

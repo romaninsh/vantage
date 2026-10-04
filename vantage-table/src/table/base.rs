@@ -59,6 +59,12 @@ where
     pub(super) contained: Vec<crate::references::ContainedRelation<T>>,
     pub(super) expressions: IndexMap<String, ExpressionFn<T>>,
     pub(super) lazy_expressions: IndexMap<String, LazyExpressionFn<T>>,
+    /// Columns the `Vista` computes after each read (see
+    /// `vantage_vista::Column::with_expression`). The table never selects or
+    /// writes them; it carries them so a Vista built from this table — a
+    /// traversal target included — knows them. Each carries its position
+    /// among all columns, stored and computed, as declared.
+    pub(super) computed_columns: IndexMap<String, (usize, vantage_vista::Column)>,
     /// When `Some`, `select()` projects only these column names (plus the id
     /// column, always). `None` keeps the default "project every column"
     /// behavior. The set holds both plain column names and dotted implicit
@@ -107,6 +113,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             contained: Vec::new(),
             expressions: IndexMap::new(),
             lazy_expressions: IndexMap::new(),
+            computed_columns: IndexMap::new(),
             active_columns: None,
             imported_columns: indexmap::IndexSet::new(),
             pagination: None,
@@ -138,6 +145,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             contained: self.contained,
             expressions: self.expressions,
             lazy_expressions: self.lazy_expressions,
+            computed_columns: self.computed_columns,
             active_columns: self.active_columns,
             imported_columns: self.imported_columns,
             pagination: self.pagination,
@@ -231,6 +239,24 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Register a column the `Vista` computes after each read, positioned
+    /// after every column added so far. Driver factories fold these into
+    /// `VistaMetadata`. A stored column of the same name (one inherited by a
+    /// derived table) is replaced, so the column is never both read and
+    /// computed.
+    pub fn add_computed_column(&mut self, column: vantage_vista::Column) {
+        self.columns.shift_remove(&column.name);
+        let at = self.columns.len() + self.computed_columns.len();
+        self.computed_columns
+            .insert(column.name.clone(), (at, column));
+    }
+
+    /// Columns registered via [`Self::add_computed_column`], in order, each
+    /// with its position among all columns.
+    pub fn computed_columns(&self) -> impl Iterator<Item = (usize, &vantage_vista::Column)> {
+        self.computed_columns.values().map(|(at, c)| (*at, c))
     }
 
     /// Shape-only specs (name, host, kind, id) for the contained relations

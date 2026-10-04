@@ -133,6 +133,7 @@ impl Vista {
                                 relation = key
                             ));
                         }
+                        self.check_insert_link(key)?;
                         main.insert(reference.foreign_key.clone(), value.clone());
                     }
                 }
@@ -153,6 +154,7 @@ impl Vista {
                 )
             })?;
             let foreign_key = reference.foreign_key.clone();
+            self.check_insert_link(&relation)?;
             match reference.kind {
                 // Inserting a child stamps its new id into the main row's
                 // foreign key, so a main row that ALREADY carries that
@@ -231,7 +233,7 @@ impl Vista {
         &self,
         record: &Record<CborValue>,
     ) -> Result<String> {
-        let (mut main, has_one, has_many) = self.classify_insert(record)?;
+        let (mut main, has_one, has_many) = self.classify_insert(&self.without_computed(record))?;
         self.insert_has_one_children(&mut main, has_one).await?;
         let parent_id = self
             .source
@@ -248,7 +250,7 @@ impl Vista {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        let (mut main, has_one, has_many) = self.classify_insert(record)?;
+        let (mut main, has_one, has_many) = self.classify_insert(&self.without_computed(record))?;
         self.insert_has_one_children(&mut main, has_one).await?;
         let inserted = self.source.insert_vista_value(self, id, &main).await?;
         self.insert_has_many_children(id, has_many).await?;

@@ -117,7 +117,9 @@ fn cmp_values(a: Option<&CborValue>, b: Option<&CborValue>) -> Ordering {
         (Some(_), None) => Ordering::Less,
         (Some(a), Some(b)) => match (a, b) {
             (CborValue::Integer(x), CborValue::Integer(y)) => i128::from(*x).cmp(&i128::from(*y)),
-            (CborValue::Float(x), CborValue::Float(y)) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
+            (CborValue::Float(x), CborValue::Float(y)) => {
+                x.partial_cmp(y).unwrap_or(Ordering::Equal)
+            }
             (CborValue::Text(x), CborValue::Text(y)) => x.cmp(y),
             (CborValue::Bool(x), CborValue::Bool(y)) => x.cmp(y),
             // Mixed/other kinds: fall back to a textual rendering so the sort
@@ -141,16 +143,26 @@ impl TableShell for KubeTableShell {
         self.metadata.id_column.as_deref()
     }
 
-    async fn list_vista_values(&self, _vista: &Vista) -> Result<IndexMap<String, Record<CborValue>>> {
+    async fn list_vista_values(
+        &self,
+        _vista: &Vista,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
         Ok(self.materialize().await?.into_iter().collect())
     }
 
-    async fn get_vista_value(&self, _vista: &Vista, id: &String) -> Result<Option<Record<CborValue>>> {
+    async fn get_vista_value(
+        &self,
+        _vista: &Vista,
+        id: &String,
+    ) -> Result<Option<Record<CborValue>>> {
         let mut data = self.table.list_values().await?;
         Ok(data.shift_remove(id))
     }
 
-    async fn get_vista_some_value(&self, _vista: &Vista) -> Result<Option<(String, Record<CborValue>)>> {
+    async fn get_vista_some_value(
+        &self,
+        _vista: &Vista,
+    ) -> Result<Option<(String, Record<CborValue>)>> {
         Ok(self.materialize().await?.into_iter().next())
     }
 
@@ -169,7 +181,11 @@ impl TableShell for KubeTableShell {
         Ok(all.into_iter().skip(offset).take(limit).collect())
     }
 
-    async fn fetch_page(&self, _vista: &Vista, page: usize) -> Result<Vec<(String, Record<CborValue>)>> {
+    async fn fetch_page(
+        &self,
+        _vista: &Vista,
+        page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
         if page == 0 {
             return Err(error!("page is 1-based; got 0"));
         }
@@ -193,7 +209,11 @@ impl TableShell for KubeTableShell {
             None => 1,
             Some(CborValue::Integer(n)) => usize::try_from(i128::from(n))
                 .map_err(|_| error!("fetch_next token out of range"))?,
-            Some(_) => return Err(error!("invalid fetch_next token type for kubernetes driver")),
+            Some(_) => {
+                return Err(error!(
+                    "invalid fetch_next token type for kubernetes driver"
+                ));
+            }
         };
         if page < 1 {
             return Err(error!("fetch_next token must be a 1-based page number"));
@@ -202,7 +222,8 @@ impl TableShell for KubeTableShell {
         let all = self.materialize().await?;
         let records: Vec<(String, Record<CborValue>)> =
             all.into_iter().skip((page - 1) * size).take(size).collect();
-        let next_token = (records.len() == size).then(|| CborValue::Integer(((page + 1) as i64).into()));
+        let next_token =
+            (records.len() == size).then(|| CborValue::Integer(((page + 1) as i64).into()));
         Ok((records, next_token))
     }
 
@@ -248,13 +269,15 @@ impl TableShell for KubeTableShell {
 
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
         let target = self.table.get_ref_from_row::<EmptyEntity>(relation, row)?;
-        let factory = crate::vista::factory::KubeVistaFactory::new(self.table.data_source().clone());
+        let factory =
+            crate::vista::factory::KubeVistaFactory::new(self.table.data_source().clone());
         factory.from_table(target)
     }
 
     fn get_ref_target(&self, relation: &str) -> Result<Vista> {
         let target = self.table.get_ref_target_erased(relation)?;
-        let factory = crate::vista::factory::KubeVistaFactory::new(self.table.data_source().clone());
+        let factory =
+            crate::vista::factory::KubeVistaFactory::new(self.table.data_source().clone());
         factory.from_table(target)
     }
 

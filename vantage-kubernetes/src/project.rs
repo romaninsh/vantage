@@ -60,8 +60,14 @@ pub fn owner(item: &JsonValue) -> (Option<String>, Option<String>) {
     else {
         return (None, None);
     };
-    let name = first.get("name").and_then(|v| v.as_str()).map(str::to_string);
-    let kind = first.get("kind").and_then(|v| v.as_str()).map(str::to_string);
+    let name = first
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let kind = first
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     (name, kind)
 }
 
@@ -73,7 +79,12 @@ pub fn owner_deployment(item: &JsonValue) -> Option<String> {
     let (name, kind) = owner(item);
     let name = name?;
     match kind.as_deref() {
-        Some("ReplicaSet") => Some(name.rsplit_once('-').map(|(head, _)| head).unwrap_or(&name).to_string()),
+        Some("ReplicaSet") => Some(
+            name.rsplit_once('-')
+                .map(|(head, _)| head)
+                .unwrap_or(&name)
+                .to_string(),
+        ),
         _ => Some(name),
     }
 }
@@ -147,7 +158,10 @@ impl Row {
 
     /// Parse a CPU quantity at `path` into millicores under `col`.
     pub fn cpu_millicores(self, col: &str, item: &JsonValue, path: &str) -> Self {
-        match str_at(item, path).as_deref().and_then(quantity::parse_cpu_millicores) {
+        match str_at(item, path)
+            .as_deref()
+            .and_then(quantity::parse_cpu_millicores)
+        {
             Some(n) => self.num(col, n),
             None => self,
         }
@@ -155,7 +169,10 @@ impl Row {
 
     /// Parse a memory/storage quantity at `path` into bytes under `col`.
     pub fn memory_bytes(self, col: &str, item: &JsonValue, path: &str) -> Self {
-        match str_at(item, path).as_deref().and_then(quantity::parse_memory_bytes) {
+        match str_at(item, path)
+            .as_deref()
+            .and_then(quantity::parse_memory_bytes)
+        {
             Some(n) => self.num(col, n),
             None => self,
         }

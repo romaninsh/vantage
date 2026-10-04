@@ -2,6 +2,8 @@ use ciborium::Value as CborValue;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
+use vantage_core::Context;
+
 use crate::postgres::PostgresDB;
 use crate::postgres::row::{bind_postgres_value, row_to_record};
 use crate::postgres::types::AnyPostgresType;
@@ -66,6 +68,28 @@ impl vantage_expressions::ExprDataSource<AnyPostgresType> for PostgresDB {
                 })
             })
         })
+    }
+}
+
+impl PostgresDB {
+    /// Run a statement that returns no rows (DELETE, UPDATE) and report how
+    /// many rows it changed. [`ExprDataSource::execute`](vantage_expressions::ExprDataSource::execute)
+    /// returns the fetched rows instead, so it can't tell "deleted one" from
+    /// "matched nothing".
+    pub async fn execute_affected(
+        &self,
+        expr: &Expression<AnyPostgresType>,
+    ) -> vantage_core::Result<u64> {
+        let resolved = resolve_deferred(expr).await?;
+        let (sql, params) = prepare_typed_query(&resolved)?;
+        let mut query = sqlx::query(&sql);
+        for value in &params {
+            query = bind_postgres_value(query, value);
+        }
+        let done = query.execute(self.pool()).await.with_context(|| {
+            vantage_core::error!("PostgreSQL statement failed", sql = sql.clone())
+        })?;
+        Ok(done.rows_affected())
     }
 }
 

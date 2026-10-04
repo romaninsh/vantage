@@ -88,7 +88,11 @@ impl TableSource for KubernetesCluster {
         Ok(KubeCondition::eq(field.to_string(), value.to_string()))
     }
 
-    fn eq_value_condition(&self, field: &str, value: Self::Value) -> DatasetResult<Self::Condition> {
+    fn eq_value_condition(
+        &self,
+        field: &str,
+        value: Self::Value,
+    ) -> DatasetResult<Self::Condition> {
         Ok(KubeCondition::eq(field.to_string(), value))
     }
 
@@ -276,7 +280,11 @@ impl TableSource for KubernetesCluster {
         Err(error!("vantage-kubernetes is read-only in v0"))
     }
 
-    async fn delete_table_value<E>(&self, _table: &Table<Self, E>, _id: &Self::Id) -> DatasetResult<()>
+    async fn delete_table_value<E>(
+        &self,
+        _table: &Table<Self, E>,
+        _id: &Self::Id,
+    ) -> DatasetResult<()>
     where
         E: Entity<Self::Value>,
         Self: Sized,

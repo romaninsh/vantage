@@ -98,7 +98,9 @@ where
 /// Collapse conditions to `(field, value)` equality pairs for client-side
 /// matching. Errors on zero- or multi-element `In`; a `Deferred` reaching
 /// here is an internal error (it must be resolved upstream).
-pub(crate) fn eq_pairs(conditions: &[KubeCondition]) -> vantage_core::Result<Vec<(String, CborValue)>> {
+pub(crate) fn eq_pairs(
+    conditions: &[KubeCondition],
+) -> vantage_core::Result<Vec<(String, CborValue)>> {
     let mut out = Vec::with_capacity(conditions.len());
     for cond in conditions {
         match cond {

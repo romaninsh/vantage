@@ -14,7 +14,8 @@ use vantage_types::Record;
 
 use super::types::{AnySqliteType, SqliteTypeVariants};
 
-type SqliteQuery<'q> = sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>;
+pub(crate) type SqliteQuery<'q> =
+    sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>;
 
 /// Bind an AnySqliteType to a sqlx query. Uses the variant tag to pick
 /// the right sqlx bind type — no guessing from the CBOR value format.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 — 2026-10-03
+
+- `Table::add_computed_column` / `computed_columns`: carries Vista computed columns for driver
+  factories. A computed column replaces a stored one of the same name.
+- Depends on `vantage-vista` 1.1.0.
+
 ## 1.0.0 — 2026-10-03
 
 - Stable release. The API hasn't changed since 2026-08-22 (6 weeks); no code changes.

@@ -20,13 +20,21 @@ impl KubernetesCluster {
             .method(http::Method::GET)
             .uri(&path)
             .body(Vec::new())
-            .map_err(|e| error!("failed to build Kubernetes request", path = path.clone(), details = e.to_string()))?;
+            .map_err(|e| {
+                error!(
+                    "failed to build Kubernetes request",
+                    path = path.clone(),
+                    details = e.to_string()
+                )
+            })?;
 
-        let resp: JsonValue = self
-            .client()
-            .request(request)
-            .await
-            .map_err(|e| error!("Kubernetes list request failed", path = path.clone(), details = e.to_string()))?;
+        let resp: JsonValue = self.client().request(request).await.map_err(|e| {
+            error!(
+                "Kubernetes list request failed",
+                path = path.clone(),
+                details = e.to_string()
+            )
+        })?;
 
         match resp.get("items").and_then(|v| v.as_array()) {
             Some(items) => Ok(items.clone()),
@@ -67,6 +75,9 @@ mod tests {
 
     #[test]
     fn collapses_existing_leading_slash() {
-        assert_eq!(normalize_path("/apis/apps/v1/deployments"), "/apis/apps/v1/deployments");
+        assert_eq!(
+            normalize_path("/apis/apps/v1/deployments"),
+            "/apis/apps/v1/deployments"
+        );
     }
 }

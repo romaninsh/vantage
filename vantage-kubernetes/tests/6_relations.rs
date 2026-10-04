@@ -5,7 +5,7 @@
 mod common;
 
 use ciborium::Value as CborValue;
-use common::{as_text, cluster_or_skip, NS, WEB_REPLICAS};
+use common::{NS, WEB_REPLICAS, as_text, cluster_or_skip};
 use vantage_kubernetes::models::apps::deployments;
 use vantage_kubernetes::models::core::{nodes, pods};
 
@@ -42,7 +42,10 @@ async fn deployment_web_drills_to_its_pods() -> anyhow::Result<()> {
 
     // And it should have at least one ReplicaSet.
     let rs = deployments.get_ref("replicasets", &web)?;
-    assert!(!rs.fetch_window(0, 10).await?.is_empty(), "web should have a replicaset");
+    assert!(
+        !rs.fetch_window(0, 10).await?.is_empty(),
+        "web should have a replicaset"
+    );
     Ok(())
 }
 
@@ -58,7 +61,9 @@ async fn node_drills_to_a_strict_subset_of_pods() -> anyhow::Result<()> {
         .get_count()
         .await?;
 
-    let nodes_vista = cluster.vista_factory().from_table(nodes::nodes_table(cluster.clone()))?;
+    let nodes_vista = cluster
+        .vista_factory()
+        .from_table(nodes::nodes_table(cluster.clone()))?;
     let node_rows = nodes_vista.fetch_window(0, 10).await?;
     let (_, node) = node_rows.first().expect("at least one node");
 

@@ -93,6 +93,9 @@ where
         }
         metadata = metadata.with_column(vc);
     }
+    for (at, column) in table.computed_columns() {
+        metadata = metadata.with_column_at(at, column.clone());
+    }
     if let Some(id_field) = table.id_field() {
         let id_name = id_field.name().to_string();
         metadata = metadata.with_id_column(id_name.clone());

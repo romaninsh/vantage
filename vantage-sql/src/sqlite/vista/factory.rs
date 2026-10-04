@@ -153,12 +153,13 @@ pub(crate) fn build_sqlite_table(
         if name.contains('.') {
             continue;
         }
+        if let Some(column) = col_spec.lazy_column(name)? {
+            table.add_computed_column(column);
+            continue;
+        }
         table.add_column(build_column(name, col_spec)?);
         if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
             table.add_title_field(name);
-        }
-        if let Some(code) = &col_spec.lazy {
-            add_lazy_column(&mut table, name, code)?;
         }
     }
 
@@ -200,7 +201,12 @@ pub(crate) fn build_sqlite_table(
         // Every spec column is listed, so the plain set keeps projecting
         // unchanged while each dotted name becomes a read-only correlated
         // import aliased under the literal dotted name.
-        let names: Vec<&str> = spec.columns.keys().map(String::as_str).collect();
+        let names: Vec<&str> = spec
+            .columns
+            .iter()
+            .filter(|(_, c)| c.lazy.is_none())
+            .map(|(n, _)| n.as_str())
+            .collect();
         table = table.with_active_columns(&names)?;
     }
 
@@ -275,14 +281,15 @@ fn build_derived_table(
 
     // The derived vista's own declared columns (e.g. aggregate outputs).
     for (name, col_spec) in &spec.columns {
+        if let Some(column) = col_spec.lazy_column(name)? {
+            table.add_computed_column(column);
+            continue;
+        }
         if !table.columns().contains_key(name) {
             table.add_column(build_column(name, col_spec)?);
         }
         if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
             table.add_title_field(name);
-        }
-        if let Some(code) = &col_spec.lazy {
-            add_lazy_column(&mut table, name, code)?;
         }
     }
 
@@ -293,40 +300,6 @@ fn build_derived_table(
 
     let table = table.with_contained_specs(&spec.contained, build_column)?;
     Ok(table)
-}
-
-/// Lower a column's `lazy:` script onto the table. The Rhai closure works on
-/// the CBOR carrier, so each record converts per value on the way in
-/// (`into_value`) and the script's result converts back on the way out
-/// (`AnySqliteType::untyped`).
-#[cfg(feature = "rhai")]
-fn add_lazy_column(table: &mut Table<SqliteDB, EmptyEntity>, name: &str, code: &str) -> Result<()> {
-    // Compiles once, here: a script that does not parse fails the table build.
-    let script = vantage_vista::lazy_value_closure(code)?;
-    table.add_lazy_expression(
-        name,
-        Arc::new(move |record| {
-            let cbor_row: vantage_types::Record<ciborium::Value> = record
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone().into_value()))
-                .collect();
-            let script = script.clone();
-            Box::pin(async move { Ok(AnySqliteType::untyped(script(&cbor_row)?)) })
-        }),
-    );
-    Ok(())
-}
-
-#[cfg(not(feature = "rhai"))]
-fn add_lazy_column(
-    _table: &mut Table<SqliteDB, EmptyEntity>,
-    name: &str,
-    _code: &str,
-) -> Result<()> {
-    Err(error!(
-        "column declares a `lazy:` script but vantage-sql was built without the `rhai` feature",
-        column = name
-    ))
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like
@@ -448,6 +421,9 @@ where
         if let Some(col) = metadata.columns.get_mut(title) {
             col.flags.push(vista_flags::TITLE.to_string());
         }
+    }
+    for (at, column) in table.computed_columns() {
+        metadata = metadata.with_column_at(at, column.clone());
     }
     for reference in table.vista_references() {
         metadata = metadata.with_reference(reference);

@@ -35,7 +35,10 @@ fn sum_usage(item: &JsonValue, field: &str, parse: fn(&str) -> Option<i64>) -> i
 }
 
 pub fn project(item: &JsonValue) -> (String, Record<CborValue>) {
-    let id = match (project::str_at(item, "metadata.namespace"), project::str_at(item, "metadata.name")) {
+    let id = match (
+        project::str_at(item, "metadata.namespace"),
+        project::str_at(item, "metadata.name"),
+    ) {
         (Some(ns), Some(name)) => format!("{ns}/{name}"),
         _ => project::str_at(item, "metadata.name").unwrap_or_default(),
     };
@@ -43,8 +46,14 @@ pub fn project(item: &JsonValue) -> (String, Record<CborValue>) {
         .text("id", id.clone())
         .str("name", item, "metadata.name")
         .str("namespace", item, "metadata.namespace")
-        .num("cpuMillicores", sum_usage(item, "cpu", quantity::parse_cpu_millicores))
-        .num("memBytes", sum_usage(item, "memory", quantity::parse_memory_bytes))
+        .num(
+            "cpuMillicores",
+            sum_usage(item, "cpu", quantity::parse_cpu_millicores),
+        )
+        .num(
+            "memBytes",
+            sum_usage(item, "memory", quantity::parse_memory_bytes),
+        )
         .build();
     (id, record)
 }

@@ -181,6 +181,10 @@ pub(crate) fn build_postgres_table(
         if name.contains('.') {
             continue;
         }
+        if let Some(column) = col_spec.lazy_column(name)? {
+            table.add_computed_column(column);
+            continue;
+        }
         table.add_column(build_column(name, col_spec)?);
         if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
             table.add_title_field(name);
@@ -222,7 +226,12 @@ pub(crate) fn build_postgres_table(
 
     if has_dotted {
         // Lower the dotted imports now that their relations are declared.
-        let names: Vec<&str> = spec.columns.keys().map(String::as_str).collect();
+        let names: Vec<&str> = spec
+            .columns
+            .iter()
+            .filter(|(_, c)| c.lazy.is_none())
+            .map(|(n, _)| n.as_str())
+            .collect();
         table = table.with_active_columns(&names)?;
     }
 
@@ -297,6 +306,10 @@ fn build_derived_table(
 
     // The derived vista's own declared columns (e.g. aggregate outputs).
     for (name, col_spec) in &spec.columns {
+        if let Some(column) = col_spec.lazy_column(name)? {
+            table.add_computed_column(column);
+            continue;
+        }
         if !table.columns().contains_key(name) {
             table.add_column(build_column(name, col_spec)?);
         }
@@ -431,6 +444,9 @@ where
         if let Some(col) = metadata.columns.get_mut(title) {
             col.flags.push(vista_flags::TITLE.to_string());
         }
+    }
+    for (at, column) in table.computed_columns() {
+        metadata = metadata.with_column_at(at, column.clone());
     }
     for reference in table.vista_references() {
         metadata = metadata.with_reference(reference);

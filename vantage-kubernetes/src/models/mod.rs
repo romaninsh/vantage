@@ -94,24 +94,54 @@ impl Factory {
             "core.pod" => (entry!(core::pods::pods_table), FactoryMode::Single),
             "core.nodes" => (entry!(core::nodes::nodes_table), FactoryMode::List),
             "core.node" => (entry!(core::nodes::nodes_table), FactoryMode::Single),
-            "core.namespaces" => (entry!(core::namespaces::namespaces_table), FactoryMode::List),
-            "core.namespace" => (entry!(core::namespaces::namespaces_table), FactoryMode::Single),
+            "core.namespaces" => (
+                entry!(core::namespaces::namespaces_table),
+                FactoryMode::List,
+            ),
+            "core.namespace" => (
+                entry!(core::namespaces::namespaces_table),
+                FactoryMode::Single,
+            ),
             "core.services" => (entry!(core::services::services_table), FactoryMode::List),
             "core.service" => (entry!(core::services::services_table), FactoryMode::Single),
-            "core.configmaps" => (entry!(core::configmaps::configmaps_table), FactoryMode::List),
-            "core.configmap" => (entry!(core::configmaps::configmaps_table), FactoryMode::Single),
+            "core.configmaps" => (
+                entry!(core::configmaps::configmaps_table),
+                FactoryMode::List,
+            ),
+            "core.configmap" => (
+                entry!(core::configmaps::configmaps_table),
+                FactoryMode::Single,
+            ),
             "core.secrets" => (entry!(core::secrets::secrets_table), FactoryMode::List),
             "core.secret" => (entry!(core::secrets::secrets_table), FactoryMode::Single),
             "core.events" => (entry!(core::events::events_table), FactoryMode::List),
             "core.event" => (entry!(core::events::events_table), FactoryMode::Single),
-            "apps.deployments" => (entry!(apps::deployments::deployments_table), FactoryMode::List),
-            "apps.deployment" => (entry!(apps::deployments::deployments_table), FactoryMode::Single),
-            "apps.replicasets" => (entry!(apps::replicasets::replicasets_table), FactoryMode::List),
-            "apps.replicaset" => (entry!(apps::replicasets::replicasets_table), FactoryMode::Single),
+            "apps.deployments" => (
+                entry!(apps::deployments::deployments_table),
+                FactoryMode::List,
+            ),
+            "apps.deployment" => (
+                entry!(apps::deployments::deployments_table),
+                FactoryMode::Single,
+            ),
+            "apps.replicasets" => (
+                entry!(apps::replicasets::replicasets_table),
+                FactoryMode::List,
+            ),
+            "apps.replicaset" => (
+                entry!(apps::replicasets::replicasets_table),
+                FactoryMode::Single,
+            ),
             "batch.jobs" => (entry!(batch::jobs::jobs_table), FactoryMode::List),
             "batch.job" => (entry!(batch::jobs::jobs_table), FactoryMode::Single),
-            "metrics.node_metrics" => (entry!(metrics::node_metrics::node_metrics_table), FactoryMode::List),
-            "metrics.pod_metrics" => (entry!(metrics::pod_metrics::pod_metrics_table), FactoryMode::List),
+            "metrics.node_metrics" => (
+                entry!(metrics::node_metrics::node_metrics_table),
+                FactoryMode::List,
+            ),
+            "metrics.pod_metrics" => (
+                entry!(metrics::pod_metrics::pod_metrics_table),
+                FactoryMode::List,
+            ),
             _ => return None,
         };
         Some((vista, mode))

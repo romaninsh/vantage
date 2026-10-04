@@ -20,11 +20,23 @@ pub fn namespaces_table(cluster: KubernetesCluster) -> Table<KubernetesCluster, 
         .with_column_of::<String>("phase")
         .with_column_of::<String>("age")
         .with_many("pods", "namespace", core::pods::pods_table)
-        .with_many("deployments", "namespace", apps::deployments::deployments_table)
-        .with_many("replicasets", "namespace", apps::replicasets::replicasets_table)
+        .with_many(
+            "deployments",
+            "namespace",
+            apps::deployments::deployments_table,
+        )
+        .with_many(
+            "replicasets",
+            "namespace",
+            apps::replicasets::replicasets_table,
+        )
         .with_many("services", "namespace", core::services::services_table)
         .with_many("jobs", "namespace", batch::jobs::jobs_table)
-        .with_many("configmaps", "namespace", core::configmaps::configmaps_table)
+        .with_many(
+            "configmaps",
+            "namespace",
+            core::configmaps::configmaps_table,
+        )
         .with_many("secrets", "namespace", core::secrets::secrets_table)
         .with_many("events", "namespace", core::events::events_table)
 }

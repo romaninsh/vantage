@@ -120,6 +120,10 @@ impl GraphqlApiVistaFactory {
         let mut table = Table::<GraphqlApi, EmptyEntity>::new(root_field, api);
 
         for (name, col_spec) in &spec.columns {
+            if let Some(column) = col_spec.lazy_column(name)? {
+                table.add_computed_column(column);
+                continue;
+            }
             table.add_column(build_column(name, col_spec)?);
             if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
                 table.add_title_field(name);
@@ -225,6 +229,9 @@ where
             vc = vc.with_flag(vista_flags::HIDDEN);
         }
         metadata = metadata.with_column(vc);
+    }
+    for (at, column) in table.computed_columns() {
+        metadata = metadata.with_column_at(at, column.clone());
     }
     if let Some(id_field) = table.id_field() {
         let id = id_field.name().to_string();
