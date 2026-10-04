@@ -11,8 +11,7 @@ use vantage_vista::{ColumnSpec, ReferenceKind, ReferenceSpec, SpecResolver, Vist
 use crate::{source::SelectSource, table::Table, traits::table_source::TableSource};
 
 /// Rebuilds a referenced table from its spec, a data source and the resolver.
-type SpecTableBuilder<S, T> =
-    fn(&S, T, Option<SpecResolver<S>>) -> Result<Table<T, EmptyEntity>>;
+type SpecTableBuilder<S, T> = fn(&S, T, Option<SpecResolver<S>>) -> Result<Table<T, EmptyEntity>>;
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add one spec column. A `lazy:` column becomes a computed column;

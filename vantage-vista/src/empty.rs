@@ -83,7 +83,7 @@ mod tests {
         assert!(vista.list_values().await.unwrap().is_empty());
         assert_eq!(vista.get_value("x".to_string()).await.unwrap(), None);
         let err = vista
-            .insert_value("x".to_string(),&Rec::new())
+            .insert_value("x".to_string(), &Rec::new())
             .await
             .unwrap_err();
         assert!(err.is_unsupported(), "{err}");
