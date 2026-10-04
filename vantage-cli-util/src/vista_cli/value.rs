@@ -17,15 +17,15 @@
 //!   needed.
 
 use ciborium::Value as CborValue;
-use vantage_core::{Result, error};
+use vantage_core::{Context, Result, error};
 use vantage_vista::Vista;
 
 /// Coerce a raw CLI value string to CBOR. `#`-prefixed values are parsed
 /// as JSON literals; everything else goes through the auto-detect path.
 pub fn parse_value(s: &str) -> Result<CborValue> {
     if let Some(rest) = s.strip_prefix('#') {
-        let json: serde_json::Value = serde_json::from_str(rest)
-            .map_err(|e| error!(format!("invalid JSON literal `{rest}`: {e}")))?;
+        let json: serde_json::Value =
+            serde_json::from_str(rest).context(error!("invalid JSON literal", literal = rest))?;
         Ok(json_to_cbor(json))
     } else {
         Ok(auto_detect(s))
@@ -56,22 +56,28 @@ pub fn coerce_for_column(vista: &Vista, field: &str, raw: &str) -> Result<CborVa
         ColumnKind::Bool => match raw {
             "true" => Ok(CborValue::Bool(true)),
             "false" => Ok(CborValue::Bool(false)),
-            other => Err(error!(format!(
-                "`{field}` is a bool column; value `{other}` is neither `true` nor `false`"
-            ))),
+            other => Err(error!(
+                "bool column value is neither `true` nor `false`",
+                field = field,
+                value = other
+            )),
         },
         ColumnKind::Int => raw
             .parse::<i64>()
             .map(|i| CborValue::Integer(i.into()))
             .map_err(|_| {
-                error!(format!(
-                    "`{field}` is an integer column; value `{raw}` is not an integer"
-                ))
+                error!(
+                    "integer column value is not an integer",
+                    field = field,
+                    value = raw
+                )
             }),
         ColumnKind::Float => raw.parse::<f64>().map(CborValue::Float).map_err(|_| {
-            error!(format!(
-                "`{field}` is a float column; value `{raw}` is not a number"
-            ))
+            error!(
+                "float column value is not a number",
+                field = field,
+                value = raw
+            )
         }),
         ColumnKind::Text => Ok(CborValue::Text(raw.to_string())),
         ColumnKind::Unknown => Ok(auto_detect(raw)),
@@ -131,13 +137,14 @@ pub fn json_to_cbor(j: serde_json::Value) -> CborValue {
 pub fn parse_value_list(s: &str) -> Result<Vec<CborValue>> {
     if let Some(rest) = s.strip_prefix('#') {
         // The whole list is a JSON array.
-        let json: serde_json::Value = serde_json::from_str(rest)
-            .map_err(|e| error!(format!("invalid JSON array `{rest}`: {e}")))?;
+        let json: serde_json::Value =
+            serde_json::from_str(rest).context(error!("invalid JSON array", literal = rest))?;
         match json {
             serde_json::Value::Array(arr) => Ok(arr.into_iter().map(json_to_cbor).collect()),
-            other => Err(error!(format!(
-                "`:in=#…` expects a JSON array, got `{other}`"
-            ))),
+            other => Err(error!(
+                "`:in=#…` expects a JSON array",
+                got = other.to_string()
+            )),
         }
     } else {
         Ok(s.split(',')
@@ -293,6 +300,7 @@ mod tests {
 
         let bool_err = coerce_for_column(&vista, "vip_flag", "yes").unwrap_err();
         assert!(format!("{bool_err}").contains("bool column"));
+        assert_eq!(bool_err.context.get("field").unwrap(), "\"vip_flag\"");
 
         let int_err = coerce_for_column(&vista, "salary", "abc").unwrap_err();
         assert!(format!("{int_err}").contains("integer column"));

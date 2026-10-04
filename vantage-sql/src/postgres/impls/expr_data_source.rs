@@ -1,71 +1,65 @@
 use ciborium::Value as CborValue;
+use sqlx::postgres::{PgQueryResult, PgRow};
+use vantage_expressions::Expression;
 use vantage_expressions::traits::expressive::DeferredFn;
-use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
-
-use vantage_core::Context;
+use vantage_types::Record;
 
 use crate::postgres::PostgresDB;
 use crate::postgres::row::{bind_postgres_value, row_to_record};
 use crate::postgres::types::AnyPostgresType;
+use crate::sql_exec::{self, Placeholder, SqlDialect, SqlxQuery};
+
+impl SqlDialect for PostgresDB {
+    type Db = sqlx::Postgres;
+    type Value = AnyPostgresType;
+
+    const PLACEHOLDER: Placeholder = Placeholder::DollarNumbered;
+    const QUERY_FAILED: &'static str = "PostgreSQL query failed";
+    const STATEMENT_FAILED: &'static str = "PostgreSQL statement failed";
+
+    fn sqlx_pool(&self) -> &sqlx::PgPool {
+        self.pool()
+    }
+
+    fn bind<'q>(
+        query: SqlxQuery<'q, sqlx::Postgres>,
+        value: &'q AnyPostgresType,
+    ) -> vantage_core::Result<SqlxQuery<'q, sqlx::Postgres>> {
+        Ok(bind_postgres_value(query, value))
+    }
+
+    fn rows_affected(result: &PgQueryResult) -> u64 {
+        result.rows_affected()
+    }
+
+    fn row_to_record(row: &PgRow) -> Record<AnyPostgresType> {
+        row_to_record(row)
+    }
+
+    fn into_cbor(value: AnyPostgresType) -> CborValue {
+        value.into_value()
+    }
+
+    fn from_cbor_rows(rows: CborValue) -> AnyPostgresType {
+        AnyPostgresType::from_cbor(&rows)
+            .expect("CBOR array should always convert to AnyPostgresType")
+    }
+
+    fn untyped(value: CborValue) -> AnyPostgresType {
+        AnyPostgresType::untyped(value)
+    }
+}
 
 impl vantage_expressions::ExprDataSource<AnyPostgresType> for PostgresDB {
     async fn execute(
         &self,
         expr: &Expression<AnyPostgresType>,
     ) -> vantage_core::Result<AnyPostgresType> {
-        // 1. Resolve deferred parameters (async — may call other databases)
-        let resolved = resolve_deferred(expr).await?;
-
-        // 2. Flatten nested expressions + convert {} to $N (PostgreSQL uses $1, $2, ...)
-        let (sql, params) = prepare_typed_query(&resolved)?;
-
-        // 3. Bind and execute
-        let rows = bind_all(&sql, &params)
-            .fetch_all(self.pool())
-            .await
-            .map_err(|e| {
-                vantage_core::error!("PostgreSQL query failed", details = e.to_string())
-            })?;
-
-        // 4. Convert rows to AnyPostgresType — each row becomes a CBOR Map
-        let arr: Vec<CborValue> = rows
-            .iter()
-            .map(|row| {
-                let record = row_to_record(row);
-                let map: Vec<(CborValue, CborValue)> = record
-                    .into_iter()
-                    .map(|(k, v)| (CborValue::Text(k), v.into_value()))
-                    .collect();
-                CborValue::Map(map)
-            })
-            .collect();
-
-        let cbor_arr = CborValue::Array(arr);
-        Ok(AnyPostgresType::from_cbor(&cbor_arr)
-            .expect("CBOR array should always convert to AnyPostgresType"))
+        sql_exec::fetch_rows(self, expr).await
     }
 
     fn defer(&self, expr: Expression<AnyPostgresType>) -> DeferredFn<AnyPostgresType> {
-        let db = self.clone();
-        DeferredFn::from_fn(move || {
-            let db = db.clone();
-            let expr = expr.clone();
-            Box::pin(async move {
-                let result = vantage_expressions::ExprDataSource::execute(&db, &expr).await?;
-                Ok(match result.value() {
-                    CborValue::Array(arr) => arr
-                        .first()
-                        .and_then(|row| match row {
-                            CborValue::Map(map) => map
-                                .first()
-                                .map(|(_, v)| AnyPostgresType::untyped(v.clone())),
-                            _ => None,
-                        })
-                        .unwrap_or(result),
-                    _ => result,
-                })
-            })
-        })
+        sql_exec::defer_first_cell(self, expr)
     }
 }
 
@@ -78,94 +72,6 @@ impl PostgresDB {
         &self,
         expr: &Expression<AnyPostgresType>,
     ) -> vantage_core::Result<u64> {
-        let resolved = resolve_deferred(expr).await?;
-        let (sql, params) = prepare_typed_query(&resolved)?;
-        let done = bind_all(&sql, &params)
-            .execute(self.pool())
-            .await
-            .with_context(|| {
-                vantage_core::error!("PostgreSQL statement failed", sql = sql.clone())
-            })?;
-        Ok(done.rows_affected())
+        sql_exec::execute_affected(self, expr).await
     }
-}
-
-fn bind_all<'q>(
-    sql: &'q str,
-    params: &'q [AnyPostgresType],
-) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
-    params.iter().fold(sqlx::query(sql), bind_postgres_value)
-}
-
-/// Resolve all Deferred parameters in an expression by calling them.
-async fn resolve_deferred(
-    expr: &Expression<AnyPostgresType>,
-) -> vantage_core::Result<Expression<AnyPostgresType>> {
-    let mut resolved_params = Vec::new();
-
-    for param in &expr.parameters {
-        match param {
-            ExpressiveEnum::Deferred(deferred_fn) => {
-                let result = deferred_fn.call().await?;
-                resolved_params.push(result);
-            }
-            ExpressiveEnum::Nested(inner) => {
-                let resolved_inner = Box::pin(resolve_deferred(inner)).await?;
-                resolved_params.push(ExpressiveEnum::Nested(resolved_inner));
-            }
-            other => {
-                resolved_params.push(other.clone());
-            }
-        }
-    }
-
-    Ok(Expression::new(expr.template.clone(), resolved_params))
-}
-
-/// Flatten an `Expression<AnyPostgresType>` and convert `{}` placeholders to `$N`.
-/// PostgreSQL uses $1, $2, ... for positional parameters (not ?N like SQLite).
-fn prepare_typed_query(
-    expr: &Expression<AnyPostgresType>,
-) -> vantage_core::Result<(String, Vec<AnyPostgresType>)> {
-    let flattener = ExpressionFlattener::new();
-    let flattened = flattener.flatten(expr);
-
-    let mut sql = String::new();
-    let mut params = Vec::new();
-    let template_parts: Vec<&str> = flattened.template.split("{}").collect();
-    let mut param_counter = 0;
-
-    if template_parts.len() != flattened.parameters.len() + 1 {
-        return Err(vantage_core::error!(
-            "template placeholder count doesn't match parameter count",
-            placeholders = template_parts.len() - 1,
-            parameters = flattened.parameters.len()
-        ));
-    }
-
-    sql.push_str(template_parts[0]);
-
-    for (i, param) in flattened.parameters.iter().enumerate() {
-        match param {
-            ExpressiveEnum::Scalar(value) => {
-                param_counter += 1;
-                sql.push_str(&format!("${}", param_counter));
-                params.push(value.clone());
-            }
-            ExpressiveEnum::Nested(_) => {
-                unreachable!(
-                    "nested expression should have been flattened during query preparation"
-                );
-            }
-            ExpressiveEnum::Deferred(_) => {
-                unreachable!("deferred expression should have been resolved before prepare");
-            }
-        }
-
-        if i + 1 < template_parts.len() {
-            sql.push_str(template_parts[i + 1]);
-        }
-    }
-
-    Ok((sql, params))
 }

@@ -11,13 +11,11 @@ use std::sync::{Arc, RwLock};
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::column::flags::ColumnFlag;
-use vantage_table::table::Table;
-use vantage_table::traits::column_like::ColumnLike;
+use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, ReferenceKind, Vista, VistaCapabilities,
-    VistaFactory, VistaMetadata, flags as vista_flags,
+    Reference as VistaReference, ReferenceKind, Vista, VistaCapabilities, VistaFactory,
+    VistaMetadata,
 };
 
 use super::source::{RestApiTableShell, YamlReference, YamlReferenceKind};
@@ -161,10 +159,7 @@ impl VistaFactory for RestApiVistaFactory {
                 rel_name.clone(),
                 ref_spec.table.clone(),
                 ref_spec.kind,
-                ref_spec
-                    .foreign_key
-                    .clone()
-                    .unwrap_or_else(|| rel_name.clone()),
+                ref_spec.foreign_key_or(rel_name),
             ));
         }
 
@@ -182,10 +177,7 @@ impl VistaFactory for RestApiVistaFactory {
                         ReferenceKind::HasOne => YamlReferenceKind::HasOne,
                         ReferenceKind::HasMany => YamlReferenceKind::HasMany,
                     },
-                    foreign_key: ref_spec
-                        .foreign_key
-                        .clone()
-                        .unwrap_or_else(|| rel_name.clone()),
+                    foreign_key: ref_spec.foreign_key_or(rel_name),
                     keys: ref_spec.keys.clone(),
                 },
             );
@@ -225,57 +217,18 @@ impl RestApiVistaFactory {
             .and_then(|b| b.endpoint.clone())
             .unwrap_or_else(|| spec.name.clone());
 
-        let id_column = resolve_id_column(spec);
-
         let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, self.api.clone());
-        for (name, col_spec) in &spec.columns {
-            if table.add_lazy_spec_column(col_spec, name)? {
-                continue;
-            }
-            table.add_column(build_column(name, col_spec)?);
-            if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-                table.add_title_field(name);
-            }
-        }
-
-        if !table.columns().contains_key(&id_column) {
-            return Err(error!(
-                "id column not present in spec.columns",
-                id = id_column
-            ));
-        }
-        table.set_id_field(&id_column);
-
+        table.add_spec_columns(&spec.columns, build_column)?;
+        table.set_spec_id_field(&spec.resolve_id_column())?;
         Ok(table)
     }
-}
-
-/// Pick the id column from an `id_column:` field or the first column
-/// flagged `id`; falls back to `"id"`.
-fn resolve_id_column(spec: &RestApiVistaSpec) -> String {
-    if let Some(id) = &spec.id_column {
-        return id.clone();
-    }
-    for (name, col_spec) in &spec.columns {
-        if col_spec.flags.iter().any(|f| f == vista_flags::ID) {
-            return name.clone();
-        }
-    }
-    "id".to_string()
 }
 
 fn build_column(
     name: &str,
     col_spec: &vantage_vista::ColumnSpec<ApiColumnExtras>,
 ) -> Result<TableColumn<CborValue>> {
-    let ty = col_spec.col_type.as_deref().unwrap_or("string");
-    let hidden = col_spec.flags.iter().any(|f| f == vista_flags::HIDDEN);
-
-    let mut col = column_for_type(name, ty)?;
-    if hidden {
-        col = col.with_flag(ColumnFlag::Hidden);
-    }
-    Ok(col)
+    TableColumn::from_spec(name, col_spec, None, column_for_type)
 }
 
 /// YAML type alias → typed `Column<T>` → erased to `Column<CborValue>`
@@ -308,33 +261,17 @@ fn metadata_from_table<E>(table: &Table<RestApi, E>) -> VistaMetadata
 where
     E: Entity<CborValue> + 'static,
 {
-    let mut metadata = VistaMetadata::new();
     // An API with a sort param is assumed to sort on any column it returns;
     // without one, no column is orderable and consumers sort client-side.
-    let orderable = table.data_source().ordering().is_some();
-    for (name, col) in table.columns() {
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
-        if col.flags().contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(vista_flags::HIDDEN);
-        }
-        if orderable {
-            vc = vc.with_flag(vista_flags::ORDERABLE);
-        }
-        metadata = metadata.with_column(vc);
-    }
-    metadata = metadata.with_columns_at(table.computed_columns());
-    if let Some(id_field) = table.id_field() {
-        let id = id_field.name().to_string();
-        metadata = metadata.with_id_column(id.clone());
-        if let Some(col) = metadata.columns.get_mut(&id) {
-            col.flags.push(vista_flags::ID.to_string());
-        }
-    }
-    for title in table.title_fields() {
-        if let Some(col) = metadata.columns.get_mut(title) {
-            col.flags.push(vista_flags::TITLE.to_string());
-        }
-    }
+    let orderable = match table.data_source().ordering() {
+        Some(_) => Orderable::All,
+        None => Orderable::None,
+    };
+    let mut metadata = table.vista_metadata(VistaMetadataOptions {
+        orderable,
+        id_flag: true,
+        ..VistaMetadataOptions::default()
+    });
     for relation in table.references() {
         metadata = metadata.with_reference(VistaReference::new(
             relation.clone(),

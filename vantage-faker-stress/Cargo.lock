@@ -1576,7 +1576,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.13.4"
+version = "0.13.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -1613,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-faker"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1656,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "1.0.0"
+version = "1.1.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1689,7 +1689,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "1.0.0"
+version = "1.1.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "1.0.0"
+version = "1.1.1"
 dependencies = [
  "async-stream",
  "async-trait",

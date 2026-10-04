@@ -12,6 +12,7 @@ pub mod value;
 pub use expression::core::Expression;
 pub use expression::flatten::{ExpressionFlattener, Flatten};
 pub use expression::mapping::{ExpressionMap, ExpressionMapper};
+pub use expression::resolve_param;
 pub use traits::associated_expressions::AssociatedExpression;
 pub use traits::associated_queryable::AssociatedQueryable;
 pub use traits::datasource::ExprDataSource;

@@ -16,10 +16,7 @@ use vantage_core::{Result, error};
 use vantage_dataset::prelude::{ActiveEntity, ActiveRecord};
 use vantage_types::{Entity, InvariantValue, TryIntoRecord};
 
-use crate::{
-    table::Table,
-    traits::{column_like::ColumnLike, table_source::TableSource},
-};
+use crate::{table::Table, traits::table_source::TableSource};
 
 /// Traverse a relation from a loaded record.
 pub trait GetRefExt<T: TableSource, E> {
@@ -45,11 +42,7 @@ where
 
         // The entity struct carries no id column, but has-many traversal reads the
         // parent id out of the row — inject it from the ActiveEntity's known id.
-        let id_field = self
-            .dataset()
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field = self.dataset().id_field_name();
         record.insert(id_field, self.id().clone().into());
 
         self.dataset().get_ref_from_row::<E2>(relation, &record)

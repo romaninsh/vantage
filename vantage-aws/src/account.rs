@@ -10,8 +10,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use vantage_core::Result;
 use vantage_core::error;
+use vantage_core::{Context, Result};
 
 #[derive(Clone)]
 pub struct AwsAccount {
@@ -398,7 +398,7 @@ fn resolve_region_for(home_dir: &std::path::Path, profile: &str) -> Result<Strin
 /// with a specific message rather than collapsing into a generic
 /// "profile not resolvable".
 fn export_credentials_via_aws_cli(profile: &str) -> Result<(String, String, Option<String>)> {
-    let output = match std::process::Command::new("aws")
+    let spawned = std::process::Command::new("aws")
         .args([
             "configure",
             "export-credentials",
@@ -407,16 +407,15 @@ fn export_credentials_via_aws_cli(profile: &str) -> Result<(String, String, Opti
             "--format",
             "env",
         ])
-        .output()
-    {
-        Ok(o) => o,
+        .output();
+    let output = match spawned {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Err(error!(
                 "AWS CLI not installed — needed to materialise SSO, assume-role, or credential_process credentials. Install via mise or your package manager.",
                 profile = profile
             ));
         }
-        Err(e) => return Err(error!(format!("failed to spawn `aws`: {e}"))),
+        other => other.context(error!("failed to spawn `aws`", profile = profile))?,
     };
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

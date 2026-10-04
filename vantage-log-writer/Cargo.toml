@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-log-writer"
-version = "0.6.4"
+version = "0.6.5"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for append-only log files (JSONL)"
@@ -25,13 +25,13 @@ ulid = "1"
 vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
-vantage-table = { version = "1.1.0", path = "../vantage-table" }
+vantage-table = { version = "1.1.1", path = "../vantage-table" }
 vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "1.1.0", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "1.1.1", path = "../vantage-vista", optional = true }
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 tempfile = "3"
 tokio = { version = "1.48", features = ["full"] }
-vantage-vista = { version = "1.1.0", path = "../vantage-vista" }
+vantage-vista = { version = "1.1.1", path = "../vantage-vista" }

@@ -423,10 +423,7 @@ impl TableSource for Redb {
         // If the source FK column is the source's id column, we have to
         // pull from the IndexMap keys — id values aren't duplicated inside
         // row bodies in redb.
-        let source_id_col = source_table
-            .id_field()
-            .map(|c| ColumnLike::name(c).to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let source_id_col = source_table.id_field_name();
 
         RedbCondition::Deferred(DeferredFn::new(move || {
             let db = db.clone();

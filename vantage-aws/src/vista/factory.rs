@@ -6,14 +6,9 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
-use vantage_table::column::flags::ColumnFlag;
-use vantage_table::table::Table;
-use vantage_table::traits::column_like::ColumnLike;
+use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{
-    Column as VistaColumn, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
-    flags as vista_flags,
-};
+use vantage_vista::{NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata};
 
 use crate::AwsAccount;
 use crate::vista::source::AwsTableShell;
@@ -85,26 +80,8 @@ pub(crate) fn metadata_from_table<E>(table: &Table<AwsAccount, E>) -> VistaMetad
 where
     E: Entity<CborValue> + 'static,
 {
-    let mut metadata = VistaMetadata::new();
-    for (name, col) in table.columns() {
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
-        if col.flags().contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(vista_flags::HIDDEN);
-        }
-        metadata = metadata.with_column(vc);
-    }
-    metadata = metadata.with_columns_at(table.computed_columns());
-    if let Some(id_field) = table.id_field() {
-        let id_name = id_field.name().to_string();
-        metadata = metadata.with_id_column(id_name.clone());
-        if let Some(col) = metadata.columns.get_mut(&id_name) {
-            col.flags.push(vista_flags::ID.to_string());
-        }
-    }
-    for title in table.title_fields() {
-        if let Some(col) = metadata.columns.get_mut(title) {
-            col.flags.push(vista_flags::TITLE.to_string());
-        }
-    }
-    metadata
+    table.vista_metadata(VistaMetadataOptions {
+        id_flag: true,
+        ..VistaMetadataOptions::default()
+    })
 }

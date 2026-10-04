@@ -1,19 +1,19 @@
 //! `SurrealVistaFactory` — typed-table and YAML entry points, plus the
 //! `VistaFactory` trait impl. SurrealDB advertises full read/write/count.
 
+#[cfg(feature = "rhai")]
 use std::sync::Arc;
 #[cfg(feature = "rhai")]
 use vantage_rhai::{Host, Limits};
 
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::column::flags::ColumnFlag;
-use vantage_table::table::Table;
+use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Column as VistaColumn, ReferenceKind, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
-    flags as vista_flags, reference::Reference as VistaReferenceMeta,
+    SpecResolver, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
+    reference::Reference as VistaReferenceMeta, resolve_base_spec,
 };
 
 use crate::surrealdb::SurrealDB;
@@ -25,10 +25,9 @@ use crate::vista::spec::{
     SurrealVistaSpec,
 };
 
-/// Resolves a YAML spec by table name. The factory hands clones of this
-/// into each `with_one` / `with_many` closure so child tables can be
-/// rebuilt from the live spec at traversal time.
-pub type SurrealSpecResolver = Arc<dyn Fn(&str) -> Option<SurrealVistaSpec> + Send + Sync>;
+/// Resolves a YAML spec by table name, so references and `base:` can rebuild
+/// their tables from the live spec.
+pub type SurrealSpecResolver = SpecResolver<SurrealVistaSpec>;
 
 pub struct SurrealVistaFactory {
     db: SurrealDB,
@@ -141,15 +140,11 @@ impl VistaFactory for SurrealVistaFactory {
         // in here rather than via `table.vista_references()`, whose target is
         // the (erased) entity type name, not the table name.
         for (rel_name, ref_spec) in &spec.references {
-            let fk = ref_spec
-                .foreign_key
-                .clone()
-                .unwrap_or_else(|| rel_name.clone());
             let mut reference = VistaReferenceMeta::new(
                 rel_name.clone(),
                 ref_spec.table.clone(),
                 ref_spec.kind,
-                fk,
+                ref_spec.foreign_key_or(rel_name),
             );
             if let Some(script) = ref_spec
                 .driver
@@ -210,14 +205,9 @@ impl SurrealVistaFactory {
     }
 }
 
-/// Build a `Table<SurrealDB, EmptyEntity>` from a spec, registering each
-/// `references:` entry as a typed `with_one` / `with_many` on the parent.
-///
-/// Each reference closure captures a clone of the resolver `Arc` and the
-/// target table name; at traversal time it asks the resolver for the
-/// target's current spec and rebuilds the child table. On a resolver miss,
-/// the closure falls back to an empty `Table::new(target_name, db)` — the
-/// next query then fails loudly when it discovers no columns are defined.
+/// Build a `Table<SurrealDB, EmptyEntity>` from a spec. Each `references:`
+/// entry rebuilds its target through `resolver` at traversal time (see
+/// `Table::with_spec_references`).
 pub(crate) fn build_surreal_table(
     spec: &SurrealVistaSpec,
     db: SurrealDB,
@@ -240,52 +230,17 @@ pub(crate) fn build_surreal_table(
     };
 
     for (name, col_spec) in &spec.columns {
-        if table.add_lazy_spec_column(col_spec, name)? {
-            continue;
-        }
-        table.add_column(build_column(name, col_spec)?);
-        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-            table.add_title_field(name);
-        }
-        if let Some(code) = &col_spec.expr {
+        if table.add_spec_column(name, col_spec, build_column)?
+            && let Some(code) = &col_spec.expr
+        {
             table = add_expr_column(table, name, code)?;
         }
     }
+    table.set_spec_id_field(&spec.resolve_id_column())?;
 
-    let id_column = resolve_id_column(spec);
-    if !table.columns().contains_key(&id_column) {
-        return Err(error!(
-            "id column not present in spec.columns",
-            id = id_column
-        ));
-    }
-    table.set_id_field(&id_column);
-
-    for (rel_name, ref_spec) in &spec.references {
-        let target_name = ref_spec.table.clone();
-        let fk = ref_spec
-            .foreign_key
-            .clone()
-            .unwrap_or_else(|| rel_name.clone());
-        let resolver_clone = resolver.clone();
-
-        let build_child = move |db: SurrealDB| -> Table<SurrealDB, EmptyEntity> {
-            if let Some(r) = &resolver_clone
-                && let Some(child_spec) = r(&target_name)
-                && let Ok(child) = build_surreal_table(&child_spec, db.clone(), Some(r.clone()))
-            {
-                return child;
-            }
-            Table::<SurrealDB, EmptyEntity>::new(target_name.clone(), db)
-        };
-
-        table = match ref_spec.kind {
-            ReferenceKind::HasOne => table.with_one::<EmptyEntity>(rel_name, &fk, build_child),
-            ReferenceKind::HasMany => table.with_many::<EmptyEntity>(rel_name, &fk, build_child),
-        };
-    }
-
-    let table = table.with_contained_specs(&spec.contained, build_column)?;
+    let table = table
+        .with_spec_references(&spec.references, resolver, build_surreal_table)
+        .with_contained_specs(&spec.contained, build_column)?;
 
     // A dotted spec column (`batch.name`) is an implicit reference — route it
     // through `with_active_columns` so it becomes a validated traversal import.
@@ -353,62 +308,30 @@ fn table_from_rhai(
 /// Build a derived table: resolve `base_name` eagerly via the resolver, build
 /// the base table, optionally transform its `select()` through a `rhai:` script
 /// (transform mode — `base` is seeded into the engine scope), and inherit the
-/// listed columns/relations via [`Table::derive_from`]. The derived vista's own
-/// `columns:` (e.g. aggregate outputs) are added on top.
+/// listed columns/relations (see `Table::derive_from_spec`).
 fn build_derived_table(
     spec: &SurrealVistaSpec,
     base_name: &str,
     db: SurrealDB,
     resolver: Option<SurrealSpecResolver>,
 ) -> Result<Table<SurrealDB, EmptyEntity>> {
-    let resolver = resolver.ok_or_else(|| {
-        error!(
-            "vista declares `base:` but no spec resolver is attached to the factory",
-            base = base_name
-        )
-    })?;
-    let base_spec = resolver(base_name)
-        .ok_or_else(|| error!("base vista not found via resolver", base = base_name))?;
-    let base_table = build_surreal_table(&base_spec, db.clone(), Some(resolver.clone()))?;
+    let (resolver, base_spec) = resolve_base_spec(resolver, base_name)?;
+    let base_table = build_surreal_table(&base_spec, db, Some(resolver))?;
 
     let block = spec.driver.surreal.as_ref();
-    let transformed = match block.and_then(|m| m.rhai.clone()) {
+    let select = match block.and_then(|m| m.rhai.clone()) {
         Some(code) => eval_transform(&code, base_table.select(), &spec.driver_block_args())?,
         None => base_table.select(),
     };
-
     let inherit = block.and_then(|m| m.inherit.clone()).unwrap_or_default();
-    let cols: Vec<&str> = inherit.columns.iter().map(String::as_str).collect();
-    let rels: Vec<&str> = inherit.relations.iter().map(String::as_str).collect();
-
-    let mut table = Table::derive_from(
+    Table::derive_from_spec(
         &base_table,
-        spec.name.clone(),
-        move |_| transformed,
-        &cols,
-        &rels,
-    );
-
-    // The derived vista's own declared columns (e.g. aggregate outputs).
-    for (name, col_spec) in &spec.columns {
-        if table.add_lazy_spec_column(col_spec, name)? {
-            continue;
-        }
-        if !table.columns().contains_key(name) {
-            table.add_column(build_column(name, col_spec)?);
-        }
-        if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
-            table.add_title_field(name);
-        }
-    }
-
-    // Explicit id override; otherwise the id inherited from the base stands.
-    if let Some(id) = &spec.id_column {
-        table.set_id_field(id);
-    }
-
-    let table = table.with_contained_specs(&spec.contained, build_column)?;
-    Ok(table)
+        spec,
+        select,
+        &inherit.columns,
+        &inherit.relations,
+        build_column,
+    )
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like
@@ -433,39 +356,17 @@ fn eval_transform(
     ))
 }
 
-pub(crate) fn resolve_id_column(spec: &SurrealVistaSpec) -> String {
-    if let Some(id) = &spec.id_column {
-        return id.clone();
-    }
-    for (name, col_spec) in &spec.columns {
-        if col_spec.flags.iter().any(|f| f == vista_flags::ID) {
-            return name.clone();
-        }
-    }
-    "id".to_string()
-}
-
+/// The `surreal.field` block names the stored field.
 pub(crate) fn build_column(
     name: &str,
     col_spec: &vantage_vista::ColumnSpec<SurrealColumnExtras>,
 ) -> Result<TableColumn<AnySurrealType>> {
-    let ty = col_spec.col_type.as_deref().unwrap_or("string");
-    let alias = col_spec
+    let field = col_spec
         .driver
         .surreal
         .as_ref()
-        .and_then(|b| b.field.clone())
-        .filter(|s| s != name);
-    let hidden = col_spec.flags.iter().any(|f| f == vista_flags::HIDDEN);
-
-    let mut col = column_for_type(name, ty)?;
-    if let Some(alias) = alias {
-        col = col.with_alias(alias);
-    }
-    if hidden {
-        col = col.with_flag(ColumnFlag::Hidden);
-    }
-    Ok(col)
+        .and_then(|b| b.field.clone());
+    TableColumn::from_spec(name, col_spec, field, column_for_type)
 }
 
 /// YAML type alias → typed `Column` (then erased to `Column<AnySurrealType>`).
@@ -506,43 +407,18 @@ where
     E: Entity<T::Value> + 'static,
     T::Column<T::AnyType>: ColumnLike<T::AnyType>,
 {
-    let mut metadata = VistaMetadata::new();
-    for (name, col) in table.columns() {
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
-        // SurrealDB sorts on any physical field; flag those ORDERABLE. An
-        // imported implicit-reference column exists only as a projection
-        // alias — ordering by its dotted name would address a nonexistent
-        // field and silently not sort, so it gets CALCULATED instead.
-        if table.is_imported_column(name) {
-            vc = vc.with_flag(vista_flags::CALCULATED);
-        } else {
-            vc = vc.with_flag(vista_flags::ORDERABLE);
-            // expr:/lazy computed columns stay orderable (they order by
-            // their projected alias) but are read-only for consumers.
-            if table.is_calculated_column(name) {
-                vc = vc.with_flag(vista_flags::CALCULATED);
-            }
-        }
-        if col.flags().contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(vista_flags::HIDDEN);
-        }
-        if col.flags().contains(&ColumnFlag::Searchable) {
-            vc = vc.with_flag(vista_flags::SEARCHABLE);
-        }
-        if col.flags().contains(&ColumnFlag::Mandatory) {
-            vc = vc.with_flag(vista_flags::MANDATORY);
-        }
-        metadata = metadata.with_column(vc);
-    }
-    metadata = metadata.with_columns_at(table.computed_columns());
-    if let Some(id_field) = table.id_field() {
-        metadata = metadata.with_id_column(id_field.name().to_string());
-    }
-    for title in table.title_fields() {
-        if let Some(col) = metadata.columns.get_mut(title) {
-            col.flags.push(vista_flags::TITLE.to_string());
-        }
-    }
+    // SurrealDB sorts on any physical field. An imported implicit-reference
+    // column exists only as a projection alias — ordering by its dotted name
+    // would address a nonexistent field and silently not sort. expr:/lazy
+    // computed columns stay orderable (they order by their projected alias);
+    // all computed columns are read-only for consumers.
+    let mut metadata = table.vista_metadata(VistaMetadataOptions {
+        orderable: Orderable::ExceptImported,
+        calculated: true,
+        column_flags: true,
+        contained: true,
+        ..VistaMetadataOptions::default()
+    });
     // Surface the table's typed relations as schema references, so
     // consumers that read the vista's metadata (not just traversal calls)
     // see them — the target table name comes from building the bare
@@ -561,9 +437,6 @@ where
             foreign_key,
         ));
     }
-    for spec in table.vista_contained() {
-        metadata = metadata.with_contained(spec);
-    }
     metadata
 }
 
@@ -571,8 +444,10 @@ where
 mod tests {
     use super::*;
     use indexmap::IndexMap;
+    use std::sync::Arc;
     use surreal_client::{MockSurrealEngine, SurrealClient};
     use vantage_vista::VistaFactory;
+    use vantage_vista::{ReferenceKind, flags as vista_flags};
 
     fn test_db() -> SurrealDB {
         let client = SurrealClient::new(
@@ -999,7 +874,10 @@ columns:
             .get_ref("products", &row)
             .err()
             .expect("with_condition on table(...) must fail");
-        assert!(err.to_string().contains("`with_condition`"), "{err}");
+        assert!(
+            err.to_string().contains(r#"verb: "with_condition""#),
+            "{err}"
+        );
     }
 
     #[cfg(feature = "rhai")]

@@ -153,7 +153,7 @@ async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
     let err = result.expect_err("row 3 fails");
     let message = err.to_string();
     assert!(
-        message.contains("row 3 of 5") && message.contains("t3"),
+        message.contains("row: 3, of: 5") && message.contains("\"t3\""),
         "the error names the failing row and id: {message}"
     );
     assert_eq!(

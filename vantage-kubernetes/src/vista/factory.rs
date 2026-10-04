@@ -5,14 +5,9 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
-use vantage_table::column::flags::ColumnFlag;
-use vantage_table::table::Table;
-use vantage_table::traits::column_like::ColumnLike;
+use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{
-    Column as VistaColumn, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
-    flags as vista_flags,
-};
+use vantage_vista::{NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata};
 
 use crate::cluster::KubernetesCluster;
 use crate::vista::source::KubeTableShell;
@@ -82,33 +77,14 @@ pub(crate) fn metadata_from_table<E>(table: &Table<KubernetesCluster, E>) -> Vis
 where
     E: Entity<CborValue> + 'static,
 {
-    let mut metadata = VistaMetadata::new();
-    for (name, col) in table.columns() {
-        // Every column is sortable — the shell sorts client-side over the
-        // materialised listing, so there's no per-column server constraint.
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string())
-            .with_flag(vista_flags::ORDERABLE);
-        if col.flags().contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(vista_flags::HIDDEN);
-        }
-        metadata = metadata.with_column(vc);
-    }
-    if let Some(id_field) = table.id_field() {
-        let id_name = id_field.name().to_string();
-        metadata = metadata.with_id_column(id_name.clone());
-        if let Some(col) = metadata.columns.get_mut(&id_name) {
-            col.flags.push(vista_flags::ID.to_string());
-        }
-    }
-    for title in table.title_fields() {
-        if let Some(col) = metadata.columns.get_mut(title) {
-            col.flags.push(vista_flags::TITLE.to_string());
-            // The quicksearch scans all text fields, but flag the title so
-            // UIs know what the primary searchable column is.
-            col.flags.push(vista_flags::SEARCHABLE.to_string());
-        }
-    }
-    // Computed columns go in after the flag passes above: the Vista holds
-    // their values, so they are neither orderable nor searchable.
-    metadata.with_columns_at(table.computed_columns())
+    table.vista_metadata(VistaMetadataOptions {
+        // The shell sorts client-side over the materialised listing, so
+        // every column is sortable.
+        orderable: Orderable::All,
+        id_flag: true,
+        // The quicksearch scans all text fields; flagging the title tells
+        // UIs which one is primary.
+        searchable_titles: true,
+        ..VistaMetadataOptions::default()
+    })
 }

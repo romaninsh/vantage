@@ -81,33 +81,10 @@ pub(crate) async fn apply_condition(
 }
 
 /// Resolve an expression parameter to a concrete `AnyCsvType` value.
-/// Scalars pass through, Deferred closures are called, Nested expressions
-/// are recursively resolved.
-pub(crate) fn resolve_param(
-    param: &ExpressiveEnum<AnyCsvType>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<AnyCsvType>> + Send + '_>> {
-    Box::pin(async move {
-        match param {
-            ExpressiveEnum::Scalar(v) => Ok(v.clone()),
-            ExpressiveEnum::Deferred(deferred) => {
-                let result = deferred.call().await?;
-                match result {
-                    ExpressiveEnum::Scalar(v) => Ok(v),
-                    other => resolve_param(&other).await,
-                }
-            }
-            ExpressiveEnum::Nested(expr) => {
-                // A nested expression with no params is just a value reference
-                if expr.parameters.is_empty() {
-                    Ok(AnyCsvType::new(expr.template.clone()))
-                } else if expr.parameters.len() == 1 {
-                    resolve_param(&expr.parameters[0]).await
-                } else {
-                    Ok(AnyCsvType::new(expr.template.clone()))
-                }
-            }
-        }
-    })
+/// A nested expression with no single parameter is taken as its template text.
+pub(crate) async fn resolve_param(param: &ExpressiveEnum<AnyCsvType>) -> Result<AnyCsvType> {
+    vantage_expressions::resolve_param(param, |template| AnyCsvType::new(template.to_string()))
+        .await
 }
 
 #[cfg(test)]

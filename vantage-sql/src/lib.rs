@@ -7,6 +7,16 @@ pub mod primitives;
 pub use vantage_expressions;
 pub(crate) mod types;
 
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+mod sql_exec;
+#[cfg(all(
+    feature = "vista",
+    any(feature = "sqlite", feature = "postgres", feature = "mysql")
+))]
+mod sql_vista;
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+mod table_writes;
+
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 

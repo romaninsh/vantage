@@ -13,6 +13,9 @@ use vantage_core::Result;
 use crate::column::Column;
 use crate::reference::{ContainedKind, ReferenceKind};
 
+mod lowering;
+pub use lowering::{SpecResolver, resolve_base_spec};
+
 /// Empty extras placeholder. Serializes as an absent key.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -22,7 +22,7 @@ use vantage_table::table::Table;
 use vantage_types::{Entity, Record};
 
 use crate::condition::RedbCondition;
-use crate::redb::helpers::{id_column_name, indexed_columns, paginate};
+use crate::redb::helpers::{indexed_columns, paginate};
 use crate::redb::{Redb, index_table_def, index_table_name, main_table_def};
 use crate::types::{AnyRedbType, decode_record, value_to_index_key};
 
@@ -34,7 +34,7 @@ where
     E: Entity<AnyRedbType>,
 {
     let table_name = table.table_name();
-    let id_col = id_column_name(table);
+    let id_col = table.id_field_name();
     let indexed = indexed_columns(table);
 
     // Resolve any deferred conditions up front (they may need DB roundtrips).

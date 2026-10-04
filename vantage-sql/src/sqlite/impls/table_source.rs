@@ -169,10 +169,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let select = table.select();
         let result = self.execute(&select.expr()).await?;
@@ -188,10 +185,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let id_val = id.clone();
         let condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
@@ -209,10 +203,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let mut select = table.select();
         select.set_limit(Some(1), None);
@@ -278,10 +269,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
             .with_record(record)
@@ -305,10 +293,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         // SQLite INSERT OR REPLACE handles both insert and update
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
@@ -340,10 +325,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let id_val = id.clone();
         let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
@@ -352,19 +334,14 @@ impl TableSource for SqliteDB {
             .with_condition(id_condition);
         self.execute(&update.expr()).await?;
 
-        self.get_table_value(table, id)
-            .await?
-            .ok_or_else(|| error!("Row not found after patch", id = id.clone()).mark_not_found())
+        crate::table_writes::refetch_after_patch(self, table, id).await
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let id_val = id.clone();
         let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
@@ -397,10 +374,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let insert =
             crate::sqlite::statements::SqliteInsert::new(table.table_name()).with_record(record);

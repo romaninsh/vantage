@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.9 — 2026-10-04
+
+- Error messages carry context fields instead of formatted text.
+- Parameters resolve through `vantage_expressions::resolve_param`.
+
+- Vista metadata comes from `Table::vista_metadata`.
+- The DynamoDB id column comes from `Table::id_field_name`.
+- Depends on `vantage-expressions` 1.0.1, `vantage-table` 1.1.1, `vantage-vista` 1.1.1.
+
 ## 0.6.8 — 2026-10-03
 
 - `Table::add_computed_column` columns reach the Vista.

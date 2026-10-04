@@ -35,15 +35,6 @@ use crate::dynamodb::transport;
 use crate::dynamodb::types::{AnyDynamoType, AttributeValue};
 use crate::dynamodb::wire::{attr_to_json, json_to_item_map};
 
-const DEFAULT_ID_FIELD: &str = "id";
-
-fn id_field_name<E: Entity<AnyDynamoType>>(table: &Table<DynamoDB, E>) -> String {
-    table
-        .id_field()
-        .map(|c| c.name().to_string())
-        .unwrap_or_else(|| DEFAULT_ID_FIELD.to_string())
-}
-
 /// Build a single-field DynamoDB `Key` map from a partition-key id.
 fn key_for_id(
     field: &str,
@@ -152,7 +143,7 @@ impl TableSource for DynamoDB {
             .and_then(|v| v.as_array())
             .ok_or_else(|| error!("DynamoDB Scan response missing Items array"))?;
 
-        let id_field = id_field_name(table);
+        let id_field = table.id_field_name();
         let mut out = IndexMap::with_capacity(items.len());
         for item in items {
             let (id, record) = item_to_record(&id_field, item)?;
@@ -169,7 +160,7 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field = id_field_name(table);
+        let id_field = table.id_field_name();
         let key = key_for_id(&id_field, id)?;
         let resp = transport::get_item(self.aws(), table.table_name(), key).await?;
 
@@ -204,7 +195,7 @@ impl TableSource for DynamoDB {
         let Some(item) = item else {
             return Ok(None);
         };
-        let id_field = id_field_name(table);
+        let id_field = table.id_field_name();
         let (id, record) = item_to_record(&id_field, &item)?;
         Ok(Some((id, record)))
     }
@@ -271,7 +262,7 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field = id_field_name(table);
+        let id_field = table.id_field_name();
         let mut item = JsonMap::new();
         item.insert(id_field.clone(), attr_to_json(&id.to_attr())?);
         for (k, v) in record.iter() {
@@ -324,7 +315,7 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field = id_field_name(table);
+        let id_field = table.id_field_name();
         let key = key_for_id(&id_field, id)?;
         transport::delete_item(self.aws(), table.table_name(), key).await?;
         Ok(())
@@ -334,7 +325,7 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field = id_field_name(table);
+        let id_field = table.id_field_name();
         let filter = resolve_conditions(table.conditions()).await?;
         let resp =
             transport::scan(self.aws(), table.table_name(), None, false, Some(&filter)).await?;

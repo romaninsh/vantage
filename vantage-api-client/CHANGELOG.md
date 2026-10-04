@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.20 — 2026-10-04
+
+- The REST and GraphQL vista factories use the shared spec helpers.
+- REST conditions resolve deferred values through `Expression::resolve_deferred`.
+- Depends on `vantage-expressions` 1.0.1, `vantage-table` 1.1.1, `vantage-vista` 1.1.1.
+
 ## 0.6.19 — 2026-10-03
 
 - Spec `lazy:` columns become Vista computed columns, on GraphQL too.

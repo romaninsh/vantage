@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.24 — 2026-10-04
+
+- Error messages carry context fields instead of formatted text.
+
+- The vista factory uses the shared spec helpers.
+- Deferred parameters resolve through `Expression::resolve_deferred`.
+- Depends on `vantage-expressions` 1.0.1, `vantage-table` 1.1.1, `vantage-vista` 1.1.1.
+
 ## 0.6.23 — 2026-10-03
 
 - Spec `lazy:` columns become Vista computed columns, traversal targets included.

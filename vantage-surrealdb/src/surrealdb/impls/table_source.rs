@@ -213,10 +213,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let select = table.select();
         let result = self.execute(&select.expr()).await?;
@@ -254,10 +251,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         // Narrow the table's own select rather than `SELECT * FROM ONLY <id>`
         // — the table's select projects computed `with_expression` columns
@@ -301,10 +295,7 @@ impl TableSource for SurrealDB {
         select.limit = Some(1);
         let result = self.execute(&select.expr()).await?;
 
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let arr = result
             .into_value()
@@ -410,10 +401,7 @@ impl TableSource for SurrealDB {
             }
         };
         let map = extract_first_map(result)?;
-        let id_field = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field = table.id_field_name();
         let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
         Ok(rec)
     }
@@ -437,10 +425,7 @@ impl TableSource for SurrealDB {
             .with_record(record);
         let result = self.execute(&update.expr()).await?;
         let map = extract_first_map(result)?;
-        let id_field = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field = table.id_field_name();
         let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
         Ok(rec)
     }
@@ -458,10 +443,7 @@ impl TableSource for SurrealDB {
         let result = self.execute(&update.expr()).await?;
         ensure_row_affected(&result, table.table_name(), id)?;
         let map = extract_first_map(result)?;
-        let id_field = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field = table.id_field_name();
         let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
         Ok(rec)
     }

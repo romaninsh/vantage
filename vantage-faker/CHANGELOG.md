@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.5 — 2026-10-04
+
+- `ShapedShell`'s `TableShell` impl moved to `shape/shell.rs`.
+
+- Sim `fake_row()` generates like seeding: string cells take the table's `weirdness`, and
+  even-spread dates and trees scale to its `count`. `SimEngineBuilder::fake_rows(table, count,
+  weirdness)`; `DatasetSpec::sim_builder` sets it from each table.
+- `ShapedShell` forwards contained relations, raw conditions and Rhai hooks to the wrapped shell,
+  and operator conditions when the shape lists `can_filter_operators`.
+- Depends on `vantage-vista` 1.1.1.
+
 ## 1.0.4 — 2026-10-04
 
 - The column-name guess matches whole words (split on `_`, `-`, `.`, camelCase): `hostname`,

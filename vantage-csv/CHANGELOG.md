@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.7 — 2026-10-04
+
+- Parameters resolve through `vantage_expressions::resolve_param`.
+- The vista factory uses the shared spec helpers.
+- Depends on `vantage-expressions` 1.0.1, `vantage-table` 1.1.1, `vantage-vista` 1.1.1.
+
 ## 0.6.6 — 2026-10-03
 
 - Spec `lazy:` columns become Vista computed columns.

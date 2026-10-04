@@ -12,7 +12,7 @@ use vantage_rhai::{Host, Limits, Mode, from_json};
 
 use super::clock::{Clock, SimClock, unix_secs};
 use super::engine::SimEngine;
-use super::kind::{Inner, Kind, OnSimError};
+use super::kind::{FakeRows, Inner, Kind, OnSimError};
 use super::sched::Sched;
 use super::stats::Counters;
 use super::{SimDef, spawn, validate, vocab};
@@ -28,6 +28,7 @@ pub struct SimEngineBuilder {
     manual: Option<SystemTime>,
     warm_progress: Option<Box<spawn::Progress>>,
     columns: HashMap<String, Vec<FakerColumn>>,
+    fake_rows: HashMap<String, FakeRows>,
     on_error: Option<Arc<OnSimError>>,
 }
 
@@ -50,6 +51,24 @@ impl SimEngineBuilder {
     /// `fake_row()` on it always returns an empty map.
     pub fn columns(mut self, table: impl Into<String>, columns: Vec<FakerColumn>) -> Self {
         self.columns.insert(table.into(), columns);
+        self
+    }
+
+    /// Generate `fake_row()` values for `table` the way seeding it does:
+    /// even-spread dates and trees scale to `count` rows (100 when `count`
+    /// is 0), and each string cell without a generator stands a `weirdness`
+    /// chance (`0..=1`) of an anomaly — see
+    /// [`TableGen::weirdness`](crate::TableGen::weirdness). Without this
+    /// call: 100 rows, no anomalies.
+    pub fn fake_rows(mut self, table: impl Into<String>, count: usize, weirdness: f64) -> Self {
+        let mut rows = FakeRows {
+            weirdness: weirdness.clamp(0.0, 1.0),
+            ..FakeRows::default()
+        };
+        if count > 0 {
+            rows.rows = count;
+        }
+        self.fake_rows.insert(table.into(), rows);
         self
     }
 
@@ -161,6 +180,7 @@ impl SimEngineBuilder {
             store: self.store,
             tables: Default::default(),
             columns: self.columns,
+            fake_rows: self.fake_rows,
             seed: self.seed,
             origin,
             handles: Mutex::default(),

@@ -56,7 +56,7 @@ impl Default for ExpressionFlattener {
 impl<T: Clone> Flatten<Expression<T>> for ExpressionFlattener {
     fn flatten(&self, expr: &Expression<T>) -> Expression<T> {
         // Deferred-parameter resolution is a separate, async phase owned by the
-        // DataSource execute path (see each backend's `resolve_deferred`); it
+        // DataSource execute path (`Expression::resolve_deferred`); it
         // cannot happen in this sync flattener, so we only flatten nesting here.
         self.flatten_nested(expr)
     }

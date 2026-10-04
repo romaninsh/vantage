@@ -80,14 +80,14 @@ impl RunState {
             Token::ModelName(name, sel) => {
                 let (mut v, m) = factory
                     .for_name(&name)
-                    .ok_or_else(|| error!(format!("Unknown model `{name}`")))?;
+                    .ok_or_else(|| error!("Unknown model", model = name))?;
                 let m = apply_selector_opt(&mut v, m, sel, renderer).await?;
                 (v, m)
             }
             Token::Locator(s) => {
                 let v = factory
                     .for_locator(&s)
-                    .ok_or_else(|| error!(format!("Cannot resolve locator `{s}`")))?;
+                    .ok_or_else(|| error!("Cannot resolve locator", locator = s))?;
                 (v, Mode::Single)
             }
             Token::OpCondition { .. }
@@ -96,9 +96,10 @@ impl RunState {
             | Token::Columns(_, _)
             | Token::Search(_)
             | Token::Aggregate { .. } => {
-                return Err(error!(format!(
-                    "First argument must be a model name or locator, got `{first_arg}`"
-                )));
+                return Err(error!(
+                    "First argument must be a model name or locator",
+                    got = first_arg
+                ));
             }
         };
         Ok(Self {
@@ -158,9 +159,10 @@ impl RunState {
         sel: Option<Selector>,
     ) -> Result<()> {
         if self.mode != Mode::Single {
-            return Err(error!(format!(
-                "Cannot traverse `:{rel}` from list mode — narrow to a single record first (add a filter or `[N]`)"
-            )));
+            return Err(error!(
+                "Cannot traverse a relation from list mode — narrow to a single record first (add a filter or `[N]`)",
+                relation = rel
+            ));
         }
         let child_kind = self
             .vista
@@ -169,9 +171,10 @@ impl RunState {
             .find(|(name, _)| name == &rel)
             .map(|(_, k)| k);
         let (_id, parent_row) = self.vista.get_some_value().await?.ok_or_else(|| {
-            error!(format!(
-                "Cannot traverse `:{rel}` — narrowed vista has no matching record"
-            ))
+            error!(
+                "Cannot traverse relation — narrowed vista has no matching record",
+                relation = rel
+            )
         })?;
         self.vista = self.vista.get_ref(&rel, &parent_row)?;
         self.mode = match child_kind {
@@ -306,10 +309,10 @@ fn apply_condition<R: Renderer>(
             let is_id_alias = field == "id";
             let resolved_field = if is_id_alias {
                 vista.get_id_column().map(str::to_string).ok_or_else(|| {
-                    error!(format!(
-                        "`id=` used but vista `{}` has no id column",
-                        vista.name()
-                    ))
+                    error!(
+                        "`id=` used but vista has no id column",
+                        vista = vista.name()
+                    )
                 })?
             } else {
                 field.to_string()
@@ -340,15 +343,17 @@ async fn apply_index(vista: &mut Vista, index: usize) -> Result<Mode> {
     let records = vista.list_values().await?;
     let total = records.len();
     let (id, _record) = records.into_iter().nth(index).ok_or_else(|| {
-        error!(format!(
-            "Index [{index}] out of bounds — only {total} record(s) match"
-        ))
+        error!(
+            "Index out of bounds",
+            index = index,
+            matching_records = total
+        )
     })?;
     let id_field = vista.get_id_column().map(str::to_string).ok_or_else(|| {
-        error!(format!(
-            "Cannot apply index — vista `{}` has no id column",
-            vista.name()
-        ))
+        error!(
+            "Cannot apply index — vista has no id column",
+            vista = vista.name()
+        )
     })?;
     let coerced = super::value::coerce_for_column(vista, &id_field, &id)?;
     vista.add_condition_eq(&id_field, coerced)?;

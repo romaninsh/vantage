@@ -175,10 +175,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let select = table.select();
         let result = self.execute(&select.expr()).await?;
@@ -194,10 +191,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let condition = {
             let id_val = id_value(id);
@@ -217,10 +211,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let mut select = table.select();
         select.set_limit(Some(1), None);
@@ -286,10 +277,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
             .with_record(record)
@@ -313,10 +301,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         // MySQL: INSERT ... ON DUPLICATE KEY UPDATE ...
         let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
@@ -357,10 +342,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let id_condition = {
             let id_val = id_value(id);
@@ -371,19 +353,14 @@ impl TableSource for MysqlDB {
             .with_condition(id_condition);
         self.execute(&update.expr()).await?;
 
-        self.get_table_value(table, id)
-            .await?
-            .ok_or_else(|| error!("Row not found after patch", id = id.clone()).mark_not_found())
+        crate::table_writes::refetch_after_patch(self, table, id).await
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table
-            .id_field()
-            .map(|c| c.name().to_string())
-            .unwrap_or_else(|| "id".to_string());
+        let id_field_name = table.id_field_name();
 
         let id_condition = {
             let id_val = id_value(id);
@@ -423,41 +400,11 @@ impl TableSource for MysqlDB {
 
         // MySQL doesn't support RETURNING. Execute INSERT and SELECT LAST_INSERT_ID()
         // on the same connection to get the auto-generated id.
-        use crate::mysql::row::bind_mysql_value;
-        use vantage_expressions::{ExpressionFlattener, Flatten};
-
-        let expr = insert.expr();
-        let flattener = ExpressionFlattener::new();
-        let flattened = flattener.flatten(&expr);
-
-        // Build the INSERT query with ? placeholders
-        let template_parts: Vec<&str> = flattened.template.split("{}").collect();
-        if template_parts.len() != flattened.parameters.len() + 1 {
-            return Err(error!(
-                "MySQL insert expression placeholder mismatch",
-                placeholders = (template_parts.len() - 1).to_string(),
-                parameters = flattened.parameters.len().to_string()
-            ));
-        }
-
-        let mut sql = String::new();
-        let mut params = Vec::new();
-        sql.push_str(template_parts[0]);
-        for (i, param) in flattened.parameters.iter().enumerate() {
-            match param {
-                ExpressiveEnum::Scalar(value) => {
-                    sql.push('?');
-                    params.push(value.clone());
-                }
-                _ => {
-                    return Err(error!(
-                        "MySQL insert expression contains non-scalar parameter",
-                        index = i.to_string()
-                    ));
-                }
-            }
-            sql.push_str(template_parts[i + 1]);
-        }
+        let (sql, params) = crate::sql_exec::prepare(
+            &insert.expr(),
+            <Self as crate::sql_exec::SqlDialect>::PLACEHOLDER,
+        )
+        .await?;
 
         // Acquire a single connection to ensure LAST_INSERT_ID() works
         let mut conn = self
@@ -466,14 +413,13 @@ impl TableSource for MysqlDB {
             .await
             .map_err(|e| error!("MySQL acquire connection failed", details = e.to_string()))?;
 
-        let mut query = sqlx::query(&sql);
-        for value in &params {
-            query = bind_mysql_value(query, value);
-        }
-        query
+        crate::sql_exec::bind_all::<Self>(&sql, &params)?
             .execute(&mut *conn)
             .await
-            .map_err(|e| error!("MySQL insert failed", details = e.to_string()))?;
+            .map_err(|e| {
+                let err = error!("MySQL insert failed", details = e.to_string());
+                crate::sql_exec::failure_context::<Self>(err, &sql, &params)
+            })?;
 
         let last_id_sql = "SELECT LAST_INSERT_ID() AS id";
         let row = sqlx::query(last_id_sql)

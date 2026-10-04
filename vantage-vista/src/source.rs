@@ -63,6 +63,27 @@ impl VistaChange {
 /// so it can be handed to a background task.
 pub type VistaChangeStream = Pin<Box<dyn Stream<Item = Result<VistaChange>> + Send>>;
 
+/// The stream [`TableShell::stream_vista_values`] returns.
+pub type VistaRowStream<'a> =
+    Pin<Box<dyn Stream<Item = Result<(String, Record<CborValue>)>> + Send + 'a>>;
+
+/// The rows `list` resolves to, as a stream, or its error as the only item:
+/// how [`TableShell::stream_vista_values`] answers by default.
+pub fn stream_from_list<'a>(
+    list: impl Future<Output = Result<IndexMap<String, Record<CborValue>>>> + Send + 'a,
+) -> VistaRowStream<'a> {
+    Box::pin(async_stream::stream! {
+        match list.await {
+            Ok(map) => {
+                for item in map {
+                    yield Ok(item);
+                }
+            }
+            Err(e) => yield Err(e),
+        }
+    })
+}
+
 /// Per-driver executor for a `Vista`.
 ///
 /// Implementations live in driver crates (vantage-sqlite, vantage-mongodb,
@@ -126,24 +147,11 @@ pub trait TableShell: Send + Sync + 'static {
 
     /// Default implementation wraps `list_vista_values`. Drivers with native
     /// streaming (cursor-based queries, paginated REST APIs) override.
-    #[allow(clippy::type_complexity)]
-    fn stream_vista_values<'a>(
-        &'a self,
-        vista: &'a Vista,
-    ) -> Pin<Box<dyn Stream<Item = Result<(String, Record<CborValue>)>> + Send + 'a>>
+    fn stream_vista_values<'a>(&'a self, vista: &'a Vista) -> VistaRowStream<'a>
     where
         Self: Sync,
     {
-        Box::pin(async_stream::stream! {
-            match self.list_vista_values(vista).await {
-                Ok(map) => {
-                    for item in map {
-                        yield Ok(item);
-                    }
-                }
-                Err(e) => yield Err(e),
-            }
-        })
+        stream_from_list(self.list_vista_values(vista))
     }
 
     // ---- WritableValueSet delegates ----------------------------------------
@@ -290,10 +298,7 @@ pub trait TableShell: Send + Sync + 'static {
     /// translation (e.g. `cbor_to_bson` for Mongo, `cbor → AnyCsvType` for CSV).
     fn add_eq_condition(&mut self, _field: &str, _value: &CborValue) -> Result<()> {
         Err(error!(
-            format!(
-                "add_eq_condition not implemented for '{}'",
-                std::any::type_name::<Self>()
-            ),
+            "add_eq_condition not implemented",
             method = "add_eq_condition",
             source_type = std::any::type_name::<Self>()
         )
@@ -317,11 +322,7 @@ pub trait TableShell: Send + Sync + 'static {
         match op {
             crate::FilterOp::Eq => self.add_eq_condition(field, value),
             _ => Err(error!(
-                format!(
-                    "add_op_condition operator {:?} not implemented for '{}'",
-                    op,
-                    std::any::type_name::<Self>()
-                ),
+                "add_op_condition operator not implemented",
                 method = "add_op_condition",
                 operator = format!("{:?}", op),
                 source_type = std::any::type_name::<Self>()
@@ -343,10 +344,7 @@ pub trait TableShell: Send + Sync + 'static {
         _condition: Box<dyn std::any::Any + Send + Sync>,
     ) -> Result<()> {
         Err(error!(
-            format!(
-                "add_raw_condition not implemented for '{}'",
-                std::any::type_name::<Self>()
-            ),
+            "add_raw_condition not implemented",
             method = "add_raw_condition",
             source_type = std::any::type_name::<Self>()
         )
@@ -503,10 +501,7 @@ pub trait TableShell: Send + Sync + 'static {
     /// never here.
     fn get_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
         Err(error!(
-            format!(
-                "get_ref not implemented for '{}'",
-                std::any::type_name::<Self>()
-            ),
+            "get_ref not implemented",
             method = "get_ref",
             relation = relation,
             source_type = std::any::type_name::<Self>()
@@ -528,10 +523,7 @@ pub trait TableShell: Send + Sync + 'static {
     /// this is reached.
     fn get_ref_target(&self, relation: &str) -> Result<Vista> {
         Err(error!(
-            format!(
-                "get_ref_target not implemented for '{}'",
-                std::any::type_name::<Self>()
-            ),
+            "get_ref_target not implemented",
             method = "get_ref_target",
             relation = relation,
             source_type = std::any::type_name::<Self>()
@@ -555,10 +547,7 @@ pub trait TableShell: Send + Sync + 'static {
     /// with a writeback that patches the parent.
     fn get_contained_ref(&self, relation: &str, _row: &Record<CborValue>) -> Result<Vista> {
         Err(error!(
-            format!(
-                "get_contained_ref not implemented for '{}'",
-                std::any::type_name::<Self>()
-            ),
+            "get_contained_ref not implemented",
             method = "get_contained_ref",
             relation = relation,
             source_type = std::any::type_name::<Self>()
@@ -729,21 +718,16 @@ pub trait TableShell: Send + Sync + 'static {
         let source_type = std::any::type_name::<Self>();
         if self.capability_flag(capability) {
             error!(
-                format!(
-                    "'{}' is advertised as VistaCapability for '{}' but implementation for '{}' is missing",
-                    capability, source_type, method
-                ),
+                "capability is advertised but its implementation is missing",
                 method = method,
                 capability = capability,
                 source_type = source_type
             )
-            .mark_unimplemented().traced()
+            .mark_unimplemented()
+            .traced()
         } else {
             error!(
-                format!(
-                    "'{}' is not supported by '{}'; '{}' refused",
-                    capability, source_type, method
-                ),
+                "capability is not supported; method refused",
                 method = method,
                 capability = capability,
                 source_type = source_type
