@@ -47,7 +47,7 @@ fn value_for(
                 now: now_unix(),
             },
         ),
-        None => ValueGen::value_for_with(rng, col),
+        None => ValueGen::value_for_with(rng, col, now_unix()),
     }
 }
 

@@ -27,11 +27,17 @@ use fake::rand::{RngExt as _, SeedableRng as _};
 use vantage_types::Record;
 
 use crate::FakerColumn;
-use crate::generator::{self, Cell, ColumnGen, Memo, column_salt, now_unix};
+use crate::generator::{self, Cell, ColumnGen, Memo, column_salt, now_unix, rfc3339};
+
+mod name;
+use name::{has_any, name_words};
 
 /// Rows this fraction of `record_for` calls draw a value from the anomaly
 /// pool instead of the realistic generator — see [`ValueGen::with_weirdness`].
 const ANOMALIES: [&str; 4] = ["long", "blank", "duplicate", "unicode"];
+
+/// How far back a type-fallback datetime may reach from the generator's `now`.
+const RECENT_DAYS: i64 = 90;
 
 /// A fresh rng seeded from the thread rng — the "no seed given" path.
 pub(crate) fn entropy_rng() -> StdRng {
@@ -134,7 +140,7 @@ impl ValueGen {
     fn cell_value(&self, rng: &mut StdRng, col: &FakerColumn, seq: usize) -> CborValue {
         match &col.generator {
             Some(generator) => self.generated(rng, generator, col, seq),
-            None => Self::value_for_with(rng, col),
+            None => Self::value_for_with(rng, col, self.now),
         }
     }
 
@@ -160,46 +166,50 @@ impl ValueGen {
         )
     }
 
-    pub(crate) fn value_for_with(rng: &mut StdRng, col: &FakerColumn) -> CborValue {
-        let name = col.name.to_lowercase();
+    /// Name guess, then type fallback. `now` anchors the fallback's
+    /// relative datetimes.
+    pub(crate) fn value_for_with(rng: &mut StdRng, col: &FakerColumn, now: i64) -> CborValue {
+        // Whole words of the column name, not substrings — see `name_words`.
+        let words = name_words(&col.name);
+        let is = |candidates: &[&str]| has_any(&words, candidates);
 
         // --- name-aware ------------------------------------------------------
-        if name.contains("email") {
+        if is(&["email"]) {
             return CborValue::Text(SafeEmail().fake_with_rng(rng));
         }
-        if name.contains("first") && name.contains("name") {
+        if is(&["firstname"]) {
             return CborValue::Text(FirstName().fake_with_rng(rng));
         }
-        if name.contains("last") && name.contains("name") || name.contains("surname") {
+        if is(&["lastname", "surname"]) {
             return CborValue::Text(LastName().fake_with_rng(rng));
         }
-        if name.contains("username") || name.contains("login") || name.contains("handle") {
+        if is(&["username", "login", "handle"]) {
             return CborValue::Text(Username().fake_with_rng(rng));
         }
-        if name.contains("name") {
+        if is(&["name"]) {
             return CborValue::Text(Name().fake_with_rng(rng));
         }
-        if name.contains("phone") || name.contains("mobile") || name.contains("tel") {
+        if is(&["phone", "mobile", "tel", "telephone"]) {
             return CborValue::Text(PhoneNumber().fake_with_rng(rng));
         }
-        if name.contains("city") {
+        if is(&["city"]) {
             return CborValue::Text(CityName().fake_with_rng(rng));
         }
-        if name.contains("country") {
+        if is(&["country"]) {
             return CborValue::Text(CountryName().fake_with_rng(rng));
         }
-        if name.contains("street") || name.contains("address") {
+        if is(&["street", "address"]) {
             return CborValue::Text(StreetName().fake_with_rng(rng));
         }
-        if name.contains("company") || name.contains("employer") || name.contains("organization") {
+        if is(&["company", "employer", "organization", "organisation"]) {
             return CborValue::Text(CompanyName().fake_with_rng(rng));
         }
 
         // --- type fallback ---------------------------------------------------
-        Self::value_by_type(rng, &col.ty)
+        Self::value_by_type(rng, &col.ty, now)
     }
 
-    fn value_by_type(rng: &mut StdRng, ty: &str) -> CborValue {
+    fn value_by_type(rng: &mut StdRng, ty: &str, now: i64) -> CborValue {
         match ty.trim().to_lowercase().as_str() {
             "int" | "integer" | "number" | "i64" | "bigint" => {
                 let n: i64 = (0..10_000).fake_with_rng(rng);
@@ -212,10 +222,9 @@ impl ValueGen {
             }
             "bool" | "boolean" => CborValue::Bool(fake::Faker.fake_with_rng(rng)),
             "datetime" | "date" | "timestamp" => {
-                // avoid a wall-clock / chrono dependency — vary a plausible ISO string
-                let day: u8 = (1..=28).fake_with_rng(rng);
-                let hour: u8 = (0..24).fake_with_rng(rng);
-                CborValue::Text(format!("2026-01-{day:02}T{hour:02}:00:00Z"))
+                // A random instant within the last `RECENT_DAYS` days of `now`.
+                let secs: i64 = (0..RECENT_DAYS * 86_400).fake_with_rng(rng);
+                CborValue::Text(rfc3339(now - secs))
             }
             // string and anything unknown
             _ => CborValue::Text(Word().fake_with_rng(rng)),
@@ -282,7 +291,7 @@ impl ValueGen {
                 let value = self.generated(rng, generator, col, seq);
                 rec.insert(col.name.clone(), value);
             } else {
-                let mut value = Self::value_for_with(rng, col);
+                let mut value = Self::value_for_with(rng, col, self.now);
                 if self.weirdness > 0.0
                     && matches!(value, CborValue::Text(_))
                     && rng.random_range(0.0..1.0) < self.weirdness

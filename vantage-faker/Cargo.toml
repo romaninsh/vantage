@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -44,6 +44,8 @@ tracing = "0.1"
 
 [features]
 sim = ["dep:vantage-rhai", "vantage-vista/rhai"]
+# No-op: `config` and the serde derives are always built. Kept so existing
+# `features = ["serde"]` requirements still resolve.
 serde = []
 
 [package.metadata.docs.rs]
