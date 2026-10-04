@@ -49,12 +49,13 @@ pub fn eval_ref_script(
 
 /// Evaluate a `modify:` script against a built Vista, exposed as `self`.
 ///
-/// When the script ends on a table handle (`self.where("vip", true)`), that
-/// handle is resolved and returned. Otherwise the latest handle a backend
-/// extension verb made from `self` is used, else `self` as given:
+/// Statements on `self` accumulate, whichever verb they use. When the script
+/// ends on a table handle, that handle is resolved and returned; otherwise the
+/// latest handle made from `self`, else `self` as given:
 ///
 /// ```rhai
 /// self.with_condition(ident("is_paying_client") == true);
+/// self.sort("name", "desc");
 /// ```
 pub fn eval_modify_script(host: &Host, code: &str, vista: Vista) -> Result<Vista> {
     const WHAT: &str = "rhai modify script";
@@ -103,8 +104,8 @@ fn eval_augment_compiled(
     finish(base, result)
 }
 
-/// The script's handle resolved; else the latest handle an extension verb
-/// made from `self`; else the base it was given.
+/// The script's handle resolved; else the latest handle a verb made from
+/// `self`; else the base it was given.
 fn finish(base: Handle, result: Dynamic) -> Result<Vista> {
     match result.try_cast::<Handle>() {
         Some(handle) => handle.resolve(None),

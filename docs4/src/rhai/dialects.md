@@ -62,23 +62,16 @@ the concept exists in both, and SurrealDB's own terms where it doesn't (graph pa
 The SQL and SurrealDB builders are two copies of a similar grammar. Merging them is a known
 follow-up and not part of the data vocabulary.
 
+A SurrealDB column spec may also carry `expr:`, a server-side computed column: the script is
+evaluated once with this vocabulary, and the backend projects the result as `(<expr>) AS <column>`
+on every read. Unlike a `lazy:` column it is part of the query, so it can follow record links and
+call SurrealDB functions. Other backends reject or ignore it.
+
 ## `lazy:` columns
 
-A column spec may carry `lazy: <script>`. The script computes the column's value from the record
-built so far, which it sees as `row`. Its last expression is the value:
-
-<!-- tested: rhai_guide::surfaces::lazy_column -->
-```rhai
-row.contents.split("\n").len() - 1
-```
-
-[`lazy_value_closure`](vantage_vista::rhai::lazy_value_closure) compiles the script once, when the
-table is built, so a syntax error fails the build instead of the first row. Lazy columns run when
-rows are fetched, in declaration order, so one can read a column an earlier one added. The intro's
-[Augmentation step](../intro/step6-augmentation.md) shows them in use.
-
-A lazy script has no `table(name)`: it computes from one row, and reading other tables from it
-would run a query per row. Use [augmentation](../augmentation.md) for that.
+A column's `lazy:` script is a third kind: it computes one value from one row, in the Vista, after
+the backend has returned the row. It uses neither the data vocabulary nor a query builder, only
+`row`. [Computed columns](./computed.md) covers it.
 
 ## Templates
 

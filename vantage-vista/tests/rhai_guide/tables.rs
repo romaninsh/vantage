@@ -86,6 +86,26 @@ fn ref_sets() {
     );
 }
 
+const LIMIT_AND_REF: &str = r#"
+let biggest = table("order").sort("total", "desc").limit(2);
+let nobody = table("client").where("name", "Nobody");
+
+#{
+    count: biggest.count(),
+    clients: biggest.ref("client").sort("name").list().map(|c| c.name),
+    none: nobody.ref("orders").count(),
+}
+"#;
+
+#[test]
+fn limit_and_ref() {
+    let host = read_write(&shop());
+    assert_eq!(
+        json(&host, LIMIT_AND_REF),
+        json!({"count": 2, "clients": ["Ada", "Ben"], "none": 0})
+    );
+}
+
 const INTROSPECTION: &str = r#"
 let orders = table("order");
 

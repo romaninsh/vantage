@@ -97,6 +97,47 @@ fn two_extension_statements_both_apply() {
 }
 
 #[test]
+fn extension_then_narrowing_statements_both_apply() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let base = || resolver(&store)("t").unwrap();
+    let script = r#"self.only_a1(); self.sort("n");"#;
+    let modified = eval_modify_script(&host, script, base()).unwrap();
+    assert_eq!(ids(&modified), ["r3", "r1"]);
+    let augmented = vantage_vista::eval_augment_source(&host, script, base(), &rec(&[])).unwrap();
+    assert_eq!(ids(&augmented), ["r3", "r1"]);
+}
+
+#[test]
+fn narrowing_then_extension_statements_both_apply() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let base = resolver(&store)("t").unwrap();
+    let modified = eval_modify_script(&host, r#"self.sort("n"); self.only_a1();"#, base).unwrap();
+    assert_eq!(ids(&modified), ["r3", "r1"]);
+}
+
+#[test]
+fn two_narrowing_statements_both_apply() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let base = resolver(&store)("t").unwrap();
+    let modified =
+        eval_modify_script(&host, r#"self.where("a", 1); self.sort("n");"#, base).unwrap();
+    assert_eq!(ids(&modified), ["r3", "r1"]);
+}
+
+#[test]
+fn table_handle_stays_unchanged_by_later_chains() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let base = resolver(&store)("t").unwrap();
+    let script = r#"let x = table("t").where("a", 1); x.sort("n"); x.where("n", 3); x"#;
+    let vista = eval_modify_script(&host, script, base).unwrap();
+    assert_eq!(ids(&vista), ["r1", "r3"]);
+}
+
+#[test]
 fn ref_script_builds_target_from_row() {
     let store = store();
     let host = host(&store, Terminals::Describe);

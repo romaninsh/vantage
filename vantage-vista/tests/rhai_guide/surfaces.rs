@@ -3,12 +3,13 @@
 use ciborium::Value as CborValue;
 use serde_json::json;
 use vantage_dataset::ReadableValueSet;
-use vantage_rhai::Env;
+use vantage_rhai::rhai::{Dynamic, EvalAltResult};
+use vantage_rhai::{Env, Host, Limits};
 use vantage_types::Record;
-use vantage_vista::rhai::{block_on, lazy_value_closure};
+use vantage_vista::rhai::block_on;
 use vantage_vista::{
-    Terminals, Vista, Writes, augment_source_closure, eval_modify_script, eval_ref_script,
-    preview_script, run_script,
+    DataVocab, FilterOp, Handle, Terminals, Vista, Writes, augment_source_closure, dynamic_to_cbor,
+    eval_modify_script, eval_ref_script, preview_script, run_script,
 };
 
 use super::support::{host, resolver, run, shop};
@@ -75,6 +76,63 @@ fn modify() {
     assert_eq!(ids(&vista), ["c3", "c1"]);
 }
 
+const EXTENSION_STATEMENTS: &str = r#"
+self.only("vip", true);
+self.only("name", "Cy");
+"#;
+
+const MIXED_STATEMENTS: &str = r#"
+self.only("vip", true);
+self.sort("name", "desc");
+"#;
+
+/// A stand-in for a backend extension verb: `only(col, value)` narrows the
+/// Vista in hand by equality.
+fn only(h: &mut Handle, col: &str, value: Dynamic) -> Result<Handle, Box<EvalAltResult>> {
+    let (col, value) = (col.to_string(), dynamic_to_cbor(value)?);
+    h.with_base_vista("only", |vista| {
+        vista.add_condition(col, FilterOp::Eq, value)
+    })
+    .map_err(|e| e.to_string().into())
+}
+
+#[test]
+fn extension_statements() {
+    let store = shop();
+    let host = Host::builder(Limits::background())
+        .vocab_fn(|engine| {
+            engine.register_fn("only", only);
+        })
+        .vocab(DataVocab::describe(Some(resolver(&store))))
+        .build();
+    let base = || resolver(&store)("client").unwrap();
+
+    let vista = eval_modify_script(&host, EXTENSION_STATEMENTS, base()).unwrap();
+    assert_eq!(ids(&vista), ["c3"]);
+
+    // A stored handle keeps what it was given.
+    let kept = "let all = self; all.only(\"vip\", true); all";
+    assert_eq!(
+        ids(&eval_modify_script(&host, kept, base()).unwrap()),
+        ["c1", "c2", "c3"]
+    );
+
+    // Narrowing statements accumulate with extension statements.
+    let vista = eval_modify_script(&host, MIXED_STATEMENTS, base()).unwrap();
+    assert_eq!(ids(&vista), ["c3", "c1"]);
+
+    // Narrowing chains on an extension verb's result.
+    let chained = r#"self.only("vip", true).sort("name", "desc")"#;
+    assert_eq!(
+        ids(&eval_modify_script(&host, chained, base()).unwrap()),
+        ["c3", "c1"]
+    );
+
+    // Outside `self`, an extension verb is an error naming it.
+    let err = run(&host, r#"table("client").only("vip", true)"#).unwrap_err();
+    assert!(err.contains("not on a handle from `table(...)`"), "{err}");
+}
+
 const REF_BUILD: &str = r#"
 table("order").where("client", row.id).where("status", "due")
 "#;
@@ -105,19 +163,6 @@ fn describe_host_has_no_terminals() {
     let store = shop();
     let host = host(&store, Terminals::Describe);
     assert!(run(&host, r#"table("order").count()"#).is_err());
-}
-
-const LAZY_COLUMN: &str = r#"
-row.contents.split("\n").len() - 1
-"#;
-
-#[test]
-fn lazy_column() {
-    let compute = lazy_value_closure(LAZY_COLUMN).unwrap();
-    let row: Record<CborValue> = [("contents".to_string(), CborValue::Text("a\nb\nc\n".into()))]
-        .into_iter()
-        .collect();
-    assert_eq!(compute(&row).unwrap(), CborValue::Integer(3.into()));
 }
 
 const READ_HOST: &str = r#"

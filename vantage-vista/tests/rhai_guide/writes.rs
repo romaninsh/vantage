@@ -118,6 +118,19 @@ fn import_twice() {
     assert_eq!(json(&host, IMPORT_TWICE), json!([3, 0, 3]));
 }
 
+const IMPORT_LIMITED: &str = r#"
+let biggest = table("order").sort("total", "desc").limit(2);
+let report = table("archive").import_from(biggest);
+
+[report.inserted, table("archive").ids()]
+"#;
+
+#[test]
+fn import_limited() {
+    let host = read_write(&shop());
+    assert_eq!(json(&host, IMPORT_LIMITED), json!([2, ["o1", "o3"]]));
+}
+
 #[test]
 fn denied_writes() {
     let store = shop();

@@ -120,7 +120,8 @@ a column on the table, so the derived fields are part of its schema like any oth
 Like most things declared on a table, lazy columns have a config-driven form: a column spec may
 carry `lazy: <rhai script>`, where the script sees the record built so far as `row` and its
 final expression becomes the value — `row.contents.split("\n").len() - 1`. Declaration order
-chains the same way. See [Config-Driven Vistas](../config-driven-vistas.md).
+chains the same way. A `lazy:` script can't do I/O, so it suits the `rows` and `latest` steps but
+not the download. See [Computed Columns](../rhai/computed.md).
 ```
 
 ## Why not just list this table?
