@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.8 — 2026-10-04
+
+- Doc links fixed.
+
 ## 0.13.7 — 2026-10-04
 
 - Error messages carry context fields instead of formatted text.

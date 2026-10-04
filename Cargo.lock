@@ -5747,7 +5747,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.13.7"
+version = "0.13.8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5807,6 +5807,7 @@ dependencies = [
  "vantage-diorama",
  "vantage-expressions",
  "vantage-mongodb",
+ "vantage-rhai",
  "vantage-sql",
  "vantage-table",
  "vantage-types",
@@ -5939,7 +5940,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.6.27"
+version = "0.6.28"
 dependencies = [
  "async-stream",
  "async-trait",

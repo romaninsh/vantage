@@ -173,7 +173,7 @@ narrowing, but a query-sourced table reports no write capabilities at all.
 
 A host that gets a handle back from a script reads it through
 [`Handle`](vantage_vista::Handle): `table_name()` is the starting table (`None` for a handle over a
-Vista), `steps()` is the list of [`Step`](vantage_vista::Step)s, and `resolve(resolver)` builds the
+Vista), `steps()` is the list of [`Step`](vantage_vista::rhai::Step)s, and `resolve(resolver)` builds the
 Vista. Query preview works this way: the script returns a handle, and the host renders the resolved
 Vista's query.
 
