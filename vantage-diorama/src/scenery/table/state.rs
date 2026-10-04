@@ -381,6 +381,17 @@ impl TableSceneryState {
             *guard = total;
             changed
         };
+        // A paged view's slots are positions in the source's order, so a
+        // counted total ends them. Rows past it came from a warm cache that
+        // outlived them, or from before the source shrank.
+        if let (Some(len), super::view_stats::TotalKind::Exact) = (total, kind)
+            && self.is_chunk_loaded()
+        {
+            let dropped = self.rows.write().unwrap().truncate(len);
+            if !dropped.is_empty() {
+                self.id_to_idx.write().unwrap().retain(|_, idx| *idx < len);
+            }
+        }
         *self.total_kind.write().unwrap() = kind;
         self.publish_view_stats();
         changed

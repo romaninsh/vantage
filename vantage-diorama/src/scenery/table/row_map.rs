@@ -59,6 +59,15 @@ impl RowMap {
         previous
     }
 
+    /// Drop every row at `len` or past it, returning them.
+    pub(crate) fn truncate(&mut self, len: usize) -> BTreeMap<usize, Row> {
+        let dropped = self.rows.split_off(&len);
+        for row in dropped.values() {
+            tally(&mut self.summary, &row.status, -1);
+        }
+        dropped
+    }
+
     pub(crate) fn clear(&mut self) {
         self.rows.clear();
         self.summary = RowStatusSummary::default();

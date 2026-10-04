@@ -78,6 +78,11 @@ fn writes_keep_counts_in_step() {
     assert_eq!(map.summary(), scanned(&map));
     assert_eq!(map.summary().failed, 0);
 
+    map.insert(5, row(RowStatus::PendingWrite));
+    assert_eq!(map.truncate(2).len(), 2);
+    assert_eq!(map.summary(), scanned(&map));
+    assert_eq!(map.summary().loaded, 1);
+
     map.clear();
     assert_eq!(map.summary(), RowStatusSummary::default());
 }
