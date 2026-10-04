@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.28 — 2026-10-04
+
+- Builds without the `vista` feature again (the vista `Like` pattern helper is gated on it).
+
 ## 0.6.27 — 2026-10-04
 
 - SQLite, Postgres and MySQL share one statement path (deferred parameters, placeholders,
