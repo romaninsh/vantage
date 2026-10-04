@@ -37,9 +37,12 @@ impl KubernetesCluster {
     /// integration tests use.
     pub async fn try_default() -> Result<Self> {
         install_crypto_provider();
-        let client = kube::Client::try_default()
-            .await
-            .map_err(|e| error!("failed to build Kubernetes client from kubeconfig", details = e.to_string()))?;
+        let client = kube::Client::try_default().await.map_err(|e| {
+            error!(
+                "failed to build Kubernetes client from kubeconfig",
+                details = e.to_string()
+            )
+        })?;
         Ok(Self::new(client))
     }
 

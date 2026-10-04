@@ -2,6 +2,8 @@ use ciborium::Value as CborValue;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
+use vantage_core::Context;
+
 use crate::mysql::MysqlDB;
 use crate::mysql::row::{bind_mysql_value, row_to_record};
 use crate::mysql::types::AnyMysqlType;
@@ -15,12 +17,7 @@ impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
         let (sql, params) = prepare_typed_query(&resolved)?;
 
         // 3. Bind and execute
-        let mut query = sqlx::query(&sql);
-        for value in &params {
-            query = bind_mysql_value(query, value);
-        }
-
-        let rows = query
+        let rows = bind_all(&sql, &params)
             .fetch_all(self.pool())
             .await
             .map_err(|e| vantage_core::error!("MySQL query failed", details = e.to_string()))?;
@@ -65,6 +62,32 @@ impl vantage_expressions::ExprDataSource<AnyMysqlType> for MysqlDB {
             })
         })
     }
+}
+
+impl MysqlDB {
+    /// Run a statement that returns no rows (DELETE, UPDATE) and report how
+    /// many rows it changed. [`ExprDataSource::execute`](vantage_expressions::ExprDataSource::execute)
+    /// returns the fetched rows instead, so it can't tell "deleted one" from
+    /// "matched nothing".
+    pub async fn execute_affected(
+        &self,
+        expr: &Expression<AnyMysqlType>,
+    ) -> vantage_core::Result<u64> {
+        let resolved = resolve_deferred(expr).await?;
+        let (sql, params) = prepare_typed_query(&resolved)?;
+        let done = bind_all(&sql, &params)
+            .execute(self.pool())
+            .await
+            .with_context(|| vantage_core::error!("MySQL statement failed", sql = sql.clone()))?;
+        Ok(done.rows_affected())
+    }
+}
+
+fn bind_all<'q>(
+    sql: &'q str,
+    params: &'q [AnyMysqlType],
+) -> sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments> {
+    params.iter().fold(sqlx::query(sql), bind_mysql_value)
 }
 
 /// Resolve all Deferred parameters in an expression by calling them.

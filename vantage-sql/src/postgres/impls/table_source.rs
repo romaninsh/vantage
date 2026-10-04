@@ -443,7 +443,9 @@ impl TableSource for PostgresDB {
         };
         let delete = crate::postgres::statements::PostgresDelete::new(table.table_name())
             .with_condition(id_condition);
-        self.execute(&delete.expr()).await?;
+        if self.execute_affected(&delete.expr()).await? == 0 {
+            return Err(error!("Row not found for delete", id = id.clone()).mark_not_found());
+        }
         Ok(())
     }
 

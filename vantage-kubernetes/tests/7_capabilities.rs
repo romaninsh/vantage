@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{as_text, cluster_or_skip, NS};
+use common::{NS, as_text, cluster_or_skip};
 use vantage_kubernetes::models::core::pods;
 use vantage_vista::SortDirection;
 
@@ -13,7 +13,9 @@ async fn ordering_is_applied() -> anyhow::Result<()> {
     let Some(cluster) = cluster_or_skip().await else {
         return Ok(());
     };
-    let mut vista = cluster.vista_factory().from_table(pods::pods_table(cluster.clone()))?;
+    let mut vista = cluster
+        .vista_factory()
+        .from_table(pods::pods_table(cluster.clone()))?;
     vista.add_condition_eq("namespace", ciborium::Value::Text(NS.to_string()))?;
 
     vista.add_order("name", SortDirection::Ascending)?;
@@ -36,7 +38,10 @@ async fn ordering_is_applied() -> anyhow::Result<()> {
         .collect();
     let mut expected_desc = asc.clone();
     expected_desc.sort_by(|a, b| b.cmp(a));
-    assert_eq!(desc, expected_desc, "descending order should be reverse-sorted");
+    assert_eq!(
+        desc, expected_desc,
+        "descending order should be reverse-sorted"
+    );
     Ok(())
 }
 
@@ -45,19 +50,28 @@ async fn quicksearch_narrows_to_matching_rows() -> anyhow::Result<()> {
     let Some(cluster) = cluster_or_skip().await else {
         return Ok(());
     };
-    let mut vista = cluster.vista_factory().from_table(pods::pods_table(cluster.clone()))?;
+    let mut vista = cluster
+        .vista_factory()
+        .from_table(pods::pods_table(cluster.clone()))?;
     vista.add_condition_eq("namespace", ciborium::Value::Text(NS.to_string()))?;
     vista.add_search("sidecar")?;
 
     let rows = vista.fetch_window(0, 1000).await?;
-    assert_eq!(rows.len(), 1, "search 'sidecar' should match exactly one pod");
+    assert_eq!(
+        rows.len(),
+        1,
+        "search 'sidecar' should match exactly one pod"
+    );
     assert_eq!(as_text(rows[0].1.get("name")).as_deref(), Some("sidecar"));
 
     // Count honours the search filter too.
     assert_eq!(vista.get_count().await?, 1);
 
     vista.clear_search()?;
-    assert!(vista.get_count().await? > 1, "clearing search should restore the full count");
+    assert!(
+        vista.get_count().await? > 1,
+        "clearing search should restore the full count"
+    );
     Ok(())
 }
 
@@ -66,12 +80,17 @@ async fn pagination_slices_the_listing() -> anyhow::Result<()> {
     let Some(cluster) = cluster_or_skip().await else {
         return Ok(());
     };
-    let mut vista = cluster.vista_factory().from_table(pods::pods_table(cluster.clone()))?;
+    let mut vista = cluster
+        .vista_factory()
+        .from_table(pods::pods_table(cluster.clone()))?;
     vista.add_condition_eq("namespace", ciborium::Value::Text(NS.to_string()))?;
     vista.add_order("name", SortDirection::Ascending)?;
 
     let total = vista.get_count().await? as usize;
-    assert!(total >= 4, "expected ≥4 demo pods for a meaningful page test");
+    assert!(
+        total >= 4,
+        "expected ≥4 demo pods for a meaningful page test"
+    );
 
     vista.set_page_size(2)?;
     let page1 = vista.fetch_page(1).await?;

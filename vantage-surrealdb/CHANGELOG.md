@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.23 — 2026-10-03
+
+- Spec `lazy:` columns become Vista computed columns, traversal targets included.
+- Depends on `vantage-table` 1.1.0, `vantage-vista` 1.1.0.
+
 ## 0.6.22 — 2026-10-03
 
 - `count()` on a grouped query table counts the grouped rows instead of returning 0.

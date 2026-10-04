@@ -178,7 +178,7 @@ pub(crate) fn build_postgres_table(
     // nonexistent identifier.
     let has_dotted = spec.columns.keys().any(|n| n.contains('.'));
     for (name, col_spec) in &spec.columns {
-        if name.contains('.') {
+        if name.contains('.') || table.add_lazy_spec_column(col_spec, name)? {
             continue;
         }
         table.add_column(build_column(name, col_spec)?);
@@ -222,7 +222,12 @@ pub(crate) fn build_postgres_table(
 
     if has_dotted {
         // Lower the dotted imports now that their relations are declared.
-        let names: Vec<&str> = spec.columns.keys().map(String::as_str).collect();
+        let names: Vec<&str> = spec
+            .columns
+            .iter()
+            .filter(|(_, c)| c.lazy.is_none())
+            .map(|(n, _)| n.as_str())
+            .collect();
         table = table.with_active_columns(&names)?;
     }
 
@@ -297,6 +302,9 @@ fn build_derived_table(
 
     // The derived vista's own declared columns (e.g. aggregate outputs).
     for (name, col_spec) in &spec.columns {
+        if table.add_lazy_spec_column(col_spec, name)? {
+            continue;
+        }
         if !table.columns().contains_key(name) {
             table.add_column(build_column(name, col_spec)?);
         }
@@ -432,6 +440,7 @@ where
             col.flags.push(vista_flags::TITLE.to_string());
         }
     }
+    metadata = metadata.with_columns_at(table.computed_columns());
     for reference in table.vista_references() {
         metadata = metadata.with_reference(reference);
     }

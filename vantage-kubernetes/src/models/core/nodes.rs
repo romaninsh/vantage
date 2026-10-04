@@ -46,7 +46,11 @@ fn internal_ip(item: &JsonValue) -> Option<String> {
         .and_then(|addrs| {
             addrs.iter().find_map(|a| {
                 (a.get("type").and_then(|v| v.as_str()) == Some("InternalIP"))
-                    .then(|| a.get("address").and_then(|v| v.as_str()).map(str::to_string))
+                    .then(|| {
+                        a.get("address")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    })
                     .flatten()
             })
         })

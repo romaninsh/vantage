@@ -221,7 +221,9 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
 }
 
 fn print_usage() {
-    eprintln!("usage: k8s-cli [--format=<f>] <model> [field=value ...] [[N]] [:relation ...] [@op[:field]]");
+    eprintln!(
+        "usage: k8s-cli [--format=<f>] <model> [field=value ...] [[N]] [:relation ...] [@op[:field]]"
+    );
     eprintln!("\nFormats: table (default), json, ndjson, cbor-diag");
     eprintln!("\nKnown models:");
     for name in Factory::known_names() {
@@ -237,7 +239,8 @@ async fn main() -> Result<()> {
 
     for arg in raw {
         if let Some(value) = arg.strip_prefix("--format=") {
-            format = OutputFormat::parse(value).with_context(|| format!("unknown --format `{value}`"))?;
+            format = OutputFormat::parse(value)
+                .with_context(|| format!("unknown --format `{value}`"))?;
         } else {
             positional.push(arg);
         }

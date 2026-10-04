@@ -108,5 +108,7 @@ where
             col.flags.push(vista_flags::SEARCHABLE.to_string());
         }
     }
-    metadata
+    // Computed columns go in after the flag passes above: the Vista holds
+    // their values, so they are neither orderable nor searchable.
+    metadata.with_columns_at(table.computed_columns())
 }

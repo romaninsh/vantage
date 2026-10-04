@@ -73,6 +73,9 @@ impl CsvVistaFactory {
         let mut table = Table::<Csv, EmptyEntity>::new(stem, csv);
 
         for (name, col_spec) in &spec.columns {
+            if table.add_lazy_spec_column(col_spec, name)? {
+                continue;
+            }
             table.add_column(build_column(name, col_spec)?);
             if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
                 table.add_title_field(name);
@@ -179,6 +182,7 @@ where
         }
         metadata = metadata.with_column(vc);
     }
+    metadata = metadata.with_columns_at(table.computed_columns());
     if let Some(id_field) = table.id_field() {
         metadata = metadata.with_id_column(id_field.name().to_string());
     }

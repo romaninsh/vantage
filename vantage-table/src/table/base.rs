@@ -59,6 +59,12 @@ where
     pub(super) contained: Vec<crate::references::ContainedRelation<T>>,
     pub(super) expressions: IndexMap<String, ExpressionFn<T>>,
     pub(super) lazy_expressions: IndexMap<String, LazyExpressionFn<T>>,
+    /// Columns the `Vista` computes after each read (see
+    /// `vantage_vista::Column::with_expression`). The table never selects or
+    /// writes them; it carries them so a Vista built from this table — a
+    /// traversal target included — knows them. Each carries its position
+    /// among all columns, stored and computed, as declared.
+    pub(super) computed_columns: IndexMap<String, (usize, vantage_vista::Column)>,
     /// When `Some`, `select()` projects only these column names (plus the id
     /// column, always). `None` keeps the default "project every column"
     /// behavior. The set holds both plain column names and dotted implicit
@@ -107,6 +113,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             contained: Vec::new(),
             expressions: IndexMap::new(),
             lazy_expressions: IndexMap::new(),
+            computed_columns: IndexMap::new(),
             active_columns: None,
             imported_columns: indexmap::IndexSet::new(),
             pagination: None,
@@ -138,6 +145,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             contained: self.contained,
             expressions: self.expressions,
             lazy_expressions: self.lazy_expressions,
+            computed_columns: self.computed_columns,
             active_columns: self.active_columns,
             imported_columns: self.imported_columns,
             pagination: self.pagination,
@@ -231,6 +239,61 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Register a column the `Vista` computes after each read, positioned
+    /// after every column added so far. Driver factories fold these into
+    /// `VistaMetadata`. A stored column of the same name (one inherited by a
+    /// derived table) is replaced, so the column is never both read and
+    /// computed.
+    pub fn add_computed_column(&mut self, column: vantage_vista::Column) {
+        if let Some((stored_index, _, _)) = self.columns.shift_remove_full(&column.name) {
+            let removed = self.position_of_stored(stored_index);
+            for (at, _) in self.computed_columns.values_mut() {
+                if *at > removed {
+                    *at -= 1;
+                }
+            }
+        }
+        let at = self.columns.len() + self.computed_columns.len();
+        self.computed_columns
+            .insert(column.name.clone(), (at, column));
+    }
+
+    /// Register `spec`'s column as computed when it declares a `lazy:` script
+    /// (see [`vantage_vista::ColumnSpec::lazy_column`]). Returns `false` for a
+    /// stored column, leaving the caller to add it.
+    pub fn add_lazy_spec_column<C>(
+        &mut self,
+        spec: &vantage_vista::ColumnSpec<C>,
+        name: &str,
+    ) -> vantage_core::Result<bool> {
+        let Some(column) = spec.lazy_column(name)? else {
+            return Ok(false);
+        };
+        self.add_computed_column(column);
+        Ok(true)
+    }
+
+    /// Position among all columns of the stored column at `stored_index`:
+    /// computed columns occupy their recorded positions, stored columns fill
+    /// the remaining slots in order.
+    fn position_of_stored(&self, stored_index: usize) -> usize {
+        let mut computed: Vec<usize> = self.computed_columns.values().map(|(at, _)| *at).collect();
+        computed.sort_unstable();
+        let mut at = stored_index;
+        for position in computed {
+            if position <= at {
+                at += 1;
+            }
+        }
+        at
+    }
+
+    /// Columns registered via [`Self::add_computed_column`], in order, each
+    /// with its position among all columns.
+    pub fn computed_columns(&self) -> impl Iterator<Item = (usize, &vantage_vista::Column)> {
+        self.computed_columns.values().map(|(at, c)| (*at, c))
     }
 
     /// Shape-only specs (name, host, kind, id) for the contained relations
@@ -375,5 +438,39 @@ impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
             )
             .field("expressions_count", &self.expressions.len())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mocks::mock_table_source::MockTableSource;
+
+    #[test]
+    fn computed_column_replacing_a_stored_one_keeps_positions() {
+        let mut table = Table::<MockTableSource, EmptyEntity>::new("t", MockTableSource::new())
+            .with_column_of::<String>("a")
+            .with_column_of::<String>("b");
+        table.add_computed_column(vantage_vista::Column::new("x", "string"));
+        table.add_column_of::<String>("c");
+        assert_eq!(
+            table
+                .computed_columns()
+                .map(|(at, c)| (at, c.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(2, "x")]
+        );
+
+        table.add_computed_column(vantage_vista::Column::new("a", "string"));
+
+        let stored: Vec<&str> = table.columns().keys().map(String::as_str).collect();
+        assert_eq!(stored, vec!["b", "c"]);
+        assert_eq!(
+            table
+                .computed_columns()
+                .map(|(at, c)| (at, c.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(1, "x"), (3, "a")]
+        );
     }
 }

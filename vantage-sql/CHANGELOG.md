@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.26 — 2026-10-03
+
+- Deleting a missing row fails with `ErrorKind::NotFound` on SQLite, Postgres and MySQL.
+- `execute_affected` on `SqliteDB`, `PostgresDB` and `MysqlDB` returns the affected-row count;
+  its errors keep the sqlx error as their source.
+- Spec `lazy:` columns become Vista computed columns, on Postgres and MySQL too.
+- Depends on `vantage-table` 1.1.0, `vantage-vista` 1.1.0.
+
 ## 0.6.25 — 2026-10-03
 
 - A patch that finds no row fails with `ErrorKind::NotFound` on SQLite, Postgres and MySQL.

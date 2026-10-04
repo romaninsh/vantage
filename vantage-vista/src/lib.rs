@@ -4,6 +4,7 @@ pub mod aggregate;
 pub mod any_expression;
 pub mod capabilities;
 pub mod column;
+mod computed;
 pub mod contained;
 pub mod factory;
 pub mod filter;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 — 2026-10-03
+
+- Spec `lazy:` columns, computed by the Vista (`rhai` feature).
+- Depends on `vantage-table` 1.1.0, `vantage-vista` 1.1.0.
+
 ## 1.0.0 — 2026-10-03
 
 Initial release.

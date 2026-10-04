@@ -9,7 +9,7 @@ use crate::{
     flags,
     reference::{Reference, ReferenceKind},
     sort::SortDirection,
-    source::TableShell,
+    source::{TableShell, VistaChange},
 };
 
 /// Universal, schema-bearing data handle.
@@ -76,7 +76,8 @@ impl Vista {
         &self,
         records: &indexmap::IndexMap<String, Record<CborValue>>,
     ) -> Result<usize> {
-        self.source.import_vista_values(self, records).await
+        let records = self.without_computed_all(records);
+        self.source.import_vista_values(self, &records).await
     }
 
     // ---- metadata accessors -----------------------------------------------
@@ -133,10 +134,13 @@ impl Vista {
     /// type (BSON document for Mongo, `Expression` for CSV/SQL, …) and applies
     /// it to the wrapped table.
     ///
-    /// Returns `Err` if the field is unknown to the driver or the value cannot
-    /// be translated into the driver's condition vocabulary.
+    /// Returns `Err` if the field is unknown to the driver, is a computed
+    /// column, or the value cannot be translated into the driver's condition
+    /// vocabulary.
     pub fn add_condition_eq(&mut self, field: impl Into<String>, value: CborValue) -> Result<()> {
-        self.source.add_eq_condition(&field.into(), &value)
+        let field = field.into();
+        self.refuse_computed(&field, "condition")?;
+        self.source.add_eq_condition(&field, &value)
     }
 
     /// Narrow the vista to records matching `field <op> value`. Equality is
@@ -151,7 +155,9 @@ impl Vista {
         op: crate::FilterOp,
         value: CborValue,
     ) -> Result<()> {
-        self.source.add_op_condition(&field.into(), op, &value)
+        let field = field.into();
+        self.refuse_computed(&field, "condition")?;
+        self.source.add_op_condition(&field, op, &value)
     }
 
     /// Narrow to a single row by id.
@@ -213,7 +219,13 @@ impl Vista {
     /// `None` is the signal to reduce locally instead — see
     /// [`crate::TableShell::aggregate_vista`] for why a partial answer is
     /// never returned.
+    ///
+    /// Reducing or grouping by a computed column is an error: the backend
+    /// holds no values for it.
     pub fn aggregate(&self, spec: &AggregateSpec) -> Result<Option<Vista>> {
+        for column in spec.column.iter().chain(&spec.group_by) {
+            self.refuse_computed(column, "aggregate")?;
+        }
         self.source.aggregate_vista(self, spec)
     }
 
@@ -227,9 +239,12 @@ impl Vista {
         id: &str,
         row: &Record<CborValue>,
     ) -> Result<Option<Record<CborValue>>> {
-        self.source
+        let mut found = self
+            .source
             .get_vista_value_with_row(self, &id.to_string(), row)
-            .await
+            .await?;
+        self.fill_computed_rows(found.as_mut())?;
+        Ok(found)
     }
 
     /// Push a driver-native condition into the wrapped table. The
@@ -257,7 +272,9 @@ impl Vista {
     /// (DynamoDB, most token-paginated REST APIs) only support
     /// [`fetch_next`](Self::fetch_next) instead.
     pub async fn fetch_page(&self, page: usize) -> Result<Vec<(String, Record<CborValue>)>> {
-        self.source.fetch_page(self, page).await
+        let mut rows = self.source.fetch_page(self, page).await?;
+        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
+        Ok(rows)
     }
 
     /// Cursor-style chain fetch. Pass `None` on the first call; pass the
@@ -273,7 +290,9 @@ impl Vista {
         &self,
         token: Option<CborValue>,
     ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
-        self.source.fetch_next(self, token).await
+        let (mut rows, next) = self.source.fetch_next(self, token).await?;
+        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
+        Ok((rows, next))
     }
 
     /// Fetch the half-open row window `[offset, offset + limit)` in the
@@ -286,7 +305,9 @@ impl Vista {
         offset: usize,
         limit: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
-        self.source.fetch_window(self, offset, limit).await
+        let mut rows = self.source.fetch_window(self, offset, limit).await?;
+        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
+        Ok(rows)
     }
 
     /// [`fetch_window`](Self::fetch_window), plus the grand total when the
@@ -298,7 +319,12 @@ impl Vista {
         offset: usize,
         limit: usize,
     ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
-        self.source.fetch_window_counted(self, offset, limit).await
+        let (mut rows, total) = self
+            .source
+            .fetch_window_counted(self, offset, limit)
+            .await?;
+        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
+        Ok((rows, total))
     }
 
     // ---- quicksearch -------------------------------------------------------
@@ -339,13 +365,13 @@ impl Vista {
             .columns()
             .get(column)
             .ok_or_else(|| error!("Unknown column for add_order", column = column))?;
+        if col.is_computed() {
+            return self.refuse_computed(column, "order");
+        }
         if !col.has_flag(flags::ORDERABLE) {
-            return Err(error!(
-                format!("column '{}' is not orderable", column),
-                column = column
-            )
-            .mark_unsupported()
-            .traced());
+            return Err(error!("Column is not orderable", column = column)
+                .mark_unsupported()
+                .traced());
         }
         self.source.add_order(column, dir)
     }
@@ -379,11 +405,17 @@ impl Vista {
     /// or [`get_some_value`](vantage_dataset::traits::ReadableValueSet::get_some_value)).
     /// The join value is read out of the record and pushed as a plain
     /// eq-condition on the target — no subqueries, no deferred fetch.
+    ///
+    /// A has-one key may be a computed column of this Vista (the row carries
+    /// its value); a has-many key that is a computed column of the target is
+    /// an error, since the backend can't narrow by it.
     pub fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
         if self.source.contained().contains_key(relation) {
             return self.source.get_contained_ref(relation, row);
         }
-        self.source.get_ref(relation, row)
+        let target = self.source.get_ref(relation, row)?;
+        self.check_has_many_key(relation, &target)?;
+        Ok(target)
     }
 
     /// Contained (embedded-in-row) relations the Vista exposes, with their
@@ -421,7 +453,28 @@ impl Vista {
     /// [`can_subscribe`](VistaCapabilities::can_subscribe) — check
     /// [`can_watch`](Self::can_watch) first.
     pub async fn watch(&self) -> Result<crate::source::VistaChangeStream> {
-        self.source.watch_vista(self).await
+        let mut changes = self.source.watch_vista(self).await?;
+        let columns = self.computed_columns();
+        if columns.is_empty() {
+            return Ok(changes);
+        }
+        Ok(Box::pin(async_stream::stream! {
+            while let Some(change) =
+                std::future::poll_fn(|cx| changes.as_mut().poll_next(cx)).await
+            {
+                yield change.and_then(|change| match change {
+                    VistaChange::Inserted { id, mut value } => {
+                        crate::computed::fill(&columns, &mut value)?;
+                        Ok(VistaChange::Inserted { id, value })
+                    }
+                    VistaChange::Updated { id, mut value } => {
+                        crate::computed::fill(&columns, &mut value)?;
+                        Ok(VistaChange::Updated { id, value })
+                    }
+                    other => Ok(other),
+                });
+            }
+        }))
     }
 }
 

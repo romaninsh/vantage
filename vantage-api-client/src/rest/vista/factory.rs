@@ -229,12 +229,12 @@ impl RestApiVistaFactory {
 
         let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, self.api.clone());
         for (name, col_spec) in &spec.columns {
+            if table.add_lazy_spec_column(col_spec, name)? {
+                continue;
+            }
             table.add_column(build_column(name, col_spec)?);
             if col_spec.flags.iter().any(|f| f == vista_flags::TITLE) {
                 table.add_title_field(name);
-            }
-            if let Some(code) = &col_spec.lazy {
-                add_lazy_column(&mut table, name, code)?;
             }
         }
 
@@ -248,36 +248,6 @@ impl RestApiVistaFactory {
 
         Ok(table)
     }
-}
-
-/// Lower a column's `lazy:` script onto the table — a Rhai closure run in
-/// Rust on each returned record (`row` in scope), never sent to the API.
-/// The REST carrier is already CBOR, so no per-value conversion is needed.
-#[cfg(feature = "rhai")]
-fn add_lazy_column(table: &mut Table<RestApi, EmptyEntity>, name: &str, code: &str) -> Result<()> {
-    // Compiles once, here: a script that does not parse fails the table build.
-    let script = vantage_vista::lazy_value_closure(code)?;
-    table.add_lazy_expression(
-        name,
-        Arc::new(move |record| {
-            let row = record.clone();
-            let script = script.clone();
-            Box::pin(async move { script(&row) })
-        }),
-    );
-    Ok(())
-}
-
-#[cfg(not(feature = "rhai"))]
-fn add_lazy_column(
-    _table: &mut Table<RestApi, EmptyEntity>,
-    name: &str,
-    _code: &str,
-) -> Result<()> {
-    Err(error!(
-        "column declares a `lazy:` script but vantage-api-client was built without the `rhai` feature",
-        column = name
-    ))
 }
 
 /// Pick the id column from an `id_column:` field or the first column
@@ -352,6 +322,7 @@ where
         }
         metadata = metadata.with_column(vc);
     }
+    metadata = metadata.with_columns_at(table.computed_columns());
     if let Some(id_field) = table.id_field() {
         let id = id_field.name().to_string();
         metadata = metadata.with_id_column(id.clone());

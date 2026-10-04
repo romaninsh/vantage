@@ -65,7 +65,9 @@ pub(crate) fn register_reads(
         if !vista.capabilities().can_count {
             return Err(unsupported("count", &vista));
         }
-        run(vista.get_count())
+        let count = run(vista.get_count())?;
+        // A `limit(n)` caps the rows `list` would return; count agrees.
+        Ok(h.row_limit().map_or(count, |n| count.min(n as i64)))
     });
 
     let r = resolver.clone();

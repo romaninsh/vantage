@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — 2026-10-03
+
+- Computed columns: `Column::with_expression(code)` (Rhai over `row`), `is_computed()`,
+  `expression()`. The Vista fills them on every read, drops them from writes, and refuses them
+  in conditions, ordering, aggregates, has-many joins and nested-insert links.
+- `ColumnSpec::lazy_column(name)` lowers a spec `lazy:` column; `VistaMetadata::with_column_at`,
+  `with_columns_at`.
+- **Breaking:** `Column` is `#[non_exhaustive]` and gains a private field, so it can no longer be
+  built with a struct literal; use `Column::new` and its builders.
+- Script `count()` respects `limit(n)`.
+- Row-by-row `import_from` skips an id the target already holds and carries on; any insert
+  error stops the import.
+
 ## 1.0.0 — 2026-10-03
 
 - `DataVocab { resolver, terminals }`: one script vocabulary. `table(name)` returns an immutable

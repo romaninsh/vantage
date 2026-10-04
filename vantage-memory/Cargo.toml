@@ -1,6 +1,6 @@
 [package]
 name = "vantage-memory"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -15,8 +15,8 @@ vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-types = { version = "1.0.0", path = "../vantage-types" }
 vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
 vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
-vantage-table = { version = "1.0.0", path = "../vantage-table" }
-vantage-vista = { version = "1.0.0", path = "../vantage-vista" }
+vantage-table = { version = "1.1.0", path = "../vantage-table" }
+vantage-vista = { version = "1.1.0", path = "../vantage-vista" }
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }
 parking_lot = "0.12"
@@ -28,6 +28,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml_ng = "0.10"
 paste = "1"
+
+[features]
+# `lazy:` (Vista-computed) columns in YAML specs.
+rhai = ["vantage-vista/rhai"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

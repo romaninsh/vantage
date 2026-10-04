@@ -2,6 +2,8 @@ use ciborium::Value as CborValue;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
+use vantage_core::Context;
+
 use crate::postgres::PostgresDB;
 use crate::postgres::row::{bind_postgres_value, row_to_record};
 use crate::postgres::types::AnyPostgresType;
@@ -18,14 +20,12 @@ impl vantage_expressions::ExprDataSource<AnyPostgresType> for PostgresDB {
         let (sql, params) = prepare_typed_query(&resolved)?;
 
         // 3. Bind and execute
-        let mut query = sqlx::query(&sql);
-        for value in &params {
-            query = bind_postgres_value(query, value);
-        }
-
-        let rows = query.fetch_all(self.pool()).await.map_err(|e| {
-            vantage_core::error!("PostgreSQL query failed", details = e.to_string())
-        })?;
+        let rows = bind_all(&sql, &params)
+            .fetch_all(self.pool())
+            .await
+            .map_err(|e| {
+                vantage_core::error!("PostgreSQL query failed", details = e.to_string())
+            })?;
 
         // 4. Convert rows to AnyPostgresType — each row becomes a CBOR Map
         let arr: Vec<CborValue> = rows
@@ -67,6 +67,34 @@ impl vantage_expressions::ExprDataSource<AnyPostgresType> for PostgresDB {
             })
         })
     }
+}
+
+impl PostgresDB {
+    /// Run a statement that returns no rows (DELETE, UPDATE) and report how
+    /// many rows it changed. [`ExprDataSource::execute`](vantage_expressions::ExprDataSource::execute)
+    /// returns the fetched rows instead, so it can't tell "deleted one" from
+    /// "matched nothing".
+    pub async fn execute_affected(
+        &self,
+        expr: &Expression<AnyPostgresType>,
+    ) -> vantage_core::Result<u64> {
+        let resolved = resolve_deferred(expr).await?;
+        let (sql, params) = prepare_typed_query(&resolved)?;
+        let done = bind_all(&sql, &params)
+            .execute(self.pool())
+            .await
+            .with_context(|| {
+                vantage_core::error!("PostgreSQL statement failed", sql = sql.clone())
+            })?;
+        Ok(done.rows_affected())
+    }
+}
+
+fn bind_all<'q>(
+    sql: &'q str,
+    params: &'q [AnyPostgresType],
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    params.iter().fold(sqlx::query(sql), bind_postgres_value)
 }
 
 /// Resolve all Deferred parameters in an expression by calling them.

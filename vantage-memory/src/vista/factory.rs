@@ -105,21 +105,28 @@ fn id_column(spec: &MemoryVistaSpec) -> String {
     })
 }
 
-/// Every column is orderable: the store sorts on any field.
+/// Every stored column is orderable: the store sorts on any field. A `lazy:`
+/// column is computed by the Vista.
 fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
     let mut metadata = VistaMetadata::new().with_id_column(id_column(spec));
     for (name, col) in &spec.columns {
-        if col.lazy.is_some() || col.expr.is_some() {
+        if col.expr.is_some() {
             return Err(error!(
-                "Computed columns (lazy / expr) are not supported by vantage-memory",
+                "Server-side `expr:` columns are not supported by vantage-memory",
                 column = name
             ));
         }
-        let mut column = Column::new(name, col.col_type.as_deref().unwrap_or("string"));
-        column.flags = col.flags.clone();
-        if !column.has_flag(flags::ORDERABLE) {
-            column = column.with_flag(flags::ORDERABLE);
-        }
+        let column = match col.lazy_column(name)? {
+            Some(computed) => computed,
+            None => {
+                let mut column = Column::new(name, col.col_type.as_deref().unwrap_or("string"));
+                column.flags = col.flags.clone();
+                if !column.has_flag(flags::ORDERABLE) {
+                    column = column.with_flag(flags::ORDERABLE);
+                }
+                column
+            }
+        };
         metadata = metadata.with_column(column);
         match &col.references {
             Some(ReferenceSugar::Sugar(target)) => {

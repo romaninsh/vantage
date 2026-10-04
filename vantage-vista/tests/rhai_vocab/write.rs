@@ -66,6 +66,17 @@ fn writes_ignore_narrowing() {
 }
 
 #[test]
+fn row_by_row_import_skips_existing_ids() {
+    let host = read_write(&store());
+    assert_eq!(
+        json(&host, r#"table("mock").import_from(table("t"))"#),
+        json!({"inserted": 2, "skipped": 1, "cancelled": false})
+    );
+    assert_eq!(json(&host, r#"table("mock").get("r1")"#)["a"], json!(7));
+    assert_eq!(json(&host, r#"table("mock").get("r3")"#)["n"], json!(2));
+}
+
+#[test]
 fn import_copies_rows_through_mapping() {
     let host = read_write(&store());
     assert_eq!(

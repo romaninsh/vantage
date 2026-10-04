@@ -237,10 +237,8 @@ async fn id_column_mismatch_with_existing_table_errors() {
 }
 
 #[tokio::test]
-async fn computed_columns_are_rejected() {
+async fn expr_columns_are_rejected() {
     let (_s, f) = setup();
-    let lazy = PRODUCT.replace("price: { type: int }", "price: { type: int, lazy: \"1\" }");
-    assert!(f.from_yaml(&lazy).is_err());
     let expr = PRODUCT.replace("price: { type: int }", "price: { type: int, expr: \"1\" }");
     assert!(f.from_yaml(&expr).is_err());
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3 — 2026-10-04
+
+- Depends on `vantage-vista` 1.1.0, `vantage-memory` 1.1.0. Sim scripts get `count()` respecting
+  `limit(n)`, and `import_from` skips ids the target already holds.
+
 ## 1.0.2 — 2026-10-03
 
 - `builtin:pulse` keeps integer values integers when the baseline is an integer.

@@ -224,6 +224,28 @@ sqlite:
         rows["a"].get("shouted"),
         Some(&CborValue::Text("ALPHA: 10".into()))
     );
+
+    // Computed by the Vista, so every read path fills it and writes drop it.
+    assert!(vista.get_column("shouted").unwrap().is_computed());
+    let window = vista.fetch_window(2, 1).await?;
+    assert_eq!(
+        window[0].1.get("price_label"),
+        Some(&CborValue::Text("Gamma: 30".into()))
+    );
+    let record: Record<CborValue> = [
+        ("name", CborValue::Text("Delta".into())),
+        ("price", CborValue::Integer(40i64.into())),
+        ("price_label", CborValue::Text("stale".into())),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect();
+    vista.insert_value("d", &record).await?;
+    let fetched = vista.get_value("d").await?.expect("inserted");
+    assert_eq!(
+        fetched.get("price_label"),
+        Some(&CborValue::Text("Delta: 40".into()))
+    );
     Ok(())
 }
 
@@ -248,6 +270,16 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
 
     vista.delete("d").await?;
     assert!(vista.get_value("d").await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_delete_of_a_missing_row_is_not_found() -> TestResult {
+    let db = setup().await;
+    let vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let err = vista.delete("nope").await.unwrap_err();
+    assert!(err.is_not_found(), "{err}");
+    vista.delete("a").await?;
     Ok(())
 }
 

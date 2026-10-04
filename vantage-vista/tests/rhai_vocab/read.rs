@@ -53,6 +53,13 @@ fn ids_in_sort_order() {
 }
 
 #[test]
+fn count_respects_limit() {
+    let host = read_write(&store());
+    assert_eq!(json(&host, r#"table("t").limit(2).count()"#), json!(2));
+    assert_eq!(json(&host, r#"table("t").limit(9).count()"#), json!(3));
+}
+
+#[test]
 fn count_requires_capability() {
     let host = read_write(&store());
     assert_eq!(json(&host, r#"table("t").where("a", 1).count()"#), json!(2));

@@ -8,7 +8,9 @@
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use vantage_core::Result;
 
+use crate::column::Column;
 use crate::reference::{ContainedKind, ReferenceKind};
 
 /// Empty extras placeholder. Serializes as an absent key.
@@ -94,7 +96,8 @@ pub struct ColumnSpec<C = NoExtras> {
     /// and the script's final expression becomes this column's value.
     /// Lazy columns apply in declaration order, so a later one sees the
     /// values earlier ones produced. Lowered via
-    /// `Table::add_lazy_expression`; never part of the backend query.
+    /// [`lazy_column`](Self::lazy_column) onto a Vista computed column;
+    /// never part of the backend query.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lazy: Option<String>,
     /// Rhai script for a *server-side* computed column. Evaluated once at
@@ -141,6 +144,34 @@ impl<C: Default> ColumnSpec<C> {
         self.expr = Some(script.into());
         self
     }
+}
+
+impl<C> ColumnSpec<C> {
+    /// The Vista column for a `lazy:` column — its type and flags, computed
+    /// by its script (see [`Column::with_expression`]) — or `None` for a
+    /// stored column. Errors when the script doesn't compile, or when this
+    /// crate was built without the `rhai` feature.
+    pub fn lazy_column(&self, name: &str) -> Result<Option<Column>> {
+        let Some(code) = &self.lazy else {
+            return Ok(None);
+        };
+        let mut column = Column::new(name, self.col_type.as_deref().unwrap_or("string"));
+        column.flags = self.flags.clone();
+        computed(column, code).map(Some)
+    }
+}
+
+#[cfg(feature = "rhai")]
+fn computed(column: Column, code: &str) -> Result<Column> {
+    column.with_expression(code)
+}
+
+#[cfg(not(feature = "rhai"))]
+fn computed(column: Column, _code: &str) -> Result<Column> {
+    Err(vantage_core::error!(
+        "Column declares a `lazy:` script but vantage-vista was built without the `rhai` feature",
+        column = column.name
+    ))
 }
 
 impl<C: Default> Default for ColumnSpec<C> {

@@ -1,14 +1,14 @@
 [package]
 edition = "2024"
 name = "vantage-api-client"
-version = "0.6.18"
+version = "0.6.19"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for REST and GraphQL HTTP API backends"
 
 [features]
-# `lazy:` computed columns on REST tables — Rhai scripts run per returned
-# record via vantage-vista's shared lazy-expression evaluator.
+# `lazy:` columns on REST tables, computed by the Vista from each returned
+# record.
 rhai = ["vantage-vista/rhai"]
 
 [dependencies]
@@ -28,9 +28,9 @@ vantage-api-pool = { version = "0.6.3",path = "../vantage-api-pool" }
 vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
-vantage-table = { version = "1.0.0", path = "../vantage-table" }
+vantage-table = { version = "1.1.0", path = "../vantage-table" }
 vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "1.0.0", path = "../vantage-vista" }
+vantage-vista = { version = "1.1.0", path = "../vantage-vista" }
 
 [dev-dependencies]
 anyhow = "1.0"

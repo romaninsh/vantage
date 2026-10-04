@@ -180,8 +180,8 @@ impl TableShell for RestApiTableShell {
             )
             .await?;
         // This path fetches straight from the API layer (windowed), so the
-        // table's `list_values` never runs — apply lazy computed columns
-        // here or `lazy:` cells stay empty in the lazily-scrolled grid.
+        // table's `list_values` never runs — apply a typed table's lazy
+        // expressions here. Spec `lazy:` columns are the Vista's to fill.
         let mut records: Vec<(String, Record<CborValue>)> = records.into_iter().collect();
         for (_, rec) in records.iter_mut() {
             self.table.apply_lazy_expressions(rec).await?;

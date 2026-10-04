@@ -25,7 +25,11 @@ pub fn deployments_table(cluster: KubernetesCluster) -> Table<KubernetesCluster,
         .with_column_of::<i64>("updated")
         .with_column_of::<i64>("available")
         .with_column_of::<String>("age")
-        .with_many("replicasets", "ownerName", super::replicasets::replicasets_table)
+        .with_many(
+            "replicasets",
+            "ownerName",
+            super::replicasets::replicasets_table,
+        )
         .with_many("pods", "ownerDeployment", core::pods::pods_table)
 }
 

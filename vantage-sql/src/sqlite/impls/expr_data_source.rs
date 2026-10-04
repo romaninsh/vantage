@@ -2,8 +2,10 @@ use ciborium::Value as CborValue;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 
+use vantage_core::Context;
+
 use crate::sqlite::SqliteDB;
-use crate::sqlite::row::{bind_sqlite_value, describe_param_types, row_to_record};
+use crate::sqlite::row::{SqliteQuery, bind_sqlite_value, describe_param_types, row_to_record};
 use crate::sqlite::types::AnySqliteType;
 
 impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
@@ -20,23 +22,17 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
         // 3. Bind and execute. Errors carry the SQL and a parameter-type
         // summary (types only, never values) — the SQL names the table
         // and columns, which is what failure reports need most.
-        let mut query = sqlx::query(&sql);
-        for (i, value) in params.iter().enumerate() {
-            query = bind_sqlite_value(query, value).map_err(|mut e| {
-                e.context.insert("parameter".into(), (i + 1).to_string());
-                e.context.insert("sql".into(), truncate_sql(&sql));
-                e
+        let rows = bind_all(&sql, &params)?
+            .fetch_all(self.pool())
+            .await
+            .map_err(|e| {
+                vantage_core::error!(
+                    "SQLite query failed",
+                    details = e.to_string(),
+                    sql = truncate_sql(&sql),
+                    params = describe_param_types(&params)
+                )
             })?;
-        }
-
-        let rows = query.fetch_all(self.pool()).await.map_err(|e| {
-            vantage_core::error!(
-                "SQLite query failed",
-                details = e.to_string(),
-                sql = truncate_sql(&sql),
-                params = describe_param_types(&params)
-            )
-        })?;
 
         // 4. Convert rows to AnySqliteType — each row becomes a CBOR Map
         let arr: Vec<CborValue> = rows
@@ -67,6 +63,48 @@ impl vantage_expressions::ExprDataSource<AnySqliteType> for SqliteDB {
             })
         })
     }
+}
+
+impl SqliteDB {
+    /// Run a statement that returns no rows (DELETE, UPDATE) and report how
+    /// many rows it changed. [`ExprDataSource::execute`](vantage_expressions::ExprDataSource::execute)
+    /// returns the fetched rows instead, so it can't tell "deleted one" from
+    /// "matched nothing".
+    pub async fn execute_affected(
+        &self,
+        expr: &Expression<AnySqliteType>,
+    ) -> vantage_core::Result<u64> {
+        let resolved = resolve_deferred(expr).await?;
+        let (sql, params) = prepare_typed_query(&resolved)?;
+        let done = bind_all(&sql, &params)?
+            .execute(self.pool())
+            .await
+            .with_context(|| {
+                vantage_core::error!(
+                    "SQLite statement failed",
+                    sql = truncate_sql(&sql),
+                    params = describe_param_types(&params)
+                )
+            })?;
+        Ok(done.rows_affected())
+    }
+}
+
+/// Bind every parameter onto `sql`. A bind error names the parameter and
+/// carries the SQL.
+fn bind_all<'q>(
+    sql: &'q str,
+    params: &'q [AnySqliteType],
+) -> vantage_core::Result<SqliteQuery<'q>> {
+    let mut query = sqlx::query(sql);
+    for (i, value) in params.iter().enumerate() {
+        query = bind_sqlite_value(query, value).map_err(|mut e| {
+            e.context.insert("parameter".into(), (i + 1).to_string());
+            e.context.insert("sql".into(), truncate_sql(sql));
+            e
+        })?;
+    }
+    Ok(query)
 }
 
 /// SQL for error context — whole statement up to a cap, so a giant
