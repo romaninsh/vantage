@@ -97,7 +97,7 @@ async fn publish_index_order(
         rows.insert(i, Arc::new(enriched));
         id_to_idx.insert(id.clone(), i);
     }
-    *state.rows.write().unwrap() = rows;
+    *state.rows.write().unwrap() = super::row_map::RowMap::from_map(rows);
     *state.id_to_idx.write().unwrap() = id_to_idx;
 }
 
@@ -186,7 +186,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
         rows.insert(i, Arc::new(enriched));
         id_to_idx.insert(id, i);
     }
-    *state.rows.write().unwrap() = rows;
+    *state.rows.write().unwrap() = super::row_map::RowMap::from_map(rows);
     *state.id_to_idx.write().unwrap() = id_to_idx;
 }
 
@@ -236,10 +236,11 @@ pub(crate) async fn run_list_page(state: Arc<TableSceneryState>) {
         }
         *guard = true;
     }
+    state.publish_view_stats();
 
     let result = list_page_into(&state, &dio_inner, &index).await;
 
-    *state.list_in_flight.lock().unwrap() = false;
+    state.clear_list_in_flight();
 
     match result {
         Ok((base, new_ids)) => {
@@ -526,6 +527,7 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
         }
         *guard = true;
     }
+    state.publish_view_stats();
 
     // Build the replacement spine OFF TO THE SIDE: the scenery keeps serving
     // its current index and map while pages land here, so a refresh never
@@ -536,7 +538,7 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
     let fresh = Arc::new(crate::dio::query_index::QueryIndex::new());
     loop {
         if let Err(e) = list_page_into(state, &dio_inner, &fresh).await {
-            *state.list_in_flight.lock().unwrap() = false;
+            state.clear_list_in_flight();
             let _ = dio_inner.event_bus.send(DioEvent::LoadFailed {
                 range: fresh.len()..fresh.len(),
                 error: e.to_string(),
@@ -547,7 +549,7 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
             break;
         }
     }
-    *state.list_in_flight.lock().unwrap() = false;
+    state.clear_list_in_flight();
 
     // Register the new spine first: `reseed_filtered` derives the visible set
     // from the scenery's index, so it has to be the fresh one.

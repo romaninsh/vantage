@@ -30,9 +30,10 @@ pub use lens::{
 pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashRejection, QueryDescriptor};
 pub use scenery::sugar::{Sugar, SugarFn, SugarFuture};
 pub use scenery::{
-    Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, LoadState, OpCondition,
-    RecordScenery, RecordStatus, RowStatus, RowStatusSummary, SortDir, TableScenery,
-    TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, boxed_custom_aggregate,
+    Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, FilterOrigin, LoadState,
+    OpCondition, RecordScenery, RecordStatus, RowStatus, RowStatusSummary, SortDir, TableScenery,
+    TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount, ViewFilter,
+    ViewState, ViewStats, boxed_custom_aggregate,
 };
 pub use servo::{IdStrategy, Servo, ServoStatus};
 pub use vantage_vista::VistaCapabilities;

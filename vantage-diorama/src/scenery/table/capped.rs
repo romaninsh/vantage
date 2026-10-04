@@ -63,6 +63,11 @@ impl TableScenery for CappedScenery {
             .set_viewport(range.start.min(self.cap)..range.end.min(self.cap));
     }
 
+    fn set_shown_range(&self, range: Option<Range<usize>>) {
+        self.inner
+            .set_shown_range(super::view_stats::clamp_range(range, self.cap));
+    }
+
     fn request_load_more(&self) {
         if self.inner.row_count() < self.cap {
             self.inner.request_load_more();
@@ -99,6 +104,14 @@ impl TableScenery for CappedScenery {
 
     fn subscribe(&self) -> watch::Receiver<Generation> {
         self.inner.subscribe()
+    }
+
+    fn view_stats(&self) -> super::ViewStats {
+        self.inner.view_stats().capped(self.cap)
+    }
+
+    fn subscribe_view_stats(&self) -> watch::Receiver<Generation> {
+        self.inner.subscribe_view_stats()
     }
 
     fn master_capabilities(&self) -> &VistaCapabilities {
