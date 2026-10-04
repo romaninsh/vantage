@@ -226,7 +226,7 @@ The two look similar and are used for different things.
 Use `lazy:` for a value that is part of the data, such as a key, an amount or a status that
 relations and scripts need. Use `sugar:` for presentation on one page, or when the script needs
 setup (a lookup map, helpers) before the first row. Sugar is built on
-[`vantage_diorama::Sugar`], which merges the outputs into the rows one
+diorama's [`Sugar`](vantage_diorama::Sugar), which merges the outputs into the rows one
 Scenery reads and strips them from anything written back. Its YAML is documented in Vantage UI's
 skills.
 
