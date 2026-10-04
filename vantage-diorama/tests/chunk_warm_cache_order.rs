@@ -82,6 +82,51 @@ async fn warm_cache_reopen_shows_master_order_not_id_order() -> Result<()> {
     Ok(())
 }
 
+/// A warm cache can outlive rows the source has since lost (the redb file
+/// survives a restart; a regenerated source does not). Once the refetch
+/// states the real total, slots past it are gone: `loaded` never exceeds
+/// the total.
+#[tokio::test]
+async fn warm_reopen_drops_cached_rows_past_the_stated_total() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path().join("c.redb");
+    let backend: Backend = Arc::new(Mutex::new(vec![
+        ("1".into(), rec("one", 10)),
+        ("2".into(), rec("two", 30)),
+        ("3".into(), rec("three", 20)),
+    ]));
+    let lens = paged_lens(cache, backend.clone());
+    let dio = lens.make_dio(master()).await?;
+
+    {
+        let s1 = dio.table_scenery().open().await?;
+        let mut rx = s1.subscribe();
+        let g = u64::from(*rx.borrow_and_update());
+        s1.set_viewport(0..3);
+        wait_for_gen(&mut rx, g).await;
+        settle().await;
+    }
+
+    // The source loses two rows while no view is open; the cache keeps them.
+    backend.lock().unwrap().retain(|(id, _)| id == "2");
+
+    let s2 = dio.table_scenery().open().await?;
+    let mut rx = s2.subscribe();
+    s2.set_viewport(0..3);
+    settle().await;
+    let _ = wait_for_gen(&mut rx, 0).await;
+    settle().await;
+
+    assert_eq!(s2.row_count(), 1, "the refetch states the real total");
+    assert_eq!(order(&s2), vec!["two"]);
+    assert_eq!(
+        s2.view_stats().loaded,
+        1,
+        "cached slots past the stated total are not loaded rows",
+    );
+    Ok(())
+}
+
 /// A warm reopen shows its cached rows *immediately* — settled, non-empty, no
 /// loading state — so navigating back to a grid never flashes a loading
 /// skeleton over data already held. A cold open (empty cache) still reports

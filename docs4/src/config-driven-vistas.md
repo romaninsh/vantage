@@ -68,7 +68,7 @@ one driver-named block at each level:
 | `name`       | The vista's public name (catalog key, UI label)                     |
 | `datasource` | Optional datasource key, for inventories that manage several        |
 | `id_column`  | Explicit id override (see resolution order above)                   |
-| `columns`    | Ordered map of column name → `{ type, flags, references, <driver> }`|
+| `columns`    | Ordered map of column name → `{ type, flags, references, lazy, <driver> }`|
 | `references` | Named relations to other vistas (see below)                         |
 | `contained`  | Embedded-in-row relations (see below)                               |
 | `<driver>`   | The driver's table-level block: `sqlite:`, `surreal:`, `mongo:`, `csv:` |
@@ -176,8 +176,9 @@ small, embeddable scripting language whose Vantage vocabulary compiles to native
 expression primitives are shared across backends where the concept overlaps (`count`, `avg`,
 `coalesce`, `case_when`, `date_format` …) — see [SQL Primitives](./sql/primitives.md) and
 [SurrealDB Primitives](./surrealdb/primitives.md) for the full vocabularies. Rhai appears in a spec
-in four places, each with a distinct job. The first two build native queries; the last two use the
-data vocabulary taught in [Scripting with Rhai](./rhai.md).
+in five places, each with a distinct job. The first two build native queries; the next two use the
+data vocabulary taught in [Scripting with Rhai](./rhai.md); the last computes a column from one
+row.
 
 ### 1. Query-sourced vistas — `rhai:`
 
@@ -225,7 +226,8 @@ same spec resolver as references. Derived vistas are query-sourced, hence read-o
 ### 3. Post-build tweaks — `modify:` (SurrealDB)
 
 A script applied to the *finished* vista, exposed as `self`, using the
-[table handle's verbs](./rhai/tables.md) plus vendor expressions YAML keys can't state:
+[table handle's verbs](./rhai/tables.md) plus vendor expressions YAML keys can't state (see
+[`modify:` scripts](./rhai/surfaces.md#modify-scripts)):
 
 ```yaml
 name: active_products
@@ -260,7 +262,23 @@ references:
 ```
 
 The script ends on a table handle, which becomes the narrowed target vista; `foreign_key` remains as metadata for consumers that
-introspect the relation.
+introspect the relation. See [Reference build scripts](./rhai/surfaces.md#reference-build-scripts).
+
+### 5. Computed columns — column-level `lazy:` (every driver)
+
+A column whose value no backend stores, computed by the Vista from the row it read:
+
+<!-- tested: rhai_guide::computed::declare_in_yaml (excerpt) -->
+```yaml
+columns:
+  net: { type: int }
+  vat: { type: int, lazy: "row.net / 5" }
+```
+
+The script sees the row as `row`, and its last expression is the value. Columns compute in
+declaration order, writes drop them, and filtering, ordering or aggregating on one is an error
+naming the column. A has-one reference may use one as its foreign key; a has-many may not. Full
+details in [Computed Columns](./rhai/computed.md).
 
 ```admonish note title="YAML primary, Rhai targeted"
 The division of labour is deliberate: YAML stays the canonical, declarative format that every

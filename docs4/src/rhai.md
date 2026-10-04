@@ -1,9 +1,10 @@
 # Scripting with Rhai
 
-Vantage applications keep much of their behaviour in configuration: YAML table specs, page
-definitions, action bodies, faker sims. When that configuration needs logic (a filter that depends
-on a row, a write after a form is submitted, a simulated order that ships after twenty minutes) it
-is written in [Rhai](https://rhai.rs), a small scripting language embedded in Rust.
+A Vantage application can keep much of its behaviour in configuration: YAML table specs, page
+definitions, action bodies, faker sims. Some of that configuration needs logic: a column derived
+from other columns, a filter that depends on the selected row, a write after a form is submitted,
+a simulated order that ships after twenty minutes. That logic is written in
+[Rhai](https://rhai.rs), a small scripting language embedded in Rust.
 
 This part of the book is the one place that teaches scripting across the framework. Other chapters
 link here instead of repeating the verbs.
@@ -11,6 +12,75 @@ link here instead of repeating the verbs.
 <!-- toc -->
 
 ---
+
+## Why scripts
+
+Configuration is data. A user, an agent or a hot-reloading inventory can change it while the
+application runs, and nothing gets recompiled. Rust code can't follow it there, so the logic that
+travels with the configuration has to be data too: text that the application compiles and runs
+when it loads the YAML.
+
+Rhai fits that job:
+
+- **It runs in the process.** There is no interpreter to install and no subprocess. A script
+  calls straight into the same Vistas the Rust code uses.
+- **It can only do what the host allows.** A Rhai script has no file system, network or process
+  access of its own. It sees the functions the host registered and nothing else.
+- **It can't hang the caller.** Every host caps the number of operations a script may run. A
+  script that loops forever fails with an error.
+- **It is backend-neutral.** Data scripts act on [Vistas](./intro/step4-vista.md), so the same
+  script runs over SQLite, SurrealDB, a REST API or an in-memory store.
+
+## What a script can do
+
+| Task | Example | Chapter |
+|---|---|---|
+| Read a set of rows, count it, follow a relation | `table("client").where("vip", true).ref("orders").count()` | [The table handle](./rhai/tables.md) |
+| Insert, patch, delete, copy rows between tables | `table("order").patch(id, #{ status: "paid" })` | [Writes](./rhai/writes.md) |
+| Compute a column from the other columns of a row | `lazy: "row.net + row.vat"` | [Computed columns](./rhai/computed.md) |
+| Edit one row field by field and save what changed | `row.status = "paid"; row.save();` | [Records](./rhai/records.md) |
+| Narrow a table in YAML, or build a relation's target | `self.where("vip", true)` | [Surfaces](./rhai/surfaces.md) |
+| Build a backend's native query | `select().from("product").field("id")` | [Expression dialects](./rhai/dialects.md) |
+
+## Where scripts run
+
+A script always runs inside a **host**: a Rhai engine with fixed operation limits, a compile cache,
+and the vocabularies the host chose to register. The host decides what `table(name)` resolves to,
+whether writes are allowed, and how many rows a `list()` may return. The same script text can be
+legal in one place and refused in another.
+
+| Surface | Example | What the script can do |
+|---|---|---|
+| Agent data scripts (`run_script`) | an MCP tool reading or fixing data | read, and write if the host allows it |
+| Query preview (`preview_script`) | an MCP tool showing the query a script would run | describe a set, never read it |
+| YAML `modify:`, reference build scripts, augmentation sources | `self.where("vip", true)` | describe a set |
+| YAML `lazy:` columns | `row.net / 5` | compute one value from one row |
+| Form `options:` | a dropdown filled from another table | read |
+| Action bodies, form `on_submit`, wizard workers | `row.status = "paid"; row.save();` | read and write |
+| Faker sims | an order that ships, then disappears | read and write a memory store, plus time and random verbs |
+
+[Hosts](./rhai/hosts.md) explains how a host is put together, and [Surfaces](./rhai/surfaces.md)
+walks through each row of this table with a working example.
+
+## Rhai in two minutes
+
+Rhai reads like a mix of Rust and JavaScript. The parts these chapters use:
+
+| Rhai | Meaning |
+|---|---|
+| `let x = 5;` | a variable; no type annotations |
+| `#{ name: "Ada", vip: true }` | an object map; read with `m.name` or `m["name"]` |
+| `[1, 2, 3]` | an array |
+| `\|c\| c.name` | a closure, as in `rows.map(\|c\| c.name)` and `rows.filter(\|c\| c.vip)` |
+| `()` | "nothing": a missing field, a row that wasn't found |
+| `a ?? b` | `a`, or `b` when `a` is `()` |
+| `` `total: ${t}` `` | string interpolation |
+| `if c { a } else { b }` | an expression; it has a value |
+| `try { … } catch (err) { … }`, `throw "message"` | catching and raising errors |
+
+A script's value is its last expression, with no `return` and no trailing `;`. Methods chain, so
+`table("order").where("status", "due").count()` is three calls on the result of the one before.
+The [Rhai book](https://rhai.rs/book/) covers the full language.
 
 ## A first script
 
@@ -34,28 +104,8 @@ through it. `ref("orders")` follows a relation from every row of the set, so `du
 of every VIP client. The script's last expression is its result; here a map, which a host can turn
 into JSON.
 
-The script never mentions SQL, SurrealDB or HTTP. The same script runs over a SQLite table, a
-SurrealDB table, a REST API or an in-memory store, because the words act on Vistas, and every
-backend can be wrapped as a Vista.
-
-## Where scripts run
-
-A script always runs inside a **host**: a Rhai engine with fixed operation limits, a compile cache,
-and the vocabularies the host chose to register. The host decides what `table(name)` resolves to,
-whether writes are allowed, and how many rows a `list()` may return. The same script text can be
-legal in one place and refused in another.
-
-| Surface | Example | What the script can do |
-|---|---|---|
-| Agent data scripts (`run_script`) | an MCP tool reading or fixing data | read, and write if the host allows it |
-| Query preview (`preview_script`) | an MCP tool showing the query a script would run | describe a set, never read it |
-| YAML `modify:`, reference build scripts, augmentation sources | `self.where("vip", true)` | describe a set |
-| Form `options:` | a dropdown filled from another table | read |
-| Action bodies, form `on_submit`, wizard workers | `row.status = "paid"; row.save();` | read and write |
-| Faker sims | an order that ships, then disappears | read and write a memory store, plus time and random verbs |
-
-[Hosts](./rhai/hosts.md) explains how a host is put together, and [Surfaces](./rhai/surfaces.md)
-walks through each row of this table with a working example.
+The script never mentions SQL, SurrealDB or HTTP. The words act on Vistas, and every backend can be
+wrapped as a Vista.
 
 ## The layers
 
@@ -93,11 +143,13 @@ a SQL `select()` or a SurrealDB condition. They aren't data scripts and have the
   errors.
 - [Writes](./rhai/writes.md): `insert`, `upsert`, `patch`, `delete` and `import_from`, and what
   each returns when a row is missing.
+- [Computed columns](./rhai/computed.md): `lazy:` columns that the Vista fills on every read, and
+  what they refuse.
 - [Records](./rhai/records.md): drafts of one row that stage edits and save only what changed.
 - [Surfaces](./rhai/surfaces.md): every place the vocabulary runs, with a tested example for each,
   plus backend extensions such as SurrealDB's `with_condition`.
 - [Layers](./rhai/layers.md): Servo, Scenery and faker sims next to the data vocabulary.
-- [Expression dialects](./rhai/dialects.md): query builders, `lazy:` columns and templates.
+- [Expression dialects](./rhai/dialects.md): query builders, templates and command scripts.
 
 ```admonish note title="Tested examples"
 Every script in this part is copied from a test. The comment above a snippet names the test, for
@@ -114,6 +166,8 @@ example `rhai_guide::tables::first_script` in `vantage-vista/tests/rhai_guide/`.
 | Read | `list()`, `get(id)`, `first()`, `count()`, `ids()`, `columns()`, `references()`, `capabilities()` |
 | Write | `insert(map)`, `upsert(id, map)`, `patch(id, map)`, `delete(id)`, `import_from(source)`, `import_from(source, mapping)` |
 | Record | `record()`, `record(id)`; on a record: `r.col`, `r["col"]`, `set(map)`, `id`, `is_dirty()`, `dirty(col)`, `baseline()`, `revert()`, `revert(col)`, `save()`, `delete()`, `status()`, `rejection()` |
+| Computed column | `row` (the record as read); the last expression is the value |
 
 `where` takes the operators `=` / `==` / `eq`, `!=` / `ne`, `>` / `gt`, `>=` / `gte`, `<` / `lt`,
-`<=` / `lte`, `in`, `not_in` and `like`.
+`<=` / `lte`, `in`, `not_in` and `like`, plus a few aliases (`<>`, `nin`, `contains`). `sort` takes `"asc"` or `"desc"` (or `"ascending"` /
+`"descending"`).

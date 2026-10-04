@@ -73,6 +73,10 @@ n.set(#{ id: "c9", name: "Eve" })   // throws: `id` is the id column
 
 To insert under an id you choose, use `insert(#{ id: …, … })` or `upsert(id, map)` on the handle.
 
+The record finds out which column is the id column on the first field set, by resolving its
+table, and keeps the answer, so later sets don't resolve the table again. A table with no id
+column falls back to `id`.
+
 ## Dirty state and revert
 
 <!-- tested: rhai_guide::records::revert -->
@@ -143,3 +147,33 @@ A host that already holds a row can give it to a script without a second fetch:
 [`RecordDraft::from_row(handle, resolver, writes, id, row)`](vantage_vista::RecordDraft::from_row).
 After the script runs, `changes()` returns what it staged and `values()` the row as the script
 last saw it. Vantage UI builds the action body's `row` this way, over the page's Dio Vista.
+
+A row that belongs to no table, such as the `row` an action predicate reads, still needs a
+resolver: the first field set asks it for the id column. [`Vista::empty(name)`](vantage_vista::Vista::empty)
+is a Vista with no columns, no rows and no capabilities, made for this:
+
+<!-- tested: rhai_guide::records::row_without_table -->
+```rust,ignore
+let no_table: TargetResolver = Arc::new(|_| Ok(Vista::empty("row")));
+let row = RecordDraft::from_row(
+    Handle::named("row"),
+    Some(no_table),
+    Writes::Denied("this row is read-only".into()),
+    "o1".into(),
+    values,
+);
+```
+
+A script given this `row` can read it and stage fields, and every save throws the denial:
+
+<!-- tested: rhai_guide::records::row_without_table -->
+```rhai
+row.status = "void";   // staged on the draft
+let saved = true;
+try { row.save(); } catch (err) { saved = false; }
+
+#{ status: row.status, was: row.baseline().status, saved: saved }
+```
+
+returns `status: "void"`, `was: "paid"` and `saved: false`. Setting `row["id"]` still throws,
+because the empty table has no id column and the draft falls back to `id`.

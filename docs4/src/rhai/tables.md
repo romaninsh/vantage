@@ -36,7 +36,15 @@ keep a base handle in a variable and branch from it as often as you like.
 | `ref(relation)` | the related rows of every row in the set |
 
 Conditions add up: every `where` narrows further. Sorting keeps one column. A later `sort`
-replaces an earlier one, as `Vista::add_order` does.
+replaces an earlier one, as `Vista::add_order` does. Several `limit` steps keep the smallest.
+
+`limit(n)` limits the set itself, not just one read: `list()`, `ids()` and `count()` all see at
+most `n` rows, a `ref` after it follows only those `n` rows, and `import_from` copies only those
+`n` (see [Following relations](#following-relations)). A `limit` before a `ref` doesn't carry over
+to the target; limit the target again if you need to.
+
+The column in `where` and `sort` must be one the backend stores. A
+[computed column](./computed.md) is refused with an error naming it.
 
 Nothing is checked while you narrow. A step the resolved Vista can't apply (an unknown relation, a
 column that isn't orderable, `search` on a backend without search) fails at the terminal verb:
@@ -70,7 +78,7 @@ let ghost = clients.get("c9");
 | `list()` | an array of row maps, capped by the host's limit and any `limit(n)` |
 | `get(id)` | the row map, or `()` when no row has that id |
 | `first()` | the first row map in sort order, or `()` for an empty set |
-| `count()` | the number of rows, as an integer; needs `can_count` |
+| `count()` | the number of rows, as an integer, at most `n` after `limit(n)`; needs `can_count` |
 | `ids()` | an array of id strings, in sort order (insertion order when unsorted) |
 
 Row maps always include the id column, filled from the row's key when the backend doesn't return
@@ -110,10 +118,30 @@ Relations come from the Vista's metadata: the YAML `references:` block, or the t
 - When it has several, the step takes the bare target and adds an `in` condition: on the foreign
   key for has-many (the target rows point at ours), on the target's id for has-one (our rows point
   at the target).
-- A `ref` over more than 1,000 rows is an error. Narrow first.
+- When it has none, or none of the rows has a has-one key, the target is an empty set. Nothing is
+  queried: reads return nothing, `count()` is 0, and a preview reports `"query": null`. The target
+  keeps its columns and still takes writes.
+- A `limit(n)` before the `ref` caps the rows it follows. Without one, a `ref` over more than
+  1,000 rows is an error. Narrow first.
+
+<!-- tested: rhai_guide::tables::limit_and_ref -->
+```rhai
+let biggest = table("order").sort("total", "desc").limit(2);
+let nobody = table("client").where("name", "Nobody");
+
+#{
+    count: biggest.count(),
+    clients: biggest.ref("client").sort("name").list().map(|c| c.name),
+    none: nobody.ref("orders").count(),
+}
+```
+
+The two biggest orders are `o1` (Ada) and `o3` (Ben), so this returns `count: 2`, `clients:
+["Ada", "Ben"]` and `none: 0`.
 
 Steps after `ref` narrow the target, so `ref("orders").where("status", "due")` is the due orders
-of the set.
+of the set. A relation keyed on a [computed column](./computed.md#relations-through-a-computed-column)
+works for has-one and is refused for has-many.
 
 ## Introspection
 
@@ -145,7 +173,7 @@ narrowing, but a query-sourced table reports no write capabilities at all.
 
 A host that gets a handle back from a script reads it through
 [`Handle`](vantage_vista::Handle): `table_name()` is the starting table (`None` for a handle over a
-Vista), `steps()` is the list of [`Step`](vantage_vista::Step)s, and `resolve(resolver)` builds the
+Vista), `steps()` is the list of [`Step`](vantage_vista::rhai::Step)s, and `resolve(resolver)` builds the
 Vista. Query preview works this way: the script returns a handle, and the host renders the resolved
 Vista's query.
 

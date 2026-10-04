@@ -38,11 +38,14 @@ let patched = orders.patch("o99", #{ status: "paid" });   // false
 
 `patch` and `delete` return `false` only for a missing row: the backend reported
 `ErrorKind::NotFound`. Any other failure throws. Drivers report not-found for these cases:
-vantage-memory, SQL (a patch that matched no row) and SurrealDB (an update or delete that affected
-nothing). A Dio Vista checks its cache and then its master before it queues the write.
+vantage-memory, SQL on SQLite, PostgreSQL and MySQL (a patch or delete that matched no row) and
+SurrealDB (an update or delete that affected nothing). A Dio Vista checks its cache and then its
+master before it queues the write. A backend that doesn't report not-found returns `true` for a
+missing row.
 
 `patch` changes only the fields in the map. `upsert` replaces the whole row, so fields left out of
-the map are gone afterwards.
+the map are gone afterwards. [Computed columns](./computed.md) in the map are dropped before the
+write reaches the backend.
 
 ## Ids
 
@@ -115,7 +118,17 @@ agents to write data" setting is on.
 
 `import_from(source)` copies every row of another handle into this table. `source` is read through
 its narrowing, so it can be any set: a filtered table, the target of a `ref`, a table on another
-datasource.
+datasource. A `limit(n)` on the source copies only its first `n` rows:
+
+<!-- tested: rhai_guide::writes::import_limited -->
+```rhai
+let biggest = table("order").sort("total", "desc").limit(2);
+let report = table("archive").import_from(biggest);
+
+[report.inserted, table("archive").ids()]
+```
+
+returns `[2, ["o1", "o3"]]`. Without a mapping, each row keeps its id.
 
 With a mapping, each imported row is built from a source row. String values in the mapping may
 reference source columns as `${row.<col>}`:
@@ -137,9 +150,12 @@ let report = table("archive").import_from(
 - The mapping must set the target's id column. Two source rows mapping to the same id are an
   error, and so is an id whose `table:` prefix names a different table.
 
-When the target can import (`can_import`), the rows go through `import_values` in one call, and
-rows the target already holds count as `skipped`. Otherwise each row is inserted, and an existing
-id throws. Importing the same rows twice into a memory table:
+An id the target already holds is never overwritten; it counts as `skipped`. When the target can
+import (`can_import`), the rows go through `import_values` in one call and the backend decides
+which ids it already holds. Otherwise each row is looked up with `get` first and inserted only if
+it is missing; any insert failure stops the import and throws. A target narrowed by `ref` only
+sees its own rows in that lookup, so an id held outside the narrowing is sent as an insert, which a
+backend that rejects duplicate ids refuses. Importing the same rows twice into a memory table:
 
 <!-- tested: rhai_guide::writes::import_twice -->
 ```rhai
@@ -154,7 +170,9 @@ returns `[3, 0, 3]`.
 `cancelled` is `true` when the backend stopped part-way: a host's import can be cancellable (Vantage
 UI shows a progress dialog with a cancel button). `inserted` then counts the rows written before
 the stop. A backend signals this by returning an error carrying the
-[`IMPORT_CANCELLED`](vantage_vista::rhai::IMPORT_CANCELLED) context key.
+[`IMPORT_CANCELLED`](vantage_vista::rhai::IMPORT_CANCELLED) context key (the rows inserted), and
+optionally [`IMPORT_CANCELLED_SKIPPED`](vantage_vista::rhai::IMPORT_CANCELLED_SKIPPED) (the rows
+skipped).
 
 ## Writes through a Dio
 

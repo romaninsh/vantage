@@ -33,6 +33,7 @@
   - [Hosts](./rhai/hosts.md)
   - [The Table Handle](./rhai/tables.md)
   - [Writes](./rhai/writes.md)
+  - [Computed Columns](./rhai/computed.md)
   - [Records](./rhai/records.md)
   - [Surfaces](./rhai/surfaces.md)
   - [Layers](./rhai/layers.md)

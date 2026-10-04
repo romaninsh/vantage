@@ -17,6 +17,7 @@ scope. This chapter goes through each surface with a tested example.
 | YAML `modify:` | the backend's spec resolver | Describe | Background | `self` |
 | reference build script | the backend's spec resolver | Describe | Background | `row` |
 | augmentation source | the catalog | Describe | Background | `self`, `row` |
+| `lazy:` computed column | none | none: no data vocabulary | Background | `row` |
 | Vantage UI form `options:` | the app's tables | Read, capped | | form values |
 | Vantage UI action predicates (`when:`) | none | Read | Ui | `row` |
 | Vantage UI action bodies | the app's tables, writes through Dio | ReadWrite | Ui | `row`, `actions` |
@@ -65,8 +66,9 @@ table("order").where("status", "paid").sort("total", "desc")
 ```
 
 The result is driver-shaped JSON. The memory store, for example, reports its driver, table,
-conditions and order. One exception to "never reads": a `ref`
-step still reads the rows it starts from, because the target's condition depends on them.
+conditions and order. One exception to "never reads": a `ref` step still reads the rows it starts
+from, because the target's condition depends on them. When it finds none, the preview reports
+`"query": null` with a note, because nothing would be queried.
 
 ## `modify:` scripts
 
@@ -79,9 +81,9 @@ self.where("vip", true).sort("name", "desc")
 ```
 
 When the script ends on a handle, that handle is resolved and becomes the table. When it ends on
-anything else, the latest handle a backend extension verb made from `self` is used, so
-`self.with_condition(..);` still applies; otherwise `self` as given. A stored handle never changes.
-`modify:` narrows a real table, so the Vista stays writable.
+anything else (a statement with `;`, say), the result of the last verb called on `self` is used;
+otherwise `self` as given. `modify:` narrows a real table, so the Vista stays
+writable. Augmentation sources finish the same way.
 
 ### Backend extensions
 
@@ -97,9 +99,49 @@ self.with_condition(ident("is_paying_client") == true)
    .sort("name", "asc")
 ```
 
-and `me`, the current-record anchor for graph paths. Extension verbs change a Vista in hand, so
-they work on `self` only. On a handle from `table(name)`, or after a `ref` step, they throw an
-error naming the verb. A backend implements one with `Handle::with_base_vista(verb, |vista| …)`.
+and `me`, the current-record anchor for graph paths.
+
+An extension verb changes a Vista in hand, not a list of steps, so it works on `self` only. On a
+handle from `table(name)`, or after a `ref` step, it throws an error naming the verb. A backend
+implements one with [`Handle::with_base_vista`](vantage_vista::Handle::with_base_vista). This
+stand-in verb narrows by equality:
+
+<!-- tested: rhai_guide::surfaces::extension_statements -->
+```rust,ignore
+fn only(h: &mut Handle, col: &str, value: Dynamic) -> Result<Handle, Box<EvalAltResult>> {
+    let (col, value) = (col.to_string(), dynamic_to_cbor(value)?);
+    h.with_base_vista("only", |vista| {
+        vista.add_condition(col, FilterOp::Eq, value)
+    })
+    .map_err(|e| e.to_string().into())
+}
+```
+
+`with_base_vista` works on a copy of the Vista and returns a new handle over it, so like every
+other verb it leaves the handle it was called on alone: `let all = self; all.only("vip", true);
+all` still ends on every client. (A backend whose shell can't be copied is changed in place.)
+
+Statements on `self` accumulate, whichever verb they use:
+
+<!-- tested: rhai_guide::surfaces::extension_statements -->
+```rhai
+self.only("vip", true);
+self.only("name", "Cy");
+```
+
+leaves only Cy, and
+
+<!-- tested: rhai_guide::surfaces::extension_statements -->
+```rhai
+self.only("vip", true);
+self.sort("name", "desc");
+```
+
+leaves Cy and Ada, in that order. Each statement builds on the result of the one before, and the
+script, ending on a statement, finishes with the last result. Chaining works too:
+`self.only("vip", true).sort("name", "desc")` gives the same table. A handle from `table(name)`
+doesn't accumulate: `let x = table("client").where("vip", true); x.sort("name"); x` ends on `x`
+unsorted.
 
 Backends without a scripting vocabulary (CSV, MongoDB, REST) keep the default no-op and get the
 data vocabulary alone.
@@ -144,6 +186,12 @@ self.where("client", row.id)
 [`augment_source_closure(resolver, code)`](vantage_vista::augment_source_closure) turns the script
 into the `Fn(&row, base) -> Vista` closure the Dio calls per row. It compiles once, on first use,
 with the detail Vista's backend extensions registered.
+
+## Computed columns
+
+A `lazy:` column script runs on the shared background host, with no data vocabulary at all: no
+`table(name)`, no handles, only `row`. It computes one value from one row, every time the Vista
+reads that row. [Computed columns](./computed.md) covers it.
 
 ## Read-only hosts
 

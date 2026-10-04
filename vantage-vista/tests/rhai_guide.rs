@@ -2,6 +2,7 @@
 //! appears verbatim in the book, next to the name of the test that runs it.
 
 mod rhai_guide {
+    mod computed;
     mod hosts;
     mod records;
     mod support;

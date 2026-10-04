@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.8 — 2026-10-04
+
+- Doc links fixed.
+- A paged view drops rows past an exact total, so cached rows the source no longer has stop
+  counting as loaded.
+
 ## 0.13.7 — 2026-10-04
 
 - Error messages carry context fields instead of formatted text.

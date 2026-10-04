@@ -93,8 +93,15 @@ through JSON or a script still traverses correctly.
 
 Rhai data scripts (the `vantage-vista` rhai feature) traverse with `ref(relation)` on a table
 handle, which follows the relation from every row of a set. A one-row set goes through `get_ref`,
-so it follows the same metadata and backend traversal described here. See
+so it follows the same metadata and backend traversal described here. Several rows become an `in`
+condition on the target, a `limit(n)` before the `ref` caps the rows it follows, and an empty set
+gives an empty target without a query. See
 [The Table Handle](../rhai/tables.md#following-relations).
+
+A relation's foreign key may be a [computed column](../rhai/computed.md) (a `lazy:` column). A
+has-one through one works, because the parent row carries the computed value. A has-many whose key
+is a computed column of the child is refused by `get_ref` with an error naming the relation and
+column, since the backend can't filter the child by a value it doesn't store.
 
 ### Capabilities: the honest contract
 
@@ -184,21 +191,25 @@ the common case. The full form (`references: { table, kind, foreign_key, name }`
 differently — you need that when two relations point at the same table.
 
 When a relation needs more than a plain foreign-key match — extra conditions, ordering, a search —
-give the reference a `rhai:` build script:
+give the reference a `rhai:` build script in its driver block (SurrealDB supports this today, and
+reports `can_build_ref_via_script`):
 
+<!-- tested: rhai_guide::surfaces::ref_build (the script) -->
 ```yaml
 references:
-  recent_orders:
+  due_orders:
     table: order
     kind: has_many
     foreign_key: client
-    rhai: |
-      table("order").where("client", row.id).sort("created_at", "desc")
+    surreal:
+      rhai: |
+        table("order").where("client", row.id).where("status", "due")
 ```
 
 The script runs lazily when the relation is traversed, with the parent record in scope as `row`,
 and must end on a table handle: start it with `table("<name>")` and chain the
-[narrowing verbs](../rhai/tables.md#narrowing). Without `rhai:`, the
+[narrowing verbs](../rhai/tables.md#narrowing) (see
+[Reference build scripts](../rhai/surfaces.md#reference-build-scripts)). Without `rhai:`, the
 relation falls back to the plain `foreign_key` match. This is the `can_build_ref_via_script` path
 from the capabilities list — the reference resolves through the script engine instead of the
 fixed eq-condition.
@@ -208,7 +219,8 @@ Imported dotted columns — like `batch.name` above, the YAML form of
 Rust API, with the same construction-time validation: a bad dotted column fails the spec load,
 not the first fetch. They arrive in metadata flagged `calculated`. That flag means read-only for
 consumers: the value comes from a traversal, not from a column you can write. This is how a UI
-knows not to offer editing on them.
+knows not to offer editing on them. [Computed columns](../rhai/computed.md) (`lazy:`) carry the
+same flag for the same reason.
 
 The key difference: at the typed layer *you* know which traversal forms are safe — you wrote the
 code against a backend you chose. At the erased layer, the *capabilities* say so. Same relations,

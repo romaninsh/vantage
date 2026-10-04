@@ -1,6 +1,13 @@
 //! Chapter "Records".
 
+use std::sync::Arc;
+
+use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use serde_json::json;
+use vantage_rhai::rhai::Dynamic;
+use vantage_rhai::{Block, Env, Host, Limits};
+use vantage_vista::{DataVocab, Handle, RecordDraft, TargetResolver, Vista, Writes};
 
 use super::support::{json, read_write, run, shop};
 
@@ -99,6 +106,50 @@ fn failed_save() {
     assert_eq!(out["staged"], json!(true));
     let message = out["message"].as_str().unwrap();
     assert!(message.contains("no longer exists"), "{message}");
+}
+
+const ROW_WITHOUT_TABLE: &str = r#"
+row.status = "void";   // staged on the draft
+let saved = true;
+try { row.save(); } catch (err) { saved = false; }
+
+#{ status: row.status, was: row.baseline().status, saved: saved }
+"#;
+
+#[test]
+fn row_without_table() {
+    let values: IndexMap<String, CborValue> = [
+        ("status".to_string(), CborValue::Text("paid".into())),
+        ("total".to_string(), CborValue::Integer(120.into())),
+    ]
+    .into_iter()
+    .collect();
+
+    let no_table: TargetResolver = Arc::new(|_| Ok(Vista::empty("row")));
+    let row = RecordDraft::from_row(
+        Handle::named("row"),
+        Some(no_table),
+        Writes::Denied("this row is read-only".into()),
+        "o1".into(),
+        values,
+    );
+
+    let host = Host::builder(Limits::Ui)
+        .vocab(DataVocab::read(None, None))
+        .build();
+    let env = Env::new().var("row", Dynamic::from(row.clone()));
+    let script = host.compile(&Block::from(ROW_WITHOUT_TABLE)).unwrap();
+    assert_eq!(
+        vantage_rhai::to_json(&script.eval(&env).unwrap()),
+        json!({"status": "void", "was": "paid", "saved": false})
+    );
+    assert_eq!(row.changes().len(), 1);
+
+    let err = host
+        .compile(&Block::from(r#"row["id"] = "o2""#))
+        .and_then(|s| s.eval(&env))
+        .unwrap_err();
+    assert!(err.to_string().contains("id column"), "{err}");
 }
 
 const ID_IS_READ_ONLY: &str = r#"

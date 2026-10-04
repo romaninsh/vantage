@@ -13,5 +13,7 @@ vantage-mongodb = { path = "../vantage-mongodb" }
 vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres"] }
 vantage-table = { path = "../vantage-table" }
 vantage-types = { path = "../vantage-types" }
-vantage-vista = { path = "../vantage-vista" }
+# `rhai` so the Rhai chapters' links (Handle, run_script, …) resolve.
+vantage-rhai = { path = "../vantage-rhai" }
+vantage-vista = { path = "../vantage-vista", features = ["rhai"] }
 vantage-vista-factory = { path = "../vantage-vista-factory" }

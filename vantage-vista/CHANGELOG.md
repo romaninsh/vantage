@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2 — 2026-10-04
+
+- Narrowing statements on `self` in `modify:`/augment scripts accumulate with earlier extension verbs.
+
 ## 1.1.1 — 2026-10-04
 
 - Error messages carry context fields instead of formatted text.
