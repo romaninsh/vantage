@@ -169,6 +169,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "aws-lc-rs"
+version = "1.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e"
+dependencies = [
+ "aws-lc-sys",
+ "zeroize",
+]
+
+[[package]]
+name = "aws-lc-sys"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bff6c3b54fad79a2e60b8102caf565819711497c1f5f092f49508e2f5c31b27"
+dependencies = [
+ "cc",
+ "cmake",
+ "dunce",
+ "fs_extra",
+ "pkg-config",
+]
+
+[[package]]
 name = "bakery_model3"
 version = "0.1.0"
 dependencies = [
@@ -345,6 +368,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80f41ae168f955c12fb8960b057d70d0ca153fb83182b57d86380443527be7e9"
 dependencies = [
  "find-msvc-tools",
+ "jobserver",
+ "libc",
  "shlex",
 ]
 
@@ -427,6 +452,15 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "cmake"
+version = "0.1.54"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7caa3f9de89ddbe2c607f4101924c5abec803763ae9534e4f4d7d8f84aa81f0"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "colorchoice"
@@ -769,7 +803,7 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "dataset-ui-adapters"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -885,6 +919,12 @@ name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
+
+[[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "either"
@@ -1075,6 +1115,12 @@ checksum = "8878864ba14bb86e818a412bfd6f18f9eabd4ec0f008a28e8f7eb61db532fcf9"
 dependencies = [
  "futures-core",
 ]
+
+[[package]]
+name = "fs_extra"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "funty"
@@ -1466,7 +1512,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
@@ -1705,6 +1751,16 @@ name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+
+[[package]]
+name = "jobserver"
+version = "0.1.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
+dependencies = [
+ "getrandom 0.4.2",
+ "libc",
+]
 
 [[package]]
 name = "js-sys"
@@ -1999,7 +2055,7 @@ dependencies = [
  "tokio-util",
  "typed-builder",
  "uuid",
- "webpki-roots",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
@@ -2616,7 +2672,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
@@ -2773,6 +2829,7 @@ version = "0.23.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd3c25631629d034ce7cd9940adc9d45762d46de2b0f57193c4443b92c6d4d40"
 dependencies = [
+ "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
@@ -2798,6 +2855,7 @@ version = "0.103.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8572f3c2cb9934231157b45499fc41e1f58c589fdfb81a844ba873265e80f8eb"
 dependencies = [
+ "aws-lc-rs",
  "ring",
  "rustls-pki-types",
  "untrusted",
@@ -3133,6 +3191,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "rust_decimal",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
@@ -3143,6 +3202,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -3331,7 +3391,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "0.4.3"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "base64",
@@ -3345,6 +3405,7 @@ dependencies = [
  "paste",
  "reqwest",
  "rust_decimal",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -3631,8 +3692,12 @@ checksum = "489a59b6730eda1b0171fcfda8b121f4bee2b35cba8645ca35c5f7ba3eb736c1"
 dependencies = [
  "futures-util",
  "log",
+ "rustls",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls",
  "tungstenite",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -3774,6 +3839,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.2",
+ "rustls",
+ "rustls-pki-types",
  "sha1",
  "thiserror 2.0.18",
  "utf-8",
@@ -3906,7 +3973,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.5.0"
+version = "0.6.9"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3931,19 +3998,20 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.4.2"
+version = "1.0.0"
 dependencies = [
  "atty",
  "indexmap",
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "vantage-csv"
-version = "0.5.0"
+version = "0.6.7"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -3962,7 +4030,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "0.4.3"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3981,7 +4049,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "0.4.4"
+version = "1.0.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3995,7 +4063,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "0.5.0"
+version = "0.6.9"
 dependencies = [
  "async-trait",
  "bson",
@@ -4017,8 +4085,9 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.5.0"
+version = "0.6.28"
 dependencies = [
+ "async-stream",
  "async-trait",
  "chrono",
  "ciborium",
@@ -4030,6 +4099,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "tracing",
  "uuid",
  "vantage-core",
  "vantage-dataset",
@@ -4041,8 +4111,9 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "0.5.0"
+version = "0.6.24"
 dependencies = [
+ "async-stream",
  "async-trait",
  "base64",
  "chrono",
@@ -4069,10 +4140,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "0.5.0"
+version = "1.1.1"
 dependencies = [
  "async-stream",
  "async-trait",
+ "chrono",
  "ciborium",
  "futures-core",
  "indexmap",
@@ -4082,6 +4154,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
@@ -4091,8 +4164,9 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.4.3"
+version = "1.0.0"
 dependencies = [
+ "chrono",
  "ciborium",
  "indexmap",
  "paste",
@@ -4104,7 +4178,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types-entity"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4113,7 +4187,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.4.10"
+version = "1.1.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4121,6 +4195,7 @@ dependencies = [
  "futures-core",
  "indexmap",
  "serde",
+ "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.18",
  "vantage-core",
@@ -4313,6 +4388,15 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
+dependencies = [
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]

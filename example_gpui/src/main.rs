@@ -1,10 +1,11 @@
-use bakery_model3::{connect_surrealdb, surrealdb, Client};
-use dataset_ui_adapters::{gpui_adapter::GpuiTableDelegate, TableStore, VantageTableAdapter};
+use bakery_model3::{Client, connect_surrealdb, surrealdb};
+use dataset_ui_adapters::{TableStore, VantageTableAdapter, gpui_adapter::GpuiTableDelegate};
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, Root, StyledExt,
     button::Button,
     table::{DataTable, TableState},
-    v_flex, ActiveTheme, Root, StyledExt,
+    v_flex,
 };
 
 actions!(example_gpui, [Quit, AddClient]);

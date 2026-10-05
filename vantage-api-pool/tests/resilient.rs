@@ -8,8 +8,8 @@ use std::time::Duration;
 use support::{
     fast_retry, mount, mount_delayed, mount_script, mount_status, requests, scripted_refresher,
 };
-use vantage_api_pool::resilient::{ClientError, ErrorKind};
 use vantage_api_pool::ResilientClient;
+use vantage_api_pool::resilient::{ClientError, ErrorKind};
 use wiremock::matchers::{header, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

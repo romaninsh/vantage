@@ -20,7 +20,7 @@ impl Vocab for RollVocab {
         let state = self.0.clone();
         engine.register_fn("roll", move || -> f64 {
             let x = state
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |mut x| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |mut x| {
                     x ^= x << 13;
                     x ^= x >> 7;
                     x ^= x << 17;

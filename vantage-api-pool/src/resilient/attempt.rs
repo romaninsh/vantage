@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::breaker::{Gate, ProbeGuard};
-use super::policy::{self, with_jitter, Health};
+use super::policy::{self, Health, with_jitter};
 use super::{BreakerMode, CallPolicy, ClientError, ErrorKind, ResilientClient, TransportEvent};
 
 /// How much of a failing response body is kept on [`ClientError::body`].
@@ -133,7 +133,7 @@ where
                                 ErrorKind::BreakerOpen,
                                 self.attempt,
                                 0,
-                            ))
+                            ));
                         }
                         BreakerMode::WaitForProbe => tokio::time::sleep(wait).await,
                     },
@@ -177,7 +177,7 @@ where
                         body: None,
                         hint: None,
                         ms: elapsed_ms(acquiring),
-                    })
+                    });
                 }
             }
         }

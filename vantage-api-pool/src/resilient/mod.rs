@@ -26,8 +26,8 @@ pub use error::{ClientError, ErrorKind};
 pub use observer::{TransportEvent, TransportObserver};
 pub use policy::{BreakerMode, CallPolicy, RetryMode, RetryPolicy};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tokio::sync::Semaphore;
 

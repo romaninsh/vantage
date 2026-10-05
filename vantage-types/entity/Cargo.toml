@@ -1,7 +1,7 @@
 [package]
 name = "vantage-types-entity"
-version = "1.0.0"
-edition = "2021"
+version = "1.0.1"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Entity proc macro for the Vantage type system"
 repository = "https://github.com/romaninsh/vantage"

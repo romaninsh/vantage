@@ -7,11 +7,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use support::{
-    background_error, counting_refresher, essential_fast, mount_script, mount_status, requests,
-    scripted_refresher, within, Recorder,
+    Recorder, background_error, counting_refresher, essential_fast, mount_script, mount_status,
+    requests, scripted_refresher, within,
 };
-use vantage_api_pool::resilient::{ErrorKind, TransportEvent};
 use vantage_api_pool::ResilientClient;
+use vantage_api_pool::resilient::{ErrorKind, TransportEvent};
 use wiremock::MockServer;
 
 #[tokio::test]

@@ -2,7 +2,7 @@ use crate::{DataSet, TableStore};
 use std::sync::Arc;
 
 #[cfg(feature = "gpui")]
-use gpui::{div, px, App, Context, InteractiveElement, IntoElement, ParentElement, Window};
+use gpui::{App, Context, InteractiveElement, IntoElement, ParentElement, Window, div, px};
 #[cfg(feature = "gpui")]
 use gpui_component::table::{Column, TableDelegate, TableState};
 

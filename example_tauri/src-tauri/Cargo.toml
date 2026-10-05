@@ -5,7 +5,7 @@ description = "Dataset UI Adapters — Tauri Table Example"
 authors = ["you"]
 license = ""
 repository = ""
-edition = "2021"
+edition = "2024"
 
 [workspace]
 

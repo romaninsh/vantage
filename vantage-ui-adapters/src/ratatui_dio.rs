@@ -28,10 +28,10 @@ use ciborium::Value as CborValue;
 /// at rather than the whole screen.
 const HYDRATE_BAND: usize = 10;
 use crossterm::event::{Event, KeyCode, KeyEventKind};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Row, Table, TableState};
-use ratatui::Frame;
 use tokio::sync::{mpsc, watch};
 use vantage_diorama::{Generation, TableScenery, ValueScenery};
 

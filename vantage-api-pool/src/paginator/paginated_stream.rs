@@ -81,10 +81,10 @@ impl PaginatedStream {
 
     fn ensure_prefetch(&mut self) {
         // Only prefetch if we know there are more pages or don't know total yet
-        if let Some(total) = self.total_pages {
-            if self.next_page_to_fetch > total {
-                return; // No more pages to fetch
-            }
+        if let Some(total) = self.total_pages
+            && self.next_page_to_fetch > total
+        {
+            return; // No more pages to fetch
         }
 
         let active_fetches = self.fetch_queue.len();
@@ -97,10 +97,10 @@ impl PaginatedStream {
 
         for _ in 0..needed {
             // Double-check we haven't exceeded total pages
-            if let Some(total) = self.total_pages {
-                if self.next_page_to_fetch > total {
-                    break;
-                }
+            if let Some(total) = self.total_pages
+                && self.next_page_to_fetch > total
+            {
+                break;
             }
 
             self.spawn_fetch(self.next_page_to_fetch);
@@ -117,23 +117,23 @@ impl PaginatedStream {
                     made_progress = true;
 
                     // Extract pagination info from first page
-                    if page == 1 {
-                        if let Some(pagination) = body.get("pagination") {
-                            self.total_pages = pagination
-                                .get("total_pages")
-                                .and_then(|v| v.as_u64())
-                                .map(|v| v as usize);
-                        }
+                    if page == 1
+                        && let Some(pagination) = body.get("pagination")
+                    {
+                        self.total_pages = pagination
+                            .get("total_pages")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as usize);
                     }
 
                     // Extract data items
-                    if let Some(data) = body.get("data").and_then(|v| v.as_array()) {
-                        if !data.is_empty() {
-                            self.ready_pages.push_back(PageData {
-                                items: data.clone(),
-                                index: 0,
-                            });
-                        }
+                    if let Some(data) = body.get("data").and_then(|v| v.as_array())
+                        && !data.is_empty()
+                    {
+                        self.ready_pages.push_back(PageData {
+                            items: data.clone(),
+                            index: 0,
+                        });
                     }
                 }
                 Poll::Ready(Ok(Err(e))) => return Err(e),

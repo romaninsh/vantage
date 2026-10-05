@@ -1,8 +1,8 @@
 //! Assembling a [`ResilientClient`]: every policy is optional, and a client
 //! built with no options at all is a plain bounded-retry HTTP client.
 
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use tokio::sync::{RwLock, Semaphore};

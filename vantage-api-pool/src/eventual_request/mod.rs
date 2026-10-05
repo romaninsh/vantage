@@ -6,7 +6,7 @@ use std::{
 
 use reqwest::{Client, Request, Response};
 use tokio::{
-    sync::{oneshot, Mutex},
+    sync::{Mutex, oneshot},
     time::sleep,
 };
 use tracing::warn;
@@ -96,14 +96,12 @@ impl<T: Sync + Send + Sized> EventualRequest<T> {
     }
 
     fn extract_retry_delay(&self, response: &Response) -> Option<Duration> {
-        if let Some(retry_after) = response.headers().get("retry-after") {
-            if let Ok(retry_str) = retry_after.to_str() {
-                if let Ok(retry_secs) = retry_str.parse::<u64>() {
-                    if retry_secs >= 1 {
-                        return Some(Duration::from_secs(retry_secs));
-                    }
-                }
-            }
+        if let Some(retry_after) = response.headers().get("retry-after")
+            && let Ok(retry_str) = retry_after.to_str()
+            && let Ok(retry_secs) = retry_str.parse::<u64>()
+            && retry_secs >= 1
+        {
+            return Some(Duration::from_secs(retry_secs));
         }
         None
     }

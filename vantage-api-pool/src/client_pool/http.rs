@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use rust_decimal::prelude::*;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{error, Instrument as _};
+use tracing::{Instrument as _, error};
 
-use crate::{eventual_request::EventualRequestResult, EventualRequest, KeyedRateLimiter};
+use crate::{EventualRequest, KeyedRateLimiter, eventual_request::EventualRequestResult};
 
 pub struct HttpClientPool<T: Sync + Send + Sized + 'static> {
     workers: usize,

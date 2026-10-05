@@ -6,12 +6,12 @@ mod support;
 use std::time::Duration;
 
 use support::{
-    background_error, background_ok, cancel, counting_refresher, essential_fast, mount,
-    mount_delayed, mount_script, mount_status, open_breaker, requests, spawn_essential,
-    wait_for_requests, within, within_secs, HalfFailing,
+    HalfFailing, background_error, background_ok, cancel, counting_refresher, essential_fast,
+    mount, mount_delayed, mount_script, mount_status, open_breaker, requests, spawn_essential,
+    wait_for_requests, within, within_secs,
 };
-use vantage_api_pool::resilient::{BreakerState, ErrorKind};
 use vantage_api_pool::ResilientClient;
+use vantage_api_pool::resilient::{BreakerState, ErrorKind};
 use wiremock::MockServer;
 
 #[tokio::test]
