@@ -8,6 +8,8 @@ pub use vantage_expressions;
 pub(crate) mod types;
 
 #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+mod set_writes;
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
 mod sql_exec;
 #[cfg(all(
     feature = "vista",

@@ -151,6 +151,23 @@ async fn narrowed_delete_all_keeps_rows_outside_the_set() -> Result<()> {
     Ok(())
 }
 
+/// `id` is outside the red set: a patch into it is NotFound, an insert
+/// under the id a Conflict.
+async fn assert_outside_red(red: &Vista, id: &str) {
+    assert!(
+        red.patch_value(id, &rec(&[("team", "red")]))
+            .await
+            .unwrap_err()
+            .is_not_found()
+    );
+    assert!(
+        red.insert_value(id, &rec(&[("id", id)]))
+            .await
+            .unwrap_err()
+            .is_conflict()
+    );
+}
+
 /// Poll `pred(shell)` every 10 ms for up to 2 s.
 async fn settle_until(shell: &MockShell, pred: impl Fn(&MockShell) -> bool) {
     for _ in 0..200 {
@@ -168,18 +185,7 @@ async fn narrowed_facade_writes_stay_in_the_set() -> Result<()> {
     red.add_condition_eq("team", CborValue::Text("red".into()))?;
 
     red.delete("3").await?; // blue: outside the set
-    assert!(
-        red.patch_value("3", &rec(&[("team", "red")]))
-            .await
-            .unwrap_err()
-            .is_not_found()
-    );
-    assert!(
-        red.insert_value("3", &rec(&[("id", "3")]))
-            .await
-            .unwrap_err()
-            .is_conflict()
-    );
+    assert_outside_red(&red, "3").await;
     red.insert_value("4", &rec(&[("id", "4")])).await?; // team filled
     red.delete("ghost").await?; // idempotent
     settle_until(&shell, |s| s.get_record("4").is_some()).await;
@@ -210,18 +216,7 @@ async fn narrowed_writes_read_one_row_not_the_set() -> Result<()> {
     red.patch_value("1", &rec(&[("team", "red")])).await?;
     red.delete("2").await?;
     red.delete("3").await?; // blue, cached: outside, nothing queued
-    assert!(
-        red.patch_value("3", &rec(&[("team", "red")]))
-            .await
-            .unwrap_err()
-            .is_not_found()
-    );
-    assert!(
-        red.insert_value("3", &rec(&[("id", "3")]))
-            .await
-            .unwrap_err()
-            .is_conflict()
-    );
+    assert_outside_red(&red, "3").await;
     Ok(())
 }
 
@@ -236,18 +231,7 @@ async fn narrowed_writes_find_rows_only_the_master_holds() -> Result<()> {
     shell.set_record("6", rec(&[("id", "6"), ("team", "blue")]));
 
     red.patch_value("5", &rec(&[("team", "red")])).await?;
-    assert!(
-        red.patch_value("6", &rec(&[("team", "red")]))
-            .await
-            .unwrap_err()
-            .is_not_found()
-    );
-    assert!(
-        red.insert_value("6", &rec(&[("id", "6")]))
-            .await
-            .unwrap_err()
-            .is_conflict()
-    );
+    assert_outside_red(&red, "6").await;
     red.delete("6").await?; // outside: nothing queued
     red.delete("5").await?;
     settle_until(&shell, |s| s.get_record("5").is_none()).await;
@@ -266,18 +250,7 @@ async fn narrowed_write_ignores_a_stale_cache_row() -> Result<()> {
     red.add_condition_eq("team", CborValue::Text("red".into()))?;
     shell.set_field("1", "team", CborValue::Text("blue".into()));
 
-    assert!(
-        red.patch_value("1", &rec(&[("team", "red")]))
-            .await
-            .unwrap_err()
-            .is_not_found()
-    );
-    assert!(
-        red.insert_value("1", &rec(&[("id", "1")]))
-            .await
-            .unwrap_err()
-            .is_conflict()
-    );
+    assert_outside_red(&red, "1").await;
     red.delete("1").await?;
     red.delete("2").await?;
     settle_until(&shell, |s| s.get_record("2").is_none()).await;

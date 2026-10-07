@@ -1,3 +1,7 @@
+#[macro_use]
+#[path = "common/safe_writes.rs"]
+mod safe_writes_contract;
+
 mod sqlite {
     #[path = "4_aggregates.rs"]
     mod aggregates;

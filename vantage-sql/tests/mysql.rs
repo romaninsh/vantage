@@ -1,4 +1,9 @@
 #[cfg(feature = "mysql")]
+#[macro_use]
+#[path = "common/safe_writes.rs"]
+mod safe_writes_contract;
+
+#[cfg(feature = "mysql")]
 mod mysql {
     #[path = "4_aggregates.rs"]
     mod aggregates;

@@ -12,12 +12,11 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
-use super::set_writes;
 use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::AnySqliteType;
 use crate::table_writes::{
-    held_outside, new_row_not_in_set, not_in_set, patch_leaves_set, patch_not_found,
+    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
 };
 use vantage_expressions::expr_any;
 
@@ -281,22 +280,11 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        // In the set already: the insert is a no-op that returns the stored row.
-        if let Some(existing) = self.get_table_value(table, id).await? {
+        if let Some(existing) = guard_insert(self, table, id, record).await? {
             return Ok(existing);
         }
-        let id_field_name = table.id_field_name();
-        if table.conditions().next().is_some() {
-            if self.id_exists_anywhere(table, id).await? {
-                return Err(held_outside(table, id));
-            }
-            let mut row = record.clone();
-            row.insert(id_field_name.clone(), set_writes::id_cell(table, id));
-            if !self.row_in_set(table, &row).await? {
-                return Err(not_in_set(table, id));
-            }
-        }
 
+        let id_field_name = table.id_field_name();
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
             .with_record(record)
             // The explicit id param is authoritative on this path, so apply it
@@ -304,14 +292,7 @@ impl TableSource for SqliteDB {
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
         if let Err(e) = self.execute(&insert.expr()).await {
-            // Another writer took the id between the check and the insert.
-            if let Some(existing) = self.get_table_value(table, id).await? {
-                return Ok(existing);
-            }
-            if self.id_exists_anywhere(table, id).await? {
-                return Err(held_outside(table, id));
-            }
-            return Err(e);
+            return settle_failed_insert(self, table, id, e).await;
         }
 
         self.get_table_value(table, id)
@@ -328,19 +309,9 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
-        if table.conditions().next().is_some() {
-            let in_set = self.get_table_value(table, id).await?.is_some();
-            if !in_set && self.id_exists_anywhere(table, id).await? {
-                return Err(held_outside(table, id));
-            }
-            let mut row = record.clone();
-            row.insert(id_field_name.clone(), set_writes::id_cell(table, id));
-            if !self.row_in_set(table, &row).await? {
-                return Err(not_in_set(table, id));
-            }
-        }
+        guard_replace(self, table, id, record).await?;
 
+        let id_field_name = table.id_field_name();
         // SQLite INSERT OR REPLACE handles both insert and update
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
             .with_record(record)
@@ -371,18 +342,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let Some(current) = self.get_table_value(table, id).await? else {
-            return Err(patch_not_found(table, id));
-        };
-        if table.conditions().next().is_some() {
-            let mut merged = current;
-            for (k, v) in partial.iter() {
-                merged.insert(k.clone(), v.clone());
-            }
-            if !self.row_in_set(table, &merged).await? {
-                return Err(patch_leaves_set(table, id));
-            }
-        }
+        guard_patch(self, table, id, partial).await?;
 
         let id_field_name = table.id_field_name();
         let id_val = id.clone();
@@ -437,9 +397,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        if !self.row_in_set(table, record).await? {
-            return Err(new_row_not_in_set(table));
-        }
+        guard_new_row(self, table, record).await?;
         let id_field_name = table.id_field_name();
 
         let insert =

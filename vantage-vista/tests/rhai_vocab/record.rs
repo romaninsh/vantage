@@ -43,10 +43,8 @@ fn retried_new_record_save_reuses_its_id() {
         can_insert: true,
         ..VistaCapabilities::default()
     };
-    let shell = LossyShell {
-        inner: mock_with("r1", &[], caps),
-        lost: Arc::new(AtomicBool::new(false)),
-    };
+    let shell = SpyShell::new(mock_with("r1", &[], caps));
+    shell.lose_next_insert.store(true, Ordering::SeqCst);
     let host = host_over(shell);
     let out = json(
         &host,
@@ -92,21 +90,18 @@ fn unchanged_save_writes_nothing() {
 
 #[test]
 fn loaded_record_saves_only_changed_fields() {
-    let patches: Arc<Mutex<Vec<Record<CborValue>>>> = Arc::new(Mutex::new(Vec::new()));
-    let shell = RecordingShell {
-        inner: mock_with(
-            "r1",
-            &[
-                ("a", CborValue::Integer(1.into())),
-                ("b", CborValue::Integer(2.into())),
-            ],
-            VistaCapabilities {
-                can_update: true,
-                ..VistaCapabilities::default()
-            },
-        ),
-        patches: patches.clone(),
-    };
+    let shell = SpyShell::new(mock_with(
+        "r1",
+        &[
+            ("a", CborValue::Integer(1.into())),
+            ("b", CborValue::Integer(2.into())),
+        ],
+        VistaCapabilities {
+            can_update: true,
+            ..VistaCapabilities::default()
+        },
+    ));
+    let patches = shell.patches.clone();
     let host = host_over(shell);
     let _ = run(
         &host,
@@ -332,84 +327,31 @@ fn host_over(shell: impl TableShell + Clone + 'static) -> Host {
         .build()
 }
 
-/// Wraps a `MockShell` whose first insert lands but reports an error, the
-/// way a write whose response is lost does.
-#[derive(Clone)]
-struct LossyShell {
-    inner: MockShell,
-    lost: Arc<AtomicBool>,
-}
-
-#[async_trait]
-impl TableShell for LossyShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        self.inner.columns()
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.inner.id_column()
-    }
-
-    fn capabilities(&self) -> &VistaCapabilities {
-        self.inner.capabilities()
-    }
-
-    async fn list_vista_values(
-        &self,
-        vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.inner.list_vista_values(vista).await
-    }
-
-    async fn get_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        self.inner.get_vista_value(vista, id).await
-    }
-
-    async fn get_vista_some_value(
-        &self,
-        vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        self.inner.get_vista_some_value(vista).await
-    }
-
-    fn references(&self) -> &IndexMap<String, Reference> {
-        self.inner.references()
-    }
-
-    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
-        self.inner.preview_query(vista)
-    }
-
-    async fn insert_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let stored = self.inner.insert_vista_value(vista, id, record).await?;
-        if !self.lost.swap(true, Ordering::SeqCst) {
-            return Err(vantage_core::error!("connection reset"));
-        }
-        Ok(stored)
-    }
-}
-
 /// Wraps a `MockShell` and records every `partial` a `patch_vista_value`
 /// call carries, so a test can assert on exactly what a record's `save()`
 /// sent — not just the final stored state, which a full-record patch would
 /// produce identically (`MockShell::patch_vista_value` merges either way).
+/// With `lose_next_insert` set, the next insert lands but reports an error,
+/// the way a write whose response is lost does.
 #[derive(Clone)]
-struct RecordingShell {
+struct SpyShell {
     inner: MockShell,
     patches: Arc<Mutex<Vec<Record<CborValue>>>>,
+    lose_next_insert: Arc<AtomicBool>,
+}
+
+impl SpyShell {
+    fn new(inner: MockShell) -> Self {
+        Self {
+            inner,
+            patches: Arc::default(),
+            lose_next_insert: Arc::default(),
+        }
+    }
 }
 
 #[async_trait]
-impl TableShell for RecordingShell {
+impl TableShell for SpyShell {
     fn columns(&self) -> &IndexMap<String, Column> {
         self.inner.columns()
     }
@@ -452,6 +394,19 @@ impl TableShell for RecordingShell {
     ) -> Result<Record<CborValue>> {
         self.patches.lock().unwrap().push(partial.clone());
         self.inner.patch_vista_value(vista, id, partial).await
+    }
+
+    async fn insert_vista_value(
+        &self,
+        vista: &Vista,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        let stored = self.inner.insert_vista_value(vista, id, record).await?;
+        if self.lose_next_insert.swap(false, Ordering::SeqCst) {
+            return Err(vantage_core::error!("connection reset"));
+        }
+        Ok(stored)
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
