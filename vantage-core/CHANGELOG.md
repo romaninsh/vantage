@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 — 2026-10-05
+
+- `ErrorKind::Conflict`, `mark_conflict()`, `is_conflict()`: a write that disagrees with the set it
+  goes through.
+- **Breaking:** an exhaustive `match` on `ErrorKind` needs the new arm.
+
 ## 1.0.0 — 2026-10-03
 
 - Stable release. The API hasn't changed since 2026-09-16 (2 weeks); no code changes.

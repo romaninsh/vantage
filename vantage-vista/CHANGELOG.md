@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 — 2026-10-05
+
+- **Breaking:** `VistaCapabilities::can_confine_writes` (a struct literal that lists every field
+  needs it). `Vista` refuses by-id writes through a narrowed handle whose shell doesn't advertise it.
+- `TableShell` write methods document the write contract; `MockShell` follows it (it used to fail
+  loudly on duplicate inserts and missing deletes, and `delete_all` ignored its filters).
+- `flags::AUTO`, `Vista::has_auto_id()`: the backend makes the ids. `Vista::is_narrowed()`.
+- **Breaking:** Rhai writes go to the whole narrowed handle (`where`, `search`, `ref`) and stay in
+  its set; `sort` is ignored; a handle with `limit` refuses writes.
+- **Breaking:** Rhai `delete` returns `true` unless writes aren't allowed (`false`): a missing row or
+  one outside the set is `true`.
+- A `ref` over no rows takes no inserts (`Conflict`).
+- Rhai `insert` and a new record's `save()` without an id mint a UUIDv7 before the first attempt
+  (a record reuses it on retry); an id column flagged `auto` asks the backend instead; a numeric
+  id column without `auto` is an error.
+- Rhai `insert` of an id already in the set returns the id; one outside the set throws `Conflict`.
+- **Breaking:** `import_from` reports `#{ inserted, skipped, rejected, cancelled }`; a row that
+  conflicts with a narrowed target is `rejected` and the import carries on.
+
 ## 1.1.2 — 2026-10-04
 
 - Narrowing statements on `self` in `modify:`/augment scripts accumulate with earlier extension verbs.

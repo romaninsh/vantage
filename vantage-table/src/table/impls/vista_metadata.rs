@@ -56,6 +56,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             {
                 col.flags.push(flags::ID.to_string());
             }
+            if self.id_auto
+                && let Some(col) = metadata.columns.get_mut(&id)
+                && !col.flags.iter().any(|f| f == flags::AUTO)
+            {
+                col.flags.push(flags::AUTO.to_string());
+            }
             metadata = metadata.with_id_column(id);
         }
         for title in self.title_fields() {
@@ -156,5 +162,17 @@ mod tests {
             [flags::ORDERABLE, flags::TITLE, flags::SEARCHABLE]
         );
         assert!(flags_of(&metadata, "shout").is_empty());
+    }
+
+    #[test]
+    fn auto_id_flags_the_id_column() {
+        let metadata = table()
+            .with_auto_id()
+            .vista_metadata(VistaMetadataOptions::default());
+        assert!(
+            metadata.columns["id"]
+                .flags
+                .contains(&flags::AUTO.to_string())
+        );
     }
 }

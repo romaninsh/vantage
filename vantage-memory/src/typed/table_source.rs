@@ -76,6 +76,21 @@ impl TableSource for MemoryDB {
         ))
     }
 
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        match condition {
+            MemoryCondition::Cmp {
+                path,
+                op: FilterOp::Eq,
+                value,
+            } => Some((path.clone(), AnyMemoryType::untyped(value.clone()))),
+            _ => None,
+        }
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        true
+    }
+
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         Ok(MemoryCondition::cmp(
             field,
@@ -180,7 +195,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.put(table, id, record, false)
+        self.insert_in_set(table, id, record).await
     }
 
     async fn replace_table_value<E>(
@@ -192,7 +207,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.put(table, id, record, true)
+        self.replace_in_set(table, id, record).await
     }
 
     async fn patch_table_value<E>(
@@ -204,18 +219,38 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let store = self.store_table(table)?;
-        let row = match store.patch(id, &to_cbor_record(partial)) {
-            true => store.get(id),
-            false => None,
-        };
-        let row = row.ok_or_else(|| {
+        let not_found = || {
             error!(
                 "Row not found",
                 table = table.table_name(),
                 id = id.as_str()
             )
-        })?;
+            .mark_not_found()
+        };
+        let store = self.store_table(table)?;
+        let existing = store.get(id).ok_or_else(not_found)?;
+        if !self.in_set(table, &existing).await? {
+            return Err(not_found());
+        }
+        let id_column = self.id_column(table);
+        let mut merged = (*existing).clone();
+        for (k, v) in to_cbor_record(partial) {
+            if k != id_column {
+                merged.insert(k, v);
+            }
+        }
+        if !self.in_set(table, &merged).await? {
+            return Err(error!(
+                "patch would move the row out of this set",
+                table = table.table_name(),
+                id = id.as_str()
+            )
+            .mark_conflict());
+        }
+        if !store.patch(id, &to_cbor_record(partial)) {
+            return Err(not_found());
+        }
+        let row = store.get(id).ok_or_else(not_found)?;
         Ok(from_cbor_record(&row))
     }
 
@@ -223,14 +258,13 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        match self.store_table(table)?.delete(id) {
-            true => Ok(()),
-            false => Err(error!(
-                "Row not found",
-                table = table.table_name(),
-                id = id.as_str()
-            )),
+        let store = self.store_table(table)?;
+        if let Some(row) = store.get(id)
+            && self.in_set(table, &row).await?
+        {
+            store.delete(id);
         }
+        Ok(())
     }
 
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
@@ -252,7 +286,11 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.store_table(table)?.insert(to_cbor_record(record))
+        let row = to_cbor_record(record);
+        if !self.in_set(table, &row).await? {
+            return Err(Self::misfit(table.table_name(), ""));
+        }
+        self.store_table(table)?.insert(row)
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

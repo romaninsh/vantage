@@ -79,7 +79,7 @@ impl TableShell for MemoryTableShell {
     }
 
     async fn insert_vista_return_id_value(&self, _vista: &Vista, record: &Rec) -> Result<String> {
-        self.table.insert(record.clone())
+        self.insert_return_id(record)
     }
 
     async fn import_vista_values(
@@ -87,7 +87,7 @@ impl TableShell for MemoryTableShell {
         _vista: &Vista,
         records: &IndexMap<String, Rec>,
     ) -> Result<usize> {
-        Ok(self.import_rows(records))
+        self.import_rows(records)
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
@@ -99,6 +99,9 @@ impl TableShell for MemoryTableShell {
     }
 
     fn add_op_condition(&mut self, field: &str, op: FilterOp, value: &CborValue) -> Result<()> {
+        if op == FilterOp::Eq {
+            self.invariants.insert(field.to_string(), value.clone());
+        }
         self.query
             .conditions
             .push(MemoryCondition::cmp(field, op, value.clone()));

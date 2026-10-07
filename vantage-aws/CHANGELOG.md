@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-10-07
+
+- Fixed: DynamoDB insert silently overwrote an existing item (`PutItem`); it is now a conditional put
+  that returns the stored item, or `Conflict` for an id outside the set.
+- Delete and replace are conditional on the table's conditions; `get_value` honours them.
+- DynamoDB patch is refused as `Unsupported` (was an unclassified error).
+- `condition_equality` for `DynamoCondition::eq`; `can_confine_writes` is `true`.
+
 ## 0.6.10 — 2026-10-07
 
 - Builds against the bumped vantage crates (edition 2024 workspace).

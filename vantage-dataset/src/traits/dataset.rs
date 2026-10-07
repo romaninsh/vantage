@@ -150,10 +150,15 @@ where
 ///
 /// # Idempotency Guarantees
 ///
-/// All write operations are designed to be safely retryable:
-/// - `insert`: No-op if ID already exists
-/// - `replace`: Always succeeds, overwrites existing data
-/// - `patch`: Atomic update, fails if entity doesn't exist
+/// Every write is retry-safe, and a write through a narrowed set only touches
+/// rows inside that set — the contract is the one on
+/// [`WritableValueSet`](super::WritableValueSet):
+/// - `insert`: returns the stored entity untouched if the id is in the set;
+///   `Conflict` if the id is held outside the set; a new entity must fit the set
+/// - `replace`: replaces or creates; `Conflict` if the entity would leave the
+///   set or the id is held outside it (where verifiable)
+/// - `patch`: `NotFound` when the entity is missing or outside the set;
+///   `Conflict` when the patched entity would leave the set
 ///
 /// # Example
 ///
@@ -181,9 +186,9 @@ where
 {
     /// Insert entity with a specific ID (often generated) (HTTP POST with ID)
     ///
-    /// **Idempotent**: Succeeds if no entity exists with the given ID. If
-    /// entity already exists, must return success without overwriting
-    /// data, returning original data.
+    /// **Idempotent**: an id already in the set returns the stored entity
+    /// untouched; an id held outside the set is `Conflict`; a new entity
+    /// must fit the set.
     ///
     /// **Returns**: Entity as it was stored.
     ///
@@ -193,11 +198,14 @@ where
 
     /// Replace the entire entity at the specified ID (HTTP PUT)
     ///
-    /// **Idempotent**: Always succeeds, completely overwrites existing data
-    /// if present. If possible, will remove/recreate entity; therefore if
-    /// `entity` doesn't contain certain attributes which were present in the
-    /// database, those will be removed. If entity does not exist, will
-    /// create it.
+    /// **Idempotent**: completely overwrites existing data if present. If
+    /// possible, will remove/recreate entity; therefore if `entity` doesn't
+    /// contain certain attributes which were present in the database, those
+    /// will be removed. If entity does not exist, will create it.
+    ///
+    /// **Confined**: an entity in the set is replaced (`Conflict` if the new
+    /// entity would leave the set); an id held outside the set is `Conflict`
+    /// where the backend can verify it; a created entity must fit the set.
     ///
     /// **Returns**: entity as it was stored.
     ///
@@ -207,8 +215,10 @@ where
 
     /// Partially update an entity by merging with the provided data (HTTP PATCH)
     ///
-    /// **Fails if entity doesn't exist**. The exact merge behavior depends on
-    /// the storage implementation - typically merges object fields for JSON-like values.
+    /// **`NotFound`** (marked) when the entity is missing or outside the set;
+    /// `Conflict` when the patched entity would leave the set. The exact
+    /// merge behavior depends on the storage implementation - typically
+    /// merges object fields for JSON-like values.
     ///
     /// **Returns**: entity as it was stored (not only the partial change).
     ///
@@ -307,6 +317,10 @@ where
     ///
     /// This method is **not idempotent** - each call creates a new entity with
     /// a new ID, even if the entity data is identical.
+    ///
+    /// Not retry-safe: prefer `insert` with a client-made id (UUIDv7); use
+    /// this only where the backend must make the id (declared server-made
+    /// ids).
     async fn insert_return_id(&self, entity: &E) -> Result<Self::Id>;
 }
 

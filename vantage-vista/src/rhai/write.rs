@@ -1,10 +1,11 @@
 //! Write terminals on the `Table` handle: `insert`, `upsert`, `patch`,
 //! `delete`, and `import_from` (see [`super::import`]).
 //!
-//! Writes go to the handle's base table (or the target of its last `ref`);
-//! `where`/`sort`/`search`/`limit` don't filter them.
+//! Writes go to the whole narrowed handle and stay inside its set (see the
+//! book's Writes chapter); a handle with `limit` refuses writes.
 
 use ciborium::Value as CborValue;
+use vantage_core::error;
 use vantage_dataset::{InsertableValueSet, WritableValueSet};
 use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 use vantage_types::cbor_id_to_string;
@@ -35,7 +36,7 @@ fn register_allowed(engine: &mut Engine, resolver: Option<TargetResolver>) {
         "insert",
         move |h: &mut Handle, map: RhaiMap| -> RhaiResult<String> {
             let vista = target(h, r.as_ref(), "insert", |c| c.can_insert)?;
-            insert_record(&vista, map_to_record(map)?)
+            insert_record(&vista, map_to_record(map)?, None)
         },
     );
 
@@ -66,11 +67,8 @@ fn register_allowed(engine: &mut Engine, resolver: Option<TargetResolver>) {
     engine.register_fn(
         "delete",
         move |h: &mut Handle, id: Dynamic| -> RhaiResult<bool> {
-            let vista = target(h, r.as_ref(), "delete", |c| c.can_delete)?;
-            found(super::bridge::block_on(WritableValueSet::delete(
-                &vista,
-                id_string(id)?,
-            )))
+            let vista = h.write_target(r.as_ref()).map_err(rhai_err)?;
+            delete_row(&vista, id_string(id)?)
         },
     );
 
@@ -113,11 +111,9 @@ fn register_denied(engine: &mut Engine, msg: String) {
         "patch",
         move |_: &mut Handle, _: Dynamic, _: RhaiMap| -> RhaiResult<bool> { Err(d()) },
     );
-    let d = deny.clone();
-    engine.register_fn(
-        "delete",
-        move |_: &mut Handle, _: Dynamic| -> RhaiResult<bool> { Err(d()) },
-    );
+    engine.register_fn("delete", |_: &mut Handle, _: Dynamic| -> RhaiResult<bool> {
+        Ok(false)
+    });
     let d = deny.clone();
     engine.register_fn(
         "import_from",
@@ -148,25 +144,90 @@ fn import_target(h: &Handle, resolver: Option<&TargetResolver>) -> RhaiResult<Vi
     target(h, resolver, "import_from", |c| c.can_import || c.can_insert)
 }
 
-/// Insert `rec` into `vista`: an explicit, non-null value in the id column is
-/// used as given (an existing row with that id is an error); otherwise the
-/// backend assigns one. Shared by `insert(#{…})` and a new record's `save()`.
+/// Insert `rec` into `vista` and return the row's id.
+///
+/// The id is the record's own (the id column, when set); otherwise the
+/// backend's, when the id column is flagged `auto` (`insert_return_id`, not
+/// retry-safe); otherwise `minted`, or a fresh UUIDv7 — made before the first
+/// attempt so a retry reuses it and lands on the idempotent insert.
 pub(crate) fn insert_record(
     vista: &Vista,
     mut rec: vantage_types::Record<CborValue>,
+    minted: Option<&str>,
 ) -> RhaiResult<String> {
     let id_col = vista.get_id_column().unwrap_or("id").to_string();
     let explicit = rec
         .get(&id_col)
         .filter(|v| !matches!(v, CborValue::Null))
         .and_then(cbor_id_to_string);
-    match explicit {
-        Some(id) => {
-            rec.shift_remove(&id_col);
-            run(vista.insert_value(id.clone(), &rec))?;
-            Ok(id)
-        }
-        None => run(vista.insert_return_id_value(&rec)),
+    let id = match explicit {
+        Some(id) => id,
+        None if vista.has_auto_id() => return run(vista.insert_return_id_value(&rec)),
+        None => match minted {
+            Some(id) => id.to_string(),
+            None => new_id(vista, &id_col)?,
+        },
+    };
+    rec.shift_remove(&id_col);
+    run(vista.insert_value(id.clone(), &rec))?;
+    Ok(id)
+}
+
+/// A client-made UUIDv7 for a row inserted without an id. A numeric id column
+/// can't hold one: without the `auto` flag that is an error asking for either.
+pub(crate) fn new_id(vista: &Vista, id_col: &str) -> RhaiResult<String> {
+    if let Some(column) = vista.get_column(id_col)
+        && is_numeric_type(&column.original_type)
+    {
+        return Err(rhai_err(error!(
+            "id column holds numbers: declare server-made ids (flag `auto`) or pass an id",
+            column = id_col,
+            r#type = column.original_type.as_str()
+        )));
+    }
+    Ok(uuid::Uuid::now_v7().to_string())
+}
+
+fn is_numeric_type(t: &str) -> bool {
+    let t = t.trim().to_ascii_lowercase();
+    let base = t.split('(').next().unwrap_or("");
+    matches!(
+        base,
+        "int"
+            | "integer"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "bigint"
+            | "smallint"
+            | "serial"
+            | "bigserial"
+            | "number"
+            | "numeric"
+            | "decimal"
+            | "float"
+            | "f32"
+            | "f64"
+            | "double"
+            | "real"
+    )
+}
+
+/// Delete `id` from `vista`'s set: `true` once the row is gone (missing or
+/// outside the set counts), `false` when the Vista can't delete.
+pub(crate) fn delete_row(vista: &Vista, id: String) -> RhaiResult<bool> {
+    if !vista.capabilities().can_delete {
+        return Ok(false);
+    }
+    match super::bridge::block_on(WritableValueSet::delete(vista, id)).and_then(|r| r) {
+        Ok(()) => Ok(true),
+        Err(e) if e.is_unsupported() => Ok(false),
+        Err(e) => Err(rhai_err(e)),
     }
 }
 

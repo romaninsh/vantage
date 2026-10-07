@@ -6,6 +6,7 @@ pub mod impls;
 pub(crate) mod helpers;
 pub(crate) mod indexes;
 pub(crate) mod query;
+pub(crate) mod scope;
 
 use redb::{Database, ReadTransaction, TableDefinition, WriteTransaction};
 use std::path::Path;

@@ -182,3 +182,77 @@ async fn get_value_returns_none_for_missing_id() -> vantage_core::Result<()> {
     assert!(result.is_none(), "missing id should return None, not error");
     Ok(())
 }
+
+fn contract_prefix() -> &'static str {
+    static PREFIX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PREFIX.get_or_init(run_prefix)
+}
+
+fn contract_id(name: &str) -> DynamoId {
+    DynamoId::new(format!("{}-{}", contract_prefix(), name))
+}
+
+fn contract_text(s: &str) -> AnyDynamoType {
+    AnyDynamoType::untyped(AttributeValue::S(s.to_string()))
+}
+
+fn contract_record(name: &str, parent: &str) -> Record<AnyDynamoType> {
+    let mut rec = Record::new();
+    rec.insert("name".into(), contract_text(name));
+    rec.insert("parent".into(), contract_text(parent));
+    rec
+}
+
+const CONTRACT_IDS: [&str; 6] = ["in1", "out1", "new1", "new2", "new3", "ghost"];
+
+/// Resets the rows the contract checks use: `in1` inside the set and
+/// `out1` outside it, written through the unnarrowed table.
+async fn seed_contract_rows(all: &Table<DynamoDB, EmptyEntity>) -> vantage_core::Result<()> {
+    for id in CONTRACT_IDS {
+        all.delete(contract_id(id)).await?;
+    }
+    all.insert_value(contract_id("in1"), &contract_record("a", "p1"))
+        .await?;
+    all.insert_value(contract_id("out1"), &contract_record("b", "p2"))
+        .await?;
+    Ok(())
+}
+
+/// Runs the write-contract checks against the live table. DynamoDB
+/// refuses patch, so `check_patch` is not run.
+#[tokio::test]
+async fn contract_checks_live() -> vantage_core::Result<()> {
+    use vantage_aws::dynamodb::DynamoCondition;
+    use vantage_dataset::contract::{self, Fixture};
+
+    let Some(aws) = account_or_skip() else {
+        eprintln!("skipping: AWS credentials not configured");
+        return Ok(());
+    };
+    let all = products_table(DynamoDB::new(aws));
+    let set = all.clone().with_condition(DynamoCondition::eq(
+        "parent",
+        AttributeValue::S("p1".into()),
+    ));
+    let fixture = Fixture {
+        all: &all,
+        set: &set,
+        id: contract_id,
+        text: contract_text,
+        detects_outside: true,
+    };
+
+    seed_contract_rows(&all).await?;
+    contract::check_delete(&fixture).await;
+    seed_contract_rows(&all).await?;
+    contract::check_insert(&fixture).await;
+    seed_contract_rows(&all).await?;
+    contract::check_replace(&fixture).await;
+    seed_contract_rows(&all).await?;
+    contract::check_delete_all(&fixture).await;
+
+    for id in CONTRACT_IDS {
+        all.delete(contract_id(id)).await?;
+    }
+    Ok(())
+}

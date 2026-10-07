@@ -36,6 +36,50 @@ both handles — `GetRefExt` carries blanket implementations for each, generic o
 `TableSource` (the handles themselves live in `vantage-dataset` and know nothing about `Table`,
 which is why this arrives as an extension trait).
 
+## Safe writes
+
+Every write is retry-safe, and a write through a narrowed table only touches rows in it. An
+unnarrowed table is the only way to write anywhere.
+
+The set is the table's conditions, equality and operator alike. For a Vista or a Rhai handle it
+is every narrowing step that decides membership.
+
+| operation | row in the set | row outside the set | no such row |
+| --- | --- | --- | --- |
+| `delete(id)` | deleted; `Ok(())` | left alone; `Ok(())` | `Ok(())` |
+| `insert(id, rec)` | nothing written; returns the stored row | `Conflict`, where the backend can tell | inserted; the record must fit the set |
+| `patch(id, partial)` | applied; `Conflict` if the row would leave the set | `NotFound` | `NotFound` |
+| `replace(id, rec)` | applied; `Conflict` if the row would leave the set | `Conflict`, where the backend can tell | created; the record must fit the set |
+| import | `skipped` | `rejected` | inserted; `rejected` if it doesn't fit the set |
+| `delete_all()` | deletes exactly the set | — | — |
+
+A write that isn't allowed fails with `ErrorKind::Unsupported`: writes are denied, the capability
+is off, or the backend can't apply one of the set's conditions. In Rhai, `delete` returns `false`
+instead and the other verbs throw.
+
+The data source enforces the set: SQL adds the conditions to the statement and checks a written
+row with a one-row probe; SurrealDB and MongoDB do the same in their own query language; memory,
+redb, DynamoDB and Dio evaluate the conditions on the row. A source that can't apply or evaluate a
+condition refuses the write.
+
+Ids: a record without an id gets a client-made UUIDv7 before the first attempt (Rhai `insert`, a
+new record, Servo `IdStrategy::Uuid`,
+[`IdGenerator::UuidV7`](vantage_table::table::IdGenerator)), so a retry lands on the idempotent
+insert. A table whose ids the server makes declares it
+([`Table::with_auto_id`](vantage_table::table::Table::with_auto_id), YAML `flags: [id, auto]`) and
+inserts through `insert_return_id`, which is not retry-safe.
+
+```admonish warning title="Eventually-consistent backends"
+A backend that can't see a row before it writes can't tell an insert of an id held outside the set
+from a new row. Such a backend documents what it does instead; vantage never overwrites silently.
+DynamoDB inserts with a conditional put, so it does detect the clash.
+```
+
+There are no transactions. `replace` and `patch` check the row and then write it, so a concurrent
+writer can change the row between the two. MySQL can't run an `UPDATE` or `DELETE` whose
+condition subqueries the table being written (error 1093), so a set defined that way can't be
+written through on MySQL.
+
 ## Set invariants
 
 A table narrowed by a literal `column = value` is a **set**, and every row written into it must
@@ -48,11 +92,14 @@ Invariants are registered automatically wherever the scope is a plain `column = 
 
 - `Table::with_id(id)` — narrows by the id column.
 - has-many / has-one traversal (`Reference::resolve_from_row`) — narrows by the foreign key.
+- **every literal `column = value` passed to `add_condition` / `with_condition`**.
+- a Vista's `add_condition_eq`.
+- Rhai `where(col, value)`.
 
 Expression scopes never register an invariant. You can also set one explicitly with
 `Table::with_invariant(column, value)` / `add_invariant`.
 
-On every insert / replace / patch, each invariant column is resolved by a four-way rule:
+On insert and replace, each invariant column is resolved by a four-way rule:
 
 | record's value for the column | result |
 | --- | --- |
@@ -63,6 +110,10 @@ On every insert / replace / patch, each invariant column is resolved by a four-w
 
 So a child row inserted through a relation needs no foreign key (it's filled), may state the
 matching one (kept), but cannot smuggle in a *different* one (error — it doesn't belong to this set).
+
+A patch never fills an invariant column. A present value must match it; a different or null value
+is rejected (`Conflict`), because it would move the row out of the set. Moving a row between sets
+goes through a handle whose set holds both.
 
 ```rust
 let crew = launch.get_ref::<LaunchCrew>("launch_crew")?;
@@ -121,7 +172,8 @@ the datasource — enough for cross-row validation and after-effects.
 - **Returning `Err` from any before-hook cancels the operation** before anything is written.
 - **`BeforeDelete` returning `HookReturn::Handled`** skips the real delete and reports success —
   this is how soft-delete works (patch a `deleted` marker, return `Handled`). A delete with hooks
-  loads the row once so before/after hooks see its contents; `delete_all` fires no hooks.
+  loads the row once so before/after hooks see its contents; `delete_all` fires no hooks. A
+  delete with hooks on a row outside the set runs no hooks and deletes nothing.
 - After-hooks run for side-effects only. Vantage favours idempotence over transactions: an
   after-hook failure surfaces an error but does not roll back the committed write — design
   after-effects to be safe to retry.

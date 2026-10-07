@@ -17,7 +17,7 @@ let id = orders.insert(#{ client: "c2", total: 30, status: "due" });
 orders.patch(id, #{ status: "paid" });
 
 let deleted = orders.delete("o4");   // true: the row was there
-let again = orders.delete("o4");     // false: nothing left to delete
+let again = orders.delete("o4");     // true: the row is gone either way
 let patched = orders.patch("o99", #{ status: "paid" });   // false
 
 #{
@@ -30,18 +30,17 @@ let patched = orders.patch("o99", #{ status: "paid" });   // false
 
 | Verb | Returns | When the row is missing |
 |---|---|---|
-| `insert(map)` | the new row's id | n/a |
+| `insert(map)` | the id; an id already in the set returns it | n/a |
 | `upsert(id, map)` | `id` | inserts it |
 | `patch(id, map)` | `true` | returns `false` |
-| `delete(id)` | `true` | returns `false` |
-| `import_from(source)`, `import_from(source, mapping)` | `#{ inserted, skipped, cancelled }` | n/a |
+| `delete(id)` | `true`; `false` only when writes aren't allowed | returns `true` |
+| `import_from(source)`, `import_from(source, mapping)` | `#{ inserted, skipped, rejected, cancelled }` | n/a |
 
-`patch` and `delete` return `false` only for a missing row: the backend reported
-`ErrorKind::NotFound`. Any other failure throws. Drivers report not-found for these cases:
-vantage-memory, SQL on SQLite, PostgreSQL and MySQL (a patch or delete that matched no row) and
-SurrealDB (an update or delete that affected nothing). A Dio Vista checks its cache and then its
-master before it queues the write. A backend that doesn't report not-found returns `true` for a
-missing row.
+`patch` returns `false` when the row is missing or outside the handle's set (the backend reported
+`NotFound`). `delete` returns `true` whenever the row is gone afterwards, including when it was
+never there or is outside the set; it returns `false` only when the write isn't allowed
+(`Writes::Denied`, no `can_delete`, a backend that can't keep writes inside the set). Any other
+failure throws. Why: [Safe writes](../record-lifecycle.md#safe-writes).
 
 `patch` changes only the fields in the map. `upsert` replaces the whole row, so fields left out of
 the map are gone afterwards. [Computed columns](./computed.md) in the map are dropped before the
@@ -49,9 +48,11 @@ write reaches the backend.
 
 ## Ids
 
-`insert` looks at the map's id column. With a value there, that id is used as given, and an
-existing row with that id is an error. Without one, the backend assigns the id and `insert`
-returns it.
+`insert` looks at the map's id column. With a value there, that id is used as given. Without one,
+`insert` mints a UUIDv7 before the first attempt, so a retry reuses it, and returns it. When the
+id column is flagged `auto`, the backend makes the id instead (`insert_return_id`, not
+retry-safe; see [Safe writes](../record-lifecycle.md#safe-writes)). A numeric id column without
+`auto` is an error: pass an id or flag the column.
 
 <!-- tested: rhai_guide::writes::explicit_ids -->
 ```rhai
@@ -64,43 +65,47 @@ orders.upsert("o11", #{ client: "c3", total: 5, status: "due" });    // inserts
 table("client").where("id", "c3").ref("orders").ids()
 ```
 
-Inserting an id that already exists throws:
+Inserting an id that already exists in the set returns it; an id held by a row outside the set
+throws. This insert returns `"o1"` and changes nothing:
 
-<!-- tested: rhai_guide::writes::duplicate_insert -->
+<!-- tested: rhai_guide::writes::insert_existing_id -->
 ```rhai
 table("order").insert(#{ id: "o1", client: "c2", total: 1, status: "due" })
 ```
 
 Use `upsert` when a script owns stable ids and may run more than once.
 
-## Narrowing doesn't filter writes
+## Writes stay in the set
 
-A write goes to the handle's table. `where`, `sort`, `search` and `limit` decide what reads
-return, not which rows a write may touch:
+`where`, `search` and `ref` define the set; a write only touches rows in it, an insert fills the
+set's equality conditions (including a `ref`'s foreign key), and a write that would leave the set
+throws. `sort` doesn't change membership. A handle with `limit(n)` can't be written through: drop
+the limit.
 
-<!-- tested: rhai_guide::writes::writes_ignore_narrowing -->
+<!-- tested: rhai_guide::writes::writes_stay_in_the_set -->
 ```rhai
 let paid = table("order").where("status", "paid");
-paid.delete("o2");   // o2 is due, and is deleted all the same
+let o2 = paid.delete("o2");                         // o2 is due: outside the set
+let o9 = paid.patch("o2", #{ total: 1 });           // false: not in the set
 
 let ada = table("client").where("id", "c1");
-ada.ref("orders").insert(#{ id: "o20", client: "c1", total: 9, status: "due" });
+ada.ref("orders").insert(#{ id: "o20", total: 9, status: "due" });   // client filled
 
 #{
     orders: table("order").ids(),
-    clients: table("client").count(),
+    o20: table("order").get("o20").client,
+    o2: o2,
+    o9: o9,
 }
 ```
 
-The exception is `ref`: after a `ref` step, writes go to the relation's target table. Steps before
-the last `ref` are read (to find the related rows); steps after it are ignored for writes.
-
-`insert` through a `ref` doesn't fill the foreign key. Set it in the map, as above.
+returns `#{ orders: ["o1", "o2", "o3", "o4", "o20"], o20: "c1", o2: true, o9: false }`: `o2` is
+still there.
 
 ## Capabilities
 
 Each write checks the target Vista's capabilities before it runs, and throws an error naming the
-verb and the table when the backend can't do it:
+verb and the table when the backend can't do it (`delete` returns `false` instead):
 
 | Verb | Needs |
 |---|---|
@@ -111,8 +116,8 @@ verb and the table when the backend can't do it:
 | `import_from` | `can_import`, or `can_insert` for row-by-row inserts |
 
 A host can also turn writes off for every table with `Writes::Denied(message)`. The verbs are
-still there, and each throws `message`. Vantage UI does this for MCP agents unless the "Allow MCP
-agents to write data" setting is on.
+still there, and each throws `message`, except `delete`, which returns `false`. Vantage UI does
+this for MCP agents unless the "Allow MCP agents to write data" setting is on.
 
 ## Importing
 
@@ -150,12 +155,13 @@ let report = table("archive").import_from(
 - The mapping must set the target's id column. Two source rows mapping to the same id are an
   error, and so is an id whose `table:` prefix names a different table.
 
-An id the target already holds is never overwritten; it counts as `skipped`. When the target can
-import (`can_import`), the rows go through `import_values` in one call and the backend decides
-which ids it already holds. Otherwise each row is looked up with `get` first and inserted only if
-it is missing; any insert failure stops the import and throws. A target narrowed by `ref` only
-sees its own rows in that lookup, so an id held outside the narrowing is sent as an insert, which a
-backend that rejects duplicate ids refuses. Importing the same rows twice into a memory table:
+An id the target already holds is never overwritten; it counts as `skipped`. Rows that conflict
+with a narrowed target count as `rejected`. When the target can import (`can_import`) and isn't
+narrowed, the rows go through `import_values` in one call and the backend decides which ids it
+already holds. Otherwise each row is looked up with `get` first and inserted on its own if it is
+missing. Into a narrowed target, a row outside the set is `rejected` and the import carries on;
+any other insert failure stops the import and throws. Importing the same rows twice into a memory
+table:
 
 <!-- tested: rhai_guide::writes::import_twice -->
 ```rhai
@@ -181,5 +187,6 @@ Dio's cache whose inserts, patches and deletes are queued as flashes and written
 master. To the script it is just a Vista. It is how action bodies in Vantage UI write: the page
 sees the change at once, and the master write follows.
 
-An `insert` without an id on a Dio Vista goes straight to the master (there is no id to stage
-until the master assigns one) and then seeds the cache, so an immediate `get(id)` finds the row.
+An `insert` without an id is queued like any other, with its minted UUIDv7. When the id column is
+flagged `auto`, it goes straight to the master instead (there is no id to stage until the master
+assigns one) and then seeds the cache, so an immediate `get(id)` finds the row.

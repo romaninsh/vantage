@@ -3,7 +3,10 @@
 pub mod record;
 pub mod traits;
 
+#[cfg(feature = "contract")]
+pub mod contract;
 pub mod im;
+pub mod invariants;
 pub mod mocks;
 pub mod prelude;
 

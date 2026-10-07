@@ -12,9 +12,13 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+use super::set_writes;
 use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::AnySqliteType;
+use crate::table_writes::{
+    held_outside, new_row_not_in_set, not_in_set, patch_leaves_set, patch_not_found,
+};
 use vantage_expressions::expr_any;
 
 /// Parse the CBOR array result from execute() into an IndexMap of id → Record.
@@ -92,6 +96,14 @@ impl TableSource for SqliteDB {
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySqliteType> = Column::new(field);
         Ok(SqliteOperation::eq(&column, value))
+    }
+
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        vantage_table::conditions::literal_equality(&condition.0)
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        true
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -269,7 +281,21 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
+        // In the set already: the insert is a no-op that returns the stored row.
+        if let Some(existing) = self.get_table_value(table, id).await? {
+            return Ok(existing);
+        }
         let id_field_name = table.id_field_name();
+        if table.conditions().next().is_some() {
+            if self.id_exists_anywhere(table, id).await? {
+                return Err(held_outside(table, id));
+            }
+            let mut row = record.clone();
+            row.insert(id_field_name.clone(), set_writes::id_cell(table, id));
+            if !self.row_in_set(table, &row).await? {
+                return Err(not_in_set(table, id));
+            }
+        }
 
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
             .with_record(record)
@@ -277,7 +303,16 @@ impl TableSource for SqliteDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
-        self.execute(&insert.expr()).await?;
+        if let Err(e) = self.execute(&insert.expr()).await {
+            // Another writer took the id between the check and the insert.
+            if let Some(existing) = self.get_table_value(table, id).await? {
+                return Ok(existing);
+            }
+            if self.id_exists_anywhere(table, id).await? {
+                return Err(held_outside(table, id));
+            }
+            return Err(e);
+        }
 
         self.get_table_value(table, id)
             .await?
@@ -294,6 +329,17 @@ impl TableSource for SqliteDB {
         E: Entity<Self::Value>,
     {
         let id_field_name = table.id_field_name();
+        if table.conditions().next().is_some() {
+            let in_set = self.get_table_value(table, id).await?.is_some();
+            if !in_set && self.id_exists_anywhere(table, id).await? {
+                return Err(held_outside(table, id));
+            }
+            let mut row = record.clone();
+            row.insert(id_field_name.clone(), set_writes::id_cell(table, id));
+            if !self.row_in_set(table, &row).await? {
+                return Err(not_in_set(table, id));
+            }
+        }
 
         // SQLite INSERT OR REPLACE handles both insert and update
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
@@ -325,13 +371,28 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
+        let Some(current) = self.get_table_value(table, id).await? else {
+            return Err(patch_not_found(table, id));
+        };
+        if table.conditions().next().is_some() {
+            let mut merged = current;
+            for (k, v) in partial.iter() {
+                merged.insert(k.clone(), v.clone());
+            }
+            if !self.row_in_set(table, &merged).await? {
+                return Err(patch_leaves_set(table, id));
+            }
+        }
 
+        let id_field_name = table.id_field_name();
         let id_val = id.clone();
         let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
-        let update = crate::sqlite::statements::SqliteUpdate::new(table.table_name())
+        let mut update = crate::sqlite::statements::SqliteUpdate::new(table.table_name())
             .with_record(partial)
             .with_condition(id_condition);
+        for condition in table.conditions() {
+            update = update.with_condition(condition.clone());
+        }
         self.execute(&update.expr()).await?;
 
         crate::table_writes::refetch_after_patch(self, table, id).await
@@ -345,11 +406,13 @@ impl TableSource for SqliteDB {
 
         let id_val = id.clone();
         let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
-        let delete = crate::sqlite::statements::SqliteDelete::new(table.table_name())
+        // A missing row, or one outside the conditions, matches nothing: Ok.
+        let mut delete = crate::sqlite::statements::SqliteDelete::new(table.table_name())
             .with_condition(id_condition);
-        if self.execute_affected(&delete.expr()).await? == 0 {
-            return Err(error!("Row not found for delete", id = id.clone()).mark_not_found());
+        for condition in table.conditions() {
+            delete = delete.with_condition(condition.clone());
         }
+        self.execute(&delete.expr()).await?;
         Ok(())
     }
 
@@ -374,6 +437,9 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
+        if !self.row_in_set(table, record).await? {
+            return Err(new_row_not_in_set(table));
+        }
         let id_field_name = table.id_field_name();
 
         let insert =

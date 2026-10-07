@@ -20,6 +20,7 @@ use crate::condition::RedbCondition;
 use crate::redb::helpers::{collect_indexed_pairs, indexed_columns};
 use crate::redb::indexes::{delete_indexes, write_indexes};
 use crate::redb::query::load_filtered;
+use crate::redb::scope::{fits, resolved_conditions, with_id};
 use crate::redb::{Redb, index_table_def, index_table_name, main_table_def};
 use crate::types::{AnyRedbType, decode_record, encode_record};
 
@@ -59,6 +60,17 @@ impl TableSource for Redb {
         parameters: Vec<ExpressiveEnum<Self::Value>>,
     ) -> Expression<Self::Value> {
         Expression::new(template, parameters)
+    }
+
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        match condition {
+            RedbCondition::Eq { column, value } => Some((column.clone(), value.clone())),
+            _ => None,
+        }
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        true
     }
 
     fn search_table_condition<E>(
@@ -105,6 +117,7 @@ impl TableSource for Redb {
     where
         E: Entity<Self::Value>,
     {
+        let conditions = resolved_conditions(table).await?;
         let txn = self.begin_read()?;
         let main = match txn.open_table(main_table_def(table.table_name())) {
             Ok(t) => t,
@@ -119,10 +132,10 @@ impl TableSource for Redb {
         let bytes = main
             .get(id.as_str())
             .map_err(|e| error!("redb get failed", details = e.to_string()))?;
-        match bytes {
-            Some(b) => Ok(Some(decode_record(b.value())?)),
-            None => Ok(None),
-        }
+        let Some(b) = bytes else { return Ok(None) };
+        let row = decode_record(b.value())?;
+        let id_col = table.id_field_name();
+        Ok(fits(&conditions, &with_id(&row, &id_col, id)).then_some(row))
     }
 
     async fn get_table_some_value<E>(
@@ -210,12 +223,34 @@ impl TableSource for Redb {
         let bytes = encode_record(record)?;
         let indexed_cols = indexed_columns(table);
         let pairs = collect_indexed_pairs(record, &indexed_cols);
+        let id_col = table.id_field_name();
+        let conditions = resolved_conditions(table).await?;
 
         let txn = self.begin_write()?;
         {
             let mut main = txn
                 .open_table(main_table_def(table_name))
                 .map_err(|e| error!("Failed to open main for insert", details = e.to_string()))?;
+
+            // An id that is already stored is never overwritten: inside the
+            // set the stored row is returned, outside it the insert conflicts.
+            let existing = main
+                .get(id.as_str())
+                .map_err(|e| error!("Insert read failed", details = e.to_string()))?
+                .map(|b| decode_record(b.value()))
+                .transpose()?;
+            if let Some(existing) = existing {
+                if fits(&conditions, &with_id(&existing, &id_col, id)) {
+                    return Ok(existing);
+                }
+                return Err(error!("Row exists outside this set", id = id.as_str()).mark_conflict());
+            }
+            if !fits(&conditions, &with_id(record, &id_col, id)) {
+                return Err(
+                    error!("Row does not belong to this set", id = id.as_str()).mark_conflict()
+                );
+            }
+
             main.insert(id.as_str(), bytes.as_slice())
                 .map_err(|e| error!("Main insert failed", details = e.to_string()))?;
             write_indexes(&txn, table_name, &pairs, id)?;
@@ -239,6 +274,12 @@ impl TableSource for Redb {
         let new_bytes = encode_record(record)?;
         let indexed_cols = indexed_columns(table);
         let new_pairs = collect_indexed_pairs(record, &indexed_cols);
+        let id_col = table.id_field_name();
+        let conditions = resolved_conditions(table).await?;
+
+        if !fits(&conditions, &with_id(record, &id_col, id)) {
+            return Err(error!("Row does not belong to this set", id = id.as_str()).mark_conflict());
+        }
 
         let txn = self.begin_write()?;
 
@@ -253,6 +294,9 @@ impl TableSource for Redb {
                 .transpose()?
         };
         if let Some(old) = &old_record {
+            if !fits(&conditions, &with_id(old, &id_col, id)) {
+                return Err(error!("Row exists outside this set", id = id.as_str()).mark_conflict());
+            }
             let old_pairs = collect_indexed_pairs(old, &indexed_cols);
             delete_indexes(&txn, table_name, &old_pairs, id)?;
         }
@@ -283,19 +327,26 @@ impl TableSource for Redb {
     {
         let table_name = table.table_name();
         let indexed_cols = indexed_columns(table);
+        let id_col = table.id_field_name();
+        let conditions = resolved_conditions(table).await?;
         let txn = self.begin_write()?;
 
         // Phase 1 — read the existing row in its own scope so the read
-        // borrow is released before we re-open for write.
+        // borrow is released before we re-open for write. A row outside the
+        // set is as good as missing.
         let mut record = {
             let main = txn
                 .open_table(main_table_def(table_name))
                 .map_err(|e| error!("Failed to open main for patch", details = e.to_string()))?;
-            let old_bytes = main
+            let old = main
                 .get(id.as_str())
                 .map_err(|e| error!("Patch read failed", details = e.to_string()))?
-                .ok_or_else(|| error!("Cannot patch missing row", id = id.as_str()))?;
-            decode_record(old_bytes.value())?
+                .map(|b| decode_record(b.value()))
+                .transpose()?
+                .filter(|r| fits(&conditions, &with_id(r, &id_col, id)));
+            old.ok_or_else(|| {
+                error!("Cannot patch missing row", id = id.as_str()).mark_not_found()
+            })?
         };
 
         // Snapshot old indexed pairs before mutating the record (owned copies
@@ -308,6 +359,12 @@ impl TableSource for Redb {
 
         for (k, v) in partial.iter() {
             record.insert(k.clone(), v.clone());
+        }
+
+        if !fits(&conditions, &with_id(&record, &id_col, id)) {
+            return Err(
+                error!("Patch would move the row out of its set", id = id.as_str()).mark_conflict(),
+            );
         }
 
         // Phase 2 — write new bytes + maintain indexes.
@@ -338,9 +395,12 @@ impl TableSource for Redb {
     {
         let table_name = table.table_name();
         let indexed_cols = indexed_columns(table);
+        let id_col = table.id_field_name();
+        let conditions = resolved_conditions(table).await?;
         let txn = self.begin_write()?;
 
-        // Read row to know what to delete from indexes, then remove.
+        // Read the row to know what to delete from indexes; only a row in the
+        // set is removed.
         let row = {
             let mut main = txn
                 .open_table(main_table_def(table_name))
@@ -349,9 +409,12 @@ impl TableSource for Redb {
                 .get(id.as_str())
                 .map_err(|e| error!("Delete read failed", details = e.to_string()))?
                 .map(|b| decode_record(b.value()))
-                .transpose()?;
-            main.remove(id.as_str())
-                .map_err(|e| error!("Delete remove failed", details = e.to_string()))?;
+                .transpose()?
+                .filter(|r| fits(&conditions, &with_id(r, &id_col, id)));
+            if row.is_some() {
+                main.remove(id.as_str())
+                    .map_err(|e| error!("Delete remove failed", details = e.to_string()))?;
+            }
             row
         };
 
@@ -402,7 +465,13 @@ impl TableSource for Redb {
     where
         E: Entity<Self::Value>,
     {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id_col = table.id_field_name();
+        let supplied = record.get(id_col.as_str()).and_then(|v| match v.value() {
+            ciborium::Value::Text(s) => Some(s.clone()),
+            ciborium::Value::Integer(n) => Some(i128::from(*n).to_string()),
+            _ => None,
+        });
+        let id = supplied.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
         self.insert_table_value(table, &id, record).await?;
         Ok(id)
     }

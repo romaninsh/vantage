@@ -2,6 +2,7 @@
 mod macros;
 pub mod operation;
 pub(crate) mod row;
+mod set_writes;
 pub mod statements;
 mod table_source;
 pub mod types;

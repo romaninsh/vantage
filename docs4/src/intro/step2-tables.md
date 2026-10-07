@@ -71,7 +71,7 @@ important differences:
 | **Operations**   | One SQL statement (SELECT, INSERT, ...) | Higher-level CRUD: list, get, add, patch, delete |
 | **Columns**      | String field names via `.with_field()`  | Typed `Column<T>` definitions                    |
 | **Database**     | Not bound — just a struct               | Holds a database reference (`Arc`)               |
-| **Idempotency**  | INSERT fails on duplicate key           | `replace()` and `delete()` are idempotent        |
+| **Idempotency**  | INSERT fails on duplicate key           | every write is retry-safe ([Safe writes](../record-lifecycle.md#safe-writes)) |
 | **Data sources** | Only databases with a query language    | Any data source: SQL, CSV, APIs, queues, etc.    |
 
 A [`Table`](vantage_table::table::Table) is typically defined in its own file alongside the entity.
@@ -171,7 +171,8 @@ That's it. `list()` returns an `IndexMap<Id, Product>` — ordered and keyed by 
 `Option<Product>` — `None` when the ID doesn't exist, so you can pattern-match or `.ok_or(...)` into
 your own not-found error. There's also `get_some()` which returns an `(Id, Product)` pair (still
 `Option`-wrapped) for sampling, and `insert_return_id()` for when you want the database to generate
-the ID.
+the ID; see [Safe writes](../record-lifecycle.md#safe-writes) for why a client-made id is the
+retry-safe choice.
 
 ```admonish info title="Ids are strings"
 Our `id` column is `INTEGER PRIMARY KEY`, yet every id above is a string. That's deliberate:
@@ -183,10 +184,9 @@ JSON output in the next chapter.
 ```
 
 ```admonish tip title="Idempotent operations"
-Try duplicating the `replace()` and `delete()` calls — the result is the same. Replacing
-a record that already has the new values is a no-op. Deleting a record that's already gone
-succeeds silently. This makes table operations safe to retry without worrying about
-side effects.
+Try repeating the `insert`, `replace` and `delete` calls — the result is the same: an insert
+of an existing id returns the stored row, a replace with the same values changes nothing, and
+deleting a row that's gone succeeds. See [Safe writes](../record-lifecycle.md#safe-writes).
 ```
 
 ---

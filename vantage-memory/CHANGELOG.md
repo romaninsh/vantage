@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 — 2026-10-05
+
+- **Breaking:** typed and Vista writes follow the write contract: insert of an existing id returns
+  the stored row (an id outside the set is `Conflict`); delete of a missing row or one outside the
+  set is `Ok`; replace of a missing row creates it; patch of a missing row is `NotFound`.
+- Writes through a narrowed table or Vista are confined to its conditions and fill its equality
+  conditions; has-many traversal fills the foreign key.
+- **Breaking:** native import (`import_vista_values`) never overwrites: an existing id counts zero,
+  and a row outside the set fails the import before anything is written.
+- Depends on `vantage-table` 1.2.0, `vantage-dataset` 1.1.0.
+- Vista shells advertise `can_confine_writes`.
+
 ## 1.1.1 — 2026-10-04
 
 - The vista factory uses the shared spec helpers.

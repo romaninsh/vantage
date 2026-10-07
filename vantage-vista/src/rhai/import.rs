@@ -12,9 +12,11 @@
 //! The mapping must set the target's id column; the id commands the insert and
 //! is not repeated in the record.
 //!
-//! The verb returns a report, `#{ inserted, skipped, cancelled }`: rows newly
-//! written, rows the target already held, and whether the backend stopped
-//! early (a host's import may be cancellable).
+//! The verb returns a report, `#{ inserted, skipped, rejected, cancelled }`:
+//! rows newly written, rows the target already held, rows that conflict with
+//! the target's set (an equality they break, an operator they fail, an id held
+//! outside the set), and whether the backend stopped early (a host's import
+//! may be cancellable).
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -60,17 +62,21 @@ fn source_rows(source: &Handle, resolver: Option<&TargetResolver>) -> RhaiResult
     Ok(rows.into_iter().collect())
 }
 
-/// Bulk import when the backend can, one insert per row otherwise.
+/// Bulk import when the backend can and the target isn't narrowed, one insert
+/// per row otherwise.
 ///
-/// Either way, rows the target already held count as skipped.
+/// Either way, rows the target already held count as skipped. Row by row, a
+/// row that conflicts with the target's set is rejected and the import carries
+/// on; any other insert failure stops it.
 /// A backend whose import was cancelled part-way returns an error carrying
 /// [`IMPORT_CANCELLED`]; that becomes a `cancelled` report, not a throw.
 fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
-    if vista.capabilities().can_import {
+    if vista.capabilities().can_import && !vista.is_narrowed() {
         return match block_on(vista.import_values(records)).map_err(rhai_err)? {
             Ok(inserted) => Ok(report(
                 inserted,
                 records.len().saturating_sub(inserted),
+                0,
                 false,
             )),
             Err(e) => match e.context.get(IMPORT_CANCELLED) {
@@ -79,6 +85,7 @@ fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
                     Ok(report(
                         n.parse().unwrap_or(0),
                         skipped.and_then(|s| s.parse().ok()).unwrap_or(0),
+                        0,
                         true,
                     ))
                 }
@@ -86,18 +93,19 @@ fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
             },
         };
     }
-    // An id the target already holds is skipped, as the bulk path counts it;
-    // any insert failure stops the import. A target narrowed by `.ref()` only
-    // sees its own rows, so an id held outside the narrowing is inserted.
-    let mut inserted = 0;
+    let (mut inserted, mut skipped, mut rejected) = (0, 0, 0);
     for (id, record) in records {
         if run(vista.get_value(id.clone()))?.is_some() {
+            skipped += 1;
             continue;
         }
-        run(vista.insert_value(id.clone(), record))?;
-        inserted += 1;
+        match block_on(vista.insert_value(id.clone(), record)).map_err(rhai_err)? {
+            Ok(_) => inserted += 1,
+            Err(e) if e.is_conflict() => rejected += 1,
+            Err(e) => return Err(rhai_err(e)),
+        }
     }
-    Ok(report(inserted, records.len() - inserted, false))
+    Ok(report(inserted, skipped, rejected, false))
 }
 
 /// Context key a backend sets on the error it returns from
@@ -109,10 +117,11 @@ pub const IMPORT_CANCELLED: &str = "import_cancelled_after";
 /// (already held) before the stop. Missing means none.
 pub const IMPORT_CANCELLED_SKIPPED: &str = "import_cancelled_skipped";
 
-fn report(inserted: usize, skipped: usize, cancelled: bool) -> RhaiMap {
+fn report(inserted: usize, skipped: usize, rejected: usize, cancelled: bool) -> RhaiMap {
     let mut map = RhaiMap::new();
     map.insert("inserted".into(), (inserted as i64).into());
     map.insert("skipped".into(), (skipped as i64).into());
+    map.insert("rejected".into(), (rejected as i64).into());
     map.insert("cancelled".into(), cancelled.into());
     map
 }

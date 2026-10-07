@@ -4,11 +4,16 @@ use vantage_types::Entity;
 use crate::{conditions::ConditionHandle, table::Table, traits::table_source::TableSource};
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
-    /// Add a permanent condition to limit what records the table represents
+    /// Add a permanent condition. A literal `column = value` condition (see
+    /// [`TableSource::condition_equality`]) also becomes a set invariant.
     pub fn add_condition(&mut self, condition: impl Into<T::Condition>) {
+        let condition = condition.into();
+        if let Some((column, value)) = self.data_source.condition_equality(&condition) {
+            self.add_invariant(column, value);
+        }
         let id = -self.next_condition_id;
         self.next_condition_id += 1;
-        self.conditions.insert(id, condition.into());
+        self.conditions.insert(id, condition);
     }
 
     /// Add a temporary condition that can be removed later
@@ -94,6 +99,31 @@ mod tests {
 
         // Verify we have exactly 2 conditions left (both permanent)
         assert_eq!(table.conditions().count(), 2);
+    }
+
+    #[test]
+    fn literal_equality_condition_registers_an_invariant() {
+        use serde_json::json;
+        use vantage_expressions::{Expression, ExpressiveEnum};
+        let mut table = Table::<_, EmptyEntity>::new("t", MockTableSource::new());
+        table.add_condition(Expression::new(
+            "{} = {}",
+            vec![
+                ExpressiveEnum::Nested(Expression::new("parent", vec![])),
+                ExpressiveEnum::Nested(Expression::new(
+                    "{}",
+                    vec![ExpressiveEnum::Scalar(json!("p1"))],
+                )),
+            ],
+        ));
+        assert_eq!(table.invariants().get("parent"), Some(&json!("p1")));
+        let pattern = "%x%".to_string();
+        let _ = table.temp_add_condition(expr_any!("name LIKE {}", pattern));
+        assert_eq!(
+            table.invariants().len(),
+            1,
+            "temp conditions register nothing"
+        );
     }
 
     #[test]

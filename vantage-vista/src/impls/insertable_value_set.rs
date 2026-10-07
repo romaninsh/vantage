@@ -9,6 +9,7 @@ use crate::vista::Vista;
 #[async_trait]
 impl InsertableValueSet for Vista {
     async fn insert_return_id_value(&self, record: &Record<CborValue>) -> Result<String> {
+        self.require_confined("insert")?;
         self.insert_nested_return_id(record).await
     }
 }

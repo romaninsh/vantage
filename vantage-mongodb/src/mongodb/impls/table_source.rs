@@ -70,6 +70,60 @@ fn select_from_table<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> Mong
     select
 }
 
+/// `{ _id: id }`, and the table's filter when it has one.
+fn confined(id: &MongoId, filter: bson::Document) -> bson::Document {
+    if filter.is_empty() {
+        doc! { "_id": id }
+    } else {
+        doc! { "$and": [ { "_id": id }, filter ] }
+    }
+}
+
+fn record_to_doc(record: &Record<AnyMongoType>) -> bson::Document {
+    let mut d = bson::Document::new();
+    for (k, v) in record.iter() {
+        d.insert(k, v.value().clone());
+    }
+    d
+}
+
+fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
+    use mongodb::error::{ErrorKind, WriteFailure};
+    matches!(
+        &*e.kind,
+        ErrorKind::Write(WriteFailure::WriteError(we)) if we.code == 11000
+    )
+}
+
+impl MongoDB {
+    /// Whether `doc` satisfies the table's filter, evaluated by the server over a
+    /// one-document `$documents` stage (MongoDB 5.1+).
+    pub(crate) async fn row_in_set<E: Entity<AnyMongoType>>(
+        &self,
+        table: &Table<Self, E>,
+        doc: &bson::Document,
+    ) -> Result<bool> {
+        let filter = select_from_table(table).build_filter().await?;
+        if filter.is_empty() {
+            return Ok(true);
+        }
+        let pipeline = vec![
+            doc! { "$documents": [doc.clone()] },
+            doc! { "$match": filter },
+        ];
+        let mut cursor = self
+            .database()
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| error!("MongoDB set probe failed", details = e.to_string()))?;
+        Ok(cursor
+            .try_next()
+            .await
+            .map_err(|e| error!("MongoDB set probe cursor failed", details = e.to_string()))?
+            .is_some())
+    }
+}
+
 #[async_trait]
 impl TableSource for MongoDB {
     type Column<Type>
@@ -84,6 +138,29 @@ impl TableSource for MongoDB {
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         Ok(MongoCondition::Doc(doc! { field: value.to_bson() }))
+    }
+
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        let MongoCondition::Doc(d) = condition else {
+            return None;
+        };
+        if d.len() != 1 {
+            return None;
+        }
+        let (k, v) = d.iter().next()?;
+        if k.starts_with('$') {
+            return None;
+        }
+        let value = match v {
+            Bson::Document(inner) if inner.len() == 1 => inner.get("$eq")?.clone(),
+            Bson::Document(_) | Bson::Array(_) => return None,
+            scalar => scalar.clone(),
+        };
+        Some((k.clone(), AnyMongoType::untyped(value)))
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        true
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -189,9 +266,10 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         let coll = self.doc_collection(table.table_name());
+        let filter = select_from_table(table).build_filter().await?;
 
         let Some(d) = coll
-            .find_one(doc! { "_id": id })
+            .find_one(confined(id, filter))
             .await
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
         else {
@@ -350,9 +428,37 @@ impl TableSource for MongoDB {
             doc.insert(k, v.value().clone());
         }
 
-        coll.insert_one(doc)
+        if let Some(existing) = self.get_table_value(table, id).await? {
+            return Ok(existing);
+        }
+        let held_outside =
+            || error!("Id is held outside the table's set", id = id.to_string()).mark_conflict();
+        if coll
+            .find_one(doc! { "_id": id })
             .await
-            .map_err(|e| error!("MongoDB insert_one failed", details = e.to_string()))?;
+            .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
+            .is_some()
+        {
+            return Err(held_outside());
+        }
+        if !self.row_in_set(table, &doc).await? {
+            return Err(error!(
+                "Document does not match the table's filter",
+                id = id.to_string()
+            )
+            .mark_conflict());
+        }
+
+        if let Err(e) = coll.insert_one(doc).await {
+            if !is_duplicate_key(&e) {
+                return Err(error!("MongoDB insert_one failed", details = e.to_string()));
+            }
+            // A concurrent insert won the race: return its row if it is ours.
+            return self
+                .get_table_value(table, id)
+                .await?
+                .ok_or_else(held_outside);
+        }
 
         self.get_table_value(table, id)
             .await?
@@ -369,16 +475,48 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         let coll = self.doc_collection(table.table_name());
-        let filter = doc! { "_id": id };
+        let table_filter = select_from_table(table).build_filter().await?;
         let mut replacement = bson::Document::new();
         for (k, v) in record.iter() {
             replacement.insert(k, v.value().clone());
         }
+        let mut full = doc! { "_id": id };
+        full.extend(replacement.clone());
 
-        coll.replace_one(filter, replacement)
-            .upsert(true)
-            .await
-            .map_err(|e| error!("MongoDB replace_one failed", details = e.to_string()))?;
+        if self.get_table_value(table, id).await?.is_some() {
+            if !self.row_in_set(table, &full).await? {
+                return Err(error!(
+                    "Replacement document leaves the table's set",
+                    id = id.to_string()
+                )
+                .mark_conflict());
+            }
+            coll.replace_one(confined(id, table_filter), replacement)
+                .await
+                .map_err(|e| error!("MongoDB replace_one failed", details = e.to_string()))?;
+        } else {
+            if coll
+                .find_one(doc! { "_id": id })
+                .await
+                .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
+                .is_some()
+            {
+                return Err(
+                    error!("Id is held outside the table's set", id = id.to_string())
+                        .mark_conflict(),
+                );
+            }
+            if !self.row_in_set(table, &full).await? {
+                return Err(error!(
+                    "Document does not match the table's filter",
+                    id = id.to_string()
+                )
+                .mark_conflict());
+            }
+            coll.insert_one(full)
+                .await
+                .map_err(|e| error!("MongoDB insert_one failed", details = e.to_string()))?;
+        }
 
         self.get_table_value(table, id)
             .await?
@@ -394,29 +532,47 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
+        let not_found = || error!("Record not found", id = id.to_string()).mark_not_found();
         let coll = self.doc_collection(table.table_name());
-        let filter = doc! { "_id": id };
+        let table_filter = select_from_table(table).build_filter().await?;
+        let filter = confined(id, table_filter);
+
+        let existing = self
+            .get_table_value(table, id)
+            .await?
+            .ok_or_else(not_found)?;
+        let mut merged = record_to_doc(&existing);
         let mut set_doc = bson::Document::new();
         for (k, v) in partial.iter() {
             set_doc.insert(k, v.value().clone());
+            merged.insert(k, v.value().clone());
         }
-        let update = doc! { "$set": set_doc };
+        if !self.row_in_set(table, &merged).await? {
+            return Err(error!(
+                "Patched document leaves the table's set",
+                id = id.to_string()
+            )
+            .mark_conflict());
+        }
 
-        coll.update_one(filter, update)
+        let result = coll
+            .update_one(filter, doc! { "$set": set_doc })
             .await
             .map_err(|e| error!("MongoDB update_one failed", details = e.to_string()))?;
+        if result.matched_count == 0 {
+            return Err(not_found());
+        }
 
-        self.get_table_value(table, id)
-            .await?
-            .ok_or_else(|| error!("Record not found after patch", id = id.to_string()))
+        self.get_table_value(table, id).await?.ok_or_else(not_found)
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
+        let filter = select_from_table(table).build_filter().await?;
         let coll = self.doc_collection(table.table_name());
-        coll.delete_one(doc! { "_id": id })
+        coll.delete_one(confined(id, filter))
             .await
             .map_err(|e| error!("MongoDB delete_one failed", details = e.to_string()))?;
         Ok(())
@@ -447,6 +603,9 @@ impl TableSource for MongoDB {
         let mut doc = bson::Document::new();
         for (k, v) in record.iter() {
             doc.insert(k, v.value().clone());
+        }
+        if !self.row_in_set(table, &doc).await? {
+            return Err(error!("Document does not match the table's filter").mark_conflict());
         }
 
         let result = coll

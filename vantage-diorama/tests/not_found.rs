@@ -1,9 +1,8 @@
 //! `DioShell`'s `TableShell` writes check a row's existence — cache first,
-//! master on a cache miss — before enqueueing a patch or delete. Without
-//! that check, an id absent everywhere would still enqueue: the write
-//! queue is fire-and-forget, so `patch_value`/`delete` would return `Ok`
-//! to the immediate caller, and the write's eventual failure would only
-//! reach `DioEvent::WriteFailed` on the event bus.
+//! master on a cache miss — before enqueueing a patch or delete. A patch of
+//! an id absent everywhere is `NotFound` up front rather than a later
+//! `DioEvent::WriteFailed`; a delete of one is an idempotent `Ok` that
+//! queues nothing.
 
 use std::sync::Arc;
 
@@ -78,7 +77,7 @@ async fn cached_row_skips_the_master_read() -> Result<()> {
 }
 
 #[tokio::test]
-async fn patch_and_delete_of_a_missing_row_are_not_found() -> Result<()> {
+async fn patch_missing_is_not_found_delete_missing_succeeds() -> Result<()> {
     let (dio, _master) = dio_with_one_row().await?;
     let vista = dio.vista();
 
@@ -88,8 +87,7 @@ async fn patch_and_delete_of_a_missing_row_are_not_found() -> Result<()> {
         .unwrap_err();
     assert!(err.is_not_found(), "{err}");
 
-    let err = vista.delete("nope").await.unwrap_err();
-    assert!(err.is_not_found(), "{err}");
+    assert!(vista.delete("nope").await.is_ok());
 
     Ok(())
 }

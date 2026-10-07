@@ -2,6 +2,7 @@
 //! insert or a patch of only the changed fields, delete, revert, and the
 //! read-only id column.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -34,6 +35,36 @@ fn new_record_save_inserts_and_returns_id() {
         json(&host, &format!(r#"table("t").get("{id}")"#))["a"],
         json!(9)
     );
+}
+
+#[test]
+fn retried_new_record_save_reuses_its_id() {
+    let caps = VistaCapabilities {
+        can_insert: true,
+        ..VistaCapabilities::default()
+    };
+    let shell = LossyShell {
+        inner: mock_with("r1", &[], caps),
+        lost: Arc::new(AtomicBool::new(false)),
+    };
+    let host = host_over(shell);
+    let out = json(
+        &host,
+        r#"
+        let r = table("t").record();
+        r.a = 5;
+        let first = "saved";
+        try {
+            r.save();
+        } catch(err) {
+            first = r.status();
+        }
+        let id = r.save();
+        #{ first: first, id: id, ids: table("t").ids() }
+    "#,
+    );
+    assert_eq!(out["first"], json!("failed"), "{out}");
+    assert_eq!(out["ids"], json!(["r1", out["id"]]), "{out}");
 }
 
 #[test]
@@ -229,15 +260,15 @@ fn denied_writes_block_save() {
     .unwrap_err();
     assert!(err.contains("writes aren't available here"), "{err}");
 
-    let err = run(
+    let deleted = run(
         &host,
         r#"
         let r = table("t").record("r1");
         r.delete()
     "#,
     )
-    .unwrap_err();
-    assert!(err.contains("writes aren't available here"), "{err}");
+    .unwrap();
+    assert!(!deleted.as_bool().unwrap(), "a denied delete is `false`");
 }
 
 #[test]
@@ -299,6 +330,72 @@ fn host_over(shell: impl TableShell + Clone + 'static) -> Host {
     Host::builder(Limits::background())
         .vocab(DataVocab::read_write(Some(resolver)))
         .build()
+}
+
+/// Wraps a `MockShell` whose first insert lands but reports an error, the
+/// way a write whose response is lost does.
+#[derive(Clone)]
+struct LossyShell {
+    inner: MockShell,
+    lost: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl TableShell for LossyShell {
+    fn columns(&self) -> &IndexMap<String, Column> {
+        self.inner.columns()
+    }
+
+    fn id_column(&self) -> Option<&str> {
+        self.inner.id_column()
+    }
+
+    fn capabilities(&self) -> &VistaCapabilities {
+        self.inner.capabilities()
+    }
+
+    async fn list_vista_values(
+        &self,
+        vista: &Vista,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.inner.list_vista_values(vista).await
+    }
+
+    async fn get_vista_value(
+        &self,
+        vista: &Vista,
+        id: &String,
+    ) -> Result<Option<Record<CborValue>>> {
+        self.inner.get_vista_value(vista, id).await
+    }
+
+    async fn get_vista_some_value(
+        &self,
+        vista: &Vista,
+    ) -> Result<Option<(String, Record<CborValue>)>> {
+        self.inner.get_vista_some_value(vista).await
+    }
+
+    fn references(&self) -> &IndexMap<String, Reference> {
+        self.inner.references()
+    }
+
+    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
+        self.inner.preview_query(vista)
+    }
+
+    async fn insert_vista_value(
+        &self,
+        vista: &Vista,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        let stored = self.inner.insert_vista_value(vista, id, record).await?;
+        if !self.lost.swap(true, Ordering::SeqCst) {
+            return Err(vantage_core::error!("connection reset"));
+        }
+        Ok(stored)
+    }
 }
 
 /// Wraps a `MockShell` and records every `partial` a `patch_vista_value`

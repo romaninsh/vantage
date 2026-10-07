@@ -10,6 +10,9 @@ scope. This chapter goes through each surface with a tested example.
 
 ## Overview
 
+Rows marked "(app)" are hosts an application builds for itself; the values shown are Vantage UI's.
+The rest come with vantage.
+
 | Surface | `table(name)` resolves | Terminals | Limits | In scope |
 |---|---|---|---|---|
 | `run_script` (agent tools) | the caller's resolver | ReadWrite, `list()` capped at 1 to 50 rows | Background | |
@@ -18,11 +21,11 @@ scope. This chapter goes through each surface with a tested example.
 | reference build script | the backend's spec resolver | Describe | Background | `row` |
 | augmentation source | the catalog | Describe | Background | `self`, `row` |
 | `lazy:` computed column | none | none: no data vocabulary | Background | `row` |
-| Vantage UI form `options:` | the app's tables | Read, capped | | form values |
-| Vantage UI action predicates (`when:`) | none | Read | Ui | `row` |
-| Vantage UI action bodies | the app's tables, writes through Dio | ReadWrite | Ui | `row`, `actions` |
-| Vantage UI form `on_submit`, wizard forms | the app's tables, writes through Dio | ReadWrite | Background | `form` (a Servo), `wizard` |
-| Vantage UI wizard `worker:` | the app's tables | ReadWrite, 50 rows | Background | `wizard`, `state` |
+| form `options:` (app) | the app's tables | Read, capped | | form values |
+| action predicates, `when:` (app) | none | Read | Ui | `row` |
+| action bodies (app) | the app's tables, writes through Dio | ReadWrite | Ui | `row`, `actions` |
+| form `on_submit`, wizard forms (app) | the app's tables, writes through Dio | ReadWrite | Background | `form` (a Servo), `wizard` |
+| wizard `worker:` (app) | the app's tables | ReadWrite, 50 rows | Background | `wizard`, `state` |
 | faker sims | the sim's memory store | ReadWrite | the sim's own budget | `args` |
 
 ## Agent scripts: `run_script`
@@ -209,10 +212,11 @@ Write verbs such as `delete` don't exist on a read host at all, and calling one 
 found" error. Vantage UI uses read hosts for form `options:` scripts, and for action predicates,
 which get `row` but no `table(name)`.
 
-## Read-write hosts in Vantage UI
+## Read-write hosts in an application
 
-Action bodies and form `on_submit` scripts get `table(name)` over the app's tables and, for row
-actions, `row` as a [record](./records.md):
+An application decides what its action scripts see; Vantage UI, for example, gives action bodies
+and form `on_submit` scripts `table(name)` over the app's tables and, for row actions, `row` as a
+[record](./records.md):
 
 ```rhai
 let r = actions.cancel_order(row);
@@ -229,5 +233,5 @@ Form and wizard scripts also see Servo drafts, which have their own vocabulary
 
 ## Faker sims
 
-Sims are covered in [Layers](./layers.md#faker-sims): they use this vocabulary over a memory store,
-with `table()` naming the sim's own table, plus time and random verbs.
+Sims are covered in [Faker Sims](./faker.md): they use this vocabulary over a memory store, with
+`table()` naming the sim's own table, plus time and random verbs.

@@ -41,7 +41,8 @@ replaces an earlier one, as `Vista::add_order` does. Several `limit` steps keep 
 `limit(n)` limits the set itself, not just one read: `list()`, `ids()` and `count()` all see at
 most `n` rows, a `ref` after it follows only those `n` rows, and `import_from` copies only those
 `n` (see [Following relations](#following-relations)). A `limit` before a `ref` doesn't carry over
-to the target; limit the target again if you need to.
+to the target; limit the target again if you need to. A handle with `limit` reads; it can't be
+written through ([Writes](./writes.md#writes-stay-in-the-set)).
 
 The column in `where` and `sort` must be one the backend stores. A
 [computed column](./computed.md) is refused with an error naming it.
@@ -120,7 +121,7 @@ Relations come from the Vista's metadata: the YAML `references:` block, or the t
   at the target).
 - When it has none, or none of the rows has a has-one key, the target is an empty set. Nothing is
   queried: reads return nothing, `count()` is 0, and a preview reports `"query": null`. The target
-  keeps its columns and still takes writes.
+  keeps its columns, and an insert into it throws: no row can belong to an empty set.
 - A `limit(n)` before the `ref` caps the rows it follows. Without one, a `ref` over more than
   1,000 rows is an error. Narrow first.
 

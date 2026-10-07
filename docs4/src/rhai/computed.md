@@ -176,8 +176,8 @@ assert!(by_client.is_err());
 ```
 
 To filter on a derived value, filter on the stored columns it comes from (`net` rather than
-`gross`), or compute it in the backend's query: a query-sourced table or SurrealDB's `expr:`
-column (see [Expression dialects](./dialects.md)).
+`gross`), or compute it in the backend's query: a [query-sourced table](./query-tables.md) or
+SurrealDB's `expr:` column (see [Other ways to compute a column](#other-ways-to-compute-a-column)).
 
 ## Relations through a computed column
 
@@ -210,10 +210,42 @@ with `Has-many relation can't join on a computed column of its target (relation:
 computed foreign key (into the parent for has-one, into each child for has-many) is refused before
 anything is written.
 
+## Other ways to compute a column
+
+`lazy:` is one of several ways to derive a column in vantage. They differ in where the value is
+made, and that decides what the backend can do with it:
+
+| Where | How | Runs | Can filter/sort | Link |
+|---|---|---|---|---|
+| SQL / SurrealDB expression | `Table::with_expression(name, …)`, SurrealDB YAML `expr:` | in the query | yes | [`Table::with_expression`](vantage_table::table::Table::with_expression) |
+| Rust after the read | `Table::with_lazy_expression(name, …)` | after each read, in Rust | no | [`Table::with_lazy_expression`](vantage_table::table::Table::with_lazy_expression) |
+| Rust on write | a `BeforeSave` hook that stores the value | on insert and update | yes (it's stored) | [`Hook`](vantage_table::table::Hook) |
+| Rhai `lazy:` | this chapter | after each read, in the Vista | no | — |
+| Dio `sugar:` | [`Sugar`](vantage_diorama::Sugar) | on the rows one Scenery reads | no | — |
+
+- **`with_expression`** takes a closure that returns an expression in the backend's own language,
+  rendered into the `SELECT` (the intro's
+  [computed fields](../intro/step2-tables.md#computed-fields-with-expressions) use a correlated
+  subquery). In Rust, `get_column_expr(name)` returns that expression, so a condition or an order
+  can use it. SurrealDB's `expr:` column is the YAML form (see
+  [Expression dialects](./dialects.md#surrealdb-expressions)).
+- **`with_lazy_expression`** runs an async Rust closure on each record a `list` or `get` returns.
+  It can do I/O, which a `lazy:` script can't: the intro's
+  [Augmentation step](../intro/step6-augmentation.md) uses it to download a file and derive
+  columns from it. It never takes part in a query. The Vista reports its column as `calculated`.
+- **A `BeforeSave` hook** in the `Populate` phase sets a field before every insert and update (see
+  [Lifecycle hooks](../record-lifecycle.md#lifecycle-hooks)). The value is then stored, so the
+  backend can filter, sort and aggregate it, but it changes only when the row is written through
+  that table.
+
+Pick the backend when the column must filter or sort; Rust when the logic needs the type system;
+`lazy:` when it must travel with YAML.
+
 ## `lazy:` and `sugar:`
 
-Vantage UI has a second way to add derived columns: `sugar:` on a grid, binder or other component.
-The two look similar and are used for different things.
+An application can also add derived columns per view with diorama's `Sugar`. Vantage UI, for
+example, exposes it as `sugar:` on a grid, binder or other component. The two look similar and are
+used for different things.
 
 | | `lazy:` (computed column) | `sugar:` (Vantage UI) |
 |---|---|---|
@@ -229,8 +261,3 @@ setup (a lookup map, helpers) before the first row. Sugar is built on
 diorama's [`Sugar`](vantage_diorama::Sugar), which merges the outputs into the rows one
 Scenery reads and strips them from anything written back. Its YAML is documented in Vantage UI's
 skills.
-
-The third look-alike is the typed table's `with_lazy_expression`, an async Rust closure per row
-(the intro's [Augmentation step](../intro/step6-augmentation.md) uses it to download a file and
-derive columns from it). It runs inside the typed table, before the Vista sees the row, and it can
-do I/O, which a `lazy:` script can't. The Vista reports its column as `calculated`.

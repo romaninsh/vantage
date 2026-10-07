@@ -181,6 +181,7 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.can_insert);
     assert!(caps.can_update);
     assert!(caps.can_delete);
+    assert!(caps.can_confine_writes);
     assert!(!caps.can_subscribe);
     Ok(())
 }

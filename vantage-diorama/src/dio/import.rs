@@ -80,12 +80,10 @@ impl Dio {
     ///
     /// The skip is decided by a read before the write, so the counts are
     /// exact only against a table nobody else is writing: a racing
-    /// writer that creates one of these ids in between has its record
-    /// kept (the driver's insert is idempotent — nothing is
-    /// overwritten), but this import counts that row as its own. The
-    /// counts are a report for a person, and no data turns on them;
-    /// making them exact needs an insert-if-absent the driver contract
-    /// does not have today.
+    /// writer that creates one of these ids in between is counted by this
+    /// import as its own. The driver's insert is insert-if-absent by
+    /// contract, so a racing writer's row is kept; the counts are a
+    /// report for a person.
     pub async fn import_values(
         &self,
         records: IndexMap<String, Record<CborValue>>,
@@ -120,7 +118,7 @@ impl Dio {
         };
         let mut outcome = ImportOutcome::default();
         for (index, (id, record)) in records.iter().enumerate() {
-            // A driver's insert is idempotent — an existing id comes back
+            // A driver's insert is insert-if-absent — an existing id comes back
             // as the stored record, not an error — so the count would
             // otherwise claim every row landed. Ask first; an id already
             // present is skipped and not counted.

@@ -1,6 +1,7 @@
 pub mod base;
 pub mod expr_data_source;
 pub mod selectable_data_source;
+pub mod set_writes;
 pub mod table_expr_source;
 pub mod table_query_source;
 pub mod table_source;

@@ -177,6 +177,7 @@ impl ShapedShell {
         let page_size = shape.page_size.max(1);
         let mut capabilities = shape.capabilities.clone();
         capabilities.can_subscribe &= inner.capabilities().can_subscribe;
+        capabilities.can_confine_writes = inner.capabilities().can_confine_writes;
         Self {
             inner,
             shape: Arc::new(shape),

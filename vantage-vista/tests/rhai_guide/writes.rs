@@ -12,7 +12,7 @@ let id = orders.insert(#{ client: "c2", total: 30, status: "due" });
 orders.patch(id, #{ status: "paid" });
 
 let deleted = orders.delete("o4");   // true: the row was there
-let again = orders.delete("o4");     // false: nothing left to delete
+let again = orders.delete("o4");     // true: the row is gone either way
 let patched = orders.patch("o99", #{ status: "paid" });   // false
 
 #{
@@ -28,7 +28,7 @@ fn write_verbs() {
     let host = read_write(&shop());
     assert_eq!(
         json(&host, WRITE_VERBS),
-        json!({"status": "paid", "deleted": true, "again": false, "patched": false})
+        json!({"status": "paid", "deleted": true, "again": true, "patched": false})
     );
 }
 
@@ -54,31 +54,57 @@ table("order").insert(#{ id: "o1", client: "c2", total: 1, status: "due" })
 "#;
 
 #[test]
-fn duplicate_insert() {
+fn insert_existing_id() {
     let host = read_write(&shop());
-    assert!(run(&host, DUPLICATE_INSERT).is_err());
+    assert_eq!(json(&host, DUPLICATE_INSERT), json!("o1"));
+    assert_eq!(json(&host, r#"table("order").get("o1").total"#), json!(120));
 }
 
-const WRITES_IGNORE_NARROWING: &str = r#"
+const WRITES_STAY_IN_THE_SET: &str = r#"
 let paid = table("order").where("status", "paid");
-paid.delete("o2");   // o2 is due, and is deleted all the same
+let o2 = paid.delete("o2");                         // o2 is due: outside the set
+let o9 = paid.patch("o2", #{ total: 1 });           // false: not in the set
 
 let ada = table("client").where("id", "c1");
-ada.ref("orders").insert(#{ id: "o20", client: "c1", total: 9, status: "due" });
+ada.ref("orders").insert(#{ id: "o20", total: 9, status: "due" });   // client filled
 
 #{
     orders: table("order").ids(),
-    clients: table("client").count(),
+    o20: table("order").get("o20").client,
+    o2: o2,
+    o9: o9,
 }
 "#;
 
 #[test]
-fn writes_ignore_narrowing() {
+fn writes_stay_in_the_set() {
     let host = read_write(&shop());
     assert_eq!(
-        json(&host, WRITES_IGNORE_NARROWING),
-        json!({"orders": ["o1", "o3", "o4", "o20"], "clients": 3})
+        json(&host, WRITES_STAY_IN_THE_SET),
+        json!({"orders": ["o1", "o2", "o3", "o4", "o20"], "o20": "c1", "o2": true, "o9": false})
     );
+}
+
+#[test]
+fn limit_refuses_writes() {
+    let host = read_write(&shop());
+    let err = run(
+        &host,
+        r#"table("order").sort("total").limit(1).delete("o1")"#,
+    )
+    .unwrap_err();
+    assert!(err.contains("drop limit(n)"), "{err}");
+}
+
+#[test]
+fn insert_outside_the_set_throws() {
+    let host = read_write(&shop());
+    let err = run(
+        &host,
+        r#"table("order").where("status", "paid").insert(#{ id: "o2", total: 1 })"#,
+    )
+    .unwrap_err();
+    assert!(err.contains("outside this set"), "{err}");
 }
 
 const IMPORT_MAPPED: &str = r#"
@@ -96,7 +122,7 @@ fn import_mapped() {
     assert_eq!(
         json(&host, IMPORT_MAPPED),
         json!({
-            "report": {"inserted": 2, "skipped": 0, "cancelled": false},
+            "report": {"inserted": 2, "skipped": 0, "rejected": 0, "cancelled": false},
             "rows": [
                 {"id": "a-o1", "amount": 120, "note": "paid by c1"},
                 {"id": "a-o3", "amount": 75, "note": "paid by c2"},
@@ -141,7 +167,8 @@ fn denied_writes() {
             writes: Writes::Denied("writes are off for agents".into()),
         },
     );
-    let err = run(&host, r#"table("order").delete("o1")"#).unwrap_err();
+    assert_eq!(json(&host, r#"table("order").delete("o1")"#), json!(false));
+    let err = run(&host, r#"table("order").insert(#{ total: 1 })"#).unwrap_err();
     assert!(err.contains("writes are off for agents"), "{err}");
     assert_eq!(json(&host, r#"table("order").count()"#), json!(4));
 }

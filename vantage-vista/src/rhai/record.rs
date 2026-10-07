@@ -58,6 +58,9 @@ struct DraftState {
     rejection: Option<String>,
     /// The write target's id column, resolved on the first field set.
     id_column: Option<String>,
+    /// The id minted for a new row on its first save attempt, reused by a
+    /// retry so a write that landed unseen isn't inserted twice.
+    minted_id: Option<String>,
 }
 
 /// A staged, single-row edit over a [`Handle`]'s table. Rhai type `"Record"`.
@@ -120,6 +123,7 @@ impl RecordDraft {
                 status: DraftStatus::Tracking,
                 rejection: None,
                 id_column: None,
+                minted_id: None,
             })),
         }
     }

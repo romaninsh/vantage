@@ -51,6 +51,7 @@ A Servo and a data-vocabulary [record](./records.md) look alike, and some words 
 | read a field | `r.col`, `r["col"]` | `servo.get("col")` |
 | stage a field | `r.col = v`, `r.set(map)` | `servo.set("col", v)` |
 | id | `r.id` | `servo.id()` |
+| id of a new row | a UUIDv7 minted on the first save | [`IdStrategy`](vantage_diorama::IdStrategy): `Uuid` (the default) mints one when the Servo opens |
 | the whole draft | (field reads) | `servo.record()` |
 | baseline | `r.baseline()` | `servo.baseline()` |
 | dirty | `r.is_dirty()`, `r.dirty(col)` | `servo.is_dirty()`, `servo.dirty(col)` |
@@ -68,10 +69,28 @@ on the Dio, or hide the Servo's lifecycle behind data-vocabulary words.
 `servo.save()` needs a tokio runtime context and blocks on the flash, so Servo scripts run under
 `spawn_blocking`, like any data script with a network backend.
 
+### Which one to use
+
+Use a record for a script's own one-off edit over any Vista; it saves when the script says so and
+is gone after. Use a [Servo](vantage_diorama::Servo) when a person edits: it lives in the Dio,
+outlasts the script, takes per-field rejections, and its save goes through the flash route.
+
+Unless the id is left to the backend (an `auto` id column, `IdStrategy::Auto`), both reuse their id
+when a save is retried, so neither can create a row twice (see
+[Safe writes](../record-lifecycle.md#safe-writes)).
+
 ## Scenery: the shape of a view
 
-A Vantage UI component's `table:` binding can be a plain key or a short script that shapes a live
-view (a Scenery). The script builds a description that the page resolves when it mounts:
+A Scenery is a live, reactive view over a Dio: a [`TableScenery`](vantage_diorama::TableScenery)
+keeps an ordered window of rows current as the Dio's cache changes, a
+[`ValueScenery`](vantage_diorama::ValueScenery) keeps one aggregate current, and a
+[`RecordScenery`](vantage_diorama::RecordScenery) one row (see
+[Scenery — Reactive Views](../intro/step7-scenery.md)). An application binds a widget to one.
+
+`vantage-diorama` has no Scenery script words. Vantage UI adds some: a component's `table:` binding
+can be a plain table key or a short script, `scenery(name)` followed by narrowing words, that
+describes which Scenery to open. The script builds a description, and the page opens the Scenery
+when it mounts:
 
 <!-- tested: vantage-ui scenery_script::tests::chain_builds_a_spec -->
 ```rhai
@@ -101,7 +120,8 @@ Scenery-only words:
 
 - `tail(n)`: follow the last `n` rows as they arrive, for append-only feeds.
 - `arg(name, value)` and `args(#{ … })`: parameters passed to the table's own `rhai:` query
-  script as its `args` map, which reshape the query itself rather than filtering its result.
+  script as its `args` map, which reshape the query itself rather than filtering its result (see
+  [Arguments](./query-tables.md#arguments)).
 
 Scenery has no reads or writes: it describes a view, and the page's Dio opens it. The vocabulary
 lives in Vantage UI (`SceneryVocab` in `crates/app/src/infra/scenery_script.rs`), runs under
@@ -109,44 +129,5 @@ lives in Vantage UI (`SceneryVocab` in `crates/app/src/infra/scenery_script.rs`)
 
 ## Faker sims
 
-A faker sim is a Rhai script that runs from top to bottom on its own thread, with its own sim
-clock. Its local variables are its state, and `sleep` pauses it. The data vocabulary is there in
-full, over the engine's memory store, and `table()` with no name is the sim's own table:
-
-<!-- tested: vantage-faker sim::tests::guide::order_sim_from_the_guide -->
-```rhai
-if table().where("status", "Placed").count() >= 40 {
-    done();
-}
-
-let id = table().insert(#{ customer: fake("name"), total: rand_float(5.0, 80.0), status: "Placed" });
-sleep(minutes(rand_int(5, 20)));
-
-table().patch(id, #{ status: "Shipped" });
-table("order_event").insert(#{ order: id, note: "shipped" });
-sleep(hours(2));
-
-table().delete(id);
-```
-
-On top of the data vocabulary, sims get:
-
-- **data**: `fake_row()` on a handle (`table().fake_row()`, `table("t").fake_row()`) returns a map
-  with a generated value for each column the table declares through `SimEngineBuilder::columns`,
-  without the id column. Sequential generators (`walk`, evenly spread `date`) advance one step per
-  call, shared by every sim of the def.
-- **time**: `seconds(n)`, `minutes(n)`, `hours(n)`, `days(n)`, `sleep(d)`, `wait_until(t)`,
-  `now()`, `now_secs()`, `wall_now()`, `wall_in(d)`, `elapsed()`, `clock()`, `done()`.
-- **random**: `pick`, `pick_weighted`, `rand_int`, `rand_float`, `chance(p)`, `pattern("BA####")`,
-  `sentence(min, max)`, `fake(kind)`, `date_between(from, to)`.
-- **spawn**: `spawn_sim(name, args?)`, `sim_id()`, `sim_name()`, and the spawner's `args`.
-- **geo**: `great_circle`, `bearing`, `interpolate`.
-
-A sim's tables are memory Vistas, so reads and writes finish on the first poll and sims run
-without tokio (see [the bridge](./hosts.md#async-reads-from-a-synchronous-script)). Writes
-broadcast the store's change events to any watching Dio. During a warm start, each written table
-stays quiet and sends one `Reset` at the end. A missing table is a script error: the store's
-tables are created by the dataset, not by the sim.
-
-The `vantage-faker` README covers defs, spawners, clocks, the operations budget and the built-in
-sims.
+Sims use the data vocabulary over a memory store plus time and random words. See
+[Faker Sims](./faker.md).

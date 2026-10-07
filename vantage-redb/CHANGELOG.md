@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-10-05
+
+- Fixed: insert of an existing id overwrote the row and left stale index entries; it now returns the
+  stored row (an id outside the set is `Conflict`).
+- Fixed: `insert_return_id` dropped a record-supplied id; it keeps it, else mints a UUIDv7.
+- **Breaking:** by-id reads and writes honour the table's conditions; delete outside the set is `Ok`;
+  patch of a missing row is `NotFound`; a condition that can't be evaluated (search) refuses the write.
+
 ## 0.6.3 — 2026-10-04
 
 - Id column name comes from `Table::id_field_name()`.

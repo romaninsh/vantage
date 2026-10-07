@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 — 2026-10-05
+
+- **Breaking:** by-id writes follow the write contract on SQLite, PostgreSQL and MySQL: delete of a
+  missing row or one outside the table's conditions is `Ok` (undoes the 0.6.26 NotFound); insert of
+  an existing id in the set returns the stored row; an id held outside the set is `Conflict`.
+- Patch, replace and delete are confined to the table's conditions in the statement; a written row
+  must still satisfy them (checked by a one-row probe), else `Conflict`.
+- Fixed: a patch or insert outside the set ran and only then reported "not found" / "Inserted row
+  disappeared".
+- `condition_equality`: `column = value` conditions fill on insert.
+- Vista shells advertise `can_confine_writes`.
+
 ## 0.6.28 — 2026-10-04
 
 - Builds without the `vista` feature again (the vista `Like` pattern helper is gated on it).

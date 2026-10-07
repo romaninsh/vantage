@@ -13,12 +13,13 @@ fn denied_writes_throw_the_message() {
         r#"table("t").insert(#{ a: 1 })"#,
         r#"table("t").upsert("r1", #{ a: 1 })"#,
         r#"table("t").patch("r1", #{ a: 1 })"#,
-        r#"table("t").delete("r1")"#,
         r#"table("t").import_from(table("t"))"#,
     ] {
         let err = run(&host, script).unwrap_err();
         assert!(err.contains("writes are off"), "`{script}`: {err}");
     }
+    let deleted = run(&host, r#"table("t").delete("r1")"#).unwrap();
+    assert!(!deleted.as_bool().unwrap(), "a denied delete is `false`");
     assert!(
         run(&host, r#"table("t").count()"#).is_ok(),
         "reads still work"

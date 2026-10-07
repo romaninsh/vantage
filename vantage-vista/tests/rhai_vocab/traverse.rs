@@ -15,7 +15,7 @@ use vantage_vista::{
     Writes, preview_script,
 };
 
-use super::support::{json, read_write, store};
+use super::support::{json, read_write, run, store};
 
 fn text_row(pairs: &[(&str, &str)]) -> Record<CborValue> {
     pairs
@@ -124,6 +124,29 @@ fn ref_over_no_rows_is_empty() {
 }
 
 #[test]
+fn ref_over_no_rows_takes_no_writes() {
+    let host = shop_host(shop());
+    let nobody = r#"table("client").where("name", "Nobody").ref("orders")"#;
+    let err = run(&host, &format!(r#"{nobody}.insert(#{{ id: "o9" }})"#)).unwrap_err();
+    assert!(err.contains("holds no rows"), "{err}");
+    assert_eq!(
+        json(
+            &host,
+            &format!(r#"{nobody}.patch("o1", #{{ client: "c2" }})"#)
+        ),
+        json!(false)
+    );
+    assert_eq!(
+        json(&host, &format!(r#"{nobody}.delete("o1")"#)),
+        json!(true)
+    );
+    assert_eq!(
+        json(&host, r#"table("order").ids()"#),
+        json!(["o1", "o2", "o3", "o4"])
+    );
+}
+
+#[test]
 fn ref_over_no_rows_sends_no_condition() {
     let preview = preview_script(
         r#"table("client").where("name", "Nobody").ref("orders")"#.into(),
@@ -139,7 +162,7 @@ fn import_from_reads_only_the_limited_source_rows() {
     let host = read_write(&store());
     assert_eq!(
         json(&host, r#"table("copy").import_from(table("t").limit(2))"#),
-        json!({"inserted": 2, "skipped": 0, "cancelled": false})
+        json!({"inserted": 2, "skipped": 0, "rejected": 0, "cancelled": false})
     );
     assert_eq!(json(&host, r#"table("copy").count()"#), json!(2));
 }

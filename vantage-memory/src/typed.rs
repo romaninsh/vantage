@@ -5,7 +5,8 @@ pub mod convert;
 pub mod operation;
 mod table_source;
 
-use vantage_core::{Result, error};
+use ciborium::Value as CborValue;
+use vantage_core::{Result, VantageError, error};
 use vantage_expressions::{
     DeferredFn, Expression, ExpressiveEnum,
     traits::datasource::{DataSource, ExprDataSource},
@@ -14,6 +15,7 @@ use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{Entity, Record};
 
+use crate::eval::matches_all;
 use crate::store::{MemoryStore, MemoryTableHandle, Row, TableDef};
 use crate::types::AnyMemoryType;
 use convert::{from_cbor_record, table_query, to_cbor_record};
@@ -80,24 +82,100 @@ impl MemoryDB {
         self.store_table(table)?.query(&q)
     }
 
-    /// Store `record` as row `id` and return the stored row. The row must
-    /// already exist when `replace`, and must not otherwise.
-    pub(crate) fn put<E: Entity<AnyMemoryType>>(
+    /// Whether the store row `row` is in `table`'s set.
+    pub(crate) async fn in_set<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        row: &Record<CborValue>,
+    ) -> Result<bool> {
+        matches_all(&table_query(table).await?, row)
+    }
+
+    pub(crate) fn outside(table: &str, id: &str) -> VantageError {
+        error!(
+            "id is held by a row outside this set",
+            table = table,
+            id = id
+        )
+        .mark_conflict()
+    }
+
+    pub(crate) fn misfit(table: &str, id: &str) -> VantageError {
+        error!("record does not belong to this set", table = table, id = id).mark_conflict()
+    }
+
+    /// `record` as a store row for `id`: the id column set to `id`.
+    fn row_for<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
         id: &str,
         record: &Record<AnyMemoryType>,
-        replace: bool,
-    ) -> Result<Record<AnyMemoryType>> {
-        let store = self.store_table(table)?;
-        let record = to_cbor_record(record);
-        let row = match replace {
-            false => store.insert_as(id, record)?,
-            true => store
-                .replace(id, record)
-                .ok_or_else(|| error!("Row not found", table = table.table_name(), id = id))?,
+    ) -> Record<CborValue> {
+        let mut row = to_cbor_record(record);
+        row.insert(self.id_column(table), CborValue::Text(id.to_string()));
+        row
+    }
+
+    /// The row already stored under `id` when it is in the set; `outside`
+    /// when it is held by a row outside the set.
+    async fn stored_in_set<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        id: &str,
+    ) -> Result<Option<Row>> {
+        let Some(existing) = self.store_table(table)?.get(id) else {
+            return Ok(None);
         };
-        Ok(from_cbor_record(&row))
+        match self.in_set(table, &existing).await? {
+            true => Ok(Some(existing)),
+            false => Err(Self::outside(table.table_name(), id)),
+        }
+    }
+
+    /// Insert `record` as `id` and return the stored row. An id already held
+    /// by a row in the set returns that row; one held outside it is a
+    /// `Conflict`.
+    pub(crate) async fn insert_in_set<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        id: &str,
+        record: &Record<AnyMemoryType>,
+    ) -> Result<Record<AnyMemoryType>> {
+        if let Some(existing) = self.stored_in_set(table, id).await? {
+            return Ok(from_cbor_record(&existing));
+        }
+        let row = self.row_for(table, id, record);
+        if !self.in_set(table, &row).await? {
+            return Err(Self::misfit(table.table_name(), id));
+        }
+        match self.store_table(table)?.insert_as(id, row) {
+            Ok(stored) => Ok(from_cbor_record(&stored)),
+            // Lost a race to another writer: take whatever it stored.
+            Err(e) => match self.stored_in_set(table, id).await? {
+                Some(existing) => Ok(from_cbor_record(&existing)),
+                None => Err(e),
+            },
+        }
+    }
+
+    /// Replace row `id` with `record`, creating it when missing.
+    pub(crate) async fn replace_in_set<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        id: &str,
+        record: &Record<AnyMemoryType>,
+    ) -> Result<Record<AnyMemoryType>> {
+        let existing = self.stored_in_set(table, id).await?;
+        let row = self.row_for(table, id, record);
+        if !self.in_set(table, &row).await? {
+            return Err(Self::misfit(table.table_name(), id));
+        }
+        let store = self.store_table(table)?;
+        let stored = match existing.and_then(|_| store.replace(id, row.clone())) {
+            Some(stored) => stored,
+            None => store.insert_as(id, row)?,
+        };
+        Ok(from_cbor_record(&stored))
     }
 
     /// The typed table's id field, else the store table's id column.

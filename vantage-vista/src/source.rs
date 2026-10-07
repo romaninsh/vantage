@@ -164,6 +164,16 @@ pub trait TableShell: Send + Sync + 'static {
     // detected). If the flag is `false`, it produces `Unsupported`. Both are
     // emitted as tracing events at construction.
 
+    /// Every write method follows the write contract on
+    /// `vantage_dataset::WritableValueSet` over this shell's own narrowing:
+    /// confined, idempotent, invariant-filling. A shell that implements them
+    /// must advertise [`can_confine_writes`](VistaCapabilities::can_confine_writes);
+    /// one that can't confine leaves it `false` and `Vista` refuses narrowed
+    /// writes.
+    ///
+    /// Insert: an id already in the set returns the stored row untouched; an
+    /// id held outside the set is `Conflict`; a new row is conformed to the
+    /// set's equality conditions.
     async fn insert_vista_value(
         &self,
         _vista: &Vista,
@@ -173,6 +183,8 @@ pub trait TableShell: Send + Sync + 'static {
         Err(self.default_error("insert_vista_value", "can_insert"))
     }
 
+    /// Replace: a row in the set is replaced, a missing one created, both
+    /// conformed to the set; an id held outside the set is `Conflict`.
     async fn replace_vista_value(
         &self,
         _vista: &Vista,
@@ -184,6 +196,8 @@ pub trait TableShell: Send + Sync + 'static {
 
     /// Insert row `id`, or replace it if it exists. The default replaces and
     /// falls back to insert on `NotFound`; stores with a native upsert override it.
+    ///
+    /// Upsert: same rows as replace — an id held outside the set is `Conflict`.
     async fn upsert_vista_value(
         &self,
         vista: &Vista,
@@ -196,6 +210,8 @@ pub trait TableShell: Send + Sync + 'static {
         }
     }
 
+    /// Patch: applied to a row in the set; a row outside the set or missing
+    /// is `NotFound`; a result that leaves the set is `Conflict`.
     async fn patch_vista_value(
         &self,
         _vista: &Vista,
@@ -205,16 +221,21 @@ pub trait TableShell: Send + Sync + 'static {
         Err(self.default_error("patch_vista_value", "can_update"))
     }
 
+    /// Delete: removes the row only when it is in the set; `Ok(())` whether it
+    /// was in the set, outside it, or missing.
     async fn delete_vista_value(&self, _vista: &Vista, _id: &String) -> Result<()> {
         Err(self.default_error("delete_vista_value", "can_delete"))
     }
 
+    /// Delete all: removes exactly the rows in the set.
     async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
         Err(self.default_error("delete_vista_all_values", "can_delete"))
     }
 
     // ---- InsertableValueSet delegate ---------------------------------------
 
+    /// Insert with a backend-made id: the record is conformed to the set like
+    /// insert. Not retry-safe — a retry makes a second row.
     async fn insert_vista_return_id_value(
         &self,
         _vista: &Vista,
@@ -238,6 +259,8 @@ pub trait TableShell: Send + Sync + 'static {
     /// cannot make the batch atomic must not advertise it either; the
     /// caller then falls back to per-record inserts where partial
     /// progress is honest and reportable.
+    ///
+    /// Import: each record follows the insert row of the write contract.
     async fn import_vista_values(
         &self,
         _vista: &Vista,
@@ -698,6 +721,7 @@ pub trait TableShell: Send + Sync + 'static {
             "can_traverse_to_set" => caps.can_traverse_to_set,
             "can_build_ref_via_script" => caps.can_build_ref_via_script,
             "can_traverse_in_columns" => caps.can_traverse_in_columns,
+            "can_confine_writes" => caps.can_confine_writes,
             _ => false,
         }
     }

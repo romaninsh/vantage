@@ -10,9 +10,9 @@ use super::{DraftStatus, RecordDraft};
 use crate::VistaCapabilities;
 use crate::rhai::bridge::block_on;
 use crate::rhai::handle::Handle;
-use crate::rhai::read::RhaiResult;
+use crate::rhai::read::{RhaiResult, rhai_err};
 use crate::rhai::vocab::{TargetResolver, Writes};
-use crate::rhai::write::{found, insert_record, target};
+use crate::rhai::write::{delete_row, found, insert_record, new_id, target};
 use crate::vista::Vista;
 
 /// `writes` gates `save()`/`delete()` the same way it gates the write
@@ -69,8 +69,19 @@ pub(super) fn try_save(r: &RecordDraft) -> RhaiResult<Dynamic> {
             let vista = checked_target(&handle, resolver.as_ref(), &writes, "save", |c| {
                 c.can_insert
             })?;
-            let new_id = insert_record(&vista, Record::from_indexmap(changes.clone()))?;
             let id_col = vista.get_id_column().unwrap_or("id").to_string();
+            let minted = {
+                let mut g = r.inner.lock().unwrap();
+                if g.minted_id.is_none() && !vista.has_auto_id() && !changes.contains_key(&id_col) {
+                    g.minted_id = Some(new_id(&vista, &id_col)?);
+                }
+                g.minted_id.clone()
+            };
+            let new_id = insert_record(
+                &vista,
+                Record::from_indexmap(changes.clone()),
+                minted.as_deref(),
+            )?;
             let mut baseline = changes;
             baseline.insert(id_col, CborValue::Text(new_id.clone()));
             let mut guard = r.inner.lock().unwrap();
@@ -116,8 +127,9 @@ pub(super) fn try_delete(r: &RecordDraft) -> RhaiResult<bool> {
     let Some(id) = id else {
         return Err("record has no id; it was never saved".into());
     };
-    let vista = checked_target(&handle, resolver.as_ref(), &writes, "delete", |c| {
-        c.can_delete
-    })?;
-    found(block_on(WritableValueSet::delete(&vista, id)))
+    if matches!(writes, Writes::Denied(_)) {
+        return Ok(false);
+    }
+    let vista = handle.write_target(resolver.as_ref()).map_err(rhai_err)?;
+    delete_row(&vista, id)
 }

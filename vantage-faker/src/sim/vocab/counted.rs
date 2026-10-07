@@ -41,6 +41,19 @@ impl CountedShell {
         Counters::bump(&self.writes);
     }
 
+    /// The store table's write count, when the table is known.
+    fn table_writes(&self) -> Option<u64> {
+        self.table.as_ref().map(|t| t.writes())
+    }
+
+    /// Count a write unless the table is known and its own counter did not
+    /// move since `before`.
+    fn bump_if_changed(&self, before: Option<u64>) {
+        if before.is_none() || before != self.table_writes() {
+            self.bump();
+        }
+    }
+
     fn counted(&self, vista: Vista) -> Vista {
         let name = vista.name().to_string();
         let shell = CountedShell {
@@ -69,9 +82,11 @@ forward_table_shell!(CountedShell, inner, {
         Ok(self.counted(self.inner.get_ref_target(relation)?))
     }
 
+    /// An insert of an existing id changes nothing and does not count.
     async fn insert_vista_value(&self, vista: &Vista, id: &String, record: &Rec) -> Result<Rec> {
+        let before = self.table_writes();
         let row = self.inner.insert_vista_value(vista, id, record).await?;
-        self.bump();
+        self.bump_if_changed(before);
         Ok(row)
     }
 
@@ -81,14 +96,11 @@ forward_table_shell!(CountedShell, inner, {
         Ok(row)
     }
 
-    /// An upsert that leaves the row as it was does not count: the store
-    /// table's own write counter moves only when a row changes.
+    /// An upsert that leaves the row as it was does not count.
     async fn upsert_vista_value(&self, vista: &Vista, id: &String, record: &Rec) -> Result<Rec> {
-        let before = self.table.as_ref().map(|t| t.writes());
+        let before = self.table_writes();
         let row = self.inner.upsert_vista_value(vista, id, record).await?;
-        if before != self.table.as_ref().map(|t| t.writes()) || before.is_none() {
-            self.bump();
-        }
+        self.bump_if_changed(before);
         Ok(row)
     }
 
@@ -99,8 +111,9 @@ forward_table_shell!(CountedShell, inner, {
     }
 
     async fn delete_vista_value(&self, vista: &Vista, id: &String) -> Result<()> {
+        let before = self.table_writes();
         self.inner.delete_vista_value(vista, id).await?;
-        self.bump();
+        self.bump_if_changed(before);
         Ok(())
     }
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2 — 2026-10-07
+
+- A sim inserting an id that already exists leaves the stored row as it was instead of failing (vantage-memory 1.2.0 write contract).
+- `SimStats::writes` counts only writes that changed the store; a repeated delete or an insert of an existing id doesn't count.
+- Shapes pass the wrapped shell's `can_confine_writes` through.
+- A sim `insert(#{…})` without an id gets a UUIDv7 instead of the memory store's counter id
+  (vantage-vista 1.2.0), so a retried insert doesn't duplicate the row. A sim table with a numeric
+  id column must pass ids explicitly.
+
 ## 1.1.1 — 2026-10-07
 
 - Builds against the bumped vantage crates (edition 2024 workspace).

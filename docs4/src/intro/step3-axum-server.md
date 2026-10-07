@@ -642,7 +642,7 @@ curl -w "\nstatus=%{http_code}\n" http://localhost:3001/categories/999
 
 curl -w "\nstatus=%{http_code}\n" -X PATCH http://localhost:3001/categories/999 \
   -H 'content-type: application/json' -d '{"name":"Ghost"}'
-# {"error":"patch_table_value: no row found (id: \"999\")"}
+# {"error":"Row not found (table: \"category\", id: \"999\")"}
 # status=500
 
 curl -w "\nstatus=%{http_code}\n" -X POST http://localhost:3001/categories \
@@ -656,10 +656,9 @@ curl -w "\nstatus=%{http_code}\n" -X DELETE http://localhost:3001/categories/999
 
 Missing ids produce 404s with a clean JSON body. The malformed body gets axum's built-in 400
 for free. `DELETE` on a missing id still returns 204 — vantage's `delete` is idempotent, and
-"the resource is gone" is true whether or not it was ever there. `PATCH` on a missing id
-still 500s for now — patching doesn't go through `get`, so there's no `Option` to intercept;
-adding a pre-flight `get`-and-`ok_or(not_found)` before the `patch` call would give you 404
-there too.
+"the resource is gone" is true whether or not it was ever there. `PATCH` on a missing id fails
+with an error whose `is_not_found()` is true; this handler maps every non-`get` error to 500, so
+add `Err(e) if e.is_not_found() => not_found(&id)` to answer 404 there too.
 
 ```admonish info title="Why not match on the error message?"
 An earlier draft of this tutorial matched `e.to_string().contains("no row found")` to

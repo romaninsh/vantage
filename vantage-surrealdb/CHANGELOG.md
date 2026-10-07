@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-10-05
+
+- **Breaking:** delete of a missing record or one outside the table's conditions is `Ok`.
+- Insert, replace, patch and delete are confined to the table's conditions; an id held outside the
+  set is `Conflict`; a written record must satisfy the conditions (`SELECT … FROM [record] WHERE`).
+- `condition_equality`: `field = value` conditions fill on insert.
+- Vista shells advertise `can_confine_writes`.
+
 ## 0.6.24 — 2026-10-04
 
 - Error messages carry context fields instead of formatted text.

@@ -42,6 +42,8 @@ mod sqlite {
     mod records;
     #[path = "5_references.rs"]
     mod references;
+    #[path = "9_safe_writes.rs"]
+    mod safe_writes;
     #[path = "2_search.rs"]
     mod search;
     #[path = "3_select.rs"]

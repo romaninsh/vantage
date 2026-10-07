@@ -1,6 +1,6 @@
 [package]
 name = "vantage-memory"
-version = "1.1.1"
+version = "1.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -14,9 +14,9 @@ readme = "README.md"
 vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-types = { version = "1.0.0", path = "../vantage-types" }
 vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
-vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
-vantage-table = { version = "1.1.1", path = "../vantage-table" }
-vantage-vista = { version = "1.1.1", path = "../vantage-vista" }
+vantage-dataset = { version = "1.1.0", path = "../vantage-dataset" }
+vantage-table = { version = "1.2.0", path = "../vantage-table" }
+vantage-vista = { version = "1.2.0", path = "../vantage-vista" }
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }
 parking_lot = "0.12"
@@ -34,7 +34,8 @@ paste = "1"
 rhai = ["vantage-vista/rhai"]
 
 [dev-dependencies]
+vantage-dataset = { version = "1.1.0", path = "../vantage-dataset", features = ["contract"] }
 tokio = { version = "1", features = ["full"] }
-vantage-diorama = { version = "0.13.4",path = "../vantage-diorama" }
+vantage-diorama = { version = "0.14.0", path = "../vantage-diorama" }
 futures-util = "0.3"
 tempfile = "3"

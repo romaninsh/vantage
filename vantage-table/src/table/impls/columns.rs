@@ -90,6 +90,19 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.id_text
     }
 
+    /// Mark the id column as backend-made (SQL auto-increment, SurrealDB
+    /// generated record ids, MongoDB ObjectIds). Vista metadata then flags it
+    /// [`AUTO`](vantage_vista::flags::AUTO).
+    pub fn with_auto_id(mut self) -> Self {
+        self.id_auto = true;
+        self
+    }
+
+    /// Whether the backend makes this table's ids (see [`Self::with_auto_id`]).
+    pub fn has_auto_id(&self) -> bool {
+        self.id_auto
+    }
+
     /// Add a typed column AND mark it as a display title.
     ///
     /// Title columns show alongside the id in generic list views and

@@ -18,3 +18,7 @@ pub const HIDDEN: &str = "hidden";
 /// it read-only and exclude it from forms and write payloads; the data layer
 /// enforces the same on writes (imported columns are stripped or rejected).
 pub const CALCULATED: &str = "calculated";
+/// The backend makes this column's values (SQL auto-increment, SurrealDB
+/// generated record ids, MongoDB ObjectIds). On the id column it means an
+/// insert without an id asks the backend for one.
+pub const AUTO: &str = "auto";

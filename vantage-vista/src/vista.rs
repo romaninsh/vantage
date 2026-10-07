@@ -25,6 +25,7 @@ use crate::{
 pub struct Vista {
     pub(crate) name: String,
     pub(crate) capabilities: VistaCapabilities,
+    pub(crate) narrowed: bool,
     pub source: Box<dyn TableShell>,
 }
 
@@ -34,6 +35,7 @@ impl Vista {
         Self {
             name: name.into(),
             capabilities,
+            narrowed: false,
             source,
         }
     }
@@ -50,6 +52,32 @@ impl Vista {
 
     pub fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
+    }
+
+    /// Whether a condition or search narrowed this Vista through its own API.
+    pub fn is_narrowed(&self) -> bool {
+        self.narrowed
+    }
+
+    /// Whether the backend makes this table's ids: the id column carries
+    /// [`flags::AUTO`]. An insert without an id then asks the backend for one
+    /// (`insert_return_id`, not retry-safe) instead of minting a UUIDv7.
+    pub fn has_auto_id(&self) -> bool {
+        self.get_id_column()
+            .and_then(|c| self.get_column(c))
+            .is_some_and(|c| c.has_flag(flags::AUTO))
+    }
+
+    pub(crate) fn require_confined(&self, verb: &'static str) -> Result<()> {
+        if !self.narrowed || self.capabilities.can_confine_writes {
+            return Ok(());
+        }
+        Err(error!(
+            "this backend can't keep writes inside a narrowed set",
+            verb = verb,
+            table = self.name.as_str()
+        )
+        .mark_unsupported())
     }
 
     /// Short human label for the underlying driver (e.g. `"csv"`, `"sqlite"`,
@@ -76,6 +104,7 @@ impl Vista {
         &self,
         records: &indexmap::IndexMap<String, Record<CborValue>>,
     ) -> Result<usize> {
+        self.require_confined("import")?;
         let records = self.without_computed_all(records);
         self.source.import_vista_values(self, &records).await
     }
@@ -140,7 +169,9 @@ impl Vista {
     pub fn add_condition_eq(&mut self, field: impl Into<String>, value: CborValue) -> Result<()> {
         let field = field.into();
         self.refuse_computed(&field, "condition")?;
-        self.source.add_eq_condition(&field, &value)
+        self.source.add_eq_condition(&field, &value)?;
+        self.narrowed = true;
+        Ok(())
     }
 
     /// Narrow the vista to records matching `field <op> value`. Equality is
@@ -157,7 +188,9 @@ impl Vista {
     ) -> Result<()> {
         let field = field.into();
         self.refuse_computed(&field, "condition")?;
-        self.source.add_op_condition(&field, op, &value)
+        self.source.add_op_condition(&field, op, &value)?;
+        self.narrowed = true;
+        Ok(())
     }
 
     /// Narrow to a single row by id.
@@ -253,7 +286,9 @@ impl Vista {
     /// FK eq-conditions (i.e. conditions whose value is resolved at
     /// fetch time by reading a parent record).
     pub fn add_raw_condition<C: Send + Sync + 'static>(&mut self, condition: C) -> Result<()> {
-        self.source.add_raw_condition(Box::new(condition))
+        self.source.add_raw_condition(Box::new(condition))?;
+        self.narrowed = true;
+        Ok(())
     }
 
     // ---- pagination -------------------------------------------------------
@@ -337,7 +372,9 @@ impl Vista {
     /// search filter. Returns `Unsupported` when the driver does not advertise
     /// `can_search`.
     pub fn add_search(&mut self, text: impl Into<String>) -> Result<()> {
-        self.source.add_search(&text.into())
+        self.source.add_search(&text.into())?;
+        self.narrowed = true;
+        Ok(())
     }
 
     /// Drop any quicksearch filter previously applied. Returns `Unsupported`

@@ -93,14 +93,16 @@ mod tests {
         assert_eq!(inserted.name, "Charlie");
         assert_eq!(inserted.age, 35);
 
-        // Test insert with existing ID should fail
+        // insert with an existing ID returns the stored entity
         let duplicate_user = TestUser {
             id: Some("1".to_string()),
             name: "David".to_string(),
             age: 40,
         };
-        let result = table.insert("1", &duplicate_user).await;
-        assert!(result.is_err());
+        assert_eq!(
+            table.insert("1", &duplicate_user).await.unwrap().name,
+            "Alice"
+        );
 
         // Test replace with existing ID
         let updated_user = TestUser {
@@ -151,9 +153,8 @@ mod tests {
         let result3 = table.get("2").await.unwrap();
         assert!(result3.is_none()); // Should be deleted
 
-        // Test delete non-existing ID should fail
-        let result4 = table.delete("999").await;
-        assert!(result4.is_err());
+        // delete of a missing id succeeds (idempotent)
+        table.delete("999").await.unwrap();
 
         // Test delete_all
         table.delete_all().await.unwrap();

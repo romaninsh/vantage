@@ -29,7 +29,8 @@ pub fn store() -> MemoryStore {
 }
 
 /// Memory Vistas over `store`; `nocount` is a mock that can't count, `mock`
-/// a mock without bulk import that already holds `r1 {a:7}`.
+/// a mock without bulk import that already holds `r1 {a:7}`, `auto` and
+/// `intid` empty mocks with a numeric id column, flagged `auto` on `auto`.
 pub fn resolver(store: &MemoryStore) -> TargetResolver {
     let store = store.clone();
     let mock = MockShell::new()
@@ -42,6 +43,17 @@ pub fn resolver(store: &MemoryStore) -> TargetResolver {
     Arc::new(move |name: &str| {
         if name == "mock" {
             return Ok(Vista::new(name, Box::new(mock.clone())));
+        }
+        if name == "auto" || name == "intid" {
+            let mut id = Column::new("id", "int").with_flag("id");
+            if name == "auto" {
+                id = id.with_flag("auto");
+            }
+            let metadata = VistaMetadata::new().with_column(id).with_id_column("id");
+            return Ok(Vista::new(
+                name,
+                Box::new(MockShell::new().with_metadata(metadata)),
+            ));
         }
         if name == "nocount" {
             let caps = VistaCapabilities {
