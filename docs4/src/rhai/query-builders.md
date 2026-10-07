@@ -25,9 +25,9 @@ Where a function takes a plain value as well, it says so.
 Two rules hold in both builders:
 
 - A number, bool or string passed as an argument (to `expr`'s array, to a comparison, to
-  `coalesce` on SurrealDB) becomes a bound parameter, never query text.
+  `coalesce` and `thing` on SurrealDB) becomes a bound parameter, never query text.
 - A string passed as a name (`ident`, `from`, `field`, `alias`) or as a template (`expr`,
-  `cast`'s type, `thing`) is written into the query. These come from the configuration's author,
+  `cast`'s type) is written into the query. These come from the configuration's author,
   not from data.
 
 ## Constructors
@@ -42,7 +42,7 @@ Two rules hold in both builders:
 | `fx("name", [x, …])` | yes | yes | a function call `name(x, …)`; arguments must be expressions or identifiers |
 | `case_when()` | yes | yes | an empty conditional (see [Conditionals](#conditionals)) |
 | `window()` | yes | — | an empty window spec (see [Window functions](#window-functions)) |
-| `thing("table", "id")` | — | yes | a record id, `type::thing("table", "id")` |
+| `thing("table", "id")` | — | yes | a record id, `type::record(…)` with both parts bound as parameters |
 | `param("name")` | — | yes | a parameter, `$name` |
 | `parent()`, `parent("field")` | — | yes | `$parent`, `$parent.field` |
 | `time_now()` | — | yes | `time::now()` |
