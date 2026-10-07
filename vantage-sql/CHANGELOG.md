@@ -2,6 +2,8 @@
 
 ## 0.7.0 — 2026-10-05
 
+- Removed the uncompiled `rhai_engine/dialect_functions.rs` (`strftime`, a second `group_concat`);
+  use `date_format()` and the registered `group_concat()`.
 - **Breaking:** by-id writes follow the write contract on SQLite, PostgreSQL and MySQL: delete of a
   missing row or one outside the table's conditions is `Ok` (undoes the 0.6.26 NotFound); insert of
   an existing id in the set returns the stored row; an id held outside the set is `Conflict`.
