@@ -96,7 +96,11 @@ impl MemoryTableShell {
     pub(super) fn patch_row(&self, id: &str, partial: &Rec) -> Result<Rec> {
         let existing = match self.stored_in_set(id) {
             Ok(Some(existing)) => existing,
-            Ok(None) | Err(_) => return Err(self.not_found(id)),
+            // A row held outside the set is invisible to this patch; any other
+            // failure (an unevaluable condition) is the caller's to see.
+            Ok(None) => return Err(self.not_found(id)),
+            Err(e) if e.is_conflict() => return Err(self.not_found(id)),
+            Err(e) => return Err(e),
         };
         validate(partial, &self.invariants)?;
         let mut merged = existing;
@@ -166,5 +170,44 @@ impl MemoryTableShell {
             }
         }
         Ok(inserted)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MemoryStore;
+    use crate::eval::MemoryCondition;
+    use crate::vista::Catalog;
+    use vantage_vista::VistaMetadata;
+
+    #[test]
+    fn patch_propagates_set_check_errors_other_than_outside() {
+        let store = MemoryStore::new();
+        let table = store.table("item");
+        table
+            .insert_as(
+                "a",
+                [("n".to_string(), CborValue::Text("x".into()))]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+        let mut shell = MemoryTableShell::new(
+            table,
+            VistaMetadata::new().with_id_column("id"),
+            Catalog::new(store),
+        );
+        // A bare column reference is not a filter, so the set check cannot run.
+        shell
+            .query
+            .conditions
+            .push(MemoryCondition::Column("n".into()));
+
+        let partial: Rec = [("n".to_string(), CborValue::Text("y".into()))]
+            .into_iter()
+            .collect();
+        let err = shell.patch_row("a", &partial).unwrap_err();
+        assert!(!err.is_not_found(), "set-check failure was masked: {err}");
     }
 }

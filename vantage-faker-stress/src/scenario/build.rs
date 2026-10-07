@@ -33,7 +33,7 @@ impl Scenario {
             spawn.max = Some(scale(spawn.max.unwrap_or(1), sims));
         }
         for table in s.tables.values_mut() {
-            table.count = scale(table.count, rows);
+            table.count = table.count.map(|n| scale(n, rows));
         }
         s
     }

@@ -248,7 +248,9 @@ impl TableSource for MockTableSource {
         Self: Sized,
     {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-        im_table.list_values().await
+        let mut rows = im_table.list_values().await?;
+        rows.retain(|_, row| Self::row_in_set(table, row));
+        Ok(rows)
     }
 
     async fn get_table_value<E>(
@@ -282,7 +284,10 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        Ok(self.im_data_source.table_len(table.table_name()) as i64)
+        if table.conditions().next().is_none() {
+            return Ok(self.im_data_source.table_len(table.table_name()) as i64);
+        }
+        Ok(self.list_table_values(table).await?.len() as i64)
     }
 
     async fn get_table_sum<E>(
@@ -742,6 +747,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(raw, json!(3));
+    }
+
+    #[tokio::test]
+    async fn test_list_count_and_get_honour_literal_conditions() {
+        let mock = MockTableSource::new()
+            .with_data(
+                "users",
+                vec![
+                    json!({"id": "1", "name": "Alice"}),
+                    json!({"id": "2", "name": "Bob"}),
+                ],
+            )
+            .await;
+        let all = Table::<MockTableSource, TestUser>::new("users", mock.clone());
+        let mut set = all.clone();
+        set.add_condition(mock.eq_value_condition("name", json!("Alice")).unwrap());
+
+        let listed = set.data_source().list_table_values(&set).await.unwrap();
+        assert_eq!(listed.keys().collect::<Vec<_>>(), ["1"]);
+        assert_eq!(set.data_source().get_table_count(&set).await.unwrap(), 1);
+        let (src, id) = (set.data_source(), "2".to_string());
+        assert!(src.get_table_value(&set, &id).await.unwrap().is_none());
+        assert_eq!(all.data_source().get_table_count(&all).await.unwrap(), 2);
     }
 
     #[tokio::test]

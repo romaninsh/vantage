@@ -47,7 +47,7 @@ fn unquote_identifier(text: &str) -> Option<String> {
     for q in ['"', '`'] {
         if let Some(inner) = text.strip_prefix(q).and_then(|t| t.strip_suffix(q)) {
             let doubled: String = [q, q].iter().collect();
-            if inner.replace(&doubled, "").contains(q) {
+            if inner.is_empty() || inner.replace(&doubled, "").contains(q) {
                 return None;
             }
             return Some(inner.replace(&doubled, &q.to_string()));
@@ -95,6 +95,8 @@ mod tests {
             None,
             "qualified: correlated, not an invariant"
         );
+        assert_eq!(literal_equality(&eq("\"\"", json!(1))), None, "empty name");
+        assert_eq!(literal_equality(&eq("``", json!(1))), None, "empty name");
         let gt = Expression::new("{} > {}", eq("price", json!(1)).parameters);
         assert_eq!(literal_equality(&gt), None);
     }

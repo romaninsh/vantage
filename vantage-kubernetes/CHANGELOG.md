@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.5 — 2026-10-07
+
+- `ExprDataSource` builds on `vantage_expressions::execute_by_resolving` and `defer_execute`.
+
 ## 0.6.4 — 2026-10-04
 
 - Parameters resolve through `vantage_expressions::resolve_param`.

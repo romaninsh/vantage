@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 — 2026-10-07
+
+- Vista `patch` returns set-check errors other than "outside the set" instead of `NotFound`.
+- Typed `insert_table_return_id_value` misfit error no longer carries an empty `id`.
+- `MemoryDB::execute` builds on `vantage_expressions::execute_strict`; its errors name the backend in a `backend` context key.
+
 ## 1.2.0 — 2026-10-05
 
 - **Breaking:** typed and Vista writes follow the write contract: insert of an existing id returns

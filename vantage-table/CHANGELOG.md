@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 — 2026-10-07
+
+- `MockTableSource` `list` and `count` honour the table's literal conditions.
+- `literal_equality` rejects a quoted empty identifier.
+- Count-shape error carries the result in a `result` context key instead of the message.
+
 ## 1.2.0 — 2026-10-05
 
 - `Table::add_condition` of a literal `column = value` registers a set invariant (inserts fill it).

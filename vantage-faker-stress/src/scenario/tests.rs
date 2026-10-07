@@ -44,7 +44,7 @@ fn loads_tables_sims_and_includes() {
     );
     let s = load(root.path(), "basic").unwrap();
     assert_eq!(s.seed, Some(7));
-    assert_eq!(s.tables["ticket"].count, 20);
+    assert_eq!(s.tables["ticket"].count, Some(20));
     assert_eq!(s.sims["churn"].script, "let id = table().insert(#{});");
     assert_eq!(s.duration().unwrap(), Duration::from_secs(5));
     assert_eq!(s.stress.limits.cpu_pct, Some(400.0));
@@ -155,7 +155,7 @@ fn scale_multiplies_sims_and_rows() {
         s.sims["audit"].spawn.rate, None,
         "an absent rate stays absent"
     );
-    assert_eq!(s.tables["ticket"].count, 60);
+    assert_eq!(s.tables["ticket"].count, Some(60));
 }
 
 #[test]
@@ -177,8 +177,8 @@ fn scale_keeps_nonzero_at_least_one() {
     let s = load(root.path(), "basic").unwrap().scaled(0.01, 0.01);
     assert_eq!(s.sims["churn"].spawn.burst, Some(1));
     assert_eq!(s.sims["churn"].spawn.max, Some(1));
-    assert_eq!(s.tables["ticket"].count, 1);
-    assert_eq!(s.tables["audit"].count, 0);
+    assert_eq!(s.tables["ticket"].count, Some(1));
+    assert_eq!(s.tables["audit"].count, Some(0));
 }
 
 #[test]

@@ -461,7 +461,13 @@ impl TableShell for MockShell {
         id: &String,
     ) -> Result<Option<Record<CborValue>>> {
         self.guard_reads()?;
-        Ok(self.data.lock().unwrap().get(&self.key(id)).cloned())
+        Ok(self
+            .data
+            .lock()
+            .unwrap()
+            .get(&self.key(id))
+            .filter(|record| self.in_set(record))
+            .cloned())
     }
 
     async fn get_vista_some_value(
@@ -954,6 +960,18 @@ mod tests {
                 _ => contract::check_delete_all(&f).await,
             }
         }
+    }
+
+    #[tokio::test]
+    async fn narrowed_get_hides_rows_outside_the_set() {
+        let source = MockShell::new()
+            .with_record("in1", record(&[("parent", cbor_text("p1"))]))
+            .with_record("out1", record(&[("parent", cbor_text("p2"))]));
+        let mut vista = build_user_vista(source);
+        vista.add_condition_eq("parent", cbor_text("p1")).unwrap();
+
+        assert!(vista.get_value("in1").await.unwrap().is_some());
+        assert!(vista.get_value("out1").await.unwrap().is_none());
     }
 
     #[tokio::test]

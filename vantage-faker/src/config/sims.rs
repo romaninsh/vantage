@@ -114,7 +114,11 @@ impl DatasetSpec {
         for (name, table) in &self.tables {
             builder = builder
                 .columns(name.clone(), super::sim_columns(table))
-                .fake_rows(name.clone(), table.count, table.weirdness.unwrap_or(0.0));
+                .fake_rows(
+                    name.clone(),
+                    self.resolve_count(table),
+                    table.weirdness.unwrap_or(0.0),
+                );
         }
         for def in self.sim_defs()? {
             builder = builder.sim(def);

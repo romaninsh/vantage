@@ -11,13 +11,10 @@ where
 {
     async fn insert_return_id(&self, entity: &E) -> crate::traits::Result<Self::Id> {
         // Convert entity to record
-        let mut record: Record<serde_json::Value> =
-            entity.clone().try_into_record().map_err(|e| {
-                vantage_core::util::error::vantage_error!(
-                    "Failed to serialize entity to record: {:?}",
-                    e
-                )
-            })?;
+        let mut record: Record<serde_json::Value> = entity
+            .clone()
+            .try_into_record()
+            .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
         // Extract ID from record if present, otherwise generate random ID
         let id = if let Some(record_id) = record.get("id") {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1 — 2026-10-07
+
+- Fixed: DynamoDB `delete_all` deleted rows that left the set between its scan and the delete; each delete is now conditional on the set.
+- `AwsAccount`'s `ExprDataSource` builds on `vantage_expressions::execute_by_resolving` and `defer_execute`.
+
 ## 0.7.0 — 2026-10-07
 
 - Fixed: DynamoDB insert silently overwrote an existing item (`PutItem`); it is now a conditional put

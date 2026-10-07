@@ -53,6 +53,22 @@ pub(super) fn tracked<T>(
     result
 }
 
+/// `delete()` with status tracking. A `false` result means nothing was
+/// attempted, so the draft keeps the status and rejection it had.
+pub(super) fn tracked_delete(r: &RecordDraft) -> RhaiResult<bool> {
+    let (status, rejection) = {
+        let guard = r.inner.lock().unwrap();
+        (guard.status, guard.rejection.clone())
+    };
+    let result = tracked(r, try_delete);
+    if matches!(result, Ok(false)) {
+        let mut guard = r.inner.lock().unwrap();
+        guard.status = status;
+        guard.rejection = rejection;
+    }
+    result
+}
+
 pub(super) fn try_save(r: &RecordDraft) -> RhaiResult<Dynamic> {
     let (handle, resolver, writes, id, changes) = {
         let guard = r.inner.lock().unwrap();

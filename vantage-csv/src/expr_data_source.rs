@@ -3,9 +3,9 @@
 //! Enables executing expressions against CSV by resolving DeferredFn closures.
 //! This is used by `column_values_expression` and other deferred-based expressions.
 
-use vantage_expressions::Expression;
 use vantage_expressions::traits::datasource::ExprDataSource;
-use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
+use vantage_expressions::traits::expressive::DeferredFn;
+use vantage_expressions::{Expression, defer_execute, execute_by_resolving};
 
 use crate::Csv;
 use crate::condition::resolve_param;
@@ -13,37 +13,27 @@ use crate::type_system::AnyCsvType;
 
 impl ExprDataSource<AnyCsvType> for Csv {
     async fn execute(&self, expr: &Expression<AnyCsvType>) -> vantage_core::Result<AnyCsvType> {
-        // For CSV, execution means resolving deferred params.
-        // An expression with a single param resolves to that param's value.
-        // Multi-param expressions resolve each param and join as comma-separated.
-        if expr.parameters.len() == 1 {
-            resolve_param(&expr.parameters[0]).await
-        } else if expr.parameters.is_empty() {
-            Ok(AnyCsvType::new(expr.template.clone()))
-        } else {
-            // Resolve all params, join with commas
-            let mut results = Vec::new();
-            for param in &expr.parameters {
-                let resolved = resolve_param(param).await?;
-                results.push(resolved.value().clone());
-            }
-            Ok(AnyCsvType::new(results.join(",")))
-        }
+        // For CSV, execution means resolving deferred params. Multi-param
+        // expressions resolve each param and join the values comma-separated.
+        execute_by_resolving(
+            expr,
+            |template| AnyCsvType::new(template.to_string()),
+            |params| async move {
+                let mut results = Vec::with_capacity(params.len());
+                for param in params {
+                    results.push(resolve_param(param).await?.value().clone());
+                }
+                Ok(AnyCsvType::new(results.join(",")))
+            },
+        )
+        .await
     }
 
     fn defer(&self, expr: Expression<AnyCsvType>) -> DeferredFn<AnyCsvType>
     where
         AnyCsvType: Clone + Send + Sync + 'static,
     {
-        let csv = self.clone();
-        DeferredFn::new(move || {
-            let csv = csv.clone();
-            let expr = expr.clone();
-            Box::pin(async move {
-                let result = csv.execute(&expr).await?;
-                Ok(ExpressiveEnum::Scalar(result))
-            })
-        })
+        defer_execute(self, expr)
     }
 }
 

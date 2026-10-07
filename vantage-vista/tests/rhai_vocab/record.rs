@@ -267,6 +267,24 @@ fn denied_writes_block_save() {
 }
 
 #[test]
+fn denied_delete_leaves_status_unchanged() {
+    let host = host(&store(), Terminals::Read { limit: None });
+    let out = json(
+        &host,
+        r#"
+        let r = table("t").record("r1");
+        r.a = 1;
+        try { r.save(); } catch(err) {}
+        let before = r.status();
+        let deleted = r.delete();
+        #{ before: before, after: r.status(), deleted: deleted }
+    "#,
+    );
+    assert_eq!(out["deleted"], json!(false), "{out}");
+    assert_eq!(out["after"], out["before"], "{out}");
+}
+
+#[test]
 fn field_sets_resolve_the_id_column_once() {
     let shell = mock_with("r1", &[], VistaCapabilities::default());
     let calls = Arc::new(Mutex::new(0usize));

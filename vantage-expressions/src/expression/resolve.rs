@@ -1,11 +1,13 @@
 //! [`Expression::resolve_deferred`]: call every deferred parameter before an
 //! expression is rendered and sent. [`resolve_param`] collapses one parameter
-//! all the way down to a single value.
+//! all the way down to a single value; [`execute_by_resolving`] and
+//! [`execute_strict`] build an `ExprDataSource::execute` from that for
+//! backends without an expression engine.
 
 use std::future::Future;
 use std::pin::Pin;
 
-use vantage_core::Result;
+use vantage_core::{Result, error};
 
 use crate::expression::core::Expression;
 use crate::traits::expressive::ExpressiveEnum;
@@ -40,6 +42,81 @@ where
             },
         }
     })
+}
+
+/// Execute `expr` on a backend with no expression engine of its own by
+/// collapsing its parameters to one value.
+///
+/// An expression without parameters becomes `from_template(template)`, and one
+/// with a single parameter goes through [`resolve_param`]. An expression with
+/// more parameters is passed to `many`, which decides whether and how to
+/// resolve them.
+pub async fn execute_by_resolving<'a, T, F>(
+    expr: &'a Expression<T>,
+    from_template: fn(&str) -> T,
+    many: impl FnOnce(&'a [ExpressiveEnum<T>]) -> F,
+) -> Result<T>
+where
+    T: Clone + Send + Sync + 'a,
+    F: Future<Output = Result<T>>,
+{
+    match expr.parameters.as_slice() {
+        [] => Ok(from_template(&expr.template)),
+        [single] => resolve_param(single, from_template).await,
+        params => many(params).await,
+    }
+}
+
+/// Execute `expr` on a backend that unwraps values without recursing.
+///
+/// An expression without parameters becomes `from_template(template)`. A single
+/// parameter must be a scalar, a deferred call that returns a scalar, or a
+/// nested expression whose only parameter is one of those two. Every other
+/// shape is an error; `backend` names the caller in the error context.
+pub async fn execute_strict<T>(
+    expr: &Expression<T>,
+    from_template: fn(&str) -> T,
+    backend: &'static str,
+) -> Result<T>
+where
+    T: Clone + Send + Sync,
+{
+    match expr.parameters.as_slice() {
+        [] => Ok(from_template(&expr.template)),
+        [ExpressiveEnum::Nested(inner)] => match inner.parameters.as_slice() {
+            [single] => strict_scalar(single, backend).await,
+            _ => Err(error!(
+                "Nested expression must have exactly one parameter",
+                backend = backend
+            )),
+        },
+        [single] => strict_scalar(single, backend).await,
+        _ => Err(error!(
+            "Multi-parameter expression execution is not supported",
+            backend = backend
+        )),
+    }
+}
+
+/// The scalar behind a scalar or deferred parameter.
+async fn strict_scalar<T>(param: &ExpressiveEnum<T>, backend: &'static str) -> Result<T>
+where
+    T: Clone + Send + Sync,
+{
+    match param {
+        ExpressiveEnum::Scalar(v) => Ok(v.clone()),
+        ExpressiveEnum::Deferred(deferred) => match deferred.call().await? {
+            ExpressiveEnum::Scalar(v) => Ok(v),
+            _ => Err(error!(
+                "Deferred parameter resolved to a non-scalar",
+                backend = backend
+            )),
+        },
+        ExpressiveEnum::Nested(_) => Err(error!(
+            "Only one level of expression nesting is supported",
+            backend = backend
+        )),
+    }
 }
 
 impl<T: Clone> Expression<T> {
@@ -130,5 +207,84 @@ mod tests {
             resolve_param(&two, from_template).await.unwrap(),
             "tpl:{} {}"
         );
+    }
+
+    fn scalar(v: &str) -> ExpressiveEnum<String> {
+        ExpressiveEnum::Scalar(v.to_string())
+    }
+
+    #[tokio::test]
+    async fn execute_by_resolving_hands_many_parameters_to_the_caller() {
+        let none = Expression::<String>::new("raw", vec![]);
+        let one = Expression::new("{}", vec![deferred_to(scalar("x"))]);
+        let two = Expression::new("{} {}", vec![scalar("a"), scalar("b")]);
+        let many = |params: &[ExpressiveEnum<String>]| {
+            let n = params.len();
+            async move { Ok(format!("many:{n}")) }
+        };
+
+        assert_eq!(
+            execute_by_resolving(&none, from_template, many)
+                .await
+                .unwrap(),
+            "tpl:raw"
+        );
+        assert_eq!(
+            execute_by_resolving(&one, from_template, many)
+                .await
+                .unwrap(),
+            "x"
+        );
+        assert_eq!(
+            execute_by_resolving(&two, from_template, many)
+                .await
+                .unwrap(),
+            "many:2"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_strict_unwraps_one_level_and_rejects_the_rest() {
+        let none = Expression::<String>::new("raw", vec![]);
+        assert_eq!(
+            execute_strict(&none, from_template, "test").await.unwrap(),
+            "tpl:raw"
+        );
+
+        let nested = Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Nested(Expression::new(
+                "{}",
+                vec![deferred_to(scalar("v"))],
+            ))],
+        );
+        assert_eq!(
+            execute_strict(&nested, from_template, "test")
+                .await
+                .unwrap(),
+            "v"
+        );
+
+        let two = Expression::new("{} {}", vec![scalar("a"), scalar("b")]);
+        let deep = Expression::new(
+            "{}",
+            vec![ExpressiveEnum::Nested(Expression::new(
+                "{}",
+                vec![ExpressiveEnum::Nested(Expression::new(
+                    "{}",
+                    vec![scalar("v")],
+                ))],
+            ))],
+        );
+        let to_nested = Expression::new(
+            "{}",
+            vec![deferred_to(ExpressiveEnum::Nested(Expression::new(
+                "{}",
+                vec![scalar("v")],
+            )))],
+        );
+        for expr in [two, deep, to_nested] {
+            assert!(execute_strict(&expr, from_template, "test").await.is_err());
+        }
     }
 }

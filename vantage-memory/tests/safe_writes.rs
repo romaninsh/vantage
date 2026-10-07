@@ -123,6 +123,28 @@ async fn vista_operator_condition_keeps_rows_in_set() {
 }
 
 #[tokio::test]
+async fn typed_insert_return_id_misfit_is_conflict_without_empty_id() {
+    use vantage_table::prelude::TableSource;
+
+    let db = MemoryDB::from_store(seeded());
+    let all = Table::<MemoryDB, EmptyEntity>::new("item", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<String>("parent");
+    let set = all.clone().with_condition(all["parent"].eq("p1"));
+    let record: Record<AnyMemoryType> = [("parent".to_string(), AnyMemoryType::from("p2"))]
+        .into_iter()
+        .collect();
+
+    let err = db
+        .insert_table_return_id_value(&set, &record)
+        .await
+        .unwrap_err();
+    assert!(err.is_conflict(), "{err}");
+    assert!(!err.to_string().contains("id: \"\""), "{err}");
+}
+
+#[tokio::test]
 async fn native_import_never_overwrites() {
     let store = seeded();
     let all = vista(&store);

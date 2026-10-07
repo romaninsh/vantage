@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1 — 2026-10-07
+
+- `scenery/table/state.rs` split into focused modules.
+
 ## 0.14.0 — 2026-10-05
 
 - Fixed: `delete_all` on a narrowed `Dio::vista()` emptied the whole master. It now deletes only
