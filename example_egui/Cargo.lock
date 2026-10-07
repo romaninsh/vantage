@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "example_egui"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bakery_model3",
  "dataset-ui-adapters",
@@ -5719,7 +5719,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "async-trait",
  "chrono",

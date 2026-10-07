@@ -1772,7 +1772,7 @@ dependencies = [
 
 [[package]]
 name = "example_slint"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "bakery_model3",
@@ -7330,7 +7330,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "async-trait",
  "chrono",

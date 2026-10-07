@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "example_tui"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "bakery_model3",
@@ -4572,7 +4572,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-aws"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "async-trait",
  "chrono",
