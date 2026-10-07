@@ -15,8 +15,8 @@
         <link rel="icon" href="favicon-de23e50b.svg">
         <link rel="shortcut icon" href="favicon-8114d1fc.png">
         <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
         <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ed4d36fc.js";
+            window.path_to_searchindex_js = "searchindex-13d076e4.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-aa92909c.js"></script>
+        <script src="toc-73e720bf.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,6 +181,8 @@ definitions, action bodies, faker sims. Some of that configuration needs logic: 
 from other columns, a filter that depends on the selected row, a write after a form is submitted,
 a simulated order that ships after twenty minutes. That logic is written in
 <a href="https://rhai.rs">Rhai</a>, a small scripting language embedded in Rust.</p>
+<p>Rhai is part of vantage: any application that holds Vistas can run these scripts. Vantage UI is one
+such application and is used as an example where it helps.</p>
 <p>This part of the book is the one place that teaches scripting across the framework. Other chapters
 link here instead of repeating the verbs.</p>
 <ul>
@@ -241,8 +243,8 @@ legal in one place and refused in another.</p>
 <tr><td>Query preview (<code>preview_script</code>)</td><td>an MCP tool showing the query a script would run</td><td>describe a set, never read it</td></tr>
 <tr><td>YAML <code>modify:</code>, reference build scripts, augmentation sources</td><td><code>self.where("vip", true)</code></td><td>describe a set</td></tr>
 <tr><td>YAML <code>lazy:</code> columns</td><td><code>row.net / 5</code></td><td>compute one value from one row</td></tr>
-<tr><td>Form <code>options:</code></td><td>a dropdown filled from another table</td><td>read</td></tr>
-<tr><td>Action bodies, form <code>on_submit</code>, wizard workers</td><td><code>row.status = "paid"; row.save();</code></td><td>read and write</td></tr>
+<tr><td>An application’s form <code>options:</code> (e.g. Vantage UI)</td><td>a dropdown filled from another table</td><td>read</td></tr>
+<tr><td>An application’s action bodies, form <code>on_submit</code>, wizard workers (e.g. Vantage UI)</td><td><code>row.status = "paid"; row.save();</code></td><td>read and write</td></tr>
 <tr><td>Faker sims</td><td>an order that ships, then disappears</td><td>read and write a memory store, plus time and random verbs</td></tr>
 </tbody>
 </table>
@@ -285,7 +287,7 @@ let due = vips.ref("orders").where("status", "due");
 }
 </code></pre>
 <p><code>vips</code> and <code>due</code> are <strong>handles</strong>: descriptions of a set. Nothing is read until <code>count()</code> or
-<code>ids()</code> runs, and the handle is then resolved into a <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/vista/struct.Vista.html"><code>Vista</code></a> and read
+<code>ids()</code> runs, and the handle is then resolved into a <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/vista/struct.Vista.html" title="struct vantage_vista::vista::Vista"><code>Vista</code></a> and read
 through it. <code>ref("orders")</code> follows a relation from every row of the set, so <code>due</code> is the due orders
 of every VIP client. The script’s last expression is its result; here a map, which a host can turn
 into JSON.</p>
@@ -320,14 +322,19 @@ behind <code>table(name)</code>, and how async reads run from synchronous script
 <li><a href="./rhai/tables.html">The table handle</a>: narrowing verbs, reads, relations, introspection, and
 errors.</li>
 <li><a href="./rhai/writes.html">Writes</a>: <code>insert</code>, <code>upsert</code>, <code>patch</code>, <code>delete</code> and <code>import_from</code>, and what
-each returns when a row is missing.</li>
+each returns when a row is missing or outside the set.</li>
 <li><a href="./rhai/computed.html">Computed columns</a>: <code>lazy:</code> columns that the Vista fills on every read, and
 what they refuse.</li>
 <li><a href="./rhai/records.html">Records</a>: drafts of one row that stage edits and save only what changed.</li>
 <li><a href="./rhai/surfaces.html">Surfaces</a>: every place the vocabulary runs, with a tested example for each,
 plus backend extensions such as SurrealDB’s <code>with_condition</code>.</li>
 <li><a href="./rhai/layers.html">Layers</a>: Servo, Scenery and faker sims next to the data vocabulary.</li>
+<li><a href="./rhai/faker.html">Faker sims</a>: scripts that keep a memory store changing over sim time.</li>
 <li><a href="./rhai/dialects.html">Expression dialects</a>: query builders, templates and command scripts.</li>
+<li><a href="./rhai/query-tables.html">Tables defined by a query</a>: a table whose source is a script-built
+<code>SELECT</code>, and why that is the only place a script builds a query.</li>
+<li><a href="./rhai/query-builders.html">Query builder functions</a>: every function the SQL and SurrealDB query
+builders register.</li>
 </ul>
 <div id="admonition-tested-examples" class="admonition admonish-note" role="note" aria-labelledby="admonition-tested-examples-title">
 <div class="admonition-title">
@@ -410,11 +417,11 @@ example <code>rhai_guide::tables::first_script</code> in <code>vantage-vista/tes
 
         <script src="elasticlunr-ef4e11c1.min.js"></script>
         <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="searcher-09f2665d.js"></script>
 
         <script src="clipboard-1626706a.min.js"></script>
         <script src="highlight-abc7f01d.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
         <script src="mermaid-eefea253.min.js"></script>

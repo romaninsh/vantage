@@ -15,8 +15,8 @@
         <link rel="icon" href="favicon-de23e50b.svg">
         <link rel="shortcut icon" href="favicon-8114d1fc.png">
         <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
         <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ed4d36fc.js";
+            window.path_to_searchindex_js = "searchindex-13d076e4.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-aa92909c.js"></script>
+        <script src="toc-73e720bf.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -215,7 +215,7 @@ compiles to native queries.</p>
 </ul>
 <hr>
 <h2 id="one-page-of-yaml-one-working-vista"><a class="header" href="#one-page-of-yaml-one-working-vista">One page of YAML, one working Vista</a></h2>
-<p>Every driver’s factory implements <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/factory/trait.VistaFactory.html"><code>VistaFactory</code></a>, whose <code>from_yaml</code>
+<p>Every driver’s factory implements <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/factory/trait.VistaFactory.html" title="trait vantage_vista::factory::VistaFactory"><code>VistaFactory</code></a>, whose <code>from_yaml</code>
 parses a spec and lowers it:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -254,7 +254,7 @@ explicit key exists so a YAML author can correct a wrong flag without touching a
 </ul>
 <hr>
 <h2 id="anatomy-of-a-spec"><a class="header" href="#anatomy-of-a-spec">Anatomy of a spec</a></h2>
-<p>A <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/spec/struct.VistaSpec.html"><code>VistaSpec</code></a> has a uniform core that every driver understands, plus
+<p>A <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/spec/struct.VistaSpec.html" title="struct vantage_vista::spec::VistaSpec"><code>VistaSpec</code></a> has a uniform core that every driver understands, plus
 one driver-named block at each level:</p>
 <div class="table-wrapper">
 <table>
@@ -491,7 +491,7 @@ mechanics — and the sharp edges — are covered in
 <hr>
 <h2 id="cross-persistence-the-vistacatalog"><a class="header" href="#cross-persistence-the-vistacatalog">Cross-persistence: the VistaCatalog</a></h2>
 <p>A single Vista is strictly single-backend. When a system spans several — categories in Postgres,
-products behind a REST API — <a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/index.html"><code>VistaCatalog</code></a> sits one layer up: it holds a
+products behind a REST API — <a href="https://docs.rs/vantage-vista-factory/0.6.3/vantage_vista_factory/index.html" title="mod vantage_vista_factory"><code>VistaCatalog</code></a> sits one layer up: it holds a
 loader per model name and traverses relations whose target lives in a <em>different</em> persistence:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -579,11 +579,11 @@ driver-side walkthrough is <a href="./new-persistence/step8-vista-integration.ht
 
         <script src="elasticlunr-ef4e11c1.min.js"></script>
         <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="searcher-09f2665d.js"></script>
 
         <script src="clipboard-1626706a.min.js"></script>
         <script src="highlight-abc7f01d.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
         <script src="mermaid-eefea253.min.js"></script>

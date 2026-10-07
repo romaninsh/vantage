@@ -15,8 +15,8 @@
         <link rel="icon" href="../favicon-de23e50b.svg">
         <link rel="shortcut icon" href="../favicon-8114d1fc.png">
         <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-2459343d.css">
-        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
         <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ed4d36fc.js";
+            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-aa92909c.js"></script>
+        <script src="../toc-73e720bf.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -243,12 +243,12 @@ important differences:</p>
 <tr><td><strong>Operations</strong></td><td>One SQL statement (SELECT, INSERT, …)</td><td>Higher-level CRUD: list, get, add, patch, delete</td></tr>
 <tr><td><strong>Columns</strong></td><td>String field names via <code>.with_field()</code></td><td>Typed <code>Column&lt;T&gt;</code> definitions</td></tr>
 <tr><td><strong>Database</strong></td><td>Not bound — just a struct</td><td>Holds a database reference (<code>Arc</code>)</td></tr>
-<tr><td><strong>Idempotency</strong></td><td>INSERT fails on duplicate key</td><td><code>replace()</code> and <code>delete()</code> are idempotent</td></tr>
+<tr><td><strong>Idempotency</strong></td><td>INSERT fails on duplicate key</td><td>every write is retry-safe (<a href="../record-lifecycle.html#safe-writes">Safe writes</a>)</td></tr>
 <tr><td><strong>Data sources</strong></td><td>Only databases with a query language</td><td>Any data source: SQL, CSV, APIs, queues, etc.</td></tr>
 </tbody>
 </table>
 </div>
-<p>A <a href="https://docs.rs/vantage_table/1.1.1/vantage_table/table/base/struct.Table.html"><code>Table</code></a> is typically defined in its own file alongside the entity.
+<p>A <a href="https://docs.rs/vantage-table/1.2.0/vantage_table/table/base/struct.Table.html" title="struct vantage_table::table::base::Table"><code>Table</code></a> is typically defined in its own file alongside the entity.
 Create <code>src/product.rs</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -349,7 +349,8 @@ table.delete(&amp;"8".to_string()).await?;
 <code>Option&lt;Product&gt;</code> — <code>None</code> when the ID doesn’t exist, so you can pattern-match or <code>.ok_or(...)</code> into
 your own not-found error. There’s also <code>get_some()</code> which returns an <code>(Id, Product)</code> pair (still
 <code>Option</code>-wrapped) for sampling, and <code>insert_return_id()</code> for when you want the database to generate
-the ID.</p>
+the ID; see <a href="../record-lifecycle.html#safe-writes">Safe writes</a> for why a client-made id is the
+retry-safe choice.</p>
 <div id="admonition-ids-are-strings" class="admonition admonish-info" role="note" aria-labelledby="admonition-ids-are-strings-title">
 <div class="admonition-title">
 <div id="admonition-ids-are-strings-title">
@@ -380,10 +381,9 @@ JSON output in the next chapter.</p>
 </div>
 
 <div>
-<p>Try duplicating the <code>replace()</code> and <code>delete()</code> calls — the result is the same. Replacing
-a record that already has the new values is a no-op. Deleting a record that’s already gone
-succeeds silently. This makes table operations safe to retry without worrying about
-side effects.</p>
+<p>Try repeating the <code>insert</code>, <code>replace</code> and <code>delete</code> calls — the result is the same: an insert
+of an existing id returns the stored row, a replace with the same values changes nothing, and
+deleting a row that’s gone succeeds. See <a href="../record-lifecycle.html#safe-writes">Safe writes</a>.</p>
 </div>
 
 </div>
@@ -917,11 +917,11 @@ collection, expressed in Rust, executed efficiently on each side.</li>
 
         <script src="../elasticlunr-ef4e11c1.min.js"></script>
         <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
         <script src="../clipboard-1626706a.min.js"></script>
         <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-a0b12cfe.js"></script>
+        <script src="../book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
         <script src="../mermaid-eefea253.min.js"></script>

@@ -15,8 +15,8 @@
         <link rel="icon" href="../favicon-de23e50b.svg">
         <link rel="shortcut icon" href="../favicon-8114d1fc.png">
         <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-2459343d.css">
-        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
         <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ed4d36fc.js";
+            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-aa92909c.js"></script>
+        <script src="../toc-73e720bf.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,7 +181,7 @@ Vista, so it follows the backend’s rules and whatever policy the host’s reso
 <ul>
 <li><a href="#the-write-verbs">The write verbs</a></li>
 <li><a href="#ids">Ids</a></li>
-<li><a href="#narrowing-doesnt-filter-writes">Narrowing doesn’t filter writes</a></li>
+<li><a href="#writes-stay-in-the-set">Writes stay in the set</a></li>
 <li><a href="#capabilities">Capabilities</a></li>
 <li><a href="#importing">Importing</a></li>
 <li><a href="#writes-through-a-dio">Writes through a Dio</a></li>
@@ -195,7 +195,7 @@ let id = orders.insert(#{ client: "c2", total: 30, status: "due" });
 orders.patch(id, #{ status: "paid" });
 
 let deleted = orders.delete("o4");   // true: the row was there
-let again = orders.delete("o4");     // false: nothing left to delete
+let again = orders.delete("o4");     // true: the row is gone either way
 let patched = orders.patch("o99", #{ status: "paid" });   // false
 
 #{
@@ -211,27 +211,28 @@ let patched = orders.patch("o99", #{ status: "paid" });   // false
 <tr><th>Verb</th><th>Returns</th><th>When the row is missing</th></tr>
 </thead>
 <tbody>
-<tr><td><code>insert(map)</code></td><td>the new row’s id</td><td>n/a</td></tr>
+<tr><td><code>insert(map)</code></td><td>the id; an id already in the set returns it</td><td>n/a</td></tr>
 <tr><td><code>upsert(id, map)</code></td><td><code>id</code></td><td>inserts it</td></tr>
 <tr><td><code>patch(id, map)</code></td><td><code>true</code></td><td>returns <code>false</code></td></tr>
-<tr><td><code>delete(id)</code></td><td><code>true</code></td><td>returns <code>false</code></td></tr>
-<tr><td><code>import_from(source)</code>, <code>import_from(source, mapping)</code></td><td><code>#{ inserted, skipped, cancelled }</code></td><td>n/a</td></tr>
+<tr><td><code>delete(id)</code></td><td><code>true</code>; <code>false</code> only when writes aren’t allowed</td><td>returns <code>true</code></td></tr>
+<tr><td><code>import_from(source)</code>, <code>import_from(source, mapping)</code></td><td><code>#{ inserted, skipped, rejected, cancelled }</code></td><td>n/a</td></tr>
 </tbody>
 </table>
 </div>
-<p><code>patch</code> and <code>delete</code> return <code>false</code> only for a missing row: the backend reported
-<code>ErrorKind::NotFound</code>. Any other failure throws. Drivers report not-found for these cases:
-vantage-memory, SQL on SQLite, PostgreSQL and MySQL (a patch or delete that matched no row) and
-SurrealDB (an update or delete that affected nothing). A Dio Vista checks its cache and then its
-master before it queues the write. A backend that doesn’t report not-found returns <code>true</code> for a
-missing row.</p>
+<p><code>patch</code> returns <code>false</code> when the row is missing or outside the handle’s set (the backend reported
+<code>NotFound</code>). <code>delete</code> returns <code>true</code> whenever the row is gone afterwards, including when it was
+never there or is outside the set; it returns <code>false</code> only when the write isn’t allowed
+(<code>Writes::Denied</code>, no <code>can_delete</code>, a backend that can’t keep writes inside the set). Any other
+failure throws. Why: <a href="../record-lifecycle.html#safe-writes">Safe writes</a>.</p>
 <p><code>patch</code> changes only the fields in the map. <code>upsert</code> replaces the whole row, so fields left out of
 the map are gone afterwards. <a href="./computed.html">Computed columns</a> in the map are dropped before the
 write reaches the backend.</p>
 <h2 id="ids"><a class="header" href="#ids">Ids</a></h2>
-<p><code>insert</code> looks at the map’s id column. With a value there, that id is used as given, and an
-existing row with that id is an error. Without one, the backend assigns the id and <code>insert</code>
-returns it.</p>
+<p><code>insert</code> looks at the map’s id column. With a value there, that id is used as given. Without one,
+<code>insert</code> mints a UUIDv7 before the first attempt, so a retry reuses it, and returns it. When the
+id column is flagged <code>auto</code>, the backend makes the id instead (<code>insert_return_id</code>, not
+retry-safe; see <a href="../record-lifecycle.html#safe-writes">Safe writes</a>). A numeric id column without
+<code>auto</code> is an error: pass an id or flag the column.</p>
 <!-- tested: rhai_guide::writes::explicit_ids -->
 <pre><code class="language-rhai">let orders = table("order");
 
@@ -241,32 +242,37 @@ orders.upsert("o11", #{ client: "c3", total: 5, status: "due" });    // inserts
 
 table("client").where("id", "c3").ref("orders").ids()
 </code></pre>
-<p>Inserting an id that already exists throws:</p>
-<!-- tested: rhai_guide::writes::duplicate_insert -->
+<p>Inserting an id that already exists in the set returns it; an id held by a row outside the set
+throws. This insert returns <code>"o1"</code> and changes nothing:</p>
+<!-- tested: rhai_guide::writes::insert_existing_id -->
 <pre><code class="language-rhai">table("order").insert(#{ id: "o1", client: "c2", total: 1, status: "due" })
 </code></pre>
 <p>Use <code>upsert</code> when a script owns stable ids and may run more than once.</p>
-<h2 id="narrowing-doesnt-filter-writes"><a class="header" href="#narrowing-doesnt-filter-writes">Narrowing doesn’t filter writes</a></h2>
-<p>A write goes to the handle’s table. <code>where</code>, <code>sort</code>, <code>search</code> and <code>limit</code> decide what reads
-return, not which rows a write may touch:</p>
-<!-- tested: rhai_guide::writes::writes_ignore_narrowing -->
+<h2 id="writes-stay-in-the-set"><a class="header" href="#writes-stay-in-the-set">Writes stay in the set</a></h2>
+<p><code>where</code>, <code>search</code> and <code>ref</code> define the set; a write only touches rows in it, an insert fills the
+set’s equality conditions (including a <code>ref</code>’s foreign key), and a write that would leave the set
+throws. <code>sort</code> doesn’t change membership. A handle with <code>limit(n)</code> can’t be written through: drop
+the limit.</p>
+<!-- tested: rhai_guide::writes::writes_stay_in_the_set -->
 <pre><code class="language-rhai">let paid = table("order").where("status", "paid");
-paid.delete("o2");   // o2 is due, and is deleted all the same
+let o2 = paid.delete("o2");                         // o2 is due: outside the set
+let o9 = paid.patch("o2", #{ total: 1 });           // false: not in the set
 
 let ada = table("client").where("id", "c1");
-ada.ref("orders").insert(#{ id: "o20", client: "c1", total: 9, status: "due" });
+ada.ref("orders").insert(#{ id: "o20", total: 9, status: "due" });   // client filled
 
 #{
     orders: table("order").ids(),
-    clients: table("client").count(),
+    o20: table("order").get("o20").client,
+    o2: o2,
+    o9: o9,
 }
 </code></pre>
-<p>The exception is <code>ref</code>: after a <code>ref</code> step, writes go to the relation’s target table. Steps before
-the last <code>ref</code> are read (to find the related rows); steps after it are ignored for writes.</p>
-<p><code>insert</code> through a <code>ref</code> doesn’t fill the foreign key. Set it in the map, as above.</p>
+<p>returns <code>#{ orders: ["o1", "o2", "o3", "o4", "o20"], o20: "c1", o2: true, o9: false }</code>: <code>o2</code> is
+still there.</p>
 <h2 id="capabilities"><a class="header" href="#capabilities">Capabilities</a></h2>
 <p>Each write checks the target Vista’s capabilities before it runs, and throws an error naming the
-verb and the table when the backend can’t do it:</p>
+verb and the table when the backend can’t do it (<code>delete</code> returns <code>false</code> instead):</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -282,8 +288,8 @@ verb and the table when the backend can’t do it:</p>
 </table>
 </div>
 <p>A host can also turn writes off for every table with <code>Writes::Denied(message)</code>. The verbs are
-still there, and each throws <code>message</code>. Vantage UI does this for MCP agents unless the “Allow MCP
-agents to write data” setting is on.</p>
+still there, and each throws <code>message</code>, except <code>delete</code>, which returns <code>false</code>. Vantage UI does
+this for MCP agents unless the “Allow MCP agents to write data” setting is on.</p>
 <h2 id="importing"><a class="header" href="#importing">Importing</a></h2>
 <p><code>import_from(source)</code> copies every row of another handle into this table. <code>source</code> is read through
 its narrowing, so it can be any set: a filtered table, the target of a <code>ref</code>, a table on another
@@ -313,12 +319,13 @@ type: <code>amount</code> stays an integer.</li>
 <li>The mapping must set the target’s id column. Two source rows mapping to the same id are an
 error, and so is an id whose <code>table:</code> prefix names a different table.</li>
 </ul>
-<p>An id the target already holds is never overwritten; it counts as <code>skipped</code>. When the target can
-import (<code>can_import</code>), the rows go through <code>import_values</code> in one call and the backend decides
-which ids it already holds. Otherwise each row is looked up with <code>get</code> first and inserted only if
-it is missing; any insert failure stops the import and throws. A target narrowed by <code>ref</code> only
-sees its own rows in that lookup, so an id held outside the narrowing is sent as an insert, which a
-backend that rejects duplicate ids refuses. Importing the same rows twice into a memory table:</p>
+<p>An id the target already holds is never overwritten; it counts as <code>skipped</code>. Rows that conflict
+with a narrowed target count as <code>rejected</code>. When the target can import (<code>can_import</code>) and isn’t
+narrowed, the rows go through <code>import_values</code> in one call and the backend decides which ids it
+already holds. Otherwise each row is looked up with <code>get</code> first and inserted on its own if it is
+missing. Into a narrowed target, a row outside the set is <code>rejected</code> and the import carries on;
+any other insert failure stops the import and throws. Importing the same rows twice into a memory
+table:</p>
 <!-- tested: rhai_guide::writes::import_twice -->
 <pre><code class="language-rhai">let first = table("backup").import_from(table("client"));
 let second = table("backup").import_from(table("client"));
@@ -329,16 +336,17 @@ let second = table("backup").import_from(table("client"));
 <p><code>cancelled</code> is <code>true</code> when the backend stopped part-way: a host’s import can be cancellable (Vantage
 UI shows a progress dialog with a cancel button). <code>inserted</code> then counts the rows written before
 the stop. A backend signals this by returning an error carrying the
-<a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/import/constant.IMPORT_CANCELLED.html"><code>IMPORT_CANCELLED</code></a> context key (the rows inserted), and
-optionally <a href="https://docs.rs/vantage_vista/1.1.2/vantage_vista/rhai/import/constant.IMPORT_CANCELLED_SKIPPED.html"><code>IMPORT_CANCELLED_SKIPPED</code></a> (the rows
+<a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/import/constant.IMPORT_CANCELLED.html" title="constant vantage_vista::rhai::import::IMPORT_CANCELLED"><code>IMPORT_CANCELLED</code></a> context key (the rows inserted), and
+optionally <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/import/constant.IMPORT_CANCELLED_SKIPPED.html" title="constant vantage_vista::rhai::import::IMPORT_CANCELLED_SKIPPED"><code>IMPORT_CANCELLED_SKIPPED</code></a> (the rows
 skipped).</p>
 <h2 id="writes-through-a-dio"><a class="header" href="#writes-through-a-dio">Writes through a Dio</a></h2>
 <p>A host may hand scripts Vistas whose writes go through a Dio: <code>Dio::vista()</code> is a Vista over the
 Dio’s cache whose inserts, patches and deletes are queued as flashes and written through to the
 master. To the script it is just a Vista. It is how action bodies in Vantage UI write: the page
 sees the change at once, and the master write follows.</p>
-<p>An <code>insert</code> without an id on a Dio Vista goes straight to the master (there is no id to stage
-until the master assigns one) and then seeds the cache, so an immediate <code>get(id)</code> finds the row.</p>
+<p>An <code>insert</code> without an id is queued like any other, with its minted UUIDv7. When the id column is
+flagged <code>auto</code>, it goes straight to the master instead (there is no id to stage until the master
+assigns one) and then seeds the cache, so an immediate <code>get(id)</code> finds the row.</p>
 
                     </main>
 
@@ -384,11 +392,11 @@ until the master assigns one) and then seeds the cache, so an immediate <code>ge
 
         <script src="../elasticlunr-ef4e11c1.min.js"></script>
         <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
         <script src="../clipboard-1626706a.min.js"></script>
         <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-a0b12cfe.js"></script>
+        <script src="../book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
         <script src="../mermaid-eefea253.min.js"></script>

@@ -15,8 +15,8 @@
         <link rel="icon" href="../favicon-de23e50b.svg">
         <link rel="shortcut icon" href="../favicon-8114d1fc.png">
         <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-2459343d.css">
-        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
         <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ed4d36fc.js";
+            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-aa92909c.js"></script>
+        <script src="../toc-73e720bf.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -333,11 +333,11 @@ let dio = lens.make_dio(master).await?.augment(
     }],
 );
 <span class="boring">}</span></code></pre>
-<p>An <a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/augment/struct.Augmentation.html"><code>Augmentation</code></a> answers four questions:</p>
+<p>An <a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/augment/struct.Augmentation.html" title="struct vantage_diorama::augment::Augmentation"><code>Augmentation</code></a> answers four questions:</p>
 <ul>
 <li><strong><code>detail</code></strong> — <em>where do detail records come from?</em> <code>Detail::Fixed</code> holds our augmenter Vista
 directly. (<code>Detail::Catalog(name)</code> resolves one by name instead — the config-driven form,
-which is also why <code>augment</code> takes a <a href="https://docs.rs/vantage_vista_factory/0.6.3/vantage_vista_factory/struct.VistaCatalog.html"><code>VistaCatalog</code></a>.
+which is also why <code>augment</code> takes a <a href="https://docs.rs/vantage-vista-factory/0.6.3/vantage_vista_factory/struct.VistaCatalog.html" title="struct vantage_vista_factory::VistaCatalog"><code>VistaCatalog</code></a>.
 Building an empty catalog just to satisfy the signature is admittedly awkward; the parameter
 earns its place only in the catalog form.)</li>
 <li><strong><code>source</code></strong> — <em>how does a master row select its detail record?</em> <code>Source::Column</code> maps the
@@ -487,7 +487,7 @@ the fetch is retried the next time the viewport reaches for it.</p>
 <tbody>
 <tr><td><code>with_lazy_expression(name, callback)</code></td><td>A column computed in Rust on the returned record; chains in order</td></tr>
 <tr><td><code>s3::get_object</code></td><td>Raw object fetch through the same (unsigned) driver</td></tr>
-<tr><td><a href="https://docs.rs/vantage_diorama/0.13.8/vantage_diorama/augment/struct.Augmentation.html"><code>Augmentation</code></a></td><td>Declares detail source, row→detail mapping, fetch style, merge</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/augment/struct.Augmentation.html" title="struct vantage_diorama::augment::Augmentation"><code>Augmentation</code></a></td><td>Declares detail source, row→detail mapping, fetch style, merge</td></tr>
 <tr><td><code>Detail::Fixed</code> / <code>Detail::Catalog</code></td><td>Detail Vista held directly, or resolved by name from a catalog</td></tr>
 <tr><td><code>Source::Column { from, to }</code></td><td>Master column → detail condition (our <code>Key</code> → <code>prefix</code>)</td></tr>
 <tr><td><code>MergeRule</code></td><td>Which detail columns land on the master row — and which don’t</td></tr>
@@ -576,11 +576,11 @@ and the YAML form — at <a href="../augmentation.html">Augmentation</a>.</p>
 
         <script src="../elasticlunr-ef4e11c1.min.js"></script>
         <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
         <script src="../clipboard-1626706a.min.js"></script>
         <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-a0b12cfe.js"></script>
+        <script src="../book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
         <script src="../mermaid-eefea253.min.js"></script>
