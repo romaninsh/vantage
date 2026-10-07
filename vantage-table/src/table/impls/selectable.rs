@@ -476,8 +476,9 @@ where
         } else if let Some(count) = result.as_i64() {
             Ok(count)
         } else {
-            Err(vantage_core::util::error::vantage_error!(
-                "count query returned an unexpected result shape: {result}"
+            Err(vantage_core::error!(
+                "count query returned an unexpected result shape",
+                result = result
             ))
         }
     }

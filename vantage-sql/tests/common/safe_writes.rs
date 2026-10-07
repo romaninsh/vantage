@@ -86,6 +86,19 @@ macro_rules! safe_writes_tests {
             })
             .await;
         }
+
+        #[tokio::test]
+        async fn operator_condition_on_absent_column_is_a_conflict() {
+            let all = item("operator_condition_on_absent_column_is_a_conflict").await;
+            let price = all["price"].clone();
+            let set = all.clone().with_condition(price.gt(10i64));
+            let err = set
+                .insert_value("nop", &rec(&[("name", "n".into())]))
+                .await
+                .expect_err("a row without a price is outside `price > 10`");
+            assert!(err.is_conflict(), "expected a conflict, got: {err:?}");
+            assert!(all.get_value("nop").await.unwrap().is_none());
+        }
     };
 }
 

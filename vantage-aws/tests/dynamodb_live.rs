@@ -183,6 +183,47 @@ async fn get_value_returns_none_for_missing_id() -> vantage_core::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn delete_all_keeps_rows_outside_the_set() -> vantage_core::Result<()> {
+    use vantage_aws::dynamodb::DynamoCondition;
+
+    let Some(aws) = account_or_skip() else {
+        eprintln!("skipping: AWS credentials not configured");
+        return Ok(());
+    };
+    let all = products_table(DynamoDB::new(aws));
+    let marker = run_prefix();
+    let inside = [
+        DynamoId::new(format!("{}-in1", marker)),
+        DynamoId::new(format!("{}-in2", marker)),
+    ];
+    let outside = DynamoId::new(format!("{}-out1", marker));
+    let set = all.clone().with_condition(DynamoCondition::eq(
+        "parent",
+        AttributeValue::S(marker.clone()),
+    ));
+
+    for id in &inside {
+        all.insert_value(id.clone(), &contract_record("in", &marker))
+            .await?;
+    }
+    all.insert_value(outside.clone(), &contract_record("out", "other"))
+        .await?;
+
+    set.delete_all().await?;
+
+    for id in &inside {
+        assert!(all.get_value(id.clone()).await?.is_none(), "{id} survived");
+    }
+    assert!(
+        all.get_value(outside.clone()).await?.is_some(),
+        "row outside the set was deleted"
+    );
+
+    all.delete(outside).await?;
+    Ok(())
+}
+
 fn contract_prefix() -> &'static str {
     static PREFIX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     PREFIX.get_or_init(run_prefix)

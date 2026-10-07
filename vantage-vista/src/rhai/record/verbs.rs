@@ -5,7 +5,7 @@ use vantage_rhai::rhai::{Array, Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 
 use super::RecordDraft;
 use super::dotted::set_dotted;
-use super::save::{tracked, try_delete, try_save};
+use super::save::{tracked, tracked_delete, try_save};
 use crate::rhai::convert::{cbor_to_dynamic, dynamic_to_cbor};
 use crate::rhai::handle::Handle;
 use crate::rhai::read::{RhaiResult, id_string, rhai_err};
@@ -80,7 +80,7 @@ pub(crate) fn register_record(
         tracked(r, try_save)
     });
     engine.register_fn("delete", |r: &mut RecordDraft| -> RhaiResult<bool> {
-        tracked(r, try_delete)
+        tracked_delete(r)
     });
 }
 

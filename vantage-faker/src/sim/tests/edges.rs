@@ -73,6 +73,27 @@ fn an_occasional_still_sleep_is_harmless() {
 }
 
 #[test]
+fn an_insert_without_an_id_gets_a_uuid_v7() {
+    let store = store_with(&["log"]);
+    let log = store.table("log");
+    let engine = SimEngine::builder()
+        .store(&store)
+        .sim(SimDef::new(
+            "u",
+            "log",
+            r#"table().insert(#{ name: "x" });"#,
+        ))
+        .manual_clock(start())
+        .start()
+        .unwrap();
+    engine.settle();
+    let ids = log.ids();
+    assert_eq!(ids.len(), 1);
+    let id = uuid::Uuid::parse_str(&ids[0]).expect("the id parses as a UUID");
+    assert_eq!(id.get_version_num(), 7);
+}
+
+#[test]
 fn inserting_an_existing_id_keeps_the_stored_row() {
     let store = store_with(&["log"]);
     let log = store.table("log");

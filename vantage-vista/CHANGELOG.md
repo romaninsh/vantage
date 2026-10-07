@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 — 2026-10-07
+
+- `MockShell::get_vista_value` honours the vista's filters.
+- Rhai `RecordDraft.delete()` leaves the draft's status unchanged when writes are denied.
+
 ## 1.2.0 — 2026-10-05
 
 - **Breaking:** `VistaCapabilities::can_confine_writes` (a struct literal that lists every field

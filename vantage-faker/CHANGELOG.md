@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 — 2026-10-07
+
+- **Breaking:** `TableSpec.count` is `Option<usize>`. Unset now resolves to the dataset's `count`, then 20, where it used to mean 0 rows; write `count: 0` for an empty table.
+- `DatasetSpec.count` sets the default row count for every table without its own.
+- `DatasetSpec::max_rows()` / `DatasetGen::max_rows()` give the most rows generation creates, following its fan-out rules.
+- `DatasetSpec::table_count(name)` and `config::DEFAULT_COUNT`.
+- `relational::max_relational_rows`.
+- `shape/shell.rs` split into focused modules.
+
 ## 1.1.2 — 2026-10-07
 
 - A sim inserting an id that already exists leaves the stored row as it was instead of failing (vantage-memory 1.2.0 write contract).

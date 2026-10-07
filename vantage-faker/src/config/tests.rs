@@ -58,6 +58,86 @@ fn unknown_reference_is_an_error() {
     assert!(err.contains("a") && err.contains("x"), "{err}");
 }
 
+fn rows_of(yaml: &str) -> usize {
+    let s: DatasetSpec = serde_yaml_ng::from_str(yaml).unwrap();
+    let store = MemoryStore::new();
+    s.generate(&store).unwrap();
+    store.table("t").len()
+}
+
+#[test]
+fn count_resolves_table_then_dataset_then_default() {
+    assert_eq!(rows_of("count: 7\ntables: { t: { count: 3 } }"), 3);
+    assert_eq!(rows_of("count: 7\ntables: { t: {} }"), 7);
+    assert_eq!(rows_of("tables: { t: {} }"), 20);
+}
+
+#[test]
+fn an_explicit_zero_count_means_no_rows() {
+    assert_eq!(rows_of("count: 7\ntables: { t: { count: 0 } }"), 0);
+    assert_eq!(rows_of("count: 0\ntables: { t: {} }"), 0);
+}
+
+#[test]
+fn max_rows_follows_the_generators_fan_out() {
+    let s: DatasetSpec = serde_yaml_ng::from_str(
+        r#"
+seed: 4
+count: 5
+tables:
+  client: {}
+  invoice:
+    references: { client_id: client }
+    fan_out: { column: client_id, min: 2, max: 2 }
+    columns: { client_id: {} }
+  line:
+    references: { invoice_id: invoice }
+    fan_out: { column: invoice_id, min: 3, max: 3 }
+    columns: { invoice_id: {} }
+  note: { count: 4 }
+"#,
+    )
+    .unwrap();
+    // 5 clients + 10 invoices + 30 lines + 4 notes.
+    assert_eq!(s.max_rows(), 49);
+    let store = MemoryStore::new();
+    s.generate(&store).unwrap();
+    let generated: usize = ["client", "invoice", "line", "note"]
+        .iter()
+        .map(|t| store.table(t).len())
+        .sum();
+    assert_eq!(generated, 49);
+}
+
+#[test]
+fn max_rows_bounds_a_ranged_fan_out() {
+    let s: DatasetSpec = serde_yaml_ng::from_str(
+        r#"
+seed: 4
+tables:
+  client: { count: 6 }
+  invoice:
+    references: { client_id: client }
+    fan_out: { column: client_id, min: 1, max: 4 }
+    columns: { client_id: {} }
+"#,
+    )
+    .unwrap();
+    assert_eq!(s.max_rows(), 6 + 6 * 4);
+    let store = MemoryStore::new();
+    s.generate(&store).unwrap();
+    assert!(store.table("invoice").len() <= 6 * 4);
+}
+
+#[test]
+fn max_rows_of_an_ungeneratable_plan_is_zero() {
+    let s: DatasetSpec = serde_yaml_ng::from_str(
+        "tables: { a: { references: { x_id: x }, columns: { x_id: {} } } }",
+    )
+    .unwrap();
+    assert_eq!(s.max_rows(), 0);
+}
+
 #[test]
 fn durations_parse() {
     use std::time::Duration;
@@ -165,7 +245,7 @@ fn new_matches_deserialized() {
 fn sim_builder_takes_more_settings_before_start() {
     let store = MemoryStore::new();
     let s: DatasetSpec = serde_yaml_ng::from_str(
-        "tables: { log: {} }\nsims: { w: { script: \"sleep(seconds(10)); table().insert(#{ who: 1 });\" } }",
+        "tables: { log: { count: 0 } }\nsims: { w: { script: \"sleep(seconds(10)); table().insert(#{ who: 1 });\" } }",
     )
     .unwrap();
     s.generate(&store).unwrap();

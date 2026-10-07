@@ -4,13 +4,17 @@
 //!
 //! [`DatasetSpec`] mirrors [`DatasetGen`]/[`TableGen`] one-for-one, plus
 //! [`SimSpec`] for the `sim` feature. Every struct rejects
-//! unknown keys and fills the rest from vantage-ui's own defaults. The
+//! unknown keys and fills the rest from the defaults documented on each
+//! field; row counts resolve table, then dataset, then [`DEFAULT_COUNT`]. The
 //! structs are `#[non_exhaustive]`: build them with `Default` (or
 //! [`DatasetSpec::new`]) and assign fields.
 
 mod sims;
 #[cfg(test)]
 mod tests;
+
+/// Rows a table generates when neither it nor its dataset sets `count`.
+pub const DEFAULT_COUNT: usize = 20;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -30,6 +34,10 @@ pub struct DatasetSpec {
     /// Reproducible when `Some`; fresh entropy per table with `None`.
     #[serde(default)]
     pub seed: Option<u64>,
+    /// Rows for every table that sets no `count` of its own. Default
+    /// [`DEFAULT_COUNT`].
+    #[serde(default)]
+    pub count: Option<usize>,
     #[serde(default)]
     pub tables: IndexMap<String, TableSpec>,
     /// Needs the `sim` feature to run; always deserializes.
@@ -45,9 +53,11 @@ pub struct TableSpec {
     /// Default `"id"`.
     #[serde(default)]
     pub id_column: Option<String>,
-    /// Ignored when `fan_out` is set on a reference column. Default 0.
+    /// Rows to generate; an explicit `0` is an empty table. Unset falls back
+    /// to [`DatasetSpec::count`], then [`DEFAULT_COUNT`]. Ignored when
+    /// `fan_out` is set on a reference column.
     #[serde(default)]
-    pub count: usize,
+    pub count: Option<usize>,
     #[serde(default)]
     pub columns: IndexMap<String, ColumnSpec>,
     #[serde(default)]
@@ -88,30 +98,57 @@ pub struct FanOutSpec {
 }
 
 impl DatasetSpec {
-    /// A spec from its three parts.
+    /// A spec from its three parts, with no dataset-level `count`.
     pub fn new(
         seed: Option<u64>,
         tables: IndexMap<String, TableSpec>,
         sims: IndexMap<String, SimSpec>,
     ) -> Self {
-        Self { seed, tables, sims }
+        Self {
+            seed,
+            count: None,
+            tables,
+            sims,
+        }
     }
 
     /// Seed every declared table into `store`, in reference order. See
     /// [`DatasetGen::generate`] for the exact seeding rules and errors.
     pub fn generate(&self, store: &MemoryStore) -> Result<()> {
+        self.dataset_gen().generate(store)?;
+        Ok(())
+    }
+
+    /// Most rows [`generate`](Self::generate) creates across all tables —
+    /// see [`DatasetGen::max_rows`] — so a host can cap a spec before
+    /// generating it. Counts resolve as in [`table_count`](Self::table_count).
+    pub fn max_rows(&self) -> usize {
+        self.dataset_gen().max_rows()
+    }
+
+    /// Rows `table` generates when it has no `fan_out`: its own `count`, else
+    /// the dataset's, else [`DEFAULT_COUNT`]. `None` when the spec declares no
+    /// such table.
+    pub fn table_count(&self, table: &str) -> Option<usize> {
+        self.tables.get(table).map(|spec| self.resolve_count(spec))
+    }
+
+    fn resolve_count(&self, table: &TableSpec) -> usize {
+        table.count.or(self.count).unwrap_or(DEFAULT_COUNT)
+    }
+
+    fn dataset_gen(&self) -> DatasetGen {
         let mut dataset = DatasetGen::new(self.seed);
         for (name, table) in &self.tables {
-            dataset = dataset.table(table_gen(name, table));
+            dataset = dataset.table(table_gen(name, table, self.resolve_count(table)));
         }
-        dataset.generate(store)?;
-        Ok(())
+        dataset
     }
 }
 
-fn table_gen(name: &str, spec: &TableSpec) -> TableGen {
+fn table_gen(name: &str, spec: &TableSpec, count: usize) -> TableGen {
     let mut table = TableGen::new(name)
-        .count(spec.count)
+        .count(count)
         .indexed(spec.indexed.clone());
     if let Some(id_column) = &spec.id_column {
         table = table.id_column(id_column.clone());

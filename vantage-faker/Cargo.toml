@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "1.1.2"
+version = "1.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -61,3 +61,5 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["full", "test-util"] }
 # `ColumnGen`'s YAML shape, as vantage-ui table configs write it.
 serde_yaml_ng = "0.10"
+# Parses a sim-inserted id to check it is a UUIDv7.
+uuid = { version = "1", features = ["v7"] }
