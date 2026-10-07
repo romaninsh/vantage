@@ -73,7 +73,7 @@ fn an_occasional_still_sleep_is_harmless() {
 }
 
 #[test]
-fn inserting_an_existing_id_is_a_script_error() {
+fn inserting_an_existing_id_keeps_the_stored_row() {
     let store = store_with(&["log"]);
     let log = store.table("log");
     let mut rx = log.subscribe();
@@ -93,5 +93,5 @@ fn inserting_an_existing_id_is_a_script_error() {
     let rows = rows(&log);
     assert_eq!(rows.len(), 1);
     assert_eq!(text(&rows[0], "who"), "first");
-    assert_eq!(engine.stats().errored, 1);
+    assert_eq!(engine.stats().errored, 0);
 }

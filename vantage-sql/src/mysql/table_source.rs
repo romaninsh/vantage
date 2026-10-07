@@ -15,12 +15,15 @@ use vantage_types::{Entity, Record};
 use crate::mysql::MysqlDB;
 use crate::mysql::types::AnyMysqlType;
 use crate::primitives::identifier::ident;
+use crate::table_writes::{
+    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
+};
 use vantage_expressions::expr_any;
 
 /// Create an AnyMysqlType for an id value. Always binds as string to
 /// preserve semantics of textual ids (e.g., leading zeros in "00123").
 /// MySQL will coerce to integer when the column type requires it.
-fn id_value(id: &str) -> AnyMysqlType {
+pub(super) fn id_value(id: &str) -> AnyMysqlType {
     AnyMysqlType::from(id.to_string())
 }
 
@@ -99,6 +102,14 @@ impl TableSource for MysqlDB {
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnyMysqlType> = Column::new(field);
         Ok(MysqlOperation::eq(&column, value))
+    }
+
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        vantage_table::conditions::literal_equality(&condition.0)
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        true
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -277,15 +288,20 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
+        if let Some(existing) = guard_insert(self, table, id, record).await? {
+            return Ok(existing);
+        }
 
+        let id_field_name = table.id_field_name();
         let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
             .with_record(record)
             // The explicit id param is authoritative on this path, so apply it
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, id_value(id));
-        self.execute(&insert.expr()).await?;
+        if let Err(e) = self.execute(&insert.expr()).await {
+            return settle_failed_insert(self, table, id, e).await;
+        }
 
         self.get_table_value(table, id)
             .await?
@@ -301,8 +317,9 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
+        guard_replace(self, table, id, record).await?;
 
+        let id_field_name = table.id_field_name();
         // MySQL: INSERT ... ON DUPLICATE KEY UPDATE ...
         let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
             .with_record(record)
@@ -342,15 +359,19 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
+        guard_patch(self, table, id, partial).await?;
 
+        let id_field_name = table.id_field_name();
         let id_condition = {
             let id_val = id_value(id);
             mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
-        let update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
+        let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
             .with_record(partial)
             .with_condition(id_condition);
+        for condition in table.conditions() {
+            update = update.with_condition(condition.clone());
+        }
         self.execute(&update.expr()).await?;
 
         crate::table_writes::refetch_after_patch(self, table, id).await
@@ -366,11 +387,13 @@ impl TableSource for MysqlDB {
             let id_val = id_value(id);
             mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
-        let delete = crate::mysql::statements::MysqlDelete::new(table.table_name())
+        // A missing row, or one outside the conditions, matches nothing: Ok.
+        let mut delete = crate::mysql::statements::MysqlDelete::new(table.table_name())
             .with_condition(id_condition);
-        if self.execute_affected(&delete.expr()).await? == 0 {
-            return Err(error!("Row not found for delete", id = id.clone()).mark_not_found());
+        for condition in table.conditions() {
+            delete = delete.with_condition(condition.clone());
         }
+        self.execute(&delete.expr()).await?;
         Ok(())
     }
 
@@ -395,6 +418,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
+        guard_new_row(self, table, record).await?;
         let insert =
             crate::mysql::statements::MysqlInsert::new(table.table_name()).with_record(record);
 

@@ -1,6 +1,6 @@
 [package]
 name = "vantage-api-adapters"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Web-framework adapters that expose Vantage Dio/Scenery over HTTP"
@@ -11,9 +11,9 @@ doctest = false
 
 [dependencies]
 vantage-action = { version = "0.6.1",path = "../vantage-action" }
-vantage-core = { version = "1.0.0", path = "../vantage-core" }
+vantage-core = { version = "1.1.0", path = "../vantage-core" }
 vantage-types = { version = "1.0.0", path = "../vantage-types" }
-vantage-diorama = { version = "0.13.4",path = "../vantage-diorama" }
+vantage-diorama = { version = "0.14.0", path = "../vantage-diorama" }
 vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
 
 ciborium = { version = "0.2", features = ["std"] }

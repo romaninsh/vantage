@@ -195,11 +195,16 @@ pub fn fn_div(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::
 
 // ── Record ID constructor ──────────────────────────────────────────────
 
-/// type::thing("table", "id") → creates a Record ID reference
+/// `type::record(table, id)` → a Record ID reference (SurrealDB 3 renamed
+/// `type::thing`). Both parts are bound as query parameters, never written
+/// into the query text.
 pub fn fn_thing(table: &str, id: &str) -> RhaiExpr {
     RhaiExpr(Expression::new(
-        format!("type::thing(\"{}\", \"{}\")", table, id),
-        vec![],
+        "type::record({}, {})",
+        vec![
+            ExpressiveEnum::Scalar(AnySurrealType::from(table.to_string())),
+            ExpressiveEnum::Scalar(AnySurrealType::from(id.to_string())),
+        ],
     ))
 }
 
@@ -584,4 +589,16 @@ pub fn fn_case_else(
 
 pub fn fn_case_expr(c: RhaiCase) -> RhaiExpr {
     RhaiExpr(c.0.expr())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fn_thing;
+
+    #[test]
+    fn thing_binds_table_and_id_as_parameters() {
+        let expr = fn_thing("order", "x\") OR true OR (\"").0;
+        assert_eq!(expr.template, "type::record({}, {})");
+        assert_eq!(expr.parameters.len(), 2);
+    }
 }

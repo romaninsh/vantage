@@ -84,14 +84,19 @@ async fn crud_round_trip() {
     ds.patch_table_value(&t, &id, &patch).await.unwrap();
     let got = ds.get_table_value(&t, &id).await.unwrap().unwrap();
     assert_eq!(String::try_from(got["name"].clone()).unwrap(), "Scone");
-    assert!(
-        ds.insert_table_value(&t, &"p1".to_string(), &Record::new())
-            .await
-            .is_err()
-    );
+    let again = ds
+        .insert_table_value(&t, &id, &Record::new())
+        .await
+        .unwrap();
+    assert_eq!(String::try_from(again["name"].clone()).unwrap(), "Scone");
     ds.delete_table_value(&t, &id).await.unwrap();
-    assert!(ds.delete_table_value(&t, &id).await.is_err());
-    assert!(ds.patch_table_value(&t, &id, &patch).await.is_err());
+    ds.delete_table_value(&t, &id).await.unwrap();
+    assert!(
+        ds.patch_table_value(&t, &id, &patch)
+            .await
+            .unwrap_err()
+            .is_not_found()
+    );
 }
 
 #[tokio::test]

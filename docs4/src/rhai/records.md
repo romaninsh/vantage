@@ -47,7 +47,7 @@ only, then folds them into the baseline. A record with no changes saves nothing 
 ```rhai
 let n = table("client").record();
 n.set(#{ name: "Dee", vip: false });
-let id = n.save();   // an insert; the backend picks the id
+let id = n.save();   // an insert under a new UUIDv7 id
 
 #{
     same_id: n.id == id,
@@ -128,10 +128,15 @@ Saving a record whose row has gone fails with "record `o3` no longer exists". `f
 always empty for the data vocabulary's records. Servo drafts, which carry per-field validation
 errors from a Dio's flash route, fill it in (see [Layers](./layers.md)).
 
+A new record mints its UUIDv7 on the first `save()` and keeps it, so saving again after a failure
+can't create a second row (see [Safe writes](../record-lifecycle.md#safe-writes)). A table whose id
+column is flagged `auto` leaves the id to the backend instead.
+
 ## Deleting
 
-`delete()` deletes the record's row and returns `true`, or `false` if the row was already gone.
-A new record that was never saved has nothing to delete and throws.
+`delete()` deletes the record's row and returns `true` — also when the row was already gone — or
+`false` when writes aren't allowed. A new record that was never saved has nothing to delete and
+throws.
 
 ## Permissions
 

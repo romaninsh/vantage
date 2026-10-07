@@ -101,6 +101,7 @@ impl SurrealVistaFactory {
                 can_traverse_to_record: true,
                 can_traverse_to_set: true,
                 can_traverse_in_columns: true,
+                can_confine_writes: !read_only,
                 // Per-reference scripted traversal only works when the script
                 // engine is compiled in; without `rhai`, any `build_script` is
                 // ignored and the FK eq-condition path still serves.

@@ -102,4 +102,10 @@ pub struct VistaCapabilities {
     /// [`can_traverse_to_set`](Self::can_traverse_to_set): SQL and SurrealDB
     /// advertise `true`; CSV/Mongo/REST leave it `false`.
     pub can_traverse_in_columns: bool,
+    /// By-id writes (insert, replace, upsert, patch, delete, import) stay
+    /// inside the narrowed set and follow the write contract on
+    /// `WritableValueSet`: a row outside the set is never touched, a written
+    /// row must still belong to it. `Vista` refuses by-id writes through a
+    /// narrowed handle whose shell doesn't advertise this.
+    pub can_confine_writes: bool,
 }

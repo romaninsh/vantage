@@ -142,13 +142,18 @@ impl TableShell for DioShell {
     // server-side data should refetch via `get_value` after the write
     // completes (an `on_flash` route typically updates the cache too).
 
+    /// Insert-if-absent: an id already in view returns the stored row and
+    /// queues nothing; an id held outside the narrowing is `Conflict`.
     async fn insert_vista_value(
         &self,
         _vista: &Vista,
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue_full_record(FlashKind::Insert, id, record)
+        if let Some(row) = self.row_in_view_or_conflict(id).await? {
+            return Ok(row);
+        }
+        self.enqueue_full_record(FlashKind::Insert, id, &self.conformed(record)?)
             .await
     }
 
@@ -158,29 +163,37 @@ impl TableShell for DioShell {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue_full_record(FlashKind::Replace, id, record)
+        self.row_in_view_or_conflict(id).await?;
+        self.enqueue_full_record(FlashKind::Replace, id, &self.conformed(record)?)
             .await
     }
 
-    /// Unlike `patch`/`delete`, upsert has no missing-row failure to guard
-    /// against, so no `ensure_row_exists` check is needed here.
     async fn upsert_vista_value(
         &self,
         _vista: &Vista,
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.enqueue_full_record(FlashKind::Upsert, id, record)
+        self.row_in_view_or_conflict(id).await?;
+        self.enqueue_full_record(FlashKind::Upsert, id, &self.conformed(record)?)
             .await
     }
 
+    /// The write queue is fire-and-forget, so a missing row is caught here
+    /// rather than surfacing later as `DioEvent::WriteFailed`.
     async fn patch_vista_value(
         &self,
         _vista: &Vista,
         id: &String,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.ensure_row_exists(id).await?;
+        if self.row_in_view(id).await?.is_none() {
+            return Err(
+                error!("Row not found", table = self.dio.cache_table_name, id = id)
+                    .mark_not_found(),
+            );
+        }
+        vantage_dataset::invariants::validate(partial, &self.query.invariants())?;
         self.enqueue(ChangeFlash::new(
             crate::ops::FlashKind::Patch,
             Some(id.clone()),
@@ -190,13 +203,27 @@ impl TableShell for DioShell {
         Ok(with_injected_id(partial, id))
     }
 
+    /// Idempotent: a row missing or outside the narrowing is already gone
+    /// from this set, so nothing is queued and the call succeeds.
     async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
-        self.ensure_row_exists(id).await?;
-        self.enqueue(ChangeFlash::delete(id.clone())).await
+        if self.row_in_view(id).await?.is_some() {
+            self.enqueue(ChangeFlash::delete(id.clone())).await?;
+        }
+        Ok(())
     }
 
+    /// An unnarrowed handle clears the master. A narrowed one is a subset:
+    /// it deletes exactly the rows it reads, one `Delete` flash each, and
+    /// never sends `Clear`. Routes and the default write path read `Clear`
+    /// as "every row".
     async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
-        self.enqueue(ChangeFlash::clear()).await
+        if self.query.conditions.is_empty() {
+            return self.enqueue(ChangeFlash::clear()).await;
+        }
+        for id in self.read().await?.into_keys() {
+            self.enqueue(ChangeFlash::delete(id)).await?;
+        }
+        Ok(())
     }
 
     /// No id exists until the master assigns one — see
@@ -212,7 +239,7 @@ impl TableShell for DioShell {
         let dio = crate::Dio {
             inner: self.dio.clone(),
         };
-        let (id, _stored) = dio.insert_returning_id(record).await?;
+        let (id, _stored) = dio.insert_returning_id(&self.conformed(record)?).await?;
         Ok(id)
     }
 
@@ -333,22 +360,54 @@ impl DioShell {
         crate::dio::augment_passes::hydrate_gaps(&dio, rows).await
     }
 
-    /// `patch`/`delete` return before the write-through queue drains, so a
-    /// write to a nonexistent id would only fail later via
-    /// [`DioEvent::WriteFailed`](crate::DioEvent::WriteFailed), never reaching the caller. Check the cache
-    /// first, then the master on a miss — a lazily-populated cache must not
-    /// report not-found for a row the master holds. A cache hit returns
-    /// without touching the master, so the extra master read is paid only
-    /// on a cache miss.
-    async fn ensure_row_exists(&self, id: &str) -> Result<()> {
-        if self.dio.cache.get_value(id).await?.is_some() {
-            return Ok(());
+    /// The row with `id`, ignoring the narrowing — one point read, never a
+    /// listing. An unnarrowed handle has no set to protect: it reads the
+    /// cache, then the master on a miss, so a cache hit never touches the
+    /// master. A narrowed handle reads the master only, because a stale
+    /// cached row must not decide whether a write stays inside the set.
+    async fn row_anywhere(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        if self.query.conditions.is_empty()
+            && let Some(row) = self.dio.cache.get_value(id).await?
+        {
+            return Ok(Some(row));
         }
         let master = self.dio.master.read().unwrap().clone();
-        if master.get_value(id).await?.is_some() {
-            return Ok(());
+        master.get_value(id).await
+    }
+
+    /// The row `id` as this handle sees it: `row_anywhere`, kept only when
+    /// it satisfies the narrowing.
+    async fn row_in_view(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        Ok(self
+            .row_anywhere(id)
+            .await?
+            .filter(|row| self.query.matches(row)))
+    }
+
+    /// Like `row_in_view`, but an id held by a row outside the narrowing is
+    /// `Conflict`: a full-record write may create the row, never take over
+    /// one outside the set.
+    async fn row_in_view_or_conflict(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        match self.row_anywhere(id).await? {
+            Some(row) if !self.query.matches(&row) => Err(self.outside(id)),
+            row => Ok(row),
         }
-        Err(error!("Row not found", table = self.dio.cache_table_name, id = id).mark_not_found())
+    }
+
+    fn outside(&self, id: &str) -> vantage_core::VantageError {
+        error!(
+            "id is held by a row outside this set",
+            table = self.dio.cache_table_name,
+            id = id
+        )
+        .mark_conflict()
+    }
+
+    /// Fill and check the handle's equality conditions.
+    fn conformed(&self, record: &Record<CborValue>) -> Result<Record<CborValue>> {
+        let mut out = record.clone();
+        vantage_dataset::invariants::conform(&mut out, &self.query.invariants())?;
+        Ok(out)
     }
 
     /// `insert`/`replace`/`upsert` share one shape: enqueue the whole

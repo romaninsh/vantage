@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 — 2026-10-05
+
+- `Table::add_condition` of a literal `column = value` registers a set invariant (inserts fill it).
+- `TableSource::condition_equality` and `TableSource::can_confine_writes`; the by-id write methods
+  document the confined, idempotent contract.
+- `conditions::literal_equality` recognises `column = value` expressions.
+- `MockTableSource` follows the write contract (it used to fail loudly on duplicate inserts and
+  missing deletes); `without_confined_writes()` makes it refuse.
+- **Breaking:** patch no longer fills invariant columns. A patch through a `with_id` or a
+  traversed table wrote the id or the foreign key into every patch; it now writes only the
+  given fields, and a conflicting or null invariant value is `Conflict`.
+- Invariant conflicts are `ErrorKind::Conflict`.
+- `Table::with_auto_id()` flags the id column `auto` in Vista metadata.
+- A delete with delete hooks on a row outside the set (or missing) runs no hooks and deletes
+  nothing; it used to skip the hooks but still delete.
+- `MockTableSource` implements `eq_value_condition`.
+- **Breaking:** a by-id write through a conditioned table is refused (`Unsupported`) when the source
+  doesn't report `can_confine_writes`.
+
 ## 1.1.1 — 2026-10-04
 
 - Spec lowering for driver factories: `Column::from_spec`, `Table::add_spec_column(s)`,

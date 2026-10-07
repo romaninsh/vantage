@@ -32,8 +32,9 @@ A few principles run through every layer of the framework:
   precise, dates stay dates, nothing is funnelled through JSON.
 - **Business logic lives on the entity.** Validation, audit, soft-delete, and domain methods attach
   to your model once and apply everywhere the entity is used.
-- **Fail loudly, retry safely.** No panics, no silent zeros or match-alls; operations are
-  idempotent wherever possible, so retrying is always an option.
+- **Fail loudly, retry safely.** No panics, no silent zeros or match-alls. Every write is
+  retry-safe and stays inside the set it goes through
+  ([Safe writes](./record-lifecycle.md#safe-writes)).
 - **Be aware of observers.** Data knows who is watching: changes stream to subscribers, and edits
   reconcile instead of clobbering. (This is live mode — the second half of the guide builds it up.)
 

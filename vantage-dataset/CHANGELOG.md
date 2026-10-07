@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 — 2026-10-05
+
+- The write contract is written out on `WritableValueSet`/`WritableDataSet`: idempotent and confined to the set.
+- `invariants::{conform, validate}`: the four-way invariant rule, shared by every layer.
+- Feature `contract`: `contract::check_*` helpers every writable backend runs.
+- `ImTable::patch_value` of a missing row is `NotFound`.
+
 ## 1.0.0 — 2026-10-03
 
 - Stable release. The API hasn't changed since 2026-08-09 (8 weeks); no code changes.

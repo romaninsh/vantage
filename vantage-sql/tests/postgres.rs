@@ -1,4 +1,9 @@
 #[cfg(feature = "postgres")]
+#[macro_use]
+#[path = "common/safe_writes.rs"]
+mod safe_writes_contract;
+
+#[cfg(feature = "postgres")]
 mod postgres {
     #[path = "4_aggregates.rs"]
     mod aggregates;
@@ -30,6 +35,8 @@ mod postgres {
     mod records;
     #[path = "5_references.rs"]
     mod references;
+    #[path = "9_safe_writes.rs"]
+    mod safe_writes;
     #[path = "2_search.rs"]
     mod search;
     #[path = "3_select.rs"]

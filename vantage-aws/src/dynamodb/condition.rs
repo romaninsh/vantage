@@ -13,9 +13,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use vantage_core::Result;
+use vantage_core::{Result, error};
+use vantage_types::Record;
 
-use super::types::AttributeValue;
+use super::types::{AnyDynamoType, AttributeValue};
 
 /// Future returned by a deferred condition fetch (e.g. a relationship
 /// traversal that lists the source table to discover the IN values).
@@ -95,6 +96,77 @@ impl DynamoCondition {
             values,
         }
     }
+}
+
+/// The `(field, value)` of a `#f = :v` condition built by [`DynamoCondition::eq`].
+pub fn equality_of(condition: &DynamoCondition) -> Option<(String, AttributeValue)> {
+    let DynamoCondition::Expr {
+        expression,
+        names,
+        values,
+    } = condition
+    else {
+        return None;
+    };
+    if expression != "#f = :v" {
+        return None;
+    }
+    Some((names.get("#f")?.clone(), values.get(":v")?.clone()))
+}
+
+/// Whether `item` satisfies every condition, evaluated client-side.
+///
+/// Understands `#f = :v`, `begins_with(#f, :v)` and `In`; any other
+/// expression is `Unsupported`, since a write cannot be confined to a set
+/// that cannot be evaluated.
+pub fn row_in_set<'a>(
+    conditions: &'a [DynamoCondition],
+    item: &'a Record<AnyDynamoType>,
+) -> Pin<Box<dyn std::future::Future<Output = Result<bool>> + Send + 'a>> {
+    Box::pin(async move {
+        for cond in conditions {
+            let holds = match cond {
+                DynamoCondition::Expr {
+                    expression,
+                    names,
+                    values,
+                } => {
+                    let (Some(field), Some(want)) = (names.get("#f"), values.get(":v")) else {
+                        return Err(unsupported_expression(expression));
+                    };
+                    let have = item.get(field).map(|v| v.value());
+                    match expression.as_str() {
+                        "#f = :v" => have == Some(want),
+                        "begins_with(#f, :v)" => match (have, want) {
+                            (Some(AttributeValue::S(h)), AttributeValue::S(w)) => {
+                                h.starts_with(w.as_str())
+                            }
+                            _ => false,
+                        },
+                        _ => return Err(unsupported_expression(expression)),
+                    }
+                }
+                DynamoCondition::In { field, values } => {
+                    let allowed = (values)().await?;
+                    item.get(field)
+                        .is_some_and(|v| allowed.iter().any(|a| a == v.value()))
+                }
+                DynamoCondition::And(children) => row_in_set(children, item).await?,
+            };
+            if !holds {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })
+}
+
+fn unsupported_expression(expression: &str) -> vantage_core::VantageError {
+    error!(
+        "DynamoDB condition cannot be evaluated client-side; write refused",
+        expression = expression.to_string()
+    )
+    .mark_unsupported()
 }
 
 /// Resolved condition pieces ready to fold into a Scan/Query request.
@@ -231,6 +303,93 @@ impl MangleState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn row_in_set_evaluates_eq_and_refuses_unknown_expressions() {
+        let item: Record<AnyDynamoType> = [(
+            "parent".to_string(),
+            AnyDynamoType::untyped(AttributeValue::S("p1".into())),
+        )]
+        .into_iter()
+        .collect();
+        assert!(
+            row_in_set(
+                &[DynamoCondition::eq(
+                    "parent",
+                    AttributeValue::S("p1".into())
+                )],
+                &item
+            )
+            .await
+            .unwrap()
+        );
+        assert!(
+            !row_in_set(
+                &[DynamoCondition::eq(
+                    "parent",
+                    AttributeValue::S("p2".into())
+                )],
+                &item
+            )
+            .await
+            .unwrap()
+        );
+        let odd = DynamoCondition::Expr {
+            expression: "size(#f) > :v".into(),
+            names: [("#f".to_string(), "parent".to_string())]
+                .into_iter()
+                .collect(),
+            values: [(":v".to_string(), AttributeValue::N("1".into()))]
+                .into_iter()
+                .collect(),
+        };
+        assert!(
+            row_in_set(&[odd], &item)
+                .await
+                .unwrap_err()
+                .is_unsupported()
+        );
+    }
+
+    #[tokio::test]
+    async fn row_in_set_evaluates_begins_with_and_in() {
+        let item: Record<AnyDynamoType> = [(
+            "sk".to_string(),
+            AnyDynamoType::untyped(AttributeValue::S("ABC".into())),
+        )]
+        .into_iter()
+        .collect();
+        assert!(
+            row_in_set(&[DynamoCondition::begins_with("sk", "A")], &item)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !row_in_set(&[DynamoCondition::begins_with("sk", "B")], &item)
+                .await
+                .unwrap()
+        );
+        let values = Arc::new(|| -> ValueListFuture {
+            Box::pin(async move { Ok(vec![AttributeValue::S("ABC".into())]) })
+        });
+        let hit = DynamoCondition::In {
+            field: "sk".into(),
+            values,
+        };
+        assert!(row_in_set(&[hit], &item).await.unwrap());
+    }
+
+    #[test]
+    fn equality_of_reads_eq_conditions() {
+        assert_eq!(
+            equality_of(&DynamoCondition::eq(
+                "parent",
+                AttributeValue::S("p1".into())
+            )),
+            Some(("parent".into(), AttributeValue::S("p1".into())))
+        );
+        assert_eq!(equality_of(&DynamoCondition::begins_with("sk", "A")), None);
+    }
 
     #[tokio::test]
     async fn empty_input_yields_empty_filter() {

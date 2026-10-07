@@ -69,6 +69,7 @@ impl MongoVistaFactory {
                 can_fetch_page: true,
                 can_fetch_next: true,
                 can_traverse_to_record: true,
+                can_confine_writes: true,
                 ..VistaCapabilities::default()
             },
             metadata,

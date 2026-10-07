@@ -104,7 +104,7 @@ Script-facing names and signatures are unchanged unless listed here. `t?` means 
 
 | Verb | Behaviour |
 |---|---|
-| `insert(t?, map) -> id` | `MemoryTable::insert`. The map is stored as given, plus the id — there is no declared-column shaping, since a `MemoryTable` has no column list (missing fields read as null). If the map carries the id column, that id is used, and an existing row with it is a script error. |
+| `insert(t?, map) -> id` | `MemoryTable::insert`. The map is stored as given, plus the id — there is no declared-column shaping, since a `MemoryTable` has no column list (missing fields read as null). If the map carries the id column, that id is used, and an existing row with it is left as it was and its id returned. |
 | `upsert(t?, id, map)` **new** | `MemoryTable::upsert`. This is the idempotent write for stable ids, such as `"parcel-" + sim_id()`. |
 | `patch(t?, id, map)`, `set(t?, id, field, v)`, `delete(t?, id)` | Store `patch` / `delete`. A missing id is a silent no-op, as today. |
 | `get(t?, id) -> map \| ()`, `ids(t?) -> [id]`, `count(t?) -> int` | Store reads. |

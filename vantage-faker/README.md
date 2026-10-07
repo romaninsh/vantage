@@ -200,9 +200,9 @@ The verbs a script can call:
   (`get`, `list`, `first`, `count`, `ids`) and write (`insert`, `upsert`, `patch`, `delete`,
   `import_from`), and open `record` drafts. `table().fake_row()` returns a generated value for
   each column declared with `SimEngineBuilder::columns`, with the table's `weirdness` and row
-  count from `SimEngineBuilder::fake_rows`. Ids are strings. `patch` and `delete`
-  return `false` for a missing row; `insert` with an existing id is an error, so use `upsert` for
-  stable ids. The vocabulary is described in
+  count from `SimEngineBuilder::fake_rows`. Ids are strings. `patch` returns `false` for a
+  missing row and `delete` is `true` either way; `insert` with an existing id leaves the stored
+  row as it was, so use `upsert` to replace it. The vocabulary is described in
   [Scripting with Rhai](https://romaninsh.github.io/vantage/rhai.html).
 - **Random:** `pick`, `pick_weighted`, `rand_int`, `rand_float`, `chance(p)`, `pattern`,
   `sentence`, `fake(kind)` (a value as a column named `kind` would get), `date_between`.

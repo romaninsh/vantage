@@ -144,15 +144,27 @@ impl Handle {
         self.resolve_through(resolver, self.steps.len())
     }
 
-    /// The Vista writes go to: the base, or the target of the last `ref` step.
-    /// Other narrowing doesn't filter writes.
+    /// The Vista writes go to: the whole narrowed handle — `where`, `search`
+    /// and `ref` all define the set, so a write only touches rows in it.
+    /// `sort` doesn't change membership and is skipped. `limit` defines rows
+    /// by position, not by condition, so a handle with one can't be written
+    /// through.
     pub(crate) fn write_target(&self, resolver: Option<&TargetResolver>) -> Result<Vista> {
-        let through = self
-            .steps
-            .iter()
-            .rposition(|s| matches!(s, Step::Ref(_)))
-            .map_or(0, |i| i + 1);
-        self.resolve_through(resolver, through)
+        if self.steps.iter().any(|s| matches!(s, Step::Limit(_))) {
+            return Err(
+                error!("writes need a set defined by conditions; drop limit(n)")
+                    .mark_incorrect_usage(),
+            );
+        }
+        let mut vista = self.resolve_base(resolver.or(self.resolver.as_ref()))?;
+        for step in self.steps.iter() {
+            if matches!(step, Step::Sort { .. }) {
+                continue;
+            }
+            vista = apply(vista, step, None)
+                .with_context(|| error!("Step can't be applied", step = step))?;
+        }
+        Ok(vista)
     }
 
     /// The smallest `limit(n)` applied after the last `ref` step.
@@ -201,6 +213,7 @@ impl Handle {
         let base = match vista.source.clone_shell() {
             Some(shell) => {
                 let mut copy = Vista::new(vista.name(), shell);
+                copy.narrowed = vista.narrowed;
                 drop(slot);
                 f(&mut copy)?;
                 Base::Vista(Arc::new(Mutex::new(Some(copy))))
@@ -261,9 +274,13 @@ impl Handle {
                 let mut slot = cell
                     .lock()
                     .map_err(|_| error!("table handle mutex poisoned"))?;
-                let copy = slot
-                    .as_ref()
-                    .and_then(|v| v.source.clone_shell().map(|s| Vista::new(v.name(), s)));
+                let copy = slot.as_ref().and_then(|v| {
+                    v.source.clone_shell().map(|s| {
+                        let mut copy = Vista::new(v.name(), s);
+                        copy.narrowed = v.narrowed;
+                        copy
+                    })
+                });
                 copy.or_else(|| slot.take()).ok_or_else(|| {
                     error!(
                         "this handle's backend can't be copied; build it again from `table(...)`"

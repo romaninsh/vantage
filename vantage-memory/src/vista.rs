@@ -6,6 +6,8 @@ mod shell;
 mod watch;
 mod writes;
 
+use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use vantage_vista::{VistaCapabilities, VistaMetadata};
 
 use crate::eval::MemoryCondition;
@@ -21,6 +23,9 @@ pub struct MemoryTableShell {
     metadata: VistaMetadata,
     catalog: Catalog,
     query: Query,
+    /// Literal `column = value` conditions of the query; full-record writes
+    /// fill them and patches may not contradict them.
+    pub(crate) invariants: IndexMap<String, CborValue>,
     page_size: Option<usize>,
     capabilities: VistaCapabilities,
 }
@@ -32,6 +37,7 @@ impl MemoryTableShell {
             metadata,
             catalog,
             query: Query::new(),
+            invariants: IndexMap::new(),
             page_size: None,
             capabilities: Self::capabilities_for_memory(),
         }
@@ -53,6 +59,7 @@ impl MemoryTableShell {
             can_traverse_to_record: true,
             can_traverse_to_set: true,
             can_subscribe: true,
+            can_confine_writes: true,
             ..VistaCapabilities::default()
         }
     }

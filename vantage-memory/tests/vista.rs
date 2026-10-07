@@ -73,7 +73,7 @@ async fn capabilities_are_advertised() {
     assert!(c.can_count && c.can_insert && c.can_update && c.can_delete && c.can_import);
     assert!(c.can_order && c.can_search && c.can_filter_operators && c.can_subscribe);
     assert!(c.can_set_page_size && c.can_fetch_page && c.can_fetch_window);
-    assert!(c.can_traverse_to_record && c.can_traverse_to_set);
+    assert!(c.can_traverse_to_record && c.can_traverse_to_set && c.can_confine_writes);
     assert!(!c.can_invalidate && !c.can_fetch_next);
 }
 
@@ -144,7 +144,7 @@ async fn writes_through_the_vista_reach_the_store() {
         Some(&int(9))
     );
     v.delete(&id).await.unwrap();
-    assert!(v.delete(&id).await.is_err());
+    v.delete(&id).await.unwrap();
 }
 
 #[tokio::test]
@@ -166,7 +166,7 @@ async fn upsert_inserts_then_replaces() {
 }
 
 #[tokio::test]
-async fn patch_and_delete_of_a_missing_row_are_not_found() {
+async fn patch_of_a_missing_row_is_not_found_and_delete_is_ok() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
     let err = v
@@ -174,8 +174,7 @@ async fn patch_and_delete_of_a_missing_row_are_not_found() {
         .await
         .unwrap_err();
     assert!(err.is_not_found(), "{err}");
-    let err = v.delete("nope").await.unwrap_err();
-    assert!(err.is_not_found(), "{err}");
+    v.delete("nope").await.unwrap();
 }
 
 #[tokio::test]

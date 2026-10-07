@@ -40,7 +40,9 @@ use crate::axum_dio::ApiError;
 /// [`ErrorKind::NotFound`](vantage_core::ErrorKind::NotFound) is 404 and
 /// [`ErrorKind::IncorrectUsage`](vantage_core::ErrorKind::IncorrectUsage)
 /// — a malformed input, a record action invoked without an id — is 400.
-/// Those are the only two answered 4xx. Everything else is a failure the
+/// [`ErrorKind::Conflict`](vantage_core::ErrorKind::Conflict) — a write
+/// that disagrees with the set it goes through — is 409.
+/// Those are the only three answered 4xx. Everything else is a failure the
 /// caller cannot fix by retrying differently (a database that is down,
 /// an outbox that rejected the message), so it is a 500 and is logged.
 ///
@@ -53,6 +55,8 @@ fn error_response(e: VantageError) -> ApiError {
         StatusCode::NOT_FOUND
     } else if e.is_incorrect_usage() {
         StatusCode::BAD_REQUEST
+    } else if e.is_conflict() {
+        StatusCode::CONFLICT
     } else {
         // Match `axum_dio`'s conversion: a failure that reaches the
         // transport has to leave a server-side trace, or an outage looks
@@ -198,5 +202,16 @@ impl ActionRouter {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod conflict_tests {
+    use super::*;
+
+    #[test]
+    fn conflict_maps_to_409() {
+        let e = vantage_core::error!("row belongs to another set").mark_conflict();
+        assert_eq!(error_response(e).status, StatusCode::CONFLICT);
     }
 }

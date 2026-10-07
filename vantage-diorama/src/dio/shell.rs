@@ -26,6 +26,11 @@ impl FacadeQuery {
         self.conditions.is_empty() && self.order.is_none()
     }
 
+    /// The facade's equality conditions, as set invariants.
+    pub(crate) fn invariants(&self) -> IndexMap<String, CborValue> {
+        self.conditions.iter().cloned().collect()
+    }
+
     /// Whether `row` satisfies every condition, evaluated locally.
     pub(crate) fn matches(&self, row: &Record<CborValue>) -> bool {
         self.conditions
@@ -130,6 +135,7 @@ impl DioShell {
             // Column traversal is lowered into the master's query; the cache
             // passes it through unchanged.
             can_traverse_in_columns: master_caps.can_traverse_in_columns,
+            can_confine_writes: true,
         };
         Self {
             dio,

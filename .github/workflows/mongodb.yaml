@@ -45,7 +45,7 @@ jobs:
         run: cargo test -p vantage-mongodb --lib
 
       - name: Run integration tests
-        run: cargo test -p vantage-mongodb --test 1_table_source --test 1_types_record
+        run: cargo test -p vantage-mongodb --test 1_table_source --test 1_types_record --test 7_safe_writes
         env:
           MONGODB_URL: mongodb://localhost:27017
 

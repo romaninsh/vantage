@@ -36,6 +36,10 @@ pub enum ErrorKind {
     /// unclassified failure (the lookup itself worked). Transports map
     /// this to 404 instead of guessing from the message text.
     NotFound,
+    /// The write disagrees with the set it goes through: the id is held by a
+    /// row outside the set, or the written row would not belong to the set.
+    /// The request was well formed. Transports map this to 409.
+    Conflict,
 }
 
 /// VantageError with location tracking and context information
@@ -280,6 +284,12 @@ impl VantageError {
         self
     }
 
+    /// Classify this error as [`ErrorKind::Conflict`] (builder).
+    pub fn mark_conflict(mut self) -> Self {
+        self.kind = ErrorKind::Conflict;
+        self
+    }
+
     /// Emit a `tracing::error!` event with this error's kind, location,
     /// message and context, then return `self` so it can be chained:
     /// `error!(...).mark_unsupported().traced()`. Classification and logging
@@ -322,6 +332,11 @@ impl VantageError {
     /// `true` if this error is classified as [`ErrorKind::NotFound`].
     pub fn is_not_found(&self) -> bool {
         self.kind == ErrorKind::NotFound
+    }
+
+    /// `true` if this error is classified as [`ErrorKind::Conflict`].
+    pub fn is_conflict(&self) -> bool {
+        self.kind == ErrorKind::Conflict
     }
 
     fn emit_trace(&self) {
@@ -577,5 +592,13 @@ mod tests {
         let io_err = io::Error::new(io::ErrorKind::NotFound, "File not found");
         let vantage_err = VantageError::from(io_err);
         assert_eq!(vantage_err.to_string(), "IO error: File not found");
+    }
+
+    #[test]
+    fn conflict_kind_round_trips() {
+        let e = crate::error!("row belongs to another set", id = "o1").mark_conflict();
+        assert!(e.is_conflict());
+        assert_eq!(e.kind(), ErrorKind::Conflict);
+        assert!(!e.is_not_found());
     }
 }

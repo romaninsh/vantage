@@ -2,6 +2,7 @@
 //! insert or a patch of only the changed fields, delete, revert, and the
 //! read-only id column.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -37,6 +38,34 @@ fn new_record_save_inserts_and_returns_id() {
 }
 
 #[test]
+fn retried_new_record_save_reuses_its_id() {
+    let caps = VistaCapabilities {
+        can_insert: true,
+        ..VistaCapabilities::default()
+    };
+    let shell = SpyShell::new(mock_with("r1", &[], caps));
+    shell.lose_next_insert.store(true, Ordering::SeqCst);
+    let host = host_over(shell);
+    let out = json(
+        &host,
+        r#"
+        let r = table("t").record();
+        r.a = 5;
+        let first = "saved";
+        try {
+            r.save();
+        } catch(err) {
+            first = r.status();
+        }
+        let id = r.save();
+        #{ first: first, id: id, ids: table("t").ids() }
+    "#,
+    );
+    assert_eq!(out["first"], json!("failed"), "{out}");
+    assert_eq!(out["ids"], json!(["r1", out["id"]]), "{out}");
+}
+
+#[test]
 fn unchanged_save_writes_nothing() {
     // can_update is false; if save() attempted a patch despite no staged
     // changes, the capability check inside `target()` would throw.
@@ -61,21 +90,18 @@ fn unchanged_save_writes_nothing() {
 
 #[test]
 fn loaded_record_saves_only_changed_fields() {
-    let patches: Arc<Mutex<Vec<Record<CborValue>>>> = Arc::new(Mutex::new(Vec::new()));
-    let shell = RecordingShell {
-        inner: mock_with(
-            "r1",
-            &[
-                ("a", CborValue::Integer(1.into())),
-                ("b", CborValue::Integer(2.into())),
-            ],
-            VistaCapabilities {
-                can_update: true,
-                ..VistaCapabilities::default()
-            },
-        ),
-        patches: patches.clone(),
-    };
+    let shell = SpyShell::new(mock_with(
+        "r1",
+        &[
+            ("a", CborValue::Integer(1.into())),
+            ("b", CborValue::Integer(2.into())),
+        ],
+        VistaCapabilities {
+            can_update: true,
+            ..VistaCapabilities::default()
+        },
+    ));
+    let patches = shell.patches.clone();
     let host = host_over(shell);
     let _ = run(
         &host,
@@ -229,15 +255,15 @@ fn denied_writes_block_save() {
     .unwrap_err();
     assert!(err.contains("writes aren't available here"), "{err}");
 
-    let err = run(
+    let deleted = run(
         &host,
         r#"
         let r = table("t").record("r1");
         r.delete()
     "#,
     )
-    .unwrap_err();
-    assert!(err.contains("writes aren't available here"), "{err}");
+    .unwrap();
+    assert!(!deleted.as_bool().unwrap(), "a denied delete is `false`");
 }
 
 #[test]
@@ -305,14 +331,27 @@ fn host_over(shell: impl TableShell + Clone + 'static) -> Host {
 /// call carries, so a test can assert on exactly what a record's `save()`
 /// sent — not just the final stored state, which a full-record patch would
 /// produce identically (`MockShell::patch_vista_value` merges either way).
+/// With `lose_next_insert` set, the next insert lands but reports an error,
+/// the way a write whose response is lost does.
 #[derive(Clone)]
-struct RecordingShell {
+struct SpyShell {
     inner: MockShell,
     patches: Arc<Mutex<Vec<Record<CborValue>>>>,
+    lose_next_insert: Arc<AtomicBool>,
+}
+
+impl SpyShell {
+    fn new(inner: MockShell) -> Self {
+        Self {
+            inner,
+            patches: Arc::default(),
+            lose_next_insert: Arc::default(),
+        }
+    }
 }
 
 #[async_trait]
-impl TableShell for RecordingShell {
+impl TableShell for SpyShell {
     fn columns(&self) -> &IndexMap<String, Column> {
         self.inner.columns()
     }
@@ -355,6 +394,19 @@ impl TableShell for RecordingShell {
     ) -> Result<Record<CborValue>> {
         self.patches.lock().unwrap().push(partial.clone());
         self.inner.patch_vista_value(vista, id, partial).await
+    }
+
+    async fn insert_vista_value(
+        &self,
+        vista: &Vista,
+        id: &String,
+        record: &Record<CborValue>,
+    ) -> Result<Record<CborValue>> {
+        let stored = self.inner.insert_vista_value(vista, id, record).await?;
+        if self.lose_next_insert.swap(false, Ordering::SeqCst) {
+            return Err(vantage_core::error!("connection reset"));
+        }
+        Ok(stored)
     }
 
     fn capabilities(&self) -> &VistaCapabilities {

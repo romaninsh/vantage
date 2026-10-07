@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4 — 2026-10-05
+
+- `Conflict` errors answer 409.
+- Builds against vantage-diorama 0.14.0.
+
 ## 0.6.3 — 2026-10-03
 
 - Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-dataset` 1.0.0,

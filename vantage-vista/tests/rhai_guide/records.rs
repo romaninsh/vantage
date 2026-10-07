@@ -45,7 +45,7 @@ fn edit_existing() {
 const NEW_ROW: &str = r#"
 let n = table("client").record();
 n.set(#{ name: "Dee", vip: false });
-let id = n.save();   // an insert; the backend picks the id
+let id = n.save();   // an insert under a new UUIDv7 id
 
 #{
     same_id: n.id == id,

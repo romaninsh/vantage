@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.0 — 2026-10-05
+
+- Fixed: `delete_all` on a narrowed `Dio::vista()` emptied the whole master. It now deletes only
+  the rows the narrowed handle reads, one `Delete` flash each.
+- The Dio facade advertises `can_confine_writes`.
+- **Breaking:** `Dio::vista()` by-id writes honour the facade's narrowing: delete of a missing row or
+  one outside the narrowing is `Ok` (was `NotFound`); patch outside it is `NotFound`; insert of an
+  existing id returns the stored row, an id outside the narrowing is `Conflict`; inserts fill the
+  narrowing's equality conditions.
+- A retried `Insert` flash lands on the master's idempotent insert: no `WriteFailed`.
+
 ## 0.13.8 — 2026-10-04
 
 - Doc links fixed.

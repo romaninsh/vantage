@@ -16,7 +16,7 @@ use vantage_expressions::{
     traits::datasource::{DataSource, ExprDataSource, SelectableDataSource},
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, InvariantValue, Record};
 
 use crate::column::core::ColumnType;
 use crate::mocks::mock_column::MockColumn;
@@ -27,22 +27,21 @@ use crate::{
     traits::{column_like::ColumnLike, table_source::TableSource},
 };
 
-/// A deliberately strict, in-memory `TableSource` for tests.
+/// An in-memory `TableSource` for tests.
 ///
 /// All row storage lives in a single [`ImDataSource`] — there is no second
 /// count store to drift out of sync, so `get_table_count` always agrees with
 /// what `list`/`get` return, including after writes.
 ///
-/// Unlike the production [`ImTable`] (which honours the idempotent trait
-/// contracts), this mock is intentionally *fail-loud* so tests can exercise
-/// error paths: `insert_table_value` errors on a duplicate id, and
-/// `delete_table_value` errors on a missing id. Treat divergence from the
-/// documented idempotency as a feature of this test tool, not a bug.
+/// Meets the write contract for literal `column = value` conditions; any
+/// other condition on a by-id write is refused with `Unsupported`. Reads
+/// ignore non-literal conditions, as before.
 #[derive(Clone)]
 pub struct MockTableSource {
     im_data_source: ImDataSource,
     select_source: Option<MockSelectableDataSource>,
     query_source: Option<Arc<Mutex<vantage_expressions::mocks::mock_builder::MockBuilder>>>,
+    confines: bool,
 }
 
 impl MockTableSource {
@@ -51,7 +50,15 @@ impl MockTableSource {
             im_data_source: ImDataSource::new(),
             select_source: None,
             query_source: None,
+            confines: true,
         }
+    }
+
+    /// Report [`TableSource::can_confine_writes`] as `false`, standing in for
+    /// a backend that cannot keep by-id writes inside a conditioned set.
+    pub fn without_confined_writes(mut self) -> Self {
+        self.confines = false;
+        self
     }
 
     pub async fn with_data(self, table_name: &str, data: Vec<Value>) -> Self {
@@ -95,6 +102,43 @@ impl MockTableSource {
     }
 }
 
+impl MockTableSource {
+    /// Whether `row` satisfies every literal-equality condition of `table`.
+    /// Other conditions are skipped; writes refuse them first through
+    /// [`Self::ensure_confinable`].
+    fn row_in_set<E: Entity<Value>>(table: &Table<Self, E>, row: &Record<Value>) -> bool {
+        table.conditions().all(|condition| {
+            crate::conditions::literal_equality(condition).is_none_or(|(column, expected)| {
+                row.get(&column).is_some_and(|v| v.value_eq(&expected))
+            })
+        })
+    }
+
+    /// Refuse a by-id write up front when `table` holds a condition the mock
+    /// cannot evaluate, so a missing row is refused rather than reported as
+    /// absent.
+    fn ensure_confinable<E: Entity<Value>>(table: &Table<Self, E>) -> Result<()> {
+        if table
+            .conditions()
+            .all(|c| crate::conditions::literal_equality(c).is_some())
+        {
+            return Ok(());
+        }
+        Err(vantage_core::error!(
+            "MockTableSource confines writes only for literal equality conditions"
+        )
+        .mark_unsupported())
+    }
+
+    fn outside(id: &str) -> vantage_core::VantageError {
+        vantage_core::error!("id is held by a row outside this set", id = id).mark_conflict()
+    }
+
+    fn misfit(id: &str) -> vantage_core::VantageError {
+        vantage_core::error!("record does not belong to this set", id = id).mark_conflict()
+    }
+}
+
 impl Default for MockTableSource {
     fn default() -> Self {
         Self::new()
@@ -114,6 +158,25 @@ impl TableSource for MockTableSource {
     type Id = String;
     type Condition = vantage_expressions::Expression<Self::Value>;
     type Source = String;
+
+    fn condition_equality(&self, condition: &Expression<Value>) -> Option<(String, Value)> {
+        crate::conditions::literal_equality(condition)
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        self.confines
+    }
+
+    fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
+        use vantage_expressions::ExpressiveEnum;
+        Ok(Expression::new(
+            "{} = {}",
+            vec![
+                ExpressiveEnum::Nested(Expression::new(field.to_string(), vec![])),
+                ExpressiveEnum::Nested(Expression::new("{}", vec![ExpressiveEnum::Scalar(value)])),
+            ],
+        ))
+    }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         use std::any::TypeId;
@@ -198,7 +261,8 @@ impl TableSource for MockTableSource {
         Self: Sized,
     {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-        im_table.get_value(id).await
+        let row = im_table.get_value(id).await?;
+        Ok(row.filter(|r| Self::row_in_set(table, r)))
     }
 
     async fn get_table_some_value<E>(
@@ -263,7 +327,6 @@ impl TableSource for MockTableSource {
         ))
     }
 
-    /// Insert a record as Record value (for WritableValueSet implementation)
     async fn insert_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -274,23 +337,23 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
+        Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-
-        // Check if record already exists - fail if it does
-        if im_table.get_value(id).await?.is_some() {
-            return Err(vantage_core::error!(
-                "Record with ID already exists",
-                id = id
-            ));
+        if let Some(existing) = im_table.get_value(id).await? {
+            if Self::row_in_set(table, &existing) {
+                return Ok(existing);
+            }
+            return Err(Self::outside(id));
         }
 
-        let mut record_with_id = record.clone();
-        record_with_id.insert("id".to_string(), Value::String(id.clone()));
-
-        im_table.replace_value(id, &record_with_id).await
+        let mut full = record.clone();
+        full.insert("id".to_string(), Value::String(id.clone()));
+        if !Self::row_in_set(table, &full) {
+            return Err(Self::misfit(id));
+        }
+        im_table.replace_value(id, &full).await
     }
 
-    /// Replace a record as Record value (for WritableValueSet implementation)
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -301,14 +364,22 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        let mut record_with_id = record.clone();
-        record_with_id.insert("id".to_string(), Value::String(id.clone()));
-
+        Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-        im_table.replace_value(id, &record_with_id).await
+        if let Some(existing) = im_table.get_value(id).await?
+            && !Self::row_in_set(table, &existing)
+        {
+            return Err(Self::outside(id));
+        }
+
+        let mut full = record.clone();
+        full.insert("id".to_string(), Value::String(id.clone()));
+        if !Self::row_in_set(table, &full) {
+            return Err(Self::misfit(id));
+        }
+        im_table.replace_value(id, &full).await
     }
 
-    /// Patch a record as Record value (for WritableValueSet implementation)
     async fn patch_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -319,37 +390,62 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
+        Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
+        let mut merged = match im_table.get_value(id).await? {
+            Some(existing) if Self::row_in_set(table, &existing) => existing,
+            _ => {
+                return Err(
+                    vantage_core::error!("Record not found", id = id.as_str()).mark_not_found()
+                );
+            }
+        };
+        for (column, value) in partial.iter() {
+            merged.insert(column.clone(), value.clone());
+        }
+        if !Self::row_in_set(table, &merged) {
+            return Err(vantage_core::error!(
+                "patch would move the row out of this set",
+                id = id.as_str()
+            )
+            .mark_conflict());
+        }
         im_table.patch_value(id, partial).await
     }
 
-    /// Delete a record by ID (for WritableValueSet implementation)
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity,
         Self: Sized,
     {
+        Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-
-        // Check if record exists - fail if it doesn't
-        if im_table.get_value(id).await?.is_none() {
-            return Err(vantage_core::error!("Record not found", id = id));
+        if let Some(existing) = im_table.get_value(id).await?
+            && Self::row_in_set(table, &existing)
+        {
+            im_table.delete(id).await?;
         }
-
-        im_table.delete(id).await
+        Ok(())
     }
 
-    /// Delete all records (for WritableValueSet implementation)
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
     where
         E: Entity,
         Self: Sized,
     {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-        im_table.delete_all().await
+        if table.conditions().next().is_none() {
+            return im_table.delete_all().await;
+        }
+        Self::ensure_confinable(table)?;
+        for (id, row) in im_table.list_values().await? {
+            if Self::row_in_set(table, &row) {
+                im_table.delete(&id).await?;
+            }
+        }
+        Ok(())
     }
 
-    /// Insert a record and return generated ID (for InsertableValueSet implementation)
     async fn insert_table_return_id_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -359,6 +455,10 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
+        Self::ensure_confinable(table)?;
+        if !Self::row_in_set(table, record) {
+            return Err(Self::misfit("(new)"));
+        }
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         im_table.insert_return_id_value(record).await
     }

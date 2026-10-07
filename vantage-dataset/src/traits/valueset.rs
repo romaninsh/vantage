@@ -126,16 +126,36 @@ pub trait ReadableValueSet: ValueSet {
     }
 }
 
-/// Write operations on raw storage values with idempotent behavior.
+/// Write operations on raw storage values. **Every write is retry-safe, and a
+/// write through a narrowed set only touches rows inside that set.**
+///
+/// "The set" is everything that narrows this value set (a table's conditions,
+/// a Vista's narrowing). An unnarrowed set is the only way to write anywhere.
+///
+/// | operation | row in the set | row exists outside the set | no such row |
+/// |---|---|---|---|
+/// | `delete(id)` | deleted, `Ok(())` | untouched, `Ok(())` | `Ok(())` |
+/// | `insert_value(id, r)` | untouched, returns the stored row | `Conflict` where the backend can see it; never an overwrite | inserted; must fit the set, else `Conflict` |
+/// | `patch_value(id, p)` | applied; `Conflict` if the result leaves the set | `NotFound` | `NotFound` |
+/// | `replace_value(id, r)` | replaced; `Conflict` if it leaves the set | `Conflict` where verifiable | created; must fit the set |
+/// | `delete_all()` | deletes exactly the set | — | — |
+///
+/// A row "fits the set" when it satisfies every condition: equality
+/// conditions are invariants (an absent or null column is filled on insert and
+/// replace, validated on patch); operator conditions are evaluated by the
+/// backend. A backend that can't apply or evaluate a condition refuses the
+/// write with `Unsupported`. An eventually-consistent backend can't see an id
+/// held outside the set before it writes; it documents what it does instead,
+/// and never overwrites silently.
 ///
 /// See documentation for [`ValueSet`] for implementation example.
 #[async_trait]
 pub trait WritableValueSet: ValueSet {
     /// Insert value with a specific ID (often generated) (HTTP POST with ID)
     ///
-    /// **Idempotent**: Succeeds if no record exists with the given ID. If
-    /// record already exists, must return success without overwriting
-    /// data, returning original data.
+    /// **Idempotent**: an id already in the set returns the stored row
+    /// untouched; an id held outside the set is `Conflict`; a new row must
+    /// fit the set.
     ///
     /// **Returns**: Record as it was stored.
     ///
@@ -149,11 +169,14 @@ pub trait WritableValueSet: ValueSet {
 
     /// Replace the entire record at the specified ID (HTTP PUT)
     ///
-    /// **Idempotent**: Always succeeds, completely overwrites existing data
-    /// if present. If possible, will remove/recreate record; therefore if
-    /// `record` doesn't contain certain attributes which were present in the
-    /// database, those will be removed. If record does not exist, will
-    /// create it.
+    /// **Idempotent**: completely overwrites existing data if present. If
+    /// possible, will remove/recreate record; therefore if `record` doesn't
+    /// contain certain attributes which were present in the database, those
+    /// will be removed. If record does not exist, will create it.
+    ///
+    /// **Confined**: a row in the set is replaced (`Conflict` if the new row
+    /// would leave the set); an id held outside the set is `Conflict` where
+    /// the backend can verify it; a created row must fit the set.
     ///
     /// **Returns**: Record as it was stored.
     ///
@@ -167,8 +190,10 @@ pub trait WritableValueSet: ValueSet {
 
     /// Partially update a record by merging with the provided value (HTTP PATCH)
     ///
-    /// **Fails if record doesn't exist**. The exact merge behavior depends on
-    /// the storage implementation - typically merges object fields for JSON-like values.
+    /// **`NotFound`** (marked) when the row is missing or outside the set;
+    /// `Conflict` when the patched row would leave the set. The exact merge
+    /// behavior depends on the storage implementation - typically merges
+    /// object fields for JSON-like values.
     ///
     /// **Returns**: Record as it was stored (not only the partial change).
     ///
@@ -182,14 +207,14 @@ pub trait WritableValueSet: ValueSet {
 
     /// Delete a record by ID (HTTP DELETE)
     ///
-    /// **Idempotent**: Always succeeds, even if the record doesn't exist.
-    /// This allows safe cleanup operations without checking existence first.
+    /// **Idempotent and confined**: a missing row or a row outside the set is
+    /// left alone and reports `Ok(())` — nothing is revealed about rows
+    /// outside the set.
     async fn delete(&self, id: impl Into<Self::Id> + Send) -> Result<()>;
 
     /// Delete all records in the set (HTTP DELETE without ID)
     ///
-    /// **Idempotent**: All records in the set will be deleted.
-    /// Executing several times is OK.
+    /// **Idempotent**: deletes exactly the set. Executing several times is OK.
     ///
     /// Execute on a subset of your entire database.
     async fn delete_all(&self) -> Result<()>;
@@ -208,6 +233,10 @@ pub trait InsertableValueSet: ValueSet {
     ///
     /// This method is **not idempotent** - each call creates a new record with
     /// a new ID, even if the value data is identical.
+    ///
+    /// Not retry-safe: prefer `insert_value` with a client-made id (UUIDv7);
+    /// use this only where the backend must make the id (declared
+    /// server-made ids).
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id>;
 }
 

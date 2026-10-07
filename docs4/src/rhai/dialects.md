@@ -44,9 +44,9 @@ sqlite:
 ```
 
 A query-sourced Vista is read-only. A derived Vista (`base:` plus `rhai:`) gets the base's
-`select()` as `base` and transforms it. Both are described in
-[Config-Driven Vistas](../config-driven-vistas.md#the-rhai-layer), and the primitives in
-[SQL Primitives](../sql/primitives.md).
+`select()` as `base` and transforms it. [Tables Defined by a Query](./query-tables.md) covers
+both, and [Query Builder Functions](./query-builders.md) lists every function the builders
+register. The Rust primitives are in [SQL Primitives](../sql/primitives.md).
 
 `where` here is the SQL builder's method and takes an expression. On a data handle, `where` takes a
 column and a value. The name is the same because both narrow, but the two vocabularies never share

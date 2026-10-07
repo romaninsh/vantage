@@ -52,7 +52,7 @@ where
             let mut existing_record = table
                 .get(&id)
                 .ok_or_else(|| {
-                    vantage_core::util::error::vantage_error!("Record with id '{}' not found", id)
+                    vantage_core::error!("Record not found", id = id.clone()).mark_not_found()
                 })?
                 .clone();
 
@@ -137,5 +137,25 @@ mod tests {
         let table = ImTable::<User>::new(&ds, "users");
 
         table.delete_all().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn patch_missing_is_not_found() {
+        let ds = ImDataSource::new();
+        let table = ImTable::<User>::new(&ds, "users");
+        let err = table
+            .patch_value("nope", &Record::from(serde_json::json!({"name": "x"})))
+            .await
+            .unwrap_err();
+        assert!(err.is_not_found(), "{err}");
+    }
+
+    #[cfg(feature = "contract")]
+    #[tokio::test]
+    async fn im_table_meets_the_unnarrowed_contract() {
+        let ds = ImDataSource::new();
+        let table = ImTable::<User>::new(&ds, "users");
+        crate::contract::check_unnarrowed(&table, |s| s.to_string(), |s| serde_json::json!(s))
+            .await;
     }
 }

@@ -13,6 +13,7 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+use super::set_writes;
 use crate::identifier::Identifier;
 use crate::statements::delete::SurrealDelete;
 use crate::statements::insert::SurrealInsert;
@@ -125,6 +126,14 @@ impl TableSource for SurrealDB {
             return AnySurrealType::from(thing.to_cbor());
         }
         value
+    }
+
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        vantage_table::conditions::literal_equality(condition)
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        true
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -263,7 +272,11 @@ impl TableSource for SurrealDB {
             .with_condition(SurrealOperation::eq(&id_column, id.clone()));
         let mut select = narrowed.select();
         select.limit = Some(1);
-        let result = self.execute(&select.expr()).await?;
+        let result = match self.execute(&select.expr()).await {
+            Ok(result) => result,
+            Err(e) if set_writes::is_missing_table(&e) => return Ok(None),
+            Err(e) => return Err(e),
+        };
 
         let arr = result
             .into_value()
@@ -383,6 +396,21 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
+        // The `WritableDataSet::insert` contract is idempotent: a record
+        // already in the set is returned untouched.
+        if let Some(existing) = self.get_table_value(table, id).await? {
+            return Ok(existing);
+        }
+        let conditioned = table.conditions().next().is_some();
+        if conditioned {
+            if self.id_exists_anywhere(id).await? {
+                return Err(set_writes::held_outside(table.table_name(), id));
+            }
+            let row = set_writes::row_with_id(table, id, record);
+            if !self.row_in_set(table, &row).await? {
+                return Err(set_writes::not_in_set(table.table_name(), Some(id)));
+            }
+        }
         let mut insert = SurrealInsert::new(table.table_name()).with_id(id.id());
         for (key, value) in record.iter() {
             insert = insert.with_any_field(key, value.clone());
@@ -390,12 +418,14 @@ impl TableSource for SurrealDB {
         let result = match self.execute(&insert.expr()).await {
             Ok(result) => result,
             Err(e) => {
-                // The `WritableDataSet::insert` contract is idempotent: when
-                // the record already exists, return it untouched instead of
-                // failing. SurrealDB's CREATE (and, since v3, INSERT too)
-                // rejects duplicates, so recover by reading the record back.
+                // SurrealDB's CREATE (and, since v3, INSERT too) rejects
+                // duplicates, so another writer taking the id between the
+                // check and the insert surfaces here: read the record back.
                 if let Some(existing) = self.get_table_value(table, id).await? {
                     return Ok(existing);
+                }
+                if conditioned && self.id_exists_anywhere(id).await? {
+                    return Err(set_writes::held_outside(table.table_name(), id));
                 }
                 return Err(e);
             }
@@ -415,15 +445,37 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
+        let conditioned = table.conditions().next().is_some();
+        let mut in_set = false;
+        if conditioned {
+            in_set = self.get_table_value(table, id).await?.is_some();
+            if !in_set && self.id_exists_anywhere(id).await? {
+                return Err(set_writes::held_outside(table.table_name(), id));
+            }
+            let row = set_writes::row_with_id(table, id, record);
+            if !self.row_in_set(table, &row).await? {
+                return Err(set_writes::not_in_set(table.table_name(), Some(id)));
+            }
+        }
+
         // `replace` must create the row when it's missing (its documented
         // contract, and what `ActiveEntity::save` relies on). A plain `UPDATE`
         // is a no-op on a non-existent record since SurrealDB 2.0, so use
-        // `UPSERT`.
-        let update = SurrealUpdate::new(id.clone())
-            .upsert()
-            .content()
-            .with_record(record);
+        // `UPSERT` — except for a record already in a conditioned set, where
+        // the conditions on the UPDATE keep a concurrent move from slipping
+        // through.
+        let mut update = SurrealUpdate::new(id.clone()).content().with_record(record);
+        if in_set {
+            for condition in table.conditions() {
+                update = update.with_condition(condition.clone());
+            }
+        } else {
+            update = update.upsert();
+        }
         let result = self.execute(&update.expr()).await?;
+        if in_set {
+            ensure_row_affected(&result, table.table_name(), id)?;
+        }
         let map = extract_first_map(result)?;
         let id_field = table.id_field_name();
         let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
@@ -439,7 +491,26 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let update = SurrealUpdate::new(id.clone()).merge().with_record(partial);
+        let Some(current) = self.get_table_value(table, id).await? else {
+            return Err(
+                error!("Row not found", table = table.table_name(), id = id.clone())
+                    .mark_not_found(),
+            );
+        };
+        if table.conditions().next().is_some() {
+            let mut merged = current;
+            for (k, v) in partial.iter() {
+                merged.insert(k.clone(), v.clone());
+            }
+            let merged = set_writes::row_with_id(table, id, &merged);
+            if !self.row_in_set(table, &merged).await? {
+                return Err(set_writes::patch_leaves_set(table.table_name(), id));
+            }
+        }
+        let mut update = SurrealUpdate::new(id.clone()).merge().with_record(partial);
+        for condition in table.conditions() {
+            update = update.with_condition(condition.clone());
+        }
         let result = self.execute(&update.expr()).await?;
         ensure_row_affected(&result, table.table_name(), id)?;
         let map = extract_first_map(result)?;
@@ -452,9 +523,13 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let delete = SurrealDelete::new(id.clone()).return_before();
-        let result = self.execute(&delete.expr()).await?;
-        ensure_row_affected(&result, table.table_name(), id)
+        // A missing record, or one outside the conditions, matches nothing: Ok.
+        let mut delete = SurrealDelete::new(id.clone());
+        for condition in table.conditions() {
+            delete = delete.with_condition(condition.clone());
+        }
+        self.execute(&delete.expr()).await?;
+        Ok(())
     }
 
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
@@ -478,6 +553,9 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
+        if !self.row_in_set(table, record).await? {
+            return Err(set_writes::not_in_set(table.table_name(), None));
+        }
         let mut insert = SurrealInsert::new(table.table_name());
         for (key, value) in record.iter() {
             insert = insert.with_any_field(key, value.clone());

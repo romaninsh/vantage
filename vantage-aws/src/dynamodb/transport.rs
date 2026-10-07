@@ -161,15 +161,6 @@ pub(crate) async fn get_item(
     call(aws, "GetItem", body).await
 }
 
-pub(crate) async fn put_item(
-    aws: &AwsAccount,
-    table: &str,
-    item: JsonMap<String, JsonValue>,
-) -> Result<JsonValue> {
-    let body = json!({ "TableName": table, "Item": item });
-    call(aws, "PutItem", body).await
-}
-
 pub(crate) async fn delete_item(
     aws: &AwsAccount,
     table: &str,
@@ -177,4 +168,112 @@ pub(crate) async fn delete_item(
 ) -> Result<JsonValue> {
     let body = json!({ "TableName": table, "Key": key });
     call(aws, "DeleteItem", body).await
+}
+
+/// Whether a conditional write was applied or refused by its condition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PutOutcome {
+    Written,
+    ConditionFailed,
+}
+
+/// Add `ConditionExpression` and its name/value maps to a request body.
+fn add_condition(body: &mut JsonValue, condition: &ResolvedFilter) -> Result<()> {
+    if condition.is_empty() {
+        return Ok(());
+    }
+    body["ConditionExpression"] = json!(condition.expression);
+    if !condition.names.is_empty() {
+        let mut names = JsonMap::new();
+        for (k, v) in &condition.names {
+            names.insert(k.clone(), JsonValue::String(v.clone()));
+        }
+        body["ExpressionAttributeNames"] = JsonValue::Object(names);
+    }
+    if !condition.values.is_empty() {
+        let mut values = JsonMap::new();
+        for (k, v) in &condition.values {
+            values.insert(k.clone(), attr_to_json(v)?);
+        }
+        body["ExpressionAttributeValues"] = JsonValue::Object(values);
+    }
+    Ok(())
+}
+
+fn put_body(
+    table: &str,
+    item: &JsonMap<String, JsonValue>,
+    condition: &ResolvedFilter,
+) -> Result<JsonValue> {
+    let mut body = json!({ "TableName": table, "Item": item });
+    add_condition(&mut body, condition)?;
+    Ok(body)
+}
+
+fn delete_body(
+    table: &str,
+    key: &JsonMap<String, JsonValue>,
+    condition: &ResolvedFilter,
+) -> Result<JsonValue> {
+    let mut body = json!({ "TableName": table, "Key": key });
+    add_condition(&mut body, condition)?;
+    Ok(body)
+}
+
+/// Run a conditional write; a `ConditionalCheckFailedException` becomes
+/// `ConditionFailed` rather than an error.
+async fn conditional_call(aws: &AwsAccount, action: &str, body: JsonValue) -> Result<PutOutcome> {
+    match call(aws, action, body).await {
+        Ok(_) => Ok(PutOutcome::Written),
+        Err(e) if e.to_string().contains("ConditionalCheckFailedException") => {
+            Ok(PutOutcome::ConditionFailed)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// `PutItem` guarded by `condition`.
+pub(crate) async fn put_item_if(
+    aws: &AwsAccount,
+    table: &str,
+    item: JsonMap<String, JsonValue>,
+    condition: &ResolvedFilter,
+) -> Result<PutOutcome> {
+    conditional_call(aws, "PutItem", put_body(table, &item, condition)?).await
+}
+
+/// `DeleteItem` guarded by `condition`.
+pub(crate) async fn delete_item_if(
+    aws: &AwsAccount,
+    table: &str,
+    key: JsonMap<String, JsonValue>,
+    condition: &ResolvedFilter,
+) -> Result<PutOutcome> {
+    conditional_call(aws, "DeleteItem", delete_body(table, &key, condition)?).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dynamodb::condition::{DynamoCondition, resolve_conditions};
+    use crate::dynamodb::types::AttributeValue;
+
+    #[tokio::test]
+    async fn put_body_carries_condition_and_maps() {
+        let cond = DynamoCondition::eq("parent", AttributeValue::S("p1".into()));
+        let filter = resolve_conditions([&cond]).await.unwrap();
+        let mut item = JsonMap::new();
+        item.insert("id".into(), json!({"S": "a"}));
+        let body = put_body("t", &item, &filter).unwrap();
+        assert_eq!(body["ConditionExpression"], "#n0 = :v0");
+        assert_eq!(body["ExpressionAttributeNames"]["#n0"], "parent");
+        assert_eq!(body["ExpressionAttributeValues"][":v0"], json!({"S": "p1"}));
+        assert_eq!(body["Item"]["id"], json!({"S": "a"}));
+    }
+
+    #[test]
+    fn empty_condition_adds_no_expression() {
+        let body = delete_body("t", &JsonMap::new(), &ResolvedFilter::default()).unwrap();
+        assert!(body.get("ConditionExpression").is_none());
+    }
 }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 — 2026-10-05
+
+- **Breaking:** by-id reads and writes honour the table's filter: `get_value` of a document outside
+  it is `None`; insert/replace/patch/delete are confined; an id held outside the set is `Conflict`.
+- Insert of an existing id in the set returns the stored document (was a duplicate-key error);
+  patch of a missing document is `NotFound`.
+- A written document must match the filter (`$documents` probe), else `Conflict`.
+- `condition_equality`: `{field: value}` / `{field: {$eq: value}}` fill on insert.
+- Vista shells advertise `can_confine_writes`.
+
 ## 0.6.9 — 2026-10-04
 
 - The vista factory uses the shared spec helpers.

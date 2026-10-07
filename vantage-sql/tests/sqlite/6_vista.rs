@@ -274,11 +274,12 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_delete_of_a_missing_row_is_not_found() -> TestResult {
+async fn vista_delete_of_a_missing_row_succeeds() -> TestResult {
     let db = setup().await;
     let vista = db.vista_factory().from_table(product_table(db.clone()))?;
-    let err = vista.delete("nope").await.unwrap_err();
-    assert!(err.is_not_found(), "{err}");
+    vista.delete("nope").await?;
+    vista.delete("a").await?;
+    assert!(vista.get_value("a").await?.is_none());
     vista.delete("a").await?;
     Ok(())
 }
@@ -332,6 +333,7 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.can_insert);
     assert!(caps.can_update);
     assert!(caps.can_delete);
+    assert!(caps.can_confine_writes);
     assert!(!caps.can_subscribe);
     Ok(())
 }

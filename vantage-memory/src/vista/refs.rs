@@ -82,6 +82,11 @@ impl MemoryTableShell {
         let condition = match reference.kind {
             ReferenceKind::HasMany => {
                 let mut forms = id_forms(&id);
+                if let Some(first) = forms.first() {
+                    target
+                        .invariants
+                        .insert(reference.foreign_key.clone(), first.clone());
+                }
                 match forms.len() {
                     1 => {
                         MemoryCondition::cmp(&reference.foreign_key, FilterOp::Eq, forms.remove(0))
@@ -94,7 +99,11 @@ impl MemoryTableShell {
                 }
             }
             ReferenceKind::HasOne => {
-                MemoryCondition::cmp(target.id_column_name(), FilterOp::Eq, CborValue::Text(id))
+                let id_column = target.id_column_name().to_string();
+                target
+                    .invariants
+                    .insert(id_column.clone(), CborValue::Text(id.clone()));
+                MemoryCondition::cmp(&id_column, FilterOp::Eq, CborValue::Text(id))
             }
         };
         target.query.conditions.push(condition);

@@ -67,6 +67,29 @@ pub trait TableSource: DataSource + Clone + 'static {
         ))
     }
 
+    /// When `condition` is a literal `column = value`, return the pair.
+    ///
+    /// [`Table::add_condition`] registers it as a set invariant: an insert or
+    /// replace through the table fills an absent column, a patch may not change
+    /// it. Expression backends use [`crate::conditions::literal_equality`];
+    /// document backends read their own filter shape. Default `None`: the
+    /// condition still narrows, it just fills nothing.
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        let _ = condition;
+        None
+    }
+
+    /// Whether every by-id write (`insert_table_value`, `replace_table_value`,
+    /// `patch_table_value`, `delete_table_value`, `insert_table_return_id_value`)
+    /// honours the write contract over `table.conditions()`: it only touches
+    /// rows in the set, and only leaves rows that still belong to it. A source
+    /// that returns `false` is refused any by-id write through a conditioned
+    /// table: `Table` refuses it with `Unsupported` before reaching the source.
+    /// Default `false`.
+    fn can_confine_writes(&self) -> bool {
+        false
+    }
+
     /// Coerce a reference join value into the backend's native id form.
     ///
     /// Reference traversal (`resolve_from_row`) reads the join value raw out
@@ -192,7 +215,12 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Insert a record as Record value (for WritableValueSet implementation)
+    /// Insert a record by ID. **Confined and idempotent:** when the id is
+    /// already stored in `table.conditions()`, return the stored row unchanged;
+    /// when it is held by a row outside the set, fail with `Conflict`; a new
+    /// row must fit the conditions, else `Conflict` and nothing is stored.
+    /// Refuse with `Unsupported` when a condition can be neither applied nor
+    /// evaluated. See `WritableValueSet` for the table.
     async fn insert_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -203,7 +231,12 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Replace a record as Record value (for WritableValueSet implementation)
+    /// Replace a record by ID, creating it when missing. **Confined and
+    /// idempotent:** an id held by a row outside `table.conditions()` fails
+    /// with `Conflict`; the written row must fit the conditions, else
+    /// `Conflict` and nothing changes. Refuse with `Unsupported` when a
+    /// condition can be neither applied nor evaluated. See `WritableValueSet`
+    /// for the table.
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -214,7 +247,11 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Patch a record as Record value (for WritableValueSet implementation)
+    /// Merge `partial` into the row with this ID. **Confined:** a missing row
+    /// or one outside `table.conditions()` is `NotFound` (marked); the merged
+    /// row must still fit the conditions, else `Conflict` and nothing changes.
+    /// Refuse with `Unsupported` when a condition can be neither applied nor
+    /// evaluated. See `WritableValueSet` for the table.
     async fn patch_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -225,7 +262,11 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Delete a record by ID (for WritableValueSet implementation)
+    /// Delete a record by ID. **Confined and idempotent:** delete only when the
+    /// row is in `table.conditions()`; a missing row or a row outside the set
+    /// is `Ok(())` (no lookup is needed — SQL: `DELETE … WHERE id = ? AND
+    /// <conditions>`). Refuse with `Unsupported` when a condition can be
+    /// neither applied nor evaluated. See `WritableValueSet` for the table.
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
@@ -244,7 +285,11 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
-    /// Insert a record and return generated ID (for InsertableValueSet implementation)
+    /// Insert a record under a generated ID and return it. **Confined, not
+    /// retry-safe:** the record must fit `table.conditions()`, else `Conflict`
+    /// and nothing is stored; a retry after a lost reply stores a second row.
+    /// Refuse with `Unsupported` when a condition can be neither applied nor
+    /// evaluated.
     async fn insert_table_return_id_value<E>(
         &self,
         table: &Table<Self, E>,

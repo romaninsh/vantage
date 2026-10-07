@@ -6,6 +6,9 @@ from other columns, a filter that depends on the selected row, a write after a f
 a simulated order that ships after twenty minutes. That logic is written in
 [Rhai](https://rhai.rs), a small scripting language embedded in Rust.
 
+Rhai is part of vantage: any application that holds Vistas can run these scripts. Vantage UI is one
+such application and is used as an example where it helps.
+
 This part of the book is the one place that teaches scripting across the framework. Other chapters
 link here instead of repeating the verbs.
 
@@ -55,8 +58,8 @@ legal in one place and refused in another.
 | Query preview (`preview_script`) | an MCP tool showing the query a script would run | describe a set, never read it |
 | YAML `modify:`, reference build scripts, augmentation sources | `self.where("vip", true)` | describe a set |
 | YAML `lazy:` columns | `row.net / 5` | compute one value from one row |
-| Form `options:` | a dropdown filled from another table | read |
-| Action bodies, form `on_submit`, wizard workers | `row.status = "paid"; row.save();` | read and write |
+| An application's form `options:` (e.g. Vantage UI) | a dropdown filled from another table | read |
+| An application's action bodies, form `on_submit`, wizard workers (e.g. Vantage UI) | `row.status = "paid"; row.save();` | read and write |
 | Faker sims | an order that ships, then disappears | read and write a memory store, plus time and random verbs |
 
 [Hosts](./rhai/hosts.md) explains how a host is put together, and [Surfaces](./rhai/surfaces.md)
@@ -142,14 +145,19 @@ a SQL `select()` or a SurrealDB condition. They aren't data scripts and have the
 - [The table handle](./rhai/tables.md): narrowing verbs, reads, relations, introspection, and
   errors.
 - [Writes](./rhai/writes.md): `insert`, `upsert`, `patch`, `delete` and `import_from`, and what
-  each returns when a row is missing.
+  each returns when a row is missing or outside the set.
 - [Computed columns](./rhai/computed.md): `lazy:` columns that the Vista fills on every read, and
   what they refuse.
 - [Records](./rhai/records.md): drafts of one row that stage edits and save only what changed.
 - [Surfaces](./rhai/surfaces.md): every place the vocabulary runs, with a tested example for each,
   plus backend extensions such as SurrealDB's `with_condition`.
 - [Layers](./rhai/layers.md): Servo, Scenery and faker sims next to the data vocabulary.
+- [Faker sims](./rhai/faker.md): scripts that keep a memory store changing over sim time.
 - [Expression dialects](./rhai/dialects.md): query builders, templates and command scripts.
+- [Tables defined by a query](./rhai/query-tables.md): a table whose source is a script-built
+  `SELECT`, and why that is the only place a script builds a query.
+- [Query builder functions](./rhai/query-builders.md): every function the SQL and SurrealDB query
+  builders register.
 
 ```admonish note title="Tested examples"
 Every script in this part is copied from a test. The comment above a snippet names the test, for

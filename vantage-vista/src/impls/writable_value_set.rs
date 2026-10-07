@@ -14,6 +14,7 @@ impl WritableValueSet for Vista {
         id: impl Into<String> + Send,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        self.require_confined("insert")?;
         let id = id.into();
         self.insert_nested_value(&id, record).await
     }
@@ -23,6 +24,7 @@ impl WritableValueSet for Vista {
         id: impl Into<String> + Send,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        self.require_confined("replace")?;
         let id = id.into();
         let record = self.without_computed(record);
         self.source.replace_vista_value(self, &id, &record).await
@@ -33,12 +35,14 @@ impl WritableValueSet for Vista {
         id: impl Into<String> + Send,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        self.require_confined("patch")?;
         let id = id.into();
         let partial = self.without_computed(partial);
         self.source.patch_vista_value(self, &id, &partial).await
     }
 
     async fn delete(&self, id: impl Into<String> + Send) -> Result<()> {
+        self.require_confined("delete")?;
         let id = id.into();
         self.source.delete_vista_value(self, &id).await
     }
@@ -58,6 +62,7 @@ impl Vista {
         id: impl Into<String> + Send,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        self.require_confined("upsert")?;
         let id = id.into();
         let record = self.without_computed(record);
         self.source.upsert_vista_value(self, &id, &record).await

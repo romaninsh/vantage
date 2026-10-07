@@ -4,6 +4,11 @@
 //! `DeleteItem`. Conditions and aggregates are stubbed — Scan filters
 //! and SUM/MIN/MAX-via-client-aggregation land later.
 //!
+//! Insert is a conditional `PutItem` (`attribute_not_exists`), so an id held
+//! outside the set is detected (strongly consistent per item) and never
+//! overwritten. A set whose conditions DynamoDB can't evaluate client-side
+//! refuses the write.
+//!
 //! Composite-key tables are partially supported: writes carry the full
 //! item, but `get_table_value` only knows the partition key (`DynamoId`
 //! is partition-only in v0). Sort-key tables work for Scan/Put/Delete
@@ -29,9 +34,11 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::dynamodb::DynamoDB;
-use crate::dynamodb::condition::{DynamoCondition, ValueListFuture, resolve_conditions};
+use crate::dynamodb::condition::{
+    DynamoCondition, ResolvedFilter, ValueListFuture, equality_of, resolve_conditions, row_in_set,
+};
 use crate::dynamodb::id::DynamoId;
-use crate::dynamodb::transport;
+use crate::dynamodb::transport::{self, PutOutcome};
 use crate::dynamodb::types::{AnyDynamoType, AttributeValue};
 use crate::dynamodb::wire::{attr_to_json, json_to_item_map};
 
@@ -69,6 +76,39 @@ fn item_to_record(
     Ok((id, record))
 }
 
+/// Build the wire item for a write: the id plus every non-id column.
+fn item_map(
+    id_field: &str,
+    id: &DynamoId,
+    record: &Record<AnyDynamoType>,
+) -> std::result::Result<JsonMap<String, JsonValue>, vantage_core::VantageError> {
+    let mut item = JsonMap::new();
+    item.insert(id_field.to_string(), attr_to_json(&id.to_attr())?);
+    for (k, v) in record.iter() {
+        if k == id_field {
+            continue;
+        }
+        item.insert(k.clone(), attr_to_json(v.value())?);
+    }
+    Ok(item)
+}
+
+/// Refuse a write whose row (record plus id) falls outside the set.
+async fn ensure_in_set(
+    conditions: &[DynamoCondition],
+    id_field: &str,
+    id: &DynamoId,
+    record: &Record<AnyDynamoType>,
+) -> Result<()> {
+    let mut row = record.clone();
+    row.insert(id_field.to_string(), AnyDynamoType::untyped(id.to_attr()));
+    if row_in_set(conditions, &row).await? {
+        Ok(())
+    } else {
+        Err(error!("Row does not belong to this set", id = id.to_string()).mark_conflict())
+    }
+}
+
 #[async_trait]
 impl TableSource for DynamoDB {
     type Column<Type>
@@ -90,6 +130,14 @@ impl TableSource for DynamoDB {
             field,
             AttributeValue::S(value.to_string()),
         ))
+    }
+
+    fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        equality_of(condition).map(|(field, value)| (field, AnyDynamoType::untyped(value)))
+    }
+
+    fn can_confine_writes(&self) -> bool {
+        true
     }
 
     fn to_any_column<Type: ColumnType>(
@@ -171,7 +219,8 @@ impl TableSource for DynamoDB {
             return Ok(None);
         }
         let (_id, record) = item_to_record(&id_field, item)?;
-        Ok(Some(record))
+        let conditions: Vec<DynamoCondition> = table.conditions().cloned().collect();
+        Ok(row_in_set(&conditions, &record).await?.then_some(record))
     }
 
     async fn get_table_some_value<E>(
@@ -263,22 +312,31 @@ impl TableSource for DynamoDB {
         E: Entity<Self::Value>,
     {
         let id_field = table.id_field_name();
-        let mut item = JsonMap::new();
-        item.insert(id_field.clone(), attr_to_json(&id.to_attr())?);
-        for (k, v) in record.iter() {
-            if k == &id_field {
-                continue;
-            }
-            item.insert(k.clone(), attr_to_json(v.value())?);
-        }
-        transport::put_item(self.aws(), table.table_name(), item).await?;
+        let conditions: Vec<DynamoCondition> = table.conditions().cloned().collect();
+        let item = item_map(&id_field, id, record)?;
+        ensure_in_set(&conditions, &id_field, id, record).await?;
 
-        // PutItem doesn't return the written item by default; re-fetch
-        // so callers see exactly what's now in storage (including any
-        // columns DynamoDB may have stored differently).
-        self.get_table_value(table, id)
-            .await?
-            .ok_or_else(|| error!("Inserted item not found by GetItem", id = id.to_string()))
+        let not_exists = ResolvedFilter {
+            expression: "attribute_not_exists(#pk)".to_string(),
+            names: IndexMap::from([("#pk".to_string(), id_field.clone())]),
+            values: IndexMap::new(),
+        };
+        let outcome =
+            transport::put_item_if(self.aws(), table.table_name(), item, &not_exists).await?;
+
+        // An id that is already stored is never overwritten: inside the set
+        // the stored item is returned, outside it the insert conflicts.
+        // PutItem doesn't return the written item, so re-fetch it.
+        match (outcome, self.get_table_value(table, id).await?) {
+            (_, Some(stored)) => Ok(stored),
+            (PutOutcome::Written, None) => Err(error!(
+                "Inserted item not found by GetItem",
+                id = id.to_string()
+            )),
+            (PutOutcome::ConditionFailed, None) => {
+                Err(error!("Item exists outside this set", id = id.to_string()).mark_conflict())
+            }
+        }
     }
 
     async fn replace_table_value<E>(
@@ -290,8 +348,27 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        // PutItem replaces by default — same code path as insert.
-        self.insert_table_value(table, id, record).await
+        let id_field = table.id_field_name();
+        let conditions: Vec<DynamoCondition> = table.conditions().cloned().collect();
+        let item = item_map(&id_field, id, record)?;
+        ensure_in_set(&conditions, &id_field, id, record).await?;
+
+        // Writes when the id is free or the stored item is inside the set.
+        let filter = resolve_conditions(&conditions).await?;
+        let mut guard = filter.clone();
+        if !filter.is_empty() {
+            guard.expression = format!("attribute_not_exists(#pk) OR ({})", filter.expression);
+            guard.names.insert("#pk".to_string(), id_field.clone());
+        }
+        match transport::put_item_if(self.aws(), table.table_name(), item, &guard).await? {
+            PutOutcome::Written => self
+                .get_table_value(table, id)
+                .await?
+                .ok_or_else(|| error!("Replaced item not found by GetItem", id = id.to_string())),
+            PutOutcome::ConditionFailed => {
+                Err(error!("Item exists outside this set", id = id.to_string()).mark_conflict())
+            }
+        }
     }
 
     async fn patch_table_value<E>(
@@ -303,12 +380,7 @@ impl TableSource for DynamoDB {
     where
         E: Entity<Self::Value>,
     {
-        // UpdateItem with SET expression — needs placeholder mangling
-        // to avoid colliding with reserved words and is non-trivial to
-        // render. Land it next iteration.
-        Err(error!(
-            "DynamoDB UpdateItem (patch) not implemented yet — use replace"
-        ))
+        Err(error!("DynamoDB patch is not available; use replace").mark_unsupported())
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
@@ -317,7 +389,10 @@ impl TableSource for DynamoDB {
     {
         let id_field = table.id_field_name();
         let key = key_for_id(&id_field, id)?;
-        transport::delete_item(self.aws(), table.table_name(), key).await?;
+        let filter = resolve_conditions(table.conditions()).await?;
+        // A delete the condition refuses means the item is outside the set
+        // (or already gone): the retry-safe outcome is success.
+        transport::delete_item_if(self.aws(), table.table_name(), key, &filter).await?;
         Ok(())
     }
 

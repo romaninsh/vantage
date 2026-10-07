@@ -21,6 +21,7 @@ where
     T::Value: InvariantValue,
 {
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id> {
+        self.require_confined_writes("insert")?;
         let erased = self.as_entity_erased();
         let mut record = record.clone();
         run_before(self.before_insert_hooks(), &mut record, erased).await?;

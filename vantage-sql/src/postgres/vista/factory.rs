@@ -102,6 +102,7 @@ impl PostgresVistaFactory {
                 can_traverse_to_record: true,
                 can_traverse_to_set: true,
                 can_traverse_in_columns: true,
+                can_confine_writes: !read_only,
                 ..VistaCapabilities::default()
             },
             metadata,

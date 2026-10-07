@@ -85,13 +85,18 @@ where
     /// column). Set via [`Self::with_text_id`]. Defaults to false to preserve
     /// the integer-id convention used by other models.
     pub(super) id_text: bool,
+    /// When true, the backend makes this table's ids (auto-increment,
+    /// generated record ids). Set via [`Self::with_auto_id`]; Vista metadata
+    /// flags the id column `auto`.
+    pub(super) id_auto: bool,
     /// Column values every row in this set must hold, because they are part of
     /// the set's definition (e.g. a has-many child carries the parent's foreign
     /// key). Registered wherever the table is narrowed by a literal
     /// `column = value` (see [`Self::with_id`], `Reference::resolve_from_row`);
-    /// never from an expression scope. Enforced on write: a column the caller
-    /// left null/absent is filled, a matching value is kept, and a conflicting
-    /// value is rejected.
+    /// never from an expression scope (and every literal `column = value`
+    /// passed to `add_condition`). Enforced on write: insert and replace fill a
+    /// null/absent column and reject a conflicting one; patch never fills, and
+    /// rejects a present value that differs (or is null).
     pub(super) invariants: IndexMap<String, T::Value>,
     /// Lifecycle hooks (see [`Hook`](super::Hook)). Registered via [`Self::with_hook`].
     pub(super) hooks: Hooks<T>,
@@ -121,6 +126,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: Vec::new(),
             id_field: None,
             id_text: false,
+            id_auto: false,
             invariants: IndexMap::new(),
             hooks: Hooks::default(),
         }
@@ -153,6 +159,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             title_fields: self.title_fields,
             id_field: self.id_field,
             id_text: self.id_text,
+            id_auto: self.id_auto,
             invariants: self.invariants,
             hooks: self.hooks,
         }
@@ -328,6 +335,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.source.name()
     }
 
+    /// Refuse a by-id write through a conditioned table whose source can't
+    /// keep it inside the set (see [`TableSource::can_confine_writes`]). An
+    /// unconditioned table writes anywhere.
+    pub(crate) fn require_confined_writes(&self, verb: &'static str) -> vantage_core::Result<()> {
+        if self.conditions.is_empty() || self.data_source.can_confine_writes() {
+            return Ok(());
+        }
+        Err(vantage_core::error!(
+            "this data source can't keep a write inside a narrowed table",
+            verb = verb,
+            table = self.table_name()
+        )
+        .mark_unsupported())
+    }
+
     /// The table's source (a name, or a query used as a derived source).
     pub fn source(&self) -> &T::Source {
         &self.source
@@ -407,8 +429,9 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Column values every row in this set must hold (see the `invariants`
-    /// field): enforced on write — filled when null/absent, kept when matching,
-    /// rejected when conflicting.
+    /// field): insert and replace fill a null/absent column and reject a
+    /// conflicting one; patch never fills, and rejects a present value that
+    /// differs (or is null).
     pub fn invariants(&self) -> &IndexMap<String, T::Value> {
         &self.invariants
     }

@@ -63,6 +63,7 @@ impl MockShell {
                 can_delete: true,
                 can_order: true,
                 can_search: true,
+                can_confine_writes: true,
                 ..VistaCapabilities::default()
             },
             metadata: VistaMetadata::new(),
@@ -223,6 +224,28 @@ impl MockShell {
             .unwrap()
             .iter()
             .all(|(field, expected)| record.get(field) == Some(expected))
+    }
+
+    /// Whether `record` belongs to this shell's narrowed set.
+    fn in_set(&self, record: &Record<CborValue>) -> bool {
+        self.matches_filters(record) && self.matches_search(record)
+    }
+
+    /// `record` as stored under `key`: conformed to the eq filters, keyed in
+    /// the id column, and required to land inside the set.
+    fn fit(&self, record: &Record<CborValue>, key: &str) -> Result<Record<CborValue>> {
+        let invariants: IndexMap<String, CborValue> =
+            self.filters.lock().unwrap().iter().cloned().collect();
+        let mut stored = record.clone();
+        vantage_dataset::invariants::conform(&mut stored, &invariants)?;
+        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
+        stored.insert(id_field.to_string(), CborValue::Text(key.to_string()));
+        if !self.in_set(&stored) {
+            return Err(
+                vantage_core::error!("Record would fall outside the set", id = key).mark_conflict(),
+            );
+        }
+        Ok(stored)
     }
 
     fn matches_search(&self, record: &Record<CborValue>) -> bool {
@@ -467,12 +490,15 @@ impl TableShell for MockShell {
     ) -> Result<Record<CborValue>> {
         let key = self.key(id);
         let mut data = self.data.lock().unwrap();
-        if data.contains_key(&key) {
-            return Err(vantage_core::error!("Record already exists", id = id));
+        if let Some(existing) = data.get(&key) {
+            if self.in_set(existing) {
+                return Ok(existing.clone());
+            }
+            return Err(
+                vantage_core::error!("Record is held outside the set", id = id).mark_conflict(),
+            );
         }
-        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
-        let mut stored = record.clone();
-        stored.insert(id_field.to_string(), CborValue::Text(key.clone()));
+        let stored = self.fit(record, &key)?;
         data.insert(key, stored.clone());
         Ok(stored)
     }
@@ -484,13 +510,19 @@ impl TableShell for MockShell {
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let key = self.key(id);
-        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
         let mut data = self.data.lock().unwrap();
-        if self.replace_requires_existing && !data.contains_key(&key) {
-            return Err(vantage_core::error!("Record not found", id = id).mark_not_found());
+        match data.get(&key) {
+            Some(existing) if !self.in_set(existing) => {
+                return Err(
+                    vantage_core::error!("Record is held outside the set", id = id).mark_conflict(),
+                );
+            }
+            None if self.replace_requires_existing => {
+                return Err(vantage_core::error!("Record not found", id = id).mark_not_found());
+            }
+            _ => {}
         }
-        let mut stored = record.clone();
-        stored.insert(id_field.to_string(), CborValue::Text(key.clone()));
+        let stored = self.fit(record, &key)?;
         data.insert(key, stored.clone());
         Ok(stored)
     }
@@ -503,27 +535,39 @@ impl TableShell for MockShell {
     ) -> Result<Record<CborValue>> {
         let key = self.key(id);
         let mut data = self.data.lock().unwrap();
-        let existing = data
-            .get_mut(&key)
-            .ok_or_else(|| vantage_core::error!("Record not found", id = id))?;
+        let mut patched = data
+            .get(&key)
+            .filter(|existing| self.in_set(existing))
+            .cloned()
+            .ok_or_else(|| vantage_core::error!("Record not found", id = id).mark_not_found())?;
         for (k, v) in partial {
-            existing.insert(k.clone(), v.clone());
+            patched.insert(k.clone(), v.clone());
         }
-        Ok(existing.clone())
+        if !self.in_set(&patched) {
+            return Err(vantage_core::error!(
+                "Patch would move the record out of the set",
+                id = id
+            )
+            .mark_conflict());
+        }
+        data.insert(key, patched.clone());
+        Ok(patched)
     }
 
     async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
         let key = self.key(id);
         let mut data = self.data.lock().unwrap();
-        if data.shift_remove(&key).is_none() {
-            Err(vantage_core::error!("Record not found", id = id))
-        } else {
-            Ok(())
+        if data.get(&key).is_some_and(|existing| self.in_set(existing)) {
+            data.shift_remove(&key);
         }
+        Ok(())
     }
 
     async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
-        self.data.lock().unwrap().clear();
+        self.data
+            .lock()
+            .unwrap()
+            .retain(|_, record| !self.in_set(record));
         Ok(())
     }
 
@@ -770,9 +814,9 @@ mod tests {
             .unwrap();
         assert_eq!(inserted.get("id"), Some(&cbor_text("alice")));
 
-        // duplicate insert_value fails
-        let dup = vista.insert_value("alice", &record(&[])).await;
-        assert!(dup.is_err());
+        // a retried insert_value returns the stored row untouched
+        let dup = vista.insert_value("alice", &record(&[])).await.unwrap();
+        assert_eq!(dup.get("name"), Some(&cbor_text("Alice")));
 
         // replace_value upserts
         vista
@@ -794,9 +838,10 @@ mod tests {
         assert_eq!(patched.get("name"), Some(&cbor_text("Alicia")));
         assert_eq!(patched.get("email"), Some(&cbor_text("alice@example.com")));
 
-        // delete
+        // delete, and a retried delete succeeds
         vista.delete("alice").await.unwrap();
         assert!(vista.get_value("alice").await.unwrap().is_none());
+        vista.delete("alice").await.unwrap();
 
         // delete_all
         vista
@@ -871,5 +916,58 @@ mod tests {
         assert_eq!(explicit, "alice");
 
         assert_eq!(vista.get_count().await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn mock_shell_meets_the_contract() {
+        use vantage_dataset::contract::{self, Fixture};
+        for check in 0..5 {
+            let shell = MockShell::new()
+                .with_metadata(
+                    VistaMetadata::new()
+                        .with_column(Column::new("id", "String").with_flag("id"))
+                        .with_id_column("id"),
+                )
+                .with_record(
+                    "in1",
+                    record(&[("name", cbor_text("a")), ("parent", cbor_text("p1"))]),
+                )
+                .with_record(
+                    "out1",
+                    record(&[("name", cbor_text("b")), ("parent", cbor_text("p2"))]),
+                );
+            let all = Vista::new("t", Box::new(shell.clone()));
+            let mut set = Vista::new("t", shell.clone_shell().unwrap());
+            set.add_condition_eq("parent", cbor_text("p1")).unwrap();
+            let f = Fixture {
+                all: &all,
+                set: &set,
+                id: |s| s.to_string(),
+                text: cbor_text,
+                detects_outside: true,
+            };
+            match check {
+                0 => contract::check_delete(&f).await,
+                1 => contract::check_insert(&f).await,
+                2 => contract::check_patch(&f).await,
+                3 => contract::check_replace(&f).await,
+                _ => contract::check_delete_all(&f).await,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn narrowed_vista_refuses_writes_its_shell_cannot_confine() {
+        let shell = MockShell::new().with_capabilities(VistaCapabilities {
+            can_insert: true,
+            can_update: true,
+            can_delete: true,
+            can_confine_writes: false,
+            ..VistaCapabilities::default()
+        });
+        let mut v = Vista::new("t", Box::new(shell));
+        v.add_condition_eq("a", cbor_text("x")).unwrap();
+        assert!(v.is_narrowed());
+        assert!(v.delete("1").await.unwrap_err().is_unsupported());
     }
 }
