@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-10-07
+
+- Builds against the bumped vantage crates (edition 2024 workspace).
+
 ## 1.1.0 — 2026-10-04
 
 - `SimEngine::spawn(name, args)` starts a sim from outside the engine.

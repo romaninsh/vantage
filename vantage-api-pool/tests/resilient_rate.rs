@@ -6,7 +6,7 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
-use support::{mount_status, requests, Recorder};
+use support::{Recorder, mount_status, requests};
 use vantage_api_pool::ResilientClient;
 use wiremock::MockServer;
 

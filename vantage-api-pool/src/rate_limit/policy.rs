@@ -111,11 +111,11 @@ impl<T: Eq + Hash + Clone> RateLimitPolicyEnforcer<T> {
 
         // Update bucket
         let mut buckets = self.buckets.lock().unwrap();
-        if let Some(bucket) = buckets.get_mut(&key) {
-            if bucket.remaining > 0 {
-                bucket.remaining -= 1;
-                headers.remaining = bucket.remaining;
-            }
+        if let Some(bucket) = buckets.get_mut(&key)
+            && bucket.remaining > 0
+        {
+            bucket.remaining -= 1;
+            headers.remaining = bucket.remaining;
         }
 
         // Cleanup old buckets every ~1000 calls

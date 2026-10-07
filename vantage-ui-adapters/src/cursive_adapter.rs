@@ -1,9 +1,9 @@
 use crate::{DataSet, TableStore};
 use cursive::{
+    Cursive, CursiveExt, View,
     event::Key,
     traits::{Nameable, Resizable},
     views::{Dialog, LinearLayout, TextView},
-    Cursive, CursiveExt, View,
 };
 use cursive_table_view::{TableView, TableViewItem};
 use std::cmp::Ordering;

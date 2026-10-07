@@ -55,7 +55,10 @@ async fn list_vista(vista: Vista) -> PyResult<Vec<String>> {
             obj.insert("id".to_string(), serde_json::Value::String(id));
             let mut data = serde_json::Map::new();
             for (k, v) in record {
-                data.insert(k, serde_json::to_value(&v).unwrap_or(serde_json::Value::Null));
+                data.insert(
+                    k,
+                    serde_json::to_value(&v).unwrap_or(serde_json::Value::Null),
+                );
             }
             obj.insert("data".to_string(), serde_json::Value::Object(data));
             serde_json::Value::Object(obj).to_string()

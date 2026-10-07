@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use support::{
-    cancel, essential_fast, fast_retry, mount_delayed, mount_script, mount_status, requests,
-    scripted_refresher, spawn_essential, wait_for_requests, wait_until, within, Recorder,
+    Recorder, cancel, essential_fast, fast_retry, mount_delayed, mount_script, mount_status,
+    requests, scripted_refresher, spawn_essential, wait_for_requests, wait_until, within,
 };
 use vantage_api_pool::resilient::{CallPolicy, ErrorKind};
 use vantage_api_pool::{ResilientClient, RetryPolicy};

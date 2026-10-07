@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tokio::task::JoinHandle;
+use vantage_api_pool::ResilientClient;
 use vantage_api_pool::resilient::{
     AuthRefresher, BreakerMode, CallPolicy, ErrorKind, RetryMode, RetryPolicy, TransportEvent,
     TransportObserver,
 };
-use vantage_api_pool::ResilientClient;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 

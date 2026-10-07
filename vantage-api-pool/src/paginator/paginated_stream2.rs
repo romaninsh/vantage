@@ -71,13 +71,13 @@ impl PaginatedStream {
 
     fn extract_page_data(&mut self, body: &Value) -> (Vec<Value>, Option<usize>) {
         // Extract pagination info if this is the first page
-        if self.current_page == 1 {
-            if let Some(pagination) = body.get("pagination") {
-                self.total_pages = pagination
-                    .get("total_pages")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as usize);
-            }
+        if self.current_page == 1
+            && let Some(pagination) = body.get("pagination")
+        {
+            self.total_pages = pagination
+                .get("total_pages")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
         }
 
         // Extract data items
@@ -125,7 +125,7 @@ impl Stream for PaginatedStream {
                     self.state = StreamState::FetchingPage(handle);
                 }
 
-                StreamState::FetchingPage(ref mut handle) => {
+                StreamState::FetchingPage(handle) => {
                     match Pin::new(handle).poll(cx) {
                         Poll::Ready(Ok(Ok(body))) => {
                             let (items, next_page) = self.extract_page_data(&body);

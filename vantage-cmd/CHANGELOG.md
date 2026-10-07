@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.9 — 2026-10-07
+
+- Builds against the bumped vantage crates (edition 2024 workspace).
+
 ## 0.6.8 — 2026-10-04
 
 - Parameters resolve through `vantage_expressions::resolve_param`.

@@ -1,5 +1,5 @@
-use bakery_model3::{connect_surrealdb, surrealdb, Client};
-use dataset_ui_adapters::{cursive_adapter::CursiveTableApp, TableStore, VantageTableAdapter};
+use bakery_model3::{Client, connect_surrealdb, surrealdb};
+use dataset_ui_adapters::{TableStore, VantageTableAdapter, cursive_adapter::CursiveTableApp};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

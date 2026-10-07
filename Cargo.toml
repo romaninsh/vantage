@@ -46,4 +46,4 @@ exclude = [
     "vantage-faker-stress",
     "vantage-spacetimedb",
 ]
-resolver = "2"
+resolver = "3"

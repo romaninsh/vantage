@@ -1,11 +1,11 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{Arc, atomic::AtomicUsize},
 };
 
 use reqwest::{Request, Response};
-use tokio::sync::{mpsc, oneshot, Mutex};
-use tracing::{warn, Instrument as _};
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tracing::{Instrument as _, warn};
 
 use crate::EventualRequest;
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.4 — 2026-10-05
+
+- Rust edition 2024.
+
 ## 0.6.3 — 2026-10-03
 
 - Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0, `vantage-expressions` 1.0.0,

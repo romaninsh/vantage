@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 — 2026-10-05
+
+- Rust edition 2024.
+
 ## 1.0.0 — 2026-10-03
 
 - Stable release. The API hasn't changed since 2026-06-17 (4 months); no code changes.

@@ -2,13 +2,10 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
-use std::{
-    collections::HashSet,
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 use tokio::{select, signal, sync::RwLock};
 use uuid::Uuid;
-use warp::{http::StatusCode, reply::Response, Filter, Reply};
+use warp::{Filter, Reply, http::StatusCode, reply::Response};
 
 fn load_cities(path: &str) -> IndexMap<String, Vec<(String, i64)>> {
     let mut reader = csv::ReaderBuilder::new().from_path(path).unwrap();
@@ -17,7 +14,11 @@ fn load_cities(path: &str) -> IndexMap<String, Vec<(String, i64)>> {
     for result in reader.records() {
         let record = result.unwrap();
         let city_name = record.get(1).unwrap_or_default().to_string();
-        let country_name = record.get(7).unwrap_or_default().trim_matches('"').to_string();
+        let country_name = record
+            .get(7)
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
         let population: i64 = record.get(14).and_then(|s| s.parse().ok()).unwrap_or(0);
 
         countries
@@ -128,9 +129,7 @@ async fn cities_handler(
 struct Unauthorized;
 impl warp::reject::Reject for Unauthorized {}
 
-fn with_auth(
-    state: Arc<AppState>,
-) -> impl Filter<Extract = (), Error = warp::Rejection> + Clone {
+fn with_auth(state: Arc<AppState>) -> impl Filter<Extract = (), Error = warp::Rejection> + Clone {
     warp::any()
         .map(move || state.clone())
         .and(warp::header("Authorization"))

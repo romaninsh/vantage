@@ -2,7 +2,7 @@ use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{Arc, atomic::AtomicUsize},
     task::{Context, Poll},
 };
 
@@ -76,69 +76,67 @@ impl Stream for PageStream {
                     self.join_handles.pop_front();
 
                     // Update pagination state from response
-                    if let Ok(ref json) = result {
-                        if let Some(pagination) = json.get("pagination") {
-                            // if we learn about total_pages
-                            if let Some(total) =
-                                pagination.get("total_pages").and_then(|v| v.as_u64())
-                            {
-                                if self.total_pages.is_none() {
-                                    let total_pages = total as usize;
+                    if let Ok(ref json) = result
+                        && let Some(pagination) = json.get("pagination")
+                    {
+                        // if we learn about total_pages
+                        if let Some(total) = pagination.get("total_pages").and_then(|v| v.as_u64())
+                        {
+                            if self.total_pages.is_none() {
+                                let total_pages = total as usize;
+                                let fetched_already =
+                                    self.page.load(std::sync::atomic::Ordering::Relaxed);
+                                let mut will_prefetch = total_pages
+                                    .saturating_sub(fetched_already)
+                                    .saturating_sub(self.join_handles.len());
+                                if let Some(page_fetch_limit) = self.page_fetch_limit {
+                                    will_prefetch = will_prefetch.min(
+                                        page_fetch_limit.saturating_sub(self.join_handles.len()),
+                                    );
+                                }
+
+                                self.total_pages = Some(total as usize);
+
+                                // Only prefetch if there are pages to fetch
+                                if will_prefetch > 0 {
+                                    self.prefetch(will_prefetch);
+                                }
+                            } else {
+                                // We already know total_pages, check if we should continue prefetching
+                                if let Some(page_fetch_limit) = self.page_fetch_limit {
+                                    let total_pages = self.total_pages.unwrap();
                                     let fetched_already =
                                         self.page.load(std::sync::atomic::Ordering::Relaxed);
-                                    let mut will_prefetch = total_pages
-                                        .saturating_sub(fetched_already)
-                                        .saturating_sub(self.join_handles.len());
-                                    if let Some(page_fetch_limit) = self.page_fetch_limit {
-                                        will_prefetch = will_prefetch.min(
-                                            page_fetch_limit
+                                    let will_prefetch = page_fetch_limit
+                                        .saturating_sub(self.join_handles.len())
+                                        .min(
+                                            total_pages
+                                                .saturating_sub(fetched_already)
                                                 .saturating_sub(self.join_handles.len()),
                                         );
-                                    }
 
-                                    self.total_pages = Some(total as usize);
-
-                                    // Only prefetch if there are pages to fetch
                                     if will_prefetch > 0 {
-                                        self.prefetch(will_prefetch);
-                                    }
-                                } else {
-                                    // We already know total_pages, check if we should continue prefetching
-                                    if let Some(page_fetch_limit) = self.page_fetch_limit {
-                                        let total_pages = self.total_pages.unwrap();
-                                        let fetched_already =
-                                            self.page.load(std::sync::atomic::Ordering::Relaxed);
-                                        let will_prefetch = page_fetch_limit
-                                            .saturating_sub(self.join_handles.len())
-                                            .min(
-                                                total_pages
-                                                    .saturating_sub(fetched_already)
-                                                    .saturating_sub(self.join_handles.len()),
-                                            );
-
-                                        if will_prefetch > 0 {
-                                            if let Some(has_next) =
-                                                pagination.get("has_next").and_then(|v| v.as_bool())
-                                            {
-                                                if has_next {
-                                                    self.prefetch(will_prefetch);
-                                                }
-                                            } else {
+                                        if let Some(has_next) =
+                                            pagination.get("has_next").and_then(|v| v.as_bool())
+                                        {
+                                            if has_next {
                                                 self.prefetch(will_prefetch);
                                             }
-                                        }
-                                    } else {
-                                        // No page limit set, prefetch remaining pages up to total
-                                        let total_pages = self.total_pages.unwrap();
-                                        let fetched_already =
-                                            self.page.load(std::sync::atomic::Ordering::Relaxed);
-                                        let will_prefetch = total_pages
-                                            .saturating_sub(fetched_already)
-                                            .saturating_sub(self.join_handles.len());
-
-                                        if will_prefetch > 0 {
+                                        } else {
                                             self.prefetch(will_prefetch);
                                         }
+                                    }
+                                } else {
+                                    // No page limit set, prefetch remaining pages up to total
+                                    let total_pages = self.total_pages.unwrap();
+                                    let fetched_already =
+                                        self.page.load(std::sync::atomic::Ordering::Relaxed);
+                                    let will_prefetch = total_pages
+                                        .saturating_sub(fetched_already)
+                                        .saturating_sub(self.join_handles.len());
+
+                                    if will_prefetch > 0 {
+                                        self.prefetch(will_prefetch);
                                     }
                                 }
                             }

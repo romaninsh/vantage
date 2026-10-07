@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 — 2026-10-05
+
+- The `invalidation` example uses `AtomicU64::try_update` (Rust 1.99 deprecates `fetch_update`).
+
 ## 1.0.0 — 2026-10-03
 
 - Stable release. The API hasn't changed since 2026-09-27 (1 week); no code changes.
