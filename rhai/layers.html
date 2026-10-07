@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-027d4598.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73e720bf.js"></script>
+        <script src="../toc-a12c8285.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,11 +183,7 @@ stay separate.</p>
 <ul>
 <li><a href="#the-rule">The rule</a></li>
 <li><a href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></li>
-<li><a href="#servo-a-form-draft">Servo: a form draft</a>
-<ul>
-<li><a href="#which-one-to-use">Which one to use</a></li>
-</ul>
-</li>
+<li><a href="#servo-a-form-draft">Servo: a form draft</a></li>
 <li><a href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></li>
 <li><a href="#faker-sims">Faker sims</a></li>
 </ul>
@@ -201,13 +197,13 @@ Vista or registers its own vocabulary next to <code>DataVocab</code> on the same
 <code>limit</code>, <code>ref</code>, <code>save</code>, <code>is_dirty</code>. Where it means something different, it uses its own word, even
 if a data verb looks close.</p>
 <h2 id="dio-no-vocabulary-of-its-own"><a class="header" href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></h2>
-<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/dio/struct.Dio.html#method.vista" title="method vantage_diorama::dio::Dio::vista"><code>Dio::vista()</code></a> returns a Vista whose
+<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage-diorama/0.13.8/vantage_diorama/dio/struct.Dio.html#method.vista" title="method vantage_diorama::dio::Dio::vista"><code>Dio::vista()</code></a> returns a Vista whose
 reads come from the Dio’s cache and whose writes are queued as flashes and written through to the
 master. A host that resolves <code>table(name)</code> to Dio Vistas gives scripts cached reads and optimistic
 writes, and the scripts are the same ones that would run against the bare backend. Vantage UI’s
 action bodies work this way.</p>
 <h2 id="servo-a-form-draft"><a class="header" href="#servo-a-form-draft">Servo: a form draft</a></h2>
-<p>A <a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
+<p>A <a href="https://docs.rs/vantage-diorama/0.13.8/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
 staged edits, a status and per-field rejections from the Dio’s flash route. Forms and wizards in
 Vantage UI hand one to their scripts as <code>form</code>. <code>ServoVocab</code> (<code>vantage_diorama::rhai</code>) registers
 its words:</p>
@@ -228,7 +224,6 @@ servo.save()
 <tr><td>read a field</td><td><code>r.col</code>, <code>r["col"]</code></td><td><code>servo.get("col")</code></td></tr>
 <tr><td>stage a field</td><td><code>r.col = v</code>, <code>r.set(map)</code></td><td><code>servo.set("col", v)</code></td></tr>
 <tr><td>id</td><td><code>r.id</code></td><td><code>servo.id()</code></td></tr>
-<tr><td>id of a new row</td><td>a UUIDv7 minted on the first save</td><td><a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/servo/enum.IdStrategy.html" title="enum vantage_diorama::servo::IdStrategy"><code>IdStrategy</code></a>: <code>Uuid</code> (the default) mints one when the Servo opens</td></tr>
 <tr><td>the whole draft</td><td>(field reads)</td><td><code>servo.record()</code></td></tr>
 <tr><td>baseline</td><td><code>r.baseline()</code></td><td><code>servo.baseline()</code></td></tr>
 <tr><td>dirty</td><td><code>r.is_dirty()</code>, <code>r.dirty(col)</code></td><td><code>servo.is_dirty()</code>, <code>servo.dirty(col)</code></td></tr>
@@ -246,23 +241,9 @@ and a route can reject single fields. Folding the two into one type would make t
 on the Dio, or hide the Servo’s lifecycle behind data-vocabulary words.</p>
 <p><code>servo.save()</code> needs a tokio runtime context and blocks on the flash, so Servo scripts run under
 <code>spawn_blocking</code>, like any data script with a network backend.</p>
-<h3 id="which-one-to-use"><a class="header" href="#which-one-to-use">Which one to use</a></h3>
-<p>Use a record for a script’s own one-off edit over any Vista; it saves when the script says so and
-is gone after. Use a <a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> when a person edits: it lives in the Dio,
-outlasts the script, takes per-field rejections, and its save goes through the flash route.</p>
-<p>Unless the id is left to the backend (an <code>auto</code> id column, <code>IdStrategy::Auto</code>), both reuse their id
-when a save is retried, so neither can create a row twice (see
-<a href="../record-lifecycle.html#safe-writes">Safe writes</a>).</p>
 <h2 id="scenery-the-shape-of-a-view"><a class="header" href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></h2>
-<p>A Scenery is a live, reactive view over a Dio: a <a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a>
-keeps an ordered window of rows current as the Dio’s cache changes, a
-<a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a> keeps one aggregate current, and a
-<a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a> one row (see
-<a href="../intro/step7-scenery.html">Scenery — Reactive Views</a>). An application binds a widget to one.</p>
-<p><code>vantage-diorama</code> has no Scenery script words. Vantage UI adds some: a component’s <code>table:</code> binding
-can be a plain table key or a short script, <code>scenery(name)</code> followed by narrowing words, that
-describes which Scenery to open. The script builds a description, and the page opens the Scenery
-when it mounts:</p>
+<p>A Vantage UI component’s <code>table:</code> binding can be a plain key or a short script that shapes a live
+view (a Scenery). The script builds a description that the page resolves when it mounts:</p>
 <!-- tested: vantage-ui scenery_script::tests::chain_builds_a_spec -->
 <pre><code class="language-rhai">scenery("top").sort("visitors", "desc").limit(10)
 </code></pre>
@@ -285,15 +266,49 @@ parent’s id and nothing else, because the binding follows one parent row.</li>
 <ul>
 <li><code>tail(n)</code>: follow the last <code>n</code> rows as they arrive, for append-only feeds.</li>
 <li><code>arg(name, value)</code> and <code>args(#{ … })</code>: parameters passed to the table’s own <code>rhai:</code> query
-script as its <code>args</code> map, which reshape the query itself rather than filtering its result (see
-<a href="./query-tables.html#arguments">Arguments</a>).</li>
+script as its <code>args</code> map, which reshape the query itself rather than filtering its result.</li>
 </ul>
 <p>Scenery has no reads or writes: it describes a view, and the page’s Dio opens it. The vocabulary
 lives in Vantage UI (<code>SceneryVocab</code> in <code>crates/app/src/infra/scenery_script.rs</code>), runs under
 <code>Limits::Ui</code>, and records every page value the script reads as a dependency of the binding.</p>
 <h2 id="faker-sims"><a class="header" href="#faker-sims">Faker sims</a></h2>
-<p>Sims use the data vocabulary over a memory store plus time and random words. See
-<a href="./faker.html">Faker Sims</a>.</p>
+<p>A faker sim is a Rhai script that runs from top to bottom on its own thread, with its own sim
+clock. Its local variables are its state, and <code>sleep</code> pauses it. The data vocabulary is there in
+full, over the engine’s memory store, and <code>table()</code> with no name is the sim’s own table:</p>
+<!-- tested: vantage-faker sim::tests::guide::order_sim_from_the_guide -->
+<pre><code class="language-rhai">if table().where("status", "Placed").count() &gt;= 40 {
+    done();
+}
+
+let id = table().insert(#{ customer: fake("name"), total: rand_float(5.0, 80.0), status: "Placed" });
+sleep(minutes(rand_int(5, 20)));
+
+table().patch(id, #{ status: "Shipped" });
+table("order_event").insert(#{ order: id, note: "shipped" });
+sleep(hours(2));
+
+table().delete(id);
+</code></pre>
+<p>On top of the data vocabulary, sims get:</p>
+<ul>
+<li><strong>data</strong>: <code>fake_row()</code> on a handle (<code>table().fake_row()</code>, <code>table("t").fake_row()</code>) returns a map
+with a generated value for each column the table declares through <code>SimEngineBuilder::columns</code>,
+without the id column. Sequential generators (<code>walk</code>, evenly spread <code>date</code>) advance one step per
+call, shared by every sim of the def.</li>
+<li><strong>time</strong>: <code>seconds(n)</code>, <code>minutes(n)</code>, <code>hours(n)</code>, <code>days(n)</code>, <code>sleep(d)</code>, <code>wait_until(t)</code>,
+<code>now()</code>, <code>now_secs()</code>, <code>wall_now()</code>, <code>wall_in(d)</code>, <code>elapsed()</code>, <code>clock()</code>, <code>done()</code>.</li>
+<li><strong>random</strong>: <code>pick</code>, <code>pick_weighted</code>, <code>rand_int</code>, <code>rand_float</code>, <code>chance(p)</code>, <code>pattern("BA####")</code>,
+<code>sentence(min, max)</code>, <code>fake(kind)</code>, <code>date_between(from, to)</code>.</li>
+<li><strong>spawn</strong>: <code>spawn_sim(name, args?)</code>, <code>sim_id()</code>, <code>sim_name()</code>, and the spawner’s <code>args</code>.</li>
+<li><strong>geo</strong>: <code>great_circle</code>, <code>bearing</code>, <code>interpolate</code>.</li>
+</ul>
+<p>A sim’s tables are memory Vistas, so reads and writes finish on the first poll and sims run
+without tokio (see <a href="./hosts.html#async-reads-from-a-synchronous-script">the bridge</a>). Writes
+broadcast the store’s change events to any watching Dio. During a warm start, each written table
+stays quiet and sends one <code>Reset</code> at the end. A missing table is a script error: the store’s
+tables are created by the dataset, not by the sim.</p>
+<p>The <code>vantage-faker</code> README covers defs, spawners, clocks, the operations budget and the built-in
+sims.</p>
 
                     </main>
 
@@ -303,7 +318,7 @@ lives in Vantage UI (<code>SceneryVocab</code> in <code>crates/app/src/infra/sce
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../rhai/faker.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rhai/dialects.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -317,7 +332,7 @@ lives in Vantage UI (<code>SceneryVocab</code> in <code>crates/app/src/infra/sce
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../rhai/faker.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rhai/dialects.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

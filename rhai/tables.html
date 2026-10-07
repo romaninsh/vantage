@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-027d4598.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73e720bf.js"></script>
+        <script src="../toc-a12c8285.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -221,8 +221,7 @@ replaces an earlier one, as <code>Vista::add_order</code> does. Several <code>li
 <p><code>limit(n)</code> limits the set itself, not just one read: <code>list()</code>, <code>ids()</code> and <code>count()</code> all see at
 most <code>n</code> rows, a <code>ref</code> after it follows only those <code>n</code> rows, and <code>import_from</code> copies only those
 <code>n</code> (see <a href="#following-relations">Following relations</a>). A <code>limit</code> before a <code>ref</code> doesn’t carry over
-to the target; limit the target again if you need to. A handle with <code>limit</code> reads; it can’t be
-written through (<a href="./writes.html#writes-stay-in-the-set">Writes</a>).</p>
+to the target; limit the target again if you need to.</p>
 <p>The column in <code>where</code> and <code>sort</code> must be one the backend stores. A
 <a href="./computed.html">computed column</a> is refused with an error naming it.</p>
 <p>Nothing is checked while you narrow. A step the resolved Vista can’t apply (an unknown relation, a
@@ -290,7 +289,7 @@ key for has-many (the target rows point at ours), on the target’s id for has-o
 at the target).</li>
 <li>When it has none, or none of the rows has a has-one key, the target is an empty set. Nothing is
 queried: reads return nothing, <code>count()</code> is 0, and a preview reports <code>"query": null</code>. The target
-keeps its columns, and an insert into it throws: no row can belong to an empty set.</li>
+keeps its columns and still takes writes.</li>
 <li>A <code>limit(n)</code> before the <code>ref</code> caps the rows it follows. Without one, a <code>ref</code> over more than
 1,000 rows is an error. Narrow first.</li>
 </ul>
@@ -332,8 +331,8 @@ the rest. A script that may run against different backends can check before it w
 narrowing, but a query-sourced table reports no write capabilities at all.</p>
 <h2 id="handles-in-rust"><a class="header" href="#handles-in-rust">Handles in Rust</a></h2>
 <p>A host that gets a handle back from a script reads it through
-<a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/handle/struct.Handle.html" title="struct vantage_vista::rhai::handle::Handle"><code>Handle</code></a>: <code>table_name()</code> is the starting table (<code>None</code> for a handle over a
-Vista), <code>steps()</code> is the list of <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/handle/enum.Step.html" title="enum vantage_vista::rhai::handle::Step"><code>Step</code></a>s, and <code>resolve(resolver)</code> builds the
+<a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/handle/struct.Handle.html" title="struct vantage_vista::rhai::handle::Handle"><code>Handle</code></a>: <code>table_name()</code> is the starting table (<code>None</code> for a handle over a
+Vista), <code>steps()</code> is the list of <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/handle/enum.Step.html" title="enum vantage_vista::rhai::handle::Step"><code>Step</code></a>s, and <code>resolve(resolver)</code> builds the
 Vista. Query preview works this way: the script returns a handle, and the host renders the resolved
 Vista’s query.</p>
 <p>A handle can also start from a Vista instead of a name (<code>Handle::over(vista)</code>), which is how <code>self</code>

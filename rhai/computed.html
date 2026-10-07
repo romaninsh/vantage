@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-027d4598.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73e720bf.js"></script>
+        <script src="../toc-a12c8285.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -188,7 +188,6 @@ declare one, what it refuses, and how relations treat it.</p>
 <li><a href="#declaring-one">Declaring one</a></li>
 <li><a href="#what-they-refuse">What they refuse</a></li>
 <li><a href="#relations-through-a-computed-column">Relations through a computed column</a></li>
-<li><a href="#other-ways-to-compute-a-column">Other ways to compute a column</a></li>
 <li><a href="#lazy-and-sugar"><code>lazy:</code> and <code>sugar:</code></a></li>
 </ul>
 <hr>
@@ -259,11 +258,11 @@ table, use <a href="../augmentation.html">augmentation</a>.</li>
 without knowing they exist: data scripts, Dio caches, grids.</p>
 <h2 id="declaring-one"><a class="header" href="#declaring-one">Declaring one</a></h2>
 <p>In YAML, <code>lazy:</code> goes on the column, next to <code>type:</code> and <code>flags:</code>. Every driver’s factory lowers it
-through <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/spec/struct.ColumnSpec.html#method.lazy_column" title="method vantage_vista::spec::ColumnSpec::lazy_column"><code>ColumnSpec::lazy_column</code></a>. The script can be
+through <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/spec/struct.ColumnSpec.html#method.lazy_column" title="method vantage_vista::spec::ColumnSpec::lazy_column"><code>ColumnSpec::lazy_column</code></a>. The script can be
 inline, as above, or in a file. A loader that supports <code>!include</code>, as Vantage UI’s does, replaces
 <code>lazy: !include ../script/client_key.rhai</code> with the file’s text before the spec is parsed, so
 <code>vantage-vista</code> only ever sees the script.</p>
-<p>In Rust, <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/column/struct.Column.html#method.with_expression" title="method vantage_vista::column::Column::with_expression"><code>Column::with_expression</code></a> turns a column into a
+<p>In Rust, <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/column/struct.Column.html#method.with_expression" title="method vantage_vista::column::Column::with_expression"><code>Column::with_expression</code></a> turns a column into a
 computed one:</p>
 <!-- tested: rhai_guide::computed::declare_in_rust -->
 <pre><code class="language-rust ignore">let gross = Column::new("gross", "int")
@@ -282,7 +281,7 @@ columns through <code>Table::add_spec_column</code>, which registers a <code>laz
 the SQL, SurrealDB, MongoDB, CSV, REST and GraphQL factories fold <code>lazy:</code> into a Vista.</p>
 <p>The expression isn’t serialized. A <code>Column</code> that goes through serde comes back as a stored column
 that keeps only its <code>calculated</code> flag.</p>
-<p>If you only need the closure, <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/lazy/fn.lazy_value_closure.html" title="fn vantage_vista::rhai::lazy::lazy_value_closure"><code>lazy_value_closure</code></a>
+<p>If you only need the closure, <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/lazy/fn.lazy_value_closure.html" title="fn vantage_vista::rhai::lazy::lazy_value_closure"><code>lazy_value_closure</code></a>
 compiles a script into an <code>Fn(&amp;Record) -&gt; Result&lt;CborValue&gt;</code>:</p>
 <!-- tested: rhai_guide::computed::closure -->
 <pre><code class="language-rhai">row.contents.split("\n").len() - 1
@@ -317,8 +316,8 @@ assert!(sum.is_err());
 let by_client = orders.aggregate(&amp;AggregateSpec::new("count", "n").group_by("client"));
 assert!(by_client.is_err());</code></pre>
 <p>To filter on a derived value, filter on the stored columns it comes from (<code>net</code> rather than
-<code>gross</code>), or compute it in the backend’s query: a <a href="./query-tables.html">query-sourced table</a> or
-SurrealDB’s <code>expr:</code> column (see <a href="#other-ways-to-compute-a-column">Other ways to compute a column</a>).</p>
+<code>gross</code>), or compute it in the backend’s query: a query-sourced table or SurrealDB’s <code>expr:</code>
+column (see <a href="./dialects.html">Expression dialects</a>).</p>
 <h2 id="relations-through-a-computed-column"><a class="header" href="#relations-through-a-computed-column">Relations through a computed column</a></h2>
 <p>A has-one relation whose foreign key is a computed column of the parent works. The parent row
 already carries the computed value, and the target is narrowed by its own id, which it stores.
@@ -341,45 +340,9 @@ throws:</p>
 <p>with <code>Has-many relation can't join on a computed column of its target (relation: "orders", column: "client")</code>. <code>Vista::get_ref</code> makes the same check. A nested insert that would have to write a
 computed foreign key (into the parent for has-one, into each child for has-many) is refused before
 anything is written.</p>
-<h2 id="other-ways-to-compute-a-column"><a class="header" href="#other-ways-to-compute-a-column">Other ways to compute a column</a></h2>
-<p><code>lazy:</code> is one of several ways to derive a column in vantage. They differ in where the value is
-made, and that decides what the backend can do with it:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Where</th><th>How</th><th>Runs</th><th>Can filter/sort</th><th>Link</th></tr>
-</thead>
-<tbody>
-<tr><td>SQL / SurrealDB expression</td><td><code>Table::with_expression(name, …)</code>, SurrealDB YAML <code>expr:</code></td><td>in the query</td><td>yes</td><td><a href="https://docs.rs/vantage-table/1.2.0/vantage_table/table/base/struct.Table.html#method.with_expression" title="method vantage_table::table::base::Table::with_expression"><code>Table::with_expression</code></a></td></tr>
-<tr><td>Rust after the read</td><td><code>Table::with_lazy_expression(name, …)</code></td><td>after each read, in Rust</td><td>no</td><td><a href="https://docs.rs/vantage-table/1.2.0/vantage_table/table/base/struct.Table.html#method.with_lazy_expression" title="method vantage_table::table::base::Table::with_lazy_expression"><code>Table::with_lazy_expression</code></a></td></tr>
-<tr><td>Rust on write</td><td>a <code>BeforeSave</code> hook that stores the value</td><td>on insert and update</td><td>yes (it’s stored)</td><td><a href="https://docs.rs/vantage-table/1.2.0/vantage_table/table/hooks/enum.Hook.html" title="enum vantage_table::table::hooks::Hook"><code>Hook</code></a></td></tr>
-<tr><td>Rhai <code>lazy:</code></td><td>this chapter</td><td>after each read, in the Vista</td><td>no</td><td>—</td></tr>
-<tr><td>Dio <code>sugar:</code></td><td><a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a></td><td>on the rows one Scenery reads</td><td>no</td><td>—</td></tr>
-</tbody>
-</table>
-</div>
-<ul>
-<li><strong><code>with_expression</code></strong> takes a closure that returns an expression in the backend’s own language,
-rendered into the <code>SELECT</code> (the intro’s
-<a href="../intro/step2-tables.html#computed-fields-with-expressions">computed fields</a> use a correlated
-subquery). In Rust, <code>get_column_expr(name)</code> returns that expression, so a condition or an order
-can use it. SurrealDB’s <code>expr:</code> column is the YAML form (see
-<a href="./dialects.html#surrealdb-expressions">Expression dialects</a>).</li>
-<li><strong><code>with_lazy_expression</code></strong> runs an async Rust closure on each record a <code>list</code> or <code>get</code> returns.
-It can do I/O, which a <code>lazy:</code> script can’t: the intro’s
-<a href="../intro/step6-augmentation.html">Augmentation step</a> uses it to download a file and derive
-columns from it. It never takes part in a query. The Vista reports its column as <code>calculated</code>.</li>
-<li><strong>A <code>BeforeSave</code> hook</strong> in the <code>Populate</code> phase sets a field before every insert and update (see
-<a href="../record-lifecycle.html#lifecycle-hooks">Lifecycle hooks</a>). The value is then stored, so the
-backend can filter, sort and aggregate it, but it changes only when the row is written through
-that table.</li>
-</ul>
-<p>Pick the backend when the column must filter or sort; Rust when the logic needs the type system;
-<code>lazy:</code> when it must travel with YAML.</p>
 <h2 id="lazy-and-sugar"><a class="header" href="#lazy-and-sugar"><code>lazy:</code> and <code>sugar:</code></a></h2>
-<p>An application can also add derived columns per view with diorama’s <code>Sugar</code>. Vantage UI, for
-example, exposes it as <code>sugar:</code> on a grid, binder or other component. The two look similar and are
-used for different things.</p>
+<p>Vantage UI has a second way to add derived columns: <code>sugar:</code> on a grid, binder or other component.
+The two look similar and are used for different things.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -397,9 +360,13 @@ used for different things.</p>
 <p>Use <code>lazy:</code> for a value that is part of the data, such as a key, an amount or a status that
 relations and scripts need. Use <code>sugar:</code> for presentation on one page, or when the script needs
 setup (a lookup map, helpers) before the first row. Sugar is built on
-diorama’s <a href="https://docs.rs/vantage-diorama/0.14.0/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a>, which merges the outputs into the rows one
+diorama’s <a href="https://docs.rs/vantage-diorama/0.13.8/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a>, which merges the outputs into the rows one
 Scenery reads and strips them from anything written back. Its YAML is documented in Vantage UI’s
 skills.</p>
+<p>The third look-alike is the typed table’s <code>with_lazy_expression</code>, an async Rust closure per row
+(the intro’s <a href="../intro/step6-augmentation.html">Augmentation step</a> uses it to download a file and
+derive columns from it). It runs inside the typed table, before the Vista sees the row, and it can
+do I/O, which a <code>lazy:</code> script can’t. The Vista reports its column as <code>calculated</code>.</p>
 
                     </main>
 

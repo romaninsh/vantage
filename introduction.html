@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "searchindex-027d4598.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-73e720bf.js"></script>
+        <script src="toc-a12c8285.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -203,9 +203,8 @@ supports, so a missing capability is an explicit error, never a silent guess.</l
 precise, dates stay dates, nothing is funnelled through JSON.</li>
 <li><strong>Business logic lives on the entity.</strong> Validation, audit, soft-delete, and domain methods attach
 to your model once and apply everywhere the entity is used.</li>
-<li><strong>Fail loudly, retry safely.</strong> No panics, no silent zeros or match-alls. Every write is
-retry-safe and stays inside the set it goes through
-(<a href="./record-lifecycle.html#safe-writes">Safe writes</a>).</li>
+<li><strong>Fail loudly, retry safely.</strong> No panics, no silent zeros or match-alls; operations are
+idempotent wherever possible, so retrying is always an option.</li>
 <li><strong>Be aware of observers.</strong> Data knows who is watching: changes stream to subscribers, and edits
 reconcile instead of clobbering. (This is live mode — the second half of the guide builds it up.)</li>
 </ul>

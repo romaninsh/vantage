@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-027d4598.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73e720bf.js"></script>
+        <script src="../toc-a12c8285.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -192,13 +192,11 @@ scope. This chapter goes through each surface with a tested example.</p>
 <li><a href="#augmentation-sources">Augmentation sources</a></li>
 <li><a href="#computed-columns">Computed columns</a></li>
 <li><a href="#read-only-hosts">Read-only hosts</a></li>
-<li><a href="#read-write-hosts-in-an-application">Read-write hosts in an application</a></li>
+<li><a href="#read-write-hosts-in-vantage-ui">Read-write hosts in Vantage UI</a></li>
 <li><a href="#faker-sims">Faker sims</a></li>
 </ul>
 <hr>
 <h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Rows marked “(app)” are hosts an application builds for itself; the values shown are Vantage UI’s.
-The rest come with vantage.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -211,17 +209,17 @@ The rest come with vantage.</p>
 <tr><td>reference build script</td><td>the backend’s spec resolver</td><td>Describe</td><td>Background</td><td><code>row</code></td></tr>
 <tr><td>augmentation source</td><td>the catalog</td><td>Describe</td><td>Background</td><td><code>self</code>, <code>row</code></td></tr>
 <tr><td><code>lazy:</code> computed column</td><td>none</td><td>none: no data vocabulary</td><td>Background</td><td><code>row</code></td></tr>
-<tr><td>form <code>options:</code> (app)</td><td>the app’s tables</td><td>Read, capped</td><td></td><td>form values</td></tr>
-<tr><td>action predicates, <code>when:</code> (app)</td><td>none</td><td>Read</td><td>Ui</td><td><code>row</code></td></tr>
-<tr><td>action bodies (app)</td><td>the app’s tables, writes through Dio</td><td>ReadWrite</td><td>Ui</td><td><code>row</code>, <code>actions</code></td></tr>
-<tr><td>form <code>on_submit</code>, wizard forms (app)</td><td>the app’s tables, writes through Dio</td><td>ReadWrite</td><td>Background</td><td><code>form</code> (a Servo), <code>wizard</code></td></tr>
-<tr><td>wizard <code>worker:</code> (app)</td><td>the app’s tables</td><td>ReadWrite, 50 rows</td><td>Background</td><td><code>wizard</code>, <code>state</code></td></tr>
+<tr><td>Vantage UI form <code>options:</code></td><td>the app’s tables</td><td>Read, capped</td><td></td><td>form values</td></tr>
+<tr><td>Vantage UI action predicates (<code>when:</code>)</td><td>none</td><td>Read</td><td>Ui</td><td><code>row</code></td></tr>
+<tr><td>Vantage UI action bodies</td><td>the app’s tables, writes through Dio</td><td>ReadWrite</td><td>Ui</td><td><code>row</code>, <code>actions</code></td></tr>
+<tr><td>Vantage UI form <code>on_submit</code>, wizard forms</td><td>the app’s tables, writes through Dio</td><td>ReadWrite</td><td>Background</td><td><code>form</code> (a Servo), <code>wizard</code></td></tr>
+<tr><td>Vantage UI wizard <code>worker:</code></td><td>the app’s tables</td><td>ReadWrite, 50 rows</td><td>Background</td><td><code>wizard</code>, <code>state</code></td></tr>
 <tr><td>faker sims</td><td>the sim’s memory store</td><td>ReadWrite</td><td>the sim’s own budget</td><td><code>args</code></td></tr>
 </tbody>
 </table>
 </div>
 <h2 id="agent-scripts-run_script"><a class="header" href="#agent-scripts-run_script">Agent scripts: <code>run_script</code></a></h2>
-<p><a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/runtime/fn.run_script.html" title="fn vantage_vista::rhai::runtime::run_script"><code>run_script</code></a> evaluates a script with every read and write verb and
+<p><a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/runtime/fn.run_script.html" title="fn vantage_vista::rhai::runtime::run_script"><code>run_script</code></a> evaluates a script with every read and write verb and
 returns its last value as JSON. It runs under <code>spawn_blocking</code> for you:</p>
 <!-- tested: rhai_guide::surfaces::agent_script -->
 <pre><code class="language-rhai">let due = table("order").where("status", "due");
@@ -241,7 +239,7 @@ bulk reader. Compile, runtime and backend errors all come back as the error stri
 <p>Vantage UI’s MCP <code>run_data_script</code> tool is this function. Its writes stay <code>Denied</code> unless the user
 turns on “Allow MCP agents to write data”, a setting separate from the one that lets agents read.</p>
 <h2 id="query-preview-preview_script"><a class="header" href="#query-preview-preview_script">Query preview: <code>preview_script</code></a></h2>
-<p><a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/runtime/fn.preview_script.html" title="fn vantage_vista::rhai::runtime::preview_script"><code>preview_script</code></a> runs a script on a <code>Describe</code> host, so it can
+<p><a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/runtime/fn.preview_script.html" title="fn vantage_vista::rhai::runtime::preview_script"><code>preview_script</code></a> runs a script on a <code>Describe</code> host, so it can
 build a handle but never read rows. The script must end on the handle. The resolved Vista renders
 its query through <code>TableShell::preview_query</code>:</p>
 <!-- tested: rhai_guide::surfaces::preview -->
@@ -253,7 +251,7 @@ from, because the target’s condition depends on them. When it finds none, the 
 <code>"query": null</code> with a note, because nothing would be queried.</p>
 <h2 id="modify-scripts"><a class="header" href="#modify-scripts"><code>modify:</code> scripts</a></h2>
 <p>A YAML spec’s <code>modify:</code> script runs on the finished Vista, exposed as <code>self</code>. A <code>Describe</code> host
-evaluates it with <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/eval/fn.eval_modify_script.html" title="fn vantage_vista::rhai::eval::eval_modify_script"><code>eval_modify_script</code></a>:</p>
+evaluates it with <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/eval/fn.eval_modify_script.html" title="fn vantage_vista::rhai::eval::eval_modify_script"><code>eval_modify_script</code></a>:</p>
 <!-- tested: rhai_guide::surfaces::modify -->
 <pre><code class="language-rhai">self.where("vip", true).sort("name", "desc")
 </code></pre>
@@ -263,7 +261,7 @@ otherwise <code>self</code> as given. <code>modify:</code> narrows a real table,
 writable. Augmentation sources finish the same way.</p>
 <h3 id="backend-extensions"><a class="header" href="#backend-extensions">Backend extensions</a></h3>
 <p>A backend can add its own verbs to handles through
-<a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/source/trait.TableShell.html#method.register_rhai_extensions" title="method vantage_vista::source::TableShell::register_rhai_extensions"><code>TableShell::register_rhai_extensions</code></a>, and
+<a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/source/trait.TableShell.html#method.register_rhai_extensions" title="method vantage_vista::source::TableShell::register_rhai_extensions"><code>TableShell::register_rhai_extensions</code></a>, and
 its own variables through <code>TableShell::rhai_env</code>. SurrealDB adds its whole expression vocabulary,
 plus <code>with_condition(expr)</code>, which narrows by a native SurrealQL expression that <code>where</code> can’t
 spell:</p>
@@ -274,7 +272,7 @@ spell:</p>
 <p>and <code>me</code>, the current-record anchor for graph paths.</p>
 <p>An extension verb changes a Vista in hand, not a list of steps, so it works on <code>self</code> only. On a
 handle from <code>table(name)</code>, or after a <code>ref</code> step, it throws an error naming the verb. A backend
-implements one with <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/handle/struct.Handle.html#method.with_base_vista" title="method vantage_vista::rhai::handle::Handle::with_base_vista"><code>Handle::with_base_vista</code></a>. This
+implements one with <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/handle/struct.Handle.html#method.with_base_vista" title="method vantage_vista::rhai::handle::Handle::with_base_vista"><code>Handle::with_base_vista</code></a>. This
 stand-in verb narrows by equality:</p>
 <!-- tested: rhai_guide::surfaces::extension_statements -->
 <pre><code class="language-rust ignore">fn only(h: &amp;mut Handle, col: &amp;str, value: Dynamic) -&gt; Result&lt;Handle, Box&lt;EvalAltResult&gt;&gt; {
@@ -319,7 +317,7 @@ traversal time with the parent row as <code>row</code>, and must end on a handle
       rhai: |
         table("order").where("client", row.id).where("status", "due")
 </code></pre>
-<p><a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/eval/fn.eval_ref_script.html" title="fn vantage_vista::rhai::eval::eval_ref_script"><code>eval_ref_script</code></a> evaluates it. Drivers report the
+<p><a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/eval/fn.eval_ref_script.html" title="fn vantage_vista::rhai::eval::eval_ref_script"><code>eval_ref_script</code></a> evaluates it. Drivers report the
 <code>can_build_ref_via_script</code> capability when they support it.</p>
 <h2 id="augmentation-sources"><a class="header" href="#augmentation-sources">Augmentation sources</a></h2>
 <p>An augmentation joins a detail table onto each master row at the Dio layer (see
@@ -328,7 +326,7 @@ the master <code>row</code>:</p>
 <!-- tested: rhai_guide::surfaces::augment -->
 <pre><code class="language-rhai">self.where("client", row.id)
 </code></pre>
-<p><a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/eval/fn.augment_source_closure.html" title="fn vantage_vista::rhai::eval::augment_source_closure"><code>augment_source_closure(resolver, code)</code></a> turns the script
+<p><a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/eval/fn.augment_source_closure.html" title="fn vantage_vista::rhai::eval::augment_source_closure"><code>augment_source_closure(resolver, code)</code></a> turns the script
 into the <code>Fn(&amp;row, base) -&gt; Vista</code> closure the Dio calls per row. It compiles once, on first use,
 with the detail Vista’s backend extensions registered.</p>
 <h2 id="computed-columns"><a class="header" href="#computed-columns">Computed columns</a></h2>
@@ -346,10 +344,9 @@ o.save()   // throws: this host only reads
 <p>Write verbs such as <code>delete</code> don’t exist on a read host at all, and calling one is a “function not
 found” error. Vantage UI uses read hosts for form <code>options:</code> scripts, and for action predicates,
 which get <code>row</code> but no <code>table(name)</code>.</p>
-<h2 id="read-write-hosts-in-an-application"><a class="header" href="#read-write-hosts-in-an-application">Read-write hosts in an application</a></h2>
-<p>An application decides what its action scripts see; Vantage UI, for example, gives action bodies
-and form <code>on_submit</code> scripts <code>table(name)</code> over the app’s tables and, for row actions, <code>row</code> as a
-<a href="./records.html">record</a>:</p>
+<h2 id="read-write-hosts-in-vantage-ui"><a class="header" href="#read-write-hosts-in-vantage-ui">Read-write hosts in Vantage UI</a></h2>
+<p>Action bodies and form <code>on_submit</code> scripts get <code>table(name)</code> over the app’s tables and, for row
+actions, <code>row</code> as a <a href="./records.html">record</a>:</p>
 <pre><code class="language-rhai">let r = actions.cancel_order(row);
 row.status = "cancelled";
 row.cancellation_reason = r.reason;
@@ -361,8 +358,8 @@ Form and wizard scripts also see Servo drafts, which have their own vocabulary
 (<a href="./layers.html">Layers</a>). The action and form vocabularies themselves (<code>actions.*</code>, <code>notify</code>,
 <code>form</code>) are documented in Vantage UI’s skills.</p>
 <h2 id="faker-sims"><a class="header" href="#faker-sims">Faker sims</a></h2>
-<p>Sims are covered in <a href="./faker.html">Faker Sims</a>: they use this vocabulary over a memory store, with
-<code>table()</code> naming the sim’s own table, plus time and random verbs.</p>
+<p>Sims are covered in <a href="./layers.html#faker-sims">Layers</a>: they use this vocabulary over a memory store,
+with <code>table()</code> naming the sim’s own table, plus time and random verbs.</p>
 
                     </main>
 

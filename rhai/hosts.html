@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-027d4598.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73e720bf.js"></script>
+        <script src="../toc-a12c8285.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -282,7 +282,7 @@ target table’s own guard.</li>
 insert means.</p>
 <h2 id="async-reads-from-a-synchronous-script"><a class="header" href="#async-reads-from-a-synchronous-script">Async reads from a synchronous script</a></h2>
 <p>Rhai is synchronous. Vista reads and writes are <code>async</code>. Every terminal verb runs its future through
-one function, vista’s <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/bridge/fn.block_on.html" title="fn vantage_vista::rhai::bridge::block_on"><code>block_on</code></a>:</p>
+one function, vista’s <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/bridge/fn.block_on.html" title="fn vantage_vista::rhai::bridge::block_on"><code>block_on</code></a>:</p>
 <ul>
 <li>With a tokio runtime available (<code>Handle::try_current()</code> succeeds), it blocks on the runtime.</li>
 <li>Without one, it polls the future once on the current thread. Memory Vistas finish on the first
@@ -304,7 +304,7 @@ evaluates scripts on a blocking thread:</p>
 .await
 .unwrap()
 .unwrap();</code></pre>
-<p><a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/runtime/fn.run_script.html" title="fn vantage_vista::rhai::runtime::run_script"><code>run_script</code></a> does exactly this for you. Action bodies in Vantage UI
+<p><a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/runtime/fn.run_script.html" title="fn vantage_vista::rhai::runtime::run_script"><code>run_script</code></a> does exactly this for you. Action bodies in Vantage UI
 run under <code>Limits::Ui</code> on a background executor thread that has a runtime handle, which the bridge
 also accepts.</p>
 <h2 id="errors"><a class="header" href="#errors">Errors</a></h2>

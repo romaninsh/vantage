@@ -36,10 +36,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-027d4598.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73e720bf.js"></script>
+        <script src="../toc-a12c8285.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -220,7 +220,7 @@ only, then folds them into the baseline. A record with no changes saves nothing 
 <!-- tested: rhai_guide::records::new_row -->
 <pre><code class="language-rhai">let n = table("client").record();
 n.set(#{ name: "Dee", vip: false });
-let id = n.save();   // an insert under a new UUIDv7 id
+let id = n.save();   // an insert; the backend picks the id
 
 #{
     same_id: n.id == id,
@@ -292,13 +292,9 @@ try { o.save(); } catch (err) { threw = true; }
 <p>Saving a record whose row has gone fails with “record <code>o3</code> no longer exists”. <code>fields</code> is
 always empty for the data vocabulary’s records. Servo drafts, which carry per-field validation
 errors from a Dio’s flash route, fill it in (see <a href="./layers.html">Layers</a>).</p>
-<p>A new record mints its UUIDv7 on the first <code>save()</code> and keeps it, so saving again after a failure
-can’t create a second row (see <a href="../record-lifecycle.html#safe-writes">Safe writes</a>). A table whose id
-column is flagged <code>auto</code> leaves the id to the backend instead.</p>
 <h2 id="deleting"><a class="header" href="#deleting">Deleting</a></h2>
-<p><code>delete()</code> deletes the record’s row and returns <code>true</code> — also when the row was already gone — or
-<code>false</code> when writes aren’t allowed. A new record that was never saved has nothing to delete and
-throws.</p>
+<p><code>delete()</code> deletes the record’s row and returns <code>true</code>, or <code>false</code> if the row was already gone.
+A new record that was never saved has nothing to delete and throws.</p>
 <h2 id="permissions"><a class="header" href="#permissions">Permissions</a></h2>
 <p>Records save through the same checks as the write verbs: the target’s capabilities (<code>can_insert</code>
 for a new record, <code>can_update</code> for an existing one, <code>can_delete</code> for <code>delete()</code>), and the host’s
@@ -307,11 +303,11 @@ for a new record, <code>can_update</code> for an existing one, <code>can_delete<
 (<code>when:</code>), which see <code>row</code> but must not change it.</p>
 <h2 id="records-in-rust"><a class="header" href="#records-in-rust">Records in Rust</a></h2>
 <p>A host that already holds a row can give it to a script without a second fetch:
-<a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/rhai/record/struct.RecordDraft.html#method.from_row" title="associated function vantage_vista::rhai::record::RecordDraft::from_row"><code>RecordDraft::from_row(handle, resolver, writes, id, row)</code></a>.
+<a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/rhai/record/struct.RecordDraft.html#method.from_row" title="associated function vantage_vista::rhai::record::RecordDraft::from_row"><code>RecordDraft::from_row(handle, resolver, writes, id, row)</code></a>.
 After the script runs, <code>changes()</code> returns what it staged and <code>values()</code> the row as the script
 last saw it. Vantage UI builds the action body’s <code>row</code> this way, over the page’s Dio Vista.</p>
 <p>A row that belongs to no table, such as the <code>row</code> an action predicate reads, still needs a
-resolver: the first field set asks it for the id column. <a href="https://docs.rs/vantage-vista/1.2.0/vantage_vista/vista/struct.Vista.html#method.empty" title="associated function vantage_vista::vista::Vista::empty"><code>Vista::empty(name)</code></a>
+resolver: the first field set asks it for the id column. <a href="https://docs.rs/vantage-vista/1.1.2/vantage_vista/vista/struct.Vista.html#method.empty" title="associated function vantage_vista::vista::Vista::empty"><code>Vista::empty(name)</code></a>
 is a Vista with no columns, no rows and no capabilities, made for this:</p>
 <!-- tested: rhai_guide::records::row_without_table -->
 <pre><code class="language-rust ignore">let no_table: TargetResolver = Arc::new(|_| Ok(Vista::empty("row")));
