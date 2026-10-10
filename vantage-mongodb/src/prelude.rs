@@ -19,7 +19,7 @@ pub use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub use crate::condition::MongoCondition;
 pub use crate::id::MongoId;
-pub use crate::mongodb::MongoDB;
+pub use crate::mongodb::{MongoDB, Topology};
 pub use crate::operation::MongoOperation;
 pub use crate::select::MongoSelect;
 pub use crate::types::{AnyMongoType, MongoType};

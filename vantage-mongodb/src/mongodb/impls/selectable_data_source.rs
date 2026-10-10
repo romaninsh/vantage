@@ -1,9 +1,8 @@
 //! SelectableDataSource implementation for MongoDB.
 //!
 //! Wires `MongoSelect` into the Vantage query pipeline so `table.select()` works.
-//! `execute_select` runs the built query against MongoDB using the driver directly.
-
-use futures_util::TryStreamExt;
+//! `execute_select` runs the built query against MongoDB using the driver
+//! directly: a `find`, or an `aggregate` over the data source's view.
 
 use vantage_expressions::Expression;
 use vantage_expressions::traits::datasource::SelectableDataSource;
@@ -17,7 +16,10 @@ impl SelectableDataSource<AnyMongoType, MongoCondition> for MongoDB {
     type Select = MongoSelect;
 
     fn select(&self) -> Self::Select {
-        MongoSelect::new()
+        MongoSelect {
+            pre_stages: self.view_stages(),
+            ..MongoSelect::new()
+        }
     }
 
     fn add_select_column(
@@ -37,28 +39,7 @@ impl SelectableDataSource<AnyMongoType, MongoCondition> for MongoDB {
         &self,
         select: &Self::Select,
     ) -> vantage_core::Result<Vec<AnyMongoType>> {
-        let coll_name = select
-            .collection
-            .as_deref()
-            .ok_or_else(|| vantage_core::error!("MongoSelect has no collection set"))?;
-
-        let filter = select.build_filter().await?;
-        let options = select.build_find_options();
-        let coll = self.doc_collection(coll_name);
-
-        let cursor = coll.find(filter).with_options(options).await.map_err(|e| {
-            vantage_core::error!(
-                "MongoDB execute_select find failed",
-                details = e.to_string()
-            )
-        })?;
-
-        let docs: Vec<bson::Document> = cursor.try_collect().await.map_err(|e| {
-            vantage_core::error!(
-                "MongoDB execute_select cursor failed",
-                details = e.to_string()
-            )
-        })?;
+        let docs = self.read_docs(select).await?;
 
         docs.into_iter()
             .map(|doc| {

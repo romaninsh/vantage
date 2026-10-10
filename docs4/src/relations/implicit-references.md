@@ -80,7 +80,7 @@ mistake surfaces there, never as a silently empty column at fetch time:
 - a `has_many` hop — traversal is `has_one`-only, because a to-many field is a set, not a value
   (for an aggregate over the set, a count or a sum, use the previous chapter's
   `get_count_query`);
-- a backend that can lower neither a correlated subquery nor a native path (MongoDB, CSV, REST) —
+- a backend that can lower neither a correlated subquery nor a native path (CSV, REST) —
   its `TableSource::supports_traversal` is `false`, and dotted names are refused up front.
   Traversal is also same-datasource only; enriching rows with fields from a *different*
   datasource belongs to Dio augmentation ([Dio](./dio.md)).

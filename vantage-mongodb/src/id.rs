@@ -47,6 +47,26 @@ impl MongoId {
     }
 }
 
+/// The other spelling of an id-shaped value: an `ObjectId` yields its hex
+/// `String`, a `String` that parses as an `ObjectId` yields that `ObjectId`,
+/// anything else yields `None`. Matching both spellings lets a hex id from a
+/// text-typed surface find documents whose key is stored as an `ObjectId`.
+pub(crate) fn id_variants(value: &Bson) -> Option<Bson> {
+    match value {
+        Bson::ObjectId(oid) => Some(Bson::String(oid.to_hex())),
+        Bson::String(s) if s.len() == 24 => ObjectId::parse_str(s).ok().map(Bson::ObjectId),
+        _ => None,
+    }
+}
+
+/// Equality on `path`: a plain match, or `$in` over both id spellings.
+pub(crate) fn eq_filter(path: &str, value: &Bson) -> bson::Document {
+    match id_variants(value) {
+        Some(alt) => bson::doc! { path: { "$in": [value.clone(), alt] } },
+        None => bson::doc! { path: value.clone() },
+    }
+}
+
 impl Hash for MongoId {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Discriminant ensures ObjectId("abc...") and String("abc...") don't collide
@@ -171,6 +191,21 @@ mod tests {
     fn test_from_str_string() {
         let parsed: MongoId = "flux_cupcake".parse().unwrap();
         assert_eq!(parsed, MongoId::String("flux_cupcake".into()));
+    }
+
+    #[test]
+    fn id_variants_pairs_object_id_with_hex() {
+        let oid = ObjectId::new();
+        assert_eq!(
+            id_variants(&Bson::ObjectId(oid)),
+            Some(Bson::String(oid.to_hex()))
+        );
+        assert_eq!(
+            id_variants(&Bson::String(oid.to_hex())),
+            Some(Bson::ObjectId(oid))
+        );
+        assert_eq!(id_variants(&Bson::String("c1".into())), None);
+        assert_eq!(id_variants(&Bson::Int32(1)), None);
     }
 
     #[test]

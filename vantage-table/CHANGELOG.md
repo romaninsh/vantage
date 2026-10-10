@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-10-10
+
+- `Table::prepare_insert` and `Table::finish_insert`, the building blocks for bulk insert;
+  `insert_value` uses them.
+- Docs no longer list MongoDB as unable to lower traversal.
+
 ## 1.2.1 — 2026-10-07
 
 - `MockTableSource` `list` and `count` honour the table's literal conditions and `search_table_condition`; other conditions fail as `Unsupported`.

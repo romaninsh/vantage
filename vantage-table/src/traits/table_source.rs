@@ -367,8 +367,9 @@ pub trait TableSource: DataSource + Clone + 'static {
 
     /// Whether this backend can lower a dotted active column
     /// (`"country.name"`) into its own query — a nested correlated subquery for
-    /// SQL, a native idiom path for SurrealDB. Backends that can build neither
-    /// (e.g. MongoDB, CSV, REST) leave the default `false`, and
+    /// SQL, a native idiom path for SurrealDB, `$lookup` stages for MongoDB.
+    /// Backends that can build none of these (e.g. CSV, REST) leave the
+    /// default `false`, and
     /// [`Table::with_active_columns`](crate::table::Table::with_active_columns)
     /// rejects dotted names against them at build time rather than at fetch time.
     fn supports_traversal(&self) -> bool {

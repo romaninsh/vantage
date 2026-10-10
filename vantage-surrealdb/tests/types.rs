@@ -116,6 +116,86 @@ macro_type_test!("optionals", {
 });
 
 #[tokio::test]
+async fn test_optionals_store_none_and_values() {
+    use ciborium::Value;
+    use indexmap::IndexMap;
+
+    let db = get_surrealdb().await;
+    let run = |query: &'static str, args: Vec<AnySurrealType>| {
+        let expr = vantage_expressions::Expression::<AnySurrealType>::new(
+            query,
+            args.into_iter()
+                .map(vantage_expressions::ExpressiveEnum::Scalar)
+                .collect(),
+        );
+        let db = db.clone();
+        async move { db.execute(&expr).await }
+    };
+
+    // The table may not exist yet; a failed cleanup is fine.
+    let _ = run("DELETE optionals_stored", vec![]).await;
+    run(
+        "CREATE optionals_stored:unique_record SET some_int={}, none_int={}, some_str={}, none_str={}",
+        vec![
+            AnySurrealType::new(Some(42i32)),
+            AnySurrealType::new(None::<i32>),
+            AnySurrealType::new(Some("hello")),
+            AnySurrealType::new(None::<&str>),
+        ],
+    )
+    .await
+    .expect("Failed to execute create query");
+
+    let selected = run(
+        "SELECT some_int, none_int, some_str, none_str FROM optionals_stored:unique_record",
+        vec![],
+    )
+    .await
+    .expect("Failed to execute select query");
+    let Value::Array(rows) = selected.value() else {
+        panic!("Expected result array")
+    };
+    let Some(Value::Map(record)) = rows.first() else {
+        panic!("Expected record map")
+    };
+    let record = IndexMap::<String, AnySurrealType>::from_cbor(Value::Map(record.clone()))
+        .expect("Should convert to IndexMap");
+
+    assert_eq!(record["some_int"].try_get::<i32>(), Some(42));
+    assert_eq!(record["some_str"].try_get::<String>(), Some("hello".into()));
+    // SurrealDB drops NONE-valued fields from the stored record; a stored NULL
+    // would still be present and read back as `Null`.
+    for field in ["none_int", "none_str"] {
+        match record.get(field) {
+            None => {}
+            Some(any) => assert!(
+                matches!(any.value(), Value::Null | Value::Tag(6, _)),
+                "{field} should be NONE/NULL, got {:?}",
+                any.value()
+            ),
+        }
+    }
+
+    let _ = run("DELETE optionals_stored", vec![]).await;
+}
+
+#[tokio::test]
+async fn test_duration_variant_and_json() {
+    let db = get_surrealdb().await;
+    let expr = vantage_expressions::Expression::<AnySurrealType>::new("RETURN 1h30m", vec![]);
+    let result = db.execute(&expr).await.expect("Failed to execute query");
+
+    assert_eq!(
+        result.type_variant(),
+        Some(vantage_surrealdb::SurrealTypeVariants::Duration),
+        "unexpected CBOR: {:?}",
+        result.value()
+    );
+    let json: serde_json::Value = result.into();
+    assert_eq!(json, serde_json::Value::String("PT1H30M".to_string()));
+}
+
+#[tokio::test]
 async fn test_mismatching_types() {
     let db = get_surrealdb().await;
 

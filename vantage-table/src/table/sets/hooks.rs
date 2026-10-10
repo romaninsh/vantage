@@ -7,10 +7,49 @@
 //! the entity-erased table for relation/datasource access.
 
 use vantage_core::Result;
-use vantage_types::{EmptyEntity, Record};
+use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
 
+use super::invariants::enforce_invariants;
 use crate::table::{AfterFn, BeforeDeleteFn, BeforeFn, HookReturn, Phase, Table};
 use crate::traits::table_source::TableSource;
+
+/// The two halves of a single-record insert that surround the driver's write.
+/// A driver's bulk path calls them around its batch so that it stays
+/// equivalent to inserting the records one by one.
+impl<T: TableSource, E: Entity<T::Value>> Table<T, E>
+where
+    T::Value: InvariantValue,
+{
+    /// Everything a single insert does to `record` before the driver write:
+    /// the confined-writes check, before-insert hooks, dropping read-only
+    /// imported columns, and conforming to the set's invariants. Returns the
+    /// record to store.
+    pub async fn prepare_insert(&self, record: &Record<T::Value>) -> Result<Record<T::Value>> {
+        self.require_confined_writes("insert")?;
+        let mut record = record.clone();
+        run_before(
+            self.before_insert_hooks(),
+            &mut record,
+            self.as_entity_erased(),
+        )
+        .await?;
+        self.strip_imported_columns(&mut record);
+        enforce_invariants(&mut record, self.invariants())?;
+        Ok(record)
+    }
+
+    /// Run the after-insert hooks for a record stored under `id`, as a single
+    /// insert does once the driver write has succeeded.
+    pub async fn finish_insert(&self, id: &T::Id, record: &Record<T::Value>) -> Result<()> {
+        run_after(
+            self.after_insert_hooks(),
+            id,
+            record,
+            self.as_entity_erased(),
+        )
+        .await
+    }
+}
 
 pub(crate) async fn run_before<T: TableSource>(
     hooks: &[(Phase, BeforeFn<T>)],

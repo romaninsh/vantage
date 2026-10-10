@@ -1,5 +1,7 @@
 use bakery_model3::{Bakery, Client, Order, Product, SurrealConnection, SurrealDB};
+use surreal_client::SurrealMockBuilder;
 use vantage_expressions::Expressive;
+use vantage_surrealdb::SurrealTableExt;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::types::AnySurrealType;
@@ -53,6 +55,100 @@ async fn test_build_select_count_query() {
     assert_eq!(
         count_query.expr().preview(),
         "RETURN count(SELECT VALUE id FROM product)"
+    );
+}
+
+#[tokio::test]
+async fn test_build_select_reserved_column_names() {
+    // Rendering needs no server, so a mock engine stands in for the connection.
+    let db = SurrealDB::new(SurrealMockBuilder::new().build());
+    let table = Table::<SurrealDB, EmptyEntity>::new("message", db)
+        .with_column_of::<String>("from")
+        .with_column_of::<String>("return");
+
+    assert_eq!(
+        table.select().preview(),
+        "SELECT ⟨from⟩, ⟨return⟩ FROM message"
+    );
+}
+
+fn users_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+    Table::new("users", db)
+        .with_column_of::<String>("name")
+        .with_column_of::<String>("email")
+        .with_column_of::<i64>("age")
+}
+
+#[tokio::test]
+async fn test_ext_select_shapes() {
+    let db = get_db().await;
+    let table = users_table(db);
+
+    assert_eq!(
+        table.select().preview(),
+        "SELECT name, email, age FROM users"
+    );
+    assert_eq!(
+        table.select_first().preview(),
+        "SELECT name, email, age FROM ONLY users"
+    );
+    assert_eq!(
+        table.select_values("name").unwrap().preview(),
+        "SELECT VALUE name FROM users"
+    );
+    assert_eq!(
+        table.select_single("email").unwrap().preview(),
+        "SELECT VALUE email FROM ONLY users"
+    );
+}
+
+#[tokio::test]
+async fn test_ext_select_unknown_column_is_error() {
+    let db = get_db().await;
+    let table = users_table(db);
+
+    let err = table.select_values("nonexistent").unwrap_err();
+    assert!(err.to_string().contains("Column not found in table"));
+    let err = table.select_single("invalid").unwrap_err();
+    assert!(err.to_string().contains("Column not found in table"));
+}
+
+#[tokio::test]
+async fn test_ext_select_keeps_conditions() {
+    let db = get_db().await;
+    let table = users_table(db).with_condition(surreal_expr!("age > {}", 18));
+
+    assert!(table.select().preview().contains("WHERE age > 18"));
+    assert!(table.select_first().preview().contains("WHERE age > 18"));
+    assert!(
+        table
+            .select_values("name")
+            .unwrap()
+            .preview()
+            .contains("WHERE age > 18")
+    );
+    assert!(
+        table
+            .select_single("email")
+            .unwrap()
+            .preview()
+            .contains("WHERE age > 18")
+    );
+}
+
+#[tokio::test]
+async fn test_ext_select_values_ignores_alias() {
+    let db = get_db().await;
+    let table = Table::<SurrealDB, EmptyEntity>::new("users", db)
+        .with_column(Column::<String>::new("name").with_alias("user_name"))
+        .with_column(Column::<String>::new("email").with_alias("user_email"));
+
+    let query = table.select().preview();
+    assert!(query.contains("name AS user_name"), "{query}");
+    assert!(query.contains("email AS user_email"), "{query}");
+    assert_eq!(
+        table.select_values("name").unwrap().preview(),
+        "SELECT VALUE name FROM users"
     );
 }
 

@@ -1,7 +1,5 @@
 //! The write contract on SurrealDB: confined, idempotent, invariant-filling.
 
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use vantage_dataset::contract::{self, Fixture, OpFixture};
 use vantage_dataset::prelude::*;
 use vantage_surrealdb::operation::SurrealOperation;
@@ -11,11 +9,11 @@ use vantage_surrealdb::types::AnySurrealType;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 
-static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
-
 async fn get_db() -> SurrealDB {
-    let n = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dsn = format!("cbor://root:root@localhost:8000/bakery/safe_writes_{}", n);
+    let dsn = format!(
+        "cbor://root:root@localhost:8000/bakery/safe_writes_{}",
+        uuid::Uuid::new_v4().simple()
+    );
     let client = surreal_client::SurrealConnection::dsn(&dsn)
         .expect("Invalid DSN")
         .connect()

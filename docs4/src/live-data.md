@@ -44,7 +44,7 @@ of the set arrives as a delete. Membership stops being something anyone has to r
 | PostgreSQL     | `LISTEN/NOTIFY` on `{table}_changed`   | coarse push | a trigger **and** an explicit opt-in    |
 | SQLite         | —                                      | poll        | —                                       |
 | MySQL          | —                                      | poll        | —                                       |
-| MongoDB        | —                                      | poll        | —                                       |
+| MongoDB        | change streams (`watch_vista`)         | fine push   | a replica set or sharded cluster        |
 | CSV files      | —                                      | poll        | —                                       |
 | REST / GraphQL | —                                      | poll        | —                                       |
 | AWS            | —                                      | poll        | —                                       |
@@ -52,7 +52,10 @@ of the set arrives as a delete. Membership stops being something anyone has to r
 | CLI tools      | —                                      | poll        | —                                       |
 | Append logs    | — (write-only sink)                    | n/a         | —                                       |
 
-Only three drivers implement `watch_vista` at all. Everything in the poll rows inherits the trait
+Only four drivers implement `watch_vista` at all. A standalone MongoDB server has no change streams
+and polls. `with_change_streams(true)` is for overriding a failed (`Unknown`) topology probe, say behind
+a proxy that refuses `hello`; it cannot give a standalone server change streams, and forcing it on
+there makes `watch_vista` fail on the server. Everything in the poll rows inherits the trait
 default, which reports the capability as unsupported and leaves
 [`can_subscribe`](vantage_vista::VistaCapabilities) `false` — so `dio.watch()` on those is a no-op
 and a `refresh_every` timer carries the load.

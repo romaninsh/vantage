@@ -115,13 +115,16 @@ The flags relevant to relations:
   backend that can filter by equality supports this (SQL, CSV, Mongo, Surreal, REST/GraphQL)."
 - `can_traverse_to_set` — "Set-level reference traversal — narrow the target with an
   `IN (subquery)` derived from the parent's own conditions (the `get_ref_as` / reports path).
-  Requires the backend to support subqueries; SQL and SurrealDB do, CSV/Mongo/REST do not."
+  Requires the backend to support subqueries; SQL, SurrealDB and MongoDB do, CSV/REST do not."
 - `can_build_ref_via_script` — "Per-reference Rhai-scripted traversal — a reference carrying a
   `build_script` resolves through the script engine … rather than the fixed FK eq-condition
   path."
 - `can_traverse_in_columns` — whether the backend can lower a dotted active column
-  (`country.name`) into its own query; `true` for SQL and SurrealDB shells, `false` for
-  CSV/Mongo/REST.
+  (`country.name`) into its own query; `true` for SQL, SurrealDB and MongoDB shells (MongoDB
+  uses `$lookup`, which is type-strict: a string foreign key does not join an `ObjectId` `_id`;
+  a `mongo.pipeline` view is read-only and reports `false`), `false` for CSV/REST.
+- `can_filter_operators` — whether the backend pushes operator conditions (`gt`, `in`, …) down
+  instead of filtering client-side; `true` for SurrealDB and MongoDB.
 
 Consumers branch on these before offering the corresponding affordance: a report builder checks
 `can_traverse_to_set` before offering set-level aggregation; a grid checks

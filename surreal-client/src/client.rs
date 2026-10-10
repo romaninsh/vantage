@@ -409,9 +409,8 @@ impl SurrealClient {
     /// connection — request/response-only engines return an error from
     /// [`Engine::register_live`].
     ///
-    /// The stream stays open until the connection closes; call [`kill`](Self::kill)
-    /// with the stream's [`query_id`](LiveStream::query_id) to release the
-    /// server-side query early.
+    /// The stream stays open until the connection closes. Dropping it (or
+    /// calling [`LiveStream::close`]) kills the server-side query.
     pub async fn live(&self, resource: &str) -> Result<LiveStream> {
         let mut engine = self.engine.lock().await;
 
@@ -426,7 +425,11 @@ impl SurrealClient {
         })?;
 
         let rx = engine.register_live(&query_id).await?;
-        Ok(LiveStream { query_id, rx })
+        Ok(LiveStream {
+            query_id,
+            rx,
+            client: Some(self.clone()),
+        })
     }
 
     /// Stop a live query by its id (the [`LiveStream::query_id`]).

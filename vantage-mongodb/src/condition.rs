@@ -98,7 +98,7 @@ fn bson_to_document(value: Bson) -> vantage_core::Result<Document> {
 /// - Empty list → `{}`
 /// - Single doc → returned as-is
 /// - Multiple docs → `{ "$and": [ doc1, doc2, ... ] }`
-fn merge_documents(docs: Vec<Document>) -> vantage_core::Result<Document> {
+pub(crate) fn merge_documents(docs: Vec<Document>) -> vantage_core::Result<Document> {
     Ok(match docs.len() {
         0 => Document::new(),
         1 => docs.into_iter().next().unwrap(),

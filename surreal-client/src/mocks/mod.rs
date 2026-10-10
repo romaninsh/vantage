@@ -59,4 +59,4 @@
 
 pub mod engine;
 
-pub use engine::{MockSurrealEngine, SurrealMockBuilder};
+pub use engine::{CallLog, MockSurrealEngine, SurrealMockBuilder};

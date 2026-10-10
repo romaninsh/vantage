@@ -111,6 +111,23 @@ When the spec column name differs from the storage name, the column's driver blo
 | MongoDB | `mongo: { nested_path: price.amount }` | Dotted path into a nested document — projected on read, sub-documents rebuilt on write, dotted form pushed down on filter |
 | CSV     | `csv: { source: "Unit Price" }`  | CSV header to read from                                   |
 
+MongoDB adds the column types `object_id`, `datetime` (aliases `date`, `timestamp`; a BSON
+DateTime) and `decimal` (Decimal128). Writes keep these types, and text that doesn't parse as the
+column's type is rejected. A column named with a dotted path through a reference (`client.name`)
+joins via `$lookup`, which compares types strictly: a string foreign key does not join an
+`ObjectId` `_id`.
+
+A MongoDB table block can replace the collection read with an aggregation pipeline, or script it:
+
+| Table block          | Meaning                                                              |
+| -------------------- | -------------------------------------------------------------------- |
+| `mongo: { pipeline: [...] }` | Read-only view over an aggregation pipeline (`MongoView`)    |
+| `mongo: { rhai: "..." }`     | Builds the pipeline in Rhai from `args` (`rhai` feature)     |
+| `mongo: { modify: "..." }`   | Rhai run last against the built vista as `self`              |
+
+Change streams (`watch_vista`) and `import_vista_values` need a replica set; see
+[Live data](./live-data.md).
+
 CSV is also the one driver whose *table* block is mandatory — `csv: { path: data/products.csv }` —
 because without a path there is no file.
 
@@ -146,6 +163,11 @@ Three shapes are available:
 
 - **Multi-key joins** — `keys:` lists `{ to, from }` pairs when the child is narrowed by more than
   one parent field (a deployment matched on both `product_id` and `version_id`).
+
+On MongoDB a reference key must be stored under its own field name. The vista fails to build when a
+reference's foreign key, or the id column it matches on the other side, is renamed with `field:` or
+moved with `nested_path:`. A reference with a `mongo: { rhai: }` script (below) is exempt, as its
+traversal runs the script. Joined columns (`client.city`) can still read nested fields of the target.
 
 ### The spec resolver
 
@@ -244,7 +266,7 @@ surreal:
 Unlike a query source, `modify:` narrows a real table — so the vista **stays writable**. It runs
 last, composing with `table:`, `rhai:`, or `base:`.
 
-### 4. Scripted reference traversal — reference-level `rhai:` (SurrealDB)
+### 4. Scripted reference traversal — reference-level `rhai:` (SurrealDB, MongoDB)
 
 When a relation can't be expressed as a foreign-key equality — a graph edge, a computed join — the
 reference carries its own build script, evaluated lazily at traversal time with the parent `row` in
@@ -263,6 +285,19 @@ references:
 
 The script ends on a table handle, which becomes the narrowed target vista; `foreign_key` remains as metadata for consumers that
 introspect the relation. See [Reference build scripts](./rhai/surfaces.md#reference-build-scripts).
+
+MongoDB takes the same script in the reference's `mongo:` block (`rhai` feature):
+
+```yaml
+references:
+  orders:
+    table: order
+    kind: has_many
+    foreign_key: client_id
+    mongo:
+      rhai: |
+        table("order").where("client_id", row._id)
+```
 
 ### 5. Computed columns — column-level `lazy:` (every driver)
 
