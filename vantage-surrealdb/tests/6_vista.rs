@@ -667,3 +667,66 @@ surreal:
     );
     Ok(())
 }
+
+/// An `expr:` column is projected as `(<expr>) AS <name>`, but SurrealDB
+/// evaluates WHERE before the projection, so a condition has to carry the
+/// expression itself. Each test runs in its own random database, so the
+/// seeded rows need no cleanup.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_filters_by_expr_column_on_the_expression() -> TestResult {
+    use vantage_vista::{FilterOp, SortDirection};
+
+    let (db, table_name) = setup().await;
+    for (id, qty, price) in [("big", 2i64, 5i64), ("small", 1, 3)] {
+        db.execute(&surreal_expr!(
+            &format!("CREATE {table_name}:{id} SET qty = {{}}, price = {{}}"),
+            qty,
+            price
+        ))
+        .await?;
+    }
+
+    let yaml = format!(
+        r#"
+name: line_view
+columns:
+  id: {{ type: thing, flags: [id] }}
+  qty: {{ type: int }}
+  price: {{ type: int }}
+  total: {{ type: int, expr: 'mul(ident("qty"), ident("price"))' }}
+  label:
+    type: string
+    expr: 'expr("string::concat(\"item-\", <string>qty)")'
+surreal:
+  table: {table_name}
+"#
+    );
+    let vista = || db.vista_factory().from_yaml(&yaml);
+    let ids = |rows: indexmap::IndexMap<String, Record<CborValue>>| -> Vec<String> {
+        rows.into_keys().collect()
+    };
+    let big = format!("{table_name}:big");
+    let small = format!("{table_name}:small");
+
+    let mut gt = vista()?;
+    gt.add_condition("total", FilterOp::Gt, CborValue::Integer(6.into()))?;
+    assert_eq!(ids(gt.list_values().await?), vec![big.clone()]);
+
+    let mut eq = vista()?;
+    eq.add_condition_eq("total", CborValue::Integer(3.into()))?;
+    assert_eq!(ids(eq.list_values().await?), vec![small.clone()]);
+
+    let mut like = vista()?;
+    like.add_condition("label", FilterOp::Like, CborValue::Text("ITEM-2".into()))?;
+    assert_eq!(ids(like.list_values().await?), vec![big.clone()]);
+
+    let mut sorted = vista()?;
+    sorted.add_order("total", SortDirection::Ascending)?;
+    assert_eq!(ids(sorted.list_values().await?), vec![small, big.clone()]);
+
+    let mut searched = vista()?;
+    searched.add_search("item-2")?;
+    assert_eq!(ids(searched.list_values().await?), vec![big]);
+    Ok(())
+}
