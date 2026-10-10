@@ -579,6 +579,48 @@ columns:
         );
     }
 
+    /// The WHERE clause runs before the select list is projected, so a
+    /// condition on an `expr:` column must carry the expression itself —
+    /// the `AS` alias is not a field there and would match nothing.
+    #[cfg(feature = "rhai")]
+    #[test]
+    fn conditions_on_expr_column_use_the_expression_not_the_alias() {
+        use vantage_vista::{FilterOp, TableShell};
+
+        let yaml = r#"
+name: line
+columns:
+  id: { type: string, flags: [id] }
+  qty: { type: int }
+  price: { type: int }
+  total: { type: int, expr: 'mul(ident("qty"), ident("price"))' }
+"#;
+        let table = build_surreal_table(&parse(yaml), test_db(), None).expect("build");
+        let metadata = metadata_from_table(&table);
+        let mut shell = SurrealTableShell::new(table, VistaCapabilities::default(), metadata, None);
+
+        shell
+            .add_eq_condition("total", &ciborium::Value::Integer(3.into()))
+            .expect("eq");
+        shell
+            .add_op_condition("total", FilterOp::Gt, &ciborium::Value::Integer(6.into()))
+            .expect("gt");
+        shell
+            .add_op_condition("total", FilterOp::Like, &ciborium::Value::Text("1".into()))
+            .expect("like");
+
+        let preview = shell.table.select().preview();
+        let (_, where_clause) = preview.split_once("WHERE").expect("WHERE clause");
+        assert!(
+            where_clause.matches("qty * price").count() >= 3,
+            "every condition must use the expression, got: {preview}"
+        );
+        assert!(
+            !where_clause.contains("total"),
+            "the alias must not appear in WHERE, got: {preview}"
+        );
+    }
+
     #[test]
     fn has_many_traversal_condition_from_thing_and_string_ids() {
         let batch_yaml = r#"

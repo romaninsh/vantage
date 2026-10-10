@@ -34,6 +34,9 @@ use vantage_vista::{
     Vista, VistaCapabilities, VistaChange, VistaChangeStream, VistaMetadata,
 };
 
+use vantage_expressions::Expressive;
+
+use crate::Expr;
 use crate::identifier::Identifier;
 use crate::operation::SurrealOperation;
 use crate::surreal_expr;
@@ -72,6 +75,24 @@ where
             page_size: None,
             resolver,
         }
+    }
+
+    /// The left-hand side of a condition on `field`.
+    ///
+    /// A usual column is its identifier. A server-side `expr:` column is
+    /// projected as `(<expr>) AS <name>`, but SurrealDB evaluates WHERE
+    /// before the projection, so the alias is not a field there and a
+    /// condition on it matches nothing. Such a column is therefore filtered
+    /// on its (parenthesised) expression.
+    ///
+    /// `None` when the table has no such column.
+    fn condition_subject(&self, field: &str) -> Option<Expr> {
+        if self.table.is_calculated_column(field)
+            && let Some(expression) = self.table.get_column_expr(field)
+        {
+            return Some(surreal_expr!("({})", (expression)));
+        }
+        self.table.columns().get(field).map(|column| column.expr())
     }
 
     /// Resolve a Vista-side string id into a SurrealDB `Thing`. A `table:id`
@@ -220,12 +241,9 @@ where
     }
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        let column = self
-            .table
-            .columns()
-            .get(field)
-            .ok_or_else(|| error!("Unknown column for eq condition", field = field))?
-            .clone();
+        let subject = self
+            .condition_subject(field)
+            .ok_or_else(|| error!("Unknown column for eq condition", field = field))?;
         // Id-column comparisons coerce a string value into a Thing —
         // SurrealDB compares record ids by type, so a quoted string
         // (`id = "MG78-N25S"` or `id = "tag:MG78-N25S"`) never matches.
@@ -239,7 +257,7 @@ where
             }
             _ => AnySurrealType::from(value.clone()),
         };
-        self.table.add_condition(column.eq(surreal_value));
+        self.table.add_condition(subject.eq(surreal_value));
         Ok(())
     }
 
@@ -250,12 +268,9 @@ where
         value: &CborValue,
     ) -> Result<()> {
         use vantage_vista::FilterOp;
-        let column = self
-            .table
-            .columns()
-            .get(field)
-            .ok_or_else(|| error!("Unknown column for condition", field = field))?
-            .clone();
+        let subject = self
+            .condition_subject(field)
+            .ok_or_else(|| error!("Unknown column for condition", field = field))?;
         // Same id-column coercion as `add_eq_condition`: a `table:key` /
         // bare-key string compared against the id column becomes a Thing.
         let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
@@ -266,14 +281,14 @@ where
             _ => AnySurrealType::from(value.clone()),
         };
         let condition = match op {
-            FilterOp::Eq => column.eq(surreal_value),
-            FilterOp::Ne => column.ne(surreal_value),
-            FilterOp::Gt => column.gt(surreal_value),
-            FilterOp::Gte => column.gte(surreal_value),
-            FilterOp::Lt => column.lt(surreal_value),
-            FilterOp::Lte => column.lte(surreal_value),
+            FilterOp::Eq => subject.eq(surreal_value),
+            FilterOp::Ne => subject.ne(surreal_value),
+            FilterOp::Gt => subject.gt(surreal_value),
+            FilterOp::Gte => subject.gte(surreal_value),
+            FilterOp::Lt => subject.lt(surreal_value),
+            FilterOp::Lte => subject.lte(surreal_value),
             // `value` is a CBOR array → a SurrealDB array literal; `field IN [ … ]`.
-            FilterOp::InSet => column.in_(surreal_value),
+            FilterOp::InSet => subject.in_(surreal_value),
             // A lowercased `CONTAINS`, which is exactly the contract the
             // local fallback applies: case-insensitive substring.
             //
@@ -289,7 +304,7 @@ where
                     AnySurrealType::from(CborValue::Text(vantage_vista::operand_text(value)));
                 self.table.add_condition(crate::surreal_expr!(
                     "string::lowercase(<string>{}) CONTAINS string::lowercase({})",
-                    (Identifier::new(field)),
+                    (subject),
                     needle
                 ));
                 return Ok(());

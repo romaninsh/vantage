@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 — 2026-10-10
+
+- Fixed: filtering a Vista by an `expr:` column matches on the expression, not its alias (VAN-254).
+
 ## 1.0.0 — 2026-10-10
 
 - Vista shells advertise `fetch_window`.
