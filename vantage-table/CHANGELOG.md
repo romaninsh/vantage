@@ -2,7 +2,7 @@
 
 ## 1.2.1 — 2026-10-07
 
-- `MockTableSource` `list` and `count` honour the table's literal conditions.
+- `MockTableSource` `list` and `count` honour the table's literal conditions and `search_table_condition`; other conditions fail as `Unsupported`.
 - `literal_equality` rejects a quoted empty identifier.
 - Count-shape error carries the result in a `result` context key instead of the message.
 

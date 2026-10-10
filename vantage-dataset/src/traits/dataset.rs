@@ -152,7 +152,7 @@ where
 ///
 /// Every write is retry-safe, and a write through a narrowed set only touches
 /// rows inside that set — the contract is the one on
-/// [`WritableValueSet`](super::WritableValueSet):
+/// [`WritableValueSet`]:
 /// - `insert`: returns the stored entity untouched if the id is in the set;
 ///   `Conflict` if the id is held outside the set; a new entity must fit the set
 /// - `replace`: replaces or creates; `Conflict` if the entity would leave the

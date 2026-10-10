@@ -68,7 +68,7 @@ pub(crate) struct TableSceneryState {
     /// `request_load_more` from queueing the same range twice in a row.
     pub(crate) load_in_flight: Mutex<Option<Range<usize>>>,
 
-    /// Set by [`write_chunk_row`](Self::write_chunk_row) whenever a chunk load
+    /// Set by [`write_chunk_row`](crate::lens::chunk_sink::SceneryChunkTarget::write_chunk_row) whenever a chunk load
     /// actually changes a row's visible content (new slot, status change, or a
     /// different record). The loader reads and clears it after the load and
     /// bumps the generation only when it is set — so a refresh that re-fetches
