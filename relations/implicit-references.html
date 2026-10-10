@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-cb813181.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-73e720bf.js"></script>
@@ -245,7 +245,7 @@ mistake surfaces there, never as a silently empty column at fetch time:</p>
 <li>a <code>has_many</code> hop — traversal is <code>has_one</code>-only, because a to-many field is a set, not a value
 (for an aggregate over the set, a count or a sum, use the previous chapter’s
 <code>get_count_query</code>);</li>
-<li>a backend that can lower neither a correlated subquery nor a native path (MongoDB, CSV, REST) —
+<li>a backend that can lower neither a correlated subquery nor a native path (CSV, REST) —
 its <code>TableSource::supports_traversal</code> is <code>false</code>, and dotted names are refused up front.
 Traversal is also same-datasource only; enriching rows with fields from a <em>different</em>
 datasource belongs to Dio augmentation (<a href="./dio.html">Dio</a>).</li>

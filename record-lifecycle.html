@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "searchindex-cb813181.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-73e720bf.js"></script>
@@ -234,9 +234,9 @@ redb, DynamoDB and Dio evaluate the conditions on the row. A source that can’t
 condition refuses the write.</p>
 <p>Ids: a record without an id gets a client-made UUIDv7 before the first attempt (Rhai <code>insert</code>, a
 new record, Servo <code>IdStrategy::Uuid</code>,
-<a href="https://docs.rs/vantage-table/1.2.1/vantage_table/table/id_generator/enum.IdGenerator.html" title="enum vantage_table::table::id_generator::IdGenerator"><code>IdGenerator::UuidV7</code></a>), so a retry lands on the idempotent
+<a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/id_generator/enum.IdGenerator.html" title="enum vantage_table::table::id_generator::IdGenerator"><code>IdGenerator::UuidV7</code></a>), so a retry lands on the idempotent
 insert. A table whose ids the server makes declares it
-(<a href="https://docs.rs/vantage-table/1.2.1/vantage_table/table/base/struct.Table.html#method.with_auto_id" title="method vantage_table::table::base::Table::with_auto_id"><code>Table::with_auto_id</code></a>, YAML <code>flags: [id, auto]</code>) and
+(<a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/base/struct.Table.html#method.with_auto_id" title="method vantage_table::table::base::Table::with_auto_id"><code>Table::with_auto_id</code></a>, YAML <code>flags: [id, auto]</code>) and
 inserts through <code>insert_return_id</code>, which is not retry-safe.</p>
 <div id="admonition-eventually-consistent-backends" class="admonition admonish-warning" role="note" aria-labelledby="admonition-eventually-consistent-backends-title">
 <div class="admonition-title">

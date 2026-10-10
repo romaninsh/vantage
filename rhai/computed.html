@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-cb813181.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-73e720bf.js"></script>
@@ -350,9 +350,9 @@ made, and that decides what the backend can do with it:</p>
 <tr><th>Where</th><th>How</th><th>Runs</th><th>Can filter/sort</th><th>Link</th></tr>
 </thead>
 <tbody>
-<tr><td>SQL / SurrealDB expression</td><td><code>Table::with_expression(name, …)</code>, SurrealDB YAML <code>expr:</code></td><td>in the query</td><td>yes</td><td><a href="https://docs.rs/vantage-table/1.2.1/vantage_table/table/base/struct.Table.html#method.with_expression" title="method vantage_table::table::base::Table::with_expression"><code>Table::with_expression</code></a></td></tr>
-<tr><td>Rust after the read</td><td><code>Table::with_lazy_expression(name, …)</code></td><td>after each read, in Rust</td><td>no</td><td><a href="https://docs.rs/vantage-table/1.2.1/vantage_table/table/base/struct.Table.html#method.with_lazy_expression" title="method vantage_table::table::base::Table::with_lazy_expression"><code>Table::with_lazy_expression</code></a></td></tr>
-<tr><td>Rust on write</td><td>a <code>BeforeSave</code> hook that stores the value</td><td>on insert and update</td><td>yes (it’s stored)</td><td><a href="https://docs.rs/vantage-table/1.2.1/vantage_table/table/hooks/enum.Hook.html" title="enum vantage_table::table::hooks::Hook"><code>Hook</code></a></td></tr>
+<tr><td>SQL / SurrealDB expression</td><td><code>Table::with_expression(name, …)</code>, SurrealDB YAML <code>expr:</code></td><td>in the query</td><td>yes</td><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/base/struct.Table.html#method.with_expression" title="method vantage_table::table::base::Table::with_expression"><code>Table::with_expression</code></a></td></tr>
+<tr><td>Rust after the read</td><td><code>Table::with_lazy_expression(name, …)</code></td><td>after each read, in Rust</td><td>no</td><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/base/struct.Table.html#method.with_lazy_expression" title="method vantage_table::table::base::Table::with_lazy_expression"><code>Table::with_lazy_expression</code></a></td></tr>
+<tr><td>Rust on write</td><td>a <code>BeforeSave</code> hook that stores the value</td><td>on insert and update</td><td>yes (it’s stored)</td><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/hooks/enum.Hook.html" title="enum vantage_table::table::hooks::Hook"><code>Hook</code></a></td></tr>
 <tr><td>Rhai <code>lazy:</code></td><td>this chapter</td><td>after each read, in the Vista</td><td>no</td><td>—</td></tr>
 <tr><td>Dio <code>sugar:</code></td><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a></td><td>on the rows one Scenery reads</td><td>no</td><td>—</td></tr>
 </tbody>

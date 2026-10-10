@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "searchindex-cb813181.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-73e720bf.js"></script>
@@ -230,7 +230,7 @@ of the set arrives as a delete. Membership stops being something anyone has to r
 <tr><td>PostgreSQL</td><td><code>LISTEN/NOTIFY</code> on <code>{table}_changed</code></td><td>coarse push</td><td>a trigger <strong>and</strong> an explicit opt-in</td></tr>
 <tr><td>SQLite</td><td>—</td><td>poll</td><td>—</td></tr>
 <tr><td>MySQL</td><td>—</td><td>poll</td><td>—</td></tr>
-<tr><td>MongoDB</td><td>—</td><td>poll</td><td>—</td></tr>
+<tr><td>MongoDB</td><td>change streams (<code>watch_vista</code>)</td><td>fine push</td><td>a replica set or sharded cluster</td></tr>
 <tr><td>CSV files</td><td>—</td><td>poll</td><td>—</td></tr>
 <tr><td>REST / GraphQL</td><td>—</td><td>poll</td><td>—</td></tr>
 <tr><td>AWS</td><td>—</td><td>poll</td><td>—</td></tr>
@@ -240,7 +240,10 @@ of the set arrives as a delete. Membership stops being something anyone has to r
 </tbody>
 </table>
 </div>
-<p>Only three drivers implement <code>watch_vista</code> at all. Everything in the poll rows inherits the trait
+<p>Only four drivers implement <code>watch_vista</code> at all. A standalone MongoDB server has no change streams
+and polls. <code>with_change_streams(true)</code> is for overriding a failed (<code>Unknown</code>) topology probe, say behind
+a proxy that refuses <code>hello</code>; it cannot give a standalone server change streams, and forcing it on
+there makes <code>watch_vista</code> fail on the server. Everything in the poll rows inherits the trait
 default, which reports the capability as unsupported and leaves
 <a href="https://docs.rs/vantage-vista/1.2.1/vantage_vista/capabilities/struct.VistaCapabilities.html" title="struct vantage_vista::capabilities::VistaCapabilities"><code>can_subscribe</code></a> <code>false</code> — so <code>dio.watch()</code> on those is a no-op
 and a <code>refresh_every</code> timer carries the load.</p>

@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-cb813181.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-73e720bf.js"></script>
@@ -362,7 +362,7 @@ any <code>Result</code> with a standard error type.</p>
 <p><a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html" title="struct vantage_sql::sqlite::statements::select::SqliteSelect"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
 <a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/postgres/statements/select/struct.PostgresSelect.html" title="struct vantage_sql::postgres::statements::select::PostgresSelect"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage-mongodb/0.7.0/vantage_mongodb/select/struct.MongoSelect.html" title="struct vantage_mongodb::select::MongoSelect"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage-mongodb/1.0.0/vantage_mongodb/select/struct.MongoSelect.html" title="struct vantage_mongodb::select::MongoSelect"><code>MongoSelect</code></a> — and they all implement the
 <a href="https://docs.rs/vantage-expressions/1.1.0/vantage_expressions/traits/selectable/trait.Selectable.html" title="trait vantage_expressions::traits::selectable::Selectable"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
@@ -485,7 +485,7 @@ See <a href="../type-system.html">Persistence-aligned Type System</a> for detail
 
 <h2 id="typed-columns-and-operators"><a class="header" href="#typed-columns-and-operators">Typed columns and operators</a></h2>
 <p>Writing <code>\"is_deleted\"</code> in a raw expression works, but there’s a cleaner way.
-<a href="https://docs.rs/vantage-table/1.2.1/vantage_table/column/core/struct.Column.html" title="struct vantage_table::column::core::Column"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
+<a href="https://docs.rs/vantage-table/1.3.0/vantage_table/column/core/struct.Column.html" title="struct vantage_table::column::core::Column"><code>Column&lt;T&gt;</code></a> creates a typed column reference, then chain an
 <a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/sqlite/operation/trait.SqliteOperation.html" title="trait vantage_sql::sqlite::operation::SqliteOperation"><code>SqliteOperation</code></a> like <code>.eq()</code> to build the
 condition. (<code>Column</code> lives in the <code>vantage-table</code> crate, but the <code>vantage_sql</code> prelude re-exports
 it — no new dependency needed.)</p>
@@ -735,7 +735,7 @@ async fn run() -&gt; VantageResult&lt;()&gt; {
 </thead>
 <tbody>
 <tr><td><a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html" title="struct vantage_sql::sqlite::statements::select::SqliteSelect"><code>SqliteSelect</code></a></td><td>Builds SELECT queries via builder pattern</td><td><a href="https://docs.rs/vantage-expressions/1.1.0/vantage_expressions/traits/selectable/trait.Selectable.html" title="trait vantage_expressions::traits::selectable::Selectable"><code>Selectable</code></a></td></tr>
-<tr><td><a href="https://docs.rs/vantage-table/1.2.1/vantage_table/column/core/struct.Column.html" title="struct vantage_table::column::core::Column"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
+<tr><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/column/core/struct.Column.html" title="struct vantage_table::column::core::Column"><code>Column</code></a></td><td>Typed column reference — enforces matching operand types</td><td></td></tr>
 <tr><td><a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/sqlite/operation/trait.SqliteOperation.html" title="trait vantage_sql::sqlite::operation::SqliteOperation"><code>SqliteOperation</code></a></td><td>Ext trait giving <code>.eq()</code>, <code>.gt()</code>, etc. → <code>SqliteCondition</code></td><td></td></tr>
 <tr><td><code>sqlite_expr!</code></td><td>Creates expressions with typed, bound parameters</td><td><a href="https://docs.rs/vantage-expressions/1.1.0/vantage_expressions/expression/core/struct.Expression.html" title="struct vantage_expressions::expression::core::Expression"><code>Expression</code></a></td></tr>
 <tr><td><code>db.execute()</code></td><td>Runs an expression, returns <a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/sqlite/types/struct.AnySqliteType.html" title="struct vantage_sql::sqlite::types::AnySqliteType"><code>AnySqliteType</code></a></td><td><a href="https://docs.rs/vantage-expressions/1.1.0/vantage_expressions/traits/datasource/trait.ExprDataSource.html" title="trait vantage_expressions::traits::datasource::ExprDataSource"><code>ExprDataSource</code></a></td></tr>

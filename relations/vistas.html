@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-13d076e4.js";
+            window.path_to_searchindex_js = "../searchindex-cb813181.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-73e720bf.js"></script>
@@ -290,13 +290,16 @@ read the join value out of a known row and narrow the target with a plain eq-con
 backend that can filter by equality supports this (SQL, CSV, Mongo, Surreal, REST/GraphQL).”</li>
 <li><code>can_traverse_to_set</code> — “Set-level reference traversal — narrow the target with an
 <code>IN (subquery)</code> derived from the parent’s own conditions (the <code>get_ref_as</code> / reports path).
-Requires the backend to support subqueries; SQL and SurrealDB do, CSV/Mongo/REST do not.”</li>
+Requires the backend to support subqueries; SQL, SurrealDB and MongoDB do, CSV/REST do not.”</li>
 <li><code>can_build_ref_via_script</code> — “Per-reference Rhai-scripted traversal — a reference carrying a
 <code>build_script</code> resolves through the script engine … rather than the fixed FK eq-condition
 path.”</li>
 <li><code>can_traverse_in_columns</code> — whether the backend can lower a dotted active column
-(<code>country.name</code>) into its own query; <code>true</code> for SQL and SurrealDB shells, <code>false</code> for
-CSV/Mongo/REST.</li>
+(<code>country.name</code>) into its own query; <code>true</code> for SQL, SurrealDB and MongoDB shells (MongoDB
+uses <code>$lookup</code>, which is type-strict: a string foreign key does not join an <code>ObjectId</code> <code>_id</code>;
+a <code>mongo.pipeline</code> view is read-only and reports <code>false</code>), <code>false</code> for CSV/REST.</li>
+<li><code>can_filter_operators</code> — whether the backend pushes operator conditions (<code>gt</code>, <code>in</code>, …) down
+instead of filtering client-side; <code>true</code> for SurrealDB and MongoDB.</li>
 </ul>
 <p>Consumers branch on these before offering the corresponding affordance: a report builder checks
 <code>can_traverse_to_set</code> before offering set-level aggregation; a grid checks
