@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -24,7 +24,7 @@ vantage-expressions = { version = "1.0.1", path = "../vantage-expressions" }
 paste = "1.0"
 
 vantage-dataset = { version = "1.1.0", path = "../vantage-dataset" }
-vantage-table = { version = "1.2.0", path = "../vantage-table" }
+vantage-table = { version = "1.3.0", path = "../vantage-table" }
 vantage-vista = { version = "1.2.0", path = "../vantage-vista", optional = true }
 async-trait = "0.1"
 # Drivers occasionally need to report a data-modelling problem that is not

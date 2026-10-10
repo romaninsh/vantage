@@ -201,22 +201,22 @@ async fn test_my_q2_find_in_set() {
 }
 
 // -- -----------------------------------------------------------------------------
-// -- 3. JSON operators — ->, ->>, JSON_EXTRACT, JSON_CONTAINS, MEMBER OF
-// -- Features: -> (returns JSON), ->> (returns text), JSON_CONTAINS(),
-// --           value MEMBER OF (json_array), JSON_UNQUOTE
+// -- 3. JSON extraction — JSON_EXTRACT, JSON_UNQUOTE, JSON_CONTAINS
+// -- Features: JSON_EXTRACT (returns JSON), JSON_UNQUOTE(JSON_EXTRACT) (returns
+// --           text; MySQL's `->` / `->>` shorthands, absent on MariaDB), JSON_CONTAINS()
 // -- Expected: electronics with black color and rating >= 4.0
 // -- -----------------------------------------------------------------------------
 // SELECT
 //     p.id,
 //     p.name,
-//     p.metadata->>'$.color' AS color,
-//     p.metadata->>'$.rating' AS rating,
-//     p.metadata->'$.specs' AS specs_json,
+//     JSON_UNQUOTE(JSON_EXTRACT(p.metadata, '$.color')) AS color,
+//     JSON_UNQUOTE(JSON_EXTRACT(p.metadata, '$.rating')) AS rating,
+//     JSON_EXTRACT(p.metadata, '$.specs') AS specs_json,
 //     JSON_UNQUOTE(JSON_EXTRACT(p.metadata, '$.specs.voltage')) AS voltage
 // FROM products AS p
 // WHERE JSON_CONTAINS(p.metadata, '"black"', '$.color')
-//   AND CAST(p.metadata->>'$.rating' AS DECIMAL(3,1)) >= 4.0
-// ORDER BY CAST(p.metadata->>'$.rating' AS DECIMAL(3,1)) DESC;
+//   AND CAST(JSON_UNQUOTE(JSON_EXTRACT(p.metadata, '$.rating')) AS DECIMAL(3,1)) >= 4.0
+// ORDER BY CAST(JSON_UNQUOTE(JSON_EXTRACT(p.metadata, '$.rating')) AS DECIMAL(3,1)) DESC;
 
 #[derive(Debug, Deserialize)]
 struct ProductJson {
@@ -269,14 +269,14 @@ async fn test_my_q3_json_operators() {
             .with_order(rating_cast, Order::Desc),
         concat!(
             "SELECT `p`.`id`, `p`.`name`, ",
-            "`p`.`metadata` ->> '$.color' AS `color`, ",
-            "`p`.`metadata` ->> '$.rating' AS `rating`, ",
-            "`p`.`metadata` -> '$.specs' AS `specs_json`, ",
+            "JSON_UNQUOTE(JSON_EXTRACT(`p`.`metadata`, '$.color')) AS `color`, ",
+            "JSON_UNQUOTE(JSON_EXTRACT(`p`.`metadata`, '$.rating')) AS `rating`, ",
+            "JSON_EXTRACT(`p`.`metadata`, '$.specs') AS `specs_json`, ",
             "JSON_UNQUOTE(JSON_EXTRACT(`p`.`metadata`, '$.specs.voltage')) AS `voltage`",
             " FROM `products` AS `p`",
             " WHERE JSON_CONTAINS(`p`.`metadata`, '\"black\"', '$.color')",
-            " AND CAST(`p`.`metadata` ->> '$.rating' AS DECIMAL(3,1)) >= 4.0",
-            " ORDER BY CAST(`p`.`metadata` ->> '$.rating' AS DECIMAL(3,1)) DESC",
+            " AND CAST(JSON_UNQUOTE(JSON_EXTRACT(`p`.`metadata`, '$.rating')) AS DECIMAL(3,1)) >= 4.0",
+            " ORDER BY CAST(JSON_UNQUOTE(JSON_EXTRACT(`p`.`metadata`, '$.rating')) AS DECIMAL(3,1)) DESC",
         ),
     )
     .await;
@@ -520,6 +520,29 @@ async fn test_my_q7_regexp() {
     let u_email = ident("email").dot_of("u");
     let u_name = ident("name").dot_of("u");
 
+    // MariaDB has the REGEXP operator and REGEXP_SUBSTR but no REGEXP_LIKE,
+    // so there the name flag uses the operator form.
+    let mariadb = super::is_mariadb(&get_db().await).await;
+    let (name_flag, name_flag_sql): (Expression<_>, _) = if mariadb {
+        (
+            u_name.regexp(mysql_expr!("'^[A-E]'")).expr(),
+            "`u`.`name` REGEXP '^[A-E]'",
+        )
+    } else {
+        (
+            Fx::new("regexp_like", [u_name.expr(), mysql_expr!("'^[A-E]'")]).expr(),
+            "REGEXP_LIKE(`u`.`name`, '^[A-E]')",
+        )
+    };
+    let expected_sql = format!(
+        "SELECT `u`.`id`, `u`.`name`, `u`.`email`, \
+         REGEXP_SUBSTR(`u`.`email`, '@(.+)$') AS `domain_part`, \
+         {name_flag_sql} AS `name_starts_a_to_e` \
+         FROM `users` AS `u` \
+         WHERE `u`.`email` REGEXP '^[a-z]+@example\\.com$' \
+         ORDER BY `u`.`name`"
+    );
+
     let rows: Vec<UserRegexp> = check_and_run(
         &MysqlSelect::new()
             .with_source_as("users", "u")
@@ -530,20 +553,10 @@ async fn test_my_q7_regexp() {
                 Fx::new("regexp_substr", [u_email.expr(), mysql_expr!("'@(.+)$'")])
                     .as_alias("domain_part"),
             )
-            .with_expression(
-                Fx::new("regexp_like", [u_name.expr(), mysql_expr!("'^[A-E]'")])
-                    .as_alias("name_starts_a_to_e"),
-            )
+            .with_expression(name_flag.as_alias("name_starts_a_to_e"))
             .with_condition(u_email.regexp(mysql_expr!("{}", "^[a-z]+@example\\.com$")))
             .with_order(ident("name").dot_of("u"), Order::Asc),
-        concat!(
-            "SELECT `u`.`id`, `u`.`name`, `u`.`email`, ",
-            "REGEXP_SUBSTR(`u`.`email`, '@(.+)$') AS `domain_part`, ",
-            "REGEXP_LIKE(`u`.`name`, '^[A-E]') AS `name_starts_a_to_e`",
-            " FROM `users` AS `u`",
-            " WHERE `u`.`email` REGEXP '^[a-z]+@example\\.com$'",
-            " ORDER BY `u`.`name`",
-        ),
+        &expected_sql,
     )
     .await;
 
@@ -552,6 +565,13 @@ async fn test_my_q7_regexp() {
     for row in &rows {
         assert!(row.email.ends_with("@example.com"));
         assert!(row.domain_part.as_ref().unwrap().contains("example.com"));
+        let starts_a_to_e = ('A'..='E').contains(&row.name.chars().next().unwrap());
+        assert_eq!(
+            row.name_starts_a_to_e,
+            i64::from(starts_a_to_e),
+            "{}",
+            row.name
+        );
     }
     // Alphabetically ordered by name
     for w in rows.windows(2) {
@@ -676,6 +696,16 @@ struct RollupRow {
     is_month_total: i64,
 }
 
+/// A rollup row without `GROUPING()` flags: a NULL group column marks a
+/// sub-total (`status` and `month` are never NULL in detail rows).
+#[derive(Debug, Deserialize)]
+struct PlainRollupRow {
+    status: Option<String>,
+    month: Option<String>,
+    order_count: i64,
+    revenue: f64,
+}
+
 #[tokio::test]
 async fn test_my_q9_rollup() {
     let o_status = ident("status").dot_of("o");
@@ -686,6 +716,50 @@ async fn test_my_q9_rollup() {
             mysql_expr!("'%Y-%m'"),
         ],
     );
+
+    // MariaDB has neither GROUPING() nor ORDER BY alongside WITH ROLLUP; its
+    // rollup rows follow their group, with NULL in the rolled-up columns.
+    if super::is_mariadb(&get_db().await).await {
+        let rows: Vec<PlainRollupRow> = check_and_run(
+            &MysqlSelect::new()
+                .with_source_as("orders", "o")
+                .with_expression(o_status.clone())
+                .with_expression(date_fmt.as_alias("month"))
+                .with_expression(Fx::new("count", [mysql_expr!("*")]).as_alias("order_count"))
+                .with_expression(
+                    Fx::new("sum", [ident("total").dot_of("o").expr()]).as_alias("revenue"),
+                )
+                .with_condition(o_status.ne(mysql_expr!("{}", "cancelled")))
+                .with_group_by(o_status)
+                .with_group_by(ident("month"))
+                .with_rollup(),
+            concat!(
+                "SELECT `o`.`status`, ",
+                "DATE_FORMAT(`o`.`created_at`, '%Y-%m') AS `month`, ",
+                "COUNT(*) AS `order_count`, ",
+                "SUM(`o`.`total`) AS `revenue`",
+                " FROM `orders` AS `o`",
+                " WHERE `o`.`status` != 'cancelled'",
+                " GROUP BY `o`.`status`, `month` WITH ROLLUP",
+            ),
+        )
+        .await;
+
+        let last = rows.last().unwrap();
+        assert!(last.status.is_none() && last.month.is_none(), "{last:?}");
+        assert_eq!(last.order_count, 13);
+        let details: Vec<_> = rows.iter().filter(|r| r.month.is_some()).collect();
+        let detail_revenue: f64 = details.iter().map(|r| r.revenue).sum();
+        assert!((last.revenue - detail_revenue).abs() < 0.01);
+        // One sub-total per status, besides the grand total
+        let subtotals = rows
+            .iter()
+            .filter(|r| r.status.is_some() && r.month.is_none())
+            .count();
+        assert_eq!(subtotals, 3);
+        return;
+    }
+
     let grouping_status = Fx::new("grouping", [o_status.expr()]);
     let grouping_month = Fx::new("grouping", [date_fmt.expr()]);
 

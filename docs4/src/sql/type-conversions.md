@@ -29,6 +29,7 @@ Legend:
 - Format: `"2025-01-10 12:00:00"` (space separator, no T); `FixedOffset` appends `+05:30`
 - TIME/DATETIME/TIMESTAMP default to 0 fractional digits — use `(6)` for microseconds
 - `DateTime<FixedOffset>`: VARCHAR preserves offset; DATETIME/TIMESTAMP normalize to UTC
+- MariaDB 11 rejects `DateTime<FixedOffset>` into DATETIME/TIMESTAMP (no offset literals) — use `DateTime<Utc>`
 - Cross-type coercions (e.g. NaiveTime → DATE) fail with variant mismatch
 
 ### PostgreSQL

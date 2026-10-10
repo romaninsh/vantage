@@ -89,9 +89,22 @@ where
     for<'c> &'c mut <D::Db as Database>::Connection: Executor<'c, Database = D::Db>,
     for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
 {
+    fetch_rows_on::<D, _>(db.sqlx_pool(), expr).await
+}
+
+/// [`fetch_rows`] on a given executor — a connection or an open transaction.
+pub(crate) async fn fetch_rows_on<'c, D, X>(
+    executor: X,
+    expr: &Expression<D::Value>,
+) -> Result<D::Value>
+where
+    D: SqlDialect,
+    X: Executor<'c, Database = D::Db>,
+    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+{
     let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
     let rows = bind_all::<D>(&sql, &params)?
-        .fetch_all(db.sqlx_pool())
+        .fetch_all(executor)
         .await
         .map_err(|e| {
             let err = error!(D::QUERY_FAILED, details = e.to_string());
@@ -120,9 +133,23 @@ where
     for<'c> &'c mut <D::Db as Database>::Connection: Executor<'c, Database = D::Db>,
     for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
 {
+    execute_affected_on::<D, _>(db.sqlx_pool(), expr).await
+}
+
+/// [`execute_affected`] on a given executor — a connection or an open
+/// transaction.
+pub(crate) async fn execute_affected_on<'c, D, X>(
+    executor: X,
+    expr: &Expression<D::Value>,
+) -> Result<u64>
+where
+    D: SqlDialect,
+    X: Executor<'c, Database = D::Db>,
+    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+{
     let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
     let done = bind_all::<D>(&sql, &params)?
-        .execute(db.sqlx_pool())
+        .execute(executor)
         .await
         .with_context(|| failure_context::<D>(error!(D::STATEMENT_FAILED), &sql, &params))?;
     Ok(D::rows_affected(&done))

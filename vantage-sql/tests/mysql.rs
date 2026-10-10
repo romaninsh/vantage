@@ -5,6 +5,16 @@ mod safe_writes_contract;
 
 #[cfg(feature = "mysql")]
 mod mysql {
+    /// True when the server under test is MariaDB rather than MySQL — for
+    /// the few assertions where the two servers legitimately differ.
+    pub(crate) async fn is_mariadb(db: &vantage_sql::mysql::MysqlDB) -> bool {
+        let version: String = sqlx::query_scalar("SELECT VERSION()")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        version.contains("MariaDB")
+    }
+
     #[path = "4_aggregates.rs"]
     mod aggregates;
     #[path = "2_associated.rs"]
@@ -27,6 +37,15 @@ mod mysql {
     mod expressions;
     #[path = "2_identifier.rs"]
     mod identifier;
+    #[cfg(feature = "vista")]
+    #[path = "9_import.rs"]
+    mod import;
+    #[cfg(feature = "vista")]
+    #[path = "9_import_batches.rs"]
+    mod import_batches;
+    #[cfg(feature = "vista")]
+    #[path = "9_import_conflicts.rs"]
+    mod import_conflicts;
     #[path = "2_insert.rs"]
     mod insert;
     #[path = "4_readable_data_set.rs"]
@@ -50,4 +69,13 @@ mod mysql {
     #[cfg(feature = "vista")]
     #[path = "6_vista.rs"]
     mod vista;
+    #[cfg(feature = "vista")]
+    #[path = "6_vista_paging.rs"]
+    mod vista_paging;
+    #[cfg(all(feature = "vista", feature = "rhai"))]
+    #[path = "6_vista_rhai_modify.rs"]
+    mod vista_rhai_modify;
+    #[cfg(all(feature = "vista", feature = "rhai"))]
+    #[path = "6_vista_rhai_refs.rs"]
+    mod vista_rhai_refs;
 }

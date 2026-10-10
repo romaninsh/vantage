@@ -54,11 +54,10 @@ macro_rules! register_engine {
         type Win = $crate::rhai_engine::RhaiWindow<$V>;
         type Cas = $crate::rhai_engine::RhaiCase<$V>;
 
-        // Register the full SQL vocabulary onto an existing engine. The same
-        // registrations can be layered onto vantage-vista's conventional
-        // vocabulary for scripted reference traversal (mirrors SurrealDB's
-        // `register_surreal_onto`). Wiring a per-shell target resolver is the
-        // follow-up that flips SQL's `can_build_ref_via_script` on.
+        // Register the full SQL vocabulary onto an existing engine, so a host
+        // can layer it beneath other vocabularies (e.g. vantage-vista's data
+        // vocabulary for `modify:` scripts and scripted references) instead
+        // of using `SqlVocab` on its own.
         fn __register_engine_onto(engine: &mut $crate::rhai_engine::rhai::Engine) {
             $crate::register_types!(engine, value: $V, select: $Select, join: $Join, cond: $Cond);
             $crate::register_convert!(value: $V);

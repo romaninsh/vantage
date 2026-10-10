@@ -306,6 +306,34 @@ mysql:
     Ok(())
 }
 
+/// Without the `rhai` feature a `modify:` script cannot run, so the build
+/// fails instead of silently skipping it.
+#[cfg(not(feature = "rhai"))]
+#[tokio::test]
+async fn vista_yaml_modify_without_rhai_errors() -> TestResult {
+    let db = MysqlDB::connect(MYSQL_URL).await?;
+    let yaml = r#"
+name: product
+columns:
+  id: { type: string, flags: [id] }
+mysql:
+  table: product
+  modify: |
+    self.with_condition(ident("price") > 15)
+"#;
+    let err = db
+        .vista_factory()
+        .from_yaml(yaml)
+        .err()
+        .expect("modify needs the rhai feature");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("modify") && msg.contains("`rhai` feature"),
+        "{msg}"
+    );
+    Ok(())
+}
+
 /// Create suffixed `client` and `orders` tables and return their names.
 async fn setup_clients_orders(suffix: &str) -> (MysqlDB, String, String) {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();

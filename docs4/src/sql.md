@@ -13,6 +13,10 @@ vendor-specific behaviour around type affinity, quoting, and parameter binding.
 | MySQL      | `MysqlDB`    | `AnyMysqlType`    | `?, ?`      | `` `backtick` `` |
 | SQLite     | `SqliteDB`   | `AnySqliteType`   | `?1, ?2`    | `"double_quote"` |
 
+`MysqlDB` supports MySQL 8 and MariaDB 11; both run the same test suite in CI.
+MariaDB differences: `JSON_EXTRACT` / `.as_json()` returns quoted JSON text; there is no `GROUPING()`, no
+`ORDER BY` with `WITH ROLLUP`, and no `REGEXP_LIKE` (use `REGEXP`); `DateTime<FixedOffset>` binds are rejected.
+
 ## What they implement
 
 All three implement the full trait stack:
