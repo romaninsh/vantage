@@ -105,7 +105,7 @@ pub fn relational_rows(
 ) -> Vec<(String, Record<CborValue>)> {
     let refs: Vec<&Reference> = refs.iter().filter(|r| r.parent_count > 0).collect();
     let fan = fan_out.and_then(|f| {
-        let parents = refs.iter().find(|r| r.column == f.column)?.parent_count;
+        let parents = fan_parents(&refs, f)?;
         Some((f.column.as_str(), owners(values, f, parents)))
     });
     let total = fan.as_ref().map_or(count, |(_, owners)| owners.len());
@@ -125,6 +125,26 @@ pub fn relational_rows(
             (id, record)
         })
         .collect()
+}
+
+/// Parent pool a `fan_out` draws from: the usable reference (non-empty pool)
+/// on its column, or `None` when the fan-out is ignored.
+fn fan_parents(refs: &[&Reference], fan: &FanOut) -> Option<usize> {
+    refs.iter()
+        .find(|r| r.column == fan.column)
+        .map(|r| r.parent_count)
+}
+
+/// Most rows [`relational_rows`] generates for the same plan: `count`, or
+/// with an applicable `fan_out` every parent's largest brood
+/// (`parent_count · max`). A seeded table generates fewer when its parents
+/// draw below `max`.
+pub fn max_relational_rows(count: usize, refs: &[Reference], fan_out: Option<&FanOut>) -> usize {
+    let refs: Vec<&Reference> = refs.iter().filter(|r| r.parent_count > 0).collect();
+    match fan_out.and_then(|f| Some((fan_parents(&refs, f)?, f))) {
+        Some((parents, fan)) => parents.saturating_mul(fan.min.max(fan.max)),
+        None => count,
+    }
 }
 
 /// Parent seq of each child row, children of one parent contiguous.

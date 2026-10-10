@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 — 2026-10-07
+
+- `execute_by_resolving()`, `execute_strict()` and `defer_execute()`: shared `ExprDataSource` bodies for backends without an expression engine.
+
 ## 1.0.1 — 2026-10-04
 
 - `resolve_param()`: collapses a scalar, deferred or nested parameter to one value.

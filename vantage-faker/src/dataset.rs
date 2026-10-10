@@ -67,14 +67,7 @@ impl DatasetGen {
         let mut planned = Vec::with_capacity(order.len());
         for i in order {
             let plan = &self.tables[i];
-            let refs: Vec<Reference> = plan
-                .refs
-                .iter()
-                .map(|r| Reference {
-                    column: r.column.clone(),
-                    parent_count: counts.get(r.target.as_str()).copied().unwrap_or(0),
-                })
-                .collect();
+            let refs = resolve_refs(plan, &counts);
             check_plan(&refs, plan.fan_out.as_ref()).map_err(|reason| {
                 error!("Table plan is invalid", table = plan.name, reason = reason)
             })?;
@@ -88,6 +81,38 @@ impl DatasetGen {
             .map(|(plan, rows)| seed_table(store, plan, rows))
             .collect())
     }
+
+    /// Most rows [`generate`](Self::generate) creates across all tables,
+    /// following the same reference order and fan-out rules: a flat table
+    /// counts its `count`, a fan-out table `parents × max`. A seeded fan-out
+    /// can generate fewer, never more. A plan `generate` would reject
+    /// (reference cycle, unknown target) generates nothing and counts 0.
+    pub fn max_rows(&self) -> usize {
+        let Ok(order) = order::generation_order(&self.tables) else {
+            return 0;
+        };
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        let mut total = 0usize;
+        for i in order {
+            let plan = &self.tables[i];
+            let rows = plan.max_rows(&resolve_refs(plan, &counts));
+            counts.insert(&plan.name, rows);
+            total = total.saturating_add(rows);
+        }
+        total
+    }
+}
+
+/// `plan`'s reference columns, each with the row count its target table
+/// generated (0 when not yet known).
+fn resolve_refs(plan: &TableGen, counts: &HashMap<&str, usize>) -> Vec<Reference> {
+    plan.refs
+        .iter()
+        .map(|r| Reference {
+            column: r.column.clone(),
+            parent_count: counts.get(r.target.as_str()).copied().unwrap_or(0),
+        })
+        .collect()
 }
 
 /// Define `plan`'s table in `store` and write `rows` into it quietly.

@@ -2146,7 +2146,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2165,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -2178,7 +2178,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-kubernetes"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2206,7 +2206,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2253,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "async-stream",
  "async-trait",

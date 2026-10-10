@@ -8,7 +8,7 @@ mod table_source;
 use ciborium::Value as CborValue;
 use vantage_core::{Result, VantageError, error};
 use vantage_expressions::{
-    DeferredFn, Expression, ExpressiveEnum,
+    DeferredFn, Expression, defer_execute, execute_strict,
     traits::datasource::{DataSource, ExprDataSource},
 };
 use vantage_table::table::Table;
@@ -196,55 +196,18 @@ impl ExprDataSource<AnyMemoryType> for MemoryDB {
         &self,
         expr: &Expression<AnyMemoryType>,
     ) -> vantage_core::Result<AnyMemoryType> {
-        if expr.parameters.is_empty() {
-            return Ok(AnyMemoryType::untyped(ciborium::Value::Text(
-                expr.template.clone(),
-            )));
-        }
-        if expr.parameters.len() != 1 {
-            return Err(vantage_core::error!(
-                "MemoryDB does not support multi-parameter expression execution"
-            ));
-        }
-        match &expr.parameters[0] {
-            ExpressiveEnum::Nested(inner) => match inner.parameters.as_slice() {
-                [ExpressiveEnum::Nested(_)] => Err(vantage_core::error!(
-                    "MemoryDB execute: only one level of nesting supported"
-                )),
-                [single] => scalar_of(single).await,
-                _ => Err(vantage_core::error!(
-                    "MemoryDB execute: nested expression must have exactly one parameter"
-                )),
-            },
-            other => scalar_of(other).await,
-        }
+        execute_strict(
+            expr,
+            |template| AnyMemoryType::untyped(CborValue::Text(template.to_string())),
+            "MemoryDB",
+        )
+        .await
     }
 
     fn defer(&self, expr: Expression<AnyMemoryType>) -> DeferredFn<AnyMemoryType>
     where
         AnyMemoryType: Clone + Send + Sync + 'static,
     {
-        let db = self.clone();
-        DeferredFn::new(move || {
-            let db = db.clone();
-            let expr = expr.clone();
-            Box::pin(async move { Ok(ExpressiveEnum::Scalar(db.execute(&expr).await?)) })
-        })
-    }
-}
-
-/// The scalar behind a scalar or deferred parameter.
-async fn scalar_of(param: &ExpressiveEnum<AnyMemoryType>) -> vantage_core::Result<AnyMemoryType> {
-    match param {
-        ExpressiveEnum::Scalar(v) => Ok(v.clone()),
-        ExpressiveEnum::Deferred(d) => match d.call().await? {
-            ExpressiveEnum::Scalar(v) => Ok(v),
-            _ => Err(vantage_core::error!(
-                "Deferred resolved to non-scalar in MemoryDB execute"
-            )),
-        },
-        ExpressiveEnum::Nested(_) => Err(vantage_core::error!(
-            "MemoryDB execute: only one level of nesting supported"
-        )),
+        defer_execute(self, expr)
     }
 }

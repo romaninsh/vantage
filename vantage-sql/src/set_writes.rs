@@ -8,6 +8,7 @@ use vantage_core::Result;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::{Expression, expr_any};
 use vantage_table::table::Table;
+use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
@@ -24,6 +25,15 @@ pub(crate) trait SetWrites:
 
     /// The cell a column the record leaves out reads as in the probe.
     fn null() -> Self::Value;
+
+    /// The probe cell for a column the record leaves out. `column_type` is
+    /// the column's declared Rust type name, when the table knows it. The
+    /// default is a plain [`SetWrites::null`]; a dialect whose NULL would
+    /// otherwise take the wrong type overrides this to type it.
+    fn absent(_column_type: Option<&str>) -> Expression<Self::Value> {
+        let null = Self::null();
+        expr_any!("{}", null)
+    }
 
     /// `name` quoted as an identifier.
     fn quoted(name: &str) -> Expression<Self::Value>;
@@ -56,7 +66,7 @@ where
 /// conditions over a one-row derived table aliased as the table itself, so
 /// plain, table-qualified and subquery conditions read as they do on the
 /// real rows. A table column the record leaves out reads as
-/// [`SetWrites::null`].
+/// [`SetWrites::absent`].
 pub(crate) async fn row_in_set<T, E>(
     db: &T,
     table: &Table<T, E>,
@@ -83,8 +93,14 @@ where
     let fields: Vec<Expression<T::Value>> = names
         .iter()
         .map(|name| {
-            let value = row.get(name).cloned().unwrap_or_else(T::null);
-            expr_any!("{} AS {}", value, (T::quoted(name)))
+            let cell: Expression<T::Value> = match row.get(name) {
+                Some(value) => {
+                    let value = value.clone();
+                    expr_any!("{}", value)
+                }
+                None => T::absent(table.columns().get(name).map(|c| c.get_type())),
+            };
+            expr_any!("{} AS {}", (cell), (T::quoted(name)))
         })
         .collect();
     let conditions: Vec<Expression<T::Value>> = table

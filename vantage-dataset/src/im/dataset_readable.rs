@@ -7,7 +7,7 @@ use crate::{
     im::ImTable,
     traits::{DataSet, ReadableDataSet, Result},
 };
-use vantage_core::util::error::vantage_error;
+use vantage_core::error;
 
 #[async_trait]
 impl<E> DataSet<E> for ImTable<E> where E: Entity {}
@@ -34,7 +34,7 @@ where
             record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
             let entity: E = E::try_from_record(&record_with_id)
-                .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
+                .map_err(|e| error!("Failed to convert record to entity", error = e))?;
             records.insert(id, entity);
         }
 
@@ -55,7 +55,7 @@ where
         record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
         let entity = E::try_from_record(&record_with_id)
-            .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
+            .map_err(|e| error!("Failed to convert record to entity", error = e))?;
         Ok(Some(entity))
     }
 
@@ -74,7 +74,7 @@ where
         record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
         let entity: E = E::try_from_record(&record_with_id)
-            .map_err(|e| vantage_error!("Failed to convert record to entity: {:?}", e))?;
+            .map_err(|e| error!("Failed to convert record to entity", error = e))?;
         Ok(Some((id, entity)))
     }
 }

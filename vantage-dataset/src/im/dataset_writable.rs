@@ -23,20 +23,14 @@ where
                 record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
                 return E::try_from_record(&record_with_id).map_err(|e| {
-                    vantage_core::util::error::vantage_error!(
-                        "Failed to convert record to entity: {:?}",
-                        e
-                    )
+                    vantage_core::error!("Failed to convert record to entity", error = e)
                 });
             }
 
             // Convert entity to record for storage (remove id field since it's in the key)
             let mut record: Record<serde_json::Value> =
                 entity.clone().try_into_record().map_err(|e| {
-                    vantage_core::util::error::vantage_error!(
-                        "Failed to serialize entity to record: {:?}",
-                        e
-                    )
+                    vantage_core::error!("Failed to serialize entity to record", error = e)
                 })?;
             record.shift_remove("id");
 
@@ -48,13 +42,10 @@ where
     async fn replace(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
         let id = id.into();
         // Convert entity to record for storage (remove id field since it's in the key)
-        let mut record: Record<serde_json::Value> =
-            entity.clone().try_into_record().map_err(|e| {
-                vantage_core::util::error::vantage_error!(
-                    "Failed to serialize entity to record: {:?}",
-                    e
-                )
-            })?;
+        let mut record: Record<serde_json::Value> = entity
+            .clone()
+            .try_into_record()
+            .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
         record.shift_remove("id");
 
         self.data_source.with_table_mut(&self.table_name, |table| {
@@ -67,20 +58,17 @@ where
     async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E> {
         let id = id.into();
         // Convert partial entity to record
-        let partial_record: Record<serde_json::Value> =
-            partial.clone().try_into_record().map_err(|e| {
-                vantage_core::util::error::vantage_error!(
-                    "Failed to serialize entity to record: {:?}",
-                    e
-                )
-            })?;
+        let partial_record: Record<serde_json::Value> = partial
+            .clone()
+            .try_into_record()
+            .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
         self.data_source.with_table_mut(&self.table_name, |table| {
             // Check if record exists
             let mut existing_record = table
                 .get(&id)
                 .ok_or_else(|| {
-                    vantage_core::util::error::vantage_error!("Record with id '{}' not found", id)
+                    vantage_core::error!("Record not found", id = id.clone()).mark_not_found()
                 })?
                 .clone();
 
@@ -98,12 +86,8 @@ where
             let mut record_with_id = existing_record;
             record_with_id.insert("id".to_string(), serde_json::Value::String(id));
 
-            E::try_from_record(&record_with_id).map_err(|e| {
-                vantage_core::util::error::vantage_error!(
-                    "Failed to convert record to entity: {:?}",
-                    e
-                )
-            })
+            E::try_from_record(&record_with_id)
+                .map_err(|e| vantage_core::error!("Failed to convert record to entity", error = e))
         })
     }
 }

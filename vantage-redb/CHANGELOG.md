@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1 — 2026-10-07
+
+- `Redb::execute` builds on `vantage_expressions::execute_strict`; its errors name the backend in a `backend` context key.
+
 ## 0.7.0 — 2026-10-05
 
 - Fixed: insert of an existing id overwrote the row and left stale index entries; it now returns the

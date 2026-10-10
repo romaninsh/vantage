@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1 — 2026-10-07
+
+- Removed the uncompiled `table/` module.
+
 ## 0.7.0 — 2026-10-05
 
 - **Breaking:** delete of a missing record or one outside the table's conditions is `Ok`.

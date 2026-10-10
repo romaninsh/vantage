@@ -3,7 +3,8 @@
 use crate::traits::{DataSet, ReadableDataSet, ReadableValueSet, Result, ValueSet};
 use indexmap::IndexMap;
 use std::collections::HashMap;
-use vantage_core::util::error::{Context, vantage_error};
+use vantage_core::error;
+use vantage_core::util::error::Context;
 use vantage_types::{Entity, Record, vantage_type_system};
 
 // CSV type system - everything is a string since CSV is text-based
@@ -100,7 +101,7 @@ impl MockCsv {
         self.files
             .get(filename)
             .map(|s| s.as_str())
-            .ok_or_else(|| vantage_error!("File {} not found", filename))
+            .ok_or_else(|| error!("File not found", filename = filename).mark_not_found())
     }
 }
 
@@ -141,7 +142,7 @@ where
 
         for (id, record) in values {
             let entity = T::try_from_record(&record)
-                .map_err(|_| vantage_error!("Failed to convert record to entity"))?;
+                .map_err(|_| error!("Failed to convert record to entity"))?;
             records.insert(id, entity);
         }
 
@@ -154,14 +155,14 @@ where
             return Ok(None);
         };
         let entity = T::try_from_record(&record)
-            .map_err(|_| vantage_error!("Failed to convert record to entity"))?;
+            .map_err(|_| error!("Failed to convert record to entity"))?;
         Ok(Some(entity))
     }
 
     async fn get_some(&self) -> Result<Option<(Self::Id, T)>> {
         if let Some((id, record)) = self.get_some_value().await? {
             let entity = T::try_from_record(&record)
-                .map_err(|_| vantage_error!("Failed to convert record to entity"))?;
+                .map_err(|_| error!("Failed to convert record to entity"))?;
             Ok(Some((id, entity)))
         } else {
             Ok(None)

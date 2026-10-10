@@ -1,8 +1,9 @@
 //! The [`TableShell`] impl of [`ShapedShell`]: every read, write and
 //! query-state call is gated by the shape and tolled; the rest forwards.
-
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+//!
+//! The shaped bodies live in [`reads`], [`writes`] and [`query_state`]; the
+//! impl below is one block because the forwarding macro emits a single trait
+//! impl.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -15,6 +16,10 @@ use vantage_vista::{
 };
 
 use super::{OpClass, ShapedShell};
+
+mod query_state;
+mod reads;
+mod writes;
 
 // The schema, contained relations, raw conditions and Rhai hooks forward to
 // the wrapped shell; every read, write and query-state call is shaped below.
@@ -92,32 +97,16 @@ forward_table_shell!(ShapedShell, inner, {
         offset: usize,
         limit: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
-        self.gate(
-            self.shape.capabilities.can_fetch_window,
-            "fetch_window",
-            "can_fetch_window",
-        )?;
-        tracing::debug!(target: "vantage_faker::shape", op = "window", offset, limit, "request");
-        self.toll(OpClass::Window).await?;
-        let offset = self.skewed_offset(offset);
-        self.inner.fetch_window(vista, offset, limit).await
+        self.shaped_fetch_window(vista, offset, limit).await
     }
 
-    /// The total rides the same response envelope as the rows (no second
-    /// toll) — and only exists where the shape can count.
     async fn fetch_window_counted(
         &self,
         vista: &Vista,
         offset: usize,
         limit: usize,
     ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
-        let rows = TableShell::fetch_window(self, vista, offset, limit).await?;
-        let total = if self.shape.capabilities.can_count {
-            Some(self.lied_total(vista).await?)
-        } else {
-            None
-        };
-        Ok((rows, total))
+        self.shaped_fetch_window_counted(vista, offset, limit).await
     }
 
     async fn fetch_page(
@@ -125,14 +114,7 @@ forward_table_shell!(ShapedShell, inner, {
         vista: &Vista,
         page: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
-        self.gate(
-            self.shape.capabilities.can_fetch_page,
-            "fetch_page",
-            "can_fetch_page",
-        )?;
-        self.toll(OpClass::Window).await?;
-        let offset = self.skewed_offset(page.saturating_sub(1) * self.page_size);
-        self.inner.fetch_window(vista, offset, self.page_size).await
+        self.shaped_fetch_page(vista, page).await
     }
 
     async fn fetch_next(
@@ -140,34 +122,11 @@ forward_table_shell!(ShapedShell, inner, {
         vista: &Vista,
         token: Option<CborValue>,
     ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
-        self.gate(
-            self.shape.capabilities.can_fetch_next,
-            "fetch_next",
-            "can_fetch_next",
-        )?;
-        self.toll(OpClass::Window).await?;
-        let offset = match &token {
-            None => 0,
-            Some(t) => self.decode_cursor(t)?,
-        };
-        let offset = self.skewed_offset(offset);
-        let rows = self
-            .inner
-            .fetch_window(vista, offset, self.page_size)
-            .await?;
-        let next = (rows.len() == self.page_size).then(|| self.cursor_token(offset + rows.len()));
-        Ok((rows, next))
+        self.shaped_fetch_next(vista, token).await
     }
 
     async fn get_vista_count(&self, vista: &Vista) -> Result<i64> {
-        self.gate(
-            self.shape.capabilities.can_count,
-            "get_vista_count",
-            "can_count",
-        )?;
-        tracing::debug!(target: "vantage_faker::shape", op = "count", "request");
-        self.toll(OpClass::Count).await?;
-        self.lied_total(vista).await
+        self.shaped_count(vista).await
     }
 
     /// Shaping does not touch push delivery — no toll, no fault draw — so a
@@ -182,21 +141,13 @@ forward_table_shell!(ShapedShell, inner, {
         self.inner.watch_vista(vista).await
     }
 
-    // ---- Writes: forwarded when advertised, no toll — the scenarios stress
-    // the read path; write latency is a personality nobody asked for yet.
-
     async fn insert_vista_value(
         &self,
         vista: &Vista,
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.gate(
-            self.shape.capabilities.can_insert,
-            "insert_vista_value",
-            "can_insert",
-        )?;
-        self.inner.insert_vista_value(vista, id, record).await
+        self.shaped_insert(vista, id, record).await
     }
 
     async fn replace_vista_value(
@@ -205,27 +156,16 @@ forward_table_shell!(ShapedShell, inner, {
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.gate(
-            self.shape.capabilities.can_update,
-            "replace_vista_value",
-            "can_update",
-        )?;
-        self.inner.replace_vista_value(vista, id, record).await
+        self.shaped_replace(vista, id, record).await
     }
 
-    /// A replace, then an insert when the row is missing, each gated.
     async fn upsert_vista_value(
         &self,
         vista: &Vista,
         id: &String,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        match TableShell::replace_vista_value(self, vista, id, record).await {
-            Err(e) if e.is_not_found() => {
-                TableShell::insert_vista_value(self, vista, id, record).await
-            }
-            other => other,
-        }
+        self.shaped_upsert(vista, id, record).await
     }
 
     /// Bulk import is not part of any shape.
@@ -243,30 +183,15 @@ forward_table_shell!(ShapedShell, inner, {
         id: &String,
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.gate(
-            self.shape.capabilities.can_update,
-            "patch_vista_value",
-            "can_update",
-        )?;
-        self.inner.patch_vista_value(vista, id, partial).await
+        self.shaped_patch(vista, id, partial).await
     }
 
     async fn delete_vista_value(&self, vista: &Vista, id: &String) -> Result<()> {
-        self.gate(
-            self.shape.capabilities.can_delete,
-            "delete_vista_value",
-            "can_delete",
-        )?;
-        self.inner.delete_vista_value(vista, id).await
+        self.shaped_delete(vista, id).await
     }
 
     async fn delete_vista_all_values(&self, vista: &Vista) -> Result<()> {
-        self.gate(
-            self.shape.capabilities.can_delete,
-            "delete_vista_all_values",
-            "can_delete",
-        )?;
-        self.inner.delete_vista_all_values(vista).await
+        self.shaped_delete_all(vista).await
     }
 
     async fn insert_vista_return_id_value(
@@ -274,15 +199,8 @@ forward_table_shell!(ShapedShell, inner, {
         vista: &Vista,
         record: &Record<CborValue>,
     ) -> Result<String> {
-        self.gate(
-            self.shape.capabilities.can_insert,
-            "insert_vista_return_id_value",
-            "can_insert",
-        )?;
-        self.inner.insert_vista_return_id_value(vista, record).await
+        self.shaped_insert_return_id(vista, record).await
     }
-
-    // ---- Query state ------------------------------------------------------
 
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
         // Equality push-down is universal — not gated, per the capability
@@ -291,77 +209,31 @@ forward_table_shell!(ShapedShell, inner, {
     }
 
     fn add_op_condition(&mut self, field: &str, op: FilterOp, value: &CborValue) -> Result<()> {
-        if op == FilterOp::Eq {
-            return self.inner.add_eq_condition(field, value);
-        }
-        self.gate(
-            self.shape.capabilities.can_filter_operators,
-            "add_op_condition",
-            "can_filter_operators",
-        )?;
-        self.inner.add_op_condition(field, op, value)
+        self.shaped_add_op_condition(field, op, value)
     }
 
     fn add_search(&mut self, text: &str) -> Result<()> {
-        self.gate(
-            self.shape.capabilities.can_search,
-            "add_search",
-            "can_search",
-        )?;
-        self.inner.add_search(text)?;
-        self.searching.store(true, Ordering::Relaxed);
-        Ok(())
+        self.shaped_add_search(text)
     }
 
     fn clear_search(&mut self) -> Result<()> {
-        self.gate(
-            self.shape.capabilities.can_search,
-            "clear_search",
-            "can_search",
-        )?;
-        self.inner.clear_search()?;
-        self.searching.store(false, Ordering::Relaxed);
-        Ok(())
+        self.shaped_clear_search()
     }
 
     fn add_order(&mut self, field: &str, dir: vantage_vista::sort::SortDirection) -> Result<()> {
-        self.gate(self.shape.capabilities.can_order, "add_order", "can_order")?;
-        self.inner.add_order(field, dir)
+        self.shaped_add_order(field, dir)
     }
 
     fn clear_orders(&mut self) -> Result<()> {
-        self.gate(
-            self.shape.capabilities.can_order,
-            "clear_orders",
-            "can_order",
-        )?;
-        self.inner.clear_orders()
+        self.shaped_clear_orders()
     }
 
     fn set_page_size(&mut self, size: usize) -> Result<()> {
-        self.gate(
-            self.shape.capabilities.can_set_page_size,
-            "set_page_size",
-            "can_set_page_size",
-        )?;
-        self.page_size = size.max(1);
-        Ok(())
+        self.shaped_set_page_size(size)
     }
 
-    /// Same store and fault/jitter stream, fresh query state — the clone a
-    /// consumer narrows (`add_order` + `fetch_window`) without disturbing
-    /// this handle. Each clone tracks its own `searching`.
     fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-        let inner = self.inner.clone_shell()?;
-        Some(Box::new(Self {
-            inner,
-            shape: self.shape.clone(),
-            capabilities: self.capabilities.clone(),
-            rng: self.rng.clone(),
-            epoch: self.epoch,
-            page_size: self.page_size,
-            searching: Arc::new(AtomicBool::new(false)),
-        }))
+        self.shaped_clone()
     }
 
     /// A target reached through a reference would not be shaped, so

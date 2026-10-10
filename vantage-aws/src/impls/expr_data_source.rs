@@ -9,37 +9,25 @@
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_expressions::{
-    Expression, resolve_param,
-    traits::datasource::ExprDataSource,
-    traits::expressive::{DeferredFn, ExpressiveEnum},
+    Expression, defer_execute, execute_by_resolving, traits::datasource::ExprDataSource,
+    traits::expressive::DeferredFn,
 };
 
 use crate::account::AwsAccount;
 
 impl ExprDataSource<CborValue> for AwsAccount {
     async fn execute(&self, expr: &Expression<CborValue>) -> Result<CborValue> {
-        if expr.parameters.is_empty() {
-            Ok(CborValue::Text(expr.template.clone()))
-        } else if expr.parameters.len() == 1 {
-            // Collapses a `column_table_values_expr` chain
-            // (Nested → Deferred → Scalar) to the projected array.
-            resolve_param(&expr.parameters[0], |t| CborValue::Text(t.to_string())).await
-        } else {
-            // Not a shape this backend produces; surface stably so the
-            // relationship machinery isn't tripped by trivial probes.
-            Ok(CborValue::Null)
-        }
+        // A single parameter is a `column_table_values_expr` chain
+        // (Nested → Deferred → Scalar) and collapses to the projected array.
+        execute_by_resolving(
+            expr,
+            |t| CborValue::Text(t.to_string()),
+            |_| async { Ok(CborValue::Null) },
+        )
+        .await
     }
 
     fn defer(&self, expr: Expression<CborValue>) -> DeferredFn<CborValue> {
-        let this = self.clone();
-        DeferredFn::new(move || {
-            let this = this.clone();
-            let expr = expr.clone();
-            Box::pin(async move {
-                let result = ExprDataSource::execute(&this, &expr).await?;
-                Ok(ExpressiveEnum::Scalar(result))
-            })
-        })
+        defer_execute(self, expr)
     }
 }

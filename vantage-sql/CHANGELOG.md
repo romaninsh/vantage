@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1 — 2026-10-07
+
+- Fixed: on PostgreSQL an operator condition on a column the written record omits (`price > 10`) is a
+  `Conflict`, not a type error; the set probe types an absent column's NULL from the column.
+
 ## 0.7.0 — 2026-10-05
 
 - Removed the uncompiled `rhai_engine/dialect_functions.rs` (`strftime`, a second `group_concat`);

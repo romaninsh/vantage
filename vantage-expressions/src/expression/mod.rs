@@ -58,4 +58,4 @@ pub mod macros;
 pub mod mapping;
 mod resolve;
 
-pub use resolve::resolve_param;
+pub use resolve::{execute_by_resolving, execute_strict, resolve_param};

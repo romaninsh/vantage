@@ -4,7 +4,7 @@ use std::future::Future;
 use crate::Expression;
 use crate::Selectable;
 use crate::traits::associated_expressions::AssociatedExpression;
-use crate::traits::expressive::DeferredFn;
+use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_core::Result;
 
 /// DataSource can be referenced by other objects, and will help associate them
@@ -36,6 +36,22 @@ pub trait ExprDataSource<T = Value>: DataSource {
     {
         AssociatedExpression::new(expr, self)
     }
+}
+
+/// A [`DeferredFn`] that runs `expr` through `source.execute` on each call and
+/// yields the result as a scalar: the usual [`ExprDataSource::defer`] body for
+/// a source that is cheap to clone.
+pub fn defer_execute<S, T>(source: &S, expr: Expression<T>) -> DeferredFn<T>
+where
+    S: ExprDataSource<T> + Clone + 'static,
+    T: Clone + Send + Sync + 'static,
+{
+    let source = source.clone();
+    DeferredFn::new(move || {
+        let source = source.clone();
+        let expr = expr.clone();
+        Box::pin(async move { Ok(ExpressiveEnum::Scalar(source.execute(&expr).await?)) })
+    })
 }
 
 /// Datasource that support creation and execution of select queries

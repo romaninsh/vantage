@@ -83,7 +83,7 @@ or `list()`, and calling one is a "function not found" error.
 handle resolves, and must return a **fresh, unconditioned** Vista: the handle applies its own steps
 on top. This is the resolver the guide's tests use, over an in-memory store:
 
-<!-- tested: rhai_guide::support::resolver (used by every rhai_guide test) -->
+<!-- tested: rhai_guide::hosts::build_a_host -->
 ```rust,ignore
 pub fn resolver(store: &MemoryStore) -> TargetResolver {
     let catalog = catalog(store);

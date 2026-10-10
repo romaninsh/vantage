@@ -27,7 +27,6 @@ pub mod surreal_return;
 pub mod surrealdb;
 // pub mod prelude;
 // pub mod column;
-// pub mod table;
 pub mod thing;
 // pub mod typed_expression;
 pub mod variable;

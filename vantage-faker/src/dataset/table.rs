@@ -5,7 +5,7 @@ use ciborium::Value as CborValue;
 use vantage_types::Record;
 
 use super::ExtraFields;
-use crate::relational::{Reference, relational_rows};
+use crate::relational::{Reference, max_relational_rows, relational_rows};
 use crate::value_gen::ValueGen;
 use crate::{FakerColumn, FanOut};
 
@@ -105,6 +105,11 @@ impl TableGen {
     pub fn extra_fields(mut self, extra: ExtraFields) -> Self {
         self.extra_fields = Some(extra);
         self
+    }
+
+    /// Most rows [`rows`](Self::rows) generates with `refs` resolved.
+    pub(super) fn max_rows(&self, refs: &[Reference]) -> usize {
+        max_relational_rows(self.count, refs, self.fan_out.as_ref())
     }
 
     /// This table's rows, drawn from `seed` with `refs` resolved.

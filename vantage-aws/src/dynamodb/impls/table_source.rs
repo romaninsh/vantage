@@ -430,7 +430,10 @@ impl TableSource for DynamoDB {
                 )
             })?;
             let key = key_for_id(&id_field, &id)?;
-            transport::delete_item(self.aws(), table.table_name(), key).await?;
+            // The scan is a snapshot: re-checking the set on each delete keeps
+            // a row that left it since the scan. A refused delete means the row
+            // is outside the set (or gone), so it is skipped.
+            transport::delete_item_if(self.aws(), table.table_name(), key, &filter).await?;
         }
         Ok(())
     }

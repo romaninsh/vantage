@@ -161,15 +161,6 @@ pub(crate) async fn get_item(
     call(aws, "GetItem", body).await
 }
 
-pub(crate) async fn delete_item(
-    aws: &AwsAccount,
-    table: &str,
-    key: JsonMap<String, JsonValue>,
-) -> Result<JsonValue> {
-    let body = json!({ "TableName": table, "Key": key });
-    call(aws, "DeleteItem", body).await
-}
-
 /// Whether a conditional write was applied or refused by its condition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PutOutcome {
@@ -269,6 +260,19 @@ mod tests {
         assert_eq!(body["ExpressionAttributeNames"]["#n0"], "parent");
         assert_eq!(body["ExpressionAttributeValues"][":v0"], json!({"S": "p1"}));
         assert_eq!(body["Item"]["id"], json!({"S": "a"}));
+    }
+
+    #[tokio::test]
+    async fn delete_body_carries_condition_and_maps() {
+        let cond = DynamoCondition::eq("parent", AttributeValue::S("p1".into()));
+        let filter = resolve_conditions([&cond]).await.unwrap();
+        let mut key = JsonMap::new();
+        key.insert("id".into(), json!({"S": "a"}));
+        let body = delete_body("t", &key, &filter).unwrap();
+        assert_eq!(body["ConditionExpression"], "#n0 = :v0");
+        assert_eq!(body["ExpressionAttributeNames"]["#n0"], "parent");
+        assert_eq!(body["ExpressionAttributeValues"][":v0"], json!({"S": "p1"}));
+        assert_eq!(body["Key"]["id"], json!({"S": "a"}));
     }
 
     #[test]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-10-07
+
+- `ImTable` and `MockCsv` errors carry details as context keys; a missing record or file is marked not-found.
+
 ## 1.1.0 — 2026-10-05
 
 - The write contract is written out on `WritableValueSet`/`WritableDataSet`: idempotent and confined to the set.

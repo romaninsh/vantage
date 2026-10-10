@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.10 — 2026-10-07
+
+- `ExprDataSource` builds on `vantage_expressions::execute_by_resolving` and `defer_execute`.
+
 ## 0.6.9 — 2026-10-07
 
 - Builds against the bumped vantage crates (edition 2024 workspace).

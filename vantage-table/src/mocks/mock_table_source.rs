@@ -35,7 +35,8 @@ use crate::{
 ///
 /// Meets the write contract for literal `column = value` conditions; any
 /// other condition on a by-id write is refused with `Unsupported`. Reads
-/// ignore non-literal conditions, as before.
+/// also evaluate the `name LIKE` search condition and refuse any other
+/// condition with `Unsupported`.
 #[derive(Clone)]
 pub struct MockTableSource {
     im_data_source: ImDataSource,
@@ -103,20 +104,51 @@ impl MockTableSource {
 }
 
 impl MockTableSource {
-    /// Whether `row` satisfies every literal-equality condition of `table`.
-    /// Other conditions are skipped; writes refuse them first through
-    /// [`Self::ensure_confinable`].
-    fn row_in_set<E: Entity<Value>>(table: &Table<Self, E>, row: &Record<Value>) -> bool {
-        table.conditions().all(|condition| {
-            crate::conditions::literal_equality(condition).is_none_or(|(column, expected)| {
-                row.get(&column).is_some_and(|v| v.value_eq(&expected))
-            })
-        })
+    /// Whether `row` satisfies every condition of `table`.
+    ///
+    /// Evaluates literal `column = value` conditions and the `name LIKE '%…%'`
+    /// search that [`TableSource::search_table_condition`] produces; any other
+    /// condition is refused with `Unsupported` rather than matching every row.
+    fn row_in_set<E: Entity<Value>>(table: &Table<Self, E>, row: &Record<Value>) -> Result<bool> {
+        for condition in table.conditions() {
+            let matched =
+                if let Some((column, expected)) = crate::conditions::literal_equality(condition) {
+                    row.get(&column).is_some_and(|v| v.value_eq(&expected))
+                } else if let Some(needle) = Self::name_search_needle(condition) {
+                    row.get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| name.to_lowercase().contains(&needle))
+                } else {
+                    return Err(vantage_core::error!(
+                        "mock table source cannot evaluate condition",
+                        condition = condition.preview()
+                    )
+                    .mark_unsupported());
+                };
+            if !matched {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
-    /// Refuse a by-id write up front when `table` holds a condition the mock
-    /// cannot evaluate, so a missing row is refused rather than reported as
-    /// absent.
+    /// The lowercased text inside the `%…%` pattern of a `name LIKE {}`
+    /// condition built by `search_table_condition`.
+    fn name_search_needle(condition: &Expression<Value>) -> Option<String> {
+        if condition.template != "name LIKE {}" {
+            return None;
+        }
+        match condition.parameters.as_slice() {
+            [ExpressiveEnum::Scalar(Value::String(pattern))] => {
+                Some(pattern.trim_matches('%').to_lowercase())
+            }
+            _ => None,
+        }
+    }
+
+    /// Refuse a by-id write up front when `table` holds a condition that is
+    /// not a literal equality, so a missing row is refused rather than reported
+    /// as absent.
     fn ensure_confinable<E: Entity<Value>>(table: &Table<Self, E>) -> Result<()> {
         if table
             .conditions()
@@ -248,7 +280,19 @@ impl TableSource for MockTableSource {
         Self: Sized,
     {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-        im_table.list_values().await
+        let mut rows = im_table.list_values().await?;
+        let mut failure = None;
+        rows.retain(|_, row| match Self::row_in_set(table, row) {
+            Ok(keep) => keep,
+            Err(e) => {
+                failure.get_or_insert(e);
+                false
+            }
+        });
+        match failure {
+            Some(e) => Err(e),
+            None => Ok(rows),
+        }
     }
 
     async fn get_table_value<E>(
@@ -261,8 +305,10 @@ impl TableSource for MockTableSource {
         Self: Sized,
     {
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
-        let row = im_table.get_value(id).await?;
-        Ok(row.filter(|r| Self::row_in_set(table, r)))
+        match im_table.get_value(id).await? {
+            Some(row) if Self::row_in_set(table, &row)? => Ok(Some(row)),
+            _ => Ok(None),
+        }
     }
 
     async fn get_table_some_value<E>(
@@ -282,7 +328,10 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        Ok(self.im_data_source.table_len(table.table_name()) as i64)
+        if table.conditions().next().is_none() {
+            return Ok(self.im_data_source.table_len(table.table_name()) as i64);
+        }
+        Ok(self.list_table_values(table).await?.len() as i64)
     }
 
     async fn get_table_sum<E>(
@@ -340,7 +389,7 @@ impl TableSource for MockTableSource {
         Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         if let Some(existing) = im_table.get_value(id).await? {
-            if Self::row_in_set(table, &existing) {
+            if Self::row_in_set(table, &existing)? {
                 return Ok(existing);
             }
             return Err(Self::outside(id));
@@ -348,7 +397,7 @@ impl TableSource for MockTableSource {
 
         let mut full = record.clone();
         full.insert("id".to_string(), Value::String(id.clone()));
-        if !Self::row_in_set(table, &full) {
+        if !Self::row_in_set(table, &full)? {
             return Err(Self::misfit(id));
         }
         im_table.replace_value(id, &full).await
@@ -367,14 +416,14 @@ impl TableSource for MockTableSource {
         Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         if let Some(existing) = im_table.get_value(id).await?
-            && !Self::row_in_set(table, &existing)
+            && !Self::row_in_set(table, &existing)?
         {
             return Err(Self::outside(id));
         }
 
         let mut full = record.clone();
         full.insert("id".to_string(), Value::String(id.clone()));
-        if !Self::row_in_set(table, &full) {
+        if !Self::row_in_set(table, &full)? {
             return Err(Self::misfit(id));
         }
         im_table.replace_value(id, &full).await
@@ -393,7 +442,7 @@ impl TableSource for MockTableSource {
         Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         let mut merged = match im_table.get_value(id).await? {
-            Some(existing) if Self::row_in_set(table, &existing) => existing,
+            Some(existing) if Self::row_in_set(table, &existing)? => existing,
             _ => {
                 return Err(
                     vantage_core::error!("Record not found", id = id.as_str()).mark_not_found()
@@ -403,7 +452,7 @@ impl TableSource for MockTableSource {
         for (column, value) in partial.iter() {
             merged.insert(column.clone(), value.clone());
         }
-        if !Self::row_in_set(table, &merged) {
+        if !Self::row_in_set(table, &merged)? {
             return Err(vantage_core::error!(
                 "patch would move the row out of this set",
                 id = id.as_str()
@@ -421,7 +470,7 @@ impl TableSource for MockTableSource {
         Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         if let Some(existing) = im_table.get_value(id).await?
-            && Self::row_in_set(table, &existing)
+            && Self::row_in_set(table, &existing)?
         {
             im_table.delete(id).await?;
         }
@@ -439,7 +488,7 @@ impl TableSource for MockTableSource {
         }
         Self::ensure_confinable(table)?;
         for (id, row) in im_table.list_values().await? {
-            if Self::row_in_set(table, &row) {
+            if Self::row_in_set(table, &row)? {
                 im_table.delete(&id).await?;
             }
         }
@@ -456,7 +505,7 @@ impl TableSource for MockTableSource {
         Self: Sized,
     {
         Self::ensure_confinable(table)?;
-        if !Self::row_in_set(table, record) {
+        if !Self::row_in_set(table, record)? {
             return Err(Self::misfit("(new)"));
         }
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
@@ -742,6 +791,64 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(raw, json!(3));
+    }
+
+    #[tokio::test]
+    async fn test_list_count_and_get_honour_literal_conditions() {
+        let mock = MockTableSource::new()
+            .with_data(
+                "users",
+                vec![
+                    json!({"id": "1", "name": "Alice"}),
+                    json!({"id": "2", "name": "Bob"}),
+                ],
+            )
+            .await;
+        let all = Table::<MockTableSource, TestUser>::new("users", mock.clone());
+        let mut set = all.clone();
+        set.add_condition(mock.eq_value_condition("name", json!("Alice")).unwrap());
+
+        let listed = set.data_source().list_table_values(&set).await.unwrap();
+        assert_eq!(listed.keys().collect::<Vec<_>>(), ["1"]);
+        assert_eq!(set.data_source().get_table_count(&set).await.unwrap(), 1);
+        let (src, id) = (set.data_source(), "2".to_string());
+        assert!(src.get_table_value(&set, &id).await.unwrap().is_none());
+        assert_eq!(all.data_source().get_table_count(&all).await.unwrap(), 2);
+    }
+
+    async fn users_table() -> Table<MockTableSource, TestUser> {
+        let mock = MockTableSource::new()
+            .with_data(
+                "users",
+                vec![
+                    json!({"id": "1", "name": "Alice"}),
+                    json!({"id": "2", "name": "Bob"}),
+                ],
+            )
+            .await;
+        Table::<MockTableSource, TestUser>::new("users", mock)
+    }
+
+    #[tokio::test]
+    async fn test_search_condition_filters_by_case_insensitive_substring() {
+        let mut set = users_table().await;
+        let search = set.data_source().search_table_condition(&set, "LIC");
+        set.add_condition(search);
+
+        let listed = set.data_source().list_table_values(&set).await.unwrap();
+        assert_eq!(listed.keys().collect::<Vec<_>>(), ["1"]);
+        assert_eq!(set.data_source().get_table_count(&set).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_unknown_condition_is_unsupported() {
+        let mut set = users_table().await;
+        set.add_condition(expr_any!("age > {}", 30));
+
+        let err = set.data_source().list_table_values(&set).await.unwrap_err();
+        assert_eq!(err.kind(), vantage_core::ErrorKind::Unsupported);
+        let err = set.data_source().get_table_count(&set).await.unwrap_err();
+        assert_eq!(err.kind(), vantage_core::ErrorKind::Unsupported);
     }
 
     #[tokio::test]

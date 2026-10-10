@@ -288,7 +288,12 @@ impl TableSource for MemoryDB {
     {
         let row = to_cbor_record(record);
         if !self.in_set(table, &row).await? {
-            return Err(Self::misfit(table.table_name(), ""));
+            // The id is assigned by the store after this check, so none is known yet.
+            return Err(error!(
+                "record does not belong to this set",
+                table = table.table_name()
+            )
+            .mark_conflict());
         }
         self.store_table(table)?.insert(row)
     }
