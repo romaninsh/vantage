@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-cb813181.js";
+            window.path_to_searchindex_js = "../searchindex-4182db67.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-73e720bf.js"></script>
@@ -313,7 +313,7 @@ async fn main() -&gt; VantageResult&lt;()&gt; {
 }</code></pre>
 <p>A few notes on what this is doing:</p>
 <ul>
-<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/sqlite/struct.SqliteDB.html" title="struct vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
+<li><strong><code>static DB: OnceLock&lt;</code><a href="https://docs.rs/vantage-sql/0.8.0/vantage_sql/sqlite/struct.SqliteDB.html" title="struct vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a><code>&gt;</code>.</strong> The handler needs a
 database handle but we don’t want to open a new connection per request. A program-wide <code>OnceLock</code>
 is the simplest possible holder — set once in <code>main</code>, read from anywhere.</li>
 <li><strong>Each request calls <code>Category::table(db())</code></strong> — building the table (columns, relationships) and
@@ -966,7 +966,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage-mongodb/1.0.0/vantage_mongodb/mongodb/struct.MongoDB.html" title="struct vantage_mongodb::mongodb::MongoDB"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage-sql/0.7.1/vantage_sql/sqlite/struct.SqliteDB.html" title="struct vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage-mongodb/1.0.0/vantage_mongodb/mongodb/struct.MongoDB.html" title="struct vantage_mongodb::mongodb::MongoDB"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage-sql/0.8.0/vantage_sql/sqlite/struct.SqliteDB.html" title="struct vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>

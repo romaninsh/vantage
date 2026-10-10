@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-cb813181.js";
+            window.path_to_searchindex_js = "searchindex-4182db67.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-73e720bf.js"></script>
@@ -203,8 +203,8 @@ compiles to native queries.</p>
 <ul>
 <li><a href="#1-query-sourced-vistas--rhai">1. Query-sourced vistas — <code>rhai:</code></a></li>
 <li><a href="#2-derived-vistas--base--inherit--transform">2. Derived vistas — <code>base:</code> + <code>inherit</code> + transform</a></li>
-<li><a href="#3-post-build-tweaks--modify-surrealdb">3. Post-build tweaks — <code>modify:</code> (SurrealDB)</a></li>
-<li><a href="#4-scripted-reference-traversal--reference-level-rhai-surrealdb-mongodb">4. Scripted reference traversal — reference-level <code>rhai:</code> (SurrealDB, MongoDB)</a></li>
+<li><a href="#3-post-build-tweaks--modify-surrealdb-mongodb-mysql">3. Post-build tweaks — <code>modify:</code> (SurrealDB, MongoDB, MySQL)</a></li>
+<li><a href="#4-scripted-reference-traversal--reference-level-rhai-surrealdb-mongodb-mysql">4. Scripted reference traversal — reference-level <code>rhai:</code> (SurrealDB, MongoDB, MySQL)</a></li>
 <li><a href="#5-computed-columns--column-level-lazy-every-driver">5. Computed columns — column-level <code>lazy:</code> (every driver)</a></li>
 </ul>
 </li>
@@ -432,7 +432,7 @@ sqlite:
 <p>This is the aggregate pattern: group the base by a key, declare the aggregate outputs as the
 derived vista’s own <code>columns:</code>, and re-key with <code>id_column</code>. <code>base:</code> resolves eagerly through the
 same spec resolver as references. Derived vistas are query-sourced, hence read-only.</p>
-<h3 id="3-post-build-tweaks--modify-surrealdb"><a class="header" href="#3-post-build-tweaks--modify-surrealdb">3. Post-build tweaks — <code>modify:</code> (SurrealDB)</a></h3>
+<h3 id="3-post-build-tweaks--modify-surrealdb-mongodb-mysql"><a class="header" href="#3-post-build-tweaks--modify-surrealdb-mongodb-mysql">3. Post-build tweaks — <code>modify:</code> (SurrealDB, MongoDB, MySQL)</a></h3>
 <p>A script applied to the <em>finished</em> vista, exposed as <code>self</code>, using the
 <a href="./rhai/tables.html">table handle’s verbs</a> plus vendor expressions YAML keys can’t state (see
 <a href="./rhai/surfaces.html#modify-scripts"><code>modify:</code> scripts</a>):</p>
@@ -447,8 +447,11 @@ surreal:
         .sort("name", "asc")
 </code></pre>
 <p>Unlike a query source, <code>modify:</code> narrows a real table — so the vista <strong>stays writable</strong>. It runs
-last, composing with <code>table:</code>, <code>rhai:</code>, or <code>base:</code>.</p>
-<h3 id="4-scripted-reference-traversal--reference-level-rhai-surrealdb-mongodb"><a class="header" href="#4-scripted-reference-traversal--reference-level-rhai-surrealdb-mongodb">4. Scripted reference traversal — reference-level <code>rhai:</code> (SurrealDB, MongoDB)</a></h3>
+last, composing with <code>table:</code>, <code>rhai:</code>, or <code>base:</code>. Writability follows the underlying source: a
+<code>modify:</code> on a <code>rhai:</code> or <code>base:</code> vista stays read-only, while on a plain table it stays writable.
+MySQL takes the same script in a <code>mysql:</code> block (<code>mysql: { modify: "..." }</code>), with the
+<code>with_condition(expr)</code> verb (from Rust: <code>Vista::add_raw_condition</code>).</p>
+<h3 id="4-scripted-reference-traversal--reference-level-rhai-surrealdb-mongodb-mysql"><a class="header" href="#4-scripted-reference-traversal--reference-level-rhai-surrealdb-mongodb-mysql">4. Scripted reference traversal — reference-level <code>rhai:</code> (SurrealDB, MongoDB, MySQL)</a></h3>
 <p>When a relation can’t be expressed as a foreign-key equality — a graph edge, a computed join — the
 reference carries its own build script, evaluated lazily at traversal time with the parent <code>row</code> in
 scope:</p>
@@ -473,6 +476,7 @@ introspect the relation. See <a href="./rhai/surfaces.html#reference-build-scrip
       rhai: |
         table("order").where("client_id", row._id)
 </code></pre>
+<p>MySQL takes it in the reference’s <code>mysql:</code> block (<code>mysql: { rhai: "..." }</code>, <code>rhai</code> feature).</p>
 <h3 id="5-computed-columns--column-level-lazy-every-driver"><a class="header" href="#5-computed-columns--column-level-lazy-every-driver">5. Computed columns — column-level <code>lazy:</code> (every driver)</a></h3>
 <p>A column whose value no backend stores, computed by the Vista from the row it read:</p>
 <!-- tested: rhai_guide::computed::declare_in_yaml (excerpt) -->

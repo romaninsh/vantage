@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-cb813181.js";
+            window.path_to_searchindex_js = "../searchindex-4182db67.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-73e720bf.js"></script>
@@ -209,6 +209,7 @@ Tested via entity insert + read-back (Table API).</p>
 <li>Format: <code>"2025-01-10 12:00:00"</code> (space separator, no T); <code>FixedOffset</code> appends <code>+05:30</code></li>
 <li>TIME/DATETIME/TIMESTAMP default to 0 fractional digits — use <code>(6)</code> for microseconds</li>
 <li><code>DateTime&lt;FixedOffset&gt;</code>: VARCHAR preserves offset; DATETIME/TIMESTAMP normalize to UTC</li>
+<li>MariaDB 11 rejects <code>DateTime&lt;FixedOffset&gt;</code> into DATETIME/TIMESTAMP (no offset literals) — use <code>DateTime&lt;Utc&gt;</code></li>
 <li>Cross-type coercions (e.g. NaiveTime → DATE) fail with variant mismatch</li>
 </ul>
 <h3 id="postgresql"><a class="header" href="#postgresql">PostgreSQL</a></h3>

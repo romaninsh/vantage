@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-cb813181.js";
+            window.path_to_searchindex_js = "../searchindex-4182db67.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-73e720bf.js"></script>
@@ -271,7 +271,9 @@ spell:</p>
 <pre><code class="language-rhai">self.with_condition(ident("is_paying_client") == true)
    .sort("name", "asc")
 </code></pre>
-<p>and <code>me</code>, the current-record anchor for graph paths.</p>
+<p>and <code>me</code>, the current-record anchor for graph paths. MySQL adds the SQL expression vocabulary and
+the same <code>with_condition(expr)</code>; MongoDB’s <code>with_condition</code> takes a filter written as a Rhai map,
+<code>self.with_condition(#{price: #{"$gt": 100}})</code>.</p>
 <p>An extension verb changes a Vista in hand, not a list of steps, so it works on <code>self</code> only. On a
 handle from <code>table(name)</code>, or after a <code>ref</code> step, it throws an error naming the verb. A backend
 implements one with <a href="https://docs.rs/vantage-vista/1.2.1/vantage_vista/rhai/handle/struct.Handle.html#method.with_base_vista" title="method vantage_vista::rhai::handle::Handle::with_base_vista"><code>Handle::with_base_vista</code></a>. This
@@ -301,8 +303,8 @@ script, ending on a statement, finishes with the last result. Chaining works too
 <code>self.only("vip", true).sort("name", "desc")</code> gives the same table. A handle from <code>table(name)</code>
 doesn’t accumulate: <code>let x = table("client").where("vip", true); x.sort("name"); x</code> ends on <code>x</code>
 unsorted.</p>
-<p>Backends without a scripting vocabulary (CSV, MongoDB, REST) keep the default no-op and get the
-data vocabulary alone.</p>
+<p>Backends without a scripting vocabulary (CSV, REST, SQLite and PostgreSQL Vistas) keep the
+default no-op and get the data vocabulary alone.</p>
 <h2 id="reference-build-scripts"><a class="header" href="#reference-build-scripts">Reference build scripts</a></h2>
 <p>A reference whose join isn’t a plain foreign key can carry a <code>rhai:</code> build script. It runs at
 traversal time with the parent row as <code>row</code>, and must end on a handle:</p>

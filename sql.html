@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-cb813181.js";
+            window.path_to_searchindex_js = "searchindex-4182db67.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-73e720bf.js"></script>
@@ -193,6 +193,9 @@ vendor-specific behaviour around type affinity, quoting, and parameter binding.<
 </tbody>
 </table>
 </div>
+<p><code>MysqlDB</code> supports MySQL 8 and MariaDB 11; both run the same test suite in CI.
+MariaDB differences: <code>JSON_EXTRACT</code> / <code>.as_json()</code> returns quoted JSON text; there is no <code>GROUPING()</code>, no
+<code>ORDER BY</code> with <code>WITH ROLLUP</code>, and no <code>REGEXP_LIKE</code> (use <code>REGEXP</code>); <code>DateTime&lt;FixedOffset&gt;</code> binds are rejected.</p>
 <h2 id="what-they-implement"><a class="header" href="#what-they-implement">What they implement</a></h2>
 <p>All three implement the full trait stack:</p>
 <ul>
