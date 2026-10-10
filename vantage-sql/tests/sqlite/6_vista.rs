@@ -565,6 +565,70 @@ columns:
     Ok(())
 }
 
+/// A `base:`-derived vista keeps the `references:` it declares itself, next
+/// to whatever it inherits from the base (here: nothing).
+#[tokio::test]
+async fn vista_yaml_base_derived_declares_own_reference() -> TestResult {
+    use indexmap::IndexMap;
+    use std::sync::Arc;
+    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+
+    let db = setup_clients_orders().await;
+
+    let client_yaml = r#"
+name: client
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [title] }
+"#;
+    let orders_yaml = r#"
+name: orders
+columns:
+  id: { type: string, flags: [id] }
+  client_id: { type: string }
+  total: { type: int }
+"#;
+    let derived_yaml = r#"
+name: client_derived
+columns: {}
+sqlite:
+  base: client
+  inherit:
+    columns: [id, name]
+references:
+  orders:
+    table: orders
+    kind: has_many
+    foreign_key: client_id
+"#;
+
+    let map: IndexMap<String, SqliteVistaSpec> = [
+        ("client".to_string(), serde_yaml_ng::from_str(client_yaml)?),
+        ("orders".to_string(), serde_yaml_ng::from_str(orders_yaml)?),
+    ]
+    .into_iter()
+    .collect();
+    let map = Arc::new(map);
+    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+
+    let derived_spec: SqliteVistaSpec = serde_yaml_ng::from_str(derived_yaml)?;
+    let derived = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(derived_spec)?;
+
+    let refs = derived.list_references();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].0, "orders");
+
+    let alice = derived.get_value("alice").await?.expect("alice exists");
+    let rows = derived.get_ref("orders", &alice)?.list_values().await?;
+    let mut ids: Vec<&String> = rows.keys().collect();
+    ids.sort();
+    assert_eq!(ids, ["o1", "o2"]);
+    Ok(())
+}
+
 /// A derived vista: `base: client` resolves eagerly through the factory's
 /// resolver, the base table's `select()` is seeded into the Rhai engine as
 /// `base` (transform mode), and the listed columns are inherited from the

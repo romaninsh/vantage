@@ -52,6 +52,9 @@ of the set arrives as a delete. Membership stops being something anyone has to r
 | CLI tools      | —                                      | poll        | —                                       |
 | Append logs    | — (write-only sink)                    | n/a         | —                                       |
 
+MySQL is poll-only: it has no `LISTEN/NOTIFY` equivalent, and pushing changes would need a binlog
+replication client.
+
 Only four drivers implement `watch_vista` at all. A standalone MongoDB server has no change streams
 and polls. `with_change_streams(true)` is for overriding a failed (`Unknown`) topology probe, say behind
 a proxy that refuses `hello`; it cannot give a standalone server change streams, and forcing it on

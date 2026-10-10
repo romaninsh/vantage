@@ -18,8 +18,8 @@ pub mod spec;
 pub use factory::{MysqlSpecResolver, MysqlVistaFactory};
 pub use source::MysqlTableShell;
 pub use spec::{
-    InheritBlock, MysqlColumnBlock, MysqlColumnExtras, MysqlTableBlock, MysqlTableExtras,
-    MysqlVistaSpec,
+    InheritBlock, MysqlColumnBlock, MysqlColumnExtras, MysqlRefBlock, MysqlReferenceExtras,
+    MysqlTableBlock, MysqlTableExtras, MysqlVistaSpec,
 };
 
 use crate::mysql::MysqlDB;

@@ -62,11 +62,8 @@ where
 }
 
 /// Whether `row` — the record as it would be stored, id included —
-/// satisfies every condition of `table`. The database evaluates the
-/// conditions over a one-row derived table aliased as the table itself, so
-/// plain, table-qualified and subquery conditions read as they do on the
-/// real rows. A table column the record leaves out reads as
-/// [`SetWrites::absent`].
+/// satisfies every condition of `table`, evaluated by the database over a
+/// one-row [`set_probe`].
 pub(crate) async fn row_in_set<T, E>(
     db: &T,
     table: &Table<T, E>,
@@ -79,42 +76,80 @@ where
     if table.conditions().next().is_none() {
         return Ok(true);
     }
+    let one: Expression<T::Value> = expr_any!("1 AS {}", (T::quoted(&table.id_field_name())));
+    let probe = set_probe(table, &[row], one);
+    Ok(has_rows::<T>(db.execute(&probe).await?))
+}
+
+/// The columns a set probe over `rows` carries: every stored column of the
+/// table, then any other key a row sets. [`set_probe`] binds one parameter
+/// per column per row.
+pub(crate) fn probe_columns<T, E>(table: &Table<T, E>, rows: &[&Record<T::Value>]) -> Vec<String>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
     let mut names: Vec<String> = table
         .columns()
         .keys()
         .filter(|n| !table.is_calculated_column(n))
         .cloned()
         .collect();
-    for key in row.keys() {
-        if !names.contains(key) {
-            names.push(key.clone());
+    for row in rows {
+        for key in row.keys() {
+            if !names.contains(key) {
+                names.push(key.clone());
+            }
         }
     }
-    let fields: Vec<Expression<T::Value>> = names
+    names
+}
+
+/// `SELECT <select> FROM (<rows>) AS <table> WHERE <conditions>`: the rows
+/// as a derived table aliased as the table itself (one `SELECT` per row,
+/// joined with `UNION ALL`), so plain, table-qualified and subquery
+/// conditions read as they do on the real rows. A column a row leaves out
+/// reads as [`SetWrites::absent`]. The table must have conditions.
+pub(crate) fn set_probe<T, E>(
+    table: &Table<T, E>,
+    rows: &[&Record<T::Value>],
+    select: Expression<T::Value>,
+) -> Expression<T::Value>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    let names = probe_columns(table, rows);
+    let selects: Vec<Expression<T::Value>> = rows
         .iter()
-        .map(|name| {
-            let cell: Expression<T::Value> = match row.get(name) {
-                Some(value) => {
-                    let value = value.clone();
-                    expr_any!("{}", value)
-                }
-                None => T::absent(table.columns().get(name).map(|c| c.get_type())),
-            };
-            expr_any!("{} AS {}", (cell), (T::quoted(name)))
+        .map(|row| {
+            let fields: Vec<Expression<T::Value>> = names
+                .iter()
+                .map(|name| {
+                    let cell: Expression<T::Value> = match row.get(name) {
+                        Some(value) => {
+                            let value = value.clone();
+                            expr_any!("{}", value)
+                        }
+                        None => T::absent(table.columns().get(name).map(|c| c.get_type())),
+                    };
+                    expr_any!("{} AS {}", (cell), (T::quoted(name)))
+                })
+                .collect();
+            expr_any!("SELECT {}", (Expression::from_vec(fields, ", ")))
         })
         .collect();
     let conditions: Vec<Expression<T::Value>> = table
         .conditions()
         .map(|c| expr_any!("({})", (T::condition_expr(c))))
         .collect();
-    let probe: Expression<T::Value> = expr_any!(
-        "SELECT 1 AS {} FROM (SELECT {}) AS {} WHERE {}",
-        (T::quoted(&table.id_field_name())),
-        (Expression::from_vec(fields, ", ")),
+    expr_any!(
+        "SELECT {} FROM ({}) AS {} WHERE {}",
+        (select),
+        (Expression::from_vec(selects, " UNION ALL ")),
         (T::quoted(table.table_name())),
         (Expression::from_vec(conditions, " AND "))
-    );
-    Ok(has_rows::<T>(db.execute(&probe).await?))
+    )
 }
 
 /// Whether a query result holds at least one row.

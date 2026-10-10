@@ -20,6 +20,10 @@
 --     SPATIAL INDEX, FULLTEXT INDEX, invisible index,
 --     composite PRIMARY KEY, FOREIGN KEY ON DELETE CASCADE / SET NULL
 --
+--   Also loads on MariaDB 11: the MySQL-only column SRID and INVISIBLE index
+--   sit in versioned `/*!800xx ... */` comments, which MySQL 8 runs and
+--   MariaDB skips.
+--
 -- =============================================================================
 
 SET NAMES utf8mb4;
@@ -108,7 +112,7 @@ CREATE TABLE products (
     tags        VARCHAR(500) NOT NULL DEFAULT '' COMMENT 'Comma-separated for FIND_IN_SET',
     metadata    JSON DEFAULT NULL,
     description TEXT,
-    location    POINT SRID 0 NOT NULL DEFAULT (ST_GeomFromText('POINT(0 0)', 0)),
+    location    POINT /*!80003 SRID 0 */ NOT NULL DEFAULT (ST_GeomFromText('POINT(0 0)', 0)),
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     FULLTEXT INDEX ft_prod_desc (name, description),
@@ -143,7 +147,7 @@ CREATE TABLE orders (
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     INDEX idx_orders_user (user_id),
-    INDEX idx_orders_status (status) INVISIBLE,
+    INDEX idx_orders_status (status) /*!80000 INVISIBLE */,
     CONSTRAINT fk_order_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
@@ -281,3 +285,9 @@ INSERT INTO schedules (user_id, day_of_week, start_time, end_time, flags) VALUES
     (5, 4, '08:00:00', '16:00:00', b'00000100'),  -- Thu, oncall
     (10, 1, '09:30:00', '17:00:00', b'00000010'), -- Mon, flexible
     (10, 5, '09:30:00', '13:00:00', b'00000010'); -- Fri, flexible (half day)
+
+
+-- Fulltext relevance divides by the table's row-count statistic, which InnoDB
+-- refreshes in the background after a bulk load; until then MATCH ... AGAINST
+-- can score `inf`. Refresh it now so queries right after loading are stable.
+ANALYZE TABLE products;

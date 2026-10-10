@@ -39,7 +39,7 @@ Here's what the query builder gives you:
    - `ternary(condition, true_val, false_val)` — renders as `IIF` / `IF` / `CASE WHEN`
    - `concat_sql!(a, b, c)` — renders as `||` or `CONCAT()`
    - `DateFormat::new(col, "%Y-%m")` — renders as `STRFTIME` / `DATE_FORMAT` / `TO_CHAR`
-   - `JsonExtract::new(col, "field")` — renders as `JSON_EXTRACT` / `->>`
+   - `JsonExtract::new(col, "field")` — renders as `JSON_EXTRACT` / `JSON_UNQUOTE(JSON_EXTRACT(...))` / `->>`
 
 3. **Composable expressions** — primitives nest inside each other, inside joins, inside subqueries.
    You can mix vendor-aware primitives with raw expressions when you need something specific.
@@ -358,7 +358,8 @@ vendor-aware primitives. But the query builder goes much further:
 - **UNION / EXCEPT / INTERSECT** — `Union::new(select).union_all(other).except(third)` composes set
   operations.
 - **JSON extraction** — `JsonExtract::new(col, "field")` renders as `JSON_EXTRACT(col, '$.field')`
-  on SQLite/MySQL and `col->>'field'` on PostgreSQL. Paths, quoting, and operators all adapt.
+  on SQLite, `JSON_UNQUOTE(JSON_EXTRACT(col, '$.field'))` (or bare `JSON_EXTRACT(...)` for
+  `.as_json()`) on MySQL, and `col->>'field'` on PostgreSQL. Paths, quoting, and operators all adapt.
 - **DISTINCT, LIMIT, OFFSET** — the basics, available on every vendor through `with_distinct`,
   `with_limit`.
 

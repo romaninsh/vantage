@@ -1,7 +1,7 @@
 //! YAML-facing types for the MySQL Vista driver.
 
 use serde::{Deserialize, Serialize};
-use vantage_vista::{NoExtras, VistaSpec};
+use vantage_vista::VistaSpec;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +35,12 @@ pub struct MysqlTableBlock {
     /// alongside `base`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inherit: Option<InheritBlock>,
+    /// A Rhai script applied to the built vista as its final build step, with
+    /// the vista exposed as `self`, e.g.
+    /// `self.with_condition(ident("is_paying_client") == true)`. Composes with
+    /// `table`/`rhai`/`base` (it runs last). Requires the `rhai` feature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modify: Option<String>,
     /// Observation-supplied parameters, exposed to the `rhai` script as the
     /// `args` map (`args.month`, `args.lob`, …) so a view can apply
     /// conditions BEFORE aggregation. Set programmatically by the host at
@@ -70,7 +76,25 @@ pub struct MysqlColumnBlock {
     pub column: Option<String>,
 }
 
-pub type MysqlVistaSpec = VistaSpec<MysqlTableExtras, MysqlColumnExtras, NoExtras>;
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MysqlReferenceExtras {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mysql: Option<MysqlRefBlock>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MysqlRefBlock {
+    /// Rhai script that builds the traversal target for this reference, instead
+    /// of the default foreign-key eq-condition path. Evaluated lazily at
+    /// traversal time with the parent row in scope as `row` and `me`. Requires
+    /// the `rhai` feature; ignored by builds without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rhai: Option<String>,
+}
+
+pub type MysqlVistaSpec = VistaSpec<MysqlTableExtras, MysqlColumnExtras, MysqlReferenceExtras>;
 
 /// Observation args carried on the driver block ("" = unset by convention).
 pub trait DriverBlockArgs {

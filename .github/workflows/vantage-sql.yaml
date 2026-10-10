@@ -21,7 +21,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [sqlite, postgres, mysql]
+        # `feature`/`test` pick the cargo feature and test binary; MariaDB runs
+        # the MySQL driver's tests. `mysql_image` is set everywhere so the
+        # service always has an image.
+        include:
+          - backend: sqlite
+            feature: sqlite
+            test: sqlite
+            mysql_image: mysql:8
+            mysql_health: mysqladmin ping -h 127.0.0.1
+          - backend: postgres
+            feature: postgres
+            test: postgres
+            mysql_image: mysql:8
+            mysql_health: mysqladmin ping -h 127.0.0.1
+          - backend: mysql
+            feature: mysql
+            test: mysql
+            mysql_image: mysql:8
+            mysql_health: mysqladmin ping -h 127.0.0.1
+          - backend: mariadb
+            feature: mysql
+            test: mysql
+            mysql_image: mariadb:11
+            mysql_health: healthcheck.sh --connect --innodb_initialized
 
     name: ${{ matrix.backend }}
 
@@ -41,16 +64,20 @@ jobs:
           --health-retries 5
 
       mysql:
-        image: mysql:8
+        image: ${{ matrix.mysql_image }}
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_USER: vantage
           MYSQL_PASSWORD: vantage
           MYSQL_DATABASE: vantage
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_USER: vantage
+          MARIADB_PASSWORD: vantage
+          MARIADB_DATABASE: vantage
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1"
+          --health-cmd "${{ matrix.mysql_health }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -60,7 +87,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-          key: "vantage-sql-${{ matrix.backend }}-v01"
+          key: "vantage-sql-${{ matrix.feature }}-v02"
           cache-workspace-crates: true
           cache-all-crates: true
 
@@ -89,7 +116,7 @@ jobs:
           done
 
       - name: Populate MySQL databases
-        if: matrix.backend == 'mysql'
+        if: matrix.feature == 'mysql'
         run: |
           cd vantage-sql/scripts/mysql
           # Load into shared vantage db (existing tests)
@@ -106,16 +133,23 @@ jobs:
           done
 
       - name: Build
-        run: cargo build -p vantage-sql --features "${{ matrix.backend }},vista"
+        run: cargo build -p vantage-sql --features "${{ matrix.feature }},vista,rhai"
 
       - name: Test
-        run: cargo test -p vantage-sql --features "${{ matrix.backend }},vista" --test ${{ matrix.backend }}
+        run: cargo test -p vantage-sql --features "${{ matrix.feature }},vista,rhai" --test ${{ matrix.test }}
 
       - name: Clippy
-        run: cargo clippy -p vantage-sql --features "${{ matrix.backend }},vista" --all-targets -- -D warnings
+        run: cargo clippy -p vantage-sql --features "${{ matrix.feature }},vista,rhai" --all-targets -- -D warnings
+
+      - name: Clippy without rhai
+        run: cargo clippy -p vantage-sql --features "${{ matrix.feature }},vista" --all-targets -- -D warnings
+
+      - name: Test vista modify without rhai
+        if: matrix.feature == 'mysql'
+        run: cargo test -p vantage-sql --features "mysql,vista" --test mysql vista_yaml_modify_without_rhai
 
       - name: Build bakery_model3
-        if: matrix.backend != 'mysql'
+        if: matrix.feature != 'mysql'
         run: cargo build -p bakery_model3
 
       - name: bakery_model3 smoke test

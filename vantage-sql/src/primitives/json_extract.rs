@@ -11,11 +11,11 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 ///
 /// Renders as (extract as text by default):
 /// - **SQLite:**     `JSON_EXTRACT("col", '$.field')`
-/// - **MySQL:**      `` `col` ->> '$.field' ``
+/// - **MySQL:**      `` JSON_UNQUOTE(JSON_EXTRACT(`col`, '$.field')) ``
 /// - **PostgreSQL:** `"col" ->> 'field'` or `"col" -> 'a' ->> 'b'`
 ///
 /// With `.as_json()` — return raw JSON instead of text:
-/// - **MySQL:**      `` `col` -> '$.field' ``
+/// - **MySQL:**      `` JSON_EXTRACT(`col`, '$.field') ``
 /// - **PostgreSQL:** `"col" -> 'field'`
 ///
 /// # Examples
@@ -32,7 +32,7 @@ pub struct JsonExtract<T: Debug + Display + Clone> {
     source: Expression<T>,
     path: Vec<String>,
     /// When true, return the raw JSON value instead of extracting as text.
-    /// Affects MySQL (`->` vs `->>`) and PostgreSQL (all `->` vs final `->>`)
+    /// Affects MySQL (drops `JSON_UNQUOTE`) and PostgreSQL (all `->` vs final `->>`)
     as_json: bool,
 }
 
@@ -45,7 +45,7 @@ impl<T: Debug + Display + Clone> JsonExtract<T> {
         }
     }
 
-    /// Return raw JSON instead of text. Renders `->` instead of `->>` in MySQL/PG.
+    /// Return raw JSON instead of text (no `JSON_UNQUOTE` in MySQL, `->` in PG).
     pub fn as_json(mut self) -> Self {
         self.as_json = true;
         self
@@ -84,7 +84,8 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     }
 }
 
-// -- MySQL: `col` ->> '$.a.b' or `col` -> '$.a.b' ----------------------------
+// -- MySQL: JSON_UNQUOTE(JSON_EXTRACT(`col`, '$.a.b')) ------------------------
+// The function forms of MySQL's `->>` / `->`; MariaDB has only the functions.
 
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType>
@@ -92,9 +93,13 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
 {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         let json_path = format!("$.{}", self.path.join("."));
-        let op = if self.as_json { " -> " } else { " ->> " };
+        let template = if self.as_json {
+            "JSON_EXTRACT({}, {})"
+        } else {
+            "JSON_UNQUOTE(JSON_EXTRACT({}, {}))"
+        };
         Expression::new(
-            format!("{{}}{op}{{}}"),
+            template,
             vec![
                 ExpressiveEnum::Nested(self.source.clone()),
                 ExpressiveEnum::Nested(sql_lit(&json_path)),

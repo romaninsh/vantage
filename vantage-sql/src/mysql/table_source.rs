@@ -28,7 +28,7 @@ pub(super) fn id_value(id: &str) -> AnyMysqlType {
 }
 
 /// Parse the CBOR array result from execute() into an IndexMap of id -> Record.
-fn parse_rows(
+pub(super) fn parse_rows(
     result: AnyMysqlType,
     id_field_name: &str,
 ) -> Result<IndexMap<String, Record<AnyMysqlType>>> {

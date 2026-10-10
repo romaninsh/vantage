@@ -596,16 +596,37 @@ async fn test_varchar_fixed() {
     assert_eq!(fetched.value.offset().local_minus_utc(), 5 * 3600 + 30 * 60);
 }
 
+/// MariaDB has no UTC-offset datetime literals, so it rejects an offset value
+/// bound for a DATETIME / TIMESTAMP column; MySQL 8 converts it to UTC.
+async fn assert_offset_rejected_on_mariadb(
+    db: &MysqlDB,
+    result: &Result<ValFixed, String>,
+) -> bool {
+    if !super::is_mariadb(db).await {
+        return false;
+    }
+    let err = result
+        .as_ref()
+        .expect_err("MariaDB rejects an offset datetime");
+    assert!(err.contains("Incorrect datetime value"), "{err}");
+    true
+}
+
 // ── DATETIME — offset lost, converted to UTC wall clock ────────────────
 
 #[tokio::test]
 async fn test_datetime_fixed() {
-    let t = table_for_fixed!("chrono_datetime", db().await);
+    let db = db().await;
+    let t = table_for_fixed!("chrono_datetime", db.clone());
     let orig = ValFixed {
         name: "india".into(),
         value: fixed_val(),
     };
-    let fetched = try_round_trip(&t, "dt_fix", &orig).await.unwrap();
+    let result = try_round_trip(&t, "dt_fix", &orig).await;
+    if assert_offset_rejected_on_mariadb(&db, &result).await {
+        return;
+    }
+    let fetched = result.unwrap();
     // Same instant but offset normalized to +00:00 (MySQL drops tz)
     assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
     assert_eq!(fetched.value.offset().local_minus_utc(), 0);
@@ -615,12 +636,17 @@ async fn test_datetime_fixed() {
 
 #[tokio::test]
 async fn test_timestamp_fixed() {
-    let t = table_for_fixed!("chrono_timestamp", db().await);
+    let db = db().await;
+    let t = table_for_fixed!("chrono_timestamp", db.clone());
     let orig = ValFixed {
         name: "india".into(),
         value: fixed_val(),
     };
-    let fetched = try_round_trip(&t, "ts_fix", &orig).await.unwrap();
+    let result = try_round_trip(&t, "ts_fix", &orig).await;
+    if assert_offset_rejected_on_mariadb(&db, &result).await {
+        return;
+    }
+    let fetched = result.unwrap();
     // Same instant but offset normalized to +00:00
     assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
     assert_eq!(fetched.value.offset().local_minus_utc(), 0);

@@ -1065,7 +1065,14 @@ async fn test_q13() {
     assert!(products[0].rating >= products[1].rating);
     // Gadget Pro Max has rating 4.9
     assert_eq!(products[0].name, "Gadget Pro Max");
-    assert_eq!(products[0].color, "silver");
+    // MySQL types JSON_EXTRACT's result as JSON and it decodes to the string;
+    // MariaDB's JSON is text, so the quoted JSON literal comes back.
+    let color = if super::is_mariadb(&get_db().await).await {
+        "\"silver\""
+    } else {
+        "silver"
+    };
+    assert_eq!(products[0].color, color);
 }
 
 // -- ---------------------------------------------------------------------------

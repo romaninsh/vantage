@@ -245,7 +245,7 @@ This is the aggregate pattern: group the base by a key, declare the aggregate ou
 derived vista's own `columns:`, and re-key with `id_column`. `base:` resolves eagerly through the
 same spec resolver as references. Derived vistas are query-sourced, hence read-only.
 
-### 3. Post-build tweaks — `modify:` (SurrealDB)
+### 3. Post-build tweaks — `modify:` (SurrealDB, MongoDB, MySQL)
 
 A script applied to the *finished* vista, exposed as `self`, using the
 [table handle's verbs](./rhai/tables.md) plus vendor expressions YAML keys can't state (see
@@ -264,9 +264,12 @@ surreal:
 ```
 
 Unlike a query source, `modify:` narrows a real table — so the vista **stays writable**. It runs
-last, composing with `table:`, `rhai:`, or `base:`.
+last, composing with `table:`, `rhai:`, or `base:`. Writability follows the underlying source: a
+`modify:` on a `rhai:` or `base:` vista stays read-only, while on a plain table it stays writable.
+MySQL takes the same script in a `mysql:` block (`mysql: { modify: "..." }`), with the
+`with_condition(expr)` verb (from Rust: `Vista::add_raw_condition`).
 
-### 4. Scripted reference traversal — reference-level `rhai:` (SurrealDB, MongoDB)
+### 4. Scripted reference traversal — reference-level `rhai:` (SurrealDB, MongoDB, MySQL)
 
 When a relation can't be expressed as a foreign-key equality — a graph edge, a computed join — the
 reference carries its own build script, evaluated lazily at traversal time with the parent `row` in
@@ -298,6 +301,8 @@ references:
       rhai: |
         table("order").where("client_id", row._id)
 ```
+
+MySQL takes it in the reference's `mysql:` block (`mysql: { rhai: "..." }`, `rhai` feature).
 
 ### 5. Computed columns — column-level `lazy:` (every driver)
 

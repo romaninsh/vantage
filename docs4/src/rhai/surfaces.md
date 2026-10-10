@@ -102,7 +102,9 @@ self.with_condition(ident("is_paying_client") == true)
    .sort("name", "asc")
 ```
 
-and `me`, the current-record anchor for graph paths.
+and `me`, the current-record anchor for graph paths. MySQL adds the SQL expression vocabulary and
+the same `with_condition(expr)`; MongoDB's `with_condition` takes a filter written as a Rhai map,
+`self.with_condition(#{price: #{"$gt": 100}})`.
 
 An extension verb changes a Vista in hand, not a list of steps, so it works on `self` only. On a
 handle from `table(name)`, or after a `ref` step, it throws an error naming the verb. A backend
@@ -146,8 +148,8 @@ script, ending on a statement, finishes with the last result. Chaining works too
 doesn't accumulate: `let x = table("client").where("vip", true); x.sort("name"); x` ends on `x`
 unsorted.
 
-Backends without a scripting vocabulary (CSV, MongoDB, REST) keep the default no-op and get the
-data vocabulary alone.
+Backends without a scripting vocabulary (CSV, REST, SQLite and PostgreSQL Vistas) keep the
+default no-op and get the data vocabulary alone.
 
 ## Reference build scripts
 

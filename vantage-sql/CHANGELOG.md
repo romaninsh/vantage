@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.0 — 2026-10-10
+
+- MySQL Vistas: ordering, quicksearch, page size, `fetch_page`, `fetch_window` and `fetch_next`
+  (stable tiebreak on the id column).
+- MySQL: transactional `import_vista_values` (`can_import`); ids match under the column collation;
+  statements are chunked under the 65,535-placeholder limit; set checks are batched.
+- MySQL: Rhai-scripted references (`mysql: { rhai: … }` on a reference), `with_condition`,
+  `add_raw_condition` and `mysql.modify:`.
+- **Breaking:** `MysqlVistaSpec`'s reference extras type is now `MysqlReferenceExtras`.
+- MariaDB 11 is supported and tested in CI.
+- MySQL JSON extraction renders `JSON_UNQUOTE(JSON_EXTRACT(…))` / `JSON_EXTRACT(…)` instead of
+  `->>` / `->`.
+- MariaDB rejects `DateTime<FixedOffset>` binds (documented).
+- `base:`-derived specs keep their own `references:` (SQLite, PostgreSQL, MySQL).
+- Requires vantage-table 1.3.0.
+
 ## 0.7.1 — 2026-10-07
 
 - Fixed: on PostgreSQL an operator condition on a column the written record omits (`price > 10`) is a

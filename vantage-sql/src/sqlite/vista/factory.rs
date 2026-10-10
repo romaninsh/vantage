@@ -192,8 +192,9 @@ fn table_from_rhai(
 
 /// Build a derived table: resolve `base_name` eagerly via the resolver, build
 /// the base table, optionally transform its `select()` through a `rhai:` script
-/// (transform mode — `base` is seeded into the engine scope), and inherit the
-/// listed columns/relations (see `Table::derive_from_spec`).
+/// (transform mode — `base` is seeded into the engine scope), inherit the
+/// listed columns/relations (see `Table::derive_from_spec`) and add the spec's
+/// own references.
 fn build_derived_table(
     spec: &SqliteVistaSpec,
     base_name: &str,
@@ -201,7 +202,7 @@ fn build_derived_table(
     resolver: Option<SqliteSpecResolver>,
 ) -> Result<Table<SqliteDB, EmptyEntity>> {
     let (resolver, base_spec) = resolve_base_spec(resolver, base_name)?;
-    let base_table = build_sqlite_table(&base_spec, db, Some(resolver))?;
+    let base_table = build_sqlite_table(&base_spec, db, Some(resolver.clone()))?;
 
     let block = spec.driver.sqlite.as_ref();
     let select = match block.and_then(|m| m.rhai.clone()) {
@@ -209,14 +210,16 @@ fn build_derived_table(
         None => base_table.select(),
     };
     let inherit = block.and_then(|m| m.inherit.clone()).unwrap_or_default();
-    Table::derive_from_spec(
+    let table = Table::derive_from_spec(
         &base_table,
         spec,
         select,
         &inherit.columns,
         &inherit.relations,
         build_column,
-    )
+    )?;
+    // The derived spec's own `references:` sit alongside inherited relations.
+    Ok(table.with_spec_references(&spec.references, Some(resolver), build_sqlite_table))
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like
