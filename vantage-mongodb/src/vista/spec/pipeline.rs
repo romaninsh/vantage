@@ -8,8 +8,9 @@ use vantage_vista::VistaSpec;
 use super::{MongoBlock, MongoTableExtras};
 
 impl MongoBlock {
-    /// The `pipeline` stages as BSON documents; `Ok(None)` without one. See
-    /// [`check_stages`] for what a valid pipeline is.
+    /// The `pipeline` stages as BSON documents; `Ok(None)` without one. Each
+    /// stage must be a single `$`-prefixed operator, and the pipeline must be
+    /// read-only: no `$out` or `$merge`.
     pub fn pipeline_stages(&self) -> Result<Option<Vec<Document>>> {
         let Some(stages) = &self.pipeline else {
             return Ok(None);
