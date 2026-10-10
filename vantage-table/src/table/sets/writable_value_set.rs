@@ -27,18 +27,13 @@ where
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
-        self.require_confined_writes("insert")?;
+        let record = self.prepare_insert(record).await?;
         let id = id.into();
-        let erased = self.as_entity_erased();
-        let mut record = record.clone();
-        run_before(self.before_insert_hooks(), &mut record, erased).await?;
-        self.strip_imported_columns(&mut record);
-        enforce_invariants(&mut record, self.invariants())?;
         let result = self
             .data_source()
             .insert_table_value(self, &id, &record)
             .await?;
-        run_after(self.after_insert_hooks(), &id, &result, erased).await?;
+        self.finish_insert(&id, &result).await?;
         Ok(result)
     }
 

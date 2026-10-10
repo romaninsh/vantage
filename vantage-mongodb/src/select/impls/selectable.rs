@@ -99,8 +99,20 @@ impl Selectable<AnyMongoType, MongoCondition> for MongoSelect {
         self.skip
     }
 
-    fn as_field(&self, _field: impl Into<String>) -> Expression<AnyMongoType> {
-        todo!("as_field not yet implemented for MongoDB")
+    fn as_field(&self, field: impl Into<String>) -> Expression<AnyMongoType> {
+        let coll = self.collection.as_deref().unwrap_or("?");
+        let filter = if self.conditions.is_empty() {
+            "<no conditions>".to_string()
+        } else if self.conditions.len() == 1 {
+            "<1 condition>".to_string()
+        } else {
+            format!("<{} conditions>", self.conditions.len())
+        };
+        // Braces are left out: `Expression` templates treat `{}` as a placeholder.
+        Expression::new(
+            format!("db.{}.find({}).project({})", coll, filter, field.into()),
+            vec![],
+        )
     }
 
     fn as_count(&self) -> Expression<AnyMongoType> {
@@ -130,5 +142,40 @@ impl Selectable<AnyMongoType, MongoCondition> for MongoSelect {
             format!("db.{}.aggregate($min: {})", coll, column.preview()),
             vec![],
         )
+    }
+}
+
+/// A select names its query for display only; MongoDB runs selects through
+/// the driver, never as expression text.
+impl Expressive<AnyMongoType> for MongoSelect {
+    fn expr(&self) -> Expression<AnyMongoType> {
+        self.as_field(self.fields.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bson::doc;
+
+    use super::*;
+
+    #[test]
+    fn as_field_renders_field_projection() {
+        let select = MongoSelect::new().with_source("product");
+        assert_eq!(
+            select.as_field("name").preview(),
+            "db.product.find(<no conditions>).project(name)"
+        );
+    }
+
+    #[test]
+    fn as_field_mentions_conditions() {
+        let select = MongoSelect::new()
+            .with_source("product")
+            .with_condition(doc! { "price": { "$gt": 100 } });
+        assert_eq!(
+            select.as_field("name").preview(),
+            "db.product.find(<1 condition>).project(name)"
+        );
     }
 }

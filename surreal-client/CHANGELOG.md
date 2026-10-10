@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0 — 2026-10-10
+
+- `LiveStream` sends `KILL` when dropped.
+- `LiveStream::close()`.
+- The mock engine supports live queries.
+- `mocks::CallLog`: the mock engine and builder record each call, read with `call_log()`.
+
 ## 0.6.5 — 2026-10-03
 
 - Depends on `vantage-core` 1.0.0, `vantage-types` 1.0.0.

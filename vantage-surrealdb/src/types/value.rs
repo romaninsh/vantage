@@ -123,18 +123,31 @@ impl CborDialect for SurrealDialect {
     }
 }
 
+/// Splits a compact `[seconds, nanos]` payload. SurrealDB omits trailing zero
+/// parts, so `[]`, `[seconds]` and `[seconds, nanos]` are all valid.
+fn compact_secs_nanos(inner: &CborValue) -> Option<(i64, u32)> {
+    let CborValue::Array(parts) = inner else {
+        return None;
+    };
+    let part = |value: Option<&CborValue>| match value {
+        None => Some(0i128),
+        Some(CborValue::Integer(n)) => Some(i128::from(*n)),
+        Some(_) => None,
+    };
+    if parts.len() > 2 {
+        return None;
+    }
+    let secs = i64::try_from(part(parts.first())?).ok()?;
+    let nanos = u32::try_from(part(parts.get(1))?).ok()?;
+    Some((secs, nanos))
+}
+
 /// `[seconds, nanos]` → RFC 3339 string. Falls back to the raw array (the
 /// previous, broken behaviour) only if the shape or the timestamp itself is
 /// invalid, so a malformed value is still visible rather than silently lost.
 fn compact_datetime_to_json(inner: CborValue) -> JsonValue {
     let fallback = |inner| cbor_to_json(&SurrealDialect, inner);
-    let CborValue::Array(parts) = &inner else {
-        return fallback(inner);
-    };
-    let [CborValue::Integer(secs), CborValue::Integer(nanos)] = parts.as_slice() else {
-        return fallback(inner);
-    };
-    let (Ok(secs), Ok(nanos)) = (i64::try_from(*secs), u32::try_from(*nanos)) else {
+    let Some((secs, nanos)) = compact_secs_nanos(&inner) else {
         return fallback(inner);
     };
     chrono::DateTime::from_timestamp(secs, nanos)
@@ -146,13 +159,7 @@ fn compact_datetime_to_json(inner: CborValue) -> JsonValue {
 /// back to the raw array on an unexpected shape.
 fn compact_duration_to_json(inner: CborValue) -> JsonValue {
     let fallback = |inner| cbor_to_json(&SurrealDialect, inner);
-    let CborValue::Array(parts) = &inner else {
-        return fallback(inner);
-    };
-    let [CborValue::Integer(secs), CborValue::Integer(nanos)] = parts.as_slice() else {
-        return fallback(inner);
-    };
-    let (Ok(secs), Ok(nanos)) = (i64::try_from(*secs), u32::try_from(*nanos)) else {
+    let Some((secs, nanos)) = compact_secs_nanos(&inner) else {
         return fallback(inner);
     };
     let mut out = String::from("PT");
@@ -309,6 +316,46 @@ mod tests {
         assert_eq!(
             cbor_to_json(&cbor),
             JsonValue::String("PT1H30M".to_string())
+        );
+    }
+
+    #[test]
+    fn compact_duration_without_nanos_part() {
+        let cbor = CborValue::Tag(
+            14,
+            Box::new(CborValue::Array(vec![CborValue::Integer(5400i64.into())])),
+        );
+        assert_eq!(
+            cbor_to_json(&cbor),
+            JsonValue::String("PT1H30M".to_string())
+        );
+    }
+
+    fn compact_datetime(parts: Vec<CborValue>) -> JsonValue {
+        cbor_to_json(&CborValue::Tag(12, Box::new(CborValue::Array(parts))))
+    }
+
+    #[test]
+    fn compact_datetime_empty_payload_is_epoch() {
+        assert_eq!(
+            compact_datetime(vec![]),
+            JsonValue::String("1970-01-01T00:00:00Z".to_string())
+        );
+    }
+
+    #[test]
+    fn compact_datetime_without_nanos_part() {
+        assert_eq!(
+            compact_datetime(vec![CborValue::Integer(1_735_689_600i64.into())]),
+            JsonValue::String("2025-01-01T00:00:00Z".to_string())
+        );
+    }
+
+    #[test]
+    fn compact_datetime_before_epoch() {
+        assert_eq!(
+            compact_datetime(vec![CborValue::Integer((-86_400i64).into())]),
+            JsonValue::String("1969-12-31T00:00:00Z".to_string())
         );
     }
 

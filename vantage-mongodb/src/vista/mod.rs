@@ -10,6 +10,8 @@
 //! `Vista` boundary (matching how `MongoId` already serializes for HTTP).
 
 pub mod factory;
+#[cfg(feature = "rhai")]
+mod scripting;
 pub mod source;
 pub mod spec;
 
@@ -17,9 +19,12 @@ pub mod spec;
 /// so the non-vista `AnyMongoType` conversions can use it too.
 pub use crate::types::cbor;
 pub use cbor::{bson_to_cbor, cbor_to_bson};
-pub use factory::MongoVistaFactory;
+pub use factory::{MongoSpecResolver, MongoVistaFactory};
 pub use source::MongoTableShell;
-pub use spec::{MongoBlock, MongoColumnBlock, MongoColumnExtras, MongoTableExtras, MongoVistaSpec};
+pub use spec::{
+    DriverBlockArgs, MongoBlock, MongoColumnBlock, MongoColumnExtras, MongoRefBlock,
+    MongoReferenceExtras, MongoTableExtras, MongoVistaSpec,
+};
 
 use crate::mongodb::MongoDB;
 

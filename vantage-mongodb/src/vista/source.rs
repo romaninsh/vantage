@@ -10,7 +10,7 @@
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use bson::{Bson, Document, doc};
+use bson::{Bson, doc};
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
@@ -22,15 +22,27 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
-    Vista, VistaCapabilities, VistaMetadata,
+    Column as VistaColumn, ContainedSpec, FilterOp, Reference as VistaReference, SortDirection,
+    TableShell, Vista, VistaCapabilities, VistaChangeStream, VistaMetadata, flags,
 };
 
 use crate::condition::MongoCondition;
-use crate::id::MongoId;
+use crate::id::{MongoId, eq_filter};
 use crate::mongodb::MongoDB;
+use crate::mongodb::impls::joins::{join_alias_of, table_joins};
 use crate::types::AnyMongoType;
 use crate::vista::cbor::{bson_to_cbor, cbor_to_bson};
+use crate::vista::factory::{MongoSpecResolver, MongoVistaFactory};
+use coerce::BsonKind;
+
+mod coerce;
+mod conditions;
+mod import;
+mod keyset;
+#[cfg(feature = "rhai")]
+mod scripted;
+mod watch;
+mod write;
 
 pub struct MongoTableShell {
     pub(crate) table: Table<MongoDB, EmptyEntity>,
@@ -39,10 +51,25 @@ pub struct MongoTableShell {
     /// spec column name → BSON path (e.g. `"city"` → `["address", "city"]`).
     /// Empty map ⇒ identity passthrough (used by typed `from_table` paths).
     pub(crate) column_paths: IndexMap<String, Vec<String>>,
+    /// Spec resolver handed to the factories that build traversal targets.
+    pub(crate) resolver: Option<MongoSpecResolver>,
     /// Handle for the active quicksearch condition (if any).
     pub(crate) current_search_handle: Option<ConditionHandle>,
     /// Page size declared via `set_page_size`.
     pub(crate) page_size: Option<usize>,
+    /// A vista wrapping a typed table (`from_table`) searches every column
+    /// when none is flagged `searchable`; a spec-built vista searches only its
+    /// `searchable` columns, so none flagged matches nothing. Traversal
+    /// targets (`get_ref`, `get_ref_target`) are wrapped with `from_table`
+    /// even when their table came from a spec, so they search every column
+    /// and run neither that spec's `modify:` script nor its reference scripts.
+    pub(crate) search_unflagged_columns: bool,
+    /// The factory's live-update override, handed to the factories that build
+    /// traversal targets.
+    pub(crate) change_streams: Option<bool>,
+    /// Columns whose table type is a BSON type the CBOR surface reads as
+    /// text; writes parse their values back (see the `coerce` module).
+    declared: IndexMap<String, BsonKind>,
 }
 
 impl MongoTableShell {
@@ -51,14 +78,33 @@ impl MongoTableShell {
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
         column_paths: IndexMap<String, Vec<String>>,
+        resolver: Option<MongoSpecResolver>,
+        search_unflagged_columns: bool,
+        change_streams: Option<bool>,
     ) -> Self {
+        let declared = write::declared_kinds(&table, metadata.id_column.as_deref());
         Self {
+            declared,
+            search_unflagged_columns,
+            change_streams,
             table,
             capabilities,
             metadata,
             column_paths,
+            resolver,
             current_search_handle: None,
             page_size: None,
+        }
+    }
+
+    /// A factory over this table's data source, carrying the spec resolver
+    /// and the live-update override.
+    fn factory(&self) -> MongoVistaFactory {
+        let mut factory = MongoVistaFactory::new(self.table.data_source().clone());
+        factory.change_streams = self.change_streams;
+        match &self.resolver {
+            Some(resolver) => factory.with_resolver(resolver.clone()),
+            None => factory,
         }
     }
 
@@ -77,62 +123,66 @@ impl MongoTableShell {
     /// Walk `column_paths` and project each spec column out of the raw doc.
     /// Identity (top-level keys → CBOR) when no paths are configured.
     fn unflatten_to_cbor(&self, record: Record<AnyMongoType>) -> Record<CborValue> {
-        if self.column_paths.is_empty() {
-            return record
-                .into_iter()
-                .map(|(k, v)| (k, bson_to_cbor(v.value())))
-                .collect();
-        }
-        let raw: IndexMap<String, Bson> = record
-            .into_iter()
-            .map(|(k, v)| (k, v.into_value()))
+        project_record(&self.column_paths, record)
+    }
+
+    /// Quicksearch filter over the columns flagged `searchable`. A shell over
+    /// a typed table that flags none searches every column instead, matching
+    /// `MongoDB::search_table_condition`.
+    fn search_condition(&self, text: &str) -> MongoCondition {
+        let paths: Vec<String> = self
+            .metadata
+            .columns
+            .iter()
+            .filter(|(_, col)| col.has_flag(flags::SEARCHABLE))
+            .map(|(name, _)| self.dotted_path(name))
             .collect();
-        let mut out = Record::new();
-        for (spec_name, path) in &self.column_paths {
-            if let Some(value) = walk_bson_path(&raw, path) {
-                out.insert(spec_name.clone(), bson_to_cbor(&value));
-            }
+        if paths.is_empty() && self.search_unflagged_columns {
+            return self
+                .table
+                .data_source()
+                .search_table_condition(&self.table, text);
         }
-        out
+        conditions::search_filter(&paths, text).into()
     }
 
-    /// Build a `Record<AnyMongoType>` ready for the table's write path. For
-    /// columns with a multi-segment path, intermediate sub-documents are
-    /// reconstructed and merged so that `{ "address.city", "address.zip" }`
-    /// land as one `address: { city, zip }` BSON entry.
-    fn flatten_for_write(&self, record: &Record<CborValue>) -> Record<AnyMongoType> {
-        if self.column_paths.is_empty() {
-            return record
-                .iter()
-                .map(|(k, v)| (k.clone(), AnyMongoType::untyped(cbor_to_bson(v))))
-                .collect();
-        }
-        let mut top = Document::new();
-        for (col_name, value) in record {
-            let bson_value = cbor_to_bson(value);
-            let fallback;
-            let path: &[String] = match self.column_paths.get(col_name) {
-                Some(p) => p.as_slice(),
-                None => {
-                    fallback = vec![col_name.clone()];
-                    &fallback
-                }
-            };
-            insert_at_path(&mut top, path, bson_value);
-        }
-        top.into_iter()
-            .map(|(k, v)| (k, AnyMongoType::untyped(v)))
-            .collect()
-    }
-
-    /// Dotted form of a spec column's BSON path, used for Mongo filters.
-    /// Falls back to the spec name when the column isn't in the path map.
+    /// Dotted form of a spec column's BSON path, used for Mongo filters and
+    /// sorts; a joined column's computed alias. Falls back to the spec name
+    /// when the column isn't in the path map.
     fn dotted_path(&self, field: &str) -> String {
+        if let Some(alias) = join_alias_of(&self.table, field) {
+            return alias;
+        }
         match self.column_paths.get(field) {
             Some(path) => path.join("."),
             None => field.to_string(),
         }
     }
+}
+
+/// Project a raw document onto the spec columns named in `column_paths`.
+/// Identity (top-level keys → CBOR) when no paths are configured.
+fn project_record(
+    column_paths: &IndexMap<String, Vec<String>>,
+    record: Record<AnyMongoType>,
+) -> Record<CborValue> {
+    if column_paths.is_empty() {
+        return record
+            .into_iter()
+            .map(|(k, v)| (k, bson_to_cbor(v.value())))
+            .collect();
+    }
+    let raw: IndexMap<String, Bson> = record
+        .into_iter()
+        .map(|(k, v)| (k, v.into_value()))
+        .collect();
+    let mut out = Record::new();
+    for (spec_name, path) in column_paths {
+        if let Some(value) = walk_bson_path(&raw, path) {
+            out.insert(spec_name.clone(), bson_to_cbor(&value));
+        }
+    }
+    out
 }
 
 /// Walk a dotted BSON path against a top-level map. Returns `None` if any
@@ -147,28 +197,6 @@ fn walk_bson_path(map: &IndexMap<String, Bson>, path: &[String]) -> Option<Bson>
         };
     }
     Some(current)
-}
-
-/// Insert `value` at `path` inside `doc`, creating intermediate sub-documents
-/// as needed. If a non-document scalar is in the way, it gets overwritten.
-fn insert_at_path(doc: &mut Document, path: &[String], value: Bson) {
-    if path.is_empty() {
-        return;
-    }
-    if path.len() == 1 {
-        doc.insert(path[0].clone(), value);
-        return;
-    }
-    let head = path[0].clone();
-    let entry = doc
-        .entry(head)
-        .or_insert_with(|| Bson::Document(Document::new()));
-    if !matches!(entry, Bson::Document(_)) {
-        *entry = Bson::Document(Document::new());
-    }
-    if let Bson::Document(sub) = entry {
-        insert_at_path(sub, &path[1..], value);
-    }
 }
 
 #[async_trait]
@@ -208,8 +236,10 @@ impl TableShell for MongoTableShell {
         &self,
         _vista: &Vista,
     ) -> Result<Option<(String, Record<CborValue>)>> {
-        let data = self.read_all().await?;
-        Ok(data.into_iter().next())
+        let Some((id, record)) = self.table.get_some_value().await? else {
+            return Ok(None);
+        };
+        Ok(Some((id.to_string(), self.unflatten_to_cbor(record))))
     }
 
     async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
@@ -223,7 +253,7 @@ impl TableShell for MongoTableShell {
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let mongo_id = self.parse_id(id);
-        let mongo_record = self.flatten_for_write(record);
+        let mongo_record = self.flatten_for_write(record, None)?;
         let inserted = self
             .table
             .insert_value(mongo_id.clone(), &mongo_record)
@@ -238,7 +268,8 @@ impl TableShell for MongoTableShell {
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let mongo_id = self.parse_id(id);
-        let mongo_record = self.flatten_for_write(record);
+        let stored = self.stored_row(&mongo_id).await?;
+        let mongo_record = self.flatten_for_write(record, stored.as_ref())?;
         let replaced = self
             .table
             .replace_value(mongo_id.clone(), &mongo_record)
@@ -253,7 +284,8 @@ impl TableShell for MongoTableShell {
         partial: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let mongo_id = self.parse_id(id);
-        let mongo_partial = self.flatten_for_write(partial);
+        let stored = self.stored_row(&mongo_id).await?;
+        let mongo_partial = self.flatten_for_write(partial, stored.as_ref())?;
         let patched = self
             .table
             .patch_value(mongo_id.clone(), &mongo_partial)
@@ -275,20 +307,60 @@ impl TableShell for MongoTableShell {
         _vista: &Vista,
         record: &Record<CborValue>,
     ) -> Result<String> {
-        let mongo_record = self.flatten_for_write(record);
+        let mongo_record = self.flatten_for_write(record, None)?;
         let id = self.table.insert_return_id_value(&mongo_record).await?;
         Ok(id.to_string())
     }
 
+    /// All-or-nothing bulk insert in one transaction; see the `import` module.
+    async fn import_vista_values(
+        &self,
+        _vista: &Vista,
+        records: &IndexMap<String, Record<CborValue>>,
+    ) -> Result<usize> {
+        if !self.capabilities.can_import {
+            return Err(self.default_error("import_vista_values", "can_import"));
+        }
+        import::import(self, records).await
+    }
+
     fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
         let dotted = self.dotted_path(field);
-        let bson_value = cbor_to_bson(value);
-        let filter = doc! { dotted: bson_value };
+        self.table
+            .add_condition(eq_filter(&dotted, &cbor_to_bson(value)));
+        Ok(())
+    }
+
+    fn add_op_condition(&mut self, field: &str, op: FilterOp, value: &CborValue) -> Result<()> {
+        if !self.table.columns().contains_key(field) {
+            return Err(error!("Unknown column for condition", field = field));
+        }
+        let filter = conditions::op_filter(&self.dotted_path(field), op, &cbor_to_bson(value))?;
         self.table.add_condition(filter);
         Ok(())
     }
 
+    /// Push a boxed `bson::Document` or `MongoCondition` onto the wrapped
+    /// table. Field names are raw BSON paths, not spec column names.
+    fn add_raw_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
+        self.table
+            .add_condition(conditions::raw_condition(condition)?);
+        Ok(())
+    }
+
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+        // A reference carrying a Rhai `build_script` resolves through the
+        // script engine instead of the foreign-key condition below.
+        #[cfg(feature = "rhai")]
+        if let Some(script) = self
+            .metadata
+            .references
+            .get(relation)
+            .and_then(|r| r.build_script.as_deref())
+        {
+            return self.get_ref_via_script(script, row);
+        }
+
         let native_row: Record<AnyMongoType> = row
             .iter()
             .map(|(k, v)| (k.clone(), AnyMongoType::from(v.clone())))
@@ -296,16 +368,12 @@ impl TableShell for MongoTableShell {
         let target = self
             .table
             .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-        let factory =
-            crate::vista::factory::MongoVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
+        self.factory().from_table(target)
     }
 
     fn get_ref_target(&self, relation: &str) -> Result<Vista> {
         let target = self.table.get_ref_target_erased(relation)?;
-        let factory =
-            crate::vista::factory::MongoVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
+        self.factory().from_table(target)
     }
 
     fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
@@ -333,12 +401,12 @@ impl TableShell for MongoTableShell {
             }
         };
         let mongo_id = self.parse_id(&parent_id);
-        let db = self.table.data_source().clone();
+        let factory = self.factory();
         self.table.get_contained_ref(
             relation,
             row,
             mongo_id,
-            move |t| crate::vista::factory::MongoVistaFactory::new(db.clone()).from_table(t),
+            move |t| factory.from_table(t),
             |v| Some(v.clone()),
             |c| c,
         )
@@ -373,10 +441,7 @@ impl TableShell for MongoTableShell {
         if let Some(handle) = self.current_search_handle.take() {
             let _ = self.table.temp_remove_condition(handle);
         }
-        let condition = self
-            .table
-            .data_source()
-            .search_table_condition(&self.table, text);
+        let condition = self.search_condition(text);
         self.current_search_handle = Some(self.table.temp_add_condition(condition));
         Ok(())
     }
@@ -417,6 +482,21 @@ impl TableShell for MongoTableShell {
             .collect())
     }
 
+    async fn fetch_window(
+        &self,
+        _vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        let mut window_table = self.table.clone();
+        window_table.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
+        let raw = window_table.list_values().await?;
+        Ok(raw
+            .into_iter()
+            .map(|(id, record)| (id.to_string(), self.unflatten_to_cbor(record)))
+            .collect())
+    }
+
     async fn fetch_next(
         &self,
         _vista: &Vista,
@@ -426,34 +506,41 @@ impl TableShell for MongoTableShell {
             .page_size
             .ok_or_else(|| error!("set_page_size must be called before fetch_next"))?;
 
-        // MongoDB encodes its cursor as the 1-based page number, same shape as
-        // the SQLite driver. Real change-stream / find-cursor tokens are a
-        // future optimization (Stage 7 / Coop).
-        let page: i64 = match token {
-            None => 1,
-            Some(CborValue::Integer(n)) => {
-                i64::try_from(n).map_err(|_| error!("fetch_next token out of i64 range"))?
-            }
-            Some(_) => return Err(error!("invalid fetch_next token type for mongodb driver")),
-        };
-        if page < 1 {
-            return Err(error!("fetch_next token must be a 1-based page number"));
-        }
-
+        // Keyset pagination: each page starts strictly after the previous
+        // page's last row in the (total) sort order. The token belongs to the
+        // sort it was issued under; see the `keyset` module for limits.
         let mut page_table = self.table.clone();
-        page_table.set_pagination(Some(Pagination::new(page, size as i64)));
+        keyset::add_id_tiebreak(&mut page_table);
+        let sort = keyset::effective_sort(&page_table);
+        if let Some(token) = token {
+            let last = keyset::decode_token(&token)?;
+            if last.len() != sort.len() {
+                return Err(error!("invalid fetch_next token for mongodb driver"));
+            }
+            page_table.add_condition(keyset::seek_filter(&sort, &last));
+        }
+        page_table.set_pagination(Some(Pagination::new(1, size as i64)));
         let raw = page_table.list_values().await?;
-        let records: Vec<(String, Record<CborValue>)> = raw
+
+        let next_token = match raw.last() {
+            Some((_, last)) if raw.len() == size => Some(keyset::encode_token(
+                &keyset::sort_values(&page_table, last, &sort),
+            )?),
+            _ => None,
+        };
+        let records = raw
             .into_iter()
             .map(|(id, record)| (id.to_string(), self.unflatten_to_cbor(record)))
             .collect();
-
-        let next_token = if records.len() == size {
-            Some(CborValue::Integer((page + 1).into()))
-        } else {
-            None
-        };
         Ok((records, next_token))
+    }
+
+    /// A change stream on the collection; see the `watch` module.
+    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+        if !self.capabilities.can_subscribe {
+            return Err(self.default_error("watch_vista", "can_subscribe"));
+        }
+        watch::watch(self).await
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -464,20 +551,47 @@ impl TableShell for MongoTableShell {
         "mongodb"
     }
 
-    /// The find as it stands — collection, filter document, projection, sort
-    /// and limit — rendered the way `MongoSelect` spells them.
+    /// The read as it stands — collection, filter document, projection, sort
+    /// and limit — rendered the way `MongoSelect` spells them: a `find`, or
+    /// an `aggregate` over a pipeline view.
     fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-        serde_json::json!({
+        let source = self.table.data_source();
+        let key = match source.view() {
+            Some(_) => "aggregate",
+            None => "find",
+        };
+        let collection = source.read_collection_name(self.table.table_name());
+        let mut select = self.table.select();
+        select.collection = Some(collection.to_string());
+        // Both factory entry points resolve the joins before building the
+        // vista, so a broken chain never gets this far.
+        select.joins = table_joins(&self.table).unwrap_or_default();
+        for field in &mut select.fields {
+            if let Some(alias) = join_alias_of(&self.table, field) {
+                *field = alias;
+            }
+        }
+        let mut preview = serde_json::json!({
             "driver": "mongodb",
-            "collection": self.table.table_name(),
-            "find": self.table.select().preview(),
-        })
+            "collection": collection,
+        });
+        preview[key] = select.preview().into();
+        preview
+    }
+
+    /// BSON constructors (`oid`, `date`, `doc`) plus
+    /// `self.with_condition(#{…})`, which pushes a filter document through
+    /// [`add_raw_condition`](Self::add_raw_condition).
+    #[cfg(feature = "rhai")]
+    fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
+        scripted::register_extensions(engine);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bson::Document;
 
     #[test]
     fn walk_bson_path_returns_nested_value() {
@@ -506,48 +620,5 @@ mod tests {
 
         let value = walk_bson_path(&outer, &["address".to_string(), "city".to_string()]);
         assert_eq!(value, None);
-    }
-
-    #[test]
-    fn insert_at_path_builds_nested_doc() {
-        let mut doc = Document::new();
-        insert_at_path(
-            &mut doc,
-            &["address".to_string(), "city".to_string()],
-            Bson::String("NYC".into()),
-        );
-        let address = doc.get_document("address").unwrap();
-        assert_eq!(address.get_str("city").unwrap(), "NYC");
-    }
-
-    #[test]
-    fn insert_at_path_merges_siblings() {
-        let mut doc = Document::new();
-        insert_at_path(
-            &mut doc,
-            &["address".to_string(), "city".to_string()],
-            Bson::String("NYC".into()),
-        );
-        insert_at_path(
-            &mut doc,
-            &["address".to_string(), "zip".to_string()],
-            Bson::String("10001".into()),
-        );
-        let address = doc.get_document("address").unwrap();
-        assert_eq!(address.get_str("city").unwrap(), "NYC");
-        assert_eq!(address.get_str("zip").unwrap(), "10001");
-    }
-
-    #[test]
-    fn insert_at_path_overwrites_scalar_with_nested() {
-        let mut doc = Document::new();
-        doc.insert("address", "literal");
-        insert_at_path(
-            &mut doc,
-            &["address".to_string(), "city".to_string()],
-            Bson::String("NYC".into()),
-        );
-        let address = doc.get_document("address").unwrap();
-        assert_eq!(address.get_str("city").unwrap(), "NYC");
     }
 }

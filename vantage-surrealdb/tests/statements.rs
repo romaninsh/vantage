@@ -608,6 +608,148 @@ async fn insert_live_all_types() {
 }
 
 #[tokio::test]
+async fn insert_live_integer_widths() {
+    let db = get_db().await;
+    cleanup(&db, &["si_ints"]).await;
+
+    let ins = SurrealInsert::new("si_ints")
+        .with_id("t1")
+        .with_field("i8_val", -42i8)
+        .with_field("i16_val", -12345i16)
+        .with_field("i32_val", -987654321i32)
+        .with_field("u8_val", 200u8)
+        .with_field("u16_val", 50000u16)
+        .with_field("u32_val", 3000000000u32)
+        .with_field("u64_val", 1234567890123456u64)
+        .with_field("isize_val", -999isize)
+        .with_field("usize_val", 12345usize);
+
+    db.execute(&ins.expr()).await.unwrap();
+
+    assert_eq!(read_value::<i64>(&db, "si_ints:t1", "i8_val").await, -42);
+    assert_eq!(
+        read_value::<i64>(&db, "si_ints:t1", "i16_val").await,
+        -12345
+    );
+    assert_eq!(
+        read_value::<i64>(&db, "si_ints:t1", "i32_val").await,
+        -987654321
+    );
+    assert_eq!(read_value::<i64>(&db, "si_ints:t1", "u8_val").await, 200);
+    assert_eq!(read_value::<i64>(&db, "si_ints:t1", "u16_val").await, 50000);
+    assert_eq!(
+        read_value::<i64>(&db, "si_ints:t1", "u32_val").await,
+        3000000000
+    );
+    assert_eq!(
+        read_value::<i64>(&db, "si_ints:t1", "u64_val").await,
+        1234567890123456
+    );
+    assert_eq!(
+        read_value::<i64>(&db, "si_ints:t1", "isize_val").await,
+        -999
+    );
+    assert_eq!(
+        read_value::<i64>(&db, "si_ints:t1", "usize_val").await,
+        12345
+    );
+
+    cleanup(&db, &["si_ints"]).await;
+}
+
+#[tokio::test]
+async fn insert_live_f32() {
+    let db = get_db().await;
+    cleanup(&db, &["si_f32"]).await;
+
+    let ins = SurrealInsert::new("si_f32")
+        .with_id("t1")
+        .with_field("f32_val", 2.5f32);
+
+    db.execute(&ins.expr()).await.unwrap();
+
+    let stored = read_value::<f64>(&db, "si_f32:t1", "f32_val").await;
+    assert!((stored - 2.5).abs() < 1e-6, "stored {stored}");
+
+    cleanup(&db, &["si_f32"]).await;
+}
+
+#[tokio::test]
+async fn insert_live_datetime() {
+    let db = get_db().await;
+    cleanup(&db, &["si_dt"]).await;
+
+    let born = "1980-09-08T13:37:01Z"
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .unwrap();
+    let ins = SurrealInsert::new("si_dt")
+        .with_id("t1")
+        .with_field("born", born);
+
+    db.execute(&ins.expr()).await.unwrap();
+
+    assert_eq!(
+        read_value::<chrono::DateTime<chrono::Utc>>(&db, "si_dt:t1", "born").await,
+        born
+    );
+
+    cleanup(&db, &["si_dt"]).await;
+}
+
+#[cfg(feature = "decimal")]
+#[tokio::test]
+async fn insert_live_decimal() {
+    use rust_decimal::Decimal;
+
+    let db = get_db().await;
+    cleanup(&db, &["si_dec"]).await;
+
+    let balance = Decimal::new(12345, 2);
+    let small = "0.000000000000000001".parse::<Decimal>().unwrap();
+    let ins = SurrealInsert::new("si_dec")
+        .with_id("t1")
+        .with_field("balance", balance)
+        .with_field("small", small);
+
+    db.execute(&ins.expr()).await.unwrap();
+
+    assert_eq!(
+        read_value::<Decimal>(&db, "si_dec:t1", "balance").await,
+        balance
+    );
+    assert_eq!(
+        read_value::<Decimal>(&db, "si_dec:t1", "small").await,
+        small
+    );
+
+    cleanup(&db, &["si_dec"]).await;
+}
+
+#[tokio::test]
+async fn insert_live_array_field() {
+    let db = get_db().await;
+    cleanup(&db, &["si_arr"]).await;
+
+    let tags = vec![
+        "rust".to_string(),
+        "database".to_string(),
+        "surreal".to_string(),
+    ];
+    let ins = SurrealInsert::new("si_arr")
+        .with_id("t1")
+        .with_field("tags", tags.clone());
+
+    db.execute(&ins.expr()).await.unwrap();
+
+    assert_eq!(
+        read_value::<Vec<String>>(&db, "si_arr:t1", "tags").await,
+        tags
+    );
+
+    cleanup(&db, &["si_arr"]).await;
+}
+
+#[tokio::test]
 async fn insert_live_multiple_records() {
     let db = get_db().await;
     cleanup(&db, &["si_multi"]).await;

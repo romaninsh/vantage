@@ -29,26 +29,48 @@ echo "Container: $CONTAINER_NAME"
 echo "Port: $PORT"
 echo "Database: $DB"
 
-# Start MongoDB container (no auth for local dev)
+# Start MongoDB container as a single-node replica set (no auth for local dev).
+# Change streams and transactions need a replica set.
 docker run -d \
     --name $CONTAINER_NAME \
     -p $PORT:27017 \
-    mongo:7
+    mongo:7 --replSet rs0 --bind_ip_all
 
-# Wait for MongoDB to be ready
+# Wait for MongoDB to accept commands
 echo "Waiting for MongoDB to start..."
 for i in $(seq 1 30); do
     if docker exec $CONTAINER_NAME mongosh --quiet --eval "db.runCommand({ping:1})" > /dev/null 2>&1; then
-        echo "MongoDB is ready!"
         break
     fi
     sleep 1
 done
 
+echo "Initiating replica set rs0..."
+docker exec $CONTAINER_NAME mongosh --quiet --eval \
+    'try { rs.status() } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]}) }' \
+    > /dev/null
+
+# Wait for the node to become primary
+PRIMARY=false
+for i in $(seq 1 30); do
+    if docker exec $CONTAINER_NAME mongosh --quiet --eval "db.hello().isWritablePrimary" 2>/dev/null | grep -q true; then
+        echo "MongoDB is ready!"
+        PRIMARY=true
+        break
+    fi
+    sleep 1
+done
+
+if [ "$PRIMARY" != true ]; then
+    echo "Error: MongoDB node never became primary"
+    docker logs $CONTAINER_NAME
+    exit 1
+fi
+
 if docker ps -q -f name=$CONTAINER_NAME | grep -q .; then
     echo ""
     echo "Connection details:"
-    echo "  URL: mongodb://localhost:$PORT"
+    echo "  URL: mongodb://localhost:$PORT/?directConnection=true"
     echo "  Database: $DB"
     echo ""
     echo "To connect with mongosh:"

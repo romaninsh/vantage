@@ -17,8 +17,8 @@ pub trait SurrealTableExt<E: Entity<AnySurrealType>> {
     /// `SELECT col1, col2, … FROM ONLY table [WHERE …]` — first row only.
     fn select_first(&self) -> SurrealSelect<result::SingleRow>;
 
-    /// `SELECT VALUE <col> FROM table [WHERE …]` — single column, all rows.
-    fn select_column(&self, column: &str) -> Result<SurrealSelect<result::List>>;
+    /// `SELECT VALUE <col> FROM table [WHERE …]` — every row's value of one column.
+    fn select_values(&self, column: &str) -> Result<SurrealSelect<result::List>>;
 
     /// `SELECT VALUE <col> FROM ONLY table [WHERE …]` — single column, first row.
     fn select_single(&self, column: &str) -> Result<SurrealSelect<result::Single>>;
@@ -29,7 +29,7 @@ impl<E: Entity<AnySurrealType>> SurrealTableExt<E> for Table<SurrealDB, E> {
         self.select().only_first_row()
     }
 
-    fn select_column(&self, column: &str) -> Result<SurrealSelect<result::List>> {
+    fn select_values(&self, column: &str) -> Result<SurrealSelect<result::List>> {
         if !self.columns().contains_key(column) {
             return Err(vantage_core::error!(
                 "Column not found in table",

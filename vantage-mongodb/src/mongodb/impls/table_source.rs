@@ -2,7 +2,9 @@
 //!
 //! Uses `MongoCondition` as the condition type. Read/aggregate operations
 //! build a `MongoSelect` from table state and use its helper methods
-//! (`build_filter`, `build_find_options`, `as_aggregate_pipeline`).
+//! (`build_filter`, `build_find_options`, `as_aggregate_pipeline`). Over a
+//! data source carrying a `MongoView`, reads aggregate after the view's
+//! stages and writes are refused.
 //! Write operations use the `mongodb` driver directly.
 
 use async_trait::async_trait;
@@ -20,13 +22,20 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::condition::MongoCondition;
-use crate::id::MongoId;
+use crate::id::{MongoId, eq_filter, id_variants};
 use crate::mongodb::MongoDB;
-use crate::select::MongoSelect;
+use crate::mongodb::impls::joins::{imported_columns, join_alias_of, table_joins};
+use crate::select::join::{alias_index, filter_uses_joins};
+use crate::select::{JoinColumn, MongoSelect};
 use crate::types::{AnyMongoType, MongoType};
 
-/// Convert a `bson::Document` into a `Record<AnyMongoType>`, optionally extracting the `_id`.
-fn doc_to_record(doc: bson::Document) -> (Option<MongoId>, Record<AnyMongoType>) {
+/// Convert a `bson::Document` into a `Record<AnyMongoType>`, optionally
+/// extracting the `_id`. A joined column's alias is renamed back to the
+/// column's dotted name.
+fn doc_to_record(
+    doc: bson::Document,
+    joins: &[JoinColumn],
+) -> (Option<MongoId>, Record<AnyMongoType>) {
     let mut fields = IndexMap::new();
     let mut id: Option<MongoId> = None;
 
@@ -34,16 +43,66 @@ fn doc_to_record(doc: bson::Document) -> (Option<MongoId>, Record<AnyMongoType>)
         if k == "_id" {
             id = MongoId::from_bson(&v);
         }
-        fields.insert(k, AnyMongoType::untyped(v));
+        let key = match alias_index(&k).and_then(|i| joins.get(i)) {
+            Some(join) => join.name.clone(),
+            None => k,
+        };
+        fields.insert(key, AnyMongoType::untyped(v));
     }
 
     (id, Record::from_indexmap(fields))
 }
 
-/// Build a `MongoSelect` from a `Table`'s current state (conditions, ordering, pagination).
-fn select_from_table<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> MongoSelect {
+/// A `MongoSelect` for reading `table`: its filter, ordering and paging plus
+/// the join chains of its imported columns.
+fn select_from_table<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> Result<MongoSelect> {
+    let mut select = select_base(table);
+    select.joins = table_joins(table)?;
+    Ok(select)
+}
+
+/// The table's filter for confining a write. Writes match stored documents
+/// directly, where joined columns do not exist, so a condition on one is
+/// refused rather than matching nothing. Capabilities are fixed when the
+/// vista is built, so a vista narrowed this way still advertises insert,
+/// update and delete; the refusal comes at write time.
+async fn write_filter<E: Entity<AnyMongoType>>(
+    table: &Table<MongoDB, E>,
+) -> Result<bson::Document> {
+    let filter = select_base(table).build_filter().await?;
+    if filter_uses_joins(&filter, imported_columns(table).len()) {
+        return Err(error!(
+            "MongoDB cannot confine a write by a condition on a joined column",
+            table = table.table_name()
+        )
+        .mark_unsupported());
+    }
+    Ok(filter)
+}
+
+/// Refuse an aggregate over a joined column: the accumulator reads stored
+/// fields, so it would total the dotted path instead of the joined value.
+fn ensure_stored_column<E: Entity<AnyMongoType>>(
+    table: &Table<MongoDB, E>,
+    column: &str,
+) -> Result<()> {
+    if table.is_imported_column(column) {
+        return Err(error!(
+            "MongoDB cannot aggregate a joined column",
+            table = table.table_name(),
+            column = column
+        )
+        .mark_unsupported());
+    }
+    Ok(())
+}
+
+/// Build a `MongoSelect` from a `Table`'s current state (the data source's
+/// view stages, conditions, ordering, pagination), without joins.
+fn select_base<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> MongoSelect {
     let mut select = MongoSelect::new();
     select.collection = Some(table.table_name().to_string());
+    select.pre_stages = table.data_source().view_stages();
 
     for condition in table.conditions() {
         select.conditions.push(condition.clone());
@@ -68,6 +127,43 @@ fn select_from_table<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> Mong
     }
 
     select
+}
+
+/// The `ObjectId` of a two-element `$in` whose elements are the two spellings
+/// of one id; `None` for any other array.
+fn id_pair_object_id(pair: &[Bson]) -> Option<Bson> {
+    let [a, b] = pair else {
+        return None;
+    };
+    if id_variants(a).as_ref() != Some(b) {
+        return None;
+    }
+    [a, b]
+        .into_iter()
+        .find(|v| matches!(v, Bson::ObjectId(_)))
+        .cloned()
+}
+
+/// Largest total document size sent in one set-probe command, well under the
+/// server's 16 MB command limit.
+const PROBE_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+
+/// Split items of the given byte `sizes` into consecutive ranges whose totals
+/// stay within `limit`; an item larger than `limit` gets a range of its own.
+fn chunk_ranges(sizes: &[usize], limit: usize) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let (mut start, mut total) = (0, 0);
+    for (i, size) in sizes.iter().enumerate() {
+        if i > start && total + size > limit {
+            ranges.push(start..i);
+            (start, total) = (i, 0);
+        }
+        total += size;
+    }
+    if start < sizes.len() {
+        ranges.push(start..sizes.len());
+    }
+    ranges
 }
 
 /// `{ _id: id }`, and the table's filter when it has one.
@@ -96,31 +192,63 @@ fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
 }
 
 impl MongoDB {
-    /// Whether `doc` satisfies the table's filter, evaluated by the server over a
-    /// one-document `$documents` stage (MongoDB 5.1+).
+    /// The table's filter document for confining writes; empty when the
+    /// table is not narrowed. Refused when it reads a joined column.
+    pub(crate) async fn set_filter<E: Entity<AnyMongoType>>(
+        &self,
+        table: &Table<Self, E>,
+    ) -> Result<bson::Document> {
+        write_filter(table).await
+    }
+
+    /// The `_id`s (as `{_id: ..}` documents) of the members of `docs` that
+    /// satisfy `filter`, evaluated by the server over `$documents` stages
+    /// (MongoDB 5.1+). `docs` are probed in chunks so no command nears the
+    /// server's command size limit.
+    pub(crate) async fn docs_matching(
+        &self,
+        filter: &bson::Document,
+        docs: &[bson::Document],
+    ) -> Result<Vec<bson::Document>> {
+        let sizes = docs
+            .iter()
+            .map(|d| bson::to_vec(d).map(|v| v.len()))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| error!("MongoDB set probe failed", details = e.to_string()))?;
+        let mut matching = Vec::new();
+        for range in chunk_ranges(&sizes, PROBE_CHUNK_BYTES) {
+            let pipeline = vec![
+                doc! { "$documents": &docs[range] },
+                doc! { "$match": filter },
+                doc! { "$project": { "_id": 1 } },
+            ];
+            let found: Vec<bson::Document> = self
+                .database()
+                .aggregate(pipeline)
+                .await
+                .map_err(|e| error!("MongoDB set probe failed", details = e.to_string()))?
+                .try_collect()
+                .await
+                .map_err(|e| error!("MongoDB set probe cursor failed", details = e.to_string()))?;
+            matching.extend(found);
+        }
+        Ok(matching)
+    }
+
+    /// Whether `doc` satisfies the table's filter.
     pub(crate) async fn row_in_set<E: Entity<AnyMongoType>>(
         &self,
         table: &Table<Self, E>,
         doc: &bson::Document,
     ) -> Result<bool> {
-        let filter = select_from_table(table).build_filter().await?;
+        let filter = self.set_filter(table).await?;
         if filter.is_empty() {
             return Ok(true);
         }
-        let pipeline = vec![
-            doc! { "$documents": [doc.clone()] },
-            doc! { "$match": filter },
-        ];
-        let mut cursor = self
-            .database()
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| error!("MongoDB set probe failed", details = e.to_string()))?;
-        Ok(cursor
-            .try_next()
-            .await
-            .map_err(|e| error!("MongoDB set probe cursor failed", details = e.to_string()))?
-            .is_some())
+        Ok(!self
+            .docs_matching(&filter, std::slice::from_ref(doc))
+            .await?
+            .is_empty())
     }
 }
 
@@ -137,7 +265,7 @@ impl TableSource for MongoDB {
     type Source = String;
 
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
-        Ok(MongoCondition::Doc(doc! { field: value.to_bson() }))
+        Ok(MongoCondition::Doc(eq_filter(field, &value.to_bson())))
     }
 
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
@@ -152,15 +280,52 @@ impl TableSource for MongoDB {
             return None;
         }
         let value = match v {
-            Bson::Document(inner) if inner.len() == 1 => inner.get("$eq")?.clone(),
+            Bson::Document(inner) if inner.len() == 1 => match inner.iter().next()? {
+                (op, operand) if op == "$eq" => operand.clone(),
+                (op, Bson::Array(pair)) if op == "$in" => id_pair_object_id(pair)?,
+                _ => return None,
+            },
             Bson::Document(_) | Bson::Array(_) => return None,
             scalar => scalar.clone(),
         };
         Some((k.clone(), AnyMongoType::untyped(value)))
     }
 
+    /// A 24-char hex string join value is written as the `ObjectId` it spells.
+    /// Text surfaces (CBOR, scripts) carry ids as hex strings, so without this
+    /// a child inserted into a traversed set would store its foreign key as a
+    /// string and no longer match the parent's `ObjectId` `_id`. Lookups still
+    /// match both spellings (see `eq_value_condition`).
+    fn coerce_reference_value(&self, value: Self::Value) -> Self::Value {
+        match value.to_bson() {
+            hex @ Bson::String(_) => match id_variants(&hex) {
+                Some(oid) => AnyMongoType::untyped(oid),
+                None => value,
+            },
+            _ => value,
+        }
+    }
+
     fn can_confine_writes(&self) -> bool {
-        true
+        self.view().is_none()
+    }
+
+    /// Dotted columns read through `$lookup` (see the `joins` module), except
+    /// over a pipeline view. The lookup matches `localField` against
+    /// `foreignField`. Correlated subqueries are not implemented:
+    /// `Table::get_subquery_*` panics here (`related_correlated_condition`
+    /// keeps the trait's `unimplemented!` default).
+    fn supports_traversal(&self) -> bool {
+        self.view().is_none()
+    }
+
+    /// Names the path only: reads resolve an imported column's join chain
+    /// from the table's references and never evaluate this expression.
+    fn traversal_path_expr(&self, hops: &[&str], column: &str) -> Option<Expression<Self::Value>> {
+        Some(Expression::new(
+            format!("{}.{}", hops.join("."), column),
+            vec![],
+        ))
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -200,12 +365,15 @@ impl TableSource for MongoDB {
         // Escape regex metacharacters so the search is a literal substring match
         let escaped = regex_escape(search_value);
 
-        // Build $or across all string-like columns with case-insensitive regex
+        // Build $or across all columns with a case-insensitive regex, each at
+        // its stored BSON path (the alias) or its join alias.
         let conditions: Vec<bson::Bson> = table
             .columns()
             .values()
             .map(|col| {
-                bson::Bson::Document(doc! { col.name(): { "$regex": &escaped, "$options": "i" } })
+                let field = join_alias_of(table, col.name())
+                    .unwrap_or_else(|| col.alias().unwrap_or(col.name()).to_string());
+                bson::Bson::Document(doc! { field: { "$regex": &escaped, "$options": "i" } })
             })
             .collect();
 
@@ -231,25 +399,12 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table);
-        let filter = select.build_filter().await?;
-        let options = select.build_find_options();
-        let coll = self.doc_collection(table.table_name());
-
-        let cursor = coll
-            .find(filter)
-            .with_options(options)
-            .await
-            .map_err(|e| error!("MongoDB find failed", details = e.to_string()))?;
-
-        let docs: Vec<bson::Document> = cursor
-            .try_collect()
-            .await
-            .map_err(|e| error!("MongoDB cursor failed", details = e.to_string()))?;
+        let select = select_from_table(table)?;
+        let docs = self.read_docs(&select).await?;
 
         let mut records = IndexMap::new();
         for d in docs {
-            let (oid, record) = doc_to_record(d);
+            let (oid, record) = doc_to_record(d, &select.joins);
             let id = oid.ok_or_else(|| error!("Document missing _id field"))?;
             records.insert(id, record);
         }
@@ -265,8 +420,17 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
+        let mut select = select_from_table(table)?;
+        if self.reads_pipeline(&select) {
+            select.conditions.push(doc! { "_id": id }.into());
+            select.sort.clear();
+            (select.skip, select.limit) = (None, Some(1));
+            let d = self.read_docs(&select).await?.into_iter().next();
+            return Ok(d.map(|d| doc_to_record(d, &select.joins).1));
+        }
+
         let coll = self.doc_collection(table.table_name());
-        let filter = select_from_table(table).build_filter().await?;
+        let filter = select.build_filter().await?;
 
         let Some(d) = coll
             .find_one(confined(id, filter))
@@ -276,7 +440,7 @@ impl TableSource for MongoDB {
             return Ok(None);
         };
 
-        let (_oid, record) = doc_to_record(d);
+        let (_oid, record) = doc_to_record(d, &[]);
         Ok(Some(record))
     }
 
@@ -287,18 +451,30 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table);
+        let mut select = select_from_table(table)?;
+        if self.reads_pipeline(&select) {
+            (select.skip, select.limit) = (None, Some(1));
+            let d = self.read_docs(&select).await?.into_iter().next();
+            return Ok(d.and_then(|d| {
+                let (oid, record) = doc_to_record(d, &select.joins);
+                oid.map(|id| (id, record))
+            }));
+        }
+
         let filter = select.build_filter().await?;
         let coll = self.doc_collection(table.table_name());
 
-        let d = coll
-            .find_one(filter)
+        let mut find = coll.find_one(filter);
+        if let Some(sort) = select.build_sort() {
+            find = find.sort(sort);
+        }
+        let d = find
             .await
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?;
 
         match d {
             Some(d) => {
-                let (oid, record) = doc_to_record(d);
+                let (oid, record) = doc_to_record(d, &[]);
                 Ok(oid.map(|id| (id, record)))
             }
             None => Ok(None),
@@ -311,16 +487,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table);
-        let filter = select.build_filter().await?;
-        let coll = self.doc_collection(table.table_name());
-
-        let count = coll
-            .count_documents(filter)
-            .await
-            .map_err(|e| error!("MongoDB count_documents failed", details = e.to_string()))?;
-
-        Ok(count as i64)
+        self.count_docs(&select_from_table(table)?).await
     }
 
     async fn get_table_sum<E>(
@@ -331,25 +498,12 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table);
-        let pipeline = select.as_aggregate_pipeline("$sum", column.name()).await?;
-        let coll = self.doc_collection(table.table_name());
-
-        let mut cursor = coll
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| error!("MongoDB aggregate (sum) failed", details = e.to_string()))?;
-
-        if let Some(result) = cursor
-            .try_next()
-            .await
-            .map_err(|e| error!("MongoDB aggregate cursor failed", details = e.to_string()))?
-        {
-            let val = result.get("val").cloned().unwrap_or(Bson::Int64(0));
-            Ok(AnyMongoType::untyped(val))
-        } else {
-            Ok(AnyMongoType::untyped(Bson::Int64(0)))
-        }
+        ensure_stored_column(table, column.name())?;
+        let select = select_from_table(table)?;
+        let val = self
+            .accumulate(&select, "$sum", column.name(), Bson::Int64(0))
+            .await?;
+        Ok(AnyMongoType::untyped(val))
     }
 
     async fn get_table_max<E>(
@@ -360,25 +514,12 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table);
-        let pipeline = select.as_aggregate_pipeline("$max", column.name()).await?;
-        let coll = self.doc_collection(table.table_name());
-
-        let mut cursor = coll
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| error!("MongoDB aggregate (max) failed", details = e.to_string()))?;
-
-        if let Some(result) = cursor
-            .try_next()
-            .await
-            .map_err(|e| error!("MongoDB aggregate cursor failed", details = e.to_string()))?
-        {
-            let val = result.get("val").cloned().unwrap_or(Bson::Null);
-            Ok(AnyMongoType::untyped(val))
-        } else {
-            Ok(AnyMongoType::untyped(Bson::Null))
-        }
+        ensure_stored_column(table, column.name())?;
+        let select = select_from_table(table)?;
+        let val = self
+            .accumulate(&select, "$max", column.name(), Bson::Null)
+            .await?;
+        Ok(AnyMongoType::untyped(val))
     }
 
     async fn get_table_min<E>(
@@ -389,25 +530,12 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table);
-        let pipeline = select.as_aggregate_pipeline("$min", column.name()).await?;
-        let coll = self.doc_collection(table.table_name());
-
-        let mut cursor = coll
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| error!("MongoDB aggregate (min) failed", details = e.to_string()))?;
-
-        if let Some(result) = cursor
-            .try_next()
-            .await
-            .map_err(|e| error!("MongoDB aggregate cursor failed", details = e.to_string()))?
-        {
-            let val = result.get("val").cloned().unwrap_or(Bson::Null);
-            Ok(AnyMongoType::untyped(val))
-        } else {
-            Ok(AnyMongoType::untyped(Bson::Null))
-        }
+        ensure_stored_column(table, column.name())?;
+        let select = select_from_table(table)?;
+        let val = self
+            .accumulate(&select, "$min", column.name(), Bson::Null)
+            .await?;
+        Ok(AnyMongoType::untyped(val))
     }
 
     // ── Write ────────────────────────────────────────────────────────
@@ -421,6 +549,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
+        self.ensure_writable()?;
         let coll = self.doc_collection(table.table_name());
         let mut doc = bson::Document::new();
         doc.insert("_id", id);
@@ -474,8 +603,9 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
+        self.ensure_writable()?;
         let coll = self.doc_collection(table.table_name());
-        let table_filter = select_from_table(table).build_filter().await?;
+        let table_filter = write_filter(table).await?;
         let mut replacement = bson::Document::new();
         for (k, v) in record.iter() {
             replacement.insert(k, v.value().clone());
@@ -532,9 +662,10 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
+        self.ensure_writable()?;
         let not_found = || error!("Record not found", id = id.to_string()).mark_not_found();
         let coll = self.doc_collection(table.table_name());
-        let table_filter = select_from_table(table).build_filter().await?;
+        let table_filter = write_filter(table).await?;
         let filter = confined(id, table_filter);
 
         let existing = self
@@ -542,6 +673,9 @@ impl TableSource for MongoDB {
             .await?
             .ok_or_else(not_found)?;
         let mut merged = record_to_doc(&existing);
+        for name in imported_columns(table) {
+            merged.remove(name);
+        }
         let mut set_doc = bson::Document::new();
         for (k, v) in partial.iter() {
             set_doc.insert(k, v.value().clone());
@@ -570,7 +704,8 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let filter = select_from_table(table).build_filter().await?;
+        self.ensure_writable()?;
+        let filter = write_filter(table).await?;
         let coll = self.doc_collection(table.table_name());
         coll.delete_one(confined(id, filter))
             .await
@@ -582,8 +717,8 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table);
-        let filter = select.build_filter().await?;
+        self.ensure_writable()?;
+        let filter = write_filter(table).await?;
         let coll = self.doc_collection(table.table_name());
         coll.delete_many(filter)
             .await
@@ -599,6 +734,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
+        self.ensure_writable()?;
         let coll = self.doc_collection(table.table_name());
         let mut doc = bson::Document::new();
         for (k, v) in record.iter() {
@@ -626,49 +762,35 @@ impl TableSource for MongoDB {
     where
         Self: Sized,
     {
-        let db = self.clone();
         let source = source_table.clone();
-        let col = source_column.to_string();
         let field = target_field.to_string();
+        // A reference key is read under its own field name, as the vista
+        // factories require; a renamed, nested or joined key is refused.
+        let renamed = source_table
+            .columns()
+            .get(source_column)
+            .and_then(|c| c.alias())
+            .is_some_and(|alias| alias != source_column)
+            || source_table.is_imported_column(source_column);
+        let col = source_column.to_string();
 
         MongoCondition::Deferred(DeferredFn::new(move || {
-            let db = db.clone();
             let source = source.clone();
             let col = col.clone();
             let field = field.clone();
             Box::pin(async move {
-                // Build a projected query that only fetches the source column
-                let select = select_from_table(&source);
-                let filter = select.build_filter().await?;
-                let collection_name = select
-                    .collection
-                    .as_deref()
-                    .ok_or_else(|| error!("No collection name for related_in_condition"))?;
-
-                let mut projection = doc! { &col: 1 };
-                if col != "_id" {
-                    projection.insert("_id", 0);
+                if renamed {
+                    return Err(error!(
+                        "reference key must be stored under its own field name",
+                        column = col
+                    ));
                 }
-                let opts = mongodb::options::FindOptions::builder()
-                    .projection(projection)
-                    .build();
-
-                let coll = db.collection::<bson::Document>(collection_name);
-                let mut cursor = coll
-                    .find(filter)
-                    .with_options(opts)
-                    .await
-                    .map_err(|e| error!("MongoDB find failed", details = e.to_string()))?;
+                // Build a projected query that only fetches the source column
+                let mut select = select_from_table(&source)?;
+                select.fields = vec![col.clone()];
 
                 let mut values = Vec::new();
-                while cursor
-                    .advance()
-                    .await
-                    .map_err(|e| error!("MongoDB cursor error", details = e.to_string()))?
-                {
-                    let doc = cursor.deserialize_current().map_err(|e| {
-                        error!("MongoDB deserialize error", details = e.to_string())
-                    })?;
+                for doc in source.data_source().read_docs(&select).await? {
                     if let Some(v) = doc.get(&col) {
                         // Push the value itself, plus the alternate representation
                         // so `$in` matches regardless of whether the target stores
@@ -732,7 +854,7 @@ impl TableSource for MongoDB {
 
 /// Escape regex metacharacters so a user-provided string is treated as a
 /// literal substring in a `$regex` filter.
-fn regex_escape(s: &str) -> String {
+pub(crate) fn regex_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         if ".*+?^${}()|[]\\".contains(c) {
@@ -741,4 +863,110 @@ fn regex_escape(s: &str) -> String {
         out.push(c);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bson::oid::ObjectId;
+
+    #[test]
+    fn chunk_ranges_respects_limit() {
+        assert_eq!(chunk_ranges(&[], 10), Vec::<std::ops::Range<usize>>::new());
+        assert_eq!(chunk_ranges(&[4, 4, 4], 10), vec![0..2, 2..3]);
+        assert_eq!(chunk_ranges(&[3, 3, 4], 10), vec![0..3]);
+        assert_eq!(chunk_ranges(&[4, 4, 2, 5], 10), vec![0..3, 3..4]);
+    }
+
+    #[test]
+    fn chunk_ranges_gives_an_oversized_item_its_own_chunk() {
+        assert_eq!(chunk_ranges(&[2, 50, 2], 10), vec![0..1, 1..2, 2..3]);
+        assert_eq!(chunk_ranges(&[50], 10), vec![0..1]);
+    }
+
+    /// A handle that never talks to a server: the client connects lazily and
+    /// `MongoDB::new` skips the topology probe.
+    async fn offline() -> MongoDB {
+        let client = mongodb::Client::with_uri_str("mongodb://localhost:27017")
+            .await
+            .unwrap();
+        MongoDB::new(client, "unit")
+    }
+
+    fn roundtrip(db: &MongoDB, value: Bson) -> (MongoCondition, Option<(String, Bson)>) {
+        let condition = db
+            .eq_value_condition("fk", AnyMongoType::untyped(value))
+            .unwrap();
+        let back = db
+            .condition_equality(&condition)
+            .map(|(field, v)| (field, v.to_bson()));
+        (condition, back)
+    }
+
+    #[tokio::test]
+    async fn plain_value_round_trips_unchanged() {
+        let db = offline().await;
+        let (condition, back) = roundtrip(&db, Bson::String("c1".into()));
+        assert!(matches!(&condition, MongoCondition::Doc(d) if *d == doc! { "fk": "c1" }));
+        assert_eq!(back, Some(("fk".into(), Bson::String("c1".into()))));
+    }
+
+    #[tokio::test]
+    async fn hex_string_matches_both_spellings_and_yields_object_id() {
+        let db = offline().await;
+        let oid = ObjectId::new();
+        let (condition, back) = roundtrip(&db, Bson::String(oid.to_hex()));
+        assert!(matches!(
+            &condition,
+            MongoCondition::Doc(d) if *d == doc! { "fk": { "$in": [oid.to_hex(), oid] } }
+        ));
+        assert_eq!(back, Some(("fk".into(), Bson::ObjectId(oid))));
+    }
+
+    #[tokio::test]
+    async fn object_id_round_trips_as_object_id() {
+        let db = offline().await;
+        let oid = ObjectId::new();
+        let (_, back) = roundtrip(&db, Bson::ObjectId(oid));
+        assert_eq!(back, Some(("fk".into(), Bson::ObjectId(oid))));
+    }
+
+    #[tokio::test]
+    async fn search_reads_columns_at_their_stored_paths() {
+        let db = offline().await;
+        let table = Table::<MongoDB, vantage_types::EmptyEntity>::new("clients", db.clone())
+            .with_column(Column::<AnyMongoType>::new("city").with_alias("address.city"))
+            .with_column(Column::<AnyMongoType>::new("name"));
+        let MongoCondition::Doc(filter) = db.search_table_condition(&table, "a") else {
+            panic!("search is a plain filter document");
+        };
+        let regex = doc! { "$regex": "a", "$options": "i" };
+        assert_eq!(
+            filter,
+            doc! { "$or": [ { "address.city": regex.clone() }, { "name": regex } ] }
+        );
+    }
+
+    #[tokio::test]
+    async fn related_in_refuses_a_renamed_source_column() {
+        let db = offline().await;
+        for alias in ["refs.client", "clientId"] {
+            let orders = Table::<MongoDB, vantage_types::EmptyEntity>::new("orders", db.clone())
+                .with_column(Column::<AnyMongoType>::new("client_id").with_alias(alias));
+            let MongoCondition::Deferred(deferred) =
+                db.related_in_condition("_id", &orders, "client_id")
+            else {
+                panic!("related_in is deferred");
+            };
+            let msg = deferred.call().await.unwrap_err().to_string();
+            assert!(msg.contains("its own field name"), "{alias}: {msg}");
+        }
+    }
+
+    #[tokio::test]
+    async fn unrelated_in_has_no_equality() {
+        let db = offline().await;
+        let condition = MongoCondition::Doc(doc! { "fk": { "$in": ["a", "b"] } });
+        assert!(db.condition_equality(&condition).is_none());
+    }
 }

@@ -2,7 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 use vantage_core::{Result, error};
-use vantage_vista::{NoExtras, VistaSpec};
+use vantage_vista::VistaSpec;
+
+pub(crate) mod pipeline;
+
+pub use pipeline::DriverBlockArgs;
 
 /// Table-level `mongo:` block in YAML. All fields optional — when the block
 /// is omitted entirely, the spec name doubles as the collection name.
@@ -19,6 +23,40 @@ pub struct MongoBlock {
     /// Override for the MongoDB collection name. Defaults to the spec name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
+    /// Aggregation stages over the collection. When set, the vista reads the
+    /// pipeline's output and is read-only; its rows are keyed by the `_id`
+    /// the pipeline emits (for a `$group`, the group key), which must be a
+    /// string or an `ObjectId`. Keys keep the order written in YAML.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pipeline: Option<Vec<serde_json::Value>>,
+    /// A Rhai script that evaluates to the pipeline: an array of stage maps,
+    /// e.g. `[#{"$match": #{category: args.cat}}]`. The vista is a read-only
+    /// pipeline view exactly as with `pipeline`, which it excludes. Requires
+    /// the `rhai` feature.
+    ///
+    /// Unlike YAML `pipeline:`, Rhai map literals sort their keys. That is
+    /// harmless where MongoDB ignores key order (`$match`, `$group`,
+    /// `$project` fields), but a multi-key `$sort` (or `$setWindowFields`'
+    /// `sortBy`) must be built with `doc([["b", 1], ["a", -1]])`, and an
+    /// exact match on an embedded document should use dotted paths
+    /// (`#{"address.city": "Riga"}`) instead of a nested map. A missing
+    /// `args.x` reads as `()`, which becomes BSON `null`; guard optional
+    /// args with `"x" in args`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rhai: Option<String>,
+    /// A Rhai script applied to the *built* vista as a final step, exposed as
+    /// `self`, e.g. `self.with_condition(#{price: #{"$gt": 100}})`. Composes
+    /// with `collection`/`pipeline`/`rhai` (it runs last). Requires the `rhai`
+    /// feature. Filter maps sort their keys like `rhai:` stages, so match
+    /// embedded documents by dotted path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modify: Option<String>,
+    /// Observation-supplied parameters, exposed to the `rhai` script as the
+    /// `args` map (`args.cat`, …) so a view can filter before it aggregates.
+    /// Set programmatically by the host at open time, never from YAML (hence
+    /// no serde). A `modify:` script runs without them.
+    #[serde(skip)]
+    pub args: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -34,6 +72,7 @@ pub struct MongoColumnBlock {
     /// BSON field name when it differs from the spec column name.
     /// Single-level rename only — for nested documents use `nested_path`.
     /// Mutually exclusive with `nested_path`; `nested_path` wins if both set.
+    /// A reference key cannot be renamed; see `nested_path`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
     /// Dotted BSON path into a nested document (e.g. `address.city`). The
@@ -41,6 +80,14 @@ pub struct MongoColumnBlock {
     /// write, intermediate sub-documents are reconstructed and merged across
     /// sibling columns. On filter, the dotted form is used directly so Mongo
     /// can index the lookup server-side.
+    ///
+    /// A reference key cannot live at a nested path (nor be renamed with
+    /// `field`): building a vista fails when a reference's foreign key, or
+    /// the id column it matches on the other side, is stored anywhere but a
+    /// field of its own name ("reference key must be stored under its own
+    /// field name"). A reference with a `mongo: { rhai: }` build script is
+    /// exempt under the `rhai` feature. Joined (dotted) columns may still
+    /// read nested fields of the target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested_path: Option<String>,
 }
@@ -79,7 +126,28 @@ impl MongoColumnBlock {
     }
 }
 
-pub type MongoVistaSpec = VistaSpec<MongoTableExtras, MongoColumnExtras, NoExtras>;
+/// Per-reference `mongo:` block, riding in `ReferenceSpec`'s flattened
+/// `driver` slot beside the uniform `table`/`kind`/`foreign_key` keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MongoReferenceExtras {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mongo: Option<MongoRefBlock>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MongoRefBlock {
+    /// Rhai script that builds the traversal target for this reference,
+    /// instead of the foreign-key condition, e.g.
+    /// `table("order").where("client_id", row._id)`. Evaluated at traversal
+    /// time with the parent row in scope as `row` (and `me`). Requires the
+    /// `rhai` feature; ignored by builds without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rhai: Option<String>,
+}
+
+pub type MongoVistaSpec = VistaSpec<MongoTableExtras, MongoColumnExtras, MongoReferenceExtras>;
 
 #[cfg(test)]
 mod tests {
@@ -138,6 +206,94 @@ columns:
 "#;
         let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         assert!(spec.driver.mongo.is_none());
+    }
+
+    #[test]
+    fn yaml_pipeline_parses_into_bson_stages() {
+        let yaml = r#"
+name: totals
+columns:
+  _id: { type: string, flags: [id] }
+mongo:
+  collection: products
+  pipeline:
+    - $group: { _id: "$category", total: { $sum: "$price" } }
+    - $sort: { total: -1 }
+"#;
+        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+        let stages = spec
+            .driver
+            .mongo
+            .unwrap()
+            .pipeline_stages()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            stages,
+            vec![
+                bson::doc! { "$group": { "_id": "$category", "total": { "$sum": "$price" } } },
+                bson::doc! { "$sort": { "total": -1_i64 } },
+            ]
+        );
+    }
+
+    #[test]
+    fn yaml_parses_scripts_and_reference_block() {
+        let yaml = r#"
+name: client
+columns:
+  _id: { type: object_id, flags: [id] }
+mongo:
+  rhai: '[#{"$match": #{}}]'
+  modify: 'self.with_condition(#{a: 1})'
+references:
+  orders:
+    table: order
+    kind: has_many
+    foreign_key: client_id
+    mongo:
+      rhai: 'table("order").where("client_id", row._id)'
+"#;
+        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+        let block = spec.driver.mongo.as_ref().unwrap();
+        assert!(block.rhai.as_deref().unwrap().contains("$match"));
+        assert!(block.modify.as_deref().unwrap().contains("with_condition"));
+        assert!(block.args.is_empty());
+        let reference = spec.references["orders"].driver.mongo.as_ref().unwrap();
+        assert!(reference.rhai.as_deref().unwrap().starts_with("table("));
+    }
+
+    #[test]
+    fn pipeline_stages_absent_without_pipeline() {
+        assert!(MongoBlock::default().pipeline_stages().unwrap().is_none());
+    }
+
+    #[test]
+    fn pipeline_rejects_empty_pipeline() {
+        let block = MongoBlock {
+            pipeline: Some(vec![]),
+            ..MongoBlock::default()
+        };
+        let msg = block.pipeline_stages().unwrap_err().to_string();
+        assert!(msg.contains("at least one stage"), "{msg}");
+    }
+
+    #[test]
+    fn pipeline_rejects_bad_stage_naming_its_index() {
+        for bad in [
+            serde_json::json!({ "group": { "_id": 1 } }),
+            serde_json::json!({ "$match": {}, "$sort": { "a": 1 } }),
+            serde_json::json!(["$match"]),
+            serde_json::json!({}),
+        ] {
+            let block = MongoBlock {
+                pipeline: Some(vec![serde_json::json!({ "$match": {} }), bad.clone()]),
+                ..MongoBlock::default()
+            };
+            let msg = block.pipeline_stages().unwrap_err().to_string();
+            assert!(msg.contains("pipeline stage"), "{bad}: {msg}");
+            assert!(msg.contains("stage: 1"), "{bad}: {msg}");
+        }
     }
 
     #[test]

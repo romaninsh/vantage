@@ -229,7 +229,8 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.can_update);
     assert!(caps.can_delete);
     assert!(caps.can_confine_writes);
-    assert!(!caps.can_subscribe);
+    assert_eq!(caps.can_subscribe, db.supports_change_streams());
+    assert_eq!(caps.can_import, db.supports_change_streams());
 
     teardown(&db, &name).await;
     Ok(())

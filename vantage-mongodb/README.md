@@ -172,7 +172,79 @@ products.add_condition(condition);
 // Generates: { "$or": [{ "name": { "$regex": "cupcake", "$options": "i" } }, ...] }
 ```
 
-Each column in the table gets an `$or` branch. This is a simple substring search — for more sophisticated text search, use MongoDB's `$text` operator directly via `doc!{}`.
+Each column in the table gets an `$or` branch, at its stored BSON path (the column alias). This is a simple substring search — for more sophisticated text search, use MongoDB's `$text` operator directly via `doc!{}`.
+
+## Vista capabilities
+
+With the `vista` feature, a MongoDB vista advertises:
+
+- Always: count, order, search (over `SEARCHABLE` columns by BSON path), page, keyset `fetch_next`,
+  `fetch_window`, operator filters (`can_filter_operators`).
+- Unless it is a pipeline view (read-only): insert, update, delete, confined writes, and reference
+  traversal (`can_traverse_to_record`, `can_traverse_to_set`, `can_traverse_in_columns` for dotted
+  join columns via `$lookup`).
+- `can_build_ref_via_script`: with the `rhai` feature.
+- `can_subscribe` (change streams, `watch_vista`) and `can_import` (transactional
+  `import_vista_values`): need a replica set or sharded cluster. The topology is probed on connect;
+  `MongoVistaFactory::with_change_streams(true)` forces them on, `false` off. A standalone server
+  advertises neither, and forcing them on there does not give it change streams. `MongoDB::connect`
+  waits out server selection (30 s by default) when the server is unreachable, then reports
+  `Topology::Unknown`.
+
+`$lookup` joins are type-strict: a string foreign key does not join an `ObjectId` `_id`. Each hop
+matches `localField` against `foreignField`. Correlated subqueries are not implemented:
+`Table::get_subquery_*` panics on MongoDB (`related_correlated_condition` is `unimplemented!`).
+Reference keys must be stored under their own field name: a reference whose foreign key, or the id
+column it matches, is renamed (`field:`) or nested (`nested_path:`) is refused when the vista is
+built, unless the reference carries a `mongo: { rhai: }` script. A typed
+`table.select()` run through `execute_select` does not lower joined columns; `list_values` and the
+vista do.
+
+A spec-built vista searches only its `SEARCHABLE` columns. A target reached through `get_ref` or
+`get_ref_target` is wrapped with `from_table`: it searches every column when none is flagged, and
+does not run that target spec's `modify:` script or its reference scripts.
+
+YAML column types include `object_id`, `datetime` (aliases `date`, `timestamp`) and `decimal`. Typed
+columns parse written text back into ObjectId, DateTime or Decimal128, and reject text that doesn't parse.
+
+## YAML Vistas: `pipeline:`, `rhai:` and `modify:`
+
+With the `vista` feature, a YAML spec can make a vista read an aggregation pipeline instead of a collection. The result is read-only. Each row's id is the `_id` the pipeline emits (for a `$group`, the group key):
+
+```yaml
+name: category_totals
+columns:
+  _id: { type: string, flags: [id] }
+  total: { type: int }
+mongo:
+  collection: products
+  pipeline:
+    - $match: { active: true }
+    - $group: { _id: "$category", total: { $sum: "$price" } }
+```
+
+The `rhai` feature adds two script slots. `rhai:` builds the pipeline in Rhai, so it can depend on `args`, the parameters the host sets at open time. `rhai:` and `pipeline:` can't be used together. `modify:` runs last, against the built vista as `self`:
+
+```yaml
+mongo:
+  collection: products
+  rhai: |
+    let stages = [];
+    if "cat" in args { stages.push(#{"$match": #{category: args.cat}}); }
+    stages.push(#{"$group": #{_id: "$category", n: #{"$sum": 1}}});
+    stages
+  modify: |
+    self.with_condition(#{n: #{"$gt": 1}})
+```
+
+Maps convert straight to BSON. `oid("…")` builds an `ObjectId`, and `date("2026-01-01T00:00:00Z")` builds a BSON date. A reference can also be built by a script (`references: { orders: { …, mongo: { rhai: 'table("order").where("client_id", me._id)' } } }`). This is how the rows of a `$group` view lead to other tables.
+
+**Key order.** YAML `pipeline:` keeps keys in the order you wrote them. Rhai map literals sort their keys, so `#{b: 1, a: -1}` reaches MongoDB as `{a: -1, b: 1}`. Most of the time this doesn't matter: `$match` filters, `$group` fields and `$project` fields ignore key order. Two cases do care:
+
+- A multi-key `$sort`, or `$setWindowFields`' `sortBy`, sorts by key order. Build it with `doc([["b", 1], ["a", -1]])`, which keeps the order given.
+- An exact match on an embedded document compares key order too. Match nested fields by dotted path instead: `#{"address.city": "Riga"}`, not `#{address: #{city: "Riga"}}`.
+
+**Missing args.** If the host didn't set `args.x`, it reads as `()`, which becomes BSON `null`, and the filter then matches only documents where the field is null or absent. Guard optional args with `"x" in args`.
 
 ## Multi-Backend Applications
 
@@ -198,8 +270,7 @@ The `MongoDB` struct exposes the underlying driver for anything Vantage doesn't 
 ```rust
 let collection = db.collection::<bson::Document>("products");
 
-// Use the driver directly for complex aggregation pipelines,
-// change streams, transactions, etc.
+// Use the driver directly for operations Vantage doesn't abstract.
 let pipeline = vec![
     doc! { "$unwind": "$tags" },
     doc! { "$group": { "_id": "$tags", "count": { "$sum": 1 } } },
@@ -207,4 +278,4 @@ let pipeline = vec![
 let cursor = collection.aggregate(pipeline).await?;
 ```
 
-Vantage MongoDB handles the common patterns — typed CRUD, conditions, relationships, aggregates. For MongoDB-specific features like change streams, transactions, or custom pipelines, the driver is one method call away.
+Vantage MongoDB handles typed CRUD, conditions, relationships and aggregates. Anything else goes through the driver handle.

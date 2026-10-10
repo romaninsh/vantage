@@ -70,7 +70,16 @@ macro_rules! impl_from_for_any_mongo {
     };
 }
 
-impl_from_for_any_mongo!(i32, i64, f64, bool, String, bson::oid::ObjectId);
+impl_from_for_any_mongo!(
+    i32,
+    i64,
+    f64,
+    bool,
+    String,
+    bson::oid::ObjectId,
+    bson::DateTime,
+    bson::Decimal128
+);
 
 impl From<&str> for AnyMongoType {
     /// Converts a `&str` into an `AnyMongoType`. 24-character hex strings are

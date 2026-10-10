@@ -10,25 +10,17 @@
 //!
 //! - SurrealSelect implements SelectQuery
 
-// pub mod associated_query;
-// pub mod conditional;
-
-// pub mod field_projection;
+pub mod ext;
 pub mod field;
 pub mod identifier;
-pub mod operation;
-// pub mod protocol;
-pub mod ext;
 pub mod macros;
+pub mod operation;
 pub mod primitives;
 pub mod statements;
 pub mod sum;
 pub mod surreal_return;
 pub mod surrealdb;
-// pub mod prelude;
-// pub mod column;
 pub mod thing;
-// pub mod typed_expression;
 pub mod variable;
 
 #[cfg(feature = "vista")]

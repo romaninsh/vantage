@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0 — 2026-10-10
+
+- Vista shells advertise `fetch_window`.
+- **Breaking:** `SurrealTableExt::select_column` renamed `select_values`.
+- Compact datetime and duration CBOR payloads without nanos decode.
+- Removed the uncompiled modules `associated_query`, `column`, `conditional`, `field_projection`,
+  `prelude`, `protocol`, `typed_expression` and `surrealdb::selectsource`.
+- Retired the pre-0.3 test files.
+- Depends on `surreal-client` 1.0.0.
+
 ## 0.7.1 — 2026-10-07
 
 - Removed the uncompiled `table/` module.

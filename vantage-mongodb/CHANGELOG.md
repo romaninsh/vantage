@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.0 — 2026-10-10
+
+- YAML `references:` are registered, with `with_resolver`; column-less fallback targets are keyed by `_id`.
+- Nested paths survive traversal.
+- Operator push-down: `can_filter_operators`, `can_traverse_to_set`.
+- ObjectId and hex string match in filters and traversal.
+- `fetch_window`.
+- `get_some_value` honours sort.
+- `as_field` no longer panics.
+- **Breaking:** quicksearch covers only `SEARCHABLE` columns, by BSON path; a spec-built vista
+  with none flagged matches nothing.
+- Keyset `fetch_next`.
+- Topology probe and `with_change_streams`; `MongoDB::connect` runs `hello` and, when the server
+  is unreachable, waits out server selection before reporting `Unknown`.
+- `Topology` is `#[non_exhaustive]`.
+- **Breaking:** a reference whose key column is renamed (`field:`) or nested (`nested_path:`) is
+  refused at build, unless it has a `mongo.rhai` script.
+- Pipeline views refuse `$out` and `$merge`.
+- `_id` copied from a read row is stored as an ObjectId.
+- Change streams (`watch_vista`).
+- `import_vista_values` is transactional.
+- Raw conditions.
+- Pipeline views: `mongo.pipeline`, `MongoView`.
+- Dotted join columns via `$lookup`.
+- Writes preserve types; new `datetime` and `decimal` column types.
+- **Breaking:** typed ObjectId, DateTime and Decimal128 columns reject unparseable text.
+- Rhai: `rhai` feature, `with_condition`, `oid()`, `date()`, `doc()`, `mongo.rhai`, `mongo.modify`,
+  scripted references.
+- Replica-set dev scripts and CI.
+- Depends on `vantage-table` 1.3.0.
+
 ## 0.7.0 — 2026-10-05
 
 - **Breaking:** by-id reads and writes honour the table's filter: `get_value` of a document outside

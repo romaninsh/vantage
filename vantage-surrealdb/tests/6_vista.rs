@@ -236,6 +236,66 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
 }
 
 #[tokio::test]
+async fn capabilities_advertise_fetch_window() -> TestResult {
+    let (db, table_name) = setup().await;
+    let table = product_table(db.clone(), &table_name);
+    let vista = db.vista_factory().from_table(table)?;
+    assert!(vista.capabilities().can_fetch_window);
+
+    // Windowing is a read-side capability, so a read-only vista keeps it.
+    #[cfg(feature = "rhai")]
+    {
+        let yaml = r#"
+name: expensive_products
+columns:
+  id:
+    type: thing
+    flags: [id]
+  name:
+    type: string
+surreal:
+  rhai: |
+    select().from("product").field("id").field("name").where(expr("price > 15"))
+"#;
+        let read_only = db.vista_factory().from_yaml(yaml)?;
+        assert!(!read_only.capabilities().can_insert);
+        assert!(read_only.capabilities().can_fetch_window);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_fetch_window_returns_row_indexed_slice() -> TestResult {
+    use vantage_vista::SortDirection;
+
+    let (db, table_name) = setup().await;
+    for (id, name) in [
+        ("a", "Apple"),
+        ("b", "Banana"),
+        ("c", "Cherry"),
+        ("d", "Date"),
+    ] {
+        seed_row(&db, &table_name, id, name, 1, false).await?;
+    }
+
+    let table = product_table(db.clone(), &table_name);
+    let mut vista = db.vista_factory().from_table(table)?;
+    vista.add_order("name", SortDirection::Ascending)?;
+
+    let window = vista.fetch_window(1, 2).await?;
+    let names: Vec<String> = window
+        .iter()
+        .map(|(_, r)| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(names, vec!["Banana".to_string(), "Cherry".into()]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn vista_eq_condition_with_typed_value() -> TestResult {
     let (db, table_name) = setup().await;
     seed_row(&db, &table_name, "a", "Match", 10, false).await?;

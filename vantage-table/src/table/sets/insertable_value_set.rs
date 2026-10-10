@@ -3,14 +3,7 @@ use vantage_core::Result;
 use vantage_dataset::prelude::InsertableValueSet;
 use vantage_types::{Entity, InvariantValue, Record};
 
-use crate::{
-    prelude::TableSource,
-    table::Table,
-    table::sets::{
-        hooks::{run_after, run_before},
-        invariants::enforce_invariants,
-    },
-};
+use crate::{prelude::TableSource, table::Table};
 
 // Implement InsertableValueSet by running before-insert hooks, enforcing set
 // invariants, writing, then running after-insert hooks. The typed-entity path
@@ -21,17 +14,12 @@ where
     T::Value: InvariantValue,
 {
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id> {
-        self.require_confined_writes("insert")?;
-        let erased = self.as_entity_erased();
-        let mut record = record.clone();
-        run_before(self.before_insert_hooks(), &mut record, erased).await?;
-        self.strip_imported_columns(&mut record);
-        enforce_invariants(&mut record, self.invariants())?;
+        let record = self.prepare_insert(record).await?;
         let id = self
             .data_source()
             .insert_table_return_id_value(self, &record)
             .await?;
-        run_after(self.after_insert_hooks(), &id, &record, erased).await?;
+        self.finish_insert(&id, &record).await?;
         Ok(id)
     }
 }

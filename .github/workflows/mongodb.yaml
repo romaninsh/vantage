@@ -14,17 +14,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -34,22 +23,35 @@ jobs:
           cache-workspace-crates: true
           cache-all-crates: true
 
+      - name: Start MongoDB replica set
+        run: |
+          docker run -d --name mongo-vantage -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo-vantage mongosh --quiet --eval "db.runCommand({ping:1})" > /dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec mongo-vantage mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for i in $(seq 1 30); do
+            docker exec mongo-vantage mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true && exit 0
+            sleep 1
+          done
+          echo "Replica set did not become primary" >&2
+          docker logs mongo-vantage
+          exit 1
+
       - name: Seed database
         run: |
-          docker exec ${{ job.services.mongodb.id }} mongosh vantage < vantage-mongodb/scripts/db/v2.js
+          docker exec -i mongo-vantage mongosh vantage < vantage-mongodb/scripts/db/v2.js
 
       - name: Build vantage-mongodb
-        run: cargo build -p vantage-mongodb
+        run: cargo build -p vantage-mongodb --all-features
 
-      - name: Run unit tests
-        run: cargo test -p vantage-mongodb --lib
-
-      - name: Run integration tests
-        run: cargo test -p vantage-mongodb --test 1_table_source --test 1_types_record --test 7_safe_writes
+      - name: Run tests
+        run: cargo test -p vantage-mongodb --all-features
         env:
-          MONGODB_URL: mongodb://localhost:27017
+          MONGODB_URL: mongodb://localhost:27017/?directConnection=true
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop ${{ job.services.mongodb.id }} || true
+          docker stop mongo-vantage || true

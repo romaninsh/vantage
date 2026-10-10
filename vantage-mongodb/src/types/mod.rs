@@ -53,6 +53,8 @@ impl MongoTypeVariants {
 
 mod bool;
 pub mod cbor;
+mod datetime;
+mod decimal;
 mod numbers;
 mod object_id;
 mod string;

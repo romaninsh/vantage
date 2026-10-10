@@ -3,11 +3,17 @@
 //! Provides a simplified mock implementation that requires exact matching of method calls
 //! and parameters, making it predictable and easy to debug.
 
+use crate::live::Notification;
 use crate::{Engine, error::Result};
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+
+/// Shared, append-only record of the RPC method names a mock engine received.
+pub type CallLog = Arc<Mutex<Vec<String>>>;
 
 /// A mock SurrealDB engine that requires exact matching of requests
 #[derive(Debug, Clone)]
@@ -16,6 +22,10 @@ pub struct MockSurrealEngine {
     exact_matches: HashMap<(String, Value), Value>,
     /// Enable debug logging of queries
     debug: bool,
+    /// Method names of every request received, in order
+    calls: CallLog,
+    /// Senders for registered live queries, keyed by query id
+    live: HashMap<String, mpsc::UnboundedSender<Notification>>,
 }
 
 impl MockSurrealEngine {
@@ -24,7 +34,15 @@ impl MockSurrealEngine {
         Self {
             exact_matches: HashMap::new(),
             debug: false,
+            calls: CallLog::default(),
+            live: HashMap::new(),
         }
+    }
+
+    /// Handle to the log of RPC method names this engine receives. It stays
+    /// valid after the engine is moved into a client.
+    pub fn call_log(&self) -> CallLog {
+        self.calls.clone()
     }
 
     /// Enable debug logging of queries
@@ -61,6 +79,8 @@ impl MockSurrealEngine {
 
     /// Find exact matching response for a request or panic with descriptive error
     fn find_response(&self, method: &str, params: &Value) -> Value {
+        self.calls.lock().unwrap().push(method.to_string());
+
         if self.debug {
             println!("MockSurrealEngine: method='{}', params={}", method, params);
         }
@@ -114,6 +134,19 @@ impl Engine for MockSurrealEngine {
         let response = self.find_response(method, &json_params);
         Ok(crate::cbor_convert::json_to_cbor(response))
     }
+
+    async fn register_live(
+        &mut self,
+        query_id: &str,
+    ) -> Result<mpsc::UnboundedReceiver<Notification>> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.live.insert(query_id.to_string(), tx);
+        Ok(rx)
+    }
+
+    async fn unregister_live(&mut self, query_id: &str) {
+        self.live.remove(query_id);
+    }
 }
 
 /// Builder for creating mock SurrealDB instances with test data
@@ -149,6 +182,11 @@ impl SurrealMockBuilder {
     pub fn with_debug(mut self, debug: bool) -> Self {
         self.engine = self.engine.with_debug(debug);
         self
+    }
+
+    /// Handle to the log of RPC method names the built client's engine receives
+    pub fn call_log(&self) -> CallLog {
+        self.engine.call_log()
     }
 
     /// Add exact response for specific method and parameters

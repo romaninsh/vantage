@@ -200,7 +200,7 @@ where
     /// final target. Everything is validated here, so every failure is a
     /// **build-time** error, never a fetch-time surprise: unknown column,
     /// unknown relation, a `has_many` hop, or a backend that cannot lower
-    /// traversal into its query (e.g. MongoDB, CSV, REST). Same-datasource
+    /// traversal into its query (e.g. CSV, REST). Same-datasource
     /// only; cross-datasource traversal is a Diorama augmentation concern.
     pub fn with_active_columns(mut self, cols: &[&str]) -> Result<Self>
     where
