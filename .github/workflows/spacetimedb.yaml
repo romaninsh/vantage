@@ -6,10 +6,9 @@ name: SpacetimeDB Backend Tests
 # and `vantage-kubernetes` carry their own.
 on:
   pull_request:
-    branches: ["main", "v2"]
+    branches: ["main"]
     paths:
       - "vantage-spacetimedb/**"
-      - "vantage-vista/**"
       - ".github/workflows/spacetimedb.yaml"
 
 env:
