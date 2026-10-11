@@ -33,8 +33,8 @@
 //! handful of nominally relational fields here (`launches.mission_id`
 //! is a *list*, `capsules.find.mission` matches against a nested
 //! `CapsuleMission.name` rather than the top-level `missions` table)
-//! don't compose into clean traversals. Nested-selection adapter mode
-//! is the right tool — tracked for a future phase.
+//! don't compose into clean traversals. Read them as dotted columns
+//! (`rocket.rocket_name`), which render as nested selections.
 //!
 //! The endpoint defaults to a community mirror and can be overridden
 //! via `SPACEX_ENDPOINT`. Community mirrors come and go — if a 4xx/5xx

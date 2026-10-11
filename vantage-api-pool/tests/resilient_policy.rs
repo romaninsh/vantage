@@ -149,13 +149,17 @@ async fn retry_after_is_clamped_to_the_policy_ceiling() {
         .mount(&server)
         .await;
     mount_status(&server, 200).await;
-    let client = ResilientClient::builder().build();
+    // A supplied client keeps the default client's first-request build out
+    // of the timed window.
+    let client = ResilientClient::builder()
+        .http_client(reqwest::Client::builder().no_proxy().build().unwrap())
+        .build();
     let url = server.uri();
-    let policy = CallPolicy::bounded(RetryPolicy {
-        max_retries: 1,
-        base_backoff: Duration::from_millis(1),
-        max_backoff: Duration::from_millis(20),
-    });
+    let policy = CallPolicy::bounded(RetryPolicy::new(
+        1,
+        Duration::from_millis(1),
+        Duration::from_millis(20),
+    ));
 
     let started = std::time::Instant::now();
     let resp = within(client.execute_with(&policy, |h| h.get(&url)))

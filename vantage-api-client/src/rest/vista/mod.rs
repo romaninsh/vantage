@@ -6,18 +6,22 @@
 //! erased table in a `RestApiTableShell` that the universal Vista
 //! surface drives.
 //!
-//! REST APIs are read-only at this stage — the shell advertises only
-//! `can_count`.
+//! A YAML spec builds the same way through `build_from_spec`, and its
+//! `references:` traverse to other models through the factory's registry
+//! or an installed [`ModelResolver`].
+//!
+//! The shell only reads: it counts, lists and fetches by id, and
+//! advertises absolute-offset windows and ordering where the API is
+//! configured for them. Writes go through [`RestApi::http_request`].
 
 pub mod factory;
-pub mod source;
+mod source;
 pub mod spec;
 
 pub use factory::{ModelResolver, RestApiVistaFactory};
 pub use source::RestApiTableShell;
 pub use spec::{
-    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, NoApiExtras,
-    RestApiVistaSpec,
+    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, RestApiVistaSpec,
 };
 
 use crate::RestApi;

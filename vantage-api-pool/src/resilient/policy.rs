@@ -9,9 +9,13 @@ const MIN_BACKOFF: Duration = Duration::from_millis(1);
 /// Bounded retry: exponential from `base_backoff` (doubling per attempt),
 /// capped at `max_backoff`, with jitter added before each sleep.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RetryPolicy {
+    /// Retries after the first attempt.
     pub max_retries: usize,
+    /// The back-off before the first retry; doubles for each one after.
     pub base_backoff: Duration,
+    /// The ceiling the doubling stops at.
     pub max_backoff: Duration,
 }
 
@@ -26,6 +30,15 @@ impl Default for RetryPolicy {
 }
 
 impl RetryPolicy {
+    /// A policy with explicit bounds.
+    pub fn new(max_retries: usize, base_backoff: Duration, max_backoff: Duration) -> Self {
+        Self {
+            max_retries,
+            base_backoff,
+            max_backoff,
+        }
+    }
+
     pub(crate) fn backoff(&self, attempt: usize) -> Duration {
         exponential(self.base_backoff, self.max_backoff, attempt)
     }
@@ -52,6 +65,7 @@ pub(crate) fn with_jitter(d: Duration) -> Duration {
 
 /// How many times, and how long apart, a failed attempt is repeated.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum RetryMode {
     /// One attempt. For work nobody is waiting on.
     None,
@@ -59,11 +73,25 @@ pub enum RetryMode {
     Bounded(RetryPolicy),
     /// Retry until the caller drops the future; exponential from `base`
     /// capped at `max`. For work someone is waiting on.
-    UntilCancelled { base: Duration, max: Duration },
+    #[non_exhaustive]
+    UntilCancelled {
+        /// The first back-off.
+        base: Duration,
+        /// The ceiling the doubling stops at.
+        max: Duration,
+    },
+}
+
+impl RetryMode {
+    /// An [`UntilCancelled`](Self::UntilCancelled) mode.
+    pub fn until_cancelled(base: Duration, max: Duration) -> Self {
+        Self::UntilCancelled { base, max }
+    }
 }
 
 /// What an attempt does while the circuit breaker is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BreakerMode {
     /// Return `ErrorKind::BreakerOpen` at once.
     FailFast,
@@ -73,12 +101,21 @@ pub enum BreakerMode {
 
 /// The policy for one call.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct CallPolicy {
+    /// How failed attempts are repeated.
     pub retry: RetryMode,
+    /// What to do while the breaker is open.
     pub breaker: BreakerMode,
 }
 
 impl CallPolicy {
+    /// A policy from its two parts. The named constructors cover the usual
+    /// combinations.
+    pub fn new(retry: RetryMode, breaker: BreakerMode) -> Self {
+        Self { retry, breaker }
+    }
+
     /// One attempt, fail fast. Polls, refreshes, hydration.
     pub fn background() -> Self {
         Self {
@@ -91,10 +128,7 @@ impl CallPolicy {
     /// Cold loads, uncached viewports, writes.
     pub fn essential() -> Self {
         Self {
-            retry: RetryMode::UntilCancelled {
-                base: Duration::from_millis(250),
-                max: Duration::from_secs(10),
-            },
+            retry: RetryMode::until_cancelled(Duration::from_millis(250), Duration::from_secs(10)),
             breaker: BreakerMode::WaitForProbe,
         }
     }
@@ -107,6 +141,8 @@ impl CallPolicy {
         }
     }
 
+    /// Keep this policy's retry mode but wait for the breaker's probe slot
+    /// instead of failing fast.
     pub fn wait_for_probe(mut self) -> Self {
         self.breaker = BreakerMode::WaitForProbe;
         self
@@ -186,10 +222,7 @@ mod tests {
     #[test]
     fn a_zeroed_policy_still_sleeps() {
         let p = CallPolicy {
-            retry: RetryMode::UntilCancelled {
-                base: Duration::ZERO,
-                max: Duration::ZERO,
-            },
+            retry: RetryMode::until_cancelled(Duration::ZERO, Duration::ZERO),
             breaker: BreakerMode::FailFast,
         };
         assert_eq!(p.next_backoff(0), Some(MIN_BACKOFF));

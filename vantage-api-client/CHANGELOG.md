@@ -1,5 +1,60 @@
 # Changelog
 
+## 1.0.0 — 2026-10-11
+
+- **Breaking:** `#[non_exhaustive]` on `FilterDialect`, `GraphqlOp`, `GraphqlCondition`,
+  `ResponseShape`, `FilterStrategy`, `CountMode`, `PaginationMode`, `Supports`, `PaginationParams`,
+  `OrderingParams`, `RenderedQuery` and the YAML block structs; build them with `Default`,
+  `new` and `with_*`.
+- **Breaking:** internal modules are private (`graphql::{api, condition, operation, select,
+  impls}`, `rest::{api, operation, table_source}`, the vista `source` modules); types are
+  re-exported from the crate root, `graphql`, `rest` and `prelude`.
+- **Breaking:** `GraphqlSelect` fields are private (read accessors added); `group_by` and
+  `distinct` removed.
+- **Breaking:** YAML `dialect:` is typed: `generic` or `hasura`, lowercase only (was lower-cased);
+  an unknown value fails to parse.
+- **Breaking:** `PaginationParams` has `mode: PaginationMode` (`Page` | `Skip`) instead of
+  `skip_based: bool`.
+- **Breaking:** `NoApiExtras`, `NoGraphqlExtras`, `RestApi::with_auth` and
+  `GraphqlApiBuilder::client` removed; use `builder().auth(..)` and `http_client(..)`.
+- **Breaking:** requests time out after 30 s by default (no timeout before); `request_timeout(..)`
+  and `no_request_timeout()` on both builders.
+- **Breaking:** the default HTTP client is built on the first request, not at construction.
+- **Breaking:** re-exported pool types (`TransportEvent` and its variants, `ClientError`,
+  `ErrorKind`, `BreakerState`, `CallPolicy`, `RetryMode`) are `#[non_exhaustive]`; build them with
+  their constructors. `ErrorKind::Closed` removed.
+- **Breaking:** `#[non_exhaustive]` on `FieldCondition` and `GraphqlCondition::DeferredField`; build
+  them with `FieldCondition::new` and `GraphqlCondition::deferred_field`.
+- **Breaking:** `OrderingParams::value` and `RestApi::serves_windows` are no longer public.
+- **Breaking:** GraphQL paging is advertised only with filter push-down (`paginate` and `filter`).
+- **Breaking:** writes and `sum` / `min` / `max` return `Unsupported` errors on both drivers.
+- **Breaking:** a row without an id (GraphQL: a null or empty id) is keyed `~row:<pos>`; two
+  rows with the same id in one response are an error.
+- **Breaking:** GraphQL names (fields, root field, arguments, filter keys, order and count fields)
+  are validated; an invalid name fails before any request.
+- GraphQL vistas with `paginate: true` serve `fetch_page`, `fetch_window` and `fetch_next`;
+  Hasura paged reads order by the id column when no order is set.
+- Hasura `count: aggregate` opts in to counting through `<root>_aggregate` (counts still list by
+  default); `count_field:` overrides its name. A rejected aggregate is an error naming
+  `count: list`.
+- `GraphqlApi::can_page`.
+- A spec's `graphql:` block overrides the builder's `Supports` key by key.
+- GraphQL ordering reaches the server (`Vista::add_order`); dotted columns are refused.
+- GraphQL quicksearch covers `searchable:` columns, or else string-typed non-id columns; none
+  matches nothing. `%`, `_` and `\` are escaped.
+- GraphQL get-by-id honours `Supports` and sends an int id column's value as an integer.
+- Hasura `contains` renders `_ilike`.
+- `GraphqlApiTableShell` implements `clone_shell`.
+- YAML `references:` on GraphQL specs, with `register_yaml`, `build` and `with_resolver`
+  (`GraphqlSpecResolver`).
+- YAML column `field:` aliases a column to a different server field.
+- GraphQL strings escape every control character.
+- `Supports`, `CountMode`, `RetryPolicy` and `ResilientClientBuilder` are exported from the crate
+  root.
+- REST `column_table_values_expr` lists the table and returns the column (was a panic).
+- `RestApi::http_request` returns an error for a bad header name or value (was a panic).
+- Depends on `vantage-api-pool` 1.0.0.
+
 ## 0.6.20 — 2026-10-04
 
 - The REST and GraphQL vista factories use the shared spec helpers.

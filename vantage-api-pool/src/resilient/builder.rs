@@ -9,12 +9,14 @@ use tokio::sync::{RwLock, Semaphore};
 
 use super::auth::{AuthRefresher, AuthState};
 use super::breaker::CircuitBreaker;
+use super::http::{DEFAULT_REQUEST_TIMEOUT, LazyHttp};
 use super::rate::TokenBucket;
 use super::{ResilientClient, RetryPolicy, TransportObserver};
 
 /// Builder for [`ResilientClient`].
 pub struct ResilientClientBuilder {
     http: Option<reqwest::Client>,
+    timeout: Option<Duration>,
     max_parallel: usize,
     policy: RetryPolicy,
     breaker: Option<(usize, Duration, Duration)>,
@@ -27,6 +29,7 @@ impl Default for ResilientClientBuilder {
     fn default() -> Self {
         Self {
             http: None,
+            timeout: Some(DEFAULT_REQUEST_TIMEOUT),
             max_parallel: 8,
             policy: RetryPolicy::default(),
             breaker: None,
@@ -44,6 +47,8 @@ impl ResilientClientBuilder {
         self
     }
 
+    /// Retry policy for [`ResilientClient::execute`]. Calls made through
+    /// `execute_with` carry their own [`CallPolicy`](super::CallPolicy).
     pub fn retry(mut self, policy: RetryPolicy) -> Self {
         self.policy = policy;
         self
@@ -89,8 +94,29 @@ impl ResilientClientBuilder {
         self
     }
 
+    /// Send requests with `client` instead of a default one. The client keeps
+    /// its own settings; [`request_timeout`](Self::request_timeout) does not
+    /// apply to it.
     pub fn http_client(mut self, client: reqwest::Client) -> Self {
         self.http = Some(client);
+        self
+    }
+
+    /// Give up on a single request after `timeout` (default 30 s). It covers
+    /// connecting, sending and reading the response, and a timed-out attempt
+    /// is a retryable transport failure.
+    ///
+    /// Applies only to the default client this crate builds; a client passed
+    /// to [`http_client`](Self::http_client) keeps its own timeout.
+    pub fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Never time a request out. Applies only to the default client, like
+    /// [`request_timeout`](Self::request_timeout).
+    pub fn no_request_timeout(mut self) -> Self {
+        self.timeout = None;
         self
     }
 
@@ -101,6 +127,7 @@ impl ResilientClientBuilder {
         self.rate_limit_with_burst(per_second, burst)
     }
 
+    /// Like [`rate_limit`](Self::rate_limit) with an explicit burst size.
     pub fn rate_limit_with_burst(mut self, per_second: f64, burst: usize) -> Self {
         self.rate = Some((per_second, burst));
         self
@@ -117,9 +144,18 @@ impl ResilientClientBuilder {
         self
     }
 
+    /// Finish the client. No network or proxy work happens here: a default
+    /// HTTP client is built on the first request. If that build keeps
+    /// failing, every attempt fails with a retryable
+    /// [`ErrorKind::Transport`](super::ErrorKind::Transport), so an
+    /// `essential()` call keeps retrying.
     pub fn build(self) -> ResilientClient {
+        let http = match self.http {
+            Some(client) => LazyHttp::supplied(client),
+            None => LazyHttp::deferred(self.timeout),
+        };
         ResilientClient {
-            http: self.http.unwrap_or_default(),
+            http: Arc::new(http),
             semaphore: Arc::new(Semaphore::new(self.max_parallel)),
             policy: self.policy,
             breaker: self

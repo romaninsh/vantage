@@ -7,17 +7,27 @@
 //! universal Vista surface sees the same level of detail as the REST
 //! bridge.
 //!
-//! GraphQL is read-only at this stage — the shell advertises
-//! `can_count` only. Writes will follow once the schema map (Phase 9)
-//! describes mutation field names per-table.
+//! A YAML spec builds the same way through `build_from_spec`, and its
+//! `references:` traverse to other specs on the same endpoint.
+//!
+//! The shell only reads: it counts, lists and fetches by id, and
+//! advertises ordering, search and paging where the root field takes them.
+//! Writes are not supported, because mutation names and argument shapes
+//! differ from one schema to the next.
 
 pub mod factory;
-pub mod source;
+mod lowering;
+mod paging;
+mod source;
 pub mod spec;
+mod traversal;
 
 pub use factory::GraphqlApiVistaFactory;
+pub use lowering::GraphqlSpecResolver;
 pub use source::GraphqlApiTableShell;
-pub use spec::{GraphqlApiVistaSpec, NoGraphqlExtras};
+pub use spec::{
+    GraphqlApiVistaSpec, GraphqlBlock, GraphqlColumnBlock, GraphqlColumnExtras, GraphqlTableExtras,
+};
 
 use crate::graphql::api::GraphqlApi;
 

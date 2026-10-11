@@ -1,7 +1,8 @@
 //! `Selectable<AnyGraphqlType, GraphqlCondition>` for `GraphqlSelect`.
 //!
 //! Same shape as `vantage-mongodb`'s impl — most methods are direct
-//! field accessors; the as_field/as_count/as_sum/as_max/as_min
+//! field accessors; grouping and `DISTINCT` are no-ops (GraphQL has no
+//! spelling for either); the as_field/as_count/as_sum/as_max/as_min
 //! aggregate constructors return placeholder expressions because the
 //! actual aggregate semantics depend on the schema (Hasura ships
 //! `<table>_aggregate { aggregate { count, sum {...} } }`; generic
@@ -38,9 +39,8 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
         self.conditions.push(condition.into());
     }
 
-    fn set_distinct(&mut self, distinct: bool) {
-        self.distinct = distinct;
-    }
+    /// No GraphQL spelling: ignored.
+    fn set_distinct(&mut self, _distinct: bool) {}
 
     fn add_order_by(&mut self, order: impl Into<GraphqlCondition>, direction: Order) {
         // Convention: an order argument that resolves to a Field
@@ -52,9 +52,8 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
         }
     }
 
-    fn add_group_by(&mut self, expression: impl Expressive<AnyGraphqlType>) {
-        self.group_by.push(expression.preview());
-    }
+    /// No GraphQL spelling: ignored.
+    fn add_group_by(&mut self, _expression: impl Expressive<AnyGraphqlType>) {}
 
     fn set_limit(&mut self, limit: Option<i64>, skip: Option<i64>) {
         self.limit = limit;
@@ -73,9 +72,7 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
         self.sort.clear();
     }
 
-    fn clear_group_by(&mut self) {
-        self.group_by.clear();
-    }
+    fn clear_group_by(&mut self) {}
 
     fn has_fields(&self) -> bool {
         !self.fields.is_empty()
@@ -90,11 +87,11 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
     }
 
     fn has_group_by(&self) -> bool {
-        !self.group_by.is_empty()
+        false
     }
 
     fn is_distinct(&self) -> bool {
-        self.distinct
+        false
     }
 
     fn get_limit(&self) -> Option<i64> {
@@ -106,9 +103,9 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
     }
 
     fn as_field(&self, _field: impl Into<String>) -> Expression<AnyGraphqlType> {
-        // Subquery-as-field requires schema-driven aggregate field
-        // names that aren't available at this layer; defer to a real
-        // path in Phase 6 / Phase 5 once the schema map exists.
+        // Subquery-as-field needs schema-driven aggregate field names that
+        // this layer doesn't have, so the expression only previews the
+        // query.
         Expression::new(self.preview(), vec![])
     }
 

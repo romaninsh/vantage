@@ -17,18 +17,31 @@ use vantage_expressions::traits::expressive::DeferredFn;
 
 use crate::RestApi;
 
+/// The error every write and server-side aggregate returns.
+fn unsupported(method: &'static str) -> vantage_core::VantageError {
+    error!("REST data source supports reads only", method = method).mark_unsupported()
+}
+
 /// Extract the id field name from a table's column flags.
 fn id_field_name<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Option<String> {
     table.id_field().map(|col| col.name().to_string())
 }
 
 impl ExprDataSource<CborValue> for RestApi {
+    /// A bare template is its own text. A lone `{}` around one value — a
+    /// deferred read such as `column_table_values_expr` — evaluates to that
+    /// value. Anything else has no REST meaning and is null.
     async fn execute(&self, expr: &Expression<CborValue>) -> vantage_core::Result<CborValue> {
         if expr.parameters.is_empty() {
-            Ok(CborValue::Text(expr.template.clone()))
-        } else {
-            Ok(CborValue::Null)
+            return Ok(CborValue::Text(expr.template.clone()));
         }
+        if expr.template == "{}" && expr.parameters.len() == 1 {
+            let resolved = expr.resolve_deferred().await?;
+            if let Some(ExpressiveEnum::Scalar(value)) = resolved.parameters.into_iter().next() {
+                return Ok(value);
+            }
+        }
+        Ok(CborValue::Null)
     }
 
     fn defer(&self, expr: Expression<CborValue>) -> DeferredFn<CborValue> {
@@ -192,7 +205,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("Sum not implemented for API backend"))
+        Err(unsupported("get_table_sum"))
     }
 
     async fn get_table_max<E>(
@@ -204,7 +217,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("Max not implemented for API backend"))
+        Err(unsupported("get_table_max"))
     }
 
     async fn get_table_min<E>(
@@ -216,7 +229,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("Min not implemented for API backend"))
+        Err(unsupported("get_table_min"))
     }
 
     async fn insert_table_value<E>(
@@ -229,7 +242,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("REST API is a read-only data source"))
+        Err(unsupported("insert_table_value"))
     }
 
     async fn replace_table_value<E>(
@@ -242,7 +255,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("REST API is a read-only data source"))
+        Err(unsupported("replace_table_value"))
     }
 
     async fn patch_table_value<E>(
@@ -255,7 +268,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("REST API is a read-only data source"))
+        Err(unsupported("patch_table_value"))
     }
 
     async fn delete_table_value<E>(&self, _table: &Table<Self, E>, _id: &Self::Id) -> Result<()>
@@ -263,7 +276,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("REST API is a read-only data source"))
+        Err(unsupported("delete_table_value"))
     }
 
     async fn delete_table_all_values<E>(&self, _table: &Table<Self, E>) -> Result<()>
@@ -271,7 +284,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("REST API is a read-only data source"))
+        Err(unsupported("delete_table_all_values"))
     }
 
     async fn insert_table_return_id_value<E>(
@@ -283,7 +296,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(error!("REST API is a read-only data source"))
+        Err(unsupported("insert_table_return_id_value"))
     }
 
     /// Build a child condition for `with_many` / `with_one` traversal.
@@ -365,15 +378,34 @@ impl TableSource for RestApi {
         )
     }
 
+    /// A REST API runs no subqueries, so the column's values are read by
+    /// listing the table when the expression is resolved and taking
+    /// `column` from each row (rows without it are skipped). Resolves to a
+    /// CBOR array.
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
-        _table: &Table<Self, E>,
-        _column: &Self::Column<Type>,
+        table: &Table<Self, E>,
+        column: &Self::Column<Type>,
     ) -> AssociatedExpression<'a, Self, Self::Value, Vec<Type>>
     where
         E: Entity<Self::Value> + 'static,
         Self: Sized,
     {
-        unimplemented!("column_table_values_expr not yet supported for REST API")
+        let api = self.clone();
+        let table = table.clone();
+        let column = column.name().to_string();
+        let values = DeferredFn::new(move || {
+            let (api, table, column) = (api.clone(), table.clone(), column.clone());
+            Box::pin(async move {
+                let records = api.list_table_values(&table).await?;
+                let values = records
+                    .values()
+                    .filter_map(|r| r.get(&column).cloned())
+                    .collect();
+                Ok(ExpressiveEnum::Scalar(CborValue::Array(values)))
+            })
+        });
+        let expr = Expression::new("{}", vec![ExpressiveEnum::Deferred(values)]);
+        AssociatedExpression::new(expr, self)
     }
 }

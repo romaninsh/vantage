@@ -4,6 +4,7 @@
 //! `VantageError` that keeps the status and the server's message.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use vantage_api_pool::resilient::{
     AuthRefresher, CallPolicy, ClientError, ResilientClient, TransportObserver,
@@ -45,6 +46,9 @@ pub(crate) struct ClientConfig {
     pub rate_limit: Option<f64>,
     pub observer: Option<(Arc<str>, Arc<dyn TransportObserver>)>,
     pub http: Option<reqwest::Client>,
+    /// `None` keeps the transport's default; `Some(None)` disables the
+    /// timeout. Ignored when `http` is supplied.
+    pub request_timeout: Option<Option<Duration>>,
     /// Bearer token source, asked on the first request and again on a `401`.
     pub auth_refresher: Option<AuthRefresher>,
 }
@@ -56,6 +60,7 @@ impl Default for ClientConfig {
             rate_limit: None,
             observer: None,
             http: None,
+            request_timeout: None,
             auth_refresher: None,
         }
     }
@@ -68,6 +73,7 @@ impl std::fmt::Debug for ClientConfig {
             .field("rate_limit", &self.rate_limit)
             .field("observer", &self.observer.as_ref().map(|(k, _)| k))
             .field("http", &self.http.is_some())
+            .field("request_timeout", &self.request_timeout)
             .field("auth_refresher", &self.auth_refresher.is_some())
             .finish()
     }
@@ -82,6 +88,11 @@ pub(crate) fn build_client(cfg: ClientConfig) -> ResilientClient {
     }
     if let Some((key, observer)) = cfg.observer {
         b = b.observer(key, observer);
+    }
+    match cfg.request_timeout {
+        Some(Some(timeout)) => b = b.request_timeout(timeout),
+        Some(None) => b = b.no_request_timeout(),
+        None => {}
     }
     if let Some(http) = cfg.http {
         b = b.http_client(http);

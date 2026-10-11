@@ -15,6 +15,7 @@ mod auth;
 mod breaker;
 mod builder;
 mod error;
+mod http;
 mod observer;
 mod policy;
 mod rate;
@@ -38,7 +39,7 @@ use breaker::CircuitBreaker;
 /// A cheap-to-clone resilient HTTP client. Build via [`ResilientClient::builder`].
 #[derive(Clone)]
 pub struct ResilientClient {
-    http: reqwest::Client,
+    http: Arc<http::LazyHttp>,
     semaphore: Arc<Semaphore>,
     policy: RetryPolicy,
     breaker: Option<Arc<CircuitBreaker>>,
@@ -50,6 +51,7 @@ pub struct ResilientClient {
 }
 
 impl ResilientClient {
+    /// Start assembling a client; every policy is optional.
     pub fn builder() -> ResilientClientBuilder {
         ResilientClientBuilder::default()
     }

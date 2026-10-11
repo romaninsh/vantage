@@ -27,7 +27,7 @@ async fn observer_sees_every_attempt_retry_and_breaker_transition() {
     within(client.execute_with(&essential_fast(), |h| h.get(&url)))
         .await
         .expect("third attempt succeeds");
-    client.report(TransportEvent::RowsPulled { n: 7 });
+    client.report(TransportEvent::rows_pulled(7));
 
     assert_eq!(rec.key().as_deref(), Some("local"));
     assert_eq!(client.key(), Some("local"));

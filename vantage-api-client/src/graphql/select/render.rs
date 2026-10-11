@@ -5,78 +5,67 @@
 //! goes through typed variables (`$limit: Int`, `$offset: Int`) which the
 //! GraphQL spec covers without any schema lookup.
 //!
-//! That trade-off makes the renderer schema-agnostic for v1; Phase 5
-//! will wire a schema map that can promote the filter to a typed
-//! variable when the input-type name is known.
+//! That trade-off keeps the renderer schema-agnostic: no input-type names
+//! are needed, at the cost of the filter not being a reusable variable.
 
 use serde_json::{Map, Value};
 use vantage_core::{Result, error};
 use vantage_expressions::Order;
 
 use crate::graphql::condition::{FilterDialect, GraphqlCondition};
+use crate::graphql::name::validate;
 use crate::graphql::select::GraphqlSelect;
 
 /// The rendered output of [`GraphqlSelect::render`] — what
 /// `GraphqlApi::post_graphql` consumes.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct RenderedQuery {
+    /// The query document.
     pub query: String,
+    /// Values for the document's variables (`limit`, `offset`).
     pub variables: Map<String, Value>,
+}
+
+/// `order_by: [{a: asc, b: desc}]` for the given sort keys.
+fn render_order_by(sort: &[(&str, Order)]) -> String {
+    let entries: Vec<String> = sort
+        .iter()
+        .map(|(field, order)| format!("{}: {}", field, render_order(*order)))
+        .collect();
+    format!("order_by: [{{{}}}]", entries.join(", "))
+}
+
+/// AND the conditions into one, `None` when there are none.
+fn combined(conditions: Vec<GraphqlCondition>) -> Option<GraphqlCondition> {
+    match conditions.len() {
+        0 => None,
+        1 => conditions.into_iter().next(),
+        _ => Some(GraphqlCondition::And(conditions)),
+    }
 }
 
 impl GraphqlSelect {
     /// Produce a `(query, variables)` pair. Async because conditions
     /// may carry `Deferred` branches that resolve at fetch time.
+    ///
+    /// Every name spliced into the document is checked against the GraphQL
+    /// `Name` grammar first; an invalid one is an error, never a request.
     pub async fn render(&self) -> Result<RenderedQuery> {
         let root = self
             .root_field
             .as_deref()
             .ok_or_else(|| error!("GraphqlSelect: root_field is required"))?;
+        validate("root field", root)?;
+        self.validate_selection_names()?;
 
         let mut variables = Map::new();
         let mut var_decls: Vec<String> = Vec::new();
-        let mut args: Vec<String> = Vec::new();
+        let mut args = self.render_root_and_filter_args().await?;
 
-        // ── Literal root arguments ───────────────────────────────
-        // First, so a mandatory `input:` reads before the filter it
-        // often has nothing to do with.
-        if let Some(Value::Object(map)) = &self.root_args {
-            for (name, value) in map {
-                args.push(format!("{}: {}", name, json_to_graphql_value(value)));
-            }
-        }
-
-        // ── Filter (inline) ──────────────────────────────────────
-        if !self.conditions.is_empty() {
-            let combined = if self.conditions.len() == 1 {
-                self.conditions[0].render(self.dialect).await?
-            } else {
-                GraphqlCondition::And(self.conditions.clone())
-                    .render(self.dialect)
-                    .await?
-            };
-            let arg_name = self
-                .filter_arg_name
-                .as_deref()
-                .unwrap_or(match self.dialect {
-                    FilterDialect::Hasura => "where",
-                    FilterDialect::Generic => "find",
-                });
-            args.push(format!(
-                "{}: {}",
-                arg_name,
-                json_to_graphql_value(&combined)
-            ));
-        }
-
-        // ── Order (Hasura only for now) ──────────────────────────
+        // ── Order (Hasura only) ──────────────────────────────────
         if !self.sort.is_empty() && matches!(self.dialect, FilterDialect::Hasura) {
-            let entries: Vec<String> = self
-                .sort
-                .iter()
-                .map(|(field, order)| format!("{}: {}", field, render_order(*order)))
-                .collect();
-            args.push(format!("order_by: [{{{}}}]", entries.join(", ")));
+            args.push(render_order_by(&self.wire_sort()));
         }
 
         // ── Pagination via variables ─────────────────────────────
@@ -124,6 +113,22 @@ impl GraphqlSelect {
         Ok(RenderedQuery { query, variables })
     }
 
+    /// The literal root arguments followed by the inline filter argument —
+    /// what narrows the row set, as opposed to ordering or paging it. Shared
+    /// by [`render`](Self::render) and the aggregate count query, so a count
+    /// sees exactly the rows a list would.
+    pub(crate) async fn render_root_and_filter_args(&self) -> Result<Vec<String>> {
+        // Literal root arguments first, so a mandatory `input:` reads before
+        // the filter it often has nothing to do with.
+        let mut args = self.render_root_args()?;
+
+        if let Some(condition) = combined(self.wire_conditions()) {
+            let rendered = condition.render(self.dialect).await?;
+            args.push(self.render_filter_arg(&rendered)?);
+        }
+        Ok(args)
+    }
+
     /// The document [`render`](Self::render) would produce, built synchronously
     /// so it can be shown without sending anything.
     ///
@@ -150,20 +155,9 @@ impl GraphqlSelect {
             }
         }
 
-        if !self.conditions.is_empty() {
-            let combined = if self.conditions.len() == 1 {
-                self.conditions[0].render_preview(self.dialect)
-            } else {
-                GraphqlCondition::And(self.conditions.clone()).render_preview(self.dialect)
-            };
-            let arg_name = self
-                .filter_arg_name
-                .as_deref()
-                .unwrap_or(match self.dialect {
-                    FilterDialect::Hasura => "where",
-                    FilterDialect::Generic => "find",
-                });
-            match combined {
+        if let Some(condition) = combined(self.wire_conditions()) {
+            let arg_name = self.filter_arg();
+            match condition.render_preview(self.dialect) {
                 Ok(value) => args.push(format!("{}: {}", arg_name, json_to_graphql_value(&value))),
                 // A dialect that cannot spell this filter fails at send time
                 // too. Surfacing that here is the point of previewing.
@@ -172,12 +166,7 @@ impl GraphqlSelect {
         }
 
         if !self.sort.is_empty() && matches!(self.dialect, FilterDialect::Hasura) {
-            let entries: Vec<String> = self
-                .sort
-                .iter()
-                .map(|(field, order)| format!("{}: {}", field, render_order(*order)))
-                .collect();
-            args.push(format!("order_by: [{{{}}}]", entries.join(", ")));
+            args.push(render_order_by(&self.wire_sort()));
         }
 
         if let Some(limit) = self.limit {
@@ -222,7 +211,7 @@ fn render_selection_set<'a>(
                 root = select.root_field.clone().unwrap_or_default()
             ));
         }
-        let mut parts = FieldTree::from_paths(&select.fields).into_parts();
+        let mut parts = FieldTree::from_paths(&select.selection_paths()).into_parts();
         for (field, child) in &select.sub_selections {
             let inner = render_inline_subselection(child).await?;
             parts.push(format!("{}{}", field, inner));
@@ -240,7 +229,7 @@ fn preview_selection_set(select: &GraphqlSelect) -> String {
     if select.fields.is_empty() && select.sub_selections.is_empty() {
         return "{ <empty selection set> }".to_string();
     }
-    let mut parts = FieldTree::from_paths(&select.fields).into_parts();
+    let mut parts = FieldTree::from_paths(&select.selection_paths()).into_parts();
     for (field, child) in &select.sub_selections {
         parts.push(format!("{}{}", field, preview_inline_subselection(child)));
     }
@@ -250,19 +239,8 @@ fn preview_selection_set(select: &GraphqlSelect) -> String {
 /// Synchronous [`render_inline_subselection`], for [`GraphqlSelect::preview`].
 fn preview_inline_subselection(child: &GraphqlSelect) -> String {
     let mut args: Vec<String> = Vec::new();
-    if !child.conditions.is_empty() {
-        let condition = if child.conditions.len() == 1 {
-            child.conditions[0].clone()
-        } else {
-            GraphqlCondition::And(child.conditions.clone())
-        };
-        let arg_name = child
-            .filter_arg_name
-            .as_deref()
-            .unwrap_or(match child.dialect {
-                FilterDialect::Hasura => "where",
-                FilterDialect::Generic => "find",
-            });
+    if let Some(condition) = combined(child.wire_conditions()) {
+        let arg_name = child.filter_arg();
         match condition.render_preview(child.dialect) {
             Ok(value) => args.push(format!("{}: {}", arg_name, json_to_graphql_value(&value))),
             Err(e) => args.push(format!("{}: <unrenderable: {}>", arg_name, e)),
@@ -342,25 +320,9 @@ fn render_inline_subselection<'a>(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send + 'a>> {
     Box::pin(async move {
         let mut args: Vec<String> = Vec::new();
-        if !child.conditions.is_empty() {
-            let condition = if child.conditions.len() == 1 {
-                child.conditions[0].clone()
-            } else {
-                GraphqlCondition::And(child.conditions.clone())
-            };
+        if let Some(condition) = combined(child.wire_conditions()) {
             let rendered = condition.render(child.dialect).await?;
-            let arg_name = child
-                .filter_arg_name
-                .as_deref()
-                .unwrap_or(match child.dialect {
-                    FilterDialect::Hasura => "where",
-                    FilterDialect::Generic => "find",
-                });
-            args.push(format!(
-                "{}: {}",
-                arg_name,
-                json_to_graphql_value(&rendered)
-            ));
+            args.push(child.render_filter_arg(&rendered)?);
         }
         if let Some(limit) = child.limit {
             args.push(format!("limit: {}", limit));
@@ -400,7 +362,13 @@ pub(crate) fn json_to_graphql_value(v: &Value) -> String {
     }
 }
 
+/// The body of a GraphQL string literal. Quote and backslash are escaped,
+/// newline, carriage return and tab take their short forms, and every other
+/// control character (U+0000–U+001F, and DEL) becomes `\u00XX` — a raw
+/// control character is not valid inside a GraphQL string.
 fn escape_string(s: &str) -> String {
+    use std::fmt::Write as _;
+
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -409,6 +377,9 @@ fn escape_string(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            c if c.is_ascii_control() => {
+                let _ = write!(out, "\\u{:04X}", c as u32);
+            }
             c => out.push(c),
         }
     }
@@ -474,13 +445,13 @@ mod tests {
             .with_root_field("runs")
             .with_field("id")
             .with_dialect(FilterDialect::Generic)
-            .with_condition(GraphqlCondition::DeferredField {
-                field: "stack_id".into(),
-                op: GraphqlOp::Eq,
-                value_fn: DeferredFn::new(|| {
+            .with_condition(GraphqlCondition::deferred_field(
+                "stack_id",
+                GraphqlOp::Eq,
+                DeferredFn::new(|| {
                     Box::pin(async { Ok(ExpressiveEnum::Scalar(AnyGraphqlType::from(json!("x")))) })
                 }),
-            })
+            ))
             .preview();
         assert!(
             preview.contains("**deferred(stack_id"),
@@ -630,6 +601,30 @@ mod tests {
         let v = json!({ "mission_name": "FalconSat", "year": 2006 });
         let rendered = json_to_graphql_value(&v);
         assert_eq!(rendered, "{mission_name: \"FalconSat\", year: 2006}");
+    }
+
+    #[test]
+    fn strings_escape_quotes_backslashes_and_short_forms() {
+        assert_eq!(escape_string("a\"b\\c"), "a\\\"b\\\\c");
+        assert_eq!(escape_string("l1\nl2\r\tx"), "l1\\nl2\\r\\tx");
+    }
+
+    #[test]
+    fn strings_escape_every_other_control_character() {
+        assert_eq!(escape_string("\u{0}"), "\\u0000");
+        assert_eq!(escape_string("a\u{8}b\u{c}c"), "a\\u0008b\\u000Cc");
+        assert_eq!(escape_string("\u{1b}[31m"), "\\u001B[31m");
+        assert_eq!(escape_string("\u{1f}\u{7f}"), "\\u001F\\u007F");
+        for c in (0u32..0x20).chain([0x7f]).filter_map(char::from_u32) {
+            let escaped = escape_string(&c.to_string());
+            assert!(
+                !escaped.chars().any(|e| e.is_ascii_control()),
+                "U+{:04X} rendered raw: {escaped:?}",
+                c as u32
+            );
+        }
+        // Printable and non-ASCII text passes through.
+        assert_eq!(escape_string("Zürich ✓"), "Zürich ✓");
     }
 }
 

@@ -3,12 +3,15 @@
 //! Network-driven behaviour (URI template substitution, deferred FK
 //! resolution) is exercised by `examples/jsonplaceholder_yaml.rs`.
 
+mod support;
+
 use vantage_api_client::{ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec};
 use vantage_vista::{ReferenceKind, VistaFactory};
 
 fn factory() -> RestApiVistaFactory {
     let api = RestApi::builder("https://example.com")
         .response_shape(ResponseShape::BareArray)
+        .http_client(support::test_client())
         .build();
     RestApiVistaFactory::new(api)
 }

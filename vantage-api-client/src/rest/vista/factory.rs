@@ -2,11 +2,11 @@
 //! trait impl, plus the YAML factory pipeline (`build_from_spec`,
 //! `register_yaml`, `with_model_resolver`).
 //!
-//! REST API is read-only at this stage, so the factory advertises
-//! only `can_count`.
+//! The factory advertises reads only: count always, absolute-offset
+//! windows when the API pages, and ordering when it has a sort param.
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock};
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
@@ -23,18 +23,36 @@ use super::spec::{ApiColumnExtras, ApiReferenceExtras, ApiTableExtras, RestApiVi
 use crate::RestApi;
 
 /// Callback that maps a model name to its `Vista`. The factory uses
-/// it at relation-traversal time so cross-driver lookups (vantage-ui's
-/// inventory layer) and same-driver lookups (the internal
-/// `register_yaml` registry) flow through one channel.
+/// it at relation-traversal time so cross-driver lookups (an application
+/// catalogue spanning several data sources) and same-driver lookups (the
+/// internal `register_yaml` registry) flow through one channel.
 pub type ModelResolver = Arc<dyn Fn(&str) -> Result<Vista> + Send + Sync>;
 
+type SpecRegistry = Arc<RwLock<HashMap<String, RestApiVistaSpec>>>;
+
+/// Builds `Vista`s over one [`RestApi`]: from typed tables
+/// ([`from_table`](Self::from_table)), from YAML specs
+/// ([`build_from_spec`](VistaFactory::build_from_spec)), or from specs
+/// registered by name ([`register_yaml`](Self::register_yaml) +
+/// [`build`](Self::build)).
 pub struct RestApiVistaFactory {
     api: RestApi,
-    specs: Arc<RwLock<HashMap<String, RestApiVistaSpec>>>,
+    specs: SpecRegistry,
     resolver: Option<ModelResolver>,
 }
 
+/// A registered spec by name. A writer that panicked can't leave a map
+/// insert half-done, so a poisoned lock is read through.
+fn registry_get(specs: &SpecRegistry, name: &str) -> Option<RestApiVistaSpec> {
+    specs
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(name)
+        .cloned()
+}
+
 impl RestApiVistaFactory {
+    /// A factory over `api` with an empty spec registry and no resolver.
     pub fn new(api: RestApi) -> Self {
         Self {
             api,
@@ -43,13 +61,14 @@ impl RestApiVistaFactory {
         }
     }
 
+    /// The data source every Vista from this factory reads through.
     pub fn api(&self) -> &RestApi {
         &self.api
     }
 
     /// Install a model-resolver callback. Use this when models live
-    /// across multiple drivers (e.g. vantage-ui's inventory crosses
-    /// drivers and decides which factory to build each model from).
+    /// across multiple drivers and the caller decides which factory
+    /// builds each model.
     pub fn with_model_resolver(mut self, resolver: ModelResolver) -> Self {
         self.resolver = Some(resolver);
         self
@@ -66,7 +85,10 @@ impl RestApiVistaFactory {
                 detail = e.to_string()
             )
         })?;
-        self.specs.write().unwrap().insert(spec.name.clone(), spec);
+        self.specs
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(spec.name.clone(), spec);
         Ok(())
     }
 
@@ -74,12 +96,7 @@ impl RestApiVistaFactory {
     /// the internal registry; the installed resolver (if any) takes
     /// over at relation traversal time.
     pub fn build(&self, name: &str) -> Result<Vista> {
-        let spec = self
-            .specs
-            .read()
-            .unwrap()
-            .get(name)
-            .cloned()
+        let spec = registry_get(&self.specs, name)
             .ok_or_else(|| error!("No registered spec for model name", name = name.to_string()))?;
         self.build_from_spec(spec)
     }
@@ -126,7 +143,7 @@ impl RestApiVistaFactory {
         let specs = self.specs.clone();
         let api = self.api.clone();
         Arc::new(move |name: &str| -> Result<Vista> {
-            let spec = specs.read().unwrap().get(name).cloned().ok_or_else(|| {
+            let spec = registry_get(&specs, name).ok_or_else(|| {
                 error!(
                     "Model resolver: no spec registered for name",
                     name = name.to_string()

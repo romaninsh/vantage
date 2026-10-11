@@ -5571,7 +5571,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "0.6.20"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5600,28 +5600,12 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "0.6.4"
+version = "1.0.0"
 dependencies = [
  "anyhow",
- "async-stream",
- "async-trait",
- "futures-core",
  "futures-util",
- "indexmap 2.14.0",
  "reqwest",
- "rust_decimal",
- "serde",
- "serde_json",
  "tokio",
- "tokio-stream",
- "tracing",
- "urlencoding",
- "vantage-cli-util",
- "vantage-core",
- "vantage-dataset",
- "vantage-expressions",
- "vantage-table",
- "vantage-types",
  "wiremock",
 ]
 

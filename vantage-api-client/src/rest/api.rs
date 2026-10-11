@@ -10,13 +10,15 @@ use vantage_expressions::Expression;
 use vantage_table::pagination::Pagination;
 use vantage_types::Record;
 
+use crate::row_keys::insert_row;
 use crate::transport::AuthHeader;
 
 /// How the API wraps its row array in the response body.
 ///
-/// Most public APIs use one of these three shapes; the legacy vantage
-/// "wrapped under `data`" shape is `Wrapped { array_key: "data" }`.
+/// Most public APIs use one of these three shapes. The default is
+/// `Wrapped { array_key: "data" }`.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum ResponseShape {
     /// Body is a bare JSON array of records.
     /// Example: `GET /users` → `[ {…}, {…} ]`. JSONPlaceholder, GitHub, etc.
@@ -24,7 +26,10 @@ pub enum ResponseShape {
 
     /// Body is a JSON object with the array under a fixed key.
     /// Example: `GET /users` → `{ "data": [ … ] }`.
-    Wrapped { array_key: String },
+    Wrapped {
+        /// The key holding the row array.
+        array_key: String,
+    },
 
     /// Body is a JSON object with the array under a key matching the
     /// table name. Example (DummyJSON):
@@ -33,7 +38,8 @@ pub enum ResponseShape {
 }
 
 impl Default for ResponseShape {
-    /// Default matches the legacy 0.1.x shape: `{ "data": [...] }`.
+    /// `{ "data": [...] }`, the envelope JSON:API and many hand-rolled
+    /// services use.
     fn default() -> Self {
         ResponseShape::Wrapped {
             array_key: "data".to_string(),
@@ -41,34 +47,55 @@ impl Default for ResponseShape {
     }
 }
 
-/// Names of the page/limit query parameters the API expects.
+/// What the position parameter of [`PaginationParams`] counts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PaginationMode {
+    /// A 1-based page index (`?_page=3&_limit=10` is rows 20–29). The
+    /// JSON Server convention.
+    #[default]
+    Page,
+    /// A 0-based item offset (`?skip=20&limit=10` is rows 20–29).
+    /// DummyJSON, Django REST Framework's `offset`, and most SQL-backed
+    /// APIs.
+    Skip,
+}
+
+/// Names of the paging query parameters the API expects, and what the
+/// position parameter counts.
 ///
-/// Defaults to `("_page", "_limit")` — the JSON Server convention used
-/// by JSONPlaceholder. DummyJSON uses `("skip", "limit")` (in items not
-/// pages). Customise via `RestApiBuilder::pagination_params`.
+/// Defaults to `("_page", "_limit")` in [`PaginationMode::Page`] — the
+/// JSON Server convention used by JSONPlaceholder. DummyJSON uses
+/// `("skip", "limit")` in [`PaginationMode::Skip`]. Set it with
+/// [`RestApiBuilder::pagination_params`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct PaginationParams {
+    /// Name of the position parameter: the page index or the item offset,
+    /// per [`mode`](Self::mode).
     pub page: String,
+    /// Name of the page-size parameter.
     pub limit: String,
-    /// If true, the page parameter is sent as a *0-based item offset*
-    /// (`skip`) instead of a 1-based page index. DummyJSON-style.
-    pub skip_based: bool,
+    /// What the position parameter counts.
+    pub mode: PaginationMode,
 }
 
 impl PaginationParams {
+    /// A 1-based page index under `page` and the page size under `limit`.
     pub fn page_limit(page: impl Into<String>, limit: impl Into<String>) -> Self {
         Self {
             page: page.into(),
             limit: limit.into(),
-            skip_based: false,
+            mode: PaginationMode::Page,
         }
     }
 
+    /// A 0-based item offset under `skip` and the page size under `limit`.
     pub fn skip_limit(skip: impl Into<String>, limit: impl Into<String>) -> Self {
         Self {
             page: skip.into(),
             limit: limit.into(),
-            skip_based: true,
+            mode: PaginationMode::Skip,
         }
     }
 }
@@ -79,19 +106,13 @@ impl Default for PaginationParams {
     }
 }
 
-/// REST API backend for Vantage — reads data from HTTP JSON endpoints.
-///
-/// Each table maps to an API endpoint: `{base_url}/{table_name}`.
-/// Response shape is configurable via [`RestApi::builder`]; see
-/// [`ResponseShape`] for the supported variants.
-///
-/// Currently read-only — write operations return errors.
 /// How a table's conditions are applied to a request.
 ///
 /// URL `{placeholder}` path segments are always filled from matching
 /// eq-conditions regardless of strategy; this governs what happens to
 /// the *remaining* (non-path) eq-conditions.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FilterStrategy {
     /// Append remaining eq-conditions as `?field=value` query params
     /// (JSON-Server semantics). The default.
@@ -100,8 +121,7 @@ pub enum FilterStrategy {
     /// Apply remaining eq-conditions as in-memory row filters after the
     /// fetch, never as query params. For APIs whose only server-side
     /// filters are path segments and that reject (or ignore) unknown
-    /// query params — e.g. the Mercury control-API, whose CLI likewise
-    /// filters version/env client-side after fetching by product path.
+    /// query params.
     Client,
 }
 
@@ -111,12 +131,16 @@ pub enum FilterStrategy {
 /// vista orderable, so a paged grid asks the server for its sort instead of
 /// re-sorting the rows it happens to hold.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct OrderingParams {
+    /// Name of the sort query parameter (`ordering`).
     pub param: String,
+    /// Prefix on the column name that makes the sort descending (`-`).
     pub desc_prefix: String,
 }
 
 impl OrderingParams {
+    /// Sort by `?{param}=<column>`, descending as `?{param}={desc_prefix}<column>`.
     pub fn new(param: impl Into<String>, desc_prefix: impl Into<String>) -> Self {
         Self {
             param: param.into(),
@@ -125,7 +149,7 @@ impl OrderingParams {
     }
 
     /// The value for `param`: the column, prefixed when descending.
-    pub fn value(&self, field: &str, dir: vantage_vista::SortDirection) -> String {
+    pub(crate) fn value(&self, field: &str, dir: vantage_vista::SortDirection) -> String {
         match dir {
             vantage_vista::SortDirection::Ascending => field.to_string(),
             vantage_vista::SortDirection::Descending => format!("{}{field}", self.desc_prefix),
@@ -144,11 +168,18 @@ struct Page {
     lossy: bool,
 }
 
+/// REST API backend for Vantage — reads data from HTTP JSON endpoints.
+///
+/// Each table maps to an API endpoint: `{base_url}/{table_name}`.
+/// Response shape, paging, filtering and auth are set through
+/// [`RestApi::builder`]. Table writes return `Unsupported` errors; send a
+/// write with [`http_request`](Self::http_request). Cheap to clone: the
+/// inner [`ResilientClient`] is shared.
 #[derive(Clone, Debug)]
 pub struct RestApi {
     base_url: String,
     client: ResilientClient,
-    pub(crate) auth_header: AuthHeader,
+    auth_header: AuthHeader,
     response_shape: ResponseShape,
     pagination: PaginationParams,
     /// Paging params were configured explicitly, so windows can be fetched
@@ -177,9 +208,10 @@ pub struct RestApi {
 }
 
 impl RestApi {
-    /// Create a new REST API pointing at `base_url`. Uses the legacy
-    /// default response shape (`{ "data": [...] }`). For other shapes
-    /// (bare array, wrapped-by-table-name) use [`RestApi::builder`].
+    /// Create a new REST API pointing at `base_url`, with every builder
+    /// default: the [`ResponseShape::default`] envelope (`{ "data": [...] }`)
+    /// and JSON Server paging params. For other shapes (bare array,
+    /// wrapped-by-table-name) or auth, use [`RestApi::builder`].
     pub fn new(base_url: impl Into<String>) -> Self {
         RestApi::builder(base_url).build()
     }
@@ -187,14 +219,6 @@ impl RestApi {
     /// Start configuring a [`RestApi`] via the builder.
     pub fn builder(base_url: impl Into<String>) -> RestApiBuilder {
         RestApiBuilder::new(base_url.into())
-    }
-
-    /// Set the Authorization header value (e.g. "Bearer `<token>`").
-    /// Provided for backwards compatibility — prefer
-    /// `RestApi::builder(...).auth(...)`.
-    pub fn with_auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = AuthHeader::new(auth);
-        self
     }
 
     /// The configured response-envelope total key, if any. When set, the
@@ -207,7 +231,7 @@ impl RestApi {
     /// (explicit `pagination_params`, or a `total_key`) and pagination isn't
     /// switched off. Without a total the loader learns the end of the set
     /// from a short page.
-    pub fn serves_windows(&self) -> bool {
+    pub(crate) fn serves_windows(&self) -> bool {
         !self.no_pagination && (self.paged || self.total_key.is_some())
     }
 
@@ -243,6 +267,9 @@ impl RestApi {
     /// [`vantage_core::Priority::current`], same as a table read. On success,
     /// a non-`GET` method reports [`TransportEvent::WritePushed`] to the
     /// observer.
+    ///
+    /// A header name or value that HTTP cannot carry (a newline, say) is an
+    /// error, returned before anything is sent.
     pub async fn http_request(
         &self,
         method: reqwest::Method,
@@ -258,17 +285,17 @@ impl RestApi {
         // it on the wire.
         let mut header_map = HeaderMap::new();
         if let Some(auth) = self.auth_header.value() {
-            header_map.insert(
-                AUTHORIZATION,
-                HeaderValue::from_str(auth)
-                    .expect("configured auth header must be a valid header value"),
-            );
+            let value = HeaderValue::from_str(auth)
+                .map_err(|_| error!("Configured Authorization header value is not valid"))?;
+            header_map.insert(AUTHORIZATION, value);
         }
         for (name, value) in headers {
-            header_map.insert(
-                HeaderName::from_bytes(name.as_bytes()).expect("header name must be valid"),
-                HeaderValue::from_str(value).expect("header value must be valid"),
-            );
+            let header_name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| error!("HTTP header name is not valid", name = *name))?;
+            // The value may be a secret, so the error names only the header.
+            let header_value = HeaderValue::from_str(value)
+                .map_err(|_| error!("HTTP header value is not valid", name = *name))?;
+            header_map.insert(header_name, header_value);
         }
 
         let policy = crate::transport::policy_for(Priority::current());
@@ -403,10 +430,9 @@ impl RestApi {
         {
             let offset = offset.max(0);
             let limit = limit.max(1);
-            let page_value = if self.pagination.skip_based {
-                offset.to_string()
-            } else {
-                (offset / limit + 1).to_string()
+            let page_value = match self.pagination.mode {
+                PaginationMode::Skip => offset.to_string(),
+                PaginationMode::Page => (offset / limit + 1).to_string(),
             };
             params.push((self.pagination.page.clone(), page_value));
             params.push((self.pagination.limit.clone(), limit.to_string()));
@@ -520,7 +546,7 @@ impl RestApi {
     /// Fetch data from the API endpoint and return parsed records.
     ///
     /// `id_field` selects which JSON field is treated as the record ID;
-    /// if `None`, row indices are used. The page-based `pagination` is
+    /// a row without one is keyed by its position (see `insert_row`). The page-based `pagination` is
     /// lowered to a `[offset, offset+limit)` window; `conditions` are
     /// pushed into the URL query string — eq-conditions become
     /// `?field=value`. Conditions that can't be peeled into a simple
@@ -747,10 +773,9 @@ impl RestApi {
 
         // Page-based APIs are addressed by whole pages: start at the page
         // holding `offset`.
-        let start = if self.pagination.skip_based {
-            offset
-        } else {
-            offset - offset % limit
+        let start = match self.pagination.mode {
+            PaginationMode::Skip => offset,
+            PaginationMode::Page => offset - offset % limit,
         };
         let first = self
             .fetch_page(
@@ -766,8 +791,8 @@ impl RestApi {
         }
 
         // Assemble the window page by page until it is full or the server
-        // runs out. When rows were dropped (client filters, repeated ids) a
-        // row's place in the result is only known by walking from the start.
+        // runs out. When client filters dropped rows, a row's place in the
+        // result is only known by walking from the start.
         let (mut server_offset, mut skip) = if first.lossy {
             (0, offset)
         } else {
@@ -797,6 +822,8 @@ impl RestApi {
                 if skip > 0 {
                     skip -= 1;
                 } else if (rows.len() as i64) < limit {
+                    // An id repeated across pages (rows shifting between
+                    // fetches) keeps the later row and doesn't end the window.
                     rows.insert(id, row);
                 }
             }
@@ -810,7 +837,8 @@ impl RestApi {
 
     /// One request: the page's rows keyed by id, the envelope total, and how
     /// many rows the server sent — more than `rows` holds when client filters
-    /// or repeated ids dropped some (`lossy`).
+    /// dropped some (`lossy`). Two rows sharing an id within this one
+    /// response are an error.
     async fn fetch_page(
         &self,
         table_name: &str,
@@ -829,21 +857,27 @@ impl RestApi {
             .and_then(|v| v.as_i64());
         let data = self.extract_array(&body, table_name)?;
 
+        // Where this page starts in the server's result, so an id-less row
+        // is keyed by its absolute position (see `insert_row`).
+        let offset = match window {
+            Some((offset, _)) if !self.no_pagination => offset.max(0) as usize,
+            _ => 0,
+        };
         let mut records = IndexMap::new();
         for (row_idx, item) in data.iter().enumerate() {
             let obj = item
                 .as_object()
                 .ok_or_else(|| error!("API data item is not an object", index = row_idx))?;
 
-            // Extract ID from the configured id_field, or use row index
+            // The configured id field when it holds a string or number;
+            // otherwise the row is keyed by its position.
             let id = id_field
                 .and_then(|field| obj.get(field))
                 .and_then(|v| match v {
                     serde_json::Value::String(s) => Some(s.clone()),
                     serde_json::Value::Number(n) => Some(n.to_string()),
                     _ => None,
-                })
-                .unwrap_or_else(|| row_idx.to_string());
+                });
 
             // The HTTP body parses as JSON for free; convert to CBOR
             // at this single boundary so the rest of the pipeline
@@ -854,7 +888,7 @@ impl RestApi {
                 record.insert(k.clone(), vantage_types::json_to_cbor(v.clone()));
             }
 
-            records.insert(id, record);
+            insert_row(&mut records, id, offset + row_idx, record)?;
         }
 
         // Client-side filtering (FilterStrategy::Client): drop rows that
@@ -876,7 +910,7 @@ impl RestApi {
         // Counts the rows this call hands back, so a client-side filter shows
         // up as fewer rows pulled than the server sent.
         self.client
-            .report(TransportEvent::RowsPulled { n: records.len() });
+            .report(TransportEvent::rows_pulled(records.len()));
 
         // The envelope counted what the SERVER matched, before any rows were
         // dropped above — reporting that total now would size a grid to rows it
@@ -1021,6 +1055,19 @@ impl RestApiBuilder {
         self
     }
 
+    /// Give up on one request after `timeout` (default 30 s). Ignored when a
+    /// client is supplied with [`http_client`](Self::http_client).
+    pub fn request_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.transport.request_timeout = Some(Some(timeout));
+        self
+    }
+
+    /// Never time a request out. Ignored when a client is supplied.
+    pub fn no_request_timeout(mut self) -> Self {
+        self.transport.request_timeout = Some(None);
+        self
+    }
+
     /// Report every attempt, retry and breaker transition under `key`
     /// (the datasource name).
     pub fn observer(
@@ -1110,6 +1157,9 @@ impl RestApiBuilder {
         self
     }
 
+    /// Finish the configuration. Builds no HTTP client yet: unless one was
+    /// given with [`http_client`](Self::http_client), the default client is
+    /// created on the first request.
     pub fn build(self) -> RestApi {
         RestApi {
             base_url: self.base_url,
@@ -1145,6 +1195,14 @@ mod tests {
         let text = format!("{api:?}");
         assert!(!text.contains("secret-token"), "{text}");
         assert!(text.contains("<set>"), "{text}");
+    }
+
+    #[test]
+    fn ordering_value_prefixes_only_descending() {
+        use vantage_vista::SortDirection;
+        let params = OrderingParams::new("sort", "-");
+        assert_eq!(params.value("net", SortDirection::Ascending), "net");
+        assert_eq!(params.value("net", SortDirection::Descending), "-net");
     }
 
     #[test]

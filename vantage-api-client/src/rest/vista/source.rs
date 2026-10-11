@@ -51,6 +51,10 @@ pub(crate) enum YamlReferenceKind {
     HasOne,
 }
 
+/// The `TableShell` behind a REST-backed `Vista`: an erased
+/// `Table<RestApi, EmptyEntity>` plus the metadata, capabilities and YAML
+/// references the factory harvested. Built by [`RestApiVistaFactory`];
+/// callers drive it through the `Vista` it is wrapped in.
 #[derive(Clone)]
 pub struct RestApiTableShell {
     pub(crate) table: Table<RestApi, EmptyEntity>,
@@ -196,10 +200,9 @@ impl TableShell for RestApiTableShell {
     }
 
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        // YAML-declared references first. With row-based traversal we no
-        // longer need the deferred-fetch dance — the parent record is on
-        // hand, so we just read the join value out of `row` and push a
-        // plain eq-condition on the child.
+        // YAML-declared references first. The parent record is on hand,
+        // so the join value is read out of `row` and pushed as a plain
+        // eq-condition on the child; no deferred fetch is needed.
         if let Some(yref) = self.yaml_refs.get(relation) {
             let resolver = self.resolver.as_ref().ok_or_else(|| {
                 error!(

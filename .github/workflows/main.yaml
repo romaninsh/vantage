@@ -15,6 +15,8 @@ on:
       - "vantage-core/**"
       - "vantage-action/**"
       - "vantage-api-adapters/**"
+      - "vantage-api-client/**"
+      - "vantage-api-pool/**"
       - "surreal-client/**"
       - "bakery_model3/**"
       - "Cargo.toml"
@@ -49,11 +51,17 @@ jobs:
       - name: Run all tests
         run: cargo test --workspace --exclude surreal-client --exclude vantage-surrealdb --exclude vantage-sql --exclude bakery_model3 --exclude vantage-mongodb
 
+      - name: Run API client and pool tests with all features
+        run: cargo test -p vantage-api-client -p vantage-api-pool --all-features
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Run clippy
         run: cargo clippy --workspace --exclude surreal-client --exclude vantage-surrealdb --exclude vantage-sql --exclude bakery_model3 --exclude vantage-mongodb --all-targets -- -D warnings
+
+      - name: Run clippy on API client and pool with all features
+        run: cargo clippy -p vantage-api-client -p vantage-api-pool --all-features --all-targets -- -D warnings
 
       - name: Check documentation
         run: cargo doc --workspace --exclude surreal-client --exclude vantage-surrealdb --exclude vantage-sql --exclude bakery_model3 --exclude vantage-mongodb --no-deps --document-private-items
