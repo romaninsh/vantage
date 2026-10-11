@@ -810,7 +810,7 @@ impl Dio {
         // Unimplemented — SurrealDB has no `NOT IN` — which is also a drop.
         let mut push_terms = Vec::new();
         for term in &query.filters {
-            if term.op == vantage_vista::FilterOp::Eq || caps.can_filter_operators {
+            if term.pushable_to(caps) {
                 push_terms.push(term.clone());
             } else {
                 tracing::warn!(

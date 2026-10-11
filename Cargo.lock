@@ -5742,7 +5742,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.14.2"
+version = "0.14.3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5851,7 +5851,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "async-stream",
  "async-trait",
