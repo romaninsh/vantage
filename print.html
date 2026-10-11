@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4182db67.js";
+            window.path_to_searchindex_js = "searchindex-ec34408f.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-73e720bf.js"></script>
+        <script src="toc-06e7dd88.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -8908,7 +8908,8 @@ while keeping type safety and parameterised binding.</p>
 produces data:</p>
 <ul>
 <li><strong>REST APIs</strong> — <code>vantage-api-client</code> wraps any paginated JSON API as a read-only <code>TableSource</code></li>
-<li><strong>API pools</strong> — <code>vantage-api-pool</code> adds connection pooling, prefetching, and rate limiting</li>
+<li><strong>Resilient transport</strong> — <code>vantage-api-pool</code> adds retry, a circuit breaker, rate limiting and auth
+refresh to API traffic</li>
 <li><strong>CSV files</strong> — <code>vantage-csv</code> reads structured files with in-memory conditions</li>
 <li><strong>Local caches</strong> — <code>vantage-live</code> syncs fast cache (ImTable, ReDB) with slow backend (Postgres,
 SurrealDB) for responsive UIs</li>
@@ -9127,6 +9128,7 @@ column.</p>
 <tr><td>MongoDB</td><td><code>mongo: { field: unitPrice }</code></td><td>Single-level BSON rename</td></tr>
 <tr><td>MongoDB</td><td><code>mongo: { nested_path: price.amount }</code></td><td>Dotted path into a nested document — projected on read, sub-documents rebuilt on write, dotted form pushed down on filter</td></tr>
 <tr><td>CSV</td><td><code>csv: { source: "Unit Price" }</code></td><td>CSV header to read from</td></tr>
+<tr><td>GraphQL</td><td><code>graphql: { field: unit_price }</code></td><td>Selected as a GraphQL alias, filtered and sorted under the server name (<a href="#graphql-the-graphql-blocks">GraphQL blocks</a>)</td></tr>
 </tbody>
 </table>
 </div>
@@ -15525,6 +15527,264 @@ result executes identically.</p>
 parameter names in the output.</li>
 <li>Drop to <strong><code>expr("…")</code> / <code>fx(…)</code></strong> only when no primitive fits.</li>
 </ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="http-apis-rest--graphql"><a class="header" href="#http-apis-rest--graphql">HTTP APIs: REST &amp; GraphQL</a></h1>
+<p>The <code>vantage-api-client</code> crate reads tables from HTTP APIs. <code>RestApi</code> turns a table into
+<code>GET {base_url}/{endpoint}?…</code>, and <code>GraphqlApi</code> turns it into one query document posted to an
+endpoint. Both send through <code>vantage-api-pool</code>’s <code>ResilientClient</code>, which caps parallel requests,
+retries, rate-limits and trips a circuit breaker per API.</p>
+<p>Both drivers read a <a href="#config-driven-vistas-yaml--rhai">YAML spec</a> through their Vista factory, the same
+way the database drivers do. The universal keys (<code>name</code>, <code>id_column</code>, <code>columns</code>, <code>references</code>)
+work as everywhere else. Each driver adds one table-level block: <code>api:</code> for REST and <code>graphql:</code>
+for GraphQL. GraphQL also has a column-level <code>graphql:</code> block.</p>
+<p>Settings that belong to the endpoint as a whole (base URL, auth, response envelope, paging
+parameter names, timeouts) are set once on the <code>RestApi</code> / <code>GraphqlApi</code> builder. Every table
+built from that API shares them. The YAML blocks carry only what differs per table.</p>
+<p>Both drivers read only. Table writes return an <code>Unsupported</code> error, and so do <code>sum</code>, <code>min</code> and
+<code>max</code>. Send a write yourself with <code>RestApi::http_request</code> or <code>GraphqlApi::post_graphql</code>. These
+go through the same client, so they share its cap, breaker and observer.</p>
+<h2 id="pages-1"><a class="header" href="#pages-1">Pages</a></h2>
+<ul>
+<li><a href="#rest-the-api-block">REST: the <code>api:</code> block</a>: endpoint templates, references, column
+types, and the builder settings that sit beside them.</li>
+<li><a href="#graphql-the-graphql-blocks">GraphQL: the <code>graphql:</code> blocks</a>: every table and column key,
+dialects, paging, counting, search and references.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="rest-the-api-block"><a class="header" href="#rest-the-api-block">REST: the <code>api:</code> block</a></h1>
+<p>A REST spec is a <code>RestApiVistaSpec</code>. Its only driver-specific key is the table-level <code>api:</code> block.
+Columns and references use the universal spec keys, with no <code>api:</code> block of their own.</p>
+<pre><code class="language-yaml">name: albums
+columns:
+  id: { type: int, flags: [id] }
+  userId: { type: int }
+  title: { type: string, flags: [title] }
+api:
+  endpoint: users/{userId}/albums
+references:
+  photos: { table: photos, kind: has_many, foreign_key: albumId }
+</code></pre>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let mut factory = api.vista_factory();
+factory.register_yaml(ALBUMS_YAML)?;
+factory.register_yaml(PHOTOS_YAML)?;
+let albums = factory.build("albums")?;
+<span class="boring">}</span></code></pre>
+<h2 id="table-keys"><a class="header" href="#table-keys">Table keys</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>api.endpoint</code></td><td>string</td><td>the spec <code>name</code></td><td>Path under the API’s base URL. May hold <code>{placeholder}</code> segments.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The whole <code>api:</code> block is optional. Unknown keys are a parse error.</p>
+<h3 id="endpoint-templates"><a class="header" href="#endpoint-templates">Endpoint templates</a></h3>
+<p>Each <code>{placeholder}</code> is filled at request time from the eq-condition on the column of that name,
+and that condition is used up. Any eq-condition left over goes into the query string
+(<code>?title=x</code>), or is applied to the fetched rows when the API was built with
+<code>FilterStrategy::Client</code>. A placeholder with no condition to fill it is an error
+(<code>No eq-condition provided for URI placeholder</code>), so nothing is sent.</p>
+<p>So <code>users/{userId}/albums</code>, narrowed to <code>userId = 1</code>, fetches <code>GET /users/1/albums</code>. Traversal
+from a user to its albums arrives at that URL without any code.</p>
+<h2 id="columns"><a class="header" href="#columns">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>type</code></th><th>Column</th></tr>
+</thead>
+<tbody>
+<tr><td><code>int</code>, <code>integer</code>, <code>i64</code>, <code>i32</code></td><td><code>i64</code></td></tr>
+<tr><td><code>float</code>, <code>double</code>, <code>f64</code>, <code>f32</code></td><td><code>f64</code></td></tr>
+<tr><td><code>bool</code>, <code>boolean</code></td><td><code>bool</code></td></tr>
+<tr><td><code>string</code>, <code>text</code>, <code>str</code> (default)</td><td><code>String</code></td></tr>
+<tr><td><code>json</code>, <code>any</code></td><td>raw CBOR value</td></tr>
+</tbody>
+</table>
+</div>
+<p>Any other type fails the build. <code>flags:</code> works as in every driver (<code>id</code>, <code>title</code>, <code>hidden</code>, …).
+A column with a <code>lazy:</code> script is computed from each fetched record. It needs the crate’s <code>rhai</code>
+feature.</p>
+<p>A row is keyed by its id column. A row whose id is missing, null, empty, or not a string or
+number is keyed <code>~row:&lt;position&gt;</code>, where the position is absolute in the result. Two rows with
+the same id in one response are an error.</p>
+<h2 id="references-1"><a class="header" href="#references-1">References</a></h2>
+<p><code>references:</code> takes the universal form: <code>table</code>, <code>kind</code> (<code>has_one</code> / <code>has_many</code>) and
+<code>foreign_key</code>, or <code>keys:</code> for a multi-column join. Traversal reads the join value from the
+parent row and gives the target an eq-condition. That condition then fills a placeholder in the
+target’s <code>endpoint</code>, becomes a query parameter, or filters rows, by the rules above.</p>
+<ul>
+<li><code>has_one</code>: the parent’s <code>foreign_key</code> value narrows the target’s id column.</li>
+<li><code>has_many</code>: the parent’s id narrows the target’s <code>foreign_key</code> column.</li>
+</ul>
+<p>Targets are found by name. <code>register_yaml</code> keeps them in the factory’s own registry. If the
+models live across several drivers, <code>with_model_resolver(ModelResolver)</code> installs a closure
+that returns a built <code>Vista</code> for a name instead.</p>
+<h2 id="builder-settings"><a class="header" href="#builder-settings">Builder settings</a></h2>
+<p>The block is deliberately small. Everything that describes the API, rather than one table, is
+set on <code>RestApi::builder(base_url)</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Builder method</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>response_shape(ResponseShape)</code></td><td><code>Wrapped { array_key: "data" }</code></td><td>Where the rows are: <code>BareArray</code>, <code>Wrapped { array_key }</code>, <code>WrappedByTableName</code></td></tr>
+<tr><td><code>pagination_params(PaginationParams)</code></td><td><code>page_limit("_page", "_limit")</code></td><td>Paging parameter names; <code>skip_limit("skip", "limit")</code> for 0-based offsets. Setting it enables windowed reads</td></tr>
+<tr><td><code>no_pagination()</code></td><td>off</td><td>Send no paging parameters; the first page is the whole set</td></tr>
+<tr><td><code>total_key("count")</code></td><td>none</td><td>Envelope key holding the total row count</td></tr>
+<tr><td><code>filter_strategy(FilterStrategy)</code></td><td><code>Query</code></td><td><code>Client</code> keeps non-path conditions off the wire</td></tr>
+<tr><td><code>ordering(OrderingParams::new("ordering", "-"))</code></td><td>none</td><td>Sort parameter; makes every column orderable</td></tr>
+<tr><td><code>auth(..)</code> / <code>auth_refresher(..)</code></td><td>none</td><td><code>Authorization</code> header, fixed or refreshed after a <code>401</code></td></tr>
+<tr><td><code>max_parallel</code>, <code>rate_limit</code>, <code>request_timeout</code>, <code>observer</code>, <code>http_client</code></td><td>4, none, 30 s, none, default</td><td>Transport; see the crate’s <code>README_transport.md</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>A REST Vista can always count. It can fetch windows when the API pages, and can order when
+<code>ordering</code> is set. Search runs over the rows already fetched.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="graphql-the-graphql-blocks"><a class="header" href="#graphql-the-graphql-blocks">GraphQL: the <code>graphql:</code> blocks</a></h1>
+<p>A GraphQL spec is a <code>GraphqlApiVistaSpec</code>. It has a table-level <code>graphql:</code> block for the root
+field and what the server accepts, and an optional column-level <code>graphql:</code> block for a column
+whose server field has a different name.</p>
+<pre><code class="language-yaml">name: launches
+id_column: id
+columns:
+  id: { type: string, flags: [id] }
+  mission: { type: string, flags: [title, searchable], graphql: { field: mission_name } }
+  launch_year: { type: int }
+  rocket_id: { type: string }
+  rocket.rocket_name: { type: string }
+references:
+  rocket: { table: rockets, kind: has_one, foreign_key: rocket_id }
+graphql:
+  root_field: launches
+  dialect: hasura
+  paginate: true
+  count: aggregate
+</code></pre>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(LAUNCHES_YAML)?;
+let launches = api.vista_factory().build_from_spec(spec)?;
+<span class="boring">}</span></code></pre>
+<h2 id="table-keys-1"><a class="header" href="#table-keys-1">Table keys</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>root_field</code></td><td>name</td><td>the spec <code>name</code></td><td>Query field the rows are read from</td></tr>
+<tr><td><code>dialect</code></td><td><code>generic</code> | <code>hasura</code></td><td>the API’s dialect</td><td>How filters are spelled; lowercase only</td></tr>
+<tr><td><code>filter_arg</code></td><td>name</td><td>the API’s, else <code>where</code> (Hasura) / <code>find</code> (Generic)</td><td>Name of the filter argument</td></tr>
+<tr><td><code>args</code></td><td>map</td><td>the API’s <code>root_args</code></td><td>Literal arguments always passed to the root field</td></tr>
+<tr><td><code>response_path</code></td><td>dotted path</td><td>the API’s</td><td>Path walked into the root field’s value to reach the rows (<code>edges.node</code>)</td></tr>
+<tr><td><code>filter</code></td><td>bool</td><td><code>true</code></td><td>Conditions may be sent to the server</td></tr>
+<tr><td><code>order</code></td><td>bool</td><td><code>true</code> on Hasura, else <code>false</code></td><td><code>order_by:</code> may be sent</td></tr>
+<tr><td><code>search</code></td><td>bool</td><td><code>true</code> on Hasura, else <code>false</code></td><td>Quicksearch may be sent as <code>_ilike</code>s; never with <code>filter: false</code></td></tr>
+<tr><td><code>paginate</code></td><td>bool</td><td><code>false</code></td><td><code>limit:</code> / <code>offset:</code> may be sent</td></tr>
+<tr><td><code>count</code></td><td><code>list</code> | <code>aggregate</code></td><td><code>list</code></td><td>How <code>get_count</code> is answered</td></tr>
+<tr><td><code>count_field</code></td><td>name</td><td>the API’s, else <code>&lt;root_field&gt;_aggregate</code></td><td>Aggregate field for <code>count: aggregate</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The whole block is optional, and unknown keys or values are a parse error. Every name the block
+puts into a query is checked against the GraphQL name grammar (<code>[_A-Za-z][_0-9A-Za-z]*</code>, dotted
+paths segment by segment) when the Vista is built.</p>
+<p>The block’s <code>filter</code>, <code>order</code>, <code>search</code>, <code>paginate</code> and <code>count</code> override the API’s <code>Supports</code> for
+that table, key by key. A key left out keeps the builder’s setting, and the default in the table
+above applies only when the builder left it unset too.</p>
+<h3 id="dialects"><a class="header" href="#dialects">Dialects</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Dialect</th><th>Filter</th><th>Operators</th></tr>
+</thead>
+<tbody>
+<tr><td><code>hasura</code></td><td><code>launches(where: {launch_year: {_eq: 2018}})</code></td><td>the full set, plus <code>_and</code> / <code>_or</code> / <code>_not</code></td></tr>
+<tr><td><code>generic</code></td><td><code>launches(find: {launch_year: 2018})</code></td><td>equality only</td></tr>
+</tbody>
+</table>
+</div>
+<p>A condition the dialect can’t spell fails before anything is sent. On Generic, a Vista
+<code>contains</code> filter is reported as unimplemented, so the consumer filters locally.</p>
+<h3 id="filter-false"><a class="header" href="#filter-false"><code>filter: false</code></a></h3>
+<p>This is for a root field that takes no filter argument. Conditions, including traversal
+conditions, are applied to the fetched rows instead. Search, operators and paging switch off,
+and counts list.</p>
+<h3 id="paging"><a class="header" href="#paging">Paging</a></h3>
+<p>With <code>paginate: true</code> and <code>filter</code> on, the Vista offers <code>fetch_page</code>, <code>fetch_window</code> and
+<code>fetch_next</code>, sent as <code>$limit</code> / <code>$offset</code> variables. With <code>filter: false</code> a server page would
+be cut short by the local filter, so paging is not offered. On Hasura, a paged read with no order
+of its own is ordered by the id column so that pages stay stable. A Generic schema can’t sort,
+so its pages are only as stable as the server’s natural order.</p>
+<h3 id="counting"><a class="header" href="#counting">Counting</a></h3>
+<p><code>count: list</code> lists the rows and counts them, which works for every role. <code>count: aggregate</code>
+(Hasura, with <code>filter</code> on) sends <code>&lt;count_field&gt;(where: …) { aggregate { count } }</code>. That needs a
+role with <code>allow_aggregations</code>. If the server rejects the query, the count fails with an error
+that suggests <code>count: list</code>; it never falls back silently. Generic tables always list.</p>
+<h3 id="search-and-ordering-1"><a class="header" href="#search-and-ordering-1">Search and ordering</a></h3>
+<p>A quicksearch ORs <code>_ilike</code> over the columns flagged <code>searchable</code>. If none are flagged, it uses
+the string-typed columns other than the id. Dotted columns are skipped, and with no column left
+the search matches nothing. <code>%</code>, <code>_</code> and <code>\</code> in the text are escaped. Ordering a dotted column is
+refused.</p>
+<h2 id="column-keys"><a class="header" href="#column-keys">Column keys</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>graphql.field</code></td><td>name</td><td>the column name</td><td>Server field the column reads</td></tr>
+</tbody>
+</table>
+</div>
+<p>The query selects an aliased column as <code>mission: mission_name</code>, so rows keep the column name.
+Conditions, sort keys and search on the column are sent as the server field. Both names must be
+plain (undotted).</p>
+<p>A dotted column (<code>rocket.rocket_name</code>) renders as a nested selection, <code>rocket { rocket_name }</code>.
+A <code>lazy:</code> column is computed from each fetched row and never selected (crate feature <code>rhai</code>).</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>type</code></th><th>Column</th></tr>
+</thead>
+<tbody>
+<tr><td><code>int</code>, <code>integer</code>, <code>i32</code></td><td><code>i32</code></td></tr>
+<tr><td><code>bigint</code>, <code>i64</code>, <code>long</code></td><td><code>i64</code></td></tr>
+<tr><td><code>float</code>, <code>double</code>, <code>f64</code>, <code>f32</code></td><td><code>f64</code></td></tr>
+<tr><td><code>bool</code>, <code>boolean</code></td><td><code>bool</code></td></tr>
+<tr><td><code>string</code>, <code>text</code>, <code>str</code>, <code>id</code> (default <code>string</code>)</td><td><code>String</code></td></tr>
+<tr><td><code>datetime</code>, <code>timestamp</code>, <code>timestamptz</code></td><td><code>DateTime&lt;Utc&gt;</code></td></tr>
+<tr><td><code>date</code>, <code>time</code></td><td><code>NaiveDate</code>, <code>NaiveTime</code></td></tr>
+<tr><td><code>uuid</code></td><td><code>Uuid</code></td></tr>
+<tr><td><code>json</code></td><td><code>serde_json::Value</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Get-by-id sends an integer literal for an int id column, and a quoted string otherwise. A row
+whose id is null or empty is keyed <code>~row:&lt;position&gt;</code>. Two rows with the same id in one
+response are an error.</p>
+<h2 id="references-2"><a class="header" href="#references-2">References</a></h2>
+<p><code>references:</code> takes <code>table</code>, <code>kind</code> (<code>has_one</code> / <code>has_many</code>) and <code>foreign_key</code>. Multi-column
+<code>keys:</code> are refused at build. Traversal gives the target an eq-condition: <code>has_one</code> narrows the
+target’s id by the parent’s <code>foreign_key</code>, and <code>has_many</code> narrows the target’s <code>foreign_key</code> by
+the parent’s id. A text key is sent as an integer when the target column is an int.</p>
+<p>A target is built from its own spec on the factory’s API, without the parent table’s
+<code>graphql:</code> overrides. Targets come from the factory’s registry (<code>register_yaml</code>, then
+<code>build(name)</code>), or from a spec resolver:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let resolver: GraphqlSpecResolver = Arc::new(move |name| specs.get(name).cloned());
+let factory = api.vista_factory().with_resolver(resolver);
+<span class="boring">}</span></code></pre>
+<p>A reference to a model with no spec is an error naming the relation and the target, and no
+request is sent.</p>
 
                     </main>
 

@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4182db67.js";
+            window.path_to_searchindex_js = "searchindex-ec34408f.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-73e720bf.js"></script>
+        <script src="toc-06e7dd88.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -332,7 +332,8 @@ while keeping type safety and parameterised binding.</p>
 produces data:</p>
 <ul>
 <li><strong>REST APIs</strong> — <code>vantage-api-client</code> wraps any paginated JSON API as a read-only <code>TableSource</code></li>
-<li><strong>API pools</strong> — <code>vantage-api-pool</code> adds connection pooling, prefetching, and rate limiting</li>
+<li><strong>Resilient transport</strong> — <code>vantage-api-pool</code> adds retry, a circuit breaker, rate limiting and auth
+refresh to API traffic</li>
 <li><strong>CSV files</strong> — <code>vantage-csv</code> reads structured files with in-memory conditions</li>
 <li><strong>Local caches</strong> — <code>vantage-live</code> syncs fast cache (ImTable, ReDB) with slow backend (Postgres,
 SurrealDB) for responsive UIs</li>
