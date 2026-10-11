@@ -39,6 +39,9 @@ uuid = { version = "1", features = ["v7"], optional = true }
 # the script-slot evaluators and the `run_script` runner. Backends layer their
 # vendor expression vocabulary on top via `TableShell::register_rhai_extensions`.
 rhai = ["dep:vantage-rhai", "dep:tokio", "dep:chrono", "dep:uuid", "vantage-types/serde"]
+# Driver-facing checks (`vantage_vista::contract`) that every backend's test
+# suite runs against its own fixture. Enable from `[dev-dependencies]` only.
+contract = []
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }
@@ -46,6 +49,10 @@ vantage-dataset = { version = "1.1.0", path = "../vantage-dataset", features = [
 # Memory-backed Vistas for the script vocabulary tests. Integration tests only:
 # vantage-memory depends on this crate, so unit tests would see two copies.
 vantage-memory = { path = "../vantage-memory" }
+
+[[test]]
+name = "contract"
+required-features = ["contract"]
 
 [[test]]
 name = "rhai_vocab"

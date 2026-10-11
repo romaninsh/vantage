@@ -34,3 +34,4 @@ tokio = { version = "1", features = [
     "time",
 ] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+vantage-vista = { version = "1.0.0", path = "../vantage-vista", features = ["contract"] }

@@ -2,9 +2,10 @@ name: AWS Backend Tests
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-aws/**"
+      - "vantage-vista/**"
       - ".github/workflows/aws.yaml"
 
 env:

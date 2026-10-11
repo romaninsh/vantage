@@ -1,0 +1,82 @@
+name: Public API snapshots
+
+# Fails when a crate's public API differs from its api/<crate>.txt snapshot.
+# The paths cover every crate whose types appear in the snapshots.
+on:
+  push:
+    branches: ["main", "v2"]
+    paths:
+      - "vantage-core/**"
+      - "vantage-types/**"
+      - "vantage-expressions/**"
+      - "vantage-dataset/**"
+      - "vantage-table/**"
+      - "vantage-rhai/**"
+      - "vantage-vista/**"
+      - "vantage-vista-factory/**"
+      - "vantage-diorama/**"
+      - "vantage-diorama-aggregate/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "api/**"
+      - ".github/workflows/public-api.yaml"
+  pull_request:
+    branches: ["main", "v2"]
+    paths:
+      - "vantage-core/**"
+      - "vantage-types/**"
+      - "vantage-expressions/**"
+      - "vantage-dataset/**"
+      - "vantage-table/**"
+      - "vantage-rhai/**"
+      - "vantage-vista/**"
+      - "vantage-vista-factory/**"
+      - "vantage-diorama/**"
+      - "vantage-diorama-aggregate/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "api/**"
+      - ".github/workflows/public-api.yaml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  public-api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # api/snapshot.sh pins both versions; read them rather than repeat them.
+      - name: Read pinned versions
+        id: pins
+        run: |
+          echo "nightly=$(sed -n 's/^NIGHTLY="\(.*\)"$/\1/p' api/snapshot.sh)" >> "$GITHUB_OUTPUT"
+          echo "tool=$(sed -n 's/^PUBLIC_API_VERSION="\(.*\)"$/\1/p' api/snapshot.sh)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pins.outputs.nightly }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: "public-api-${{ steps.pins.outputs.tool }}-${{ steps.pins.outputs.nightly }}"
+
+      - name: Install cargo-public-api
+        env:
+          TOOL_VERSION: ${{ steps.pins.outputs.tool }}
+        run: |
+          cargo public-api --version | grep -qx "cargo-public-api $TOOL_VERSION" ||
+            cargo install cargo-public-api --version "$TOOL_VERSION" --locked --force
+
+      - name: Regenerate snapshots
+        run: api/snapshot.sh
+
+      - name: Compare with committed snapshots
+        run: |
+          git add --intent-to-add api/
+          if ! git diff --exit-code -- api/; then
+            echo "::error::Public API differs from api/*.txt. Run 'mise run api-snapshot' and commit the result."
+            exit 1
+          fi
