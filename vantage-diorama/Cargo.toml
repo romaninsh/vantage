@@ -50,6 +50,7 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "test-ut
 vantage-csv = { path = "../vantage-csv", features = ["vista"] }
 vantage-sql = { path = "../vantage-sql", features = ["sqlite", "vista"] }
 vantage-cmd = { path = "../vantage-cmd" }
+vantage-vista = { version = "1.2.0", path = "../vantage-vista", features = ["contract"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
 cucumber = { version = "0.21", default-features = false, features = ["macros"] }
 insta = { version = "1.41", features = ["yaml", "filters"] }

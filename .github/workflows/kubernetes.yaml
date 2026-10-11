@@ -2,9 +2,10 @@ name: Kubernetes Tests
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-kubernetes/**"
+      - "vantage-vista/**"
       - ".github/workflows/kubernetes.yaml"
 
 env:

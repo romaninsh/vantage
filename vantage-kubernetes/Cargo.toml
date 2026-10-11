@@ -46,6 +46,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 
 [dev-dependencies]
 vantage-cli-util = { version = "0.6.2",path = "../vantage-cli-util" }
+vantage-vista = { version = "1.1.1", path = "../vantage-vista", features = ["contract"] }
 ciborium = "0.2"
 
 anyhow = "1"

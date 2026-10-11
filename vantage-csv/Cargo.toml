@@ -31,4 +31,4 @@ vantage-vista = { version = "1.1.1", path = "../vantage-vista", optional = true 
 tokio = { version = "1.52", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "1.1.1", path = "../vantage-vista" }
+vantage-vista = { version = "1.1.1", path = "../vantage-vista", features = ["contract"] }

@@ -2,9 +2,10 @@ name: Cmd Backend Tests
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-cmd/**"
+      - "vantage-vista/**"
       - ".github/workflows/cmd.yaml"
 
 env:

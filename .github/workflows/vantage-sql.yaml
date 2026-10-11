@@ -2,13 +2,14 @@ name: vantage-sql
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-sql/**"
       - "vantage-expressions/**"
       - "vantage-table/**"
       - "vantage-types/**"
       - "vantage-core/**"
+      - "vantage-vista/**"
       - "bakery_model3/**"
       - ".github/workflows/vantage-sql.yaml"
 

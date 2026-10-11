@@ -2,10 +2,11 @@ name: SurrealDB Tests
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-surrealdb/**"
       - "surreal-client/**"
+      - "vantage-vista/**"
       - "bakery_model3/**"
       - ".github/workflows/surreal.yaml"
 
@@ -103,7 +104,7 @@ jobs:
         run: cargo build -p vantage-surrealdb -p surreal-client
 
       - name: Run vantage-surrealdb and surreal-client tests
-        run: cargo test -p vantage-surrealdb -p surreal-client -- --test-threads=1
+        run: cargo test -p vantage-surrealdb -p surreal-client --features vantage-surrealdb/vista -- --test-threads=1
         env:
           DB_ENDPOINT: cbor://localhost:8000/rpc
           DB_USER: root
