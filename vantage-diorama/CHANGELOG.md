@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.2 — 2026-10-11
+
+- A `Dio::watch` stream ends when its Dio drops, also during back-off and resubscribe.
+- No fetch past a total proven by a short page.
+
 ## 0.14.1 — 2026-10-07
 
 - `scenery/table/state.rs` split into focused modules.

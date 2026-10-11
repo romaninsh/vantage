@@ -156,3 +156,79 @@ async fn full_pages_extend_the_horizon_until_a_short_page_ends_it() -> Result<()
 
     Ok(())
 }
+
+type Backend = Arc<std::sync::Mutex<Vec<(String, Record<CborValue>)>>>;
+type Fetches = Arc<std::sync::Mutex<Vec<std::ops::Range<usize>>>>;
+
+/// A total-less lens over `backend` that records every range it is asked for.
+fn recording_lens(cache: std::path::PathBuf, backend: Backend, fetches: Fetches) -> Arc<Lens> {
+    Lens::new()
+        .cache_at(cache)
+        .on_load_chunk(move |_dio, range, _sort, sink| {
+            let rows = backend.lock().unwrap().clone();
+            fetches.lock().unwrap().push(range.clone());
+            async move {
+                for idx in range {
+                    if let Some((id, r)) = rows.get(idx) {
+                        sink.push(idx, id.clone(), r.clone()).await?;
+                    }
+                }
+                Ok(())
+            }
+        })
+        .build()
+        .map(Arc::new)
+        .expect("build lens")
+}
+
+/// A short page proves where the set ends. A viewport reaching that end must
+/// not probe past it, but a refresh still re-fetches, so rows added later
+/// are picked up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_short_page_end_is_not_probed_past() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let backend: Backend = Arc::new(std::sync::Mutex::new(
+        (0..6).map(|i| (format!("id{i:04}"), rec(i))).collect(),
+    ));
+    let fetches: Fetches = Arc::default();
+    let lens = recording_lens(tmp.path().join("c.redb"), backend.clone(), fetches.clone());
+    let dio = lens.make_dio(master_cols(&[("v", "String")])).await?;
+    let scenery = dio.table_scenery().page_size(10).open().await?;
+
+    wait_for("short first page", &scenery, || {
+        scenery.estimated_total() == Some(6) && scenery.row(5).is_some()
+    })
+    .await;
+    let opened = fetches.lock().unwrap().len();
+
+    scenery.set_viewport(0..6);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let past_end: Vec<_> = fetches.lock().unwrap()[opened..]
+        .iter()
+        .filter(|r| r.start >= 6)
+        .cloned()
+        .collect();
+    assert!(
+        past_end.is_empty(),
+        "probed past a proven end: {past_end:?}"
+    );
+    assert_eq!(scenery.row_count(), 6);
+
+    backend
+        .lock()
+        .unwrap()
+        .extend((6..9).map(|i| (format!("id{i:04}"), rec(i))));
+    // The refresh re-fetches the rows on screen; a full page reopens the
+    // horizon, and scrolling into it finds the new end.
+    scenery.request_refresh();
+    wait_for("refresh reopens the horizon", &scenery, || {
+        scenery.row_count() > 6
+    })
+    .await;
+    scenery.set_viewport(6..scenery.row_count());
+    wait_for("growth loaded to its new end", &scenery, || {
+        scenery.row_count() == 9 && scenery.row(8).is_some()
+    })
+    .await;
+    Ok(())
+}

@@ -23,6 +23,13 @@ pub struct MongoBlock {
     /// Override for the MongoDB collection name. Defaults to the spec name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
+    /// The collection is a server-side view (`db.createView`). The vista
+    /// reads it and is read-only, with no live updates, import or traversal,
+    /// like a `pipeline` view; a `pipeline` or `rhai` then runs over the
+    /// server-side view. An undeclared view fails its first write or watch
+    /// with an unsupported error naming this flag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub view: bool,
     /// Aggregation stages over the collection. When set, the vista reads the
     /// pipeline's output and is read-only; its rows are keyed by the `_id`
     /// the pipeline emits (for a `$group`, the group key), which must be a
@@ -195,6 +202,40 @@ mongo:
 "#;
         let err = serde_yaml_ng::from_str::<MongoVistaSpec>(yaml).unwrap_err();
         assert!(err.to_string().contains("bogus") || err.to_string().contains("unknown"));
+    }
+
+    #[test]
+    fn yaml_view_flag_parses_and_defaults_off() {
+        let yaml = r#"
+name: report
+columns:
+  _id: { type: object_id, flags: [id] }
+mongo:
+  collection: sales_report
+  view: true
+"#;
+        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+        assert!(spec.driver.mongo.as_ref().unwrap().view);
+        assert!(!MongoBlock::default().view);
+
+        let unknown = format!("{yaml}  bogus: 1\n");
+        let err = serde_yaml_ng::from_str::<MongoVistaSpec>(&unknown).unwrap_err();
+        assert!(err.to_string().contains("bogus"), "{err}");
+    }
+
+    #[test]
+    fn yaml_view_flag_is_omitted_when_off() {
+        let off = serde_yaml_ng::to_string(&MongoBlock::default()).unwrap();
+        assert!(!off.contains("view"), "{off}");
+        let on = MongoBlock {
+            view: true,
+            ..MongoBlock::default()
+        };
+        assert!(
+            serde_yaml_ng::to_string(&on)
+                .unwrap()
+                .contains("view: true")
+        );
     }
 
     #[test]

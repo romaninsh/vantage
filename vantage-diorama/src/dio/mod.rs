@@ -10,6 +10,7 @@ pub(crate) mod pending;
 pub(crate) mod query_index;
 pub mod refresh;
 pub mod shell;
+mod watch;
 pub mod worker;
 
 use std::sync::Arc;
@@ -68,9 +69,12 @@ impl From<Generation> for u64 {
 /// Per-entity binding of a Vista to a Lens.
 ///
 /// Cheap to clone — wraps an `Arc<DioInner>` so all clones share the
-/// same write queue, event bus, refresh task, and hot tier. Sceneries
-/// keep their own `Arc<DioInner>` and remain alive as long as any
-/// handle outlives the original Dio.
+/// same write queue, event bus, refresh task, and hot tier.
+///
+/// The Dio lives until its last strong holder drops: `Dio` clones, an open
+/// form's [`Servo`], a narrowed child's [`DioShell`], or a queued write still
+/// landing. Sceneries hold only a `Weak` and don't extend it. When it ends,
+/// every [`watch`](Self::watch) task ends with it and drops its stream.
 #[derive(Clone)]
 pub struct Dio {
     pub(crate) inner: Arc<DioInner>,
@@ -223,6 +227,10 @@ pub(crate) struct DioInner {
     pub(crate) servo_census: std::sync::atomic::AtomicUsize,
     /// Live record sceneries opened on this Dio — census bookkeeping only.
     pub(crate) record_census: std::sync::atomic::AtomicUsize,
+    /// Never sent on; dropping it with the Dio is the signal. Every
+    /// [`watch`](Dio::watch) task holds a receiver and returns as soon as
+    /// it closes, so a quiet stream doesn't outlive its Dio.
+    pub(crate) watch_cancel: tokio::sync::watch::Sender<()>,
 }
 
 impl Drop for DioInner {
@@ -1046,89 +1054,6 @@ impl Dio {
                 self.refresh().await?;
             }
         }
-        Ok(())
-    }
-
-    /// Start watching the master Vista and apply every change it pushes.
-    ///
-    /// Transparent by design: if the master advertises
-    /// [`can_watch`](vantage_vista::Vista::can_watch) (SurrealDB LIVE, Postgres
-    /// `LISTEN/NOTIFY`), this subscribes and pipes each
-    /// [`VistaChange`](vantage_vista::VistaChange) through
-    /// [`apply_change`](Self::apply_change) on a background task — no polling. If
-    /// it doesn't, this is a no-op and the caller's `refresh_every` timer keeps
-    /// the cache fresh instead. Either way the reactive stack behaves the same;
-    /// only the freshness mechanism differs.
-    ///
-    /// Failure is self-correcting rather than silent — critical, since the task
-    /// is detached and can't return an error:
-    /// - a change that fails to apply triggers a full [`refresh`](Self::refresh)
-    ///   so the cache can't drift out of step with the backend;
-    /// - if the subscription drops (a WebSocket close ends the stream), the task
-    ///   backs off, **re-subscribes**, and refreshes to close the gap of changes
-    ///   missed while disconnected — it does not silently stop pushing.
-    ///
-    /// The initial subscription is established synchronously so a
-    /// misconfiguration surfaces to the caller here. The background task holds a
-    /// `Weak` to the Dio, so it exits on its own once the last `Dio` handle drops.
-    pub async fn watch(&self) -> Result<()> {
-        let master = self.master();
-        if !master.can_watch() {
-            return Ok(());
-        }
-        let mut stream = master.watch().await?;
-        let weak = Arc::downgrade(&self.inner);
-
-        tokio::spawn(async move {
-            use futures::StreamExt;
-            let base = std::time::Duration::from_millis(200);
-            let mut backoff = base;
-
-            'session: loop {
-                // Drain the current subscription.
-                while let Some(item) = stream.next().await {
-                    let Some(inner) = weak.upgrade() else { return };
-                    let dio = Dio { inner };
-                    match item {
-                        Ok(change) => match dio.apply_change(change.into()).await {
-                            Ok(()) => backoff = base,
-                            Err(e) => {
-                                // One row failed to apply — the cache may be out
-                                // of step for that id. Reconcile the whole set so
-                                // the view can't drift silently.
-                                tracing::error!(error = %e, "watch: apply failed; reconciling");
-                                let _ = dio.refresh().await;
-                            }
-                        },
-                        Err(e) => {
-                            tracing::warn!(error = %e, "watch: stream error; resubscribing");
-                            break;
-                        }
-                    }
-                }
-
-                // The subscription ended (a dropped connection yields `None`).
-                // Push is gone; reconnect with backoff instead of exiting, then
-                // reconcile to recover anything missed during the gap.
-                loop {
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                    let Some(inner) = weak.upgrade() else { return };
-                    let dio = Dio { inner };
-                    match dio.master().watch().await {
-                        Ok(fresh) => {
-                            stream = fresh;
-                            let _ = dio.refresh().await;
-                            tracing::info!("watch: resubscribed and reconciled");
-                            continue 'session;
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "watch: resubscribe failed; retrying");
-                        }
-                    }
-                }
-            }
-        });
         Ok(())
     }
 }
