@@ -38,4 +38,5 @@ tokio = { version = "1.52", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2.1"
 vantage-cli-util = { path = "../vantage-cli-util" }
+vantage-vista = { version = "1.1.1", path = "../vantage-vista", features = ["contract"] }
 wiremock = "0.6"

@@ -6,6 +6,8 @@ pub mod capabilities;
 pub mod column;
 mod computed;
 pub mod contained;
+#[cfg(feature = "contract")]
+pub mod contract;
 mod empty;
 pub mod factory;
 pub mod filter;

@@ -2,9 +2,9 @@ name: Main Workspace (v0.3 Core)
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "v2"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-expressions/**"
       - "vantage-sql/**"
@@ -17,6 +17,15 @@ on:
       - "vantage-api-adapters/**"
       - "vantage-api-client/**"
       - "vantage-api-pool/**"
+      - "vantage-log-writer/**"
+      - "vantage-vista/**"
+      - "vantage-memory/**"
+      - "vantage-csv/**"
+      - "vantage-diorama/**"
+      - "vantage-diorama-aggregate/**"
+      - "vantage-types/**"
+      - "vantage-rhai/**"
+      - "vantage-vista-factory/**"
       - "surreal-client/**"
       - "bakery_model3/**"
       - "Cargo.toml"
@@ -53,6 +62,11 @@ jobs:
 
       - name: Run API client and pool tests with all features
         run: cargo test -p vantage-api-client -p vantage-api-pool --all-features
+
+      # Its Vista tests, the contract test among them, sit behind the `vista`
+      # feature, which no workspace member enables.
+      - name: Run log-writer tests with all features
+        run: cargo test -p vantage-log-writer --all-features
 
       - name: Check formatting
         run: cargo fmt --all -- --check

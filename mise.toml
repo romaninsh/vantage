@@ -1,2 +1,7 @@
 [tools]
 aws = { version = "latest", symlink_bins = "true" }
+
+# The pinned nightly and cargo-public-api versions are in the script's header.
+[tasks.api-snapshot]
+description = "Regenerate the public-API snapshots in api/"
+run = "api/snapshot.sh"

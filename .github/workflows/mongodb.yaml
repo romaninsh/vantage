@@ -2,9 +2,10 @@ name: MongoDB Tests
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-mongodb/**"
+      - "vantage-vista/**"
       - ".github/workflows/mongodb.yaml"
 
 env:

@@ -47,7 +47,7 @@ vantage-rhai = { version = "1.0.0", path = "../vantage-rhai", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "1.1.1", path = "../vantage-vista" }
+vantage-vista = { version = "1.1.1", path = "../vantage-vista", features = ["contract"] }
 sqlformat = "0.3"
 vantage-dataset = { version = "1.1.0", path = "../vantage-dataset", features = ["contract"] }
 
