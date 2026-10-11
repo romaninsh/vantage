@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.3 — 2026-10-11
+
+- `TableScenery::count_where(terms)`: pushed-down count with replacement filter terms.
+- `TableScenery::terms_supported(terms)`: whether the view can apply every filter term.
+- Local terms and sort read a datetime (`Tag(0, rfc3339)`) as its text, so it compares with text dates.
+
+## 0.14.2 — 2026-10-11
+
+- A `Dio::watch` stream ends when its Dio drops, also during back-off and resubscribe.
+- No fetch past a total proven by a short page.
+
 ## 0.14.1 — 2026-10-07
 
 - `scenery/table/state.rs` split into focused modules.

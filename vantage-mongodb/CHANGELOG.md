@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 — 2026-10-11
+
+- Change streams use a dedicated client: `with_stream_pool_size` (default 100), app name
+  `vantage-mongodb-streams`; `MongoDB::new()` handles share the given client.
+- `mongo: { view: true }` declares a server-side view: read-only, not watched, not imported.
+- `MongoDB::with_server_view` / `is_server_view`.
+- Watch, write or import on an undeclared view (error 166) is unsupported and names `view: true`.
+- Paged finds set `batch_size` to the limit.
+- `MongoBlock` gains the pub field `view`; struct literals of `MongoBlock` need `..Default::default()`.
+
 ## 1.0.0 — 2026-10-10
 
 - YAML `references:` are registered, with `with_resolver`; column-less fallback targets are keyed by `_id`.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 — 2026-10-11
+
+- Comparisons (conditions, order, min/max) read a datetime (`Tag(0, rfc3339)`) as its text.
+
 ## 1.2.1 — 2026-10-07
 
 - Vista `patch` returns set-check errors other than "outside the set" instead of `NotFound`.

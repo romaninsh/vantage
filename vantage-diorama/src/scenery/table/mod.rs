@@ -19,6 +19,7 @@
 
 mod builder;
 mod capped;
+mod count;
 mod helpers;
 mod loader;
 mod reactor;
@@ -82,6 +83,14 @@ impl OpCondition {
     /// colliding with the unfiltered set or a different-operator filter).
     pub fn key_fragment(&self) -> String {
         format!("{}{}{:?}", self.column, self.op.key_symbol(), self.value)
+    }
+
+    /// Whether a master with `caps` can take this term into its query:
+    /// equality always, richer operators only with `can_filter_operators`.
+    /// A source may still decline a term it advertises (`add_condition`
+    /// returning `Unimplemented`).
+    pub(crate) fn pushable_to(&self, caps: &VistaCapabilities) -> bool {
+        self.op == vantage_vista::FilterOp::Eq || caps.can_filter_operators
     }
 }
 
@@ -210,6 +219,22 @@ pub trait TableScenery: Send + Sync {
         Vec::new()
     }
 
+    /// How many rows this view would hold with `terms` in place of its current
+    /// UI filter terms — the query's own conditions and the current search
+    /// still apply. Pushed down to the master when it can be: a paged view
+    /// counts on a narrowed `clone_shell`; an eager view counts the rows its
+    /// cache holds. `Ok(None)` when neither is possible: a paged master
+    /// without `clone_shell` or `can_count`, or one that cannot take every
+    /// term; an eager view before it has settled; a two-pass view. The future
+    /// is runtime-agnostic: it may be awaited from any executor, and dropping
+    /// it abandons the count.
+    fn count_where(
+        &self,
+        _terms: Vec<OpCondition>,
+    ) -> futures::future::BoxFuture<'static, vantage_core::Result<Option<usize>>> {
+        Box::pin(async { Ok(None) })
+    }
+
     /// Replace the quicksearch text (replace semantics; `None` or blank
     /// clears). Paged sceneries push it into every chunk fetch — callers
     /// should offer search only when [`Self::search_supported`] says so.
@@ -221,6 +246,15 @@ pub trait TableScenery: Send + Sync {
     /// scenery needs the master's `can_search` (a local filter would silently
     /// search only the loaded slice); an eager one always can.
     fn search_supported(&self) -> bool {
+        false
+    }
+
+    /// Whether [`Self::set_filter_terms`] will apply every one of `terms`
+    /// honestly: a paged scenery needs a master that can take each into its
+    /// query (equality always, richer operators with `can_filter_operators`);
+    /// an eager or two-pass one evaluates them over its own rows, so always
+    /// can.
+    fn terms_supported(&self, _terms: &[OpCondition]) -> bool {
         false
     }
 
@@ -505,6 +539,13 @@ impl TableScenery for TableSceneryImpl {
         self.inner.ui_terms.read().unwrap().clone()
     }
 
+    fn count_where(
+        &self,
+        terms: Vec<OpCondition>,
+    ) -> futures::future::BoxFuture<'static, vantage_core::Result<Option<usize>>> {
+        count::count_where(&self.inner, terms)
+    }
+
     fn set_search(&self, query: Option<String>) {
         let normalized = query.filter(|q| !q.trim().is_empty());
         if *self.inner.search.read().unwrap() == normalized {
@@ -561,6 +602,15 @@ impl TableScenery for TableSceneryImpl {
     fn search_supported(&self) -> bool {
         if self.inner.paged {
             self.inner.master_capabilities.can_search
+        } else {
+            true
+        }
+    }
+
+    fn terms_supported(&self, terms: &[OpCondition]) -> bool {
+        if self.inner.paged && !self.inner.two_pass {
+            let caps = &self.inner.master_capabilities;
+            terms.iter().all(|t| t.pushable_to(caps))
         } else {
             true
         }

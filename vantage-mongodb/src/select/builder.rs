@@ -35,12 +35,18 @@ impl MongoSelect {
         Some(doc)
     }
 
-    /// Build `mongodb::options::FindOptions` from the current state.
+    /// Build `mongodb::options::FindOptions` from the current state. A
+    /// positive limit is also the batch size, so a page arrives in one
+    /// round trip instead of the server's default first batch plus `getMore`s.
     pub fn build_find_options(&self) -> mongodb::options::FindOptions {
         let mut opts = mongodb::options::FindOptions::default();
         opts.projection = self.build_projection();
         opts.sort = self.build_sort();
         opts.limit = self.limit;
+        opts.batch_size = self
+            .limit
+            .filter(|&n| n > 0)
+            .map(|n| u32::try_from(n).unwrap_or(u32::MAX));
         opts.skip = self.skip.map(|s| s as u64);
         opts
     }
@@ -84,6 +90,24 @@ mod tests {
         assert!(opts.projection.is_some());
         assert_eq!(opts.limit, Some(5));
         assert_eq!(opts.skip, Some(10));
+    }
+
+    #[test]
+    fn test_build_find_options_batch_size_follows_limit() {
+        let page = MongoSelect::new().with_limit(Some(50), None);
+        assert_eq!(page.build_find_options().batch_size, Some(50));
+
+        assert_eq!(MongoSelect::new().build_find_options().batch_size, None);
+
+        let mut nonpositive = MongoSelect::new();
+        for limit in [0, -3] {
+            nonpositive.limit = Some(limit);
+            assert_eq!(nonpositive.build_find_options().batch_size, None);
+        }
+
+        let mut huge = MongoSelect::new();
+        huge.limit = Some(i64::MAX);
+        assert_eq!(huge.build_find_options().batch_size, Some(u32::MAX));
     }
 
     #[tokio::test]

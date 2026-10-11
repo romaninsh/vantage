@@ -4,6 +4,7 @@ use crate::dio::{Dio, DioEvent};
 use crate::lens::ChunkSink;
 use crate::scenery::table::ViewportRequest;
 use crate::scenery::table::state::{InFlightMarker, TableSceneryState};
+use crate::scenery::table::view_stats::TotalKind;
 
 use super::guards::{CancelOnDrop, PendingChunk};
 use super::range::compute_fetch_range;
@@ -78,10 +79,15 @@ pub(super) async fn run_chunk_callback(
     // cache-seeded reopen, where no total survived — the seeded row count.
     let advertised_end =
         total.unwrap_or_else(|| state.rows.read().unwrap().keys().max().map_or(0, |i| i + 1));
+    // Only a guessed end is worth asking past. A short page proves the end
+    // (`Exact`), and probing it again on every viewport costs a wasted fetch;
+    // a refresh re-fetches anyway, so growth is still picked up.
+    let end_is_guess = total.is_none() || *state.total_kind.read().unwrap() == TotalKind::Horizon;
     let horizon_probe = state.paged
         && !state.two_pass
         && !force_load
         && !state.total_ever_stated()
+        && end_is_guess
         && advertised_end > 0
         && visible.end >= advertised_end;
 

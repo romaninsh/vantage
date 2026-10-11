@@ -129,12 +129,14 @@ pub(crate) fn op_conditions_key(conds: &[super::OpCondition]) -> String {
 }
 
 pub(crate) fn cbor_eq(a: &CborValue, b: &CborValue) -> bool {
+    if let (Some(x), Some(y)) = (text_or_datetime(a), text_or_datetime(b)) {
+        return x == y;
+    }
     match (a, b) {
-        (CborValue::Text(x), CborValue::Text(y)) => x == y,
         (CborValue::Integer(x), CborValue::Integer(y)) => x == y,
         (CborValue::Bool(x), CborValue::Bool(y)) => x == y,
-        // Float and the rest fall back to format-string compare. Good
-        // enough for v1's hand-rolled filter.
+        // Floats and other kinds compare by their debug text, so `1` and
+        // `1.0` are not equal here.
         _ => format!("{a:?}") == format!("{b:?}"),
     }
 }
@@ -230,6 +232,34 @@ mod tests {
         assert!(!matches_op_conditions(&rec("x", 6), &lte));
     }
 
+    fn datetime(s: &str) -> CborValue {
+        CborValue::Tag(0, Box::new(CborValue::Text(s.into())))
+    }
+
+    fn dated(at: CborValue) -> Record<CborValue> {
+        let mut r = Record::new();
+        r.insert("at".to_string(), at);
+        r
+    }
+
+    #[test]
+    fn datetime_compares_with_text_and_datetime_as_text() {
+        let mid = || datetime("2026-10-05T00:00:00Z");
+        let cond = |op| vec![OpCondition::new("at", op, mid())];
+        let early_text = dated(CborValue::Text("2026-10-01T00:00:00Z".into()));
+        let late_tag = dated(datetime("2026-10-09T00:00:00Z"));
+
+        assert!(matches_op_conditions(&early_text, &cond(FilterOp::Lt)));
+        assert!(!matches_op_conditions(&late_tag, &cond(FilterOp::Lt)));
+        assert!(matches_op_conditions(&late_tag, &cond(FilterOp::Gt)));
+        assert!(!matches_op_conditions(&early_text, &cond(FilterOp::Gt)));
+
+        let equal_text = dated(CborValue::Text("2026-10-05T00:00:00Z".into()));
+        assert!(matches_op_conditions(&equal_text, &cond(FilterOp::Eq)));
+        assert!(matches_op_conditions(&dated(mid()), &cond(FilterOp::Eq)));
+        assert!(!matches_op_conditions(&early_text, &cond(FilterOp::Eq)));
+    }
+
     #[test]
     fn set_membership() {
         let in_set = vec![OpCondition::new(
@@ -307,24 +337,44 @@ pub(crate) fn cbor_cmp(a: Option<&CborValue>, b: Option<&CborValue>) -> std::cmp
         (None, None) => Ordering::Equal,
         (None, _) => Ordering::Less,
         (_, None) => Ordering::Greater,
-        (Some(lhs), Some(rhs)) => match (lhs, rhs) {
-            (CborValue::Text(l), CborValue::Text(r)) => l.cmp(r),
-            (CborValue::Integer(l), CborValue::Integer(r)) => i128::from(*l).cmp(&i128::from(*r)),
-            // Floats (and int/float mixes) sort by numeric value — NOT by their
-            // `{:?}` debug string, which would rank "657.96" above "1826.19".
-            // NaN is treated as equal so a stray NaN can't panic the sort.
-            (CborValue::Float(l), CborValue::Float(r)) => {
-                l.partial_cmp(r).unwrap_or(Ordering::Equal)
-            }
-            (CborValue::Integer(l), CborValue::Float(r)) => (i128::from(*l) as f64)
-                .partial_cmp(r)
-                .unwrap_or(Ordering::Equal),
-            (CborValue::Float(l), CborValue::Integer(r)) => l
-                .partial_cmp(&(i128::from(*r) as f64))
-                .unwrap_or(Ordering::Equal),
-            (CborValue::Bool(l), CborValue::Bool(r)) => l.cmp(r),
-            _ => format!("{lhs:?}").cmp(&format!("{rhs:?}")),
+        (Some(lhs), Some(rhs)) => match (text_or_datetime(lhs), text_or_datetime(rhs)) {
+            (Some(l), Some(r)) => l.cmp(r),
+            _ => cbor_cmp_values(lhs, rhs),
         },
+    }
+}
+
+fn cbor_cmp_values(lhs: &CborValue, rhs: &CborValue) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (lhs, rhs) {
+        (CborValue::Integer(l), CborValue::Integer(r)) => i128::from(*l).cmp(&i128::from(*r)),
+        // Floats (and int/float mixes) sort by numeric value — NOT by their
+        // `{:?}` debug string, which would rank "657.96" above "1826.19".
+        // NaN is treated as equal so a stray NaN can't panic the sort.
+        (CborValue::Float(l), CborValue::Float(r)) => l.partial_cmp(r).unwrap_or(Ordering::Equal),
+        (CborValue::Integer(l), CborValue::Float(r)) => (i128::from(*l) as f64)
+            .partial_cmp(r)
+            .unwrap_or(Ordering::Equal),
+        (CborValue::Float(l), CborValue::Integer(r)) => l
+            .partial_cmp(&(i128::from(*r) as f64))
+            .unwrap_or(Ordering::Equal),
+        (CborValue::Bool(l), CborValue::Bool(r)) => l.cmp(r),
+        _ => format!("{lhs:?}").cmp(&format!("{rhs:?}")),
+    }
+}
+
+/// The text of a plain text value or of a CBOR standard datetime
+/// (`Tag(0, Text)`), so a datetime operand orders against, and equals,
+/// dates a source stores as text. RFC 3339 strings with the same offset
+/// sort lexically. Twin: `vantage-memory/src/eval/compare.rs`.
+fn text_or_datetime(value: &CborValue) -> Option<&str> {
+    match value {
+        CborValue::Text(s) => Some(s),
+        CborValue::Tag(0, inner) => match inner.as_ref() {
+            CborValue::Text(s) => Some(s),
+            _ => None,
+        },
+        _ => None,
     }
 }
 

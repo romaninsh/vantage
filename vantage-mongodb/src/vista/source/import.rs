@@ -29,6 +29,7 @@ use vantage_types::Record;
 
 use super::MongoTableShell;
 use crate::id::MongoId;
+use crate::mongodb::view::undeclared_view;
 use crate::types::AnyMongoType;
 
 /// A record ready to store: its id, the document, and the prepared record the
@@ -48,7 +49,10 @@ pub(super) async fn import(
     shell: &MongoTableShell,
     records: &IndexMap<String, Record<CborValue>>,
 ) -> Result<usize> {
-    shell.table.data_source().ensure_writable()?;
+    shell
+        .table
+        .data_source()
+        .ensure_writable(shell.table.table_name())?;
     if records.is_empty() {
         return Ok(0);
     }
@@ -177,6 +181,6 @@ async fn write_new(
     coll.insert_many(new.iter().map(|p| &p.doc))
         .session(&mut *session)
         .await
-        .map_err(failed)?;
+        .map_err(|e| undeclared_view(&e, shell.table.table_name()).unwrap_or_else(|| failed(e)))?;
     Ok(new)
 }

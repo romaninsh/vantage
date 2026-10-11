@@ -189,7 +189,12 @@ With the `vista` feature, a MongoDB vista advertises:
   `MongoVistaFactory::with_change_streams(true)` forces them on, `false` off. A standalone server
   advertises neither, and forcing them on there does not give it change streams. `MongoDB::connect`
   waits out server selection (30 s by default) when the server is unreachable, then reports
-  `Topology::Unknown`.
+  `Topology::Unknown`. Change streams run on a dedicated client (app name
+  `vantage-mongodb-streams`), sized by `MongoDB::with_stream_pool_size` (default 100); a
+  `MongoDB::new()` handle watches on the client it was given.
+- A table with `mongo: { view: true }` (or `MongoDB::with_server_view(true)`) reads a server-side
+  view: read-only, not watched, not imported. An undeclared view refuses watch, write and import
+  with an unsupported error that names `view: true`.
 
 `$lookup` joins are type-strict: a string foreign key does not join an `ObjectId` `_id`. Each hop
 matches `localField` against `foreignField`. Correlated subqueries are not implemented:

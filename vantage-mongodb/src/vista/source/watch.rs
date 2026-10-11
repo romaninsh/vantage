@@ -20,6 +20,7 @@ use vantage_vista::{VistaChange, VistaChangeStream};
 
 use super::{MongoTableShell, project_record};
 use crate::id::MongoId;
+use crate::mongodb::view::undeclared_view;
 
 /// Event kinds the stream is opened for. Anything else (index builds,
 /// `createIndexes`, ...) is not a change to the rows.
@@ -37,23 +38,29 @@ const OPERATION_TYPES: [&str; 8] = [
 /// Open a change stream on the shell's collection. The cursor is established
 /// server-side before this returns, so writes made afterwards are seen.
 pub(super) async fn watch(shell: &MongoTableShell) -> Result<VistaChangeStream> {
-    shell.table.data_source().ensure_watchable()?;
     let table = shell.table.clone();
+    let name = table.table_name();
+    table.data_source().ensure_watchable(name)?;
     let column_paths = shell.column_paths.clone();
     let pipeline: Vec<Document> =
         vec![doc! { "$match": { "operationType": { "$in": OPERATION_TYPES.to_vec() } } }];
 
+    // The stream runs on the data source's change-stream client; the re-read
+    // behind each event (`get_value`) stays on the main one.
     let mut events = table
         .data_source()
-        .doc_collection(table.table_name())
+        .stream_collection(name)
+        .await?
         .watch()
         .pipeline(pipeline)
         .await
         .map_err(|e| {
-            error!(
-                "Failed to open MongoDB change stream",
-                details = e.to_string()
-            )
+            undeclared_view(&e, name).unwrap_or_else(|| {
+                error!(
+                    "Failed to open MongoDB change stream",
+                    details = e.to_string()
+                )
+            })
         })?;
 
     Ok(Box::pin(async_stream::try_stream! {

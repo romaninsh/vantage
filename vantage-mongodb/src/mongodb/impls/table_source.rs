@@ -25,6 +25,7 @@ use crate::condition::MongoCondition;
 use crate::id::{MongoId, eq_filter, id_variants};
 use crate::mongodb::MongoDB;
 use crate::mongodb::impls::joins::{imported_columns, join_alias_of, table_joins};
+use crate::mongodb::view::undeclared_view;
 use crate::select::join::{alias_index, filter_uses_joins};
 use crate::select::{JoinColumn, MongoSelect};
 use crate::types::{AnyMongoType, MongoType};
@@ -191,6 +192,16 @@ fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
     )
 }
 
+/// A failed write to `collection`: an undeclared server-side view gets its
+/// own unsupported error, anything else `message` with the driver's details.
+fn write_failed(
+    e: &mongodb::error::Error,
+    collection: &str,
+    message: &'static str,
+) -> vantage_core::VantageError {
+    undeclared_view(e, collection).unwrap_or_else(|| error!(message, details = e.to_string()))
+}
+
 impl MongoDB {
     /// The table's filter document for confining writes; empty when the
     /// table is not narrowed. Refused when it reads a joined column.
@@ -307,7 +318,7 @@ impl TableSource for MongoDB {
     }
 
     fn can_confine_writes(&self) -> bool {
-        self.view().is_none()
+        self.is_stored()
     }
 
     /// Dotted columns read through `$lookup` (see the `joins` module), except
@@ -549,7 +560,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        self.ensure_writable()?;
+        self.ensure_writable(table.table_name())?;
         let coll = self.doc_collection(table.table_name());
         let mut doc = bson::Document::new();
         doc.insert("_id", id);
@@ -580,7 +591,11 @@ impl TableSource for MongoDB {
 
         if let Err(e) = coll.insert_one(doc).await {
             if !is_duplicate_key(&e) {
-                return Err(error!("MongoDB insert_one failed", details = e.to_string()));
+                return Err(write_failed(
+                    &e,
+                    table.table_name(),
+                    "MongoDB insert_one failed",
+                ));
             }
             // A concurrent insert won the race: return its row if it is ours.
             return self
@@ -603,7 +618,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        self.ensure_writable()?;
+        self.ensure_writable(table.table_name())?;
         let coll = self.doc_collection(table.table_name());
         let table_filter = write_filter(table).await?;
         let mut replacement = bson::Document::new();
@@ -623,7 +638,7 @@ impl TableSource for MongoDB {
             }
             coll.replace_one(confined(id, table_filter), replacement)
                 .await
-                .map_err(|e| error!("MongoDB replace_one failed", details = e.to_string()))?;
+                .map_err(|e| write_failed(&e, table.table_name(), "MongoDB replace_one failed"))?;
         } else {
             if coll
                 .find_one(doc! { "_id": id })
@@ -645,7 +660,7 @@ impl TableSource for MongoDB {
             }
             coll.insert_one(full)
                 .await
-                .map_err(|e| error!("MongoDB insert_one failed", details = e.to_string()))?;
+                .map_err(|e| write_failed(&e, table.table_name(), "MongoDB insert_one failed"))?;
         }
 
         self.get_table_value(table, id)
@@ -662,7 +677,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        self.ensure_writable()?;
+        self.ensure_writable(table.table_name())?;
         let not_found = || error!("Record not found", id = id.to_string()).mark_not_found();
         let coll = self.doc_collection(table.table_name());
         let table_filter = write_filter(table).await?;
@@ -692,7 +707,7 @@ impl TableSource for MongoDB {
         let result = coll
             .update_one(filter, doc! { "$set": set_doc })
             .await
-            .map_err(|e| error!("MongoDB update_one failed", details = e.to_string()))?;
+            .map_err(|e| write_failed(&e, table.table_name(), "MongoDB update_one failed"))?;
         if result.matched_count == 0 {
             return Err(not_found());
         }
@@ -704,12 +719,12 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        self.ensure_writable()?;
+        self.ensure_writable(table.table_name())?;
         let filter = write_filter(table).await?;
         let coll = self.doc_collection(table.table_name());
         coll.delete_one(confined(id, filter))
             .await
-            .map_err(|e| error!("MongoDB delete_one failed", details = e.to_string()))?;
+            .map_err(|e| write_failed(&e, table.table_name(), "MongoDB delete_one failed"))?;
         Ok(())
     }
 
@@ -717,12 +732,12 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        self.ensure_writable()?;
+        self.ensure_writable(table.table_name())?;
         let filter = write_filter(table).await?;
         let coll = self.doc_collection(table.table_name());
         coll.delete_many(filter)
             .await
-            .map_err(|e| error!("MongoDB delete_many failed", details = e.to_string()))?;
+            .map_err(|e| write_failed(&e, table.table_name(), "MongoDB delete_many failed"))?;
         Ok(())
     }
 
@@ -734,7 +749,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        self.ensure_writable()?;
+        self.ensure_writable(table.table_name())?;
         let coll = self.doc_collection(table.table_name());
         let mut doc = bson::Document::new();
         for (k, v) in record.iter() {
@@ -747,7 +762,7 @@ impl TableSource for MongoDB {
         let result = coll
             .insert_one(doc)
             .await
-            .map_err(|e| error!("MongoDB insert_one failed", details = e.to_string()))?;
+            .map_err(|e| write_failed(&e, table.table_name(), "MongoDB insert_one failed"))?;
 
         MongoId::from_bson(&result.inserted_id)
             .ok_or_else(|| error!("MongoDB insert did not return a valid id"))
