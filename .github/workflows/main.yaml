@@ -18,6 +18,7 @@ on:
       - "vantage-api-client/**"
       - "vantage-api-pool/**"
       - "surreal-client/**"
+      - "vantage-inventory/**"
       - "bakery_model3/**"
       - "Cargo.toml"
       - "Cargo.lock"

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Fail if this repo's crates depend on a layer above it. The layers, lowest
+# first: vantage (public) <- vantage-lib (private) <- vantage-server and
+# vantage-ui. vantage must not depend on vantage-lib's or vantage-ui's crates.
+#
+# Checks the workspace, then each crate listed in the workspace `exclude`
+# (those resolve on their own, so `--workspace` never sees them).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+FORBIDDEN='^(vantage-spec|vantage-wizard-spec|vantage-ui-schema|vantage-actions|vantage-backend|vantage-catalog|vantage-ui|ui-[a-z-]+|vantage-ui-[a-z-]+) '
+TREE=(-e normal --all-features --prefix none --target all)
+status=0
+
+# Prints the forbidden lines of a dependency tree and returns 1 if any.
+check_tree() {
+    local label=$1 tree=$2 hits
+    if hits=$(grep -E "$FORBIDDEN" <<<"$tree" | sort -u) && [[ -n "$hits" ]]; then
+        echo "error: $label depends on a forbidden layer:"
+        echo "$hits"
+        return 1
+    fi
+}
+
+check_tree "the workspace" "$(cargo tree --workspace "${TREE[@]}")" || status=1
+
+# The `exclude = [...]` entries of the root Cargo.toml, globs expanded.
+excluded=$(awk '/^exclude *= *\[/{on=1; next} on && /\]/{on=0} on' Cargo.toml | tr -d ' ",')
+for pattern in $excluded; do
+    for dir in $pattern; do
+        [[ -f "$dir/Cargo.toml" ]] || continue
+        # Resolving may rewrite the crate's own lockfile; put it back after.
+        lock="$dir/Cargo.lock"
+        saved=""
+        [[ -f "$lock" ]] && saved=$(mktemp) && cp "$lock" "$saved"
+        ok=1
+        tree=$(cargo tree --manifest-path "$dir/Cargo.toml" "${TREE[@]}" 2>&1) || ok=0
+        if [[ -n "$saved" ]]; then mv "$saved" "$lock"; else rm -f "$lock"; fi
+        if [[ $ok -eq 0 ]]; then
+            echo "skipped $dir: $(grep -m1 '^error' <<<"$tree" || echo 'cargo tree failed')"
+            continue
+        fi
+        check_tree "$dir" "$tree" || status=1
+    done
+done
+
+[[ $status -eq 0 ]] && echo "check-repo-layers: ok"
+exit $status
