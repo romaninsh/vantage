@@ -40,11 +40,13 @@ async fn observer_ms_excludes_the_rate_wait() {
     let rec = Arc::new(Recorder::default());
     let client = ResilientClient::builder()
         .observer("local", rec.clone())
+        .http_client(reqwest::Client::new())
         .rate_limit_with_burst(10.0, 1)
         .build();
     let url = server.uri();
 
-    // First call spends the initial token immediately.
+    // First call spends the initial token immediately. The HTTP client is
+    // supplied so no lazy build runs while the bucket refills.
     client
         .execute(|h| h.get(&url))
         .await

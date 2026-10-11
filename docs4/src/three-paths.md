@@ -129,7 +129,8 @@ Vantage isn't limited to databases. Implement the persistence traits for anythin
 produces data:
 
 - **REST APIs** — `vantage-api-client` wraps any paginated JSON API as a read-only `TableSource`
-- **API pools** — `vantage-api-pool` adds connection pooling, prefetching, and rate limiting
+- **Resilient transport** — `vantage-api-pool` adds retry, a circuit breaker, rate limiting and auth
+  refresh to API traffic
 - **CSV files** — `vantage-csv` reads structured files with in-memory conditions
 - **Local caches** — `vantage-live` syncs fast cache (ImTable, ReDB) with slow backend (Postgres,
   SurrealDB) for responsive UIs

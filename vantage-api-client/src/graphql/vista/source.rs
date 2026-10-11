@@ -13,6 +13,7 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::column::core::Column;
+use vantage_table::pagination::Pagination;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
@@ -22,11 +23,19 @@ use vantage_vista::{
 };
 
 use crate::graphql::api::GraphqlApi;
+use crate::graphql::condition::FilterDialect;
+use crate::graphql::impls::search::contains_pattern;
 use crate::graphql::operation::GraphqlOperation;
 use crate::graphql::types::AnyGraphqlType;
-use crate::graphql::vista::factory::GraphqlApiVistaFactory;
+use crate::graphql::vista::lowering::TargetResolver;
 use vantage_table::traits::table_source::TableSource as _;
 
+/// The `TableShell` behind a GraphQL-backed `Vista`: an erased
+/// `Table<GraphqlApi, EmptyEntity>` plus the metadata and capabilities the
+/// factory harvested. Built by
+/// [`GraphqlApiVistaFactory`](crate::GraphqlApiVistaFactory); callers
+/// drive it through the `Vista` it is wrapped in.
+#[derive(Clone)]
 pub struct GraphqlApiTableShell {
     pub(crate) table: Table<GraphqlApi, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
@@ -34,6 +43,13 @@ pub struct GraphqlApiTableShell {
     /// Handle for the quicksearch condition, so the next `add_search`
     /// replaces it rather than stacking another OR-of-ilikes on top.
     search_handle: Option<vantage_table::conditions::ConditionHandle>,
+    /// Rows per page from `set_page_size`; `fetch_page` and `fetch_next`
+    /// refuse to run until it is set. Paging itself lives in `paging.rs`.
+    pub(crate) page_size: Option<usize>,
+    /// Set on a shell built from a YAML spec: every reference it holds came
+    /// from `references:`, and its target spec is looked up here at
+    /// traversal time (see `traversal.rs`).
+    pub(crate) resolver: Option<TargetResolver>,
 }
 
 impl GraphqlApiTableShell {
@@ -47,10 +63,17 @@ impl GraphqlApiTableShell {
             capabilities,
             metadata,
             search_handle: None,
+            page_size: None,
+            resolver: None,
         }
     }
 
-    fn record_to_cbor(record: Record<AnyGraphqlType>) -> Record<CborValue> {
+    pub(crate) fn with_resolver(mut self, resolver: Option<TargetResolver>) -> Self {
+        self.resolver = resolver;
+        self
+    }
+
+    pub(crate) fn record_to_cbor(record: Record<AnyGraphqlType>) -> Record<CborValue> {
         record
             .into_iter()
             .map(|(k, v)| (k, CborValue::from(v)))
@@ -145,26 +168,23 @@ impl TableShell for GraphqlApiTableShell {
                     column.not_in(items)
                 }
             }
-            scalar_op => {
-                let native = AnyGraphqlType::from(value.clone());
-                match scalar_op {
-                    FilterOp::Eq => column.eq(native),
-                    FilterOp::Ne => column.ne(native),
-                    FilterOp::Gt => column.gt(native),
-                    FilterOp::Gte => column.gte(native),
-                    FilterOp::Lt => column.lt(native),
-                    FilterOp::Lte => column.lte(native),
-                    // No GraphQL dialect here spells a pattern match; the
-                    // consumer evaluates it locally.
-                    FilterOp::Like => {
-                        return Err(error!(
-                            "GraphQL add_op_condition: Like has no push-down; filter locally",
-                            method = "add_op_condition"
-                        )
-                        .mark_unimplemented());
-                    }
-                    FilterOp::InSet | FilterOp::NotInSet => unreachable!("handled above"),
+            FilterOp::Eq => column.eq(AnyGraphqlType::from(value.clone())),
+            FilterOp::Ne => column.ne(AnyGraphqlType::from(value.clone())),
+            FilterOp::Gt => column.gt(AnyGraphqlType::from(value.clone())),
+            FilterOp::Gte => column.gte(AnyGraphqlType::from(value.clone())),
+            FilterOp::Lt => column.lt(AnyGraphqlType::from(value.clone())),
+            FilterOp::Lte => column.lte(AnyGraphqlType::from(value.clone())),
+            // Hasura spells "contains, any case" as `_ilike '%…%'`; Generic
+            // has no pattern match, so the consumer evaluates it locally.
+            FilterOp::Like => {
+                if self.table.data_source().dialect() != FilterDialect::Hasura {
+                    return Err(error!(
+                        "GraphQL add_op_condition: Like has no push-down; filter locally",
+                        method = "add_op_condition"
+                    )
+                    .mark_unimplemented());
                 }
+                column.ilike(contains_pattern(&vantage_vista::operand_text(value)))
             }
         };
         self.table.add_condition(condition);
@@ -174,6 +194,14 @@ impl TableShell for GraphqlApiTableShell {
     fn add_order(&mut self, field: &str, dir: vantage_vista::SortDirection) -> Result<()> {
         if !self.table.columns().contains_key(field) {
             return Err(error!("Unknown column for add_order", field = field));
+        }
+        // Hasura orders a nested field with a nested `order_by` object,
+        // which the renderer doesn't produce; `run.id: asc` would be
+        // rejected by the server.
+        if field.contains('.') {
+            return Err(
+                error!("GraphQL cannot order by a dotted column", field = field).mark_unsupported(),
+            );
         }
         // Vista's add_order is replace-semantics.
         self.table.clear_orders();
@@ -215,23 +243,83 @@ impl TableShell for GraphqlApiTableShell {
         Ok(())
     }
 
+    // Each paging method defers to the trait's default (an `Unsupported`
+    // error) when the root field doesn't take `limit:`/`offset:`.
+
+    fn set_page_size(&mut self, size: usize) -> Result<()> {
+        if !self.capabilities.can_set_page_size {
+            return Err(self.default_error("set_page_size", "can_set_page_size"));
+        }
+        if size == 0 {
+            return Err(error!("page size must be > 0"));
+        }
+        self.page_size = Some(size);
+        Ok(())
+    }
+
+    async fn fetch_page(
+        &self,
+        _vista: &Vista,
+        page: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        if !self.capabilities.can_fetch_page {
+            return Err(self.default_error("fetch_page", "can_fetch_page"));
+        }
+        if page == 0 {
+            return Err(error!("page is 1-based; got 0"));
+        }
+        let size = self.require_page_size("fetch_page")?;
+        self.list_paginated(Pagination::new(page as i64, size as i64))
+            .await
+    }
+
+    async fn fetch_window(
+        &self,
+        _vista: &Vista,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
+        if !self.capabilities.can_fetch_window {
+            return Err(self.default_error("fetch_window", "can_fetch_window"));
+        }
+        self.list_paginated(Pagination::window(offset as i64, limit as i64))
+            .await
+    }
+
+    async fn fetch_next(
+        &self,
+        _vista: &Vista,
+        token: Option<CborValue>,
+    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
+        if !self.capabilities.can_fetch_next {
+            return Err(self.default_error("fetch_next", "can_fetch_next"));
+        }
+        self.fetch_next_page(token).await
+    }
+
     fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        // Hand-coded `with_many` / `with_one` registrations on the typed
-        // table: convert the parent's CBOR row to the native value type,
-        // resolve the target via `get_ref_from_row`, then re-wrap as a
-        // Vista through a fresh factory bound to the same data source.
-        let native_row = Self::row_to_native(row);
+        // The typed table's `with_many` / `with_one` registrations (from
+        // code or from YAML `references:`) push the eq-condition: convert
+        // the parent's CBOR row to the native value type, resolve the target
+        // via `get_ref_from_row`, then re-wrap it as a Vista.
+        // One bare target serves both the spec check and the join-value
+        // coercion; `get_ref_from_row` builds its own, narrowed one.
+        let (target_spec, bare) = match self.spec_target(relation)? {
+            Some((spec, bare)) => (Some(spec), bare),
+            None => (None, self.table.get_ref_target_erased(relation)?),
+        };
+        let mut native_row = Self::row_to_native(row);
+        self.coerce_join_value(relation, &bare, row, &mut native_row)?;
         let target = self
             .table
             .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-        let factory = GraphqlApiVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
+        self.wrap_target(target, target_spec)
     }
 
     fn get_ref_target(&self, relation: &str) -> Result<Vista> {
+        let target_spec = self.spec_target(relation)?.map(|(spec, _)| spec);
         let target = self.table.get_ref_target_erased(relation)?;
-        let factory = GraphqlApiVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
+        self.wrap_target(target, target_spec)
     }
 
     fn get_ref_kinds(&self) -> Vec<(String, ReferenceKind)> {
@@ -240,6 +328,13 @@ impl TableShell for GraphqlApiTableShell {
 
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
+    }
+
+    /// Cheap: the `GraphqlApi` behind the table shares its HTTP client, and
+    /// the copy owns only query state (conditions, order, search, page
+    /// size).
+    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
+        Some(Box::new(self.clone()))
     }
 
     fn driver_name(&self) -> &'static str {
@@ -256,5 +351,28 @@ impl TableShell for GraphqlApiTableShell {
             "endpoint": self.table.data_source().endpoint(),
             "query": self.table.select().preview(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shell refuses a dotted order on its own, not only through the
+    /// Vista's ORDERABLE check, so a caller reaching the shell directly
+    /// can't render an `order_by` the server rejects.
+    #[test]
+    fn shell_refuses_ordering_a_dotted_column() {
+        let api = GraphqlApi::new("https://api.test/graphql");
+        let table = Table::<GraphqlApi, EmptyEntity>::new("runs", api)
+            .with_id_column("id")
+            .with_column_of::<String>("run.id");
+        let mut shell =
+            GraphqlApiTableShell::new(table, VistaCapabilities::default(), VistaMetadata::new());
+        let err = shell
+            .add_order("run.id", vantage_vista::SortDirection::Ascending)
+            .unwrap_err();
+        assert!(err.is_unsupported(), "{err}");
+        assert!(shell.table.orders().next().is_none());
     }
 }

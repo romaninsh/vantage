@@ -5,20 +5,21 @@
 //! parsed against a configurable [`ResponseShape`]. CBOR values flow
 //! end-to-end, bridging cleanly into the Vista universal surface.
 //!
-//! See also: the `graphql` sibling module for a query-language-based
-//! HTTP API adapter.
+//! See also: the [`graphql`](crate::graphql) sibling module for a
+//! query-language-based HTTP API adapter.
 
-pub mod api;
-pub mod operation;
-pub mod table_source;
+mod api;
+mod operation;
+mod table_source;
 pub mod vista;
 
 pub use api::{
-    FilterStrategy, OrderingParams, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
+    FilterStrategy, OrderingParams, PaginationMode, PaginationParams, ResponseShape, RestApi,
+    RestApiBuilder,
 };
 pub use operation::eq_condition;
 pub(crate) use operation::{cbor_to_query_string, condition_to_query_param};
 pub use vista::{
-    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, ModelResolver, NoApiExtras,
+    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, ModelResolver,
     RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec,
 };

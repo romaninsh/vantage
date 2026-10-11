@@ -1,37 +1,16 @@
 [package]
 edition = "2024"
 name = "vantage-api-pool"
-version = "0.6.4"
+version = "1.0.0"
 license = "MIT OR Apache-2.0"
-description = "Paginated REST API client pool for Vantage"
+description = "Resilient async HTTP client for Vantage: bounded parallelism, retry, circuit breaker, rate limit and auth refresh"
 
 [dependencies]
 anyhow = "1.0"
-async-stream = "0.3"
-futures-core = "0.3"
-reqwest = { version = "0.12", features = ["json"] }
-rust_decimal = { version = "1.42", features = ["serde", "macros"] }
-serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1"
-tracing = "0.1"
-
-async-trait = "0.1"
-indexmap = { version = "2", features = ["serde"] }
-serde = { version = "1.0", features = ["derive"] }
-vantage-core = { version = "1.0.0", path = "../vantage-core" }
-vantage-dataset = { version = "1.0.0", path = "../vantage-dataset" }
-vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
-vantage-table = { version = "1.0.0", path = "../vantage-table" }
-vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
+reqwest = "0.12"
+tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]
-anyhow = "1.0"
 futures-util = "0.3"
-reqwest = { version = "0.12", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1"
-urlencoding = "2.1"
-vantage-cli-util = { path = "../vantage-cli-util" }
 wiremock = "0.6"

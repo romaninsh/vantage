@@ -1,8 +1,7 @@
 //! `GraphqlCondition` — the structured filter type for the GraphQL adapter.
 //!
 //! Conditions are kept abstract (field/op/value) and rendered to JSON at
-//! request time by the dialect attached to the data source. The two
-//! dialects that ship today:
+//! request time by the dialect attached to the data source, one of:
 //!
 //! * [`FilterDialect::Hasura`] — `{ field: { _eq: v }, _and: [...], _or:
 //!   [...], _not: {...} }`. Full operator coverage.
@@ -20,12 +19,18 @@ use vantage_expressions::{DeferredFn, Expression, Expressive, ExpressiveEnum};
 use crate::graphql::types::AnyGraphqlType;
 
 /// How a `GraphqlCondition` is rendered into a GraphQL argument object.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// In YAML (`graphql: { dialect: … }`) it is spelled `generic` or
+/// `hasura`; any other value fails to deserialise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum FilterDialect {
     /// Hasura-style: `{ field: { _eq: v } }`, `_and`/`_or`/`_not`.
     Hasura,
     /// Flat-argument schemas like SpaceX: `{ field: v }`. Equality
-    /// only — non-eq operators fail at render time.
+    /// only — non-eq operators fail at render time. The default.
+    #[default]
     Generic,
 }
 
@@ -34,18 +39,31 @@ pub enum FilterDialect {
 /// Whether a given dialect can render a given op is decided at render
 /// time — see `GraphqlCondition::render`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GraphqlOp {
+    /// `field = value`
     Eq,
+    /// `field != value`
     Ne,
+    /// `field > value`
     Gt,
+    /// `field >= value`
     Gte,
+    /// `field < value`
     Lt,
+    /// `field <= value`
     Lte,
+    /// `field` is one of the values in an array.
     In,
+    /// `field` is none of the values in an array.
     NotIn,
+    /// Case-sensitive pattern match (`%` and `_` wildcards).
     Like,
+    /// Case-insensitive pattern match (`%` and `_` wildcards).
     ILike,
+    /// `field` is null; the value is ignored.
     IsNull,
+    /// `field` is not null; the value is ignored.
     IsNotNull,
 }
 
@@ -70,15 +88,21 @@ impl GraphqlOp {
     }
 }
 
-/// A single `field <op> value` clause.
+/// A single `field <op> value` clause. Build one with
+/// [`FieldCondition::new`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct FieldCondition {
+    /// The column name the clause tests.
     pub field: String,
+    /// The comparison.
     pub op: GraphqlOp,
+    /// The operand, already in JSON form.
     pub value: Value,
 }
 
 impl FieldCondition {
+    /// A `field <op> value` clause.
     pub fn new(field: impl Into<String>, op: GraphqlOp, value: Value) -> Self {
         Self {
             field: field.into(),
@@ -91,21 +115,31 @@ impl FieldCondition {
 /// Structured filter for GraphQL requests. Built by the operator trait
 /// (`GraphqlOperation` in `operation.rs`) and rendered at fetch time.
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum GraphqlCondition {
+    /// One `field <op> value` clause.
     Field(FieldCondition),
     /// Like [`Self::Field`] but the value is resolved at fetch time.
     /// Used by relationship traversal — `with_many`/`with_one` builds
     /// one of these when the parent's foreign-key value isn't known
     /// until the parent is fetched. The deferred resolves to a scalar
     /// (the FK value); render-time wraps it in the dialect's `_eq`-
-    /// equivalent and merges it into the filter.
+    /// equivalent and merges it into the filter. Build one with
+    /// [`GraphqlCondition::deferred_field`].
+    #[non_exhaustive]
     DeferredField {
+        /// The column name the clause tests.
         field: String,
+        /// The comparison.
         op: GraphqlOp,
+        /// Produces the operand at fetch time.
         value_fn: DeferredFn<AnyGraphqlType>,
     },
+    /// Every part holds.
     And(Vec<GraphqlCondition>),
+    /// At least one part holds. Hasura only.
     Or(Vec<GraphqlCondition>),
+    /// The inner condition does not hold. Hasura only.
     Not(Box<GraphqlCondition>),
     /// Resolved at fetch time — produces a complete filter sub-object
     /// that already matches the surrounding dialect. Use [`Self::DeferredField`]
@@ -134,6 +168,20 @@ impl GraphqlCondition {
     /// that have a value already converted to JSON.
     pub fn eq(field: impl Into<String>, value: impl Into<Value>) -> Self {
         Self::Field(FieldCondition::new(field, GraphqlOp::Eq, value.into()))
+    }
+
+    /// A `field <op> value` clause whose value `value_fn` produces at fetch
+    /// time; see [`Self::DeferredField`].
+    pub fn deferred_field(
+        field: impl Into<String>,
+        op: GraphqlOp,
+        value_fn: DeferredFn<AnyGraphqlType>,
+    ) -> Self {
+        Self::DeferredField {
+            field: field.into(),
+            op,
+            value_fn,
+        }
     }
 
     /// Render this condition as a JSON object suitable for use as a

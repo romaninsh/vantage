@@ -13,16 +13,20 @@ are linked from the [README](README.md).
 ```
 Vista (vantage-vista)                  what UIs and Diorama consume
    │  RestApiVistaFactory / GraphqlApiVistaFactory     vista/factory.rs, vista/spec.rs
-   │  RestApiTableShell / GraphqlApiTableShell          vista/source.rs
+   │  GraphQL spec lowering + references               graphql/vista/lowering.rs, traversal.rs
+   │  RestApiTableShell / GraphqlApiTableShell          vista/source.rs, graphql/vista/paging.rs
    ▼
 Table<RestApi, E> / Table<GraphqlApi, E>  (vantage-table)
-   │  TableSource impl                                  rest/table_source.rs, graphql/impls/table_source.rs
+   │  TableSource impl                                  rest/table_source.rs, graphql/impls/
+   │    (GraphQL: count, get_by_id, search, local_filter split out)
    ▼
 RestApi                      GraphqlApi
    endpoint templates           GraphqlSelect builder + renderer   graphql/select/
    query string / client        GraphqlCondition + FilterDialect    graphql/condition.rs, operation.rs
      filters, pagination        typed scalars (AnyGraphqlType)      graphql/types/
-   response shapes              response_path, root_args
+   response shapes              response_path, root_args, aliases
+                                name validation                     graphql/name.rs
+   row keys (both)                                                  row_keys.rs
    │  fetch_raw_body              │  post_graphql
    ▼                              ▼
 transport.rs        ClientConfig · build_client · policy_for · client_error
@@ -60,18 +64,22 @@ request site for REST.
    array: the body itself (`BareArray`), `body[array_key]` (`Wrapped`), or
    `body[table_name]` (`WrappedByTableName`). `total_key`, when configured,
    is read from the envelope. Each row becomes a `Record<CborValue>` keyed
-   by the id field (or its index). Client filters are applied. `RowsPulled {
-   n }` is reported with the final count.
+   by the id field; a row without a usable id is keyed `~row:<position>`
+   (absolute position in the result), and two rows with the same id in one
+   response are an error (`row_keys.rs`). Client filters are applied.
+   `RowsPulled { n }` is reported with the final count.
 
 `fetch_total` sends a `(0, 1)` window and reads only `total_key`; it is the
 count probe the paged grid uses to size its scrollbar. `preview_request`
 renders the same URL without sending, and masks the auth header.
 
 Capabilities advertised to Vista: `can_count`, `can_traverse_to_record`,
-and `can_fetch_window` only when `total_key` is set. No server-side sort,
-search or operators: a REST Vista sorts and searches what it loaded. REST
-is read-only at the `TableSource` level; writes go through
-`RestApi::http_request`.
+`can_fetch_window` when the API pages (`pagination_params`, or a
+`total_key`, and not `no_pagination`), and `can_order` when an
+`OrderingParams` sort param is configured. No server-side search or
+operators: a REST Vista searches what it loaded. REST is read-only at the
+`TableSource` level (writes and `sum`/`min`/`max` return `Unsupported`);
+writes go through `RestApi::http_request`.
 
 ## Request lifecycle: GraphQL
 
@@ -83,9 +91,13 @@ is read-only at the `TableSource` level; writes go through
    builder) render before the filter.
 2. **Render.** The filter renders inline as GraphQL value syntax under the
    dialect's argument name (`where` for Hasura, `find` or `filter_arg` for
-   Generic) so no input-type name is needed; pagination goes through typed
-   variables `$limit: Int`, `$offset: Int`. `preview` is the synchronous
-   twin used by `preview_query`.
+   Generic) so no input-type name is needed; with `paginate` on, the page
+   goes through typed variables `$limit: Int`, `$offset: Int`. Every name
+   put into the document (root field, fields, argument names and keys,
+   filter keys, order and count fields) is checked against the GraphQL
+   `Name` grammar first (`graphql/name.rs`), and strings escape every
+   control character. `preview` is the synchronous twin used by
+   `preview_query`; it inlines `limit`/`offset`.
 3. **Send.** Same policy selection as REST; `POST endpoint` with
    `{ query, variables }` and the auth header, rebuilt per attempt. A
    non-2xx becomes `VantageError { "GraphQL request failed", endpoint,
@@ -95,14 +107,32 @@ is read-only at the `TableSource` level; writes go through
    messages. It happens after the transport succeeded, so it never retries
    and never counts against the breaker. Otherwise `data[root]`, descended
    through `response_path`, is the row array (or a single object for
-   get-by-id). `RowsPulled` is reported after decoding.
+   get-by-id). Rows are keyed as for REST. `RowsPulled` is reported after
+   decoding.
 
 Capabilities: `can_count`, `can_traverse_to_record`, and `can_order`,
-`can_search`, `can_filter_operators`, `can_set_page_size` according to the
-`Supports` flags (all true by default). A YAML `graphql:` block can turn
-any of them off for endpoints that ignore the argument, so the consumer
-sorts or filters locally instead of sending something the server drops.
-GraphQL is read-only.
+`can_search`, `can_filter_operators` and the paging set according to the
+`Supports` flags: filtering on by default, ordering and search on for
+Hasura only, paging off until `paginate: true` (and only with filtering
+on, `GraphqlApi::can_page`). A YAML `graphql:` block overrides each, so for
+endpoints that ignore an argument the consumer sorts or filters locally
+instead of sending something the server drops; with `filter: false` the
+conditions run on the fetched rows (`impls/local_filter.rs`). GraphQL is
+read-only: writes and `sum`/`min`/`max` return `Unsupported`.
+
+Counting follows `Supports.count`: `CountMode::List` (the default) lists and
+counts; `CountMode::Aggregate` on Hasura with filtering on queries
+`<root>_aggregate { aggregate { count } }` (`impls/count.rs`). A rejected
+aggregate is an error, never a silent fallback. Get-by-id
+(`impls/get_by_id.rs`) adds the id filter only with filtering on and
+`limit: 1` only with paging on; otherwise it lists and picks the row. An
+int id column gets an integer literal.
+
+Quicksearch (`impls/search.rs`) ORs `_ilike` over columns flagged
+`searchable`, else over string-typed non-id columns; dotted columns are
+skipped, and no column renders the always-false `{_not: {}}`. Ordering on a
+dotted column is refused. Paged reads with no order are ordered by the id
+column where the dialect can order (`vista/paging.rs`).
 
 ### Dialects
 
@@ -110,8 +140,13 @@ GraphQL is read-only.
 `_not` and the full `GraphqlOp` set (`Eq Ne Gt Gte Lt Lte In NotIn Like
 ILike IsNull IsNotNull`). `FilterDialect::Generic` renders `{ field: v }`,
 equality only; any other operator, `OR` or `NOT` fails at render time with
-an error naming the dialect. `add_op_condition` reports `Like` as
-`Unimplemented` so a Vista consumer evaluates pattern filters locally.
+an error naming the dialect. A Vista `FilterOp::Like` (contains) renders as
+an escaped `_ilike: "%…%"` on Hasura; on Generic `add_op_condition` reports
+it as `Unimplemented` so a Vista consumer evaluates it locally.
+
+A column's `graphql: { field }` is a wire-name alias (`select/aliases.rs`):
+the selection renders `column: field`, and conditions and sort keys are
+renamed to `field` at render.
 
 ### Types
 
@@ -135,27 +170,37 @@ Both adapters implement `related_in_condition` for `with_many` /
   row at request time and reads the foreign key from it. REST resolves
   deferreds at the top of `fetch_raw_body`; GraphQL at render time.
 
-GraphQL relations are two round trips today; single-document nested
-selection is on the roadmap.
+A GraphQL relation is two round trips: the parent fetch produces the key,
+the child fetch filters on it. A dotted column is the one-document
+alternative (a nested selection).
 
 ## Vista bridge and YAML
 
 `RestApiVistaSpec` / `GraphqlApiVistaSpec` are `vantage-vista` specs with
 adapter extras. REST: `api: { endpoint }` per table (defaults to the table
 name). GraphQL: `graphql: { root_field, dialect, filter_arg, args,
-response_path, filter, order, search, paginate }` per table and `graphql: {
-field }` per column. The factories build a `Vista` whose `driver()` is
-`"rest-api"` or `"graphql"`; `RestApiVistaFactory::register_yaml` keeps a
-registry so cross-model references resolve by name.
+response_path, filter, order, search, paginate, count, count_field }` per
+table and `graphql: { field }` per column. The factories build a `Vista`
+whose `driver()` is `"rest-api"` or `"graphql"`. Both factories keep a
+`register_yaml` registry so references resolve by name.
+
+REST traverses YAML references in its shell, resolving the target to a
+built `Vista` through a `ModelResolver`. GraphQL registers them on the
+typed table with `Table::with_spec_references` and a `GraphqlSpecResolver`
+(`with_resolver`), which returns the target's *spec*; `vista/lowering.rs`
+lowers the target onto the factory's API so the parent table's `graphql:`
+overrides never leak into it, and `vista/traversal.rs` checks the target
+before traversal so a missing spec is an error rather than an empty table.
 
 ## Transport glue
 
 `transport.rs` is the only file that knows both this crate and
 `vantage-api-pool`:
 
-- `ClientConfig { max_parallel: 4, rate_limit, observer, http }` is what
-  both builders collect; `build_client` turns it into a `ResilientClient`
-  with `default_breaker()`.
+- `ClientConfig { max_parallel: 4, rate_limit, observer, http,
+  request_timeout, auth_refresher }` is what both builders collect;
+  `build_client` turns it into a `ResilientClient` with
+  `default_breaker()`.
 - `policy_for(Priority)` maps `Essential` → `CallPolicy::essential()`,
   everything else → `background()`.
 - `client_error(ClientError, what, url)` produces the `VantageError` shape
@@ -174,14 +219,18 @@ the datasource-side view is [README_transport.md](README_transport.md).
 | Message | Where | Context keys |
 |---|---|---|
 | `API request failed` | REST transport/status | `url`, `attempts`, `kind`, `status`, `body` or `detail` |
-| `GraphQL request failed` | GraphQL transport/status | `endpoint`, `attempts`, `kind`, `status`, `body` or `detail` |
+| `GraphQL request failed` | GraphQL transport/status | `url`, `attempts`, `kind`, `status`, `body` or `detail` |
 | `GraphQL response carried errors` | logical errors in a 2xx | `errors` (joined messages) |
 | `Failed to parse API response as JSON` | body not JSON | `detail` |
 | `Response missing array under wrapper key` | `ResponseShape` mismatch | `key` |
 | `Expected response body to be a JSON array (BareArray shape)` | envelope where an array was expected | |
 | `total_key missing or not an integer in API response` | count probe | `total_key` |
 | `No eq-condition provided for URI placeholder` | template without its condition | `placeholder`, `table_name` |
-| `REST API is a read-only data source` | any write through `TableSource` | |
+| `Two rows in the response share an id` | duplicate id within one response | `id` |
+| `REST data source supports reads only` | REST write or `sum`/`min`/`max` (`Unsupported`) | `method` |
+| `GraphQL data source supports reads and count only` | GraphQL write or `sum`/`min`/`max` (`Unsupported`) | `method` |
+| `GraphQL name is not valid` | a name outside the GraphQL `Name` grammar, at build or render | `kind`, `name` |
+| `GraphQL server rejected the aggregate count; …` | `count: aggregate` refused by the server | `field`, `errors` |
 
 `VantageError::Display` prints the message followed by `(key: value, …)`,
 so status codes and server messages are greppable in logs and testable
@@ -204,6 +253,14 @@ never one per table.
   client). Nothing touches the network.
 - `tests/builder.rs`, `tests/yaml_factory.rs`: builder defaults and YAML
   spec parsing.
+- `tests/graphql_vista_reads.rs`, `graphql_paging.rs`, `graphql_aliases.rs`,
+  `graphql_references.rs`, `graphql_traversal.rs`: GraphQL Vista reads
+  (order, search, get-by-id, paging, count, aliases, references).
+- `tests/rest_open_paging.rs`, `rest_ordering.rs`: REST windows and sort.
+- `tests/graphql_safety.rs`, `rest_safety.rs`: name validation, header
+  errors, unsupported writes, row keys.
+- Tests build clients through `support::test_client()` (`no_proxy`), so no
+  system proxy lookup slows them.
 - `src/**` unit tests: query-string rendering, templates, dialect
   rendering, type mapping. One `#[ignore]`d test hits the live Launch
   Library dev host.

@@ -69,6 +69,12 @@ rule are in [ARCHITECTURE.md](ARCHITECTURE.md).
 | `essential()` | 250 ms doubling to 10 s, until the future is dropped | wait for the half-open probe and take it | a cold page, a viewport the user is looking at, a write |
 | `bounded(RetryPolicy)` | `max_retries` with exponential back-off | fail fast | what `execute` does |
 
+Other combinations come from `CallPolicy::new(RetryMode, BreakerMode)`,
+`RetryPolicy::new(max_retries, base, max)` and
+`RetryMode::until_cancelled(base, max)`. The policy, error and event types
+are `#[non_exhaustive]`: build them with these constructors and give every
+`match` a wildcard arm.
+
 ## Observing traffic
 
 `observer(key, Arc<dyn TransportObserver>)` reports every attempt as
@@ -86,18 +92,19 @@ anything that would rather poll.
 ## Errors
 
 `ClientError { kind, attempts, body }` with `ErrorKind::{Status(u16),
-Transport(String), BreakerOpen, Auth(String), Closed}`, `status()` and
+Transport(String), BreakerOpen, Auth(String)}`, `status()` and
 `kind_name()`. `Display` is `HTTP 503 after 3 attempts`; the URL and the
 body are never in the message.
 
-## Legacy
+## HTTP client and timeout
 
-`AwwPool`, `HttpClientPool`, `EventualRequest`, the paginated streams and
-`PoolApi` are the previous design: worker threads, a oneshot matcher, and a
-`TableSource` over a `{ "data": [...], "pagination": {...} }` envelope. They
-still compile and ship, have no consumers in the workspace, and carry known
-defects (a `4xx` hangs the caller; the auth token is never refreshed). They
-are slated for removal; build new work on `ResilientClient`.
+Unless you pass one with `http_client(..)`, the client builds its own
+`reqwest::Client` on the first request (not at construction, so creating a
+`ResilientClient` does no system proxy lookup). That client times a request
+out after 30 s; change it with `request_timeout(..)` or turn it off with
+`no_request_timeout()`. A client you supply keeps its own settings. If the
+default client cannot be built, every attempt fails with a retryable
+`ErrorKind::Transport`, so an `essential()` call keeps retrying.
 
 ## License
 

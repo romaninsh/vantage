@@ -62,7 +62,11 @@ async fn main() -> anyhow::Result<()> {
     let token = body["token"].as_str().expect("No token in response");
 
     // Initialize static API
-    set_api(RestApi::new("http://127.0.0.1:3030").with_auth(format!("Bearer {}", token)));
+    set_api(
+        RestApi::builder("http://127.0.0.1:3030")
+            .auth(format!("Bearer {}", token))
+            .build(),
+    );
 
     // List countries
     let countries = Country::api_table();

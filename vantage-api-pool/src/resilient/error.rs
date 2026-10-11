@@ -3,7 +3,9 @@
 
 use std::fmt;
 
+/// Why a call failed. New kinds may be added; match with a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// The server answered with a non-2xx status.
     Status(u16),
@@ -13,12 +15,13 @@ pub enum ErrorKind {
     BreakerOpen,
     /// The auth refresher returned an error.
     Auth(String),
-    /// The client's semaphore was closed. Reserved for an explicit client
-    /// shutdown; nothing closes the semaphore today.
-    Closed,
 }
 
+/// The failure of a call, once its retries (if any) are used up. The client
+/// produces these; [`ClientError::new`] exists for consumers that need to
+/// fabricate one, such as a test double for [`TransportEvent::Failed`](super::TransportEvent::Failed).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ClientError {
     /// The failure of the last attempt.
     pub kind: ErrorKind,
@@ -33,7 +36,8 @@ pub struct ClientError {
 }
 
 impl ClientError {
-    pub(crate) fn new(kind: ErrorKind, attempts: usize) -> Self {
+    /// An error of `kind` after `attempts` attempts, with no response body.
+    pub fn new(kind: ErrorKind, attempts: usize) -> Self {
         Self {
             kind,
             attempts,
@@ -41,19 +45,20 @@ impl ClientError {
         }
     }
 
-    pub(crate) fn with_body(mut self, body: Option<String>) -> Self {
+    /// Attach the start of the failing response body.
+    pub fn with_body(mut self, body: Option<String>) -> Self {
         self.body = body;
         self
     }
 
     /// Whether no retry, now or later, could change this answer: a `4xx`
-    /// other than `408` / `429`, an auth refresher that failed, or a closed
-    /// client. Everything else (`5xx`, transport, an open breaker) is the
-    /// transient kind a later call may get past, so callers log it quietly.
+    /// other than `408` / `429`, or an auth refresher that failed. Everything
+    /// else (`5xx`, transport, an open breaker) is the transient kind a later
+    /// call may get past, so callers log it quietly.
     pub fn is_final(&self) -> bool {
         match self.kind {
             ErrorKind::Status(s) => !super::policy::is_retryable_status(s),
-            ErrorKind::Auth(_) | ErrorKind::Closed => true,
+            ErrorKind::Auth(_) => true,
             ErrorKind::Transport(_) | ErrorKind::BreakerOpen => false,
         }
     }
@@ -73,7 +78,6 @@ impl ClientError {
             ErrorKind::Transport(_) => "transport",
             ErrorKind::BreakerOpen => "breaker_open",
             ErrorKind::Auth(_) => "auth",
-            ErrorKind::Closed => "closed",
         }
     }
 }
@@ -90,7 +94,6 @@ impl fmt::Display for ClientError {
             ErrorKind::Transport(e) => write!(f, "{e} after {} {plural}", self.attempts),
             ErrorKind::BreakerOpen => write!(f, "circuit breaker open"),
             ErrorKind::Auth(e) => write!(f, "auth refresh failed: {e}"),
-            ErrorKind::Closed => write!(f, "client closed"),
         }
     }
 }

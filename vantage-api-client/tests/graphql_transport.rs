@@ -8,6 +8,7 @@ use std::time::Duration;
 use serde_json::Map;
 use support::{
     Recorder, client_with_user_agent, mount, mount_n, mount_with_header, recorder, requests,
+    test_client,
 };
 use vantage_api_client::{GraphqlApi, Priority};
 use wiremock::MockServer;
@@ -15,6 +16,7 @@ use wiremock::MockServer;
 fn api(server: &MockServer, rec: &Arc<Recorder>) -> GraphqlApi {
     GraphqlApi::builder(server.uri())
         .observer("gql", rec.clone())
+        .http_client(test_client())
         .build()
 }
 
@@ -81,7 +83,7 @@ async fn http_client_override_travels_with_every_request() {
     )
     .await;
     let api = GraphqlApi::builder(server.uri())
-        .client(client_with_user_agent("probe-agent"))
+        .http_client(client_with_user_agent("probe-agent"))
         .build();
     let data = api
         .post_graphql("{ missions { id } }", &Map::new())

@@ -44,13 +44,13 @@ let api = GraphqlApi::builder("https://spacex-api.fly.dev/graphql")
 let mut launches = Table::<GraphqlApi, EmptyEntity>::new("launches", api);
 launches.add_column(Column::<String>::new("mission_name"));
 launches.add_condition(Column::<String>::new("mission_name").eq("FalconSat"));
-// POSTs: query { launches(find: {mission_name: "FalconSat"}) { id mission_name } }
+// POSTs: query { launches(find: {mission_name: "FalconSat"}) { mission_name } }
 let rows = launches.list_values().await?;
 ```
 
 The retry policy follows `vantage_core::Priority`: wrap a wait in `Priority::Essential.scope(..)` to retry until it is dropped; everything else makes one attempt.
 
-The query document gets rendered with inline filter values plus typed `$limit` / `$offset` variables. Two dialects ship out of the box:
+The query document gets rendered with inline filter values; with paging turned on (`paginate`), the page goes in typed `$limit` / `$offset` variables. Two dialects ship out of the box:
 
 - **`Hasura`** — `(where: { field: { _eq: v } })`, with `_and` / `_or` / `_not` and full operator coverage
 - **`Generic`** — `(find: { field: v })`, equality only, for hand-rolled schemas like the SpaceX community API
@@ -114,7 +114,7 @@ let launches = vista.list_values().await?;
 
 The same shape exists for REST (`RestApiVistaSpec`) with an `api:` block carrying URL templates and a built-in registry. `RestApiVistaFactory::register_yaml(&str)` accumulates specs and resolves cross-model references through the registry — declare `users.yaml`, `albums.yaml`, `photos.yaml` and traversing `users id=1 :albums :photos` works without writing any Rust.
 
-GraphQL column types map to typed Vantage columns: `int`, `bigint`, `float`, `bool`, `string`, `datetime`, `date`, `time`, `uuid`, `json`. Unknown types fail loudly at build time.
+GraphQL specs take `references:` too: `GraphqlApiVistaFactory::register_yaml` collects specs for traversal, or `with_resolver` supplies them from elsewhere. GraphQL column types map to typed Vantage columns: `int`, `bigint`, `float`, `bool`, `string`, `datetime`, `date`, `time`, `uuid`, `json`. Unknown types fail loudly at build time. Every key of the `api:` and `graphql:` blocks is listed in the Vantage book's "HTTP APIs: REST & GraphQL" chapter.
 
 ## Mixing Backends
 
@@ -148,7 +148,7 @@ let albums = users.get_ref_as::<Album>("albums")?;
 // GraphQL: posts a single query with a `userId: 1` filter on `albums`
 ```
 
-GraphQL relations are inherently two-round-trip in v1 — the parent fetch produces ids, the child fetch consumes them. Single-round-trip nested selection (rendering `launches { id rocket { id name } }` as one document) is on the roadmap; see the TODO list for status.
+GraphQL relations take two round trips: the parent fetch produces ids, the child fetch consumes them. A dotted column (`rocket.rocket_name`) is the one-request alternative: it renders as a nested selection inside the parent's query.
 
 ## Where to go next
 

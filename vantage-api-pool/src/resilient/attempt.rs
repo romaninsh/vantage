@@ -150,12 +150,12 @@ where
     /// count are held for exactly this window and released before the caller
     /// sleeps for anything.
     async fn send_once(&mut self) -> Result<Outcome, ClientError> {
-        let _permit = self
-            .client
-            .semaphore
-            .acquire()
-            .await
-            .map_err(|_| ClientError::new(ErrorKind::Closed, self.attempt))?;
+        let _permit = self.client.semaphore.acquire().await.map_err(|_| {
+            ClientError::new(
+                ErrorKind::Transport("client semaphore closed".into()),
+                self.attempt,
+            )
+        })?;
         let _in_flight = self.client.enter_flight();
 
         self.client.report(TransportEvent::Started);
@@ -164,7 +164,18 @@ where
             armed: true,
         });
 
-        let mut req = (self.build)(&self.client.http);
+        let http = match self.client.http.get().await {
+            Ok(http) => http,
+            Err(e) => {
+                return Ok(Outcome::Failed {
+                    kind: ErrorKind::Transport(format!("building the HTTP client failed: {e}")),
+                    body: None,
+                    hint: None,
+                    ms: 0,
+                });
+            }
+        };
+        let mut req = (self.build)(http);
         if let Some(auth) = &self.client.auth {
             let acquiring = Instant::now();
             match auth.current().await {

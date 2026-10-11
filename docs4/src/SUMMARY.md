@@ -67,3 +67,6 @@
   - [Type Conversions](./sql/type-conversions.md)
 - [SurrealDB](./surrealdb.md)
   - [Primitives](./surrealdb/primitives.md)
+- [HTTP APIs: REST & GraphQL](./http-apis.md)
+  - [REST: the api: Block](./http-apis/rest-yaml.md)
+  - [GraphQL: the graphql: Blocks](./http-apis/graphql-yaml.md)

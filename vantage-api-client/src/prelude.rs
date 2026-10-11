@@ -6,13 +6,14 @@
 //! [`crate::rest`] or [`crate::graphql`] directly.
 
 pub use crate::graphql::{
-    AnyGraphqlType, FieldCondition, FilterDialect, GraphqlApi, GraphqlApiBuilder,
+    AnyGraphqlType, CountMode, FieldCondition, FilterDialect, GraphqlApi, GraphqlApiBuilder,
     GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec, GraphqlBlock,
     GraphqlColumnBlock, GraphqlColumnExtras, GraphqlCondition, GraphqlOp, GraphqlOperation,
-    GraphqlSelect, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants, NoGraphqlExtras,
-    RenderedQuery,
+    GraphqlSelect, GraphqlSpecResolver, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants,
+    RenderedQuery, Supports,
 };
 pub use crate::rest::{
-    NoApiExtras, PaginationParams, ResponseShape, RestApi, RestApiBuilder, RestApiTableShell,
+    ApiTableBlock, ApiTableExtras, FilterStrategy, ModelResolver, OrderingParams, PaginationMode,
+    PaginationParams, ResponseShape, RestApi, RestApiBuilder, RestApiTableShell,
     RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };

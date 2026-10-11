@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use support::{
     Recorder, client_with_user_agent, mount, mount_n, mount_with_header, recorder, requests,
+    test_client,
 };
 use vantage_api_client::{Priority, ResponseShape, RestApi};
 use vantage_dataset::prelude::ReadableValueSet;
@@ -20,6 +21,7 @@ fn api(server: &MockServer, rec: &Arc<Recorder>) -> RestApi {
     RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .observer("local", rec.clone())
+        .http_client(test_client())
         .build()
 }
 
@@ -132,6 +134,7 @@ async fn breaker_opens_after_five_background_failures() {
         .response_shape(ResponseShape::BareArray)
         .max_parallel(1)
         .observer("local", rec.clone())
+        .http_client(test_client())
         .build();
 
     // `default_breaker` opens after 5 consecutive failures.
@@ -174,6 +177,7 @@ async fn caller_authorization_header_replaces_the_configured_one() {
     let api = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .auth("Bearer configured")
+        .http_client(test_client())
         .build();
 
     api.http_request(
@@ -207,6 +211,7 @@ async fn auth_header_still_travels() {
     let api = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .auth("Bearer t0k")
+        .http_client(test_client())
         .build();
     assert_eq!(list_rows(&api).await.unwrap(), 0);
 }
@@ -234,6 +239,7 @@ async fn auth_refresher_supplies_the_token_and_is_asked_again_on_401() {
     let api = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .auth_refresher(refresher)
+        .http_client(test_client())
         .build();
 
     assert_eq!(list_rows(&api).await.unwrap(), 1);
@@ -268,6 +274,7 @@ async fn a_fixed_auth_set_after_a_refresher_replaces_it() {
         .response_shape(ResponseShape::BareArray)
         .auth_refresher(refresher)
         .auth("Bearer fixed")
+        .http_client(test_client())
         .build();
 
     assert_eq!(list_rows(&api).await.unwrap(), 1);

@@ -3,7 +3,7 @@
 //! typed columns get `.eq()`/`.gt()`/`.in_()`/… for free.
 //!
 //! ```ignore
-//! use vantage_api_client::graphql::operation::GraphqlOperation;
+//! use vantage_api_client::GraphqlOperation;
 //! use vantage_table::column::core::Column;
 //!
 //! let mission = Column::<String>::new("mission_name");

@@ -1,7 +1,9 @@
-//! Shared by the transport contract tests: an observer that records event
-//! tags in order, and wiremock mounts.
+//! Shared by the integration tests: a proxy-free HTTP client, an observer
+//! that records event tags in order, and wiremock mounts.
 
 #![allow(dead_code)]
+
+pub mod references;
 
 use std::sync::{Arc, Mutex};
 
@@ -25,8 +27,9 @@ impl TransportObserver for Recorder {
             TransportEvent::RetryScheduled { attempt, .. } => format!("retry:{attempt}"),
             TransportEvent::BreakerOpened { .. } => "opened".to_string(),
             TransportEvent::BreakerClosed => "closed".to_string(),
-            TransportEvent::RowsPulled { n } => format!("rows:{n}"),
+            TransportEvent::RowsPulled { n, .. } => format!("rows:{n}"),
             TransportEvent::WritePushed => "write".to_string(),
+            other => format!("other:{other:?}"),
         };
         self.tags.lock().unwrap().push(tag);
         self.keys.lock().unwrap().push(key.to_string());
@@ -81,12 +84,19 @@ pub async fn mount_with_header(
         .await;
 }
 
-/// A client that stamps `user-agent: {agent}` on every request it sends.
+/// A client for talking to a local mock server. `no_proxy()` skips the
+/// system proxy lookup, which takes tens of seconds per client on macOS.
+pub fn test_client() -> reqwest::Client {
+    test_client_builder().build().unwrap()
+}
+
+/// A [`test_client`] that stamps `user-agent: {agent}` on every request.
 pub fn client_with_user_agent(agent: &str) -> reqwest::Client {
-    reqwest::Client::builder()
-        .user_agent(agent)
-        .build()
-        .unwrap()
+    test_client_builder().user_agent(agent).build().unwrap()
+}
+
+fn test_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder().no_proxy()
 }
 
 pub async fn requests(server: &MockServer) -> usize {

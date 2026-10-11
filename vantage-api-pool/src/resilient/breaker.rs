@@ -30,11 +30,15 @@ pub(crate) enum Gate {
 /// What a [`ResilientClient`](crate::ResilientClient)'s breaker is doing right
 /// now, for consumers that poll instead of tracking `TransportEvent`s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BreakerState {
     /// Requests go straight through.
     Closed,
     /// Requests are rejected (or wait) until `until`.
-    Open { until: Instant },
+    Open {
+        /// When the cooldown ends.
+        until: Instant,
+    },
     /// The cooldown has elapsed: one caller may take the probe slot.
     HalfOpen,
 }

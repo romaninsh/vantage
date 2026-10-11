@@ -110,6 +110,7 @@ When the spec column name differs from the storage name, the column's driver blo
 | MongoDB | `mongo: { field: unitPrice }`    | Single-level BSON rename                                  |
 | MongoDB | `mongo: { nested_path: price.amount }` | Dotted path into a nested document — projected on read, sub-documents rebuilt on write, dotted form pushed down on filter |
 | CSV     | `csv: { source: "Unit Price" }`  | CSV header to read from                                   |
+| GraphQL | `graphql: { field: unit_price }` | Selected as a GraphQL alias, filtered and sorted under the server name ([GraphQL blocks](./http-apis/graphql-yaml.md)) |
 
 MongoDB adds the column types `object_id`, `datetime` (aliases `date`, `timestamp`; a BSON
 DateTime) and `decimal` (Decimal128). Writes keep these types, and text that doesn't parse as the

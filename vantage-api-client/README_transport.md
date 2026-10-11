@@ -108,14 +108,20 @@ retry loop ends.
 | `max_parallel(n)` | 4 | requests in flight to this API at most; the permit covers only the request, not the waits |
 | `rate_limit(per_second)` | none | token bucket, burst `ceil(per_second)` |
 | `observer(key, Arc<dyn TransportObserver>)` | none | report traffic under `key` (the datasource name) |
-| `http_client(reqwest::Client)` (`client(..)` also on GraphQL) | default client | timeouts, proxies, TLS |
+| `request_timeout(d)` / `no_request_timeout()` | 30 s | per-attempt timeout of the default client; a timed-out attempt is a transport failure |
+| `http_client(reqwest::Client)` | default client | proxies, TLS, timeouts; a supplied client keeps its own settings and ignores `request_timeout` |
 
-The breaker is always on with the defaults above.
+The breaker is always on with the defaults above. The default client is
+built on the first request, not by `build()`, so constructing an API does
+no system proxy lookup; a build failure is a retryable transport error.
+`http_client(..)` is part of the public API, so the crate is tied to
+reqwest 0.12 within 1.x.
 
 ## What an observer sees
 
 The observer receives, per attempt, `Started` then exactly one of
-`Succeeded { status, ms, bytes }` or `Failed { error, ms }`; per retry,
+`Succeeded { status, ms, bytes }`, `Failed { error, ms }` or `Cancelled`
+(the caller dropped the future mid-attempt); per retry,
 `RetryScheduled { after, attempt }`; per breaker change, `BreakerOpened {
 cooldown }` (repeated on each failed probe with a longer cooldown, no
 `BreakerClosed` in between) and `BreakerClosed`. The datasource adds
@@ -157,8 +163,12 @@ through the same client: it joins `base_url` and `path`, applies the
 configured auth, then the caller's headers (a caller header of the same name
 replaces the configured one), a JSON body when given, chooses the policy
 from `Priority::current()`, and reports `WritePushed` on a non-`GET`
-success. A caller that needs the raw client, for example to share its cap
-and breaker with something this helper does not cover, has
+success. A header name or value that is not valid HTTP is an error, not a
+panic. Table writes (`insert`, `replace`, `patch`, `delete`) are not
+implemented by either driver and return an `Unsupported` error; this
+method is the way to write. A caller that needs the raw client, for
+example to share its cap and breaker with something this helper does not
+cover, has
 `RestApi::client()` and `GraphqlApi::client()`.
 
 Retrying a write is only safe if the server treats a repeat as a no-op.

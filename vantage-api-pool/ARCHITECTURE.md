@@ -30,8 +30,20 @@ AttemptLoop::run                    attempt.rs
    ├── ClientError / ErrorKind      error.rs
    └── TransportObserver events     observer.rs
    ▼
+LazyHttp                            http.rs
+   │  the supplied reqwest::Client, or the default one built on first send
+   ▼
 reqwest::Client (shared, cloneable)
 ```
+
+**The HTTP client.** A client passed to `http_client(..)` is used as is,
+with its own timeouts. Otherwise `LazyHttp` builds one on the first request
+(`tokio::sync::OnceCell`, so concurrent first requests build it once), with
+a 30 s request timeout unless `request_timeout(..)` or
+`no_request_timeout()` says otherwise. Building it does the system proxy
+lookup, which is why `build()` does not. A failed build is not cached: the
+attempt fails with a retryable `ErrorKind::Transport` and the next attempt
+tries again. A timed-out attempt is a transport failure like any other.
 
 Everything above `reqwest` is plain `async` on whatever runtime the caller
 is on. The crate spawns nothing. Dropping the future returned by
@@ -98,7 +110,12 @@ opens the breaker on the third `503`.
 
 ## Retry policy
 
-`CallPolicy { retry: RetryMode, breaker: BreakerMode }`.
+`CallPolicy { retry: RetryMode, breaker: BreakerMode }`, built with
+`CallPolicy::new(retry, breaker)` or the presets below. The policy and error
+types are `#[non_exhaustive]`, so they grow without a major release; build
+them with their constructors (`RetryPolicy::new`,
+`RetryMode::until_cancelled`, `ClientError::new`, the `TransportEvent`
+constructors), and match them with a wildcard arm.
 
 - `RetryMode::None` — one attempt. `CallPolicy::background()` pairs it with
   `FailFast`. For work nobody is waiting on: polls, refreshes, hydration.
@@ -191,9 +208,7 @@ was released.
 
 `ClientError { kind, attempts, body }`:
 
-- `kind`: `Status(u16)`, `Transport(String)`, `BreakerOpen`, `Auth(String)`,
-  `Closed` (reserved for an explicit client shutdown; nothing produces it
-  today).
+- `kind`: `Status(u16)`, `Transport(String)`, `BreakerOpen` or `Auth(String)`.
 - `attempts`: how many attempts were made, including the first.
 - `body`: up to 2048 bytes of the last non-2xx response, cut on a char
   boundary; `None` for every other kind.
@@ -223,12 +238,3 @@ body.
   outlive the caller, the consumer spawns and owns that task.
 - It does not persist anything. A queue of writes that must survive a
   restart lives above this crate.
-
-## Legacy
-
-`AwwPool`, `HttpClientPool`, `EventualRequest`, `EventualRequestMatcher`,
-the four paginated streams and the `rate_limit` module predate
-`ResilientClient`. They use worker threads and a oneshot matcher, have known
-defects (a `4xx` leaves the caller waiting forever; the auth token is never
-refreshed), and have no consumers in the workspace. They will be removed
-once the remaining examples migrate; nothing new should build on them.

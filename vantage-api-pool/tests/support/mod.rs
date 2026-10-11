@@ -23,23 +23,20 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 /// A bounded retry policy with the back-off compressed to 1–5 ms, so a test
 /// that needs several retries finishes in milliseconds.
 pub fn fast_retry(max_retries: usize) -> RetryPolicy {
-    RetryPolicy {
+    RetryPolicy::new(
         max_retries,
-        base_backoff: Duration::from_millis(1),
-        max_backoff: Duration::from_millis(5),
-    }
+        Duration::from_millis(1),
+        Duration::from_millis(5),
+    )
 }
 
 /// `CallPolicy::essential()` with the back-off compressed from 250 ms–10 s to
 /// 1–4 ms.
 pub fn essential_fast() -> CallPolicy {
-    CallPolicy {
-        retry: RetryMode::UntilCancelled {
-            base: Duration::from_millis(1),
-            max: Duration::from_millis(4),
-        },
-        breaker: BreakerMode::WaitForProbe,
-    }
+    CallPolicy::new(
+        RetryMode::until_cancelled(Duration::from_millis(1), Duration::from_millis(4)),
+        BreakerMode::WaitForProbe,
+    )
 }
 
 /// Run an unbounded call under a deadline: `UntilCancelled` retries forever,
@@ -270,7 +267,7 @@ impl TransportObserver for Recorder {
                 self.succeeded_ms.lock().unwrap().push(ms);
                 format!("ok:{status}")
             }
-            TransportEvent::Failed { error, ms } => {
+            TransportEvent::Failed { error, ms, .. } => {
                 self.failed_ms.lock().unwrap().push(ms);
                 format!("failed:{}", error.kind_name())
             }
@@ -278,8 +275,9 @@ impl TransportObserver for Recorder {
             TransportEvent::RetryScheduled { attempt, .. } => format!("retry:{attempt}"),
             TransportEvent::BreakerOpened { .. } => "opened".to_string(),
             TransportEvent::BreakerClosed => "closed".to_string(),
-            TransportEvent::RowsPulled { n } => format!("rows:{n}"),
+            TransportEvent::RowsPulled { n, .. } => format!("rows:{n}"),
             TransportEvent::WritePushed => "write".to_string(),
+            other => format!("other:{other:?}"),
         };
         self.events.lock().unwrap().push((key.to_string(), tag));
     }

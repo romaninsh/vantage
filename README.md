@@ -71,9 +71,9 @@ First - persistence implementation:
   relationships, aggregations, and query builder with JOINs, window functions, and CTEs.
 - `vantage-csv` - CSV file persistence with read support, conditions, relationships, and custom type
   system. No query builder (conditions are evaluated in-memory).
-- [`vantage-api-pool`](vantage-api-pool/README.md) - High-performance REST API client pool with
-  auto-pagination, prefetching, and rate limiting. Read-only `TableSource` over paginated APIs.
-- `vantage-api-client` - Simple REST API client implementing read-only `TableSource`.
+- [`vantage-api-pool`](vantage-api-pool/README.md) - Resilient async HTTP client used by the API
+  backends: bounded parallelism, retry, circuit breaker, rate limiting and auth refresh.
+- `vantage-api-client` - REST and GraphQL API clients implementing read-only `TableSource`.
 
 On the other end, Vantage offers some adapters. Those would work with `Table` / `AnyTable` and
 implement generic UI or API component:

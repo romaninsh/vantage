@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.0 — 2026-10-11
+
+- **Breaking:** the legacy `AwwPool` / `PoolApi` stack is removed (modules `aww_pool`, `pool_api`,
+  `client_pool`, `eventual_request`, `matcher`, `paginator`, `rate_limit`, `stats`);
+  `ResilientClient` is the only transport.
+- **Breaking:** `#[non_exhaustive]` on `ErrorKind`, `ClientError`, `TransportEvent` (and its
+  struct variants), `BreakerState`, `RetryMode`, `BreakerMode`, `RetryPolicy`, `CallPolicy`.
+- **Breaking:** requests time out after 30 s by default; `request_timeout(..)` and
+  `no_request_timeout()` on the builder. A client passed to `http_client(..)` keeps its own.
+- **Breaking:** the default `reqwest::Client` is built on the first request, not by `build()`; a
+  build failure is a retryable `Transport` error.
+- **Breaking:** `ErrorKind::Closed` removed; nothing produced it.
+- Constructors: `RetryPolicy::new`, `CallPolicy::new`, `RetryMode::until_cancelled`,
+  `ClientError::new` / `with_body`, `TransportEvent::{succeeded, failed, retry_scheduled,
+  breaker_opened, rows_pulled}`.
+- `AuthFuture` re-exported at the crate root.
+- Every public item is documented.
+- Dependencies trimmed to `anyhow`, `reqwest`, `tokio`.
+
 ## 0.6.4 — 2026-10-05
 
 - Rust edition 2024.

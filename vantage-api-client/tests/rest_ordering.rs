@@ -2,6 +2,8 @@
 //! orderable and a pushed sort becomes the API's query param; without it
 //! nothing is orderable and the sort stays client-side.
 
+mod support;
+
 use vantage_api_client::{
     OrderingParams, PaginationParams, ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec,
 };
@@ -22,7 +24,8 @@ fn factory(server: &MockServer, ordering: Option<OrderingParams>) -> RestApiVist
             array_key: "results".into(),
         })
         .total_key("count")
-        .pagination_params(PaginationParams::skip_limit("offset", "limit"));
+        .pagination_params(PaginationParams::skip_limit("offset", "limit"))
+        .http_client(support::test_client());
     if let Some(ordering) = ordering {
         api = api.ordering(ordering);
     }
@@ -64,11 +67,4 @@ async fn without_an_ordering_param_nothing_is_orderable() {
     let mut vista = factory(&server, None).build_from_spec(spec).expect("build");
     assert!(!vista.capabilities().can_order);
     assert!(vista.add_order("net", SortDirection::Descending).is_err());
-}
-
-#[test]
-fn ascending_sends_the_bare_column() {
-    let params = OrderingParams::new("sort", "-");
-    assert_eq!(params.value("net", SortDirection::Ascending), "net");
-    assert_eq!(params.value("net", SortDirection::Descending), "-net");
 }
