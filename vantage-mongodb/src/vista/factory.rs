@@ -142,9 +142,9 @@ impl MongoVistaFactory {
                 reference.build_script = Some(script);
             }
         }
-        // A pipeline view only reads; its rows are computed, so they neither
-        // traverse nor stream.
-        let writable = table.data_source().view().is_none();
+        // A pipeline or server-side view only reads; its rows are computed,
+        // so they neither traverse nor stream.
+        let writable = table.data_source().is_stored();
         let live = writable && self.live_enabled();
         let source = MongoTableShell::new(
             table,
@@ -239,7 +239,8 @@ pub(crate) fn build_mongo_table(
     let db = match stages {
         Some(stages) => db.with_view(MongoView::new(collection.clone(), stages)),
         None => db.without_view(),
-    };
+    }
+    .with_server_view(block.is_some_and(|m| m.view));
 
     let joined: Vec<&str> = spec
         .columns

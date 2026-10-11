@@ -125,9 +125,11 @@ A MongoDB table block can replace the collection read with an aggregation pipeli
 | `mongo: { pipeline: [...] }` | Read-only view over an aggregation pipeline (`MongoView`)    |
 | `mongo: { rhai: "..." }`     | Builds the pipeline in Rhai from `args` (`rhai` feature)     |
 | `mongo: { modify: "..." }`   | Rhai run last against the built vista as `self`              |
+| `mongo: { view: true }`      | The collection is a server-side view: read-only, not watched, not imported |
 
 Change streams (`watch_vista`) and `import_vista_values` need a replica set; see
-[Live data](./live-data.md).
+[Live data](./live-data.md). Streams run on a dedicated client sized by
+`MongoDB::with_stream_pool_size` (default 100).
 
 CSV is also the one driver whose *table* block is mandatory — `csv: { path: data/products.csv }` —
 because without a path there is no file.
