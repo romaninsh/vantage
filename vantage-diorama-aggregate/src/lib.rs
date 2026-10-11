@@ -25,10 +25,10 @@
 //! own Vista, its own cache and its own sceneries.
 //!
 //! That distinction also decides what can be claimed honestly. A layer that
-//! sorts a partially-loaded source cannot advertise `can_order` without lying,
+//! sorts a partially-loaded source cannot advertise `Order` without lying,
 //! because rows it has not seen may belong at the top. An aggregate holds its
-//! *entire* output in memory, so its Vista advertises `can_order`,
-//! `can_search` and `can_count` and then honours them — sorting a derived table
+//! *entire* output in memory, so its Vista advertises `Order`, `Search` and
+//! `Window` and then honours them — sorting a derived table
 //! is ordinary push-down into its own Vista, not a client-side special case.
 //!
 //! # Recomputation, not incremental updates

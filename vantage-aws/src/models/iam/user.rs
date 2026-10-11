@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::models::request_param;
 use crate::types::{Arn, AwsDateTime};
 use crate::{AwsAccount, eq};
 
@@ -31,7 +32,9 @@ pub struct User {
 
 /// `ListUsers` table — every IAM user in the account. Optional
 /// filters: `PathPrefix` to narrow by path, `MaxItems` to cap the
-/// page (v0 still only reads the first page either way).
+/// page (v0 still only reads the first page either way). `PathPrefix` is
+/// declared as a hidden request-param column, so a Vista can set it too;
+/// `MaxItems` is the typed table's only.
 ///
 /// Three relations:
 ///   - `groups` → `ListGroupsForUser` for this user
@@ -59,6 +62,7 @@ pub fn users_table(aws: AwsAccount) -> Table<AwsAccount, User> {
         .with_title_column_of::<String>("Path")
         .with_title_column_of::<AwsDateTime>("CreateDate")
         .with_column_of::<AwsDateTime>("PasswordLastUsed")
+        .with_column(request_param("PathPrefix"))
         .with_many("groups", "UserName", groups_for_user_table)
         .with_many("access_keys", "UserName", access_keys_table)
         .with_many(

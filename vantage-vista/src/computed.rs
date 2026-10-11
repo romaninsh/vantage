@@ -30,20 +30,15 @@ pub(crate) fn fill<'a>(columns: impl IntoIterator<Item = &'a Column>, row: &mut 
 impl Vista {
     /// The computed columns, in declaration order.
     pub(crate) fn computed_columns(&self) -> Vec<Column> {
-        self.source
-            .columns()
+        self.columns()
             .values()
             .filter(|c| c.is_computed())
             .cloned()
             .collect()
     }
 
-    pub(crate) fn has_computed(&self) -> bool {
-        self.source.columns().values().any(Column::is_computed)
-    }
-
-    pub(crate) fn fill_computed(&self, row: &mut Rec) -> Result<()> {
-        fill(self.source.columns().values(), row)
+    fn has_computed(&self) -> bool {
+        self.columns().values().any(Column::is_computed)
     }
 
     pub(crate) fn fill_computed_rows<'a>(
@@ -54,7 +49,7 @@ impl Vista {
             return Ok(());
         }
         for row in rows {
-            self.fill_computed(row)?;
+            fill(self.columns().values(), row)?;
         }
         Ok(())
     }
@@ -63,7 +58,6 @@ impl Vista {
     /// store them.
     pub(crate) fn without_computed<'a>(&self, record: &'a Rec) -> Cow<'a, Rec> {
         let mut present = self
-            .source
             .columns()
             .values()
             .filter(|c| c.is_computed() && record.contains_key(&c.name))
@@ -95,11 +89,11 @@ impl Vista {
     }
 
     /// Refuse `operation` on `column` when it is computed: the backend holds
-    /// no values to filter, order or aggregate by.
+    /// no values to filter or order by.
     pub(crate) fn refuse_computed(&self, column: &str, operation: &str) -> Result<()> {
-        match self.get_column(column) {
+        match self.column(column) {
             Some(c) if c.is_computed() => Err(error!(
-                "Computed column can't be used to filter, order or aggregate; the backend doesn't hold its values",
+                "Computed column can't be used to filter or order; the backend doesn't hold its values",
                 column = column,
                 operation = operation
             )
@@ -111,20 +105,22 @@ impl Vista {
     /// A has-many traversal narrows `target` by its foreign key on the
     /// backend, so that key can't be a computed column of the target.
     pub(crate) fn check_has_many_key(&self, relation: &str, target: &Vista) -> Result<()> {
-        let Some(reference) = self.get_reference(relation) else {
+        let Some(reference) = self.reference(relation) else {
             return Ok(());
         };
-        if reference.kind == ReferenceKind::HasMany
-            && target
-                .get_column(&reference.foreign_key)
-                .is_some_and(Column::is_computed)
-        {
-            return Err(error!(
-                "Has-many relation can't join on a computed column of its target",
-                relation = relation,
-                column = reference.foreign_key.clone()
-            )
-            .mark_unsupported());
+        if reference.kind != ReferenceKind::HasMany {
+            return Ok(());
+        }
+        for key in &reference.keys {
+            let column = key.target_column(target)?;
+            if target.column(column).is_some_and(Column::is_computed) {
+                return Err(error!(
+                    "Has-many relation can't join on a computed column of its target",
+                    relation = relation,
+                    column = column
+                )
+                .mark_unsupported());
+            }
         }
         Ok(())
     }
@@ -133,30 +129,30 @@ impl Vista {
     /// a has-one, into each child for a has-many. Neither can be a computed
     /// column, which the backend has nowhere to store.
     pub(crate) fn check_insert_link(&self, relation: &str) -> Result<()> {
-        let Some(reference) = self.get_reference(relation) else {
+        let Some(reference) = self.reference(relation) else {
             return Ok(());
         };
         match reference.kind {
             ReferenceKind::HasOne => {
-                if self
-                    .get_column(&reference.foreign_key)
-                    .is_some_and(Column::is_computed)
-                {
-                    return Err(error!(
-                        "Nested insert can't link through a computed foreign key",
-                        relation = relation,
-                        column = reference.foreign_key.clone()
-                    )
-                    .mark_unsupported());
+                for key in &reference.keys {
+                    if self.column(&key.from).is_some_and(Column::is_computed) {
+                        return Err(error!(
+                            "Nested insert can't link through a computed foreign key",
+                            relation = relation,
+                            column = key.from.clone()
+                        )
+                        .mark_unsupported());
+                    }
                 }
                 Ok(())
             }
             // A target the shell can't resolve declares no computed columns.
-            ReferenceKind::HasMany => match self.get_ref_target(relation) {
+            ReferenceKind::HasMany => match self.shell().get_ref(relation, None) {
                 Ok(target) => self.check_has_many_key(relation, &target),
                 Err(e) if e.is_unimplemented() || e.is_unsupported() => Ok(()),
                 Err(e) => Err(e),
             },
+            _ => Ok(()),
         }
     }
 }

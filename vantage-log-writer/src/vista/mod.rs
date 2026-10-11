@@ -1,7 +1,7 @@
 //! Vista bridge for the log-writer backend.
 //!
-//! Insert-only: `can_insert: true`, all other capability flags false. Read
-//! methods return `ErrorKind::Unsupported` via the trait's `default_error`.
+//! Insert-only: `Insert` is the one advertised capability, and every read
+//! returns `ErrorKind::Unsupported`.
 
 pub mod factory;
 pub mod source;

@@ -4,16 +4,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_diorama::{Dio, Lens};
 use vantage_types::Record;
-use vantage_vista::reference::Reference;
-use vantage_vista::source::TableShell;
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Column, FilterOp, Page, TableShell, Vista, VistaMetadata, forward_table_shell, mocks::MockShell,
+};
 
 fn rec(pairs: &[(&str, &str)]) -> Record<CborValue> {
     let mut r = Record::new();
@@ -27,7 +26,7 @@ fn rec(pairs: &[(&str, &str)]) -> Record<CborValue> {
 /// master's shell so a test can read the store directly.
 async fn teams() -> Result<(Dio, MockShell)> {
     let shell = team_shell();
-    let dio = warmed_dio(Box::new(shell.clone())).await?;
+    let dio = warmed_dio(Vista::new("teams", shell.clone())).await?;
     Ok((dio, shell))
 }
 
@@ -44,84 +43,46 @@ fn team_shell() -> MockShell {
         .with_record("3", rec(&[("id", "3"), ("team", "blue")]))
 }
 
-async fn warmed_dio(master: Box<dyn TableShell>) -> Result<Dio> {
+async fn warmed_dio(master: Vista) -> Result<Dio> {
     let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    let dio = lens.make_dio(Vista::new("teams", master)).await?;
+    let dio = lens.make_dio(master).await?;
     for (id, row) in dio.master().list_values().await? {
         dio.cache().insert_value(&id, &row).await?;
     }
     Ok(dio)
 }
 
-/// A MockShell that refuses every listing once `refuse` is set — any
-/// read of the whole set then fails, while point reads and writes pass
-/// through.
+/// A shell that refuses every read of the whole set once `refuse` is set,
+/// while point reads and writes pass through.
+#[derive(Clone)]
 struct ListRefusingShell {
-    inner: MockShell,
+    inner: Box<dyn TableShell>,
     refuse: Arc<AtomicBool>,
 }
 
-#[async_trait]
-#[allow(clippy::ptr_arg)]
-impl TableShell for ListRefusingShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        self.inner.columns()
-    }
-    fn references(&self) -> &IndexMap<String, Reference> {
-        self.inner.references()
-    }
-    fn id_column(&self) -> Option<&str> {
-        self.inner.id_column()
-    }
-    async fn list_vista_values(
-        &self,
-        vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
+impl ListRefusingShell {
+    fn check(&self) -> Result<()> {
         if self.refuse.load(Ordering::SeqCst) {
             return Err(error!("listing refused"));
         }
-        self.inner.list_vista_values(vista).await
-    }
-    async fn get_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        self.inner.get_vista_value(vista, id).await
-    }
-    async fn get_vista_some_value(
-        &self,
-        vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        self.inner.get_vista_some_value(vista).await
-    }
-    async fn patch_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-        partial: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        self.inner.patch_vista_value(vista, id, partial).await
-    }
-    async fn delete_vista_value(&self, vista: &Vista, id: &String) -> Result<()> {
-        self.inner.delete_vista_value(vista, id).await
-    }
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        self.inner.add_eq_condition(field, value)
-    }
-    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-        Some(Box::new(ListRefusingShell {
-            inner: self.inner.clone(),
-            refuse: self.refuse.clone(),
-        }))
-    }
-    fn capabilities(&self) -> &VistaCapabilities {
-        self.inner.capabilities()
-    }
-    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
-        self.inner.preview_query(vista)
+        Ok(())
     }
 }
+
+forward_table_shell!(ListRefusingShell, inner, {
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.check()?;
+        self.inner.list().await
+    }
+    async fn count(&self) -> Result<i64> {
+        self.check()?;
+        self.inner.count().await
+    }
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        self.check()?;
+        self.inner.fetch_window(offset, limit).await
+    }
+});
 
 /// Writes are queued; wait until the store stops shrinking.
 async fn settle(shell: &MockShell, expected_len: usize) {
@@ -138,7 +99,7 @@ async fn settle(shell: &MockShell, expected_len: usize) {
 async fn narrowed_delete_all_keeps_rows_outside_the_set() -> Result<()> {
     let (dio, shell) = teams().await?;
     let mut red = dio.vista();
-    red.add_condition_eq("team", CborValue::Text("red".into()))?;
+    red.add_condition("team", FilterOp::Eq, "red")?;
 
     red.delete_all().await?;
     settle(&shell, 1).await;
@@ -182,7 +143,7 @@ async fn settle_until(shell: &MockShell, pred: impl Fn(&MockShell) -> bool) {
 async fn narrowed_facade_writes_stay_in_the_set() -> Result<()> {
     let (dio, shell) = teams().await?;
     let mut red = dio.vista();
-    red.add_condition_eq("team", CborValue::Text("red".into()))?;
+    red.add_condition("team", FilterOp::Eq, "red")?;
 
     red.delete("3").await?; // blue: outside the set
     assert_outside_red(&red, "3").await;
@@ -204,13 +165,13 @@ async fn narrowed_facade_writes_stay_in_the_set() -> Result<()> {
 #[tokio::test]
 async fn narrowed_writes_read_one_row_not_the_set() -> Result<()> {
     let refuse = Arc::new(AtomicBool::new(false));
-    let dio = warmed_dio(Box::new(ListRefusingShell {
-        inner: team_shell(),
+    let master = Vista::new("teams", team_shell()).map_shell(|inner| ListRefusingShell {
+        inner,
         refuse: refuse.clone(),
-    }))
-    .await?;
+    });
+    let dio = warmed_dio(master).await?;
     let mut red = dio.vista();
-    red.add_condition_eq("team", CborValue::Text("red".into()))?;
+    red.add_condition("team", FilterOp::Eq, "red")?;
     refuse.store(true, Ordering::SeqCst);
 
     red.patch_value("1", &rec(&[("team", "red")])).await?;
@@ -226,7 +187,7 @@ async fn narrowed_writes_read_one_row_not_the_set() -> Result<()> {
 async fn narrowed_writes_find_rows_only_the_master_holds() -> Result<()> {
     let (dio, shell) = teams().await?;
     let mut red = dio.vista();
-    red.add_condition_eq("team", CborValue::Text("red".into()))?;
+    red.add_condition("team", FilterOp::Eq, "red")?;
     shell.set_record("5", rec(&[("id", "5"), ("team", "red")]));
     shell.set_record("6", rec(&[("id", "6"), ("team", "blue")]));
 
@@ -247,7 +208,7 @@ async fn narrowed_writes_find_rows_only_the_master_holds() -> Result<()> {
 async fn narrowed_write_ignores_a_stale_cache_row() -> Result<()> {
     let (dio, shell) = teams().await?;
     let mut red = dio.vista();
-    red.add_condition_eq("team", CborValue::Text("red".into()))?;
+    red.add_condition("team", FilterOp::Eq, "red")?;
     shell.set_field("1", "team", CborValue::Text("blue".into()));
 
     assert_outside_red(&red, "1").await;

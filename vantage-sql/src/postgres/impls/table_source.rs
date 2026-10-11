@@ -106,7 +106,7 @@ fn parse_rows(
 
     // Rows are keyed BY ID, so a non-unique id column silently collapses
     // them — the caller then sees a short page and reads it as "the set
-    // ended here" (`fetch_next` exhausts on a short page, a grid renders a
+    // ended here" (a window scan stops on a short window, a grid renders a
     // gap). It is a modelling error rather than a driver error, so the read
     // still succeeds; it just stops being invisible. Query-sourced views are
     // the usual culprit: give the view a synthetic row key.

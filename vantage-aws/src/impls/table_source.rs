@@ -24,12 +24,49 @@ use vantage_expressions::{
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
 use vantage_table::column::core::{Column, ColumnType};
+use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::account::AwsAccount;
 use crate::condition::AwsCondition;
+
+/// Apply `Eq` conditions naming record fields to fetched rows.
+///
+/// AWS APIs only push down their own request parameters (`PathPrefix`,
+/// `logGroupNamePrefix`, `cluster`). Conditions naming actual record fields
+/// (`UserName`, `Path`, `clusterArn`) are applied here, so narrowing works
+/// whatever the API filters server-side. A row without the field fails when
+/// the field is in `required` (see [`required_fields`]); any other field is
+/// taken to be a request parameter, already applied.
+pub(crate) fn retain_matching(
+    records: &mut IndexMap<String, Record<CborValue>>,
+    conditions: &[AwsCondition],
+    required: &[String],
+) {
+    records.retain(|_id, record| {
+        conditions.iter().all(|c| match c {
+            AwsCondition::Eq { field, value } => match record.get(field) {
+                Some(rec_val) => rec_val == value,
+                None => !required.contains(field),
+            },
+            _ => true,
+        })
+    });
+}
+
+/// The condition fields a row must carry to match: the declared columns
+/// that aren't `hidden`. A hidden column, or a field the table doesn't
+/// declare, is a request parameter the API applies without returning it.
+pub(crate) fn required_fields<E: Entity<CborValue>>(table: &Table<AwsAccount, E>) -> Vec<String> {
+    table
+        .columns()
+        .iter()
+        .filter(|(_, column)| !column.flags().contains(&ColumnFlag::Hidden))
+        .map(|(name, _)| name.clone())
+        .collect()
+}
 
 #[async_trait]
 impl TableSource for AwsAccount {
@@ -112,24 +149,7 @@ impl TableSource for AwsAccount {
         let conditions: Vec<AwsCondition> = table.conditions().cloned().collect();
         let resp = self.execute_rpc(table.table_name(), &conditions).await?;
         let mut records = self.parse_records(table.table_name(), resp, id_field.as_deref())?;
-
-        // AWS APIs only push down their own request-param filters
-        // (e.g. `PathPrefix`, `logGroupNamePrefix`, `cluster`). Eq
-        // conditions naming actual record fields (`UserName`, `Path`,
-        // `clusterArn`) are still useful — apply them post-hoc so
-        // narrowing works regardless of what the API filters
-        // server-side. Field names that don't appear on any record are
-        // assumed to be request params and skipped.
-        records.retain(|_id, record| {
-            conditions.iter().all(|c| match c {
-                AwsCondition::Eq { field, value } => match record.get(field) {
-                    Some(rec_val) => rec_val == value,
-                    None => true,
-                },
-                _ => true,
-            })
-        });
-
+        retain_matching(&mut records, &conditions, &required_fields(table));
         Ok(records)
     }
 

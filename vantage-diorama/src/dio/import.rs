@@ -1,7 +1,7 @@
 //! Bulk import — one entry point that picks the master's native path or
 //! the per-record optimistic fallback.
 //!
-//! The split of responsibilities: [`VistaCapabilities::can_import`]
+//! The split of responsibilities: [`Capability::Import`]
 //! answers *whether the master can take the whole set in one operation*
 //! (SQL COPY, Surreal batch insert — all-or-nothing by contract);
 //! [`Dio::import_values`] answers *how these records get in regardless* —
@@ -9,7 +9,7 @@
 //! optimistic flash path a form save uses, where partial progress is
 //! honest and reportable.
 //!
-//! [`VistaCapabilities::can_import`]: vantage_vista::VistaCapabilities::can_import
+//! [`Capability::Import`]: vantage_vista::Capability::Import
 
 use std::ops::ControlFlow;
 
@@ -50,7 +50,7 @@ impl ImportOutcome {
 impl Dio {
     /// Store `records` (id → record) in the master.
     ///
-    /// When the master advertises `can_import`, the whole set goes down
+    /// When the master advertises `Import`, the whole set goes down
     /// in one driver-native operation, the cache absorbs the records,
     /// and sceneries hear a single
     /// [`DatasetChanged`](DioEvent::DatasetChanged). Otherwise each
@@ -92,7 +92,7 @@ impl Dio {
         let total = records.len();
         let master = self.master();
 
-        if master.capabilities().can_import {
+        if master.capabilities().has(vantage_vista::Capability::Import) {
             let inserted = master.import_values(&records).await?;
             // The master holds the set now; make the cache agree and
             // announce membership moved — once, not per row.

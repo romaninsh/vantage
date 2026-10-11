@@ -14,6 +14,7 @@
 //!   `VistaCatalog`, the CLI or a UI inventory can call. `load` does the
 //!   fetching up front precisely so construction needs no `await`.
 
+mod capabilities;
 pub mod factory;
 pub mod source;
 pub mod spec;

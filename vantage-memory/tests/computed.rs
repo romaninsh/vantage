@@ -7,7 +7,7 @@ use vantage_core::VantageError;
 use vantage_dataset::{ReadableValueSet, WritableValueSet};
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
-use vantage_vista::{AggregateSpec, FilterOp, SortDirection, Vista, VistaChange, VistaFactory};
+use vantage_vista::{FilterOp, SortDirection, Vista, VistaChange, VistaFactory};
 
 const PRODUCT: &str = r#"
 name: product
@@ -67,8 +67,8 @@ fn setup() -> (MemoryStore, Vista, Vista) {
 
 #[tokio::test]
 async fn reads_fill_computed_columns() {
-    let (_s, _p, mut lines) = setup();
-    let column = lines.get_column("total").unwrap();
+    let (_s, _p, lines) = setup();
+    let column = lines.column("total").unwrap();
     assert!(column.is_computed());
     assert_eq!(column.expression(), Some("row.qty * 2"));
 
@@ -83,7 +83,7 @@ async fn reads_fill_computed_columns() {
     assert!(some.contains_key("total"));
 
     let window = lines.fetch_window(1, 1).await.unwrap();
-    assert_eq!(window[0].1.get("total"), Some(&int(8)));
+    assert_eq!(window.rows[0].1.get("total"), Some(&int(8)));
 
     let streamed: Vec<_> = lines.stream_values().collect().await;
     assert!(
@@ -92,9 +92,8 @@ async fn reads_fill_computed_columns() {
             .all(|r| r.as_ref().unwrap().1.contains_key("total"))
     );
 
-    lines.set_page_size(1).unwrap();
-    let page = lines.fetch_page(1).await.unwrap();
-    assert_eq!(page[0].1.get("big"), Some(&CborValue::Bool(false)));
+    let first = lines.fetch_window(0, 1).await.unwrap();
+    assert_eq!(first.rows[0].1.get("big"), Some(&CborValue::Bool(false)));
 }
 
 #[tokio::test]
@@ -145,7 +144,9 @@ async fn writes_drop_computed_columns() {
 #[tokio::test]
 async fn filtering_or_ordering_on_a_computed_column_errors() {
     let (_s, _p, mut lines) = setup();
-    let err = lines.add_condition_eq("total", int(2)).unwrap_err();
+    let err = lines
+        .add_condition("total", FilterOp::Eq, int(2))
+        .unwrap_err();
     assert!(err.is_unsupported(), "{err}");
     assert!(names_column(&err, "total"), "{err:?}");
     let err = lines
@@ -153,22 +154,9 @@ async fn filtering_or_ordering_on_a_computed_column_errors() {
         .unwrap_err();
     assert!(names_column(&err, "total"), "{err:?}");
     let err = lines
-        .add_order("total", SortDirection::Ascending)
+        .set_order(Some(("total", SortDirection::Ascending)))
         .unwrap_err();
     assert!(names_column(&err, "total"), "{err:?}");
-}
-
-#[tokio::test]
-async fn aggregating_over_a_computed_column_errors() {
-    let (_s, _p, lines) = setup();
-    let Err(err) = lines.aggregate(&AggregateSpec::new("sum", "sum").column("total")) else {
-        panic!("summing a computed column must error");
-    };
-    assert!(names_column(&err, "total"), "{err:?}");
-    let Err(err) = lines.aggregate(&AggregateSpec::new("count", "n").group_by("big")) else {
-        panic!("grouping by a computed column must error");
-    };
-    assert!(names_column(&err, "big"), "{err:?}");
 }
 
 #[tokio::test]
@@ -196,7 +184,7 @@ fn names_column(err: &VantageError, column: &str) -> bool {
 async fn has_one_reference_follows_a_computed_key() {
     let (_s, _p, lines) = setup();
     let row = lines.get_value("l1").await.unwrap().unwrap();
-    let product = lines.get_ref("product", &row).unwrap();
+    let product = lines.get_ref("product", Some(&row)).unwrap();
     let ids: Vec<String> = product.list_values().await.unwrap().into_keys().collect();
     assert_eq!(ids, ["p3"]);
 }
@@ -206,7 +194,7 @@ async fn has_many_reference_on_a_computed_child_key_errors() {
     let (_s, products, _l) = setup();
     let mut row = products.get_value("p3").await.unwrap().unwrap();
     row.insert("id".into(), text("p3"));
-    let Err(err) = products.get_ref("lines", &row) else {
+    let Err(err) = products.get_ref("lines", Some(&row)) else {
         panic!("has-many on a computed key must not traverse");
     };
     assert!(err.is_unsupported(), "{err}");

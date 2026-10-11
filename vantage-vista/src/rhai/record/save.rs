@@ -7,13 +7,13 @@ use vantage_rhai::rhai::Dynamic;
 use vantage_types::Record;
 
 use super::{DraftStatus, RecordDraft};
-use crate::VistaCapabilities;
 use crate::rhai::bridge::block_on;
 use crate::rhai::handle::Handle;
 use crate::rhai::read::{RhaiResult, rhai_err};
 use crate::rhai::vocab::{TargetResolver, Writes};
-use crate::rhai::write::{delete_row, found, insert_record, new_id, target};
+use crate::rhai::write::{delete_row, found, has_auto_id, insert_record, new_id, target};
 use crate::vista::Vista;
+use crate::{Capability, VistaCapabilities};
 
 /// `writes` gates `save()`/`delete()` the same way it gates the write
 /// terminals: [`Writes::Denied`] throws its message before any capability
@@ -83,12 +83,12 @@ pub(super) fn try_save(r: &RecordDraft) -> RhaiResult<Dynamic> {
     match id {
         None => {
             let vista = checked_target(&handle, resolver.as_ref(), &writes, "save", |c| {
-                c.can_insert
+                c.has(Capability::Insert)
             })?;
-            let id_col = vista.get_id_column().unwrap_or("id").to_string();
+            let id_col = vista.id_column().unwrap_or("id").to_string();
             let minted = {
                 let mut g = r.inner.lock().unwrap();
-                if g.minted_id.is_none() && !vista.has_auto_id() && !changes.contains_key(&id_col) {
+                if g.minted_id.is_none() && !has_auto_id(&vista) && !changes.contains_key(&id_col) {
                     g.minted_id = Some(new_id(&vista, &id_col)?);
                 }
                 g.minted_id.clone()
@@ -111,7 +111,7 @@ pub(super) fn try_save(r: &RecordDraft) -> RhaiResult<Dynamic> {
                 return Ok(Dynamic::from(id));
             }
             let vista = checked_target(&handle, resolver.as_ref(), &writes, "save", |c| {
-                c.can_update
+                c.has(Capability::Update)
             })?;
             let rec = Record::from_indexmap(changes.clone());
             let landed = found(block_on(vista.patch_value(id.clone(), &rec)))?;

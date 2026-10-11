@@ -20,7 +20,7 @@ use vantage_core::Result;
 use vantage_diorama::SortDir;
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata};
+use vantage_vista::{Capability, Column, Vista, VistaCapabilities, VistaMetadata};
 
 mod support;
 use support::chunk::{Backend, col_at, settle};
@@ -32,7 +32,7 @@ fn rec(name: &str) -> Record<CborValue> {
 }
 
 /// A master that genuinely orders server-side, like SQL or a REST API with an
-/// `order` parameter: `can_order` is true and the chunk callback serves the
+/// `order` parameter: it advertises `Order` and the chunk callback serves the
 /// window from the *sorted* set.
 fn orderable_master() -> Vista {
     let metadata = VistaMetadata::new()
@@ -41,14 +41,9 @@ fn orderable_master() -> Vista {
         .with_id_column("id");
     Vista::new(
         "items",
-        Box::new(
-            MockShell::new()
-                .with_metadata(metadata)
-                .with_capabilities(VistaCapabilities {
-                    can_order: true,
-                    ..Default::default()
-                }),
-        ),
+        MockShell::new()
+            .with_metadata(metadata)
+            .with_capabilities(VistaCapabilities::new().with(Capability::Order)),
     )
 }
 

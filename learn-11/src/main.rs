@@ -33,7 +33,7 @@ async fn run() -> Result<()> {
     // and new deliveries append at the end.
     let mut master =
         SurrealVistaFactory::new(db.clone()).from_table(Product::surreal_table(db.clone()))?;
-    master.add_order("created", SortDirection::Ascending)?;
+    master.set_order(Some(("created", SortDirection::Ascending)))?;
 
     // Eager cache, no refresh timer: `dio.watch()` reconciles the instant a
     // change lands. `on_refresh` still matters — the watch task falls back to it

@@ -23,10 +23,12 @@ async fn setup() -> SqliteDB {
 }
 
 fn orders(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
+    let target = db.clone();
     Table::<SqliteDB, EmptyEntity>::new("orders", db)
         .with_id_column("id")
         .with_column_of::<String>("client_id")
         .with_column_of::<i64>("total")
+        .with_one("client", "client_id", move |_| clients(target.clone()))
 }
 
 fn clients(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
@@ -42,6 +44,7 @@ async fn sqlite_contract_advertised() {
     let db = setup().await;
     let factory = db.vista_factory();
     contract::check_advertised(&factory.from_table(clients(db.clone())).unwrap()).await;
+    contract::check_advertised(&factory.from_table(orders(db.clone())).unwrap()).await;
     contract::check_advertised_writes(&factory.from_table(orders(db.clone())).unwrap()).await;
 }
 

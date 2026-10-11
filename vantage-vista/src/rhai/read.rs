@@ -12,7 +12,7 @@ use super::convert::record_to_dynamic;
 use super::handle::Handle;
 use super::introspect::{capabilities_map, columns_array, references_array};
 use super::vocab::TargetResolver;
-use crate::vista::Vista;
+use crate::{Capability, vista::Vista};
 
 pub(crate) type RhaiResult<T> = std::result::Result<T, Box<EvalAltResult>>;
 
@@ -62,10 +62,7 @@ pub(crate) fn register_reads(
     let r = resolver.clone();
     engine.register_fn("count", move |h: &mut Handle| -> RhaiResult<i64> {
         let vista = h.resolve(r.as_ref()).map_err(rhai_err)?;
-        if !vista.capabilities().can_count {
-            return Err(unsupported("count", &vista));
-        }
-        let count = run(vista.get_count())?;
+        let count = run(vista.count())?;
         // A `limit(n)` caps the rows `list` would return; count agrees.
         Ok(h.row_limit().map_or(count, |n| count.min(n as i64)))
     });
@@ -106,30 +103,33 @@ fn rows(
     Ok((vista, rows))
 }
 
-/// Read at most `limit` rows. Uses `fetch_window(0, limit)` when the driver
-/// advertises it, otherwise a full `list_values` truncated to `limit`.
+/// Read at most `limit` rows through `fetch_window(0, limit)`, which shells
+/// without [`Window`](Capability::Window) may still answer as a leading
+/// window. Only a shell that refuses it is read in full and truncated; a
+/// shell advertising `Window` that refuses it is a contract break and fails.
 pub(crate) async fn fetch_capped(vista: &Vista, limit: Option<usize>) -> Result<Rows> {
     let Some(limit) = limit else {
         return Ok(vista.list_values().await?.into_iter().collect());
     };
-    if vista.capabilities().can_fetch_window {
-        match vista.fetch_window(0, limit).await {
-            Ok(mut rows) => {
-                rows.truncate(limit);
-                return Ok(rows);
-            }
-            // Some shells advertise the window but refuse it (the diorama
-            // cache shell passes the flag through from its master).
-            Err(e) if e.is_unsupported() => {}
-            Err(e) => return Err(e),
+    match vista.fetch_window(0, limit).await {
+        Ok(page) => {
+            let mut rows = page.rows;
+            rows.truncate(limit);
+            Ok(rows)
         }
+        Err(e)
+            if (e.is_unsupported() || e.is_unimplemented())
+                && !vista.capabilities().has(Capability::Window) =>
+        {
+            Ok(vista.list_values().await?.into_iter().take(limit).collect())
+        }
+        Err(e) => Err(e),
     }
-    Ok(vista.list_values().await?.into_iter().take(limit).collect())
 }
 
 /// A row as a script map, with the id column filled from the row's key.
 pub(crate) fn row_dynamic(vista: &Vista, id: &str, rec: &Record<CborValue>) -> Dynamic {
-    let col = vista.get_id_column().unwrap_or("id");
+    let col = vista.id_column().unwrap_or("id");
     if rec.contains_key(col) {
         return record_to_dynamic(rec);
     }

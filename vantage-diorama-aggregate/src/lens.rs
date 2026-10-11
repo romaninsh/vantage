@@ -187,8 +187,8 @@ impl AggregateLens {
     /// Mount a row-producing aggregation as its own `Dio`.
     ///
     /// The result is an ordinary Dio: open sceneries on it, sort and search it,
-    /// drive a grid from it. Its Vista advertises `can_order` / `can_search` /
-    /// `can_count` and honours them, because unlike its source it holds its
+    /// drive a grid from it. Its Vista advertises `Order`, `Search` and
+    /// `Window` and honours them, because unlike its source it holds its
     /// entire row set.
     pub async fn derive<A>(
         self: &Arc<Self>,
@@ -232,7 +232,7 @@ impl AggregateLens {
 
         let shared_rows = shared(initial.clone());
         let shell = AggregateShell::new(shared_rows.clone(), &initial.columns);
-        let vista = Vista::new(name, Box::new(shell));
+        let vista = Vista::new(name, shell);
         let dio = self.lens.make_dio_as(vista, name.to_string()).await?;
 
         let state = DerivedState::new(shared_rows, dio.clone());

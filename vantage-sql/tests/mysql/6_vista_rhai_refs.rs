@@ -14,7 +14,7 @@ use vantage_dataset::prelude::*;
 use vantage_sql::mysql::MysqlDB;
 use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
 use vantage_types::Record;
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -198,11 +198,11 @@ async fn build_script_reference_resolves_target() -> TestResult {
     let f = Fixture::new("resolve").await;
     let factory = f.db.vista_factory().with_resolver(f.resolver());
     let clients = factory.build_from_spec(f.client_spec(ORDERS_SCRIPT))?;
-    let reference = clients.get_reference("orders").expect("orders ref");
+    let reference = clients.reference("orders").expect("orders ref");
     assert!(reference.build_script.is_some());
 
     let alice = clients.get_value("alice").await?.expect("alice exists");
-    let orders = clients.get_ref("orders", &alice)?;
+    let orders = clients.get_ref("orders", Some(&alice))?;
     assert_eq!(orders.name(), "orders");
     let rows = orders.list_values().await?;
     assert_eq!(sorted_ids(&rows), vec!["o2"]);
@@ -219,23 +219,25 @@ async fn build_script_reference_sees_row() -> TestResult {
         f.client_spec(r#"table("orders").where("client_id", row.id).where("total", "lt", 15)"#),
     )?;
 
-    let orders = clients.get_ref("orders", &row_with_id("alice"))?;
+    let orders = clients.get_ref("orders", Some(&row_with_id("alice")))?;
     assert_eq!(sorted_ids(&orders.list_values().await?), vec!["o1"]);
     // The target is the writable table.
-    assert!(orders.capabilities().can_insert);
+    assert!(orders.capabilities().has(Capability::Insert));
 
     f.drop_tables().await;
     Ok(())
 }
 
+/// A scripted reference is still a traversal: both the table and the
+/// query-sourced view advertise `Traverse`.
 #[tokio::test]
-async fn capabilities_advertise_build_ref_via_script() -> TestResult {
+async fn capabilities_advertise_traverse_for_scripted_refs() -> TestResult {
     let f = Fixture::new("caps").await;
     let factory = f.db.vista_factory().with_resolver(f.resolver());
     let orders = factory.build_from_spec(f.orders_spec())?;
-    assert!(orders.capabilities().can_build_ref_via_script);
+    assert!(orders.capabilities().has(Capability::Traverse));
     let view = factory.build_from_spec(f.client_view_spec())?;
-    assert!(view.capabilities().can_build_ref_via_script);
+    assert!(view.capabilities().has(Capability::Traverse));
 
     f.drop_tables().await;
     Ok(())
@@ -247,12 +249,12 @@ async fn scripted_ref_from_query_sourced_view_row() -> TestResult {
     let factory = f.db.vista_factory().with_resolver(f.resolver());
     let view = factory.build_from_spec(f.client_view_spec())?;
     assert!(
-        !view.capabilities().can_insert,
+        !view.capabilities().has(Capability::Insert),
         "query-sourced view is read-only"
     );
 
     let alice = view.get_value("alice").await?.expect("alice in view");
-    let orders = view.get_ref("orders", &alice)?;
+    let orders = view.get_ref("orders", Some(&alice))?;
     assert_eq!(sorted_ids(&orders.list_values().await?), vec!["o2"]);
 
     f.drop_tables().await;
@@ -264,11 +266,11 @@ async fn scripted_ref_declared_on_base_derived_vista() -> TestResult {
     let f = Fixture::new("derived").await;
     let factory = f.db.vista_factory().with_resolver(f.resolver());
     let derived = factory.build_from_spec(f.derived_client_spec())?;
-    let reference = derived.get_reference("orders").expect("orders ref");
+    let reference = derived.reference("orders").expect("orders ref");
     assert!(reference.build_script.is_some());
 
     let alice = derived.get_value("alice").await?.expect("alice in view");
-    let orders = derived.get_ref("orders", &alice)?;
+    let orders = derived.get_ref("orders", Some(&alice))?;
     assert_eq!(sorted_ids(&orders.list_values().await?), vec!["o2"]);
 
     f.drop_tables().await;
@@ -281,9 +283,9 @@ async fn script_table_unknown_to_resolver_errors() -> TestResult {
     let factory = f.db.vista_factory().with_resolver(f.resolver());
     let clients = factory.build_from_spec(f.client_spec(r#"table("nope")"#))?;
     let err = clients
-        .get_ref("orders", &row_with_id("alice"))
-        .err()
-        .expect("an unknown table must fail");
+        .get_ref("orders", Some(&row_with_id("alice")))
+        .map(drop)
+        .expect_err("an unknown table must fail");
     let msg = err.to_string();
     assert!(
         msg.contains("unknown table") && msg.contains("nope"),
@@ -300,9 +302,9 @@ async fn script_table_without_resolver_errors() -> TestResult {
     let factory = f.db.vista_factory();
     let clients = factory.build_from_spec(f.client_spec(ORDERS_SCRIPT))?;
     let err = clients
-        .get_ref("orders", &row_with_id("alice"))
-        .err()
-        .expect("table() without a spec resolver must fail");
+        .get_ref("orders", Some(&row_with_id("alice")))
+        .map(drop)
+        .expect_err("table() without a spec resolver must fail");
     assert!(err.to_string().contains("spec resolver"), "{err}");
 
     f.drop_tables().await;

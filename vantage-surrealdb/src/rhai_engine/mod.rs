@@ -34,16 +34,11 @@ impl vantage_rhai::Vocab for SurrealVocab {
     }
 }
 
-/// The per-evaluation half of the vocabulary: `me`, the current-record
-/// anchor, as a scope variable. It used to be an `on_var` hook on the engine,
-/// which collided with the host's own resolver hook (rhai keeps only the last
-/// one installed); a variable composes.
-#[cfg(feature = "rhai")]
-pub fn surreal_env(env: vantage_rhai::Env) -> vantage_rhai::Env {
-    env.var("me", rhai::Dynamic::from(RhaiExpr(crate::primitives::me())))
-}
-
-/// Register the full SurrealDB query-building vocabulary onto `engine`.
+/// Register the full SurrealDB query-building vocabulary onto `engine`,
+/// including `me`, the current-record anchor, as an engine-wide constant
+/// ([`vantage_rhai::register_constant`]): every script on the engine reads it,
+/// with no per-evaluation setup. A `let me` in a script shadows it; an `Env`
+/// variable named `me` does not.
 ///
 /// Shared by two entry points:
 /// - [`SurrealVocab`], the form a [`vantage_rhai::Host`] takes (the `rhai:`
@@ -53,12 +48,18 @@ pub fn surreal_env(env: vantage_rhai::Env) -> vantage_rhai::Env {
 ///   vantage-vista's conventional `Vista` verbs so a reference build-script can
 ///   use `ident`/`==`/`fx`/graph syntax and `with_condition`.
 ///
-/// Prefer [`SurrealVocab`] on a host — this is the registration behind it. Limits and
-/// `me` are the host's and [`surreal_env`]'s business, not this function's.
+/// Prefer [`SurrealVocab`] on a host — this is the registration behind it.
+/// Limits are the host's business, not this function's.
 #[cfg(feature = "rhai")]
 pub fn register_surreal_onto(engine: &mut rhai::Engine) {
     use crate::AnySurrealType as AST;
     use crate::rhai_engine::types::{RhaiExpr as Ex, RhaiIdent as Id};
+
+    vantage_rhai::register_constant(
+        engine,
+        "me",
+        rhai::Dynamic::from(Ex(crate::primitives::me())),
+    );
 
     {
         // ── Register types ────────────────────────────────────
@@ -351,7 +352,7 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
 /// Bring the SurrealDB Rhai toolkit into scope: the `AST`/`Ex`/`Id`/`Sel`
 /// aliases and `__host()`, one shared [`vantage_rhai::Host`] carrying
 /// [`SurrealVocab`] under the background limit profile. Evaluate with
-/// `__host().compile(..)` and an `Env` from [`surreal_env`] so `me` resolves.
+/// `__host().compile(..)`; `me` needs no `Env` setup.
 #[cfg(feature = "rhai")]
 #[macro_export]
 macro_rules! register_surreal_engine {

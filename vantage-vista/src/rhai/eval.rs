@@ -26,9 +26,8 @@ pub(crate) fn compile(host: &Host, what: &str, code: &str) -> Result<Compiled<Bl
 
 /// Evaluate a reference build-script and return the Vista it describes.
 ///
-/// `env` is the backend's base environment
-/// ([`TableShell::rhai_env`](crate::TableShell::rhai_env)); the parent `row`
-/// is pushed onto it. The script must end on a table handle, e.g.
+/// `env` is the caller's base environment; the parent `row` is pushed onto
+/// it. The script must end on a table handle, e.g.
 /// `table("order").where("client", row.id)`.
 pub fn eval_ref_script(
     host: &Host,
@@ -60,10 +59,9 @@ pub fn eval_ref_script(
 pub fn eval_modify_script(host: &Host, code: &str, vista: Vista) -> Result<Vista> {
     const WHAT: &str = "rhai modify script";
     let script = compile(host, WHAT, code)?;
-    let env = vista.source.rhai_env(Env::new());
     let base = Handle::over(vista);
     let result = script
-        .eval(&env.var("self", Dynamic::from(base.clone())))
+        .eval(&Env::new().var("self", Dynamic::from(base.clone())))
         .context(error!("rhai script failed", script = WHAT))?;
     finish(base, result)
 }
@@ -90,11 +88,11 @@ fn eval_augment_compiled(
     base: Vista,
     row: &Record<CborValue>,
 ) -> Result<Vista> {
-    let env = base.source.rhai_env(Env::new());
     let base = Handle::over(base);
     let result = script
         .eval(
-            &env.var("self", Dynamic::from(base.clone()))
+            &Env::new()
+                .var("self", Dynamic::from(base.clone()))
                 .var("row", record_to_dynamic(row)),
         )
         .context(error!(
@@ -111,7 +109,7 @@ fn finish(base: Handle, result: Dynamic) -> Result<Vista> {
         Some(handle) => handle.resolve(None),
         None => match base.latest_extended() {
             Some(handle) => handle.resolve(None),
-            None => base.take_base(),
+            None => base.base_vista(),
         },
     }
 }
@@ -129,7 +127,7 @@ pub fn augment_source_closure(resolver: TargetResolver, code: String) -> Augment
         move |row: &Record<CborValue>, base: Vista| -> Result<Vista> {
             let script = compiled.get_or_init(|| {
                 let host = Host::builder(Limits::background())
-                    .vocab_fn(|engine| base.source.register_rhai_extensions(engine))
+                    .vocab_fn(|engine| base.shell().register_rhai_extensions(engine))
                     .vocab(DataVocab::describe(Some(resolver.clone())))
                     .build();
                 compile(&host, "rhai augment source script", &code).map_err(Arc::new)

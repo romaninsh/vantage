@@ -52,9 +52,10 @@ async fn run() -> vantage_core::Result<()> {
     for arg in raw {
         if let Some(value) = arg.strip_prefix("--format=") {
             format = OutputFormat::parse(value).ok_or_else(|| {
-                vantage_core::error!(format!(
-                    "Unknown --format `{value}` — pick table, json, ndjson, or cbor-diag"
-                ))
+                vantage_core::error!(
+                    "Unknown --format; pick table, json, ndjson, or cbor-diag",
+                    format = value
+                )
             })?;
         } else {
             positional.push(arg);
@@ -122,9 +123,10 @@ async fn run() -> vantage_core::Result<()> {
             let db = SurrealDB::new(client);
             vista_cli::run(&SurrealFactory { db }, &renderer, &rest).await
         }
-        other => Err(vantage_core::error!(format!(
-            "Unknown source `{other}` — use csv, sqlite, postgres, mongo, or surreal"
-        ))),
+        other => Err(vantage_core::error!(
+            "Unknown source; use csv, sqlite, postgres, mongo, or surreal",
+            source = other
+        )),
     }
 }
 
@@ -277,7 +279,7 @@ impl Renderer for MultiFormatRenderer {
                 if let Some(cols) = column_override {
                     render_records_columns(records, cols, &vista.source_column_types());
                 } else {
-                    render_records(records, vista.get_id_column());
+                    render_records(records, vista.id_column());
                 }
                 let n = records.len();
                 println!("({n} record{})", if n == 1 { "" } else { "s" });
@@ -318,9 +320,9 @@ impl Renderer for MultiFormatRenderer {
 }
 
 fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
-    let id_field = vista.get_id_column().unwrap_or("id");
+    let id_field = vista.id_column().unwrap_or("id");
     println!("{}: {}", id_field, id);
-    let title_fields: Vec<&str> = vista.get_title_columns();
+    let title_fields: Vec<&str> = vista.title_columns();
     for tf in &title_fields {
         if *tf == id_field {
             continue;
@@ -336,14 +338,17 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
         }
         println!("{}: {}", k, scalar(v));
     }
-    let refs = vista.list_references();
+    let refs = vista.references();
     if !refs.is_empty() {
         println!();
         println!("Relations:");
-        for (name, kind) in refs {
-            let marker = match kind {
+        for (name, reference) in refs {
+            let marker = match reference.kind {
                 vantage_vista::ReferenceKind::HasOne => "→ one",
                 vantage_vista::ReferenceKind::HasMany => "↠ many",
+                vantage_vista::ReferenceKind::ContainsOne => "⊃ one",
+                vantage_vista::ReferenceKind::ContainsMany => "⊃ many",
+                _ => "?",
             };
             println!("  :{name}  {marker}");
         }

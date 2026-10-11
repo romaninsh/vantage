@@ -1,7 +1,8 @@
-//! Server-side ordering: when the master `can_order`, the scenery pushes its
-//! sort down (`Dio::fetch_window_ordered` → `add_order` on a per-call clone →
-//! `fetch_window`) and does NOT re-sort client-side. Contrast `chunk_sort.rs`,
-//! which covers the `can_order = false` fallback (client re-sort over the cache).
+//! Server-side ordering: when the master advertises `Order`, the scenery pushes
+//! its sort down (`Dio::fetch_window_ordered` → `with_query` on a
+//! per-call clone → `fetch_window`) and does NOT re-sort client-side. Contrast
+//! `chunk_sort.rs`, which covers the fallback without `Order` (client re-sort
+//! over the cache).
 
 use std::sync::Arc;
 
@@ -9,7 +10,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_diorama::{Lens, SortDir};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Capability, Column, ColumnFlag, Vista, VistaMetadata, mocks::MockShell};
 
 mod support;
 use support::chunk::{col_at, wait_for_gen};
@@ -23,26 +24,24 @@ fn rec(v: &str) -> Record<CborValue> {
 
 /// A master that can order + window server-side. Its *native* (insertion) order
 /// (v3, v1, v2) is deliberately unsorted, so any sorted result must come from
-/// the master applying `add_order` — there is no client-side sort in the helper.
+/// the master applying `set_order` — there is no client-side sort in the helper.
 fn orderable_master() -> Vista {
     // Orderable columns carry the ORDERABLE flag — exactly what the SQL / Mongo /
-    // Surreal factories set so `Vista::add_order` accepts the column.
+    // Surreal factories set so `Vista::set_order` accepts the column.
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("v", "String").with_flag(vantage_vista::flags::ORDERABLE))
+        .with_column(Column::new("v", "String").with_flag(ColumnFlag::Orderable))
         .with_id_column("id");
-    let caps = VistaCapabilities {
-        can_order: true,
-        can_fetch_window: true,
-        ..Default::default()
-    };
+    let caps = [Capability::Order, Capability::Window]
+        .into_iter()
+        .collect();
     let shell = MockShell::new()
         .with_metadata(metadata)
         .with_capabilities(caps)
         .with_record("a", rec("v3"))
         .with_record("b", rec("v1"))
         .with_record("c", rec("v2"));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 fn vs(rows: &[(String, Record<CborValue>)]) -> Vec<String> {
@@ -59,7 +58,7 @@ async fn fetch_window_ordered_orders_via_master() -> Result<()> {
     let dio = eager_dio(orderable_master()).await;
 
     // Ascending: the master returns v1, v2, v3 — its native order was v3,v1,v2,
-    // so this ordering can only come from the pushed-down `add_order`.
+    // so this ordering can only come from the pushed-down `set_order`.
     let asc = dio
         .fetch_window_ordered(0, 10, Some(("v".to_string(), SortDir::Asc)))
         .await?;
@@ -76,10 +75,10 @@ async fn fetch_window_ordered_orders_via_master() -> Result<()> {
     assert_eq!(vs(&desc_head), vec!["v3", "v2"], "descending window");
 
     // No sort → the master's NATIVE order, unpolluted. Checked *after* the two
-    // ordered fetches above: because each fetch orders a per-call `clone_shell`
-    // with its own query state, the master itself is never reordered. (If the
+    // ordered fetches above: because each fetch orders a per-call clone with
+    // its own query state, the master itself is never reordered. (If the
     // clone shared the master's order — the bug this guards — this would come
-    // back v3,v2,v1 from the last `add_order`.)
+    // back v3,v2,v1 from the last `set_order`.)
     let native = dio.fetch_window_ordered(0, 10, None).await?;
     assert_eq!(
         vs(&native),
@@ -90,9 +89,38 @@ async fn fetch_window_ordered_orders_via_master() -> Result<()> {
     Ok(())
 }
 
-/// A paged scenery over a `can_order` master orders **server-side**: the loader
+/// A sort an `Order`-capable master refuses (its column isn't `Orderable`)
+/// fails the fetch. The scenery doesn't re-sort a window from such a master,
+/// so returning native order would show it unsorted without a word.
+#[tokio::test]
+async fn a_refused_sort_on_an_ordering_master_is_an_error() -> Result<()> {
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("v", "String"))
+        .with_id_column("id");
+    let shell = MockShell::new()
+        .with_metadata(metadata)
+        .with_capabilities(
+            [Capability::Order, Capability::Window]
+                .into_iter()
+                .collect(),
+        )
+        .with_record("a", rec("v3"))
+        .with_record("b", rec("v1"));
+    let dio = eager_dio(Vista::new("items", shell)).await;
+
+    let err = dio
+        .fetch_window_ordered(0, 10, Some(("v".to_string(), SortDir::Asc)))
+        .await
+        .unwrap_err();
+    assert!(!err.is_unsupported(), "{err}");
+    assert!(err.to_string().contains("can't order"), "{err}");
+    Ok(())
+}
+
+/// A paged scenery over an `Order` master orders **server-side**: the loader
 /// hands the sort to `on_load_chunk` (which fetches via `fetch_window_ordered`),
-/// and — because `can_order` — skips the client re-sort, so the rows are written
+/// and — because of `Order` — skips the client re-sort, so the rows are written
 /// straight through in the master's returned order.
 #[tokio::test]
 async fn paged_scenery_orders_server_side() -> Result<()> {

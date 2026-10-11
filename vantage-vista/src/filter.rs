@@ -1,13 +1,9 @@
-//! Comparison operator for a filter condition at the `Vista` boundary.
+//! Comparison operator of a [`Condition`](crate::Condition).
 //!
-//! Equality has always had a dedicated channel
-//! ([`add_eq_condition`](crate::source::TableShell::add_eq_condition)); this
-//! enum carries the rest so a caller can request `field != value`,
-//! `field > value`, etc. through the general
-//! [`add_op_condition`](crate::source::TableShell::add_op_condition) method.
-//! Backends that can push the operator into their query advertise
-//! [`can_filter_operators`](crate::VistaCapabilities::can_filter_operators);
-//! others leave it `false` and the consumer filters locally.
+//! Every shell takes [`FilterOp::Eq`]. Backends that can push the other
+//! operators into their query advertise
+//! [`FilterOps`](crate::Capability::FilterOps); for the others the caller
+//! filters locally.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +14,7 @@ use serde::{Deserialize, Serialize};
 /// rather than a scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum FilterOp {
     /// `field == value`
     Eq,
@@ -39,8 +36,9 @@ pub enum FilterOp {
     NotInSet,
     /// `field` contains `value`, case-insensitively. SurrealDB lowercases both
     /// sides and uses `CONTAINS`; SQL uses `LIKE '%value%'` (`ILIKE` on
-    /// Postgres). A backend with no spelling for it returns Unimplemented and
-    /// the consumer evaluates it locally.
+    /// Postgres). A backend with no spelling for it refuses it with
+    /// `unsupported(Capability::FilterOps)` and the consumer evaluates it
+    /// locally.
     ///
     /// **Case folding is the backend's.** The local fallback and SurrealDB
     /// fold Unicode; SQLite's `LIKE` folds ASCII only, and MySQL follows the
@@ -141,7 +139,7 @@ impl FilterOp {
     }
 
     /// Compact, stable symbol used when rendering the operator into a cache
-    /// key (see [`Vista::index_key`](crate::Vista::index_key)). Distinct
+    /// key (see [`VistaQuery::key`](crate::VistaQuery::key)). Distinct
     /// operators must produce distinct symbols so two filters that differ only
     /// by operator can't collide onto the same cached index.
     pub fn key_symbol(&self) -> &'static str {

@@ -1,6 +1,6 @@
 //! `vantage_vista::contract` over the Dio facade (`dio.vista()`), mastered by
-//! in-memory SQLite so the master advertises paging, ordering, search and
-//! operator filters for the facade to inherit.
+//! in-memory SQLite, a master that can page, order, search and filter. The
+//! facade advertises only what it answers itself, whatever the master can do.
 
 use std::sync::Arc;
 
@@ -48,9 +48,13 @@ async fn dio() -> Dio {
 }
 
 #[tokio::test]
-#[ignore = "v2 phase 3: facade advertises master flags it does not implement"]
 async fn facade_contract_advertised() {
     contract::check_advertised(&dio().await.vista()).await;
+}
+
+#[tokio::test]
+async fn facade_contract_advertised_writes() {
+    contract::check_advertised_writes(&dio().await.vista()).await;
 }
 
 #[tokio::test]

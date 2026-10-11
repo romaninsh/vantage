@@ -12,6 +12,8 @@ use vantage_vista::prelude::*;
 
 const BUCKET: &str = "noaa-ghcn-pds";
 const PREFIX: &str = "csv/by_station/GM";
+/// Keys per listing request; S3 returns at most 1000.
+const PAGE_SIZE: usize = 1000;
 
 #[tokio::main]
 async fn main() {
@@ -84,13 +86,17 @@ async fn run() -> VantageResult<()> {
     // Details are paid for by the rows you ask for: a window of ten.
     let start = Instant::now();
     let window = dio.vista().fetch_window(0, 10).await?;
-    for (filename, file) in &window {
+    for (filename, file) in &window.rows {
         let size = file.get("Size").and_then(|v| v.as_str()).unwrap_or("");
         let rows = file.get("rows").and_then(|v| v.as_i64()).unwrap_or(0);
         let latest = file.get("latest").and_then(|v| v.as_str()).unwrap_or("");
         println!("{size:>10} {rows:>8} {latest:>10}  {filename}");
     }
-    println!("{} files detailed in {:?}", window.len(), start.elapsed());
+    println!(
+        "{} files detailed in {:?}",
+        window.rows.len(),
+        start.elapsed()
+    );
     Ok(())
 }
 
@@ -107,10 +113,10 @@ async fn sync(dio: &Dio) -> VantageResult<()> {
         .map(Into::into);
     loop {
         let start = Instant::now();
-        let (page, next) = dio.master().fetch_next(token).await?;
-        let count = page.len();
+        let (page, next) = dio.master().fetch_cursor(token, PAGE_SIZE).await?;
+        let count = page.rows.len();
         dio.cache()
-            .insert_values(page.into_iter().collect())
+            .insert_values(page.rows.into_iter().collect())
             .await?;
         println!("fetched {count} files in {:?}", start.elapsed());
         if next.is_none() {

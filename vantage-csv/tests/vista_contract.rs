@@ -34,7 +34,6 @@ async fn csv_contract_advertised() {
 }
 
 #[tokio::test]
-#[ignore = "v2 phase 1: shell not cloneable"]
 async fn csv_contract_clone() {
     contract::check_clone(&clients(), "is_paying_client", CborValue::Bool(true)).await;
 }

@@ -1,10 +1,13 @@
 //! `SurrealVistaFactory` — typed-table and YAML entry points, plus the
-//! `VistaFactory` trait impl. SurrealDB advertises full read/write/count.
+//! `VistaFactory` trait impl. SurrealDB advertises reads, writes, order,
+//! search, operator filters, native conditions, windowed reads, traversal
+//! and (for real tables) LIVE subscriptions; a query-sourced vista is
+//! read-only.
 
 #[cfg(feature = "rhai")]
-use std::sync::Arc;
-#[cfg(feature = "rhai")]
-use vantage_rhai::{Host, Limits};
+mod scripting;
+#[cfg(test)]
+mod tests;
 
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
@@ -12,8 +15,8 @@ use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    SpecResolver, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
-    reference::Reference as VistaReferenceMeta, resolve_base_spec,
+    Capability, JoinKey, Reference as VistaReferenceMeta, ReferenceKind, SpecResolver, Vista,
+    VistaCapabilities, VistaFactory, VistaMetadata, resolve_base_spec,
 };
 
 use crate::surrealdb::SurrealDB;
@@ -29,6 +32,7 @@ use crate::vista::spec::{
 /// their tables from the live spec.
 pub type SurrealSpecResolver = SpecResolver<SurrealVistaSpec>;
 
+#[derive(Clone)]
 pub struct SurrealVistaFactory {
     db: SurrealDB,
     resolver: Option<SurrealSpecResolver>,
@@ -73,37 +77,13 @@ impl SurrealVistaFactory {
     where
         E: Entity<AnySurrealType> + 'static,
     {
-        let source = SurrealTableShell::new(
+        let shell = SurrealTableShell::new(
             table,
-            VistaCapabilities {
-                can_count: true,
-                can_insert: !read_only,
-                can_update: !read_only,
-                can_delete: !read_only,
-                // Real tables can be watched with LIVE SELECT; query-sourced
-                // (rhai/base) vistas can't, so they stay unwatchable.
-                can_subscribe: !read_only,
-                can_order: true,
-                can_search: true,
-                can_filter_operators: true,
-                can_set_page_size: true,
-                can_fetch_page: true,
-                can_fetch_window: true,
-                can_fetch_next: true,
-                can_traverse_to_record: true,
-                can_traverse_to_set: true,
-                can_traverse_in_columns: true,
-                can_confine_writes: !read_only,
-                // Per-reference scripted traversal only works when the script
-                // engine is compiled in; without `rhai`, any `build_script` is
-                // ignored and the FK eq-condition path still serves.
-                can_build_ref_via_script: cfg!(feature = "rhai"),
-                ..VistaCapabilities::default()
-            },
+            surreal_capabilities(read_only),
             metadata,
             self.resolver.clone(),
         );
-        Vista::new(name, Box::new(source))
+        Vista::new(name, shell)
     }
 
     /// Build a `Table<SurrealDB, EmptyEntity>` from a spec.
@@ -132,31 +112,49 @@ impl VistaFactory for SurrealVistaFactory {
         // YAML `references:` carry the target table name explicitly; fold them
         // in here rather than via `table.vista_references()`, whose target is
         // the (erased) entity type name, not the table name.
+        let source_id = table.id_field_name();
         for (rel_name, ref_spec) in &spec.references {
-            let mut reference = VistaReferenceMeta::new(
-                rel_name.clone(),
-                ref_spec.table.clone(),
-                ref_spec.kind,
-                ref_spec.foreign_key_or(rel_name),
-            );
-            if let Some(script) = ref_spec
+            let script = ref_spec
                 .driver
                 .surreal
                 .as_ref()
-                .and_then(|b| b.rhai.clone())
-            {
-                reference = reference.with_build_script(script);
+                .and_then(|b| b.rhai.clone());
+            #[cfg(not(feature = "rhai"))]
+            if script.is_some() {
+                return Err(error!(
+                    "reference declares a `rhai:` build script but vantage-surrealdb was built without the `rhai` feature",
+                    vista = vista_name.as_str(),
+                    relation = rel_name.as_str()
+                ));
             }
+            let reference = VistaReferenceMeta::new(
+                rel_name.clone(),
+                ref_spec.table.clone(),
+                ref_spec.kind,
+                join_keys(ref_spec.kind, &source_id, ref_spec.foreign_key_or(rel_name)),
+            );
+            let reference = match script {
+                Some(script) => reference.with_build_script(script),
+                None => reference,
+            };
             metadata = metadata.with_reference(reference);
         }
-        let mut vista = self.wrap(table, vista_name.clone(), metadata, read_only);
-        vista.set_name(vista_name);
+        let modify = spec.driver.surreal.as_ref().and_then(|b| b.modify.clone());
+        #[cfg(not(feature = "rhai"))]
+        if modify.is_some() {
+            return Err(error!(
+                "vista declares a `modify:` script but vantage-surrealdb was built without the `rhai` feature",
+                vista = vista_name.as_str()
+            ));
+        }
+        #[cfg_attr(not(feature = "rhai"), allow(unused_mut))]
+        let mut vista = self.wrap(table, vista_name, metadata, read_only);
 
         // Final step: a `surreal: { modify }` script tweaks the just-built vista
         // (e.g. an expression condition YAML can't express). Runs last, so it
         // composes with `table`/`rhai`/`base`.
         #[cfg(feature = "rhai")]
-        if let Some(code) = spec.driver.surreal.as_ref().and_then(|b| b.modify.clone()) {
+        if let Some(code) = modify {
             vista = self.apply_modify(vista, &code)?;
         }
 
@@ -164,37 +162,41 @@ impl VistaFactory for SurrealVistaFactory {
     }
 }
 
-#[cfg(feature = "rhai")]
-impl SurrealVistaFactory {
-    /// Run a `surreal: { modify }` script against an already-built vista,
-    /// layering SurrealDB's expression vocabulary plus the table handle verbs
-    /// onto a host. `table(name)` inside the script resolves through the
-    /// factory's spec resolver (if attached); `self` is the built vista, `me`
-    /// comes from the shell.
-    fn apply_modify(&self, vista: Vista, code: &str) -> Result<Vista> {
-        let db = self.db.clone();
-        let resolver = self.resolver.clone();
-        let target_resolver: vantage_vista::TargetResolver = Arc::new(move |name| {
-            let resolver = resolver
-                .as_ref()
-                .ok_or_else(|| error!("modify script `table()` requires a spec resolver"))?;
-            let spec = resolver(name)
-                .ok_or_else(|| error!("modify script: unknown table", table = name))?;
-            SurrealVistaFactory::new(db.clone())
-                .with_resolver(resolver.clone())
-                .build_from_spec(spec)
-        });
+/// What the SurrealDB shell implements. A query-sourced (`rhai:` or `base:`)
+/// vista takes no writes, so it confines none, and has no table for a LIVE
+/// subscription. Native conditions narrow it all the same.
+fn surreal_capabilities(read_only: bool) -> VistaCapabilities {
+    let reads = [
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::NativeConditions,
+        Capability::Window,
+        Capability::Traverse,
+    ];
+    let table_only = [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+        Capability::Subscribe,
+    ];
+    let caps: VistaCapabilities = reads.into_iter().collect();
+    if read_only {
+        return caps;
+    }
+    table_only.into_iter().fold(caps, VistaCapabilities::with)
+}
 
-        // Vendor vocab first, data vocab second (so `table` is a table handle,
-        // not SurrealDB's `ident` alias — same ordering as scripted traversal).
-        let host = Host::builder(Limits::background())
-            .vocab_fn(|engine| vista.source.register_rhai_extensions(engine))
-            .vocab(vantage_vista::DataVocab {
-                resolver: Some(target_resolver),
-                terminals: vantage_vista::Terminals::Describe,
-            })
-            .build();
-        vantage_vista::eval_modify_script(&host, code, vista)
+/// The join key of a single-column relation: a `has_one` reads the parent's
+/// `foreign_key` and constrains the target's id column; a `has_many` reads
+/// the parent's `source_id` and constrains the target's `foreign_key`. A
+/// contained relation has no keys.
+fn join_keys(kind: ReferenceKind, source_id: &str, foreign_key: String) -> Vec<JoinKey> {
+    match kind {
+        ReferenceKind::HasOne => vec![JoinKey::to_target_id(foreign_key)],
+        ReferenceKind::HasMany => vec![JoinKey::new(source_id, foreign_key)],
+        _ => Vec::new(),
     }
 }
 
@@ -232,7 +234,7 @@ pub(crate) fn build_surreal_table(
     table.set_spec_id_field(&spec.resolve_id_column())?;
 
     let table = table
-        .with_spec_references(&spec.references, resolver, build_surreal_table)
+        .with_spec_references(&spec.references, resolver, build_surreal_table)?
         .with_contained_specs(&spec.contained, build_column)?;
 
     // A dotted spec column (`batch.name`) is an implicit reference — route it
@@ -416,6 +418,7 @@ where
     // consumers that read the vista's metadata (not just traversal calls)
     // see them — the target table name comes from building the bare
     // target, which is offline (no I/O until a query runs).
+    let source_id = table.id_field_name();
     for (name, kind) in table.ref_kinds() {
         let Ok(foreign_key) = table.ref_foreign_key(&name) else {
             continue;
@@ -427,549 +430,8 @@ where
             name,
             target.table_name().to_string(),
             kind,
-            foreign_key,
+            join_keys(kind, &source_id, foreign_key),
         ));
     }
     metadata
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-    use surreal_client::{MockSurrealEngine, SurrealClient};
-    use vantage_vista::VistaFactory;
-    use vantage_vista::{ReferenceKind, flags as vista_flags};
-
-    fn test_db() -> SurrealDB {
-        let client = SurrealClient::new(
-            Box::new(MockSurrealEngine::new()),
-            Some("test".into()),
-            Some("test".into()),
-        );
-        SurrealDB::new(client)
-    }
-
-    fn parse(yaml: &str) -> SurrealVistaSpec {
-        serde_yaml_ng::from_str(yaml).expect("yaml parse")
-    }
-
-    fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SurrealSpecResolver {
-        let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
-        let map = Arc::new(map);
-        Arc::new(move |name: &str| map.get(name).cloned())
-    }
-
-    /// SurrealDB lowers an implicit reference into a native idiom path, each
-    /// segment escaped on its own so the record links are traversed
-    /// (`batch.golf_course.name`) rather than looked up as one literal field.
-    #[test]
-    fn traversal_path_expr_builds_escaped_idiom_path() {
-        use vantage_table::traits::table_source::TableSource;
-        let db = test_db();
-        assert!(db.supports_traversal());
-
-        let one = db.traversal_path_expr(&["batch"], "name").unwrap();
-        assert_eq!(one.preview(), "batch.name");
-
-        let two = db
-            .traversal_path_expr(&["batch", "golf_course"], "name")
-            .unwrap();
-        assert_eq!(two.preview(), "batch.golf_course.name");
-
-        // A reserved keyword segment is escaped independently — not the whole
-        // path — so traversal survives.
-        let reserved = db.traversal_path_expr(&["SELECT"], "name").unwrap();
-        assert_eq!(reserved.preview(), "⟨SELECT⟩.name");
-    }
-
-    /// A dotted spec column routes through the traversal import: the idiom
-    /// descends the relation's **link field** (here `batch`), not its registry
-    /// name (`owner`), the flat dotted alias is escaped as a single
-    /// identifier, and metadata flags the column `calculated` (not orderable —
-    /// the dotted name is a projection alias, not a sortable field).
-    #[test]
-    fn factory_routes_dotted_spec_column_through_traversal() {
-        let batch_yaml = r#"
-name: batch
-columns:
-  id: { type: string, flags: [id] }
-  name: { type: string }
-"#;
-        let tag_yaml = r#"
-name: tag
-columns:
-  id: { type: string, flags: [id] }
-  status: { type: string }
-  batch: { type: string }
-  owner.name: { type: string }
-references:
-  owner:
-    table: batch
-    kind: has_one
-    foreign_key: batch
-"#;
-        let resolver = registry_resolver(vec![("batch".to_string(), parse(batch_yaml))]);
-        let table =
-            build_surreal_table(&parse(tag_yaml), test_db(), Some(resolver)).expect("build tag");
-
-        let preview = table.select().preview();
-        println!("QUERY: {preview}");
-        assert!(
-            preview.contains("batch.name"),
-            "idiom must descend the link field `batch`: {preview}"
-        );
-        assert!(
-            preview.contains("⟨owner.name⟩"),
-            "dotted alias must be a single escaped identifier: {preview}"
-        );
-        assert!(
-            !preview.contains("(owner.name)"),
-            "relation name must not be used as the idiom path: {preview}"
-        );
-
-        let metadata = metadata_from_table(&table);
-        let col = metadata.columns.get("owner.name").expect("metadata column");
-        assert!(
-            col.flags.iter().any(|f| f == vista_flags::CALCULATED),
-            "imported column must be flagged calculated: {:?}",
-            col.flags
-        );
-        assert!(
-            !col.flags.iter().any(|f| f == vista_flags::ORDERABLE),
-            "imported column must not be orderable: {:?}",
-            col.flags
-        );
-        let status = metadata.columns.get("status").expect("status column");
-        assert!(status.flags.iter().any(|f| f == vista_flags::ORDERABLE));
-    }
-
-    /// A dotted spec column naming an unknown relation fails the build —
-    /// the factory propagates `with_active_columns`' build-time error instead
-    /// of leaving a dead literal column.
-    #[test]
-    fn factory_rejects_dotted_spec_column_with_unknown_relation() {
-        let yaml = r#"
-name: tag
-columns:
-  id: { type: string, flags: [id] }
-  nope.name: { type: string }
-"#;
-        assert!(build_surreal_table(&parse(yaml), test_db(), None).is_err());
-    }
-
-    #[cfg(feature = "rhai")]
-    #[test]
-    fn expr_column_projects_into_select() {
-        let yaml = r#"
-name: tag
-columns:
-  id: { type: string, flags: [id] }
-  batch: { type: string }
-  batch_name: { type: string, expr: 'ident("batch")["name"]' }
-"#;
-        let spec = parse(yaml);
-        let table = build_surreal_table(&spec, test_db(), None).expect("build");
-        let preview = table.select().preview();
-        println!("QUERY: {preview}");
-        assert!(
-            preview.contains("batch.name") && preview.contains("AS batch_name"),
-            "expr column must project as (batch.name) AS batch_name, got: {preview}"
-        );
-    }
-
-    /// The WHERE clause runs before the select list is projected, so a
-    /// condition on an `expr:` column must carry the expression itself —
-    /// the `AS` alias is not a field there and would match nothing.
-    #[cfg(feature = "rhai")]
-    #[test]
-    fn conditions_on_expr_column_use_the_expression_not_the_alias() {
-        use vantage_vista::{FilterOp, TableShell};
-
-        let yaml = r#"
-name: line
-columns:
-  id: { type: string, flags: [id] }
-  qty: { type: int }
-  price: { type: int }
-  total: { type: int, expr: 'mul(ident("qty"), ident("price"))' }
-"#;
-        let table = build_surreal_table(&parse(yaml), test_db(), None).expect("build");
-        let metadata = metadata_from_table(&table);
-        let mut shell = SurrealTableShell::new(table, VistaCapabilities::default(), metadata, None);
-
-        shell
-            .add_eq_condition("total", &ciborium::Value::Integer(3.into()))
-            .expect("eq");
-        shell
-            .add_op_condition("total", FilterOp::Gt, &ciborium::Value::Integer(6.into()))
-            .expect("gt");
-        shell
-            .add_op_condition("total", FilterOp::Like, &ciborium::Value::Text("1".into()))
-            .expect("like");
-
-        let preview = shell.table.select().preview();
-        let (_, where_clause) = preview.split_once("WHERE").expect("WHERE clause");
-        assert!(
-            where_clause.matches("qty * price").count() >= 3,
-            "every condition must use the expression, got: {preview}"
-        );
-        assert!(
-            !where_clause.contains("total"),
-            "the alias must not appear in WHERE, got: {preview}"
-        );
-    }
-
-    #[test]
-    fn has_many_traversal_condition_from_thing_and_string_ids() {
-        let batch_yaml = r#"
-name: batch
-columns:
-  id: { type: string, flags: [id] }
-  name: { type: string }
-references:
-  tags:
-    table: tag
-    kind: has_many
-    foreign_key: batch
-"#;
-        let tag_yaml = r#"
-name: tag
-columns:
-  id: { type: string, flags: [id] }
-  batch: { type: string }
-"#;
-        let batch_spec = parse(batch_yaml);
-        let tag_spec = parse(tag_yaml);
-        let resolver = registry_resolver(vec![("tag".to_string(), tag_spec)]);
-        let table =
-            build_surreal_table(&batch_spec, test_db(), Some(resolver)).expect("build batch");
-
-        // Parent row with a Tag(8) record id (what SurrealDB actually returns).
-        let thing_cbor = ciborium::Value::Tag(
-            8,
-            Box::new(ciborium::Value::Array(vec![
-                ciborium::Value::Text("batch".into()),
-                ciborium::Value::Text("0jz7".into()),
-            ])),
-        );
-        let mut row: vantage_types::Record<AnySurrealType> = vantage_types::Record::new();
-        row.insert("id".into(), AnySurrealType::from(thing_cbor));
-        let target = table
-            .get_ref_from_row::<EmptyEntity>("tags", &row)
-            .expect("traverse");
-        let q = target.select().preview();
-        println!("THING QUERY: {q}");
-        assert!(
-            q.contains("batch = batch:0jz7"),
-            "Thing id must render as a record literal, got: {q}"
-        );
-
-        // Parent row with the id as a plain string (e.g. re-parsed from text).
-        let mut row: vantage_types::Record<AnySurrealType> = vantage_types::Record::new();
-        row.insert(
-            "id".into(),
-            AnySurrealType::from(ciborium::Value::Text("batch:0jz7".into())),
-        );
-        let target = table
-            .get_ref_from_row::<EmptyEntity>("tags", &row)
-            .expect("traverse");
-        let q = target.select().preview();
-        assert!(
-            q.contains("batch = batch:0jz7"),
-            "string id must be coerced to a record literal, got: {q}"
-        );
-        // The insert invariant must carry the coerced record id too — a child
-        // inserted into this set stores a link, not a string FK.
-        let invariant = target.invariants().get("batch").expect("batch invariant");
-        assert!(
-            matches!(invariant.value(), ciborium::Value::Tag(8, _)),
-            "invariant must hold a Tag(8) record id, got: {:?}",
-            invariant.value()
-        );
-    }
-
-    #[test]
-    fn has_one_traversal_coerces_string_fk_to_record_literal() {
-        let tag_yaml = r#"
-name: tag
-columns:
-  id: { type: string, flags: [id] }
-  batch: { type: string }
-references:
-  batch:
-    table: batch
-    kind: has_one
-    foreign_key: batch
-"#;
-        let batch_yaml = r#"
-name: batch
-columns:
-  id: { type: string, flags: [id] }
-  name: { type: string }
-"#;
-        let tag_spec = parse(tag_yaml);
-        let batch_spec = parse(batch_yaml);
-        let resolver = registry_resolver(vec![("batch".to_string(), batch_spec)]);
-        let table = build_surreal_table(&tag_spec, test_db(), Some(resolver)).expect("build tag");
-
-        // FK arriving in string form (e.g. a row that round-tripped through
-        // a script) must narrow the target by record literal, not by string.
-        let mut row: vantage_types::Record<AnySurrealType> = vantage_types::Record::new();
-        row.insert(
-            "batch".into(),
-            AnySurrealType::from(ciborium::Value::Text("batch:0jz7".into())),
-        );
-        let target = table
-            .get_ref_from_row::<EmptyEntity>("batch", &row)
-            .expect("traverse");
-        let q = target.select().preview();
-        assert!(
-            q.contains("id = batch:0jz7"),
-            "string FK must be coerced to a record literal, got: {q}"
-        );
-    }
-
-    #[test]
-    fn build_from_spec_surfaces_references_in_metadata() {
-        let yaml = r#"
-name: bakery
-columns:
-  id: { type: thing, flags: [id] }
-  name: { type: string, flags: [title] }
-references:
-  products:
-    table: product
-    kind: has_many
-    foreign_key: bakery
-  primary_product:
-    table: product
-    kind: has_one
-    foreign_key: primary_product
-"#;
-        let spec = parse(yaml);
-        let factory = SurrealVistaFactory::new(test_db());
-        let vista = factory.build_from_spec(spec).expect("build");
-
-        let mut listed = vista.get_references();
-        listed.sort();
-        assert_eq!(listed, vec!["primary_product", "products"]);
-
-        let products = vista.get_reference("products").expect("products ref");
-        assert_eq!(products.target, "product");
-        assert_eq!(products.kind, ReferenceKind::HasMany);
-        assert_eq!(products.foreign_key, "bakery");
-
-        let primary = vista.get_reference("primary_product").expect("primary ref");
-        assert_eq!(primary.kind, ReferenceKind::HasOne);
-    }
-
-    #[test]
-    fn resolver_supplies_child_columns_on_traversal() {
-        let bakery_yaml = r#"
-name: bakery
-columns:
-  id: { type: thing, flags: [id] }
-references:
-  products:
-    table: product
-    kind: has_many
-    foreign_key: bakery
-"#;
-        let product_yaml = r#"
-name: product
-columns:
-  id: { type: thing, flags: [id] }
-  name: { type: string, flags: [title] }
-  price: { type: int }
-  bakery: { type: thing }
-"#;
-        let bakery_spec = parse(bakery_yaml);
-        let product_spec = parse(product_yaml);
-
-        let resolver = registry_resolver(vec![
-            ("bakery".into(), bakery_spec.clone()),
-            ("product".into(), product_spec.clone()),
-        ]);
-
-        let factory = SurrealVistaFactory::new(test_db()).with_resolver(resolver);
-        let bakery = factory.build_from_spec(bakery_spec).expect("build bakery");
-
-        let mut row: vantage_types::Record<ciborium::Value> = vantage_types::Record::new();
-        row.insert(
-            "id".into(),
-            ciborium::Value::Text("bakery:hill_valley".into()),
-        );
-
-        let child = bakery.get_ref("products", &row).expect("traverse products");
-
-        let mut cols = child.get_column_names();
-        cols.sort();
-        assert_eq!(cols, vec!["bakery", "id", "name", "price"]);
-        assert_eq!(child.get_id_column(), Some("id"));
-    }
-
-    #[cfg(feature = "rhai")]
-    #[test]
-    fn scripted_reference_builds_target_via_rhai() {
-        let bakery_yaml = r#"
-name: bakery
-columns:
-  id: { type: thing, flags: [id] }
-references:
-  products:
-    table: product
-    kind: has_many
-    foreign_key: bakery
-    surreal:
-      rhai: |
-        table("product").where("bakery", row.id)
-"#;
-        let product_yaml = r#"
-name: product
-columns:
-  id: { type: thing, flags: [id] }
-  name: { type: string, flags: [title] }
-  price: { type: int }
-  bakery: { type: thing }
-"#;
-        let bakery_spec = parse(bakery_yaml);
-        let product_spec = parse(product_yaml);
-        let resolver = registry_resolver(vec![
-            ("bakery".into(), bakery_spec.clone()),
-            ("product".into(), product_spec),
-        ]);
-
-        let factory = SurrealVistaFactory::new(test_db()).with_resolver(resolver);
-        let bakery = factory.build_from_spec(bakery_spec).expect("build bakery");
-
-        // The build_script rode through the extras slot onto the Reference, and
-        // the backend advertises the scripted-traversal capability.
-        assert!(bakery.capabilities().can_build_ref_via_script);
-        let reference = bakery.get_reference("products").expect("products ref");
-        assert!(reference.build_script.is_some());
-
-        // Traversal evaluates the script: `table("product")` resolves a fresh
-        // product Vista (proving the script path fired, not the FK path).
-        let mut row: vantage_types::Record<ciborium::Value> = vantage_types::Record::new();
-        row.insert(
-            "id".into(),
-            ciborium::Value::Text("bakery:hill_valley".into()),
-        );
-        let child = bakery
-            .get_ref("products", &row)
-            .expect("scripted traverse products");
-
-        let mut cols = child.get_column_names();
-        cols.sort();
-        assert_eq!(cols, vec!["bakery", "id", "name", "price"]);
-        assert_eq!(child.name(), "product");
-    }
-
-    #[cfg(feature = "rhai")]
-    #[test]
-    fn scripted_reference_refuses_vendor_condition_on_table() {
-        // `with_condition` needs a Vista in hand (`self`); on a handle from
-        // `table(name)` it is an error naming the verb.
-        let bakery_yaml = r#"
-name: bakery
-columns:
-  id: { type: thing, flags: [id] }
-references:
-  products:
-    table: product
-    kind: has_many
-    foreign_key: bakery
-    surreal:
-      rhai: |
-        table("product").with_condition(ident("bakery") == row.id)
-"#;
-        let product_yaml = r#"
-name: product
-columns:
-  id: { type: thing, flags: [id] }
-  name: { type: string, flags: [title] }
-  bakery: { type: thing }
-"#;
-        let bakery_spec = parse(bakery_yaml);
-        let resolver = registry_resolver(vec![
-            ("bakery".into(), bakery_spec.clone()),
-            ("product".into(), parse(product_yaml)),
-        ]);
-        let factory = SurrealVistaFactory::new(test_db()).with_resolver(resolver);
-        let bakery = factory.build_from_spec(bakery_spec).expect("build bakery");
-
-        let mut row: vantage_types::Record<ciborium::Value> = vantage_types::Record::new();
-        row.insert(
-            "id".into(),
-            ciborium::Value::Text("bakery:hill_valley".into()),
-        );
-        let err = bakery
-            .get_ref("products", &row)
-            .err()
-            .expect("with_condition on table(...) must fail");
-        assert!(
-            err.to_string().contains(r#"verb: "with_condition""#),
-            "{err}"
-        );
-    }
-
-    #[cfg(feature = "rhai")]
-    #[test]
-    fn modify_script_tweaks_built_vista_with_vendor_condition() {
-        // The YAML builds a normal, writable `client` table; the `modify` script
-        // then narrows it with an expression condition YAML can't express. A
-        // clean build proves the post-build hook ran and the vendor condition
-        // routed through `add_raw_condition`.
-        let yaml = r#"
-name: client
-columns:
-  id: { type: thing, flags: [id] }
-  name: { type: string, flags: [title] }
-  is_paying_client: { type: bool }
-surreal:
-  table: clients
-  modify: |
-    self.with_condition(ident("is_paying_client") == true)
-       .sort("name", "asc")
-"#;
-        let spec = parse(yaml);
-        let factory = SurrealVistaFactory::new(test_db());
-        let vista = factory.build_from_spec(spec).expect("build + modify");
-
-        // The base table stays writable (a condition narrows, it doesn't make
-        // the vista read-only), and the schema is intact.
-        assert!(vista.capabilities().can_insert);
-        let mut cols = vista.get_column_names();
-        cols.sort();
-        assert_eq!(cols, vec!["id", "is_paying_client", "name"]);
-    }
-
-    #[test]
-    fn resolver_miss_falls_back_to_empty_child_table() {
-        let bakery_yaml = r#"
-name: bakery
-columns:
-  id: { type: thing, flags: [id] }
-references:
-  ghosts:
-    table: missing_table
-    kind: has_many
-    foreign_key: bakery
-"#;
-        let bakery_spec = parse(bakery_yaml);
-        let resolver = registry_resolver(vec![]);
-        let factory = SurrealVistaFactory::new(test_db()).with_resolver(resolver);
-        let bakery = factory.build_from_spec(bakery_spec).expect("build");
-
-        let mut row: vantage_types::Record<ciborium::Value> = vantage_types::Record::new();
-        row.insert(
-            "id".into(),
-            ciborium::Value::Text("bakery:hill_valley".into()),
-        );
-
-        let child = bakery.get_ref("ghosts", &row).expect("fallback child");
-        assert!(child.get_column_names().is_empty());
-    }
 }

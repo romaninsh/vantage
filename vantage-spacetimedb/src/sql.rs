@@ -41,7 +41,7 @@
 use ciborium::Value as CborValue;
 use spacetimedb_sats::AlgebraicType;
 use vantage_core::{Result, error};
-use vantage_vista::FilterOp;
+use vantage_vista::{Capability, FilterOp, unsupported};
 
 /// A validated identifier — a table, view or column name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +132,11 @@ impl Literal {
     }
 
     /// Render a decoded value for a `WHERE` comparison or an assignment.
+    ///
+    /// A value the dialect has no literal for (a null, an array, a map) is
+    /// refused as `unsupported(Capability::FilterOps)` with the reason in its
+    /// context, so a condition on it is evaluated by the caller. A text value
+    /// the dialect can't carry is a plain error.
     pub(crate) fn from_cbor(value: &CborValue) -> Result<Self> {
         Ok(match value {
             // A tag is a CBOR annotation, not part of the value: Vista's rhai
@@ -145,17 +150,12 @@ impl Literal {
             CborValue::Float(f) => Self::float(*f),
             CborValue::Text(s) => Self::text(s)?,
             CborValue::Null => {
-                return Err(
-                    error!("SpacetimeDB SQL has no null literal to compare against")
-                        .mark_unimplemented(),
-                );
+                return no_literal("SpacetimeDB SQL has no null literal to compare against");
             }
             other => {
-                return Err(error!(
-                    "value cannot be expressed as a SpacetimeDB SQL literal",
-                    value = format!("{other:?}")
-                )
-                .mark_unimplemented());
+                return no_literal(format!(
+                    "value cannot be expressed as a SpacetimeDB SQL literal: {other:?}"
+                ));
             }
         })
     }
@@ -220,12 +220,15 @@ pub(crate) struct Cond {
 }
 
 impl Cond {
-    pub(crate) fn new(column: Ident, op: FilterOp, value: Literal) -> Result<Self> {
-        Ok(Self {
-            column,
-            op: sql_operator(op)?,
-            value,
-        })
+    /// `column <op> value`. The operator is checked before the value, so an
+    /// operator the dialect lacks is refused as such whatever its operand.
+    /// An operand with no literal (a null, an array) is refused too, by
+    /// [`Literal::from_cbor`]: the caller evaluates the comparison over the
+    /// rows it reads.
+    pub(crate) fn new(column: Ident, op: FilterOp, value: &CborValue) -> Result<Self> {
+        let op = sql_operator(op)?;
+        let value = Literal::from_cbor(value)?;
+        Ok(Self { column, op, value })
     }
 
     /// An equality test, for the id comparisons every single-row statement makes.
@@ -348,10 +351,6 @@ impl Insert {
         self
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        self.columns.is_empty()
-    }
-
     pub(crate) fn render(&self) -> String {
         let columns: Vec<&str> = self.columns.iter().map(Ident::as_str).collect();
         let values: Vec<&str> = self.values.iter().map(Literal::as_str).collect();
@@ -447,7 +446,9 @@ impl Delete {
     }
 }
 
-/// The comparison operators the dialect accepts.
+/// The comparison operators the dialect accepts. `InSet`, `NotInSet` and
+/// `Like` have no spelling (no `IN`, no `LIKE`) and are refused as
+/// `Unsupported`, so a caller evaluates them over the rows it reads.
 pub(crate) fn sql_operator(op: FilterOp) -> Result<&'static str> {
     Ok(match op {
         FilterOp::Eq => "=",
@@ -456,10 +457,16 @@ pub(crate) fn sql_operator(op: FilterOp) -> Result<&'static str> {
         FilterOp::Gte => ">=",
         FilterOp::Lt => "<",
         FilterOp::Lte => "<=",
-        FilterOp::InSet | FilterOp::NotInSet => {
-            return Err(error!("no `IN` operator in SpacetimeDB SQL").mark_unimplemented());
-        }
+        _ => return unsupported(Capability::FilterOps),
     })
+}
+
+/// The refusal of a value the dialect has no literal for, with `reason` in
+/// its context.
+fn no_literal<T>(reason: impl Into<String>) -> Result<T> {
+    let mut refusal = unsupported::<()>(Capability::FilterOps).unwrap_err();
+    refusal.context.insert("reason".to_string(), reason.into());
+    Err(refusal)
 }
 
 #[cfg(test)]
@@ -635,9 +642,11 @@ mod tests {
     }
 
     #[test]
-    fn in_is_refused_because_the_dialect_has_no_such_operator() {
-        assert!(sql_operator(FilterOp::InSet).is_err());
-        assert!(sql_operator(FilterOp::NotInSet).is_err());
+    fn in_and_like_are_refused_because_the_dialect_has_no_such_operator() {
+        for op in [FilterOp::InSet, FilterOp::NotInSet, FilterOp::Like] {
+            let err = sql_operator(op).unwrap_err();
+            assert!(err.is_unsupported(), "{op:?}: {err}");
+        }
         assert_eq!(sql_operator(FilterOp::Gte).unwrap(), ">=");
     }
 }

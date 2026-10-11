@@ -110,7 +110,7 @@ pub struct GraphqlBlock {
     pub search: Option<bool>,
 
     /// `paginate: true` sends `limit:`/`offset:` and enables offset paging
-    /// (`fetch_page`, `fetch_window`, `fetch_next`). Off by default, and
+    /// (`fetch_window`). Off by default, and
     /// not offered with `filter: false`, where local filtering would cut
     /// server pages short.
     #[serde(default, skip_serializing_if = "Option::is_none")]

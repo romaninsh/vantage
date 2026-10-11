@@ -115,7 +115,7 @@ async fn yaml_references_traverse_has_one_and_has_many() -> TestResult {
 
     let clients = factory.build_from_spec(client_spec)?;
     let marty = clients.get_value("c1").await?.expect("client c1");
-    let orders = clients.get_ref("orders", &marty)?;
+    let orders = clients.get_ref("orders", Some(&marty))?;
     let rows = orders.list_values().await?;
     let mut items: Vec<String> = rows.values().filter_map(|r| text(r, "item")).collect();
     items.sort();
@@ -123,7 +123,7 @@ async fn yaml_references_traverse_has_one_and_has_many() -> TestResult {
 
     let orders = factory.build_from_spec(order_spec)?;
     let o3 = orders.get_value("o3").await?.expect("order o3");
-    let client = orders.get_ref("client", &o3)?;
+    let client = orders.get_ref("client", Some(&o3))?;
     let rows = client.list_values().await?;
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -163,7 +163,7 @@ async fn references_traverse_object_id_foreign_keys() -> TestResult {
         .get_value(c1.to_hex().as_str())
         .await?
         .expect("client c1");
-    let orders = clients.get_ref("orders", &marty)?;
+    let orders = clients.get_ref("orders", Some(&marty))?;
     let rows = orders.list_values().await?;
     let mut items: Vec<String> = rows.values().filter_map(|r| text(r, "item")).collect();
     items.sort();
@@ -182,7 +182,7 @@ async fn references_traverse_object_id_foreign_keys() -> TestResult {
 
     let orders = factory.build_from_spec(order_spec)?;
     let o3 = orders.get_value("o3").await?.expect("order o3");
-    let client = orders.get_ref("client", &o3)?;
+    let client = orders.get_ref("client", Some(&o3))?;
     let rows = client.list_values().await?;
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -216,7 +216,8 @@ references:
 "#,
     ))?;
     let doc = clients.get_value("c2").await?.expect("client c2");
-    let orders = clients.get_ref("orders", &doc)?;
+    let orders = clients.get_ref("orders", Some(&doc))?;
+    assert!(orders.is_narrowed());
     let rows = orders.list_values().await?;
     assert_eq!(rows.len(), 1);
     // Column-less passthrough: the stored document, every key as stored.
@@ -250,8 +251,8 @@ references:
     let err = db
         .vista_factory()
         .build_from_spec(nested_order.clone())
-        .err()
-        .expect("nested has_one key refused");
+        .map(drop)
+        .expect_err("nested has_one key refused");
     assert!(err.to_string().contains("its own field name"), "{err}");
 
     // The client's has_many lands on the same nested key, on the target.
@@ -260,8 +261,8 @@ references:
         .with_resolver(resolver(vec![spec(CLIENT), nested_order]));
     let err = factory
         .build_from_spec(spec(CLIENT))
-        .err()
-        .expect("nested has_many key refused");
+        .map(drop)
+        .expect_err("nested has_many key refused");
     assert!(err.to_string().contains("client_id"), "{err}");
 
     teardown(&db, &name).await;
@@ -287,9 +288,9 @@ async fn traversal_into_target_with_renamed_reference_key_errors() -> TestResult
 
     let row = clients.get_value("c1").await?.expect("client c1");
     let err = clients
-        .get_ref("orders", &row)
-        .err()
-        .expect("traversal into the order must fail loudly");
+        .get_ref("orders", Some(&row))
+        .map(drop)
+        .expect_err("traversal into the order must fail loudly");
     let msg = err.to_string();
     assert!(msg.contains("its own field name"), "{msg}");
     assert!(msg.contains("product_id"), "{msg}");
@@ -319,7 +320,7 @@ references:
 "#,
     ))?;
     let o3 = orders.get_value("o3").await?.expect("order o3");
-    let rows = orders.get_ref("client", &o3)?.list_values().await?;
+    let rows = orders.get_ref("client", Some(&o3))?.list_values().await?;
     assert_eq!(rows.len(), 1);
     assert_eq!(
         text(rows.values().next().unwrap(), "name").as_deref(),
@@ -350,7 +351,7 @@ async fn writes_through_traversed_set_accept_ids_as_read() -> TestResult {
         .get_value(c1.to_hex().as_str())
         .await?
         .expect("client");
-    let orders = clients.get_ref("orders", &marty)?;
+    let orders = clients.get_ref("orders", Some(&marty))?;
 
     let stored_fk = || async {
         db.doc_collection("orders")
@@ -400,15 +401,16 @@ async fn traversal_target_keeps_nested_paths() -> TestResult {
 
     let orders = factory.build_from_spec(order_spec)?;
     let o1 = orders.get_value("o1").await?.expect("order o1");
-    let client = orders.get_ref("client", &o1)?;
+    let client = orders.get_ref("client", Some(&o1))?;
+    assert!(client.is_narrowed());
     let rows = client.list_values().await?;
     assert_eq!(rows.len(), 1);
     let row = rows.values().next().unwrap();
     assert_eq!(text(row, "city").as_deref(), Some("Hill Valley"));
     assert!(row.get("address").is_none());
 
-    // The target vista built by `get_ref_target` carries the paths too.
-    let target = orders.get_ref_target("client")?;
+    // The bare target carries the paths too.
+    let target = orders.get_ref("client", None)?;
     let all = target.list_values().await?;
     let mut cities: Vec<String> = all.values().filter_map(|r| text(r, "city")).collect();
     cities.sort();

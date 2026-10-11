@@ -126,7 +126,7 @@ pub(crate) struct TableSceneryState {
     /// time. Sceneries hand this back through
     /// `TableScenery::master_capabilities` so UI delegates can route
     /// page requests through the right primitive (`set_viewport` for
-    /// `can_fetch_page`, `request_load_more` for `can_fetch_next`).
+    /// `Window`, `request_load_more` for `Cursor`).
     pub(crate) master_capabilities: VistaCapabilities,
 
     // ---- two-pass loading -------------------------------------------------
@@ -163,7 +163,7 @@ pub(crate) struct TableSceneryState {
     /// [`DioInner::demanded_columns`](crate::dio::DioInner::demanded_columns).
     pub(crate) demand: Option<Vec<String>>,
     /// The shared per-query ordered index for this scenery's conditions/sort,
-    /// keyed by [`Vista::index_key`](vantage_vista::Vista::index_key). `None` in single-pass mode.
+    /// keyed by `query_index::index_key`. `None` in single-pass mode.
     /// Swappable: a `set_sort` re-points it at the index for the
     /// new variant (see [`resort`](super::two_pass::resort)).
     pub(crate) index: RwLock<Option<Arc<crate::dio::query_index::QueryIndex>>>,

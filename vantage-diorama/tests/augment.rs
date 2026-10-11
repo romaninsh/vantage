@@ -53,7 +53,7 @@ fn master_vista() -> Vista {
         .with_record("r0", record(&[("id", "r0"), ("branch", "main")]))
         .with_record("r1", record(&[("id", "r1"), ("branch", "dev")]))
         .with_metadata(meta(&["id", "branch"]));
-    Vista::new("runs", Box::new(shell))
+    Vista::new("runs", shell)
 }
 
 /// Detail source #1: keyed by id, carries the expensive `detail` column.
@@ -62,7 +62,7 @@ fn detail_vista() -> Vista {
         .with_record("r0", record(&[("id", "r0"), ("detail", "full-r0")]))
         .with_record("r1", record(&[("id", "r1"), ("detail", "full-r1")]))
         .with_metadata(meta(&["id", "detail"]));
-    Vista::new("runs-detail", Box::new(shell))
+    Vista::new("runs-detail", shell)
 }
 
 /// Detail source #2: a *second* independent vista, carries `extra`.
@@ -71,7 +71,7 @@ fn extra_vista() -> Vista {
         .with_record("r0", record(&[("id", "r0"), ("extra", "x0")]))
         .with_record("r1", record(&[("id", "r1"), ("extra", "x1")]))
         .with_metadata(meta(&["id", "extra"]));
-    Vista::new("runs-extra", Box::new(shell))
+    Vista::new("runs-extra", shell)
 }
 
 fn catalog() -> Arc<VistaCatalog> {
@@ -297,7 +297,7 @@ async fn fixed_detail_vista_hydrates_without_a_catalog() {
             record(&[("path", "a/tmp"), ("size", "512"), ("file_count", "1")]),
         )
         .with_metadata(size_meta);
-    let fixed = Arc::new(Vista::new("folder_size", Box::new(size_shell)));
+    let fixed = Arc::new(Vista::new("folder_size", size_shell));
 
     let master = MockShell::new()
         .with_record("r0", record(&[("id", "r0"), ("path", "a/logs")]))
@@ -311,7 +311,7 @@ async fn fixed_detail_vista_hydrates_without_a_catalog() {
             .expect("lens builds"),
     );
     let dio = lens
-        .make_dio(Vista::new("listing", Box::new(master)))
+        .make_dio(Vista::new("listing", master))
         .await
         .expect("make_dio")
         .augment(
@@ -360,8 +360,8 @@ async fn changed_master_row_refetches_its_augment() {
     let detail_shell = MockShell::new()
         .with_record("r0", record(&[("id", "r0"), ("size", "100")]))
         .with_metadata(meta(&["id", "size"]));
-    let master_writer = Vista::new("m", Box::new(master_shell.clone()));
-    let detail_writer = Vista::new("d", Box::new(detail_shell.clone()));
+    let master_writer = Vista::new("m", master_shell.clone());
+    let detail_writer = Vista::new("d", detail_shell.clone());
 
     let lens = Arc::new(
         Lens::new()
@@ -371,13 +371,13 @@ async fn changed_master_row_refetches_its_augment() {
             .expect("lens builds"),
     );
     let dio = lens
-        .make_dio(Vista::new("listing", Box::new(master_shell)))
+        .make_dio(Vista::new("listing", master_shell))
         .await
         .expect("make_dio")
         .augment(
             Arc::new(VistaCatalog::new()),
             vec![Augmentation {
-                detail: Detail::Fixed(Arc::new(Vista::new("sizes", Box::new(detail_shell)))),
+                detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail_shell))),
                 source: Source::Id,
                 fetch: Fetch::PerRow,
                 merge: MergeRule {
@@ -431,14 +431,14 @@ mod counting {
     use async_trait::async_trait;
     use ciborium::Value as CborValue;
     use indexmap::IndexMap;
-    use vantage_core::Result;
+    use vantage_core::{Result, error};
     use vantage_types::Record;
-    use vantage_vista::capabilities::VistaCapabilities;
-    use vantage_vista::metadata::VistaMetadata;
-    use vantage_vista::reference::Reference;
-    use vantage_vista::source::TableShell;
-    use vantage_vista::{Column, Vista};
+    use vantage_vista::{
+        Capability, Column, Condition, Page, Preview, Reference, TableShell, Vista,
+        VistaCapabilities, VistaMetadata, unsupported,
+    };
 
+    #[derive(Clone)]
     pub struct CountingDetailShell {
         pub rows: Arc<Mutex<IndexMap<String, Record<CborValue>>>>,
         pub gets: Arc<AtomicUsize>,
@@ -456,13 +456,13 @@ mod counting {
                 rows: Arc::new(Mutex::new(rows)),
                 gets: Arc::new(AtomicUsize::new(0)),
                 metadata,
-                capabilities: VistaCapabilities::default(),
+                capabilities: VistaCapabilities::new(),
             }
         }
     }
 
+    /// Get-only: it lists nothing and takes no narrowing.
     #[async_trait]
-    #[allow(clippy::ptr_arg)]
     impl TableShell for CountingDetailShell {
         fn columns(&self) -> &IndexMap<String, Column> {
             &self.metadata.columns
@@ -473,42 +473,33 @@ mod counting {
         fn id_column(&self) -> Option<&str> {
             self.metadata.id_column.as_deref()
         }
-        async fn list_vista_values(
-            &self,
-            _vista: &Vista,
-        ) -> Result<IndexMap<String, Record<CborValue>>> {
-            Ok(IndexMap::new()) // get-only
-        }
-        async fn get_vista_value(
-            &self,
-            _vista: &Vista,
-            id: &String,
-        ) -> Result<Option<Record<CborValue>>> {
-            self.gets.fetch_add(1, Ordering::SeqCst);
-            Ok(self.rows.lock().unwrap().get(id).cloned())
-        }
-        async fn get_vista_some_value(
-            &self,
-            _vista: &Vista,
-        ) -> Result<Option<(String, Record<CborValue>)>> {
-            Ok(None)
-        }
         fn capabilities(&self) -> &VistaCapabilities {
             &self.capabilities
-        }
-        fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-            Some(Box::new(Self {
-                rows: self.rows.clone(),
-                gets: self.gets.clone(),
-                metadata: self.metadata.clone(),
-                capabilities: self.capabilities.clone(),
-            }))
         }
         fn driver_name(&self) -> &'static str {
             "counting-detail"
         }
-        fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-            serde_json::json!({ "driver": "counting-detail" })
+        fn preview(&self) -> Preview {
+            Preview::new("counting-detail")
+        }
+        async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+            Ok(IndexMap::new())
+        }
+        async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+            self.gets.fetch_add(1, Ordering::SeqCst);
+            Ok(self.rows.lock().unwrap().get(id).cloned())
+        }
+        async fn count(&self) -> Result<i64> {
+            Ok(0)
+        }
+        async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
+            unsupported(Capability::Window)
+        }
+        fn add_condition(&mut self, _condition: &Condition) -> Result<()> {
+            Err(error!("a get-only detail shell takes no conditions").mark_unimplemented())
+        }
+        fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
+            unsupported(Capability::Traverse)
         }
     }
 }
@@ -531,7 +522,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
             record(&[("id", "run.log"), ("modified", "t1"), ("size", "64")]),
         )
         .with_metadata(meta(&["id", "modified", "size"]));
-    let master_writer = Vista::new("m", Box::new(master_shell.clone()));
+    let master_writer = Vista::new("m", master_shell.clone());
 
     let mut detail_rows = indexmap::IndexMap::new();
     detail_rows.insert(
@@ -550,13 +541,13 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
             .expect("lens builds"),
     );
     let dio = lens
-        .make_dio(Vista::new("listing", Box::new(master_shell)))
+        .make_dio(Vista::new("listing", master_shell))
         .await
         .expect("make_dio")
         .augment(
             Arc::new(VistaCatalog::new()),
             vec![Augmentation {
-                detail: Detail::Fixed(Arc::new(Vista::new("sizes", Box::new(detail)))),
+                detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
                 source: Source::Id,
                 fetch: Fetch::PerRow,
                 merge: MergeRule {
@@ -673,7 +664,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         .with_record("logs", record(&[("id", "logs"), ("modified", "t1")]))
         .with_record("tmp", record(&[("id", "tmp"), ("modified", "t1")]))
         .with_metadata(meta(&["id", "modified"]));
-    let master_writer = Vista::new("m", Box::new(master_shell.clone()));
+    let master_writer = Vista::new("m", master_shell.clone());
 
     let mut detail_rows = indexmap::IndexMap::new();
     detail_rows.insert(
@@ -692,13 +683,13 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
             .expect("lens builds"),
     );
     let dio = lens
-        .make_dio(Vista::new("listing", Box::new(master_shell)))
+        .make_dio(Vista::new("listing", master_shell))
         .await
         .expect("make_dio")
         .augment(
             Arc::new(VistaCatalog::new()),
             vec![Augmentation {
-                detail: Detail::Fixed(Arc::new(Vista::new("sizes", Box::new(detail)))),
+                detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
                 source: Source::Id,
                 fetch: Fetch::PerRow,
                 merge: MergeRule {

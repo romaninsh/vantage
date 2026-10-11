@@ -58,9 +58,7 @@ async fn main() -> Result<()> {
             .build()
             .map_err(|e| vantage_core::error!("lens", detail = e.to_string()))?,
     );
-    let orders = lens
-        .make_dio(Vista::new("orders", Box::new(shell.clone())))
-        .await?;
+    let orders = lens.make_dio(Vista::new("orders", shell.clone())).await?;
 
     // ---- the aggregates ----------------------------------------------------
     let aggregates = AggregateLens::in_memory()

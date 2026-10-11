@@ -1,18 +1,19 @@
 //! Reference traversal on a `GraphqlApiTableShell`.
 //!
-//! The typed table holds every reference as `with_one` / `with_many`, so the
-//! eq-condition on the target comes from vantage-table either way. What a
-//! spec-built shell adds is the target's spec: it names the traversed Vista,
-//! carries the target's own references into its metadata, and is checked
-//! up front, since vantage-table turns a target it cannot build into a
-//! column-less table rather than an error. The join value read from the
-//! parent row is retyped by the target column first (`coerce_join_value`).
+//! The typed table holds every reference as `with_one` / `with_many`, which
+//! builds the bare target. A spec-built shell builds it from the target's
+//! spec instead: the spec names the traversed Vista, carries the target's
+//! own references into its metadata, and is checked up front, since
+//! vantage-table turns a target it cannot build into a column-less table
+//! rather than an error. From a parent row, the target is narrowed through
+//! `Reference::narrow`, after each join value is retyped by its target
+//! column (`coerce_join_values`).
 
 use ciborium::Value as CborValue;
 use vantage_core::{Context, Result, error};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{ReferenceKind, Vista};
+use vantage_vista::{Reference as VistaReference, Vista};
 
 use crate::graphql::api::GraphqlApi;
 use crate::graphql::impls::get_by_id::id_for_column;
@@ -54,38 +55,28 @@ impl GraphqlApiTableShell {
         Ok(Some((target, bare)))
     }
 
-    /// Retype a text join value in `native` (the converted `row`) by the
-    /// column of `target` (the bare target table) it is compared with: an
-    /// integer-typed column takes an integer literal. Rows built from text
-    /// (forms, scripts, URLs) would otherwise send `_eq: "5"` against an
-    /// `Int` field, which the server rejects.
-    pub(crate) fn coerce_join_value(
+    /// The target of `relation`: bare without a `row`, else narrowed to the
+    /// rows related to it through the reference's join keys.
+    pub(crate) fn ref_target(
         &self,
         relation: &str,
-        target: &BareTarget,
-        row: &Record<CborValue>,
-        native: &mut Record<AnyGraphqlType>,
-    ) -> Result<()> {
-        let Some(reference) = self
-            .table
-            .vista_references()
-            .into_iter()
-            .find(|r| r.name == relation)
-        else {
-            return Ok(());
+        row: Option<&Record<CborValue>>,
+    ) -> Result<Vista> {
+        let reference = self
+            .metadata
+            .references
+            .get(relation)
+            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())?;
+        let (target_spec, bare) = match self.spec_target(relation)? {
+            Some((spec, bare)) => (Some(spec), bare),
+            None => (None, self.table.get_ref_target_erased(relation)?),
         };
-        let (source, target_column) = match reference.kind {
-            ReferenceKind::HasOne => (reference.foreign_key, target.id_field()),
-            ReferenceKind::HasMany => {
-                let column = target.columns().get(&reference.foreign_key);
-                (self.table.id_field_name(), column)
-            }
+        let Some(row) = row else {
+            return self.wrap_target(bare, target_spec);
         };
-        if let Some(CborValue::Text(text)) = row.get(&source) {
-            let value = id_for_column(target_column, text, &source)?;
-            native.insert(source, AnyGraphqlType::untyped(value));
-        }
-        Ok(())
+        let row = coerce_join_values(reference, &bare, row)?;
+        let target = self.wrap_target(bare, target_spec)?;
+        reference.narrow(target, &row, CborValue::clone)
     }
 
     /// Wrap a traversed table: from its spec when it has one, else as a
@@ -97,9 +88,36 @@ impl GraphqlApiTableShell {
     ) -> Result<Vista> {
         match (target, &self.resolver) {
             (Some(target), Some(resolver)) => {
-                Ok(wrap_spec_table(table, &target.spec, resolver.clone()))
+                wrap_spec_table(table, &target.spec, resolver.clone())
             }
             _ => GraphqlApiVistaFactory::new(self.table.data_source().clone()).from_table(table),
         }
     }
+}
+
+/// `row` with each text join value retyped by the column of `target` (the
+/// bare target table) it is compared with: an integer-typed column takes an
+/// integer literal. Rows built from text (forms, scripts, URLs) would
+/// otherwise send `_eq: "5"` against an `Int` field, which the server
+/// rejects.
+fn coerce_join_values(
+    reference: &VistaReference,
+    target: &BareTarget,
+    row: &Record<CborValue>,
+) -> Result<Record<CborValue>> {
+    let mut row = row.clone();
+    for key in &reference.keys {
+        let column = match &key.to {
+            Some(to) => target.columns().get(to),
+            None => target.id_field(),
+        };
+        if let Some(CborValue::Text(text)) = row.get(&key.from) {
+            let value = id_for_column(column, text, &key.from)?;
+            row.insert(
+                key.from.clone(),
+                CborValue::from(AnyGraphqlType::untyped(value)),
+            );
+        }
+    }
+    Ok(row)
 }

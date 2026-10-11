@@ -40,5 +40,5 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 async-trait = "0.1"
 indexmap = "2"
-vantage-vista = { path = "../vantage-vista" }
+vantage-vista = { path = "../vantage-vista", features = ["mocks"] }
 vantage-vista-factory = { path = "../vantage-vista-factory" }

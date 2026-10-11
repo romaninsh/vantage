@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
 use crate::AwsAccount;
+use crate::models::request_param;
 
 /// One row of an attached-policies listing. The full policy document
 /// isn't returned — fetch it separately via `Policy` if needed.
@@ -29,6 +30,7 @@ pub fn attached_user_policies_table(aws: AwsAccount) -> Table<AwsAccount, Attach
     )
     .with_id_column("PolicyArn")
     .with_title_column_of::<String>("PolicyName")
+    .with_column(request_param("UserName"))
 }
 
 /// `ListAttachedGroupPolicies` — requires `eq("GroupName", "...")`.
@@ -40,6 +42,7 @@ pub fn attached_group_policies_table(aws: AwsAccount) -> Table<AwsAccount, Attac
     )
     .with_id_column("PolicyArn")
     .with_title_column_of::<String>("PolicyName")
+    .with_column(request_param("GroupName"))
 }
 
 /// `ListAttachedRolePolicies` — requires `eq("RoleName", "...")`.
@@ -51,4 +54,5 @@ pub fn attached_role_policies_table(aws: AwsAccount) -> Table<AwsAccount, Attach
     )
     .with_id_column("PolicyArn")
     .with_title_column_of::<String>("PolicyName")
+    .with_column(request_param("RoleName"))
 }

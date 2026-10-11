@@ -2,17 +2,17 @@
 //!
 //! Wired through to real Vista calls: `Op::Eq` conditions, `[N]`
 //! narrow-to-single, `:relation` traversal, column overrides, sort
-//! (`[+col]` / `[-col]` → `Vista::add_order`), and search (`?keyword`
-//! → `Vista::add_search`). Still stubbed (the `Renderer::note_stub`
+//! (`[+col]` / `[-col]` → `Vista::set_order`), and search (`?keyword`
+//! → `Vista::set_search`). Still stubbed (the `Renderer::note_stub`
 //! hook reports the call name): operator vocabulary beyond `eq`,
 //! range slicing (`[N:M]`), and aggregates. Drivers without the
-//! matching `can_*` capability return `Unsupported` from the
-//! corresponding Vista method.
+//! matching [`Capability`](vantage_vista::Capability) return
+//! `Unsupported` from the corresponding Vista method.
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_vista::{ReferenceKind, SortDirection, Vista};
+use vantage_vista::{FilterOp, ReferenceKind, SortDirection, Vista};
 
 use super::factory::{ModelFactory, Renderer};
 use super::parse::parse_token;
@@ -142,7 +142,7 @@ impl RunState {
                 Ok(())
             }
             Token::Search(query) => {
-                self.vista.add_search(query)?;
+                self.vista.set_search(Some(&query))?;
                 Ok(())
             }
             Token::Aggregate { op, field } => {
@@ -164,21 +164,16 @@ impl RunState {
                 relation = rel
             ));
         }
-        let child_kind = self
-            .vista
-            .list_references()
-            .into_iter()
-            .find(|(name, _)| name == &rel)
-            .map(|(_, k)| k);
+        let child_kind = self.vista.reference(&rel).map(|r| r.kind);
         let (_id, parent_row) = self.vista.get_some_value().await?.ok_or_else(|| {
             error!(
                 "Cannot traverse relation — narrowed vista has no matching record",
                 relation = rel
             )
         })?;
-        self.vista = self.vista.get_ref(&rel, &parent_row)?;
+        self.vista = self.vista.get_ref(&rel, Some(&parent_row))?;
         self.mode = match child_kind {
-            Some(ReferenceKind::HasOne) => Mode::Single,
+            Some(ReferenceKind::HasOne | ReferenceKind::ContainsOne) => Mode::Single,
             _ => Mode::List,
         };
         // A new Vista deserves its own default columns.
@@ -222,11 +217,7 @@ async fn render_final<R: Renderer>(
                 .get_some_value()
                 .await?
                 .ok_or_else(|| error!("No record found"))?;
-            let relations: Vec<String> = vista
-                .get_references()
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
+            let relations: Vec<String> = vista.references().keys().cloned().collect();
             renderer.render_record(vista, &id, &record, &relations);
         }
     }
@@ -235,7 +226,7 @@ async fn render_final<R: Renderer>(
 
 /// Apply a `[…]` selector to `vista` in place. Returns the new mode
 /// (single when a `[N]` index slice narrowed to one record, otherwise
-/// the incoming mode). Sort routes through `Vista::add_order`; slice's
+/// the incoming mode). Sort routes through `Vista::set_order`; slice's
 /// `Index` variant uses the real narrow-to-single path. Slice's `Range`
 /// variant is stubbed — Vista's pagination surface is page-based, so an
 /// arbitrary `[start:end]` offset doesn't map cleanly yet.
@@ -246,7 +237,7 @@ async fn apply_selector<R: Renderer>(
     renderer: &R,
 ) -> Result<Mode> {
     if let Some((field, dir)) = &sel.sort {
-        vista.add_order(field, sort_direction(*dir))?;
+        vista.set_order(Some((field, sort_direction(*dir))))?;
     }
     match sel.slice {
         None => Ok(mode),
@@ -308,7 +299,7 @@ fn apply_condition<R: Renderer>(
         Op::Eq => {
             let is_id_alias = field == "id";
             let resolved_field = if is_id_alias {
-                vista.get_id_column().map(str::to_string).ok_or_else(|| {
+                vista.id_column().map(str::to_string).ok_or_else(|| {
                     error!(
                         "`id=` used but vista has no id column",
                         vista = vista.name()
@@ -321,7 +312,7 @@ fn apply_condition<R: Renderer>(
                 Some(raw) => super::value::coerce_for_column(vista, &resolved_field, &raw)?,
                 None => v,
             };
-            vista.add_condition_eq(&resolved_field, coerced)?;
+            vista.add_condition(&resolved_field, FilterOp::Eq, coerced)?;
             Ok(if is_id_alias {
                 Some(Mode::Single)
             } else {
@@ -349,13 +340,13 @@ async fn apply_index(vista: &mut Vista, index: usize) -> Result<Mode> {
             matching_records = total
         )
     })?;
-    let id_field = vista.get_id_column().map(str::to_string).ok_or_else(|| {
+    let id_field = vista.id_column().map(str::to_string).ok_or_else(|| {
         error!(
             "Cannot apply index — vista has no id column",
             vista = vista.name()
         )
     })?;
     let coerced = super::value::coerce_for_column(vista, &id_field, &id)?;
-    vista.add_condition_eq(&id_field, coerced)?;
+    vista.add_condition(&id_field, FilterOp::Eq, coerced)?;
     Ok(Mode::Single)
 }

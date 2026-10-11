@@ -6,11 +6,9 @@ use vantage_core::Result;
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{
-    ColumnSpec, NoExtras, SpecResolver, Vista, VistaCapabilities, VistaFactory, resolve_base_spec,
-};
+use vantage_vista::{ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, resolve_base_spec};
 
-use crate::sql_vista::{column_for_type, metadata_options};
+use crate::sql_vista::{column_for_type, metadata_options, sql_capabilities};
 use crate::sqlite::SqliteDB;
 use crate::sqlite::statements::SqliteSelect;
 use crate::sqlite::types::AnySqliteType;
@@ -59,29 +57,8 @@ impl SqliteVistaFactory {
         E: Entity<AnySqliteType> + 'static,
     {
         let metadata = table.vista_metadata(metadata_options());
-        let source = SqliteTableShell::new(
-            table,
-            VistaCapabilities {
-                can_count: true,
-                can_insert: !read_only,
-                can_update: !read_only,
-                can_delete: !read_only,
-                can_order: true,
-                can_search: true,
-                can_filter_operators: true,
-                can_set_page_size: true,
-                can_fetch_page: true,
-                can_fetch_window: true,
-                can_fetch_next: true,
-                can_traverse_to_record: true,
-                can_traverse_to_set: true,
-                can_traverse_in_columns: true,
-                can_confine_writes: !read_only,
-                ..VistaCapabilities::default()
-            },
-            metadata,
-        );
-        Vista::new(name, Box::new(source))
+        let shell = SqliteTableShell::new(table, sql_capabilities(read_only), metadata, ());
+        Vista::new(name, shell)
     }
 
     /// Build a `Table<SqliteDB, EmptyEntity>` from a spec, resolving any
@@ -104,9 +81,7 @@ impl VistaFactory for SqliteVistaFactory {
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.wrap(table, vista_name.clone(), read_only);
-        vista.set_name(vista_name);
-        Ok(vista)
+        Ok(self.wrap(table, vista_name, read_only))
     }
 }
 
@@ -145,7 +120,7 @@ pub(crate) fn build_sqlite_table(
     }
     table.set_spec_id_field(&spec.resolve_id_column())?;
 
-    let mut table = table.with_spec_references(&spec.references, resolver, build_sqlite_table);
+    let mut table = table.with_spec_references(&spec.references, resolver, build_sqlite_table)?;
 
     if has_dotted {
         // Lower the dotted imports now that their relations are declared.
@@ -219,7 +194,7 @@ fn build_derived_table(
         build_column,
     )?;
     // The derived spec's own `references:` sit alongside inherited relations.
-    Ok(table.with_spec_references(&spec.references, Some(resolver), build_sqlite_table))
+    table.with_spec_references(&spec.references, Some(resolver), build_sqlite_table)
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like

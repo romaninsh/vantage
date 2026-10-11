@@ -227,7 +227,10 @@ async fn assert_has_more(w: &mut DioramaWorld, expected: String) {
 #[then(regex = r"^the table scenery master capability can_fetch_page is (true|false)$")]
 async fn assert_can_fetch_page(w: &mut DioramaWorld, expected: String) {
     let scenery = w.scenery.as_ref().expect("scenery not opened");
-    let got = scenery.master_capabilities().can_fetch_page;
+    // A page is a window, so the step reads the `Window` capability.
+    let got = scenery
+        .master_capabilities()
+        .has(vantage_vista::Capability::Window);
     let want = expected == "true";
     assert_eq!(got, want, "master.can_fetch_page: want {want}, got {got}");
 }

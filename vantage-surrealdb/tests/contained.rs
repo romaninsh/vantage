@@ -4,6 +4,8 @@
 //! Self-contained and re-runnable — operates on a throwaway schemaless
 //! `contained_test` record it creates and deletes.
 
+#![cfg(feature = "vista")]
+
 use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_surrealdb::surrealdb::SurrealDB;
@@ -83,7 +85,7 @@ async fn contains_many_eager_writeback_on_real_surreal() {
 
     // Traverse the embedded array as a sub-Vista.
     let row = vista.get_value(&id).await.unwrap().unwrap();
-    let lines = vista.get_ref("lines", &row).unwrap();
+    let lines = vista.get_ref("lines", Some(&row)).unwrap();
     assert_eq!(lines.list_values().await.unwrap().len(), 2);
 
     // Insert a third line — eager writeback patches the parent row.
@@ -166,9 +168,9 @@ async fn contained_record_traverses_out_to_product() {
 
     // line -> product traversal resolves to the real product row.
     let row = vista.get_value(&id).await.unwrap().unwrap();
-    let lines = vista.get_ref("lines", &row).unwrap();
+    let lines = vista.get_ref("lines", Some(&row)).unwrap();
     let line0 = lines.get_value("0").await.unwrap().unwrap();
-    let product = lines.get_ref("product", &line0).unwrap();
+    let product = lines.get_ref("product", Some(&line0)).unwrap();
     let (_pid, prod) = product.get_some_value().await.unwrap().unwrap();
     assert_eq!(prod.get("name"), Some(&text("Flux Capacitor Cupcake")));
 

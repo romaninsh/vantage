@@ -39,6 +39,11 @@ columns:
   item: { type: string, flags: [title, searchable] }
 mongo:
   collection: orders
+references:
+  client:
+    table: client
+    kind: has_one
+    foreign_key: client_id
 "#;
 
 /// Clients `c1`, `c2`; orders `o1`, `o2` (c1) and `o3` (c2).
@@ -82,21 +87,23 @@ fn spec(yaml: &str) -> MongoVistaSpec {
     serde_yaml_ng::from_str(yaml).expect("spec yaml")
 }
 
+/// Both sides of the join: the client's has-many and the order's has-one.
 #[tokio::test]
 async fn mongo_contract_advertised() {
     let (db, factory) = setup().await;
     contract::check_advertised(&factory.build_from_spec(spec(CLIENT)).unwrap()).await;
+    contract::check_advertised(&factory.build_from_spec(spec(ORDER)).unwrap()).await;
     teardown(&db).await;
 }
 
-/// The shell can't be cloned, so `check_advertised` skips these probes.
 #[tokio::test]
 async fn mongo_contract_narrowing() {
     let (db, factory) = setup().await;
-    contract::check_narrowing(&mut factory.build_from_spec(spec(CLIENT)).unwrap()).await;
+    contract::check_narrowing(&factory.build_from_spec(spec(CLIENT)).unwrap()).await;
     teardown(&db).await;
 }
 
+/// Each test gets its own database, so the orders are disposable.
 #[tokio::test]
 async fn mongo_contract_writes() {
     let (db, factory) = setup().await;
@@ -105,7 +112,6 @@ async fn mongo_contract_writes() {
 }
 
 #[tokio::test]
-#[ignore = "v2 phase 1: shell not cloneable"]
 async fn mongo_contract_clone() {
     let (db, factory) = setup().await;
     let orders = factory.build_from_spec(spec(ORDER)).unwrap();

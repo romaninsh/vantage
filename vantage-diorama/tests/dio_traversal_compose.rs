@@ -10,7 +10,7 @@ use support::MockView;
 use vantage_diorama::{Dio, Lens};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Reference, ReferenceKind, Vista, VistaMetadata};
+use vantage_vista::{Column, JoinKey, Reference, ReferenceKind, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -54,14 +54,14 @@ fn launch_master() -> Vista {
             "crew",
             "launch_crew",
             ReferenceKind::HasMany,
-            "launch_id",
+            vec![JoinKey::new("id", "launch_id")],
         ));
     let shell = MockShell::new()
         .with_metadata(meta)
         .with_record("L1", rec(&[("id", "L1"), ("name", "Apollo 11")]))
         .with_record("L2", rec(&[("id", "L2"), ("name", "Apollo 12")]))
         .with_ref_target("crew", crew_shell());
-    Vista::new("launches", Box::new(shell))
+    Vista::new("launches", shell)
 }
 
 /// Single-pass eager Dio over the launches master (in-memory cache).

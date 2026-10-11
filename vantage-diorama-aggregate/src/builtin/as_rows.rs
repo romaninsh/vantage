@@ -10,7 +10,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
-use vantage_vista::{Column, flags};
+use vantage_vista::{Column, ColumnFlag};
 
 use crate::aggregation::{Aggregation, DerivedRows, Rows};
 
@@ -39,7 +39,7 @@ impl<A: Aggregation<Output = CborValue>> Aggregation for AsRows<A> {
 
     fn compute(&self, rows: &Rows) -> DerivedRows {
         let value = self.inner.compute(rows);
-        let column = Column::new(self.alias.clone(), column_type(&value)).with_flag(flags::ID);
+        let column = Column::new(self.alias.clone(), column_type(&value)).with_flag(ColumnFlag::Id);
         let mut record = Record::new();
         record.insert(self.alias.clone(), value);
         DerivedRows::new(vec![(ROW_ID.to_string(), record)], vec![column])
@@ -115,7 +115,7 @@ mod tests {
     fn the_only_column_is_the_id_column() {
         let derived = AsRows::new("total", Count::rows()).compute(&events());
         assert!(
-            derived.columns[0].flags.contains(&flags::ID.to_string()),
+            derived.columns[0].has_flag(ColumnFlag::Id),
             "columns: {:?}",
             derived.columns
         );

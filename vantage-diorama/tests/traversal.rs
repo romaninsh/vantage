@@ -10,7 +10,9 @@ use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::Lens;
 use vantage_types::Record;
-use vantage_vista::{Column, Reference, ReferenceKind, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Column, JoinKey, Reference, ReferenceKind, Vista, VistaMetadata, mocks::MockShell,
+};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -54,14 +56,14 @@ fn launch_master(crew: MockShell) -> Vista {
             "crew",
             "launch_crew",
             ReferenceKind::HasMany,
-            "launch_id",
+            vec![JoinKey::new("id", "launch_id")],
         ));
     let shell = MockShell::new()
         .with_metadata(meta)
         .with_record("L1", rec(&[("id", "L1"), ("name", "Apollo 11")]))
         .with_record("L2", rec(&[("id", "L2"), ("name", "Apollo 12")]))
         .with_ref_target("crew", crew);
-    Vista::new("launches", Box::new(shell))
+    Vista::new("launches", shell)
 }
 
 /// Warm-cache-aware eager lens (mirrors the UI's `build_eager_lens`): copy the

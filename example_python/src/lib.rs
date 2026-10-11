@@ -43,7 +43,7 @@ fn to_py_err<E: std::fmt::Display>(e: E) -> PyErr {
 }
 
 async fn count_vista(vista: Vista) -> PyResult<i64> {
-    vista.get_count().await.map_err(to_py_err)
+    vista.count().await.map_err(to_py_err)
 }
 
 async fn list_vista(vista: Vista) -> PyResult<Vec<String>> {

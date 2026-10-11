@@ -17,6 +17,7 @@
 
 pub mod factory;
 mod lowering;
+mod narrow;
 mod paging;
 mod source;
 pub mod spec;

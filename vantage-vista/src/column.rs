@@ -5,24 +5,21 @@ use serde::{Deserialize, Serialize};
 use vantage_core::Result;
 use vantage_types::Record;
 
-use crate::flags;
+mod flag;
+pub use flag::ColumnFlag;
 
 /// Computes one column value from a record: the record as read so far goes
 /// in, the column's value comes out.
 pub type LazyValueFn = Arc<dyn Fn(&Record<CborValue>) -> Result<CborValue> + Send + Sync>;
 
 /// Display-relevant column metadata held by a `Vista`.
-///
-/// `flags` is an open vocabulary; the constants in [`crate::flags`] name the
-/// values vista's own accessors understand. Drivers and consumers may add
-/// their own.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Column {
     pub name: String,
     pub original_type: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub flags: Vec<String>,
+    flags: Vec<ColumnFlag>,
     /// Set on a computed column; see `Column::with_expression` (`rhai` feature).
     #[serde(skip)]
     computed: Option<Computed>,
@@ -61,9 +58,9 @@ impl Column {
     /// The `Vista` fills computed columns on every read, in declaration
     /// order, so one sees the values of those declared before it. The backend
     /// never sees them: writes drop them, and filtering or ordering on one is
-    /// an error. The column is flagged [`CALCULATED`](flags::CALCULATED) and
-    /// loses [`ORDERABLE`](flags::ORDERABLE) and
-    /// [`SEARCHABLE`](flags::SEARCHABLE).
+    /// an error. The column is flagged [`Calculated`](ColumnFlag::Calculated)
+    /// and loses [`Orderable`](ColumnFlag::Orderable) and
+    /// [`Searchable`](ColumnFlag::Searchable).
     ///
     /// The script compiles here, so one that doesn't parse fails the build
     /// rather than the first read.
@@ -79,43 +76,34 @@ impl Column {
             )
         })?;
         self.flags
-            .retain(|f| f != flags::ORDERABLE && f != flags::SEARCHABLE);
-        if !self.has_flag(flags::CALCULATED) {
-            self.flags.push(flags::CALCULATED.to_string());
-        }
+            .retain(|f| *f != ColumnFlag::Orderable && *f != ColumnFlag::Searchable);
+        self = self.with_flag(ColumnFlag::Calculated);
         self.computed = Some(Computed { code, eval });
         Ok(self)
     }
 
-    pub fn with_flag(mut self, flag: impl Into<String>) -> Self {
-        self.flags.push(flag.into());
+    /// This column with `flag` added; a flag it already has is kept once.
+    /// A flag is stored in its canonical form (`Other("id")` as `Id`).
+    pub fn with_flag(mut self, flag: impl Into<ColumnFlag>) -> Self {
+        let flag = ColumnFlag::from(flag.into().as_str());
+        if !self.flags.contains(&flag) {
+            self.flags.push(flag);
+        }
         self
     }
 
-    pub fn hidden(self) -> Self {
-        self.with_flag(flags::HIDDEN)
+    pub fn has_flag(&self, flag: impl Into<ColumnFlag>) -> bool {
+        self.flags.contains(&flag.into())
     }
 
-    pub fn has_flag(&self, flag: &str) -> bool {
-        self.flags.iter().any(|f| f == flag)
-    }
-
-    pub fn is_hidden(&self) -> bool {
-        self.has_flag(flags::HIDDEN)
-    }
-
-    pub fn is_id(&self) -> bool {
-        self.has_flag(flags::ID)
-    }
-
-    pub fn is_title(&self) -> bool {
-        self.has_flag(flags::TITLE)
+    pub fn flags(&self) -> &[ColumnFlag] {
+        &self.flags
     }
 
     /// Whether the `Vista` computes this column rather than reading it.
     ///
     /// The expression isn't serialized: a column that goes through serde
-    /// comes back stored, keeping only its [`CALCULATED`](flags::CALCULATED)
+    /// comes back stored, keeping only its [`Calculated`](ColumnFlag::Calculated)
     /// flag.
     pub fn is_computed(&self) -> bool {
         self.computed.is_some()

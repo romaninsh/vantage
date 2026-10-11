@@ -10,7 +10,7 @@ use vantage_types::Record;
 use crate::rhai::bridge::block_on;
 use crate::rhai::handle::{Handle, Step};
 use crate::rhai::vocab::{DataVocab, TargetResolver};
-use crate::{Column, FilterOp, Vista, VistaMetadata, mocks::MockShell};
+use crate::{Column, ColumnFlag, FilterOp, Vista, VistaMetadata, mocks::MockShell};
 
 pub(super) fn user(id: &str, name: &str, vip: bool) -> Record<CborValue> {
     [
@@ -30,11 +30,11 @@ pub(super) fn users_vista() -> Vista {
         .with_record("2", user("2", "Bob", false))
         .with_record("3", user("3", "Carol", true));
     let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("name", "String").with_flag("title"))
+        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+        .with_column(Column::new("name", "String").with_flag(ColumnFlag::Title))
         .with_column(Column::new("vip_flag", "bool"))
         .with_id_column("id");
-    Vista::new("users", Box::new(source.with_metadata(metadata)))
+    Vista::new("users", source.with_metadata(metadata))
 }
 
 pub(super) fn mock_resolver() -> TargetResolver {

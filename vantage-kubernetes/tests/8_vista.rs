@@ -6,6 +6,7 @@ mod common;
 
 use common::cluster_or_skip;
 use vantage_kubernetes::models::core::pods;
+use vantage_vista::Capability;
 
 #[tokio::test]
 async fn vista_lists_counts_and_advertises_capabilities() -> anyhow::Result<()> {
@@ -16,14 +17,20 @@ async fn vista_lists_counts_and_advertises_capabilities() -> anyhow::Result<()> 
         .vista_factory()
         .from_table(pods::pods_table(cluster.clone()))?;
 
-    // Read-only backend: count is supported, writes are not.
-    assert!(
-        vista.capabilities().can_count,
-        "pods vista should advertise can_count"
+    // Read-only backend: reads are honoured client-side, writes are not.
+    let caps: Vec<Capability> = vista.capabilities().iter().collect();
+    assert_eq!(
+        caps,
+        [
+            Capability::Order,
+            Capability::Search,
+            Capability::Window,
+            Capability::Traverse
+        ]
     );
 
-    let count = vista.get_count().await?;
-    let rows = vista.fetch_window(0, 10000).await?;
+    let count = vista.count().await?;
+    let rows = vista.fetch_window(0, 10000).await?.rows;
     assert_eq!(
         count as usize,
         rows.len(),
@@ -31,11 +38,10 @@ async fn vista_lists_counts_and_advertises_capabilities() -> anyhow::Result<()> 
     );
 
     // Schema is exposed through the erased boundary.
-    assert_eq!(vista.get_id_column(), Some("id"));
-    let columns = vista.get_column_names();
+    assert_eq!(vista.id_column(), Some("id"));
     for expected in ["name", "namespace", "phase", "ready"] {
         assert!(
-            columns.contains(&expected),
+            vista.column(expected).is_some(),
             "pods vista should expose `{expected}`"
         );
     }

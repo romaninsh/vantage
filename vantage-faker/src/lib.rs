@@ -13,7 +13,7 @@
 //! - [`config::DatasetSpec`] is the YAML shape of a whole datasource (tables
 //!   and sims).
 //!
-//! [`ShapedShell`] wraps a store-backed [`vantage_vista::source::TableShell`]
+//! [`ShapedShell`] wraps a store-backed [`vantage_vista::TableShell`]
 //! to make it behave like a real backend — paged or cursor-driven, sluggish
 //! or flaky, honest or lying — for exercising a consumer against something
 //! less forgiving than a plain in-memory table.

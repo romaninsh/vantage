@@ -4,24 +4,23 @@
 //! [`Vista`](crate::Vista) makes are stated once and held everywhere. A check
 //! runs every probe, then panics once, listing every broken rule.
 //!
-//! - [`check_advertised`]: every capability flag the vista advertises is
-//!   backed by a working method. Reads must succeed on a valid fixture;
-//!   reference traversal must not answer `Unsupported` or `Unimplemented`
-//!   (other errors, such as a missing join value, are not contract breaks).
-//! - [`check_narrowing`]: the page-size and narrowing half of
-//!   `check_advertised`, for a vista the caller can throw away.
-//!   `check_advertised` runs it on a clone, and skips it when the shell can't
-//!   be cloned.
-//! - [`check_advertised_writes`]: the write flags, held to the lenient rule.
-//!   Run it only on a disposable fixture, since a successful probe may store
-//!   a row.
-//! - [`check_clone`]: `clone_shell` exists, a clone carries its narrowing,
-//!   and narrowing a clone leaves the original alone.
+//! - [`check_advertised`]: every advertised read, narrowing and traversal
+//!   [`Capability`](crate::Capability) is backed by a working method. Reads
+//!   and narrowing must succeed on a valid fixture; traversal and native
+//!   conditions only must not be refused (a missing join value or a foreign
+//!   condition type is not a contract break). On a fixture with rows, search,
+//!   order and operator filters must also change what is read. Narrowing
+//!   probes run on clones, so the vista passed in is left as it was.
+//! - [`check_narrowing`]: the narrowing half of `check_advertised` alone.
+//! - [`check_advertised_writes`]: the write capabilities, held to the lenient
+//!   rule. Run it only on a disposable fixture, since a successful probe may
+//!   store a row.
+//! - [`check_clone`]: a clone carries its narrowing, and narrowing a clone
+//!   leaves the original alone.
 //!
 //! Each driver's contract test file runs `check_clone` and
-//! `check_advertised`, plus `check_narrowing` while its shell can't be
-//! cloned, and `check_advertised_writes` where its fixture is disposable. A
-//! shell that can't be cloned fails `check_clone`, not `check_advertised`.
+//! `check_advertised`, plus `check_advertised_writes` where its fixture is
+//! disposable.
 
 mod advertised;
 mod clone;
@@ -35,6 +34,8 @@ pub use writes::check_advertised_writes;
 
 use vantage_core::Result;
 
+use crate::Capability;
+
 /// Collects the broken rules of one check, so a driver sees all of them in
 /// one run.
 #[derive(Default)]
@@ -45,7 +46,7 @@ struct Probe {
 impl Probe {
     /// Lenient rule: `result` may be any error except a refusal
     /// (`Unsupported`/`Unimplemented`).
-    fn check<T>(&mut self, capability: &str, method: &str, result: &Result<T>) {
+    fn check<T>(&mut self, capability: Capability, method: &str, result: &Result<T>) {
         if let Err(e) = result
             && (e.is_unsupported() || e.is_unimplemented())
         {
@@ -56,7 +57,7 @@ impl Probe {
     }
 
     /// Strict rule: on a valid fixture, `result` must be `Ok`.
-    fn check_ok<T>(&mut self, capability: &str, method: &str, result: &Result<T>) {
+    fn check_ok<T>(&mut self, capability: Capability, method: &str, result: &Result<T>) {
         match result {
             Err(e) if e.is_unsupported() || e.is_unimplemented() => self.fail(format!(
                 "`{capability}` is advertised but `{method}` refuses it: {e}"

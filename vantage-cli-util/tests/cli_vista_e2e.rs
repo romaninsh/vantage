@@ -14,7 +14,7 @@ use vantage_cli_util::output::{self, OutputFormat};
 use vantage_cli_util::vista_cli::{self, AggregateOp, Mode, ModelFactory, Renderer};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
+use vantage_vista::{Column, FilterOp, Vista, VistaMetadata};
 
 // ─── Test fixtures ─────────────────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ fn build_users_vista() -> Vista {
         .with_column(Column::new("salary", "i64").with_flag("orderable"))
         .with_column(Column::new("vip_flag", "bool"))
         .with_id_column("id");
-    Vista::new("users", Box::new(seeded_shell().with_metadata(metadata)))
+    Vista::new("users", seeded_shell().with_metadata(metadata))
 }
 
 // ─── Test factory + recorder ───────────────────────────────────────────────
@@ -110,10 +110,9 @@ impl ModelFactory for TestFactory {
         // column-typed coercion the CLI uses on `field=value` so the
         // value matches the id column's declared type.
         let id = locator.strip_prefix("user:")?;
-        let mut v = build_users_vista();
+        let v = build_users_vista();
         let coerced = vista_cli::coerce_for_column(&v, "id", id).ok()?;
-        v.add_condition_eq("id", coerced).ok()?;
-        Some(v)
+        v.with_condition("id", FilterOp::Eq, coerced).ok()
     }
 }
 
@@ -299,7 +298,7 @@ async fn index_narrows_to_single() {
 }
 
 #[tokio::test]
-async fn sort_applies_via_add_order() {
+async fn sort_applies_via_set_order() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "[+name]"]))
         .await
@@ -307,10 +306,10 @@ async fn sort_applies_via_add_order() {
 
     assert!(
         rec.stubs().is_empty(),
-        "sort is wired to Vista::add_order, no stub expected: {:?}",
+        "sort is wired to Vista::set_order, no stub expected: {:?}",
         rec.stubs()
     );
-    // MockShell honours add_order, so the rendered list comes back in
+    // MockShell honours set_order, so the rendered list comes back in
     // name-ascending order: Alice, Bob, Carol.
     let lists = rec.lists();
     assert_eq!(lists.len(), 1);
@@ -324,7 +323,7 @@ async fn sort_applies_via_add_order() {
 #[tokio::test]
 async fn sort_then_index_narrows_to_single() {
     // [+name:0] — sort, then `apply_index` narrows to the top row. With
-    // sort wired through `Vista::add_order`, "row 0" is the smallest
+    // sort wired through `Vista::set_order`, "row 0" is the smallest
     // by name-ascending, which is Alice (matches seed order here too).
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users[+name:0]"]))
@@ -338,7 +337,7 @@ async fn sort_then_index_narrows_to_single() {
 }
 
 #[tokio::test]
-async fn search_applies_via_add_search() {
+async fn search_applies_via_set_search() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users", "?alice"]))
         .await
@@ -346,10 +345,10 @@ async fn search_applies_via_add_search() {
 
     assert!(
         rec.stubs().is_empty(),
-        "search is wired to Vista::add_search, no stub expected: {:?}",
+        "search is wired to Vista::set_search, no stub expected: {:?}",
         rec.stubs()
     );
-    // MockShell honours add_search with case-insensitive substring
+    // MockShell honours set_search with case-insensitive substring
     // matching across text fields — so "?alice" leaves only Alice.
     let lists = rec.lists();
     assert_eq!(lists.len(), 1);

@@ -48,9 +48,9 @@ fn ref_script_can_read_the_parent_row() {
 #[test]
 fn ref_script_unknown_table_surfaces_resolver_error() {
     let host = describe_host(mock_resolver());
-    let err = eval_ref_script(&host, r#"table("ghosts")"#, Env::new(), &row(&[]))
-        .err()
-        .expect("unknown table");
+    let Err(err) = eval_ref_script(&host, r#"table("ghosts")"#, Env::new(), &row(&[])) else {
+        panic!("unknown table should fail");
+    };
     assert!(err.to_string().contains("unknown table"), "{err}");
 }
 

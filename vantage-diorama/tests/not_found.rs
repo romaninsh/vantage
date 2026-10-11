@@ -11,7 +11,7 @@ use vantage_core::Result;
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_diorama::{Dio, Lens};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Capability, Column, Vista, VistaMetadata, mocks::MockShell};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -36,16 +36,14 @@ fn metadata() -> VistaMetadata {
 /// shell is the master's, to make its reads fail.
 async fn dio_with_one_row() -> Result<(Dio, MockShell)> {
     let shell = MockShell::new()
-        .with_capabilities(VistaCapabilities {
-            can_count: true,
-            can_insert: true,
-            can_update: true,
-            can_delete: true,
-            ..VistaCapabilities::default()
-        })
+        .with_capabilities(
+            [Capability::Insert, Capability::Update, Capability::Delete]
+                .into_iter()
+                .collect(),
+        )
         .with_metadata(metadata())
         .with_record("1", rec(&[("id", "1"), ("name", "a")]));
-    let master = Vista::new("items", Box::new(shell.clone()));
+    let master = Vista::new("items", shell.clone());
 
     let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
     let dio = lens.make_dio(master).await?;

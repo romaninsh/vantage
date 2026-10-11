@@ -9,6 +9,7 @@
 
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_spacetimedb::SpacetimeDb;
+use vantage_vista::{Capability, FilterOp, Vista};
 
 fn url() -> String {
     std::env::var("SPACETIMEDB_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into())
@@ -24,6 +25,12 @@ fn authed() -> SpacetimeDb {
     SpacetimeDb::new(url(), database()).with_token(token)
 }
 
+const WRITES: [Capability; 3] = [Capability::Insert, Capability::Update, Capability::Delete];
+
+fn advertises_writes(vista: &Vista) -> bool {
+    WRITES.into_iter().any(|w| vista.capabilities().has(w))
+}
+
 #[tokio::test]
 #[ignore = "needs a running SpacetimeDB host with `cardroom` published"]
 async fn anonymous_writes_are_refused_before_a_request_is_sent() {
@@ -32,9 +39,8 @@ async fn anonymous_writes_are_refused_before_a_request_is_sent() {
     let mut factory = SpacetimeDb::new(url(), database()).vista_factory();
     let vista = factory.from_relation("config").await.expect("build vista");
 
-    let caps = vista.capabilities().clone();
     assert!(
-        !caps.can_insert && !caps.can_update && !caps.can_delete,
+        !advertises_writes(&vista),
         "an anonymous connection must not advertise writes"
     );
 }
@@ -45,8 +51,10 @@ async fn a_token_turns_the_write_capabilities_on() {
     let mut factory = authed().vista_factory();
     let vista = factory.from_relation("config").await.expect("build vista");
 
-    let caps = vista.capabilities().clone();
-    assert!(caps.can_insert && caps.can_update && caps.can_delete);
+    let caps = vista.capabilities();
+    for write in WRITES {
+        assert!(caps.has(write), "the owner's token must turn on {write}");
+    }
 }
 
 #[tokio::test]
@@ -58,9 +66,8 @@ async fn a_view_stays_read_only_even_with_a_token() {
         .await
         .expect("build view vista");
 
-    let caps = vista.capabilities().clone();
     assert!(
-        !caps.can_insert && !caps.can_update && !caps.can_delete,
+        !advertises_writes(&vista),
         "a view has nothing to write to, token or not"
     );
 }
@@ -186,10 +193,10 @@ async fn a_row_leaving_a_filtered_set_arrives_as_a_delete() {
     let inside = ciborium::Value::Integer(10.into());
     let outside = ciborium::Value::Integer(11.into());
 
-    // A second vista over the same relation, narrowed. `Vista` is not `Clone`,
-    // so this is built rather than copied.
-    let mut set = factory.from_relation("config").await.expect("build vista");
-    set.add_condition_eq("join_window_secs", inside.clone())
+    // A narrowed clone; `plain` keeps the whole table.
+    let set = plain
+        .clone()
+        .with_condition("join_window_secs", FilterOp::Eq, inside.clone())
         .expect("join_window_secs is a real column");
 
     // Start from inside the set, so the row is there to be removed.

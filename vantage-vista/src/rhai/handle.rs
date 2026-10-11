@@ -35,9 +35,8 @@ pub struct Handle {
 pub(crate) enum Base {
     /// Resolved by name through the host's [`TargetResolver`].
     Name(String),
-    /// A Vista in hand. Copied with `clone_shell` on each resolve; a backend
-    /// that can't be copied hands its Vista over once.
-    Vista(Arc<Mutex<Option<Vista>>>),
+    /// A Vista in hand, cloned on each resolve.
+    Vista(Arc<Vista>),
 }
 
 /// One narrowing step, as a host reading a handle's description sees it.
@@ -69,7 +68,7 @@ impl Handle {
 
     pub fn over(vista: Vista) -> Self {
         Self {
-            base: Base::Vista(Arc::new(Mutex::new(Some(vista)))),
+            base: Base::Vista(Arc::new(vista)),
             steps: Arc::new(Vec::new()),
             resolver: None,
             latest: Some(Arc::default()),
@@ -138,7 +137,7 @@ impl Handle {
         })
     }
 
-    /// Build the Vista: resolver(name) or a clone_shell of the base, then apply
+    /// Build the Vista: resolver(name) or a clone of the base, then apply
     /// steps. Without `resolver`, the one `table(name)` was given is used.
     pub fn resolve(&self, resolver: Option<&TargetResolver>) -> Result<Vista> {
         self.resolve_through(resolver, self.steps.len())
@@ -185,7 +184,7 @@ impl Handle {
     /// the change goes onto the latest handle derived from it. Backend
     /// extension verbs (`verb`) use this: they need a Vista in hand, so a
     /// handle built from `table(name)`, or one past a `ref`, is an error naming
-    /// the verb. A backend that can't be copied is changed in place.
+    /// the verb.
     pub fn with_base_vista(
         &self,
         verb: &str,
@@ -204,37 +203,16 @@ impl Handle {
                 verb = verb
             ));
         }
-        let mut slot = source
-            .lock()
-            .map_err(|_| error!("Table handle mutex poisoned", verb = verb))?;
-        let vista = slot
-            .as_mut()
-            .ok_or_else(|| error!("This handle's Vista was already used", verb = verb))?;
-        let base = match vista.source.clone_shell() {
-            Some(shell) => {
-                let mut copy = Vista::new(vista.name(), shell);
-                copy.narrowed = vista.narrowed;
-                drop(slot);
-                f(&mut copy)?;
-                Base::Vista(Arc::new(Mutex::new(Some(copy))))
-            }
-            None => {
-                f(vista)?;
-                drop(slot);
-                from.base.clone()
-            }
-        };
+        let mut copy = Vista::clone(source);
+        f(&mut copy)?;
+        let base = Base::Vista(Arc::new(copy));
         Ok(self.record(Handle { base, ..from }))
     }
 
-    /// Take a Vista base out of the handle, ignoring the steps.
-    pub(crate) fn take_base(&self) -> Result<Vista> {
+    /// A copy of the Vista base, ignoring the steps.
+    pub(crate) fn base_vista(&self) -> Result<Vista> {
         match &self.base {
-            Base::Vista(cell) => cell
-                .lock()
-                .map_err(|_| error!("table handle mutex poisoned"))?
-                .take()
-                .ok_or_else(|| error!("this handle's Vista was already used")),
+            Base::Vista(vista) => Ok(Vista::clone(vista)),
             Base::Name(name) => Err(error!(
                 "This table handle has no Vista in hand",
                 table = name
@@ -270,34 +248,20 @@ impl Handle {
                 })?;
                 resolver(name)
             }
-            Base::Vista(cell) => {
-                let mut slot = cell
-                    .lock()
-                    .map_err(|_| error!("table handle mutex poisoned"))?;
-                let copy = slot.as_ref().and_then(|v| {
-                    v.source.clone_shell().map(|s| {
-                        let mut copy = Vista::new(v.name(), s);
-                        copy.narrowed = v.narrowed;
-                        copy
-                    })
-                });
-                copy.or_else(|| slot.take()).ok_or_else(|| {
-                    error!(
-                        "this handle's backend can't be copied; build it again from `table(...)`"
-                    )
-                })
-            }
+            Base::Vista(vista) => Ok(Vista::clone(vista)),
         }
     }
 }
 
-/// Apply one step; `limit` caps the rows a `ref` step follows.
+/// Apply one step; `limit` caps the rows a `ref` step follows. `limit(n)`
+/// itself changes no Vista: terminals read at most [`Handle::row_limit`]
+/// rows through `fetch_window(0, n)`.
 fn apply(mut vista: Vista, step: &Step, limit: Option<usize>) -> Result<Vista> {
     match step {
-        Step::Where { col, op, value } => vista.add_condition(col.clone(), *op, value.clone())?,
-        Step::Sort { col, dir } => vista.add_order(col, *dir)?,
-        Step::Search(text) => vista.add_search(text.clone())?,
-        Step::Limit(n) => vista.set_page_size(*n)?,
+        Step::Where { col, op, value } => vista.add_condition(col, *op, value.clone())?,
+        Step::Sort { col, dir } => vista.set_order(Some((col, *dir)))?,
+        Step::Search(text) => vista.set_search(Some(text))?,
+        Step::Limit(_) => {}
         Step::Ref(rel) => return traverse(&vista, rel, limit),
     }
     Ok(vista)

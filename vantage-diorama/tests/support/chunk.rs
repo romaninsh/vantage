@@ -37,19 +37,13 @@ pub fn master_with_id_type(id_ty: &str, cols: &[(&str, &str)]) -> Vista {
     }
     let metadata = metadata.with_id_column("id");
     // A native-order paged master: it serves rows through `on_load_chunk` and
-    // genuinely can't push a sort down, so `can_order` is false — the scenery
-    // re-sorts client-side over the cache.
-    let caps = VistaCapabilities {
-        can_order: false,
-        ..Default::default()
-    };
+    // genuinely can't push a sort down, so it advertises no `Order` — the
+    // scenery re-sorts client-side over the cache.
     Vista::new(
         "items",
-        Box::new(
-            MockShell::new()
-                .with_metadata(metadata)
-                .with_capabilities(caps),
-        ),
+        MockShell::new()
+            .with_metadata(metadata)
+            .with_capabilities(VistaCapabilities::new()),
     )
 }
 

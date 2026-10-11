@@ -3,7 +3,8 @@
 //!
 //! The shell is generic in `E` so `with_expression` closures (parameterized
 //! over `E`) survive the wrap; `Vista` erases `E` once at the
-//! `Box<dyn TableShell>` boundary.
+//! `Box<dyn TableShell>` boundary. A clone copies the table's query state
+//! (conditions, order, search) and shares the connection.
 //!
 //! Vista exposes ids as `String`. SurrealDB's native id is `Thing`
 //! (`table:id`). The shell stringifies via `Thing::to_string()` on the way
@@ -13,38 +14,37 @@
 //! `AnySurrealType` already wraps `ciborium::Value`, so the value boundary
 //! is a straight unwrap/rewrap.
 
+mod narrow;
+mod refs;
+#[cfg(feature = "rhai")]
+mod scripted;
+#[cfg(test)]
+mod tests;
+mod watch;
+
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use surreal_client::Action;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
-#[cfg(feature = "rhai")]
-use vantage_rhai::rhai;
-#[cfg(feature = "rhai")]
-use vantage_rhai::{Env, Host, Limits};
 use vantage_table::conditions::ConditionHandle;
 use vantage_table::pagination::Pagination;
-use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::table::Table;
-use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Column as VistaColumn, ContainedSpec, Reference as VistaReference, SortDirection, TableShell,
-    Vista, VistaCapabilities, VistaChange, VistaChangeStream, VistaMetadata,
+    Column as VistaColumn, Condition, NativeCondition, Page, Preview, Reference as VistaReference,
+    SortDirection, TableShell, Vista, VistaCapabilities, VistaChangeStream, VistaMetadata,
 };
 
-use vantage_expressions::Expressive;
-
-use crate::Expr;
-use crate::identifier::Identifier;
-use crate::operation::SurrealOperation;
-use crate::surreal_expr;
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
-use crate::types::{AnySurrealType, SurrealType};
-use crate::vista::factory::{SurrealSpecResolver, SurrealVistaFactory};
+use crate::types::AnySurrealType;
+use crate::vista::factory::SurrealSpecResolver;
 
+#[cfg(feature = "rhai")]
+pub(crate) use scripted::register_extensions;
+
+#[derive(Clone)]
 pub struct SurrealTableShell<E = EmptyEntity>
 where
     E: Entity<AnySurrealType>,
@@ -52,8 +52,10 @@ where
     pub(crate) table: Table<SurrealDB, E>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
+    /// Handle for the active quicksearch condition, removed when the search
+    /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
-    pub(crate) page_size: Option<usize>,
+    /// Spec resolver handed to the factories that build traversal targets.
     pub(crate) resolver: Option<SurrealSpecResolver>,
 }
 
@@ -72,27 +74,8 @@ where
             capabilities,
             metadata,
             current_search_handle: None,
-            page_size: None,
             resolver,
         }
-    }
-
-    /// The left-hand side of a condition on `field`.
-    ///
-    /// A usual column is its identifier. A server-side `expr:` column is
-    /// projected as `(<expr>) AS <name>`, but SurrealDB evaluates WHERE
-    /// before the projection, so the alias is not a field there and a
-    /// condition on it matches nothing. Such a column is therefore filtered
-    /// on its (parenthesised) expression.
-    ///
-    /// `None` when the table has no such column.
-    fn condition_subject(&self, field: &str) -> Option<Expr> {
-        if self.table.is_calculated_column(field)
-            && let Some(expression) = self.table.get_column_expr(field)
-        {
-            return Some(surreal_expr!("({})", (expression)));
-        }
-        self.table.columns().get(field).map(|column| column.expr())
     }
 
     /// Resolve a Vista-side string id into a SurrealDB `Thing`. A `table:id`
@@ -123,6 +106,13 @@ fn to_native_record(record: &Record<CborValue>) -> Record<AnySurrealType> {
         .collect()
 }
 
+fn to_cbor_rows(
+    raw: IndexMap<Thing, Record<AnySurrealType>>,
+) -> impl Iterator<Item = (String, Record<CborValue>)> {
+    raw.into_iter()
+        .map(|(thing, record)| (thing.to_string(), to_cbor_record(record)))
+}
+
 #[async_trait]
 impl<E> TableShell for SurrealTableShell<E>
 where
@@ -140,459 +130,6 @@ where
         self.metadata.id_column.as_deref()
     }
 
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        let raw = self.table.list_values().await?;
-        Ok(raw
-            .into_iter()
-            .map(|(thing, record)| (thing.to_string(), to_cbor_record(record)))
-            .collect())
-    }
-
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        let thing = self.parse_id(id);
-        let Some(record) = self.table.get_value(thing.clone()).await? else {
-            return Ok(None);
-        };
-        Ok(Some(to_cbor_record(record)))
-    }
-
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        let Some((thing, record)) = self.table.get_some_value().await? else {
-            return Ok(None);
-        };
-        Ok(Some((thing.to_string(), to_cbor_record(record))))
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        self.table.get_count().await
-    }
-
-    async fn insert_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let thing = self.parse_id(id);
-        let inserted = self
-            .table
-            .insert_value(thing.clone(), &to_native_record(record))
-            .await?;
-        Ok(to_cbor_record(inserted))
-    }
-
-    async fn replace_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let thing = self.parse_id(id);
-        let replaced = self
-            .table
-            .replace_value(thing.clone(), &to_native_record(record))
-            .await?;
-        Ok(to_cbor_record(replaced))
-    }
-
-    async fn patch_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        partial: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let thing = self.parse_id(id);
-        let patched = self
-            .table
-            .patch_value(thing.clone(), &to_native_record(partial))
-            .await?;
-        Ok(to_cbor_record(patched))
-    }
-
-    async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
-        let thing = self.parse_id(id);
-        self.table.delete(thing.clone()).await
-    }
-
-    async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
-        self.table.delete_all().await
-    }
-
-    async fn insert_vista_return_id_value(
-        &self,
-        _vista: &Vista,
-        record: &Record<CborValue>,
-    ) -> Result<String> {
-        let thing = self
-            .table
-            .insert_return_id_value(&to_native_record(record))
-            .await?;
-        Ok(thing.to_string())
-    }
-
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        let subject = self
-            .condition_subject(field)
-            .ok_or_else(|| error!("Unknown column for eq condition", field = field))?;
-        // Id-column comparisons coerce a string value into a Thing —
-        // SurrealDB compares record ids by type, so a quoted string
-        // (`id = "MG78-N25S"` or `id = "tag:MG78-N25S"`) never matches.
-        // `parse_id` accepts both the bare-key and `table:key` forms.
-        // This is what lets a cross-persistence relation narrow a surreal
-        // table from a plain string held by another backend's row.
-        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
-        let surreal_value = match value {
-            CborValue::Text(s) if field == id_field => {
-                AnySurrealType::from(self.parse_id(s).to_cbor())
-            }
-            _ => AnySurrealType::from(value.clone()),
-        };
-        self.table.add_condition(subject.eq(surreal_value));
-        Ok(())
-    }
-
-    fn add_op_condition(
-        &mut self,
-        field: &str,
-        op: vantage_vista::FilterOp,
-        value: &CborValue,
-    ) -> Result<()> {
-        use vantage_vista::FilterOp;
-        let subject = self
-            .condition_subject(field)
-            .ok_or_else(|| error!("Unknown column for condition", field = field))?;
-        // Same id-column coercion as `add_eq_condition`: a `table:key` /
-        // bare-key string compared against the id column becomes a Thing.
-        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
-        let surreal_value = match value {
-            CborValue::Text(s) if field == id_field => {
-                AnySurrealType::from(self.parse_id(s).to_cbor())
-            }
-            _ => AnySurrealType::from(value.clone()),
-        };
-        let condition = match op {
-            FilterOp::Eq => subject.eq(surreal_value),
-            FilterOp::Ne => subject.ne(surreal_value),
-            FilterOp::Gt => subject.gt(surreal_value),
-            FilterOp::Gte => subject.gte(surreal_value),
-            FilterOp::Lt => subject.lt(surreal_value),
-            FilterOp::Lte => subject.lte(surreal_value),
-            // `value` is a CBOR array → a SurrealDB array literal; `field IN [ … ]`.
-            FilterOp::InSet => subject.in_(surreal_value),
-            // A lowercased `CONTAINS`, which is exactly the contract the
-            // local fallback applies: case-insensitive substring.
-            //
-            // Not the fuzzy `~`: SurrealDB 3.0 removed those operators (3.2.3
-            // answers `Unexpected token '~'`), and fuzzy was never this
-            // operator's meaning anyway.
-            //
-            // The operand is the value's own text, not `surreal_value` — on
-            // the id column that would have coerced the pattern into a Thing
-            // and compared a record id against a substring.
-            FilterOp::Like => {
-                let needle =
-                    AnySurrealType::from(CborValue::Text(vantage_vista::operand_text(value)));
-                self.table.add_condition(crate::surreal_expr!(
-                    "string::lowercase(<string>{}) CONTAINS string::lowercase({})",
-                    (subject),
-                    needle
-                ));
-                return Ok(());
-            }
-            // The SurrealDB expression builder has no `NOT IN` combinator yet.
-            // Report Unimplemented so the consumer filters locally (correct,
-            // just not pushed) rather than silently dropping the filter.
-            FilterOp::NotInSet => {
-                return Err(error!(
-                    "SurrealDB add_op_condition: NotInSet has no push-down; filter locally",
-                    method = "add_op_condition",
-                    source_type = std::any::type_name::<Self>()
-                )
-                .mark_unimplemented()
-                .traced());
-            }
-        };
-        self.table.add_condition(condition);
-        Ok(())
-    }
-
-    /// Route a boxed driver-native condition onto the wrapped table. The boxed
-    /// value must be a SurrealDB [`crate::Expr`] (`Expression<AnySurrealType>`,
-    /// the table's `Condition` type) — the type a Rhai `with_condition(...)`
-    /// expression lowers to. Used by scripted reference traversal.
-    fn add_raw_condition(&mut self, condition: Box<dyn std::any::Any + Send + Sync>) -> Result<()> {
-        let condition = condition.downcast::<crate::Expr>().map_err(|_| {
-            error!(
-                "add_raw_condition expected a SurrealDB Expression<AnySurrealType>",
-                source_type = std::any::type_name::<Self>()
-            )
-        })?;
-        self.table.add_condition(*condition);
-        Ok(())
-    }
-
-    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        // A reference carrying a Rhai `build_script` resolves through the script
-        // engine instead of the fixed FK eq-condition path below.
-        #[cfg(feature = "rhai")]
-        if let Some(script) = self
-            .metadata
-            .references
-            .get(relation)
-            .and_then(|r| r.build_script.clone())
-        {
-            return self.get_ref_via_script(&script, row);
-        }
-
-        let native_row = to_native_record(row);
-        let target = self
-            .table
-            .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-        let mut factory = SurrealVistaFactory::new(self.table.data_source().clone());
-        if let Some(resolver) = &self.resolver {
-            factory = factory.with_resolver(resolver.clone());
-        }
-        factory.from_table(target)
-    }
-
-    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        let target = self.table.get_ref_target_erased(relation)?;
-        let mut factory = SurrealVistaFactory::new(self.table.data_source().clone());
-        if let Some(resolver) = &self.resolver {
-            factory = factory.with_resolver(resolver.clone());
-        }
-        factory.from_table(target)
-    }
-
-    fn contained(&self) -> &IndexMap<String, ContainedSpec> {
-        &self.metadata.contained
-    }
-
-    /// Resolve a contained relation. SurrealDB stores the embedded object /
-    /// array natively, so the host value passes through unchanged and writes
-    /// `UPDATE … MERGE` it back. The shared `Table::get_contained_ref` does the
-    /// rest; this shim supplies the `Thing` id and the factory wrap (which
-    /// carries the cross-persistence resolver for traverse-out).
-    fn get_contained_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
-        let id_cbor = row
-            .get(id_field)
-            .ok_or_else(|| error!("contained traversal requires the parent row's id"))?;
-        let thing = Thing::from_cbor(id_cbor.clone())
-            .or_else(|| match id_cbor {
-                CborValue::Text(s) => Some(self.parse_id(s)),
-                _ => None,
-            })
-            .ok_or_else(|| error!("could not resolve parent id into a Thing"))?;
-
-        let db = self.table.data_source().clone();
-        let spec_resolver = self.resolver.clone();
-        self.table.get_contained_ref(
-            relation,
-            row,
-            thing,
-            move |t| {
-                let mut factory = crate::vista::factory::SurrealVistaFactory::new(db.clone());
-                if let Some(r) = &spec_resolver {
-                    factory = factory.with_resolver(r.clone());
-                }
-                factory.from_table(t)
-            },
-            |v| Some(v.clone()),
-            |c| c,
-        )
-    }
-
-    fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
-        self.table.ref_kinds()
-    }
-
-    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
-        if !self.table.columns().contains_key(field) {
-            return Err(error!("Unknown column for add_order", field = field));
-        }
-        self.table.clear_orders();
-        let expr = surreal_expr!("{}", (Identifier::new(field)));
-        let direction = match dir {
-            SortDirection::Ascending => TableSortDirection::Ascending,
-            SortDirection::Descending => TableSortDirection::Descending,
-        };
-        self.table.add_order(OrderBy {
-            expression: expr,
-            direction,
-        });
-        Ok(())
-    }
-
-    fn clear_orders(&mut self) -> Result<()> {
-        self.table.clear_orders();
-        Ok(())
-    }
-
-    fn add_search(&mut self, text: &str) -> Result<()> {
-        if let Some(handle) = self.current_search_handle.take() {
-            let _ = self.table.temp_remove_condition(handle);
-        }
-        let condition = self
-            .table
-            .data_source()
-            .search_table_condition(&self.table, text);
-        self.current_search_handle = Some(self.table.temp_add_condition(condition));
-        Ok(())
-    }
-
-    fn clear_search(&mut self) -> Result<()> {
-        if let Some(handle) = self.current_search_handle.take() {
-            let _ = self.table.temp_remove_condition(handle);
-        }
-        Ok(())
-    }
-
-    fn set_page_size(&mut self, size: usize) -> Result<()> {
-        if size == 0 {
-            return Err(error!("page size must be > 0"));
-        }
-        self.page_size = Some(size);
-        Ok(())
-    }
-
-    async fn fetch_page(
-        &self,
-        _vista: &Vista,
-        page: usize,
-    ) -> Result<Vec<(String, Record<CborValue>)>> {
-        if page == 0 {
-            return Err(error!("page is 1-based; got 0"));
-        }
-        let size = self
-            .page_size
-            .ok_or_else(|| error!("set_page_size must be called before fetch_page"))?;
-
-        let mut page_table = self.table.clone();
-        page_table.set_pagination(Some(Pagination::new(page as i64, size as i64)));
-        let raw = page_table.list_values().await?;
-        Ok(raw
-            .into_iter()
-            .map(|(thing, record)| (thing.to_string(), to_cbor_record(record)))
-            .collect())
-    }
-
-    /// `LIMIT limit START offset` — a row-indexed window.
-    ///
-    /// Unlike [`fetch_page`](Self::fetch_page) the offset is arbitrary, so it
-    /// needs no `set_page_size` beforehand and does not have to align to a page
-    /// boundary. This is the primitive a lazily-paged grid drives on scroll: its
-    /// ranges are edge-anchored to whatever is already cached (`35..42`), which
-    /// no page index expresses.
-    async fn fetch_window(
-        &self,
-        _vista: &Vista,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<(String, Record<CborValue>)>> {
-        let mut window_table = self.table.clone();
-        window_table.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
-        let raw = window_table.list_values().await?;
-        Ok(raw
-            .into_iter()
-            .map(|(thing, record)| (thing.to_string(), to_cbor_record(record)))
-            .collect())
-    }
-
-    async fn fetch_next(
-        &self,
-        _vista: &Vista,
-        token: Option<CborValue>,
-    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
-        let size = self
-            .page_size
-            .ok_or_else(|| error!("set_page_size must be called before fetch_next"))?;
-
-        let page: i64 = match token {
-            None => 1,
-            Some(CborValue::Integer(n)) => {
-                i64::try_from(n).map_err(|_| error!("fetch_next token out of i64 range"))?
-            }
-            Some(_) => return Err(error!("invalid fetch_next token type for surrealdb driver")),
-        };
-        if page < 1 {
-            return Err(error!("fetch_next token must be a 1-based page number"));
-        }
-
-        let mut page_table = self.table.clone();
-        page_table.set_pagination(Some(Pagination::new(page, size as i64)));
-        let raw = page_table.list_values().await?;
-        let records: Vec<(String, Record<CborValue>)> = raw
-            .into_iter()
-            .map(|(thing, record)| (thing.to_string(), to_cbor_record(record)))
-            .collect();
-
-        let next_token = if records.len() == size {
-            Some(CborValue::Integer((page + 1).into()))
-        } else {
-            None
-        };
-        Ok((records, next_token))
-    }
-
-    /// Watch the wrapped table with a SurrealDB `LIVE SELECT` and stream each
-    /// change as a [`VistaChange`].
-    ///
-    /// SurrealDB delivers `CREATE`/`UPDATE`/`DELETE` frames carrying the
-    /// affected record's `Thing`. To guarantee a live-updated row is byte-for-
-    /// byte the same shape as the initial `list_vista_values` snapshot (so the
-    /// consumer's index doesn't see a phantom second key), each `CREATE`/`UPDATE`
-    /// re-reads the row through [`get_vista_value`](Self::get_vista_value)'s exact
-    /// path rather than reshaping the pushed payload. `DELETE` needs no read.
-    ///
-    /// The subscription follows the whole table; a narrowed vista's conditions
-    /// are honoured by the consumer's cache/scenery, not pushed into the LIVE
-    /// query (a v1 limitation — fine for an unconditioned master).
-    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
-        let table_name = self.table.table_name().to_string();
-        let live = self.table.data_source().live(&table_name).await?;
-        let table = self.table.clone();
-
-        let stream = async_stream::try_stream! {
-            let mut live = live;
-            while let Some(note) = live.recv().await {
-                let Some(thing) = Thing::from_cbor(note.record_id.clone()) else {
-                    continue;
-                };
-                let id = thing.to_string();
-                match note.action {
-                    Action::Delete => yield VistaChange::Deleted { id },
-                    Action::Create | Action::Update => {
-                        // Re-read the authoritative, projected row.
-                        match table.get_value(thing.clone()).await? {
-                            Some(record) => {
-                                let value = to_cbor_record(record);
-                                if note.action == Action::Create {
-                                    yield VistaChange::Inserted { id, value };
-                                } else {
-                                    yield VistaChange::Updated { id, value };
-                                }
-                            }
-                            // Gone between notification and read — treat as removed.
-                            None => yield VistaChange::Deleted { id },
-                        }
-                    }
-                }
-            }
-        };
-        Ok(Box::pin(stream))
-    }
-
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }
@@ -602,87 +139,110 @@ where
     }
 
     /// The SurrealQL SELECT as it stands, with every condition and order
-    /// applied so far rendered inline.
-    ///
-    /// `page_size` is reported separately because it lives on the shell, not on
-    /// the table: `fetch_page`/`fetch_next` turn it into a `START`/`LIMIT` at
-    /// call time, so it is absent from the statement below. Folding it in would
-    /// show a `LIMIT` that a plain `list_values()` never sends.
-    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-        serde_json::json!({
-            "driver": "surrealdb",
-            "table": self.table.table_name(),
-            "surql": self.table.select().preview(),
-            "page_size": self.page_size,
-        })
+    /// rendered inline. A window's `LIMIT`/`START` is added at fetch time, so
+    /// it is absent here.
+    fn preview(&self) -> Preview {
+        Preview::new("surrealdb").with_query(self.table.select().preview())
     }
 
-    /// Layer SurrealDB's expression vocabulary beside vantage-vista's table
-    /// handle verbs, plus `self.with_condition(<expr>)`, which routes a native
-    /// `Expression` through [`add_raw_condition`](Self::add_raw_condition) on
-    /// the handle's Vista.
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        Ok(to_cbor_rows(self.table.list_values().await?).collect())
+    }
+
+    async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        let record = self.table.get_value(self.parse_id(id)).await?;
+        Ok(record.map(to_cbor_record))
+    }
+
+    async fn count(&self) -> Result<i64> {
+        self.table.get_count().await
+    }
+
+    /// `LIMIT limit START offset`, applied to a clone so the shell's query
+    /// is left as it was.
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        let mut window = self.table.clone();
+        window.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
+        Ok(Page::new(
+            to_cbor_rows(window.list_values().await?).collect(),
+        ))
+    }
+
+    async fn watch(&self) -> Result<VistaChangeStream> {
+        self.live_changes().await
+    }
+
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        self.apply_condition(condition)
+    }
+
+    fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {
+        self.apply_native_condition(condition)
+    }
+
+    fn set_search(&mut self, text: Option<&str>) -> Result<()> {
+        self.apply_search(text);
+        Ok(())
+    }
+
+    fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
+        self.apply_order(order)
+    }
+
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Record<CborValue>,
+    ) -> Result<(String, Record<CborValue>)> {
+        let native = to_native_record(record);
+        let Some(id) = id else {
+            let thing = self.table.insert_return_id_value(&native).await?;
+            let stored = self.read_back(&thing).await?;
+            return Ok((thing.to_string(), stored));
+        };
+        let thing = self.parse_id(id);
+        let inserted = self.table.insert_value(thing.clone(), &native).await?;
+        Ok((thing.to_string(), to_cbor_record(inserted)))
+    }
+
+    async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
+        let replaced = self
+            .table
+            .replace_value(self.parse_id(id), &to_native_record(record))
+            .await?;
+        Ok(to_cbor_record(replaced))
+    }
+
+    /// The replace statement is an `UPSERT … CONTENT` for a row outside the
+    /// set, so it already creates a missing row in one operation.
+    async fn upsert(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
+        self.replace(id, record).await
+    }
+
+    async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {
+        let patched = self
+            .table
+            .patch_value(self.parse_id(id), &to_native_record(partial))
+            .await?;
+        Ok(to_cbor_record(patched))
+    }
+
+    async fn delete(&self, id: &str) -> Result<()> {
+        self.table.delete(self.parse_id(id)).await
+    }
+
+    async fn delete_all(&self) -> Result<()> {
+        self.table.delete_all().await
+    }
+
+    fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
+        self.ref_target(relation, row)
+    }
+
+    /// SurrealDB's expression vocabulary, `self.with_condition(<expr>)` and
+    /// the `me` anchor; see [`register_extensions`].
     #[cfg(feature = "rhai")]
-    fn register_rhai_extensions(&self, engine: &mut rhai::Engine) {
-        use vantage_vista::Handle;
-
-        crate::rhai_engine::register_surreal_onto(engine);
-
-        engine.register_fn(
-            "with_condition",
-            |h: &mut Handle,
-             cond: crate::rhai_engine::RhaiExpr|
-             -> std::result::Result<Handle, Box<rhai::EvalAltResult>> {
-                h.with_base_vista("with_condition", |vista| vista.add_raw_condition(cond.0))
-                    .map_err(|e| e.to_string().into())
-            },
-        );
-    }
-
-    /// `me`, the current-record anchor, for every script this shell's vistas
-    /// evaluate (`modify:`, augmentation, traversal).
-    #[cfg(feature = "rhai")]
-    fn rhai_env(&self, env: Env) -> Env {
-        crate::rhai_engine::surreal_env(env)
-    }
-}
-
-#[cfg(feature = "rhai")]
-impl<E> SurrealTableShell<E>
-where
-    E: Entity<AnySurrealType> + 'static,
-{
-    /// Build a reference's traversal target by evaluating its Rhai
-    /// `build_script`. SurrealDB's vendor extensions plus vantage-vista's
-    /// describe-only data vocabulary go onto a host; `table(name)` resolves a
-    /// fresh target through the shell's spec resolver, and the parent `row`
-    /// (and `me`) are exposed to the script.
-    fn get_ref_via_script(&self, script: &str, row: &Record<CborValue>) -> Result<Vista> {
-        use vantage_vista::VistaFactory;
-
-        let db = self.table.data_source().clone();
-        let resolver = self.resolver.clone();
-        let target_resolver: vantage_vista::TargetResolver = std::sync::Arc::new(move |name| {
-            let resolver = resolver.as_ref().ok_or_else(|| {
-                error!("scripted reference traversal requires a spec resolver on the factory")
-            })?;
-            let spec = resolver(name).ok_or_else(|| {
-                error!("scripted reference traversal: unknown table", table = name)
-            })?;
-            SurrealVistaFactory::new(db.clone())
-                .with_resolver(resolver.clone())
-                .build_from_spec(spec)
-        });
-
-        // Vendor vocab first, data vocab second: this makes `table(name)` a
-        // table handle rather than SurrealDB's `table` alias for `ident`
-        // (which stays reachable as `ident(...)`).
-        let host = Host::builder(Limits::background())
-            .vocab_fn(|engine| self.register_rhai_extensions(engine))
-            .vocab(vantage_vista::DataVocab {
-                resolver: Some(target_resolver),
-                terminals: vantage_vista::Terminals::Describe,
-            })
-            .build();
-        vantage_vista::eval_ref_script(&host, script, self.rhai_env(Env::new()), row)
+    fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
+        register_extensions(engine);
     }
 }
