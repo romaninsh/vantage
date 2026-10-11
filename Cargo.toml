@@ -28,6 +28,7 @@ members = [
     "vantage-api-client",
     "vantage-api-pool",
     "vantage-cli-util",
+    "vantage-inventory",
     "bakery_model3",
     "bakery_model4",
     "docs4",

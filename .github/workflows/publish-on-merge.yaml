@@ -104,6 +104,8 @@ jobs:
             # will depend on it as their Rhai engines move onto the shared
             # host — so it publishes ahead of everything.
             vantage-rhai
+            # No internal dependencies.
+            vantage-inventory
             vantage-core
             vantage-action/macros
             vantage-action
