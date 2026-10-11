@@ -1,9 +1,9 @@
 //! Vista bridge for the AWS backend.
 //!
 //! Construct a `Vista` from a typed `Table<AwsAccount, E>` via
-//! `AwsAccount::vista_factory().from_table(...)`. AWS is read-only at
-//! this stage — the shell advertises only `can_count`. YAML-driven
-//! construction is stubbed; see [`factory::AwsVistaFactory`].
+//! `AwsAccount::vista_factory().from_table(...)`. AWS is read-only — the
+//! shell advertises traversal, plus a key cursor on S3 object listings.
+//! YAML-driven construction is stubbed; see [`factory::AwsVistaFactory`].
 
 pub mod factory;
 pub mod source;

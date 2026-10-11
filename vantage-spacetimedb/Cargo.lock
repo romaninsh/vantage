@@ -2220,23 +2220,20 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44677eb11bb16f957b79008dac83ed859d18673b79a8a6f74017b7953c62c226"
+version = "1.1.0"
 dependencies = [
  "atty",
  "indexmap 2.14.0",
  "owo-colors",
  "serde",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "vantage-dataset"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b511c291ff262889b0bf5dce5b444c7a71ab68f0ea6975028eab03a08643a7"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2280,9 +2277,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d437264bbd29a579b482e5e6887834ad21d454cf445175f85742c0e6c9202073"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "ciborium",
@@ -2296,9 +2291,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types-entity"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0b7457dc46f03ae0e87e3202ff0d5236ce3c206700e54f78f28c1cda5b855cb"
+version = "1.0.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2307,9 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "0.6.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee4f31b41f4de94f861d89731996a36c06293465b140288767e4064e0af92fef"
+version = "1.2.1"
 dependencies = [
  "async-stream",
  "async-trait",

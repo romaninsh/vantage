@@ -7,11 +7,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet};
 use vantage_diorama::{ChangeFlash, Dio, Lens};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Capability, Column, TableShell, Vista, VistaMetadata, forward_table_shell, mocks::MockShell,
+};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -34,18 +36,30 @@ fn metadata() -> VistaMetadata {
 
 fn empty_shell() -> MockShell {
     MockShell::new()
-        .with_capabilities(VistaCapabilities {
-            can_count: true,
-            can_insert: true,
-            can_update: true,
-            can_delete: true,
-            ..VistaCapabilities::default()
-        })
+        .with_capabilities(
+            [Capability::Insert, Capability::Update, Capability::Delete]
+                .into_iter()
+                .collect(),
+        )
         .with_metadata(metadata())
 }
 
-async fn dio_over(shell: MockShell) -> Result<Dio> {
-    let master = Vista::new("items", Box::new(shell));
+/// A shell whose native replace requires the row, the way memory's does.
+#[derive(Clone)]
+struct StrictReplace {
+    inner: Box<dyn TableShell>,
+}
+
+forward_table_shell!(StrictReplace, inner, {
+    async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
+        if self.inner.get(id).await?.is_none() {
+            return Err(error!("Row not found", id = id).mark_not_found());
+        }
+        self.inner.replace(id, record).await
+    }
+});
+
+async fn dio_over(master: Vista) -> Result<Dio> {
     let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
     lens.make_dio(master).await
 }
@@ -53,7 +67,12 @@ async fn dio_over(shell: MockShell) -> Result<Dio> {
 /// A Dio over an empty in-memory master, cache empty until reads/writes
 /// populate it.
 async fn dio_over_memory() -> Result<Dio> {
-    dio_over(empty_shell()).await
+    dio_over(Vista::new("items", empty_shell())).await
+}
+
+/// A Dio over an empty master whose replace requires the row.
+async fn dio_over_strict_replace() -> Result<Dio> {
+    dio_over(Vista::new("items", empty_shell()).map_shell(|inner| StrictReplace { inner })).await
 }
 
 /// `upsert_value` enqueues onto the fire-and-forget write queue like every
@@ -112,7 +131,7 @@ fn caused_by_not_found(err: &vantage_core::VantageError) -> bool {
 /// only on the event bus.
 #[tokio::test]
 async fn replace_flash_of_a_missing_row_still_fails() -> Result<()> {
-    let dio = dio_over(empty_shell().with_replace_requires_existing()).await?;
+    let dio = dio_over_strict_replace().await?;
 
     let err = dio
         .flash(ChangeFlash::replace("missing", rec(&[("name", "a")])))
@@ -125,7 +144,7 @@ async fn replace_flash_of_a_missing_row_still_fails() -> Result<()> {
 /// The same missing row accepts an `Upsert` flash instead of failing.
 #[tokio::test]
 async fn upsert_flash_of_a_missing_row_creates_it() -> Result<()> {
-    let dio = dio_over(empty_shell().with_replace_requires_existing()).await?;
+    let dio = dio_over_strict_replace().await?;
 
     dio.flash(ChangeFlash::upsert("missing", rec(&[("name", "a")])))
         .await?;

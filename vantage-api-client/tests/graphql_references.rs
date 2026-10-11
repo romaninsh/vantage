@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use serde_json::json;
 use vantage_api_client::GraphqlApiVistaSpec;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_vista::{ReferenceKind, VistaFactory};
+use vantage_vista::{JoinKey, ReferenceKind, VistaFactory};
 use wiremock::MockServer;
 
 use support::references::{CLIENT, answer, factory, order_yaml, registered, row, texts};
@@ -22,16 +22,16 @@ async fn metadata_carries_reference_targets_and_foreign_keys() {
     let factory = registered(&server, "");
 
     let clients = factory.build("client").unwrap();
-    let orders = clients.get_reference("orders").unwrap();
+    let orders = clients.reference("orders").unwrap();
     assert_eq!(orders.target, "order");
     assert_eq!(orders.kind, ReferenceKind::HasMany);
-    assert_eq!(orders.foreign_key, "client_id");
+    assert_eq!(orders.keys, vec![JoinKey::new("id", "client_id")]);
 
     let client = factory.build("order").unwrap();
-    let client = client.get_reference("client").unwrap();
+    let client = client.reference("client").unwrap();
     assert_eq!(client.target, "client");
     assert_eq!(client.kind, ReferenceKind::HasOne);
-    assert_eq!(client.foreign_key, "client_id");
+    assert_eq!(client.keys, vec![JoinKey::to_target_id("client_id")]);
 }
 
 #[tokio::test]
@@ -43,8 +43,14 @@ async fn reference_to_an_unregistered_model_is_an_error() {
     let o3 = row(&[("id", "o3"), ("client_id", "c2")]);
 
     for err in [
-        orders.get_ref("client", &o3).err().expect("get_ref error"),
-        orders.get_ref_target("client").err().expect("target error"),
+        orders
+            .get_ref("client", Some(&o3))
+            .map(drop)
+            .expect_err("get_ref error"),
+        orders
+            .get_ref("client", None)
+            .map(drop)
+            .expect_err("target error"),
     ] {
         let msg = err.to_string();
         assert!(msg.contains("no registered spec"), "{msg}");
@@ -65,7 +71,10 @@ async fn reference_to_a_broken_target_spec_is_an_error() {
         .unwrap();
     let orders = factory.build("order").unwrap();
 
-    let err = orders.get_ref_target("client").err().expect("target error");
+    let err = orders
+        .get_ref("client", None)
+        .map(drop)
+        .expect_err("target error");
     assert!(err.to_string().contains("can't be built"), "{err}");
 }
 
@@ -93,6 +102,6 @@ async fn with_resolver_targets_ignore_the_parent_overrides() {
     let orders = factory.build_from_spec(order).unwrap();
     let o3 = row(&[("id", "o3"), ("client_id", "c2")]);
 
-    let client = orders.get_ref("client", &o3).unwrap();
+    let client = orders.get_ref("client", Some(&o3)).unwrap();
     assert_eq!(texts(&client.list_values().await.unwrap(), "name"), ["Doc"]);
 }

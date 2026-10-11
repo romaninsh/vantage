@@ -56,16 +56,12 @@ async fn paged_source(backing: Vec<(String, Record<CborValue>)>) -> Dio {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("status", "String"))
         .with_id_column("id");
-    let vista =
-        Vista::new(
-            "items",
-            Box::new(MockShell::new().with_metadata(metadata).with_capabilities(
-                VistaCapabilities {
-                    can_order: false,
-                    ..Default::default()
-                },
-            )),
-        );
+    let vista = Vista::new(
+        "items",
+        MockShell::new()
+            .with_metadata(metadata)
+            .with_capabilities(VistaCapabilities::new()),
+    );
     let lens = Arc::new(
         Lens::new()
             .cache_in_memory()

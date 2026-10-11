@@ -19,7 +19,7 @@ use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoId, MongoVistaFactory};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Vista, VistaFactory};
+use vantage_vista::{Capability, Vista, VistaFactory, contract};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -110,7 +110,7 @@ async fn undeclared_view_watch_names_the_flag() -> TestResult {
     let db = setup().await;
     let vista = open_tasks(&db, "{ collection: open_tasks }");
     assert!(
-        vista.can_watch(),
+        vista.capabilities().has(Capability::Subscribe),
         "an undeclared view looks like a collection"
     );
 
@@ -159,43 +159,47 @@ async fn declared_view_is_read_only_without_streams() -> TestResult {
     let db = setup().await;
     let vista = open_tasks(&db, "{ collection: open_tasks, view: true }");
 
-    let caps = vista.capabilities().clone();
-    for (flag, on) in [
-        ("can_count", caps.can_count),
-        ("can_order", caps.can_order),
-        ("can_search", caps.can_search),
-        ("can_fetch_page", caps.can_fetch_page),
+    let caps = *vista.capabilities();
+    for capability in [
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::NativeConditions,
+        Capability::Window,
+        Capability::Cursor,
+        Capability::Traverse,
     ] {
-        assert!(on, "{flag} should be on");
+        assert!(caps.has(capability), "{capability} should be on");
     }
-    for (flag, on) in [
-        ("can_insert", caps.can_insert),
-        ("can_update", caps.can_update),
-        ("can_delete", caps.can_delete),
-        ("can_import", caps.can_import),
-        ("can_subscribe", caps.can_subscribe),
-        ("can_confine_writes", caps.can_confine_writes),
-        ("can_traverse_to_record", caps.can_traverse_to_record),
-        ("can_traverse_to_set", caps.can_traverse_to_set),
-        ("can_traverse_in_columns", caps.can_traverse_in_columns),
+    for capability in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::Import,
+        Capability::Subscribe,
+        Capability::ConfineWrites,
     ] {
-        assert!(!on, "{flag} should be off");
+        assert!(!caps.has(capability), "{capability} should be off");
     }
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
-    assert_eq!(vista.get_count().await?, 2);
+    assert_eq!(vista.count().await?, 2);
 
     let err = vista
         .insert_value(ObjectId::new().to_hex(), &row("plan"))
         .await
         .unwrap_err();
     assert!(err.is_unsupported(), "insert: {err}");
+    let batch = IndexMap::from([(ObjectId::new().to_hex(), row("plan"))]);
+    let err = vista.import_values(&batch).await.unwrap_err();
+    assert!(err.is_unsupported(), "import: {err}");
     let Err(err) = vista.watch().await else {
         panic!("watch on a declared view must be refused");
     };
     assert!(err.is_unsupported(), "watch: {err}");
     assert_eq!(stored(&db).await, 3);
+    contract::check_advertised(&vista).await;
 
     teardown(&db).await;
     Ok(())
@@ -239,8 +243,8 @@ async fn declared_view_runs_a_pipeline_over_it() -> TestResult {
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1);
-    assert!(!vista.capabilities().can_insert);
-    assert!(!vista.capabilities().can_subscribe);
+    assert!(!vista.capabilities().has(Capability::Insert));
+    assert!(!vista.capabilities().has(Capability::Subscribe));
 
     teardown(&db).await;
     Ok(())

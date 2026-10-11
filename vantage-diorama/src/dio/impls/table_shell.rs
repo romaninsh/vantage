@@ -5,7 +5,8 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
 use vantage_vista::{
-    Column, Reference, SortDirection, TableShell, Vista, VistaCapabilities, VistaChangeStream,
+    Capability, Column, Condition, FilterOp, Page, Preview, Reference, SortDirection, TableShell,
+    Vista, VistaCapabilities, VistaChangeStream, unsupported,
 };
 
 use crate::dio::shell::DioShell;
@@ -30,25 +31,18 @@ impl TableShell for DioShell {
     // ---- Reads — cache-first; bounded reads hydrate ---------------------------
     //
     // When the Dio carries augmentations, a BOUNDED facade read
-    // (`get_value`, `fetch_window`) runs the detail pass for every
+    // (`get`, `fetch_window`) runs the detail pass for every
     // returned row that still has an augment gap — the read blocks until
     // its rows are fully hydrated (and cached, so the cost is paid once).
-    // `list_values` deliberately stays cheap: a listing is the fast spine,
+    // `list` deliberately stays cheap: a listing is the fast spine,
     // and hydrating an entire set through it means one innocent-looking
     // call downloading everything. Ask for a window when you want details.
 
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
         self.read().await
     }
 
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
+    async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
         // A narrowed handle is a smaller set: an id outside it is not found,
         // rather than found and silently outside the filter.
         let Some(row) = (if self.query.is_empty() {
@@ -58,79 +52,64 @@ impl TableShell for DioShell {
         }) else {
             return Ok(None);
         };
-        let mut rows = IndexMap::from([(id.clone(), row)]);
+        let mut rows = IndexMap::from([(id.to_string(), row)]);
         self.hydrate(&mut rows).await?;
         Ok(rows.shift_remove(id))
     }
 
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        let rows = self.read().await?;
-        let Some((id, row)) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        let mut one = IndexMap::from([(id.clone(), row)]);
-        self.hydrate(&mut one).await?;
-        Ok(one.into_iter().next())
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
+    async fn count(&self) -> Result<i64> {
         if self.query.is_empty() {
             return self.dio.cache.count().await;
         }
         Ok(self.read().await?.len() as i64)
     }
 
-    async fn fetch_window(
-        &self,
-        _vista: &Vista,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<(String, Record<CborValue>)>> {
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
         let all = self.read().await?;
+        let total = all.len() as i64;
         let mut rows: IndexMap<String, Record<CborValue>> =
             all.into_iter().skip(offset).take(limit).collect();
         self.hydrate(&mut rows).await?;
-        Ok(rows.into_iter().collect())
+        Ok(Page::new(rows.into_iter().collect()).with_total(total))
     }
 
     // ---- Narrowing -----------------------------------------------------------
     //
     // Recorded here and routed at read time (see `DioShell::plan`): pushed into
     // the master when it can answer them, applied over the cache when it
-    // cannot. Accrete/replace semantics match `Vista`'s: conditions accumulate,
-    // order replaces.
+    // cannot. Conditions accumulate, order replaces. A clone carries the
+    // narrowing but owns it, so narrowing a derived handle never disturbs the
+    // one it came from.
 
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
+    /// Takes equality on a facade column, an augmented column, or a dotted
+    /// path into a facade column; any other column is an error. A facade
+    /// over a master with no declared columns can't check, and takes any.
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        if condition.op != FilterOp::Eq {
+            return unsupported(Capability::FilterOps);
+        }
+        let column = condition.column.as_str();
+        let root = column.split('.').next().unwrap_or(column);
+        if !self.columns.is_empty()
+            && !self.columns.contains_key(column)
+            && !self.columns.contains_key(root)
+            && !self.dio.is_augmented_column(column)
+        {
+            return Err(error!(
+                "Unknown column",
+                column = column,
+                table = self.dio.cache_table_name
+            ));
+        }
         self.query
             .conditions
-            .push((field.to_string(), value.clone()));
+            .push((condition.column.clone(), condition.value.clone()));
         Ok(())
     }
 
-    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
-        self.query.order = Some((field.to_string(), dir));
+    fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
+        self.query.order = order.map(|(field, dir)| (field.to_string(), dir));
         Ok(())
-    }
-
-    fn clear_orders(&mut self) -> Result<()> {
-        self.query.order = None;
-        Ok(())
-    }
-
-    /// Clones carry the narrowing but stay independent, so narrowing a derived
-    /// handle never disturbs the one it came from.
-    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-        Some(Box::new(DioShell {
-            dio: self.dio.clone(),
-            capabilities: self.capabilities.clone(),
-            columns: self.columns.clone(),
-            references: self.references.clone(),
-            id_column: self.id_column.clone(),
-            query: self.query.clone(),
-        }))
     }
 
     // ---- Writes — enqueue + return synthesized record ------------------------
@@ -142,38 +121,40 @@ impl TableShell for DioShell {
     // server-side data should refetch via `get_value` after the write
     // completes (an `on_flash` route typically updates the cache too).
 
-    /// Insert-if-absent: an id already in view returns the stored row and
-    /// queues nothing; an id held outside the narrowing is `Conflict`.
-    async fn insert_vista_value(
+    /// With an id, insert-if-absent: an id already in view returns the stored
+    /// row and queues nothing; an id held outside the narrowing is `Conflict`.
+    ///
+    /// Without one, no id exists until the master assigns it — see
+    /// `Dio::insert_returning_id`, which bypasses the write queue and any
+    /// `on_flash` route and seeds the cache, so the returned id is visible to
+    /// an immediate `get_value`.
+    async fn insert(
         &self,
-        _vista: &Vista,
-        id: &String,
+        id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
+    ) -> Result<(String, Record<CborValue>)> {
+        let Some(id) = id else {
+            let dio = crate::Dio {
+                inner: self.dio.clone(),
+            };
+            return dio.insert_returning_id(&self.conformed(record)?).await;
+        };
         if let Some(row) = self.row_in_view_or_conflict(id).await? {
-            return Ok(row);
+            return Ok((id.to_string(), row));
         }
-        self.enqueue_full_record(FlashKind::Insert, id, &self.conformed(record)?)
-            .await
+        let stored = self
+            .enqueue_full_record(FlashKind::Insert, id, &self.conformed(record)?)
+            .await?;
+        Ok((id.to_string(), stored))
     }
 
-    async fn replace_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
+    async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
         self.row_in_view_or_conflict(id).await?;
         self.enqueue_full_record(FlashKind::Replace, id, &self.conformed(record)?)
             .await
     }
 
-    async fn upsert_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
+    async fn upsert(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
         self.row_in_view_or_conflict(id).await?;
         self.enqueue_full_record(FlashKind::Upsert, id, &self.conformed(record)?)
             .await
@@ -181,12 +162,7 @@ impl TableShell for DioShell {
 
     /// The write queue is fire-and-forget, so a missing row is caught here
     /// rather than surfacing later as `DioEvent::WriteFailed`.
-    async fn patch_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        partial: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
+    async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {
         if self.row_in_view(id).await?.is_none() {
             return Err(
                 error!("Row not found", table = self.dio.cache_table_name, id = id)
@@ -195,8 +171,8 @@ impl TableShell for DioShell {
         }
         vantage_dataset::invariants::validate(partial, &self.query.invariants())?;
         self.enqueue(ChangeFlash::new(
-            crate::ops::FlashKind::Patch,
-            Some(id.clone()),
+            FlashKind::Patch,
+            Some(id.to_string()),
             partial.clone(),
         ))
         .await?;
@@ -205,9 +181,9 @@ impl TableShell for DioShell {
 
     /// Idempotent: a row missing or outside the narrowing is already gone
     /// from this set, so nothing is queued and the call succeeds.
-    async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
+    async fn delete(&self, id: &str) -> Result<()> {
         if self.row_in_view(id).await?.is_some() {
-            self.enqueue(ChangeFlash::delete(id.clone())).await?;
+            self.enqueue(ChangeFlash::delete(id.to_string())).await?;
         }
         Ok(())
     }
@@ -216,7 +192,7 @@ impl TableShell for DioShell {
     /// it deletes exactly the rows it reads, one `Delete` flash each, and
     /// never sends `Clear`. Routes and the default write path read `Clear`
     /// as "every row".
-    async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
+    async fn delete_all(&self) -> Result<()> {
         if self.query.conditions.is_empty() {
             return self.enqueue(ChangeFlash::clear()).await;
         }
@@ -226,29 +202,20 @@ impl TableShell for DioShell {
         Ok(())
     }
 
-    /// No id exists until the master assigns one — see
-    /// `Dio::insert_returning_id`, which
-    /// bypasses the write queue and any `on_flash` route and seeds the
-    /// cache, so the id returned here is visible to an immediate
-    /// `get_value`.
-    async fn insert_vista_return_id_value(
-        &self,
-        _vista: &Vista,
-        record: &Record<CborValue>,
-    ) -> Result<String> {
-        let dio = crate::Dio {
-            inner: self.dio.clone(),
-        };
-        let (id, _stored) = dio.insert_returning_id(&self.conformed(record)?).await?;
-        Ok(id)
-    }
-
     // ---- Live subscription ------------------------------------------------------
 
     /// Follows the Dio's event bus, re-evaluated through this handle's
     /// narrowing — see `dio/shell/watch.rs`.
-    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+    async fn watch(&self) -> Result<VistaChangeStream> {
         self.follow().await
+    }
+
+    // ---- References ---------------------------------------------------------
+
+    /// The facade doesn't traverse: a related set needs its own Dio, which
+    /// `Dio::get_ref` builds.
+    fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
+        unsupported(Capability::Traverse)
     }
 
     // ---- Capability + identity ------------------------------------------------
@@ -265,44 +232,54 @@ impl TableShell for DioShell {
     /// seeing is the **master's**, which is what filled that cache in the first
     /// place.
     ///
-    /// Which clauses that master carries is not a given: `plan` offers each one
-    /// to a private clone and keeps whatever it accepts, so the same condition
-    /// is a server-side filter against one driver and an in-memory one against
-    /// the next. The preview therefore reports the
-    /// **planned** master, and lists under `facade` only what the master
-    /// refused. Reporting the bare master and every clause as local would put
-    /// pushed-down filters in the wrong column — lossy is acceptable here,
-    /// wrong is not.
-    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-        let (planned, local) = self.plan();
+    /// Which clauses that master carries is not a given: `plan` offers them
+    /// to a clone and keeps whatever it accepts, so the same condition is a
+    /// server-side filter against one driver and an in-memory one against the
+    /// next. The preview therefore reports the **planned** master, and notes
+    /// only what the master refused as applied over the cache. Reporting the
+    /// bare master and every clause as local would put pushed-down filters in
+    /// the wrong place — lossy is acceptable here, wrong is not.
+    fn preview(&self) -> Preview {
+        let (planned, local) = match self.plan() {
+            Ok(plan) => plan,
+            Err(e) => {
+                return Preview::new("dio")
+                    .with_note(format!("the master refused this handle's query: {e}"));
+            }
+        };
         let master = match &planned {
-            Some(narrowed) => narrowed.preview_query(),
+            Some(narrowed) => narrowed.preview(),
             // Nothing pushed down: the master runs unnarrowed.
-            None => self.dio.master.read().unwrap().preview_query(),
+            None => self.dio.master.read().unwrap().preview(),
         };
 
-        let conditions: Vec<String> = local
+        let mut facade: Vec<String> = local
             .conditions
             .iter()
             .map(|(field, value)| format!("{field} = {value:?}"))
             .collect();
-        let order = local.order.as_ref().map(|(col, dir)| {
+        if let Some((col, dir)) = &local.order {
             let dir = match dir {
                 SortDirection::Ascending => "asc",
                 SortDirection::Descending => "desc",
             };
-            format!("{col} {dir}")
-        });
+            facade.push(format!("order by {col} {dir}"));
+        }
 
-        serde_json::json!({
-            "driver": "dio",
-            "note": "reads come from the local cache; this issues no query of \
-                     its own. `master` is the query that populates that cache, \
-                     carrying every clause the driver accepted; `facade` is what \
-                     it refused, applied to the cached rows in memory.",
-            "master": master,
-            "facade": { "conditions": conditions, "order": order },
-        })
+        let mut note = format!(
+            "reads come from the local cache; the query is the {} master's, \
+             which populates that cache and carries every clause it accepted",
+            master.driver
+        );
+        if !facade.is_empty() {
+            note.push_str("; applied over the cache: ");
+            note.push_str(&facade.join(", "));
+        }
+        let preview = Preview::new("dio").with_note(note);
+        match master.query {
+            Some(query) => preview.with_query(query),
+            None => preview,
+        }
     }
 }
 
@@ -314,7 +291,7 @@ impl DioShell {
     /// authoritative over the whole set, not over whatever the cache happens to
     /// hold — and applies the rest here. See [`DioShell::plan`] for the routing.
     pub(crate) async fn read(&self) -> Result<IndexMap<String, Record<CborValue>>> {
-        let (narrowed, local) = self.plan();
+        let (narrowed, local) = self.plan()?;
         let mut rows = match narrowed {
             Some(master) => master.list_values().await?,
             None => self.dio.cache.list_values().await?,
@@ -412,7 +389,7 @@ impl DioShell {
 
     /// `insert`/`replace`/`upsert` share one shape: enqueue the whole
     /// record under `id` as the given flash kind, then hand back the
-    /// synthesized record — see the module doc above `insert_vista_value`.
+    /// synthesized record — see the "Writes" comment above `insert`.
     async fn enqueue_full_record(
         &self,
         kind: FlashKind,

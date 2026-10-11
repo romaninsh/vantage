@@ -59,6 +59,7 @@ impl Product {
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<Option<Animal>>("sticker")
+            .with_column_of::<String>("bakery_id")
             .with_one("bakery", "bakery_id", Bakery::sqlite_table)
     }
 
@@ -70,6 +71,7 @@ impl Product {
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<Option<Animal>>("sticker")
+            .with_column_of::<String>("bakery_id")
             .with_one("bakery", "bakery_id", Bakery::postgres_table)
     }
 
@@ -81,6 +83,7 @@ impl Product {
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
             .with_column_of::<Option<Animal>>("sticker")
+            .with_column_of::<String>("bakery_id")
     }
 
     pub fn dynamo_table(db: DynamoDB) -> Table<DynamoDB, Product> {

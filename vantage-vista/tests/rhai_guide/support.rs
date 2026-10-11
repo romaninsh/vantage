@@ -10,8 +10,8 @@ use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::{
-    Column, DataVocab, Reference, ReferenceKind, TargetResolver, Terminals, Vista, VistaMetadata,
-    Writes,
+    Column, ColumnFlag, DataVocab, JoinKey, Reference, ReferenceKind, TargetResolver, Terminals,
+    Vista, VistaMetadata, Writes,
 };
 
 fn row(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
@@ -64,30 +64,30 @@ fn catalog(store: &MemoryStore) -> Catalog {
     catalog.register(
         "client",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
-            .with_column(Column::new("name", "String").with_flag("orderable"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+            .with_column(Column::new("name", "String").with_flag(ColumnFlag::Orderable))
             .with_column(Column::new("vip", "bool"))
             .with_id_column("id")
             .with_reference(Reference::new(
                 "orders",
                 "order",
                 ReferenceKind::HasMany,
-                "client",
+                vec![JoinKey::new("id", "client")],
             )),
     );
     catalog.register(
         "order",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
             .with_column(Column::new("client", "String"))
-            .with_column(Column::new("total", "int").with_flag("orderable"))
+            .with_column(Column::new("total", "int").with_flag(ColumnFlag::Orderable))
             .with_column(Column::new("status", "String"))
             .with_id_column("id")
             .with_reference(Reference::new(
                 "client",
                 "client",
                 ReferenceKind::HasOne,
-                "client",
+                vec![JoinKey::to_target_id("client")],
             )),
     );
     catalog
@@ -102,7 +102,7 @@ pub fn resolver(store: &MemoryStore) -> TargetResolver {
             .unwrap_or_else(|| VistaMetadata::new().with_id_column("id"));
         let table = catalog.store().table(name);
         let shell = MemoryTableShell::new(table, metadata, catalog.clone());
-        Ok(Vista::new(name, Box::new(shell)))
+        Ok(Vista::new(name, shell))
     })
 }
 

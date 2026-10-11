@@ -57,9 +57,18 @@ pub mod lambda;
 pub mod logs;
 pub mod s3;
 
+use vantage_table::column::core::Column;
+use vantage_table::column::flags::ColumnFlag;
 use vantage_vista::Vista;
 
 use crate::AwsAccount;
+
+/// A request parameter a relation narrows its target by, declared as a
+/// hidden column so a Vista takes the join condition. Rows don't carry it:
+/// the API applies it server-side.
+pub(crate) fn request_param(name: &str) -> Column<String> {
+    Column::new(name).with_flag(ColumnFlag::Hidden)
+}
 
 /// Whether a [`Factory`] lookup should drop into list mode (returning
 /// every matching record) or single-record mode (returning just the

@@ -1,29 +1,19 @@
-//! `limit(n)` on a shell that can window rows but can't set a page size must
-//! still cap the read.
+//! `limit(n)` must cap the read on a shell that can window rows, with no
+//! page-size setting involved.
 //!
-//! Today the `limit` step calls `Vista::set_page_size` while the handle
-//! resolves, so a shell without `can_set_page_size` fails before the terminal
-//! runs. In 2.0 `limit(n)` is a read cap the terminal applies through
-//! `fetch_window(0, n)`.
-//!
-//! Phase 1 removes `can_count`, `can_fetch_window` and `can_set_page_size`:
-//! the caps become `{Window}` with no page-size capability; the assertion
-//! stays.
+//! In 1.x the `limit` step called `Vista::set_page_size` while the handle
+//! resolved, so a shell without `can_set_page_size` failed before the
+//! terminal ran. In 2.0 `limit(n)` is a read cap the terminal applies through
+//! `fetch_window(0, n)`, and there is no page-size capability.
 
 use vantage_rhai::rhai::{Array, Map as RhaiMap};
-use vantage_vista::{Terminals, VistaCapabilities};
+use vantage_vista::{Capability, Terminals, VistaCapabilities};
 
 use super::rhai_support::{host, mock, run};
 
 #[test]
-#[ignore = "v2 phase 2: limit(n) becomes a read cap instead of set_page_size"]
 fn rhai_limit_without_page_size() {
-    let caps = VistaCapabilities {
-        can_count: true,
-        can_fetch_window: true,
-        can_set_page_size: false,
-        ..VistaCapabilities::default()
-    };
+    let caps = VistaCapabilities::new().with(Capability::Window);
     let host = host(
         mock().with_capabilities(caps),
         Terminals::Read { limit: None },

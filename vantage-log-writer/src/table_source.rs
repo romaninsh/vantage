@@ -312,7 +312,7 @@ fn serialize_line(record: &Record<Value>) -> Result<String> {
     Ok(s)
 }
 
-fn extract_or_generate_id(record: &Record<Value>, id_column: &str) -> String {
+pub(crate) fn extract_or_generate_id(record: &Record<Value>, id_column: &str) -> String {
     if let Some(v) = record.get(id_column) {
         match v {
             Value::String(s) if !s.is_empty() => return s.clone(),

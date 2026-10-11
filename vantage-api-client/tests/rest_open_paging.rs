@@ -8,7 +8,7 @@ use support::test_client;
 use vantage_api_client::{
     FilterStrategy, PaginationParams, ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec,
 };
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, FilterOp, VistaFactory};
 use wiremock::matchers::{method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -43,11 +43,45 @@ async fn paging_params_without_a_total_serve_windows_by_page() {
     let vista = RestApiVistaFactory::new(api)
         .build_from_spec(spec)
         .expect("build");
-    assert!(vista.capabilities().can_fetch_window);
+    assert!(vista.capabilities().has(Capability::Window));
 
-    let (window, total) = vista.fetch_window_counted(3, 3).await.expect("fetch");
-    assert_eq!(window.len(), 2, "a short page: the end of the set");
-    assert_eq!(total, None);
+    let page = vista.fetch_window(3, 3).await.expect("fetch");
+    assert_eq!(page.rows.len(), 2, "a short page: the end of the set");
+    assert_eq!(page.total, None);
+}
+
+/// A `total_key` puts the envelope's grand total on the page, from the same
+/// response as the rows.
+#[tokio::test]
+async fn a_total_key_puts_the_total_on_the_page() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(query_param("offset", "0"))
+        .and(query_param("limit", "2"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "count": 7, "results": rows(1..3) })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::Wrapped {
+            array_key: "results".into(),
+        })
+        .total_key("count")
+        .pagination_params(PaginationParams::skip_limit("offset", "limit"))
+        .http_client(test_client())
+        .build();
+    let spec: RestApiVistaSpec = serde_yaml_ng::from_str(SPEC).unwrap();
+    let vista = RestApiVistaFactory::new(api)
+        .build_from_spec(spec)
+        .expect("build");
+
+    let page = vista.fetch_window(0, 2).await.expect("fetch");
+    assert_eq!(page.rows.len(), 2);
+    assert_eq!(page.total, Some(7));
 }
 
 /// The paged activities vista; `filter` overrides the default
@@ -82,11 +116,11 @@ async fn a_window_off_a_page_boundary_returns_the_rows_it_asks_for() {
     mount_page(&server, "2", rows(3..6)).await;
     mount_page(&server, "3", rows(6..9)).await;
 
-    let (window, _) = paged_vista(&server, None)
-        .fetch_window_counted(5, 3)
+    let page = paged_vista(&server, None)
+        .fetch_window(5, 3)
         .await
         .expect("fetch");
-    let ids: Vec<&str> = window.iter().map(|(id, _)| id.as_str()).collect();
+    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
     assert_eq!(ids, ["5", "6", "7"]);
 }
 
@@ -113,11 +147,11 @@ async fn rows_lost_from_a_full_page_do_not_end_the_set() {
 
     let mut vista = paged_vista(&server, Some(FilterStrategy::Client));
     vista
-        .add_condition_eq("kind", ciborium::Value::Text("ride".into()))
+        .add_condition("kind", FilterOp::Eq, ciborium::Value::Text("ride".into()))
         .unwrap();
 
-    let (window, _) = vista.fetch_window_counted(0, 3).await.expect("fetch");
-    let ids: Vec<&str> = window.iter().map(|(id, _)| id.as_str()).collect();
+    let page = vista.fetch_window(0, 3).await.expect("fetch");
+    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
     assert_eq!(ids, ["1", "2", "3"], "a full window, not a short one");
 }
 
@@ -129,7 +163,7 @@ fn without_paging_params_or_a_total_there_are_no_windows() {
             .build_from_spec(spec)
             .expect("build")
             .capabilities()
-            .can_fetch_window
+            .has(Capability::Window)
     };
     let plain = RestApi::builder("http://example.invalid")
         .http_client(test_client())

@@ -33,7 +33,7 @@ fn master(rows: &[(&str, &str)]) -> Vista {
     for (id, name) in rows {
         shell = shell.with_record(*id, named(name));
     }
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 async fn eager_lens(cache_path: std::path::PathBuf) -> Arc<Lens> {
@@ -117,7 +117,7 @@ async fn reload_swaps_dataset_without_blanking() -> Result<()> {
         "old rows must be gone after reload"
     );
     // The master swapped too.
-    assert_eq!(dio.master().get_count().await?, 3);
+    assert_eq!(dio.master().count().await?, 3);
 
     // No blank: the view never showed fewer than the original 2 rows.
     let min = min_seen.load(Ordering::SeqCst);

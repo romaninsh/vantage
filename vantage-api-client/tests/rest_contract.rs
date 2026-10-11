@@ -38,9 +38,30 @@ fn page(rows: Value) -> ResponseTemplate {
 }
 
 /// Clients `c1`, `c2`; orders `o1`, `o2` (c1) and `o3` (c2). A request for
-/// `client_id=c1` gets c1's orders only.
+/// `client_id=c1` gets c1's orders only, and `ordering=-id` reverses a list.
 async fn serve() -> MockServer {
     let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/order"))
+        .and(query_param("ordering", "-id"))
+        .respond_with(page(json!([
+            { "id": "o3", "client_id": "c2", "item": "flux capacitor" },
+            { "id": "o2", "client_id": "c1", "item": "almanac" },
+            { "id": "o1", "client_id": "c1", "item": "skateboard" }
+        ])))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/client"))
+        .and(query_param("ordering", "-id"))
+        .respond_with(page(json!([
+            { "id": "c2", "name": "Doc" },
+            { "id": "c1", "name": "Marty" }
+        ])))
+        .with_priority(1)
+        .mount(&server)
+        .await;
     Mock::given(method("GET"))
         .and(path("/order"))
         .and(query_param("client_id", "c1"))

@@ -1,15 +1,13 @@
-//! Filter documents for the vista source's `add_eq_condition` /
-//! `add_op_condition`, and the downcast behind `add_raw_condition`.
+//! Filter documents for the vista source's `add_condition`, and the downcast
+//! behind `add_native_condition`.
 //!
 //! Operands that look like ids are matched in both spellings (`ObjectId` and
 //! its 24-char hex string), because a text-typed surface cannot tell which one
 //! the collection stores.
 
-use std::any::Any;
-
 use bson::{Bson, Document, doc};
 use vantage_core::{Result, error};
-use vantage_vista::FilterOp;
+use vantage_vista::{Capability, FilterOp, NativeCondition, unsupported};
 
 use crate::condition::MongoCondition;
 use crate::id::{eq_filter, id_variants};
@@ -45,6 +43,9 @@ pub(crate) fn op_filter(path: &str, op: FilterOp, value: &Bson) -> Result<Docume
             let text = vantage_vista::operand_text(&crate::vista::cbor::bson_to_cbor(value));
             doc! { path: { "$regex": regex_escape(&text), "$options": "i" } }
         }
+        // An operator added after this driver was written; the caller
+        // evaluates it locally.
+        _ => return unsupported(Capability::FilterOps),
     };
     Ok(filter)
 }
@@ -64,21 +65,30 @@ pub(crate) fn search_filter(paths: &[String], text: &str) -> Document {
     }
 }
 
-/// A boxed driver-native condition: a `bson::Document` or a `MongoCondition`.
-pub(crate) fn raw_condition(condition: Box<dyn Any + Send + Sync>) -> Result<MongoCondition> {
+/// A driver-native condition: a `bson::Document` or a `MongoCondition`. Any
+/// other type is `IncorrectUsage`.
+pub(crate) fn native_condition(condition: NativeCondition) -> Result<MongoCondition> {
     let condition = match condition.downcast::<Document>() {
-        Ok(doc) => return Ok(MongoCondition::Doc(*doc)),
+        Ok(doc) => return Ok(MongoCondition::Doc(doc)),
         Err(other) => other,
     };
-    condition
-        .downcast::<MongoCondition>()
-        .map(|c| *c)
-        .map_err(|_| {
-            error!(
-                "add_raw_condition expected a bson::Document or MongoCondition",
-                source_type = std::any::type_name::<super::MongoTableShell>()
-            )
-        })
+    condition.downcast::<MongoCondition>().map_err(|other| {
+        error!(
+            "MongoDB takes a bson::Document or MongoCondition as a native condition",
+            key = other.key()
+        )
+        .mark_incorrect_usage()
+    })
+}
+
+/// The key a filter document is recorded under in `Vista::query()`: its
+/// canonical extended JSON, so equal documents (same fields, same order)
+/// get equal keys.
+#[cfg(any(feature = "rhai", test))]
+pub(crate) fn native_key(filter: &Document) -> String {
+    Bson::Document(filter.clone())
+        .into_canonical_extjson()
+        .to_string()
 }
 
 fn operand_array(op: FilterOp, value: &Bson) -> Result<Vec<Bson>> {
@@ -205,17 +215,35 @@ mod tests {
     }
 
     #[test]
-    fn raw_condition_accepts_document_and_mongo_condition() {
-        let from_doc = raw_condition(Box::new(doc! { "a": 1 })).unwrap();
+    fn native_condition_accepts_document_and_mongo_condition() {
+        let from_doc = native_condition(NativeCondition::new(doc! { "a": 1 }, "a")).unwrap();
         assert!(matches!(from_doc, MongoCondition::Doc(d) if d == doc! { "a": 1 }));
-        let from_cond = raw_condition(Box::new(MongoCondition::Doc(doc! { "b": 2 }))).unwrap();
+        let from_cond = native_condition(NativeCondition::new(
+            MongoCondition::Doc(doc! { "b": 2 }),
+            "b",
+        ))
+        .unwrap();
         assert!(matches!(from_cond, MongoCondition::Doc(d) if d == doc! { "b": 2 }));
     }
 
     #[test]
-    fn raw_condition_rejects_other_types() {
-        let err = raw_condition(Box::new(42_i32)).unwrap_err();
+    fn native_condition_rejects_other_types() {
+        let err = native_condition(NativeCondition::new(42_i32, "n")).unwrap_err();
+        assert!(err.is_incorrect_usage(), "{err:?}");
         assert!(err.to_string().contains("bson::Document or MongoCondition"));
+    }
+
+    #[test]
+    fn native_key_is_canonical_json() {
+        assert_eq!(
+            native_key(&doc! { "n": { "$gte": 2 } }),
+            r#"{"n":{"$gte":{"$numberInt":"2"}}}"#
+        );
+        assert_eq!(native_key(&doc! { "a": 1 }), native_key(&doc! { "a": 1 }));
+        assert_ne!(
+            native_key(&doc! { "a": 1 }),
+            native_key(&doc! { "a": 1_i64 })
+        );
     }
 
     #[test]

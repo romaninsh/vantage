@@ -16,7 +16,7 @@ use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
 use vantage_mongodb::vista::{MongoSpecResolver, MongoVistaSpec};
 use vantage_types::Record;
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, VistaFactory, contract};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -95,9 +95,14 @@ async fn modify_script_adds_condition() -> TestResult {
     let mut categories: Vec<String> = rows.values().filter_map(|r| text(r, "category")).collect();
     categories.sort();
     assert_eq!(categories, vec!["cake", "candy"]);
-    assert_eq!(v.get_count().await?, 2);
+    assert_eq!(v.count().await?, 2);
     // A condition narrows; the collection stays writable.
-    assert!(v.capabilities().can_insert);
+    assert!(v.capabilities().has(Capability::Insert));
+    // The script's filter is recorded under its canonical JSON.
+    assert_eq!(
+        v.query().native,
+        vec![r#"{"price":{"$gt":{"$numberLong":"100"}}}"#.to_string()]
+    );
 
     teardown(&db, &name).await;
     Ok(())
@@ -162,10 +167,10 @@ async fn rhai_pipeline_view_with_args() -> TestResult {
 
     // Same read-only capabilities as a YAML `pipeline:` view.
     let caps = v.capabilities();
-    assert!(caps.can_count && caps.can_order && caps.can_fetch_next);
-    assert!(!caps.can_insert && !caps.can_update && !caps.can_delete);
-    assert!(!caps.can_subscribe && !caps.can_traverse_to_set);
-    let preview = v.preview_query().to_string();
+    assert!(caps.has(Capability::Order) && caps.has(Capability::Cursor));
+    assert!(!caps.has(Capability::Insert) && !caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete) && !caps.has(Capability::Subscribe));
+    let preview = v.preview().query.expect("a rendered query");
     assert!(preview.contains("$group"), "preview: {preview}");
 
     teardown(&db, &name).await;
@@ -273,14 +278,14 @@ async fn build_script_reference_resolves_target() -> TestResult {
         .vista_factory()
         .with_resolver(resolver(vec![client_spec.clone(), order_spec]));
     let clients = factory.build_from_spec(client_spec)?;
-    let reference = clients.get_reference("orders").expect("orders ref");
+    let reference = clients.reference("orders").expect("orders ref");
     assert!(reference.build_script.is_some());
 
     let marty = clients
         .get_value(c1.to_hex().as_str())
         .await?
         .expect("client c1");
-    let orders = clients.get_ref("orders", &marty)?;
+    let orders = clients.get_ref("orders", Some(&marty))?;
     assert_eq!(orders.name(), "order");
     let rows = orders.list_values().await?;
     let items: Vec<String> = rows.values().filter_map(|r| text(r, "item")).collect();
@@ -307,9 +312,9 @@ async fn build_script_reference_refuses_with_condition_on_table() -> TestResult 
     let mut row = Record::new();
     row.insert("_id".to_string(), CborValue::Text(ObjectId::new().to_hex()));
     let err = clients
-        .get_ref("orders", &row)
-        .err()
-        .expect("with_condition on table(...) must fail");
+        .get_ref("orders", Some(&row))
+        .map(drop)
+        .expect_err("with_condition on table(...) must fail");
     assert!(
         err.to_string().contains(r#"verb: "with_condition""#),
         "{err}"
@@ -320,14 +325,14 @@ async fn build_script_reference_refuses_with_condition_on_table() -> TestResult 
 }
 
 #[tokio::test]
-async fn capabilities_advertise_build_ref_via_script() -> TestResult {
+async fn capabilities_advertise_traverse_for_scripted_refs() -> TestResult {
     let (db, name) = setup().await;
     let v = db.vista_factory().build_from_spec(spec(ORDER))?;
-    assert!(v.capabilities().can_build_ref_via_script);
-    // A pipeline view's rows reach other tables only through a script.
+    assert!(v.capabilities().has(Capability::Traverse));
+    // A pipeline view's rows reach other tables through its references too.
     let view = db.vista_factory().build_from_spec(spec(BY_CATEGORY))?;
-    assert!(view.capabilities().can_build_ref_via_script);
-    assert!(!view.capabilities().can_traverse_to_set);
+    assert!(view.capabilities().has(Capability::Traverse));
+    assert!(!view.capabilities().has(Capability::Insert));
     teardown(&db, &name).await;
     Ok(())
 }
@@ -372,11 +377,12 @@ async fn scripted_ref_from_group_view_row() -> TestResult {
         .with_resolver(resolver(vec![groups_spec.clone(), product_spec]));
     let groups = factory.build_from_spec(groups_spec)?;
     let cake = groups.get_value("cake").await?.expect("cake group");
-    let products = groups.get_ref("products", &cake)?;
+    let products = groups.get_ref("products", Some(&cake))?;
     assert_eq!(products.name(), "product");
-    assert_eq!(products.get_count().await?, 3);
+    assert_eq!(products.count().await?, 3);
     // The target is the writable collection, not the view.
-    assert!(products.capabilities().can_insert);
+    assert!(products.capabilities().has(Capability::Insert));
+    contract::check_advertised(&groups).await;
 
     teardown(&db, &name).await;
     Ok(())
@@ -405,9 +411,9 @@ async fn script_table_unknown_to_resolver_errors() -> TestResult {
         .with_resolver(resolver(vec![client_spec.clone(), spec(ORDER)]));
     let clients = factory.build_from_spec(client_spec)?;
     let err = clients
-        .get_ref("orders", &any_client_row())
-        .err()
-        .expect("an unknown table must fail with a resolver attached");
+        .get_ref("orders", Some(&any_client_row()))
+        .map(drop)
+        .expect_err("an unknown table must fail with a resolver attached");
     let msg = err.to_string();
     assert!(
         msg.contains("unknown table") && msg.contains("nope"),
@@ -427,9 +433,39 @@ async fn script_table_without_resolver_is_bare_collection() -> TestResult {
     let clients = db
         .vista_factory()
         .build_from_spec(client_targeting_nope())?;
-    let target = clients.get_ref("orders", &any_client_row())?;
+    let target = clients.get_ref("orders", Some(&any_client_row()))?;
     assert_eq!(target.name(), "nope");
-    assert_eq!(target.get_count().await?, 1);
+    assert_eq!(target.count().await?, 1);
+    // A bare collection reads documents as stored, every field included.
+    let rows = target.list_values().await?;
+    assert_eq!(
+        rows["n1"].get("anything"),
+        Some(&CborValue::Integer(1.into()))
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn script_where_on_bare_collection_without_resolver() -> TestResult {
+    let (db, name) = setup().await;
+    db.doc_collection("orders")
+        .insert_many(vec![
+            doc! { "_id": "o1", "client_id": "c1", "item": "skateboard" },
+            doc! { "_id": "o2", "client_id": "c2", "item": "almanac" },
+        ])
+        .await?;
+    let clients = db.vista_factory().build_from_spec(spec(&CLIENT.replace(
+        r#"table("order").where("client_id", me._id).where("status", "open")"#,
+        r#"table("orders").where("client_id", me._id)"#,
+    )))?;
+    let mut row = Record::new();
+    row.insert("_id".to_string(), CborValue::Text("c1".into()));
+    let orders = clients.get_ref("orders", Some(&row))?;
+    let rows = orders.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), vec!["o1"]);
+    assert_eq!(text(&rows["o1"], "item").as_deref(), Some("skateboard"));
 
     teardown(&db, &name).await;
     Ok(())

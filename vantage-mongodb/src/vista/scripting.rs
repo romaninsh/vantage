@@ -8,10 +8,11 @@ use bson::{Bson, Document};
 use vantage_core::{Context, Result, error};
 use vantage_rhai::rhai::{Array, Dynamic, Map};
 use vantage_rhai::{Block, Env, Host, Limits};
-use vantage_vista::{DataVocab, TableShell, TargetResolver, Vista, VistaFactory};
+use vantage_vista::{DataVocab, TargetResolver, Vista, VistaFactory};
 
 use crate::rhai_engine::{MongoVocab, dynamic_to_bson};
 use crate::vista::factory::MongoVistaFactory;
+use crate::vista::source::register_extensions;
 use crate::vista::spec::pipeline::{check_stages, not_a_stage};
 
 /// Constructors only: a pipeline script builds data, it reaches no tables.
@@ -62,16 +63,16 @@ pub(crate) fn eval_pipeline(code: &str, args: &[(String, String)]) -> Result<Vec
 
 /// Run a `modify:` script against a built vista, exposed as `self`.
 pub(crate) fn apply_modify(factory: &MongoVistaFactory, vista: Vista, code: &str) -> Result<Vista> {
-    let host = script_host(&*vista.source, factory.clone());
+    let host = script_host(factory.clone());
     vantage_vista::eval_modify_script(&host, code, vista)
 }
 
 /// The shell's MongoDB vocabulary first, then vantage-vista's describe-only
 /// data verbs, with `table(name)` building the named vista through
 /// `factory`.
-pub(crate) fn script_host(shell: &dyn TableShell, factory: MongoVistaFactory) -> Host {
+pub(crate) fn script_host(factory: MongoVistaFactory) -> Host {
     Host::builder(Limits::background())
-        .vocab_fn(|engine| shell.register_rhai_extensions(engine))
+        .vocab_fn(register_extensions)
         .vocab(DataVocab::describe(Some(target_resolver(factory))))
         .build()
 }

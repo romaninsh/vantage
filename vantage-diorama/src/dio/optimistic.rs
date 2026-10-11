@@ -179,7 +179,7 @@ impl Dio {
 
         let master = self.master();
         let id = master.insert_return_id_value(record).await?;
-        let id_column = master.get_id_column().unwrap_or("id");
+        let id_column = master.id_column().unwrap_or("id");
         let mut stored = record.clone();
         stored.insert(id_column.to_string(), CborValue::Text(id.clone()));
         if let Err(e) = self.patched(id.clone(), stored.clone()).await {
@@ -199,7 +199,7 @@ impl Dio {
     /// wrote with.
     fn stored_id(&self, record: &Record<CborValue>) -> Option<String> {
         let master = self.master();
-        let id_column = master.get_id_column().unwrap_or("id");
+        let id_column = master.id_column().unwrap_or("id");
         record.get(id_column).and_then(cbor_id_to_string)
     }
 }

@@ -47,6 +47,11 @@ columns:
   bakery: { type: thing }
 surreal:
   table: client
+references:
+  bakery:
+    table: bakery
+    kind: has_one
+    foreign_key: bakery
 "#;
 
 fn spec(yaml: &str) -> SurrealVistaSpec {
@@ -80,17 +85,19 @@ async fn setup() -> SurrealVistaFactory {
     SurrealVistaFactory::new(db).with_resolver(resolver)
 }
 
+/// Both sides of the bakery/client join: `bakery` probes a has-many,
+/// `client` a has-one.
 #[tokio::test]
 async fn surreal_contract_advertised() {
     let factory = setup().await;
     contract::check_advertised(&factory.build_from_spec(spec(BAKERY)).unwrap()).await;
+    contract::check_advertised(&factory.build_from_spec(spec(CLIENT)).unwrap()).await;
 }
 
-/// The shell can't be cloned, so `check_advertised` skips these probes.
 #[tokio::test]
 async fn surreal_contract_narrowing() {
     let factory = setup().await;
-    contract::check_narrowing(&mut factory.build_from_spec(spec(CLIENT)).unwrap()).await;
+    contract::check_narrowing(&factory.build_from_spec(spec(CLIENT)).unwrap()).await;
 }
 
 #[tokio::test]
@@ -100,7 +107,6 @@ async fn surreal_contract_writes() {
 }
 
 #[tokio::test]
-#[ignore = "v2 phase 1: shell not cloneable"]
 async fn surreal_contract_clone() {
     let clients = setup().await.build_from_spec(spec(CLIENT)).unwrap();
     contract::check_clone(&clients, "city", CborValue::Text("hv".into())).await;

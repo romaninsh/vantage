@@ -57,7 +57,7 @@ pub fn bucket_master() -> Vista {
         .with_record("o2", record(&[("id", "o2"), ("kind", "blue")]))
         .with_record("o3", record(&[("id", "o3"), ("kind", "red")]))
         .with_metadata(meta(&["id", "kind"]));
-    Vista::new("bucket", Box::new(shell))
+    Vista::new("bucket", shell)
 }
 
 /// Detail source "names": object id -> { name }. 1st and 3rd are John.
@@ -67,7 +67,7 @@ pub fn names_detail() -> Vista {
         .with_record("o2", record(&[("id", "o2"), ("name", "Jane")]))
         .with_record("o3", record(&[("id", "o3"), ("name", "John")]))
         .with_metadata(meta(&["id", "name"]));
-    Vista::new("names", Box::new(shell))
+    Vista::new("names", shell)
 }
 
 pub fn bucket_catalog() -> Arc<VistaCatalog> {
@@ -112,7 +112,7 @@ pub fn teams_master() -> Vista {
         .with_record("b", record(&[("id", "b"), ("team", "blue")]))
         .with_record("c", record(&[("id", "c"), ("team", "red")]))
         .with_metadata(meta(&["id", "team"]));
-    Vista::new("members", Box::new(shell))
+    Vista::new("members", shell)
 }
 
 /// A single-pass Dio whose `on_start` eagerly copies the master into an

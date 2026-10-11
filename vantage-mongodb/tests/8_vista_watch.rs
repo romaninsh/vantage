@@ -15,7 +15,7 @@ use vantage_dataset::prelude::*;
 use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{MongoDB, MongoVistaFactory};
 use vantage_types::Record;
-use vantage_vista::{Vista, VistaChange, VistaChangeStream, VistaFactory};
+use vantage_vista::{Capability, FilterOp, Vista, VistaChange, VistaChangeStream, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -80,7 +80,7 @@ async fn next(changes: &mut VistaChangeStream) -> VistaChange {
 async fn watch_emits_insert_update_delete() -> TestResult {
     let db = setup().await;
     let vista = tasks(&db);
-    assert!(vista.can_watch());
+    assert!(vista.capabilities().has(Capability::Subscribe));
 
     let mut changes = vista.watch().await?;
     let id = ObjectId::new().to_hex();
@@ -124,7 +124,7 @@ async fn watch_narrowed_update_leaving_set_is_deleted() -> TestResult {
     all.insert_value(&id, &row("write", "open")).await?;
 
     let mut open = tasks(&db);
-    open.add_condition_eq("status", CborValue::Text("open".into()))?;
+    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
     let mut changes = open.watch().await?;
 
     all.patch_value(&id, &status("closed")).await?;
@@ -189,15 +189,18 @@ async fn capabilities_without_change_streams() -> TestResult {
     let off = MongoVistaFactory::new(db.clone())
         .with_change_streams(false)
         .build_from_spec(spec.clone())?;
-    assert!(!off.capabilities().can_subscribe);
+    assert!(!off.capabilities().has(Capability::Subscribe));
     let Err(err) = off.watch().await else {
         panic!("watch must be unsupported");
     };
     assert!(err.is_unsupported(), "wrong error kind: {err}");
-    assert!(err.to_string().contains("watch_vista"), "{err}");
+    assert_eq!(
+        err.context.get("capability").map(String::as_str),
+        Some("\"subscribe\"")
+    );
 
     let default = MongoVistaFactory::new(db.clone()).build_from_spec(spec)?;
-    assert!(default.capabilities().can_subscribe);
+    assert!(default.capabilities().has(Capability::Subscribe));
 
     teardown(&db).await;
     Ok(())

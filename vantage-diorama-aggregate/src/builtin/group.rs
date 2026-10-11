@@ -2,7 +2,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
-use vantage_vista::{Column, flags};
+use vantage_vista::{Column, ColumnFlag};
 
 use crate::aggregation::{Aggregation, DerivedRows, Rows};
 use crate::cmp;
@@ -110,7 +110,8 @@ impl<R: GroupReducer> Aggregation for GroupBy<R> {
             })
             .collect();
 
-        let mut columns = vec![Column::new(self.key_column.clone(), "String").with_flag(flags::ID)];
+        let mut columns =
+            vec![Column::new(self.key_column.clone(), "String").with_flag(ColumnFlag::Id)];
         columns.extend(self.reducer.columns());
 
         DerivedRows::new(derived, columns)

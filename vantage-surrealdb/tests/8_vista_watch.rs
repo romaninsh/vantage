@@ -15,7 +15,7 @@ use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use vantage_vista::VistaChange;
+use vantage_vista::{Capability, VistaChange};
 
 use surreal_client::{SurrealClient, SurrealConnection};
 
@@ -68,7 +68,7 @@ async fn vista_watch_reports_insert_update_delete() -> TestResult {
     let vista =
         SurrealVistaFactory::new(db.clone()).from_table(product_table(db.clone(), &table_name))?;
     assert!(
-        vista.can_watch(),
+        vista.capabilities().has(Capability::Subscribe),
         "surreal from_table vista should be watchable"
     );
 

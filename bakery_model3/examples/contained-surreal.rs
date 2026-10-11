@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
         product.get("inventory")
     );
 
-    let inventory = products.get_ref("inventory", &product)?;
+    let inventory = products.get_ref("inventory", Some(&product))?;
     let stock_before = inventory.get_value("0").await?.expect("inventory record");
     println!("inventory sub-Vista record = {stock_before:?}");
 
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     let oid = "order:order1".to_string();
     let order = orders.get_value(oid.clone()).await?.expect("order exists");
 
-    let lines = orders.get_ref("lines", &order)?;
+    let lines = orders.get_ref("lines", Some(&order))?;
     println!("order has {} lines", lines.list_values().await?.len());
 
     // Patch the first line's quantity (preserves its product record link).
@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
 
     // ---- traverse OUT of a contained record: line.product -> product -----
     let line0 = lines.get_value("0").await?.unwrap();
-    let product_of_line = lines.get_ref("product", &line0)?;
+    let product_of_line = lines.get_ref("product", Some(&line0))?;
     let (_id, prod) = product_of_line
         .get_some_value()
         .await?

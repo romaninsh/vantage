@@ -40,6 +40,7 @@ tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync"] }
 serde_json = "1.0"
 vantage-expressions = { version = "1.0.0", path = "../vantage-expressions" }
 vantage-dataset = { version = "1.1.0", path = "../vantage-dataset", features = ["contract"] }
+vantage-vista = { version = "1.2.0", path = "../vantage-vista", features = ["mocks"] }
 # vantage-surrealdb = { path = "../vantage-surrealdb" }
 surreal-client = { version = "1.0.0", path = "../surreal-client" }
 async-trait = "0.1"

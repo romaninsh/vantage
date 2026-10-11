@@ -47,6 +47,6 @@ async fn get_value_returns_title(w: &mut DioramaWorld, id: String, expected: Str
 #[then(regex = r"^the facade count is (\d+)$")]
 async fn facade_count(w: &mut DioramaWorld, expected: i64) {
     let dio = w.dio.as_ref().expect("dio not created");
-    let got = dio.vista().get_count().await.expect("facade count");
+    let got = dio.vista().count().await.expect("facade count");
     assert_eq!(got, expected, "facade count: want {expected}, got {got}");
 }

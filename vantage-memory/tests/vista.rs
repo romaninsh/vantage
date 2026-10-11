@@ -2,7 +2,7 @@ use ciborium::Value as CborValue;
 use vantage_dataset::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
-use vantage_vista::{FilterOp, SortDirection, Vista, VistaFactory};
+use vantage_vista::{Capability, FilterOp, SortDirection, Vista, VistaFactory};
 
 const PRODUCT: &str = r#"
 name: product
@@ -70,11 +70,68 @@ async fn capabilities_are_advertised() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
     let c = v.capabilities();
-    assert!(c.can_count && c.can_insert && c.can_update && c.can_delete && c.can_import);
-    assert!(c.can_order && c.can_search && c.can_filter_operators && c.can_subscribe);
-    assert!(c.can_set_page_size && c.can_fetch_page && c.can_fetch_window);
-    assert!(c.can_traverse_to_record && c.can_traverse_to_set && c.can_confine_writes);
-    assert!(!c.can_invalidate && !c.can_fetch_next);
+    for cap in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::Import,
+        Capability::Subscribe,
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::Window,
+        Capability::Traverse,
+        Capability::ConfineWrites,
+    ] {
+        assert!(c.has(cap), "{cap} is not advertised");
+    }
+    assert!(!c.has(Capability::Cursor) && !c.has(Capability::NativeConditions));
+}
+
+#[tokio::test]
+async fn a_condition_on_an_undeclared_column_is_an_error() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+    let err = v
+        .with_condition("colour", FilterOp::Eq, text("red"))
+        .unwrap_err();
+    assert!(!err.is_unsupported(), "{err}");
+}
+
+#[tokio::test]
+async fn equality_conforms_text_to_an_integer_column() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+    let v = v.with_condition("price", FilterOp::Eq, text("5")).unwrap();
+    assert_eq!(ids(&v).await, ["p2"]);
+}
+
+#[tokio::test]
+async fn a_range_conforms_text_to_an_integer_column() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+    let v = v.with_condition("price", FilterOp::Gt, text("3")).unwrap();
+    assert_eq!(ids(&v).await, ["p2", "p3"]);
+}
+
+/// `qty` has no `type:`, so a written integer stays an integer and ranges
+/// and order compare numbers, not text.
+#[tokio::test]
+async fn an_untyped_column_keeps_written_integers() {
+    let (s, f) = setup();
+    let yaml = "name: stock\nid_column: id\ncolumns:\n  id: { flags: [id] }\n  qty: {}\n";
+    let v = f.from_yaml(yaml).unwrap();
+    for (id, qty) in [("a", 9), ("b", 10), ("c", 100)] {
+        v.replace_value(id, &record(&[("qty", int(qty))]))
+            .await
+            .unwrap();
+    }
+    let stored = s.table("stock").get("b").unwrap();
+    assert_eq!(stored.get("qty"), Some(&int(10)));
+    let mut over = v.with_condition("qty", FilterOp::Gt, int(9)).unwrap();
+    over.set_order(Some(("qty", SortDirection::Descending)))
+        .unwrap();
+    assert_eq!(ids(&over).await, ["c", "b"]);
 }
 
 #[tokio::test]
@@ -82,45 +139,47 @@ async fn op_conditions_order_search_and_count() {
     let (_s, f) = setup();
     let mut v = f.from_yaml(PRODUCT).unwrap();
     v.add_condition("price", FilterOp::Gte, int(4)).unwrap();
-    v.add_order("price", SortDirection::Descending).unwrap();
+    v.set_order(Some(("price", SortDirection::Descending)))
+        .unwrap();
     assert_eq!(ids(&v).await, ["p2", "p3"]);
-    assert_eq!(v.get_count().await.unwrap(), 2);
-    v.add_search("cof").unwrap();
+    assert_eq!(v.count().await.unwrap(), 2);
+    v.set_search(Some("cof")).unwrap();
     assert_eq!(ids(&v).await, ["p3"]);
 }
 
+#[test]
+fn an_unknown_relation_is_not_found() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+    let err = v.get_ref("no_such_relation", None).unwrap_err();
+    assert!(err.is_not_found(), "{err:?}");
+}
+
 #[tokio::test]
-async fn add_order_replaces_previous_order() {
+async fn set_order_replaces_previous_order() {
     let (_s, f) = setup();
     let mut v = f.from_yaml(PRODUCT).unwrap();
-    v.add_order("price", SortDirection::Descending).unwrap();
-    v.add_order("name", SortDirection::Ascending).unwrap();
+    v.set_order(Some(("price", SortDirection::Descending)))
+        .unwrap();
+    v.set_order(Some(("name", SortDirection::Ascending)))
+        .unwrap();
     assert_eq!(ids(&v).await, ["p2", "p3", "p1"]);
 }
 
 #[tokio::test]
-async fn pages_and_windows() {
+async fn windows_carry_the_total() {
     let (_s, f) = setup();
     let mut v = f.from_yaml(PRODUCT).unwrap();
-    v.add_order("price", SortDirection::Ascending).unwrap();
-    v.set_page_size(2).unwrap();
-    let p2: Vec<String> = v
-        .fetch_page(2)
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect();
-    assert_eq!(p2, ["p2"]);
-    assert!(v.fetch_page(0).await.is_err());
-    let w: Vec<String> = v
-        .fetch_window(1, 1)
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect();
-    assert_eq!(w, ["p3"]);
+    v.set_order(Some(("price", SortDirection::Ascending)))
+        .unwrap();
+    let page = v.fetch_window(2, 2).await.unwrap();
+    let ids_of = |page: &vantage_vista::Page| -> Vec<String> {
+        page.rows.iter().map(|(id, _)| id.clone()).collect()
+    };
+    assert_eq!(ids_of(&page), ["p2"]);
+    assert_eq!(page.total, Some(3));
+    let w = v.fetch_window(1, 1).await.unwrap();
+    assert_eq!(ids_of(&w), ["p3"]);
     assert_eq!(
         ids(&v).await.len(),
         3,
@@ -178,11 +237,13 @@ async fn patch_of_a_missing_row_is_not_found_and_delete_is_ok() {
 }
 
 #[tokio::test]
-async fn clone_shell_isolates_query_state() {
+async fn a_clone_isolates_query_state() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
-    let mut narrowed = Vista::new(v.name(), v.source.clone_shell().unwrap());
-    narrowed.add_condition_eq("category", text("food")).unwrap();
+    let narrowed = v
+        .clone()
+        .with_condition("category", FilterOp::Eq, text("food"))
+        .unwrap();
     assert_eq!(ids(&narrowed).await, ["p2"]);
     assert_eq!(ids(&v).await.len(), 3);
 }
@@ -195,10 +256,11 @@ async fn has_one_reference_traverses_to_the_target_row() {
     s.table("order")
         .upsert("o1", record(&[("product", text("p3")), ("qty", int(2))]));
     let row = s.table("order").get("o1").unwrap();
-    let target = orders.get_ref("product", &row).unwrap();
+    let target = orders.get_ref("product", Some(&row)).unwrap();
     assert_eq!(ids(&target).await, ["p3"]);
+    assert!(target.is_narrowed(), "the join is recorded on the target");
     assert!(
-        target.get_column("price").is_some(),
+        target.column("price").is_some(),
         "target uses the catalog's metadata"
     );
 }

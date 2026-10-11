@@ -7,9 +7,9 @@ use vantage_vista::SortDirection;
 /// page it returns.
 ///
 /// A two-pass `on_list_page` callback reads these fields to fetch the right
-/// slice; the resulting ids feed the per-query index (keyed by
-/// [`Vista::index_key`](vantage_vista::Vista::index_key) over the same
-/// conditions + sort).
+/// slice; the resulting ids feed the per-query index (keyed by the master's
+/// name plus the [`VistaQuery::key`](vantage_vista::VistaQuery::key) of the
+/// same conditions + sort).
 #[derive(Debug, Clone, Default)]
 pub struct QueryDescriptor {
     pub conditions: Vec<(String, CborValue)>,

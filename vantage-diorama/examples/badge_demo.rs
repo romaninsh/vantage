@@ -39,7 +39,7 @@ fn master() -> Vista {
         .with_metadata(metadata)
         .with_record("a", record("alpha", 10))
         .with_record("b", record("beta", 20));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 fn show(

@@ -1,11 +1,11 @@
 //! `AggregateShell` — a Vista over an aggregation's output.
 //!
 //! This is the point of the crate. A derived row set is small and **fully
-//! materialised**, so this shell can advertise `can_order`, `can_search` and
-//! `can_count` and then actually honour them. Ordering a derived set is
-//! ordinary push-down into its own Vista, not a client-side special case
-//! layered over partial data — which is exactly the trap the surrounding
-//! design is trying to get out of.
+//! materialised**, so this shell can advertise `Order`, `Search` and `Window`
+//! and then actually honour them. Ordering a derived set is ordinary push-down
+//! into its own Vista, not a client-side special case layered over partial
+//! data — which is exactly the trap the surrounding design is trying to get
+//! out of.
 
 use std::sync::{Arc, RwLock};
 
@@ -15,7 +15,8 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_types::Record;
 use vantage_vista::{
-    Column, Reference, SortDirection, TableShell, Vista, VistaCapabilities, flags,
+    Capability, Column, ColumnFlag, Condition, FilterOp, Page, Preview, Reference, SortDirection,
+    TableShell, Vista, VistaCapabilities, unsupported,
 };
 
 use crate::aggregation::DerivedRows;
@@ -25,6 +26,9 @@ use crate::cmp;
 /// replaces them) and every Vista clone (which reads them).
 pub(crate) type SharedRows = Arc<RwLock<DerivedRows>>;
 
+/// Clones share the rows but own their query state, so two differently-sorted
+/// views over one aggregate never race.
+#[derive(Clone)]
 pub(crate) struct AggregateShell {
     rows: SharedRows,
     columns: IndexMap<String, Column>,
@@ -32,8 +36,6 @@ pub(crate) struct AggregateShell {
     id_column: Option<String>,
     capabilities: VistaCapabilities,
 
-    // Per-clone query state. `clone_shell` gives each narrowing its own copy,
-    // so two differently-sorted views over one aggregate never race.
     conditions: Vec<(String, CborValue)>,
     order: Option<(String, SortDirection)>,
     search: Option<String>,
@@ -42,21 +44,18 @@ pub(crate) struct AggregateShell {
 impl AggregateShell {
     /// Build the shell from the aggregation's declared schema.
     ///
-    /// Every derived column is flagged `ORDERABLE` and `SEARCHABLE`. That is
+    /// Every derived column is flagged `Orderable` and `Searchable`. That is
     /// not a convenience: the whole derived set is in memory, so there is no
     /// column this shell genuinely cannot order or search by.
     pub(crate) fn new(rows: SharedRows, schema: &[Column]) -> Self {
         let mut columns = IndexMap::new();
         let mut id_column = None;
         for column in schema {
-            let mut column = column.clone();
-            if !column.has_flag(flags::ORDERABLE) {
-                column = column.with_flag(flags::ORDERABLE);
-            }
-            if !column.has_flag(flags::SEARCHABLE) {
-                column = column.with_flag(flags::SEARCHABLE);
-            }
-            if column.has_flag(flags::ID) && id_column.is_none() {
+            let column = column
+                .clone()
+                .with_flag(ColumnFlag::Orderable)
+                .with_flag(ColumnFlag::Searchable);
+            if column.has_flag(ColumnFlag::Id) && id_column.is_none() {
                 id_column = Some(column.name.clone());
             }
             columns.insert(column.name.clone(), column);
@@ -67,18 +66,11 @@ impl AggregateShell {
             columns,
             references: IndexMap::new(),
             id_column,
-            capabilities: VistaCapabilities {
-                can_count: true,
-                can_order: true,
-                can_search: true,
-                can_fetch_window: true,
-                // Derived rows are read-only: they are a function of the
-                // source, so a write here would have nowhere to land.
-                can_insert: false,
-                can_update: false,
-                can_delete: false,
-                ..Default::default()
-            },
+            // Derived rows are read-only: they are a function of the source,
+            // so a write here would have nowhere to land.
+            capabilities: [Capability::Order, Capability::Search, Capability::Window]
+                .into_iter()
+                .collect(),
             conditions: Vec::new(),
             order: None,
             search: None,
@@ -112,6 +104,13 @@ impl AggregateShell {
         }
         rows
     }
+
+    fn known_column(&self, field: &str) -> Result<()> {
+        if self.columns.contains_key(field) {
+            return Ok(());
+        }
+        Err(error!("unknown column on an aggregate", column = field))
+    }
 }
 
 #[async_trait]
@@ -137,118 +136,83 @@ impl TableShell for AggregateShell {
     }
 
     /// An aggregate is derived in memory from the rows its source Dio already
-    /// holds, so it issues no query and costs no request. The narrowing below
-    /// is applied to the derived rows. To see what feeds it, preview the source
+    /// holds, so it issues no query and costs no request. The narrowing is
+    /// applied to the derived rows. To see what feeds it, preview the source
     /// table.
-    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
-        let conditions: Vec<String> = self
+    fn preview(&self) -> Preview {
+        let mut clauses: Vec<String> = self
             .conditions
             .iter()
             .map(|(field, value)| format!("{field} = {value:?}"))
             .collect();
-        let order = self.order.as_ref().map(|(column, dir)| {
+        if let Some(text) = &self.search {
+            clauses.push(format!("search {text:?}"));
+        }
+        if let Some((column, dir)) = &self.order {
             let dir = match dir {
                 SortDirection::Ascending => "asc",
                 SortDirection::Descending => "desc",
             };
-            format!("{column} {dir}")
-        });
-        serde_json::json!({
-            "driver": "aggregate",
-            "name": vista.name(),
-            "note": "derived in memory from the source Dio's cached rows — no \
-                     query, no request. Preview the source table to see what \
-                     fetches the rows this reduces.",
-            "conditions": conditions,
-            "order": order,
-            "search": self.search,
-        })
+            clauses.push(format!("order by {column} {dir}"));
+        }
+        let mut note = "derived in memory from the source Dio's cached rows — no query, no \
+                        request. Preview the source table to see what fetches the rows this \
+                        reduces."
+            .to_string();
+        if !clauses.is_empty() {
+            note.push_str(" Applied to the derived rows: ");
+            note.push_str(&clauses.join(", "));
+        }
+        Preview::new("aggregate").with_note(note)
     }
 
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
         Ok(self.view().into_iter().collect())
     }
 
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        let guard = self.rows.read().expect("aggregate rows poisoned");
-        Ok(guard
-            .rows
-            .iter()
+    async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        Ok(self
+            .view()
+            .into_iter()
             .find(|(row_id, _)| row_id == id)
-            .map(|(_, record)| record.clone()))
+            .map(|(_, record)| record))
     }
 
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        Ok(self.view().into_iter().next())
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
+    async fn count(&self) -> Result<i64> {
         Ok(self.view().len() as i64)
     }
 
-    async fn fetch_window(
-        &self,
-        _vista: &Vista,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<(String, Record<CborValue>)>> {
-        Ok(self.view().into_iter().skip(offset).take(limit).collect())
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        let rows = self.view();
+        let total = rows.len() as i64;
+        Ok(Page::new(rows.into_iter().skip(offset).take(limit).collect()).with_total(total))
     }
 
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        if !self.columns.contains_key(field) {
-            return Err(error!("unknown column on an aggregate", column = field));
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        if condition.op != FilterOp::Eq {
+            return unsupported(Capability::FilterOps);
         }
-        self.conditions.push((field.to_string(), value.clone()));
+        self.known_column(&condition.column)?;
+        self.conditions
+            .push((condition.column.clone(), condition.value.clone()));
         Ok(())
     }
 
-    /// Replace semantics, matching `Vista::add_order`.
-    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
-        if !self.columns.contains_key(field) {
-            return Err(error!("unknown column on an aggregate", column = field));
+    fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
+        if let Some((field, _)) = order {
+            self.known_column(field)?;
         }
-        self.order = Some((field.to_string(), dir));
+        self.order = order.map(|(field, dir)| (field.to_string(), dir));
         Ok(())
     }
 
-    fn clear_orders(&mut self) -> Result<()> {
-        self.order = None;
+    fn set_search(&mut self, text: Option<&str>) -> Result<()> {
+        self.search = text.map(str::to_string);
         Ok(())
     }
 
-    fn add_search(&mut self, text: &str) -> Result<()> {
-        self.search = Some(text.to_string());
-        Ok(())
-    }
-
-    fn clear_search(&mut self) -> Result<()> {
-        self.search = None;
-        Ok(())
-    }
-
-    /// Clones share the rows but get their own query state — the property that
-    /// lets two views sort one aggregate differently without interfering.
-    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-        Some(Box::new(Self {
-            rows: self.rows.clone(),
-            columns: self.columns.clone(),
-            references: self.references.clone(),
-            id_column: self.id_column.clone(),
-            capabilities: self.capabilities.clone(),
-            conditions: self.conditions.clone(),
-            order: self.order.clone(),
-            search: self.search.clone(),
-        }))
+    /// Derived rows carry no relations.
+    fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
+        unsupported(Capability::Traverse)
     }
 }

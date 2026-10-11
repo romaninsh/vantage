@@ -34,15 +34,15 @@ pub(crate) enum RefreshKind {
 }
 
 /// Capability-aware **list pass**: push the `[offset, offset+limit)` window down
-/// to the master when it advertises `can_fetch_window`, otherwise list the whole
+/// to the master when it advertises `Window`, otherwise list the whole
 /// set and window it locally so sequential paging still terminates.
 pub(crate) async fn list_page(
     dio: &Dio,
     desc: QueryDescriptor,
 ) -> Result<Vec<(String, Record<CborValue>)>> {
     let master = dio.master();
-    if master.capabilities().can_fetch_window {
-        master.fetch_window(desc.offset, desc.limit).await
+    if master.capabilities().has(vantage_vista::Capability::Window) {
+        Ok(master.fetch_window(desc.offset, desc.limit).await?.rows)
     } else {
         let rows = master.list_values().await?;
         Ok(rows
@@ -63,7 +63,7 @@ pub(crate) async fn load_detail_with(
     augmentations: &[Augmentation],
 ) -> Result<Record<CborValue>> {
     let mut row = dio.cache().get_value(&id).await?.unwrap_or_default();
-    let master_id_column = dio.master().get_id_column().unwrap_or("id").to_string();
+    let master_id_column = dio.master().id_column().unwrap_or("id").to_string();
     let dio_name = dio.master().name().to_string();
     for aug in augmentations {
         aug.augment_row(&dio_name, &master_id_column, &mut row, catalog)

@@ -110,7 +110,7 @@ pub async fn attach(
             let name = table.name().to_string();
             let id = table.id_column().to_string();
             let shell = MemoryTableShell::new(table, metadata, Catalog::new(store.clone()));
-            let vista = Vista::new(name, Box::new(shell));
+            let vista = Vista::new(name, shell);
             let dio = lens
                 .make_dio(vista)
                 .await

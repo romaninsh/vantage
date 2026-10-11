@@ -99,6 +99,8 @@ pub(crate) fn matches_op_conditions(rec: &Record<CborValue>, conds: &[super::OpC
                         .to_lowercase()
                         .contains(&needle)
             }
+            // An operator this version can't evaluate matches nothing.
+            _ => false,
         }
     })
 }

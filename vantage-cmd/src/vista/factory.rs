@@ -6,15 +6,15 @@
 //! registered on a cloned `Cmd` under the vista name and columns/flags/id
 //! are lowered onto a typed table. References declared in YAML are lowered
 //! onto the table as real `with_many` / `with_one` registrations by
-//! [`crate::models::CmdModelFactory`], so traversal flows through the
-//! built-in `Table::get_ref_from_row` path — no bespoke resolver.
+//! [`crate::models::CmdModelFactory`], so a traversal builds its target
+//! through the table's own relation — no bespoke resolver.
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata};
+use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata};
 
 use crate::cmd::{Cmd, CmdSpec};
 use crate::vista::source::CmdTableShell;
@@ -71,17 +71,13 @@ impl CmdVistaFactory {
     }
 }
 
-/// Wrap a column-built table as a `Vista`.
+/// Wrap a column-built table as a `Vista`. A command is read-only: the shell
+/// advertises in-memory windows and traversal, and no write.
 fn wrap(table: Table<Cmd, EmptyEntity>, name: String, metadata: VistaMetadata) -> Vista {
-    let source = CmdTableShell::new(
-        table,
-        VistaCapabilities {
-            can_count: true,
-            ..VistaCapabilities::default()
-        },
-        metadata,
-    );
-    Vista::new(name, Box::new(source))
+    let capabilities: VistaCapabilities = [Capability::Window, Capability::Traverse]
+        .into_iter()
+        .collect();
+    Vista::new(name, CmdTableShell::new(table, capabilities, metadata))
 }
 
 impl VistaFactory for CmdVistaFactory {
@@ -138,6 +134,7 @@ where
 {
     table.vista_metadata(VistaMetadataOptions {
         id_flag: true,
+        references: true,
         ..VistaMetadataOptions::default()
     })
 }

@@ -16,7 +16,7 @@ use vantage_table::column::core::Column as TableColumn;
 use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use vantage_vista::{ColumnSpec, SpecResolver, flags};
+use vantage_vista::{ColumnFlag as VistaColumnFlag, ColumnSpec, SpecResolver};
 
 use crate::graphql::api::{GraphqlApi, Supports, split_response_path};
 use crate::graphql::name::{validate, validate_path, validate_root_args};
@@ -78,7 +78,7 @@ pub(crate) fn build_table(
     let mut table = Table::<GraphqlApi, EmptyEntity>::new(root_field, api);
     table.add_spec_columns(&spec.columns, build_column)?;
     table.set_spec_id_field(&spec.resolve_id_column())?;
-    Ok(table.with_spec_references(&spec.references, resolver, build_target_table))
+    table.with_spec_references(&spec.references, resolver, build_target_table)
 }
 
 /// The `with_spec_references` builder. The parent's API is ignored in favour
@@ -171,7 +171,7 @@ fn build_column(
 ) -> Result<TableColumn<AnyGraphqlType>> {
     validate_path("field", name)?;
     let column = TableColumn::from_spec(name, col_spec, None, column_for_type)?;
-    Ok(if col_spec.has_flag(flags::SEARCHABLE) {
+    Ok(if col_spec.has_flag(VistaColumnFlag::Searchable) {
         column.with_flag(ColumnFlag::Searchable)
     } else {
         column

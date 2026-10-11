@@ -104,7 +104,7 @@ fn id_column(r: &RecordDraft) -> RhaiResult<String> {
     };
     // Resolved without the lock: the resolver may block on I/O.
     let vista = handle.write_target(resolver.as_ref()).map_err(rhai_err)?;
-    let col = vista.get_id_column().unwrap_or("id").to_string();
+    let col = vista.id_column().unwrap_or("id").to_string();
     r.inner.lock().unwrap().id_column = Some(col.clone());
     Ok(col)
 }

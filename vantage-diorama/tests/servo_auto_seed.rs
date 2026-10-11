@@ -65,7 +65,7 @@ fn product_vista(shell: &MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id");
-    Vista::new("products", Box::new(shell.clone().with_metadata(metadata)))
+    Vista::new("products", shell.clone().with_metadata(metadata))
 }
 
 #[tokio::test]

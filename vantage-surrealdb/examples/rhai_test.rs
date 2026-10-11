@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process;
 
 use vantage_rhai::{Block, Env};
-use vantage_surrealdb::rhai_engine::{RhaiSelect, surreal_env};
+use vantage_surrealdb::rhai_engine::RhaiSelect;
 
 vantage_surrealdb::register_surreal_engine!();
 
@@ -38,7 +38,7 @@ fn main() {
     entries.sort_by_key(|e| e.file_name());
 
     let host = __host();
-    let env = surreal_env(Env::new());
+    let env = Env::new();
 
     let mut pass = 0u32;
     let mut fail = 0u32;

@@ -70,8 +70,9 @@ fn row(pairs: &[(&str, &str)]) -> Record<CborValue> {
 #[test]
 fn spec_lazy_column_is_computed() {
     let tag = build("tag", TAG);
-    assert_eq!(tag.get_column_names(), vec!["id", "name", "label"]);
-    assert!(tag.get_column("label").unwrap().is_computed());
+    let names: Vec<&str> = tag.columns().keys().map(String::as_str).collect();
+    assert_eq!(names, vec!["id", "name", "label"]);
+    assert!(tag.column("label").unwrap().is_computed());
 }
 
 #[test]
@@ -81,27 +82,39 @@ fn has_one_target_carries_its_lazy_columns() {
     let parent = event
         .get_ref(
             "parent",
-            &row(&[("id", "event:1"), ("tag", "a"), ("tag_key", "tag:a")]),
+            Some(&row(&[
+                ("id", "event:1"),
+                ("tag", "a"),
+                ("tag_key", "tag:a"),
+            ])),
         )
         .expect("traverse parent");
-    assert!(parent.get_column("label").unwrap().is_computed());
+    assert!(parent.column("label").unwrap().is_computed());
+    assert!(parent.is_narrowed());
 }
 
+/// The backend holds no values for a computed column, so a has-many can't
+/// narrow its target by one: a refusal naming the relation and the column.
 #[test]
 fn has_many_on_computed_target_key_is_refused() {
     let tag = build("tag", TAG);
-    let err = match tag.get_ref("events", &row(&[("id", "tag:a"), ("name", "a")])) {
+    let err = match tag.get_ref("events", Some(&row(&[("id", "tag:a"), ("name", "a")]))) {
         Ok(_) => panic!("a has-many joined on a computed column must not traverse"),
         Err(e) => e,
     };
     assert!(err.is_unsupported(), "{err}");
-    let column = err.context.get("column").map(|v| v.trim_matches('"'));
-    assert_eq!(column, Some("tag_key"), "{err:?}");
+    let context = |key: &str| {
+        err.context
+            .get(key)
+            .map(|v| v.trim_matches('"').to_string())
+    };
+    assert_eq!(context("column").as_deref(), Some("tag_key"), "{err:?}");
+    assert_eq!(context("relation").as_deref(), Some("events"), "{err:?}");
 }
 
 #[test]
 fn bare_ref_target_carries_its_lazy_columns() {
     let tag = build("tag", TAG);
-    let events = tag.get_ref_target("events").expect("bare target");
-    assert!(events.get_column("tag_key").unwrap().is_computed());
+    let events = tag.get_ref("events", None).expect("bare target");
+    assert!(events.column("tag_key").unwrap().is_computed());
 }

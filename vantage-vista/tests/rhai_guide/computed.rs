@@ -10,7 +10,7 @@ use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
 use vantage_vista::rhai::{block_on, lazy_value_closure};
 use vantage_vista::{
-    AggregateSpec, Column, DataVocab, TargetResolver, VistaFactory, VistaMetadata, Writes, flags,
+    Column, ColumnFlag, DataVocab, TargetResolver, VistaFactory, VistaMetadata, Writes,
 };
 
 use super::support::run;
@@ -135,14 +135,14 @@ fn reads() {
 #[test]
 fn declare_in_rust() {
     let gross = Column::new("gross", "int")
-        .with_flag("orderable")
+        .with_flag(ColumnFlag::Orderable)
         .with_expression("row.net + row.vat")
         .unwrap();
 
     assert!(gross.is_computed());
     assert_eq!(gross.expression(), Some("row.net + row.vat"));
-    assert!(gross.has_flag(flags::CALCULATED));
-    assert!(!gross.has_flag(flags::ORDERABLE));
+    assert!(gross.has_flag(ColumnFlag::Calculated));
+    assert!(!gross.has_flag(ColumnFlag::Orderable));
 
     let broken = Column::new("vat", "int").with_expression("row.net /");
     assert!(broken.is_err());
@@ -162,7 +162,7 @@ fn declare_in_rust() {
         metadata.with_id_column("id"),
         vantage_memory::vista::Catalog::new(store.clone()),
     );
-    let vista = vantage_vista::Vista::new("order", Box::new(shell));
+    let vista = vantage_vista::Vista::new("order", shell);
     store
         .table("order")
         .insert_as("o1", [("net".to_string(), int(100))].into_iter().collect())
@@ -179,12 +179,12 @@ fn declare_in_yaml() {
     let store = MemoryStore::new();
     let factory = MemoryVistaFactory::new(store);
     let orders = factory.from_yaml(ORDER).unwrap();
-    let client = orders.get_column("client").unwrap();
+    let client = orders.column("client").unwrap();
     assert!(client.is_computed());
     assert!(client.expression().unwrap().contains("row.code.split"));
     assert_eq!(
-        orders.get_reference("client").unwrap().foreign_key,
-        "client"
+        orders.reference("client").unwrap().foreign_key(),
+        Some("client")
     );
 
     let broken = ORDER.replace("row.net / 5", "row.net /");
@@ -229,20 +229,6 @@ fn refused() {
     }
 }
 
-#[test]
-fn aggregate_refused() {
-    let (_store, resolver) = invoices();
-    let orders = resolver("order").unwrap();
-
-    let sum = orders.aggregate(&AggregateSpec::new("sum", "total").column("gross"));
-    assert!(sum.is_err());
-    let by_client = orders.aggregate(&AggregateSpec::new("count", "n").group_by("client"));
-    assert!(by_client.is_err());
-
-    let err = sum.err().unwrap();
-    assert!(err.to_string().contains("gross"), "{err}");
-}
-
 const RELATIONS: &str = r#"
 let big = table("order").where("net", ">", 50);
 
@@ -265,9 +251,10 @@ fn relations() {
     );
     let err = run(&host, HAS_MANY_REFUSED).unwrap_err();
     assert!(
-        err.contains("Has-many relation can't join on a computed column"),
+        err.contains("can't narrow the relation's target to the parent row"),
         "{err}"
     );
+    assert!(err.contains("Computed column can't be used"), "{err}");
     assert!(err.contains("client"), "{err}");
 }
 

@@ -227,20 +227,35 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Snapshot the table's relations as Vista references (name, target type,
-    /// cardinality, foreign key). Driver factories fold this into
+    /// cardinality, join key). Driver factories fold this into
     /// `VistaMetadata` so the erased `Vista` carries enough to drive nested
     /// insert and relation traversal.
+    ///
+    /// Each relation gets one join key. A `has_many` key is fully known
+    /// here: this table's id column into the target's foreign key. A
+    /// `has_one` key constrains the target's id column, which is only known
+    /// once the target is built, so it is
+    /// [`JoinKey::to_target_id`](vantage_vista::JoinKey::to_target_id),
+    /// resolved at traversal from the built target. Building every target
+    /// here would make each metadata read rebuild the related tables.
     pub fn vista_references(&self) -> Vec<vantage_vista::Reference> {
+        use vantage_vista::{JoinKey, ReferenceKind};
+
+        let source_id = self.id_field_name();
         self.refs
             .as_ref()
             .map(|refs| {
                 refs.iter()
                     .map(|(name, r)| {
+                        let key = match r.cardinality() {
+                            ReferenceKind::HasOne => JoinKey::to_target_id(r.foreign_key()),
+                            _ => JoinKey::new(source_id.clone(), r.foreign_key()),
+                        };
                         vantage_vista::Reference::new(
                             name.clone(),
                             r.target_type_name().to_string(),
                             r.cardinality(),
-                            r.foreign_key().to_string(),
+                            vec![key],
                         )
                     })
                     .collect()
@@ -303,12 +318,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.computed_columns.values().map(|(at, c)| (*at, c))
     }
 
-    /// Shape-only specs (name, host, kind, id) for the contained relations
-    /// declared on this table, for driver factories to fold into
-    /// `VistaMetadata`. Columns are derived at traversal from each relation's
+    /// The contained relations declared on this table as Vista references of
+    /// a contained kind, for driver factories to fold into `VistaMetadata`.
+    /// The records' schema is derived at traversal from each relation's
     /// `build_target` closure.
-    pub fn vista_contained(&self) -> Vec<vantage_vista::ContainedSpec> {
-        self.contained.iter().map(|c| c.spec()).collect()
+    pub fn vista_contained(&self) -> Vec<vantage_vista::Reference> {
+        self.contained.iter().map(|c| c.reference()).collect()
     }
 
     /// Look up a contained relation by name (for the driver's traversal).

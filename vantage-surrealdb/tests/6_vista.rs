@@ -17,7 +17,7 @@ use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::thing::Thing;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, FilterOp, VistaFactory};
 
 use surreal_client::SurrealConnection;
 
@@ -86,7 +86,7 @@ async fn vista_lists_typed_surreal_as_cbor() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     assert_eq!(vista.name(), table_name);
-    assert_eq!(vista.get_id_column(), Some("id"));
+    assert_eq!(vista.id_column(), Some("id"));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
@@ -139,10 +139,10 @@ async fn vista_count_with_eq_condition() -> TestResult {
     let table = product_table(db.clone(), &table_name);
     let mut vista = db.vista_factory().from_table(table)?;
 
-    assert_eq!(vista.get_count().await?, 3);
+    assert_eq!(vista.count().await?, 3);
 
-    vista.add_condition_eq("is_deleted", CborValue::Bool(false))?;
-    assert_eq!(vista.get_count().await?, 2);
+    vista.add_condition("is_deleted", FilterOp::Eq, CborValue::Bool(false))?;
+    assert_eq!(vista.count().await?, 2);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
@@ -176,8 +176,8 @@ surreal:
     let vista = db.vista_factory().from_yaml(&yaml)?;
 
     assert_eq!(vista.name(), "product_view");
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1);
@@ -216,6 +216,54 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
     Ok(())
 }
 
+/// With no id given, SurrealDB makes one; the row is read back through the
+/// (narrowed) set and returned as stored.
+#[tokio::test]
+async fn vista_insert_without_id_reads_back_the_stored_row() -> TestResult {
+    let (db, table_name) = setup().await;
+    let table = product_table(db.clone(), &table_name);
+    let vista = db
+        .vista_factory()
+        .from_table(table)?
+        .with_condition("price", FilterOp::Eq, 5)?;
+
+    let record: Record<CborValue> = vec![
+        ("name".to_string(), CborValue::Text("Echo".into())),
+        ("price".to_string(), CborValue::Integer(5i64.into())),
+    ]
+    .into_iter()
+    .collect();
+    let id = vista.insert_return_id_value(&record).await?;
+    assert!(id.starts_with(&format!("{table_name}:")), "{id}");
+
+    let all = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    let stored = all.get_value(&id).await?.expect("stored");
+    assert_eq!(stored.get("name"), Some(&CborValue::Text("Echo".into())));
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_upsert_creates_then_replaces() -> TestResult {
+    let (db, table_name) = setup().await;
+    let vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    let named = |name: &str| -> Record<CborValue> {
+        [("name".to_string(), CborValue::Text(name.into()))]
+            .into_iter()
+            .collect()
+    };
+
+    vista.upsert_value("echo", &named("First")).await?;
+    vista.upsert_value("echo", &named("Second")).await?;
+    let stored = vista.get_value("echo").await?.expect("upserted");
+    assert_eq!(stored.get("name"), Some(&CborValue::Text("Second".into())));
+    assert_eq!(vista.count().await?, 1);
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_capabilities_advertise_read_write() -> TestResult {
     let (db, table_name) = setup().await;
@@ -223,14 +271,13 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(caps.can_insert);
-    assert!(caps.can_update);
-    assert!(caps.can_delete);
-    assert!(caps.can_confine_writes);
+    assert!(caps.has(Capability::Insert));
+    assert!(caps.has(Capability::Update));
+    assert!(caps.has(Capability::Delete));
+    assert!(caps.has(Capability::ConfineWrites));
     // A read-write SurrealDB Vista is watchable via LIVE queries.
-    assert!(caps.can_subscribe);
-    assert_eq!(vista.driver(), "surrealdb");
+    assert!(caps.has(Capability::Subscribe));
+    assert_eq!(vista.driver_name(), "surrealdb");
 
     Ok(())
 }
@@ -240,7 +287,7 @@ async fn capabilities_advertise_fetch_window() -> TestResult {
     let (db, table_name) = setup().await;
     let table = product_table(db.clone(), &table_name);
     let vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_fetch_window);
+    assert!(vista.capabilities().has(Capability::Window));
 
     // Windowing is a read-side capability, so a read-only vista keeps it.
     #[cfg(feature = "rhai")]
@@ -258,8 +305,8 @@ surreal:
     select().from("product").field("id").field("name").where(expr("price > 15"))
 "#;
         let read_only = db.vista_factory().from_yaml(yaml)?;
-        assert!(!read_only.capabilities().can_insert);
-        assert!(read_only.capabilities().can_fetch_window);
+        assert!(!read_only.capabilities().has(Capability::Insert));
+        assert!(read_only.capabilities().has(Capability::Window));
     }
 
     Ok(())
@@ -281,10 +328,11 @@ async fn vista_fetch_window_returns_row_indexed_slice() -> TestResult {
 
     let table = product_table(db.clone(), &table_name);
     let mut vista = db.vista_factory().from_table(table)?;
-    vista.add_order("name", SortDirection::Ascending)?;
+    vista.set_order(Some(("name", SortDirection::Ascending)))?;
 
     let window = vista.fetch_window(1, 2).await?;
     let names: Vec<String> = window
+        .rows
         .iter()
         .map(|(_, r)| match r.get("name") {
             Some(CborValue::Text(s)) => s.clone(),
@@ -304,7 +352,7 @@ async fn vista_eq_condition_with_typed_value() -> TestResult {
     let table = product_table(db.clone(), &table_name);
     let mut vista = db.vista_factory().from_table(table)?;
 
-    vista.add_condition_eq("name", CborValue::Text("Match".into()))?;
+    vista.add_condition("name", FilterOp::Eq, CborValue::Text("Match".into()))?;
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1);
     let (_, row) = rows.into_iter().next().unwrap();
@@ -320,7 +368,7 @@ async fn vista_unknown_field_eq_errors() -> TestResult {
     let mut vista = db.vista_factory().from_table(table)?;
 
     let err = vista
-        .add_condition_eq("nonexistent", CborValue::Bool(true))
+        .add_condition("nonexistent", FilterOp::Eq, CborValue::Bool(true))
         .expect_err("should reject unknown field");
     assert!(err.to_string().contains("nonexistent"));
 
@@ -328,7 +376,7 @@ async fn vista_unknown_field_eq_errors() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult {
+async fn vista_set_order_filters_results_with_replace_semantics() -> TestResult {
     use vantage_vista::SortDirection;
 
     let (db, table_name) = setup().await;
@@ -338,9 +386,9 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
 
     let table = product_table(db.clone(), &table_name);
     let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_order);
+    assert!(vista.capabilities().has(Capability::Order));
 
-    vista.add_order("price", SortDirection::Ascending)?;
+    vista.set_order(Some(("price", SortDirection::Ascending)))?;
     let rows = vista.list_values().await?;
     let names: Vec<String> = rows
         .values()
@@ -354,7 +402,7 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
         vec!["Alpha".to_string(), "Beta".into(), "Gamma".into()]
     );
 
-    vista.add_order("name", SortDirection::Descending)?;
+    vista.set_order(Some(("name", SortDirection::Descending)))?;
     let rows = vista.list_values().await?;
     let names: Vec<String> = rows
         .values()
@@ -368,13 +416,13 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
         vec!["Gamma".to_string(), "Beta".into(), "Alpha".into()]
     );
 
-    vista.clear_orders()?;
+    vista.set_order(None)?;
     let _rows = vista.list_values().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_add_search_uses_string_contains() -> TestResult {
+async fn vista_set_search_uses_string_contains() -> TestResult {
     let (db, table_name) = setup().await;
     seed_row(&db, &table_name, "alpha", "Alpha", 10, false).await?;
     seed_row(&db, &table_name, "beta", "Beta", 20, false).await?;
@@ -382,9 +430,9 @@ async fn vista_add_search_uses_string_contains() -> TestResult {
 
     let table = product_table(db.clone(), &table_name);
     let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_search);
+    assert!(vista.capabilities().has(Capability::Search));
 
-    vista.add_search("amma")?;
+    vista.set_search(Some("amma"))?;
     let rows = vista.list_values().await?;
     assert_eq!(
         rows.len(),
@@ -392,18 +440,19 @@ async fn vista_add_search_uses_string_contains() -> TestResult {
         "only Gamma contains 'amma' (case-insensitive)"
     );
 
-    vista.add_search("alpha")?;
+    vista.set_search(Some("alpha"))?;
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1);
 
-    vista.clear_search()?;
+    vista.set_search(None)?;
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
     Ok(())
 }
 
+/// Consecutive windows page through an ordered set; the last is short.
 #[tokio::test]
-async fn vista_fetch_page_offset_pagination() -> TestResult {
+async fn vista_fetch_window_pages_through_the_set() -> TestResult {
     use vantage_vista::SortDirection;
 
     let (db, table_name) = setup().await;
@@ -418,60 +467,40 @@ async fn vista_fetch_page_offset_pagination() -> TestResult {
     }
 
     let table = product_table(db.clone(), &table_name);
-    let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_fetch_page);
+    let vista = db
+        .vista_factory()
+        .from_table(table)?
+        .with_order("name", SortDirection::Ascending)?;
 
-    vista.set_page_size(2)?;
-    vista.add_order("name", SortDirection::Ascending)?;
-
-    let p1 = vista.fetch_page(1).await?;
-    let names_p1: Vec<String> = p1
-        .iter()
-        .map(|(_, r)| match r.get("name") {
-            Some(CborValue::Text(s)) => s.clone(),
-            _ => String::new(),
-        })
-        .collect();
-    assert_eq!(names_p1, vec!["Apple".to_string(), "Banana".into()]);
-
-    let p2 = vista.fetch_page(2).await?;
-    let names_p2: Vec<String> = p2
-        .iter()
-        .map(|(_, r)| match r.get("name") {
-            Some(CborValue::Text(s)) => s.clone(),
-            _ => String::new(),
-        })
-        .collect();
-    assert_eq!(names_p2, vec!["Cherry".to_string(), "Date".into()]);
-
-    let p3 = vista.fetch_page(3).await?;
-    assert_eq!(p3.len(), 1);
+    let names = |page: vantage_vista::Page| -> Vec<String> {
+        page.rows
+            .iter()
+            .map(|(_, r)| match r.get("name") {
+                Some(CborValue::Text(s)) => s.clone(),
+                _ => String::new(),
+            })
+            .collect()
+    };
+    assert_eq!(names(vista.fetch_window(0, 2).await?), ["Apple", "Banana"]);
+    assert_eq!(names(vista.fetch_window(2, 2).await?), ["Cherry", "Date"]);
+    assert_eq!(names(vista.fetch_window(4, 2).await?), ["Elder"]);
     Ok(())
 }
 
+/// SurrealDB windows by position; it has no cursor of its own.
 #[tokio::test]
-async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
-    use vantage_vista::SortDirection;
-
+async fn vista_fetch_cursor_is_unsupported() -> TestResult {
     let (db, table_name) = setup().await;
-    for (id, name) in [("a", "Apple"), ("b", "Banana"), ("c", "Cherry")] {
-        seed_row(&db, &table_name, id, name, 1, false).await?;
-    }
-
-    let table = product_table(db.clone(), &table_name);
-    let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_fetch_next);
-
-    vista.set_page_size(2)?;
-    vista.add_order("name", SortDirection::Ascending)?;
-
-    let (r1, tok1) = vista.fetch_next(None).await?;
-    assert_eq!(r1.len(), 2);
-    assert!(tok1.is_some());
-
-    let (r2, tok2) = vista.fetch_next(tok1).await?;
-    assert_eq!(r2.len(), 1);
-    assert!(tok2.is_none());
+    let vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    assert!(!vista.capabilities().has(Capability::Cursor));
+    let err = vista
+        .fetch_cursor(None, 2)
+        .await
+        .map(drop)
+        .expect_err("refused");
+    assert!(err.is_unsupported(), "{err:?}");
     Ok(())
 }
 
@@ -531,10 +560,13 @@ surreal:
     assert_eq!(vista.name(), "expensive_products");
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(!caps.can_insert, "rhai-sourced vista is read-only");
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(
+        !caps.has(Capability::Insert),
+        "rhai-sourced vista is read-only"
+    );
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
+    assert!(!caps.has(Capability::Subscribe));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2, "only products with price > 15");
@@ -591,11 +623,11 @@ surreal:
     // Query-sourced → read-only.
     let caps = vista.capabilities();
     assert!(
-        !caps.can_insert,
+        !caps.has(Capability::Insert),
         "derived (query-sourced) vista is read-only"
     );
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
 
     // Transform applied (only Alice) and inherited columns surface.
     let rows = vista.list_values().await?;
@@ -675,7 +707,7 @@ surreal:
 #[cfg(feature = "rhai")]
 #[tokio::test]
 async fn vista_filters_by_expr_column_on_the_expression() -> TestResult {
-    use vantage_vista::{FilterOp, SortDirection};
+    use vantage_vista::SortDirection;
 
     let (db, table_name) = setup().await;
     for (id, qty, price) in [("big", 2i64, 5i64), ("small", 1, 3)] {
@@ -714,7 +746,7 @@ surreal:
     assert_eq!(ids(gt.list_values().await?), vec![big.clone()]);
 
     let mut eq = vista()?;
-    eq.add_condition_eq("total", CborValue::Integer(3.into()))?;
+    eq.add_condition("total", FilterOp::Eq, CborValue::Integer(3.into()))?;
     assert_eq!(ids(eq.list_values().await?), vec![small.clone()]);
 
     let mut like = vista()?;
@@ -722,11 +754,11 @@ surreal:
     assert_eq!(ids(like.list_values().await?), vec![big.clone()]);
 
     let mut sorted = vista()?;
-    sorted.add_order("total", SortDirection::Ascending)?;
+    sorted.set_order(Some(("total", SortDirection::Ascending)))?;
     assert_eq!(ids(sorted.list_values().await?), vec![small, big.clone()]);
 
     let mut searched = vista()?;
-    searched.add_search("item-2")?;
+    searched.set_search(Some("item-2"))?;
     assert_eq!(ids(searched.list_values().await?), vec![big]);
     Ok(())
 }

@@ -8,6 +8,7 @@ use ciborium::Value as CborValue;
 use common::{NS, WEB_REPLICAS, as_text, cluster_or_skip};
 use vantage_kubernetes::models::apps::deployments;
 use vantage_kubernetes::models::core::{nodes, pods};
+use vantage_vista::FilterOp;
 
 #[tokio::test]
 async fn deployment_web_drills_to_its_pods() -> anyhow::Result<()> {
@@ -19,8 +20,8 @@ async fn deployment_web_drills_to_its_pods() -> anyhow::Result<()> {
     let mut deployments = cluster
         .vista_factory()
         .from_table(deployments::deployments_table(cluster.clone()))?;
-    deployments.add_condition_eq("id", CborValue::Text("web".to_string()))?;
-    let rows = deployments.fetch_window(0, 10).await?;
+    deployments.add_condition("id", FilterOp::Eq, CborValue::Text("web".to_string()))?;
+    let rows = deployments.fetch_window(0, 10).await?.rows;
     let (_, web) = rows
         .into_iter()
         .find(|(_, r)| as_text(r.get("namespace")).as_deref() == Some(NS))
@@ -28,8 +29,8 @@ async fn deployment_web_drills_to_its_pods() -> anyhow::Result<()> {
 
     // Drill into its pods. The join is pod.ownerDeployment == web.id, so it
     // must return exactly the replica count — not every pod in the cluster.
-    let pods_of_web = deployments.get_ref("pods", &web)?;
-    let pod_rows = pods_of_web.fetch_window(0, 1000).await?;
+    let pods_of_web = deployments.get_ref("pods", Some(&web))?;
+    let pod_rows = pods_of_web.fetch_window(0, 1000).await?.rows;
     assert_eq!(
         pod_rows.len(),
         WEB_REPLICAS,
@@ -41,9 +42,9 @@ async fn deployment_web_drills_to_its_pods() -> anyhow::Result<()> {
     }
 
     // And it should have at least one ReplicaSet.
-    let rs = deployments.get_ref("replicasets", &web)?;
+    let rs = deployments.get_ref("replicasets", Some(&web))?;
     assert!(
-        !rs.fetch_window(0, 10).await?.is_empty(),
+        !rs.fetch_window(0, 10).await?.rows.is_empty(),
         "web should have a replicaset"
     );
     Ok(())
@@ -58,17 +59,17 @@ async fn node_drills_to_a_strict_subset_of_pods() -> anyhow::Result<()> {
     let total_pods = cluster
         .vista_factory()
         .from_table(pods::pods_table(cluster.clone()))?
-        .get_count()
+        .count()
         .await?;
 
     let nodes_vista = cluster
         .vista_factory()
         .from_table(nodes::nodes_table(cluster.clone()))?;
-    let node_rows = nodes_vista.fetch_window(0, 10).await?;
+    let node_rows = nodes_vista.fetch_window(0, 10).await?.rows;
     let (_, node) = node_rows.first().expect("at least one node");
 
-    let pods_on_node = nodes_vista.get_ref("pods", node)?;
-    let on_node = pods_on_node.fetch_window(0, 5000).await?;
+    let pods_on_node = nodes_vista.get_ref("pods", Some(node))?;
+    let on_node = pods_on_node.fetch_window(0, 5000).await?.rows;
 
     assert!(!on_node.is_empty(), "a Ready node should host some pods");
     // The relation narrows: a node hosts a subset of all pods, and every

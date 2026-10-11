@@ -1,14 +1,19 @@
 //! The Vista layer: a `TableShell` over one store table.
 
+mod affinity;
 pub mod factory;
+mod narrow;
 mod refs;
 mod shell;
 mod watch;
 mod writes;
 
+use std::sync::Arc;
+
+use affinity::{Affinity, Untyped};
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_vista::{VistaCapabilities, VistaMetadata};
+use vantage_vista::{Capability, SortDirection, VistaCapabilities, VistaMetadata};
 
 use crate::eval::MemoryCondition;
 use crate::{MemoryTableHandle, Query};
@@ -26,11 +31,15 @@ pub struct MemoryTableShell {
     /// Literal `column = value` conditions of the query; full-record writes
     /// fill them and patches may not contradict them.
     pub(crate) invariants: IndexMap<String, CborValue>,
-    page_size: Option<usize>,
+    /// Declared columns whose type is only a display default.
+    untyped: Arc<Untyped>,
     capabilities: VistaCapabilities,
 }
 
 impl MemoryTableShell {
+    /// A shell over `table`. Cells of a column `metadata` declares with an
+    /// integer or text type are stored and compared in that form; see
+    /// [`with_untyped_columns`](Self::with_untyped_columns).
     pub fn new(table: MemoryTableHandle, metadata: VistaMetadata, catalog: Catalog) -> Self {
         Self {
             table,
@@ -38,30 +47,51 @@ impl MemoryTableShell {
             catalog,
             query: Query::new(),
             invariants: IndexMap::new(),
-            page_size: None,
+            untyped: Arc::default(),
             capabilities: Self::capabilities_for_memory(),
         }
     }
 
+    /// This shell with `columns` treated as declared without a type, so
+    /// their cells are stored as given whatever type the metadata names.
+    pub fn with_untyped_columns(
+        mut self,
+        columns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.untyped = Arc::new(columns.into_iter().map(Into::into).collect());
+        self
+    }
+
+    fn affinity(&self, column: &str) -> Affinity {
+        Affinity::of(&self.metadata, &self.untyped, self.id_column_name(), column)
+    }
+
+    /// Whether `column` has no declared type: not declared, or declared
+    /// without a type.
+    fn is_untyped(&self, column: &str) -> bool {
+        column != self.id_column_name()
+            && (self.untyped.contains(column) || !self.metadata.columns.contains_key(column))
+    }
+
+    /// Everything but cursors and native conditions: the store evaluates
+    /// every operator, search, order and window itself, and every write is
+    /// checked against the shell's query, so writes stay inside the set.
     pub fn capabilities_for_memory() -> VistaCapabilities {
-        VistaCapabilities {
-            can_count: true,
-            can_insert: true,
-            can_update: true,
-            can_delete: true,
-            can_import: true,
-            can_order: true,
-            can_search: true,
-            can_filter_operators: true,
-            can_set_page_size: true,
-            can_fetch_page: true,
-            can_fetch_window: true,
-            can_traverse_to_record: true,
-            can_traverse_to_set: true,
-            can_subscribe: true,
-            can_confine_writes: true,
-            ..VistaCapabilities::default()
-        }
+        [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::Import,
+            Capability::Subscribe,
+            Capability::Order,
+            Capability::Search,
+            Capability::FilterOps,
+            Capability::Window,
+            Capability::Traverse,
+            Capability::ConfineWrites,
+        ]
+        .into_iter()
+        .collect()
     }
 
     pub(crate) fn query(&self) -> &Query {
@@ -85,9 +115,36 @@ impl MemoryTableShell {
     fn windowed(&self, offset: usize, limit: Option<usize>) -> Query {
         self.query.clone().window(offset, limit)
     }
+
+    /// The query rendered for `preview`.
+    fn render_query(&self) -> String {
+        let mut out = format!("scan {}", self.table.name());
+        let mut clauses: Vec<String> = self.query.conditions.iter().map(describe).collect();
+        if let Some(text) = &self.query.search {
+            clauses.push(format!("search {text:?}"));
+        }
+        if !clauses.is_empty() {
+            out.push_str(" WHERE ");
+            out.push_str(&clauses.join(" AND "));
+        }
+        if !self.query.order.is_empty() {
+            let keys: Vec<String> = self
+                .query
+                .order
+                .iter()
+                .map(|(field, dir)| match dir {
+                    SortDirection::Ascending => format!("{field} ASC"),
+                    SortDirection::Descending => format!("{field} DESC"),
+                })
+                .collect();
+            out.push_str(" ORDER BY ");
+            out.push_str(&keys.join(", "));
+        }
+        out
+    }
 }
 
-/// Human-readable form of a condition, for `preview_query`.
+/// Human-readable form of a condition, for `preview`.
 fn describe(c: &MemoryCondition) -> String {
     let join = |list: &[MemoryCondition], sep: &str| {
         let parts: Vec<String> = list.iter().map(describe).collect();
@@ -95,7 +152,7 @@ fn describe(c: &MemoryCondition) -> String {
     };
     match c {
         MemoryCondition::Cmp { path, op, value } => {
-            format!("{path} {} {value:?}", op.key_symbol())
+            format!("{path} {} {}", op.key_symbol(), render_value(value))
         }
         MemoryCondition::Search(text) => format!("search {text:?}"),
         MemoryCondition::And(all) => join(all, " AND "),
@@ -103,5 +160,22 @@ fn describe(c: &MemoryCondition) -> String {
         MemoryCondition::Not(inner) => format!("NOT {}", describe(inner)),
         MemoryCondition::Column(name) => name.clone(),
         MemoryCondition::Deferred(_) => "<deferred>".to_string(),
+    }
+}
+
+/// A condition operand as a literal: text quoted, numbers and booleans bare,
+/// arrays bracketed.
+fn render_value(value: &CborValue) -> String {
+    match value {
+        CborValue::Text(s) => format!("{s:?}"),
+        CborValue::Integer(i) => i128::from(*i).to_string(),
+        CborValue::Float(f) => f.to_string(),
+        CborValue::Bool(b) => b.to_string(),
+        CborValue::Null => "null".to_string(),
+        CborValue::Array(items) => {
+            let items: Vec<String> = items.iter().map(render_value).collect();
+            format!("[{}]", items.join(", "))
+        }
+        other => format!("{other:?}"),
     }
 }

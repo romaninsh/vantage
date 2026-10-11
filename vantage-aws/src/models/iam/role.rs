@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::models::request_param;
 use crate::types::{Arn, AwsDateTime};
 use crate::{AwsAccount, eq};
 
@@ -56,6 +57,7 @@ pub fn roles_table(aws: AwsAccount) -> Table<AwsAccount, Role> {
         .with_column_of::<String>("Description")
         .with_column_of::<String>("AssumeRolePolicyDocument")
         .with_column_of::<String>("MaxSessionDuration")
+        .with_column(request_param("PathPrefix"))
         .with_many(
             "attached_policies",
             "RoleName",

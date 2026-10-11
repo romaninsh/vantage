@@ -161,6 +161,7 @@ jobs:
           cargo run -p bakery_model3 --example cli-vista -- ${{ matrix.backend }} clients
           cargo run -p bakery_model3 --example cli-vista -- ${{ matrix.backend }} client id=marty :bakery
           cargo run -p bakery_model3 --example cli-vista -- ${{ matrix.backend }} bakery :clients[0] :orders
+          cargo run -p bakery_model3 --example cli-vista -- ${{ matrix.backend }} 'bakery[0]' :products
 
       - name: bakery_model3 CSV smoke test
         if: matrix.backend == 'sqlite'

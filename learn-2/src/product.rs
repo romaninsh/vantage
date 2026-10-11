@@ -19,6 +19,7 @@ impl Product {
             .with_column_of::<String>("name")
             .with_column_of::<i64>("price")
             .with_column_of::<bool>("is_deleted")
+            .with_column_of::<i64>("category_id")
             .with_condition(is_deleted.eq(false))
             .with_one("category", "category_id", Category::table)
             .with_expression("category", |t| {

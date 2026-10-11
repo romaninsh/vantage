@@ -110,7 +110,7 @@ const INTROSPECTION: &str = r#"
 let orders = table("order");
 
 #{
-    can_insert: orders.capabilities().can_insert,
+    insert: orders.capabilities().insert,
     columns: orders.columns().map(|c| c.name),
     references: orders.references().map(|r| r.name + " " + r.kind),
 }
@@ -122,7 +122,7 @@ fn introspection() {
     assert_eq!(
         json(&host, INTROSPECTION),
         json!({
-            "can_insert": true,
+            "insert": true,
             "columns": ["id", "client", "total", "status"],
             "references": ["client HasOne"],
         })

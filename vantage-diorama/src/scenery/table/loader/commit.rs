@@ -97,20 +97,23 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             // the loaded rows — the documented cost of sorting a lazily-paged
             // source that can't order server-side.
             // Only re-sort client-side when the master couldn't order it for us.
-            // A `can_order` master fetched this window server-ordered (via
+            // An `Order`-capable master fetched this window server-ordered (via
             // `Dio::fetch_window_ordered`), so `write_chunk_row` already stamped
             // the rows in the right order — reseeding would be redundant.
-            let resorted =
-                if state.sort.read().unwrap().is_some() && !state.master_capabilities.can_order {
-                    if let Err(e) = state.reseed_from_cache().await {
-                        tracing::error!(error = %e, "post-load resort failed");
-                        false
-                    } else {
-                        true
-                    }
-                } else {
+            let resorted = if state.sort.read().unwrap().is_some()
+                && !state
+                    .master_capabilities
+                    .has(vantage_vista::Capability::Order)
+            {
+                if let Err(e) = state.reseed_from_cache().await {
+                    tracing::error!(error = %e, "post-load resort failed");
                     false
-                };
+                } else {
+                    true
+                }
+            } else {
+                false
+            };
 
             // Measured after the resort because a client-side sort rebuilds the
             // visible map from the cache once the load lands.

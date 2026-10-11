@@ -12,7 +12,7 @@ use vantage_dataset::prelude::*;
 use vantage_sql::postgres::PostgresDB;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, FilterOp, ReferenceKind, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -69,7 +69,7 @@ async fn vista_lists_typed_postgres_as_cbor() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     assert_eq!(vista.name(), name);
-    assert_eq!(vista.get_id_column(), Some("id"));
+    assert_eq!(vista.id_column(), Some("id"));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -102,10 +102,10 @@ async fn vista_count_with_eq_condition() -> TestResult {
     let table = product_table(db.clone(), &name);
     let mut vista = db.vista_factory().from_table(table)?;
 
-    assert_eq!(vista.get_count().await?, 3);
+    assert_eq!(vista.count().await?, 3);
 
-    vista.add_condition_eq("is_deleted", CborValue::Bool(false))?;
-    assert_eq!(vista.get_count().await?, 2);
+    vista.add_condition("is_deleted", FilterOp::Eq, CborValue::Bool(false))?;
+    assert_eq!(vista.count().await?, 2);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
@@ -138,8 +138,8 @@ postgres:
     let vista = db.vista_factory().from_yaml(&yaml)?;
 
     assert_eq!(vista.name(), "product_view");
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -177,14 +177,23 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(caps.can_insert);
-    assert!(caps.can_update);
-    assert!(caps.can_delete);
-    assert!(caps.can_confine_writes);
+    for capability in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::Window,
+        Capability::Traverse,
+    ] {
+        assert!(caps.has(capability), "postgres advertises {capability}");
+    }
+    assert!(!caps.has(Capability::Cursor));
     // Being writable says nothing about whether anyone installed the
     // `{table}_changed` trigger, so watchability is NOT inferred from it.
-    assert!(!caps.can_subscribe);
+    assert!(!caps.has(Capability::Subscribe));
     Ok(())
 }
 
@@ -199,7 +208,7 @@ async fn vista_is_watchable_only_when_notify_is_declared() -> TestResult {
             .vista_factory()
             .with_notify(notify)
             .from_table(product_table(db.clone(), &name))?;
-        assert_eq!(vista.capabilities().can_subscribe, notify);
+        assert_eq!(vista.capabilities().has(Capability::Subscribe), notify);
     }
     Ok(())
 }
@@ -250,11 +259,14 @@ async fn contained_json_column_round_trips_on_postgres() -> TestResult {
     .unwrap();
 
     let vista = db.vista_factory().from_table(cart_table(db.clone(), t))?;
-    assert_eq!(vista.list_contained().len(), 1);
+    assert_eq!(
+        vista.references()["items"].kind,
+        ReferenceKind::ContainsMany
+    );
 
     let cart = vista.get_value("c1").await?.unwrap();
     assert!(matches!(cart.get("items"), Some(CborValue::Text(_))));
-    let items = vista.get_ref("items", &cart)?;
+    let items = vista.get_ref("items", Some(&cart))?;
     assert_eq!(items.list_values().await?.len(), 2);
 
     let mut line = Record::new();
@@ -264,14 +276,14 @@ async fn contained_json_column_round_trips_on_postgres() -> TestResult {
     assert_eq!(new_id, "2");
 
     let cart2 = vista.get_value("c1").await?.unwrap();
-    let items2 = vista.get_ref("items", &cart2)?;
+    let items2 = vista.get_ref("items", Some(&cart2))?;
     assert_eq!(items2.list_values().await?.len(), 3);
 
     items2
         .patch_value("0", &field("qty", CborValue::Integer(99i64.into())))
         .await?;
     let cart3 = vista.get_value("c1").await?.unwrap();
-    let items3 = vista.get_ref("items", &cart3)?;
+    let items3 = vista.get_ref("items", Some(&cart3))?;
     assert_eq!(
         items3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
@@ -311,10 +323,12 @@ postgres:
     assert_eq!(vista.name(), "expensive_products");
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(!caps.can_insert, "rhai-sourced vista is read-only");
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(
+        !caps.has(Capability::Insert),
+        "rhai-sourced vista is read-only"
+    );
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2, "only products with price > 15");
@@ -416,9 +430,10 @@ postgres:
 
 /// Read `alice` out of a built `client` vista, for traversing her orders.
 async fn alice_row(
-    clients: &mut vantage_vista::Vista,
+    clients: &vantage_vista::Vista,
 ) -> std::result::Result<Record<CborValue>, Box<dyn Error>> {
     let (_id, alice) = clients
+        .clone()
         .with_id(CborValue::Text("alice".into()))?
         .get_some_value()
         .await?
@@ -434,15 +449,15 @@ async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
     let (client_spec, resolver) = clients_orders_specs(&client_t, &orders_t)?;
 
     let factory = db.vista_factory().with_resolver(resolver);
-    let mut clients = factory.build_from_spec(client_spec)?;
+    let clients = factory.build_from_spec(client_spec)?;
 
-    let refs = clients.list_references();
+    let refs = clients.references();
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].0, "orders");
-    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+    assert_eq!(refs["orders"].kind, ReferenceKind::HasMany);
 
-    let alice = alice_row(&mut clients).await?;
-    let alice_orders = clients.get_ref("orders", &alice)?;
+    let alice = alice_row(&clients).await?;
+    let alice_orders = clients.get_ref("orders", Some(&alice))?;
+    assert!(alice_orders.is_narrowed());
     let rows = alice_orders.list_values().await?;
     assert_eq!(rows.len(), 2, "alice has 2 orders");
     assert!(rows.contains_key("o1"));
@@ -460,26 +475,26 @@ async fn notify_opt_in_survives_reference_traversal() -> TestResult {
     let (client_spec, resolver) = clients_orders_specs(&client_t, &orders_t)?;
 
     for notify in [true, false] {
-        let mut clients = db
+        let clients = db
             .vista_factory()
             .with_resolver(resolver.clone())
             .with_notify(notify)
             .build_from_spec(client_spec.clone())?;
-        assert_eq!(clients.capabilities().can_subscribe, notify);
+        assert_eq!(clients.capabilities().has(Capability::Subscribe), notify);
 
-        let alice = alice_row(&mut clients).await?;
-        let orders = clients.get_ref("orders", &alice)?;
+        let alice = alice_row(&clients).await?;
+        let orders = clients.get_ref("orders", Some(&alice))?;
         assert_eq!(
-            orders.capabilities().can_subscribe,
+            orders.capabilities().has(Capability::Subscribe),
             notify,
-            "get_ref target should inherit the parent's notify opt-in"
+            "a target narrowed to a row should inherit the parent's notify opt-in"
         );
 
-        let target = clients.get_ref_target("orders")?;
+        let target = clients.get_ref("orders", None)?;
         assert_eq!(
-            target.capabilities().can_subscribe,
+            target.capabilities().has(Capability::Subscribe),
             notify,
-            "get_ref_target should inherit the parent's notify opt-in"
+            "the bare target should inherit the parent's notify opt-in"
         );
     }
     Ok(())
@@ -533,11 +548,11 @@ postgres:
 
     let caps = vista.capabilities();
     assert!(
-        !caps.can_insert,
+        !caps.has(Capability::Insert),
         "derived (query-sourced) vista is read-only"
     );
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1, "rhai transform filtered to Alice");
@@ -623,7 +638,7 @@ fn numeric(v: Option<&CborValue>) -> Option<i64> {
 }
 
 #[tokio::test]
-async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
+async fn vista_set_order_ascending_descending_and_clear() -> TestResult {
     use vantage_vista::SortDirection;
 
     let (db, name) = setup("order").await;
@@ -631,23 +646,23 @@ async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
     let mut vista = db.vista_factory().from_table(table)?;
 
     // A table-sourced Postgres Vista advertises ordering and flags every column
-    // ORDERABLE, so `add_order` works without going through YAML.
-    assert!(vista.capabilities().can_order);
+    // ORDERABLE, so `set_order` works without going through YAML.
+    assert!(vista.capabilities().has(Capability::Order));
 
     // sort ascending by price → a (10), b (20), c (30)
-    vista.add_order("price", SortDirection::Ascending)?;
+    vista.set_order(Some(("price", SortDirection::Ascending)))?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
     assert_eq!(ids, ["a", "b", "c"]);
 
     // replace-semantics: switch to descending name → c (Gamma), b (Beta), a (Alpha)
-    vista.add_order("name", SortDirection::Descending)?;
+    vista.set_order(Some(("name", SortDirection::Descending)))?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
     assert_eq!(ids, ["c", "b", "a"]);
 
     // clear → every row still present (order unconstrained)
-    vista.clear_orders()?;
+    vista.set_order(None)?;
     let rows = vista.list_values().await?;
     let mut ids: Vec<String> = rows.keys().cloned().collect();
     ids.sort();
@@ -655,13 +670,12 @@ async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
     Ok(())
 }
 
-/// A cursor scan must visit every row even when the id column is not unique.
+/// A window scan must visit every row even when the id column is not unique.
 ///
-/// `list_values` keys rows by id, so duplicates collapse and a FULL SQL page
-/// can arrive under-length. Treating a short page as the end of the set — the
-/// obvious reading — silently drops every page after the first duplicate.
+/// A window keys rows by id, so duplicates collapse and a FULL SQL window
+/// can arrive under-length. Only an empty window ends the scan.
 #[tokio::test]
-async fn vista_fetch_next_survives_a_non_unique_id_column() -> TestResult {
+async fn vista_window_scan_survives_a_non_unique_id_column() -> TestResult {
     use vantage_vista::SortDirection;
 
     let (db, name) = setup("dup_ids").await;
@@ -684,24 +698,21 @@ async fn vista_fetch_next_survives_a_non_unique_id_column() -> TestResult {
         .with_column_of::<String>("id")
         .with_column_of::<i64>("price");
     let mut vista = db.vista_factory().from_table(table)?;
-    vista.set_page_size(2)?;
-    vista.add_order("id", SortDirection::Ascending)?;
+    vista.set_order(Some(("id", SortDirection::Ascending)))?;
 
     let mut seen: Vec<String> = Vec::new();
-    let mut token = None;
-    for _ in 0..10 {
-        let (rows, next) = vista.fetch_next(token).await?;
-        seen.extend(rows.into_iter().map(|(id, _)| id));
-        token = next;
-        if token.is_none() {
+    for offset in (0..20).step_by(2) {
+        let page = vista.fetch_window(offset, 2).await?;
+        if page.rows.is_empty() {
             break;
         }
+        seen.extend(page.rows.into_iter().map(|(id, _)| id));
     }
-    // 'dup' collapses (page one returns a single record), but the scan must
-    // still reach 'tail' rather than stopping on the short page.
+    // 'dup' collapses (the first window returns a single record), but the
+    // scan must still reach 'tail'.
     assert!(
         seen.contains(&"tail".to_string()),
-        "cursor ended early on a deduped page; saw {seen:?}"
+        "scan ended early on a deduped window; saw {seen:?}"
     );
     Ok(())
 }
@@ -713,14 +724,12 @@ async fn vista_fetch_next_survives_a_non_unique_id_column() -> TestResult {
 async fn vista_paging_without_an_order_still_visits_every_row_once() -> TestResult {
     let (db, name) = setup("unordered_pages").await;
     let table = product_table(db.clone(), &name);
-    let mut vista = db.vista_factory().from_table(table)?;
-    vista.set_page_size(2)?;
-    vista.clear_orders()?;
+    let vista = db.vista_factory().from_table(table)?;
 
     let mut seen: Vec<String> = Vec::new();
-    for page in 1..=2 {
-        let rows = vista.fetch_page(page).await?;
-        seen.extend(rows.into_iter().map(|(id, _)| id));
+    for offset in [0, 2] {
+        let page = vista.fetch_window(offset, 2).await?;
+        seen.extend(page.rows.into_iter().map(|(id, _)| id));
     }
     seen.sort();
     assert_eq!(seen, ["a", "b", "c"], "each id must appear exactly once");

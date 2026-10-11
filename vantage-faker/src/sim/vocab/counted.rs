@@ -3,8 +3,8 @@
 //! writes scripts make through vantage-vista's `DataVocab` terminals.
 //!
 //! Everything else forwards through [`forward_table_shell!`], including the
-//! write the counter does not see (`delete_vista_all_values`). Copies and
-//! `ref(...)` targets stay wrapped, so their writes count as well.
+//! write the counter does not see (`delete_all`). Clones and `ref(...)`
+//! targets stay wrapped, so their writes count as well.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,6 +20,7 @@ use crate::sim::stats::Counters;
 
 type Rec = Record<CborValue>;
 
+#[derive(Clone)]
 pub(super) struct CountedShell {
     inner: Box<dyn TableShell>,
     /// The store table, when known, so an upsert that changes nothing isn't
@@ -54,85 +55,64 @@ impl CountedShell {
         }
     }
 
+    /// `vista` with its shell wrapped to count into the same counter; its
+    /// name and applied query are kept.
     fn counted(&self, vista: Vista) -> Vista {
-        let name = vista.name().to_string();
-        let shell = CountedShell {
-            inner: vista.source,
+        let writes = self.writes.clone();
+        vista.map_shell(|inner| CountedShell {
+            inner,
             table: None,
-            writes: self.writes.clone(),
-        };
-        Vista::new(name, Box::new(shell))
+            writes,
+        })
     }
 }
 
 forward_table_shell!(CountedShell, inner, {
-    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-        Some(Box::new(CountedShell {
-            inner: self.inner.clone_shell()?,
-            table: self.table.clone(),
-            writes: self.writes.clone(),
-        }))
-    }
-
-    fn get_ref(&self, relation: &str, row: &Rec) -> Result<Vista> {
+    fn get_ref(&self, relation: &str, row: Option<&Rec>) -> Result<Vista> {
         Ok(self.counted(self.inner.get_ref(relation, row)?))
     }
 
-    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        Ok(self.counted(self.inner.get_ref_target(relation)?))
-    }
-
     /// An insert of an existing id changes nothing and does not count.
-    async fn insert_vista_value(&self, vista: &Vista, id: &String, record: &Rec) -> Result<Rec> {
+    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
         let before = self.table_writes();
-        let row = self.inner.insert_vista_value(vista, id, record).await?;
+        let stored = self.inner.insert(id, record).await?;
         self.bump_if_changed(before);
-        Ok(row)
+        Ok(stored)
     }
 
-    async fn replace_vista_value(&self, vista: &Vista, id: &String, record: &Rec) -> Result<Rec> {
-        let row = self.inner.replace_vista_value(vista, id, record).await?;
+    async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {
+        let row = self.inner.replace(id, record).await?;
         self.bump();
         Ok(row)
     }
 
     /// An upsert that leaves the row as it was does not count.
-    async fn upsert_vista_value(&self, vista: &Vista, id: &String, record: &Rec) -> Result<Rec> {
+    async fn upsert(&self, id: &str, record: &Rec) -> Result<Rec> {
         let before = self.table_writes();
-        let row = self.inner.upsert_vista_value(vista, id, record).await?;
+        let row = self.inner.upsert(id, record).await?;
         self.bump_if_changed(before);
         Ok(row)
     }
 
-    async fn patch_vista_value(&self, vista: &Vista, id: &String, partial: &Rec) -> Result<Rec> {
-        let row = self.inner.patch_vista_value(vista, id, partial).await?;
+    async fn patch(&self, id: &str, partial: &Rec) -> Result<Rec> {
+        let row = self.inner.patch(id, partial).await?;
         self.bump();
         Ok(row)
     }
 
-    async fn delete_vista_value(&self, vista: &Vista, id: &String) -> Result<()> {
+    async fn delete(&self, id: &str) -> Result<()> {
         let before = self.table_writes();
-        self.inner.delete_vista_value(vista, id).await?;
+        self.inner.delete(id).await?;
         self.bump_if_changed(before);
         Ok(())
     }
 
-    async fn insert_vista_return_id_value(&self, vista: &Vista, record: &Rec) -> Result<String> {
-        let id = self
-            .inner
-            .insert_vista_return_id_value(vista, record)
-            .await?;
-        self.bump();
-        Ok(id)
-    }
-
-    async fn import_vista_values(
-        &self,
-        vista: &Vista,
-        records: &IndexMap<String, Rec>,
-    ) -> Result<usize> {
-        let n = self.inner.import_vista_values(vista, records).await?;
+    async fn import(&self, rows: &IndexMap<String, Rec>) -> Result<usize> {
+        let n = self.inner.import(rows).await?;
         self.writes.fetch_add(n as u64, Ordering::Relaxed);
         Ok(n)
     }
 });
+
+#[cfg(test)]
+mod tests;

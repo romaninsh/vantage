@@ -7,7 +7,9 @@ use indexmap::IndexMap;
 use serde_json::json;
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
-use vantage_vista::{DataVocab, Handle, RecordDraft, TargetResolver, Vista, Writes};
+use vantage_vista::{
+    DataVocab, Handle, RecordDraft, TargetResolver, Vista, Writes, mocks::MockShell,
+};
 
 use super::support::{json, read_write, run, shop};
 
@@ -125,7 +127,7 @@ fn row_without_table() {
     .into_iter()
     .collect();
 
-    let no_table: TargetResolver = Arc::new(|_| Ok(Vista::empty("row")));
+    let no_table: TargetResolver = Arc::new(|_| Ok(Vista::new("row", MockShell::new())));
     let row = RecordDraft::from_row(
         Handle::named("row"),
         Some(no_table),

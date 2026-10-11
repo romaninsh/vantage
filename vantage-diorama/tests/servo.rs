@@ -54,7 +54,7 @@ fn product_vista(shell: &MockShell) -> Vista {
         .with_column(Column::new("price", "int"))
         .with_column(Column::new("stock", "int"))
         .with_id_column("id");
-    Vista::new("products", Box::new(shell.clone().with_metadata(metadata)))
+    Vista::new("products", shell.clone().with_metadata(metadata))
 }
 
 /// Dio over an in-memory cache seeded from the master's current rows.
@@ -600,7 +600,7 @@ async fn a_create_settles_on_a_renamed_id_column() -> Result<()> {
         .with_column(Column::new("sku", "String").with_flag("id"))
         .with_column(Column::new("name", "String").with_flag("title"))
         .with_id_column("sku");
-    let vista = Vista::new("products", Box::new(shell.clone().with_metadata(metadata)));
+    let vista = Vista::new("products", shell.clone().with_metadata(metadata));
     let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
     let dio = lens.make_dio(vista).await?;
 

@@ -92,7 +92,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
 
     /// Mark the id column as backend-made (SQL auto-increment, SurrealDB
     /// generated record ids, MongoDB ObjectIds). Vista metadata then flags it
-    /// [`AUTO`](vantage_vista::flags::AUTO).
+    /// [`ColumnFlag::Auto`](vantage_vista::ColumnFlag::Auto).
     pub fn with_auto_id(mut self) -> Self {
         self.id_auto = true;
         self

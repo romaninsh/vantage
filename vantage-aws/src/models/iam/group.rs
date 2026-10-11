@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::models::request_param;
 use crate::types::{Arn, AwsDateTime};
 use crate::{AwsAccount, eq};
 
@@ -52,6 +53,7 @@ pub(crate) fn groups_for_user_table(aws: AwsAccount) -> Table<AwsAccount, Group>
         .with_column_of::<Arn>("Arn")
         .with_column_of::<String>("Path")
         .with_column_of::<AwsDateTime>("CreateDate")
+        .with_column(request_param("UserName"))
 }
 
 impl Group {

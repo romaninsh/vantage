@@ -5,8 +5,9 @@ use std::sync::{Arc, Mutex, RwLock};
 use ciborium::Value as CborValue;
 use tokio::sync::{Notify, mpsc, watch};
 use vantage_core::Result;
-use vantage_vista::VistaCapabilities;
+use vantage_vista::{Capability, VistaCapabilities};
 
+use crate::dio::query_index::index_key;
 use crate::dio::{Dio, DioInner, Generation};
 
 use super::helpers::op_conditions_key;
@@ -181,13 +182,6 @@ impl TableSceneryBuilder {
         // `titles_only` picker keys distinctly from a full grid so the picker
         // never inherits the grid's detail hydration.
         let key = {
-            let vista_sort = sort.as_ref().map(|(col, dir)| {
-                let dir = match dir {
-                    SortDir::Asc => vantage_vista::SortDirection::Ascending,
-                    SortDir::Desc => vantage_vista::SortDirection::Descending,
-                };
-                (col.as_str(), dir)
-            });
             // Demand joins the dedup key: a tree demanding [name, kind] and a
             // grid demanding [.., size] over the same query are DISTINCT
             // sceneries — sharing one would erase the cheaper view's savings.
@@ -201,10 +195,7 @@ impl TableSceneryBuilder {
             };
             let mut key = format!(
                 "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
-                dio.master
-                    .read()
-                    .unwrap()
-                    .index_key(&conditions, vista_sort),
+                index_key(&dio.master.read().unwrap(), &conditions, sort.as_ref()),
                 op_conditions_key(&op_conditions),
                 titles_only as u8,
                 demand_key,
@@ -226,11 +217,11 @@ impl TableSceneryBuilder {
         let (gen_tx, _gen_rx) = watch::channel(Generation::default());
         let (viewport_tx, viewport_rx) = mpsc::unbounded_channel();
 
-        let master_capabilities = dio.master.read().unwrap().capabilities().clone();
+        let master_capabilities = *dio.master.read().unwrap().capabilities();
 
         // Two-pass engages when the Dio owns augmentation, or the Lens registers
         // an explicit `on_load_detail` callback. The shared per-query index is
-        // keyed by the master Vista's index_key over the scenery's conditions +
+        // keyed by the master Vista's index key over the scenery's conditions +
         // sort, so reopening the same variant reuses the already-built index.
         let two_pass = dio.is_two_pass();
         // Whether the visible set is refined locally is derived from the query
@@ -238,19 +229,8 @@ impl TableSceneryBuilder {
         // captured here: `set_sort` changes the answer, and a
         // value frozen at open made a later sort a silent no-op.
         let index = if two_pass {
-            let vista_sort = sort.as_ref().map(|(col, dir)| {
-                let dir = match dir {
-                    SortDir::Asc => vantage_vista::SortDirection::Ascending,
-                    SortDir::Desc => vantage_vista::SortDirection::Descending,
-                };
-                (col.as_str(), dir)
-            });
-            let mut key = dio
-                .master
-                .read()
-                .unwrap()
-                .index_key(&conditions, vista_sort);
-            // Operator filters live outside the vista's eq-only index_key, so
+            let mut key = index_key(&dio.master.read().unwrap(), &conditions, sort.as_ref());
+            // Operator filters live outside the eq-only index key, so
             // fold them into the shared-index key here — two op-filter variants
             // must not collide onto one ordered index.
             key.push('\u{1}');
@@ -318,21 +298,20 @@ impl TableSceneryBuilder {
         // Said once, at open, so the rest of the session reads against it.
         {
             let caps = &state.master_capabilities;
+            // Every shell counts, so `count` is never missing.
             let can: Vec<&str> = [
-                caps.can_count.then_some("count"),
-                caps.can_fetch_window.then_some("window"),
-                caps.can_fetch_page.then_some("page"),
-                caps.can_fetch_next.then_some("cursor"),
-                caps.can_order.then_some("order"),
-                caps.can_search.then_some("search"),
+                Some("count"),
+                caps.has(Capability::Window).then_some("window"),
+                caps.has(Capability::Cursor).then_some("cursor"),
+                caps.has(Capability::Order).then_some("order"),
+                caps.has(Capability::Search).then_some("search"),
             ]
             .into_iter()
             .flatten()
             .collect();
             let cannot: Vec<&str> = [
-                (!caps.can_count).then_some("count"),
-                (!caps.can_order).then_some("order"),
-                (!caps.can_search).then_some("search"),
+                (!caps.has(Capability::Order)).then_some("order"),
+                (!caps.has(Capability::Search)).then_some("search"),
             ]
             .into_iter()
             .flatten()
@@ -679,10 +658,10 @@ async fn restore_meta_total(state: &Arc<TableSceneryState>, dio: &Arc<DioInner>)
 ///
 /// A lens making only one offer keeps that offer regardless of capability:
 /// there is no alternative to fall back to, and a paged lens over a master that
-/// does not advertise `can_fetch_window` is a legitimate arrangement — the
+/// does not advertise `Window` is a legitimate arrangement — the
 /// callback may know how to window a source the Vista can't describe.
 fn pages_lazily(dio: &Arc<DioInner>, master: &VistaCapabilities) -> bool {
     let can_page = dio.lens.callbacks.on_load_chunk.is_some();
     let can_warm = dio.lens.callbacks.on_start.is_some();
-    can_page && (!can_warm || master.can_fetch_window)
+    can_page && (!can_warm || master.has(Capability::Window))
 }

@@ -22,6 +22,7 @@ use vantage_expressions::{
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
 use vantage_table::column::core::{Column, ColumnType};
+use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -30,6 +31,18 @@ use crate::cmd::Cmd;
 use crate::condition::CmdCondition;
 use crate::rhai_engine::QueryContext;
 use crate::types::{cbor_to_string, json_to_cbor};
+
+/// The condition fields a row must carry to match: the declared columns
+/// that aren't `hidden`. A hidden column, or a field the table doesn't
+/// declare, is a request flag the script consumes; rows needn't carry it.
+fn required_fields<E: Entity<CborValue>>(table: &Table<Cmd, E>) -> Vec<String> {
+    table
+        .columns()
+        .iter()
+        .filter(|(_, column)| !column.flags().contains(&ColumnFlag::Hidden))
+        .map(|(name, _)| name.clone())
+        .collect()
+}
 
 /// Convert script-produced JSON rows into id-keyed records. The id comes
 /// from the `id_field` value on each row, falling back to the row index.
@@ -60,10 +73,40 @@ fn rows_to_records(
     records
 }
 
+/// The DETAIL script's answer for `id`: the row keyed by `id`; else, when
+/// the script returned exactly one row and that row carries no id, that row
+/// stamped with `id` (detail scripts commonly return just the extra fields).
+/// A row carrying another id, or several id-less rows, answer `None`.
+fn detail_row(
+    mut records: IndexMap<String, Record<CborValue>>,
+    id_field: Option<&str>,
+    id: &str,
+) -> Option<Record<CborValue>> {
+    if let Some(row) = records.shift_remove(id) {
+        return Some(row);
+    }
+    if records.len() != 1 {
+        return None;
+    }
+    let (_, mut row) = records.pop()?;
+    let carried = id_field
+        .and_then(|f| row.get(f))
+        .is_some_and(|v| !cbor_to_string(v).is_empty());
+    if carried {
+        return None;
+    }
+    if let Some(field) = id_field {
+        row.insert(field.to_string(), CborValue::Text(id.to_string()));
+    }
+    Some(row)
+}
+
 impl Cmd {
     /// Detail-script hydration for one id, with the existing list-pass `row`
     /// injected into the script scope as `row`. Falls back to the normal
-    /// list-and-pick path when the table has no detail script.
+    /// list-and-pick path when the table has no detail script. The detail
+    /// script runs without the table's conditions. Its answer is the row
+    /// keyed by `id`, or a single row carrying no id, stamped with `id`.
     pub async fn get_table_value_with_row<E>(
         &self,
         table: &Table<Self, E>,
@@ -107,11 +150,11 @@ impl Cmd {
         .await
         .map_err(|e| error!("command task failed to join", detail = e.to_string()))??;
 
-        let mut records = rows_to_records(rows, id_field.as_deref());
-        // Prefer the row matching the requested id; else the first row.
-        Ok(records
-            .shift_remove(id)
-            .or_else(|| records.into_iter().next().map(|(_, r)| r)))
+        Ok(detail_row(
+            rows_to_records(rows, id_field.as_deref()),
+            id_field.as_deref(),
+            id,
+        ))
     }
 }
 
@@ -234,16 +277,22 @@ impl TableSource for Cmd {
 
         let mut records = rows_to_records(rows, id_field.as_deref());
 
-        // Client-side safety net: re-apply `Eq` conditions naming real
-        // record fields. Fields the script consumed as request flags won't
-        // appear on the rows and are left alone.
+        // Client-side safety net: re-apply `Eq` and `In` conditions naming
+        // real record fields. A row lacking a visible declared column doesn't
+        // match; one lacking a request flag is left alone.
+        let required = required_fields(table);
         records.retain(|_id, record| {
-            conditions.iter().all(|c| match c {
-                CmdCondition::Eq { field, value } => match record.get(field) {
-                    Some(rec_val) => rec_val == value,
-                    None => true,
-                },
-                _ => true,
+            conditions.iter().all(|c| {
+                let (field, held) = match c {
+                    CmdCondition::Eq { field, value } => {
+                        (field, record.get(field).map(|v| v == value))
+                    }
+                    CmdCondition::In { field, values } => {
+                        (field, record.get(field).map(|v| values.contains(v)))
+                    }
+                    _ => return true,
+                };
+                held.unwrap_or_else(|| !required.contains(field))
             })
         });
 

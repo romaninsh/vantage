@@ -6,7 +6,9 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_expressions::{Expressive, SelectableDataSource};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{ColumnSpec, ReferenceKind, ReferenceSpec, SpecResolver, VistaSpec, flags};
+use vantage_vista::{
+    ColumnFlag, ColumnSpec, ReferenceKind, ReferenceSpec, SpecResolver, VistaSpec,
+};
 
 use crate::{source::SelectSource, table::Table, traits::table_source::TableSource};
 
@@ -30,7 +32,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         if !self.columns.contains_key(name) {
             self.add_column(build(name, spec)?);
         }
-        if spec.has_flag(flags::TITLE) {
+        if spec.has_flag(ColumnFlag::Title) {
             self.add_title_field(name);
         }
         Ok(true)
@@ -69,13 +71,14 @@ where
     /// At traversal time the reference asks `resolver` for the target's
     /// current spec and rebuilds it with `build`. Without a resolver, or on a
     /// miss or a build error, the target is a column-less `Table::new(target)`
-    /// and the next query against it fails.
+    /// and the next query against it fails. A contained kind is an error:
+    /// contained relations are declared under `contained:`.
     pub fn with_spec_references<R, S: 'static>(
         mut self,
         references: &IndexMap<String, ReferenceSpec<R>>,
         resolver: Option<SpecResolver<S>>,
         build: SpecTableBuilder<S, T>,
-    ) -> Self {
+    ) -> Result<Self> {
         for (relation, reference) in references {
             let target = reference.table.clone();
             let foreign_key = reference.foreign_key_or(relation);
@@ -92,9 +95,15 @@ where
             self = match reference.kind {
                 ReferenceKind::HasOne => self.with_one(relation, &foreign_key, build_target),
                 ReferenceKind::HasMany => self.with_many(relation, &foreign_key, build_target),
+                _ => {
+                    return Err(error!(
+                        "references: entries must be has_one or has_many",
+                        relation = relation.as_str()
+                    ));
+                }
             };
         }
-        self
+        Ok(self)
     }
 }
 

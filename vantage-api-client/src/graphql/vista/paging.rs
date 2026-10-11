@@ -12,7 +12,7 @@
 //! a consistent natural order.
 
 use ciborium::Value as CborValue;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::column::core::Column;
 use vantage_table::pagination::Pagination;
@@ -51,7 +51,7 @@ impl GraphqlApiTableShell {
         table
     }
 
-    /// List one page or window of rows as CBOR records, in server order.
+    /// List one window of rows as CBOR records, in server order.
     pub(crate) async fn list_paginated(
         &self,
         pagination: Pagination,
@@ -63,44 +63,5 @@ impl GraphqlApiTableShell {
             .into_iter()
             .map(|(id, record)| (id, Self::record_to_cbor(record)))
             .collect())
-    }
-
-    /// Page size from `set_page_size`, required before `fetch_page` and
-    /// `fetch_next`.
-    pub(crate) fn require_page_size(&self, method: &str) -> Result<usize> {
-        self.page_size.ok_or_else(|| {
-            error!(
-                "set_page_size must be called before fetching pages",
-                method = method
-            )
-        })
-    }
-
-    /// One `fetch_next` step. The token is the 1-based page number of the
-    /// next fetch (`None` is page 1); a short page — including an empty
-    /// one — ends the chain.
-    pub(crate) async fn fetch_next_page(
-        &self,
-        token: Option<CborValue>,
-    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
-        let size = self.require_page_size("fetch_next")?;
-        let page: i64 = match token {
-            None => 1,
-            Some(CborValue::Integer(n)) => {
-                i64::try_from(n).map_err(|_| error!("fetch_next token out of i64 range"))?
-            }
-            Some(_) => return Err(error!("invalid fetch_next token type for graphql driver")),
-        };
-        if page < 1 {
-            return Err(error!(
-                "fetch_next token must be a 1-based page number",
-                page = page
-            ));
-        }
-        let records = self
-            .list_paginated(Pagination::new(page, size as i64))
-            .await?;
-        let next = (records.len() == size).then(|| CborValue::Integer((page + 1).into()));
-        Ok((records, next))
     }
 }

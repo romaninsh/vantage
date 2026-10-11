@@ -63,8 +63,8 @@ pub async fn run_script(
 /// table("orders").where("status", "paid").limit(20)
 /// ```
 ///
-/// Returns the driver-shaped JSON from
-/// [`TableShell::preview_query`](crate::TableShell::preview_query). A `ref`
+/// Returns the [`Preview`](crate::Preview) from
+/// [`TableShell::preview`](crate::TableShell::preview), as JSON. A `ref`
 /// step still reads the rows it traverses from, through the resolver and the
 /// [bridge](super::block_on), so an async caller runs this under
 /// [`tokio::task::spawn_blocking`].
@@ -84,5 +84,5 @@ pub fn preview_script(
                 .to_string()
         })?;
     let vista = handle.resolve(Some(&resolver)).map_err(|e| e.to_string())?;
-    Ok(vista.preview_query())
+    serde_json::to_value(vista.preview()).map_err(|e| e.to_string())
 }

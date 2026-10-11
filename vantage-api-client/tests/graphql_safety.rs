@@ -127,7 +127,7 @@ async fn an_invalid_count_field_fails_before_any_request() {
     )
     .unwrap();
     let vista = api.vista_factory().build_from_spec(spec).unwrap();
-    let err = vista.get_count().await.unwrap_err().to_string();
+    let err = vista.count().await.unwrap_err().to_string();
     assert!(err.contains("count field"), "{err}");
     assert_eq!(requests(&server).await, 0);
 }

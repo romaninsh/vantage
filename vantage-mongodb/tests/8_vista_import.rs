@@ -21,7 +21,7 @@ use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoVistaFactory};
 use vantage_table::table::{AfterFn, BeforeFn, Hook, Phase, Table};
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Vista, VistaFactory};
+use vantage_vista::{Capability, FilterOp, Vista, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -205,7 +205,7 @@ async fn import_runs_insert_hooks_for_new_records_only() -> TestResult {
 async fn import_fills_set_columns_the_record_lacks() -> TestResult {
     let db = setup().await;
     let mut open = vista(&db, TASK);
-    open.add_condition_eq("status", CborValue::Text("open".into()))?;
+    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
     let id = ObjectId::new();
     let mut record = Record::new();
     record.insert("title".to_string(), CborValue::Text("no status".into()));
@@ -229,7 +229,7 @@ async fn import_conflicts_on_id_held_outside_the_set() -> TestResult {
     let before = stored(&db, "tasks").await?;
 
     let mut open = vista(&db, TASK);
-    open.add_condition_eq("status", CborValue::Text("open".into()))?;
+    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
     let rows = batch(vec![
         (ObjectId::new(), row("a", "open")),
         (closed, row("b", "open")),
@@ -254,7 +254,7 @@ async fn import_rolls_back_on_out_of_set_row() -> TestResult {
     let before = stored(&db, "tasks").await?;
 
     let mut open = vista(&db, TASK);
-    open.add_condition_eq("status", CborValue::Text("open".into()))?;
+    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
     let rows = batch(vec![
         (ObjectId::new(), row("a", "open")),
         (ObjectId::new(), row("b", "closed")),
@@ -346,7 +346,7 @@ async fn rows_copied_from_a_read_keep_object_id_keys() -> TestResult {
         &db,
         &TASK.replace("collection: tasks", "collection: imported"),
     );
-    open.add_condition_eq("status", CborValue::Text("open".into()))?;
+    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
     assert_eq!(open.import_values(&rows).await?, 2);
 
     for collection in ["copies", "imported"] {
@@ -369,10 +369,14 @@ async fn capabilities_without_transactions_hide_import() -> TestResult {
     let off = MongoVistaFactory::new(db.clone())
         .with_change_streams(false)
         .build_from_spec(spec.clone())?;
-    assert!(!off.capabilities().can_import);
+    assert!(!off.capabilities().has(Capability::Import));
+    let Err(err) = off.import_values(&IndexMap::new()).await else {
+        panic!("import must be unsupported");
+    };
+    assert!(err.is_unsupported(), "{err:?}");
 
     let default = MongoVistaFactory::new(db.clone()).build_from_spec(spec)?;
-    assert!(default.capabilities().can_import);
+    assert!(default.capabilities().has(Capability::Import));
 
     teardown(&db).await;
     Ok(())

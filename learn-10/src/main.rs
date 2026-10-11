@@ -31,7 +31,7 @@ async fn run() -> VantageResult<()> {
         .vista_factory()
         .with_notify(true)
         .from_table(Product::table(db.clone()))?;
-    master.add_order("created", SortDirection::Ascending)?;
+    master.set_order(Some(("created", SortDirection::Ascending)))?;
 
     // Eager cache, and no refresh timer at all: the NOTIFY listener refreshes
     // the instant a write lands, never on a poll.

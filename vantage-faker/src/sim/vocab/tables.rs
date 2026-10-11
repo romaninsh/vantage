@@ -9,7 +9,7 @@ use vantage_core::{Result, error};
 use vantage_memory::vista::Catalog;
 use vantage_memory::{MemoryStore, MemoryTableHandle, MemoryTableShell};
 use vantage_rhai::rhai::Engine;
-use vantage_vista::{Column, Handle, TargetResolver, Vista, VistaMetadata, flags};
+use vantage_vista::{Column, ColumnFlag, Handle, TargetResolver, Vista, VistaMetadata};
 
 use super::counted::CountedShell;
 use crate::FakerColumn;
@@ -29,31 +29,35 @@ pub(super) fn memory_resolver(
         if !store.table_names().iter().any(|n| n == name) {
             return Err(error!("no table in this store", table = name));
         }
-        let table = store.table(name);
-        let metadata = catalog
-            .get(name)
-            .unwrap_or_else(|| table_metadata(&table, columns.get(name)));
-        let shell = MemoryTableShell::new(table, metadata, catalog.clone());
-        Ok(Vista::new(
-            name,
-            Box::new(CountedShell::new(shell, writes.clone())),
-        ))
+        let shell = catalog.shell(name).unwrap_or_else(|| {
+            let table = store.table(name);
+            let declared = columns.get(name);
+            let metadata = table_metadata(&table, declared);
+            let untyped = declared.into_iter().flatten().map(|c| c.name.clone());
+            MemoryTableShell::new(table, metadata, catalog.clone()).with_untyped_columns(untyped)
+        });
+        Ok(Vista::new(name, CountedShell::new(shell, writes.clone())))
     })
 }
 
 /// A table with no catalog entry: its id column, plus every declared column
 /// as orderable and searchable, so a sim can `sort`/`search` by what it
-/// declared for `fake_row()`. An undeclared column stays usable for `where`
-/// (which is not flag-gated) but not `sort`.
+/// declared for `fake_row()`. A `where` on an undeclared column is an error
+/// once the table declares any column; a table that declares none takes a
+/// `where` on any column, but no `sort`.
+///
+/// A column's type here is a generation hint (a `faker:` generator decides
+/// the cell's real form), and generated rows are stored as given, so the
+/// resolver marks every column untyped: sim writes are stored as given too.
 fn table_metadata(table: &MemoryTableHandle, declared: Option<&Vec<FakerColumn>>) -> VistaMetadata {
     let id_column = table.id_column().to_string();
     let mut meta = VistaMetadata::new().with_id_column(id_column.clone());
     for col in declared.into_iter().flatten() {
         let mut column = Column::new(&col.name, &col.ty)
-            .with_flag(flags::ORDERABLE)
-            .with_flag(flags::SEARCHABLE);
+            .with_flag(ColumnFlag::Orderable)
+            .with_flag(ColumnFlag::Searchable);
         if col.name == id_column {
-            column = column.with_flag(flags::ID);
+            column = column.with_flag(ColumnFlag::Id);
         }
         meta = meta.with_column(column);
     }

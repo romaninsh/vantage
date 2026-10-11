@@ -292,12 +292,8 @@ impl Servo {
                         // though the user never typed it.
                         Some(id) => {
                             let mut record = data.clone();
-                            let id_column = self
-                                .dio
-                                .master()
-                                .get_id_column()
-                                .unwrap_or("id")
-                                .to_string();
+                            let id_column =
+                                self.dio.master().id_column().unwrap_or("id").to_string();
                             if record.get(&id_column).is_none() {
                                 record.insert(id_column, CborValue::Text(id.clone()));
                             }
@@ -460,12 +456,7 @@ impl Servo {
 
     /// Resolve an insert id from the record's id column.
     fn id_from_record(&self, data: &Record<CborValue>) -> Result<String> {
-        let id_column = self
-            .dio
-            .master()
-            .get_id_column()
-            .unwrap_or("id")
-            .to_string();
+        let id_column = self.dio.master().id_column().unwrap_or("id").to_string();
         let id = data
             .get(&id_column)
             .map(cbor_scalar_string)

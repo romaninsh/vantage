@@ -4,7 +4,7 @@
 //! A single [`Vista`] reads one table from one driver and can traverse its
 //! own *same-persistence* references (forwarded to the typed `Table`'s
 //! `with_one`/`with_many`, gated by
-//! [`VistaCapabilities::can_traverse_to_record`](vantage_vista::VistaCapabilities)).
+//! [`Capability::Traverse`](vantage_vista::Capability)).
 //! It deliberately knows nothing about *other* datasources.
 //!
 //! [`VistaCatalog`] sits one layer up: it is given the set of models in the
@@ -28,7 +28,7 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_types::Record;
-use vantage_vista::{ReferenceKind, Vista};
+use vantage_vista::{Capability, FilterOp, ReferenceKind, Vista};
 
 /// Produces a fresh, unconditioned target [`Vista`] on demand.
 ///
@@ -118,13 +118,13 @@ impl Relation {
                     field = self.narrow_via.as_str()
                 )
             })?;
-            target.add_condition_eq(self.foreign_key.clone(), value)?;
+            target.add_condition(&self.foreign_key, FilterOp::Eq, value)?;
         } else {
             for (child_col, parent_col) in &self.keys {
                 let value = parent_row.get(parent_col).cloned().ok_or_else(|| {
                     error!("parent row missing join field", field = parent_col.as_str())
                 })?;
-                target.add_condition_eq(child_col.clone(), value)?;
+                target.add_condition(child_col, FilterOp::Eq, value)?;
             }
         }
         Ok(())
@@ -209,7 +209,7 @@ impl VistaCatalog {
     ///
     /// Prefers the parent's own **same-persistence** reference when the parent
     /// shell declares it and advertises
-    /// [`can_traverse_to_record`](vantage_vista::VistaCapabilities::can_traverse_to_record)
+    /// [`Capability::Traverse`]
     /// — that path stays entirely inside one driver. Otherwise falls back to a
     /// registered **cross-persistence** [`Relation`] for `source_model`.
     pub fn traverse_from(
@@ -219,10 +219,10 @@ impl VistaCatalog {
         relation: &str,
         parent_row: &Record<CborValue>,
     ) -> Result<Vista> {
-        let same_persistence = parent.capabilities().can_traverse_to_record
-            && parent.get_references().iter().any(|r| r == relation);
+        let same_persistence =
+            parent.capabilities().has(Capability::Traverse) && parent.reference(relation).is_some();
         if same_persistence {
-            return parent.get_ref(relation, parent_row);
+            return parent.get_ref(relation, Some(parent_row));
         }
         let rel = self
             .relations_for(source_model)
@@ -277,7 +277,7 @@ mod tests {
                         record(&[("id", text("b1")), ("name", text("Marty's"))]),
                     )
                     .with_record("b2", record(&[("id", text("b2")), ("name", text("Other"))]));
-                Ok(Vista::new("bakery", Box::new(source)))
+                Ok(Vista::new("bakery", source))
             }),
         );
 
@@ -289,7 +289,7 @@ mod tests {
                     .with_column(Column::new("bakery_id", "String"))
                     .with_id_column("id");
                 let source = MockShell::new().with_metadata(meta);
-                Ok(Vista::new("client", Box::new(source)))
+                Ok(Vista::new("client", source))
             }),
         );
 
@@ -364,7 +364,7 @@ mod tests {
                     "c1",
                     record(&[("id", text("c1")), ("launch_id", text("L1"))]),
                 );
-                Ok(Vista::new("launch_crew", Box::new(source)))
+                Ok(Vista::new("launch_crew", source))
             }),
         );
         cat.register_relation(
