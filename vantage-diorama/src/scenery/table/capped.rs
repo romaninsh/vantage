@@ -82,6 +82,10 @@ impl TableScenery for CappedScenery {
         self.inner.search_supported()
     }
 
+    fn terms_supported(&self, terms: &[super::OpCondition]) -> bool {
+        self.inner.terms_supported(terms)
+    }
+
     fn request_refresh(&self) {
         self.inner.request_refresh();
     }
@@ -100,6 +104,14 @@ impl TableScenery for CappedScenery {
 
     fn filter_terms(&self) -> Vec<super::OpCondition> {
         self.inner.filter_terms()
+    }
+
+    /// A cap bounds what is shown, not which rows belong to the set.
+    fn count_where(
+        &self,
+        terms: Vec<super::OpCondition>,
+    ) -> futures::future::BoxFuture<'static, vantage_core::Result<Option<usize>>> {
+        self.inner.count_where(terms)
     }
 
     fn subscribe(&self) -> watch::Receiver<Generation> {
