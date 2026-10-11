@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ec34408f.js";
+            window.path_to_searchindex_js = "searchindex-a200e684.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-06e7dd88.js"></script>
@@ -331,11 +331,13 @@ joins via <code>$lookup</code>, which compares types strictly: a string foreign 
 <tr><td><code>mongo: { pipeline: [...] }</code></td><td>Read-only view over an aggregation pipeline (<code>MongoView</code>)</td></tr>
 <tr><td><code>mongo: { rhai: "..." }</code></td><td>Builds the pipeline in Rhai from <code>args</code> (<code>rhai</code> feature)</td></tr>
 <tr><td><code>mongo: { modify: "..." }</code></td><td>Rhai run last against the built vista as <code>self</code></td></tr>
+<tr><td><code>mongo: { view: true }</code></td><td>The collection is a server-side view: read-only, not watched, not imported</td></tr>
 </tbody>
 </table>
 </div>
 <p>Change streams (<code>watch_vista</code>) and <code>import_vista_values</code> need a replica set; see
-<a href="./live-data.html">Live data</a>.</p>
+<a href="./live-data.html">Live data</a>. Streams run on a dedicated client sized by
+<code>MongoDB::with_stream_pool_size</code> (default 100).</p>
 <p>CSV is also the one driver whose <em>table</em> block is mandatory — <code>csv: { path: data/products.csv }</code> —
 because without a path there is no file.</p>
 <hr>

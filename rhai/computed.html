@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ec34408f.js";
+            window.path_to_searchindex_js = "../searchindex-a200e684.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-06e7dd88.js"></script>
@@ -354,7 +354,7 @@ made, and that decides what the backend can do with it:</p>
 <tr><td>Rust after the read</td><td><code>Table::with_lazy_expression(name, …)</code></td><td>after each read, in Rust</td><td>no</td><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/base/struct.Table.html#method.with_lazy_expression" title="method vantage_table::table::base::Table::with_lazy_expression"><code>Table::with_lazy_expression</code></a></td></tr>
 <tr><td>Rust on write</td><td>a <code>BeforeSave</code> hook that stores the value</td><td>on insert and update</td><td>yes (it’s stored)</td><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/hooks/enum.Hook.html" title="enum vantage_table::table::hooks::Hook"><code>Hook</code></a></td></tr>
 <tr><td>Rhai <code>lazy:</code></td><td>this chapter</td><td>after each read, in the Vista</td><td>no</td><td>—</td></tr>
-<tr><td>Dio <code>sugar:</code></td><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a></td><td>on the rows one Scenery reads</td><td>no</td><td>—</td></tr>
+<tr><td>Dio <code>sugar:</code></td><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a></td><td>on the rows one Scenery reads</td><td>no</td><td>—</td></tr>
 </tbody>
 </table>
 </div>
@@ -397,7 +397,7 @@ used for different things.</p>
 <p>Use <code>lazy:</code> for a value that is part of the data, such as a key, an amount or a status that
 relations and scripts need. Use <code>sugar:</code> for presentation on one page, or when the script needs
 setup (a lookup map, helpers) before the first row. Sugar is built on
-diorama’s <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a>, which merges the outputs into the rows one
+diorama’s <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a>, which merges the outputs into the rows one
 Scenery reads and strips them from anything written back. Its YAML is documented in Vantage UI’s
 skills.</p>
 

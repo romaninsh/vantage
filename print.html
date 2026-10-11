@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ec34408f.js";
+            window.path_to_searchindex_js = "searchindex-a200e684.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-06e7dd88.js"></script>
@@ -500,7 +500,7 @@ any <code>Result</code> with a standard error type.</p>
 <p><a href="https://docs.rs/vantage-sql/0.8.0/vantage_sql/sqlite/statements/select/struct.SqliteSelect.html" title="struct vantage_sql::sqlite::statements::select::SqliteSelect"><code>SqliteSelect</code></a> is the query builder for SQLite.
 Other persistences have their own —
 <a href="https://docs.rs/vantage-sql/0.8.0/vantage_sql/postgres/statements/select/struct.PostgresSelect.html" title="struct vantage_sql::postgres::statements::select::PostgresSelect"><code>PostgresSelect</code></a>,
-<a href="https://docs.rs/vantage-mongodb/1.0.0/vantage_mongodb/select/struct.MongoSelect.html" title="struct vantage_mongodb::select::MongoSelect"><code>MongoSelect</code></a> — and they all implement the
+<a href="https://docs.rs/vantage-mongodb/1.1.0/vantage_mongodb/select/struct.MongoSelect.html" title="struct vantage_mongodb::select::MongoSelect"><code>MongoSelect</code></a> — and they all implement the
 <a href="https://docs.rs/vantage-expressions/1.1.0/vantage_expressions/traits/selectable/trait.Selectable.html" title="trait vantage_expressions::traits::selectable::Selectable"><code>Selectable</code></a> trait, so the interface is identical apart from
 vendor-specific extensions. None of them need a database connection — they’re just structs that
 accumulate query parts. You build them with a chain of <code>.with_*()</code> calls:</p>
@@ -2402,7 +2402,7 @@ already knows how to render a 400.</p>
 databases is a change to the model, not to the routes, handlers, or business logic. Now we
 cash the check. <code>/categories</code>, <code>/categories/{id}</code>, and <code>/categories/{cat_id}/products</code> keep
 their exact URL shape, response bodies, and behaviour — but the data lives in
-<a href="https://docs.rs/vantage-mongodb/1.0.0/vantage_mongodb/mongodb/struct.MongoDB.html" title="struct vantage_mongodb::mongodb::MongoDB"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage-sql/0.8.0/vantage_sql/sqlite/struct.SqliteDB.html" title="struct vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a>.</p>
+<a href="https://docs.rs/vantage-mongodb/1.1.0/vantage_mongodb/mongodb/struct.MongoDB.html" title="struct vantage_mongodb::mongodb::MongoDB"><code>MongoDB</code></a> instead of <a href="https://docs.rs/vantage-sql/0.8.0/vantage_sql/sqlite/struct.SqliteDB.html" title="struct vantage_sql::sqlite::SqliteDB"><code>SqliteDB</code></a>.</p>
 <p>Start Mongo — Docker is the easiest way:</p>
 <pre><code class="language-sh">docker run -d --name mongo-learn -p 27017:27017 mongo:7
 </code></pre>
@@ -2513,7 +2513,7 @@ URL’s <code>cat_id</code> string directly:</p>
 })
 <span class="boring">}</span></code></pre>
 <p><code>.eq(&amp;str)</code> works here because <code>vantage-mongodb</code>’s <code>From&lt;&amp;str&gt;</code> for
-<a href="https://docs.rs/vantage-mongodb/1.0.0/vantage_mongodb/types/struct.AnyMongoType.html" title="struct vantage_mongodb::types::AnyMongoType"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
+<a href="https://docs.rs/vantage-mongodb/1.1.0/vantage_mongodb/types/struct.AnyMongoType.html" title="struct vantage_mongodb::types::AnyMongoType"><code>AnyMongoType</code></a> auto-promotes 24-character hex strings to
 <code>ObjectId</code> and leaves everything else as <code>String</code>. The comparison fires with the right BSON type
 whichever <code>_id</code> convention the collection uses.</p>
 <h3 id="mainrs"><a class="header" href="#mainrs">main.rs</a></h3>
@@ -3608,7 +3608,7 @@ for when persistence isn’t wanted.</li>
 <li><strong><code>.on_start(...)</code></strong> fires once, inside <code>make_dio</code>. Callbacks receive <code>&amp;Dio</code> and clone it to
 hold across <code>.await</code> — a cheap <code>Arc</code> bump; every Lens callback follows this shape.</li>
 <li><strong><code>make_dio</code></strong> does the rest in one call: opens a cache table named after the master, spawns
-the write worker, runs <code>on_start</code>, and hands back the <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/struct.Dio.html" title="struct vantage_diorama::dio::Dio"><code>Dio</code></a>.</li>
+the write worker, runs <code>on_start</code>, and hands back the <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/struct.Dio.html" title="struct vantage_diorama::dio::Dio"><code>Dio</code></a>.</li>
 </ul>
 <p><code>sync</code> is where the cursor pays off. Instead of one big <code>list_values()</code>, it pulls the listing
 <strong>one page at a time</strong> and seeds the cursor from the cache:</p>
@@ -3700,7 +3700,7 @@ escape hatch back to the truth.</p>
 <hr>
 <h2 id="the-event-bus"><a class="header" href="#the-event-bus">The event bus</a></h2>
 <p>One more thing <code>make_dio</code> set up, invisibly: every Dio carries a <strong>broadcast event bus</strong>.
-Anything that changes data announces it there as a <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/event_bus/enum.DioEvent.html" title="enum vantage_diorama::dio::event_bus::DioEvent"><code>DioEvent</code></a> —
+Anything that changes data announces it there as a <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/event_bus/enum.DioEvent.html" title="enum vantage_diorama::dio::event_bus::DioEvent"><code>DioEvent</code></a> —
 <code>DatasetChanged</code> when the set of records was rewritten wholesale, <code>RecordChanged</code> /
 <code>RecordInserted</code> / <code>RecordRemoved</code> for row-level changes, <code>Refreshing</code> when a reconcile starts,
 <code>WriteFailed</code> when a queued write fails. Nothing in this chapter listens yet; chapter 7’s
@@ -3725,7 +3725,7 @@ everything” announcement. Chapter 7’s live view does exactly that.</p>
 <p>Our S3 listing has no way to notify us, so freshness is <em>pulled</em>: <code>sync</code> on start,
 <code>--invalidate</code> by hand, or <code>refresh_every(duration)</code> on a timer (chapter 7’s live view uses it).
 Backends that can push — a SurrealDB live query, a Kafka topic, a webhook — feed
-<a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/ops/change_event/enum.ChangeEvent.html" title="enum vantage_diorama::ops::change_event::ChangeEvent"><code>ChangeEvent</code></a>s into <code>dio.handle_event(...)</code> and reconcile through
+<a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/ops/change_event/enum.ChangeEvent.html" title="enum vantage_diorama::ops::change_event::ChangeEvent"><code>ChangeEvent</code></a>s into <code>dio.handle_event(...)</code> and reconcile through
 an <code>on_event</code> callback instead, using the same row-level helpers. Same cache, same events — only
 the trigger differs.</p>
 </div>
@@ -3780,13 +3780,13 @@ ops are applied to the master directly, and a master that can’t take them surf
 <tbody>
 <tr><td><code>AwsAccount::public(region)</code></td><td>Unsigned requests — public buckets, no credentials</td></tr>
 <tr><td>Cursor in the table name (<code>@req=resp</code>)</td><td>Auto-pagination: one <code>list()</code>, as many requests as needed</td></tr>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/lens/struct.Lens.html" title="struct vantage_diorama::lens::Lens"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, refresh policy</td></tr>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/struct.Dio.html" title="struct vantage_diorama::dio::Dio"><code>Dio</code></a></td><td>Binding of master Vista + Lens; owns cache, queue, event bus</td></tr>
-<tr><td><code>cache_at</code> / <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/lens/cache_backend/trait.CacheBackend.html" title="trait vantage_diorama::lens::cache_backend::CacheBackend"><code>CacheBackend</code></a></td><td>Persistent (redb) or in-memory storage for cached rows</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/lens/struct.Lens.html" title="struct vantage_diorama::lens::Lens"><code>Lens</code></a></td><td>Shared infrastructure: cache, callbacks, refresh policy</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/struct.Dio.html" title="struct vantage_diorama::dio::Dio"><code>Dio</code></a></td><td>Binding of master Vista + Lens; owns cache, queue, event bus</td></tr>
+<tr><td><code>cache_at</code> / <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/lens/cache_backend/trait.CacheBackend.html" title="trait vantage_diorama::lens::cache_backend::CacheBackend"><code>CacheBackend</code></a></td><td>Persistent (redb) or in-memory storage for cached rows</td></tr>
 <tr><td><code>fetch_next(token)</code></td><td>One page per call; S3’s token is the last key — durable</td></tr>
 <tr><td><code>dio.cache()</code> / <code>dio.master()</code></td><td>The two sides of the Dio, directly addressable from callbacks</td></tr>
 <tr><td><code>dio.vista()</code></td><td>Facade Vista: reads from cache, writes through the queue</td></tr>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/event_bus/enum.DioEvent.html" title="enum vantage_diorama::dio::event_bus::DioEvent"><code>DioEvent</code></a></td><td>Bus event: invalidated, record-level changes, write failures</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/event_bus/enum.DioEvent.html" title="enum vantage_diorama::dio::event_bus::DioEvent"><code>DioEvent</code></a></td><td>Bus event: invalidated, record-level changes, write failures</td></tr>
 </tbody>
 </table>
 </div>
@@ -3966,7 +3966,7 @@ let dio = lens.make_dio(master).await?.augment(
     }],
 );
 <span class="boring">}</span></code></pre>
-<p>An <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/augment/struct.Augmentation.html" title="struct vantage_diorama::augment::Augmentation"><code>Augmentation</code></a> answers four questions:</p>
+<p>An <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/augment/struct.Augmentation.html" title="struct vantage_diorama::augment::Augmentation"><code>Augmentation</code></a> answers four questions:</p>
 <ul>
 <li><strong><code>detail</code></strong> — <em>where do detail records come from?</em> <code>Detail::Fixed</code> holds our augmenter Vista
 directly. (<code>Detail::Catalog(name)</code> resolves one by name instead — the config-driven form,
@@ -4120,7 +4120,7 @@ the fetch is retried the next time the viewport reaches for it.</p>
 <tbody>
 <tr><td><code>with_lazy_expression(name, callback)</code></td><td>A column computed in Rust on the returned record; chains in order</td></tr>
 <tr><td><code>s3::get_object</code></td><td>Raw object fetch through the same (unsigned) driver</td></tr>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/augment/struct.Augmentation.html" title="struct vantage_diorama::augment::Augmentation"><code>Augmentation</code></a></td><td>Declares detail source, row→detail mapping, fetch style, merge</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/augment/struct.Augmentation.html" title="struct vantage_diorama::augment::Augmentation"><code>Augmentation</code></a></td><td>Declares detail source, row→detail mapping, fetch style, merge</td></tr>
 <tr><td><code>Detail::Fixed</code> / <code>Detail::Catalog</code></td><td>Detail Vista held directly, or resolved by name from a catalog</td></tr>
 <tr><td><code>Source::Column { from, to }</code></td><td>Master column → detail condition (our <code>Key</code> → <code>prefix</code>)</td></tr>
 <tr><td><code>MergeRule</code></td><td>Which detail columns land on the master row — and which don’t</td></tr>
@@ -4176,11 +4176,11 @@ screen changes.</p>
 <p><strong>Scenery</strong> is that layer. Each Scenery is a reactive view onto a Dio, exposing one access
 pattern:</p>
 <ul>
-<li><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a> — ordered rows by index, with a viewport</li>
-<li><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a> — a single record by id</li>
-<li><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
+<li><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a> — ordered rows by index, with a viewport</li>
+<li><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a> — a single record by id</li>
+<li><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a> — a computed scalar (count, sum, custom)</li>
 </ul>
-<p>All three share one reactivity mechanism: a <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/struct.Generation.html" title="struct vantage_diorama::dio::Generation"><code>Generation</code></a> counter
+<p>All three share one reactivity mechanism: a <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/struct.Generation.html" title="struct vantage_diorama::dio::Generation"><code>Generation</code></a> counter
 that bumps whenever the view’s state changes. Consumers <code>subscribe()</code> to a <code>watch</code> channel and
 redraw on each bump — the channel only ever holds the <em>latest</em> generation, so a burst of changes
 costs one repaint, not one per change.</p>
@@ -4402,7 +4402,7 @@ viewport reaches them. The passes are separately pluggable. The detail pass is a
 it’s chapter 6’s augmentation. The list pass, left alone, would ask the master — a full
 122-request S3 walk every time a view (re)builds its spine. But chapter 5 built something better:
 a cache that <em>is</em> the listing. Registering <code>on_list_page</code> overrides the list pass; the
-<a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/ops/query_descriptor/struct.QueryDescriptor.html" title="struct vantage_diorama::ops::query_descriptor::QueryDescriptor"><code>QueryDescriptor</code></a> argument carries the window (<code>offset</code>,
+<a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/ops/query_descriptor/struct.QueryDescriptor.html" title="struct vantage_diorama::ops::query_descriptor::QueryDescriptor"><code>QueryDescriptor</code></a> argument carries the window (<code>offset</code>,
 <code>limit</code> — plus conditions, sort, and search when the view has them), and our implementation is a
 window over the cache. The scenery’s spine now costs zero network.</p>
 <p><strong><code>refresh_every</code></strong> completes the freshness story. Once a minute the Dio reconciles its cache
@@ -4424,7 +4424,7 @@ let scenery = dio.table_scenery().page_size(200_000).open().await?;
 event bus), and hands back <code>Arc&lt;dyn TableScenery&gt;</code>. What you get is deliberately small and
 synchronous:</p>
 <ul>
-<li><code>row_count()</code> and <code>row(idx)</code> — an <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/enriched_record/struct.EnrichedRecord.html" title="struct vantage_diorama::scenery::enriched_record::EnrichedRecord"><code>EnrichedRecord</code></a>: the
+<li><code>row_count()</code> and <code>row(idx)</code> — an <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/enriched_record/struct.EnrichedRecord.html" title="struct vantage_diorama::scenery::enriched_record::EnrichedRecord"><code>EnrichedRecord</code></a>: the
 record plus a per-row status;</li>
 <li><code>set_viewport(range)</code> — more on this in a moment;</li>
 <li><code>subscribe()</code> — the generation channel from the start of the chapter.</li>
@@ -4539,10 +4539,10 @@ real UI binds to Vantage.</p>
 <tr><th>Concept</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a></td><td>Ordered rows by index; sort/search/filter served locally</td></tr>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a></td><td>Reactive aggregate — <code>count</code>, <code>sum</code>, <code>max</code>, <code>min</code>, or <code>custom</code></td></tr>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a></td><td>One record by id, same subscribe/redraw contract</td></tr>
-<tr><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/struct.Generation.html" title="struct vantage_diorama::dio::Generation"><code>Generation</code></a> / <code>subscribe()</code></td><td>Latest-value watch channel — one bump, one repaint</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a></td><td>Ordered rows by index; sort/search/filter served locally</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a></td><td>Reactive aggregate — <code>count</code>, <code>sum</code>, <code>max</code>, <code>min</code>, or <code>custom</code></td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a></td><td>One record by id, same subscribe/redraw contract</td></tr>
+<tr><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/struct.Generation.html" title="struct vantage_diorama::dio::Generation"><code>Generation</code></a> / <code>subscribe()</code></td><td>Latest-value watch channel — one bump, one repaint</td></tr>
 <tr><td>Two-pass loading</td><td>List pass builds the spine; detail pass hydrates rows in view</td></tr>
 <tr><td><code>on_list_page</code></td><td>Plug the list pass — ours serves pages from the chapter-5 cache</td></tr>
 <tr><td><code>set_viewport(range)</code></td><td>Declares what’s visible — and thereby what hydrates</td></tr>
@@ -9147,11 +9147,13 @@ joins via <code>$lookup</code>, which compares types strictly: a string foreign 
 <tr><td><code>mongo: { pipeline: [...] }</code></td><td>Read-only view over an aggregation pipeline (<code>MongoView</code>)</td></tr>
 <tr><td><code>mongo: { rhai: "..." }</code></td><td>Builds the pipeline in Rhai from <code>args</code> (<code>rhai</code> feature)</td></tr>
 <tr><td><code>mongo: { modify: "..." }</code></td><td>Rhai run last against the built vista as <code>self</code></td></tr>
+<tr><td><code>mongo: { view: true }</code></td><td>The collection is a server-side view: read-only, not watched, not imported</td></tr>
 </tbody>
 </table>
 </div>
 <p>Change streams (<code>watch_vista</code>) and <code>import_vista_values</code> need a replica set; see
-<a href="#live-data-push-poll--freshness">Live data</a>.</p>
+<a href="#live-data-push-poll--freshness">Live data</a>. Streams run on a dedicated client sized by
+<code>MongoDB::with_stream_pool_size</code> (default 100).</p>
 <p>CSV is also the one driver whose <em>table</em> block is mandatory — <code>csv: { path: data/products.csv }</code> —
 because without a path there is no file.</p>
 <hr>
@@ -10251,7 +10253,7 @@ made, and that decides what the backend can do with it:</p>
 <tr><td>Rust after the read</td><td><code>Table::with_lazy_expression(name, …)</code></td><td>after each read, in Rust</td><td>no</td><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/base/struct.Table.html#method.with_lazy_expression" title="method vantage_table::table::base::Table::with_lazy_expression"><code>Table::with_lazy_expression</code></a></td></tr>
 <tr><td>Rust on write</td><td>a <code>BeforeSave</code> hook that stores the value</td><td>on insert and update</td><td>yes (it’s stored)</td><td><a href="https://docs.rs/vantage-table/1.3.0/vantage_table/table/hooks/enum.Hook.html" title="enum vantage_table::table::hooks::Hook"><code>Hook</code></a></td></tr>
 <tr><td>Rhai <code>lazy:</code></td><td>this chapter</td><td>after each read, in the Vista</td><td>no</td><td>—</td></tr>
-<tr><td>Dio <code>sugar:</code></td><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a></td><td>on the rows one Scenery reads</td><td>no</td><td>—</td></tr>
+<tr><td>Dio <code>sugar:</code></td><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a></td><td>on the rows one Scenery reads</td><td>no</td><td>—</td></tr>
 </tbody>
 </table>
 </div>
@@ -10294,7 +10296,7 @@ used for different things.</p>
 <p>Use <code>lazy:</code> for a value that is part of the data, such as a key, an amount or a status that
 relations and scripts need. Use <code>sugar:</code> for presentation on one page, or when the script needs
 setup (a lookup map, helpers) before the first row. Sugar is built on
-diorama’s <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a>, which merges the outputs into the rows one
+diorama’s <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/sugar/struct.Sugar.html" title="struct vantage_diorama::scenery::sugar::Sugar"><code>Sugar</code></a>, which merges the outputs into the rows one
 Scenery reads and strips them from anything written back. Its YAML is documented in Vantage UI’s
 skills.</p>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -10673,13 +10675,13 @@ Vista or registers its own vocabulary next to <code>DataVocab</code> on the same
 <code>limit</code>, <code>ref</code>, <code>save</code>, <code>is_dirty</code>. Where it means something different, it uses its own word, even
 if a data verb looks close.</p>
 <h2 id="dio-no-vocabulary-of-its-own"><a class="header" href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></h2>
-<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/struct.Dio.html#method.vista" title="method vantage_diorama::dio::Dio::vista"><code>Dio::vista()</code></a> returns a Vista whose
+<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/struct.Dio.html#method.vista" title="method vantage_diorama::dio::Dio::vista"><code>Dio::vista()</code></a> returns a Vista whose
 reads come from the Dio’s cache and whose writes are queued as flashes and written through to the
 master. A host that resolves <code>table(name)</code> to Dio Vistas gives scripts cached reads and optimistic
 writes, and the scripts are the same ones that would run against the bare backend. Vantage UI’s
 action bodies work this way.</p>
 <h2 id="servo-a-form-draft"><a class="header" href="#servo-a-form-draft">Servo: a form draft</a></h2>
-<p>A <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
+<p>A <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
 staged edits, a status and per-field rejections from the Dio’s flash route. Forms and wizards in
 Vantage UI hand one to their scripts as <code>form</code>. <code>ServoVocab</code> (<code>vantage_diorama::rhai</code>) registers
 its words:</p>
@@ -10700,7 +10702,7 @@ servo.save()
 <tr><td>read a field</td><td><code>r.col</code>, <code>r["col"]</code></td><td><code>servo.get("col")</code></td></tr>
 <tr><td>stage a field</td><td><code>r.col = v</code>, <code>r.set(map)</code></td><td><code>servo.set("col", v)</code></td></tr>
 <tr><td>id</td><td><code>r.id</code></td><td><code>servo.id()</code></td></tr>
-<tr><td>id of a new row</td><td>a UUIDv7 minted on the first save</td><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/servo/enum.IdStrategy.html" title="enum vantage_diorama::servo::IdStrategy"><code>IdStrategy</code></a>: <code>Uuid</code> (the default) mints one when the Servo opens</td></tr>
+<tr><td>id of a new row</td><td>a UUIDv7 minted on the first save</td><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/servo/enum.IdStrategy.html" title="enum vantage_diorama::servo::IdStrategy"><code>IdStrategy</code></a>: <code>Uuid</code> (the default) mints one when the Servo opens</td></tr>
 <tr><td>the whole draft</td><td>(field reads)</td><td><code>servo.record()</code></td></tr>
 <tr><td>baseline</td><td><code>r.baseline()</code></td><td><code>servo.baseline()</code></td></tr>
 <tr><td>dirty</td><td><code>r.is_dirty()</code>, <code>r.dirty(col)</code></td><td><code>servo.is_dirty()</code>, <code>servo.dirty(col)</code></td></tr>
@@ -10720,16 +10722,16 @@ on the Dio, or hide the Servo’s lifecycle behind data-vocabulary words.</p>
 <code>spawn_blocking</code>, like any data script with a network backend.</p>
 <h3 id="which-one-to-use"><a class="header" href="#which-one-to-use">Which one to use</a></h3>
 <p>Use a record for a script’s own one-off edit over any Vista; it saves when the script says so and
-is gone after. Use a <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> when a person edits: it lives in the Dio,
+is gone after. Use a <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> when a person edits: it lives in the Dio,
 outlasts the script, takes per-field rejections, and its save goes through the flash route.</p>
 <p>Unless the id is left to the backend (an <code>auto</code> id column, <code>IdStrategy::Auto</code>), both reuse their id
 when a save is retried, so neither can create a row twice (see
 <a href="#safe-writes">Safe writes</a>).</p>
 <h2 id="scenery-the-shape-of-a-view"><a class="header" href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></h2>
-<p>A Scenery is a live, reactive view over a Dio: a <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a>
+<p>A Scenery is a live, reactive view over a Dio: a <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a>
 keeps an ordered window of rows current as the Dio’s cache changes, a
-<a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a> keeps one aggregate current, and a
-<a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a> one row (see
+<a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a> keeps one aggregate current, and a
+<a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a> one row (see
 <a href="#scenery--reactive-views">Scenery — Reactive Views</a>). An application binds a widget to one.</p>
 <p><code>vantage-diorama</code> has no Scenery script words. Vantage UI adds some: a component’s <code>table:</code> binding
 can be a plain table key or a short script, <code>scenery(name)</code> followed by narrowing words, that
@@ -12674,7 +12676,7 @@ let people = stats.iter().find(|s| s.table == "people").expect("the table was re
 assert_eq!(people.repeats, 0, "the application fetched a window more than one time");
 assert_eq!(people.rows_redundant, 0, "rows arrived that the cache already held");
 <span class="boring">}</span></code></pre>
-<p><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/stats/fn.reset_fetch_stats.html" title="fn vantage_diorama::stats::reset_fetch_stats"><code>reset_fetch_stats</code></a> makes the measurement local to one
+<p><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/stats/fn.reset_fetch_stats.html" title="fn vantage_diorama::stats::reset_fetch_stats"><code>reset_fetch_stats</code></a> makes the measurement local to one
 test. The counters are global to the process and they accumulate. A test that does not reset them
 measures each test before it.</p>
 <p>To assert on the count of fetches, first measure the count for your interaction, then write that

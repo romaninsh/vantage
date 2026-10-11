@@ -36,7 +36,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ec34408f.js";
+            window.path_to_searchindex_js = "../searchindex-a200e684.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-06e7dd88.js"></script>
@@ -201,13 +201,13 @@ Vista or registers its own vocabulary next to <code>DataVocab</code> on the same
 <code>limit</code>, <code>ref</code>, <code>save</code>, <code>is_dirty</code>. Where it means something different, it uses its own word, even
 if a data verb looks close.</p>
 <h2 id="dio-no-vocabulary-of-its-own"><a class="header" href="#dio-no-vocabulary-of-its-own">Dio: no vocabulary of its own</a></h2>
-<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/dio/struct.Dio.html#method.vista" title="method vantage_diorama::dio::Dio::vista"><code>Dio::vista()</code></a> returns a Vista whose
+<p>A Dio doesn’t add script words. <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/dio/struct.Dio.html#method.vista" title="method vantage_diorama::dio::Dio::vista"><code>Dio::vista()</code></a> returns a Vista whose
 reads come from the Dio’s cache and whose writes are queued as flashes and written through to the
 master. A host that resolves <code>table(name)</code> to Dio Vistas gives scripts cached reads and optimistic
 writes, and the scripts are the same ones that would run against the bare backend. Vantage UI’s
 action bodies work this way.</p>
 <h2 id="servo-a-form-draft"><a class="header" href="#servo-a-form-draft">Servo: a form draft</a></h2>
-<p>A <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
+<p>A <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> is a draft of one record bound to a Dio. It tracks a baseline,
 staged edits, a status and per-field rejections from the Dio’s flash route. Forms and wizards in
 Vantage UI hand one to their scripts as <code>form</code>. <code>ServoVocab</code> (<code>vantage_diorama::rhai</code>) registers
 its words:</p>
@@ -228,7 +228,7 @@ servo.save()
 <tr><td>read a field</td><td><code>r.col</code>, <code>r["col"]</code></td><td><code>servo.get("col")</code></td></tr>
 <tr><td>stage a field</td><td><code>r.col = v</code>, <code>r.set(map)</code></td><td><code>servo.set("col", v)</code></td></tr>
 <tr><td>id</td><td><code>r.id</code></td><td><code>servo.id()</code></td></tr>
-<tr><td>id of a new row</td><td>a UUIDv7 minted on the first save</td><td><a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/servo/enum.IdStrategy.html" title="enum vantage_diorama::servo::IdStrategy"><code>IdStrategy</code></a>: <code>Uuid</code> (the default) mints one when the Servo opens</td></tr>
+<tr><td>id of a new row</td><td>a UUIDv7 minted on the first save</td><td><a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/servo/enum.IdStrategy.html" title="enum vantage_diorama::servo::IdStrategy"><code>IdStrategy</code></a>: <code>Uuid</code> (the default) mints one when the Servo opens</td></tr>
 <tr><td>the whole draft</td><td>(field reads)</td><td><code>servo.record()</code></td></tr>
 <tr><td>baseline</td><td><code>r.baseline()</code></td><td><code>servo.baseline()</code></td></tr>
 <tr><td>dirty</td><td><code>r.is_dirty()</code>, <code>r.dirty(col)</code></td><td><code>servo.is_dirty()</code>, <code>servo.dirty(col)</code></td></tr>
@@ -248,16 +248,16 @@ on the Dio, or hide the Servo’s lifecycle behind data-vocabulary words.</p>
 <code>spawn_blocking</code>, like any data script with a network backend.</p>
 <h3 id="which-one-to-use"><a class="header" href="#which-one-to-use">Which one to use</a></h3>
 <p>Use a record for a script’s own one-off edit over any Vista; it saves when the script says so and
-is gone after. Use a <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> when a person edits: it lives in the Dio,
+is gone after. Use a <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/servo/struct.Servo.html" title="struct vantage_diorama::servo::Servo">Servo</a> when a person edits: it lives in the Dio,
 outlasts the script, takes per-field rejections, and its save goes through the flash route.</p>
 <p>Unless the id is left to the backend (an <code>auto</code> id column, <code>IdStrategy::Auto</code>), both reuse their id
 when a save is retried, so neither can create a row twice (see
 <a href="../record-lifecycle.html#safe-writes">Safe writes</a>).</p>
 <h2 id="scenery-the-shape-of-a-view"><a class="header" href="#scenery-the-shape-of-a-view">Scenery: the shape of a view</a></h2>
-<p>A Scenery is a live, reactive view over a Dio: a <a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a>
+<p>A Scenery is a live, reactive view over a Dio: a <a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/table/trait.TableScenery.html" title="trait vantage_diorama::scenery::table::TableScenery"><code>TableScenery</code></a>
 keeps an ordered window of rows current as the Dio’s cache changes, a
-<a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a> keeps one aggregate current, and a
-<a href="https://docs.rs/vantage-diorama/0.14.1/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a> one row (see
+<a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/value/trait.ValueScenery.html" title="trait vantage_diorama::scenery::value::ValueScenery"><code>ValueScenery</code></a> keeps one aggregate current, and a
+<a href="https://docs.rs/vantage-diorama/0.14.2/vantage_diorama/scenery/record/trait.RecordScenery.html" title="trait vantage_diorama::scenery::record::RecordScenery"><code>RecordScenery</code></a> one row (see
 <a href="../intro/step7-scenery.html">Scenery — Reactive Views</a>). An application binds a widget to one.</p>
 <p><code>vantage-diorama</code> has no Scenery script words. Vantage UI adds some: a component’s <code>table:</code> binding
 can be a plain table key or a short script, <code>scenery(name)</code> followed by narrowing words, that
