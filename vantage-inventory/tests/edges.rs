@@ -1,6 +1,6 @@
 //! Edge cases of loading and registration: missing roots, default root
-//! files that never parse, kept includes, root spellings and conflicting
-//! registrations.
+//! files that never parse, kept includes, root spellings, deleted includes
+//! and conflicting registrations.
 
 #[path = "support/note.rs"]
 mod note;
@@ -83,6 +83,27 @@ fn classify_accepts_either_spelling_of_the_root() {
             Some(("note", "gone".to_string()))
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_deleted_include_reloads_its_dependents_through_a_symlinked_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real");
+    let link = dir.path().join("link");
+    write(&real, "shared/t.txt", "Hello");
+    write(&real, "note/a.yaml", "title: !include ../shared/t.txt\n");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let mut inv = Inventory::new(&link).with(NoteKind::flat());
+    inv.load().unwrap();
+
+    let include = link.join("shared/t.txt");
+    std::fs::remove_file(&include).unwrap();
+    let reload = inv.reload_path(&include);
+
+    assert_eq!(reload.failures.len(), 1, "{:?}", reload.failures);
+    assert_eq!(reload.failures[0].key, "a");
+    assert_eq!(reload.failures[0].stage, Stage::Load);
 }
 
 #[test]

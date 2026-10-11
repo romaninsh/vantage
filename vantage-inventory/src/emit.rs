@@ -4,9 +4,10 @@
 //! where `N` is the version the caller passes; bump it whenever a kind's
 //! value type changes shape. Project files opt into editor validation with
 //! a `# yaml-language-server: $schema=./<folder>-schema-<N>.json` header in
-//! their first ten lines. Older `<folder>-schema-*.json` files are deleted
-//! once no file in the folder references them, so a version stays on disk
-//! for exactly as long as something still uses it.
+//! their first ten lines. Older `<folder>-schema-<N>.json` files are
+//! deleted once no file in the folder references them, so a version stays
+//! on disk for exactly as long as something still uses it. When a YAML
+//! file in the folder cannot be read, nothing is deleted.
 //!
 //! **READMEs.** A kind with [`Kind::readme`](crate::Kind::readme) text gets
 //! it as `<folder>/README.md`.
@@ -77,10 +78,16 @@ pub fn schema_file_name(folder: &str, version: u32) -> String {
 
 /// Keep the managed block in `root/.gitignore` equal to `lines`. The block
 /// replaces an existing one in place; a file without both markers gets it
-/// appended after a blank line. Returns whether the file was written.
+/// appended after a blank line. Returns whether the file was written. A
+/// file that exists but cannot be read as text is an error and is left
+/// as it is.
 pub fn ensure_gitignore(root: &Path, lines: &[&str]) -> Result<bool> {
     let path = root.join(".gitignore");
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
+    };
 
     let mut block = format!("{GITIGNORE_BEGIN}\n");
     for line in lines {
@@ -120,7 +127,6 @@ fn remove_unreferenced_schemas(
     current: &str,
     report: &mut EmitReport,
 ) -> Result<()> {
-    let prefix = format!("{name}-schema-");
     let referenced = schema_references(folder)?;
     let mut stale: Vec<PathBuf> = std::fs::read_dir(folder)?
         .flatten()
@@ -129,10 +135,7 @@ fn remove_unreferenced_schemas(
             path.file_name()
                 .and_then(|f| f.to_str())
                 .is_some_and(|file| {
-                    file.starts_with(&prefix)
-                        && file.ends_with(".json")
-                        && file != current
-                        && !referenced.contains(file)
+                    is_schema_version(name, file) && file != current && !referenced.contains(file)
                 })
         })
         .collect();
@@ -144,9 +147,18 @@ fn remove_unreferenced_schemas(
     Ok(())
 }
 
+/// Whether `file` is `<name>-schema-<N>.json` with an integer `N`.
+fn is_schema_version(name: &str, file: &str) -> bool {
+    file.strip_prefix(name)
+        .and_then(|rest| rest.strip_prefix("-schema-"))
+        .and_then(|rest| rest.strip_suffix(".json"))
+        .is_some_and(|n| n.parse::<u32>().is_ok())
+}
+
 /// The schema file names that `*.yaml` files directly in `folder` name in
 /// a `# yaml-language-server: $schema=./<file>` header within their first
-/// ten lines.
+/// ten lines. A file that cannot be read is an error, since its reference
+/// is unknown.
 fn schema_references(folder: &Path) -> Result<HashSet<String>> {
     let mut refs = HashSet::new();
     for entry in std::fs::read_dir(folder)?.flatten() {
@@ -154,9 +166,8 @@ fn schema_references(folder: &Path) -> Result<HashSet<String>> {
         if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
+        let content =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         for line in content.lines().take(10) {
             let Some(rest) = line.strip_prefix("# yaml-language-server:") else {
                 continue;

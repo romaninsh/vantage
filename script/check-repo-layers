@@ -4,11 +4,13 @@
 # vantage-ui. vantage must not depend on vantage-lib's or vantage-ui's crates.
 #
 # Checks the workspace, then each crate listed in the workspace `exclude`
-# (those resolve on their own, so `--workspace` never sees them).
+# (those resolve on their own, so `--workspace` never sees them). An
+# excluded crate that fails to resolve is an error; an excluded dir without
+# a Cargo.toml is skipped.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 FORBIDDEN='^(vantage-spec|vantage-wizard-spec|vantage-ui-schema|vantage-actions|vantage-backend|vantage-catalog|vantage-ui|ui-[a-z-]+|vantage-ui-[a-z-]+) '
-TREE=(-e normal --all-features --prefix none --target all)
+TREE=(-e normal,build,dev --all-features --prefix none --target all)
 status=0
 
 # Prints the forbidden lines of a dependency tree and returns 1 if any.
@@ -36,7 +38,9 @@ for pattern in $excluded; do
         tree=$(cargo tree --manifest-path "$dir/Cargo.toml" "${TREE[@]}" 2>&1) || ok=0
         if [[ -n "$saved" ]]; then mv "$saved" "$lock"; else rm -f "$lock"; fi
         if [[ $ok -eq 0 ]]; then
-            echo "skipped $dir: $(grep -m1 '^error' <<<"$tree" || echo 'cargo tree failed')"
+            echo "error: cargo tree failed for $dir:"
+            echo "$tree"
+            status=1
             continue
         fi
         check_tree "$dir" "$tree" || status=1

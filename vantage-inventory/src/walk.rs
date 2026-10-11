@@ -119,10 +119,19 @@ pub(crate) fn is_dir(path: &Path) -> bool {
     path.is_dir()
 }
 
-/// The canonical spelling of `path`, or `path` itself when it cannot be
-/// resolved (for example because it was deleted).
+/// The canonical spelling of `path`. A deleted file is resolved through
+/// its parent folder; `path` itself is returned when neither resolves.
 pub(crate) fn canonical_or_same(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    path.canonicalize()
+        .ok()
+        .or_else(|| canonical_via_parent(path))
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
+/// `path` with its parent folder canonicalized, for a file that need not
+/// exist.
+fn canonical_via_parent(path: &Path) -> Option<PathBuf> {
+    Some(path.parent()?.canonicalize().ok()?.join(path.file_name()?))
 }
 
 /// A hash over the raw bytes of `path` (empty when unreadable), for a file
@@ -143,6 +152,6 @@ fn relative(root: &Path, path: &Path) -> Option<PathBuf> {
     if let Ok(rel) = path.strip_prefix(&root) {
         return Some(rel.to_path_buf());
     }
-    let parent = path.parent()?.canonicalize().ok()?;
-    Some(parent.strip_prefix(&root).ok()?.join(path.file_name()?))
+    let path = canonical_via_parent(path)?;
+    Some(path.strip_prefix(&root).ok()?.to_path_buf())
 }

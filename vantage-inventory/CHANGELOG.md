@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 — 2026-10-11
+
+- `ensure_gitignore` returns an error for an unreadable `.gitignore` instead of overwriting it.
+- `emit_schemas` removes only `<folder>-schema-<N>.json` files with an integer `N`.
+- `emit_schemas` returns an error and deletes no old schemas when a YAML file can't be read.
+- `reload_path` reloads the dependents of a deleted include given through a symlinked root.
+
 ## 0.1.0 — 2026-10-11
 
 - YAML load pipeline: `load_document`, `parse_document`, `validate_into`, `load_yaml_validated`,

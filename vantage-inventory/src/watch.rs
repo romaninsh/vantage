@@ -4,7 +4,6 @@
 //! thread owns the inventory.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
@@ -42,7 +41,7 @@ where
             Ok(_) => {}
             Err(e) => on_change(Err(e.into())),
         },
-        notify::Config::default().with_poll_interval(Duration::from_millis(500)),
+        notify::Config::default(),
     )
     .context("failed to create file watcher")?;
     watcher

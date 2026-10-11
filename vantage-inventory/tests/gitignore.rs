@@ -53,6 +53,17 @@ fn an_existing_gitignore_keeps_its_own_entries() {
 }
 
 #[test]
+fn an_unreadable_gitignore_is_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".gitignore");
+    let bytes = b"secrets.txt\n\xff\xfe not utf-8\n";
+    std::fs::write(&path, bytes).unwrap();
+
+    assert!(ensure_gitignore(dir.path(), LINES).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
 fn a_stale_block_is_replaced_not_duplicated() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
