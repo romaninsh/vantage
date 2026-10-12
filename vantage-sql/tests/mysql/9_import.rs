@@ -192,7 +192,8 @@ async fn import_empty_is_zero() -> TestResult {
 
 #[tokio::test]
 async fn import_capability_on_writable_vistas_only() -> TestResult {
-    use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
+    use vantage_sql::mysql::vista::MysqlVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, name) = setup("caps").await;
     assert!(vista(&db, &name).capabilities().has(Capability::Import));
@@ -221,7 +222,7 @@ mysql:
         .into_iter()
         .collect();
     let map = Arc::new(map);
-    let resolver: MysqlSpecResolver = Arc::new(move |n: &str| map.get(n).cloned());
+    let resolver: SpecResolver<MysqlVistaSpec> = Arc::new(move |n: &str| map.get(n).cloned());
     let factory = db.vista_factory().with_resolver(resolver);
 
     assert!(

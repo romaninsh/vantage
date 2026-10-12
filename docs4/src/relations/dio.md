@@ -94,9 +94,8 @@ augment:
 ```
 
 ```admonish info title="Script sources"
-A `{ kind: script, code: "self.where(\"key\", row.key)" }` source lowers (under the `rhai`
-feature) to a `Build` closure — the same machinery as a reference build-script, pointed at a
-possibly different persistence. See [Surfaces](../rhai/surfaces.md#augmentation-sources).
+A scripted source is a `Build` closure the consumer writes; diorama never sees a script string.
+See [Augmentation](../augmentation.md#rhai-as-a-closure-factory).
 ```
 
 To see the two passes run, try the example — two in-memory Vistas, list pass then detail pass:

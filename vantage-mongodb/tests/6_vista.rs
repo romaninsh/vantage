@@ -634,12 +634,10 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     assert!(matches!(doc.get("lines"), Some(CborValue::Array(_))));
     let lines = vista.get_ref("lines", Some(&doc))?;
     assert_eq!(lines.list_values().await?.len(), 2);
-    assert!(
-        vista
-            .get_ref("lines", None)
-            .unwrap_err()
-            .is_incorrect_usage()
-    );
+    // Without a parent document, the bare target: no records, no writes.
+    let bare = vista.get_ref("lines", None)?;
+    assert!(bare.list_values().await?.is_empty());
+    assert!(!bare.capabilities().has(vantage_vista::Capability::Insert));
 
     // Add a line — eager writeback $sets the whole array.
     let mut new = Record::new();

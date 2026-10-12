@@ -18,8 +18,8 @@ use vantage_dataset::traits::WritableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, FilterOp, Page, Preview,
-    Reference as VistaReference, TableShell, Vista, VistaCapabilities, VistaMetadata, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, VistaCapabilities, VistaMetadata,
+    unsupported,
 };
 
 use crate::log_writer::LogWriter;
@@ -73,16 +73,8 @@ fn refuse_read<T>() -> Result<T> {
 
 #[async_trait]
 impl TableShell for LogWriterTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -101,7 +93,7 @@ impl TableShell for LogWriterTableShell {
         if !self.conditions.is_empty() {
             note.push_str("; conditions are recorded but never evaluated");
         }
-        Preview::new("log-writer").with_note(note)
+        Preview::new().with_note(note)
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -151,9 +143,5 @@ impl TableShell for LogWriterTableShell {
             .map(|(k, v)| (k, vantage_types::json_to_cbor(v)))
             .collect();
         Ok((id, stored))
-    }
-
-    fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
-        unsupported(Capability::Traverse)
     }
 }

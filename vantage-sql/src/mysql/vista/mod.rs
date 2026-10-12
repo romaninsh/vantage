@@ -15,7 +15,7 @@ pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
-pub use factory::{MysqlSpecResolver, MysqlVistaFactory};
+pub use factory::MysqlVistaFactory;
 pub use source::MysqlTableShell;
 pub use spec::{
     InheritBlock, MysqlColumnBlock, MysqlColumnExtras, MysqlRefBlock, MysqlReferenceExtras,

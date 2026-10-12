@@ -16,6 +16,9 @@ use vantage_vista::Vista;
 use crate::dio::{Dio, DioInner, HotTier, worker::write_worker_loop};
 use crate::lens::{Activity, ActivitySignal, Lens};
 
+/// Events a Dio's bus holds before a slow subscriber lags.
+pub(crate) const EVENT_BUS_CAPACITY: usize = 64;
+
 impl Lens {
     /// Bind `master` to this Lens. Opens the cache table, spawns the
     /// write worker (+ refresh task if configured), fires `on_start`,
@@ -37,7 +40,7 @@ impl Lens {
         let cache = self.cache_source.open_table(&cache_table_name).await?;
 
         let (write_tx, write_rx) = mpsc::channel(self.defaults.write_queue_capacity);
-        let (event_bus, _event_rx) = broadcast::channel(64);
+        let (event_bus, _event_rx) = broadcast::channel(EVENT_BUS_CAPACITY);
 
         let inner = Arc::new(DioInner {
             _tally: crate::stats::Tally::dio(),
@@ -56,7 +59,7 @@ impl Lens {
             base_conditions: std::sync::RwLock::new(Vec::new()),
             base_sort: std::sync::RwLock::new(None),
             augmentations: std::sync::RwLock::new(None),
-            augment_catalog: std::sync::RwLock::new(None),
+            augment_resolver: std::sync::RwLock::new(None),
             augmented_columns: std::sync::RwLock::new(std::collections::HashSet::new()),
             augment_scheduler: Arc::new(crate::dio::augment_scheduler::AugmentScheduler::new()),
             augment_worker_handles: std::sync::Mutex::new(Vec::new()),

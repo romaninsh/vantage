@@ -79,16 +79,17 @@ name: activities
 columns:
   id: { type: int, flags: [id] }
   kind: { type: string }
-  mode: { type: string, flags: [hidden] }
+  note: { type: string, flags: [hidden] }
+  mode: { type: string, flags: [request_param] }
 "#;
 
 /// Activities filtered in memory, from a server that sends every row back
-/// whatever the conditions: one row has `kind`, one lacks it, and none
-/// echoes the hidden `mode` request parameter.
+/// whatever the conditions: one row has `kind` and the hidden `note`, one
+/// lacks both, and none echoes the `mode` request parameter.
 async fn client_filtered(server: &MockServer) -> Vista {
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-            { "id": 1, "kind": "ride" },
+            { "id": 1, "kind": "ride", "note": "x" },
             { "id": 2 }
         ])))
         .mount(server)
@@ -113,8 +114,18 @@ async fn a_row_missing_a_visible_filtered_column_is_excluded() {
     assert_eq!(ids, ["1"]);
 }
 
+/// `Hidden` is display only: a hidden column is still a row field.
 #[tokio::test]
-async fn a_row_missing_a_hidden_filtered_column_is_kept() {
+async fn a_row_missing_a_hidden_filtered_column_is_excluded() {
+    let server = MockServer::start().await;
+    let mut vista = client_filtered(&server).await;
+    vista.add_condition("note", FilterOp::Eq, "x").unwrap();
+    let ids: Vec<String> = vista.list_values().await.unwrap().into_keys().collect();
+    assert_eq!(ids, ["1"]);
+}
+
+#[tokio::test]
+async fn a_row_missing_a_request_param_filtered_column_is_kept() {
     let server = MockServer::start().await;
     let mut vista = client_filtered(&server).await;
     vista

@@ -19,8 +19,8 @@ pub use api::{
 };
 pub use operation::eq_condition;
 pub(crate) use operation::{cbor_to_query_string, condition_to_query_param, placeholders};
-pub(crate) use table_source::required_fields;
+pub(crate) use table_source::row_fields;
 pub use vista::{
-    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, ModelResolver,
-    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec,
+    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, RestApiTableShell,
+    RestApiVistaFactory, RestApiVistaSpec,
 };

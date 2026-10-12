@@ -1,16 +1,15 @@
 //! The Vista layer: a `TableShell` over one store table.
 
 mod affinity;
-pub mod factory;
+mod catalog;
+mod factory;
 mod narrow;
 mod refs;
 mod shell;
 mod watch;
 mod writes;
 
-use std::sync::Arc;
-
-use affinity::{Affinity, Untyped};
+use affinity::Affinity;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_vista::{Capability, SortDirection, VistaCapabilities, VistaMetadata};
@@ -18,7 +17,8 @@ use vantage_vista::{Capability, SortDirection, VistaCapabilities, VistaMetadata}
 use crate::eval::MemoryCondition;
 use crate::{MemoryTableHandle, Query};
 
-pub use refs::Catalog;
+pub use catalog::MemoryCatalog;
+pub use factory::{MemoryBlock, MemoryTableExtras, MemoryVistaFactory, MemoryVistaSpec};
 
 /// A Vista shell over a store table. Holds its own query state; the rows
 /// live in the shared table; a clone shares the table but not the query.
@@ -26,57 +26,54 @@ pub use refs::Catalog;
 pub struct MemoryTableShell {
     table: MemoryTableHandle,
     metadata: VistaMetadata,
-    catalog: Catalog,
+    catalog: MemoryCatalog,
     query: Query,
     /// Literal `column = value` conditions of the query; full-record writes
     /// fill them and patches may not contradict them.
     pub(crate) invariants: IndexMap<String, CborValue>,
-    /// Declared columns whose type is only a display default.
-    untyped: Arc<Untyped>,
     capabilities: VistaCapabilities,
 }
 
 impl MemoryTableShell {
     /// A shell over `table`. Cells of a column `metadata` declares with an
-    /// integer or text type are stored and compared in that form; see
-    /// [`with_untyped_columns`](Self::with_untyped_columns).
-    pub fn new(table: MemoryTableHandle, metadata: VistaMetadata, catalog: Catalog) -> Self {
+    /// integer or text type are stored and compared in that form; a column
+    /// declared [untyped](vantage_vista::Column::untyped) stores them as
+    /// given. Metadata without an id column takes the store table's.
+    /// Traversal targets come from `catalog`.
+    pub fn new(table: MemoryTableHandle, metadata: VistaMetadata, catalog: MemoryCatalog) -> Self {
+        let metadata = match metadata.id_column {
+            Some(_) => metadata,
+            None => metadata.with_id_column(table.id_column().to_string()),
+        };
         Self {
             table,
             metadata,
             catalog,
             query: Query::new(),
             invariants: IndexMap::new(),
-            untyped: Arc::default(),
             capabilities: Self::capabilities_for_memory(),
         }
     }
 
-    /// This shell with `columns` treated as declared without a type, so
-    /// their cells are stored as given whatever type the metadata names.
-    pub fn with_untyped_columns(
-        mut self,
-        columns: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.untyped = Arc::new(columns.into_iter().map(Into::into).collect());
-        self
-    }
-
     fn affinity(&self, column: &str) -> Affinity {
-        Affinity::of(&self.metadata, &self.untyped, self.id_column_name(), column)
+        Affinity::of(&self.metadata, self.id_column_name(), column)
     }
 
     /// Whether `column` has no declared type: not declared, or declared
     /// without a type.
     fn is_untyped(&self, column: &str) -> bool {
         column != self.id_column_name()
-            && (self.untyped.contains(column) || !self.metadata.columns.contains_key(column))
+            && self
+                .metadata
+                .columns
+                .get(column)
+                .is_none_or(|c| c.original_type.is_none())
     }
 
     /// Everything but cursors and native conditions: the store evaluates
     /// every operator, search, order and window itself, and every write is
     /// checked against the shell's query, so writes stay inside the set.
-    pub fn capabilities_for_memory() -> VistaCapabilities {
+    pub(crate) fn capabilities_for_memory() -> VistaCapabilities {
         [
             Capability::Insert,
             Capability::Update,
@@ -103,12 +100,13 @@ impl MemoryTableShell {
         &self.table
     }
 
-    /// The declared id column, else the store table's.
+    /// The declared id column. `new` fills in the store table's when the
+    /// metadata names none, and the metadata never changes afterwards.
     fn id_column_name(&self) -> &str {
         self.metadata
             .id_column
             .as_deref()
-            .unwrap_or_else(|| self.table.id_column())
+            .expect("MemoryTableShell::new sets the id column")
     }
 
     /// The shell's query with a one-off window, leaving the shell untouched.

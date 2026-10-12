@@ -15,18 +15,14 @@ use vantage_core::{Result, error};
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Capability, ColumnFlag, Reference as VistaReference, Vista, VistaCapabilities, VistaFactory,
-    VistaMetadata,
+    Capability, ColumnFlag, SpecResolver, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
 };
 
 use crate::graphql::api::GraphqlApi;
 use crate::graphql::types::AnyGraphqlType;
-use crate::graphql::vista::lowering::{
-    GraphqlSpecResolver, TargetResolver, build_table, target_resolver,
-};
+use crate::graphql::vista::lowering::{TargetSpecResolver, build_table, target_resolver};
 use crate::graphql::vista::source::GraphqlApiTableShell;
 use crate::graphql::vista::spec::{GraphqlApiVistaSpec, GraphqlColumnExtras, GraphqlTableExtras};
-use crate::join_keys::spec_join_keys;
 
 type SpecRegistry = Arc<RwLock<HashMap<String, GraphqlApiVistaSpec>>>;
 
@@ -38,7 +34,7 @@ type SpecRegistry = Arc<RwLock<HashMap<String, GraphqlApiVistaSpec>>>;
 pub struct GraphqlApiVistaFactory {
     api: GraphqlApi,
     specs: SpecRegistry,
-    resolver: Option<GraphqlSpecResolver>,
+    resolver: Option<SpecResolver<GraphqlApiVistaSpec>>,
 }
 
 impl GraphqlApiVistaFactory {
@@ -62,7 +58,7 @@ impl GraphqlApiVistaFactory {
     /// `GraphqlApi`, so every target is queried on the same endpoint; it
     /// cannot point a reference at another driver. A target it does not know
     /// fails the traversal.
-    pub fn with_resolver(mut self, resolver: GraphqlSpecResolver) -> Self {
+    pub fn with_resolver(mut self, resolver: SpecResolver<GraphqlApiVistaSpec>) -> Self {
         self.resolver = Some(resolver);
         self
     }
@@ -88,15 +84,16 @@ impl GraphqlApiVistaFactory {
     /// Build the Vista for a model registered with
     /// [`register_yaml`](Self::register_yaml).
     pub fn build(&self, name: &str) -> Result<Vista> {
-        let spec = registry_get(&self.specs, name)
-            .ok_or_else(|| error!("No registered spec for model name", name = name))?;
+        let spec = registry_get(&self.specs, name).ok_or_else(|| {
+            error!("No registered spec for model name", name = name).mark_not_found()
+        })?;
         self.build_from_spec(spec)
     }
 
     /// The installed resolver, else one over the internal registry; either
     /// way paired with this factory's API (see `lowering`).
-    fn target_resolver(&self) -> TargetResolver {
-        let specs: GraphqlSpecResolver = match &self.resolver {
+    fn target_resolver(&self) -> TargetSpecResolver {
+        let specs: SpecResolver<GraphqlApiVistaSpec> = match &self.resolver {
             Some(resolver) => resolver.clone(),
             None => {
                 let registry = self.specs.clone();
@@ -167,18 +164,12 @@ fn registry_get(specs: &SpecRegistry, name: &str) -> Option<GraphqlApiVistaSpec>
 pub(crate) fn wrap_spec_table(
     table: Table<GraphqlApi, EmptyEntity>,
     spec: &GraphqlApiVistaSpec,
-    resolver: TargetResolver,
+    resolver: TargetSpecResolver,
 ) -> Result<Vista> {
     let mut metadata = metadata_from_table(&table, false);
-    let source_id = spec.resolve_id_column();
+    let source_id = spec.resolve_id_column("id");
     for (relation, reference) in &spec.references {
-        let keys = spec_join_keys(relation, reference, &source_id)?;
-        metadata = metadata.with_reference(VistaReference::new(
-            relation.clone(),
-            reference.table.clone(),
-            reference.kind,
-            keys,
-        ));
+        metadata = metadata.with_reference(reference.to_reference(relation, &source_id)?);
     }
     Ok(wrap(table, spec.name.clone(), metadata, Some(resolver)))
 }
@@ -188,7 +179,7 @@ fn wrap(
     table: Table<GraphqlApi, EmptyEntity>,
     name: String,
     metadata: VistaMetadata,
-    resolver: Option<TargetResolver>,
+    resolver: Option<TargetSpecResolver>,
 ) -> Vista {
     let capabilities = graphql_capabilities(table.data_source());
     let shell = GraphqlApiTableShell::new(table, capabilities, metadata).with_resolver(resolver);

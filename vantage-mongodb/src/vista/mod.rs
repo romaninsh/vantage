@@ -19,7 +19,7 @@ pub mod spec;
 /// so the non-vista `AnyMongoType` conversions can use it too.
 pub use crate::types::cbor;
 pub use cbor::{bson_to_cbor, cbor_to_bson};
-pub use factory::{MongoSpecResolver, MongoVistaFactory};
+pub use factory::MongoVistaFactory;
 pub use source::MongoTableShell;
 pub use spec::{
     DriverBlockArgs, MongoBlock, MongoColumnBlock, MongoColumnExtras, MongoRefBlock,

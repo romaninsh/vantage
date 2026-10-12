@@ -373,21 +373,23 @@ user interface, or you're building a testing framework. For these cases, vantage
 optional Rhai scripting engine (enable with the `rhai` feature).
 
 Rhai is a lightweight, Rust-like scripting language. The DSL exposes the same vendor-aware
-primitives you've seen, but as script functions:
+primitives you've seen, but as script functions. The free functions live in the `sql::` namespace,
+the same for every dialect; methods (`.from`, `.alias`, `["col"]`) and operators are called as
+usual:
 
 ```rhai
 // Rhai DSL — same query, any database
-let users = table("users").alias("u");
-let orders = table("orders").alias("o");
+let users = sql::ident("users").alias("u");
+let orders = sql::ident("orders").alias("o");
 
-select()
+sql::select()
     .from(users)
     .expression(users["name"])
-    .expression(sum(orders["total"]).alias("revenue"))
+    .expression(sql::sum(orders["total"]).alias("revenue"))
     .left_join("orders", "o", orders["user_id"] == users["id"])
     .group_by(users["id"])
-    .having(sum(orders["total"]) > 1000)
-    .order_by(expr("revenue"), "desc")
+    .having(sql::sum(orders["total"]) > 1000)
+    .order_by(sql::expr("revenue"), "desc")
 ```
 
 This script renders to correct SQL for SQLite, PostgreSQL, or MySQL — same as the Rust API.
@@ -397,10 +399,12 @@ Identifier quoting, function names, and syntax all adapt to the target database.
 
 The Rhai DSL includes primitives that translate across databases:
 
-- **`date_format(expr, "%Y-%m")`** → `STRFTIME` (SQLite), `TO_CHAR` (PostgreSQL), `DATE_FORMAT`
-  (MySQL)
-- **`group_concat(expr, distinct)`** → `GROUP_CONCAT` (SQLite/MySQL), `STRING_AGG` (PostgreSQL)
-- **`coalesce(a, b)`**, **`cast(expr, "type")`**, **`round(expr, decimals)`** — work everywhere
+- **`sql::date_format(expr, "%Y-%m")`** → `STRFTIME` (SQLite), `TO_CHAR` (PostgreSQL),
+  `DATE_FORMAT` (MySQL)
+- **`sql::group_concat(expr, distinct)`** → `GROUP_CONCAT` (SQLite/MySQL), `STRING_AGG`
+  (PostgreSQL)
+- **`sql::coalesce(a, b)`**, **`sql::cast(expr, "type")`**, **`sql::round(expr, decimals)`** — work
+  everywhere
 
 ### When to Use Rhai
 

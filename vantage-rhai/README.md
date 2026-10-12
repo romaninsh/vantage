@@ -193,17 +193,30 @@ closure is `FnOnce` with no `Send` or `'static` bound, so it can move a
 resolver or a limit straight in.
 
 **Registration order decides collisions.** Vocabs register in call order and
-the last definition of a name wins. Vantage's data layer depends on this: a
-vendor vocabulary defines `table` as an identifier constructor and the
-conventional vocabulary defines it as a query builder, so registering the
-vendor one first is what makes `table("order")` mean the query builder on a
-host that has both.
+the last definition of a name wins. So a backend vocabulary puts its free
+functions and constants in a [`Namespace`](src/namespace.rs), a rhai static
+module: a script calls `surreal::ident("name")`, `sql::count(..)` or
+`mongo::oid(..)` and reads `surreal::me`, and none of them can shadow the data
+vocabulary's `table`, `where` or `first`. Methods and operators on the
+backend's own types stay on the engine, because they dispatch on their
+receiver:
+
+```rust
+use vantage_rhai::Namespace;
+
+fn register(engine: &mut rhai::Engine) {
+    let mut ns = Namespace::new("invoice");
+    ns.func("total", |net: f64, rate: f64| net * (1.0 + rate))
+        .var("currency", "EUR".to_string());
+    ns.register(engine); // invoice::total(..), invoice::currency
+}
+```
 
 **Never call `engine.on_var` from a vocabulary.** The host installs the
 resolver on that hook before any vocab registers, rhai keeps only the last
 hook, and a second one therefore disables resolution for every slot on the
-host — silently. Push the value through `Env` instead. The SurrealDB backend's
-`me` constant was an `on_var` hook until it collided this way.
+host — silently. Push the value through `Env`, or make it a namespace
+constant.
 
 Registering a *type* and pushing the *instance* through `Env` lets one host
 serve every row; baking a specific row into the engine at registration time
@@ -349,6 +362,7 @@ Both load their slots from a YAML file beside them, the way a project does.
 |---|---|
 | `slot.rs` | `Expr`, `Template`, `Block` and their schema impls |
 | `host.rs` | `Host`, `HostBuilder`, `Vocab`, the AST cache, shared hosts |
+| `namespace.rs` | `Namespace`: a backend's free functions and constants as a static module |
 | `limits.rs` | the two profiles and what they cap |
 | `compiled.rs` | `Compiled<S>`, `Env`, the `Slot` trait, discovery |
 | `resolver.rs` | `Resolver`, `Lookup`, namespace descent, read recording |

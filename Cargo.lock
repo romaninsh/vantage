@@ -5566,7 +5566,6 @@ dependencies = [
  "vantage-diorama",
  "vantage-types",
  "vantage-vista",
- "vantage-vista-factory",
 ]
 
 [[package]]
@@ -5771,7 +5770,6 @@ dependencies = [
  "vantage-table",
  "vantage-types",
  "vantage-vista",
- "vantage-vista-factory",
 ]
 
 [[package]]
@@ -5805,7 +5803,6 @@ dependencies = [
  "vantage-table",
  "vantage-types",
  "vantage-vista",
- "vantage-vista-factory",
 ]
 
 [[package]]
@@ -6068,19 +6065,6 @@ dependencies = [
  "vantage-memory",
  "vantage-rhai",
  "vantage-types",
-]
-
-[[package]]
-name = "vantage-vista-factory"
-version = "0.6.3"
-dependencies = [
- "ciborium",
- "indexmap 2.14.0",
- "tokio",
- "vantage-core",
- "vantage-dataset",
- "vantage-types",
- "vantage-vista",
 ]
 
 [[package]]

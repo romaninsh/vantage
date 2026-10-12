@@ -45,12 +45,7 @@ impl MemoryTableShell {
     /// written row compares like a seeded one.
     fn stored_form(&self, record: &Rec) -> Rec {
         let mut row = record.clone();
-        conform_record(
-            &self.metadata,
-            &self.untyped,
-            self.id_column_name(),
-            &mut row,
-        );
+        conform_record(&self.metadata, self.id_column_name(), &mut row);
         row
     }
 
@@ -193,7 +188,7 @@ mod tests {
     use super::*;
     use crate::MemoryStore;
     use crate::eval::MemoryCondition;
-    use crate::vista::Catalog;
+    use crate::vista::MemoryCatalog;
     use vantage_vista::VistaMetadata;
 
     #[test]
@@ -211,7 +206,7 @@ mod tests {
         let mut shell = MemoryTableShell::new(
             table,
             VistaMetadata::new().with_id_column("id"),
-            Catalog::new(store),
+            MemoryCatalog::new(store),
         );
         // A bare column reference is not a filter, so the set check cannot run.
         shell

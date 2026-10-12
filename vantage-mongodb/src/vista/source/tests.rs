@@ -2,7 +2,7 @@
 //! issue a command, so no server is needed.
 
 use bson::{Bson, Document, doc};
-use vantage_vista::{FilterOp, ReferenceKind, SortDirection, VistaFactory};
+use vantage_vista::{Capability, FilterOp, ReferenceKind, SortDirection, VistaFactory};
 
 use super::*;
 use crate::vista::factory::{MongoVistaFactory, mongo_capabilities};
@@ -139,6 +139,24 @@ async fn an_unknown_column_is_a_normal_error() {
 }
 
 #[tokio::test]
+async fn a_dotted_path_under_a_declared_column_filters_by_dot_notation() {
+    let spec =
+        "{ name: client, columns: { _id: { flags: [id] }, address: { mongo: { field: addr } } } }";
+    let mut shell = shell_of(spec).await;
+    shell
+        .add_condition(&Condition::new("address.city", FilterOp::Eq, "Hill Valley"))
+        .unwrap();
+    let filter = format!("{:?}", shell.table.conditions().next().unwrap());
+    assert!(filter.contains("addr.city"), "{filter}");
+
+    let err = shell
+        .add_condition(&Condition::new("nope.city", FilterOp::Eq, "x"))
+        .unwrap_err();
+    assert!(!err.is_unsupported(), "{err:?}");
+    assert_eq!(shell.table.conditions().count(), 1);
+}
+
+#[tokio::test]
 async fn a_shell_over_stored_documents_takes_equality_on_any_field() {
     let spec = serde_yaml_ng::from_str("{ name: bare, columns: {} }").unwrap();
     let bare = factory().await.build_from_spec(spec).unwrap();
@@ -172,6 +190,8 @@ async fn bare_target_and_has_many_narrowing() {
     let vista = client_vista().await;
     let orders = vista.reference("orders").unwrap();
     assert_eq!(orders.kind, ReferenceKind::HasMany);
+    // The spec name a resolver knows, not the collection or a Rust type.
+    assert_eq!(orders.target, "order");
 
     let bare = vista.get_ref("orders", None).unwrap();
     assert!(!bare.is_narrowed());

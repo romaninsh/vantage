@@ -9,8 +9,11 @@ use vantage_types::Record;
 
 use crate::rhai::bridge::block_on;
 use crate::rhai::handle::{Handle, Step};
-use crate::rhai::vocab::{DataVocab, TargetResolver};
-use crate::{Column, ColumnFlag, FilterOp, Vista, VistaMetadata, mocks::MockShell};
+use crate::rhai::vocab::{DataVocab, Terminals};
+use crate::{
+    Column, ColumnFlag, FilterOp, NativeCondition, TableShell, Vista, VistaMetadata, VistaResolver,
+    forward_table_shell, mocks::MockShell,
+};
 
 pub(super) fn user(id: &str, name: &str, vip: bool) -> Record<CborValue> {
     [
@@ -37,7 +40,7 @@ pub(super) fn users_vista() -> Vista {
     Vista::new("users", source.with_metadata(metadata))
 }
 
-pub(super) fn mock_resolver() -> TargetResolver {
+pub(super) fn mock_resolver() -> Arc<dyn VistaResolver> {
     Arc::new(|name: &str| {
         if name == "users" {
             Ok(users_vista())
@@ -47,9 +50,9 @@ pub(super) fn mock_resolver() -> TargetResolver {
     })
 }
 
-pub(super) fn describe_host(resolver: TargetResolver) -> Host {
+pub(super) fn describe_host(resolver: Arc<dyn VistaResolver>) -> Host {
     Host::builder(Limits::background())
-        .vocab(DataVocab::describe(Some(resolver)))
+        .vocab(DataVocab::new(Terminals::Describe).with_resolver(resolver))
         .build()
 }
 
@@ -119,6 +122,59 @@ fn resolve_applies_steps_in_order() {
         op: FilterOp::Eq,
         value: CborValue::Bool(true),
     });
-    let v = h.resolve(Some(&mock_resolver())).unwrap();
+    let v = h.resolve(Some(mock_resolver().as_ref())).unwrap();
     assert_eq!(block_on(v.list_values()).unwrap().unwrap().len(), 2);
+}
+
+/// Takes any native condition; the Vista records its key.
+#[derive(Clone)]
+struct Native {
+    inner: Box<dyn TableShell>,
+}
+
+forward_table_shell!(Native, inner, {
+    fn add_native_condition(&mut self, _condition: NativeCondition) -> vantage_core::Result<()> {
+        Ok(())
+    }
+});
+
+fn only_vip() -> NativeCondition {
+    NativeCondition::new((), "vip_flag = true")
+}
+
+#[test]
+fn with_native_condition_narrows_a_copy_of_the_base() {
+    let base = Handle::over(users_vista().map_shell(|inner| Native { inner }));
+    let narrowed = base.with_native_condition("only_vip", only_vip()).unwrap();
+    let native = |h: &Handle| h.resolve(None).unwrap().query().native.clone();
+    assert_eq!(native(&narrowed), ["vip_flag = true"]);
+    assert!(
+        native(&base).is_empty(),
+        "the handle it came from keeps its base"
+    );
+}
+
+#[test]
+fn with_native_condition_needs_a_vista_in_hand() {
+    let err = Handle::named("users")
+        .with_native_condition("only_vip", only_vip())
+        .err()
+        .expect("a named handle has no Vista in hand");
+    assert!(err.to_string().contains("only works on `self`"), "{err}");
+
+    let past_ref = Handle::over(users_vista()).push(Step::Ref("posts".into()));
+    let err = past_ref
+        .with_native_condition("only_vip", only_vip())
+        .err()
+        .expect("a ref step leaves the Vista in hand");
+    assert!(err.to_string().contains("can't follow `ref(...)`"), "{err}");
+}
+
+#[test]
+fn a_refused_native_condition_is_an_error() {
+    let err = Handle::over(users_vista())
+        .with_native_condition("only_vip", only_vip())
+        .err()
+        .expect("the mock takes no native conditions");
+    assert!(err.is_unsupported(), "{err}");
 }

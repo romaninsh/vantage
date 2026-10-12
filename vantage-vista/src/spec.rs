@@ -19,6 +19,7 @@ pub use lowering::{SpecResolver, resolve_base_spec};
 /// Empty extras placeholder. Serializes as an absent key.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct NoExtras {}
 
 /// The YAML schema a vista is built from.
@@ -33,6 +34,7 @@ pub struct NoExtras {}
     serialize = "T: Serialize, C: Serialize, R: Serialize",
     deserialize = "T: DeserializeOwned + Default, C: DeserializeOwned + Default, R: DeserializeOwned + Default"
 ))]
+#[non_exhaustive]
 pub struct VistaSpec<T = NoExtras, C = NoExtras, R = NoExtras> {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -50,6 +52,22 @@ pub struct VistaSpec<T = NoExtras, C = NoExtras, R = NoExtras> {
     pub driver: T,
 }
 
+impl<T: Default, C, R> VistaSpec<T, C, R> {
+    /// A spec named `name` that declares nothing else: no columns,
+    /// references or contained relations, and the driver's default block.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            datasource: None,
+            id_column: None,
+            columns: IndexMap::new(),
+            references: IndexMap::new(),
+            contained: IndexMap::new(),
+            driver: T::default(),
+        }
+    }
+}
+
 /// YAML shape of a contained relation — embedded records stored in a column of
 /// the parent row. Mirrors [`ReferenceSpec`] but carries the contained
 /// record's own column schema (built via the driver's `build_column`) instead
@@ -62,6 +80,7 @@ pub struct VistaSpec<T = NoExtras, C = NoExtras, R = NoExtras> {
         deserialize = "C: DeserializeOwned + Default"
     )
 )]
+#[non_exhaustive]
 pub struct ContainedYaml<C = NoExtras> {
     /// Column on the parent row holding the embedded object (one) or array (many).
     pub host_column: String,
@@ -79,6 +98,10 @@ fn contains_one() -> ReferenceKind {
     ReferenceKind::ContainsOne
 }
 
+fn has_one() -> ReferenceKind {
+    ReferenceKind::HasOne
+}
+
 /// Per-column metadata in a `VistaSpec`.
 ///
 /// `flags` are snake_case names; a name vista doesn't know is kept as
@@ -92,6 +115,7 @@ fn contains_one() -> ReferenceKind {
     serialize = "C: Serialize",
     deserialize = "C: DeserializeOwned + Default"
 ))]
+#[non_exhaustive]
 pub struct ColumnSpec<C = NoExtras> {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub col_type: Option<String>,
@@ -109,12 +133,12 @@ pub struct ColumnSpec<C = NoExtras> {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lazy: Option<String>,
     /// Rhai script for a *server-side* computed column. Evaluated once at
-    /// build time with the driver's expression vocabulary (`ident(...)`,
-    /// operators, `expr("raw")`, …) into a query expression, then lowered
-    /// via `Table::with_expression` — the backend projects it as
-    /// `(<expr>) AS <column>`. Unlike `lazy:` it participates in the
-    /// query, so it can traverse record links or call backend functions.
-    /// Computed columns are read-only.
+    /// build time with the driver's expression vocabulary
+    /// (`surreal::ident(...)`, operators, `surreal::expr("raw")`, …) into a
+    /// query expression, then lowered via `Table::with_expression` — the
+    /// backend projects it as `(<expr>) AS <column>`. Unlike `lazy:` it
+    /// participates in the query, so it can traverse record links or call
+    /// backend functions. Computed columns are read-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(flatten, default)]
@@ -163,10 +187,11 @@ impl<C> ColumnSpec<C> {
         let Some(code) = &self.lazy else {
             return Ok(None);
         };
-        let column = self.flags.iter().cloned().fold(
-            Column::new(name, self.col_type.as_deref().unwrap_or("string")),
-            Column::with_flag,
-        );
+        let typed = match &self.col_type {
+            Some(ty) => Column::new(name, ty),
+            None => Column::untyped(name),
+        };
+        let column = self.flags.iter().cloned().fold(typed, Column::with_flag);
         computed(column, code).map(Some)
     }
 }
@@ -196,9 +221,11 @@ impl<C: Default> Default for ColumnSpec<C> {
     serialize = "R: Serialize",
     deserialize = "R: DeserializeOwned + Default"
 ))]
+#[non_exhaustive]
 pub struct ReferenceSpec<R = NoExtras> {
     pub table: String,
-    #[serde(default)]
+    /// `has_one` or `has_many`; defaults to `has_one`.
+    #[serde(default = "has_one")]
     pub kind: ReferenceKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreign_key: Option<String>,
@@ -227,147 +254,4 @@ pub enum ReferenceSugar {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-    #[serde(deny_unknown_fields)]
-    struct DummyTable {
-        dummy: DummyTableBlock,
-    }
-
-    #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-    #[serde(deny_unknown_fields)]
-    struct DummyTableBlock {
-        path: String,
-    }
-
-    type DummySpec = VistaSpec<DummyTable, NoExtras, NoExtras>;
-
-    #[test]
-    fn parses_minimal_spec() {
-        let yaml = r#"
-name: clients
-columns:
-  id:
-    type: int
-    flags: [id]
-  name:
-    type: string
-    flags: [title, searchable]
-dummy:
-  path: data/clients.csv
-"#;
-        let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(spec.name, "clients");
-        assert_eq!(spec.columns.len(), 2);
-        assert_eq!(spec.columns["id"].col_type.as_deref(), Some("int"));
-        assert_eq!(
-            spec.columns["name"].flags,
-            vec![ColumnFlag::Title, ColumnFlag::Searchable]
-        );
-        assert_eq!(spec.driver.dummy.path, "data/clients.csv");
-    }
-
-    #[test]
-    fn rejects_unknown_driver_field() {
-        let yaml = r#"
-name: clients
-columns:
-  id: { type: int }
-dummy:
-  path: x
-  bogus: 1
-"#;
-        let err = serde_yaml_ng::from_str::<DummySpec>(yaml).unwrap_err();
-        assert!(
-            err.to_string().contains("bogus") || err.to_string().contains("unknown"),
-            "expected typo-detecting error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn reference_sugar_round_trip() {
-        let yaml = r#"
-name: clients
-columns:
-  shop_id:
-    type: int
-    references: shops
-dummy:
-  path: x
-"#;
-        let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
-        match spec.columns["shop_id"].references.as_ref().unwrap() {
-            ReferenceSugar::Sugar(s) => assert_eq!(s, "shops"),
-            other => panic!("expected sugar, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn contained_section_round_trip() {
-        let yaml = r#"
-name: order
-columns:
-  id: { type: string, flags: [id] }
-  lines: { type: string }
-contained:
-  lines:
-    host_column: lines
-    kind: contains_many
-    id_column: line_id
-    columns:
-      line_id: { type: string, flags: [id] }
-      product: { type: string }
-      quantity: { type: int }
-dummy:
-  path: x
-"#;
-        let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
-        let c = &spec.contained["lines"];
-        assert_eq!(c.host_column, "lines");
-        assert_eq!(c.kind, ReferenceKind::ContainsMany);
-        assert_eq!(c.id_column.as_deref(), Some("line_id"));
-        assert_eq!(c.columns.len(), 3);
-        assert_eq!(c.columns["quantity"].col_type.as_deref(), Some("int"));
-    }
-
-    #[test]
-    fn spec_without_contained_still_parses() {
-        let yaml = r#"
-name: clients
-columns:
-  id: { type: int, flags: [id] }
-dummy:
-  path: x
-"#;
-        let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert!(spec.contained.is_empty());
-    }
-
-    #[test]
-    fn full_reference_form() {
-        let yaml = r#"
-name: orders
-columns:
-  user_id:
-    type: int
-    references:
-      table: users
-      kind: has_one
-      foreign_key: user_id
-dummy:
-  path: x
-"#;
-        let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
-        match spec.columns["user_id"].references.as_ref().unwrap() {
-            ReferenceSugar::Full(r) => {
-                assert_eq!(r.table, "users");
-                assert_eq!(r.kind, ReferenceKind::HasOne);
-                assert_eq!(r.foreign_key.as_deref(), Some("user_id"));
-            }
-            other => panic!("expected full, got {other:?}"),
-        }
-    }
-}
+mod tests;

@@ -52,5 +52,4 @@ pub mod prelude {
         EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
     };
     pub use crate::servo::{IdStrategy, Servo, ServoStatus};
-    pub use vantage_vista_factory::VistaCatalog;
 }

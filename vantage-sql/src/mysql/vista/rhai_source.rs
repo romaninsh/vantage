@@ -66,12 +66,13 @@ pub(crate) fn eval_to_select_args(
         })
 }
 
-/// Register the MySQL query vocabulary (`select`, `ident`, `expr`, `fx`,
-/// comparison operators, window/case builders) onto an existing engine.
+/// Register the MySQL query vocabulary onto an existing engine: the free
+/// functions under `sql::` (`sql::select`, `sql::ident`, `sql::expr`,
+/// `sql::fx`, the aggregates, `sql::window`, `sql::case_when`), and the
+/// methods and comparison operators on the SQL types.
 ///
-/// Hosts layer it beneath vantage-vista's data vocabulary; registered in that
-/// order, the data vocabulary's `table(name)` replaces the SQL `table` alias
-/// for `ident`.
+/// Hosts layer it beside vantage-vista's data vocabulary; the namespace keeps
+/// the two apart, so the order doesn't matter.
 pub fn register_mysql_onto(engine: &mut rhai::Engine) {
     __register_engine_onto(engine);
 }

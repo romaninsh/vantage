@@ -1,20 +1,23 @@
-// v4 Q4: correlated subquery with $parent — fully primitive-expressed (no expr() stubs).
-// graph(me, "placed", "order") for the hop + ["total"] field tail; Tier 1 count, existing sum.
-// The correlated (SELECT VALUE … GROUP ALL)[0] is a nested select().value()…group_all().subquery(),
-// indexed with [0]; the correlation reads $parent.id via parent("id").
-select()
+// v4 Q4: correlated subquery with $parent — fully primitive-expressed (no surreal::expr() stubs).
+// surreal::graph(surreal::me, "placed", "order") for the hop + ["total"] field tail; Tier 1
+// count, existing sum. The correlated (SELECT VALUE … GROUP ALL)[0] is a nested
+// surreal::select().value()…group_all().subquery(), indexed with [0]; the correlation reads
+// $parent.id via surreal::parent("id").
+surreal::select()
     .from("client")
     .field("name")
     .field("tier")
-    .expression(count(graph(me, "placed", "order")).alias("num_orders"))
-    .expression(sum(graph(me, "placed", "order")["total"]).alias("lifetime_spend"))
+    .expression(surreal::count(surreal::graph(surreal::me, "placed", "order")).alias("num_orders"))
     .expression(
-        select().value()
-            .expression(max(ident("total")))
+        surreal::sum(surreal::graph(surreal::me, "placed", "order")["total"])
+            .alias("lifetime_spend"))
+    .expression(
+        surreal::select().value()
+            .expression(surreal::max(surreal::ident("total")))
             .from("order")
-            .where(ident("client") == parent("id"))
+            .where(surreal::ident("client") == surreal::parent("id"))
             .group_all()
             .subquery()[0].alias("biggest_order")
     )
-    .where(count(graph(me, "placed", "order")) > 0)
-    .order_by(ident("lifetime_spend"), "desc")
+    .where(surreal::count(surreal::graph(surreal::me, "placed", "order")) > 0)
+    .order_by(surreal::ident("lifetime_spend"), "desc")

@@ -32,7 +32,7 @@ impl MongoTableShell {
                 *field = alias;
             }
         }
-        let preview = Preview::new("mongodb").with_query(select.preview());
+        let preview = Preview::new().with_query(select.preview());
         match note {
             Some(note) => preview.with_note(note),
             None => preview,

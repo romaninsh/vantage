@@ -1,12 +1,11 @@
 //! Configuring and starting a [`SimEngine`].
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use vantage_core::{Context, Result, error};
-use vantage_memory::vista::Catalog;
 use vantage_rhai::rhai::Map as RhaiMap;
 use vantage_rhai::{Host, Limits, Mode, from_json};
 
@@ -14,7 +13,7 @@ use super::clock::{Clock, SimClock, unix_secs};
 use super::engine::SimEngine;
 use super::kind::{FakeRows, Inner, Kind, OnSimError};
 use super::sched::Sched;
-use super::stats::Counters;
+use super::stats::{Counters, store_writes};
 use super::{SimDef, spawn, validate, vocab};
 use crate::FakerColumn;
 use vantage_memory::MemoryStore;
@@ -121,25 +120,13 @@ impl SimEngineBuilder {
 
         let stop = Arc::new(AtomicBool::new(false));
         let progress_stop = stop.clone();
-        let catalog = Catalog::new(self.store.clone());
-        let write_counter = Arc::new(AtomicU64::new(0));
         let counters = Counters {
-            writes: write_counter.clone(),
+            writes_before: store_writes(&self.store),
             ..Default::default()
         };
-        let store = self.store.clone();
-        let columns = Arc::new(self.columns.clone());
+        let resolver = vocab::memory_resolver(self.store.clone(), &self.columns);
         let host = Host::builder(Limits::background())
-            .vocab_fn(move |engine| {
-                vocab::register(
-                    engine,
-                    progress_stop,
-                    store,
-                    catalog,
-                    columns,
-                    write_counter,
-                )
-            })
+            .vocab_fn(move |engine| vocab::register(engine, progress_stop, resolver))
             .build();
 
         let clock = match self.manual {

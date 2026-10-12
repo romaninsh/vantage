@@ -111,7 +111,8 @@ unchanged.
 
 ## Scripting with Rhai
 
-The `rhai` feature adds `DataVocab`, the one data vocabulary every Vantage script uses:
+The `rhai` feature adds the `rhai` module and its `DataVocab`, the one data vocabulary every
+Vantage script uses:
 
 ```rhai
 let due = table("order").where("status", "due");

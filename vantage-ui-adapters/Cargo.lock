@@ -10879,7 +10879,6 @@ dependencies = [
  "vantage-table",
  "vantage-types",
  "vantage-vista",
- "vantage-vista-factory",
 ]
 
 [[package]]
@@ -10956,17 +10955,6 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-types",
-]
-
-[[package]]
-name = "vantage-vista-factory"
-version = "0.6.3"
-dependencies = [
- "ciborium",
- "indexmap 2.14.0",
- "vantage-core",
- "vantage-types",
- "vantage-vista",
 ]
 
 [[package]]

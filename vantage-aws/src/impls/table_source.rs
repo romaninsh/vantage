@@ -24,8 +24,7 @@ use vantage_expressions::{
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::column::flags::ColumnFlag;
-use vantage_table::table::Table;
+use vantage_table::table::{Table, retain_matching};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
@@ -38,34 +37,21 @@ use crate::condition::AwsCondition;
 /// `logGroupNamePrefix`, `cluster`). Conditions naming actual record fields
 /// (`UserName`, `Path`, `clusterArn`) are applied here, so narrowing works
 /// whatever the API filters server-side. A row without the field fails when
-/// the field is in `required` (see [`required_fields`]); any other field is
-/// taken to be a request parameter, already applied.
-pub(crate) fn retain_matching(
+/// the field is one of `row_fields` ([`Table::row_fields`]); any other
+/// field is a request parameter, already applied.
+pub(crate) fn retain_eq_conditions(
     records: &mut IndexMap<String, Record<CborValue>>,
     conditions: &[AwsCondition],
-    required: &[String],
+    row_fields: &[String],
 ) {
-    records.retain(|_id, record| {
-        conditions.iter().all(|c| match c {
-            AwsCondition::Eq { field, value } => match record.get(field) {
-                Some(rec_val) => rec_val == value,
-                None => !required.contains(field),
-            },
-            _ => true,
-        })
-    });
-}
-
-/// The condition fields a row must carry to match: the declared columns
-/// that aren't `hidden`. A hidden column, or a field the table doesn't
-/// declare, is a request parameter the API applies without returning it.
-pub(crate) fn required_fields<E: Entity<CborValue>>(table: &Table<AwsAccount, E>) -> Vec<String> {
-    table
-        .columns()
+    let eqs: Vec<(&str, &CborValue)> = conditions
         .iter()
-        .filter(|(_, column)| !column.flags().contains(&ColumnFlag::Hidden))
-        .map(|(name, _)| name.clone())
-        .collect()
+        .filter_map(|c| match c {
+            AwsCondition::Eq { field, value } => Some((field.as_str(), value)),
+            _ => None,
+        })
+        .collect();
+    retain_matching(records, &eqs, row_fields, |held, wanted| held == wanted);
 }
 
 #[async_trait]
@@ -149,7 +135,7 @@ impl TableSource for AwsAccount {
         let conditions: Vec<AwsCondition> = table.conditions().cloned().collect();
         let resp = self.execute_rpc(table.table_name(), &conditions).await?;
         let mut records = self.parse_records(table.table_name(), resp, id_field.as_deref())?;
-        retain_matching(&mut records, &conditions, &required_fields(table));
+        retain_eq_conditions(&mut records, &conditions, &table.row_fields());
         Ok(records)
     }
 

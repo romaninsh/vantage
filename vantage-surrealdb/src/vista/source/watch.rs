@@ -4,7 +4,7 @@ use surreal_client::Action;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Entity;
-use vantage_vista::{Capability, VistaChange, VistaChangeStream, unsupported};
+use vantage_vista::{VistaChange, VistaChangeStream};
 
 use super::{SurrealTableShell, to_cbor_record};
 use crate::thing::Thing;
@@ -27,11 +27,8 @@ where
     /// row outside the set reports `Deleted`.
     ///
     /// A query-sourced vista has no table to subscribe to and doesn't
-    /// advertise `Subscribe`, so it is refused.
+    /// advertise `Subscribe`, so `Vista::watch` refuses it before this runs.
     pub(super) async fn live_changes(&self) -> Result<VistaChangeStream> {
-        if !self.capabilities.has(Capability::Subscribe) {
-            return unsupported(Capability::Subscribe);
-        }
         let table_name = self.table.table_name().to_string();
         let live = self.table.data_source().live(&table_name).await?;
         let table = self.table.clone();

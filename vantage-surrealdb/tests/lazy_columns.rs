@@ -10,9 +10,9 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use surreal_client::{MockSurrealEngine, SurrealClient};
 use vantage_surrealdb::surrealdb::SurrealDB;
-use vantage_surrealdb::vista::{SurrealSpecResolver, SurrealVistaFactory, SurrealVistaSpec};
+use vantage_surrealdb::vista::{SurrealVistaFactory, SurrealVistaSpec};
 use vantage_types::Record;
-use vantage_vista::{Vista, VistaFactory};
+use vantage_vista::{SpecResolver, Vista, VistaFactory};
 
 const TAG: &str = r#"
 name: tag
@@ -50,7 +50,8 @@ fn factory() -> SurrealVistaFactory {
         .into_iter()
         .map(|(name, yaml)| (name.to_string(), serde_yaml_ng::from_str(yaml).unwrap()))
         .collect();
-    let resolver: SurrealSpecResolver = Arc::new(move |name: &str| specs.get(name).cloned());
+    let resolver: SpecResolver<SurrealVistaSpec> =
+        Arc::new(move |name: &str| specs.get(name).cloned());
     SurrealVistaFactory::new(db).with_resolver(resolver)
 }
 

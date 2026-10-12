@@ -4,7 +4,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use vantage_core::{Result, error};
+use vantage_core::{Result, VantageError, error};
 
 mod set;
 #[cfg(test)]
@@ -29,13 +29,14 @@ pub use set::VistaCapabilities;
 /// | `Search` | `set_search` |
 /// | `FilterOps` | `add_condition` with any operator other than `Eq` |
 /// | `NativeConditions` | `add_native_condition` |
-/// | `Window` | `fetch_window` |
+/// | `Window` | `fetch_window` at any offset |
 /// | `Cursor` | `fetch_cursor` |
 /// | `Traverse` | `get_ref` |
 /// | `ConfineWrites` | every write keeps to the narrowed set (see `WritableValueSet`) |
 ///
 /// `list`, `get`, `count` and equality conditions have no capability: every
-/// shell answers them.
+/// shell answers them. Nor does the leading window, `fetch_window(0, n)`,
+/// which every shell that lists answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum Capability {
@@ -138,4 +139,11 @@ pub fn unsupported<T>(capability: Capability) -> Result<T> {
     )
     .mark_unsupported()
     .traced_debug())
+}
+
+/// The error for a relation a shell doesn't declare, marked
+/// [`not_found`](vantage_core::VantageError::is_not_found) so a caller can
+/// tell a missing relation from one that fails to traverse.
+pub fn unknown_relation(relation: &str) -> VantageError {
+    error!("unknown relation", relation = relation).mark_not_found()
 }

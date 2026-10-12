@@ -5,9 +5,10 @@
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_types::Record;
-use vantage_vista::Vista;
+use vantage_vista::{Vista, unknown_relation};
 
 use super::MongoTableShell;
+use crate::MongoId;
 use crate::vista::factory::MongoVistaFactory;
 
 impl MongoTableShell {
@@ -16,17 +17,12 @@ impl MongoTableShell {
         relation: &str,
         row: Option<&Record<CborValue>>,
     ) -> Result<Vista> {
-        let reference = self.metadata.references.get(relation).ok_or_else(|| {
-            error!("Reference not found on vista", relation = relation).mark_not_found()
-        })?;
+        let reference = self
+            .metadata
+            .references
+            .get(relation)
+            .ok_or_else(|| unknown_relation(relation))?;
         if reference.kind.is_contained() {
-            let row = row.ok_or_else(|| {
-                error!(
-                    "contained relation is traversed from a parent row",
-                    relation = relation
-                )
-                .mark_incorrect_usage()
-            })?;
             return self.contained_target(relation, row);
         }
         // A reference carrying a Rhai `build_script` builds its related rows
@@ -38,14 +34,14 @@ impl MongoTableShell {
         }
         let target = self.table.get_ref_target_erased(relation)?;
         let target = self.factory().from_table(target)?;
-        let Some(row) = row else {
-            return Ok(target);
-        };
         // CBOR carries an ObjectId as its hex text, so the key value passes
         // through unchanged: the target's equality filter matches both
         // spellings, and the set invariant it derives (the value a child
         // insert stores as its foreign key) is the ObjectId.
-        reference.narrow(target, row, CborValue::clone)
+        match row {
+            Some(row) => reference.narrow(target, row),
+            None => Ok(target),
+        }
     }
 
     /// A factory over this table's data source, carrying the spec resolver
@@ -62,8 +58,25 @@ impl MongoTableShell {
     /// MongoDB stores nested objects and arrays natively, so the host value
     /// passes through unchanged and writes `$set` it back. The shared
     /// `Table::get_contained_ref` does the rest; this supplies the parent's
-    /// `MongoId` and the factory wrap.
-    fn contained_target(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+    /// `MongoId` and the factory wrap. Without a row it gives the bare
+    /// target.
+    fn contained_target(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
+        let parent = match row {
+            Some(row) => Some((row, self.parent_id(relation, row)?)),
+            None => None,
+        };
+        let factory = self.factory();
+        self.table.get_contained_ref(
+            relation,
+            parent,
+            move |t| factory.from_table(t),
+            |v| Some(v.clone()),
+            |c| c,
+        )
+    }
+
+    /// The parent document's id, which the host-field writeback patches by.
+    fn parent_id(&self, relation: &str, row: &Record<CborValue>) -> Result<MongoId> {
         let id_field = self.metadata.id_column.as_deref().unwrap_or("_id");
         let parent_id = match row.get(id_field) {
             Some(CborValue::Text(s)) => s.clone(),
@@ -75,15 +88,6 @@ impl MongoTableShell {
                 ));
             }
         };
-        let mongo_id = self.parse_id(&parent_id);
-        let factory = self.factory();
-        self.table.get_contained_ref(
-            relation,
-            row,
-            mongo_id,
-            move |t| factory.from_table(t),
-            |v| Some(v.clone()),
-            |c| c,
-        )
+        Ok(self.parse_id(&parent_id))
     }
 }

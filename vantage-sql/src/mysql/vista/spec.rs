@@ -37,7 +37,7 @@ pub struct MysqlTableBlock {
     pub inherit: Option<InheritBlock>,
     /// A Rhai script applied to the built vista as its final build step, with
     /// the vista exposed as `self`, e.g.
-    /// `self.with_condition(ident("is_paying_client") == true)`. Composes with
+    /// `self.with_condition(sql::ident("is_paying_client") == true)`. Composes with
     /// `table`/`rhai`/`base` (it runs last). Requires the `rhai` feature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modify: Option<String>,
@@ -162,7 +162,7 @@ mysql:
     columns: [id, name]
     relations: [orders]
   rhai: |
-    base.where(expr("vip = true"))
+    base.where(sql::expr("vip = true"))
 "#;
         let spec: MysqlVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let block = spec.driver.mysql.as_ref().unwrap();

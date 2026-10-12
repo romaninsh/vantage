@@ -62,7 +62,7 @@ impl CmdVistaFactory {
         table.add_spec_columns(&spec.columns, build_column)?;
 
         // A command's output may have no id column; the id is then optional.
-        let id_column = spec.resolve_id_column();
+        let id_column = spec.resolve_id_column("id");
         if table.columns().contains_key(&id_column) {
             table.set_id_field(&id_column);
         }

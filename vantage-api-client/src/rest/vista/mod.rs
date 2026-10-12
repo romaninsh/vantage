@@ -8,7 +8,7 @@
 //!
 //! A YAML spec builds the same way through `build_from_spec`, and its
 //! `references:` traverse to other models through the factory's registry
-//! or an installed [`ModelResolver`].
+//! or an installed [`VistaResolver`](vantage_vista::VistaResolver).
 //!
 //! The shell only reads: it counts, lists and fetches by id, and
 //! advertises absolute-offset windows and ordering where the API is
@@ -18,7 +18,7 @@ pub mod factory;
 mod source;
 pub mod spec;
 
-pub use factory::{ModelResolver, RestApiVistaFactory};
+pub use factory::RestApiVistaFactory;
 pub use source::RestApiTableShell;
 pub use spec::{
     ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, RestApiVistaSpec,

@@ -3,19 +3,19 @@
 
 use serde_json::json;
 use vantage_rhai::{Block, Env, Host, Limits};
-use vantage_vista::{DataVocab, Writes};
+use vantage_vista::rhai::{DataVocab, Terminals, Writes};
 
 use super::support::{resolver, shop};
 
 #[test]
 fn build_a_host() {
     let store = shop();
+    let terminals = Terminals::ReadWrite {
+        limit: Some(50),
+        writes: Writes::Allowed,
+    };
     let host = Host::builder(Limits::background())
-        .vocab(DataVocab::read_write_with(
-            Some(resolver(&store)),
-            Some(50),
-            Writes::Allowed,
-        ))
+        .vocab(DataVocab::new(terminals).with_resolver(resolver(&store)))
         .build();
 
     let script = host
@@ -32,8 +32,12 @@ async fn under_spawn_blocking() {
     let store = shop();
     let resolver = resolver(&store);
     let rows = tokio::task::spawn_blocking(move || {
+        let terminals = Terminals::ReadWrite {
+            limit: Some(2),
+            writes: Writes::Denied("this host only reads".into()),
+        };
         let host = Host::builder(Limits::background())
-            .vocab(DataVocab::read(Some(resolver), Some(2)))
+            .vocab(DataVocab::new(terminals).with_resolver(resolver))
             .build();
         host.compile(&Block::from(r#"table("order").list()"#))
             .and_then(|s| s.eval(&Env::new()))

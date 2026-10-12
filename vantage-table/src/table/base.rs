@@ -226,41 +226,48 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             || self.lazy_expressions.contains_key(name)
     }
 
-    /// Snapshot the table's relations as Vista references (name, target type,
+    /// Snapshot the table's relations as Vista references (name, target,
     /// cardinality, join key). Driver factories fold this into
     /// `VistaMetadata` so the erased `Vista` carries enough to drive nested
     /// insert and relation traversal.
     ///
+    /// A reference's target is the table name of its built target, the name
+    /// a catalog resolves. Building a target is offline: no I/O runs until a
+    /// query does.
+    ///
     /// Each relation gets one join key. A `has_many` key is fully known
     /// here: this table's id column into the target's foreign key. A
-    /// `has_one` key constrains the target's id column, which is only known
-    /// once the target is built, so it is
+    /// `has_one` key constrains the target's id column, so it is
     /// [`JoinKey::to_target_id`](vantage_vista::JoinKey::to_target_id),
-    /// resolved at traversal from the built target. Building every target
-    /// here would make each metadata read rebuild the related tables.
+    /// resolved at traversal from the target the traversal builds.
     pub fn vista_references(&self) -> Vec<vantage_vista::Reference> {
-        use vantage_vista::{JoinKey, ReferenceKind};
+        self.vista_references_keyed(&self.id_field_name())
+    }
 
-        let source_id = self.id_field_name();
-        self.refs
-            .as_ref()
-            .map(|refs| {
-                refs.iter()
-                    .map(|(name, r)| {
-                        let key = match r.cardinality() {
-                            ReferenceKind::HasOne => JoinKey::to_target_id(r.foreign_key()),
-                            _ => JoinKey::new(source_id.clone(), r.foreign_key()),
-                        };
-                        vantage_vista::Reference::new(
-                            name.clone(),
-                            r.target_type_name().to_string(),
-                            r.cardinality(),
-                            vec![key],
-                        )
-                    })
-                    .collect()
+    /// [`vista_references`](Self::vista_references) with `source_id` as the
+    /// column a `has_many` reads from this table's rows. A contained record
+    /// passes its relation's id column, which may differ from the table's id
+    /// field.
+    pub(crate) fn vista_references_keyed(&self, source_id: &str) -> Vec<vantage_vista::Reference> {
+        use crate::references::Cardinality;
+        use vantage_vista::{JoinKey, Reference};
+
+        let Some(refs) = &self.refs else {
+            return Vec::new();
+        };
+        refs.iter()
+            .map(|(name, r)| {
+                let target = r.target_table_name(&self.data_source);
+                match r.cardinality() {
+                    Cardinality::HasOne => {
+                        Reference::has_one(name, target, JoinKey::to_target_id(r.foreign_key()))
+                    }
+                    Cardinality::HasMany => {
+                        Reference::has_many(name, target, JoinKey::new(source_id, r.foreign_key()))
+                    }
+                }
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     /// Register a column the `Vista` computes after each read, positioned
@@ -489,35 +496,4 @@ impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mocks::mock_table_source::MockTableSource;
-
-    #[test]
-    fn computed_column_replacing_a_stored_one_keeps_positions() {
-        let mut table = Table::<MockTableSource, EmptyEntity>::new("t", MockTableSource::new())
-            .with_column_of::<String>("a")
-            .with_column_of::<String>("b");
-        table.add_computed_column(vantage_vista::Column::new("x", "string"));
-        table.add_column_of::<String>("c");
-        assert_eq!(
-            table
-                .computed_columns()
-                .map(|(at, c)| (at, c.name.as_str()))
-                .collect::<Vec<_>>(),
-            vec![(2, "x")]
-        );
-
-        table.add_computed_column(vantage_vista::Column::new("a", "string"));
-
-        let stored: Vec<&str> = table.columns().keys().map(String::as_str).collect();
-        assert_eq!(stored, vec!["b", "c"]);
-        assert_eq!(
-            table
-                .computed_columns()
-                .map(|(at, c)| (at, c.name.as_str()))
-                .collect::<Vec<_>>(),
-            vec![(1, "x"), (3, "a")]
-        );
-    }
-}
+mod tests;

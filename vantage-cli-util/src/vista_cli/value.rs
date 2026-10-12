@@ -45,14 +45,16 @@ pub fn parse_value(s: &str) -> Result<CborValue> {
 /// kinder than silently shipping an unmatched filter to the driver.
 ///
 /// Falls back to [`auto_detect`] (never errors) when the column is
-/// missing from the metadata or has a type the cli runner doesn't
-/// recognise — preserving the old behaviour for callers that haven't
-/// taught their drivers to surface a column type yet.
+/// missing from the metadata, declares no type, or has a type the cli
+/// runner doesn't recognise.
 pub fn coerce_for_column(vista: &Vista, field: &str, raw: &str) -> Result<CborValue> {
-    let Some(column) = vista.column(field) else {
+    let Some(original_type) = vista
+        .column(field)
+        .and_then(|column| column.original_type.as_deref())
+    else {
         return Ok(auto_detect(raw));
     };
-    match column_kind(&column.original_type) {
+    match column_kind(original_type) {
         ColumnKind::Bool => match raw {
             "true" => Ok(CborValue::Bool(true)),
             "false" => Ok(CborValue::Bool(false)),

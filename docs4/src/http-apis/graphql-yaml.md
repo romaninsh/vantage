@@ -130,7 +130,8 @@ A target is built from its own spec on the factory's API, without the parent tab
 `build(name)`), or from a spec resolver:
 
 ```rust
-let resolver: GraphqlSpecResolver = Arc::new(move |name| specs.get(name).cloned());
+let resolver: SpecResolver<GraphqlApiVistaSpec> =
+    Arc::new(move |name: &str| specs.get(name).cloned());
 let factory = api.vista_factory().with_resolver(resolver);
 ```
 

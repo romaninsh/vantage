@@ -41,15 +41,10 @@ fn capability_flag_complete() {
 
 #[cfg(all(feature = "rhai", feature = "mocks"))]
 fn rhai_map_lists_every_capability(caps: VistaCapabilities) {
+    use super::rhai_support::{host, mock, reads, run};
     use vantage_rhai::rhai::Map as RhaiMap;
-    use vantage_vista::Terminals;
 
-    use super::rhai_support::{host, mock, run};
-
-    let host = host(
-        mock().with_capabilities(caps),
-        Terminals::Read { limit: None },
-    );
+    let host = host(mock().with_capabilities(caps), reads());
     let map = run(&host, r#"table("t").capabilities()"#)
         .unwrap()
         .try_cast::<RhaiMap>()

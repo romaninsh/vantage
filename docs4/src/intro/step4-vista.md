@@ -291,10 +291,10 @@ surface.
 
 What if your categories live in PostgreSQL and your products in MongoDB? That is deliberately
 *not* a Vista's job — a Vista honestly describes one backend, and there is no engine that could
-execute a join across two. Cross-persistence traversal lives one layer up, in
-`vantage-vista-factory`'s [`VistaCatalog`](vantage_vista_factory): register a loader per model
-name, declare the relation, and `catalog.traverse_from("category", "products", &row)` resolves the
-target in *its* backend and narrows it by values read from the parent row. The consumer still just
+execute a join across two. Cross-persistence traversal lives one layer up, in a
+[`Catalog`](vantage_vista::Catalog): register a loader per model name, and
+`relation.narrow(catalog.vista(&relation.target)?, &row)` builds the target in *its* backend and
+narrows it by values read from the parent row. The consumer still just
 receives a Vista — see [Config-Driven Vistas](../config-driven-vistas.md) for the catalog in
 action.
 
@@ -387,7 +387,7 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.
 | `set_search` / `set_order`                              | Quicksearch and sorting (replace semantics)             |
 | `fetch_page` / `fetch_next`                             | Offset and cursor pagination                            |
 | `get_ref`                                               | Traverse a relationship from a parent row               |
-| [`VistaCatalog`](vantage_vista_factory)                 | Cross-persistence traversal, one layer above Vista      |
+| [`Catalog`](vantage_vista::Catalog)                     | Cross-persistence traversal, one layer above Vista      |
 
 ```admonish tip title="What's next"
 Vista gives you a universal read/write handle. But every call still hits the database — there's no caching, no reactivity, no way to push live updates to a UI.

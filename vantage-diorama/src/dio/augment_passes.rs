@@ -10,7 +10,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista_factory::VistaCatalog;
+use vantage_vista::VistaResolver;
 
 use crate::augment::Augmentation;
 use crate::dio::Dio;
@@ -59,14 +59,14 @@ pub(crate) async fn list_page(
 pub(crate) async fn load_detail_with(
     dio: &Dio,
     id: String,
-    catalog: &VistaCatalog,
+    resolver: &dyn VistaResolver,
     augmentations: &[Augmentation],
 ) -> Result<Record<CborValue>> {
     let mut row = dio.cache().get_value(&id).await?.unwrap_or_default();
     let master_id_column = dio.master().id_column().unwrap_or("id").to_string();
     let dio_name = dio.master().name().to_string();
     for aug in augmentations {
-        aug.augment_row(&dio_name, &master_id_column, &mut row, catalog)
+        aug.augment_row(&dio_name, &master_id_column, &mut row, resolver)
             .await?;
     }
     Ok(row)
@@ -97,11 +97,11 @@ pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &st
         inner: inner.clone(),
     };
     let detail = if inner.has_dio_augment() {
-        let catalog = inner.augment_catalog.read().unwrap().clone();
+        let resolver = inner.augment_resolver.read().unwrap().clone();
         let augmentations = inner.augmentations.read().unwrap().clone();
-        match (catalog, augmentations) {
-            (Some(catalog), Some(augmentations)) => {
-                load_detail_with(&dio, id.to_string(), &catalog, &augmentations).await?
+        match (resolver, augmentations) {
+            (Some(resolver), Some(augmentations)) => {
+                load_detail_with(&dio, id.to_string(), resolver.as_ref(), &augmentations).await?
             }
             _ => Default::default(),
         }

@@ -11,9 +11,9 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
 use vantage_sql::mysql::MysqlDB;
-use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
+use vantage_sql::mysql::vista::MysqlVistaSpec;
 use vantage_types::Record;
-use vantage_vista::{Capability, NativeCondition, VistaFactory};
+use vantage_vista::{Capability, NativeCondition, SpecResolver, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -74,7 +74,7 @@ mysql:
         self.orders_spec(&format!("  table: {}", self.orders_t))
     }
 
-    fn resolver(&self) -> MysqlSpecResolver {
+    fn resolver(&self) -> SpecResolver<MysqlVistaSpec> {
         let map: IndexMap<String, MysqlVistaSpec> =
             [("orders".to_string(), self.plain_orders_spec())]
                 .into_iter()
@@ -98,7 +98,7 @@ fn sorted_ids(rows: &IndexMap<String, Record<CborValue>>) -> Vec<String> {
 async fn modify_script_adds_sql_condition() -> TestResult {
     let f = Fixture::new("cond").await;
     let block = format!(
-        "  table: {}\n  modify: |\n    self.with_condition(ident(\"total\") > 15)",
+        "  table: {}\n  modify: |\n    self.with_condition(sql::ident(\"total\") > 15)",
         f.orders_t
     );
     let orders =
@@ -121,8 +121,8 @@ async fn modify_script_adds_sql_condition() -> TestResult {
 async fn modify_script_composes_with_rhai_source() -> TestResult {
     let f = Fixture::new("rhai").await;
     let block = format!(
-        "  rhai: |\n    select().from(\"{}\").field(\"id\").field(\"client_id\").field(\"total\")\n  \
-         modify: |\n    self.with_condition(ident(\"client_id\") == \"alice\")",
+        "  rhai: |\n    sql::select().from(\"{}\").field(\"id\").field(\"client_id\").field(\"total\")\n  \
+         modify: |\n    self.with_condition(sql::ident(\"client_id\") == \"alice\")",
         f.orders_t
     );
     let orders =
@@ -152,7 +152,7 @@ mysql:
   inherit:
     columns: [id, total]
   modify: |
-    self.with_condition(ident("total") >= 20)
+    self.with_condition(sql::ident("total") >= 20)
 "#,
     );
     let factory = f.db.vista_factory().with_resolver(f.resolver());
@@ -233,7 +233,7 @@ references:
     foreign_key: client_id
     mysql:
       rhai: |
-        table("orders").with_condition(ident("total") > 15)
+        table("orders").with_condition(sql::ident("total") > 15)
 "#,
     );
     let factory = f.db.vista_factory().with_resolver(f.resolver());
@@ -288,7 +288,7 @@ async fn modify_script_condition_guards_writes() -> TestResult {
     let before = stored_orders(&f).await;
 
     let block = format!(
-        "  table: {}\n  modify: |\n    self.with_condition(ident(\"total\") > 15)",
+        "  table: {}\n  modify: |\n    self.with_condition(sql::ident(\"total\") > 15)",
         f.orders_t
     );
     let orders =

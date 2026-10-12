@@ -5,13 +5,16 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use vantage_core::{Result, error};
 use vantage_vista::{
-    Column, ColumnFlag, JoinKey, NoExtras, Reference, ReferenceKind, ReferenceSugar, Vista,
-    VistaFactory, VistaMetadata, VistaSpec,
+    Column, ColumnFlag, JoinKey, NoExtras, Reference, ReferenceSugar, Vista, VistaFactory,
+    VistaMetadata, VistaSpec,
 };
 
-use super::affinity::{Untyped, conform_record};
-use super::{Catalog, MemoryTableShell};
+use super::affinity::conform_record;
+use super::{MemoryCatalog, MemoryTableShell};
 use crate::{MemoryStore, TableDef, seed};
+
+/// The id column a spec gets when it names none.
+const DEFAULT_ID_COLUMN: &str = "id";
 
 /// Table-level YAML block: `memory: { indexed: [..], seed: <file> }`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -32,14 +35,16 @@ pub struct MemoryBlock {
 
 pub type MemoryVistaSpec = VistaSpec<MemoryTableExtras, NoExtras, NoExtras>;
 
+/// Builds memory vistas from YAML specs, registering each one's metadata in
+/// its [`MemoryCatalog`] so traversals between them see declared columns.
 pub struct MemoryVistaFactory {
-    catalog: Catalog,
+    catalog: MemoryCatalog,
 }
 
 impl MemoryVistaFactory {
     pub fn new(store: MemoryStore) -> Self {
         Self {
-            catalog: Catalog::new(store),
+            catalog: MemoryCatalog::new(store),
         }
     }
 
@@ -61,8 +66,7 @@ impl VistaFactory for MemoryVistaFactory {
             ));
         }
         let metadata = metadata_from_spec(&spec)?;
-        let untyped = untyped_columns(&spec, &metadata);
-        let id_column = spec.resolve_id_column();
+        let id_column = spec.resolve_id_column(DEFAULT_ID_COLUMN);
         let block = spec.driver.memory;
         let table = self.store().define(
             &spec.name,
@@ -91,37 +95,20 @@ impl VistaFactory for MemoryVistaFactory {
             && table.is_empty()
         {
             seed::load_file_with(&table, path, |row| {
-                conform_record(&metadata, &untyped, &id_column, row)
+                conform_record(&metadata, &id_column, row)
             })?;
         }
-        self.catalog
-            .register_untyped(spec.name.clone(), metadata.clone(), untyped.clone());
-        let shell = MemoryTableShell::new(table, metadata, self.catalog.clone())
-            .with_untyped_columns(untyped);
+        self.catalog.register(spec.name.clone(), metadata.clone());
+        let shell = MemoryTableShell::new(table, metadata, self.catalog.clone());
         Ok(Vista::new(spec.name, shell))
     }
 }
 
-/// Stored columns the spec gives no `type:`. Their metadata says `string`
-/// for display, but their cells are stored as given.
-fn untyped_columns(spec: &MemoryVistaSpec, metadata: &VistaMetadata) -> Untyped {
-    spec.columns
-        .iter()
-        .filter(|(name, col)| {
-            let stored = metadata
-                .columns
-                .get(*name)
-                .is_some_and(|c| !c.is_computed());
-            col.col_type.is_none() && stored
-        })
-        .map(|(name, _)| name.clone())
-        .collect()
-}
-
-/// Every stored column is orderable: the store sorts on any field. A `lazy:`
+/// Every stored column is orderable: the store sorts on any field. A column
+/// without `type:` is untyped, so its cells are stored as given. A `lazy:`
 /// column is computed by the Vista.
 fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
-    let id = spec.resolve_id_column();
+    let id = spec.resolve_id_column(DEFAULT_ID_COLUMN);
     let mut metadata = VistaMetadata::new().with_id_column(id.clone());
     for (name, col) in &spec.columns {
         if col.expr.is_some() {
@@ -133,7 +120,10 @@ fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
         let column = match col.lazy_column(name)? {
             Some(computed) => computed,
             None => {
-                let column = Column::new(name, col.col_type.as_deref().unwrap_or("string"));
+                let column = match &col.col_type {
+                    Some(ty) => Column::new(name, ty),
+                    None => Column::untyped(name),
+                };
                 col.flags
                     .iter()
                     .cloned()
@@ -142,50 +132,23 @@ fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
             }
         };
         metadata = metadata.with_column(column);
+        // `references: <table>` on a column is a has_one keyed by the column.
         match &col.references {
             Some(ReferenceSugar::Sugar(target)) => {
-                metadata =
-                    metadata.with_reference(join(name, target, ReferenceKind::HasOne, name, &id)?);
+                metadata = metadata.with_reference(Reference::has_one(
+                    name,
+                    target,
+                    JoinKey::to_target_id(name),
+                ));
             }
             Some(ReferenceSugar::Full(r)) => {
-                let fk = r.foreign_key_or(name);
-                metadata = metadata.with_reference(join(name, &r.table, r.kind, &fk, &id)?);
+                metadata = metadata.with_reference(r.to_reference(name, &id)?);
             }
             None => {}
         }
     }
     for (name, r) in &spec.references {
-        if !r.keys.is_empty() {
-            return Err(error!(
-                "Multi-key references are not supported by vantage-memory",
-                reference = name
-            ));
-        }
-        let fk = r.foreign_key_or(name);
-        metadata = metadata.with_reference(join(name, &r.table, r.kind, &fk, &id)?);
+        metadata = metadata.with_reference(r.to_reference(name, &id)?);
     }
     Ok(metadata)
-}
-
-/// A single-key join: a `has_one` reads the parent's `foreign_key` and
-/// constrains the target's id column; a `has_many` reads the parent's id
-/// and constrains the target's `foreign_key`.
-fn join(
-    name: &str,
-    target: &str,
-    kind: ReferenceKind,
-    foreign_key: &str,
-    source_id: &str,
-) -> Result<Reference> {
-    let key = match kind {
-        ReferenceKind::HasOne => JoinKey::to_target_id(foreign_key),
-        ReferenceKind::HasMany => JoinKey::new(source_id, foreign_key),
-        _ => {
-            return Err(error!(
-                "references: entries must be has_one or has_many",
-                reference = name
-            ));
-        }
-    };
-    Ok(Reference::new(name, target, kind, vec![key]))
 }

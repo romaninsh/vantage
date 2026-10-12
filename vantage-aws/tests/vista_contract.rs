@@ -1,8 +1,8 @@
 //! `vantage_vista::contract` over live IAM users.
 //!
-//! Skipped (returns early) when AWS credentials aren't configured, so CI
-//! without AWS access stays green. Read-only: the backend advertises no
-//! writes.
+//! Opt-in: skipped (returns early) unless `VANTAGE_AWS_LIVE=1` is set and
+//! AWS credentials are configured. Having `~/.aws/credentials` alone never
+//! runs it. Read-only: the backend advertises no writes.
 
 use vantage_aws::AwsAccount;
 use vantage_aws::models::iam;
@@ -10,6 +10,10 @@ use vantage_dataset::prelude::ReadableValueSet;
 use vantage_vista::{CborValue, Vista, contract};
 
 fn users_or_skip() -> Option<Vista> {
+    if std::env::var("VANTAGE_AWS_LIVE").as_deref() != Ok("1") {
+        eprintln!("skipping: set VANTAGE_AWS_LIVE=1 to run against real AWS");
+        return None;
+    }
     let Ok(aws) = AwsAccount::from_default() else {
         eprintln!("skipping: AWS credentials not configured");
         return None;

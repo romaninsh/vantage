@@ -5,15 +5,12 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use serde_json::json;
-use vantage_dataset::ReadableValueSet;
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
-use vantage_vista::rhai::{block_on, lazy_value_closure};
-use vantage_vista::{
-    Column, ColumnFlag, DataVocab, TargetResolver, VistaFactory, VistaMetadata, Writes,
-};
+use vantage_vista::rhai::{DataVocab, Terminals, Writes};
+use vantage_vista::{Column, ColumnFlag, VistaFactory, VistaMetadata, VistaResolver};
 
-use super::support::run;
+use super::support::{memory_vista, read_one, run};
 
 const CLIENT: &str = r#"
 name: client
@@ -55,7 +52,7 @@ fn int(n: i64) -> CborValue {
 
 /// Clients c1 Ada (vip), c2 Ben. Orders o1 INV-c1-0001 net 100, o2
 /// INV-c1-0002 net 40, o3 INV-c2-0003 net 75.
-fn invoices() -> (MemoryStore, TargetResolver) {
+fn invoices() -> (MemoryStore, Arc<dyn VistaResolver>) {
     let store = MemoryStore::new();
     let factory = Arc::new(MemoryVistaFactory::new(store.clone()));
     // Build both once, so each one's metadata is known to `ref` traversal.
@@ -83,7 +80,7 @@ fn invoices() -> (MemoryStore, TargetResolver) {
         .collect();
         store.table("order").insert_as(id, row).unwrap();
     }
-    let resolver: TargetResolver = Arc::new(move |name: &str| match name {
+    let resolver: Arc<dyn VistaResolver> = Arc::new(move |name: &str| match name {
         "client" => factory.from_yaml(CLIENT),
         "order" => factory.from_yaml(ORDER),
         other => Err(vantage_core::error!("No such table", table = other)),
@@ -93,12 +90,12 @@ fn invoices() -> (MemoryStore, TargetResolver) {
 
 fn invoice_host() -> (MemoryStore, vantage_rhai::Host) {
     let (store, resolver) = invoices();
+    let terminals = Terminals::ReadWrite {
+        limit: None,
+        writes: Writes::Allowed,
+    };
     let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
-        .vocab(DataVocab::read_write_with(
-            Some(resolver),
-            None,
-            Writes::Allowed,
-        ))
+        .vocab(DataVocab::new(terminals).with_resolver(resolver))
         .build();
     (store, host)
 }
@@ -156,22 +153,9 @@ fn declare_in_rust() {
                 .unwrap(),
         )
         .with_column(gross);
-    let store = MemoryStore::new();
-    let shell = vantage_memory::MemoryTableShell::new(
-        store.table("order"),
-        metadata.with_id_column("id"),
-        vantage_memory::vista::Catalog::new(store.clone()),
-    );
-    let vista = vantage_vista::Vista::new("order", shell);
-    store
-        .table("order")
-        .insert_as("o1", [("net".to_string(), int(100))].into_iter().collect())
-        .unwrap();
-    let row = block_on(vista.get_value("o1".to_string()))
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert_eq!(row.get("gross"), Some(&int(120)));
+    let o1 = [("net".to_string(), int(100))].into_iter().collect();
+    let vista = memory_vista("order", metadata, vec![("o1", o1)]);
+    assert_eq!(read_one(&vista, "o1").get("gross"), Some(&int(120)));
 }
 
 #[test]
@@ -182,10 +166,7 @@ fn declare_in_yaml() {
     let client = orders.column("client").unwrap();
     assert!(client.is_computed());
     assert!(client.expression().unwrap().contains("row.code.split"));
-    assert_eq!(
-        orders.reference("client").unwrap().foreign_key(),
-        Some("client")
-    );
+    assert_eq!(orders.reference("client").unwrap().keys[0].from, "client");
 
     let broken = ORDER.replace("row.net / 5", "row.net /");
     let Err(err) = factory.from_yaml(&broken) else {
@@ -264,9 +245,15 @@ row.contents.split("\n").len() - 1
 
 #[test]
 fn closure() {
-    let compute = lazy_value_closure(CLOSURE).unwrap();
-    let row: Record<CborValue> = [("contents".to_string(), text("a\nb\nc\n"))]
+    let lines = Column::new("lines", "int")
+        .with_expression(CLOSURE)
+        .unwrap();
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("contents", "string"))
+        .with_column(lines);
+    let note = [("contents".to_string(), text("a\nb\nc\n"))]
         .into_iter()
         .collect();
-    assert_eq!(compute(&row).unwrap(), int(3));
+    let vista = memory_vista("note", metadata, vec![("n1", note)]);
+    assert_eq!(read_one(&vista, "n1").get("lines"), Some(&int(3)));
 }

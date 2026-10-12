@@ -1,6 +1,6 @@
 //! Generic augmentation: a master Vista is listed cheaply, and each row is
 //! enriched one at a time from a *separate* detail Vista resolved through a
-//! [`VistaCatalog`]. The detail source can be any backend — here both are
+//! [`Catalog`]. The detail source can be any backend — here both are
 //! in-memory so the example is self-contained.
 //!
 //! Run with: `cargo run -p vantage-diorama --example augmentation`
@@ -12,8 +12,7 @@ use ciborium::Value as CborValue;
 use vantage_diorama::{Augmentation, Detail, Fetch, Lens, MergeRule, RowStatus, Source};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
-use vantage_vista_factory::VistaCatalog;
+use vantage_vista::{Catalog, Column, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -93,8 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = std::fs::remove_file(&cache);
 
     // The catalog resolves the detail source by name (any persistence).
-    let mut catalog = VistaCatalog::new();
-    catalog.register("tfstate-detail", Arc::new(|| Ok(detail())));
+    let catalog = Catalog::new().with("tfstate-detail", |_: &str| Ok(detail()));
 
     let lens = Arc::new(
         Lens::new()

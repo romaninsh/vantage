@@ -7,9 +7,11 @@ use super::AwsTableShell;
 use super::cursor::{page_request, pages_by_key};
 use crate::AwsAccount;
 use crate::condition::AwsCondition;
-use crate::impls::table_source::{required_fields, retain_matching};
+use crate::impls::table_source::retain_eq_conditions;
 use crate::models::{iam, s3};
 use crate::vista::factory::metadata_from_table;
+
+mod leading;
 
 fn aws() -> AwsAccount {
     AwsAccount::new("AKIATEST", "secret", "eu-west-2")
@@ -114,12 +116,12 @@ async fn a_zero_limit_cursor_is_an_error_before_any_request() {
     assert!(err.to_string().contains("limit"), "{err}");
 }
 
-/// `Path` is a visible column of the user's groups; `UserName` is the
-/// hidden request parameter the rows don't carry.
+/// `Path` is a row field of the user's groups; `UserName` is the request
+/// parameter the rows don't carry.
 #[test]
-fn a_row_missing_a_visible_column_fails_and_one_missing_a_hidden_column_passes() {
+fn a_row_missing_a_row_field_fails_and_one_missing_a_request_param_passes() {
     let table = iam::group::groups_for_user_table(aws());
-    let required = required_fields(&table);
+    let required = table.row_fields();
     let rows = || {
         let with_path: Record<CborValue> = [("Path".to_string(), CborValue::from("/ops/"))]
             .into_iter()
@@ -130,21 +132,47 @@ fn a_row_missing_a_visible_column_fails_and_one_missing_a_hidden_column_passes()
         ])
     };
 
-    let mut visible = rows();
-    retain_matching(
-        &mut visible,
+    let mut by_field = rows();
+    retain_eq_conditions(
+        &mut by_field,
         &[AwsCondition::eq("Path", "/ops/")],
         &required,
     );
-    assert_eq!(visible.keys().collect::<Vec<_>>(), ["a"]);
+    assert_eq!(by_field.keys().collect::<Vec<_>>(), ["a"]);
 
-    let mut hidden = rows();
-    retain_matching(
-        &mut hidden,
+    let mut by_param = rows();
+    retain_eq_conditions(
+        &mut by_param,
         &[AwsCondition::eq("UserName", "alice")],
         &required,
     );
-    assert_eq!(hidden.keys().collect::<Vec<_>>(), ["a", "b"]);
+    assert_eq!(by_param.keys().collect::<Vec<_>>(), ["a", "b"]);
+}
+
+/// AWS has no offset, so it doesn't advertise `Window`: the Vista refuses
+/// any offset past the leading window before a request is sent.
+#[tokio::test]
+async fn an_offset_window_is_refused_before_any_request() {
+    let vista = aws()
+        .vista_factory()
+        .from_table(iam::users_table(aws()))
+        .unwrap();
+    assert!(!vista.capabilities().has(vantage_vista::Capability::Window));
+    let err = vista.fetch_window(1, 5).await.unwrap_err();
+    assert!(err.is_unsupported(), "{err:?}");
+}
+
+/// A request parameter is neither shown nor carried by rows.
+#[test]
+fn request_params_are_hidden_request_param_columns() {
+    use vantage_vista::ColumnFlag;
+    let vista = aws()
+        .vista_factory()
+        .from_table(iam::group::groups_for_user_table(aws()))
+        .unwrap();
+    let column = vista.column("UserName").expect("UserName");
+    assert!(column.has_flag(ColumnFlag::Hidden));
+    assert!(column.has_flag(ColumnFlag::RequestParam));
 }
 
 #[test]

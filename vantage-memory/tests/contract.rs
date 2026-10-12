@@ -12,6 +12,7 @@ columns:
   id: { type: string, flags: [id, orderable] }
   name: { type: string, flags: [title, searchable] }
   category: { type: string }
+  origin: {}
 "#;
 
 const ORDER: &str = r#"
@@ -35,16 +36,27 @@ fn record(pairs: &[(&str, &str)]) -> Record<CborValue> {
         .collect()
 }
 
+/// `{ country: <country> }`, the map an `origin` cell holds.
+fn origin(country: &str) -> CborValue {
+    CborValue::Map(vec![(text("country"), text(country))])
+}
+
 /// Three products, two of them drinks, and one order pointing at a product.
+/// Two products hold a map in `origin`, so the contract's dotted-path probe
+/// checks that `origin.country` narrows.
 fn factory() -> MemoryVistaFactory {
     let store = MemoryStore::new();
     let products = store.table("product");
-    for (id, name, category) in [
-        ("p1", "Tea", "drink"),
-        ("p2", "Cake", "food"),
-        ("p3", "Coffee", "drink"),
+    for (id, name, category, country) in [
+        ("p1", "Tea", "drink", Some("India")),
+        ("p2", "Cake", "food", None),
+        ("p3", "Coffee", "drink", Some("Kenya")),
     ] {
-        products.upsert(id, record(&[("name", name), ("category", category)]));
+        let mut row = record(&[("name", name), ("category", category)]);
+        if let Some(country) = country {
+            row.insert("origin".to_string(), origin(country));
+        }
+        products.upsert(id, row);
     }
     store
         .table("order")

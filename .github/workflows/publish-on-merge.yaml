@@ -111,7 +111,6 @@ jobs:
             vantage-types
             vantage-dataset
             vantage-vista
-            vantage-vista-factory
             surreal-client
             vantage-expressions
             vantage-table

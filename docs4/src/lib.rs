@@ -9,4 +9,3 @@ pub use vantage_sql;
 pub use vantage_table;
 pub use vantage_types;
 pub use vantage_vista;
-pub use vantage_vista_factory;

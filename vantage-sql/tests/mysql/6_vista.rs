@@ -299,7 +299,7 @@ columns:
     type: string
 mysql:
   rhai: |
-    select().from("{name}").field("id").field("name").where(expr("price > 15"))
+    sql::select().from("{name}").field("id").field("name").where(sql::expr("price > 15"))
 "#
     );
 
@@ -336,7 +336,7 @@ columns:
 mysql:
   table: product
   modify: |
-    self.with_condition(ident("price") > 15)
+    self.with_condition(sql::ident("price") > 15)
 "#;
     let err = db
         .vista_factory()
@@ -396,7 +396,8 @@ async fn setup_clients_orders(suffix: &str) -> (MysqlDB, String, String) {
 async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
+    use vantage_sql::mysql::vista::MysqlVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, client_t, orders_t) = setup_clients_orders("refs").await;
 
@@ -433,7 +434,7 @@ mysql:
     let map: IndexMap<String, MysqlVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: MysqlSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<MysqlVistaSpec> = Arc::new(move |name: &str| map.get(name).cloned());
 
     let factory = db.vista_factory().with_resolver(resolver);
     let clients = factory.build_from_spec(client_spec)?;
@@ -466,7 +467,8 @@ mysql:
 async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
+    use vantage_sql::mysql::vista::MysqlVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, client_t, _orders_t) = setup_clients_orders("base").await;
 
@@ -488,7 +490,7 @@ mysql:
   inherit:
     columns: [id, name]
   rhai: |
-    base.where(expr("name = 'Alice'"))
+    base.where(sql::expr("name = 'Alice'"))
 "#;
 
     let client_spec: MysqlVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
@@ -497,7 +499,7 @@ mysql:
     let map: IndexMap<String, MysqlVistaSpec> =
         [("client".to_string(), client_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: MysqlSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<MysqlVistaSpec> = Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()
@@ -527,7 +529,8 @@ mysql:
 async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
+    use vantage_sql::mysql::vista::MysqlVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, _client_t, orders_t) = setup_clients_orders("agg").await;
 
@@ -552,7 +555,7 @@ mysql:
   inherit:
     columns: [client_id]
   rhai: |
-    base.clear_fields().field("client_id").expression(expr("SUM(total) AS total_due")).group_by(expr("client_id"))
+    base.clear_fields().field("client_id").expression(sql::expr("SUM(total) AS total_due")).group_by(sql::expr("client_id"))
 "#;
 
     let orders_spec: MysqlVistaSpec = serde_yaml_ng::from_str(&orders_yaml)?;
@@ -561,7 +564,7 @@ mysql:
     let map: IndexMap<String, MysqlVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: MysqlSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<MysqlVistaSpec> = Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()

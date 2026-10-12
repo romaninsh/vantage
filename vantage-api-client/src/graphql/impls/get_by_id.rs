@@ -33,6 +33,11 @@ fn id_value<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>, id: &str) -
     id_for_column(column, id, &table.id_field_name())
 }
 
+/// Whether `column` is declared with an integer type.
+pub(crate) fn is_integer_column(column: Option<&Column<AnyGraphqlType>>) -> bool {
+    column.is_some_and(|c| INTEGER_TYPES.contains(&c.get_type()))
+}
+
 /// `id` as the JSON value `column` compares with: an integer when the
 /// column is integer-typed, a string otherwise (or without a column).
 /// `name` labels the error.
@@ -41,7 +46,7 @@ pub(crate) fn id_for_column(
     id: &str,
     name: &str,
 ) -> Result<Value> {
-    if !column.is_some_and(|c| INTEGER_TYPES.contains(&c.get_type())) {
+    if !is_integer_column(column) {
         return Ok(Value::String(id.to_string()));
     }
     id.parse::<i64>().map(Value::from).map_err(|_| {

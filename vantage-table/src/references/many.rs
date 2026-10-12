@@ -8,7 +8,11 @@ use std::{any::Any, marker::PhantomData, sync::Arc};
 use vantage_core::{Result, error};
 use vantage_types::{EmptyEntity, Entity, Record};
 
-use crate::{references::Reference, table::Table, traits::table_source::TableSource};
+use crate::{
+    references::{Cardinality, Reference},
+    table::Table,
+    traits::table_source::TableSource,
+};
 
 pub struct HasMany<T: TableSource, SourceE: Entity<T::Value>, TargetE: Entity<T::Value>> {
     /// Foreign key column on the target table (e.g. "bakery_id" on client)
@@ -86,8 +90,8 @@ where
         Box::new((self.build_target)(ds.clone()).into_entity::<EmptyEntity>())
     }
 
-    fn cardinality(&self) -> vantage_vista::ReferenceKind {
-        vantage_vista::ReferenceKind::HasMany
+    fn cardinality(&self) -> Cardinality {
+        Cardinality::HasMany
     }
 
     fn resolve_from_row(
@@ -120,7 +124,10 @@ where
         Ok(Box::new(target.into_entity::<EmptyEntity>()))
     }
 
-    fn target_type_name(&self) -> &'static str {
-        std::any::type_name::<Table<T, TargetE>>()
+    fn target_table_name(&self, data_source: &dyn Any) -> String {
+        let ds = data_source
+            .downcast_ref::<T>()
+            .expect("data source type mismatch in HasMany::target_table_name");
+        (self.build_target)(ds.clone()).table_name().to_string()
     }
 }

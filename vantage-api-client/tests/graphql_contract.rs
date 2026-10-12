@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use vantage_api_client::{GraphqlApi, GraphqlApiVistaFactory};
 use vantage_vista::contract;
 use wiremock::matchers::{body_string_contains, method};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 const CLIENT: &str = r#"
 name: client
@@ -75,11 +75,31 @@ async fn serve() -> MockServer {
     answer(&server, "orders", &["id: desc"], json!([o3, o2, o1])).await;
     answer(&server, "orders", &["_gt"], json!([o2, o3])).await;
     answer(&server, "orders", &["c1"], json!([o1, o2])).await;
-    answer(&server, "orders", &[], json!([o1, o2, o3])).await;
+    paged(&server, "orders", json!([o1, o2, o3])).await;
     answer(&server, "clients", &["id: desc"], json!([c2, c1])).await;
     answer(&server, "clients", &["_gt"], json!([c2])).await;
-    answer(&server, "clients", &[], json!([c1, c2])).await;
+    paged(&server, "clients", json!([c1, c2])).await;
     server
+}
+
+/// Answer any other query on `root` as a paging server over `rows`: the
+/// `offset`/`limit` variables slice them.
+async fn paged(server: &MockServer, root: &'static str, rows: Value) {
+    let respond = move |request: &Request| {
+        let body: Value = request.body_json().expect("a JSON request body");
+        let rows = rows.as_array().expect("rows are an array");
+        let variable = |name: &str| body["variables"][name].as_u64().map(|n| n as usize);
+        let offset = variable("offset").unwrap_or(0).min(rows.len());
+        let limit = variable("limit").unwrap_or(rows.len());
+        let window: Vec<&Value> = rows.iter().skip(offset).take(limit).collect();
+        reply(root, json!(window))
+    };
+    Mock::given(method("POST"))
+        .and(body_string_contains(root))
+        .respond_with(respond)
+        .with_priority(5)
+        .mount(server)
+        .await;
 }
 
 fn factory(server: &MockServer) -> GraphqlApiVistaFactory {

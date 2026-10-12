@@ -6,11 +6,11 @@ use vantage_dataset::ReadableValueSet;
 use vantage_rhai::rhai::{Dynamic, EvalAltResult};
 use vantage_rhai::{Env, Host, Limits};
 use vantage_types::Record;
-use vantage_vista::rhai::block_on;
-use vantage_vista::{
-    DataVocab, FilterOp, Handle, Terminals, Vista, Writes, augment_source_closure, dynamic_to_cbor,
-    eval_modify_script, eval_ref_script, preview_script, run_script,
+use vantage_vista::rhai::{
+    DataVocab, Handle, Terminals, Writes, block_on, dynamic_to_cbor, eval_modify_script,
+    eval_ref_script, preview_script, run_script,
 };
+use vantage_vista::{Condition, FilterOp, NativeCondition, TableShell, Vista, forward_table_shell};
 
 use super::support::{host, resolver, run, shop};
 
@@ -73,65 +73,114 @@ self.where("vip", true).sort("name", "desc")
 fn modify() {
     let store = shop();
     let host = host(&store, Terminals::Describe);
-    let base = resolver(&store)("client").unwrap();
+    let base = resolver(&store).vista("client").unwrap();
     let vista = eval_modify_script(&host, MODIFY, base).unwrap();
     assert_eq!(ids(&vista), ["c3", "c1"]);
 }
 
-const EXTENSION_STATEMENTS: &str = r#"
-self.only("vip", true);
-self.only("name", "Cy");
+const EXTENSION_CHAIN: &str = r#"
+self.with_condition("vip", true).with_condition("name", "Cy")
 "#;
 
-const MIXED_STATEMENTS: &str = r#"
-self.only("vip", true);
+const MIXED_CHAIN: &str = r#"
+self.with_condition("vip", true).sort("name", "desc")
+"#;
+
+const KEPT: &str = r#"
+let all = self;
+let vip = all.with_condition("vip", true);
+all
+"#;
+
+const DROPPED_STATEMENT: &str = r#"
+self.with_condition("vip", true);    // throws: this handle would be dropped
 self.sort("name", "desc");
 "#;
 
-/// A stand-in for a backend extension verb: `only(col, value)` narrows the
-/// Vista in hand by equality.
-fn only(h: &mut Handle, col: &str, value: Dynamic) -> Result<Handle, Box<EvalAltResult>> {
-    let (col, value) = (col.to_string(), dynamic_to_cbor(value)?);
-    h.with_base_vista("only", |vista| {
-        vista.add_condition(&col, FilterOp::Eq, value)
-    })
-    .map_err(|e| e.to_string().into())
+const DROPPED_ALIAS: &str = r#"
+let all = self;
+all.with_condition("vip", true);    // throws: this handle would be dropped
+all
+"#;
+
+const NOT_A_HANDLE: &str = r#"
+let vip_only = false;
+if vip_only {
+    self.with_condition("vip", true)
+}   // throws: a false `if` with no `else { self }` is ()
+"#;
+
+/// A stand-in for a backend's `with_condition` verb: an equality passed to
+/// the shell as a native condition.
+fn with_condition(h: &mut Handle, col: &str, value: Dynamic) -> Result<Handle, Box<EvalAltResult>> {
+    let key = format!("{col} = {value}");
+    let condition = Condition::new(col, FilterOp::Eq, dynamic_to_cbor(value)?);
+    h.with_native_condition("with_condition", NativeCondition::new(condition, key))
+        .map_err(|e| e.to_string().into())
 }
 
+/// The shell side of the stand-in: a native condition is a [`Condition`]
+/// the inner shell applies.
+#[derive(Clone)]
+struct NativeEq {
+    inner: Box<dyn TableShell>,
+}
+
+forward_table_shell!(NativeEq, inner, {
+    fn add_native_condition(&mut self, condition: NativeCondition) -> vantage_core::Result<()> {
+        let condition: Condition = condition
+            .downcast()
+            .map_err(|_| vantage_core::error!("not a Condition"))?;
+        self.inner.add_condition(&condition)
+    }
+});
+
 #[test]
-fn extension_statements() {
+fn extension_chains() {
     let store = shop();
     let host = Host::builder(Limits::background())
         .vocab_fn(|engine| {
-            engine.register_fn("only", only);
+            engine.register_fn("with_condition", with_condition);
         })
-        .vocab(DataVocab::describe(Some(resolver(&store))))
+        .vocab(DataVocab::new(Terminals::Describe).with_resolver(resolver(&store)))
         .build();
-    let base = || resolver(&store)("client").unwrap();
+    let base = || {
+        resolver(&store)
+            .vista("client")
+            .unwrap()
+            .map_shell(|inner| NativeEq { inner })
+    };
 
-    let vista = eval_modify_script(&host, EXTENSION_STATEMENTS, base()).unwrap();
+    let vista = eval_modify_script(&host, EXTENSION_CHAIN, base()).unwrap();
     assert_eq!(ids(&vista), ["c3"]);
 
     // A stored handle keeps what it was given.
-    let kept = "let all = self; all.only(\"vip\", true); all";
-    assert_eq!(
-        ids(&eval_modify_script(&host, kept, base()).unwrap()),
-        ["c1", "c2", "c3"]
-    );
-
-    // Narrowing statements accumulate with extension statements.
-    let vista = eval_modify_script(&host, MIXED_STATEMENTS, base()).unwrap();
-    assert_eq!(ids(&vista), ["c3", "c1"]);
+    let vista = eval_modify_script(&host, KEPT, base()).unwrap();
+    assert_eq!(ids(&vista), ["c1", "c2", "c3"]);
 
     // Narrowing chains on an extension verb's result.
-    let chained = r#"self.only("vip", true).sort("name", "desc")"#;
-    assert_eq!(
-        ids(&eval_modify_script(&host, chained, base()).unwrap()),
-        ["c3", "c1"]
+    let vista = eval_modify_script(&host, MIXED_CHAIN, base()).unwrap();
+    assert_eq!(ids(&vista), ["c3", "c1"]);
+
+    // A statement that builds a handle and drops it is refused, whatever
+    // handle it starts from.
+    for script in [DROPPED_STATEMENT, DROPPED_ALIAS] {
+        let err = eval_modify_script(&host, script, base()).unwrap_err();
+        assert!(
+            err.to_string().contains("table handle is discarded"),
+            "{err}"
+        );
+    }
+
+    // The script's value is its last statement, and it must be a table handle.
+    let err = eval_modify_script(&host, NOT_A_HANDLE, base()).unwrap_err();
+    assert!(
+        err.to_string().contains("must end on a table handle"),
+        "{err}"
     );
 
     // Outside `self`, an extension verb is an error naming it.
-    let err = run(&host, r#"table("client").only("vip", true)"#).unwrap_err();
+    let err = run(&host, r#"table("client").with_condition("vip", true)"#).unwrap_err();
     assert!(err.contains("not on a handle from `table(...)`"), "{err}");
 }
 
@@ -147,19 +196,6 @@ fn ref_build() {
     assert_eq!(ids(&vista), ["o2"]);
 }
 
-const AUGMENT: &str = r#"
-self.where("client", row.id)
-"#;
-
-#[test]
-fn augment() {
-    let store = shop();
-    let source = augment_source_closure(resolver(&store), AUGMENT.to_string());
-    let base = resolver(&store)("order").unwrap();
-    let vista = source(&client_row("c1"), base).unwrap();
-    assert_eq!(ids(&vista), ["o1", "o2"]);
-}
-
 #[test]
 fn describe_host_has_no_terminals() {
     let store = shop();
@@ -170,14 +206,19 @@ fn describe_host_has_no_terminals() {
 const READ_HOST: &str = r#"
 let o = table("order").record("o1");
 o.status = "void";
-o.save()   // throws: this host only reads
+o.flash()   // throws: this host only reads
 "#;
 
 #[test]
 fn read_host() {
     let store = shop();
-    let host = host(&store, Terminals::Read { limit: Some(50) });
-    let err = run(&host, READ_HOST).unwrap_err();
-    assert!(err.contains("writes aren't available here"), "{err}");
-    assert!(run(&host, r#"table("order").delete("o1")"#).is_err());
+    let terminals = Terminals::ReadWrite {
+        limit: Some(50),
+        writes: Writes::Denied("writes aren't available here".into()),
+    };
+    let host = host(&store, terminals);
+    for script in [READ_HOST, r#"table("order").delete("o1")"#] {
+        let err = run(&host, script).unwrap_err();
+        assert!(err.contains("writes aren't available here"), "{err}");
+    }
 }

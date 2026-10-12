@@ -2,12 +2,11 @@
 //! a [`Handle`] from `table()` or `table(name)`.
 
 use vantage_rhai::rhai::{Engine, Map as RhaiMap};
-use vantage_vista::Handle;
+use vantage_vista::rhai::{Handle, cbor_to_dynamic};
 
 use crate::generator::now_unix;
 use crate::sim::current::{Current, VerbResult, with};
 use crate::value_gen::{Draw, ValueGen};
-use vantage_vista::rhai::cbor_to_dynamic;
 
 /// Table `name`'s declared columns, generated into a map by
 /// [`ValueGen::cell`], as seeding the table does. The id column is never

@@ -43,7 +43,7 @@ impl LogWriterVistaFactory {
             .and_then(|b| b.filename.clone())
             .unwrap_or_else(|| spec.name.clone());
 
-        let id_column = spec.resolve_id_column();
+        let id_column = spec.resolve_id_column("id");
         let log_writer = self.log_writer.clone().with_id_column(&id_column);
         let mut table = Table::<LogWriter, EmptyEntity>::new(table_name, log_writer);
         table.add_spec_columns(&spec.columns, build_column)?;

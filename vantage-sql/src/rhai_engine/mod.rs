@@ -4,6 +4,10 @@
 //! Sub-macros (`register_types!`, `register_convert!`, `register_constructors!`,
 //! etc.) each generate a piece of the engine. They share type aliases
 //! defined once by `register_engine!` in the same expansion scope.
+//!
+//! A script calls the free functions through the `sql::` namespace
+//! (`sql::select().from(sql::ident("users"))`); the methods and operators on
+//! the SQL types (`.from`, `.where`, `.alias`, `["col"]`, `==`) are global.
 
 // Public so `register_engine!` can name the host crate through `$crate` from
 // any invocation site (a test, an example) without that site depending on it.
@@ -24,13 +28,13 @@ pub mod select_methods;
 pub mod operators;
 pub mod window_case;
 
-// Future checkpoint modules — uncomment as implemented:
-// #[macro_use] pub mod aggregates;
-// #[macro_use] pub mod window_case;
-
 // Re-export wrapper types so macros can reference them via $crate
 pub use types::{RhaiCase, RhaiExpr, RhaiIdent, RhaiSelect, RhaiWindow};
 
+/// Generate one SQL dialect's Rhai vocabulary in the invoking scope: the
+/// `SqlVocab` vocabulary and a shared `__host()`. The free functions are
+/// registered under `sql::`, one namespace for every dialect, so an engine
+/// keeps one `sql::` dialect: the last one registered on it.
 #[macro_export]
 macro_rules! register_engine {
     (
@@ -55,20 +59,21 @@ macro_rules! register_engine {
         type Cas = $crate::rhai_engine::RhaiCase<$V>;
 
         // Register the full SQL vocabulary onto an existing engine, so a host
-        // can layer it beneath other vocabularies (e.g. vantage-vista's data
+        // can combine it with other vocabularies (e.g. vantage-vista's data
         // vocabulary for `modify:` scripts and scripted references) instead
-        // of using `SqlVocab` on its own.
+        // of using `SqlVocab` on its own. The free functions go into the
+        // `sql::` namespace, the same for every dialect, so a script stays
+        // portable; methods and operators on the SQL types stay global.
         fn __register_engine_onto(engine: &mut $crate::rhai_engine::rhai::Engine) {
+            let mut ns = $crate::rhai_engine::vantage_rhai::Namespace::new("sql");
             $crate::register_types!(engine, value: $V, select: $Select, join: $Join, cond: $Cond);
             $crate::register_convert!(value: $V);
-            $crate::register_constructors!(engine, value: $V);
+            $crate::register_constructors!(engine, ns, value: $V);
 
-            $crate::register_select!(engine, value: $V, select: $Select, join: $Join, cond: $Cond);
+            $crate::register_select!(engine, ns, value: $V, select: $Select, join: $Join, cond: $Cond);
             $crate::register_operators!(engine, value: $V);
-            $crate::register_window_case!(engine, value: $V);
-
-            // Future phases:
-            // $crate::register_aggregates!(engine, value: $V);
+            $crate::register_window_case!(engine, ns, value: $V);
+            ns.register(engine);
         }
 
         /// This dialect's SQL vocabulary as a [`Vocab`](vantage_rhai::Vocab).

@@ -11,7 +11,7 @@ use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{Capability, Vista, VistaChangeStream, unsupported};
+use vantage_vista::{Capability, Vista, VistaChangeStream};
 
 use crate::condition::{PostgresCondition, build_sql_binary};
 use crate::postgres::PostgresDB;
@@ -115,15 +115,12 @@ impl SqlShellDialect for PostgresDB {
         move |table| factory.from_table(table)
     }
 
-    /// Refused unless the factory declared the NOTIFY triggers
-    /// (`with_notify`), as the advertised `Subscribe` says.
+    /// `Subscribe` is advertised only when the factory declared the NOTIFY
+    /// triggers (`with_notify`); `Vista::watch` refuses it otherwise.
     fn watch<E>(shell: &Shell<Self, E>) -> Result<VistaChangeStream>
     where
         E: Entity<AnyPostgresType> + 'static,
     {
-        if !shell.capabilities.has(Capability::Subscribe) {
-            return unsupported(Capability::Subscribe);
-        }
         shell.listen()
     }
 }

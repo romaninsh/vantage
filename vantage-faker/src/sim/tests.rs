@@ -17,6 +17,7 @@ mod datasets;
 mod edges;
 mod flow;
 mod guide;
+mod resolver;
 mod row;
 mod scripts;
 mod spawner;

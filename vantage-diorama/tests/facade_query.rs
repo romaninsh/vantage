@@ -369,6 +369,6 @@ async fn preview_reports_a_refused_order_on_the_facade() -> Result<()> {
             .is_some_and(|n| n.contains("applied over the cache: order by name asc")),
         "CSV refused the order, so it is applied locally: {preview:?}",
     );
-    assert_eq!(preview.driver, "dio");
+    assert_eq!(narrowed.driver_name(), "dio");
     Ok(())
 }

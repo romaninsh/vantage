@@ -9,7 +9,7 @@ use vantage_rhai::rhai::Map as RhaiMap;
 
 use super::builder::SimEngineBuilder;
 use super::kind::Inner;
-use super::stats::{Counters, SimStats};
+use super::stats::{Counters, SimStats, store_writes};
 
 /// Runs the sims of one datasource. Dropping it stops every sim and joins
 /// their threads.
@@ -70,7 +70,7 @@ impl SimEngine {
             spawned: Counters::read(&c.spawned),
             ended: Counters::read(&c.ended),
             errored: Counters::read(&c.errored),
-            writes: Counters::read(&c.writes),
+            writes: store_writes(&self.inner.store).saturating_sub(c.writes_before),
         }
     }
 

@@ -14,8 +14,8 @@ use uuid::Uuid;
 use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
-use vantage_surrealdb::vista::{SurrealSpecResolver, SurrealVistaFactory, SurrealVistaSpec};
-use vantage_vista::{VistaFactory, contract};
+use vantage_surrealdb::vista::{SurrealVistaFactory, SurrealVistaSpec};
+use vantage_vista::{SpecResolver, VistaFactory, contract};
 
 fn surreal_dsn(database: &str) -> String {
     let base = std::env::var("SURREALDB_URL")
@@ -44,6 +44,7 @@ columns:
   id: { type: thing, flags: [id, orderable] }
   name: { type: string, flags: [title, searchable] }
   city: { type: string }
+  address: {}
   bakery: { type: thing }
 surreal:
   table: client
@@ -58,7 +59,8 @@ fn spec(yaml: &str) -> SurrealVistaSpec {
     serde_yaml_ng::from_str(yaml).expect("spec yaml")
 }
 
-/// One bakery with clients `marty`, `doc` (city `hv`) and `biff` (city `tp`).
+/// One bakery with clients `marty`, `doc` (city `hv`) and `biff` (city `tp`);
+/// marty and biff carry a nested `address`.
 async fn setup() -> SurrealVistaFactory {
     let database = format!("vista_contract_{}", Uuid::new_v4().simple());
     let client = SurrealConnection::dsn(surreal_dsn(&database))
@@ -69,9 +71,9 @@ async fn setup() -> SurrealVistaFactory {
     let db = SurrealDB::new(client);
     for sql in [
         "CREATE bakery:hill_valley SET name = 'Hill Valley Bakery'",
-        "CREATE client:marty SET name = 'Marty', city = 'hv', bakery = bakery:hill_valley",
+        "CREATE client:marty SET name = 'Marty', city = 'hv', address = { street: 'Riverside' }, bakery = bakery:hill_valley",
         "CREATE client:doc SET name = 'Doc', city = 'hv', bakery = bakery:hill_valley",
-        "CREATE client:biff SET name = 'Biff', city = 'tp', bakery = bakery:hill_valley",
+        "CREATE client:biff SET name = 'Biff', city = 'tp', address = { street: 'Courthouse' }, bakery = bakery:hill_valley",
     ] {
         db.execute(&surreal_expr!(sql)).await.unwrap();
     }
@@ -81,7 +83,8 @@ async fn setup() -> SurrealVistaFactory {
     ]
     .into_iter()
     .collect();
-    let resolver: SurrealSpecResolver = Arc::new(move |name: &str| specs.get(name).cloned());
+    let resolver: SpecResolver<SurrealVistaSpec> =
+        Arc::new(move |name: &str| specs.get(name).cloned());
     SurrealVistaFactory::new(db).with_resolver(resolver)
 }
 
