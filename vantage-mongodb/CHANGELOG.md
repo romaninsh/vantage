@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-10-12
+
+- Fix: `fetch_window` and `fetch_page` sort ties by `_id`, so consecutive windows no longer repeat or skip rows that tie on the sort.
+
 ## 1.1.0 — 2026-10-11
 
 - Change streams use a dedicated client: `with_stream_pool_size` (default 100), app name
