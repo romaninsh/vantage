@@ -34,11 +34,12 @@ use vantage_core::{Result, VantageError, error};
 use vantage_table::table::Table;
 use vantage_types::{Entity, Record};
 
-use super::{MysqlTableShell, to_native_record};
+use super::MysqlTableShell;
 use crate::mysql::MysqlDB;
 use crate::mysql::table_source::id_value;
 use crate::mysql::types::AnyMysqlType;
 use crate::sql_exec::execute_affected_on;
+use crate::sql_vista::native_record;
 use crate::table_writes::{held_outside, not_in_set};
 
 /// Most rows per statement; keeps each one well under `max_allowed_packet`.
@@ -85,7 +86,9 @@ where
     let id_field = table.id_field_name();
     let mut prepared = Vec::with_capacity(records.len());
     for (id, record) in records {
-        let mut row = table.prepare_insert(&to_native_record(record)).await?;
+        let mut row = table
+            .prepare_insert(&native_record::<MysqlDB>(record))
+            .await?;
         row.insert(id_field.clone(), id_value(id));
         prepared.push(Prepared {
             id: id.clone(),

@@ -163,7 +163,7 @@ preserve. The mutability rules:
 | Operation                     | Semantics                                                  |
 | ----------------------------- | ---------------------------------------------------------- |
 | `add_condition_eq`, `with_id` | **Accrete** — each call narrows further; none can be removed |
-| `add_search`, `add_order`     | **Replace** — calling again swaps the previous one out     |
+| `set_search`, `set_order`     | **Replace** — calling again swaps the previous one out     |
 | Widening                      | **Clone first** — narrow the clone, keep the original      |
 
 A narrowed Vista is a *different, smaller set* — not a view you toggle filters on.
@@ -190,10 +190,10 @@ let row = v.get_some_value().await?;
 let mut v = vista.clone();
 
 // Quicksearch — fans across columns flagged SEARCHABLE
-v.add_search("tart")?;
+v.set_search(Some("tart"))?;
 
 // Sort by column
-v.add_order("price", SortDirection::Descending)?;
+v.set_order(Some(("price", SortDirection::Descending)))?;
 
 let rows = v.list_values().await?;
 ```
@@ -207,10 +207,10 @@ A CSV file can't sort or search server-side — it loads everything into memory.
 ~~~rust
 let caps = vista.capabilities();
 if caps.can_search {
-    v.add_search("query")?;
+    v.set_search(Some("query"))?;
 }
 if caps.can_order {
-    v.add_order("name", SortDirection::Ascending)?;
+    v.set_order(Some(("name", SortDirection::Ascending)))?;
 }
 ~~~
 
@@ -322,7 +322,7 @@ DynamoDB sets `can_count` and `can_fetch_next` (cursor-only) but not `can_fetch_
 access).
 
 ```admonish warning title="Calling unsupported methods is an error"
-The capability flags aren't suggestions — they're a contract. If `can_search` is `false`, calling `add_search()` returns an `Unsupported` error. If a flag is `true` but the driver forgot to implement the method, you get an `Unimplemented` error instead. Both are `VantageError` variants you can match on.
+The capability flags aren't suggestions — they're a contract. If `can_search` is `false`, calling `set_search()` returns an `Unsupported` error. If a flag is `true` but the driver forgot to implement the method, you get an `Unimplemented` error instead. Both are `VantageError` variants you can match on.
 
 UI adapters branch on these flags to decide which controls to show. A data grid checks `can_fetch_page` to decide between a scrollbar (random access) and a "load more" button (cursor-based).
 ```
@@ -384,7 +384,7 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.
 | [`Column`](vantage_vista::Column)                       | Column metadata with name, type, and flags              |
 | `add_condition_eq`                                      | Narrow results to field == value                        |
 | `with_id`                                               | Convenience: narrow by primary key                      |
-| `add_search` / `add_order`                              | Quicksearch and sorting (replace semantics)             |
+| `set_search` / `set_order`                              | Quicksearch and sorting (replace semantics)             |
 | `fetch_page` / `fetch_next`                             | Offset and cursor pagination                            |
 | `get_ref`                                               | Traverse a relationship from a parent row               |
 | [`VistaCatalog`](vantage_vista_factory)                 | Cross-persistence traversal, one layer above Vista      |

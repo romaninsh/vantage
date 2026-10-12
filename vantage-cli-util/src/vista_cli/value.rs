@@ -49,7 +49,7 @@ pub fn parse_value(s: &str) -> Result<CborValue> {
 /// recognise — preserving the old behaviour for callers that haven't
 /// taught their drivers to surface a column type yet.
 pub fn coerce_for_column(vista: &Vista, field: &str, raw: &str) -> Result<CborValue> {
-    let Some(column) = vista.get_column(field) else {
+    let Some(column) = vista.column(field) else {
         return Ok(auto_detect(raw));
     };
     match column_kind(&column.original_type) {
@@ -260,7 +260,7 @@ mod tests {
             .with_column(Column::new("name", "String"))
             .with_column(Column::new("vip_flag", "bool"))
             .with_column(Column::new("salary", "i64"));
-        let vista = Vista::new("users", Box::new(MockShell::new().with_metadata(metadata)));
+        let vista = Vista::new("users", MockShell::new().with_metadata(metadata));
 
         // `name=true` against a string column stays a string.
         assert_eq!(
@@ -296,7 +296,7 @@ mod tests {
             .with_column(Column::new("vip_flag", "bool"))
             .with_column(Column::new("salary", "i64"))
             .with_column(Column::new("ratio", "f64"));
-        let vista = Vista::new("users", Box::new(MockShell::new().with_metadata(metadata)));
+        let vista = Vista::new("users", MockShell::new().with_metadata(metadata));
 
         let bool_err = coerce_for_column(&vista, "vip_flag", "yes").unwrap_err();
         assert!(format!("{bool_err}").contains("bool column"));

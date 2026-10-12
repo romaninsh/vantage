@@ -14,8 +14,8 @@
 //! record it receives. Vista's only job here is to order the inserts and fill
 //! the reference (FK) values. The sequence is **best-effort / non-atomic**: a
 //! failure mid-way leaves earlier writes committed. Every Vista reference is
-//! same-persistence, so all relations are insertable; a relation name that
-//! resolves to no reference at all is rejected before any write.
+//! same-persistence, so every single-key join is insertable. Contained
+//! relations are not relations here: their data is the host column's value.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -23,7 +23,13 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::InsertableValueSet;
 use vantage_types::Record;
 
-use crate::{reference::ReferenceKind, vista::Vista};
+use crate::{
+    reference::{Reference, ReferenceKind},
+    vista::Vista,
+};
+
+#[cfg(test)]
+mod tests;
 
 /// A relation's child data, peeled off an insert record before classification.
 enum Collected {
@@ -38,19 +44,32 @@ type HasOneChild = (String, String, Record<CborValue>);
 /// A has-many group to insert after the main row: `(relation, foreign_key, children)`.
 type HasManyGroup = (String, String, Vec<Record<CborValue>>);
 
+/// The single foreign-key column a nested insert stamps.
+fn foreign_key(reference: &Reference) -> Result<String> {
+    reference.foreign_key().map(str::to_string).ok_or_else(|| {
+        error!(
+            "nested insert needs a relation joined on one key",
+            relation = reference.name.as_str()
+        )
+    })
+}
+
 impl Vista {
     /// Split an insert record into the main row's fields and the per-relation
     /// child payloads, then classify each relation as has-one / has-many.
     ///
     /// Returns `(main, has_one, has_many)`. A relation key that resolves to no
-    /// same-persistence reference (i.e. cross-persistence or unknown) is an
-    /// error, raised before any write happens.
+    /// join is an error, raised before any write happens.
     fn classify_insert(
         &self,
         record: &Record<CborValue>,
     ) -> Result<(Record<CborValue>, Vec<HasOneChild>, Vec<HasManyGroup>)> {
-        let relation_names: std::collections::HashSet<String> =
-            self.list_references().into_iter().map(|(n, _)| n).collect();
+        let relation_names: std::collections::HashSet<&str> = self
+            .references()
+            .values()
+            .filter(|r| !r.kind.is_contained())
+            .map(|r| r.name.as_str())
+            .collect();
 
         let mut main: Record<CborValue> = Record::new();
         let mut collected: IndexMap<String, Collected> = IndexMap::new();
@@ -121,12 +140,7 @@ impl Vista {
                     // shape (Text id, Tag record-id, integer key, null)
                     // is the driver's to validate, like any plain field.
                     _ => {
-                        let Some(reference) = self.get_reference(key) else {
-                            return Err(error!(
-                                "relation has no insertable reference",
-                                relation = key
-                            ));
-                        };
+                        let reference = self.join_reference(key)?;
                         if reference.kind != ReferenceKind::HasOne {
                             return Err(error!(
                                 "has-many relation takes a list of maps, not a scalar",
@@ -134,7 +148,7 @@ impl Vista {
                             ));
                         }
                         self.check_insert_link(key)?;
-                        main.insert(reference.foreign_key.clone(), value.clone());
+                        main.insert(foreign_key(reference)?, value.clone());
                     }
                 }
                 continue;
@@ -147,13 +161,8 @@ impl Vista {
         let mut has_one: Vec<HasOneChild> = Vec::new();
         let mut has_many: Vec<HasManyGroup> = Vec::new();
         for (relation, payload) in collected {
-            let reference = self.get_reference(&relation).ok_or_else(|| {
-                error!(
-                    "relation has no insertable reference",
-                    relation = relation.as_str()
-                )
-            })?;
-            let foreign_key = reference.foreign_key.clone();
+            let reference = self.join_reference(&relation)?;
+            let foreign_key = foreign_key(reference)?;
             self.check_insert_link(&relation)?;
             match reference.kind {
                 // Inserting a child stamps its new id into the main row's
@@ -189,10 +198,21 @@ impl Vista {
                         ));
                     }
                 },
+                _ => {
+                    return Err(error!(
+                        "relation has no insertable reference",
+                        relation = relation.as_str()
+                    ));
+                }
             }
         }
 
         Ok((main, has_one, has_many))
+    }
+
+    fn join_reference(&self, relation: &str) -> Result<&Reference> {
+        self.reference(relation)
+            .ok_or_else(|| error!("relation has no insertable reference", relation = relation))
     }
 
     /// Insert each has-one child into its bare target and stamp the returned id
@@ -203,7 +223,7 @@ impl Vista {
         has_one: Vec<HasOneChild>,
     ) -> Result<()> {
         for (relation, foreign_key, child) in has_one {
-            let target = self.get_ref_target(&relation)?;
+            let target = self.get_ref(&relation, None)?;
             let child_id = target.insert_return_id_value(&child).await?;
             main.insert(foreign_key, CborValue::Text(child_id));
         }
@@ -218,7 +238,7 @@ impl Vista {
         has_many: Vec<HasManyGroup>,
     ) -> Result<()> {
         for (relation, foreign_key, children) in has_many {
-            let target = self.get_ref_target(&relation)?;
+            let target = self.get_ref(&relation, None)?;
             for mut child in children {
                 child.insert(foreign_key.clone(), CborValue::Text(parent_id.to_string()));
                 target.insert_return_id_value(&child).await?;
@@ -227,18 +247,15 @@ impl Vista {
         Ok(())
     }
 
-    /// Nested insert returning the main row's id (the `insert_return_id_value`
-    /// path). Children with auto-assigned ids; main row id chosen by the driver.
+    /// Nested insert under a backend-made id (the `insert_return_id_value`
+    /// path). Returns that id.
     pub(crate) async fn insert_nested_return_id(
         &self,
         record: &Record<CborValue>,
     ) -> Result<String> {
         let (mut main, has_one, has_many) = self.classify_insert(&self.without_computed(record))?;
         self.insert_has_one_children(&mut main, has_one).await?;
-        let parent_id = self
-            .source
-            .insert_vista_return_id_value(self, &main)
-            .await?;
+        let (parent_id, _) = self.shell().insert(None, &main).await?;
         self.insert_has_many_children(&parent_id, has_many).await?;
         Ok(parent_id)
     }
@@ -247,193 +264,13 @@ impl Vista {
     /// Returns the inserted main record as the driver stored it.
     pub(crate) async fn insert_nested_value(
         &self,
-        id: &String,
+        id: &str,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
         let (mut main, has_one, has_many) = self.classify_insert(&self.without_computed(record))?;
         self.insert_has_one_children(&mut main, has_one).await?;
-        let inserted = self.source.insert_vista_value(self, id, &main).await?;
+        let (_, inserted) = self.shell().insert(Some(id), &main).await?;
         self.insert_has_many_children(id, has_many).await?;
         Ok(inserted)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{Column, Reference, ReferenceKind, VistaMetadata, mocks::mock_shell::MockShell};
-
-    /// Vista over a `client` table: scalar columns plus a has-one `bakery`
-    /// (FK `bakery_id` on this row) and a has-many `orders` (FK `client_id` on
-    /// the order row).
-    fn client_vista() -> Vista {
-        let metadata = VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
-            .with_column(Column::new("name", "String"))
-            .with_id_column("id")
-            .with_reference(Reference::new(
-                "bakery",
-                "bakery",
-                ReferenceKind::HasOne,
-                "bakery_id",
-            ))
-            .with_reference(Reference::new(
-                "orders",
-                "order",
-                ReferenceKind::HasMany,
-                "client_id",
-            ));
-        Vista::new("client", Box::new(MockShell::new().with_metadata(metadata)))
-    }
-
-    fn text(s: &str) -> CborValue {
-        CborValue::Text(s.into())
-    }
-
-    fn map(pairs: &[(&str, CborValue)]) -> CborValue {
-        CborValue::Map(
-            pairs
-                .iter()
-                .map(|(k, v)| (CborValue::Text((*k).into()), v.clone()))
-                .collect(),
-        )
-    }
-
-    fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
-        pairs
-            .iter()
-            .map(|(k, v)| ((*k).into(), v.clone()))
-            .collect()
-    }
-
-    #[test]
-    fn flat_record_has_no_relations() {
-        let (main, has_one, has_many) = client_vista()
-            .classify_insert(&record(&[
-                ("name", text("John")),
-                ("bakery_id", text("b1")),
-            ]))
-            .unwrap();
-        assert_eq!(main.get("name"), Some(&text("John")));
-        assert_eq!(main.get("bakery_id"), Some(&text("b1")));
-        assert!(has_one.is_empty());
-        assert!(has_many.is_empty());
-    }
-
-    #[test]
-    fn dotted_keys_group_into_one_has_one_child() {
-        let (main, has_one, has_many) = client_vista()
-            .classify_insert(&record(&[
-                ("name", text("John")),
-                ("bakery.name", text("New Bakery")),
-                ("bakery.profit_margin", CborValue::Integer(10.into())),
-            ]))
-            .unwrap();
-        assert_eq!(main.get("name"), Some(&text("John")));
-        assert!(main.get("bakery.name").is_none());
-        assert!(has_many.is_empty());
-        assert_eq!(has_one.len(), 1);
-        let (relation, fk, child) = &has_one[0];
-        assert_eq!(relation, "bakery");
-        assert_eq!(fk, "bakery_id");
-        assert_eq!(child.get("name"), Some(&text("New Bakery")));
-        assert_eq!(
-            child.get("profit_margin"),
-            Some(&CborValue::Integer(10.into()))
-        );
-    }
-
-    #[test]
-    fn bare_map_is_a_has_one_child() {
-        let (_main, has_one, _has_many) = client_vista()
-            .classify_insert(&record(&[("bakery", map(&[("name", text("New Bakery"))]))]))
-            .unwrap();
-        assert_eq!(has_one.len(), 1);
-        assert_eq!(has_one[0].2.get("name"), Some(&text("New Bakery")));
-    }
-
-    #[test]
-    fn bare_list_is_a_has_many_group() {
-        let (_main, has_one, has_many) = client_vista()
-            .classify_insert(&record(&[(
-                "orders",
-                CborValue::Array(vec![
-                    map(&[("total", CborValue::Integer(1.into()))]),
-                    map(&[("total", CborValue::Integer(2.into()))]),
-                ]),
-            )]))
-            .unwrap();
-        assert!(has_one.is_empty());
-        assert_eq!(has_many.len(), 1);
-        let (relation, fk, children) = &has_many[0];
-        assert_eq!(relation, "orders");
-        assert_eq!(fk, "client_id");
-        assert_eq!(children.len(), 2);
-    }
-
-    #[test]
-    fn bare_scalar_links_an_existing_record_via_the_foreign_key() {
-        let (main, has_one, has_many) = client_vista()
-            .classify_insert(&record(&[
-                ("name", text("John")),
-                ("bakery", text("bakery:hill_valley")),
-            ]))
-            .unwrap();
-        assert!(has_one.is_empty());
-        assert!(has_many.is_empty());
-        assert!(main.get("bakery").is_none());
-        assert_eq!(main.get("bakery_id"), Some(&text("bakery:hill_valley")));
-    }
-
-    /// Both forms of a has-one at once — link an existing row AND create
-    /// a child — is refused rather than resolved: the child insert would
-    /// silently overwrite the link.
-    #[test]
-    fn a_link_and_child_data_for_one_relation_is_an_error() {
-        let scalar_and_dotted = client_vista().classify_insert(&record(&[
-            ("bakery", text("bakery:hill_valley")),
-            ("bakery.name", text("New Bakery")),
-        ]));
-        let err = scalar_and_dotted.unwrap_err().to_string();
-        assert!(err.contains("both a record link and child data"), "{err}");
-
-        // Same conflict spelled with the plain foreign-key column.
-        let fk_and_map = client_vista().classify_insert(&record(&[
-            ("bakery_id", text("b1")),
-            ("bakery", map(&[("name", text("New Bakery"))])),
-        ]));
-        assert!(fk_and_map.is_err());
-
-        // Either form ALONE stays legal.
-        assert!(
-            client_vista()
-                .classify_insert(&record(&[("bakery", text("bakery:hill_valley"))]))
-                .is_ok()
-        );
-        assert!(
-            client_vista()
-                .classify_insert(&record(&[("bakery", map(&[("name", text("New"))]))]))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn has_many_given_a_scalar_is_an_error() {
-        let err = client_vista().classify_insert(&record(&[("orders", text("order:1"))]));
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn has_one_given_a_list_is_an_error() {
-        let err = client_vista()
-            .classify_insert(&record(&[("bakery", CborValue::Array(vec![map(&[])]))]));
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn has_many_given_a_map_is_an_error() {
-        let err =
-            client_vista().classify_insert(&record(&[("orders", map(&[("total", text("x"))]))]));
-        assert!(err.is_err());
     }
 }

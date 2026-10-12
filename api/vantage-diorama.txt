@@ -220,30 +220,29 @@ pub mod vantage_diorama::dio::impls::table_shell
 pub mod vantage_diorama::dio::refresh
 pub mod vantage_diorama::dio::shell
 pub struct vantage_diorama::dio::shell::DioShell
-impl vantage_vista::source::TableShell for vantage_diorama::dio::shell::DioShell
-pub fn vantage_diorama::dio::shell::DioShell::add_eq_condition(&mut self, &str, &ciborium::value::Value) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::add_order(&mut self, &str, vantage_vista::sort::SortDirection) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
-pub fn vantage_diorama::dio::shell::DioShell::clear_orders(&mut self) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::clone_shell(&self) -> core::option::Option<alloc::boxed::Box<dyn vantage_vista::source::TableShell>>
+impl core::clone::Clone for vantage_diorama::dio::shell::DioShell
+pub fn vantage_diorama::dio::shell::DioShell::clone(&self) -> Self
+impl vantage_vista::shell::TableShell for vantage_diorama::dio::shell::DioShell
+pub fn vantage_diorama::dio::shell::DioShell::add_condition(&mut self, &vantage_vista::query::Condition) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::dio::shell::DioShell::capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::dio::shell::DioShell::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::column::Column>
-pub fn vantage_diorama::dio::shell::DioShell::delete_vista_all_values<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::delete_vista_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::delete<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::delete_all<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn vantage_diorama::dio::shell::DioShell::driver_name(&self) -> &'static str
-pub fn vantage_diorama::dio::shell::DioShell::fetch_window<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, usize, usize) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_count<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_some_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::fetch_window<'life0, 'async_trait>(&'life0 self, usize, usize) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::page::Page>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::get<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::get_ref(&self, &str, core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<vantage_vista::vista::Vista>
 pub fn vantage_diorama::dio::shell::DioShell::id_column(&self) -> core::option::Option<&str>
-pub fn vantage_diorama::dio::shell::DioShell::insert_vista_return_id_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::string::String>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::insert_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::list_vista_values<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::patch_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::preview_query(&self, &vantage_vista::vista::Vista) -> serde_json::value::Value
+pub fn vantage_diorama::dio::shell::DioShell::insert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, core::option::Option<&'life1 str>, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::list<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::preview(&self) -> vantage_vista::page::Preview
 pub fn vantage_diorama::dio::shell::DioShell::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::reference::Reference>
-pub fn vantage_diorama::dio::shell::DioShell::replace_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::upsert_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::watch_vista<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::source::VistaChangeStream>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::sort::SortDirection)>) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::dio::shell::DioShell::upsert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::watch<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::change::VistaChangeStream>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 impl core::marker::Freeze for vantage_diorama::dio::shell::DioShell
 impl core::marker::Send for vantage_diorama::dio::shell::DioShell
 impl core::marker::Sync for vantage_diorama::dio::shell::DioShell
@@ -309,7 +308,6 @@ pub async fn vantage_diorama::dio::Dio::get_ref_target(&self, &str) -> vantage_c
 pub async fn vantage_diorama::dio::Dio::handle_event(&self, vantage_diorama::ops::change_event::ChangeEvent) -> vantage_core::util::error::Result<()>
 pub fn vantage_diorama::dio::Dio::live_table_scenery_count(&self) -> usize
 pub fn vantage_diorama::dio::Dio::master(&self) -> alloc::rcs::arc::Arc<vantage_vista::vista::Vista>
-pub fn vantage_diorama::dio::Dio::master_aggregate(&self, &vantage_vista::aggregate::AggregateSpec) -> vantage_core::util::error::Result<core::option::Option<vantage_vista::vista::Vista>>
 pub fn vantage_diorama::dio::Dio::notify_dataset_changed(&self)
 pub fn vantage_diorama::dio::Dio::notify_record_changed(&self, impl core::convert::Into<alloc::string::String>)
 pub fn vantage_diorama::dio::Dio::notify_seeded(&self)
@@ -356,30 +354,29 @@ impl core::marker::UnsafeUnpin for vantage_diorama::dio::Dio
 impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::dio::Dio
 impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::dio::Dio
 pub struct vantage_diorama::dio::DioShell
-impl vantage_vista::source::TableShell for vantage_diorama::dio::shell::DioShell
-pub fn vantage_diorama::dio::shell::DioShell::add_eq_condition(&mut self, &str, &ciborium::value::Value) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::add_order(&mut self, &str, vantage_vista::sort::SortDirection) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
-pub fn vantage_diorama::dio::shell::DioShell::clear_orders(&mut self) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::clone_shell(&self) -> core::option::Option<alloc::boxed::Box<dyn vantage_vista::source::TableShell>>
+impl core::clone::Clone for vantage_diorama::dio::shell::DioShell
+pub fn vantage_diorama::dio::shell::DioShell::clone(&self) -> Self
+impl vantage_vista::shell::TableShell for vantage_diorama::dio::shell::DioShell
+pub fn vantage_diorama::dio::shell::DioShell::add_condition(&mut self, &vantage_vista::query::Condition) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::dio::shell::DioShell::capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::dio::shell::DioShell::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::column::Column>
-pub fn vantage_diorama::dio::shell::DioShell::delete_vista_all_values<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::delete_vista_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::delete<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::delete_all<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn vantage_diorama::dio::shell::DioShell::driver_name(&self) -> &'static str
-pub fn vantage_diorama::dio::shell::DioShell::fetch_window<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, usize, usize) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_count<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_some_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::fetch_window<'life0, 'async_trait>(&'life0 self, usize, usize) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::page::Page>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::get<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::get_ref(&self, &str, core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<vantage_vista::vista::Vista>
 pub fn vantage_diorama::dio::shell::DioShell::id_column(&self) -> core::option::Option<&str>
-pub fn vantage_diorama::dio::shell::DioShell::insert_vista_return_id_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::string::String>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::insert_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::list_vista_values<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::patch_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::preview_query(&self, &vantage_vista::vista::Vista) -> serde_json::value::Value
+pub fn vantage_diorama::dio::shell::DioShell::insert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, core::option::Option<&'life1 str>, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::list<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::preview(&self) -> vantage_vista::page::Preview
 pub fn vantage_diorama::dio::shell::DioShell::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::reference::Reference>
-pub fn vantage_diorama::dio::shell::DioShell::replace_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::upsert_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::watch_vista<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::source::VistaChangeStream>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::sort::SortDirection)>) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::dio::shell::DioShell::upsert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::watch<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::change::VistaChangeStream>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 impl core::marker::Freeze for vantage_diorama::dio::shell::DioShell
 impl core::marker::Send for vantage_diorama::dio::shell::DioShell
 impl core::marker::Sync for vantage_diorama::dio::shell::DioShell
@@ -1247,8 +1244,8 @@ pub vantage_diorama::ops::change_event::ChangeEvent::Updated::id: alloc::string:
 pub vantage_diorama::ops::change_event::ChangeEvent::Updated::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
 impl core::clone::Clone for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::clone(&self) -> Self
-impl core::convert::From<vantage_vista::source::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
-pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::source::VistaChange) -> Self
+impl core::convert::From<vantage_vista::change::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
+pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::change::VistaChange) -> Self
 impl core::fmt::Debug for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for vantage_diorama::ops::change_event::ChangeEvent
@@ -1373,8 +1370,8 @@ pub vantage_diorama::ops::ChangeEvent::Updated::id: alloc::string::String
 pub vantage_diorama::ops::ChangeEvent::Updated::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
 impl core::clone::Clone for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::clone(&self) -> Self
-impl core::convert::From<vantage_vista::source::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
-pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::source::VistaChange) -> Self
+impl core::convert::From<vantage_vista::change::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
+pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::change::VistaChange) -> Self
 impl core::fmt::Debug for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for vantage_diorama::ops::change_event::ChangeEvent
@@ -1519,8 +1516,8 @@ pub vantage_diorama::prelude::ChangeEvent::Updated::id: alloc::string::String
 pub vantage_diorama::prelude::ChangeEvent::Updated::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
 impl core::clone::Clone for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::clone(&self) -> Self
-impl core::convert::From<vantage_vista::source::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
-pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::source::VistaChange) -> Self
+impl core::convert::From<vantage_vista::change::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
+pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::change::VistaChange) -> Self
 impl core::fmt::Debug for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for vantage_diorama::ops::change_event::ChangeEvent
@@ -1782,7 +1779,6 @@ pub async fn vantage_diorama::dio::Dio::get_ref_target(&self, &str) -> vantage_c
 pub async fn vantage_diorama::dio::Dio::handle_event(&self, vantage_diorama::ops::change_event::ChangeEvent) -> vantage_core::util::error::Result<()>
 pub fn vantage_diorama::dio::Dio::live_table_scenery_count(&self) -> usize
 pub fn vantage_diorama::dio::Dio::master(&self) -> alloc::rcs::arc::Arc<vantage_vista::vista::Vista>
-pub fn vantage_diorama::dio::Dio::master_aggregate(&self, &vantage_vista::aggregate::AggregateSpec) -> vantage_core::util::error::Result<core::option::Option<vantage_vista::vista::Vista>>
 pub fn vantage_diorama::dio::Dio::notify_dataset_changed(&self)
 pub fn vantage_diorama::dio::Dio::notify_record_changed(&self, impl core::convert::Into<alloc::string::String>)
 pub fn vantage_diorama::dio::Dio::notify_seeded(&self)
@@ -2031,7 +2027,7 @@ pub fn vantage_diorama::prelude::TableScenery::filter_terms(&self) -> alloc::vec
 pub fn vantage_diorama::prelude::TableScenery::has_more(&self) -> bool
 pub fn vantage_diorama::prelude::TableScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::prelude::TableScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::prelude::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::prelude::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::prelude::TableScenery::request_load_more(&self)
 pub fn vantage_diorama::prelude::TableScenery::request_refresh(&self)
 pub fn vantage_diorama::prelude::TableScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -2054,7 +2050,7 @@ pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<va
 pub fn vantage_diorama::CappedScenery::has_more(&self) -> bool
 pub fn vantage_diorama::CappedScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::CappedScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::CappedScenery::request_load_more(&self)
 pub fn vantage_diorama::CappedScenery::request_refresh(&self)
 pub fn vantage_diorama::CappedScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -2298,7 +2294,7 @@ pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<va
 pub fn vantage_diorama::CappedScenery::has_more(&self) -> bool
 pub fn vantage_diorama::CappedScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::CappedScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::CappedScenery::request_load_more(&self)
 pub fn vantage_diorama::CappedScenery::request_refresh(&self)
 pub fn vantage_diorama::CappedScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -2441,7 +2437,7 @@ pub fn vantage_diorama::scenery::table::TableScenery::filter_terms(&self) -> all
 pub fn vantage_diorama::scenery::table::TableScenery::has_more(&self) -> bool
 pub fn vantage_diorama::scenery::table::TableScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::scenery::table::TableScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::scenery::table::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::scenery::table::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::scenery::table::TableScenery::request_load_more(&self)
 pub fn vantage_diorama::scenery::table::TableScenery::request_refresh(&self)
 pub fn vantage_diorama::scenery::table::TableScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -2464,7 +2460,7 @@ pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<va
 pub fn vantage_diorama::CappedScenery::has_more(&self) -> bool
 pub fn vantage_diorama::CappedScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::CappedScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::CappedScenery::request_load_more(&self)
 pub fn vantage_diorama::CappedScenery::request_refresh(&self)
 pub fn vantage_diorama::CappedScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -2732,7 +2728,7 @@ pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<va
 pub fn vantage_diorama::CappedScenery::has_more(&self) -> bool
 pub fn vantage_diorama::CappedScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::CappedScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::CappedScenery::request_load_more(&self)
 pub fn vantage_diorama::CappedScenery::request_refresh(&self)
 pub fn vantage_diorama::CappedScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -2919,7 +2915,7 @@ pub fn vantage_diorama::scenery::TableScenery::filter_terms(&self) -> alloc::vec
 pub fn vantage_diorama::scenery::TableScenery::has_more(&self) -> bool
 pub fn vantage_diorama::scenery::TableScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::scenery::TableScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::scenery::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::scenery::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::scenery::TableScenery::request_load_more(&self)
 pub fn vantage_diorama::scenery::TableScenery::request_refresh(&self)
 pub fn vantage_diorama::scenery::TableScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -2942,7 +2938,7 @@ pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<va
 pub fn vantage_diorama::CappedScenery::has_more(&self) -> bool
 pub fn vantage_diorama::CappedScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::CappedScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::CappedScenery::request_load_more(&self)
 pub fn vantage_diorama::CappedScenery::request_refresh(&self)
 pub fn vantage_diorama::CappedScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -3149,8 +3145,8 @@ pub vantage_diorama::ChangeEvent::Updated::id: alloc::string::String
 pub vantage_diorama::ChangeEvent::Updated::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
 impl core::clone::Clone for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::clone(&self) -> Self
-impl core::convert::From<vantage_vista::source::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
-pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::source::VistaChange) -> Self
+impl core::convert::From<vantage_vista::change::VistaChange> for vantage_diorama::ops::change_event::ChangeEvent
+pub fn vantage_diorama::ops::change_event::ChangeEvent::from(vantage_vista::change::VistaChange) -> Self
 impl core::fmt::Debug for vantage_diorama::ops::change_event::ChangeEvent
 pub fn vantage_diorama::ops::change_event::ChangeEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for vantage_diorama::ops::change_event::ChangeEvent
@@ -3556,7 +3552,7 @@ pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<va
 pub fn vantage_diorama::CappedScenery::has_more(&self) -> bool
 pub fn vantage_diorama::CappedScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::CappedScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::CappedScenery::request_load_more(&self)
 pub fn vantage_diorama::CappedScenery::request_refresh(&self)
 pub fn vantage_diorama::CappedScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -3687,7 +3683,6 @@ pub async fn vantage_diorama::dio::Dio::get_ref_target(&self, &str) -> vantage_c
 pub async fn vantage_diorama::dio::Dio::handle_event(&self, vantage_diorama::ops::change_event::ChangeEvent) -> vantage_core::util::error::Result<()>
 pub fn vantage_diorama::dio::Dio::live_table_scenery_count(&self) -> usize
 pub fn vantage_diorama::dio::Dio::master(&self) -> alloc::rcs::arc::Arc<vantage_vista::vista::Vista>
-pub fn vantage_diorama::dio::Dio::master_aggregate(&self, &vantage_vista::aggregate::AggregateSpec) -> vantage_core::util::error::Result<core::option::Option<vantage_vista::vista::Vista>>
 pub fn vantage_diorama::dio::Dio::notify_dataset_changed(&self)
 pub fn vantage_diorama::dio::Dio::notify_record_changed(&self, impl core::convert::Into<alloc::string::String>)
 pub fn vantage_diorama::dio::Dio::notify_seeded(&self)
@@ -3751,30 +3746,29 @@ impl core::marker::UnsafeUnpin for vantage_diorama::dio::diagnostics::DioDiagnos
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::dio::diagnostics::DioDiagnostics
 impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::dio::diagnostics::DioDiagnostics
 pub struct vantage_diorama::DioShell
-impl vantage_vista::source::TableShell for vantage_diorama::dio::shell::DioShell
-pub fn vantage_diorama::dio::shell::DioShell::add_eq_condition(&mut self, &str, &ciborium::value::Value) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::add_order(&mut self, &str, vantage_vista::sort::SortDirection) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
-pub fn vantage_diorama::dio::shell::DioShell::clear_orders(&mut self) -> vantage_core::util::error::Result<()>
-pub fn vantage_diorama::dio::shell::DioShell::clone_shell(&self) -> core::option::Option<alloc::boxed::Box<dyn vantage_vista::source::TableShell>>
+impl core::clone::Clone for vantage_diorama::dio::shell::DioShell
+pub fn vantage_diorama::dio::shell::DioShell::clone(&self) -> Self
+impl vantage_vista::shell::TableShell for vantage_diorama::dio::shell::DioShell
+pub fn vantage_diorama::dio::shell::DioShell::add_condition(&mut self, &vantage_vista::query::Condition) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::dio::shell::DioShell::capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::dio::shell::DioShell::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::column::Column>
-pub fn vantage_diorama::dio::shell::DioShell::delete_vista_all_values<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::delete_vista_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::delete<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::delete_all<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn vantage_diorama::dio::shell::DioShell::driver_name(&self) -> &'static str
-pub fn vantage_diorama::dio::shell::DioShell::fetch_window<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, usize, usize) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_count<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_some_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::get_vista_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::fetch_window<'life0, 'async_trait>(&'life0 self, usize, usize) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::page::Page>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::get<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::get_ref(&self, &str, core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<vantage_vista::vista::Vista>
 pub fn vantage_diorama::dio::shell::DioShell::id_column(&self) -> core::option::Option<&str>
-pub fn vantage_diorama::dio::shell::DioShell::insert_vista_return_id_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::string::String>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::insert_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::list_vista_values<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::patch_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::preview_query(&self, &vantage_vista::vista::Vista) -> serde_json::value::Value
+pub fn vantage_diorama::dio::shell::DioShell::insert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, core::option::Option<&'life1 str>, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::list<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::preview(&self) -> vantage_vista::page::Preview
 pub fn vantage_diorama::dio::shell::DioShell::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::reference::Reference>
-pub fn vantage_diorama::dio::shell::DioShell::replace_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::upsert_vista_value<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista, &'life2 alloc::string::String, &'life3 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
-pub fn vantage_diorama::dio::shell::DioShell::watch_vista<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::source::VistaChangeStream>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::sort::SortDirection)>) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::dio::shell::DioShell::upsert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::dio::shell::DioShell::watch<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::change::VistaChangeStream>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 impl core::marker::Freeze for vantage_diorama::dio::shell::DioShell
 impl core::marker::Send for vantage_diorama::dio::shell::DioShell
 impl core::marker::Sync for vantage_diorama::dio::shell::DioShell
@@ -4401,7 +4395,7 @@ pub fn vantage_diorama::TableScenery::filter_terms(&self) -> alloc::vec::Vec<van
 pub fn vantage_diorama::TableScenery::has_more(&self) -> bool
 pub fn vantage_diorama::TableScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::TableScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::TableScenery::request_load_more(&self)
 pub fn vantage_diorama::TableScenery::request_refresh(&self)
 pub fn vantage_diorama::TableScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>
@@ -4424,7 +4418,7 @@ pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<va
 pub fn vantage_diorama::CappedScenery::has_more(&self) -> bool
 pub fn vantage_diorama::CappedScenery::is_loading(&self) -> bool
 pub fn vantage_diorama::CappedScenery::load_state(&self) -> vantage_diorama::scenery::table::LoadState
-pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::VistaCapabilities
+pub fn vantage_diorama::CappedScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
 pub fn vantage_diorama::CappedScenery::request_load_more(&self)
 pub fn vantage_diorama::CappedScenery::request_refresh(&self)
 pub fn vantage_diorama::CappedScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::scenery::enriched_record::EnrichedRecord>>

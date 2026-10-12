@@ -2,6 +2,7 @@
 
 pub mod traits;
 
+mod any_expression;
 pub mod expression;
 pub mod mocks;
 pub mod prelude;
@@ -9,6 +10,7 @@ pub mod util;
 pub mod value;
 
 // pub use expression::lazy::LazyExpression;
+pub use any_expression::{AnyExpression, ExpressionLike};
 pub use expression::core::Expression;
 pub use expression::flatten::{ExpressionFlattener, Flatten};
 pub use expression::mapping::{ExpressionMap, ExpressionMapper};
@@ -20,7 +22,6 @@ pub use traits::datasource::{ExprDataSource, defer_execute};
 pub use traits::expressive::{DeferredFn, Expressive, ExpressiveEnum};
 pub use traits::expressive_or::ExpressiveOr;
 pub use traits::selectable::{Nulls, Order, Selectable};
-pub use vantage_vista::{AnyExpression, ExpressionLike};
 
 pub use traits::result;
 

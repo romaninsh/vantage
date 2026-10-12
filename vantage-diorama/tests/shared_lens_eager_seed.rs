@@ -27,7 +27,7 @@ use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Lens, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Capability, Column, TableShell, Vista, VistaMetadata, mocks::MockShell};
 
 /// Bounds a hang; not an assertion about speed.
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
@@ -39,17 +39,21 @@ fn named(name: &str) -> Record<CborValue> {
 }
 
 /// An eager master: it holds rows and, crucially, does **not** advertise
-/// `can_fetch_window` — so a lens offering both shapes is warmed whole.
+/// `Window` — so a lens offering both shapes is warmed whole.
 fn master(rows: &[(&str, &str)]) -> Vista {
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id");
-    let mut shell = MockShell::new().with_metadata(metadata);
+    let shell = MockShell::new();
+    let capabilities = shell.capabilities().without(Capability::Window);
+    let mut shell = shell
+        .with_metadata(metadata)
+        .with_capabilities(capabilities);
     for (id, name) in rows {
         shell = shell.with_record(*id, named(name));
     }
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 /// Block until the scenery reports `want` rows, driven by the generation watch.

@@ -9,9 +9,13 @@ use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
 use vantage_table::pagination::Pagination;
 use vantage_types::Record;
+use vantage_vista::Preview;
 
 use crate::row_keys::insert_row;
 use crate::transport::AuthHeader;
+
+/// The REST shell's `driver_name`, also stamped on its previews.
+pub(crate) const REST_DRIVER: &str = "rest-api";
 
 /// How the API wraps its row array in the response body.
 ///
@@ -197,8 +201,8 @@ pub struct RestApi {
     filter_strategy: FilterStrategy,
     /// Response-envelope key carrying the grand total of matching rows
     /// (e.g. `count`). When set, the shell reports an exact count and
-    /// advertises `can_fetch_window` for lazy/scroll loading; when `None`
-    /// it falls back to counting fetched rows.
+    /// advertises the `Window` capability for lazy/scroll loading; when
+    /// `None` it falls back to counting fetched rows.
     total_key: Option<String>,
     /// The sort query param, when the API has one. Unset means the API
     /// cannot sort and consumers order fetched rows themselves.
@@ -334,19 +338,15 @@ impl RestApi {
         table_name: &str,
         conditions: &[&Expression<CborValue>],
     ) -> Result<(String, Vec<usize>)> {
+        if table_name.matches('{').count() != super::placeholders(table_name).count() {
+            return Err(error!(
+                "Unclosed `{` in table name URI template",
+                table_name = table_name
+            ));
+        }
         let mut consumed = Vec::new();
-        let mut path = String::with_capacity(table_name.len());
-        let mut rest = table_name;
-        while let Some(open) = rest.find('{') {
-            path.push_str(&rest[..open]);
-            let after = &rest[open + 1..];
-            let close = after.find('}').ok_or_else(|| {
-                error!(
-                    "Unclosed `{` in table name URI template",
-                    table_name = table_name
-                )
-            })?;
-            let placeholder = &after[..close];
+        let mut path = table_name.to_string();
+        for placeholder in super::placeholders(table_name) {
             let (idx, value) = conditions
                 .iter()
                 .enumerate()
@@ -365,10 +365,10 @@ impl RestApi {
                     )
                 })?;
             consumed.push(idx);
-            path.push_str(&urlencode(&value));
-            rest = &after[close + 1..];
+            // Earlier substitutions are URL-encoded, so they hold no `{`:
+            // the first `{placeholder}` left is this one.
+            path = path.replacen(&format!("{{{placeholder}}}"), &urlencode(&value), 1);
         }
-        path.push_str(rest);
         Ok((format!("{}/{}", self.base_url, path), consumed))
     }
 
@@ -439,7 +439,7 @@ impl RestApi {
         }
 
         // A sort reaches the query only when the API declared how it takes
-        // one; the vista never offers `add_order` otherwise.
+        // one; the vista never offers `set_order` otherwise.
         if let (Some(spec), Some((field, dir))) = (&self.ordering, order) {
             params.push((spec.param.clone(), spec.value(field, dir)));
         }
@@ -482,15 +482,16 @@ impl RestApi {
     /// One difference is deliberate: `fetch_raw_body` first *awaits* any
     /// deferred condition (a foreign key whose value arrives with the parent
     /// row), and awaiting is what a preview must not do. Those are counted
-    /// under `deferred_conditions` and left out of the URL instead.
+    /// in the note and left out of the URL instead.
     pub(crate) fn preview_request<'a>(
         &self,
         table_name: &str,
         window: Option<(i64, i64)>,
         order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
-    ) -> serde_json::Value {
+    ) -> Preview {
         let conds: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
+        let preview = Preview::new(REST_DRIVER);
 
         // Conditions the query-param lowering cannot peel into an eq pair —
         // deferred foreign keys, and anything else not shaped `field = value`.
@@ -507,40 +508,43 @@ impl RestApi {
             // template is the honest answer. With nothing outstanding, the
             // fetch would fail here too — report that.
             Err(_) if unresolved > 0 => {
-                return serde_json::json!({
-                    "driver": "rest-api",
-                    "method": "GET",
-                    "url": format!("{}/{}", self.base_url, table_name),
-                    "unresolved_conditions": unresolved,
-                    "note": "path placeholders are filled from conditions resolved \
-                             at fetch time; the template is shown unfilled",
-                });
+                return preview
+                    .with_query(format!("GET {}/{}", self.base_url, table_name))
+                    .with_note(format!(
+                        "path placeholders are filled from conditions resolved at fetch \
+                         time; the template is shown unfilled ({unresolved} unresolved)"
+                    ));
             }
-            Err(e) => {
-                return serde_json::json!({
-                    "driver": "rest-api",
-                    "base_url": self.base_url,
-                    "error": e.to_string(),
-                });
-            }
+            Err(e) => return preview.with_note(format!("the request can't be built: {e}")),
         };
 
         let (query_consumed, client_filters) = self.split_filters(&conds, consumed);
         let query = self.build_query_string(window, &conds, &query_consumed, order);
 
-        serde_json::json!({
-            "driver": "rest-api",
-            "method": "GET",
-            "url": join_query(&endpoint, &query),
-            "auth_header": self.auth_header.masked(),
-            // Under `FilterStrategy::Client` these never reach the server: the
-            // rows come back unfiltered and are narrowed in memory.
-            "client_side_filters": client_filters
+        let mut notes = Vec::new();
+        // Under `FilterStrategy::Client` these never reach the server: the
+        // rows come back unfiltered and are narrowed in memory.
+        if !client_filters.is_empty() {
+            let filters: Vec<String> = client_filters
                 .into_iter()
                 .map(|(k, v)| format!("{k}={v}"))
-                .collect::<Vec<_>>(),
-            "unresolved_conditions": unresolved,
-        })
+                .collect();
+            notes.push(format!("filtered after the fetch: {}", filters.join(", ")));
+        }
+        if unresolved > 0 {
+            notes.push(format!(
+                "{unresolved} condition(s) not rendered; deferred ones resolve at fetch time"
+            ));
+        }
+        if self.auth_header.masked().is_some() {
+            notes.push("auth header set".to_string());
+        }
+        let preview = preview.with_query(format!("GET {}", join_query(&endpoint, &query)));
+        if notes.is_empty() {
+            preview
+        } else {
+            preview.with_note(notes.join("; "))
+        }
     }
 
     /// Fetch data from the API endpoint and return parsed records.
@@ -551,18 +555,29 @@ impl RestApi {
     /// pushed into the URL query string — eq-conditions become
     /// `?field=value`. Conditions that can't be peeled into a simple
     /// eq are silently skipped (caller-side filtering still applies if
-    /// needed).
+    /// needed). `required_fields` names the fields a row must carry to pass
+    /// a client-side filter on them (see `fetch_page`). `order` is sent as
+    /// the ordering param when the API declares one.
     pub(crate) async fn fetch_records<'a>(
         &self,
         table_name: &str,
         id_field: Option<&str>,
+        required_fields: &[String],
         pagination: Option<&Pagination>,
+        order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<IndexMap<String, Record<CborValue>>> {
         let window = pagination.map(|p| (p.skip(), p.limit()));
-        self.fetch_windowed(table_name, id_field, window, None, conditions)
-            .await
-            .map(|(records, _total)| records)
+        self.fetch_windowed(
+            table_name,
+            id_field,
+            required_fields,
+            window,
+            order,
+            conditions,
+        )
+        .await
+        .map(|(records, _total)| records)
     }
 
     /// Fetch a single half-open row window `[offset, offset+limit)` — the
@@ -580,14 +595,15 @@ impl RestApi {
         &self,
         table_name: &str,
         id_field: Option<&str>,
-        offset: i64,
-        limit: i64,
+        required_fields: &[String],
+        (offset, limit): (i64, i64),
         order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
         self.fetch_windowed(
             table_name,
             id_field,
+            required_fields,
             Some((offset, limit)),
             order,
             conditions,
@@ -750,6 +766,7 @@ impl RestApi {
         &self,
         table_name: &str,
         id_field: Option<&str>,
+        required_fields: &[String],
         window: Option<(i64, i64)>,
         order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
@@ -765,7 +782,14 @@ impl RestApi {
         let conditions: Vec<&Expression<CborValue>> = conditions.into_iter().collect();
         let Some((offset, limit)) = window.filter(|_| !self.no_pagination) else {
             let page = self
-                .fetch_page(table_name, id_field, window, order, &conditions)
+                .fetch_page(
+                    table_name,
+                    id_field,
+                    required_fields,
+                    window,
+                    order,
+                    &conditions,
+                )
                 .await?;
             return Ok((page.rows, page.total));
         };
@@ -781,6 +805,7 @@ impl RestApi {
             .fetch_page(
                 table_name,
                 id_field,
+                required_fields,
                 Some((start, limit)),
                 order,
                 &conditions,
@@ -809,6 +834,7 @@ impl RestApi {
                     self.fetch_page(
                         table_name,
                         id_field,
+                        required_fields,
                         Some((server_offset, limit)),
                         order,
                         &conditions,
@@ -839,10 +865,17 @@ impl RestApi {
     /// many rows the server sent — more than `rows` holds when client filters
     /// dropped some (`lossy`). Two rows sharing an id within this one
     /// response are an error.
+    ///
+    /// A client-side filter drops a row that lacks the filtered field when
+    /// the field is in `required_fields`, a visible declared column. Any
+    /// other field (a path placeholder, a `hidden` column) is a request
+    /// parameter the server applies without returning it, so its absence
+    /// passes.
     async fn fetch_page(
         &self,
         table_name: &str,
         id_field: Option<&str>,
+        required_fields: &[String],
         window: Option<(i64, i64)>,
         order: Order<'_>,
         conditions: &[&Expression<CborValue>],
@@ -892,17 +925,15 @@ impl RestApi {
         }
 
         // Client-side filtering (FilterStrategy::Client): drop rows that
-        // don't match the non-path eq-conditions. A condition whose field
-        // is absent from a row is treated as a pass (it was a path/request
-        // param, not a record field) — mirroring the AWS connector and the
-        // Mercury CLI's own post-fetch `_filter_deployments`.
+        // don't match the non-path eq-conditions. A row lacking the field
+        // fails only when the field is required (see above).
         if !client_filters.is_empty() {
             records.retain(|_id, record| {
                 client_filters
                     .iter()
                     .all(|(field, want)| match record.get(field) {
                         Some(v) => crate::cbor_to_query_string(v).as_deref() == Some(want.as_str()),
-                        None => true,
+                        None => !required_fields.contains(field),
                     })
             });
         }
@@ -1137,15 +1168,16 @@ impl RestApiBuilder {
     }
 
     /// Name the response-envelope key carrying the grand total of matching
-    /// rows (e.g. `count`). Setting it lets the shell report an exact count
-    /// and advertise `can_fetch_window` for lazy/scroll loading.
+    /// rows (e.g. `count`). Setting it lets the shell report an exact count,
+    /// advertise the `Window` capability for lazy/scroll loading, and put the
+    /// total on every fetched page.
     pub fn total_key(mut self, key: impl Into<String>) -> Self {
         self.total_key = Some(key.into());
         self
     }
 
     /// The API's sort query param (see [`OrderingParams`]). With it set the
-    /// vista reports `can_order` and every column is orderable.
+    /// vista advertises the `Order` capability and every column is orderable.
     pub fn ordering(mut self, ordering: OrderingParams) -> Self {
         self.ordering = Some(ordering);
         self
@@ -1185,6 +1217,26 @@ mod tests {
     /// window → pagination-param mapping.
     fn qs(api: &RestApi, window: Option<(i64, i64)>) -> String {
         api.build_query_string(window, &[], &[], None)
+    }
+
+    #[test]
+    fn endpoint_url_fills_placeholders_from_conditions() {
+        let api = RestApi::builder("http://x").build();
+        let user = crate::eq_condition("userId", 1i64);
+        let title = crate::eq_condition("title", "a b");
+        let team = crate::eq_condition("team", "x/y");
+        let (url, consumed) = api
+            .endpoint_url("teams/{team}/users/{userId}", &[&user, &title, &team])
+            .unwrap();
+        assert_eq!(url, "http://x/teams/x%2Fy/users/1");
+        assert_eq!(consumed, vec![2, 0]);
+    }
+
+    #[test]
+    fn endpoint_url_rejects_an_unclosed_placeholder() {
+        let api = RestApi::builder("http://x").build();
+        let err = api.endpoint_url("users/{userId", &[]).unwrap_err();
+        assert!(err.to_string().contains("Unclosed"), "{err}");
     }
 
     #[test]
@@ -1282,7 +1334,14 @@ mod tests {
         assert!(total.is_some_and(|n| n > 0), "expected a positive count");
 
         let (rows, window_total) = api
-            .fetch_window_records_counted("launches/?mode=detailed", Some("id"), 0, 3, None, [])
+            .fetch_window_records_counted(
+                "launches/?mode=detailed",
+                Some("id"),
+                &[],
+                (0, 3),
+                None,
+                [],
+            )
             .await
             .expect("fetch_window_records_counted");
         assert_eq!(rows.len(), 3, "expected the requested 3-row window");

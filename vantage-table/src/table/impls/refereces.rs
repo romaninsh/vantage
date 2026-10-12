@@ -76,7 +76,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         self.contained.push(ContainedRelation::new(
             relation,
             host_column,
-            vantage_vista::ContainedKind::ContainsOne,
+            vantage_vista::ReferenceKind::ContainsOne,
             None,
             build_target,
         ));
@@ -105,7 +105,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         self.contained.push(ContainedRelation::new(
             relation,
             host_column,
-            vantage_vista::ContainedKind::ContainsMany,
+            vantage_vista::ReferenceKind::ContainsMany,
             id_column.map(str::to_string),
             build_target,
         ));
@@ -123,13 +123,13 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             .map(|(name, col)| {
                 let mut vc = vantage_vista::Column::new(name.clone(), col.get_type().to_string());
                 if col.flags().contains(&ColumnFlag::Hidden) {
-                    vc = vc.hidden();
+                    vc = vc.with_flag(vantage_vista::ColumnFlag::Hidden);
                 }
                 // Imported implicit-reference columns are read-only: flag them
                 // `calculated` so consumers render them read-only and keep them
                 // out of forms/write payloads (mirrors the write-side strip).
                 if self.imported_columns.contains(name) {
-                    vc = vc.with_flag(vantage_vista::flags::CALCULATED);
+                    vc = vc.with_flag(vantage_vista::ColumnFlag::Calculated);
                 }
                 vc
             })
@@ -169,11 +169,13 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         let host_value = row.get(rel.host_column()).and_then(decode_host);
 
         let contained_table = rel.build_target(self.data_source().clone());
-        let mut spec = vantage_vista::ContainedSpec::new(rel.name(), rel.host_column(), rel.kind());
+        let mut schema = contained_table
+            .vista_columns()
+            .into_iter()
+            .fold(vantage_vista::VistaMetadata::new(), |m, c| m.with_column(c));
         if let Some(id) = rel.id_column() {
-            spec = spec.with_id_column(id);
+            schema = schema.with_id_column(id);
         }
-        spec = spec.with_columns(contained_table.vista_columns());
 
         let host_column = rel.host_column().to_string();
         let parent_table = self.clone();
@@ -202,7 +204,8 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             });
 
         vantage_vista::build_contained_vista(
-            &spec,
+            &rel.reference(),
+            schema,
             host_value.as_ref(),
             writeback,
             Some(ref_resolver),
@@ -237,11 +240,17 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                 t
             };
             self = match c.kind {
-                vantage_vista::ContainedKind::ContainsOne => {
+                vantage_vista::ReferenceKind::ContainsOne => {
                     self.with_contained_one(relation, &host, build)
                 }
-                vantage_vista::ContainedKind::ContainsMany => {
+                vantage_vista::ReferenceKind::ContainsMany => {
                     self.with_contained_many(relation, &host, build, c.id_column.as_deref())
+                }
+                _ => {
+                    return Err(error!(
+                        "contained relation kind must be contains_one or contains_many",
+                        relation = relation.as_str()
+                    ));
                 }
             };
         }

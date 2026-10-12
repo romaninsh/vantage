@@ -42,8 +42,22 @@ fn reply(root: &str, rows: Value) -> ResponseTemplate {
     ResponseTemplate::new(200).set_body_json(json!({ "data": { (root): rows } }))
 }
 
+/// Answer a query on `root` whose body holds every one of `needles`.
+async fn answer(server: &MockServer, root: &str, needles: &[&str], rows: Value) {
+    let mut mock = Mock::given(method("POST")).and(body_string_contains(root));
+    for needle in needles {
+        mock = mock.and(body_string_contains(*needle));
+    }
+    mock.respond_with(reply(root, rows))
+        .with_priority(if needles.is_empty() { 5 } else { 1 })
+        .mount(server)
+        .await;
+}
+
 /// Clients `c1`, `c2`; orders `o1`, `o2` (c1) and `o3` (c2). An `orders`
-/// query naming `c1` gets c1's orders only.
+/// query naming `c1` gets c1's orders only. The contract's probes are
+/// answered too: a search for its unmatchable needle finds nothing, a
+/// descending order reverses the rows and `id > <first id>` drops the first.
 async fn serve() -> MockServer {
     let server = MockServer::start().await;
     let (o1, o2, o3) = (
@@ -51,26 +65,20 @@ async fn serve() -> MockServer {
         json!({ "id": "o2", "client_id": "c1", "item": "almanac" }),
         json!({ "id": "o3", "client_id": "c2", "item": "flux capacitor" }),
     );
-    Mock::given(method("POST"))
-        .and(body_string_contains("orders"))
-        .and(body_string_contains("c1"))
-        .respond_with(reply("orders", json!([o1, o2])))
-        .with_priority(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(body_string_contains("orders"))
-        .respond_with(reply("orders", json!([o1, o2, o3])))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(body_string_contains("clients"))
-        .respond_with(reply(
-            "clients",
-            json!([{ "id": "c1", "name": "Marty" }, { "id": "c2", "name": "Doc" }]),
-        ))
-        .mount(&server)
-        .await;
+    let (c1, c2) = (
+        json!({ "id": "c1", "name": "Marty" }),
+        json!({ "id": "c2", "name": "Doc" }),
+    );
+    for root in ["orders", "clients"] {
+        answer(&server, root, &["3f9c2a7e"], json!([])).await;
+    }
+    answer(&server, "orders", &["id: desc"], json!([o3, o2, o1])).await;
+    answer(&server, "orders", &["_gt"], json!([o2, o3])).await;
+    answer(&server, "orders", &["c1"], json!([o1, o2])).await;
+    answer(&server, "orders", &[], json!([o1, o2, o3])).await;
+    answer(&server, "clients", &["id: desc"], json!([c2, c1])).await;
+    answer(&server, "clients", &["_gt"], json!([c2])).await;
+    answer(&server, "clients", &[], json!([c1, c2])).await;
     server
 }
 

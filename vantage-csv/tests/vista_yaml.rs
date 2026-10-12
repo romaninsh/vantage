@@ -6,7 +6,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_csv::Csv;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_vista::VistaFactory;
+use vantage_vista::{ColumnFlag, FilterOp, VistaFactory};
 
 fn data_dir() -> String {
     format!("{}/data", env!("CARGO_MANIFEST_DIR"))
@@ -25,10 +25,11 @@ async fn yaml_loads_client_vista_and_lists_rows() -> Result<()> {
     let vista = csv.vista_factory().from_yaml(&yaml)?;
 
     assert_eq!(vista.name(), "client");
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
-    assert!(vista.get_column("contact_details").unwrap().is_hidden());
-    assert!(!vista.get_column("name").unwrap().is_hidden());
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
+    let hidden = |name: &str| vista.column(name).unwrap().has_flag(ColumnFlag::Hidden);
+    assert!(hidden("contact_details"));
+    assert!(!hidden("name"));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -48,7 +49,7 @@ async fn yaml_eq_condition_filters_typed_column() -> Result<()> {
     let yaml = load_yaml("client.vista.yaml");
 
     let mut vista = csv.vista_factory().from_yaml(&yaml)?;
-    vista.add_condition_eq("is_paying_client", CborValue::Bool(true))?;
+    vista.add_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
@@ -96,7 +97,7 @@ csv:
     assert_eq!(marty.get("is_active"), Some(&CborValue::Bool(true)));
 
     // Filtering must match spec names, not raw CSV headers.
-    vista.add_condition_eq("is_active", CborValue::Bool(true))?;
+    vista.add_condition("is_active", FilterOp::Eq, CborValue::Bool(true))?;
     let filtered = vista.list_values().await?;
     assert_eq!(filtered.len(), 2);
     assert!(filtered.contains_key("marty"));

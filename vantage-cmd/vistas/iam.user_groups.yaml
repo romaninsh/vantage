@@ -9,6 +9,9 @@ columns:
     type: string
   Path:
     type: string
+  UserName:
+    type: string
+    flags: [hidden]
 cmd:
   rhai: |
     let args = ["iam", "list-groups-for-user", "--output", "json"];

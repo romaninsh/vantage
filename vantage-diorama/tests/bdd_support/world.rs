@@ -43,7 +43,7 @@ pub enum OnEventMode {
 pub enum TotalProviderKind {
     #[default]
     Unset,
-    /// Calls `dio.master().get_count()` and returns it.
+    /// Calls `dio.master().count()` and returns it.
     Master,
     /// Same as `Master` but also bumps `spies.total_provider`.
     MasterRecorded,
@@ -481,7 +481,7 @@ impl LensBuilderState {
             }
         }
 
-        // total_provider — runs `dio.master().get_count()` once per
+        // total_provider — runs `dio.master().count()` once per
         // scenery open.
         match self.total_provider_kind {
             TotalProviderKind::Unset => {}
@@ -490,9 +490,9 @@ impl LensBuilderState {
                     let dio = dio.clone();
                     async move {
                         let n = if bridge {
-                            dispatch(async move { dio.master().get_count().await }).await?
+                            dispatch(async move { dio.master().count().await }).await?
                         } else {
-                            dio.master().get_count().await?
+                            dio.master().count().await?
                         };
                         Ok(n as usize)
                     }
@@ -506,9 +506,9 @@ impl LensBuilderState {
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         let n = if bridge {
-                            dispatch(async move { dio.master().get_count().await }).await?
+                            dispatch(async move { dio.master().count().await }).await?
                         } else {
-                            dio.master().get_count().await?
+                            dio.master().count().await?
                         };
                         Ok(n as usize)
                     }

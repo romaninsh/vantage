@@ -16,7 +16,7 @@ use vantage_dataset::prelude::*;
 use vantage_mongodb::vista::{MongoSpecResolver, MongoVistaSpec};
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoId};
 use vantage_types::Record;
-use vantage_vista::{FilterOp, SortDirection, Vista, VistaFactory};
+use vantage_vista::{Capability, FilterOp, SortDirection, Vista, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -200,7 +200,7 @@ async fn dotted_column_missing_target_is_null() -> TestResult {
     seed(&db).await?;
 
     let vista = orders(&db);
-    assert_eq!(vista.get_count().await?, 4);
+    assert_eq!(vista.count().await?, 4);
     let o4 = vista
         .get_value("o4")
         .await?
@@ -224,7 +224,7 @@ async fn dotted_column_filter_and_order() -> TestResult {
     let mut ids: Vec<&str> = rows.keys().map(String::as_str).collect();
     ids.sort();
     assert_eq!(ids, vec!["o1", "o2"]);
-    assert_eq!(marty.get_count().await?, 2);
+    assert_eq!(marty.count().await?, 2);
 
     let mut by_country = orders(&db);
     by_country.add_condition(
@@ -236,7 +236,7 @@ async fn dotted_column_filter_and_order() -> TestResult {
     assert_eq!(rows.keys().collect::<Vec<_>>(), vec!["o3"]);
 
     let mut sorted = orders(&db);
-    sorted.add_order("client.name", SortDirection::Descending)?;
+    sorted.set_order(Some(("client.name", SortDirection::Descending)))?;
     let rows = sorted.list_values().await?;
     let names: Vec<Option<String>> = rows.values().map(|r| text(r, "client.name")).collect();
     assert_eq!(
@@ -251,14 +251,14 @@ async fn dotted_column_filter_and_order() -> TestResult {
 
     // Keyset paging seeks on the joined sort key.
     let mut paged = orders(&db);
-    paged.add_order("client.name", SortDirection::Ascending)?;
-    paged.set_page_size(3)?;
-    let (first, token) = paged.fetch_next(None).await?;
-    let (second, token) = paged.fetch_next(token).await?;
+    paged.set_order(Some(("client.name", SortDirection::Ascending)))?;
+    let (first, token) = paged.fetch_cursor(None, 3).await?;
+    let (second, token) = paged.fetch_cursor(token, 3).await?;
     assert!(token.is_none());
     let seen: Vec<&str> = first
+        .rows
         .iter()
-        .chain(&second)
+        .chain(&second.rows)
         .map(|(id, _)| id.as_str())
         .collect();
     // A missing join sorts first; equal names fall back to `_id`.
@@ -266,10 +266,10 @@ async fn dotted_column_filter_and_order() -> TestResult {
 
     // Quicksearch covers a searchable joined column.
     let mut searched = orders(&db);
-    searched.add_search("doc")?;
+    searched.set_search(Some("doc"))?;
     let rows = searched.list_values().await?;
     assert_eq!(rows.keys().collect::<Vec<_>>(), vec!["o3"]);
-    assert_eq!(searched.get_count().await?, 1);
+    assert_eq!(searched.count().await?, 1);
 
     teardown(&db, &name).await;
     Ok(())
@@ -462,8 +462,8 @@ references:
     foreign_key: client_id
 "#,
         ))
-        .err()
-        .expect("a view cannot join");
+        .map(drop)
+        .expect_err("a view cannot join");
     assert!(err.to_string().contains("pipeline view"), "{err}");
 
     teardown(&db, &name).await;
@@ -487,7 +487,7 @@ mongo:
   collection: orders
 "#,
         ));
-    let err = result.err().expect("no `owner` relation");
+    let err = result.map(drop).expect_err("no `owner` relation");
     // "No references defined on table" / "Reference not found on table".
     assert!(
         err.to_string().to_lowercase().contains("reference"),
@@ -499,22 +499,26 @@ mongo:
 }
 
 #[tokio::test]
-async fn vista_capabilities_advertise_traverse_in_columns() -> TestResult {
+async fn joined_columns_are_for_collections_only() -> TestResult {
     let (db, name) = setup().await;
 
-    assert!(orders(&db).capabilities().can_traverse_in_columns);
+    assert!(orders(&db).column("client.name").is_some());
     let view = db.vista_factory().build_from_spec(spec(
         r#"
 name: totals
 columns:
   _id: { type: string, flags: [id] }
+  client.name: { type: string }
 mongo:
   collection: orders
   pipeline:
     - $group: { _id: "$client_id" }
 "#,
-    ))?;
-    assert!(!view.capabilities().can_traverse_in_columns);
+    ));
+    let Err(err) = view else {
+        panic!("a pipeline view cannot join");
+    };
+    assert!(err.to_string().contains("joined (dotted) column"), "{err}");
 
     teardown(&db, &name).await;
     Ok(())
@@ -533,7 +537,7 @@ async fn get_value_includes_joined_column() -> TestResult {
     // Rows re-read for live updates carry the join too. The test deployment
     // is a replica set, so change streams are available.
     use futures_util::StreamExt;
-    assert!(vista.capabilities().can_subscribe);
+    assert!(vista.capabilities().has(Capability::Subscribe));
     let mut stream = vista.watch().await?;
     db.doc_collection("orders")
         .update_one(

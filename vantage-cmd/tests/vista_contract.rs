@@ -28,7 +28,6 @@ async fn cmd_contract_advertised() {
 }
 
 #[tokio::test]
-#[ignore = "v2 phase 1: shell not cloneable"]
 async fn cmd_contract_clone() {
     contract::check_clone(&items(), "name", CborValue::Text("beta".into())).await;
 }

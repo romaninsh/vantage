@@ -6,6 +6,7 @@ use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 
 use crate::cluster::KubernetesCluster;
+use crate::models::join_column;
 use crate::project::{self, Row};
 
 pub const PATH: &str = "api/v1/pods";
@@ -21,6 +22,9 @@ pub fn pods_table(cluster: KubernetesCluster) -> Table<KubernetesCluster, EmptyE
         .with_column_of::<i64>("restarts")
         .with_column_of::<String>("podIP")
         .with_column_of::<String>("age")
+        // Join keys for the replicaset → pods and deployment → pods drills.
+        .with_column(join_column("ownerName"))
+        .with_column(join_column("ownerDeployment"))
 }
 
 /// Build `(readyContainers, restartTotal)` from `status.containerStatuses`.
@@ -69,7 +73,7 @@ pub fn project(item: &JsonValue) -> (String, Record<CborValue>) {
         .num("restarts", restarts)
         .str("podIP", item, "status.podIP")
         .opt_text("age", project::age(item))
-        // Undeclared join keys — available for relation filtering, not shown.
+        // Join keys: `app` is undeclared; the owner keys are hidden columns.
         .opt_text("app", project::label(item, "app"))
         .opt_text("ownerName", owner_name)
         .opt_text("ownerKind", owner_kind)

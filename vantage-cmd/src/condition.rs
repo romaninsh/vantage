@@ -2,7 +2,7 @@
 //!
 //! Conditions are peeled into `{ field, op, value }` shapes and handed to
 //! the Rhai script, which decides how (or whether) to translate each into
-//! a CLI flag. As a safety net, plain `Eq` conditions are also re-applied
+//! a CLI flag. As a safety net, `Eq` and `In` conditions are also re-applied
 //! client-side against the returned rows (see `table_source`), mirroring
 //! `vantage-aws`.
 //!

@@ -152,7 +152,7 @@ surreal:
             Some("clients")
         );
         assert_eq!(spec.columns["id"].col_type.as_deref(), Some("thing"));
-        assert!(spec.columns["name"].flags.contains(&"title".to_string()));
+        assert!(spec.columns["name"].has_flag(vantage_vista::ColumnFlag::Title));
     }
 
     #[test]

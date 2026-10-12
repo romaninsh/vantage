@@ -154,12 +154,12 @@ After the script runs, `changes()` returns what it staged and `values()` the row
 last saw it. Vantage UI builds the action body's `row` this way, over the page's Dio Vista.
 
 A row that belongs to no table, such as the `row` an action predicate reads, still needs a
-resolver: the first field set asks it for the id column. [`Vista::empty(name)`](vantage_vista::Vista::empty)
-is a Vista with no columns, no rows and no capabilities, made for this:
+resolver: the first field set asks it for the id column. A Vista over an empty
+[`MockShell`](vantage_vista::mocks::MockShell) (feature `mocks`) serves:
 
 <!-- tested: rhai_guide::records::row_without_table -->
 ```rust,ignore
-let no_table: TargetResolver = Arc::new(|_| Ok(Vista::empty("row")));
+let no_table: TargetResolver = Arc::new(|_| Ok(Vista::new("row", MockShell::new())));
 let row = RecordDraft::from_row(
     Handle::named("row"),
     Some(no_table),

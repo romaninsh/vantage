@@ -36,7 +36,7 @@ fn seeded_master() -> Vista {
         .with_record("a", record("alpha", 30))
         .with_record("b", record("beta", 10))
         .with_record("c", record("gamma", 20));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 /// Eager lens: `on_start` copies the master into the cache.

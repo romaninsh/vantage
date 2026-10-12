@@ -51,7 +51,7 @@ pub(crate) fn import_rows_mapped(
     resolver: Option<&TargetResolver>,
 ) -> RhaiResult<RhaiMap> {
     let rows = source_rows(source, resolver)?;
-    let id_column = vista.get_id_column().unwrap_or("id");
+    let id_column = vista.id_column().unwrap_or("id");
     let records = mapped_records(&rows, mapping, id_column, vista.name())?;
     write_records(vista, &records)
 }
@@ -71,7 +71,7 @@ fn source_rows(source: &Handle, resolver: Option<&TargetResolver>) -> RhaiResult
 /// A backend whose import was cancelled part-way returns an error carrying
 /// [`IMPORT_CANCELLED`]; that becomes a `cancelled` report, not a throw.
 fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
-    if vista.capabilities().can_import && !vista.is_narrowed() {
+    if vista.capabilities().has(crate::Capability::Import) && !vista.is_narrowed() {
         return match block_on(vista.import_values(records)).map_err(rhai_err)? {
             Ok(inserted) => Ok(report(
                 inserted,
@@ -109,7 +109,7 @@ fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
 }
 
 /// Context key a backend sets on the error it returns from
-/// `import_vista_values` when the import was cancelled part-way; its value
+/// `TableShell::import` when the import was cancelled part-way; its value
 /// is the number of rows inserted before the stop.
 pub const IMPORT_CANCELLED: &str = "import_cancelled_after";
 

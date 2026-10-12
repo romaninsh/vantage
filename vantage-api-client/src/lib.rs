@@ -19,6 +19,7 @@
 #![warn(missing_docs)]
 
 pub mod graphql;
+mod join_keys;
 pub mod prelude;
 pub mod rest;
 mod row_keys;

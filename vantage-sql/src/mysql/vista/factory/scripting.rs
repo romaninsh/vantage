@@ -6,18 +6,20 @@ use std::sync::Arc;
 
 use vantage_core::{Result, error};
 use vantage_rhai::{Host, Limits};
-use vantage_vista::{DataVocab, TableShell, TargetResolver, Vista, VistaFactory};
+use vantage_vista::{DataVocab, TargetResolver, Vista, VistaFactory};
 
 use super::MysqlVistaFactory;
+use crate::mysql::vista::source::register_extensions;
 use crate::mysql::vista::spec::MysqlVistaSpec;
 
 impl MysqlVistaFactory {
-    /// A host for scripts evaluated against `shell`'s vistas. The data vocab
-    /// goes second, so `table(name)` is a table handle rather than the SQL
-    /// vocabulary's `table` alias for `ident`.
-    pub(crate) fn script_host(&self, shell: &dyn TableShell) -> Host {
+    /// A host for scripts evaluated against MySQL vistas: the shell's
+    /// vocabulary, then the data vocab. The data vocab goes second, so
+    /// `table(name)` is a table handle rather than the SQL vocabulary's
+    /// `table` alias for `ident`.
+    pub(crate) fn script_host(&self) -> Host {
         Host::builder(Limits::background())
-            .vocab_fn(|engine| shell.register_rhai_extensions(engine))
+            .vocab_fn(register_extensions)
             .vocab(DataVocab::describe(Some(self.target_resolver())))
             .build()
     }
@@ -25,8 +27,7 @@ impl MysqlVistaFactory {
     /// Run a `mysql: { modify }` script against a built vista, exposed as
     /// `self`.
     pub(super) fn apply_modify(&self, vista: Vista, code: &str) -> Result<Vista> {
-        let host = self.script_host(&*vista.source);
-        vantage_vista::eval_modify_script(&host, code, vista)
+        vantage_vista::eval_modify_script(&self.script_host(), code, vista)
     }
 
     fn target_resolver(&self) -> TargetResolver {

@@ -32,7 +32,7 @@ fn tag_vista(shell: &MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("status", "String"))
         .with_id_column("id");
-    Vista::new("tags", Box::new(shell.clone().with_metadata(metadata)))
+    Vista::new("tags", shell.clone().with_metadata(metadata))
 }
 
 async fn dio_over(shell: &MockShell) -> Result<Dio> {

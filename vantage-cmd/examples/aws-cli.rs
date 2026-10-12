@@ -87,7 +87,7 @@ impl Renderer for CmdRenderer {
                 if let Some(cols) = column_override {
                     render_records_columns(records, cols, &IndexMap::new());
                 } else {
-                    render_records(records, vista.get_id_column());
+                    render_records(records, vista.id_column());
                 }
                 let n = records.len();
                 println!("({n} record{})", if n == 1 { "" } else { "s" });
@@ -128,9 +128,9 @@ impl Renderer for CmdRenderer {
 }
 
 fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
-    let id_field = vista.get_id_column().unwrap_or("id");
+    let id_field = vista.id_column().unwrap_or("id");
     println!("{}: {}", id_field, id);
-    let title_fields: Vec<&str> = vista.get_title_columns();
+    let title_fields: Vec<&str> = vista.title_columns();
     for tf in &title_fields {
         if *tf == id_field {
             continue;
@@ -146,14 +146,17 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
         }
         println!("{}: {}", k, scalar(v));
     }
-    let refs = vista.list_references();
+    let refs = vista.references();
     if !refs.is_empty() {
         println!();
         println!("Relations:");
-        for (name, kind) in refs {
-            let marker = match kind {
+        for (name, reference) in refs {
+            let marker = match reference.kind {
                 ReferenceKind::HasOne => "→ one",
                 ReferenceKind::HasMany => "↠ many",
+                ReferenceKind::ContainsOne => "⊃ one",
+                ReferenceKind::ContainsMany => "⊃ many",
+                _ => "?",
             };
             println!("  :{name}  {marker}");
         }

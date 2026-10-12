@@ -138,7 +138,7 @@ pub(crate) struct DioInner {
     pub(crate) refresh_task: Mutex<Option<JoinHandle<()>>>,
     pub(crate) write_worker: Mutex<Option<JoinHandle<()>>>,
     pub(crate) hot_tier: Arc<HotTier>,
-    /// Per-query ordered indexes, keyed by [`Vista::index_key`]. Shared across
+    /// Per-query ordered indexes, keyed by [`query_index::index_key`]. Shared across
     /// every two-pass scenery of this Dio so reopening the same filter/sort
     /// reuses the already-built index. Not persisted — re-listing rebuilds it.
     pub(crate) query_indexes: std::sync::Mutex<
@@ -299,13 +299,14 @@ impl DioInner {
     /// See [`Dio::write_capabilities`]. Lives on the inner so
     /// [`DioShell`] can share the one definition of capability lifting.
     pub(crate) fn write_capabilities(&self) -> WriteCapabilities {
+        use vantage_vista::Capability;
         let routed = self.lens.callbacks.on_flash.is_some();
         let master = self.master.read().unwrap().clone();
         let caps = master.capabilities();
         WriteCapabilities {
-            can_insert: caps.can_insert || routed,
-            can_update: caps.can_update || routed,
-            can_delete: caps.can_delete || routed,
+            can_insert: caps.has(Capability::Insert) || routed,
+            can_update: caps.has(Capability::Update) || routed,
+            can_delete: caps.has(Capability::Delete) || routed,
         }
     }
 
@@ -337,6 +338,47 @@ impl DioInner {
     /// emulation. Always `false` until [`Dio::augment`] populates the set.
     pub(crate) fn is_augmented_column(&self, col: &str) -> bool {
         self.augmented_columns.read().unwrap().contains(col)
+    }
+
+    /// Split `query` into what may be offered to the master and the clauses
+    /// diorama evaluates itself, which go straight to the local residual:
+    /// - clauses on augmented columns, which the master has never heard of
+    ///   (and a shell may accept an unknown column only to fail at fetch
+    ///   time);
+    /// - with `dotted_paths_local`, dotted paths (`client.name`) into a master
+    ///   column. Pass it only where the caller evaluates the residual over
+    ///   the cache, which resolves the nested value; elsewhere the master
+    ///   decides (a document store pushes the path, SQL rejects it).
+    ///
+    /// Any other column goes to the master, which rejects one it doesn't have.
+    pub(crate) fn split_local(
+        &self,
+        mut query: vantage_vista::VistaQuery,
+        dotted_paths_local: bool,
+    ) -> (vantage_vista::VistaQuery, vantage_vista::VistaQuery) {
+        let master = self.master.read().unwrap().clone();
+        let local = |column: &str| {
+            self.is_augmented_column(column)
+                || (dotted_paths_local
+                    && master.column(column).is_none()
+                    && column
+                        .split_once('.')
+                        .is_some_and(|(root, _)| master.column(root).is_some()))
+        };
+        let mut residual = vantage_vista::VistaQuery::new();
+        let (kept, offered) = std::mem::take(&mut query.conditions)
+            .into_iter()
+            .partition(|c| local(&c.column));
+        query.conditions = offered;
+        residual.conditions = kept;
+        if query
+            .order
+            .as_ref()
+            .is_some_and(|(column, _)| local(column))
+        {
+            residual.order = query.order.take();
+        }
+        (query, residual)
     }
 
     /// The union of every LIVE open scenery's demanded columns — the Dio's
@@ -455,7 +497,7 @@ impl Dio {
         // master shell. The only failure is structural (undefined relation /
         // missing join field); a down *source* does not fail here, it surfaces
         // later as an empty/recovering scenery on the returned Dio.
-        let target = self.master().get_ref(relation, row)?;
+        let target = self.master().get_ref(relation, Some(row))?;
 
         // Per-parent cache identity. A narrowed target (e.g. `crew` for launch
         // L1 vs L2 — both `name()` "launch_crew") must NOT share one cache
@@ -465,7 +507,7 @@ impl Dio {
         // `{target}-via-{relation}-{parent_id}`.
         let parent_id = self
             .master()
-            .get_id_column()
+            .id_column()
             .and_then(|idc| row.get(idc))
             .map(cbor_scalar_string)
             .unwrap_or_default();
@@ -482,7 +524,7 @@ impl Dio {
     /// inserted. The cache table is the target's own name, so a page
     /// already showing the target keeps this Dio warm.
     pub async fn get_ref_target(&self, relation: &str) -> Result<Dio> {
-        let target = self.master().get_ref_target(relation)?;
+        let target = self.master().get_ref(relation, None)?;
         let cache_table_name = target.name().to_string();
         self.inner.lens.make_dio_as(target, cache_table_name).await
     }
@@ -716,7 +758,7 @@ impl Dio {
 
     /// Produce a fresh facade [`Vista`] backed by this Dio. Each call
     /// returns an independent Vista — callers can narrow with
-    /// [`Vista::add_condition_eq`] without affecting other consumers.
+    /// [`Vista::add_condition`] without affecting other consumers.
     ///
     /// The facade's schema mirrors `master` (forwarded through
     /// [`DioShell`]'s [`columns`](vantage_vista::TableShell::columns)
@@ -724,41 +766,17 @@ impl Dio {
     /// through the Dio's queue.
     pub fn vista(&self) -> Vista {
         let name = self.master().name().to_string();
-        let shell = DioShell::new(self.inner.clone());
-        Vista::new(name, Box::new(shell))
-    }
-
-    /// Ask the **master** to derive an aggregated vista, per
-    /// [`Vista::aggregate`].
-    ///
-    /// `Ok(None)` is the "I can't" answer — unknown reduction, or conditions
-    /// the driver can't express — and it is not an error: a source that cannot
-    /// aggregate is not broken. The caller then derives the same set locally
-    /// from this Dio, which keeps the result reactive because the local
-    /// engine is fed by this Dio's change bus.
-    ///
-    /// ```ignore
-    /// let spec = AggregateSpec::new("count", "failed")
-    ///     .condition("Event", CborValue::Text("failed".into()));
-    /// let derived: Vista = match dio.master_aggregate(&spec)? {
-    ///     // The backend reduces: every matching row, loaded or not.
-    ///     Some(vista) => vista,
-    ///     // We reduce: the rows this Dio actually holds.
-    ///     None => aggregate_lens.derive_vista(dio, &spec)?,
-    /// };
-    /// ```
-    pub fn master_aggregate(&self, spec: &vantage_vista::AggregateSpec) -> Result<Option<Vista>> {
-        self.master().aggregate(spec)
+        Vista::new(name, DioShell::new(self.inner.clone()))
     }
 
     /// Fetch a `[offset, limit)` window, preferring the master's own ordering.
     ///
-    /// When `sort` is set and the master `can_order` and yields an independent
-    /// [`clone_shell`](vantage_vista::TableShell::clone_shell), the window is read
-    /// from a **per-call ordered clone** (`add_order` → `fetch_window`) — the
-    /// shared master is never mutated, so differently-sorted views never race. If
-    /// the master can't order or can't be cloned, it fetches the window in native
-    /// order and the caller re-sorts over the cache (the existing fallback).
+    /// The window is read from a **per-call narrowed clone** of the master
+    /// (`Vista::with_query` → `fetch_window`) — the shared master is
+    /// never mutated, so differently-sorted views never race. A master
+    /// without `Order` returns the window in native order and the scenery
+    /// re-sorts over the cache; a master with `Order` that refuses the sort
+    /// column is an error.
     pub async fn fetch_window_ordered(
         &self,
         offset: usize,
@@ -785,77 +803,51 @@ impl Dio {
         query: impl Into<crate::ChunkQuery>,
     ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
         let query: crate::ChunkQuery = query.into();
-        let master = self.master();
-        let caps = master.capabilities();
+        // The window's residual isn't evaluated, so a dotted path goes to the
+        // master rather than being dropped.
+        let (offered, mut residual) = self.inner.split_local(query.to_vista_query(), false);
+        let master = Vista::clone(&self.master());
+        let table = master.name().to_string();
+        let orders = master.capabilities().has(vantage_vista::Capability::Order);
+        let (narrowed, refused) = master.with_query(&offered)?;
+        residual.conditions.extend(refused.conditions);
+        residual.search = refused.search;
 
-        // What the master can actually be asked for. A search it can't push
-        // down is DROPPED here, loudly — evaluating it over one window would
-        // silently search a slice, and the scenery's `search_supported` gate
-        // exists so consumers never offer what would land in this branch.
-        let push_sort = query.sort.clone().filter(|_| caps.can_order);
-        let push_search = query.search.clone().filter(|_| caps.can_search);
-        if query.search.is_some() && push_search.is_none() {
+        // A scenery over a master that advertises `Order` treats the window
+        // as sorted and doesn't re-sort it, so a sort this master won't take
+        // must fail rather than come back in native order. Over a master
+        // without `Order` the scenery re-sorts over the cache itself.
+        if orders && let Some((column, _)) = residual.order.as_ref().or(refused.order.as_ref()) {
+            return Err(vantage_core::error!(
+                "the master can't order by this column",
+                table = table,
+                column = column.as_str()
+            ));
+        }
+
+        // A refused search or filter is dropped here, loudly — evaluating it
+        // over one window would filter a slice and present it as the set. The
+        // scenery's `search_supported` gate exists so consumers never offer a
+        // search that lands here.
+        if residual.search.is_some() {
             tracing::warn!(
                 target: "vantage_diorama::search",
-                table = %master.name(),
+                table = %table,
                 "chunk query carries a search the master cannot push down — ignored",
             );
         }
-
-        // Filter terms follow the same rule as search: what the master cannot
-        // take is dropped here, loudly, rather than evaluated over one window
-        // (which would filter a slice and present it as the set). Equality
-        // push-down is universal; the richer operators are gated by the
-        // capability flag, and a source may still decline one term with
-        // Unimplemented — SurrealDB has no `NOT IN` — which is also a drop.
-        let mut push_terms = Vec::new();
-        for term in &query.filters {
-            if term.op == vantage_vista::FilterOp::Eq || caps.can_filter_operators {
-                push_terms.push(term.clone());
-            } else {
-                tracing::warn!(
-                    target: "vantage_diorama::filter",
-                    table = %master.name(),
-                    column = %term.column,
-                    op = ?term.op,
-                    "chunk query carries a filter the master cannot push down — ignored",
-                );
-            }
+        for term in &residual.conditions {
+            tracing::warn!(
+                target: "vantage_diorama::filter",
+                table = %table,
+                column = %term.column,
+                op = ?term.op,
+                "chunk query carries a filter the master cannot push down — ignored",
+            );
         }
 
-        if (push_sort.is_some() || push_search.is_some() || !push_terms.is_empty())
-            && let Some(shell) = master.source.clone_shell()
-        {
-            let mut narrowed = Vista::new(master.name(), shell);
-            if let Some((col, dir)) = push_sort {
-                let vdir = match dir {
-                    crate::SortDir::Asc => vantage_vista::SortDirection::Ascending,
-                    crate::SortDir::Desc => vantage_vista::SortDirection::Descending,
-                };
-                narrowed.add_order(&col, vdir)?;
-            }
-            if let Some(text) = push_search {
-                narrowed.add_search(text)?;
-            }
-            for term in push_terms {
-                // `add_condition` routes `Eq` to `add_eq_condition` in every
-                // source, so equality needs no separate call here.
-                if let Err(e) =
-                    narrowed.add_condition(term.column.clone(), term.op, term.value.clone())
-                {
-                    tracing::warn!(
-                        target: "vantage_diorama::filter",
-                        table = %master.name(),
-                        column = %term.column,
-                        op = ?term.op,
-                        error = %e,
-                        "the master declined a filter term — ignored",
-                    );
-                }
-            }
-            return narrowed.fetch_window_counted(offset, limit).await;
-        }
-        master.fetch_window_counted(offset, limit).await
+        let page = narrowed.fetch_window(offset, limit).await?;
+        Ok((page.rows, page.total))
     }
 
     // ---- Event bus — user-callable surface ----------------------------------
@@ -1071,7 +1063,8 @@ impl From<vantage_vista::VistaChange> for ChangeEvent {
                 new: Some(value),
             },
             V::Deleted { id } => ChangeEvent::Deleted { id },
-            V::Invalidated => ChangeEvent::Invalidated,
+            // A change this version doesn't know: re-read everything.
+            _ => ChangeEvent::Invalidated,
         }
     }
 }

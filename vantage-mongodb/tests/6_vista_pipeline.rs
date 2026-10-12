@@ -15,7 +15,7 @@ use vantage_mongodb::{AnyMongoType, MongoDB, MongoId, MongoView};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{FilterOp, SortDirection, VistaFactory};
+use vantage_vista::{Capability, FilterOp, NativeCondition, SortDirection, VistaFactory, contract};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -115,34 +115,33 @@ async fn pipeline_view_lists_counts_filters_orders_pages() -> TestResult {
         rows["cake"].get("category"),
         Some(&CborValue::Text("cake".into()))
     );
-    assert_eq!(v.get_count().await?, 4);
+    assert_eq!(v.count().await?, 4);
 
     let mut v = totals(&db);
     v.add_condition("total", FilterOp::Gte, int(12))?;
-    v.add_order("total", SortDirection::Descending)?;
-    assert_eq!(v.get_count().await?, 3);
+    v.set_order(Some(("total", SortDirection::Descending)))?;
+    assert_eq!(v.count().await?, 3);
 
-    assert_eq!(ids(&v.fetch_window(0, 2).await?), vec!["cake", "drink"]);
-    assert_eq!(ids(&v.fetch_window(2, 5).await?), vec!["bread"]);
+    assert_eq!(
+        ids(&v.fetch_window(0, 2).await?.rows),
+        vec!["cake", "drink"]
+    );
+    assert_eq!(ids(&v.fetch_window(2, 5).await?.rows), vec!["bread"]);
 
-    v.set_page_size(2)?;
-    assert_eq!(ids(&v.fetch_page(1).await?), vec!["cake", "drink"]);
-    assert_eq!(ids(&v.fetch_page(2).await?), vec!["bread"]);
-
-    let (first, token) = v.fetch_next(None).await?;
-    assert_eq!(ids(&first), vec!["cake", "drink"]);
-    let (second, token) = v.fetch_next(token).await?;
-    assert_eq!(ids(&second), vec!["bread"]);
+    let (first, token) = v.fetch_cursor(None, 2).await?;
+    assert_eq!(ids(&first.rows), vec!["cake", "drink"]);
+    let (second, token) = v.fetch_cursor(token, 2).await?;
+    assert_eq!(ids(&second.rows), vec!["bread"]);
     assert!(token.is_none());
 
     let mut v = totals(&db);
-    v.add_search("CA")?;
+    v.set_search(Some("CA"))?;
     let mut found: Vec<String> = v.list_values().await?.into_keys().collect();
     found.sort();
     assert_eq!(found, vec!["cake", "candy"]);
-    assert_eq!(v.get_count().await?, 2);
+    assert_eq!(v.count().await?, 2);
 
-    let preview = v.preview_query().to_string();
+    let preview = v.preview().query.expect("a rendered query");
     assert!(preview.contains("$group"), "preview: {preview}");
 
     teardown(&db, &name).await;
@@ -175,30 +174,27 @@ async fn pipeline_view_is_read_only() -> TestResult {
     seed(&db).await?;
 
     let v = totals(&db);
-    let caps = v.capabilities().clone();
-    for (flag, on) in [
-        ("can_count", caps.can_count),
-        ("can_order", caps.can_order),
-        ("can_search", caps.can_search),
-        ("can_filter_operators", caps.can_filter_operators),
-        ("can_set_page_size", caps.can_set_page_size),
-        ("can_fetch_page", caps.can_fetch_page),
-        ("can_fetch_window", caps.can_fetch_window),
-        ("can_fetch_next", caps.can_fetch_next),
+    let caps = *v.capabilities();
+    for capability in [
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::NativeConditions,
+        Capability::Window,
+        Capability::Cursor,
+        Capability::Traverse,
     ] {
-        assert!(on, "{flag} should be on");
+        assert!(caps.has(capability), "{capability} should be on");
     }
-    for (flag, on) in [
-        ("can_insert", caps.can_insert),
-        ("can_update", caps.can_update),
-        ("can_delete", caps.can_delete),
-        ("can_import", caps.can_import),
-        ("can_subscribe", caps.can_subscribe),
-        ("can_confine_writes", caps.can_confine_writes),
-        ("can_traverse_to_record", caps.can_traverse_to_record),
-        ("can_traverse_to_set", caps.can_traverse_to_set),
+    for capability in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::Import,
+        Capability::Subscribe,
+        Capability::ConfineWrites,
     ] {
-        assert!(!on, "{flag} should be off");
+        assert!(!caps.has(capability), "{capability} should be off");
     }
 
     let mut record = Record::new();
@@ -207,9 +203,10 @@ async fn pipeline_view_is_read_only() -> TestResult {
         .insert_value("pie".to_string(), &record)
         .await
         .expect_err("insert on a view");
-    assert!(err.to_string().contains("read-only"), "error: {err}");
+    assert!(err.is_unsupported(), "error: {err:?}");
     assert!(v.delete("cake".to_string()).await.is_err());
     assert_eq!(stored(&db).await?, 8);
+    contract::check_advertised(&v).await;
 
     teardown(&db, &name).await;
     Ok(())
@@ -313,13 +310,13 @@ mongo:
 }
 
 #[tokio::test]
-async fn pipeline_view_accepts_raw_condition() -> TestResult {
+async fn pipeline_view_accepts_native_condition() -> TestResult {
     let (db, name) = setup().await;
     seed(&db).await?;
 
     let mut v = totals(&db);
-    v.add_raw_condition(doc! { "n": { "$gte": 2 } })?;
-    assert_eq!(v.get_count().await?, 3);
+    v.add_native_condition(NativeCondition::new(doc! { "n": { "$gte": 2 } }, "n >= 2"))?;
+    assert_eq!(v.count().await?, 3);
 
     teardown(&db, &name).await;
     Ok(())

@@ -37,7 +37,7 @@ fn master() -> Vista {
         .with_record("a", amount_rec("a", 30))
         .with_record("b", amount_rec("b", 10))
         .with_record("c", amount_rec("c", 20));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 fn order(scenery: &Arc<dyn TableScenery>) -> Vec<String> {
@@ -109,7 +109,7 @@ async fn float_column_sorts_numerically_not_lexically() -> Result<()> {
         .with_record("hi", float_rec("hi", 6416.51))
         .with_record("mid", float_rec("mid", 1826.19))
         .with_record("lo", float_rec("lo", 657.96));
-    let dio = eager_dio(Vista::new("items", Box::new(shell))).await;
+    let dio = eager_dio(Vista::new("items", shell)).await;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 
@@ -190,7 +190,7 @@ async fn client_sort_survives_shared_dio_live_stream() -> Result<()> {
         .with_record("b", amount_rec("b", 10))
         .with_record("c", amount_rec("c", 20));
     let master_handle = shell.clone();
-    let dio = eager_dio_with_refresh(Vista::new("items", Box::new(shell))).await;
+    let dio = eager_dio_with_refresh(Vista::new("items", shell)).await;
 
     // Sorted scenery opened WITH the sort (like vantage-ui's `open_scenery`), plus
     // an unsorted sibling on the same Dio (like the feed-order list / charts).

@@ -11,7 +11,7 @@ use vantage_csv::Csv;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Capability, Column, Vista, VistaMetadata, mocks::MockShell};
 
 use super::world::DioramaWorld;
 
@@ -112,7 +112,7 @@ impl MasterRows {
                 // store is Arc-shared with the Vista we box below, so a
                 // scenario can edit rows mid-run via `w.source`.
                 w.source = Some(shell.clone());
-                Ok(Vista::new(self.name.clone(), Box::new(shell)))
+                Ok(Vista::new(self.name.clone(), shell))
             }
             BackendKind::Csv => self.build_csv(w),
             BackendKind::Sqlite => self.build_sqlite(w).await,
@@ -132,24 +132,19 @@ impl MasterRows {
         // Mock acts as a random-access master for v4 scenarios that
         // assert capability flags. The Vista's reads still go through
         // `list_values` in the test harness — this only flips what the
-        // shell advertises to consumers.
-        let caps = vantage_vista::VistaCapabilities {
-            can_count: true,
-            can_insert: true,
-            can_update: true,
-            can_delete: true,
-            can_order: true,
-            can_search: true,
-            can_set_page_size: true,
-            can_fetch_page: true,
-            // The row-indexed sibling of `can_fetch_page`, and the one chunk
-            // loading actually maps onto: a scenery pages a master that
-            // advertises this. Omitting it left the mock claiming random access
-            // by page but not by row, so a lens offering both a warm and a
-            // pager was read as warm-only.
-            can_fetch_window: true,
-            ..Default::default()
-        };
+        // shell advertises to consumers. `Window` is what chunk loading maps
+        // onto: a scenery pages a master that advertises it, so a lens
+        // offering both a warm and a pager is read as a pager.
+        let caps = [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::Order,
+            Capability::Search,
+            Capability::Window,
+        ]
+        .into_iter()
+        .collect();
         let mut shell = MockShell::new().with_metadata(meta).with_capabilities(caps);
         for row in &self.rows {
             let mut rec: Record<CborValue> = Record::new();

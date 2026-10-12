@@ -5,7 +5,7 @@ use std::sync::Arc;
 use vantage_core::{Result, error};
 
 use super::{ColumnSpec, ReferenceSpec, VistaSpec};
-use crate::flags;
+use crate::column::ColumnFlag;
 
 /// Looks up a spec by vista name. Factories hand clones into each reference
 /// so a child table is rebuilt from the current spec at traversal time.
@@ -26,14 +26,14 @@ impl<T, C, R> VistaSpec<T, C, R> {
         }
         self.columns
             .iter()
-            .find(|(_, col)| col.has_flag(flags::ID))
+            .find(|(_, col)| col.has_flag(ColumnFlag::Id))
             .map_or_else(|| fallback.to_string(), |(name, _)| name.clone())
     }
 }
 
 impl<C> ColumnSpec<C> {
-    pub fn has_flag(&self, flag: &str) -> bool {
-        self.flags.iter().any(|f| f == flag)
+    pub fn has_flag(&self, flag: impl Into<ColumnFlag>) -> bool {
+        self.flags.contains(&flag.into())
     }
 }
 

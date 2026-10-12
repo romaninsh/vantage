@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::models::request_param;
 use crate::{AwsAccount, eq};
 
 use super::event::{LogEvent, events_table};
@@ -46,6 +47,7 @@ pub fn groups_table(aws: AwsAccount) -> Table<AwsAccount, LogGroup> {
     .with_id_column("logGroupName")
     .with_column_of::<i64>("creationTime")
     .with_title_column_of::<i64>("storedBytes")
+    .with_column(request_param("logGroupNamePrefix"))
     .with_many("events", "logGroupName", events_table)
     .with_many("streams", "logGroupName", streams_table)
 }

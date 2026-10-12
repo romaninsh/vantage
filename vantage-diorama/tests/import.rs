@@ -1,6 +1,6 @@
 //! `Dio::import_values` — the bulk path behind `tables.<t>.import(…)`.
 //!
-//! The capability split under test: `can_import` advertises a
+//! The capability split under test: `Import` advertises a
 //! driver-native all-or-nothing batch; without it the Dio falls back to
 //! per-record optimistic inserts, where partial progress is honest —
 //! an import that stops at row 3 says so, names the row, and leaves
@@ -15,7 +15,9 @@ use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::{Dio, Lens};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Capability, Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell,
+};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -40,7 +42,7 @@ fn tag_vista(shell: &MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("status", "String"))
         .with_id_column("id");
-    Vista::new("tags", Box::new(shell.clone().with_metadata(metadata)))
+    Vista::new("tags", shell.clone().with_metadata(metadata))
 }
 
 async fn dio_over(shell: &MockShell) -> Result<Dio> {
@@ -202,23 +204,21 @@ async fn breaking_from_progress_stops_the_walk() -> Result<()> {
 
 #[tokio::test]
 async fn advertised_native_import_is_taken_at_its_word() -> Result<()> {
-    // A shell that *claims* can_import but doesn't implement the op:
+    // A shell that *claims* Import but doesn't implement the op:
     // the Dio must route to the native path and surface the driver's
-    // Unimplemented placeholder — never silently fall back, which would
-    // hide a driver bug behind 5,000 working inserts.
-    let shell = MockShell::new().with_capabilities(VistaCapabilities {
-        can_import: true,
-        ..VistaCapabilities::default()
-    });
+    // refusal — never silently fall back, which would hide a driver bug
+    // behind 5,000 working inserts.
+    let shell =
+        MockShell::new().with_capabilities(VistaCapabilities::new().with(Capability::Import));
     let dio = dio_over(&shell).await?;
 
     let err = dio
         .import_values(tag_records(&["t1"]), |_, _| ControlFlow::Continue(()))
         .await
-        .expect_err("placeholder surfaces");
+        .expect_err("the refusal surfaces");
     assert!(
-        err.to_string().contains("import_vista_values"),
-        "the native path was attempted: {err}"
+        err.is_unsupported(),
+        "the native path was attempted and refused: {err}"
     );
     Ok(())
 }

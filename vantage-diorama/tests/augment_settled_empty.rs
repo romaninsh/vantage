@@ -37,7 +37,7 @@ fn master_vista() -> Vista {
         .with_record("r0", record(&[("id", "r0"), ("branch", "main")]))
         .with_record("r1", record(&[("id", "r1"), ("branch", "dev")]))
         .with_metadata(meta(&["id", "branch"]));
-    Vista::new("runs", Box::new(shell))
+    Vista::new("runs", shell)
 }
 
 /// Detail source with a record for `r0` ONLY. `r1` is the row that settles
@@ -47,7 +47,7 @@ fn partial_detail_vista() -> Vista {
     let shell = MockShell::new()
         .with_record("r0", record(&[("id", "r0"), ("detail", "full-r0")]))
         .with_metadata(meta(&["id", "detail"]));
-    Vista::new("runs-detail", Box::new(shell))
+    Vista::new("runs-detail", shell)
 }
 
 /// A catalog whose loader counts how many times the detail vista is built —

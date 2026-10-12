@@ -9,7 +9,7 @@ use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use vantage_api_client::{GraphqlApi, GraphqlApiVistaSpec};
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_vista::{SortDirection, Vista, VistaFactory};
+use vantage_vista::{FilterOp, SortDirection, Vista, VistaFactory};
 use wiremock::matchers::{body_partial_json, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -54,9 +54,11 @@ async fn filter_and_order_are_sent_as_the_server_field() {
     )
     .await;
     let mut vista = vista(&server, MISSION, "");
-    vista.add_condition_eq("mission", text("Falcon")).unwrap();
     vista
-        .add_order("mission", SortDirection::Ascending)
+        .add_condition("mission", FilterOp::Eq, text("Falcon"))
+        .unwrap();
+    vista
+        .set_order(Some(("mission", SortDirection::Ascending)))
         .unwrap();
 
     let rows = vista.list_values().await.unwrap();
@@ -78,7 +80,9 @@ async fn without_filter_push_down_the_rows_are_filtered_by_column_name() {
     )
     .await;
     let mut vista = vista(&server, MISSION, "  filter: false\n");
-    vista.add_condition_eq("mission", text("Falcon")).unwrap();
+    vista
+        .add_condition("mission", FilterOp::Eq, text("Falcon"))
+        .unwrap();
 
     let rows = vista.list_values().await.unwrap();
     assert_eq!(rows.len(), 1);

@@ -8,7 +8,7 @@ mod support;
 use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use vantage_api_client::{GraphqlApi, GraphqlApiVistaSpec};
-use vantage_vista::{Vista, VistaFactory};
+use vantage_vista::{Capability, FilterOp, Vista, VistaFactory};
 use wiremock::matchers::{body_partial_json, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -44,23 +44,7 @@ async fn answer(server: &MockServer, expected: Value, response: Value) {
         .await;
 }
 
-#[tokio::test]
-async fn fetch_page_sends_limit_and_offset_for_the_page() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        json!({ "variables": { "limit": 10, "offset": 10 } }),
-        rows(10, 10),
-    )
-    .await;
-    let mut vista = vista(&server, "  paginate: true\n");
-    vista.set_page_size(10).unwrap();
-
-    let page = vista.fetch_page(2).await.unwrap();
-    assert_eq!(page.len(), 10);
-    assert_eq!(page[0].0, "10");
-}
-
+/// A GraphQL list reports no total, so the window carries none.
 #[tokio::test]
 async fn fetch_window_sends_the_absolute_offset() {
     let server = MockServer::start().await;
@@ -73,45 +57,21 @@ async fn fetch_window_sends_the_absolute_offset() {
     let vista = vista(&server, "  paginate: true\n");
 
     let window = vista.fetch_window(35, 7).await.unwrap();
-    assert_eq!(window.len(), 7);
-    assert_eq!(window[0].0, "35");
+    assert_eq!(window.rows.len(), 7);
+    assert_eq!(window.rows[0].0, "35");
+    assert_eq!(window.total, None);
 }
 
+/// Offset paging is no continuation cursor, so `fetch_cursor` is refused
+/// without a request.
 #[tokio::test]
-async fn fetch_next_chain_ends_on_a_short_page() {
+async fn fetch_cursor_is_refused() {
     let server = MockServer::start().await;
-    for (offset, n) in [(0, 2), (2, 2), (4, 1)] {
-        answer(
-            &server,
-            json!({ "variables": { "limit": 2, "offset": offset } }),
-            rows(offset, n),
-        )
-        .await;
-    }
-    let mut vista = vista(&server, "  paginate: true\n");
-    vista.set_page_size(2).unwrap();
+    let vista = vista(&server, "  paginate: true\n");
 
-    let mut token = None;
-    let mut ids = Vec::new();
-    let mut tokens = Vec::new();
-    loop {
-        let (page, next) = vista.fetch_next(token).await.unwrap();
-        ids.extend(page.into_iter().map(|(id, _)| id));
-        tokens.push(next.clone());
-        match next {
-            Some(t) => token = Some(t),
-            None => break,
-        }
-    }
-    assert_eq!(ids, ["0", "1", "2", "3", "4"]);
-    assert_eq!(
-        tokens,
-        [
-            Some(CborValue::Integer(2.into())),
-            Some(CborValue::Integer(3.into())),
-            None
-        ]
-    );
+    let err = vista.fetch_cursor(None, 2).await.unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+    assert_eq!(support::requests(&server).await, 0);
 }
 
 /// Offset paging needs a stable order; Hasura can spell one, so a paged
@@ -129,26 +89,19 @@ async fn hasura_paged_read_orders_by_id_when_no_order_is_set() {
     .await;
     let vista = vista(&server, "  dialect: hasura\n  paginate: true\n");
 
-    assert_eq!(vista.fetch_window(0, 3).await.unwrap().len(), 3);
+    assert_eq!(vista.fetch_window(0, 3).await.unwrap().rows.len(), 3);
 }
 
 #[tokio::test]
 async fn paging_capabilities_follow_paginate() {
     let server = MockServer::start().await;
-    let caps = vista(&server, "  paginate: true\n").capabilities().clone();
-    assert!(caps.can_set_page_size);
-    assert!(caps.can_fetch_page);
-    assert!(caps.can_fetch_window);
-    assert!(caps.can_fetch_next);
+    let caps = *vista(&server, "  paginate: true\n").capabilities();
+    assert!(caps.has(Capability::Window));
+    assert!(!caps.has(Capability::Cursor));
 
-    let mut off = vista(&server, "  dialect: generic\n");
-    let caps = off.capabilities().clone();
-    assert!(!caps.can_set_page_size);
-    assert!(!caps.can_fetch_page);
-    assert!(!caps.can_fetch_window);
-    assert!(!caps.can_fetch_next);
-    assert!(off.set_page_size(10).is_err());
-    assert!(off.fetch_window(0, 10).await.is_err());
+    let off = vista(&server, "  dialect: generic\n");
+    assert!(!off.capabilities().has(Capability::Window));
+    assert!(off.fetch_window(0, 10).await.unwrap_err().is_unsupported());
 }
 
 /// With filtering done locally a server page would come back short, so
@@ -156,14 +109,15 @@ async fn paging_capabilities_follow_paginate() {
 #[tokio::test]
 async fn paging_is_not_advertised_with_filter_false() {
     let server = MockServer::start().await;
-    let mut vista = vista(&server, "  paginate: true\n  filter: false\n");
-    let caps = vista.capabilities().clone();
-    assert!(!caps.can_set_page_size);
-    assert!(!caps.can_fetch_page);
-    assert!(!caps.can_fetch_window);
-    assert!(!caps.can_fetch_next);
-    assert!(vista.set_page_size(10).is_err());
-    assert!(vista.fetch_window(0, 10).await.is_err());
+    let vista = vista(&server, "  paginate: true\n  filter: false\n");
+    assert!(!vista.capabilities().has(Capability::Window));
+    assert!(
+        vista
+            .fetch_window(0, 10)
+            .await
+            .unwrap_err()
+            .is_unsupported()
+    );
     assert_eq!(support::requests(&server).await, 0);
 }
 
@@ -180,7 +134,7 @@ async fn hasura_count_lists_by_default() {
     .await;
     let vista = vista(&server, "  dialect: hasura\n");
 
-    assert_eq!(vista.get_count().await.unwrap(), 4);
+    assert_eq!(vista.count().await.unwrap(), 4);
 }
 
 #[tokio::test]
@@ -195,9 +149,9 @@ async fn hasura_aggregate_count_applies_the_search() {
     )
     .await;
     let mut vista = vista(&server, "  dialect: hasura\n  count: aggregate\n");
-    vista.add_search("fal").unwrap();
+    vista.set_search(Some("fal")).unwrap();
 
-    assert_eq!(vista.get_count().await.unwrap(), 5);
+    assert_eq!(vista.count().await.unwrap(), 5);
 }
 
 /// A server refusing the aggregate fails the count, with the fix named,
@@ -213,7 +167,7 @@ async fn rejected_aggregate_count_names_count_list() {
     .await;
     let vista = vista(&server, "  dialect: hasura\n  count: aggregate\n");
 
-    let err = vista.get_count().await.unwrap_err().to_string();
+    let err = vista.count().await.unwrap_err().to_string();
     assert!(err.contains("count: list"), "{err}");
     assert!(err.contains("launches_aggregate"), "{err}");
     assert_eq!(support::requests(&server).await, 1, "no fallback listing");
@@ -238,10 +192,10 @@ async fn hasura_count_runs_the_aggregate_query_with_the_filter() {
     .await;
     let mut vista = vista(&server, "  dialect: hasura\n  count: aggregate\n");
     vista
-        .add_condition_eq("name", CborValue::Text("FalconSat".into()))
+        .add_condition("name", FilterOp::Eq, CborValue::Text("FalconSat".into()))
         .unwrap();
 
-    assert_eq!(vista.get_count().await.unwrap(), 42);
+    assert_eq!(vista.count().await.unwrap(), 42);
 }
 
 #[tokio::test]
@@ -258,7 +212,7 @@ async fn hasura_count_field_is_overridable() {
         "  dialect: hasura\n  count: aggregate\n  count_field: launchesStats\n",
     );
 
-    assert_eq!(vista.get_count().await.unwrap(), 7);
+    assert_eq!(vista.count().await.unwrap(), 7);
 }
 
 #[tokio::test]
@@ -272,5 +226,5 @@ async fn generic_count_still_lists_and_counts() {
     .await;
     let vista = vista(&server, "  dialect: generic\n");
 
-    assert_eq!(vista.get_count().await.unwrap(), 3);
+    assert_eq!(vista.count().await.unwrap(), 3);
 }

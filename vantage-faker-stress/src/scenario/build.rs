@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use vantage_faker::SimDef;
 use vantage_faker::config::DatasetSpec;
-use vantage_vista::{Column, VistaMetadata, flags};
+use vantage_vista::{Column, ColumnFlag, VistaMetadata};
 
 use super::{Scenario, parse_duration};
 
@@ -67,20 +67,23 @@ impl Scenario {
         let id = spec
             .and_then(|s| s.id_column.clone())
             .unwrap_or_else(|| "id".into());
+        let column = |name: &str, ty: &str| {
+            let column = Column::new(name, ty);
+            let column = if name == id {
+                column.with_flag(ColumnFlag::Id)
+            } else {
+                column
+            };
+            column.with_flag(ColumnFlag::Orderable)
+        };
         let mut metadata = VistaMetadata::new().with_id_column(id.clone());
         let declared = spec.map(|s| &s.columns);
         if !declared.is_some_and(|c| c.contains_key(&id)) {
-            metadata = metadata.with_column(Column::new(&id, "string"));
+            metadata = metadata.with_column(column(&id, "string"));
         }
         for (name, c) in declared.into_iter().flatten() {
             let ty = c.ty.as_deref().unwrap_or("string");
-            metadata = metadata.with_column(Column::new(name, ty));
-        }
-        for column in metadata.columns.values_mut() {
-            if column.name == id {
-                column.flags.push(flags::ID.into());
-            }
-            column.flags.push(flags::ORDERABLE.into());
+            metadata = metadata.with_column(column(name, ty));
         }
         metadata
     }

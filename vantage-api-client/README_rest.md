@@ -121,8 +121,8 @@ RestApi::builder(url)
     .ordering(OrderingParams::new("ordering", "-"))   // ?ordering=net / -net
 ```
 
-`vista.add_order("net", SortDirection::Descending)` then travels with every
-window as `?ordering=-net`, and the first page is the real top of the sorted
+`vista.set_order(Some(("net", SortDirection::Descending)))` then travels with
+every read as `?ordering=-net`, and the first page is the real top of the sorted
 set. Without `ordering` no column is orderable (`can_order: false`) and a
 consumer sorts the rows it has loaded.
 

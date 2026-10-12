@@ -10,10 +10,21 @@ use crate::{MemoryTable, Query};
 
 /// Load `rows` into `table`. An object with an id column value upserts;
 /// one without inserts, getting a generated id. Returns the number of
-/// rows processed.
+/// rows processed. Rows are stored as given; the Vista factory conforms
+/// them to their declared column types.
 pub fn load(
     table: &MemoryTable,
     rows: impl IntoIterator<Item = serde_json::Value>,
+) -> vantage_core::Result<usize> {
+    load_with(table, rows, |_| {})
+}
+
+/// [`load`], passing each row through `prepare` before it is stored (the
+/// Vista factory conforms cells to their declared column types here).
+pub(crate) fn load_with(
+    table: &MemoryTable,
+    rows: impl IntoIterator<Item = serde_json::Value>,
+    mut prepare: impl FnMut(&mut Record<CborValue>),
 ) -> vantage_core::Result<usize> {
     let mut n = 0;
     for (i, value) in rows.into_iter().enumerate() {
@@ -27,7 +38,8 @@ pub fn load(
         let CborValue::Map(_) = &cbor else {
             return Err(error!("Seed row is not an object", position = i));
         };
-        let record: Record<CborValue> = cbor.into();
+        let mut record: Record<CborValue> = cbor.into();
+        prepare(&mut record);
         match crate::store::ids::supplied_id(record.get(table.id_column())) {
             Some(id) => {
                 table.upsert(&id, record);
@@ -41,8 +53,18 @@ pub fn load(
     Ok(n)
 }
 
-/// Load rows from a `.json`, `.yaml` or `.yml` file at `path`.
+/// Load rows from a `.json`, `.yaml` or `.yml` file at `path`. Rows are
+/// stored as given.
 pub fn load_file(table: &MemoryTable, path: &Path) -> vantage_core::Result<usize> {
+    load_file_with(table, path, |_| {})
+}
+
+/// [`load_file`], passing each row through `prepare` as [`load_with`] does.
+pub(crate) fn load_file_with(
+    table: &MemoryTable,
+    path: &Path,
+    prepare: impl FnMut(&mut Record<CborValue>),
+) -> vantage_core::Result<usize> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         error!(
             "Cannot read seed file",
@@ -66,7 +88,7 @@ pub fn load_file(table: &MemoryTable, path: &Path) -> vantage_core::Result<usize
             )
         })?,
     };
-    load(table, rows)
+    load_with(table, rows, prepare)
 }
 
 /// Every row in `table`, as JSON objects in insertion order. A row holding

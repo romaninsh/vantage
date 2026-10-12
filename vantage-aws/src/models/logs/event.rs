@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
 use crate::AwsAccount;
+use crate::models::request_param;
 
 /// One log event. Timestamps are CloudWatch's usual
 /// milliseconds-since-epoch.
@@ -39,4 +40,5 @@ pub fn events_table(aws: AwsAccount) -> Table<AwsAccount, LogEvent> {
     .with_title_column_of::<String>("logStreamName")
     .with_title_column_of::<i64>("timestamp")
     .with_column_of::<String>("message")
+    .with_column(request_param("logGroupName"))
 }

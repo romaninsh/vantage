@@ -5755,7 +5755,6 @@ dependencies = [
  "redb",
  "rstest",
  "serde",
- "serde_json",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -5782,7 +5781,6 @@ dependencies = [
  "async-trait",
  "ciborium",
  "indexmap 2.14.0",
- "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -5823,7 +5821,6 @@ dependencies = [
  "tokio-test",
  "vantage-core",
  "vantage-dataset",
- "vantage-vista",
 ]
 
 [[package]]

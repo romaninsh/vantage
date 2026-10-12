@@ -2,7 +2,7 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{NoExtras, Vista, VistaCapabilities, VistaFactory};
+use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory};
 
 use crate::log_writer::LogWriter;
 use crate::type_system::AnyJsonType;
@@ -26,15 +26,10 @@ impl LogWriterVistaFactory {
         let name = table.table_name().to_string();
         let any_table = table.into_entity::<EmptyEntity>();
 
-        let source = LogWriterTableShell::new(
-            any_table,
-            VistaCapabilities {
-                can_insert: true,
-                ..VistaCapabilities::default()
-            },
-            metadata,
-        );
-        Ok(Vista::new(name, Box::new(source)))
+        // Insert is the shell's one capability: it reads nothing back.
+        let capabilities = VistaCapabilities::new().with(Capability::Insert);
+        let shell = LogWriterTableShell::new(any_table, capabilities, metadata);
+        Ok(Vista::new(name, shell))
     }
 
     pub fn table_from_spec(
@@ -65,9 +60,7 @@ impl VistaFactory for LogWriterVistaFactory {
     fn build_from_spec(&self, spec: LogWriterVistaSpec) -> Result<Vista> {
         let vista_name = spec.name.clone();
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.from_table(table)?;
-        vista.set_name(vista_name);
-        Ok(vista)
+        Ok(self.from_table(table)?.with_name(vista_name))
     }
 }
 

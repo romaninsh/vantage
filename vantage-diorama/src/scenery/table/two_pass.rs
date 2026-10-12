@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use vantage_vista::SortDirection;
 
+use crate::dio::query_index::index_key;
 use crate::dio::{Dio, DioEvent};
 use crate::lens::CacheStatus;
 use crate::ops::QueryDescriptor;
@@ -394,18 +395,11 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
     let conditions = state.conditions.read().unwrap().clone();
     let op_conditions = state.op_conditions.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
-    let vista_sort = sort.as_ref().map(|(col, dir)| {
-        let dir = match dir {
-            SortDir::Asc => SortDirection::Ascending,
-            SortDir::Desc => SortDirection::Descending,
-        };
-        (col.as_str(), dir)
-    });
-    let mut key = dio_inner
-        .master
-        .read()
-        .unwrap()
-        .index_key(&conditions, vista_sort);
+    let mut key = index_key(
+        &dio_inner.master.read().unwrap(),
+        &conditions,
+        sort.as_ref(),
+    );
     key.push('\u{1}');
     key.push_str(&super::helpers::op_conditions_key(&op_conditions));
     let new_index = dio_inner.query_index(&key);
@@ -500,18 +494,11 @@ pub(crate) async fn refresh_index(state: &Arc<TableSceneryState>) {
     let conditions = state.conditions.read().unwrap().clone();
     let op_conditions = state.op_conditions.read().unwrap().clone();
     let sort = state.sort.read().unwrap().clone();
-    let vista_sort = sort.as_ref().map(|(col, dir)| {
-        let dir = match dir {
-            SortDir::Asc => SortDirection::Ascending,
-            SortDir::Desc => SortDirection::Descending,
-        };
-        (col.as_str(), dir)
-    });
-    let mut key = dio_inner
-        .master
-        .read()
-        .unwrap()
-        .index_key(&conditions, vista_sort);
+    let mut key = index_key(
+        &dio_inner.master.read().unwrap(),
+        &conditions,
+        sort.as_ref(),
+    );
     key.push('\u{1}');
     key.push_str(&super::helpers::op_conditions_key(&op_conditions));
     if !dio_inner.has_dio_augment() && dio_inner.lens.callbacks.on_list_page.is_none() {

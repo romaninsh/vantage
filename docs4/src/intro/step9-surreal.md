@@ -71,7 +71,7 @@ that matters:
 ```rust
 let mut master = SurrealVistaFactory::new(db.clone())
     .from_table(Product::surreal_table(db.clone()))?;
-master.add_order("created", SortDirection::Ascending)?;
+master.set_order(Some(("created", SortDirection::Ascending)))?;
 
 let dio = lens.make_dio(master).await?;   // same Lens, same cache, same on_start/on_refresh
 dio.watch().await?;                        // the same call — now backed by LIVE SELECT

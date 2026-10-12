@@ -47,10 +47,7 @@ fn metadata() -> VistaMetadata {
 /// file or a third-party read-only API.
 fn read_only_shell() -> MockShell {
     MockShell::new()
-        .with_capabilities(VistaCapabilities {
-            can_count: true,
-            ..VistaCapabilities::default()
-        })
+        .with_capabilities(VistaCapabilities::new())
         .with_record(
             "c1",
             rec(&[("id", "c1"), ("name", "Ada"), ("status", "lead")]),
@@ -58,7 +55,7 @@ fn read_only_shell() -> MockShell {
 }
 
 fn vista_over(shell: &MockShell, name: &str) -> Vista {
-    Vista::new(name, Box::new(shell.clone().with_metadata(metadata())))
+    Vista::new(name, shell.clone().with_metadata(metadata()))
 }
 
 async fn seed_cache(dio: &vantage_diorama::Dio) -> Result<()> {

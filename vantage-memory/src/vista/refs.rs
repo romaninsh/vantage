@@ -7,25 +7,31 @@ use ciborium::Value as CborValue;
 use parking_lot::RwLock;
 use vantage_core::{Result, error};
 use vantage_types::Record;
-use vantage_vista::{FilterOp, Reference, ReferenceKind, Vista, VistaMetadata};
+use vantage_vista::{Reference, Vista, VistaMetadata};
 
 use super::MemoryTableShell;
-use crate::store::ids::{id_forms, supplied_id};
-use crate::{MemoryCondition, MemoryStore};
+use super::affinity::Untyped;
+use crate::MemoryStore;
 
 /// The store plus the metadata of every vista built over it, so a
 /// traversal target gets its declared columns and references.
 #[derive(Clone)]
 pub struct Catalog {
     store: MemoryStore,
-    metadata: Arc<RwLock<HashMap<String, VistaMetadata>>>,
+    entries: Arc<RwLock<HashMap<String, Entry>>>,
+}
+
+#[derive(Clone)]
+struct Entry {
+    metadata: VistaMetadata,
+    untyped: Arc<Untyped>,
 }
 
 impl Catalog {
     pub fn new(store: MemoryStore) -> Self {
         Self {
             store,
-            metadata: Arc::default(),
+            entries: Arc::default(),
         }
     }
 
@@ -33,12 +39,36 @@ impl Catalog {
         &self.store
     }
 
+    /// Register `metadata` for `name`; every column's declared type counts.
     pub fn register(&self, name: impl Into<String>, metadata: VistaMetadata) {
-        self.metadata.write().insert(name.into(), metadata);
+        self.register_untyped(name, metadata, Untyped::new());
+    }
+
+    /// Register `metadata` for `name`, `untyped` naming the columns declared
+    /// without a type.
+    pub(crate) fn register_untyped(
+        &self,
+        name: impl Into<String>,
+        metadata: VistaMetadata,
+        untyped: Untyped,
+    ) {
+        let untyped = Arc::new(untyped);
+        self.entries
+            .write()
+            .insert(name.into(), Entry { metadata, untyped });
     }
 
     pub fn get(&self, name: &str) -> Option<VistaMetadata> {
-        self.metadata.read().get(name).cloned()
+        self.entries.read().get(name).map(|e| e.metadata.clone())
+    }
+
+    /// An unnarrowed shell over the store table `name`, as registered;
+    /// `None` when `name` has no entry.
+    pub fn shell(&self, name: &str) -> Option<MemoryTableShell> {
+        let entry = self.entries.read().get(name).cloned()?;
+        let mut shell = MemoryTableShell::new(self.store.table(name), entry.metadata, self.clone());
+        shell.untyped = entry.untyped;
+        Some(shell)
     }
 }
 
@@ -47,72 +77,38 @@ impl MemoryTableShell {
         self.metadata
             .references
             .get(relation)
-            .ok_or_else(|| error!("Unknown reference", relation = relation))
+            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())
     }
 
     /// An unnarrowed shell over the reference's target table.
     fn target_shell(&self, reference: &Reference) -> MemoryTableShell {
-        let table = self.catalog.store().table(&reference.target);
-        let metadata = self
-            .catalog
-            .get(&reference.target)
-            .unwrap_or_else(|| VistaMetadata::new().with_id_column(table.id_column().to_string()));
-        MemoryTableShell::new(table, metadata, self.catalog.clone())
+        self.catalog.shell(&reference.target).unwrap_or_else(|| {
+            let table = self.catalog.store().table(&reference.target);
+            let metadata = VistaMetadata::new().with_id_column(table.id_column().to_string());
+            MemoryTableShell::new(table, metadata, self.catalog.clone())
+        })
     }
 
-    /// The target of `relation`, narrowed to the rows related to `row`.
-    /// `HasMany`: `target[foreign_key]` is `row[id]` as text or integer.
-    /// `HasOne`: `target[target id] == row[foreign_key]` as an id string.
-    /// Stored ids are text, but foreign keys (seed files especially) are
-    /// often integers, so both sides are normalised through the id's forms.
-    pub(super) fn traverse(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
+    /// The target of `relation`: bare for `None`, else narrowed to the rows
+    /// related to `row` by the reference's join keys. Equality conditions
+    /// are conformed to the stored form of their column, so an integer
+    /// foreign key (as seed files usually write them) meets a text id.
+    pub(super) fn traverse(
+        &self,
+        relation: &str,
+        row: Option<&Record<CborValue>>,
+    ) -> Result<Vista> {
         let reference = self.reference(relation)?;
-        let mut target = self.target_shell(reference);
-        let source_col = match reference.kind {
-            ReferenceKind::HasMany => self.id_column_name().to_string(),
-            ReferenceKind::HasOne => reference.foreign_key.clone(),
-        };
-        let id = supplied_id(row.get(&source_col)).ok_or_else(|| {
-            error!(
-                "Source row is missing the join field",
-                relation = relation,
-                field = source_col
-            )
-        })?;
-        let condition = match reference.kind {
-            ReferenceKind::HasMany => {
-                let mut forms = id_forms(&id);
-                if let Some(first) = forms.first() {
-                    target
-                        .invariants
-                        .insert(reference.foreign_key.clone(), first.clone());
-                }
-                match forms.len() {
-                    1 => {
-                        MemoryCondition::cmp(&reference.foreign_key, FilterOp::Eq, forms.remove(0))
-                    }
-                    _ => MemoryCondition::cmp(
-                        &reference.foreign_key,
-                        FilterOp::InSet,
-                        CborValue::Array(forms),
-                    ),
-                }
-            }
-            ReferenceKind::HasOne => {
-                let id_column = target.id_column_name().to_string();
-                target
-                    .invariants
-                    .insert(id_column.clone(), CborValue::Text(id.clone()));
-                MemoryCondition::cmp(&id_column, FilterOp::Eq, CborValue::Text(id))
-            }
-        };
-        target.query.conditions.push(condition);
-        Ok(Vista::new(reference.target.clone(), Box::new(target)))
-    }
-
-    pub(super) fn ref_target(&self, relation: &str) -> Result<Vista> {
-        let reference = self.reference(relation)?;
-        let target = self.target_shell(reference);
-        Ok(Vista::new(reference.target.clone(), Box::new(target)))
+        if reference.kind.is_contained() {
+            return Err(error!(
+                "Contained relations are not supported by vantage-memory",
+                relation = relation
+            ));
+        }
+        let target = Vista::new(reference.target.clone(), self.target_shell(reference));
+        match row {
+            Some(row) => reference.narrow(target, row, CborValue::clone),
+            None => Ok(target),
+        }
     }
 }

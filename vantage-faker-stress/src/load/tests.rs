@@ -6,15 +6,15 @@ use ciborium::Value as CborValue;
 use vantage_faker::SimStats;
 use vantage_memory::{MemoryStore, MemoryTableHandle};
 use vantage_types::Record;
-use vantage_vista::{Column, flags};
+use vantage_vista::{Column, ColumnFlag};
 
 fn metadata() -> VistaMetadata {
     VistaMetadata::new()
         .with_id_column("id")
         .with_column(
             Column::new("id", "string")
-                .with_flag(flags::ID)
-                .with_flag(flags::ORDERABLE),
+                .with_flag(ColumnFlag::Id)
+                .with_flag(ColumnFlag::Orderable),
         )
         .with_column(Column::new("note", "string"))
 }

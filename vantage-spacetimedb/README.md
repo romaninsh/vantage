@@ -47,13 +47,13 @@ have `LIMIT` and `COUNT(*)`. Subscriptions are narrower still: whole rows from a
 single table or view, `WHERE` only, at most a two-table indexed `JOIN`.
 
 So this driver filters and counts server-side, and **refuses** to sort, search or
-paginate — it does not emulate them over a materialised set. `add_order` returns
+paginate — it does not emulate them over a materialised set. `set_order` returns
 `Unsupported` rather than quietly downloading the table and sorting in memory.
 
 That is a deliberate choice. Emulation makes a capability flag misleading in the
-awkward direction: `can_order: false` while ordering appears to work, so a
-consumer cannot tell a cheap server-side sort from a full-table download. A
-caller that checks the flags first — as the contract asks — never sees the
+awkward direction: `Order` is not advertised while ordering appears to work, so
+a consumer cannot tell a cheap server-side sort from a full-table download. A
+caller that checks the capabilities first — as the contract asks — never sees the
 refusal at all. The practical consequence is that a grid over a SpacetimeDB table
 shows rows in the server's natural order and its sort headers are inert. That is
 the truth about this backend.

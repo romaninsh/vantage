@@ -8,7 +8,7 @@ use vantage_memory::vista::Catalog;
 use vantage_memory::{AnyMemoryType, MemoryDB, MemoryStore, MemoryTableShell};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Column, FilterOp, Vista, VistaMetadata};
+use vantage_vista::{Column, ColumnFlag, FilterOp, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -32,15 +32,14 @@ fn seeded() -> MemoryStore {
 
 fn vista(store: &MemoryStore) -> Vista {
     let md = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+        .with_column(Column::new("name", "String"))
+        .with_column(Column::new("parent", "String"))
+        .with_column(Column::new("price", "int"))
         .with_id_column("id");
     Vista::new(
         "item",
-        Box::new(MemoryTableShell::new(
-            store.table("item"),
-            md,
-            Catalog::new(store.clone()),
-        )),
+        MemoryTableShell::new(store.table("item"), md, Catalog::new(store.clone())),
     )
 }
 
@@ -51,7 +50,8 @@ macro_rules! vista_check {
             let store = seeded();
             let all = vista(&store);
             let mut set = vista(&store);
-            set.add_condition_eq("parent", text("p1")).unwrap();
+            set.add_condition("parent", FilterOp::Eq, text("p1"))
+                .unwrap();
             $check(&Fixture {
                 all: &all,
                 set: &set,

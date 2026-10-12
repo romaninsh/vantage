@@ -7,7 +7,7 @@ use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    ColumnSpec, NoExtras, SpecResolver, Vista, VistaCapabilities, VistaFactory, resolve_base_spec,
+    Capability, ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, resolve_base_spec,
 };
 
 use crate::postgres::PostgresDB;
@@ -15,7 +15,7 @@ use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
 use crate::postgres::vista::source::PostgresTableShell;
 use crate::postgres::vista::spec::{PostgresColumnExtras, PostgresTableExtras, PostgresVistaSpec};
-use crate::sql_vista::{column_for_type, metadata_options};
+use crate::sql_vista::{column_for_type, metadata_options, sql_capabilities};
 
 /// Resolves a YAML spec by table name, so references and `base:` can rebuild
 /// their tables from the live spec.
@@ -46,12 +46,12 @@ impl PostgresVistaFactory {
 
     /// Declare that this database has `{table}_changed` NOTIFY triggers
     /// installed, letting the vistas this factory builds advertise
-    /// [`can_subscribe`](VistaCapabilities::can_subscribe).
+    /// [`Subscribe`](Capability::Subscribe).
     ///
     /// Off by default, and deliberately explicit: Postgres cannot tell us
     /// whether a trigger exists. `LISTEN` on a channel nobody ever notifies
     /// succeeds and then blocks forever, so a vista that advertised
-    /// `can_subscribe` on the strength of being writable would promise a feed
+    /// `Subscribe` on the strength of being writable would promise a feed
     /// that is silent — indistinguishable, to a consumer, from a table where
     /// nothing happens. The trigger is application-installed (see `learn-10`'s
     /// `db::setup`, and the "Real-Time Push with LISTEN/NOTIFY" chapter), so
@@ -80,34 +80,18 @@ impl PostgresVistaFactory {
         E: Entity<AnyPostgresType> + 'static,
     {
         let metadata = table.vista_metadata(metadata_options());
-        let source = PostgresTableShell::new(
-            table,
-            VistaCapabilities {
-                can_count: true,
-                can_order: true,
-                can_search: true,
-                can_filter_operators: true,
-                can_insert: !read_only,
-                can_update: !read_only,
-                can_delete: !read_only,
-                // Push via LISTEN/NOTIFY on the `{table}_changed` channel, which
-                // the application feeds from a trigger. Opt-in (`with_notify`):
-                // we cannot detect the trigger, and claiming a feed we may never
-                // receive is worse than claiming none.
-                can_subscribe: self.notify && !read_only,
-                can_set_page_size: true,
-                can_fetch_page: true,
-                can_fetch_next: true,
-                can_fetch_window: true,
-                can_traverse_to_record: true,
-                can_traverse_to_set: true,
-                can_traverse_in_columns: true,
-                can_confine_writes: !read_only,
-                ..VistaCapabilities::default()
-            },
-            metadata,
-        );
-        Vista::new(name, Box::new(source))
+        let mut capabilities = sql_capabilities(read_only);
+        // Push via LISTEN/NOTIFY on the `{table}_changed` channel, which the
+        // application feeds from a trigger. Opt-in (`with_notify`): we cannot
+        // detect the trigger, and claiming a feed we may never receive is
+        // worse than claiming none.
+        if self.notify && !read_only {
+            capabilities = capabilities.with(Capability::Subscribe);
+        }
+        Vista::new(
+            name,
+            PostgresTableShell::new(table, capabilities, metadata, ()),
+        )
     }
 
     /// Build a `Table<PostgresDB, EmptyEntity>` from a spec, resolving any
@@ -133,9 +117,7 @@ impl VistaFactory for PostgresVistaFactory {
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.wrap(table, vista_name.clone(), read_only);
-        vista.set_name(vista_name);
-        Ok(vista)
+        Ok(self.wrap(table, vista_name, read_only))
     }
 }
 
@@ -173,7 +155,7 @@ pub(crate) fn build_postgres_table(
     }
     table.set_spec_id_field(&spec.resolve_id_column())?;
 
-    let mut table = table.with_spec_references(&spec.references, resolver, build_postgres_table);
+    let mut table = table.with_spec_references(&spec.references, resolver, build_postgres_table)?;
 
     if has_dotted {
         // Lower the dotted imports now that their relations are declared.
@@ -244,7 +226,7 @@ fn build_derived_table(
         build_column,
     )?;
     // The derived spec's own `references:` sit alongside inherited relations.
-    Ok(table.with_spec_references(&spec.references, Some(resolver), build_postgres_table))
+    table.with_spec_references(&spec.references, Some(resolver), build_postgres_table)
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like

@@ -1,5 +1,6 @@
-//! Write paths behind the shell's `TableShell` write methods. Every write is
-//! confined to the shell's query and fills its literal equality conditions.
+//! Write paths behind the shell's `TableShell` write methods. Every write
+//! stores cells in their declared-type form, is confined to the shell's
+//! query, and fills its literal equality conditions.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -8,6 +9,7 @@ use vantage_dataset::invariants::{conform, validate};
 use vantage_types::Record;
 
 use super::MemoryTableShell;
+use super::affinity::conform_record;
 use crate::eval::matches_all;
 
 type Rec = Record<CborValue>;
@@ -39,10 +41,23 @@ impl MemoryTableShell {
         .mark_conflict()
     }
 
-    /// `record` filled with the set's equality conditions and `id`; a
-    /// `Conflict` when the result is not in the set.
-    fn conformed(&self, id: &str, record: &Rec) -> Result<Rec> {
+    /// `record` with every cell in its stored form (see `affinity`), so a
+    /// written row compares like a seeded one.
+    fn stored_form(&self, record: &Rec) -> Rec {
         let mut row = record.clone();
+        conform_record(
+            &self.metadata,
+            &self.untyped,
+            self.id_column_name(),
+            &mut row,
+        );
+        row
+    }
+
+    /// `record` in its stored form, filled with the set's equality
+    /// conditions and `id`; a `Conflict` when the result is not in the set.
+    fn conformed(&self, id: &str, record: &Rec) -> Result<Rec> {
+        let mut row = self.stored_form(record);
         conform(&mut row, &self.invariants)?;
         row.insert(
             self.id_column_name().to_string(),
@@ -89,10 +104,6 @@ impl MemoryTableShell {
         Ok((*stored).clone())
     }
 
-    pub(super) fn upsert_row(&self, id: &str, record: &Rec) -> Result<Rec> {
-        self.replace_row(id, record)
-    }
-
     pub(super) fn patch_row(&self, id: &str, partial: &Rec) -> Result<Rec> {
         let existing = match self.stored_in_set(id) {
             Ok(Some(existing)) => existing,
@@ -102,6 +113,7 @@ impl MemoryTableShell {
             Err(e) if e.is_conflict() => return Err(self.not_found(id)),
             Err(e) => return Err(e),
         };
+        let partial = &self.stored_form(partial);
         validate(partial, &self.invariants)?;
         let mut merged = existing;
         for (k, v) in partial.iter() {
@@ -144,14 +156,17 @@ impl MemoryTableShell {
         Ok(())
     }
 
-    /// Insert a record under a generated or supplied id.
-    pub(super) fn insert_return_id(&self, record: &Rec) -> Result<String> {
-        let mut row = record.clone();
+    /// Insert a record under the id it supplies in its id column, else a
+    /// generated one; returns the id and the stored row.
+    pub(super) fn insert_generated(&self, record: &Rec) -> Result<(String, Rec)> {
+        let mut row = self.stored_form(record);
         conform(&mut row, &self.invariants)?;
         if !self.in_set(&row)? {
             return Err(self.misfit(""));
         }
-        self.table.insert(row)
+        let id = self.table.insert(row)?;
+        let stored = self.table.get(&id).ok_or_else(|| self.not_found(&id))?;
+        Ok((id, (*stored).clone()))
     }
 
     /// Insert every record whose id is new; returns how many were. Nothing is

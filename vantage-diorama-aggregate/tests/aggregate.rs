@@ -10,7 +10,7 @@ use vantage_diorama_aggregate::{
     AggregateLens, Aggregation, Count, CountWhere, DerivedRows, GroupBy, Max, Reduce, Rows, Sum,
 };
 use vantage_types::Record;
-use vantage_vista::{Column, SortDirection};
+use vantage_vista::{Capability, Column, SortDirection, Vista};
 
 use support::{BumpCounter, DEBOUNCE, int, master, record, settle, source, text};
 
@@ -336,8 +336,8 @@ async fn group_by_produces_a_queryable_derived_dio() -> Result<()> {
     Ok(())
 }
 
-/// The architectural claim: a derived Vista advertises `can_order` /
-/// `can_search` / `can_count` and actually honours them, because unlike its
+/// The architectural claim: a derived Vista advertises `Order` and `Search`
+/// (and counts) and actually honours them, because unlike its
 /// source it holds its whole row set.
 #[tokio::test]
 async fn the_derived_vista_honours_the_capabilities_it_advertises() -> Result<()> {
@@ -360,35 +360,26 @@ async fn the_derived_vista_honours_the_capabilities_it_advertises() -> Result<()
         .derive(&src, "by_status", GroupBy::column("status", revenue()))
         .await?;
 
-    let caps = derived.master().capabilities().clone();
-    assert!(caps.can_order && caps.can_search && caps.can_count);
+    let caps = *derived.master().capabilities();
+    assert!(caps.has(Capability::Order) && caps.has(Capability::Search));
     assert!(
-        !caps.can_insert && !caps.can_update && !caps.can_delete,
+        !caps.has(Capability::Insert)
+            && !caps.has(Capability::Update)
+            && !caps.has(Capability::Delete),
         "derived rows are a function of the source — they cannot be written",
     );
 
     // Ordering, on a fresh narrowing so the shared master is untouched.
-    let mut ordered = derived
-        .master()
-        .source
-        .clone_shell()
-        .map(|shell| vantage_vista::Vista::new("by_status", shell))
-        .expect("aggregate shells clone");
-    ordered.add_order("revenue", SortDirection::Descending)?;
+    let ordered =
+        Vista::clone(&derived.master()).with_order("revenue", SortDirection::Descending)?;
     let by_revenue: Vec<String> = ordered.list_values().await?.into_keys().collect();
     assert_eq!(by_revenue, vec!["beta", "gamma", "alpha"]);
 
     // Counting.
-    assert_eq!(derived.master().get_count().await?, 3);
+    assert_eq!(derived.master().count().await?, 3);
 
     // Search.
-    let mut searched = derived
-        .master()
-        .source
-        .clone_shell()
-        .map(|shell| vantage_vista::Vista::new("by_status", shell))
-        .expect("aggregate shells clone");
-    searched.add_search("bet")?;
+    let searched = Vista::clone(&derived.master()).with_search("bet")?;
     let hits: Vec<String> = searched.list_values().await?.into_keys().collect();
     assert_eq!(hits, vec!["beta"]);
     Ok(())
@@ -434,10 +425,14 @@ async fn the_derived_schema_is_the_key_plus_the_reducers_columns() -> Result<()>
 
     let vista = derived.master();
     assert_eq!(
-        vista.get_column_names(),
+        vista
+            .columns()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
         vec!["status", "orders", "revenue"]
     );
-    assert_eq!(vista.get_id_column(), Some("status"));
+    assert_eq!(vista.id_column(), Some("status"));
     Ok(())
 }
 

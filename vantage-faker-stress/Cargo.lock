@@ -1576,7 +1576,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.14.1"
+version = "0.14.2"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1585,7 +1585,6 @@ dependencies = [
  "libc",
  "redb",
  "serde",
- "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -1608,7 +1607,6 @@ dependencies = [
  "thiserror 2.0.21",
  "vantage-core",
  "vantage-dataset",
- "vantage-vista",
 ]
 
 [[package]]
@@ -1689,7 +1687,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "1.2.1"
+version = "1.3.0"
 dependencies = [
  "async-stream",
  "async-trait",

@@ -3,10 +3,10 @@
 //! shell.
 
 use vantage_types::Entity;
-use vantage_vista::{Column as VistaColumn, VistaMetadata, flags};
+use vantage_vista::{Column as VistaColumn, ColumnFlag, VistaMetadata};
 
 use crate::{
-    column::flags::ColumnFlag,
+    column::flags::ColumnFlag as TableColumnFlag,
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
 };
@@ -45,32 +45,29 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Vista metadata for this table. Computed columns go in after the
     /// flags: the Vista holds their values and their spec carries their flags.
     pub fn vista_metadata(&self, options: VistaMetadataOptions) -> VistaMetadata {
+        let id = self.id_field().map(|f| f.name().to_string());
+        let titles = self.title_fields();
         let mut metadata = VistaMetadata::new();
         for (name, col) in self.columns() {
-            metadata = metadata.with_column(self.vista_column(name, col, &options));
-        }
-        if let Some(id_field) = self.id_field() {
-            let id = id_field.name().to_string();
-            if options.id_flag
-                && let Some(col) = metadata.columns.get_mut(&id)
-            {
-                col.flags.push(flags::ID.to_string());
-            }
-            if self.id_auto
-                && let Some(col) = metadata.columns.get_mut(&id)
-                && !col.flags.iter().any(|f| f == flags::AUTO)
-            {
-                col.flags.push(flags::AUTO.to_string());
-            }
-            metadata = metadata.with_id_column(id);
-        }
-        for title in self.title_fields() {
-            if let Some(col) = metadata.columns.get_mut(title) {
-                col.flags.push(flags::TITLE.to_string());
-                if options.searchable_titles {
-                    col.flags.push(flags::SEARCHABLE.to_string());
+            let mut vc = self.vista_column(name, col, &options);
+            if id.as_deref() == Some(name.as_str()) {
+                if options.id_flag {
+                    vc = vc.with_flag(ColumnFlag::Id);
+                }
+                if self.id_auto {
+                    vc = vc.with_flag(ColumnFlag::Auto);
                 }
             }
+            if titles.iter().any(|t| t == name) {
+                vc = vc.with_flag(ColumnFlag::Title);
+                if options.searchable_titles {
+                    vc = vc.with_flag(ColumnFlag::Searchable);
+                }
+            }
+            metadata = metadata.with_column(vc);
+        }
+        if let Some(id) = id {
+            metadata = metadata.with_id_column(id);
         }
         metadata = metadata.with_columns_at(self.computed_columns());
         if options.references {
@@ -79,8 +76,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             }
         }
         if options.contained {
-            for spec in self.vista_contained() {
-                metadata = metadata.with_contained(spec);
+            for reference in self.vista_contained() {
+                metadata = metadata.with_reference(reference);
             }
         }
         metadata
@@ -99,21 +96,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             Orderable::ExceptImported => !self.is_imported_column(name),
         };
         if orderable {
-            vc = vc.with_flag(flags::ORDERABLE);
+            vc = vc.with_flag(ColumnFlag::Orderable);
         }
         if options.calculated && self.is_calculated_column(name) {
-            vc = vc.with_flag(flags::CALCULATED);
+            vc = vc.with_flag(ColumnFlag::Calculated);
         }
         let col_flags = col.flags();
-        if col_flags.contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(flags::HIDDEN);
+        if col_flags.contains(&TableColumnFlag::Hidden) {
+            vc = vc.with_flag(ColumnFlag::Hidden);
         }
         if options.column_flags {
-            if col_flags.contains(&ColumnFlag::Searchable) {
-                vc = vc.with_flag(flags::SEARCHABLE);
+            if col_flags.contains(&TableColumnFlag::Searchable) {
+                vc = vc.with_flag(ColumnFlag::Searchable);
             }
-            if col_flags.contains(&ColumnFlag::Mandatory) {
-                vc = vc.with_flag(flags::MANDATORY);
+            if col_flags.contains(&TableColumnFlag::Mandatory) {
+                vc = vc.with_flag(ColumnFlag::Mandatory);
             }
         }
         vc
@@ -134,8 +131,8 @@ mod tests {
         table
     }
 
-    fn flags_of(metadata: &VistaMetadata, column: &str) -> Vec<String> {
-        metadata.columns[column].flags.clone()
+    fn flags_of(metadata: &VistaMetadata, column: &str) -> Vec<ColumnFlag> {
+        metadata.columns[column].flags().to_vec()
     }
 
     #[test]
@@ -143,7 +140,7 @@ mod tests {
         let metadata = table().vista_metadata(VistaMetadataOptions::default());
         assert_eq!(metadata.id_column.as_deref(), Some("id"));
         assert!(flags_of(&metadata, "id").is_empty());
-        assert_eq!(flags_of(&metadata, "name"), [flags::TITLE]);
+        assert_eq!(flags_of(&metadata, "name"), [ColumnFlag::Title]);
         let names: Vec<&String> = metadata.columns.keys().collect();
         assert_eq!(names, ["id", "name", "shout"]);
     }
@@ -156,10 +153,17 @@ mod tests {
             searchable_titles: true,
             ..VistaMetadataOptions::default()
         });
-        assert_eq!(flags_of(&metadata, "id"), [flags::ORDERABLE, flags::ID]);
+        assert_eq!(
+            flags_of(&metadata, "id"),
+            [ColumnFlag::Orderable, ColumnFlag::Id]
+        );
         assert_eq!(
             flags_of(&metadata, "name"),
-            [flags::ORDERABLE, flags::TITLE, flags::SEARCHABLE]
+            [
+                ColumnFlag::Orderable,
+                ColumnFlag::Title,
+                ColumnFlag::Searchable
+            ]
         );
         assert!(flags_of(&metadata, "shout").is_empty());
     }
@@ -169,10 +173,6 @@ mod tests {
         let metadata = table()
             .with_auto_id()
             .vista_metadata(VistaMetadataOptions::default());
-        assert!(
-            metadata.columns["id"]
-                .flags
-                .contains(&flags::AUTO.to_string())
-        );
+        assert!(metadata.columns["id"].has_flag(ColumnFlag::Auto));
     }
 }

@@ -1,66 +1,65 @@
-//! `TableShell::capability_flag` must answer every `VistaCapabilities` field.
+//! Every reader of a capability set sees every `Capability`.
 //!
-//! Today the lookup is a hand-kept string match that has drifted: it has no
-//! arm for `can_filter_operators`, so it answers `false` whatever the shell
-//! advertises.
-//!
-//! Phase 1 replaces `capability_flag` with the `Capability` enum; this test
-//! becomes a check that every `Capability` reads its own field.
+//! The 1.x lookup was a hand-kept string match that drifted (it had no arm
+//! for `can_filter_operators`). In 2.0 serde and the rhai `capabilities()` map
+//! are both generated from `Capability::iter()`: each lists every capability
+//! by name, and reads its own bit.
 
-use vantage_vista::mocks::MockShell;
-use vantage_vista::{TableShell, VistaCapabilities};
+use vantage_vista::{Capability, VistaCapabilities};
+
+/// Every other capability, so a reader that confuses two of them shows.
+fn alternating() -> VistaCapabilities {
+    Capability::iter().step_by(2).collect()
+}
+
+fn expected(caps: &VistaCapabilities) -> Vec<(String, bool)> {
+    Capability::iter()
+        .map(|c| (c.as_str().to_string(), caps.has(c)))
+        .collect()
+}
 
 #[test]
-#[ignore = "v2 phase 1: the Capability enum replaces the capability_flag string lookup"]
 fn capability_flag_complete() {
-    let caps = VistaCapabilities {
-        can_count: true,
-        can_insert: true,
-        can_update: true,
-        can_delete: true,
-        can_import: true,
-        can_subscribe: true,
-        can_invalidate: true,
-        can_order: true,
-        can_search: true,
-        can_filter_operators: true,
-        can_set_page_size: true,
-        can_fetch_page: true,
-        can_fetch_next: true,
-        can_fetch_window: true,
-        can_traverse_to_record: true,
-        can_traverse_to_set: true,
-        can_build_ref_via_script: true,
-        can_traverse_in_columns: true,
-        can_confine_writes: true,
-    };
-    let shell = MockShell::new().with_capabilities(caps);
-    let missing: Vec<&str> = [
-        "can_count",
-        "can_insert",
-        "can_update",
-        "can_delete",
-        "can_import",
-        "can_subscribe",
-        "can_invalidate",
-        "can_order",
-        "can_search",
-        "can_filter_operators",
-        "can_set_page_size",
-        "can_fetch_page",
-        "can_fetch_next",
-        "can_fetch_window",
-        "can_traverse_to_record",
-        "can_traverse_to_set",
-        "can_build_ref_via_script",
-        "can_traverse_in_columns",
-        "can_confine_writes",
-    ]
-    .into_iter()
-    .filter(|name| !shell.capability_flag(name))
-    .collect();
-    assert!(
-        missing.is_empty(),
-        "capability_flag answers false for advertised flags: {missing:?}"
+    let caps = alternating();
+    let json = serde_json::to_value(caps).unwrap();
+    let mut serialized: Vec<(String, bool)> = json
+        .as_object()
+        .expect("a capability set serializes as a map")
+        .iter()
+        .map(|(k, v)| (k.clone(), v.as_bool().expect("each value is a bool")))
+        .collect();
+    let mut want = expected(&caps);
+    serialized.sort();
+    want.sort();
+    assert_eq!(serialized, want, "serde must list every capability");
+    let back: VistaCapabilities = serde_json::from_value(json).unwrap();
+    assert_eq!(back, caps, "serde must round-trip");
+
+    #[cfg(all(feature = "rhai", feature = "mocks"))]
+    rhai_map_lists_every_capability(caps);
+}
+
+#[cfg(all(feature = "rhai", feature = "mocks"))]
+fn rhai_map_lists_every_capability(caps: VistaCapabilities) {
+    use vantage_rhai::rhai::Map as RhaiMap;
+    use vantage_vista::Terminals;
+
+    use super::rhai_support::{host, mock, run};
+
+    let host = host(
+        mock().with_capabilities(caps),
+        Terminals::Read { limit: None },
     );
+    let map = run(&host, r#"table("t").capabilities()"#)
+        .unwrap()
+        .try_cast::<RhaiMap>()
+        .expect("capabilities() returns a map");
+    let mut listed: Vec<(String, bool)> = map
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.as_bool().expect("each value is a bool")))
+        .collect();
+    let mut want = expected(&caps);
+    listed.sort();
+    want.sort();
+    assert_eq!(listed, want, "the rhai map must list every capability");
 }

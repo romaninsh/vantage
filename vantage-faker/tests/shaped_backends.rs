@@ -16,7 +16,9 @@ use vantage_faker::{
 };
 use vantage_memory::vista::Catalog;
 use vantage_memory::{MemoryStore, MemoryTableShell};
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, flags};
+use vantage_vista::{
+    Capability, Column, ColumnFlag, FilterOp, Vista, VistaCapabilities, VistaMetadata,
+};
 
 fn columns() -> Vec<FakerColumn> {
     vec![
@@ -35,45 +37,55 @@ fn metadata(columns: &[FakerColumn], id_column: &str) -> VistaMetadata {
     let mut meta = VistaMetadata::new().with_id_column(id_column);
     for c in columns {
         let mut col = Column::new(&c.name, &c.ty)
-            .with_flag(flags::ORDERABLE)
-            .with_flag(flags::SEARCHABLE);
+            .with_flag(ColumnFlag::Orderable)
+            .with_flag(ColumnFlag::Searchable);
         if c.name == id_column {
-            col = col.with_flag(flags::ID);
+            col = col.with_flag(ColumnFlag::Id);
         }
-        meta.columns.insert(c.name.clone(), col);
+        meta = meta.with_column(col);
     }
     meta
 }
 
+fn caps(list: &[Capability]) -> VistaCapabilities {
+    list.iter().copied().collect()
+}
+
 fn windowed_caps() -> VistaCapabilities {
-    VistaCapabilities {
-        can_count: true,
-        can_fetch_window: true,
-        can_order: true,
-        ..VistaCapabilities::default()
-    }
+    caps(&[Capability::Window, Capability::Order])
 }
 
 fn shaped(count: usize, shape: BackendShape) -> Vista {
     shaped_rows(TableGen::new("shaped").count(count), shape)
 }
 
-/// Seed `table` (named `shaped`, given the fixture columns) from the
-/// shape's seed, then wrap it in the shape.
-fn shaped_rows(table: TableGen, shape: BackendShape) -> Vista {
+/// A memory Vista over `table` (named `shaped`, given the fixture columns),
+/// seeded from the shape's seed.
+fn memory_rows(table: TableGen, seed: Option<u64>) -> Vista {
     let store = MemoryStore::new();
     let cols = columns();
     let meta = metadata(&cols, "id");
 
-    DatasetGen::new(shape.seed)
+    DatasetGen::new(seed)
         .table(table.columns(cols))
         .generate(&store)
         .expect("dataset generates");
 
     let catalog = Catalog::new(store.clone());
     catalog.register("shaped", meta.clone());
-    let table = MemoryTableShell::new(store.table("shaped"), meta, catalog);
-    Vista::new("shaped", Box::new(ShapedShell::new(Box::new(table), shape)))
+    Vista::new(
+        "shaped",
+        MemoryTableShell::new(store.table("shaped"), meta, catalog),
+    )
+}
+
+/// [`memory_rows`] wrapped in the shape.
+fn shaped_rows(table: TableGen, shape: BackendShape) -> Vista {
+    memory_rows(table, shape.seed).map_shell(|inner| ShapedShell::new(inner, shape))
+}
+
+fn ids(page: &vantage_vista::Page) -> Vec<&str> {
+    page.rows.iter().map(|(id, _)| id.as_str()).collect()
 }
 
 #[tokio::test]
@@ -87,13 +99,13 @@ async fn advertised_window_serves_and_counts_with_total() {
         },
     );
 
-    let (rows, total) = vista.fetch_window_counted(5, 10).await.unwrap();
-    assert_eq!(rows.len(), 10);
-    assert_eq!(total, Some(30));
+    let page = vista.fetch_window(5, 10).await.unwrap();
+    assert_eq!(page.rows.len(), 10);
+    assert_eq!(page.total, Some(30));
 
     // Windows tile without overlap when no skew is configured.
-    let (next, _) = vista.fetch_window_counted(15, 10).await.unwrap();
-    assert!(rows.iter().all(|(id, _)| next.iter().all(|(n, _)| n != id)));
+    let next = vista.fetch_window(15, 10).await.unwrap();
+    assert!(ids(&page).iter().all(|id| !ids(&next).contains(id)));
 }
 
 #[tokio::test]
@@ -101,19 +113,42 @@ async fn unadvertised_operations_refuse_as_unsupported() {
     let vista = shaped(
         10,
         BackendShape {
-            capabilities: windowed_caps(), // no fetch_page, no fetch_next, no search
+            capabilities: windowed_caps(), // no cursor, no search, no writes
             seed: Some(1),
             ..BackendShape::default()
         },
     );
 
-    let page = vista.fetch_page(1).await;
-    assert!(page.is_err(), "fetch_page must refuse when not advertised");
-    let next = vista.fetch_next(None).await;
-    assert!(next.is_err(), "fetch_next must refuse when not advertised");
+    let err = vista.fetch_cursor(None, 10).await.unwrap_err();
+    assert!(err.is_unsupported(), "fetch_cursor must refuse: {err}");
+    let err = vista.clone().with_search("x").unwrap_err();
+    assert!(err.is_unsupported(), "search must refuse: {err}");
 
     let caps = vista.capabilities();
-    assert!(!caps.can_search && !caps.can_fetch_page && !caps.can_fetch_next);
+    assert!(!caps.has(Capability::Search) && !caps.has(Capability::Cursor));
+    assert!(!caps.has(Capability::Insert) && !caps.has(Capability::Traverse));
+}
+
+#[tokio::test]
+async fn a_shape_grants_nothing_the_inner_shell_lacks() {
+    let vista = shaped(
+        3,
+        BackendShape {
+            capabilities: Capability::iter().collect(),
+            seed: Some(1),
+            ..BackendShape::default()
+        },
+    );
+    let caps = vista.capabilities();
+    // Memory has no native conditions; import and traversal are never shaped.
+    for refused in [
+        Capability::NativeConditions,
+        Capability::Import,
+        Capability::Traverse,
+    ] {
+        assert!(!caps.has(refused), "{refused} must not be advertised");
+    }
+    assert!(caps.has(Capability::Cursor) && caps.has(Capability::ConfineWrites));
 }
 
 #[tokio::test]
@@ -121,10 +156,7 @@ async fn cursor_pagination_walks_the_whole_set_in_fixed_pages() {
     let vista = shaped(
         60,
         BackendShape {
-            capabilities: VistaCapabilities {
-                can_fetch_next: true,
-                ..VistaCapabilities::default()
-            },
+            capabilities: caps(&[Capability::Cursor]),
             page_size: 25,
             seed: Some(2),
             ..BackendShape::default()
@@ -134,8 +166,10 @@ async fn cursor_pagination_walks_the_whole_set_in_fixed_pages() {
     let mut token = None;
     let mut seen = Vec::new();
     loop {
-        let (rows, next) = vista.fetch_next(token).await.unwrap();
-        seen.extend(rows.into_iter().map(|(id, _)| id));
+        // Asking for more than the server's page still gets one page.
+        let (page, next) = vista.fetch_cursor(token, 100).await.unwrap();
+        assert!(page.rows.len() <= 25);
+        seen.extend(page.rows.into_iter().map(|(id, _)| id));
         match next {
             Some(t) => token = Some(t),
             None => break,
@@ -148,15 +182,29 @@ async fn cursor_pagination_walks_the_whole_set_in_fixed_pages() {
     assert_eq!(dedup.len(), 60);
 }
 
+#[tokio::test]
+async fn a_zero_cursor_limit_is_an_error() {
+    let vista = shaped(
+        10,
+        BackendShape {
+            capabilities: caps(&[Capability::Cursor]),
+            seed: Some(2),
+            ..BackendShape::default()
+        },
+    );
+    let err = vista.fetch_cursor(None, 0).await.unwrap_err();
+    assert!(
+        err.to_string().contains("cursor limit must be positive"),
+        "expected a limit error, got: {err}"
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn expired_cursor_tokens_die() {
     let vista = shaped(
         60,
         BackendShape {
-            capabilities: VistaCapabilities {
-                can_fetch_next: true,
-                ..VistaCapabilities::default()
-            },
+            capabilities: caps(&[Capability::Cursor]),
             page_size: 25,
             faults: FaultSchedule {
                 cursor_expiry: Some(Duration::from_secs(30)),
@@ -167,11 +215,11 @@ async fn expired_cursor_tokens_die() {
         },
     );
 
-    let (_, token) = vista.fetch_next(None).await.unwrap();
+    let (_, token) = vista.fetch_cursor(None, 25).await.unwrap();
     let token = token.expect("more pages exist");
 
     tokio::time::advance(Duration::from_secs(31)).await;
-    let err = vista.fetch_next(Some(token)).await.unwrap_err();
+    let err = vista.fetch_cursor(Some(token), 25).await.unwrap_err();
     assert!(
         err.to_string().contains("expired"),
         "expected token expiry, got: {err}"
@@ -198,12 +246,43 @@ async fn latency_is_paid_per_operation_class() {
     let fetched = vista.fetch_window(0, 5);
     tokio::pin!(fetched);
     // The paused clock only advances past the sleep when we let it.
-    let rows = fetched.await.unwrap();
-    assert_eq!(rows.len(), 5);
+    let page = fetched.await.unwrap();
+    assert_eq!(page.rows.len(), 5);
     assert!(
         started.elapsed() >= Duration::from_millis(800),
         "window fetch must pay its latency toll"
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_clone_keeps_its_search_toll() {
+    let vista = shaped(
+        10,
+        BackendShape {
+            capabilities: windowed_caps().with(Capability::Search),
+            latency: LatencyModel {
+                search_extra: Some(Latency::fixed(Duration::from_millis(500))),
+                ..LatencyModel::default()
+            },
+            seed: Some(3),
+            ..BackendShape::default()
+        },
+    );
+
+    let searching = vista.with_search("a").unwrap();
+    let clone = searching.clone();
+    let started = tokio::time::Instant::now();
+    clone.list_values().await.unwrap();
+    assert!(
+        started.elapsed() >= Duration::from_millis(500),
+        "a clone of a searching handle is still searching"
+    );
+
+    let mut cleared = clone;
+    cleared.set_search(None).unwrap();
+    let started = tokio::time::Instant::now();
+    cleared.list_values().await.unwrap();
+    assert!(started.elapsed() < Duration::from_millis(500));
 }
 
 #[tokio::test(start_paused = true)]
@@ -266,7 +345,9 @@ async fn error_rate_one_fails_everything_and_totals_lie() {
             ..BackendShape::default()
         },
     );
-    assert_eq!(honest_free.get_count().await.unwrap(), 7);
+    assert_eq!(honest_free.count().await.unwrap(), 7);
+    let page = honest_free.fetch_window(0, 5).await.unwrap();
+    assert_eq!(page.total, Some(7), "the window's total lies the same way");
 }
 
 #[tokio::test]
@@ -313,12 +394,10 @@ async fn a_seed_replays_the_same_backend() {
 
 #[tokio::test]
 async fn search_gates_and_narrows_when_advertised() {
-    let mut caps = windowed_caps();
-    caps.can_search = true;
     let vista = shaped(
         40,
         BackendShape {
-            capabilities: caps,
+            capabilities: windowed_caps().with(Capability::Search),
             seed: Some(7),
             ..BackendShape::default()
         },
@@ -335,10 +414,32 @@ async fn search_gates_and_narrows_when_advertised() {
         .expect("a generated name to search for");
 
     let mut vista = vista;
-    vista.add_search(&needle).unwrap();
+    vista.set_search(Some(&needle)).unwrap();
     let narrowed = vista.list_values().await.unwrap();
     assert!(!narrowed.is_empty());
     assert!(narrowed.len() <= all.len());
+}
+
+#[tokio::test]
+async fn shaping_a_narrowed_vista_keeps_its_name_and_query() {
+    let memory = memory_rows(TableGen::new("shaped").count(20), Some(8));
+    let first = memory
+        .list_values()
+        .await
+        .unwrap()
+        .into_keys()
+        .next()
+        .unwrap();
+    let narrowed = memory
+        .with_condition("id", FilterOp::Eq, CborValue::Text(first.clone()))
+        .unwrap();
+    let shaped = narrowed.map_shell(|inner| ShapedShell::new(inner, BackendShape::default()));
+
+    assert_eq!(shaped.name(), "shaped");
+    assert!(shaped.is_narrowed());
+    assert_eq!(shaped.query().conditions.len(), 1);
+    let rows = shaped.list_values().await.unwrap();
+    assert_eq!(rows.keys().collect::<Vec<_>>(), [&first]);
 }
 
 #[tokio::test]
@@ -349,13 +450,13 @@ async fn a_shaped_memory_table_pushes_changes() {
     let shell = MemoryTableShell::new(
         t.clone(),
         VistaMetadata::new()
-            .with_column(Column::new("id", "string").with_flag("id"))
+            .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
             .with_id_column("id"),
         Catalog::new(store.clone()),
     );
-    let shaped = ShapedShell::new(Box::new(shell), BackendShape::default());
-    let vista = Vista::new("t", Box::new(shaped));
-    assert!(vista.can_watch());
+    let vista =
+        Vista::new("t", shell).map_shell(|inner| ShapedShell::new(inner, BackendShape::default()));
+    assert!(vista.capabilities().has(Capability::Subscribe));
     let mut w = vista.watch().await.unwrap();
     t.upsert("a", Default::default());
     let change = tokio::time::timeout(std::time::Duration::from_secs(2), w.next())

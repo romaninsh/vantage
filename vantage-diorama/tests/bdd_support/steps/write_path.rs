@@ -138,21 +138,20 @@ async fn delete_all_via_facade(w: &mut DioramaWorld) {
 }
 
 #[then(
-    regex = r"^the facade capability (can_insert|can_update|can_delete|can_subscribe|can_invalidate|can_count) is (true|false)$"
+    regex = r"^the facade capability (can_insert|can_update|can_delete|can_subscribe) is (true|false)$"
 )]
 async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String) {
+    use vantage_vista::Capability;
     let dio = w.dio.as_ref().expect("dio not created");
     let facade = dio.vista();
-    let caps = facade.capabilities();
-    let actual = match flag.as_str() {
-        "can_insert" => caps.can_insert,
-        "can_update" => caps.can_update,
-        "can_delete" => caps.can_delete,
-        "can_subscribe" => caps.can_subscribe,
-        "can_invalidate" => caps.can_invalidate,
-        "can_count" => caps.can_count,
+    let capability = match flag.as_str() {
+        "can_insert" => Capability::Insert,
+        "can_update" => Capability::Update,
+        "can_delete" => Capability::Delete,
+        "can_subscribe" => Capability::Subscribe,
         other => panic!("unknown capability flag: {other}"),
     };
+    let actual = facade.capabilities().has(capability);
     let want = expected == "true";
     assert_eq!(
         actual, want,

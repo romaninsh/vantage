@@ -19,9 +19,7 @@ fn preview_renders_resolved_query() {
     let script = r#"table("t").where("a", 1).sort("n", "desc")"#;
     let json = preview_script(script.into(), resolver(&store())).unwrap();
     assert_eq!(json["driver"], json!("memory"));
-    assert_eq!(json["table"], json!("t"));
-    assert_eq!(json["order"], json!([["n", "desc"]]));
-    assert_eq!(json["conditions"].as_array().unwrap().len(), 1);
+    assert_eq!(json["query"], json!("scan t WHERE a = 1 ORDER BY n DESC"));
 }
 
 #[test]

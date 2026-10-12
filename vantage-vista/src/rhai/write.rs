@@ -15,7 +15,7 @@ use super::handle::Handle;
 use super::import::{import_rows, import_rows_mapped};
 use super::read::{RhaiResult, id_string, rhai_err, run, unsupported};
 use super::vocab::{TargetResolver, Writes};
-use crate::vista::Vista;
+use crate::{Capability, ColumnFlag, VistaCapabilities, vista::Vista};
 
 /// Register the write terminals. With [`Writes::Denied`] every verb exists
 /// and throws the denial message.
@@ -35,7 +35,7 @@ fn register_allowed(engine: &mut Engine, resolver: Option<TargetResolver>) {
     engine.register_fn(
         "insert",
         move |h: &mut Handle, map: RhaiMap| -> RhaiResult<String> {
-            let vista = target(h, r.as_ref(), "insert", |c| c.can_insert)?;
+            let vista = target(h, r.as_ref(), "insert", |c| c.has(Capability::Insert))?;
             insert_record(&vista, map_to_record(map)?, None)
         },
     );
@@ -44,7 +44,9 @@ fn register_allowed(engine: &mut Engine, resolver: Option<TargetResolver>) {
     engine.register_fn(
         "upsert",
         move |h: &mut Handle, id: Dynamic, map: RhaiMap| -> RhaiResult<String> {
-            let vista = target(h, r.as_ref(), "upsert", |c| c.can_insert && c.can_update)?;
+            let vista = target(h, r.as_ref(), "upsert", |c| {
+                c.has(Capability::Insert) && c.has(Capability::Update)
+            })?;
             let id = id_string(id)?;
             run(vista.upsert_value(id.clone(), &map_to_record(map)?))?;
             Ok(id)
@@ -55,7 +57,7 @@ fn register_allowed(engine: &mut Engine, resolver: Option<TargetResolver>) {
     engine.register_fn(
         "patch",
         move |h: &mut Handle, id: Dynamic, map: RhaiMap| -> RhaiResult<bool> {
-            let vista = target(h, r.as_ref(), "patch", |c| c.can_update)?;
+            let vista = target(h, r.as_ref(), "patch", |c| c.has(Capability::Update))?;
             let rec = map_to_record(map)?;
             found(super::bridge::block_on(
                 vista.patch_value(id_string(id)?, &rec),
@@ -131,7 +133,7 @@ pub(crate) fn target(
     h: &Handle,
     resolver: Option<&TargetResolver>,
     verb: &str,
-    allowed: impl Fn(&crate::VistaCapabilities) -> bool,
+    allowed: impl Fn(&VistaCapabilities) -> bool,
 ) -> RhaiResult<Vista> {
     let vista = h.write_target(resolver).map_err(rhai_err)?;
     if !allowed(vista.capabilities()) {
@@ -141,7 +143,9 @@ pub(crate) fn target(
 }
 
 fn import_target(h: &Handle, resolver: Option<&TargetResolver>) -> RhaiResult<Vista> {
-    target(h, resolver, "import_from", |c| c.can_import || c.can_insert)
+    target(h, resolver, "import_from", |c| {
+        c.has(Capability::Import) || c.has(Capability::Insert)
+    })
 }
 
 /// Insert `rec` into `vista` and return the row's id.
@@ -155,14 +159,14 @@ pub(crate) fn insert_record(
     mut rec: vantage_types::Record<CborValue>,
     minted: Option<&str>,
 ) -> RhaiResult<String> {
-    let id_col = vista.get_id_column().unwrap_or("id").to_string();
+    let id_col = vista.id_column().unwrap_or("id").to_string();
     let explicit = rec
         .get(&id_col)
         .filter(|v| !matches!(v, CborValue::Null))
         .and_then(cbor_id_to_string);
     let id = match explicit {
         Some(id) => id,
-        None if vista.has_auto_id() => return run(vista.insert_return_id_value(&rec)),
+        None if has_auto_id(vista) => return run(vista.insert_return_id_value(&rec)),
         None => match minted {
             Some(id) => id.to_string(),
             None => new_id(vista, &id_col)?,
@@ -173,10 +177,19 @@ pub(crate) fn insert_record(
     Ok(id)
 }
 
+/// Whether the backend makes this table's ids: the id column is flagged
+/// [`Auto`](ColumnFlag::Auto).
+pub(crate) fn has_auto_id(vista: &Vista) -> bool {
+    vista
+        .id_column()
+        .and_then(|c| vista.column(c))
+        .is_some_and(|c| c.has_flag(ColumnFlag::Auto))
+}
+
 /// A client-made UUIDv7 for a row inserted without an id. A numeric id column
 /// can't hold one: without the `auto` flag that is an error asking for either.
 pub(crate) fn new_id(vista: &Vista, id_col: &str) -> RhaiResult<String> {
-    if let Some(column) = vista.get_column(id_col)
+    if let Some(column) = vista.column(id_col)
         && is_numeric_type(&column.original_type)
     {
         return Err(rhai_err(error!(
@@ -221,7 +234,7 @@ fn is_numeric_type(t: &str) -> bool {
 /// Delete `id` from `vista`'s set: `true` once the row is gone (missing or
 /// outside the set counts), `false` when the Vista can't delete.
 pub(crate) fn delete_row(vista: &Vista, id: String) -> RhaiResult<bool> {
-    if !vista.capabilities().can_delete {
+    if !vista.capabilities().has(Capability::Delete) {
         return Ok(false);
     }
     match super::bridge::block_on(WritableValueSet::delete(vista, id)).and_then(|r| r) {

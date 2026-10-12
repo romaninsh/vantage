@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::models::request_param;
 use crate::{AwsAccount, eq};
 
 /// One IAM instance profile from `ListInstanceProfiles` /
@@ -50,6 +51,7 @@ pub(crate) fn instance_profiles_for_role_table(
     .with_column_of::<String>("Arn")
     .with_column_of::<String>("Path")
     .with_column_of::<String>("CreateDate")
+    .with_column(request_param("RoleName"))
 }
 
 impl InstanceProfile {
