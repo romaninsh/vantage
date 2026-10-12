@@ -473,7 +473,10 @@ impl TableShell for MongoTableShell {
             .page_size
             .ok_or_else(|| error!("set_page_size must be called before fetch_page"))?;
 
+        // Pages are separate queries: without a total order, rows that tie
+        // on the sort would repeat or go missing at page boundaries.
         let mut page_table = self.table.clone();
+        keyset::add_id_tiebreak(&mut page_table);
         page_table.set_pagination(Some(Pagination::new(page as i64, size as i64)));
         let raw = page_table.list_values().await?;
         Ok(raw
@@ -488,7 +491,10 @@ impl TableShell for MongoTableShell {
         offset: usize,
         limit: usize,
     ) -> Result<Vec<(String, Record<CborValue>)>> {
+        // Windows are separate queries too; the `_id` tiebreak keeps them
+        // slices of one total order.
         let mut window_table = self.table.clone();
+        keyset::add_id_tiebreak(&mut window_table);
         window_table.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
         let raw = window_table.list_values().await?;
         Ok(raw

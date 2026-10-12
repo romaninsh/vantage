@@ -93,6 +93,46 @@ async fn vista_fetch_window_reads_offset_slice() -> TestResult {
     Ok(())
 }
 
+/// Windows over a sort with many ties read the same total order as one
+/// query: `price` then `_id`. Without the `_id` tiebreak, MongoDB orders tied
+/// rows arbitrarily per query, so consecutive windows repeat some rows and
+/// skip others at their boundaries.
+#[tokio::test]
+async fn vista_fetch_window_ties_follow_id_order() -> TestResult {
+    let (db, name) = setup().await;
+    // Ids are created in order, then inserted shuffled, so insertion order
+    // can't stand in for `_id` order.
+    let mut docs: Vec<_> = (0..300)
+        .map(|i| bson::doc! { "_id": ObjectId::new(), "name": format!("item-{i}"), "price": i % 3 })
+        .collect();
+    docs.reverse();
+    docs.rotate_left(117);
+    db.doc_collection("products").insert_many(docs).await?;
+
+    let vista = ordered_products(&db);
+    let mut windows = Vec::new();
+    for offset in (0..300).step_by(37) {
+        for (id, row) in vista.fetch_window(offset, 37).await? {
+            windows.extend(names(std::iter::once(&row)).into_iter().map(|n| (id.clone(), n)));
+        }
+    }
+
+    let expected: Vec<(String, String)> = db
+        .doc_collection("products")
+        .find(bson::doc! {})
+        .sort(bson::doc! { "price": 1, "_id": 1 })
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .map(|d| (d.get_object_id("_id").unwrap().to_hex(), d.get_str("name").unwrap().to_string()))
+        .collect();
+    assert_eq!(windows, expected);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 /// Every page of `vista` in order, as (id, name) pairs. Fails when the chain
 /// outlasts `max_pages`.
 async fn drain(
