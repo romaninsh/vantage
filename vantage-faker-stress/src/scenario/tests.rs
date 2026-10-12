@@ -200,6 +200,6 @@ fn vista_metadata_puts_id_first() {
     assert_eq!(names, ["id", "status", "amount", "note"]);
     assert_eq!(meta.id_column.as_deref(), Some("id"));
     assert_eq!(meta.columns["amount"].original_type, "int");
-    assert!(meta.columns["id"].has_flag(vantage_vista::flags::ID));
-    assert!(!meta.columns["note"].has_flag(vantage_vista::flags::ID));
+    assert!(meta.columns["id"].has_flag(vantage_vista::ColumnFlag::Id));
+    assert!(!meta.columns["note"].has_flag(vantage_vista::ColumnFlag::Id));
 }

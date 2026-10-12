@@ -10,7 +10,7 @@ use vantage_dataset::traits::InsertableValueSet;
 use vantage_log_writer::LogWriter;
 use vantage_table::table::Table;
 use vantage_types::Record;
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, VistaFactory};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Event {
@@ -35,13 +35,9 @@ async fn capabilities_advertise_insert_only() {
         .with_column_of::<i64>("user_id");
 
     let vista = writer.vista_factory().from_table(table).unwrap();
-    let caps = vista.capabilities();
-    assert!(caps.can_insert);
-    assert!(!caps.can_count);
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
-    assert!(!caps.can_subscribe);
-    assert_eq!(vista.driver(), "log-writer");
+    let caps: Vec<Capability> = vista.capabilities().iter().collect();
+    assert_eq!(caps, [Capability::Insert]);
+    assert_eq!(vista.driver_name(), "log-writer");
 }
 
 #[tokio::test]
@@ -85,26 +81,53 @@ async fn read_methods_return_unsupported() {
 
     let vista = writer.vista_factory().from_table(table).unwrap();
 
-    let res = vista.list_values().await;
-    assert!(res.is_err());
-    assert_eq!(
-        res.unwrap_err().kind(),
-        vantage_core::ErrorKind::Unsupported
-    );
+    let unsupported = |res: vantage_core::Result<()>| {
+        let err = res.unwrap_err();
+        assert_eq!(err.kind(), vantage_core::ErrorKind::Unsupported);
+        err
+    };
+    let write_only = |res: vantage_core::Result<()>| {
+        let err = unsupported(res);
+        assert_eq!(
+            err.context.get("reason").map(String::as_str),
+            Some("\"write-only sink\""),
+            "{err:?}"
+        );
+    };
+    write_only(vista.list_values().await.map(drop));
+    write_only(vista.get_value("any").await.map(drop));
+    write_only(vista.get_some_value().await.map(drop));
+    write_only(vista.count().await.map(drop));
+    write_only(vista.fetch_window(0, 10).await.map(drop));
+    unsupported(vista.fetch_cursor(None, 10).await.map(drop));
+}
 
-    let res = vista.get_value("any").await;
-    assert!(res.is_err());
-    assert_eq!(
-        res.unwrap_err().kind(),
-        vantage_core::ErrorKind::Unsupported
-    );
+/// A narrowed handle records its condition but can't keep a write inside
+/// the set, so the Vista refuses inserts through it.
+#[tokio::test]
+async fn narrowed_handle_refuses_inserts() {
+    use vantage_vista::FilterOp;
 
-    let res = vista.get_count().await;
-    assert!(res.is_err());
-    assert_eq!(
-        res.unwrap_err().kind(),
-        vantage_core::ErrorKind::Unsupported
-    );
+    let dir = tempdir().unwrap();
+    let writer = LogWriter::new(dir.path());
+    let table = Table::<LogWriter, Event>::new("events", writer.clone())
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("user_id");
+    let vista = writer.vista_factory().from_table(table).unwrap();
+
+    let narrowed = vista
+        .clone()
+        .with_condition("name", FilterOp::Eq, "login")
+        .unwrap();
+    assert!(narrowed.is_narrowed());
+    let err = narrowed
+        .insert_return_id_value(&Record::new())
+        .await
+        .unwrap_err();
+    assert!(err.is_unsupported(), "{err:?}");
+
+    let unknown = vista.clone().with_condition("nope", FilterOp::Eq, "x");
+    assert!(!unknown.unwrap_err().is_unsupported());
 }
 
 #[tokio::test]
@@ -127,7 +150,7 @@ columns:
 
     let vista = writer.vista_factory().from_yaml(yaml).unwrap();
     assert_eq!(vista.name(), "events");
-    assert_eq!(vista.get_id_column(), Some("id"));
+    assert_eq!(vista.id_column(), Some("id"));
 
     let mut record = Record::<CborValue>::new();
     record.insert("name".into(), CborValue::Text("hello".into()));

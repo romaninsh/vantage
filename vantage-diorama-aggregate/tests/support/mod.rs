@@ -92,7 +92,7 @@ pub async fn source_with_debug_and_failing_refresh(shell: MockShell, ds_name: &s
             .build()
             .expect("source lens builds"),
     );
-    let vista = Vista::new("items", Box::new(shell));
+    let vista = Vista::new("items", shell);
     lens.make_dio(vista).await.expect("source dio")
 }
 
@@ -123,7 +123,7 @@ async fn build_source(shell: MockShell, debug: Option<&str>) -> Dio {
             .build()
             .expect("source lens builds"),
     );
-    let vista = Vista::new("items", Box::new(shell));
+    let vista = Vista::new("items", shell);
     lens.make_dio(vista).await.expect("source dio")
 }
 

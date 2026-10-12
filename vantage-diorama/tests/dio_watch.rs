@@ -10,7 +10,7 @@ use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Dio, Lens};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Capability, Column, FilterOp, Vista, VistaMetadata, mocks::MockShell};
 
 fn shipment(status: &str) -> Record<CborValue> {
     let mut record = Record::new();
@@ -66,13 +66,14 @@ async fn a_narrowed_dio_follows_its_parent_across_the_filter() -> Result<()> {
     let shell = master();
     shell.set_record("s1", shipment("In transit"));
     shell.set_record("s2", shipment("Delivered"));
-    let parent = eager_dio(Vista::new("shipment", Box::new(shell))).await?;
+    let parent = eager_dio(Vista::new("shipment", shell)).await?;
 
-    let mut in_transit = parent.vista();
-    in_transit.add_condition_eq("status", CborValue::Text("In transit".into()))?;
+    let in_transit = parent
+        .vista()
+        .with_condition("status", FilterOp::Eq, "In transit")?;
     let derived = eager_dio(in_transit).await?;
 
-    assert!(derived.master().can_watch());
+    assert!(derived.master().capabilities().has(Capability::Subscribe));
     derived.watch().await?;
     wait_for(&derived, "s1", true).await?;
     wait_for(&derived, "s2", false).await?;

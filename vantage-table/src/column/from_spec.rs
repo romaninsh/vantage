@@ -1,5 +1,5 @@
 use vantage_core::Result;
-use vantage_vista::{ColumnSpec, flags};
+use vantage_vista::ColumnSpec;
 
 use super::core::{Column, ColumnType};
 use super::flags::ColumnFlag;
@@ -18,7 +18,7 @@ impl<A: ColumnType> Column<A> {
         if let Some(alias) = alias.filter(|a| a != name) {
             column = column.with_alias(alias);
         }
-        if spec.has_flag(flags::HIDDEN) {
+        if spec.has_flag(vantage_vista::ColumnFlag::Hidden) {
             column = column.with_flag(ColumnFlag::Hidden);
         }
         Ok(column)
@@ -36,7 +36,7 @@ mod tests {
 
     #[test]
     fn alias_and_hidden_carry_over() {
-        let spec = ColumnSpec::<NoExtras>::new().with_flag(flags::HIDDEN);
+        let spec = ColumnSpec::<NoExtras>::new().with_flag(vantage_vista::ColumnFlag::Hidden);
         let column =
             Column::from_spec("name", &spec, Some("db_name".into()), string_column).unwrap();
         assert_eq!(column.alias(), Some("db_name"));

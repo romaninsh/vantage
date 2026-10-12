@@ -9,7 +9,7 @@ use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use vantage_api_client::{GraphqlApi, GraphqlApiVistaSpec};
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_vista::{FilterOp, SortDirection, Vista, VistaFactory, flags};
+use vantage_vista::{ColumnFlag, FilterOp, SortDirection, Vista, VistaFactory};
 use wiremock::matchers::{body_partial_json, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -42,7 +42,7 @@ async fn answer(server: &MockServer, expected: Value, response: Value) {
 }
 
 #[tokio::test]
-async fn add_order_reaches_the_request() {
+async fn set_order_reaches_the_request() {
     let server = MockServer::start().await;
     answer(
         &server,
@@ -51,7 +51,9 @@ async fn add_order_reaches_the_request() {
     )
     .await;
     let mut vista = vista(&server, ID_AND_NAME, "  dialect: hasura\n");
-    vista.add_order("name", SortDirection::Descending).unwrap();
+    vista
+        .set_order(Some(("name", SortDirection::Descending)))
+        .unwrap();
 
     assert_eq!(vista.list_values().await.unwrap().len(), 2);
 }
@@ -64,16 +66,21 @@ async fn ordering_a_dotted_column_is_refused() {
     let columns = format!("{ID_AND_NAME}  rocket.name:\n    type: string\n");
     let mut vista = vista(&server, &columns, "  dialect: hasura\n");
 
-    assert!(vista.get_column("name").unwrap().has_flag(flags::ORDERABLE));
+    assert!(
+        vista
+            .column("name")
+            .unwrap()
+            .has_flag(ColumnFlag::Orderable)
+    );
     assert!(
         !vista
-            .get_column("rocket.name")
+            .column("rocket.name")
             .unwrap()
-            .has_flag(flags::ORDERABLE)
+            .has_flag(ColumnFlag::Orderable)
     );
     assert!(
         vista
-            .add_order("rocket.name", SortDirection::Ascending)
+            .set_order(Some(("rocket.name", SortDirection::Ascending)))
             .is_err()
     );
 }
@@ -92,7 +99,7 @@ async fn hasura_search_covers_string_columns_only() {
     .await;
     let columns = "  id:\n    type: int\n    flags: [id]\n  name:\n    type: string\n  year:\n    type: int\n  details:\n    type: string\n  rocket.name:\n    type: string\n";
     let mut vista = vista(&server, columns, "  dialect: hasura\n");
-    vista.add_search("fal").unwrap();
+    vista.set_search(Some("fal")).unwrap();
 
     assert_eq!(vista.list_values().await.unwrap().len(), 1);
 }
@@ -109,7 +116,7 @@ async fn search_without_string_columns_matches_nothing() {
     .await;
     let columns = "  id:\n    type: int\n    flags: [id]\n  year:\n    type: int\n";
     let mut vista = vista(&server, columns, "  dialect: hasura\n");
-    vista.add_search("fal").unwrap();
+    vista.set_search(Some("fal")).unwrap();
 
     assert!(vista.list_values().await.unwrap().is_empty());
 }
@@ -138,7 +145,8 @@ async fn contains_is_refused_on_generic() {
     let err = vista
         .add_condition("name", FilterOp::Like, CborValue::Text("fal".into()))
         .unwrap_err();
-    assert!(err.is_unimplemented(), "{err}");
+    assert!(err.is_unsupported(), "{err}");
+    assert!(vista.query().conditions.is_empty());
 }
 
 /// An int id column filters with an integer literal; with paging off no

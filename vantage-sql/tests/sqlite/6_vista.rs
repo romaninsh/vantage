@@ -12,7 +12,7 @@ use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record, entity};
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, FilterOp, ReferenceKind, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -59,7 +59,7 @@ async fn vista_lists_typed_sqlite_as_cbor() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     assert_eq!(vista.name(), "product");
-    assert_eq!(vista.get_id_column(), Some("id"));
+    assert_eq!(vista.id_column(), Some("id"));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -93,10 +93,10 @@ async fn vista_count_with_eq_condition() -> TestResult {
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
 
-    assert_eq!(vista.get_count().await?, 3);
+    assert_eq!(vista.count().await?, 3);
 
-    vista.add_condition_eq("is_deleted", CborValue::Bool(false))?;
-    assert_eq!(vista.get_count().await?, 2);
+    vista.add_condition("is_deleted", FilterOp::Eq, CborValue::Bool(false))?;
+    assert_eq!(vista.count().await?, 2);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
@@ -108,8 +108,6 @@ async fn vista_count_with_eq_condition() -> TestResult {
 
 #[tokio::test]
 async fn vista_pushes_operator_conditions_server_side() -> TestResult {
-    use vantage_vista::FilterOp;
-
     // products: a=Alpha/10/0, b=Beta/20/1, c=Gamma/30/0.
     let db = setup().await;
 
@@ -118,7 +116,7 @@ async fn vista_pushes_operator_conditions_server_side() -> TestResult {
         db.vista_factory()
             .from_table(product_table(db.clone()))?
             .capabilities()
-            .can_filter_operators,
+            .has(Capability::FilterOps),
         "sqlite advertises operator push-down"
     );
 
@@ -180,8 +178,8 @@ sqlite:
     let vista = db.vista_factory().from_yaml(yaml)?;
 
     assert_eq!(vista.name(), "product_view");
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -226,10 +224,10 @@ sqlite:
     );
 
     // Computed by the Vista, so every read path fills it and writes drop it.
-    assert!(vista.get_column("shouted").unwrap().is_computed());
+    assert!(vista.column("shouted").unwrap().is_computed());
     let window = vista.fetch_window(2, 1).await?;
     assert_eq!(
-        window[0].1.get("price_label"),
+        window.rows[0].1.get("price_label"),
         Some(&CborValue::Text("Gamma: 30".into()))
     );
     let record: Record<CborValue> = [
@@ -329,12 +327,30 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(caps.can_insert);
-    assert!(caps.can_update);
-    assert!(caps.can_delete);
-    assert!(caps.can_confine_writes);
-    assert!(!caps.can_subscribe);
+    for capability in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::Window,
+        Capability::Traverse,
+    ] {
+        assert!(caps.has(capability), "sqlite advertises {capability}");
+    }
+    for capability in [
+        Capability::Subscribe,
+        Capability::Cursor,
+        Capability::Import,
+        Capability::NativeConditions,
+    ] {
+        assert!(
+            !caps.has(capability),
+            "sqlite doesn't advertise {capability}"
+        );
+    }
     Ok(())
 }
 
@@ -363,10 +379,13 @@ sqlite:
     assert_eq!(vista.name(), "expensive_products");
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(!caps.can_insert, "rhai-sourced vista is read-only");
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(
+        !caps.has(Capability::Insert),
+        "rhai-sourced vista is read-only"
+    );
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
+    assert!(!caps.has(Capability::ConfineWrites));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2, "only products with price > 15");
@@ -419,9 +438,10 @@ fn clients_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
 #[tokio::test]
 async fn vista_get_ref_has_many_via_row() -> TestResult {
     let db = setup_clients_orders().await;
-    let mut clients = db.vista_factory().from_table(clients_table(db.clone()))?;
+    let clients = db.vista_factory().from_table(clients_table(db.clone()))?;
 
     let (id, alice) = clients
+        .clone()
         .with_id(CborValue::Text("alice".into()))?
         .get_some_value()
         .await?
@@ -432,12 +452,82 @@ async fn vista_get_ref_has_many_via_row() -> TestResult {
         Some(&CborValue::Text("Alice".to_string()))
     );
 
-    let alice_orders = clients.get_ref("orders", &alice)?;
+    let alice_orders = clients.get_ref("orders", Some(&alice))?;
+    // The join is a recorded condition on the target.
+    assert!(alice_orders.is_narrowed());
+    assert_eq!(alice_orders.query().conditions[0].column, "client_id");
     let rows = alice_orders.list_values().await?;
     assert_eq!(rows.len(), 2, "alice has 2 orders");
     assert!(rows.contains_key("o1"));
     assert!(rows.contains_key("o2"));
     assert!(!rows.contains_key("o3"));
+
+    // Without a row, the bare target: every order.
+    let all_orders = clients.get_ref("orders", None)?;
+    assert!(!all_orders.is_narrowed());
+    assert_eq!(all_orders.count().await?, 3);
+    Ok(())
+}
+
+/// A row inserted through a target narrowed to a parent gets the parent's
+/// key in its foreign-key column.
+#[tokio::test]
+async fn vista_insert_into_has_many_target_fills_the_foreign_key() -> TestResult {
+    let db = setup_clients_orders().await;
+    let clients = db.vista_factory().from_table(clients_table(db.clone()))?;
+    let alice = clients.get_value("alice").await?.expect("alice exists");
+    let alice_orders = clients.get_ref("orders", Some(&alice))?;
+
+    let order: Record<CborValue> = [("total".to_string(), CborValue::Integer(5i64.into()))]
+        .into_iter()
+        .collect();
+    alice_orders.insert_value("o9", &order).await?;
+
+    let all_orders = db.vista_factory().from_table(orders_table(db.clone()))?;
+    let stored = all_orders.get_value("o9").await?.expect("inserted");
+    assert_eq!(
+        stored.get("client_id"),
+        Some(&CborValue::Text("alice".into()))
+    );
+    assert_eq!(alice_orders.count().await?, 3);
+    Ok(())
+}
+
+/// A `has_one` join key names the target's id column only once the target
+/// is built, so traversal resolves it from the target.
+#[tokio::test]
+async fn vista_get_ref_has_one_narrows_by_the_target_id() -> TestResult {
+    let db = setup_clients_orders().await;
+    let target_db = db.clone();
+    let orders = orders_table(db.clone()).with_one("client", "client_id", move |_| {
+        clients_table(target_db.clone())
+    });
+    let orders = db.vista_factory().from_table(orders)?;
+
+    let client = &orders.references()["client"];
+    assert_eq!(client.kind, ReferenceKind::HasOne);
+    assert_eq!(client.foreign_key(), Some("client_id"));
+
+    let o3 = orders.get_value("o3").await?.expect("o3 exists");
+    let bob = orders.get_ref("client", Some(&o3))?;
+    assert!(bob.is_narrowed());
+    assert_eq!(bob.query().conditions[0].column, "id");
+    let rows = bob.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["bob"]);
+
+    assert_eq!(orders.get_ref("client", None)?.count().await?, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_get_ref_unknown_relation_is_an_error() -> TestResult {
+    let db = setup_clients_orders().await;
+    let clients = db.vista_factory().from_table(clients_table(db))?;
+    let err = clients.get_ref("nope", None).unwrap_err();
+    assert!(
+        !err.is_unsupported(),
+        "an unknown relation is a normal error"
+    );
     Ok(())
 }
 
@@ -472,14 +562,15 @@ async fn vista_get_ref_preserves_with_expression_columns() -> TestResult {
                 .with_expression("total_with_tax", |_| sqlite_expr!("\"total\" * 2"))
         });
 
-    let mut clients = db.vista_factory().from_table(clients)?;
+    let clients = db.vista_factory().from_table(clients)?;
     let (_, alice) = clients
+        .clone()
         .with_id(CborValue::Text("alice".into()))?
         .get_some_value()
         .await?
         .expect("alice exists");
 
-    let alice_orders = clients.get_ref("orders", &alice)?;
+    let alice_orders = clients.get_ref("orders", Some(&alice))?;
     let rows = alice_orders.list_values().await?;
     assert_eq!(rows.len(), 2, "alice has 2 orders");
     let o1 = rows.get("o1").expect("order o1");
@@ -496,10 +587,11 @@ async fn vista_list_references_surfaces_cardinality() -> TestResult {
     let db = setup_clients_orders().await;
     let clients = db.vista_factory().from_table(clients_table(db))?;
 
-    let refs = clients.list_references();
+    let refs = clients.references();
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].0, "orders");
-    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+    let orders = &refs["orders"];
+    assert_eq!(orders.kind, ReferenceKind::HasMany);
+    assert_eq!(orders.foreign_key(), Some("client_id"));
     Ok(())
 }
 
@@ -542,21 +634,21 @@ columns:
     let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
 
     let factory = db.vista_factory().with_resolver(resolver);
-    let mut clients = factory.build_from_spec(client_spec)?;
+    let clients = factory.build_from_spec(client_spec)?;
 
     // Reference metadata surfaces from the wired relation.
-    let refs = clients.list_references();
+    let refs = clients.references();
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].0, "orders");
-    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+    assert_eq!(refs["orders"].kind, ReferenceKind::HasMany);
 
     // Traversal resolves `orders` via the resolver and filters to alice's rows.
     let (_id, alice) = clients
+        .clone()
         .with_id(CborValue::Text("alice".into()))?
         .get_some_value()
         .await?
         .expect("alice exists");
-    let alice_orders = clients.get_ref("orders", &alice)?;
+    let alice_orders = clients.get_ref("orders", Some(&alice))?;
     let rows = alice_orders.list_values().await?;
     assert_eq!(rows.len(), 2, "alice has 2 orders");
     assert!(rows.contains_key("o1"));
@@ -617,12 +709,15 @@ references:
         .with_resolver(resolver)
         .build_from_spec(derived_spec)?;
 
-    let refs = derived.list_references();
+    let refs = derived.references();
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].0, "orders");
+    assert!(refs.contains_key("orders"));
 
     let alice = derived.get_value("alice").await?.expect("alice exists");
-    let rows = derived.get_ref("orders", &alice)?.list_values().await?;
+    let rows = derived
+        .get_ref("orders", Some(&alice))?
+        .list_values()
+        .await?;
     let mut ids: Vec<&String> = rows.keys().collect();
     ids.sort();
     assert_eq!(ids, ["o1", "o2"]);
@@ -675,11 +770,11 @@ sqlite:
     // Query-sourced → read-only.
     let caps = vista.capabilities();
     assert!(
-        !caps.can_insert,
+        !caps.has(Capability::Insert),
         "derived (query-sourced) vista is read-only"
     );
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
 
     // Transform applied (only Alice) and inherited columns surface.
     let rows = vista.list_values().await?;
@@ -751,7 +846,7 @@ sqlite:
 }
 
 #[tokio::test]
-async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
+async fn vista_set_order_ascending_descending_and_clear() -> TestResult {
     use vantage_vista::SortDirection;
 
     let db = setup().await;
@@ -759,22 +854,22 @@ async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
     let mut vista = db.vista_factory().from_table(table)?;
 
     // capability is advertised
-    assert!(vista.capabilities().can_order);
+    assert!(vista.capabilities().has(Capability::Order));
 
     // sort ascending by price → a (10), b (20), c (30)
-    vista.add_order("price", SortDirection::Ascending)?;
+    vista.set_order(Some(("price", SortDirection::Ascending)))?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
     assert_eq!(ids, ["a", "b", "c"]);
 
     // replace-semantics: switch to descending name → c (Gamma), b (Beta), a (Alpha)
-    vista.add_order("name", SortDirection::Descending)?;
+    vista.set_order(Some(("name", SortDirection::Descending)))?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
     assert_eq!(ids, ["c", "b", "a"]);
 
     // clear → back to insertion order
-    vista.clear_orders()?;
+    vista.set_order(None)?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
     assert_eq!(ids, ["a", "b", "c"]);
@@ -782,34 +877,40 @@ async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_add_order_rejects_unknown_column() -> TestResult {
+async fn vista_set_order_rejects_unknown_column() -> TestResult {
     use vantage_vista::SortDirection;
 
     let db = setup().await;
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
 
-    let result = vista.add_order("not_a_column", SortDirection::Ascending);
-    assert!(result.is_err(), "unknown column must fail");
+    let err = vista
+        .set_order(Some(("not_a_column", SortDirection::Ascending)))
+        .unwrap_err();
+    assert!(!err.is_unsupported(), "an unknown column is a normal error");
+    assert!(
+        vista.query().order.is_none(),
+        "a refused order isn't recorded"
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_add_search_filters_results_with_replace_semantics() -> TestResult {
+async fn vista_set_search_filters_results_with_replace_semantics() -> TestResult {
     let db = setup().await;
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
 
-    assert!(vista.capabilities().can_search);
+    assert!(vista.capabilities().has(Capability::Search));
 
     // search "alpha" → only row a (name = "Alpha")
-    vista.add_search("alpha")?;
+    vista.set_search(Some("alpha"))?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
     assert_eq!(ids, ["a"], "search 'alpha' must match only row a");
 
     // replace-semantics: search "amma" → only row c (name = "Gamma")
-    vista.add_search("amma")?;
+    vista.set_search(Some("amma"))?;
     let rows = vista.list_values().await?;
     let ids: Vec<&String> = rows.keys().collect();
     assert_eq!(
@@ -819,89 +920,76 @@ async fn vista_add_search_filters_results_with_replace_semantics() -> TestResult
     );
 
     // clear → all rows back
-    vista.clear_search()?;
+    vista.set_search(None)?;
     let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 3, "clear_search must restore all rows");
+    assert_eq!(rows.len(), 3, "clearing the search must restore all rows");
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_clear_search_without_prior_search_is_noop() -> TestResult {
+async fn vista_clearing_search_without_prior_search_is_noop() -> TestResult {
     let db = setup().await;
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
 
     // No prior search — clear should silently succeed.
-    vista.clear_search()?;
+    vista.set_search(None)?;
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
     Ok(())
 }
 
+fn window_ids(page: &vantage_vista::Page) -> Vec<&str> {
+    page.rows.iter().map(|(id, _)| id.as_str()).collect()
+}
+
 #[tokio::test]
-async fn vista_fetch_page_offset_pagination() -> TestResult {
+async fn vista_fetch_window_offset_pagination() -> TestResult {
     let db = setup().await;
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
 
-    assert!(vista.capabilities().can_set_page_size);
-    assert!(vista.capabilities().can_fetch_page);
+    assert!(vista.capabilities().has(Capability::Window));
+    vista.set_order(Some(("id", vantage_vista::SortDirection::Ascending)))?;
 
-    vista.set_page_size(2)?;
-    vista.add_order("id", vantage_vista::SortDirection::Ascending)?;
+    let first = vista.fetch_window(0, 2).await?;
+    assert_eq!(window_ids(&first), ["a", "b"], "the first two rows");
+    assert_eq!(first.total, None, "a window doesn't count the set");
 
-    let page1 = vista.fetch_page(1).await?;
-    let ids1: Vec<&String> = page1.iter().map(|(id, _)| id).collect();
-    assert_eq!(ids1, ["a", "b"], "page 1 should be the first two rows");
+    let second = vista.fetch_window(2, 2).await?;
+    assert_eq!(window_ids(&second), ["c"], "the third row");
 
-    let page2 = vista.fetch_page(2).await?;
-    let ids2: Vec<&String> = page2.iter().map(|(id, _)| id).collect();
-    assert_eq!(ids2, ["c"], "page 2 should be the third row");
-
-    let page3 = vista.fetch_page(3).await?;
-    assert!(page3.is_empty(), "page 3 should be empty");
+    let past_the_end = vista.fetch_window(4, 2).await?;
+    assert!(past_the_end.rows.is_empty(), "nothing past the end");
     Ok(())
 }
 
+/// SQL pages by offset, so it has no cursor: `fetch_cursor` refuses.
 #[tokio::test]
-async fn vista_fetch_page_without_set_page_size_errors() -> TestResult {
+async fn vista_fetch_cursor_is_unsupported() -> TestResult {
     let db = setup().await;
-    let table = product_table(db.clone());
-    let vista = db.vista_factory().from_table(table)?;
+    let vista = db.vista_factory().from_table(product_table(db.clone()))?;
 
-    // No set_page_size — fetch_page must reject loudly.
-    let result = vista.fetch_page(1).await;
-    assert!(
-        result.is_err(),
-        "fetch_page without set_page_size must error"
-    );
+    assert!(!vista.capabilities().has(Capability::Cursor));
+    let err = vista.fetch_cursor(None, 2).await.unwrap_err();
+    assert!(err.is_unsupported());
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_set_page_size_zero_errors() -> TestResult {
-    let db = setup().await;
-    let table = product_table(db.clone());
-    let mut vista = db.vista_factory().from_table(table)?;
-
-    assert!(vista.set_page_size(0).is_err(), "size 0 must reject");
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_fetch_page_honors_search_and_order() -> TestResult {
+async fn vista_fetch_window_honors_search_and_order() -> TestResult {
     use vantage_vista::SortDirection;
 
     let db = setup().await;
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
 
-    vista.set_page_size(10)?;
-    vista.add_order("name", SortDirection::Descending)?;
-    vista.add_search("a")?; // matches Alpha, Beta, Gamma (all contain 'a' case-insensitively)
+    vista.set_order(Some(("name", SortDirection::Descending)))?;
+    vista.set_search(Some("a"))?; // matches Alpha, Beta, Gamma (all contain 'a' case-insensitively)
 
-    let page = vista.fetch_page(1).await?;
+    let page = vista.fetch_window(0, 10).await?;
     let names: Vec<String> = page
+        .rows
         .iter()
         .map(|(_, rec)| match rec.get("name") {
             Some(CborValue::Text(s)) => s.clone(),
@@ -916,82 +1004,59 @@ async fn vista_fetch_page_honors_search_and_order() -> TestResult {
     Ok(())
 }
 
+/// A clone of a narrowed vista carries the narrowing; narrowing the clone
+/// leaves the original alone.
 #[tokio::test]
-async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
-    use vantage_vista::SortDirection;
-
+async fn vista_clone_owns_its_narrowing() -> TestResult {
     let db = setup().await;
-    let table = product_table(db.clone());
-    let mut vista = db.vista_factory().from_table(table)?;
+    let vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let cheap =
+        vista
+            .clone()
+            .with_condition("price", FilterOp::Lt, CborValue::Integer(25i64.into()))?;
+    let alpha = cheap.clone().with_search("alpha")?;
 
-    assert!(vista.capabilities().can_fetch_next);
-
-    vista.set_page_size(2)?;
-    vista.add_order("id", SortDirection::Ascending)?;
-
-    // First call — pass None.
-    let (rows1, tok1) = vista.fetch_next(None).await?;
-    let ids1: Vec<&String> = rows1.iter().map(|(id, _)| id).collect();
-    assert_eq!(ids1, ["a", "b"], "first page");
-    assert!(tok1.is_some(), "more pages available — token must be Some");
-
-    // Second call — last partial page, 1 row → exhaustion signaled.
-    let (rows2, tok2) = vista.fetch_next(tok1).await?;
-    let ids2: Vec<&String> = rows2.iter().map(|(id, _)| id).collect();
-    assert_eq!(ids2, ["c"], "last page");
-    assert!(tok2.is_none(), "partial last page must exhaust");
+    assert_eq!(vista.count().await?, 3);
+    assert_eq!(cheap.count().await?, 2);
+    assert_eq!(alpha.count().await?, 1);
+    assert_eq!(alpha.query().search.as_deref(), Some("alpha"));
+    assert!(cheap.query().search.is_none());
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_fetch_next_resets_when_passed_none() -> TestResult {
-    use vantage_vista::SortDirection;
-
+async fn vista_preview_renders_the_select() -> TestResult {
     let db = setup().await;
-    let table = product_table(db.clone());
-    let mut vista = db.vista_factory().from_table(table)?;
-
-    vista.set_page_size(2)?;
-    vista.add_order("id", SortDirection::Ascending)?;
-
-    // Walk to exhaustion.
-    let (_p1, tok1) = vista.fetch_next(None).await?;
-    let (_p2, tok2) = vista.fetch_next(tok1).await?;
-    assert!(tok2.is_none());
-
-    // Passing None again restarts.
-    let (p_restart, _) = vista.fetch_next(None).await?;
-    let ids: Vec<&String> = p_restart.iter().map(|(id, _)| id).collect();
-    assert_eq!(ids, ["a", "b"], "passing None restarts at page 1");
+    let vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone()))?
+        .with_condition("price", FilterOp::Gt, CborValue::Integer(15i64.into()))?;
+    let preview = vista.preview();
+    assert_eq!(preview.driver, "sqlite");
+    let sql = preview.query.expect("a SELECT");
+    assert!(sql.contains("product") && sql.contains("15"), "{sql}");
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_fetch_next_rejects_bad_token_type() -> TestResult {
+async fn vista_upsert_creates_then_replaces() -> TestResult {
     let db = setup().await;
-    let table = product_table(db.clone());
-    let mut vista = db.vista_factory().from_table(table)?;
-
-    vista.set_page_size(2)?;
-
-    // SQLite expects CborValue::Integer; pass a Text and expect rejection.
-    let bad_token = Some(CborValue::Text("not a page number".into()));
-    let result = vista.fetch_next(bad_token).await;
-    assert!(result.is_err(), "non-Integer token must be rejected");
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_fetch_next_without_set_page_size_errors() -> TestResult {
-    let db = setup().await;
-    let table = product_table(db.clone());
-    let vista = db.vista_factory().from_table(table)?;
-
-    let result = vista.fetch_next(None).await;
-    assert!(
-        result.is_err(),
-        "fetch_next without set_page_size must error"
-    );
+    let vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let row = |name: &str| -> Record<CborValue> {
+        [
+            ("name", CborValue::Text(name.into())),
+            ("price", CborValue::Integer(5i64.into())),
+            ("is_deleted", CborValue::Bool(false)),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
+    };
+    vista.upsert_value("z", &row("Zeta")).await?;
+    vista.upsert_value("z", &row("Zeta 2")).await?;
+    let stored = vista.get_value("z").await?.expect("upserted");
+    assert_eq!(stored.get("name"), Some(&CborValue::Text("Zeta 2".into())));
+    assert_eq!(vista.count().await?, 4);
     Ok(())
 }
 
@@ -1002,9 +1067,9 @@ async fn vista_columns_advertise_orderable_flag() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     for col_name in ["id", "name", "price", "is_deleted"] {
-        let col = vista.get_column(col_name).expect("column exists");
+        let col = vista.column(col_name).expect("column exists");
         assert!(
-            col.has_flag(vantage_vista::flags::ORDERABLE),
+            col.has_flag(vantage_vista::ColumnFlag::Orderable),
             "column '{}' must carry ORDERABLE flag for SQLite",
             col_name
         );
@@ -1050,12 +1115,19 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
         .unwrap();
 
     let vista = db.vista_factory().from_table(cart_table(db.clone()))?;
-    assert_eq!(vista.list_contained().len(), 1);
+    assert_eq!(
+        vista.references()["items"].kind,
+        ReferenceKind::ContainsMany
+    );
+
+    // A contained relation lives in a parent row, so it needs one.
+    let err = vista.get_ref("items", None).unwrap_err();
+    assert!(err.is_incorrect_usage(), "{err}");
 
     // The host column reads back as a JSON string; the sub-Vista parses it.
     let cart = vista.get_value("c1").await?.unwrap();
     assert!(matches!(cart.get("items"), Some(CborValue::Text(_))));
-    let items = vista.get_ref("items", &cart)?;
+    let items = vista.get_ref("items", Some(&cart))?;
     assert_eq!(items.list_values().await?.len(), 2);
 
     // Add an item — eager writeback serializes to JSON and UPDATEs the column.
@@ -1067,7 +1139,7 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
 
     // Fresh read + re-traverse re-parses the persisted JSON → three items.
     let cart2 = vista.get_value("c1").await?.unwrap();
-    let items2 = vista.get_ref("items", &cart2)?;
+    let items2 = vista.get_ref("items", Some(&cart2))?;
     let rows = items2.list_values().await?;
     assert_eq!(rows.len(), 3);
     assert_eq!(rows["2"].get("sku"), Some(&CborValue::Text("c".into())));
@@ -1077,7 +1149,7 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
         .patch_value("0", &field("qty", CborValue::Integer(99i64.into())))
         .await?;
     let cart3 = vista.get_value("c1").await?.unwrap();
-    let items3 = vista.get_ref("items", &cart3)?;
+    let items3 = vista.get_ref("items", Some(&cart3))?;
     assert_eq!(
         items3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
@@ -1113,16 +1185,12 @@ contained:
       qty: { type: int }
 "#;
     let vista = db.vista_factory().from_yaml(yaml)?;
-    assert_eq!(
-        vista.list_contained(),
-        vec![(
-            "items".to_string(),
-            vantage_vista::ContainedKind::ContainsMany
-        )]
-    );
+    let items_ref = &vista.references()["items"];
+    assert_eq!(items_ref.kind, ReferenceKind::ContainsMany);
+    assert_eq!(items_ref.host_column.as_deref(), Some("items"));
 
     let cart = vista.get_value("c1").await?.unwrap();
-    let items = vista.get_ref("items", &cart)?;
+    let items = vista.get_ref("items", Some(&cart))?;
     assert_eq!(items.list_values().await?.len(), 1);
 
     let mut line = Record::new();
@@ -1131,7 +1199,7 @@ contained:
     items.insert_return_id_value(&line).await?;
 
     let cart2 = vista.get_value("c1").await?.unwrap();
-    let items2 = vista.get_ref("items", &cart2)?;
+    let items2 = vista.get_ref("items", Some(&cart2))?;
     assert_eq!(items2.list_values().await?.len(), 2);
     assert_eq!(
         items2.get_value("1").await?.unwrap().get("sku"),

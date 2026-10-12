@@ -8,6 +8,7 @@ use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::DataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::column::core::{Column, ColumnType};
+use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -16,6 +17,7 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::DeferredFn;
 
 use crate::RestApi;
+use crate::rest::api::Order;
 
 /// The error every write and server-side aggregate returns.
 fn unsupported(method: &'static str) -> vantage_core::VantageError {
@@ -25,6 +27,43 @@ fn unsupported(method: &'static str) -> vantage_core::VantageError {
 /// Extract the id field name from a table's column flags.
 fn id_field_name<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Option<String> {
     table.id_field().map(|col| col.name().to_string())
+}
+
+impl RestApi {
+    /// The rows of `table` under its conditions and pagination, with `order`
+    /// sent as the ordering param when the API declares one.
+    pub(crate) async fn list_ordered<E: Entity<CborValue>>(
+        &self,
+        table: &Table<RestApi, E>,
+        order: Order<'_>,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.fetch_records(
+            table.table_name(),
+            id_field_name(table).as_deref(),
+            &required_fields(table),
+            table.pagination(),
+            order,
+            table.conditions(),
+        )
+        .await
+    }
+}
+
+/// The condition fields a row must carry to match a client-side filter: the
+/// declared columns, less the `hidden` ones and the endpoint's
+/// `{placeholder}`s. Those two carry request parameters, which the server
+/// applies without echoing them in the rows, as does a field the table
+/// doesn't declare at all.
+pub(crate) fn required_fields<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Vec<String> {
+    let placeholders: Vec<&str> = crate::rest::placeholders(table.table_name()).collect();
+    table
+        .columns()
+        .iter()
+        .filter(|(name, column)| {
+            !column.flags().contains(&ColumnFlag::Hidden) && !placeholders.contains(&name.as_str())
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
 }
 
 impl ExprDataSource<CborValue> for RestApi {
@@ -132,13 +171,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        self.fetch_records(
-            table.table_name(),
-            id_field_name(table).as_deref(),
-            table.pagination(),
-            table.conditions(),
-        )
-        .await
+        self.list_ordered(table, None).await
     }
 
     async fn get_table_value<E>(
@@ -150,14 +183,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self
-            .fetch_records(
-                table.table_name(),
-                id_field_name(table).as_deref(),
-                table.pagination(),
-                table.conditions(),
-            )
-            .await?;
+        let records = self.list_table_values(table).await?;
         Ok(records.get(id).cloned())
     }
 
@@ -169,14 +195,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self
-            .fetch_records(
-                table.table_name(),
-                id_field_name(table).as_deref(),
-                table.pagination(),
-                table.conditions(),
-            )
-            .await?;
+        let records = self.list_table_values(table).await?;
         Ok(records.into_iter().next())
     }
 
@@ -185,14 +204,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self
-            .fetch_records(
-                table.table_name(),
-                id_field_name(table).as_deref(),
-                table.pagination(),
-                table.conditions(),
-            )
-            .await?;
+        let records = self.list_table_values(table).await?;
         Ok(records.len() as i64)
     }
 

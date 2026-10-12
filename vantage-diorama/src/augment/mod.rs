@@ -64,9 +64,8 @@ pub enum Detail {
     /// the config/YAML form (a name is all a spec can carry).
     Catalog(String),
     /// A fixed secondary Vista handle — for get-only side tables that live
-    /// in no catalog (a folder-size vista keyed by path). Read-key fetches
-    /// use the shared handle directly; narrowing sources rebuild a private
-    /// instance per row via `TableShell::clone_shell`.
+    /// in no catalog (a folder-size vista keyed by path). Each fetch narrows
+    /// its own clone of it.
     Fixed(Arc<Vista>),
 }
 
@@ -174,21 +173,11 @@ impl Augmentation {
     /// `WHERE id =`, REST a `GET /{id}`). Other-column and `Build` sources narrow
     /// the detail vista and take the first record.
     /// An owned base detail Vista for one fetch: catalog details resolve by
-    /// name; fixed details rebuild a private instance from the shared handle
-    /// (`clone_shell` — cheap for the get-only shells this serves).
+    /// name; fixed details clone the shared handle.
     fn base_vista(&self, catalog: &VistaCatalog) -> Result<Vista> {
         match &self.detail {
             Detail::Catalog(name) => catalog.build_vista(name),
-            Detail::Fixed(vista) => vista
-                .source
-                .clone_shell()
-                .map(|shell| Vista::new(vista.name().to_string(), shell))
-                .ok_or_else(|| {
-                    error!(
-                        "augment: fixed detail vista's shell is not cloneable",
-                        table = vista.name()
-                    )
-                }),
+            Detail::Fixed(vista) => Ok(Vista::clone(vista)),
         }
     }
 
@@ -201,16 +190,8 @@ impl Augmentation {
         let base = self.base_vista(catalog)?;
         match &self.fetch {
             Fetch::PerRow => match &self.source {
-                // `get_value_with_row` hands the cheap master row to drivers that
-                // use it (a cmd detail script reads list-pass columns); other
-                // drivers fall through to `get_value` by default.
-                Source::Id => {
-                    base.get_value_with_row(&self.key(row, master_id_column)?, row)
-                        .await
-                }
-                Source::Column { from, to: None } => {
-                    base.get_value_with_row(&self.key(row, from)?, row).await
-                }
+                Source::Id => base.get_value(self.key(row, master_id_column)?).await,
+                Source::Column { from, to: None } => base.get_value(self.key(row, from)?).await,
                 Source::Column {
                     from,
                     to: Some(col),
@@ -273,7 +254,7 @@ impl Augmentation {
     }
 
     fn detail_id_column(&self, base: &Vista) -> Result<String> {
-        base.get_id_column().map(str::to_string).ok_or_else(|| {
+        base.id_column().map(str::to_string).ok_or_else(|| {
             error!(
                 "augment: detail vista has no id column",
                 table = self.detail.name()

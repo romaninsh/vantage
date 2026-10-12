@@ -30,10 +30,14 @@ impl SceneryChunkTarget for TableSceneryState {
         // finishes (the loader re-sorts whenever `sort` is set). Stamping this
         // native-order row into the visible map would expose the master's order
         // in the window before the re-sort runs — a flicker. Let reseed own the
-        // map. But a `can_order` master fetched this window *already* in sort
+        // map. But an `Order`-capable master fetched this window *already* in sort
         // order (`Dio::fetch_window_ordered`) and there is no client re-sort, so
         // these rows must be written straight through.
-        if self.sort.read().unwrap().is_some() && !self.master_capabilities.can_order {
+        if self.sort.read().unwrap().is_some()
+            && !self
+                .master_capabilities
+                .has(vantage_vista::Capability::Order)
+        {
             return ChunkWrite::Skipped;
         }
         // Skip the write entirely when this slot already holds the same fresh
@@ -104,7 +108,7 @@ impl SceneryChunkTarget for TableSceneryState {
             .master
             .read()
             .unwrap()
-            .get_id_column()
+            .id_column()
             .unwrap_or("id")
             .to_string();
         let rows = self.rows.read().unwrap();

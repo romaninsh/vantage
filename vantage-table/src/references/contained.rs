@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use vantage_types::EmptyEntity;
-use vantage_vista::{ContainedKind, ContainedSpec};
+use vantage_vista::{Reference, ReferenceKind};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
@@ -22,7 +22,8 @@ use crate::{table::Table, traits::table_source::TableSource};
 pub struct ContainedRelation<T: TableSource> {
     name: String,
     host_column: String,
-    kind: ContainedKind,
+    /// `ContainsOne` or `ContainsMany`.
+    kind: ReferenceKind,
     id_column: Option<String>,
     build_target: Arc<dyn Fn(T) -> Table<T, EmptyEntity> + Send + Sync>,
 }
@@ -43,7 +44,7 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
     pub fn new(
         name: impl Into<String>,
         host_column: impl Into<String>,
-        kind: ContainedKind,
+        kind: ReferenceKind,
         id_column: Option<String>,
         build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
     ) -> Self {
@@ -64,7 +65,7 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
         &self.host_column
     }
 
-    pub fn kind(&self) -> ContainedKind {
+    pub fn kind(&self) -> ReferenceKind {
         self.kind
     }
 
@@ -78,13 +79,10 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
         (self.build_target)(db)
     }
 
-    /// Shape-only vista spec (name, host, kind, id — no columns) for metadata
-    /// surfacing. Columns are materialized at traversal from `build_target`.
-    pub fn spec(&self) -> ContainedSpec {
-        let mut spec = ContainedSpec::new(&self.name, &self.host_column, self.kind);
-        if let Some(id) = &self.id_column {
-            spec = spec.with_id_column(id);
-        }
-        spec
+    /// The relation as a Vista reference of a contained kind, for metadata.
+    /// The records' columns and id column are materialized at traversal from
+    /// `build_target`.
+    pub fn reference(&self) -> Reference {
+        Reference::contained(&self.name, self.kind, &self.host_column)
     }
 }

@@ -34,7 +34,6 @@ async fn log_writer_contract_advertised() {
 }
 
 #[tokio::test]
-#[ignore = "v2 phase 1: shell not cloneable"]
 async fn log_writer_contract_clone() {
     let (_dir, vista) = events();
     contract::check_clone(&vista, "name", CborValue::Text("login".into())).await;

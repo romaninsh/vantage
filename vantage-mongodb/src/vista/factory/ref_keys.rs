@@ -44,6 +44,9 @@ pub(super) fn check_spec(
         let (own, on_target) = match reference.kind {
             ReferenceKind::HasOne => (fk, target.as_ref().map(|t| t.resolve_id_column_or("_id"))),
             ReferenceKind::HasMany => (spec.resolve_id_column_or("_id"), Some(fk)),
+            // A contained kind has no join keys; the table build refuses it
+            // under `references:`.
+            _ => continue,
         };
         refuse_renamed(relation, &own, spec_path_is_renamed(spec, &own)?)?;
         if let (Some(target), Some(column)) = (&target, on_target) {
@@ -63,6 +66,8 @@ pub(super) fn check_table(table: &Table<MongoDB, EmptyEntity>) -> Result<()> {
         let (own, on_target) = match kind {
             ReferenceKind::HasOne => (fk, target.id_field_name()),
             ReferenceKind::HasMany => (table.id_field_name(), fk),
+            // Contained relations are registered apart and carry no join keys.
+            _ => continue,
         };
         refuse_renamed(&relation, &own, alias_is_renamed(table, &own))?;
         refuse_renamed(&relation, &on_target, alias_is_renamed(&target, &on_target))?;

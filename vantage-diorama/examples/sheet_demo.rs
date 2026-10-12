@@ -38,7 +38,7 @@ fn master() -> Vista {
     let shell = MockShell::new()
         .with_metadata(metadata)
         .with_record("c1", record("coffee", 5));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 fn print_scenery(label: &str, scenery: &Arc<dyn RecordScenery>) {

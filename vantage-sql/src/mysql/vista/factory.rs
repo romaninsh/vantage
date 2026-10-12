@@ -1,7 +1,7 @@
 //! `MysqlVistaFactory` — typed-table and YAML entry points, plus the
-//! `VistaFactory` trait impl. MySQL advertises read, write, count, order,
-//! search, paging, transactional import and (with `rhai`) scripted
-//! references; a query-sourced vista is read-only.
+//! `VistaFactory` trait impl. MySQL advertises read, write, order, search,
+//! windowed reads, native conditions, transactional import and traversal
+//! (scripted references with `rhai`); a query-sourced vista is read-only.
 
 #[cfg(feature = "rhai")]
 mod scripting;
@@ -12,9 +12,7 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{
-    ColumnSpec, SpecResolver, Vista, VistaCapabilities, VistaFactory, resolve_base_spec,
-};
+use vantage_vista::{Capability, ColumnSpec, SpecResolver, Vista, VistaFactory, resolve_base_spec};
 
 use crate::mysql::MysqlDB;
 use crate::mysql::statements::MysqlSelect;
@@ -23,7 +21,7 @@ use crate::mysql::vista::source::MysqlTableShell;
 use crate::mysql::vista::spec::{
     MysqlColumnExtras, MysqlReferenceExtras, MysqlTableExtras, MysqlVistaSpec,
 };
-use crate::sql_vista::{column_for_type, metadata_options};
+use crate::sql_vista::{column_for_type, metadata_options, sql_capabilities};
 
 /// Resolves a YAML spec by table name, so references and `base:` can rebuild
 /// their tables from the live spec.
@@ -81,34 +79,13 @@ impl MysqlVistaFactory {
             })?;
             reference.build_script = Some(script);
         }
-        let source = MysqlTableShell::new(
-            table,
-            VistaCapabilities {
-                can_count: true,
-                can_order: true,
-                can_search: true,
-                can_filter_operators: true,
-                can_set_page_size: true,
-                can_fetch_page: true,
-                can_fetch_window: true,
-                can_fetch_next: true,
-                can_insert: !read_only,
-                can_update: !read_only,
-                can_delete: !read_only,
-                can_import: !read_only,
-                can_traverse_to_record: true,
-                can_traverse_to_set: true,
-                can_traverse_in_columns: true,
-                can_confine_writes: !read_only,
-                // Without the script engine a `build_script` is ignored and
-                // the FK eq-condition path still serves.
-                can_build_ref_via_script: cfg!(feature = "rhai"),
-                ..VistaCapabilities::default()
-            },
-            metadata,
-            self.resolver.clone(),
-        );
-        Ok(Vista::new(name, Box::new(source)))
+        // Native conditions narrow a read-only vista too; import is a write.
+        let mut capabilities = sql_capabilities(read_only).with(Capability::NativeConditions);
+        if !read_only {
+            capabilities = capabilities.with(Capability::Import);
+        }
+        let shell = MysqlTableShell::new(table, capabilities, metadata, self.resolver.clone());
+        Ok(Vista::new(name, shell))
     }
 
     /// Build a `Table<MysqlDB, EmptyEntity>` from a spec, resolving any
@@ -130,7 +107,7 @@ impl VistaFactory for MysqlVistaFactory {
             .mysql
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
-        let ref_scripts = spec
+        let ref_scripts: IndexMap<String, String> = spec
             .references
             .iter()
             .filter_map(|(name, r)| {
@@ -140,15 +117,24 @@ impl VistaFactory for MysqlVistaFactory {
             .collect();
         let modify = spec.driver.mysql.as_ref().and_then(|m| m.modify.clone());
         #[cfg(not(feature = "rhai"))]
+        if let Some(relation) = ref_scripts.keys().next() {
+            return Err(error!(
+                "reference declares a `rhai:` build script but vantage-sql was built without the `rhai` feature",
+                vista = vista_name.as_str(),
+                relation = relation.as_str()
+            ));
+        }
+        #[cfg(not(feature = "rhai"))]
         if modify.is_some() {
             return Err(error!(
-                "vista declares a `modify:` script but vantage-sql was built without the `rhai` feature"
+                "vista declares a `modify:` script but vantage-sql was built without the `rhai` feature",
+                vista = vista_name.as_str()
             ));
         }
 
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.wrap(table, vista_name.clone(), read_only, ref_scripts)?;
-        vista.set_name(vista_name);
+        #[cfg_attr(not(feature = "rhai"), allow(unused_mut))]
+        let mut vista = self.wrap(table, vista_name, read_only, ref_scripts)?;
 
         // Final step: a `mysql: { modify }` script tweaks the built vista, so it
         // composes with `table`/`rhai`/`base`.
@@ -194,7 +180,7 @@ pub(crate) fn build_mysql_table(
     }
     table.set_spec_id_field(&spec.resolve_id_column())?;
 
-    let mut table = table.with_spec_references(&spec.references, resolver, build_mysql_table);
+    let mut table = table.with_spec_references(&spec.references, resolver, build_mysql_table)?;
 
     if has_dotted {
         // Lower the dotted imports now that their relations are declared.
@@ -265,7 +251,7 @@ fn build_derived_table(
         build_column,
     )?;
     // The derived spec's own `references:` sit alongside inherited relations.
-    Ok(table.with_spec_references(&spec.references, Some(resolver), build_mysql_table))
+    table.with_spec_references(&spec.references, Some(resolver), build_mysql_table)
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like
@@ -297,4 +283,65 @@ pub(crate) fn build_column(
         .as_ref()
         .and_then(|b| b.column.clone());
     TableColumn::from_spec(name, col_spec, physical, column_for_type)
+}
+
+#[cfg(all(test, not(feature = "rhai")))]
+mod tests {
+    use sqlx::mysql::MySqlPoolOptions;
+
+    use super::*;
+
+    /// A pool that never connects: the specs below fail before any query.
+    fn factory() -> MysqlVistaFactory {
+        let pool = MySqlPoolOptions::new()
+            .connect_lazy("mysql://user:pass@localhost/none")
+            .unwrap();
+        MysqlVistaFactory::new(MysqlDB { pool })
+    }
+
+    fn spec(yaml: &str) -> MysqlVistaSpec {
+        serde_yaml_ng::from_str(yaml).unwrap()
+    }
+
+    #[tokio::test]
+    async fn scripts_without_rhai_fail_the_build() {
+        let with_ref_script = spec(
+            r#"
+name: bakery
+columns:
+  id: { type: int, flags: [id] }
+references:
+  products:
+    table: product
+    kind: has_many
+    foreign_key: bakery_id
+    mysql:
+      rhai: 'table("product")'
+"#,
+        );
+        let err = factory().build_from_spec(with_ref_script).unwrap_err();
+        assert_eq!(
+            err.context.get("vista").map(String::as_str),
+            Some("\"bakery\"")
+        );
+        assert_eq!(
+            err.context.get("relation").map(String::as_str),
+            Some("\"products\"")
+        );
+
+        let with_modify = spec(
+            r#"
+name: bakery
+columns:
+  id: { type: int, flags: [id] }
+mysql:
+  modify: 'self'
+"#,
+        );
+        let err = factory().build_from_spec(with_modify).unwrap_err();
+        assert_eq!(
+            err.context.get("vista").map(String::as_str),
+            Some("\"bakery\"")
+        );
+    }
 }

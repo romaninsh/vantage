@@ -40,7 +40,7 @@ fn master() -> Vista {
         .with_record("c1", record("coffee", 5))
         .with_record("c2", record("tea", 3))
         .with_record("c3", record("juice", 4));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 fn print_scenery(label: &str, scenery: &Arc<dyn TableScenery>) {

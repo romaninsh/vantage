@@ -24,7 +24,7 @@ fn master() -> Vista {
     let shell = MockShell::new()
         .with_metadata(metadata)
         .with_record("a", rec);
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 /// Build a Lens that counts `on_refresh` invocations, with the given cadences

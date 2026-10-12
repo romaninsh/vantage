@@ -4,6 +4,7 @@ use vantage_table::table::Table;
 use crate::{AwsAccount, eq};
 
 use crate::models::logs::event::{LogEvent, events_table};
+use crate::models::request_param;
 
 /// One ECS task — `ListTasks` returns just an ARN per row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +26,7 @@ pub fn tasks_table(aws: AwsAccount) -> Table<AwsAccount, Task> {
         aws,
     )
     .with_id_column("taskArn")
+    .with_column(request_param("cluster"))
 }
 
 impl Task {

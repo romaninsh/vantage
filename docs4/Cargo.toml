@@ -15,5 +15,5 @@ vantage-table = { path = "../vantage-table" }
 vantage-types = { path = "../vantage-types" }
 # `rhai` so the Rhai chapters' links (Handle, run_script, …) resolve.
 vantage-rhai = { path = "../vantage-rhai" }
-vantage-vista = { path = "../vantage-vista", features = ["rhai"] }
+vantage-vista = { path = "../vantage-vista", features = ["rhai", "mocks"] }
 vantage-vista-factory = { path = "../vantage-vista-factory" }

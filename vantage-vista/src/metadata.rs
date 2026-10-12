@@ -1,26 +1,18 @@
 use indexmap::IndexMap;
 
-use crate::{
-    column::Column,
-    reference::{ContainedSpec, Reference},
-};
+use crate::{column::Column, reference::Reference};
 
 /// Schema a `Vista` is built around.
 ///
 /// Driver factories produce one of these by inspecting a typed
 /// `Table<DriverSource, E>`; the universal YAML loader produces one by
-/// parsing config. End-user code typically doesn't construct this directly.
-///
-/// Title columns are derived from column flags at runtime — see
-/// `Vista::get_title_columns`.
+/// parsing config. Contained relations are references of a contained kind;
+/// the schema of their records belongs to the shell that serves them.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct VistaMetadata {
     pub columns: IndexMap<String, Column>,
     pub references: IndexMap<String, Reference>,
-    /// Contained (embedded-in-row) relations, keyed by relation name. Kept
-    /// apart from `references` because their data lives in a column of the
-    /// parent row, not in a joined table.
-    pub contained: IndexMap<String, ContainedSpec>,
     pub id_column: Option<String>,
 }
 
@@ -56,11 +48,6 @@ impl VistaMetadata {
 
     pub fn with_reference(mut self, reference: Reference) -> Self {
         self.references.insert(reference.name.clone(), reference);
-        self
-    }
-
-    pub fn with_contained(mut self, spec: ContainedSpec) -> Self {
-        self.contained.insert(spec.name.clone(), spec);
         self
     }
 

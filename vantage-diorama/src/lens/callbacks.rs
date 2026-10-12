@@ -58,6 +58,28 @@ pub struct ChunkQuery {
     pub filters: Vec<crate::scenery::OpCondition>,
 }
 
+impl ChunkQuery {
+    /// The same clauses as a [`VistaQuery`](vantage_vista::VistaQuery), to
+    /// offer to a master.
+    pub(crate) fn to_vista_query(&self) -> vantage_vista::VistaQuery {
+        let mut query = vantage_vista::VistaQuery::new();
+        for term in &self.filters {
+            query = query.with_condition(vantage_vista::Condition::new(
+                &term.column,
+                term.op,
+                term.value.clone(),
+            ));
+        }
+        if let Some(text) = &self.search {
+            query = query.with_search(text.clone());
+        }
+        if let Some((column, dir)) = &self.sort {
+            query = query.with_order(column, dir.to_vista());
+        }
+        query
+    }
+}
+
 impl From<Option<(String, SortDir)>> for ChunkQuery {
     fn from(sort: Option<(String, SortDir)>) -> Self {
         Self {
@@ -74,7 +96,7 @@ impl From<Option<(String, SortDir)>> for ChunkQuery {
 ///
 /// The [`ChunkQuery`] is the requesting scenery's active order + search.
 /// Callbacks should fetch through [`Dio::fetch_window_ordered`], which pushes
-/// what the master supports (`can_order`, `can_search`) to a narrowed clone
+/// what the master supports (order, search, filters) to a narrowed clone
 /// and otherwise returns the native window (the scenery then refines over
 /// the cache where it honestly can).
 pub type DioLoadChunkCallback = Box<

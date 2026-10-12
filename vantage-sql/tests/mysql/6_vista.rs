@@ -12,7 +12,7 @@ use vantage_dataset::prelude::*;
 use vantage_sql::mysql::MysqlDB;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, FilterOp, ReferenceKind, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -69,7 +69,7 @@ async fn vista_lists_typed_mysql_as_cbor() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     assert_eq!(vista.name(), name);
-    assert_eq!(vista.get_id_column(), Some("id"));
+    assert_eq!(vista.id_column(), Some("id"));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -102,10 +102,10 @@ async fn vista_count_with_eq_condition() -> TestResult {
     let table = product_table(db.clone(), &name);
     let mut vista = db.vista_factory().from_table(table)?;
 
-    assert_eq!(vista.get_count().await?, 3);
+    assert_eq!(vista.count().await?, 3);
 
-    vista.add_condition_eq("is_deleted", CborValue::Bool(false))?;
-    assert_eq!(vista.get_count().await?, 2);
+    vista.add_condition("is_deleted", FilterOp::Eq, CborValue::Bool(false))?;
+    assert_eq!(vista.count().await?, 2);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
@@ -138,8 +138,8 @@ mysql:
     let vista = db.vista_factory().from_yaml(&yaml)?;
 
     assert_eq!(vista.name(), "product_view");
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
@@ -177,12 +177,23 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(caps.can_insert);
-    assert!(caps.can_update);
-    assert!(caps.can_delete);
-    assert!(caps.can_confine_writes);
-    assert!(!caps.can_subscribe);
+    for capability in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+        Capability::Import,
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::NativeConditions,
+        Capability::Window,
+        Capability::Traverse,
+    ] {
+        assert!(caps.has(capability), "mysql advertises {capability}");
+    }
+    assert!(!caps.has(Capability::Subscribe));
+    assert!(!caps.has(Capability::Cursor));
     Ok(())
 }
 
@@ -232,11 +243,14 @@ async fn contained_json_column_round_trips_on_mysql() -> TestResult {
     .unwrap();
 
     let vista = db.vista_factory().from_table(cart_table(db.clone(), t))?;
-    assert_eq!(vista.list_contained().len(), 1);
+    assert_eq!(
+        vista.references()["items"].kind,
+        ReferenceKind::ContainsMany
+    );
 
     let cart = vista.get_value("c1").await?.unwrap();
     assert!(matches!(cart.get("items"), Some(CborValue::Text(_))));
-    let items = vista.get_ref("items", &cart)?;
+    let items = vista.get_ref("items", Some(&cart))?;
     assert_eq!(items.list_values().await?.len(), 2);
 
     let mut line = Record::new();
@@ -246,14 +260,14 @@ async fn contained_json_column_round_trips_on_mysql() -> TestResult {
     assert_eq!(new_id, "2");
 
     let cart2 = vista.get_value("c1").await?.unwrap();
-    let items2 = vista.get_ref("items", &cart2)?;
+    let items2 = vista.get_ref("items", Some(&cart2))?;
     assert_eq!(items2.list_values().await?.len(), 3);
 
     items2
         .patch_value("0", &field("qty", CborValue::Integer(99i64.into())))
         .await?;
     let cart3 = vista.get_value("c1").await?.unwrap();
-    let items3 = vista.get_ref("items", &cart3)?;
+    let items3 = vista.get_ref("items", Some(&cart3))?;
     assert_eq!(
         items3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
@@ -293,10 +307,13 @@ mysql:
     assert_eq!(vista.name(), "expensive_products");
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(!caps.can_insert, "rhai-sourced vista is read-only");
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(
+        !caps.has(Capability::Insert),
+        "rhai-sourced vista is read-only"
+    );
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
+    assert!(!caps.has(Capability::Import));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2, "only products with price > 15");
@@ -324,8 +341,8 @@ mysql:
     let err = db
         .vista_factory()
         .from_yaml(yaml)
-        .err()
-        .expect("modify needs the rhai feature");
+        .map(drop)
+        .expect_err("modify needs the rhai feature");
     let msg = err.to_string();
     assert!(
         msg.contains("modify") && msg.contains("`rhai` feature"),
@@ -419,19 +436,20 @@ mysql:
     let resolver: MysqlSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
 
     let factory = db.vista_factory().with_resolver(resolver);
-    let mut clients = factory.build_from_spec(client_spec)?;
+    let clients = factory.build_from_spec(client_spec)?;
 
-    let refs = clients.list_references();
+    let refs = clients.references();
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].0, "orders");
-    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+    assert_eq!(refs["orders"].kind, ReferenceKind::HasMany);
 
     let (_id, alice) = clients
+        .clone()
         .with_id(CborValue::Text("alice".into()))?
         .get_some_value()
         .await?
         .expect("alice exists");
-    let alice_orders = clients.get_ref("orders", &alice)?;
+    let alice_orders = clients.get_ref("orders", Some(&alice))?;
+    assert!(alice_orders.is_narrowed());
     let rows = alice_orders.list_values().await?;
     assert_eq!(rows.len(), 2, "alice has 2 orders");
     assert!(rows.contains_key("o1"));
@@ -488,11 +506,11 @@ mysql:
 
     let caps = vista.capabilities();
     assert!(
-        !caps.can_insert,
+        !caps.has(Capability::Insert),
         "derived (query-sourced) vista is read-only"
     );
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1, "rhai transform filtered to Alice");

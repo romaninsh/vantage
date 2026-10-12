@@ -159,9 +159,9 @@ impl Renderer for CborRenderer {
         records: &IndexMap<String, Record<CborValue>>,
         column_override: Option<&[String]>,
     ) {
-        let id_field = vista.get_id_column().unwrap_or("id").to_string();
+        let id_field = vista.id_column().unwrap_or("id").to_string();
         let title_fields: Vec<String> = vista
-            .get_title_columns()
+            .title_columns()
             .into_iter()
             .map(|s| s.to_string())
             .collect();
@@ -182,11 +182,11 @@ impl Renderer for CborRenderer {
             // Fall back to the first three non-id columns from the
             // declared schema — keeps the table tidy on noisy APIs.
             vista
-                .get_column_names()
-                .into_iter()
-                .filter(|c| *c != id_field)
+                .columns()
+                .keys()
+                .filter(|c| **c != id_field)
                 .take(3)
-                .map(|s| s.to_string())
+                .cloned()
                 .collect()
         };
 
@@ -215,9 +215,9 @@ impl Renderer for CborRenderer {
         record: &Record<CborValue>,
         relations: &[String],
     ) {
-        let id_field = vista.get_id_column().unwrap_or("id");
+        let id_field = vista.id_column().unwrap_or("id");
         println!("{}: {}", id_field, id);
-        let title_fields: Vec<&str> = vista.get_title_columns();
+        let title_fields: Vec<&str> = vista.title_columns();
         for tf in &title_fields {
             if *tf == id_field {
                 continue;

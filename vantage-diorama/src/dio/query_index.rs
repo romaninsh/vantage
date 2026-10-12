@@ -3,8 +3,7 @@
 //! Two-pass loading separates *ordering* from *detail*. The detail table
 //! (id→record, shared by Vista name) holds the records; a `QueryIndex` holds
 //! the ordered list of ids for **one** query variant — a specific combination
-//! of conditions + sort, identified by
-//! [`Vista::index_key`](vantage_vista::Vista::index_key).
+//! of conditions + sort, identified by [`index_key`].
 //!
 //! The Dio caches one `QueryIndex` per key (see
 //! [`DioInner::query_index`](crate::dio::DioInner::query_index)) and shares it
@@ -15,6 +14,29 @@
 
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use ciborium::Value as CborValue;
+use vantage_vista::{Condition, FilterOp, Vista, VistaQuery};
+
+use crate::scenery::SortDir;
+
+/// The identity of one query variant over `vista`: its name plus the
+/// [`VistaQuery::key`] of the equality `conditions` and `sort`. Only
+/// identical queries share a key; condition order doesn't matter.
+pub(crate) fn index_key(
+    vista: &Vista,
+    conditions: &[(String, CborValue)],
+    sort: Option<&(String, SortDir)>,
+) -> String {
+    let mut query = VistaQuery::new();
+    for (column, value) in conditions {
+        query = query.with_condition(Condition::new(column, FilterOp::Eq, value.clone()));
+    }
+    if let Some((column, dir)) = sort {
+        query = query.with_order(column, dir.to_vista());
+    }
+    format!("{}|{}", vista.name(), query.key())
+}
 
 /// Ordered ids for one query variant, plus the bookkeeping the sequential
 /// (no-total) list pass needs: whether paging is exhausted and how many list

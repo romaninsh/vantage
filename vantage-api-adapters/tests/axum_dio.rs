@@ -55,14 +55,14 @@ mod gated {
     use ciborium::Value as CborValue;
     use indexmap::IndexMap;
     use tokio::sync::Semaphore;
-    use vantage_core::Result;
+    use vantage_core::{Result, error};
     use vantage_types::Record;
-    use vantage_vista::capabilities::VistaCapabilities;
-    use vantage_vista::metadata::VistaMetadata;
-    use vantage_vista::reference::Reference;
-    use vantage_vista::source::TableShell;
-    use vantage_vista::{Column, Vista};
+    use vantage_vista::{
+        Capability, Column, Condition, Page, Preview, Reference, TableShell, Vista,
+        VistaCapabilities, VistaMetadata, unsupported,
+    };
 
+    #[derive(Clone)]
     pub struct GatedDetailShell {
         pub rows: Arc<IndexMap<String, Record<CborValue>>>,
         pub gets: Arc<AtomicUsize>,
@@ -85,13 +85,13 @@ mod gated {
                 log: Arc::new(Mutex::new(Vec::new())),
                 gate: Arc::new(Semaphore::new(open)),
                 metadata,
-                capabilities: VistaCapabilities::default(),
+                capabilities: VistaCapabilities::new(),
             }
         }
     }
 
+    /// Get-only: it lists nothing and takes no narrowing.
     #[async_trait]
-    #[allow(clippy::ptr_arg)]
     impl TableShell for GatedDetailShell {
         fn columns(&self) -> &IndexMap<String, Column> {
             &self.metadata.columns
@@ -102,47 +102,36 @@ mod gated {
         fn id_column(&self) -> Option<&str> {
             self.metadata.id_column.as_deref()
         }
-        async fn list_vista_values(
-            &self,
-            _vista: &Vista,
-        ) -> Result<IndexMap<String, Record<CborValue>>> {
-            Ok(IndexMap::new())
-        }
-        async fn get_vista_value(
-            &self,
-            _vista: &Vista,
-            id: &String,
-        ) -> Result<Option<Record<CborValue>>> {
-            self.gets.fetch_add(1, Ordering::SeqCst);
-            self.log.lock().unwrap().push(id.clone());
-            let permit = self.gate.acquire().await.expect("gate open");
-            permit.forget();
-            Ok(self.rows.get(id).cloned())
-        }
-        async fn get_vista_some_value(
-            &self,
-            _vista: &Vista,
-        ) -> Result<Option<(String, Record<CborValue>)>> {
-            Ok(None)
-        }
         fn capabilities(&self) -> &VistaCapabilities {
             &self.capabilities
-        }
-        fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-            Some(Box::new(Self {
-                rows: self.rows.clone(),
-                gets: self.gets.clone(),
-                log: self.log.clone(),
-                gate: self.gate.clone(),
-                metadata: self.metadata.clone(),
-                capabilities: self.capabilities.clone(),
-            }))
         }
         fn driver_name(&self) -> &'static str {
             "gated-detail"
         }
-        fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-            serde_json::json!({ "driver": "gated-detail" })
+        fn preview(&self) -> Preview {
+            Preview::new("gated-detail")
+        }
+        async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+            Ok(IndexMap::new())
+        }
+        async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+            self.gets.fetch_add(1, Ordering::SeqCst);
+            self.log.lock().unwrap().push(id.to_string());
+            let permit = self.gate.acquire().await.expect("gate open");
+            permit.forget();
+            Ok(self.rows.get(id).cloned())
+        }
+        async fn count(&self) -> Result<i64> {
+            Ok(0)
+        }
+        async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
+            unsupported(Capability::Window)
+        }
+        fn add_condition(&mut self, _condition: &Condition) -> Result<()> {
+            Err(error!("a get-only detail shell takes no conditions").mark_unimplemented())
+        }
+        fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
+            unsupported(Capability::Traverse)
         }
     }
 }
@@ -168,10 +157,7 @@ async fn fixture(open_permits: usize) -> Fixture {
     for (id, rec) in &master_rows {
         master = master.with_record(*id, rec.clone());
     }
-    let master = Vista::new(
-        "files",
-        Box::new(master.with_metadata(meta(&["id", "modified"]))),
-    );
+    let master = Vista::new("files", master.with_metadata(meta(&["id", "modified"])));
 
     let mut detail_rows = indexmap::IndexMap::new();
     detail_rows.insert("r0".to_string(), record(&[("id", "r0"), ("size", "100")]));
@@ -190,7 +176,7 @@ async fn fixture(open_permits: usize) -> Fixture {
     let dio = lens.make_dio(master).await.expect("make_dio").augment(
         Arc::new(VistaCatalog::new()),
         vec![Augmentation {
-            detail: Detail::Fixed(Arc::new(Vista::new("sizes", Box::new(detail)))),
+            detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
             source: Source::Id,
             fetch: Fetch::PerRow,
             merge: MergeRule {

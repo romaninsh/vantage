@@ -4,17 +4,20 @@
 //!
 //! [`BackendShape`] is the single place a scenario's personality is written
 //! down; [`ShapedShell`] enforces it. The shell *advertises* exactly the
-//! capabilities the shape lists and *refuses* everything else through the
-//! standard [`TableShell::default_error`] discipline, so a consumer that
-//! ignores capability flags fails loudly instead of silently working against
-//! a backend that production will not provide.
+//! capabilities the shape lists and *refuses* everything else with
+//! [`unsupported`], so a consumer that ignores capability flags fails loudly
+//! instead of silently working against a backend that production will not
+//! provide.
+//!
+//! Wrap a Vista's shell with [`Vista::map_shell`](vantage_vista::Vista::map_shell)
+//! so the Vista's name and applied query survive:
+//! `vista.map_shell(|inner| ShapedShell::new(inner, shape))`.
 //!
 //! Everything nondeterministic (latency jitter, fault draws, boundary skew)
 //! draws from one seeded rng, so a scenario with a `seed` replays
 //! identically. Time-based behavior (the offline schedule, cursor expiry)
 //! reads the tokio clock, so tests drive it with `tokio::time::advance`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,116 +26,12 @@ use fake::rand::rngs::StdRng;
 use fake::rand::{RngExt as _, SeedableRng as _};
 use tokio::time::Instant;
 use vantage_core::{Result, error};
-use vantage_vista::Vista;
-use vantage_vista::capabilities::VistaCapabilities;
-use vantage_vista::source::TableShell;
+use vantage_vista::{Capability, TableShell, VistaCapabilities, unsupported};
 
-/// A latency band: each request draws uniformly from `[min, max]`.
-#[derive(Clone, Copy, Debug)]
-pub struct Latency {
-    pub min: Duration,
-    pub max: Duration,
-}
+mod profile;
+mod shell;
 
-impl Latency {
-    pub fn fixed(d: Duration) -> Self {
-        Self { min: d, max: d }
-    }
-
-    pub fn between(min: Duration, max: Duration) -> Self {
-        Self {
-            min,
-            max: max.max(min),
-        }
-    }
-
-    fn draw(&self, rng: &mut StdRng) -> Duration {
-        if self.max <= self.min {
-            return self.min;
-        }
-        let spread = (self.max - self.min).as_millis() as u64;
-        self.min + Duration::from_millis(rng.random_range(0..=spread))
-    }
-}
-
-/// Per-operation-class latency. Absent class = instant. Real backends are
-/// asymmetric — a fast get-by-id next to a slow list is a personality, not
-/// an accident — so each class is tuned independently.
-#[derive(Clone, Debug, Default)]
-pub struct LatencyModel {
-    pub list: Option<Latency>,
-    pub get: Option<Latency>,
-    pub window: Option<Latency>,
-    pub count: Option<Latency>,
-    /// Added on top of `list`/`window` while a search filter is active —
-    /// the "search is the expensive endpoint" personality.
-    pub search_extra: Option<Latency>,
-}
-
-/// Scheduled unavailability: within every `period`, the backend is down for
-/// the final `down`. The window starts *online* so a scenario's first paint
-/// works, then the outage arrives on schedule.
-#[derive(Clone, Copy, Debug)]
-pub struct Offline {
-    pub down: Duration,
-    pub period: Duration,
-}
-
-/// The vices. All default off.
-#[derive(Clone, Debug, Default)]
-pub struct FaultSchedule {
-    /// Fraction of tolled requests failing with an injected error.
-    pub error_rate: f64,
-    pub offline: Option<Offline>,
-    /// A `fetch_next` token older than this is dead (the 410 case).
-    pub cursor_expiry: Option<Duration>,
-    /// Reported totals are off by this much from the truth (clamped ≥ 0).
-    pub total_lie: i64,
-    /// Windowed fetches occasionally shift their offset by ±1 — the
-    /// duplicate/missing row an offset-paginated API produces under churn.
-    pub boundary_skew: bool,
-}
-
-/// The transport personality of one shaped backend: what it advertises, how
-/// it pages, how slow and how faulty it is. Row content — weirdness, extra
-/// fields — is a generation setting on
-/// [`TableGen`](crate::TableGen), not part of the shape.
-#[derive(Clone, Debug)]
-pub struct BackendShape {
-    /// Exactly what the backend advertises; everything else is refused.
-    pub capabilities: VistaCapabilities,
-    /// The server's page for `fetch_page`/`fetch_next` (and the starting
-    /// size where `can_set_page_size` allows negotiation).
-    pub page_size: usize,
-    pub latency: LatencyModel,
-    pub faults: FaultSchedule,
-    /// Deterministic replay of latency jitter, fault draws and boundary
-    /// skew when set; fresh entropy when `None`. Does not affect row values.
-    pub seed: Option<u64>,
-}
-
-impl Default for BackendShape {
-    /// The classic in-memory profile: full CRUD, order, search, watch, no
-    /// paging, no faults, instant.
-    fn default() -> Self {
-        Self {
-            capabilities: VistaCapabilities {
-                can_count: true,
-                can_insert: true,
-                can_update: true,
-                can_delete: true,
-                can_order: true,
-                can_search: true,
-                can_subscribe: true,
-                ..VistaCapabilities::default()
-            },
-            page_size: 25,
-            latency: LatencyModel::default(),
-            faults: FaultSchedule::default(),
-            seed: None,
-        }
-    }
-}
+pub use profile::{BackendShape, FaultSchedule, Latency, LatencyModel, Offline};
 
 /// Which latency band a request draws from.
 #[derive(Clone, Copy)]
@@ -145,28 +44,35 @@ enum OpClass {
 
 /// [`TableShell`] decorator enforcing a [`BackendShape`] over an inner shell
 /// (in practice a store-backed shell sharing the same table).
+///
+/// A clone shares the shape, the fault/jitter stream and the epoch, and
+/// carries its own copy of the query state: the inner shell's narrowing and
+/// whether a search is active.
+#[derive(Clone)]
 pub struct ShapedShell {
     inner: Box<dyn TableShell>,
     shape: Arc<BackendShape>,
-    /// What this shell actually advertises: the shape's list, with
-    /// `can_subscribe` narrowed to what the wrapped shell truly supports — a
-    /// shape may only remove capabilities, never grant one the inner shell
-    /// lacks.
+    /// What this shell actually advertises; see [`Self::new`].
     capabilities: VistaCapabilities,
     /// One stream for jitter and fault draws, shared across clones so a
     /// seeded run is a single deterministic sequence.
     rng: Arc<Mutex<StdRng>>,
     /// Time zero for the offline schedule and cursor-token ages.
     epoch: Instant,
-    /// Current negotiated page size — per handle, like any query state.
-    page_size: usize,
-    /// Whether a search filter is active on THIS handle (adds
-    /// `search_extra` latency to list/window tolls). Arc'd only so `&self`
-    /// async methods can observe what `&mut self` setters flipped.
-    searching: Arc<AtomicBool>,
+    /// Whether a search filter is active on this handle (adds
+    /// `search_extra` latency to list/window tolls).
+    searching: bool,
 }
 
 impl ShapedShell {
+    /// Shape `inner`. The shell advertises the shape's capabilities that the
+    /// inner shell also has: a shape may only remove capabilities, never
+    /// grant one the inner shell lacks. Two exceptions: `Cursor` is served
+    /// by the shape itself over the inner shell's windows, so it needs the
+    /// inner `Window`; and `ConfineWrites` is the inner shell's, since every
+    /// write is forwarded to it. `Import` and `Traverse` are never
+    /// advertised: bulk import is not part of any shape, and a reference's
+    /// target would not be shaped.
     pub fn new(inner: Box<dyn TableShell>, shape: BackendShape) -> Self {
         // Decorrelate from ValueGen's stream: same seed must not make the
         // 3rd fault draw equal the 3rd generated cell.
@@ -174,19 +80,28 @@ impl ShapedShell {
             Some(seed) => StdRng::seed_from_u64(seed ^ 0x5AAD_F00D_u64),
             None => crate::value_gen::entropy_rng(),
         };
-        let page_size = shape.page_size.max(1);
-        let mut capabilities = shape.capabilities.clone();
-        capabilities.can_subscribe &= inner.capabilities().can_subscribe;
-        capabilities.can_confine_writes = inner.capabilities().can_confine_writes;
+        let theirs = *inner.capabilities();
+        let capabilities = Capability::iter()
+            .filter(|&c| match c {
+                Capability::Cursor => shape.capabilities.has(c) && theirs.has(Capability::Window),
+                Capability::ConfineWrites => theirs.has(c),
+                Capability::Import | Capability::Traverse => false,
+                _ => shape.capabilities.has(c) && theirs.has(c),
+            })
+            .collect();
         Self {
             inner,
             shape: Arc::new(shape),
             capabilities,
             rng: Arc::new(Mutex::new(rng)),
             epoch: Instant::now(),
-            page_size,
-            searching: Arc::new(AtomicBool::new(false)),
+            searching: false,
         }
+    }
+
+    /// The server's cursor page.
+    fn page_size(&self) -> usize {
+        self.shape.page_size.max(1)
     }
 
     /// Pay a request's toll: scheduled outage, then latency, then the error
@@ -216,7 +131,7 @@ impl ShapedShell {
             };
             let mut delay = band.map(|b| b.draw(rng)).unwrap_or_default();
             if matches!(class, OpClass::List | OpClass::Window)
-                && self.searching.load(Ordering::Relaxed)
+                && self.searching
                 && let Some(extra) = self.shape.latency.search_extra
             {
                 delay += extra.draw(rng);
@@ -252,9 +167,8 @@ impl ShapedShell {
     }
 
     /// Reported total = truth + the configured lie, clamped to zero.
-    async fn lied_total(&self, vista: &Vista) -> Result<i64> {
-        let truth = self.inner.get_vista_count(vista).await?;
-        Ok((truth + self.shape.faults.total_lie).max(0))
+    fn lied(&self, truth: i64) -> i64 {
+        (truth + self.shape.faults.total_lie).max(0)
     }
 
     fn cursor_token(&self, offset: usize) -> CborValue {
@@ -282,13 +196,12 @@ impl ShapedShell {
         Ok(i128::from(*offset).max(0) as usize)
     }
 
-    fn gate(&self, allowed: bool, method: &str, capability: &str) -> Result<()> {
-        if allowed {
+    /// `Ok` when this shell advertises `capability`, its refusal otherwise.
+    fn gate(&self, capability: Capability) -> Result<()> {
+        if self.capabilities.has(capability) {
             Ok(())
         } else {
-            Err(self.default_error(method, capability))
+            unsupported(capability)
         }
     }
 }
-
-mod shell;

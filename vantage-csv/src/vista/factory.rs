@@ -1,12 +1,12 @@
 //! `CsvVistaFactory` — typed-table and YAML entry points, plus the
 //! `VistaFactory` trait impl. CSV is read-only, so the factory advertises
-//! only `can_count`.
+//! no write capability.
 
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{NoExtras, Vista, VistaCapabilities, VistaFactory};
+use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory};
 
 use crate::csv::Csv;
 use crate::type_system::AnyCsvType;
@@ -28,20 +28,14 @@ impl CsvVistaFactory {
     where
         E: Entity<AnyCsvType> + 'static,
     {
-        let metadata = table.vista_metadata(VistaMetadataOptions::default());
+        let metadata = table.vista_metadata(VistaMetadataOptions {
+            references: true,
+            ..VistaMetadataOptions::default()
+        });
         let name = table.table_name().to_string();
         let any_table = table.into_entity::<EmptyEntity>();
-
-        let source = CsvTableShell::new(
-            any_table,
-            VistaCapabilities {
-                can_count: true,
-                can_traverse_to_record: true,
-                ..VistaCapabilities::default()
-            },
-            metadata,
-        );
-        Ok(Vista::new(name, Box::new(source)))
+        let shell = CsvTableShell::new(any_table, csv_capabilities(), metadata);
+        Ok(Vista::new(name, shell))
     }
 
     /// Build a `Table<Csv, EmptyEntity>` from a spec. Each column is added
@@ -80,10 +74,16 @@ impl VistaFactory for CsvVistaFactory {
     fn build_from_spec(&self, spec: CsvVistaSpec) -> Result<Vista> {
         let vista_name = spec.name.clone();
         let table = self.table_from_spec(&spec)?;
-        let mut vista = self.from_table(table)?;
-        vista.set_name(vista_name);
-        Ok(vista)
+        Ok(self.from_table(table)?.with_name(vista_name))
     }
+}
+
+/// What the CSV shell implements: in-memory windows over the filtered rows,
+/// and traversal. No write is advertised, so the Vista refuses every write.
+fn csv_capabilities() -> VistaCapabilities {
+    [Capability::Window, Capability::Traverse]
+        .into_iter()
+        .collect()
 }
 
 /// The `csv.source` block names the CSV header to read.

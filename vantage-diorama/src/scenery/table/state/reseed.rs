@@ -74,7 +74,9 @@ impl TableSceneryState {
         };
         if self.paged
             && !self.two_pass
-            && self.master_capabilities.can_order
+            && self
+                .master_capabilities
+                .has(vantage_vista::Capability::Order)
             && sort.is_some()
             && !holds_everything
         {

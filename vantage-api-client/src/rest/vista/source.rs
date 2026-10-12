@@ -3,14 +3,13 @@
 //!
 //! `RestApi` already speaks `ciborium::Value` natively (the HTTP body
 //! is converted at the fetch boundary), so the shell is a pass-through
-//! with no per-record translation.
+//! with no per-record translation. A clone copies the table's query state
+//! (conditions, order) and shares the HTTP client.
 //!
-//! YAML-declared references are carried separately (`yaml_refs`)
-//! because `Table::with_many` / `with_one` require compile-time-known
-//! build-target closures that YAML can't synthesise. At traversal
-//! time the shell reads the join value out of the parent row supplied
-//! by `Vista::get_ref(relation, row)` and pushes a plain eq-condition
-//! on the resolver-built child Vista — no deferred fetch.
+//! The shell only reads. Conditions are equality only: each becomes a URL
+//! path placeholder, a query param, or an in-memory row filter, as the
+//! `RestApi` is configured. A condition names a declared column or a path
+//! placeholder (`teams/{team_id}/users`), which the spec needn't declare.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -21,50 +20,31 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, JoinKey, Reference as VistaReference, TableShell, Vista,
-    VistaCapabilities, VistaMetadata,
+    Capability, Column as VistaColumn, Condition, FilterOp, Page, Preview,
+    Reference as VistaReference, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, unsupported,
 };
 
 use super::factory::{ModelResolver, RestApiVistaFactory};
 use crate::RestApi;
-
-/// A single YAML-declared reference attached to a parent shell at
-/// build time. Carries the foreign-key wiring; the URL form is
-/// the child's own concern (its `api.endpoint`) — the parent only
-/// declares the relationship.
-#[derive(Clone)]
-pub(crate) struct YamlReference {
-    pub target: String,
-    pub kind: YamlReferenceKind,
-    pub foreign_key: String,
-    /// Multi-key join. When non-empty it fully describes the join (each
-    /// pair reads a parent-row column and constrains a child column),
-    /// superseding `foreign_key`. Lets a child be narrowed by more than
-    /// one parent field — e.g. a deployment by both product_id and
-    /// version_id.
-    pub keys: Vec<JoinKey>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum YamlReferenceKind {
-    HasMany,
-    HasOne,
-}
+use crate::rest::api::REST_DRIVER;
 
 /// The `TableShell` behind a REST-backed `Vista`: an erased
-/// `Table<RestApi, EmptyEntity>` plus the metadata, capabilities and YAML
-/// references the factory harvested. Built by [`RestApiVistaFactory`];
-/// callers drive it through the `Vista` it is wrapped in.
+/// `Table<RestApi, EmptyEntity>` plus the metadata and capabilities the
+/// factory harvested. Built by [`RestApiVistaFactory`]; callers drive it
+/// through the `Vista` it is wrapped in.
 #[derive(Clone)]
 pub struct RestApiTableShell {
     pub(crate) table: Table<RestApi, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
-    pub(crate) yaml_refs: IndexMap<String, YamlReference>,
+    /// Set on a shell built from a YAML spec: each reference's target is
+    /// built by name through it. A shell wrapped from a typed table has
+    /// `None` and traverses the table's own `with_one`/`with_many`.
     pub(crate) resolver: Option<ModelResolver>,
-    /// The sort pushed down by `add_order`, sent as the API's ordering
-    /// query param on every windowed fetch.
-    pub(crate) order: Option<(String, vantage_vista::SortDirection)>,
+    /// The sort set by `set_order`, sent as the API's ordering query param
+    /// on every windowed fetch.
+    pub(crate) order: Option<(String, SortDirection)>,
 }
 
 impl RestApiTableShell {
@@ -77,26 +57,29 @@ impl RestApiTableShell {
             table,
             capabilities,
             metadata,
-            yaml_refs: IndexMap::new(),
             resolver: None,
             order: None,
         }
     }
 
-    fn order(&self) -> Option<(&str, vantage_vista::SortDirection)> {
+    pub(crate) fn with_resolver(mut self, resolver: ModelResolver) -> Self {
+        self.resolver = Some(resolver);
+        self
+    }
+
+    fn order(&self) -> Option<(&str, SortDirection)> {
         self.order
             .as_ref()
             .map(|(field, dir)| (field.as_str(), *dir))
     }
 
-    pub(crate) fn with_yaml_refs(mut self, refs: IndexMap<String, YamlReference>) -> Self {
-        self.yaml_refs = refs;
-        self
-    }
-
-    pub(crate) fn with_resolver(mut self, resolver: ModelResolver) -> Self {
-        self.resolver = Some(resolver);
-        self
+    /// The bare target of `relation`, before any join narrowing.
+    fn ref_target(&self, reference: &VistaReference) -> Result<Vista> {
+        if let Some(resolver) = &self.resolver {
+            return resolver(&reference.target);
+        }
+        let target = self.table.get_ref_target_erased(&reference.name)?;
+        RestApiVistaFactory::new(self.table.data_source().clone()).from_table(target)
     }
 }
 
@@ -114,31 +97,46 @@ impl TableShell for RestApiTableShell {
         self.metadata.id_column.as_deref()
     }
 
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.table.list_values().await
+    fn capabilities(&self) -> &VistaCapabilities {
+        &self.capabilities
     }
 
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
+    fn driver_name(&self) -> &'static str {
+        REST_DRIVER
+    }
+
+    /// The HTTP GET a read would issue — path template filled in, conditions
+    /// lowered to query params, pagination applied.
+    fn preview(&self) -> Preview {
+        let window = self.table.pagination().map(|p| (p.skip(), p.limit()));
+        self.table.data_source().preview_request(
+            self.table.table_name(),
+            window,
+            self.order(),
+            self.table.conditions(),
+        )
+    }
+
+    /// The table's own read, plus the shell's order, which the table doesn't
+    /// hold. A typed table's lazy expressions are applied as `list_values`
+    /// would.
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        let api = self.table.data_source();
+        let mut rows = api.list_ordered(&self.table, self.order()).await?;
+        for rec in rows.values_mut() {
+            self.table.apply_lazy_expressions(rec).await?;
+        }
+        Ok(rows)
+    }
+
+    /// The API has no fetch-by-id endpoint the shell can rely on, so the set
+    /// is listed and the row picked out.
+    async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
         let mut data = self.table.list_values().await?;
         Ok(data.shift_remove(id))
     }
 
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        let data = self.table.list_values().await?;
-        Ok(data.into_iter().next())
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
+    async fn count(&self) -> Result<i64> {
         let api = self.table.data_source();
         // Prefer the envelope total (`total_key`) — one cheap request that
         // reflects the active conditions. Falls back to counting fetched rows
@@ -152,24 +150,13 @@ impl TableShell for RestApiTableShell {
         api.get_table_count(&self.table).await
     }
 
-    async fn fetch_window(
-        &self,
-        vista: &Vista,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<(String, Record<CborValue>)>> {
-        Ok(self.fetch_window_counted(vista, offset, limit).await?.0)
-    }
-
-    /// A REST envelope reports `total_key` on every reply, so the window
-    /// fetch already knows the grand total — handing it back here is what
-    /// lets a grid size its scrollbar without a second `limit=1` request.
-    async fn fetch_window_counted(
-        &self,
-        _vista: &Vista,
-        offset: usize,
-        limit: usize,
-    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
+    /// A REST envelope with a `total_key` reports the grand total on every
+    /// reply, so the page carries it and a grid can size its scrollbar
+    /// without a second request.
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        if !self.capabilities.has(Capability::Window) {
+            return unsupported(Capability::Window);
+        }
         let id_field = self.table.id_field().map(|c| c.name().to_string());
         let (records, total) = self
             .table
@@ -177,174 +164,73 @@ impl TableShell for RestApiTableShell {
             .fetch_window_records_counted(
                 self.table.table_name(),
                 id_field.as_deref(),
-                offset as i64,
-                limit as i64,
+                &crate::rest::required_fields(&self.table),
+                (offset as i64, limit as i64),
                 self.order(),
                 self.table.conditions(),
             )
             .await?;
-        // This path fetches straight from the API layer (windowed), so the
-        // table's `list_values` never runs — apply a typed table's lazy
-        // expressions here. Spec `lazy:` columns are the Vista's to fill.
-        let mut records: Vec<(String, Record<CborValue>)> = records.into_iter().collect();
-        for (_, rec) in records.iter_mut() {
+        // This path fetches straight from the API layer, so the table's
+        // `list_values` never runs: a typed table's lazy expressions are
+        // applied here. Spec `lazy:` columns are the Vista's to fill.
+        let mut rows: Vec<(String, Record<CborValue>)> = records.into_iter().collect();
+        for (_, rec) in rows.iter_mut() {
             self.table.apply_lazy_expressions(rec).await?;
         }
-        Ok((records, total))
+        let page = Page::new(rows);
+        Ok(match total {
+            Some(total) => page.with_total(total),
+            None => page,
+        })
     }
 
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        let condition = crate::eq_condition(field, value.clone());
+    /// Equality on a declared column or an endpoint `{placeholder}`, with a
+    /// value that renders as one URL param. Null and compound values have no
+    /// such form, so they are refused for the caller to evaluate locally.
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        let field = condition.column.as_str();
+        let known = self.metadata.columns.contains_key(field)
+            || crate::rest::placeholders(self.table.table_name()).any(|p| p == field);
+        if !known {
+            return Err(error!("Unknown column for condition", field = field));
+        }
+        if condition.op != FilterOp::Eq || crate::cbor_to_query_string(&condition.value).is_none() {
+            return unsupported(Capability::FilterOps);
+        }
+        let condition = crate::eq_condition(field, condition.value.clone());
         self.table.add_condition(condition);
         Ok(())
     }
 
-    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        // YAML-declared references first. The parent record is on hand,
-        // so the join value is read out of `row` and pushed as a plain
-        // eq-condition on the child; no deferred fetch is needed.
-        if let Some(yref) = self.yaml_refs.get(relation) {
-            let resolver = self.resolver.as_ref().ok_or_else(|| {
-                error!(
-                    "YAML reference requires a model resolver — call \
-                     `with_model_resolver` on the factory or register \
-                     the target spec via `register_yaml`",
-                    relation = relation
-                )
-            })?;
-
-            let mut child = resolver(&yref.target)?;
-
-            // Multi-key join: read each parent-row column and constrain the
-            // matching child column. Every key becomes an eq-condition on
-            // the child; how each one is applied (URL path placeholder,
-            // query param, or in-memory row filter) is the child data
-            // source's concern at fetch time.
-            if !yref.keys.is_empty() {
-                for key in &yref.keys {
-                    let value = row.get(&key.from).cloned().ok_or_else(|| {
-                        error!(
-                            "YAML reference: parent row missing join field",
-                            relation = relation,
-                            source_column = key.from.as_str()
-                        )
-                    })?;
-                    child.add_condition_eq(key.to.clone(), value)?;
-                }
-                return Ok(child);
-            }
-
-            // For `has_many` the parent's id flows onto the child's FK
-            // column; for `has_one` the parent's FK column value becomes
-            // the child's id. The field we read from `row` differs
-            // accordingly.
-            let (source_column, target_field) = match yref.kind {
-                YamlReferenceKind::HasMany => {
-                    let parent_id = self
-                        .table
-                        .id_field()
-                        .map(|c| c.name().to_string())
-                        .ok_or_else(|| {
-                            error!(
-                                "YAML has_many reference needs the parent to have an id field",
-                                relation = relation
-                            )
-                        })?;
-                    (parent_id, yref.foreign_key.clone())
-                }
-                YamlReferenceKind::HasOne => {
-                    let child_id = child
-                        .get_id_column()
-                        .map(str::to_string)
-                        .unwrap_or_else(|| "id".to_string());
-                    (yref.foreign_key.clone(), child_id)
-                }
-            };
-
-            let join_value = row.get(&source_column).cloned().ok_or_else(|| {
-                error!(
-                    "YAML reference: parent row missing join field",
-                    relation = relation,
-                    source_column = source_column.as_str()
-                )
-            })?;
-
-            child.add_condition_eq(target_field, join_value)?;
-
-            return Ok(child);
+    /// One sort at a time, rendered as the API's ordering query param.
+    fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
+        if !self.capabilities.has(Capability::Order) {
+            return unsupported(Capability::Order);
         }
-
-        // Hand-coded `with_many` / `with_one` registrations on the typed
-        // table: resolve the target table from `row` directly, then wrap
-        // it back into a Vista via a fresh factory bound to the same
-        // data source.
-        let target = self.table.get_ref_from_row::<EmptyEntity>(relation, row)?;
-        let factory = RestApiVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
-    }
-
-    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        // YAML-declared reference: the bare target is the resolver-built
-        // child with no join condition applied — the same child `get_ref`
-        // starts from before it pins the parent's key.
-        if let Some(yref) = self.yaml_refs.get(relation) {
-            let resolver = self.resolver.as_ref().ok_or_else(|| {
-                error!(
-                    "YAML reference requires a model resolver — call \
-                     `with_model_resolver` on the factory or register \
-                     the target spec via `register_yaml`",
-                    relation = relation
-                )
-            })?;
-            return resolver(&yref.target);
-        }
-
-        // Hand-coded `with_many` / `with_one` registrations on the typed table.
-        let target = self.table.get_ref_target_erased(relation)?;
-        let factory = RestApiVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
-    }
-
-    fn capabilities(&self) -> &VistaCapabilities {
-        &self.capabilities
-    }
-
-    /// Replace-semantics: one sort at a time, rendered as the API's ordering
-    /// query param. Only reachable when the datasource declared one
-    /// (`can_order`), since `Vista::add_order` gates on the column flag.
-    fn add_order(&mut self, field: &str, dir: vantage_vista::SortDirection) -> Result<()> {
+        let Some((field, dir)) = order else {
+            self.order = None;
+            return Ok(());
+        };
         if !self.table.columns().contains_key(field) {
-            return Err(error!("Unknown column for add_order", field = field));
+            return Err(error!("Unknown column for order", field = field));
         }
         self.order = Some((field.to_string(), dir));
         Ok(())
     }
 
-    fn clear_orders(&mut self) -> Result<()> {
-        self.order = None;
-        Ok(())
-    }
-
-    /// Cheap: the `RestApi` behind the table shares its HTTP client, and the
-    /// copy owns only query state (conditions, order), which is what a
-    /// per-view ordered fetch narrows.
-    fn clone_shell(&self) -> Option<Box<dyn TableShell>> {
-        Some(Box::new(self.clone()))
-    }
-
-    fn driver_name(&self) -> &'static str {
-        "rest-api"
-    }
-
-    /// The HTTP GET a read would issue — path template filled in, conditions
-    /// lowered to query params, pagination applied.
-    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-        let window = self.table.pagination().map(|p| (p.skip(), p.limit()));
-        self.table.data_source().preview_request(
-            self.table.table_name(),
-            window,
-            self.order(),
-            self.table.conditions(),
-        )
+    /// A YAML reference's target is built by name through the resolver; a
+    /// typed table's comes from its `with_one`/`with_many`. From a row, the
+    /// target is narrowed by the reference's join keys.
+    fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
+        let reference = self
+            .metadata
+            .references
+            .get(relation)
+            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())?;
+        let target = self.ref_target(reference)?;
+        match row {
+            Some(row) => reference.narrow(target, row, CborValue::clone),
+            None => Ok(target),
+        }
     }
 }

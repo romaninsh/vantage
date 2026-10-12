@@ -34,7 +34,7 @@ fn seeded_master() -> Vista {
         .with_record("a", record("alpha", 10))
         .with_record("b", record("beta", 20))
         .with_record("c", record("gamma", 30));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 async fn build_lens(cache_path: std::path::PathBuf) -> Result<Arc<Lens>> {

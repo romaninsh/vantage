@@ -8,7 +8,7 @@ use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{
-    Column, DataVocab, TargetResolver, Terminals, Vista, VistaCapabilities, VistaMetadata, Writes,
+    Column, ColumnFlag, DataVocab, TargetResolver, Terminals, Vista, VistaMetadata, Writes,
 };
 
 pub fn rec(pairs: &[(&str, i64)]) -> Record<CborValue> {
@@ -28,49 +28,38 @@ pub fn store() -> MemoryStore {
     store
 }
 
-/// Memory Vistas over `store`; `nocount` is a mock that can't count, `mock`
-/// a mock without bulk import that already holds `r1 {a:7}`, `auto` and
-/// `intid` empty mocks with a numeric id column, flagged `auto` on `auto`.
+/// Memory Vistas over `store`, declaring `id`, `a`, `n` and `tag`; `mock` a mock
+/// without bulk import that already holds `r1 {a:7}`, `auto` and `intid`
+/// empty mocks with a numeric id column, flagged `auto` on `auto`.
 pub fn resolver(store: &MemoryStore) -> TargetResolver {
     let store = store.clone();
     let mock = MockShell::new()
         .with_metadata(
             VistaMetadata::new()
-                .with_column(Column::new("id", "String").with_flag("id"))
+                .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
                 .with_id_column("id"),
         )
         .with_record("r1", rec(&[("a", 7)]));
     Arc::new(move |name: &str| {
         if name == "mock" {
-            return Ok(Vista::new(name, Box::new(mock.clone())));
+            return Ok(Vista::new(name, mock.clone()));
         }
         if name == "auto" || name == "intid" {
-            let mut id = Column::new("id", "int").with_flag("id");
+            let mut id = Column::new("id", "int").with_flag(ColumnFlag::Id);
             if name == "auto" {
-                id = id.with_flag("auto");
+                id = id.with_flag(ColumnFlag::Auto);
             }
             let metadata = VistaMetadata::new().with_column(id).with_id_column("id");
-            return Ok(Vista::new(
-                name,
-                Box::new(MockShell::new().with_metadata(metadata)),
-            ));
-        }
-        if name == "nocount" {
-            let caps = VistaCapabilities {
-                can_count: false,
-                ..VistaCapabilities::default()
-            };
-            return Ok(Vista::new(
-                name,
-                Box::new(MockShell::new().with_capabilities(caps)),
-            ));
+            return Ok(Vista::new(name, MockShell::new().with_metadata(metadata)));
         }
         let metadata = VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
-            .with_column(Column::new("n", "int").with_flag("orderable"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+            .with_column(Column::new("a", "int"))
+            .with_column(Column::new("n", "int").with_flag(ColumnFlag::Orderable))
+            .with_column(Column::new("tag", "String"))
             .with_id_column("id");
         let shell = MemoryTableShell::new(store.table(name), metadata, Catalog::new(store.clone()));
-        Ok(Vista::new(name, Box::new(shell)))
+        Ok(Vista::new(name, shell))
     })
 }
 

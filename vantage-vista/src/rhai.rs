@@ -51,6 +51,7 @@ pub use vocab::{DataVocab, TargetResolver, Terminals, Writes};
 #[cfg(test)]
 mod tests {
     mod bridge;
+    mod capped;
     mod eval;
     mod narrow;
     mod runtime;

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
 use crate::AwsAccount;
+use crate::models::request_param;
 
 /// One ECS service — `ListServices` returns just an ARN per row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +20,7 @@ pub fn services_table(aws: AwsAccount) -> Table<AwsAccount, Service> {
         aws,
     )
     .with_id_column("serviceArn")
+    .with_column(request_param("cluster"))
 }
 
 impl Service {

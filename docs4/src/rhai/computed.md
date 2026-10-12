@@ -164,7 +164,7 @@ table("order").sort("gross", "desc").list()   // throws
 The first fails with `Step can't be applied (step: Where { col: "gross", … }): Computed column
 can't be used to filter, order or aggregate; the backend doesn't hold its values (column: "gross",
 operation: "condition")`. The error is marked unsupported, like any other narrowing a backend can't
-do. In Rust, `Vista::add_condition`, `add_condition_eq` and `add_order` refuse the same way, and so
+do. In Rust, `Vista::add_condition`, `add_condition_eq` and `set_order` refuse the same way, and so
 does `aggregate` for a computed column or group key:
 
 <!-- tested: rhai_guide::computed::aggregate_refused -->

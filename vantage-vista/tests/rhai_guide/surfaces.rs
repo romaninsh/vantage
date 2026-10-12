@@ -59,8 +59,10 @@ table("order").where("status", "paid").sort("total", "desc")
 fn preview() {
     let out = preview_script(PREVIEW.to_string(), resolver(&shop())).unwrap();
     assert_eq!(out["driver"], json!("memory"));
-    assert_eq!(out["table"], json!("order"));
-    assert_eq!(out["order"], json!([["total", "desc"]]));
+    assert_eq!(
+        out["query"],
+        json!(r#"scan order WHERE status = "paid" ORDER BY total DESC"#)
+    );
 }
 
 const MODIFY: &str = r#"
@@ -91,7 +93,7 @@ self.sort("name", "desc");
 fn only(h: &mut Handle, col: &str, value: Dynamic) -> Result<Handle, Box<EvalAltResult>> {
     let (col, value) = (col.to_string(), dynamic_to_cbor(value)?);
     h.with_base_vista("only", |vista| {
-        vista.add_condition(col, FilterOp::Eq, value)
+        vista.add_condition(&col, FilterOp::Eq, value)
     })
     .map_err(|e| e.to_string().into())
 }

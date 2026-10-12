@@ -187,7 +187,7 @@ mongo:
             Some("clients")
         );
         assert_eq!(spec.columns["_id"].col_type.as_deref(), Some("object_id"));
-        assert!(spec.columns["name"].flags.contains(&"title".to_string()));
+        assert!(spec.columns["name"].has_flag(vantage_vista::ColumnFlag::Title));
     }
 
     #[test]

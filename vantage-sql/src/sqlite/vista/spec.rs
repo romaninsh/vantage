@@ -117,7 +117,7 @@ sqlite:
             Some("clients")
         );
         assert_eq!(spec.columns["id"].col_type.as_deref(), Some("int"));
-        assert!(spec.columns["name"].flags.contains(&"title".to_string()));
+        assert!(spec.columns["name"].has_flag(vantage_vista::ColumnFlag::Title));
     }
 
     #[test]

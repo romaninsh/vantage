@@ -22,9 +22,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
 vantage-rhai = { version = "1.0.0", path = "../vantage-rhai", optional = true }
-# Not optional: `TableShell::preview_query` returns a driver-shaped
-# `serde_json::Value`, so the type is part of the trait every driver implements.
-serde_json = "1"
+# The agent-tool runners (`run_script`, `preview_script`) answer in JSON.
+serde_json = { version = "1", optional = true }
 # `rt`/`rt-multi-thread` for the spawn_blocking + Handle::block_on bridge that
 # drives the async Vista fetches from the synchronous Rhai engine.
 tokio = { version = "1.52", features = ["rt", "rt-multi-thread"], optional = true }
@@ -38,25 +37,40 @@ uuid = { version = "1", features = ["v7"], optional = true }
 # (`table`/`where`/`sort`/`search`/`limit`/`ref`) with read and write terminals,
 # the script-slot evaluators and the `run_script` runner. Backends layer their
 # vendor expression vocabulary on top via `TableShell::register_rhai_extensions`.
-rhai = ["dep:vantage-rhai", "dep:tokio", "dep:chrono", "dep:uuid", "vantage-types/serde"]
+rhai = [
+    "dep:vantage-rhai",
+    "dep:serde_json",
+    "dep:tokio",
+    "dep:chrono",
+    "dep:uuid",
+    "vantage-types/serde",
+]
 # Driver-facing checks (`vantage_vista::contract`) that every backend's test
 # suite runs against its own fixture. Enable from `[dev-dependencies]` only.
 contract = []
+# `vantage_vista::mocks`: an in-memory `TableShell` for tests and examples.
+# Enable from `[dev-dependencies]` only.
+mocks = []
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }
 vantage-dataset = { version = "1.1.0", path = "../vantage-dataset", features = ["contract"] }
+serde_json = "1"
 # Memory-backed Vistas for the script vocabulary tests. Integration tests only:
 # vantage-memory depends on this crate, so unit tests would see two copies.
 vantage-memory = { path = "../vantage-memory" }
 
 [[test]]
 name = "contract"
-required-features = ["contract"]
+required-features = ["contract", "mocks"]
+
+[[test]]
+name = "contained"
+required-features = ["mocks"]
 
 [[test]]
 name = "rhai_vocab"
-required-features = ["rhai"]
+required-features = ["rhai", "mocks"]
 
 [[test]]
 name = "rhai_guide"

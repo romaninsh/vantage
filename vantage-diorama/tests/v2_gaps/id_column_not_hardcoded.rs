@@ -40,7 +40,7 @@ fn fields_holding<'a>(
 #[ignore = "v2 phase 3: facade insert hardcodes the id column as \"id\""]
 async fn id_column_not_hardcoded() -> Result<()> {
     let shell = keyed_shell();
-    let dio = eager_dio(Vista::new("keyed", Box::new(shell.clone()))).await;
+    let dio = eager_dio(Vista::new("keyed", shell.clone())).await;
     let worker = dio.take_write_worker_handle().await.expect("worker handle");
 
     let inserted = dio

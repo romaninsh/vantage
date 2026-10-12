@@ -19,6 +19,7 @@
 pub use rhai;
 
 mod compiled;
+mod constant;
 mod error;
 mod host;
 mod json;
@@ -29,6 +30,7 @@ mod slot;
 pub mod template;
 
 pub use compiled::{Compiled, Env, Slot};
+pub use constant::register_constant;
 pub use error::{Located, Result, RhaiError};
 pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Mode, Vocab, background_host, ui_host};
 pub use json::{from_json, to_json};

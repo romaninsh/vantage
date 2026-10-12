@@ -5,6 +5,9 @@ columns:
     flags: [id, title, searchable]
   PolicyArn:
     type: string
+  UserName:
+    type: string
+    flags: [hidden]
 cmd:
   rhai: |
     let args = ["iam", "list-attached-user-policies", "--output", "json"];

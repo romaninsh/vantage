@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
+use vantage_dataset::ReadableValueSet;
 use vantage_types::Record;
 use vantage_vista::Vista;
 
@@ -257,11 +258,7 @@ pub struct VantageTableAdapter {
 
 impl VantageTableAdapter {
     pub async fn new(vista: Vista) -> Self {
-        let column_names: Vec<String> = vista
-            .get_column_names()
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
+        let column_names: Vec<String> = vista.columns().keys().cloned().collect();
         let cached_columns: Vec<ColumnInfo> = column_names
             .iter()
             .map(|name| ColumnInfo {
@@ -272,11 +269,8 @@ impl VantageTableAdapter {
             })
             .collect();
 
-        let records: IndexMap<String, Record<CborValue>> = vista
-            .source
-            .list_vista_values(&vista)
-            .await
-            .unwrap_or_default();
+        let records: IndexMap<String, Record<CborValue>> =
+            vista.list_values().await.unwrap_or_default();
         let cached_data: Vec<TableRow> = records
             .into_values()
             .map(|record| {

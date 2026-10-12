@@ -44,7 +44,7 @@ use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10, RawModuleDefV10Section}
 use spacetimedb_lib::db::view::extract_view_return_product_type_ref;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
 use vantage_core::{Result, error};
-use vantage_vista::{Column as VistaColumn, VistaMetadata, flags};
+use vantage_vista::{Column as VistaColumn, ColumnFlag, VistaMetadata};
 
 /// Which module-definition ABI a [`ModuleSchema`] was decoded from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,25 +371,6 @@ impl ModuleSchema {
         let identity = schema.row_identity();
         let mut metadata = VistaMetadata::new();
 
-        for (name, ty) in &schema.columns {
-            // Deliberately *not* flagged orderable. The dialect has no `ORDER BY`
-            // and this driver refuses to sort rather than materialising the set
-            // and sorting it here, so `can_order` is false — and a column that
-            // advertised ORDERABLE would put a sort control in front of someone
-            // that then refuses. The flag has to agree with the capability.
-            let mut column = VistaColumn::new(name.clone(), vista_type_name(ty));
-            if identity.column() == Some(name.as_str()) {
-                column = column.with_flag(flags::ID);
-            }
-            metadata = metadata.with_column(column);
-        }
-
-        // A content-hash identity names no column, so `id_column` stays unset and
-        // the shell supplies the hash itself.
-        if let Some(column) = identity.column() {
-            metadata = metadata.with_id_column(column.to_string());
-        }
-
         // Nominate a display column so a grid has something to show as the row
         // label: the first string that is not the id. Purely a default — an
         // inventory author can override it.
@@ -399,17 +380,32 @@ impl ModuleSchema {
             .find(|(name, ty)| {
                 matches!(ty, AlgebraicType::String) && identity.column() != Some(name.as_str())
             })
-            .map(|(name, _)| name.clone());
-        if let Some(title) = title
-            && let Some(column) = metadata.columns.get_mut(&title)
-        {
-            column.flags.push(flags::TITLE.to_string());
-            // Not SEARCHABLE, for the reason given above about ORDERABLE: the
-            // dialect has no `LIKE`, `can_search` is false, and `add_search`
-            // refuses. The flag is what a consumer reads to decide whether to
-            // offer a search box — the CLI ORs its `?keyword` across exactly
-            // these columns — so setting it here would build the box and then
-            // refuse the query.
+            .map(|(name, _)| name.as_str());
+
+        for (name, ty) in &schema.columns {
+            // Deliberately *not* flagged orderable. The dialect has no `ORDER BY`
+            // and this driver refuses to sort rather than materialising the set
+            // and sorting it here, so `Order` is not advertised — and a column
+            // flagged orderable would put a sort control in front of someone
+            // that then refuses. The flag has to agree with the capability.
+            //
+            // Nor searchable, for the same reason: the dialect has no `LIKE`, so
+            // `Search` is not advertised. The flag is what a consumer reads to
+            // decide whether to offer a search box.
+            let mut column = VistaColumn::new(name.clone(), vista_type_name(ty));
+            if identity.column() == Some(name.as_str()) {
+                column = column.with_flag(ColumnFlag::Id);
+            }
+            if title == Some(name.as_str()) {
+                column = column.with_flag(ColumnFlag::Title);
+            }
+            metadata = metadata.with_column(column);
+        }
+
+        // A content-hash identity names no column, so `id_column` stays unset and
+        // the shell supplies the hash itself.
+        if let Some(column) = identity.column() {
+            metadata = metadata.with_id_column(column.to_string());
         }
 
         Ok(metadata)

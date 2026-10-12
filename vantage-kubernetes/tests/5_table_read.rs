@@ -15,7 +15,7 @@ async fn nodes_have_numeric_capacity() -> anyhow::Result<()> {
     let vista = cluster
         .vista_factory()
         .from_table(nodes::nodes_table(cluster.clone()))?;
-    let rows = vista.fetch_window(0, 1000).await?;
+    let rows = vista.fetch_window(0, 1000).await?.rows;
 
     assert!(!rows.is_empty(), "cluster should report at least one node");
     let (_, node) = &rows[0];
@@ -42,7 +42,7 @@ async fn namespaces_include_demo_and_kube_system() -> anyhow::Result<()> {
     let vista = cluster
         .vista_factory()
         .from_table(namespaces::namespaces_table(cluster.clone()))?;
-    let rows = vista.fetch_window(0, 1000).await?;
+    let rows = vista.fetch_window(0, 1000).await?.rows;
     let names: Vec<String> = rows
         .iter()
         .filter_map(|(_, r)| as_text(r.get("name")))
@@ -67,8 +67,12 @@ async fn demo_pods_are_listed_with_columns() -> anyhow::Result<()> {
     let mut vista = cluster
         .vista_factory()
         .from_table(pods::pods_table(cluster.clone()))?;
-    vista.add_condition_eq("namespace", CborValue::Text(NS.to_string()))?;
-    let rows = vista.fetch_window(0, 1000).await?;
+    vista.add_condition(
+        "namespace",
+        vantage_vista::FilterOp::Eq,
+        CborValue::Text(NS.to_string()),
+    )?;
+    let rows = vista.fetch_window(0, 1000).await?.rows;
 
     // 3 web replicas + the sidecar pod (+ maybe a completed job pod).
     assert!(

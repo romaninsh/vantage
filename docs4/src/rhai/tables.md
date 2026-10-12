@@ -36,7 +36,7 @@ keep a base handle in a variable and branch from it as often as you like.
 | `ref(relation)` | the related rows of every row in the set |
 
 Conditions add up: every `where` narrows further. Sorting keeps one column. A later `sort`
-replaces an earlier one, as `Vista::add_order` does. Several `limit` steps keep the smallest.
+replaces an earlier one, as `Vista::set_order` does. Several `limit` steps keep the smallest.
 
 `limit(n)` limits the set itself, not just one read: `list()`, `ids()` and `count()` all see at
 most `n` rows, a `ref` after it follows only those `n` rows, and `import_from` copies only those

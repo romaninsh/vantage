@@ -13,6 +13,8 @@ use vantage_vista::prelude::*;
 
 const BUCKET: &str = "noaa-ghcn-pds";
 const PREFIX: &str = "csv/by_station/";
+/// Keys per listing request; S3 returns at most 1000.
+const PAGE_SIZE: usize = 1000;
 
 #[tokio::main]
 async fn main() {
@@ -111,9 +113,9 @@ async fn sync(dio: &Dio) -> VantageResult<()> {
         .cloned()
         .map(Into::into);
     loop {
-        let (page, next) = dio.master().fetch_next(token).await?;
+        let (page, next) = dio.master().fetch_cursor(token, PAGE_SIZE).await?;
         dio.cache()
-            .insert_values(page.into_iter().collect())
+            .insert_values(page.rows.into_iter().collect())
             .await?;
         dio.notify_dataset_changed();
         if next.is_none() {

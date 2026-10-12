@@ -4,7 +4,8 @@
 //! built once, background limits, the full vendor vocabulary. When `base` is
 //! supplied it is pushed as the `base` variable (a `RhaiSelect` wrapping the
 //! source table's select) so scripts can *transform* an existing query rather
-//! than build one from scratch. `me` is always in scope.
+//! than build one from scratch. `me` is always in scope: the vocabulary
+//! registers it as an engine-wide constant.
 //!
 //! Scripts compile as statements (`Block`), the same shape `Engine::eval`
 //! accepted before, so a `let` in an existing `rhai:` block keeps working; the
@@ -17,7 +18,6 @@
 use vantage_rhai::rhai;
 use vantage_rhai::{Block, Env};
 
-use crate::rhai_engine::surreal_env;
 use crate::statements::SurrealSelect;
 
 crate::register_surreal_engine!();
@@ -43,7 +43,7 @@ pub(crate) fn eval_to_select_args(
     for (k, v) in args {
         map.insert(k.as_str().into(), v.clone().into());
     }
-    let mut env = surreal_env(Env::new()).var("args", rhai::Dynamic::from_map(map));
+    let mut env = Env::new().var("args", rhai::Dynamic::from_map(map));
     if let Some(base) = base {
         env = env.var("base", rhai::Dynamic::from(Sel { inner: base }));
     }
@@ -69,7 +69,7 @@ pub(crate) fn eval_to_expr(code: &str) -> vantage_core::Result<crate::Expr> {
     use vantage_expressions::Expressive as _;
     let value = __host()
         .compile(&Block::from(code))
-        .and_then(|script| script.eval(&surreal_env(Env::new())))
+        .and_then(|script| script.eval(&Env::new()))
         .map_err(|e| {
             vantage_core::error!(
                 "Rhai column expression failed to evaluate",
@@ -106,8 +106,9 @@ mod tests {
 
     #[test]
     fn me_coexists_with_a_host_resolver() {
-        // The reason `me` moved: the old hook replaced the host's resolver hook
-        // (rhai keeps only the last `on_var`). Both must work in one script.
+        // `me` is an engine constant, not an `on_var` hook: rhai keeps only the
+        // last hook installed, so one would replace the host's resolver. Both
+        // must work in one script.
         struct Ns;
         impl Resolver for Ns {
             fn resolve(&self, path: &str) -> Lookup {
@@ -118,7 +119,7 @@ mod tests {
                 }
             }
         }
-        let env = surreal_env(Env::new().resolver(Arc::new(Ns)));
+        let env = Env::new().resolver(Arc::new(Ns));
 
         let read = __host()
             .compile(&Expr::from("app.n"))

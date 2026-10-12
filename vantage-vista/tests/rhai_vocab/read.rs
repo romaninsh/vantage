@@ -59,13 +59,15 @@ fn count_respects_limit() {
     assert_eq!(json(&host, r#"table("t").limit(9).count()"#), json!(3));
 }
 
+/// The fixture holds no text cells, so any search matches nothing.
 #[test]
-fn count_requires_capability() {
+fn search_narrows() {
+    let host = read_write(&store());
+    assert_eq!(json(&host, r#"table("t").search("zz").count()"#), json!(0));
+}
+
+#[test]
+fn count_respects_where() {
     let host = read_write(&store());
     assert_eq!(json(&host, r#"table("t").where("a", 1).count()"#), json!(2));
-    let err = run(&host, r#"table("nocount").count()"#).unwrap_err();
-    assert!(
-        err.contains("`count` isn't supported by table `nocount`"),
-        "{err}"
-    );
 }

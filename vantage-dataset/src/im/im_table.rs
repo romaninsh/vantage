@@ -18,6 +18,17 @@ pub struct ImTable<E, V = serde_json::Value> {
     _phantom: std::marker::PhantomData<E>,
 }
 
+/// A clone is another handle onto the same stored rows; `E` need not be Clone.
+impl<E, V> Clone for ImTable<E, V> {
+    fn clone(&self) -> Self {
+        Self {
+            data_source: self.data_source.clone(),
+            table_name: self.table_name.clone(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<E, V> ImTable<E, V> {
     pub fn new(data_source: &ImDataSource<V>, table_name: &str) -> Self
     where

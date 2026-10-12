@@ -20,23 +20,21 @@ async fn kubernetes_contract_advertised() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The shell can't be cloned, so `check_advertised` skips these probes.
 #[tokio::test]
 async fn kubernetes_contract_narrowing() -> anyhow::Result<()> {
     let Some(cluster) = cluster_or_skip().await else {
         return Ok(());
     };
-    let mut pods = cluster
+    let pods = cluster
         .vista_factory()
         .from_table(pods::pods_table(cluster.clone()))?;
-    contract::check_narrowing(&mut pods).await;
+    contract::check_narrowing(&pods).await;
     Ok(())
 }
 
 /// The fixture namespace holds some of the cluster's pods; the system
 /// namespaces hold the rest.
 #[tokio::test]
-#[ignore = "v2 phase 1: shell not cloneable"]
 async fn kubernetes_contract_clone() -> anyhow::Result<()> {
     let Some(cluster) = cluster_or_skip().await else {
         return Ok(());

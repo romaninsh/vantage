@@ -116,7 +116,7 @@ impl ChunkSink {
     /// this chunk also learned it.
     ///
     /// Paged sources carry the total in the same response as the window (see
-    /// [`Vista::fetch_window_counted`](vantage_vista::Vista::fetch_window_counted)),
+    /// [`Page::total`](vantage_vista::Page::total) from `Vista::fetch_window`),
     /// so a lens that reads it here needs no separate `total_provider` — and
     /// therefore no second round trip on open. Calling this is optional; a
     /// lens that says nothing leaves the total exactly as it was.

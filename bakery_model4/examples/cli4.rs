@@ -16,7 +16,7 @@ use bakery_model4::{connect_sqlite, entity_names, vista};
 use clap::{Arg, Command};
 use vantage_cli_util::render_records;
 use vantage_dataset::prelude::*;
-use vantage_vista::Vista;
+use vantage_vista::{Capability, Vista};
 
 #[tokio::main]
 async fn main() {
@@ -87,20 +87,12 @@ fn print_capabilities(vista: &Vista) {
     println!(
         "Capabilities for '{}' (driver: {}):",
         vista.name(),
-        vista.driver()
+        vista.driver_name()
     );
-    println!("  list/get      yes (always)");
-    println!("  count         {}", yes_no(c.can_count));
-    println!("  add (insert)  {}", yes_no(c.can_insert));
-    println!("  update        {}", yes_no(c.can_update));
-    println!("  delete        {}", yes_no(c.can_delete));
-    println!("  subscribe     {}", yes_no(c.can_subscribe));
-    println!("  invalidate    {}", yes_no(c.can_invalidate));
-    println!("  order         {}", yes_no(c.can_order));
-    println!("  search        {}", yes_no(c.can_search));
-    println!("  page-size     {}", yes_no(c.can_set_page_size));
-    println!("  fetch_page    {}", yes_no(c.can_fetch_page));
-    println!("  fetch_next    {}", yes_no(c.can_fetch_next));
+    println!("  {:<18}yes (always)", "list/get/count");
+    for capability in Capability::iter() {
+        println!("  {:<18}{}", capability.as_str(), yes_no(c.has(capability)));
+    }
 }
 
 fn yes_no(flag: bool) -> &'static str {
@@ -133,14 +125,7 @@ async fn handle_commands(vista: Vista, commands: Vec<String>) -> vantage_core::R
                 None => println!("No records found"),
             },
             "count" => {
-                if !vista.capabilities().can_count {
-                    println!(
-                        "'{}' does not support counting — skipping (try 'list' instead).",
-                        vista.name()
-                    );
-                    continue;
-                }
-                let count = vista.get_count().await?;
+                let count = vista.count().await?;
                 println!("{} records", count);
             }
             "add" => {
@@ -153,7 +138,7 @@ async fn handle_commands(vista: Vista, commands: Vec<String>) -> vantage_core::R
                 let json_str = &commands[i];
                 i += 1;
 
-                if !vista.capabilities().can_insert {
+                if !vista.capabilities().has(Capability::Insert) {
                     println!(
                         "'{}' is read-only — insert is not supported by this source.",
                         vista.name()
@@ -186,7 +171,7 @@ async fn handle_commands(vista: Vista, commands: Vec<String>) -> vantage_core::R
                 let id = commands[i].clone();
                 i += 1;
 
-                if !vista.capabilities().can_delete {
+                if !vista.capabilities().has(Capability::Delete) {
                     println!(
                         "'{}' is read-only — delete is not supported by this source.",
                         vista.name()

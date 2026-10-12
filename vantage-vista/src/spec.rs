@@ -10,8 +10,8 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use vantage_core::Result;
 
-use crate::column::Column;
-use crate::reference::{ContainedKind, ReferenceKind};
+use crate::column::{Column, ColumnFlag};
+use crate::reference::{JoinKey, ReferenceKind};
 
 mod lowering;
 pub use lowering::{SpecResolver, resolve_base_spec};
@@ -42,8 +42,8 @@ pub struct VistaSpec<T = NoExtras, C = NoExtras, R = NoExtras> {
     pub columns: IndexMap<String, ColumnSpec<C>>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub references: IndexMap<String, ReferenceSpec<R>>,
-    /// Contained (embedded-in-row) relations, keyed by relation name. Each is
-    /// lowered into a `with_contained_one`/`with_contained_many` registration.
+    /// Contained (embedded-in-row) relations, keyed by relation name. Each
+    /// becomes a reference of a contained kind.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub contained: IndexMap<String, ContainedYaml<C>>,
     #[serde(flatten, default)]
@@ -65,9 +65,9 @@ pub struct VistaSpec<T = NoExtras, C = NoExtras, R = NoExtras> {
 pub struct ContainedYaml<C = NoExtras> {
     /// Column on the parent row holding the embedded object (one) or array (many).
     pub host_column: String,
-    /// `contains_one` or `contains_many`.
-    #[serde(default)]
-    pub kind: ContainedKind,
+    /// `contains_one` (the default) or `contains_many`.
+    #[serde(default = "contains_one")]
+    pub kind: ReferenceKind,
     /// Field used as each contained record's id (`None` → positional index).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_column: Option<String>,
@@ -75,10 +75,15 @@ pub struct ContainedYaml<C = NoExtras> {
     pub columns: IndexMap<String, ColumnSpec<C>>,
 }
 
+fn contains_one() -> ReferenceKind {
+    ReferenceKind::ContainsOne
+}
+
 /// Per-column metadata in a `VistaSpec`.
 ///
-/// `flags` is open and unvalidated — the constants in [`crate::flags`]
-/// name the values understood by vista's own accessors.
+/// `flags` are snake_case names; a name vista doesn't know is kept as
+/// [`ColumnFlag::Other`] for the layer that owns the YAML schema to accept
+/// or reject.
 /// `references` holds the sugar form (`references: products`) when the
 /// foreign key is the column itself; full reference declarations live in
 /// the parent `VistaSpec::references` map.
@@ -91,7 +96,7 @@ pub struct ColumnSpec<C = NoExtras> {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub col_type: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub flags: Vec<String>,
+    pub flags: Vec<ColumnFlag>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub references: Option<ReferenceSugar>,
     /// Rhai script for a *lazy* computed column. Runs in Rust on each
@@ -133,8 +138,8 @@ impl<C: Default> ColumnSpec<C> {
         self
     }
 
-    pub fn with_flag(mut self, flag: impl Into<String>) -> Self {
-        self.flags.push(flag.into());
+    pub fn with_flag(mut self, flag: impl Into<ColumnFlag>) -> Self {
+        self.flags.push(ColumnFlag::from(flag.into().as_str()));
         self
     }
 
@@ -158,8 +163,10 @@ impl<C> ColumnSpec<C> {
         let Some(code) = &self.lazy else {
             return Ok(None);
         };
-        let mut column = Column::new(name, self.col_type.as_deref().unwrap_or("string"));
-        column.flags = self.flags.clone();
+        let column = self.flags.iter().cloned().fold(
+            Column::new(name, self.col_type.as_deref().unwrap_or("string")),
+            Column::with_flag,
+        );
         computed(column, code).map(Some)
     }
 }
@@ -205,17 +212,6 @@ pub struct ReferenceSpec<R = NoExtras> {
     pub keys: Vec<JoinKey>,
     #[serde(flatten, default)]
     pub driver: R,
-}
-
-/// One condition contributed by a reference during row-supplied
-/// traversal: read the parent (locked) row's `from` column and constrain
-/// the child's `to` column to that value.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct JoinKey {
-    /// Child column to constrain.
-    pub to: String,
-    /// Parent column whose value (from the locked source row) is used.
-    pub from: String,
 }
 
 /// Sugar form for inline column references.
@@ -267,7 +263,10 @@ dummy:
         assert_eq!(spec.name, "clients");
         assert_eq!(spec.columns.len(), 2);
         assert_eq!(spec.columns["id"].col_type.as_deref(), Some("int"));
-        assert_eq!(spec.columns["name"].flags, vec!["title", "searchable"]);
+        assert_eq!(
+            spec.columns["name"].flags,
+            vec![ColumnFlag::Title, ColumnFlag::Searchable]
+        );
         assert_eq!(spec.driver.dummy.path, "data/clients.csv");
     }
 
@@ -328,7 +327,7 @@ dummy:
         let spec: DummySpec = serde_yaml_ng::from_str(yaml).unwrap();
         let c = &spec.contained["lines"];
         assert_eq!(c.host_column, "lines");
-        assert_eq!(c.kind, ContainedKind::ContainsMany);
+        assert_eq!(c.kind, ReferenceKind::ContainsMany);
         assert_eq!(c.id_column.as_deref(), Some("line_id"));
         assert_eq!(c.columns.len(), 3);
         assert_eq!(c.columns["quantity"].col_type.as_deref(), Some("int"));

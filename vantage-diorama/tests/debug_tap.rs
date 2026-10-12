@@ -82,7 +82,7 @@ fn master() -> Vista {
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_id_column("id");
-    Vista::new("books", Box::new(MockShell::new().with_metadata(metadata)))
+    Vista::new("books", MockShell::new().with_metadata(metadata))
 }
 
 #[tokio::test]

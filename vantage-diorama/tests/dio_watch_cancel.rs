@@ -10,18 +10,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use async_trait::async_trait;
-use ciborium::Value as CborValue;
 use futures::Stream;
-use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_diorama::{Dio, Lens};
-use vantage_types::Record;
-use vantage_vista::reference::Reference;
-use vantage_vista::source::TableShell;
 use vantage_vista::{
-    Column, Vista, VistaCapabilities, VistaChange, VistaChangeStream, VistaMetadata,
-    mocks::MockShell,
+    Capability, Column, TableShell, Vista, VistaCapabilities, VistaChange, VistaChangeStream,
+    VistaMetadata, forward_table_shell, mocks::MockShell,
 };
 
 /// What the test can observe about the streams a shell handed out.
@@ -58,45 +52,16 @@ impl Drop for QuietStream {
 }
 
 /// A watchable master whose every `watch()` returns a [`QuietStream`].
+#[derive(Clone)]
 struct QuietShell {
-    inner: MockShell,
+    inner: Box<dyn TableShell>,
     capabilities: VistaCapabilities,
     probe: Arc<Probe>,
     end: bool,
 }
 
-#[async_trait]
-#[allow(clippy::ptr_arg)]
-impl TableShell for QuietShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        self.inner.columns()
-    }
-    fn references(&self) -> &IndexMap<String, Reference> {
-        self.inner.references()
-    }
-    fn id_column(&self) -> Option<&str> {
-        self.inner.id_column()
-    }
-    async fn list_vista_values(
-        &self,
-        vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.inner.list_vista_values(vista).await
-    }
-    async fn get_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        self.inner.get_vista_value(vista, id).await
-    }
-    async fn get_vista_some_value(
-        &self,
-        vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        self.inner.get_vista_some_value(vista).await
-    }
-    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+forward_table_shell!(QuietShell, inner, {
+    async fn watch(&self) -> Result<VistaChangeStream> {
         self.probe.opened.fetch_add(1, Ordering::SeqCst);
         Ok(Box::pin(QuietStream {
             probe: self.probe.clone(),
@@ -106,10 +71,7 @@ impl TableShell for QuietShell {
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }
-    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
-        self.inner.preview_query(vista)
-    }
-}
+});
 
 async fn quiet_dio(end: bool) -> Result<(Dio, Arc<Probe>)> {
     let inner = MockShell::new().with_metadata(
@@ -117,19 +79,16 @@ async fn quiet_dio(end: bool) -> Result<(Dio, Arc<Probe>)> {
             .with_column(Column::new("id", "String").with_flag("id"))
             .with_id_column("id"),
     );
-    let capabilities = VistaCapabilities {
-        can_subscribe: true,
-        ..inner.capabilities().clone()
-    };
+    let capabilities = inner.capabilities().with(Capability::Subscribe);
     let probe = Arc::new(Probe::default());
-    let shell = QuietShell {
+    let master = Vista::new("quiet", inner).map_shell(|inner| QuietShell {
         inner,
         capabilities,
         probe: probe.clone(),
         end,
-    };
+    });
     let lens = Arc::new(Lens::new().cache_in_memory().build().expect("lens"));
-    let dio = lens.make_dio(Vista::new("quiet", Box::new(shell))).await?;
+    let dio = lens.make_dio(master).await?;
     Ok((dio, probe))
 }
 

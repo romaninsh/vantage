@@ -5,7 +5,7 @@ use ciborium::Value as CborValue;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::Lens;
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, VistaFactory};
 
 const T: &str =
     "name: t\nid_column: id\ncolumns:\n  id: { type: string, flags: [id] }\n  n: { type: int }\n";
@@ -51,7 +51,7 @@ async fn dio_over_memory_stays_live_through_watch_alone() {
             .expect("lens"),
     );
     let dio = lens.make_dio(master).await.unwrap();
-    assert!(dio.master().can_watch());
+    assert!(dio.master().capabilities().has(Capability::Subscribe));
     dio.watch().await.unwrap();
 
     t.patch(

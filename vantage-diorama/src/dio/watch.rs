@@ -11,7 +11,7 @@ impl Dio {
     /// Start watching the master Vista and apply every change it pushes.
     ///
     /// Transparent by design: if the master advertises
-    /// [`can_watch`](vantage_vista::Vista::can_watch) (SurrealDB LIVE, Postgres
+    /// [`Subscribe`](vantage_vista::Capability::Subscribe) (SurrealDB LIVE, Postgres
     /// `LISTEN/NOTIFY`), this subscribes and pipes each
     /// [`VistaChange`](vantage_vista::VistaChange) through
     /// [`apply_change`](Self::apply_change) on a background task — no polling. If
@@ -34,7 +34,10 @@ impl Dio {
     /// dropping the stream with it, which releases the backend's subscription.
     pub async fn watch(&self) -> Result<()> {
         let master = self.master();
-        if !master.can_watch() {
+        if !master
+            .capabilities()
+            .has(vantage_vista::Capability::Subscribe)
+        {
             return Ok(());
         }
         let mut stream = master.watch().await?;

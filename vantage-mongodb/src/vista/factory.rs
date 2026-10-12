@@ -13,7 +13,7 @@ use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{SpecResolver, Vista, VistaCapabilities, VistaFactory};
+use vantage_vista::{Capability, SpecResolver, Vista, VistaCapabilities, VistaFactory};
 
 use crate::mongodb::impls::joins::table_joins;
 use crate::mongodb::{MongoDB, MongoView};
@@ -49,7 +49,7 @@ impl MongoVistaFactory {
     /// Force live updates on or off, instead of following whether the
     /// deployment supports change streams. Forcing them on is meant for a
     /// replica set whose topology probe failed (`Topology::Unknown`); a
-    /// standalone server still has no change streams, so `watch_vista` then
+    /// standalone server still has no change streams, so `watch` then
     /// fails on the server.
     pub fn with_change_streams(mut self, enabled: bool) -> Self {
         self.change_streams = Some(enabled);
@@ -142,44 +142,18 @@ impl MongoVistaFactory {
                 reference.build_script = Some(script);
             }
         }
-        // A pipeline or server-side view only reads; its rows are computed,
-        // so they neither traverse nor stream.
         let writable = table.data_source().is_stored();
-        let live = writable && self.live_enabled();
-        let source = MongoTableShell::new(
+        let capabilities = mongo_capabilities(writable, writable && self.live_enabled());
+        let shell = MongoTableShell::new(
             table,
-            VistaCapabilities {
-                can_count: true,
-                can_insert: writable,
-                can_update: writable,
-                can_delete: writable,
-                can_order: true,
-                can_search: true,
-                can_set_page_size: true,
-                can_fetch_page: true,
-                can_fetch_next: true,
-                can_fetch_window: true,
-                can_traverse_to_record: writable,
-                can_traverse_to_set: writable,
-                can_traverse_in_columns: writable,
-                can_filter_operators: true,
-                can_confine_writes: writable,
-                can_subscribe: live,
-                // Transactions need the same deployments as change streams.
-                can_import: live,
-                // Without the script engine a `build_script` is ignored and
-                // the foreign-key path serves. A pipeline view's rows reach
-                // other tables only through a script.
-                can_build_ref_via_script: cfg!(feature = "rhai"),
-                ..VistaCapabilities::default()
-            },
+            capabilities,
             metadata,
             column_paths,
             self.resolver.clone(),
             search_unflagged_columns,
             self.change_streams,
         );
-        Vista::new(name, Box::new(source))
+        Vista::new(name, shell)
     }
 
     /// Build a `Table<MongoDB, EmptyEntity>` from a spec. Refuses a reference
@@ -195,6 +169,38 @@ impl MongoVistaFactory {
         ref_keys::check_spec(spec, Some(&resolver))?;
         build_mongo_table(spec, self.mongo.clone(), Some(resolver))
     }
+}
+
+/// What a MongoDB vista offers. Every vista reads, narrows, orders, searches,
+/// pages by window and by keyset cursor, and traverses its references.
+///
+/// - `writable`: a stored collection. A pipeline view or a declared server
+///   view only reads, so it takes no writes.
+/// - `live`: a writable collection on a deployment with change streams
+///   (or forced on). Import needs a transaction, which those same
+///   deployments serve.
+pub(crate) fn mongo_capabilities(writable: bool, live: bool) -> VistaCapabilities {
+    let reads = [
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::NativeConditions,
+        Capability::Window,
+        Capability::Cursor,
+        Capability::Traverse,
+    ];
+    let writes = [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+    ];
+    let streams = [Capability::Subscribe, Capability::Import];
+    reads
+        .into_iter()
+        .chain(writes.into_iter().filter(|_| writable))
+        .chain(streams.into_iter().filter(|_| live))
+        .collect()
 }
 
 /// A spec with no columns, over the collection of the same name.
@@ -258,7 +264,7 @@ pub(crate) fn build_mongo_table(
         table.add_spec_columns(&spec.columns, build_column)?;
         table.set_spec_id_field(&spec.resolve_id_column_or("_id"))?;
     }
-    let mut table = table.with_spec_references(&spec.references, resolver, build_mongo_table);
+    let mut table = table.with_spec_references(&spec.references, resolver, build_mongo_table)?;
     // A dotted column name is a join through `has_one` references, which
     // must be declared first; resolving the chains now turns a broken one
     // into a build-time error.
@@ -337,11 +343,13 @@ pub(crate) fn build_column(
         None => None,
     };
     let column = TableColumn::from_spec(name, col_spec, alias, column_for_type)?;
-    Ok(if col_spec.has_flag(vantage_vista::flags::SEARCHABLE) {
-        column.with_flag(ColumnFlag::Searchable)
-    } else {
-        column
-    })
+    Ok(
+        if col_spec.has_flag(vantage_vista::ColumnFlag::Searchable) {
+            column.with_flag(ColumnFlag::Searchable)
+        } else {
+            column
+        },
+    )
 }
 
 /// YAML type alias → typed `Column` (then erased to `Column<AnyMongoType>`).
@@ -406,9 +414,7 @@ impl VistaFactory for MongoVistaFactory {
         if modify.is_some() {
             return Err(missing_rhai("modify"));
         }
-        let table = self.table_from_spec(&spec)?;
-        let column_paths = paths_from_table_columns(&table);
-        let ref_scripts = spec
+        let ref_scripts: IndexMap<String, String> = spec
             .references
             .iter()
             .filter_map(|(name, r)| {
@@ -416,6 +422,22 @@ impl VistaFactory for MongoVistaFactory {
                 Some((name.clone(), script))
             })
             .collect();
+        #[cfg(not(feature = "rhai"))]
+        if let Some(relation) = ref_scripts.keys().next() {
+            return Err(error!(
+                "reference declares a `rhai:` build script but vantage-mongodb was built without the `rhai` feature",
+                vista = spec.name.as_str(),
+                relation = relation.as_str()
+            ));
+        }
+        let table = self.table_from_spec(&spec)?;
+        // A spec that declares nothing beyond `_id` reads documents as stored,
+        // like a bare `from_table`, instead of projecting them down to `_id`.
+        let column_paths = if is_bare(&table) {
+            IndexMap::new()
+        } else {
+            paths_from_table_columns(&table)
+        };
         let vista = self.wrap_with_paths(table, column_paths, spec.name, false, ref_scripts);
 
         // Last step: a `modify:` script narrows or tweaks the built vista.
@@ -436,5 +458,40 @@ mod tests {
         let msg = missing_rhai("modify").to_string();
         assert!(msg.contains("`rhai` feature"), "{msg}");
         assert!(msg.contains("modify"), "{msg}");
+    }
+
+    #[cfg(not(feature = "rhai"))]
+    #[tokio::test]
+    async fn reference_scripts_without_rhai_fail_the_build() {
+        let client = mongodb::Client::with_uri_str("mongodb://localhost:27017")
+            .await
+            .unwrap();
+        let spec: MongoVistaSpec = serde_yaml_ng::from_str(
+            r#"
+name: client
+columns:
+  _id: { type: string, flags: [id] }
+references:
+  orders:
+    table: order
+    kind: has_many
+    foreign_key: client_id
+    mongo: { rhai: 'table("order")' }
+"#,
+        )
+        .unwrap();
+        let err = MongoDB::new(client, "unit")
+            .vista_factory()
+            .build_from_spec(spec)
+            .expect_err("a reference script needs the rhai feature");
+        assert!(err.to_string().contains("`rhai` feature"), "{err}");
+        assert_eq!(
+            err.context.get("vista").map(String::as_str),
+            Some("\"client\"")
+        );
+        assert_eq!(
+            err.context.get("relation").map(String::as_str),
+            Some("\"orders\"")
+        );
     }
 }

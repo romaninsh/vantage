@@ -51,7 +51,7 @@ fn master() -> Vista {
             record(&[("id", "eu-west-1.tfstate"), ("size", "7kb")]),
         )
         .with_metadata(meta(&["id", "size"]));
-    Vista::new("buckets", Box::new(shell))
+    Vista::new("buckets", shell)
 }
 
 /// Detail: the expensive per-file analysis (resources, serial), keyed by id.
@@ -74,7 +74,7 @@ fn detail() -> Vista {
             ]),
         )
         .with_metadata(meta(&["id", "resources", "serial"]));
-    Vista::new("tfstate-detail", Box::new(shell))
+    Vista::new("tfstate-detail", shell)
 }
 
 fn cell(scenery: &Arc<dyn vantage_diorama::TableScenery>, i: usize, key: &str) -> String {

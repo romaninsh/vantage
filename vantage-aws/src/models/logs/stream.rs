@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use vantage_table::table::Table;
 
+use crate::models::request_param;
 use crate::{AwsAccount, eq};
 
 use super::event::{LogEvent, events_table};
@@ -52,6 +53,7 @@ pub fn streams_table(aws: AwsAccount) -> Table<AwsAccount, LogStream> {
     .with_column_of::<i64>("lastIngestionTime")
     .with_title_column_of::<i64>("storedBytes")
     .with_column_of::<String>("uploadSequenceToken")
+    .with_column(request_param("logGroupName"))
 }
 
 impl LogStream {

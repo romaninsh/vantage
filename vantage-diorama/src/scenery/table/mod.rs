@@ -31,7 +31,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use tokio::sync::watch;
-use vantage_vista::VistaCapabilities;
+use vantage_vista::{Capability, VistaCapabilities};
 
 use crate::dio::{DioInner, Generation};
 
@@ -50,10 +50,19 @@ pub enum SortDir {
     Desc,
 }
 
+impl SortDir {
+    pub(crate) fn to_vista(self) -> vantage_vista::SortDirection {
+        match self {
+            SortDir::Asc => vantage_vista::SortDirection::Ascending,
+            SortDir::Desc => vantage_vista::SortDirection::Descending,
+        }
+    }
+}
+
 /// A non-equality filter condition applied **locally** over the cached rows —
 /// the fallback path when the master vista can't push the operator into its
 /// query (advertised via
-/// [`can_filter_operators`](vantage_vista::VistaCapabilities::can_filter_operators)).
+/// [`Capability::FilterOps`]).
 /// `value` carries a scalar for the scalar operators and a
 /// [`CborValue::Array`](ciborium::Value::Array) for `InSet` / `NotInSet`.
 /// Plain equality keeps using the lighter `where_eq` / `conditions` path.
@@ -199,7 +208,7 @@ pub trait TableScenery: Send + Sync {
     /// conditions. Same mechanics as [`set_search`](Self::set_search): a
     /// paged scenery carries the terms into every chunk fetch and the master
     /// pushes down what it can — equality always, richer operators when it
-    /// advertises `can_filter_operators`, dropping the rest with a warning;
+    /// advertises `FilterOps`, dropping the rest with a warning;
     /// an eager scenery evaluates them over its complete cache. Empty vec
     /// clears. Default no-op for wrappers that don't filter.
     fn set_filter_terms(&self, _terms: Vec<OpCondition>) {}
@@ -218,7 +227,7 @@ pub trait TableScenery: Send + Sync {
     fn set_search(&self, _query: Option<String>) {}
 
     /// Whether [`Self::set_search`] will do something honest here: a paged
-    /// scenery needs the master's `can_search` (a local filter would silently
+    /// scenery needs the master's `Search` (a local filter would silently
     /// search only the loaded slice); an eager one always can.
     fn search_supported(&self) -> bool {
         false
@@ -243,8 +252,8 @@ pub trait TableScenery: Send + Sync {
 
     /// Snapshot of the master Vista's capability flags taken at open
     /// time. UI delegates branch on these to pick the right page
-    /// primitive: `can_fetch_page` → drive everything through
-    /// `set_viewport`; cursor-only (`can_fetch_next`) → call
+    /// primitive: `Window` → drive everything through
+    /// `set_viewport`; cursor-only (`Cursor`) → call
     /// `request_load_more` to walk forward.
     fn master_capabilities(&self) -> &VistaCapabilities;
 
@@ -431,7 +440,7 @@ impl TableScenery for TableSceneryImpl {
                     SortDir::Asc => "ascending",
                     SortDir::Desc => "descending",
                 },
-                if self.inner.master_capabilities.can_order {
+                if self.inner.master_capabilities.has(Capability::Order) {
                     "pushed to the source".to_string()
                 } else {
                     format!(
@@ -522,7 +531,7 @@ impl TableScenery for TableSceneryImpl {
                 "search",
                 "\"{}\" — {}",
                 q,
-                if self.inner.master_capabilities.can_search {
+                if self.inner.master_capabilities.has(Capability::Search) {
                     "pushed to the source".to_string()
                 } else {
                     format!(
@@ -560,7 +569,7 @@ impl TableScenery for TableSceneryImpl {
 
     fn search_supported(&self) -> bool {
         if self.inner.paged {
-            self.inner.master_capabilities.can_search
+            self.inner.master_capabilities.has(Capability::Search)
         } else {
             true
         }

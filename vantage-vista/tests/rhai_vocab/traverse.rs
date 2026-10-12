@@ -11,8 +11,8 @@ use vantage_memory::vista::Catalog;
 use vantage_rhai::{Host, Limits};
 use vantage_types::Record;
 use vantage_vista::{
-    Column, DataVocab, Reference, ReferenceKind, TargetResolver, Terminals, Vista, VistaMetadata,
-    Writes, preview_script,
+    Column, ColumnFlag, DataVocab, JoinKey, Reference, ReferenceKind, TargetResolver, Terminals,
+    Vista, VistaMetadata, Writes, preview_script,
 };
 
 use super::support::{json, read_write, run, store};
@@ -43,34 +43,34 @@ fn shop() -> TargetResolver {
     catalog.register(
         "client",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
-            .with_column(Column::new("name", "String").with_flag("orderable"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+            .with_column(Column::new("name", "String").with_flag(ColumnFlag::Orderable))
             .with_id_column("id")
             .with_reference(Reference::new(
                 "orders",
                 "order",
                 ReferenceKind::HasMany,
-                "client",
+                vec![JoinKey::new("id", "client")],
             )),
     );
     catalog.register(
         "order",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
             .with_column(Column::new("client", "String"))
             .with_id_column("id")
             .with_reference(Reference::new(
                 "client",
                 "client",
                 ReferenceKind::HasOne,
-                "client",
+                vec![JoinKey::to_target_id("client")],
             )),
     );
     Arc::new(move |name: &str| {
         let metadata = catalog.get(name).expect("shop table");
         let table = catalog.store().table(name);
         let shell = MemoryTableShell::new(table, metadata, catalog.clone());
-        Ok(Vista::new(name, Box::new(shell)))
+        Ok(Vista::new(name, shell))
     })
 }
 
