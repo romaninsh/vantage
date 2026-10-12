@@ -57,7 +57,7 @@ impl CsvVistaFactory {
             .ok_or_else(|| error!("csv.path must have a parent", path = csv_path.display()))?
             .to_path_buf();
 
-        let id_column = spec.resolve_id_column();
+        let id_column = spec.resolve_id_column("id");
         let csv = Csv::new(parent).with_id_column(&id_column);
         let mut table = Table::<Csv, EmptyEntity>::new(stem, csv);
         table.add_spec_columns(&spec.columns, build_column)?;

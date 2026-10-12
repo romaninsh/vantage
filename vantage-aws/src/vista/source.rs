@@ -9,8 +9,9 @@
 //! and shares the account. AWS is read-only: no write is advertised.
 //!
 //! AWS list APIs expose no COUNT, offset or point-get, so `count` and `get`
-//! materialise the listing and count or filter it in memory, and offset
-//! windows are refused. [`crate::AwsAccount::with_max_pages`] caps the walk.
+//! materialise the listing and count or filter it in memory. The leading
+//! window is cut from the listing; any other offset is refused.
+//! [`crate::AwsAccount::with_max_pages`] caps the walk.
 //! S3 object listings page by key (see [`cursor`]).
 
 pub(crate) mod cursor;
@@ -25,8 +26,8 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, FilterOp, Page, Preview,
-    Reference as VistaReference, TableShell, Vista, VistaCapabilities, VistaMetadata, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, unknown_relation, unsupported,
 };
 
 use crate::AwsAccount;
@@ -63,16 +64,8 @@ impl AwsTableShell {
 
 #[async_trait]
 impl TableShell for AwsTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -83,11 +76,12 @@ impl TableShell for AwsTableShell {
         "aws"
     }
 
-    /// The RPC a read would dispatch, decoded out of the table name, plus
-    /// the conditions that shape it.
+    /// The RPC a read would dispatch, decoded out of the table name, with the
+    /// conditions that fill its path placeholders and request parameters,
+    /// and how many pages it walks.
     fn preview(&self) -> Preview {
         let table_name = self.table.table_name();
-        let preview = Preview::new("aws");
+        let preview = Preview::new();
         let op = match crate::dispatch::parse_table_name(table_name) {
             Ok(op) => op,
             Err(e) => return preview.with_note(format!("{table_name}: {e}")),
@@ -98,22 +92,22 @@ impl TableShell for AwsTableShell {
             .map(|c| format!("{} = {:?}", c.field(), c))
             .collect();
         let paging = if op.cursor.is_some() {
-            "every page is fetched"
+            "every page"
         } else {
-            "single page"
+            "first page"
         };
-        preview
-            .with_query(format!(
-                "{:?} {} {} [{}]",
-                op.protocol,
-                op.service,
-                op.target,
-                conditions.join(", ")
-            ))
-            .with_note(format!(
-                "{paging}; a condition fills a path placeholder or becomes a request \
-                 parameter, and is applied to the rows that carry its field"
-            ))
+        let preview = preview.with_query(format!(
+            "{:?} {} {} [{}] ({paging})",
+            op.protocol,
+            op.service,
+            op.target,
+            conditions.join(", ")
+        ));
+        if conditions.is_empty() {
+            preview
+        } else {
+            preview.with_note("conditions on row fields are also applied to the fetched rows")
+        }
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -130,9 +124,14 @@ impl TableShell for AwsTableShell {
         Ok(self.table.list_values().await?.len() as i64)
     }
 
-    /// AWS pages by continuation token, never by offset.
-    async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
-        unsupported(Capability::Window)
+    /// AWS pages by continuation token, never by offset: the leading window
+    /// is cut from the listing.
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        Ok(Page::from_listing(
+            self.table.list_values().await?,
+            offset,
+            limit,
+        ))
     }
 
     async fn fetch_cursor(
@@ -140,9 +139,6 @@ impl TableShell for AwsTableShell {
         token: Option<CborValue>,
         limit: usize,
     ) -> Result<(Page, Option<CborValue>)> {
-        if !self.capabilities.has(Capability::Cursor) {
-            return unsupported(Capability::Cursor);
-        }
         self.fetch_after(token, limit).await
     }
 
@@ -168,11 +164,11 @@ impl TableShell for AwsTableShell {
             .metadata
             .references
             .get(relation)
-            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())?;
+            .ok_or_else(|| unknown_relation(relation))?;
         let target = self.table.get_ref_target_erased(relation)?;
         let target = AwsVistaFactory::new(self.table.data_source().clone()).from_table(target)?;
         match row {
-            Some(row) => reference.narrow(target, row, CborValue::clone),
+            Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
     }

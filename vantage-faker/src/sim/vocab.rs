@@ -1,7 +1,7 @@
 //! The verbs a sim script can call.
 //!
 //! **Data** — `table()` and `table(name)` return a
-//! [`Handle`](vantage_vista::Handle) over the engine's store; `table()`
+//! [`Handle`](vantage_vista::rhai::Handle) over the engine's store; `table()`
 //! defaults to the def's own table. Either form narrows (`where`, `sort`,
 //! `search`, `limit`) and resolves (`insert`, `upsert`, `patch`, `delete`,
 //! `get`, `ids`, `count`, `list`, `first`) exactly like vantage-vista's
@@ -50,24 +50,22 @@
 //! **Misc** — `sim_id()`, `sim_name()`; `print` / `debug` go to the log.
 //! The spawner's (or `spawn` caller's) args are the variable `args`.
 
-mod counted;
 mod random;
 mod row;
 mod tables;
 mod time;
 
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::AtomicBool;
 
-use vantage_memory::MemoryStore;
-use vantage_memory::vista::Catalog;
 use vantage_rhai::Vocab;
 use vantage_rhai::rhai::{Dynamic, Engine};
-use vantage_vista::DataVocab;
+use vantage_vista::VistaResolver;
+use vantage_vista::rhai::{DataVocab, Terminals, Writes};
 
 use super::current::{self, VerbResult};
-use crate::FakerColumn;
+
+pub(super) use tables::memory_resolver;
 
 /// Register every verb and the progress hook on `engine`. The operation
 /// budget is per stretch between sleeps, enforced by the hook, so the
@@ -75,10 +73,7 @@ use crate::FakerColumn;
 pub(super) fn register(
     engine: &mut Engine,
     stop: Arc<AtomicBool>,
-    store: MemoryStore,
-    catalog: Catalog,
-    columns: Arc<HashMap<String, Vec<FakerColumn>>>,
-    write_counter: Arc<AtomicU64>,
+    resolver: Arc<dyn VistaResolver>,
 ) {
     engine.set_max_operations(0);
     engine.set_max_call_levels(super::SIM_CALL_LEVELS);
@@ -87,12 +82,11 @@ pub(super) fn register(
     engine.on_print(|s| tracing::info!(target: "faker_sim", "{s}"));
     engine.on_debug(|s, _, _| tracing::debug!(target: "faker_sim", "{s}"));
 
-    DataVocab::read_write(Some(tables::memory_resolver(
-        store,
-        catalog,
-        columns,
-        write_counter,
-    )))
+    DataVocab::new(Terminals::ReadWrite {
+        limit: None,
+        writes: Writes::Allowed,
+    })
+    .with_resolver(resolver)
     .register(engine);
     tables::register(engine);
     random::register(engine);

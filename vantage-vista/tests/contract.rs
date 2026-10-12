@@ -5,9 +5,14 @@ use ciborium::Value as CborValue;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Column, ColumnFlag, Condition, JoinKey, Reference, ReferenceKind, TableShell,
-    Vista, VistaCapabilities, VistaMetadata, contract, mocks::MockShell,
+    Capability, Column, ColumnFlag, Condition, JoinKey, Reference, TableShell, Vista,
+    VistaCapabilities, VistaMetadata, contract, mocks::MockShell,
 };
+
+#[path = "contract/dotted.rs"]
+mod dotted;
+#[path = "contract/window.rs"]
+mod window;
 
 fn t(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -88,11 +93,10 @@ fn joined_shell() -> MockShell {
         )
         .with_column(Column::new("category", "String"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_one(
             "category",
             "category",
-            ReferenceKind::HasOne,
-            vec![JoinKey::new("category", "id")],
+            JoinKey::new("category", "id"),
         ));
     product_shell()
         .with_metadata(metadata)
@@ -206,10 +210,7 @@ fn orders() -> Vista {
                 )
                 .with_id_column("id"),
         )
-        .with_contained(
-            Reference::contained("lines", ReferenceKind::ContainsMany, "lines"),
-            line_schema,
-        );
+        .with_contained(Reference::contains_many("lines", "lines"), line_schema);
     let line = |product: &str| cmap(&[("product", t(product)), ("quantity", 1.into())]);
     let order = rec(&[
         ("id", t("order1")),

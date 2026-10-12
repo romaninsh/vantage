@@ -1,4 +1,4 @@
-//! How a capped read picks between a leading window and a full list.
+//! A capped read is a leading window, never a truncated full list.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -6,7 +6,7 @@ use vantage_core::{Result, error};
 use vantage_types::Record;
 
 use crate::mocks::MockShell;
-use crate::rhai::read::fetch_capped;
+use crate::rhai::read::fetch_rows;
 use crate::{
     Capability, Page, TableShell, Vista, VistaCapabilities, forward_table_shell, unsupported,
 };
@@ -51,27 +51,22 @@ fn vista(caps: VistaCapabilities) -> Vista {
     Vista::new("t", rows().with_capabilities(caps))
 }
 
-async fn capped_ids(vista: &Vista) -> Vec<String> {
-    let rows = fetch_capped(vista, Some(2)).await.unwrap();
-    rows.into_iter().map(|(id, _)| id).collect()
-}
-
 #[tokio::test]
 async fn a_leading_window_serves_a_shell_without_window() {
     let vista = vista(VistaCapabilities::new()).map_shell(|inner| NoList { inner });
-    assert_eq!(capped_ids(&vista).await, ["a", "b"]);
+    let rows = fetch_rows(&vista, Some(2)).await.unwrap();
+    let ids: Vec<String> = rows.into_iter().map(|(id, _)| id).collect();
+    assert_eq!(ids, ["a", "b"]);
 }
 
 #[tokio::test]
-async fn a_refused_window_falls_back_to_a_truncated_list() {
-    let vista = vista(VistaCapabilities::new()).map_shell(|inner| NoWindow { inner });
-    assert_eq!(capped_ids(&vista).await, ["a", "b"]);
-}
-
-#[tokio::test]
-async fn an_advertised_window_that_refuses_is_an_error() {
-    let caps = VistaCapabilities::new().with(Capability::Window);
-    let vista = vista(caps).map_shell(|inner| NoWindow { inner });
-    let err = fetch_capped(&vista, Some(2)).await.unwrap_err();
-    assert!(err.is_unsupported(), "{err}");
+async fn a_refused_leading_window_is_an_error() {
+    for caps in [
+        VistaCapabilities::new(),
+        VistaCapabilities::new().with(Capability::Window),
+    ] {
+        let vista = vista(caps).map_shell(|inner| NoWindow { inner });
+        let err = fetch_rows(&vista, Some(2)).await.unwrap_err();
+        assert!(err.is_unsupported(), "{err}");
+    }
 }

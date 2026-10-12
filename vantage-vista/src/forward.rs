@@ -22,14 +22,14 @@ pub use shell::ForwardShell;
 ///
 /// ```ignore
 /// #[derive(Clone)]
-/// struct Logged { inner: Box<dyn TableShell>, columns: IndexMap<String, Column> }
+/// struct Logged { inner: Box<dyn TableShell>, metadata: VistaMetadata }
 ///
 /// vantage_vista::forward_table_shell!(Logged, inner, {
-///     fn columns(&self) -> &IndexMap<String, Column> { &self.columns }
+///     fn metadata(&self) -> &VistaMetadata { &self.metadata }
 ///     // reads, writes, get_ref...
 /// });
 ///
-/// let wrapped = vista.map_shell(|inner| Logged { inner, columns });
+/// let wrapped = vista.map_shell(|inner| Logged { inner, metadata });
 /// ```
 #[macro_export]
 macro_rules! forward_table_shell {

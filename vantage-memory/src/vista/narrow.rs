@@ -75,7 +75,10 @@ impl MemoryTableShell {
     pub(super) fn narrow_by(&mut self, condition: &Condition) -> Result<()> {
         let column = condition.column.as_str();
         self.check_column(column)?;
-        if condition.op == FilterOp::Eq {
+        // A dotted path into a map has no flat cell to fill, so writes are
+        // left to the set check; a column named with a dot is a flat cell.
+        let flat = !column.contains('.') || self.metadata.columns.contains_key(column);
+        if condition.op == FilterOp::Eq && flat {
             let value = self.affinity(column).conform(&condition.value);
             self.invariants.insert(column.to_string(), value);
         }

@@ -137,6 +137,35 @@ async fn an_untyped_foreign_key_seeded_with_integers_joins() {
     assert_joins("{}").await;
 }
 
+/// A reference with `keys:` narrows the target by every pair.
+#[tokio::test]
+async fn a_multi_key_reference_matches_every_key() {
+    let store = MemoryStore::new();
+    let rows: Vec<serde_json::Value> = serde_yaml_ng::from_str(
+        "- { id: d1, product: p1, version: v1 }\n- { id: d2, product: p1, version: v2 }\n\
+         - { id: d3, product: p2, version: v1 }\n",
+    )
+    .unwrap();
+    vantage_memory::seed::load(&store.table("deployment"), rows).unwrap();
+    let f = MemoryVistaFactory::new(store.clone());
+    let release = f
+        .from_yaml(
+            "name: release\nid_column: id\ncolumns:\n  id: { flags: [id] }\n  product_id: {}\n  \
+             version_id: {}\nreferences:\n  deployments: { table: deployment, kind: has_many, \
+             keys: [{ from: product_id, to: product }, { from: version_id, to: version }] }\n",
+        )
+        .unwrap();
+    let row: Record<CborValue> = [
+        ("id".to_string(), text("r1")),
+        ("product_id".to_string(), text("p1")),
+        ("version_id".to_string(), text("v1")),
+    ]
+    .into_iter()
+    .collect();
+    let deployments = release.get_ref("deployments", Some(&row)).unwrap();
+    assert_eq!(ids(&deployments).await, ["d1"]);
+}
+
 /// `order` is loaded straight into the store, so the catalog has no
 /// metadata for it and its `client_id` cells keep their integer form.
 #[tokio::test]

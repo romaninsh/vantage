@@ -27,9 +27,8 @@ use tempfile::TempDir;
 use vantage_diorama::{
     Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
 };
-use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
-use vantage_vista_factory::VistaCatalog;
+use vantage_vista::{Catalog, Vista, VistaResolver};
 
 /// Master: two rows, cheap columns only.
 fn master_vista() -> Vista {
@@ -53,16 +52,11 @@ fn partial_detail_vista() -> Vista {
 /// A catalog whose loader counts how many times the detail vista is built —
 /// `Augmentation::base_vista` builds one per fetch, so this is an exact count
 /// of detail fetches attempted.
-fn counting_catalog(hits: Arc<AtomicUsize>) -> Arc<VistaCatalog> {
-    let mut c = VistaCatalog::new();
-    c.register(
-        "runs-detail",
-        Arc::new(move || {
-            hits.fetch_add(1, Ordering::SeqCst);
-            Ok(partial_detail_vista())
-        }),
-    );
-    Arc::new(c)
+fn counting_catalog(hits: Arc<AtomicUsize>) -> Arc<dyn VistaResolver> {
+    Arc::new(Catalog::new().with("runs-detail", move |_: &str| {
+        hits.fetch_add(1, Ordering::SeqCst);
+        Ok(partial_detail_vista())
+    }))
 }
 
 fn aug() -> Augmentation {

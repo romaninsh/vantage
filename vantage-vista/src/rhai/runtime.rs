@@ -6,11 +6,14 @@
 //! inside [`tokio::task::spawn_blocking`], so each terminal verb can drive its
 //! future through the [bridge](super::block_on) on the runtime.
 
+use std::sync::Arc;
+
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 
 use super::handle::Handle;
-use super::vocab::{DataVocab, TargetResolver, Writes};
+use super::vocab::{DataVocab, Terminals, Writes};
+use crate::VistaResolver;
 
 /// Lower bound applied to a requested row limit.
 pub const MIN_LIMIT: usize = 1;
@@ -35,18 +38,18 @@ fn run_once(host: &Host, script: &str) -> Result<Dynamic, String> {
 /// back as the script error's text.
 pub async fn run_script(
     script: String,
-    resolver: TargetResolver,
+    resolver: Arc<dyn VistaResolver>,
     limit: usize,
     writes: Writes,
 ) -> Result<serde_json::Value, String> {
     let limit = limit.clamp(MIN_LIMIT, MAX_LIMIT);
     tokio::task::spawn_blocking(move || {
+        let terminals = Terminals::ReadWrite {
+            limit: Some(limit),
+            writes,
+        };
         let host = Host::builder(Limits::background())
-            .vocab(DataVocab::read_write_with(
-                Some(resolver),
-                Some(limit),
-                writes,
-            ))
+            .vocab(DataVocab::new(terminals).with_resolver(resolver))
             .build();
         run_once(&host, &script).map(|v| vantage_rhai::to_json(&v))
     })
@@ -64,16 +67,17 @@ pub async fn run_script(
 /// ```
 ///
 /// Returns the [`Preview`](crate::Preview) from
-/// [`TableShell::preview`](crate::TableShell::preview), as JSON. A `ref`
+/// [`TableShell::preview`](crate::TableShell::preview), as JSON, plus a
+/// `driver` field from [`Vista::driver_name`](crate::Vista::driver_name). A `ref`
 /// step still reads the rows it traverses from, through the resolver and the
 /// [bridge](super::block_on), so an async caller runs this under
 /// [`tokio::task::spawn_blocking`].
 pub fn preview_script(
     script: String,
-    resolver: TargetResolver,
+    resolver: Arc<dyn VistaResolver>,
 ) -> Result<serde_json::Value, String> {
     let host = Host::builder(Limits::background())
-        .vocab(DataVocab::describe(Some(resolver.clone())))
+        .vocab(DataVocab::new(Terminals::Describe).with_resolver(resolver.clone()))
         .build();
     let handle = run_once(&host, &script)?
         .try_cast::<Handle>()
@@ -83,6 +87,12 @@ pub fn preview_script(
          terminal verbs (`list`, `count`, `first`)"
                 .to_string()
         })?;
-    let vista = handle.resolve(Some(&resolver)).map_err(|e| e.to_string())?;
-    serde_json::to_value(vista.preview()).map_err(|e| e.to_string())
+    let vista = handle
+        .resolve(Some(resolver.as_ref()))
+        .map_err(|e| e.to_string())?;
+    let mut out = serde_json::to_value(vista.preview()).map_err(|e| e.to_string())?;
+    if let Some(fields) = out.as_object_mut() {
+        fields.insert("driver".into(), vista.driver_name().into());
+    }
+    Ok(out)
 }

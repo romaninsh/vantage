@@ -4,6 +4,7 @@ use vantage_core::{Result, error};
 use crate::{
     capabilities::{Capability, VistaCapabilities, unsupported},
     column::{Column, ColumnFlag},
+    metadata::VistaMetadata,
     page::Preview,
     query::VistaQuery,
     reference::Reference,
@@ -105,16 +106,20 @@ impl Vista {
 
     // ---- metadata ----------------------------------------------------------
 
+    fn metadata(&self) -> &VistaMetadata {
+        self.shell.metadata()
+    }
+
     pub fn columns(&self) -> &IndexMap<String, Column> {
-        self.shell.columns()
+        &self.metadata().columns
     }
 
     pub fn column(&self, name: &str) -> Option<&Column> {
-        self.shell.columns().get(name)
+        self.columns().get(name)
     }
 
     pub fn id_column(&self) -> Option<&str> {
-        self.shell.id_column()
+        self.metadata().id_column.as_deref()
     }
 
     /// Columns flagged [`Title`](ColumnFlag::Title), in declaration order.
@@ -127,11 +132,21 @@ impl Vista {
     }
 
     pub fn references(&self) -> &IndexMap<String, Reference> {
-        self.shell.references()
+        &self.metadata().references
     }
 
     pub fn reference(&self, name: &str) -> Option<&Reference> {
-        self.shell.references().get(name)
+        self.references().get(name)
+    }
+
+    /// `unsupported(capability)` unless the shell advertises it: how `Vista`
+    /// gates a read or write before the shell is called.
+    pub(crate) fn require(&self, capability: Capability) -> Result<()> {
+        if self.capabilities().has(capability) {
+            Ok(())
+        } else {
+            unsupported(capability)
+        }
     }
 
     /// A write is refused unless the shell advertises `capability`, whatever
@@ -139,9 +154,7 @@ impl Vista {
     /// takes no writes. Writes through a narrowed Vista also need a shell
     /// that keeps them inside the set.
     pub(crate) fn require_write(&self, capability: Capability, verb: &'static str) -> Result<()> {
-        if !self.capabilities().has(capability) {
-            return unsupported(capability);
-        }
+        self.require(capability)?;
         if !self.is_narrowed() || self.capabilities().has(Capability::ConfineWrites) {
             return Ok(());
         }

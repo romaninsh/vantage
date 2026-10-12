@@ -11,7 +11,7 @@ columns:
     type: string
   UserName:
     type: string
-    flags: [hidden]
+    flags: [hidden, request_param]
 cmd:
   rhai: |
     let args = ["iam", "list-groups-for-user", "--output", "json"];

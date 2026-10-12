@@ -1,22 +1,25 @@
 //! The `Record` type's Rhai registration: `record()`/`record(id)` on
 //! `Table`, field access, staging and inspection verbs.
 
-use vantage_rhai::rhai::{Array, Dynamic, Engine, EvalAltResult, Map as RhaiMap};
+use std::sync::Arc;
+
+use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 
 use super::RecordDraft;
 use super::dotted::set_dotted;
-use super::save::{tracked, tracked_delete, try_save};
+use super::flash::{tracked, try_delete, try_flash};
+use crate::VistaResolver;
 use crate::rhai::convert::{cbor_to_dynamic, dynamic_to_cbor};
 use crate::rhai::handle::Handle;
 use crate::rhai::read::{RhaiResult, id_string, rhai_err};
-use crate::rhai::vocab::{TargetResolver, Writes};
+use crate::rhai::vocab::Writes;
 
 /// Register the `Record` type and its verbs, plus `record()`/`record(id)` on
-/// `Table`. `writes` governs `save()`/`delete()`; pass [`Writes::Denied`]
-/// for a `Terminals::Read` host so the record exists but every write throws.
+/// `Table`. `writes` governs `flash()`/`delete()`: under [`Writes::Denied`]
+/// the record exists but every write throws.
 pub(crate) fn register_record(
     engine: &mut Engine,
-    resolver: Option<TargetResolver>,
+    resolver: Option<Arc<dyn VistaResolver>>,
     writes: Writes,
 ) {
     engine.register_type_with_name::<RecordDraft>("Record");
@@ -62,7 +65,7 @@ pub(crate) fn register_record(
     engine.register_fn("revert", |r: &mut RecordDraft, col: &str| {
         r.inner.lock().unwrap().changes.shift_remove(col);
     });
-    // Returns the record so a new row chains: `table("t").record().set(#{…}).save()`.
+    // Returns the record so a new row chains: `table("t").record().set(#{…}).flash()`.
     engine.register_fn(
         "set",
         |r: &mut RecordDraft, map: RhaiMap| -> RhaiResult<RecordDraft> {
@@ -76,11 +79,11 @@ pub(crate) fn register_record(
     engine.register_fn("rejection", |r: &mut RecordDraft| -> Dynamic {
         rejection_of(r)
     });
-    engine.register_fn("save", |r: &mut RecordDraft| -> RhaiResult<Dynamic> {
-        tracked(r, try_save)
+    engine.register_fn("flash", |r: &mut RecordDraft| -> RhaiResult<Dynamic> {
+        tracked(r, try_flash)
     });
     engine.register_fn("delete", |r: &mut RecordDraft| -> RhaiResult<bool> {
-        tracked_delete(r)
+        tracked(r, try_delete)
     });
 }
 
@@ -95,15 +98,15 @@ fn get_field(r: &RecordDraft, col: &str) -> Dynamic {
 }
 
 fn id_column(r: &RecordDraft) -> RhaiResult<String> {
-    let (handle, resolver) = {
+    let (handle, gate) = {
         let guard = r.inner.lock().unwrap();
         if let Some(col) = &guard.id_column {
             return Ok(col.clone());
         }
-        (guard.handle.clone(), guard.resolver.clone())
+        (guard.handle.clone(), guard.gate.clone())
     };
     // Resolved without the lock: the resolver may block on I/O.
-    let vista = handle.write_target(resolver.as_ref()).map_err(rhai_err)?;
+    let vista = handle.write_target(gate.resolver()).map_err(rhai_err)?;
     let col = vista.id_column().unwrap_or("id").to_string();
     r.inner.lock().unwrap().id_column = Some(col.clone());
     Ok(col)
@@ -162,6 +165,8 @@ fn baseline_map(r: &RecordDraft) -> RhaiMap {
     map
 }
 
+/// `#{ message }` for the last failed write, `()` once a write succeeds. A
+/// draft writes one row as a whole, so it has no per-field errors to list.
 fn rejection_of(r: &RecordDraft) -> Dynamic {
     let guard = r.inner.lock().unwrap();
     match &guard.rejection {
@@ -169,7 +174,6 @@ fn rejection_of(r: &RecordDraft) -> Dynamic {
         Some(msg) => {
             let mut map = RhaiMap::new();
             map.insert("message".into(), Dynamic::from(msg.clone()));
-            map.insert("fields".into(), Dynamic::from_array(Array::new()));
             Dynamic::from_map(map)
         }
     }

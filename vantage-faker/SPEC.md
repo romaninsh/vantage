@@ -136,11 +136,11 @@ Row ids are strings throughout: verbs return them as strings and take them as st
   - `MAX_STILL_SLEEPS`
   - panic containment in `Release::drop`
 - **Stats.** `SimEngine::stats()` keeps its fields; `SimStats` is `#[non_exhaustive]`.
-  - `writes` counts sim verb calls:
-    - `insert` always counts (when it succeeds);
-    - `upsert` counts when it returns `Inserted` or `Updated` (not `Unchanged`);
-    - `patch`, `set` and `delete` count when the row existed, even if the values were unchanged.
-  - Seeding and the app's own writes are not counted.
+  - `writes` is read from the store's per-table write counters, minus their total when `start()` began, so it counts every write to the store's tables during the run, warm start included:
+    - an `insert` counts when it succeeds, and an import counts each row it adds;
+    - an `upsert`, `patch`, `set` or `replace` counts when it changed the row;
+    - a `delete` counts when the row existed.
+  - Seeding before `start()` is not counted. The app's own writes to the same store during the run are counted, since they move the same counters.
 
 ## Config types
 

@@ -1,11 +1,14 @@
 //! Live push from the master Vista into the cache, for as long as the Dio
 //! lives.
 
+mod batch;
+
 use std::sync::Arc;
 
 use vantage_core::Result;
 
 use super::Dio;
+use batch::Tail;
 
 impl Dio {
     /// Start watching the master Vista and apply every change it pushes.
@@ -14,7 +17,8 @@ impl Dio {
     /// [`Subscribe`](vantage_vista::Capability::Subscribe) (SurrealDB LIVE, Postgres
     /// `LISTEN/NOTIFY`), this subscribes and pipes each
     /// [`VistaChange`](vantage_vista::VistaChange) through
-    /// [`apply_change`](Self::apply_change) on a background task — no polling. If
+    /// [`apply_change`](Self::apply_change) on a background task — no polling;
+    /// changes that arrive together share one cache transaction. If
     /// it doesn't, this is a no-op and the caller's `refresh_every` timer keeps
     /// the cache fresh instead. Either way the reactive stack behaves the same;
     /// only the freshness mechanism differs.
@@ -58,18 +62,31 @@ impl Dio {
                     let Some(item) = next else { break };
                     let Some(inner) = weak.upgrade() else { return };
                     let dio = Dio { inner };
-                    match item {
-                        Ok(change) => match dio.apply_change(change.into()).await {
-                            Ok(()) => backoff = base,
-                            Err(e) => {
-                                // One row failed to apply — the cache may be out
-                                // of step for that id. Reconcile the whole set so
-                                // the view can't drift silently.
-                                tracing::error!(error = %e, "watch: apply failed; reconciling");
+                    let first = match item {
+                        Ok(change) => change,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "watch: stream error; resubscribing");
+                            break;
+                        }
+                    };
+                    let (changes, tail) = batch::ready_batch(first, &mut stream);
+                    match dio.apply_changes(changes).await {
+                        Ok(()) => backoff = base,
+                        Err(e) => {
+                            // A change failed to apply — the cache may be out
+                            // of step for its rows. Reconcile the whole set so
+                            // the view can't drift silently; when the stream
+                            // also ended, the resubscribe below reconciles.
+                            tracing::error!(error = %e, "watch: apply failed; reconciling");
+                            if tail.is_none() {
                                 let _ = dio.refresh().await;
                             }
-                        },
-                        Err(e) => {
+                        }
+                    }
+                    match tail {
+                        None => {}
+                        Some(Tail::Ended) => break,
+                        Some(Tail::Failed(e)) => {
                             tracing::warn!(error = %e, "watch: stream error; resubscribing");
                             break;
                         }

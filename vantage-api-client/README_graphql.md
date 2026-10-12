@@ -217,9 +217,11 @@ or, when the specs live elsewhere, a resolver that returns a spec by name:
 
 ```rust
 use std::sync::Arc;
-use vantage_api_client::GraphqlSpecResolver;
+use vantage_api_client::GraphqlApiVistaSpec;
+use vantage_vista::SpecResolver;
 
-let resolver: GraphqlSpecResolver = Arc::new(move |name| specs.get(name).cloned());
+let resolver: SpecResolver<GraphqlApiVistaSpec> =
+    Arc::new(move |name: &str| specs.get(name).cloned());
 let factory = api.vista_factory().with_resolver(resolver);
 ```
 

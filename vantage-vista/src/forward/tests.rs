@@ -8,17 +8,24 @@ type Rec = Record<CborValue>;
 
 use crate::mocks::MockShell;
 use crate::{Column, FilterOp, TableShell, Vista, VistaMetadata, forward_table_shell};
-
-/// Hides every column and forwards the rest.
+/// The inner schema with its columns cleared; forwards the rest.
 #[derive(Clone)]
 struct NoColumns {
     inner: Box<dyn TableShell>,
-    columns: IndexMap<String, Column>,
+    metadata: VistaMetadata,
+}
+
+impl NoColumns {
+    fn wrap(inner: Box<dyn TableShell>) -> Self {
+        let mut metadata = inner.metadata().clone();
+        metadata.columns.clear();
+        Self { inner, metadata }
+    }
 }
 
 forward_table_shell!(NoColumns, inner, {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        &self.columns
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 });
 
@@ -29,7 +36,7 @@ fn row(name: &str) -> Rec {
 }
 
 #[tokio::test]
-async fn wrapper_overrides_columns_and_forwards_the_rest() {
+async fn wrapper_overrides_metadata_and_forwards_the_rest() {
     let inner = MockShell::new()
         .with_metadata(
             VistaMetadata::new()
@@ -37,10 +44,7 @@ async fn wrapper_overrides_columns_and_forwards_the_rest() {
                 .with_id_column("id"),
         )
         .with_record("r1", row("a"));
-    let vista = Vista::new("t", inner).map_shell(|inner| NoColumns {
-        inner,
-        columns: IndexMap::new(),
-    });
+    let vista = Vista::new("t", inner).map_shell(NoColumns::wrap);
 
     assert!(vista.columns().is_empty());
     assert_eq!(vista.id_column(), Some("id"));
@@ -58,10 +62,7 @@ async fn map_shell_keeps_the_query_and_clones_narrow_independently() {
     let narrowed = Vista::new("t", inner)
         .with_condition("name", FilterOp::Eq, "a")
         .unwrap()
-        .map_shell(|inner| NoColumns {
-            inner,
-            columns: IndexMap::new(),
-        });
+        .map_shell(NoColumns::wrap);
     assert_eq!(narrowed.name(), "t");
     assert!(narrowed.is_narrowed());
     assert_eq!(narrowed.query().conditions.len(), 1);

@@ -1,1 +1,1 @@
-SELECT VALUE name, email FROM ONLY type::thing("user", "tobie")
+SELECT VALUE name, email FROM ONLY type::record("user", "tobie")

@@ -24,13 +24,20 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         ConditionHandle::new(id)
     }
 
-    /// Remove a temporary condition by its handle
+    /// Remove a temporary condition by its handle. A handle this table holds
+    /// no condition for (already removed, or from another table) is
+    /// not-found.
     pub fn temp_remove_condition(&mut self, handle: ConditionHandle) -> Result<()> {
         if handle.0 <= 0 {
             return Err(error!("Cannot remove permanent condition"));
         }
-        self.conditions.shift_remove(&handle.0);
-        Ok(())
+        match self.conditions.shift_remove(&handle.0) {
+            Some(_) => Ok(()),
+            None => Err(
+                error!("No temporary condition for this handle", handle = handle.0)
+                    .mark_not_found(),
+            ),
+        }
     }
 
     /// Get all conditions
@@ -124,6 +131,17 @@ mod tests {
             1,
             "temp conditions register nothing"
         );
+    }
+
+    #[test]
+    fn removing_a_stale_handle_is_not_found() {
+        let mut table = Table::<_, EmptyEntity>::new("test", MockTableSource::new());
+        let handle = table.temp_add_condition(expr_any!("temp"));
+        table.temp_remove_condition(handle).unwrap();
+
+        let err = table.temp_remove_condition(handle).unwrap_err();
+        assert!(err.is_not_found(), "{err}");
+        assert_eq!(table.conditions().count(), 0);
     }
 
     #[test]

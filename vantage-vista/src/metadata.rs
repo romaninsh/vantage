@@ -28,15 +28,16 @@ impl VistaMetadata {
 
     /// [`with_column`](Self::with_column) at position `index` (clamped to the
     /// end), shifting later columns along.
-    pub fn with_column_at(mut self, index: usize, column: Column) -> Self {
+    pub(crate) fn with_column_at(mut self, index: usize, column: Column) -> Self {
         let index = index.min(self.columns.len());
         self.columns
             .shift_insert(index, column.name.clone(), column);
         self
     }
 
-    /// [`with_column_at`](Self::with_column_at) for each `(position, column)`,
-    /// in order — the shape of `Table::computed_columns`.
+    /// Insert each `(position, column)` in order, a column at `position`
+    /// (clamped to the end) shifting later columns along. This is the shape
+    /// of `Table::computed_columns`.
     pub fn with_columns_at<'a>(
         self,
         columns: impl IntoIterator<Item = (usize, &'a Column)>,

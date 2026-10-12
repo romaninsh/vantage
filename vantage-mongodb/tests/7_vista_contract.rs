@@ -9,9 +9,9 @@ use std::sync::Arc;
 use bson::oid::ObjectId;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_mongodb::vista::{MongoSpecResolver, MongoVistaSpec};
+use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{MongoDB, MongoVistaFactory};
-use vantage_vista::{VistaFactory, contract};
+use vantage_vista::{SpecResolver, VistaFactory, contract};
 
 fn mongo_url() -> String {
     std::env::var("MONGODB_URL").unwrap_or_else(|_| "mongodb://localhost:27017".into())
@@ -22,6 +22,7 @@ name: client
 columns:
   _id: { type: string, flags: [id, orderable] }
   name: { type: string, flags: [title, searchable] }
+  address: {}
 mongo:
   collection: clients
 references:
@@ -46,7 +47,8 @@ references:
     foreign_key: client_id
 "#;
 
-/// Clients `c1`, `c2`; orders `o1`, `o2` (c1) and `o3` (c2).
+/// Clients `c1`, `c2`, each with a nested `address`; orders `o1`, `o2` (c1)
+/// and `o3` (c2).
 async fn setup() -> (MongoDB, MongoVistaFactory) {
     let db_name = format!("vantage_vista_contract_{}", ObjectId::new().to_hex());
     let db = MongoDB::connect(&mongo_url(), &db_name)
@@ -54,8 +56,8 @@ async fn setup() -> (MongoDB, MongoVistaFactory) {
         .expect("connect mongo");
     db.collection::<bson::Document>("clients")
         .insert_many(vec![
-            bson::doc! { "_id": "c1", "name": "Marty" },
-            bson::doc! { "_id": "c2", "name": "Doc" },
+            bson::doc! { "_id": "c1", "name": "Marty", "address": { "city": "Hill Valley" } },
+            bson::doc! { "_id": "c2", "name": "Doc", "address": { "city": "Twin Pines" } },
         ])
         .await
         .unwrap();
@@ -71,7 +73,8 @@ async fn setup() -> (MongoDB, MongoVistaFactory) {
         .into_iter()
         .map(|s| (s.name.clone(), s))
         .collect();
-    let resolver: MongoSpecResolver = Arc::new(move |name: &str| specs.get(name).cloned());
+    let resolver: SpecResolver<MongoVistaSpec> =
+        Arc::new(move |name: &str| specs.get(name).cloned());
     let factory = db.vista_factory().with_resolver(resolver);
     (db, factory)
 }

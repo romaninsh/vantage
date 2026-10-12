@@ -22,15 +22,14 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, NativeCondition, Page, Preview,
-    Reference as VistaReference, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaChangeStream, VistaMetadata, unsupported,
+    Condition, NativeCondition, Page, Preview, SortDirection, SpecResolver, TableShell, Vista,
+    VistaCapabilities, VistaChangeStream, VistaMetadata,
 };
 
 use crate::id::MongoId;
 use crate::mongodb::MongoDB;
 use crate::types::AnyMongoType;
-use crate::vista::factory::MongoSpecResolver;
+use crate::vista::spec::MongoVistaSpec;
 use coerce::BsonKind;
 use project::{project_record, walk_bson_path};
 
@@ -63,7 +62,7 @@ pub struct MongoTableShell {
     /// `from_table` paths without columns).
     pub(crate) column_paths: IndexMap<String, Vec<String>>,
     /// Spec resolver handed to the factories that build traversal targets.
-    pub(crate) resolver: Option<MongoSpecResolver>,
+    pub(crate) resolver: Option<SpecResolver<MongoVistaSpec>>,
     /// Handle for the active quicksearch condition, removed when the search
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
@@ -88,7 +87,7 @@ impl MongoTableShell {
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
         column_paths: IndexMap<String, Vec<String>>,
-        resolver: Option<MongoSpecResolver>,
+        resolver: Option<SpecResolver<MongoVistaSpec>>,
         search_unflagged_columns: bool,
         change_streams: Option<bool>,
     ) -> Self {
@@ -128,16 +127,8 @@ impl MongoTableShell {
 
 #[async_trait]
 impl TableShell for MongoTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -183,9 +174,6 @@ impl TableShell for MongoTableShell {
 
     /// A change stream on the collection; see the `watch` module.
     async fn watch(&self) -> Result<VistaChangeStream> {
-        if !self.capabilities.has(Capability::Subscribe) {
-            return unsupported(Capability::Subscribe);
-        }
         watch::watch(self).await
     }
 
@@ -198,8 +186,7 @@ impl TableShell for MongoTableShell {
     }
 
     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
-        self.apply_search(text);
-        Ok(())
+        self.apply_search(text)
     }
 
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
@@ -257,9 +244,6 @@ impl TableShell for MongoTableShell {
 
     /// All-or-nothing bulk insert in one transaction; see the `import` module.
     async fn import(&self, rows: &IndexMap<String, Record<CborValue>>) -> Result<usize> {
-        if !self.capabilities.has(Capability::Import) {
-            return unsupported(Capability::Import);
-        }
         import::import(self, rows).await
     }
 

@@ -8,6 +8,8 @@ use ciborium::Value as CborValue;
 use serde::Serialize;
 use vantage_types::Record;
 
+mod listing;
+
 /// One window of rows, in the set's order, and the set's total row count
 /// when the fetch learned it. `None` means the fetch didn't say, never zero.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -30,23 +32,30 @@ impl Page {
 
 /// The query a shell would send for its next read, rendered without sending
 /// it. A debugging surface: it must not show a clause the shell wouldn't
-/// send, and a preview that leaves a detail out says so in `note`.
+/// send.
+///
+/// The driver isn't part of it: read
+/// [`Vista::driver_name`](crate::Vista::driver_name).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[non_exhaustive]
 pub struct Preview {
-    /// The driver, as [`TableShell::driver_name`](crate::TableShell::driver_name).
-    pub driver: &'static str,
-    /// The native query (SQL, a GraphQL document, a Mongo filter, an argv);
-    /// `None` when nothing is queried.
+    /// What the backend would run (SQL, a GraphQL document, a Mongo filter,
+    /// an argv), including every condition the shell pushes to it; `None`
+    /// when nothing is queried.
     pub query: Option<String>,
+    /// Only what `query` leaves out of the read (conditions evaluated
+    /// locally, client-side search), or why nothing is queried when `query`
+    /// is `None`. Never a restatement of the query.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
 
 impl Preview {
-    pub fn new(driver: &'static str) -> Self {
+    /// No query and no note. The one way to start a preview: `Preview` has
+    /// no `Default`.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         Self {
-            driver,
             query: None,
             note: None,
         }

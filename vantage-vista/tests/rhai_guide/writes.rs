@@ -3,7 +3,7 @@
 use serde_json::json;
 
 use super::support::{host, json, read_write, run, shop};
-use vantage_vista::{Terminals, Writes};
+use vantage_vista::rhai::{Terminals, Writes};
 
 const WRITE_VERBS: &str = r#"
 let orders = table("order");
@@ -167,8 +167,15 @@ fn denied_writes() {
             writes: Writes::Denied("writes are off for agents".into()),
         },
     );
-    assert_eq!(json(&host, r#"table("order").delete("o1")"#), json!(false));
-    let err = run(&host, r#"table("order").insert(#{ total: 1 })"#).unwrap_err();
-    assert!(err.contains("writes are off for agents"), "{err}");
+    for script in [
+        r#"table("order").delete("o1")"#,
+        r#"table("order").insert(#{ total: 1 })"#,
+    ] {
+        let err = run(&host, script).unwrap_err();
+        assert!(
+            err.contains("writes are off for agents"),
+            "`{script}`: {err}"
+        );
+    }
     assert_eq!(json(&host, r#"table("order").count()"#), json!(4));
 }

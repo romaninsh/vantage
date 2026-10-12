@@ -5,12 +5,14 @@ use std::sync::LazyLock;
 
 use vantage_core::{Context, Result, error};
 use vantage_rhai::{Host, Limits, Mode};
+use vantage_vista::rhai::reject_dropped_narrowing;
 
 use super::{MAX_LIVE, SIM_EXPR_DEPTHS, SimDef};
 
 impl SimDef {
     /// Report a def the engine cannot run: an empty name, table or script, a
-    /// script that does not compile, `max: 0`, a `burst` above `max`, a
+    /// script that does not compile or that drops a narrowed table handle
+    /// (see [`reject_dropped_narrowing`]), `max: 0`, a `burst` above `max`, a
     /// negative or non-finite `rate_per_min`, a non-positive or non-finite
     /// `clock`, `ops: 0`, or a `max` above [`MAX_LIVE`]. Every error but the
     /// empty name carries the sim's name as `sim`.
@@ -62,10 +64,11 @@ impl SimDef {
         if self.ops == Some(0) {
             return Err(error!("Sim ops must be greater than 0", sim = name));
         }
-        compile_host()
+        let ast = compile_host()
             .ast_uncached(Mode::Script, &self.script)
             .with_context(|| error!("Sim script does not compile", sim = name))?;
-        Ok(())
+        reject_dropped_narrowing(&ast, "sim script", false)
+            .with_context(|| error!("Sim script drops a narrowed table handle", sim = name))
     }
 }
 

@@ -26,5 +26,5 @@ pub use select::{GraphqlSelect, RenderedQuery};
 pub use types::{AnyGraphqlType, GraphqlType, GraphqlTypeVariants};
 pub use vista::{
     GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec, GraphqlBlock,
-    GraphqlColumnBlock, GraphqlColumnExtras, GraphqlSpecResolver, GraphqlTableExtras,
+    GraphqlColumnBlock, GraphqlColumnExtras, GraphqlTableExtras,
 };

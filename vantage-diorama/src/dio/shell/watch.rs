@@ -13,7 +13,7 @@ use std::sync::{Arc, Weak};
 use futures::stream;
 use tokio::sync::broadcast::{self, error::RecvError};
 use vantage_core::Result;
-use vantage_vista::{VistaChange, VistaChangeStream};
+use vantage_vista::{VistaChange, VistaChangeStream, VistaMetadata};
 
 use super::{DioShell, FacadeQuery};
 use crate::dio::{DioEvent, DioInner};
@@ -28,6 +28,7 @@ impl DioShell {
             // Weak: a parked subscription must not keep the parent Dio alive.
             dio: Arc::downgrade(&self.dio),
             query: self.query.clone(),
+            metadata: self.metadata.clone(),
             members: HashSet::new(),
         };
         follow.relist(self.dio.clone()).await?;
@@ -42,6 +43,8 @@ struct Follow {
     events: broadcast::Receiver<DioEvent>,
     dio: Weak<DioInner>,
     query: FacadeQuery,
+    /// The facade's schema, which tells a flat cell from a dotted path.
+    metadata: VistaMetadata,
     /// Ids currently in the narrowed set, as the consumer last saw it. Tells a
     /// row entering the set (`Inserted`) from one already in it (`Updated`),
     /// and which rows leaving the filter need a `Deleted`.
@@ -84,7 +87,7 @@ impl Follow {
             .cache
             .get_value(&id)
             .await?
-            .filter(|row| self.query.matches(row));
+            .filter(|row| self.query.matches(row, &self.metadata));
         Ok(match row {
             Some(value) if self.members.insert(id.clone()) => {
                 Some(VistaChange::Inserted { id, value })
@@ -97,7 +100,9 @@ impl Follow {
 
     /// Rebuild membership from the same read the consumer's own listing uses.
     async fn relist(&mut self, dio: Arc<DioInner>) -> Result<()> {
-        let rows = DioShell::reader(dio, self.query.clone()).read().await?;
+        let rows = DioShell::reader(dio, self.query.clone(), self.metadata.clone())
+            .read()
+            .await?;
         self.members = rows.into_keys().collect();
         Ok(())
     }

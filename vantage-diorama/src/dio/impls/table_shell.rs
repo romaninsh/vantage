@@ -5,8 +5,8 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Column, Condition, FilterOp, Page, Preview, Reference, SortDirection, TableShell,
-    Vista, VistaCapabilities, VistaChangeStream, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, SortDirection, TableShell, VistaCapabilities,
+    VistaChangeStream, VistaMetadata, unsupported,
 };
 
 use crate::dio::shell::DioShell;
@@ -16,16 +16,8 @@ use crate::ops::{ChangeFlash, FlashKind};
 impl TableShell for DioShell {
     // ---- Schema forwarding to master ----------------------------------------
 
-    fn columns(&self) -> &IndexMap<String, Column> {
-        &self.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, Reference> {
-        &self.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     // ---- Reads — cache-first; bounded reads hydrate ---------------------------
@@ -90,9 +82,10 @@ impl TableShell for DioShell {
         }
         let column = condition.column.as_str();
         let root = column.split('.').next().unwrap_or(column);
-        if !self.columns.is_empty()
-            && !self.columns.contains_key(column)
-            && !self.columns.contains_key(root)
+        let columns = &self.metadata.columns;
+        if !columns.is_empty()
+            && !columns.contains_key(column)
+            && !columns.contains_key(root)
             && !self.dio.is_augmented_column(column)
         {
             return Err(error!(
@@ -163,13 +156,22 @@ impl TableShell for DioShell {
     /// The write queue is fire-and-forget, so a missing row is caught here
     /// rather than surfacing later as `DioEvent::WriteFailed`.
     async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {
-        if self.row_in_view(id).await?.is_none() {
+        let Some(mut merged) = self.row_in_view(id).await? else {
             return Err(
                 error!("Row not found", table = self.dio.cache_table_name, id = id)
                     .mark_not_found(),
             );
+        };
+        vantage_dataset::invariants::validate(partial, &self.query.invariants(&self.metadata))?;
+        merged.extend(partial.iter().map(|(k, v)| (k.clone(), v.clone())));
+        if !self.in_set(&merged) {
+            return Err(error!(
+                "patch would move the row out of the set",
+                table = self.dio.cache_table_name,
+                id = id
+            )
+            .mark_conflict());
         }
-        vantage_dataset::invariants::validate(partial, &self.query.invariants())?;
         self.enqueue(ChangeFlash::new(
             FlashKind::Patch,
             Some(id.to_string()),
@@ -210,14 +212,6 @@ impl TableShell for DioShell {
         self.follow().await
     }
 
-    // ---- References ---------------------------------------------------------
-
-    /// The facade doesn't traverse: a related set needs its own Dio, which
-    /// `Dio::get_ref` builds.
-    fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
-        unsupported(Capability::Traverse)
-    }
-
     // ---- Capability + identity ------------------------------------------------
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -243,7 +237,7 @@ impl TableShell for DioShell {
         let (planned, local) = match self.plan() {
             Ok(plan) => plan,
             Err(e) => {
-                return Preview::new("dio")
+                return Preview::new()
                     .with_note(format!("the master refused this handle's query: {e}"));
             }
         };
@@ -266,20 +260,22 @@ impl TableShell for DioShell {
             facade.push(format!("order by {col} {dir}"));
         }
 
-        let mut note = format!(
-            "reads come from the local cache; the query is the {} master's, \
-             which populates that cache and carries every clause it accepted",
-            master.driver
-        );
-        if !facade.is_empty() {
-            note.push_str("; applied over the cache: ");
-            note.push_str(&facade.join(", "));
+        // The note holds only what the master's query leaves out: the
+        // master's own note, then the clauses applied over the cache.
+        let cached =
+            (!facade.is_empty()).then(|| format!("applied over the cache: {}", facade.join(", ")));
+        let note = match (master.note, cached) {
+            (Some(own), Some(cached)) => Some(format!("{own}; {cached}")),
+            (own, cached) => own.or(cached),
+        };
+        let mut preview = Preview::new();
+        if let Some(query) = master.query {
+            preview = preview.with_query(query);
         }
-        let preview = Preview::new("dio").with_note(note);
-        match master.query {
-            Some(query) => preview.with_query(query),
-            None => preview,
+        if let Some(note) = note {
+            preview = preview.with_note(note);
         }
+        preview
     }
 }
 
@@ -297,7 +293,7 @@ impl DioShell {
             None => self.dio.cache.list_values().await?,
         };
 
-        rows.retain(|_, row| local.matches(row));
+        rows.retain(|_, row| local.matches(row, &self.metadata));
         if let Some((column, direction)) = &local.order {
             let descending = matches!(direction, SortDirection::Descending);
             let mut ordered: Vec<(String, Record<CborValue>)> = rows.into_iter().collect();
@@ -352,13 +348,15 @@ impl DioShell {
         master.get_value(id).await
     }
 
+    /// Whether `row` satisfies this handle's narrowing.
+    pub(crate) fn in_set(&self, row: &Record<CborValue>) -> bool {
+        self.query.matches(row, &self.metadata)
+    }
+
     /// The row `id` as this handle sees it: `row_anywhere`, kept only when
     /// it satisfies the narrowing.
     async fn row_in_view(&self, id: &str) -> Result<Option<Record<CborValue>>> {
-        Ok(self
-            .row_anywhere(id)
-            .await?
-            .filter(|row| self.query.matches(row)))
+        Ok(self.row_anywhere(id).await?.filter(|row| self.in_set(row)))
     }
 
     /// Like `row_in_view`, but an id held by a row outside the narrowing is
@@ -366,7 +364,7 @@ impl DioShell {
     /// one outside the set.
     async fn row_in_view_or_conflict(&self, id: &str) -> Result<Option<Record<CborValue>>> {
         match self.row_anywhere(id).await? {
-            Some(row) if !self.query.matches(&row) => Err(self.outside(id)),
+            Some(row) if !self.in_set(&row) => Err(self.outside(id)),
             row => Ok(row),
         }
     }
@@ -380,10 +378,18 @@ impl DioShell {
         .mark_conflict()
     }
 
-    /// Fill and check the handle's equality conditions.
+    /// Fill the handle's equality conditions on flat cells; a `Conflict` when
+    /// the result is still outside the set (a dotted path it doesn't hold).
     fn conformed(&self, record: &Record<CborValue>) -> Result<Record<CborValue>> {
         let mut out = record.clone();
-        vantage_dataset::invariants::conform(&mut out, &self.query.invariants())?;
+        vantage_dataset::invariants::conform(&mut out, &self.query.invariants(&self.metadata))?;
+        if !self.in_set(&out) {
+            return Err(error!(
+                "record does not belong to this set",
+                table = self.dio.cache_table_name
+            )
+            .mark_conflict());
+        }
         Ok(out)
     }
 
@@ -419,9 +425,12 @@ impl DioShell {
 /// Resolve a column, descending dotted paths into nested CBOR maps so a
 /// belongs-to leaf (`client.name`) narrows like any other column.
 pub(crate) fn record_get<'a>(record: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
-    if let Some(value) = record.get(path) {
-        return Some(value);
-    }
+    record.get(path).or_else(|| path_get(record, path))
+}
+
+/// The value at dotted `path` inside nested CBOR maps, never a flat key
+/// spelled with dots.
+pub(crate) fn path_get<'a>(record: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
     let mut segments = path.split('.');
     let mut current = record.get(segments.next()?)?;
     for segment in segments {

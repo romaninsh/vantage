@@ -177,6 +177,35 @@ fn without_paging_params_or_a_total_there_are_no_windows() {
     assert!(!can_fetch_window(off));
 }
 
+/// An API that doesn't page still answers the leading window: one unpaged
+/// GET, cut to the limit, with the listing's length as the total. Any other
+/// offset is refused before a request is sent.
+#[tokio::test]
+async fn without_paging_the_leading_window_is_cut_from_the_listing() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(rows(1..6)))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .no_pagination()
+        .http_client(test_client())
+        .build();
+    let spec: RestApiVistaSpec = serde_yaml_ng::from_str(SPEC).unwrap();
+    let vista = RestApiVistaFactory::new(api)
+        .build_from_spec(spec)
+        .expect("build");
+
+    let page = vista.fetch_window(0, 2).await.expect("fetch");
+    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["1", "2"]);
+    assert_eq!(page.total, Some(5));
+    assert!(vista.fetch_window(2, 2).await.unwrap_err().is_unsupported());
+}
+
 #[tokio::test]
 async fn a_bare_array_api_answering_an_object_reads_one_row() {
     let server = MockServer::start().await;

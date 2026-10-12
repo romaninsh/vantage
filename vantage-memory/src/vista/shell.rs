@@ -7,8 +7,8 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::{
-    Column, Condition, Page, Preview, Reference, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaChangeStream,
+    Condition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaChangeStream, VistaMetadata,
 };
 
 use super::{MemoryTableShell, watch};
@@ -25,16 +25,8 @@ fn unwrap_rows(rows: Vec<(String, Row)>) -> Vec<(String, Rec)> {
 
 #[async_trait]
 impl TableShell for MemoryTableShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, Reference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        Some(self.id_column_name())
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -46,7 +38,7 @@ impl TableShell for MemoryTableShell {
     }
 
     fn preview(&self) -> Preview {
-        Preview::new("memory").with_query(self.render_query())
+        Preview::new().with_query(self.render_query())
     }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {

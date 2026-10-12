@@ -9,7 +9,8 @@ use vantage_core::Result;
 use vantage_rhai::Env;
 use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_types::{Entity, Record};
-use vantage_vista::{Handle, NativeCondition, Vista};
+use vantage_vista::rhai::{Handle, eval_ref_script, record_to_dynamic};
+use vantage_vista::{NativeCondition, Vista};
 
 use super::MysqlTableShell;
 use crate::mysql::types::AnyMysqlType;
@@ -28,10 +29,8 @@ pub(crate) fn register_extensions(engine: &mut Engine) {
          cond: RhaiExpr<AnyMysqlType>|
          -> std::result::Result<Handle, Box<EvalAltResult>> {
             let key = cond.0.preview();
-            h.with_base_vista("with_condition", |vista| {
-                vista.add_native_condition(NativeCondition::new(cond.0, key))
-            })
-            .map_err(|e| e.to_string().into())
+            h.with_native_condition("with_condition", NativeCondition::new(cond.0, key))
+                .map_err(|e| e.to_string().into())
         },
     );
 }
@@ -48,7 +47,7 @@ where
         row: &Record<CborValue>,
     ) -> Result<Vista> {
         let host = self.factory().script_host();
-        let env = Env::new().var("me", vantage_vista::record_to_dynamic(row));
-        vantage_vista::eval_ref_script(&host, script, env, row)
+        let env = Env::new().var("me", record_to_dynamic(row));
+        eval_ref_script(&host, script, env, row)
     }
 }

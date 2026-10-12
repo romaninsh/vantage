@@ -2,7 +2,7 @@
 //! loaded one row at a time and merged on top.
 //!
 //! The master is listed; for each visible row an [`Augmentation`] resolves a
-//! detail Vista (from the [`VistaCatalog`]), narrows it for that row, fetches a
+//! detail Vista (through a [`VistaResolver`]), narrows it for that row, fetches a
 //! record, and merges chosen columns onto the master row. The detail source may
 //! be the same Vista as the master (today's cmd two-pass) or an entirely
 //! different backend (REST master enriched by a cmd script, or vice versa).
@@ -24,12 +24,10 @@ use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista::{ReferenceKind, Vista};
-use vantage_vista_factory::{Relation, VistaCatalog};
+use vantage_vista::{JoinKey, Reference, Vista, VistaResolver};
 
 /// Narrow a freshly resolved `base` detail Vista for one master `row`. Written
-/// by hand; a consumer wanting a scripted narrowing builds the closure itself
-/// (`vantage_vista::augment_source_closure` with vista's `rhai` feature).
+/// by hand; a consumer wanting a scripted narrowing builds the closure itself.
 pub type BuildFn = Arc<dyn Fn(&Record<CborValue>, Vista) -> Result<Vista> + Send + Sync>;
 
 /// Pull records from a narrowed detail Vista.
@@ -60,11 +58,11 @@ pub enum Fetch {
 
 /// Where an augmentation's detail records come from.
 pub enum Detail {
-    /// Resolve the base detail Vista from the catalog by name, per fetch —
-    /// the config/YAML form (a name is all a spec can carry).
+    /// Resolve the base detail Vista by name through the dio's resolver, per
+    /// fetch — the config/YAML form (a name is all a spec can carry).
     Catalog(String),
-    /// A fixed secondary Vista handle — for get-only side tables that live
-    /// in no catalog (a folder-size vista keyed by path). Each fetch narrows
+    /// A fixed secondary Vista handle — for get-only side tables that no
+    /// resolver knows (a folder-size vista keyed by path). Each fetch narrows
     /// its own clone of it.
     Fixed(Arc<Vista>),
 }
@@ -122,9 +120,9 @@ impl Augmentation {
         dio_name: &str,
         master_id_column: &str,
         row: &mut Record<CborValue>,
-        catalog: &VistaCatalog,
+        resolver: &dyn VistaResolver,
     ) -> Result<()> {
-        match self.fetch_one(master_id_column, row, catalog).await? {
+        match self.fetch_one(master_id_column, row, resolver).await? {
             Some(detail) => {
                 self.merge.apply(row, &detail);
                 let merged: Vec<String> = detail
@@ -164,6 +162,15 @@ impl Augmentation {
         row.get(field).map(scalar_text).unwrap_or_default()
     }
 
+    /// An owned base detail Vista for one fetch: catalog details resolve by
+    /// name; fixed details clone the shared handle.
+    fn base_vista(&self, resolver: &dyn VistaResolver) -> Result<Vista> {
+        match &self.detail {
+            Detail::Catalog(name) => resolver.vista(name),
+            Detail::Fixed(vista) => Ok(Vista::clone(vista)),
+        }
+    }
+
     /// Fetch the single detail record for one master row, or `None` if there is
     /// no match.
     ///
@@ -172,22 +179,13 @@ impl Augmentation {
     /// uniform "one record by key" primitive (cmd runs its detail script, SQL a
     /// `WHERE id =`, REST a `GET /{id}`). Other-column and `Build` sources narrow
     /// the detail vista and take the first record.
-    /// An owned base detail Vista for one fetch: catalog details resolve by
-    /// name; fixed details clone the shared handle.
-    fn base_vista(&self, catalog: &VistaCatalog) -> Result<Vista> {
-        match &self.detail {
-            Detail::Catalog(name) => catalog.build_vista(name),
-            Detail::Fixed(vista) => Ok(Vista::clone(vista)),
-        }
-    }
-
     async fn fetch_one(
         &self,
         master_id_column: &str,
         row: &Record<CborValue>,
-        catalog: &VistaCatalog,
+        resolver: &dyn VistaResolver,
     ) -> Result<Option<Record<CborValue>>> {
-        let base = self.base_vista(catalog)?;
+        let base = self.base_vista(resolver)?;
         match &self.fetch {
             Fetch::PerRow => match &self.source {
                 Source::Id => base.get_value(self.key(row, master_id_column)?).await,
@@ -196,70 +194,42 @@ impl Augmentation {
                     from,
                     to: Some(col),
                 } => {
-                    let mut base = base;
-                    self.narrow_eq(&mut base, col, from, row)?;
-                    Ok(base.get_some_value().await?.map(|(_, r)| r))
+                    let narrowed = self.narrow_eq(base, JoinKey::new(from, col), row)?;
+                    Ok(narrowed.get_some_value().await?.map(|(_, r)| r))
                 }
                 Source::Build(f) => Ok(f(row, base)?.get_some_value().await?.map(|(_, r)| r)),
             },
             Fetch::Custom(f) => {
-                let detail = self.resolve_detail(master_id_column, row, catalog)?;
+                let detail = self.resolve_detail(master_id_column, row, base)?;
                 Ok(f(detail).await?.into_iter().next())
             }
         }
     }
 
-    /// Build the detail vista and narrow it per [`Source`] — the form a
+    /// Narrow the base detail vista per [`Source`] — the form a
     /// [`Fetch::Custom`] closure receives.
     fn resolve_detail(
         &self,
         master_id_column: &str,
         row: &Record<CborValue>,
-        catalog: &VistaCatalog,
+        base: Vista,
     ) -> Result<Vista> {
-        let mut base = self.base_vista(catalog)?;
         match &self.source {
-            Source::Id => {
-                let detail_id = self.detail_id_column(&base)?;
-                self.narrow_eq(&mut base, &detail_id, master_id_column, row)?;
-                Ok(base)
+            Source::Id => self.narrow_eq(base, JoinKey::to_target_id(master_id_column), row),
+            Source::Column { from, to: Some(to) } => {
+                self.narrow_eq(base, JoinKey::new(from, to), row)
             }
-            Source::Column { from, to } => {
-                let fk = match to {
-                    Some(c) => c.clone(),
-                    None => self.detail_id_column(&base)?,
-                };
-                self.narrow_eq(&mut base, &fk, from, row)?;
-                Ok(base)
+            Source::Column { from, to: None } => {
+                self.narrow_eq(base, JoinKey::to_target_id(from), row)
             }
             Source::Build(f) => f(row, base),
         }
     }
 
-    fn narrow_eq(
-        &self,
-        base: &mut Vista,
-        detail_column: &str,
-        master_field: &str,
-        row: &Record<CborValue>,
-    ) -> Result<()> {
-        Relation::single_key(
-            "augment",
-            self.detail.name(),
-            ReferenceKind::HasOne,
-            detail_column.to_string(),
-            master_field.to_string(),
-        )
-        .narrow(base, row)
-    }
-
-    fn detail_id_column(&self, base: &Vista) -> Result<String> {
-        base.id_column().map(str::to_string).ok_or_else(|| {
-            error!(
-                "augment: detail vista has no id column",
-                table = self.detail.name()
-            )
-        })
+    /// `base` narrowed to the rows whose `key.to` column (the detail id when
+    /// unset) equals the master row's `key.from` value.
+    fn narrow_eq(&self, base: Vista, key: JoinKey, row: &Record<CborValue>) -> Result<Vista> {
+        Reference::has_one("augment", self.detail.name(), key).narrow(base, row)
     }
 
     /// Read a master row field as a scalar key string.

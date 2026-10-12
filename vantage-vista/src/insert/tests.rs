@@ -1,7 +1,7 @@
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
-use crate::{Column, JoinKey, Reference, ReferenceKind, Vista, VistaMetadata, mocks::MockShell};
+use crate::{Column, JoinKey, Reference, Vista, VistaMetadata, mocks::MockShell};
 
 /// Vista over a `client` table: scalar columns plus a has-one `bakery`
 /// (FK `bakery_id` on this row) and a has-many `orders` (FK `client_id` on
@@ -16,17 +16,15 @@ fn client_vista_over(bakeries: MockShell, orders: MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_one(
             "bakery",
             "bakery",
-            ReferenceKind::HasOne,
-            vec![JoinKey::new("bakery_id", "id")],
+            JoinKey::new("bakery_id", "id"),
         ))
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_many(
             "orders",
             "order",
-            ReferenceKind::HasMany,
-            vec![JoinKey::new("id", "client_id")],
+            JoinKey::new("id", "client_id"),
         ));
     let shell = MockShell::new()
         .with_metadata(metadata)
@@ -222,11 +220,7 @@ async fn nested_insert_writes_and_links_children() {
 /// A contained relation's host column is plain data on insert.
 #[test]
 fn a_contained_relation_is_a_plain_field() {
-    let metadata = VistaMetadata::new().with_reference(Reference::contained(
-        "lines",
-        ReferenceKind::ContainsMany,
-        "lines",
-    ));
+    let metadata = VistaMetadata::new().with_reference(Reference::contains_many("lines", "lines"));
     let vista = Vista::new("order", MockShell::new().with_metadata(metadata));
     let lines = CborValue::Array(vec![map(&[("qty", CborValue::Integer(1.into()))])]);
     let (main, has_one, has_many) = vista

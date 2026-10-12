@@ -9,7 +9,7 @@
 //! - `HasOne` — foreign key on source table (e.g. Client.bakery_id → Bakery)
 //! - `HasMany` — foreign key on target table (e.g. Bakery → Client.bakery_id)
 //!
-//! Cross-persistence references live in `vantage-vista-factory`'s `VistaCatalog`,
+//! Cross-persistence references go through a `vantage_vista::Catalog`,
 //! not here. Typed `Table<T, E>` is single-backend by construction.
 
 use std::any::Any;
@@ -23,6 +23,26 @@ pub mod one;
 pub use contained::ContainedRelation;
 pub use many::HasMany;
 pub use one::HasOne;
+
+/// How many target records a join between two tables yields. Contained
+/// relations are [`ContainedRelation`]s, not joins, so they have no
+/// cardinality here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cardinality {
+    /// At most one record: the foreign key lives on the source.
+    HasOne,
+    /// Any number of records: the foreign key lives on the target.
+    HasMany,
+}
+
+impl From<Cardinality> for vantage_vista::ReferenceKind {
+    fn from(cardinality: Cardinality) -> Self {
+        match cardinality {
+            Cardinality::HasOne => vantage_vista::ReferenceKind::HasOne,
+            Cardinality::HasMany => vantage_vista::ReferenceKind::HasMany,
+        }
+    }
+}
 
 /// Describes a relationship between two tables.
 pub trait Reference: Send + Sync {
@@ -50,12 +70,10 @@ pub trait Reference: Send + Sync {
     /// implicit-reference traversal, which walks relations by name.
     fn build_target_erased(&self, data_source: &dyn Any) -> Box<dyn Any>;
 
-    /// Cardinality of this relation. `HasOne` if traversing yields at most
-    /// one record (the FK lives on the source); `HasMany` if it can yield
-    /// any number (the FK lives on the target). Surfaced by
-    /// `Vista::list_references` so CLIs / UIs can pick a record-card vs
-    /// list-grid renderer.
-    fn cardinality(&self) -> vantage_vista::ReferenceKind;
+    /// How many records traversing this relation yields. Surfaced through
+    /// `Vista::references` so CLIs and UIs can pick a record card or a
+    /// list grid.
+    fn cardinality(&self) -> Cardinality;
 
     /// Resolve traversal using a known source row. Returns the target table
     /// (entity type erased to `EmptyEntity`) wrapped in `Box<dyn Any>`, with
@@ -75,6 +93,8 @@ pub trait Reference: Send + Sync {
         source_row: &dyn Any,
     ) -> Result<Box<dyn Any>>;
 
-    /// Type name of the target table (for error messages).
-    fn target_type_name(&self) -> &'static str;
+    /// The table name of the target built over `data_source` (`&T`). It
+    /// names the relation's target in Vista metadata, which a catalog
+    /// resolves by name.
+    fn target_table_name(&self, data_source: &dyn Any) -> String;
 }

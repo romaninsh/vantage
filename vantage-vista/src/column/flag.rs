@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 
 /// A flag on a [`Column`](crate::Column).
 ///
-/// The eight named flags are the ones the data layer acts on. Any other name
+/// The nine named flags are the ones the data layer acts on. Any other name
 /// is kept as [`Other`](Self::Other) for the layer that interprets it (a UI's
 /// presentation flag such as `label`); vista never reads those, and the layer
 /// that owns the YAML schema rejects names it doesn't know.
 ///
 /// In YAML and serde a flag is its snake_case name. `ColumnFlag::from("label")`
-/// and deserializing map the eight known names onto their variants. Flags
+/// and deserializing map the nine known names onto their variants. Flags
 /// compare and hash by name, so an `Other` built by hand from a known name
 /// (`Other("id")`) is the same flag as the variant (`Id`).
 #[derive(Debug, Clone)]
@@ -28,8 +28,13 @@ pub enum ColumnFlag {
     Orderable,
     /// A write must carry a value for the column.
     Mandatory,
-    /// Readers don't show the column by default.
+    /// Readers don't show the column by default. Display only: it says
+    /// nothing about whether rows carry the column.
     Hidden,
+    /// The column is a request parameter: its value is sent to the backend
+    /// (a URL placeholder, an API argument), and returned rows needn't carry
+    /// it. A condition on it still narrows the set.
+    RequestParam,
     /// The column is computed, not stored: an implicit-reference traversal
     /// (`country.name`), a server-side expression, or a computed column of
     /// the Vista. Readers render it read-only and writes drop it.
@@ -51,6 +56,7 @@ impl ColumnFlag {
             ColumnFlag::Orderable => "orderable",
             ColumnFlag::Mandatory => "mandatory",
             ColumnFlag::Hidden => "hidden",
+            ColumnFlag::RequestParam => "request_param",
             ColumnFlag::Calculated => "calculated",
             ColumnFlag::Auto => "auto",
             ColumnFlag::Other(name) => name,
@@ -81,6 +87,7 @@ impl From<&str> for ColumnFlag {
             "orderable" => ColumnFlag::Orderable,
             "mandatory" => ColumnFlag::Mandatory,
             "hidden" => ColumnFlag::Hidden,
+            "request_param" => ColumnFlag::RequestParam,
             "calculated" => ColumnFlag::Calculated,
             "auto" => ColumnFlag::Auto,
             other => ColumnFlag::Other(other.to_string()),
@@ -118,18 +125,21 @@ mod tests {
 
     #[test]
     fn yaml_names_map_onto_variants() {
-        let flags: Vec<ColumnFlag> = serde_yaml_ng::from_str("[id, searchable, label]").unwrap();
+        let flags: Vec<ColumnFlag> =
+            serde_yaml_ng::from_str("[id, searchable, request_param, label]").unwrap();
         assert_eq!(
             flags,
             [
                 ColumnFlag::Id,
                 ColumnFlag::Searchable,
+                ColumnFlag::RequestParam,
                 ColumnFlag::Other("label".into())
             ]
         );
+        assert!(matches!(flags[2], ColumnFlag::RequestParam));
         assert_eq!(
             serde_yaml_ng::to_string(&flags).unwrap(),
-            "- id\n- searchable\n- label\n"
+            "- id\n- searchable\n- request_param\n- label\n"
         );
     }
 

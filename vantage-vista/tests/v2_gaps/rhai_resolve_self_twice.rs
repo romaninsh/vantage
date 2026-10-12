@@ -9,10 +9,10 @@
 //! with `forward_table_shell!`, which derives Clone.
 
 use vantage_dataset::ReadableValueSet;
-use vantage_vista::rhai::block_on;
-use vantage_vista::{TableShell, Terminals, Vista, eval_modify_script, forward_table_shell};
+use vantage_vista::rhai::{block_on, eval_modify_script};
+use vantage_vista::{TableShell, Vista, forward_table_shell};
 
-use super::rhai_support::{host, mock};
+use super::rhai_support::{host, mock, reads};
 
 /// Forwards everything to the inner shell.
 #[derive(Clone)]
@@ -24,7 +24,7 @@ forward_table_shell!(Wrapped, inner, {});
 
 #[test]
 fn rhai_resolve_self_twice() {
-    let host = host(mock(), Terminals::Read { limit: None });
+    let host = host(mock(), reads());
     let base = Vista::new("t", mock()).map_shell(|inner| Wrapped { inner });
     let script = r#"if self.count() == 3 { self.where("a", 1) } else { self }"#;
     let vista = eval_modify_script(&host, script, base)

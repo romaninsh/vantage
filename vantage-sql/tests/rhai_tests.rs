@@ -1,6 +1,16 @@
-//! Rhai DSL test suite
-//!
-//! Tests .rhai files against pinned .sql output for each database backend.
+//! Rhai DSL golden suite: every `tests/rhai-tests/*.rhai` script against its
+//! pinned `.sql` output or `.err` message, once per SQL dialect. A golden
+//! that no longer matches the renderer fails here.
+
+#[cfg(feature = "rhai")]
+#[path = "common/rhai_golden.rs"]
+mod golden;
+
+#[cfg(feature = "rhai")]
+fn assert_goldens(vendor: &str, eval: impl Fn(&str) -> Result<String, String>) {
+    let mismatches = golden::mismatches(vendor, eval);
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n\n"));
+}
 
 #[cfg(all(feature = "sqlite", feature = "rhai"))]
 mod sqlite_tests {
@@ -19,25 +29,15 @@ mod sqlite_tests {
 
     type Select = RhaiSelect<AnySqliteType, SqliteSelect, SqliteSelectJoin, SqliteCondition>;
 
-    fn eval_rhai_file(path: &str) -> Select {
-        let code = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
-        __host()
-            .compile(&vantage_rhai::Block::from(code.as_str()))
-            .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
-            .unwrap_or_else(|e| panic!("Rhai eval failed for {}: {}", path, e))
-    }
-
     #[test]
-    fn q1_basic_query() {
-        let result = eval_rhai_file("tests/rhai-tests/q1.rhai");
-        let sql = result.inner.preview();
-        let expected = std::fs::read_to_string("tests/rhai-tests/sqlite/q1.sql")
-            .expect("Failed to read sqlite/q1.sql");
-        // The pinned fixtures are pretty-printed; `preview()` renders one
-        // line. SQL is whitespace-insensitive — compare tokens.
-        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert_eq!(normalize(&sql), normalize(&expected));
+    fn every_fixture_matches_its_golden() {
+        super::assert_goldens("sqlite", |code| {
+            __host()
+                .compile(&vantage_rhai::Block::from(code))
+                .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
+                .map(|select| select.inner.preview())
+                .map_err(|e| e.to_string())
+        });
     }
 }
 
@@ -59,25 +59,15 @@ mod postgres_tests {
     type Select =
         RhaiSelect<AnyPostgresType, PostgresSelect, PostgresSelectJoin, PostgresCondition>;
 
-    fn eval_rhai_file(path: &str) -> Select {
-        let code = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
-        __host()
-            .compile(&vantage_rhai::Block::from(code.as_str()))
-            .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
-            .unwrap_or_else(|e| panic!("Rhai eval failed for {}: {}", path, e))
-    }
-
     #[test]
-    fn q1_basic_query() {
-        let result = eval_rhai_file("tests/rhai-tests/q1.rhai");
-        let sql = result.inner.preview();
-        let expected = std::fs::read_to_string("tests/rhai-tests/postgres/q1.sql")
-            .expect("Failed to read postgres/q1.sql");
-        // The pinned fixtures are pretty-printed; `preview()` renders one
-        // line. SQL is whitespace-insensitive — compare tokens.
-        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert_eq!(normalize(&sql), normalize(&expected));
+    fn every_fixture_matches_its_golden() {
+        super::assert_goldens("postgres", |code| {
+            __host()
+                .compile(&vantage_rhai::Block::from(code))
+                .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
+                .map(|select| select.inner.preview())
+                .map_err(|e| e.to_string())
+        });
     }
 }
 
@@ -98,24 +88,14 @@ mod mysql_tests {
 
     type Select = RhaiSelect<AnyMysqlType, MysqlSelect, MysqlSelectJoin, MysqlCondition>;
 
-    fn eval_rhai_file(path: &str) -> Select {
-        let code = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
-        __host()
-            .compile(&vantage_rhai::Block::from(code.as_str()))
-            .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
-            .unwrap_or_else(|e| panic!("Rhai eval failed for {}: {}", path, e))
-    }
-
     #[test]
-    fn q1_basic_query() {
-        let result = eval_rhai_file("tests/rhai-tests/q1.rhai");
-        let sql = result.inner.preview();
-        let expected = std::fs::read_to_string("tests/rhai-tests/mysql/q1.sql")
-            .expect("Failed to read mysql/q1.sql");
-        // The pinned fixtures are pretty-printed; `preview()` renders one
-        // line. SQL is whitespace-insensitive — compare tokens.
-        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert_eq!(normalize(&sql), normalize(&expected));
+    fn every_fixture_matches_its_golden() {
+        super::assert_goldens("mysql", |code| {
+            __host()
+                .compile(&vantage_rhai::Block::from(code))
+                .and_then(|script| script.eval_as::<Select>(&vantage_rhai::Env::new()))
+                .map(|select| select.inner.preview())
+                .map_err(|e| e.to_string())
+        });
     }
 }

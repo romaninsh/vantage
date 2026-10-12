@@ -22,7 +22,8 @@ use crate::{table::Table, traits::table_source::TableSource};
 pub struct ContainedRelation<T: TableSource> {
     name: String,
     host_column: String,
-    /// `ContainsOne` or `ContainsMany`.
+    /// `ContainsOne` or `ContainsMany`: only [`one`](ContainedRelation::one)
+    /// and [`many`](ContainedRelation::many) set it.
     kind: ReferenceKind,
     id_column: Option<String>,
     build_target: Arc<dyn Fn(T) -> Table<T, EmptyEntity> + Send + Sync>,
@@ -41,17 +42,33 @@ impl<T: TableSource> Clone for ContainedRelation<T> {
 }
 
 impl<T: TableSource + 'static> ContainedRelation<T> {
-    pub fn new(
+    /// One record embedded as an object in `host_column`; its id is `"0"`.
+    pub fn one(
         name: impl Into<String>,
         host_column: impl Into<String>,
-        kind: ReferenceKind,
+        build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            host_column: host_column.into(),
+            kind: ReferenceKind::ContainsOne,
+            id_column: None,
+            build_target: Arc::new(build_target),
+        }
+    }
+
+    /// Records embedded as an array in `host_column`, each addressed by its
+    /// `id_column` field (`None`: by position).
+    pub fn many(
+        name: impl Into<String>,
+        host_column: impl Into<String>,
         id_column: Option<String>,
         build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
     ) -> Self {
         Self {
             name: name.into(),
             host_column: host_column.into(),
-            kind,
+            kind: ReferenceKind::ContainsMany,
             id_column,
             build_target: Arc::new(build_target),
         }
@@ -83,6 +100,10 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
     /// The records' columns and id column are materialized at traversal from
     /// `build_target`.
     pub fn reference(&self) -> Reference {
-        Reference::contained(&self.name, self.kind, &self.host_column)
+        if self.kind == ReferenceKind::ContainsMany {
+            Reference::contains_many(&self.name, &self.host_column)
+        } else {
+            Reference::contains_one(&self.name, &self.host_column)
+        }
     }
 }

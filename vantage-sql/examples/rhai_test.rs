@@ -1,25 +1,19 @@
-//! Generic Rhai DSL test runner.
+//! Rhai DSL golden runner.
 //!
-//! Walks `tests/rhai-tests/`, evaluates each `.rhai` file against all
-//! available SQL backends, and compares output to pinned `.sql` files
-//! (or expected `.err` files for error cases).
+//! Evaluates each `tests/rhai-tests/*.rhai` file against all available SQL
+//! backends and prints how each compares to its pinned `.sql` or `.err`
+//! golden. The `rhai_tests` suite runs the same check under `cargo test`;
+//! this runner is for reading the diffs and, with `--fix`, writing the
+//! vendor goldens a fixture is missing.
 //!
-//! Run: cargo run --example rhai_test --features "sqlite,postgres,mysql,rhai"
+//! Run: cargo run --example rhai_test_sql --features "sqlite,postgres,mysql,rhai"
 
 use std::fs;
-use std::path::Path;
 use std::process;
-use vantage_rhai::{Block, Env, RhaiError};
+use vantage_rhai::{Block, Env};
 
-fn format_sql(sql: &str) -> String {
-    let options = sqlformat::FormatOptions {
-        indent: sqlformat::Indent::Spaces(2),
-        uppercase: Some(true),
-        lines_between_queries: 1,
-        ..Default::default()
-    };
-    sqlformat::format(sql, &sqlformat::QueryParams::None, &options)
-}
+#[path = "../tests/common/rhai_golden.rs"]
+mod golden;
 
 // ── Vendor engines ─────────────────────────────────────────────────────
 
@@ -90,203 +84,86 @@ mod mysql_engine {
     }
 }
 
-// ── Test runner ────────────────────────────────────────────────────────
+// ── Runner ─────────────────────────────────────────────────────────────
 
-const TEST_DIR: &str = "tests/rhai-tests";
+type Eval = fn(&str) -> Result<String, String>;
 
-fn test_dir() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(TEST_DIR)
+fn vendors() -> Vec<(&'static str, Eval)> {
+    #[allow(unused_mut)]
+    let mut vendors: Vec<(&'static str, Eval)> = Vec::new();
+    #[cfg(feature = "sqlite")]
+    vendors.push(("sqlite", |code| {
+        sqlite_engine::host()
+            .compile(&Block::from(code))
+            .and_then(|s| s.eval_as::<sqlite_engine::Select>(&Env::new()))
+            .map(|s| s.inner.preview())
+            .map_err(|e| e.to_string())
+    }));
+    #[cfg(feature = "postgres")]
+    vendors.push(("postgres", |code| {
+        postgres_engine::host()
+            .compile(&Block::from(code))
+            .and_then(|s| s.eval_as::<postgres_engine::Select>(&Env::new()))
+            .map(|s| s.inner.preview())
+            .map_err(|e| e.to_string())
+    }));
+    #[cfg(feature = "mysql")]
+    vendors.push(("mysql", |code| {
+        mysql_engine::host()
+            .compile(&Block::from(code))
+            .and_then(|s| s.eval_as::<mysql_engine::Select>(&Env::new()))
+            .map(|s| s.inner.preview())
+            .map_err(|e| e.to_string())
+    }));
+    vendors
 }
 
 fn main() {
     let fix = std::env::args().any(|a| a == "--fix");
+    let (mut pass, mut fail) = (0u32, 0u32);
 
-    let test_dir = test_dir();
-    if !test_dir.exists() {
-        eprintln!("Test directory not found: {}", test_dir.display());
-        process::exit(1);
+    for (name, code) in golden::fixtures() {
+        for (vendor, eval) in vendors() {
+            let outcome = eval(&code);
+            let ok = match golden::golden(vendor, &name) {
+                Some(golden) => report(&name, vendor, golden::check(&golden, &outcome)),
+                None if fix => write_golden(&name, vendor, &outcome),
+                None => report(&name, vendor, Err("no .sql or .err golden".into())),
+            };
+            if ok {
+                pass += 1;
+            } else {
+                fail += 1;
+            }
+        }
     }
 
-    let mut entries: Vec<_> = fs::read_dir(test_dir)
-        .expect("Failed to read test dir")
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|x| x == "rhai").unwrap_or(false))
-        .collect();
-    entries.sort_by_key(|e| e.file_name());
-
-    let mut pass = 0u32;
-    let mut fail = 0u32;
-
-    for entry in &entries {
-        let path = entry.path();
-        let name = path.file_stem().unwrap().to_str().unwrap();
-        let code = fs::read_to_string(&path).expect("Failed to read .rhai");
-
-        #[cfg(feature = "sqlite")]
-        run_test(&mut pass, &mut fail, "sqlite", name, &code, fix, |e| {
-            sqlite_engine::host()
-                .compile(&Block::from(e))
-                .and_then(|s| s.eval_as::<sqlite_engine::Select>(&Env::new()))
-                .map(|s| s.inner.preview())
-        });
-
-        #[cfg(feature = "postgres")]
-        run_test(&mut pass, &mut fail, "postgres", name, &code, fix, |e| {
-            postgres_engine::host()
-                .compile(&Block::from(e))
-                .and_then(|s| s.eval_as::<postgres_engine::Select>(&Env::new()))
-                .map(|s| s.inner.preview())
-        });
-
-        #[cfg(feature = "mysql")]
-        run_test(&mut pass, &mut fail, "mysql", name, &code, fix, |e| {
-            mysql_engine::host()
-                .compile(&Block::from(e))
-                .and_then(|s| s.eval_as::<mysql_engine::Select>(&Env::new()))
-                .map(|s| s.inner.preview())
-        });
-    }
-
-    println!("\n  {} passed, {} failed", pass, fail);
+    println!("\n  {pass} passed, {fail} failed");
     if fail > 0 {
         process::exit(1);
     }
 }
 
-fn run_test<F>(
-    pass: &mut u32,
-    fail: &mut u32,
-    vendor: &str,
-    name: &str,
-    code: &str,
-    fix: bool,
-    eval: F,
-) where
-    F: Fn(&str) -> Result<String, RhaiError>,
-{
-    let base = test_dir();
-    let common_sql = base.join(format!("common/{}.sql", name));
-    let common_err = base.join(format!("common/{}.err", name));
-    let vendor_sql = base.join(format!("{}/{}.sql", vendor, name));
-    let vendor_err = base.join(format!("{}/{}.err", vendor, name));
-
-    let has_common_sql = common_sql.exists();
-    let has_common_err = common_err.exists();
-    let has_vendor_sql = vendor_sql.exists();
-    let has_vendor_err = vendor_err.exists();
-
-    let sql_path = if has_common_sql {
-        Some(common_sql)
-    } else if has_vendor_sql {
-        Some(vendor_sql.clone())
-    } else {
-        None
-    };
-
-    let err_path = if has_common_err {
-        Some(common_err)
-    } else if has_vendor_err {
-        Some(vendor_err.clone())
-    } else {
-        None
-    };
-
-    // --fix mode: generate missing files
-    if fix {
-        if has_common_sql || has_common_err {
-            println!("  ⚠️  {} [{}] cannot fix: common file exists", name, vendor);
-            *fail += 1;
-            return;
-        }
-
-        match eval(code) {
-            Ok(sql) => {
-                if !has_vendor_sql {
-                    let formatted = format_sql(&sql);
-                    fs::write(&vendor_sql, formatted.trim()).unwrap();
-                    println!("  ✅ {} [{}] created .sql", name, vendor);
-                    *pass += 1;
-                } else {
-                    println!("  ⏭️  {} [{}] .sql already exists", name, vendor);
-                }
-                // Remove .err if it exists
-                if has_vendor_err {
-                    fs::remove_file(&vendor_err).unwrap();
-                }
-            }
-            Err(e) => {
-                if !has_vendor_err {
-                    let err_msg = e.to_string();
-                    let first_line = err_msg.lines().next().unwrap_or("");
-                    fs::write(&vendor_err, first_line).unwrap();
-                    println!("  ✅ {} [{}] created .err", name, vendor);
-                    *pass += 1;
-                } else {
-                    println!("  ⏭️  {} [{}] .err already exists", name, vendor);
-                }
-                // Remove .sql if it exists
-                if has_vendor_sql {
-                    fs::remove_file(&vendor_sql).unwrap();
-                }
-            }
-        }
-        return;
+fn report(name: &str, vendor: &str, result: Result<(), String>) -> bool {
+    match &result {
+        Ok(()) => println!("  ✅ {name} [{vendor}]"),
+        Err(e) => println!("  ❌ {name} [{vendor}] {e}"),
     }
-
-    // Normal test mode
-    if let Some(sql_path) = sql_path {
-        let expected = fs::read_to_string(&sql_path).unwrap();
-        match eval(code) {
-            Ok(sql) => {
-                let actual_fmt = format_sql(&sql);
-                let expected_fmt = format_sql(&expected);
-                if actual_fmt.trim() == expected_fmt.trim() {
-                    println!("  ✅ {} [{}]", name, vendor);
-                    *pass += 1;
-                } else {
-                    println!("  ❌ {} [{}] SQL mismatch", name, vendor);
-                    println!("     expected:\n{}", expected_fmt.trim());
-                    println!("     actual:\n{}", actual_fmt.trim());
-                    *fail += 1;
-                }
-            }
-            Err(e) => {
-                println!("  ❌ {} [{}] unexpected error: {}", name, vendor, e);
-                *fail += 1;
-            }
-        }
-    } else if let Some(err_path) = err_path {
-        let expected = fs::read_to_string(&err_path).unwrap();
-        match eval(code) {
-            Err(e) => {
-                let actual = e.to_string();
-                if contains_normalized(&actual, &expected) {
-                    println!("  ✅ {} [{}] (error)", name, vendor);
-                    *pass += 1;
-                } else {
-                    println!("  ❌ {} [{}] error mismatch", name, vendor);
-                    println!("     expected to contain: {}", expected.trim());
-                    println!("     actual: {}", actual.lines().next().unwrap_or(""));
-                    *fail += 1;
-                }
-            }
-            Ok(sql) => {
-                println!(
-                    "  ❌ {} [{}] expected error, got SQL: {}",
-                    name,
-                    vendor,
-                    sql.trim()
-                );
-                *fail += 1;
-            }
-        }
-    }
-    // No .sql or .err → skip silently
+    result.is_ok()
 }
 
-/// Check if `haystack` contains `needle` after normalizing whitespace.
-fn contains_normalized(haystack: &str, needle: &str) -> bool {
-    let h: String = haystack.split_whitespace().collect::<Vec<_>>().join(" ");
-    let n: String = needle.split_whitespace().collect::<Vec<_>>().join(" ");
-    h.contains(&n)
+/// Pin a fixture that has no golden to what it produces now: its formatted
+/// SQL, or the first line of its error.
+fn write_golden(name: &str, vendor: &str, outcome: &Result<String, String>) -> bool {
+    let base = golden::dir().join(vendor);
+    let (path, text) = match outcome {
+        Ok(sql) => (base.join(format!("{name}.sql")), golden::format_sql(sql)),
+        Err(e) => (
+            base.join(format!("{name}.err")),
+            e.lines().next().unwrap_or("").to_string(),
+        ),
+    };
+    fs::write(&path, text).unwrap();
+    println!("  ✅ {name} [{vendor}] created {}", path.display());
+    true
 }

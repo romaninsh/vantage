@@ -315,7 +315,7 @@ columns:
     type: string
 postgres:
   rhai: |
-    select().from("{name}").field("id").field("name").where(expr("price > 15"))
+    sql::select().from("{name}").field("id").field("name").where(sql::expr("price > 15"))
 "#
     );
 
@@ -386,13 +386,14 @@ fn clients_orders_specs(
 ) -> std::result::Result<
     (
         vantage_sql::postgres::vista::PostgresVistaSpec,
-        vantage_sql::postgres::vista::PostgresSpecResolver,
+        vantage_vista::SpecResolver<vantage_sql::postgres::vista::PostgresVistaSpec>,
     ),
     Box<dyn Error>,
 > {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
+    use vantage_sql::postgres::vista::PostgresVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&format!(
         r#"
@@ -424,7 +425,8 @@ postgres:
     let map: IndexMap<String, PostgresVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<PostgresVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
     Ok((client_spec, resolver))
 }
 
@@ -508,7 +510,8 @@ async fn notify_opt_in_survives_reference_traversal() -> TestResult {
 async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
+    use vantage_sql::postgres::vista::PostgresVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, client_t, _orders_t) = setup_clients_orders("base").await;
 
@@ -530,7 +533,7 @@ postgres:
   inherit:
     columns: [id, name]
   rhai: |
-    base.where(expr("name = 'Alice'"))
+    base.where(sql::expr("name = 'Alice'"))
 "#;
 
     let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
@@ -539,7 +542,8 @@ postgres:
     let map: IndexMap<String, PostgresVistaSpec> =
         [("client".to_string(), client_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<PostgresVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()
@@ -569,7 +573,8 @@ postgres:
 async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
+    use vantage_sql::postgres::vista::PostgresVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, _client_t, orders_t) = setup_clients_orders("agg").await;
 
@@ -594,7 +599,7 @@ postgres:
   inherit:
     columns: [client_id]
   rhai: |
-    base.clear_fields().field("client_id").expression(expr("SUM(total) AS total_due")).group_by(expr("client_id"))
+    base.clear_fields().field("client_id").expression(sql::expr("SUM(total) AS total_due")).group_by(sql::expr("client_id"))
 "#;
 
     let orders_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&orders_yaml)?;
@@ -603,7 +608,8 @@ postgres:
     let map: IndexMap<String, PostgresVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<PostgresVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()

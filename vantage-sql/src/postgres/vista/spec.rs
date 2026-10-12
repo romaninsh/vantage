@@ -141,7 +141,7 @@ postgres:
     columns: [id, name]
     relations: [orders]
   rhai: |
-    base.where(expr("vip = true"))
+    base.where(sql::expr("vip = true"))
 "#;
         let spec: PostgresVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let block = spec.driver.postgres.as_ref().unwrap();

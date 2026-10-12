@@ -75,6 +75,11 @@ impl MemoryStore {
             .clone()
     }
 
+    /// The table `name` when it exists; never creates one.
+    pub(crate) fn existing_table(&self, name: &str) -> Option<MemoryTableHandle> {
+        self.tables.read().get(name).cloned()
+    }
+
     pub fn table_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self.tables.read().keys().cloned().collect();
         names.sort();

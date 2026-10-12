@@ -13,7 +13,7 @@ use vantage_vista::Page;
 
 use super::AwsTableShell;
 use crate::condition::AwsCondition;
-use crate::impls::table_source::{required_fields, retain_matching};
+use crate::impls::table_source::retain_eq_conditions;
 
 /// Whether the operation behind `table_name` takes `start-after` and
 /// `max-keys`, so it can page by key.
@@ -47,7 +47,7 @@ impl AwsTableShell {
         let next = truncated
             .then(|| rows.keys().last().map(|k| CborValue::Text(k.clone())))
             .flatten();
-        retain_matching(&mut rows, &conditions, &required_fields(&self.table));
+        retain_eq_conditions(&mut rows, &conditions, &self.table.row_fields());
         Ok((Page::new(rows.into_iter().collect()), next))
     }
 }

@@ -19,28 +19,37 @@ impl Vista {
     }
 
     /// Rows `[offset, offset + limit)` of the set, in its order; see
-    /// [`TableShell::fetch_window`](crate::TableShell::fetch_window).
+    /// [`TableShell::fetch_window`](crate::TableShell::fetch_window). The
+    /// leading window (`offset == 0`) is always asked of the shell; any
+    /// other offset needs [`Window`](Capability::Window).
     pub async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        if offset > 0 {
+            self.require(Capability::Window)?;
+        }
         let mut page = self.shell().fetch_window(offset, limit).await?;
         self.fill_computed_rows(page.rows.iter_mut().map(|(_, r)| r))?;
         Ok(page)
     }
 
     /// Up to `limit` rows after `token`, and the next token; see
-    /// [`TableShell::fetch_cursor`](crate::TableShell::fetch_cursor).
+    /// [`TableShell::fetch_cursor`](crate::TableShell::fetch_cursor). Needs
+    /// [`Cursor`](Capability::Cursor).
     pub async fn fetch_cursor(
         &self,
         token: Option<CborValue>,
         limit: usize,
     ) -> Result<(Page, Option<CborValue>)> {
+        self.require(Capability::Cursor)?;
         let (mut page, next) = self.shell().fetch_cursor(token, limit).await?;
         self.fill_computed_rows(page.rows.iter_mut().map(|(_, r)| r))?;
         Ok((page, next))
     }
 
     /// Subscribe to changes; see [`TableShell::watch`](crate::TableShell::watch).
-    /// Row-bearing changes carry the computed columns too.
+    /// Needs [`Subscribe`](Capability::Subscribe). Row-bearing changes carry
+    /// the computed columns too.
     pub async fn watch(&self) -> Result<VistaChangeStream> {
+        self.require(Capability::Subscribe)?;
         let mut changes = self.shell().watch().await?;
         let columns = self.computed_columns();
         if columns.is_empty() {

@@ -7,7 +7,8 @@ use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Capability, ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, resolve_base_spec,
+    Capability, ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata,
+    resolve_base_spec,
 };
 
 use crate::postgres::PostgresDB;
@@ -17,13 +18,9 @@ use crate::postgres::vista::source::PostgresTableShell;
 use crate::postgres::vista::spec::{PostgresColumnExtras, PostgresTableExtras, PostgresVistaSpec};
 use crate::sql_vista::{column_for_type, metadata_options, sql_capabilities};
 
-/// Resolves a YAML spec by table name, so references and `base:` can rebuild
-/// their tables from the live spec.
-pub type PostgresSpecResolver = SpecResolver<PostgresVistaSpec>;
-
 pub struct PostgresVistaFactory {
     db: PostgresDB,
-    resolver: Option<PostgresSpecResolver>,
+    resolver: Option<SpecResolver<PostgresVistaSpec>>,
     notify: bool,
 }
 
@@ -36,10 +33,11 @@ impl PostgresVistaFactory {
         }
     }
 
-    /// Attach a spec resolver. Required for YAML-declared references to resolve
-    /// their target tables — without it, a traversal yields a column-less target
-    /// `Table` and the next query fails loudly.
-    pub fn with_resolver(mut self, resolver: PostgresSpecResolver) -> Self {
+    /// Attach a spec resolver, which finds a YAML spec by table name so
+    /// references and `base:` can rebuild their tables from the live spec.
+    /// Without it, a traversal yields a column-less target `Table` and the
+    /// next query fails loudly.
+    pub fn with_resolver(mut self, resolver: SpecResolver<PostgresVistaSpec>) -> Self {
         self.resolver = Some(resolver);
         self
     }
@@ -69,17 +67,23 @@ impl PostgresVistaFactory {
         E: Entity<AnyPostgresType> + 'static,
     {
         let name = table.table_name().to_string();
-        Ok(self.wrap(table, name, false))
+        let metadata = table.vista_metadata(metadata_options());
+        Ok(self.wrap(table, name, metadata, false))
     }
 
     /// Single source-construction site shared by `from_table` and
     /// `build_from_spec`. A query-sourced (e.g. `rhai:`) vista is `read_only`,
     /// which clears the write capabilities.
-    fn wrap<E>(&self, table: Table<PostgresDB, E>, name: String, read_only: bool) -> Vista
+    fn wrap<E>(
+        &self,
+        table: Table<PostgresDB, E>,
+        name: String,
+        metadata: VistaMetadata,
+        read_only: bool,
+    ) -> Vista
     where
         E: Entity<AnyPostgresType> + 'static,
     {
-        let metadata = table.vista_metadata(metadata_options());
         let mut capabilities = sql_capabilities(read_only);
         // Push via LISTEN/NOTIFY on the `{table}_changed` channel, which the
         // application feeds from a trigger. Opt-in (`with_notify`): we cannot
@@ -117,7 +121,9 @@ impl VistaFactory for PostgresVistaFactory {
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
-        Ok(self.wrap(table, vista_name, read_only))
+        let mut metadata = table.vista_metadata(metadata_options());
+        table.name_spec_targets(&mut metadata, &spec.references, |_| None)?;
+        Ok(self.wrap(table, vista_name, metadata, read_only))
     }
 }
 
@@ -127,7 +133,7 @@ impl VistaFactory for PostgresVistaFactory {
 pub(crate) fn build_postgres_table(
     spec: &PostgresVistaSpec,
     db: PostgresDB,
-    resolver: Option<PostgresSpecResolver>,
+    resolver: Option<SpecResolver<PostgresVistaSpec>>,
 ) -> Result<Table<PostgresDB, EmptyEntity>> {
     let block = spec.driver.postgres.as_ref();
 
@@ -153,7 +159,7 @@ pub(crate) fn build_postgres_table(
     for (name, col_spec) in spec.columns.iter().filter(|(n, _)| !n.contains('.')) {
         table.add_spec_column(name, col_spec, build_column)?;
     }
-    table.set_spec_id_field(&spec.resolve_id_column())?;
+    table.set_spec_id_field(&spec.resolve_id_column("id"))?;
 
     let mut table = table.with_spec_references(&spec.references, resolver, build_postgres_table)?;
 
@@ -206,7 +212,7 @@ fn build_derived_table(
     spec: &PostgresVistaSpec,
     base_name: &str,
     db: PostgresDB,
-    resolver: Option<PostgresSpecResolver>,
+    resolver: Option<SpecResolver<PostgresVistaSpec>>,
 ) -> Result<Table<PostgresDB, EmptyEntity>> {
     let (resolver, base_spec) = resolve_base_spec(resolver, base_name)?;
     let base_table = build_postgres_table(&base_spec, db, Some(resolver.clone()))?;

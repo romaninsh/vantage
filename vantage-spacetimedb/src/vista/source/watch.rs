@@ -131,7 +131,7 @@ fn decode_all(
                     column = column
                 )
             })?,
-            None => content_hash(&value),
+            None => content_hash(&value)?,
         };
         out.push((id, record));
     }

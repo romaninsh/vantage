@@ -15,7 +15,7 @@ pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
-pub use factory::{SqliteSpecResolver, SqliteVistaFactory};
+pub use factory::SqliteVistaFactory;
 pub use source::SqliteTableShell;
 pub use spec::{
     InheritBlock, SqliteColumnBlock, SqliteColumnExtras, SqliteTableBlock, SqliteTableExtras,

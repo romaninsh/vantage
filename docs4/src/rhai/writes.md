@@ -33,14 +33,14 @@ let patched = orders.patch("o99", #{ status: "paid" });   // false
 | `insert(map)` | the id; an id already in the set returns it | n/a |
 | `upsert(id, map)` | `id` | inserts it |
 | `patch(id, map)` | `true` | returns `false` |
-| `delete(id)` | `true`; `false` only when writes aren't allowed | returns `true` |
+| `delete(id)` | `true` | returns `true` |
 | `import_from(source)`, `import_from(source, mapping)` | `#{ inserted, skipped, rejected, cancelled }` | n/a |
 
 `patch` returns `false` when the row is missing or outside the handle's set (the backend reported
 `NotFound`). `delete` returns `true` whenever the row is gone afterwards, including when it was
-never there or is outside the set; it returns `false` only when the write isn't allowed
-(`Writes::Denied`, no `can_delete`, a backend that can't keep writes inside the set). Any other
-failure throws. Why: [Safe writes](../record-lifecycle.md#safe-writes).
+never there or is outside the set. A write that isn't allowed (`Writes::Denied`, a capability the
+backend lacks) throws, `delete` included, and so does any other failure. Why:
+[Safe writes](../record-lifecycle.md#safe-writes).
 
 `patch` changes only the fields in the map. `upsert` replaces the whole row, so fields left out of
 the map are gone afterwards. [Computed columns](./computed.md) in the map are dropped before the
@@ -104,20 +104,25 @@ still there.
 
 ## Capabilities
 
-Each write checks the target Vista's capabilities before it runs, and throws an error naming the
-verb and the table when the backend can't do it (`delete` returns `false` instead):
+Each write goes through the Vista method of the same name, and the Vista checks the one
+capability that names it before the backend sees the call. A missing capability throws an
+`unsupported` error naming it, such as `capability is not supported; method refused (capability:
+delete)`:
 
 | Verb | Needs |
 |---|---|
-| `insert` | `can_insert` |
-| `upsert` | `can_insert` and `can_update` |
-| `patch` | `can_update` |
-| `delete` | `can_delete` |
-| `import_from` | `can_import`, or `can_insert` for row-by-row inserts |
+| `insert` | `insert` |
+| `upsert` | `update` |
+| `patch` | `update` |
+| `delete` | `delete` |
+| `import_from` | `import`, checked before the source is read |
+
+A narrowed target imports row by row through inserts, so it also needs `insert` and a backend that
+keeps writes inside the set (`confine_writes`).
 
 A host can also turn writes off for every table with `Writes::Denied(message)`. The verbs are
-still there, and each throws `message`, except `delete`, which returns `false`. Vantage UI does
-this for MCP agents unless the "Allow MCP agents to write data" setting is on.
+still there, and each throws `message`, `delete` included. Vantage UI does this for MCP agents
+unless the "Allow MCP agents to write data" setting is on.
 
 ## Importing
 
@@ -156,10 +161,10 @@ let report = table("archive").import_from(
   error, and so is an id whose `table:` prefix names a different table.
 
 An id the target already holds is never overwritten; it counts as `skipped`. Rows that conflict
-with a narrowed target count as `rejected`. When the target can import (`can_import`) and isn't
-narrowed, the rows go through `import_values` in one call and the backend decides which ids it
-already holds. Otherwise each row is looked up with `get` first and inserted on its own if it is
-missing. Into a narrowed target, a row outside the set is `rejected` and the import carries on;
+with a narrowed target count as `rejected`. Into a whole table, the rows go through
+`import_values` in one call and the backend decides which ids it already holds. Into a narrowed
+target, each row is looked up with `get` first and inserted on its own if it is missing; a row
+outside the set is `rejected` and the import carries on;
 any other insert failure stops the import and throws. Importing the same rows twice into a memory
 table:
 

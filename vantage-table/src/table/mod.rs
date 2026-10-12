@@ -30,5 +30,8 @@ pub use id_generator::*;
 pub mod impls;
 pub use impls::*;
 
+mod row_fields;
+pub use row_fields::retain_matching;
+
 pub mod sets;
 pub use sets::*;

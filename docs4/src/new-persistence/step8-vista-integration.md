@@ -414,8 +414,8 @@ Two notes worth dwelling on:
 - The result is *another* `Vista`, not the inner table. Consumers stay on the universal surface;
   each hop fetches a row and traverses from it without falling out of Vista.
 - Traversal here is strictly **same-persistence** — a Vista describes one backend. Cross-backend
-  relations live one layer up in `vantage-vista-factory`'s
-  [`VistaCatalog`](vantage_vista_factory), which resolves the target by name in *its* driver and
+  relations live one layer up in a [`Catalog`](vantage_vista::Catalog), which resolves the
+  target by name in *its* driver, and [`Reference::narrow`](vantage_vista::Reference::narrow)
   narrows it with universal eq-conditions. Your shell doesn't need any code for that to work.
 
 #### Native conditions from outside: `add_raw_condition`

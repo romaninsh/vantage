@@ -1,2 +1,2 @@
 // E6: Undefined variable
-select().from(u).field("name")
+sql::select().from(u).field("name")

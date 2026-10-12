@@ -25,7 +25,6 @@ on:
       - "vantage-diorama-aggregate/**"
       - "vantage-types/**"
       - "vantage-rhai/**"
-      - "vantage-vista-factory/**"
       - "surreal-client/**"
       - "bakery_model3/**"
       - "Cargo.toml"

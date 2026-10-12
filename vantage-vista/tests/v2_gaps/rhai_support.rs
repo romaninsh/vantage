@@ -5,9 +5,8 @@ use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{
-    Column, ColumnFlag, DataVocab, TargetResolver, Terminals, Vista, VistaMetadata,
-};
+use vantage_vista::rhai::{DataVocab, Terminals, Writes};
+use vantage_vista::{Column, ColumnFlag, TableShell, Vista, VistaMetadata, VistaResolver};
 
 fn rec(a: i64) -> Record<CborValue> {
     [("a".to_string(), CborValue::Integer(a.into()))]
@@ -30,16 +29,21 @@ pub fn mock() -> MockShell {
 }
 
 /// Resolves every name to a fresh copy of `shell`, with its own query state.
-pub fn resolver(shell: MockShell) -> TargetResolver {
+pub fn resolver(shell: impl TableShell + Clone + 'static) -> Arc<dyn VistaResolver> {
     Arc::new(move |name: &str| Ok(Vista::new(name, shell.clone())))
 }
 
-pub fn host(shell: MockShell, terminals: Terminals) -> Host {
+/// Read terminals with `list()` uncapped; every write throws.
+pub fn reads() -> Terminals {
+    Terminals::ReadWrite {
+        limit: None,
+        writes: Writes::Denied("this host only reads".into()),
+    }
+}
+
+pub fn host(shell: impl TableShell + Clone + 'static, terminals: Terminals) -> Host {
     Host::builder(Limits::background())
-        .vocab(DataVocab {
-            resolver: Some(resolver(shell)),
-            terminals,
-        })
+        .vocab(DataVocab::new(terminals).with_resolver(resolver(shell)))
         .build()
 }
 

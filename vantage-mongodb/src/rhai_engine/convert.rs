@@ -2,9 +2,10 @@
 //!
 //! A Rhai map becomes a BSON document. Rhai keeps map keys sorted, so a
 //! literal `#{b: 1, a: 2}` arrives as `{a: 2, b: 1}`; where key order matters
-//! (a multi-key `$sort`), `doc([["b", 1], ["a", 2]])` builds a document in the
-//! order given. `ObjectId`, BSON `DateTime` and `Document` values (from
-//! `oid()`, `date()`, `doc()`) pass through as themselves, as does any `Bson`
+//! (a multi-key `$sort`), `mongo::doc([["b", 1], ["a", 2]])` builds a document
+//! in the order given. `ObjectId`, BSON `DateTime` and `Document` values (from
+//! `mongo::oid()`, `mongo::date()`, `mongo::doc()`) pass through as
+//! themselves, as does any `Bson`
 //! [`bson_to_dynamic`] could not map to a native Rhai value.
 
 use bson::oid::ObjectId;
@@ -85,7 +86,7 @@ pub fn map_to_document(map: Map) -> Result<Document> {
     Ok(doc)
 }
 
-/// A script value that must be a document: a map, or a `doc()` result.
+/// A script value that must be a document: a map, or a `mongo::doc()` result.
 pub fn dynamic_to_document(d: Dynamic) -> Result<Document> {
     let type_name = d.type_name();
     match dynamic_to_bson(d)? {

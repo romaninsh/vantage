@@ -8,42 +8,20 @@
 //! semaphore the test releases permit by permit, so a test can hold the
 //! worker mid-fetch while it arranges the next scene.
 
+mod support;
+
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
+use support::detail_shell::DetailShell;
+use support::{meta, record};
 use tempfile::TempDir;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
-use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
-use vantage_vista_factory::VistaCatalog;
-
-fn text(s: &str) -> CborValue {
-    CborValue::Text(s.into())
-}
-
-fn record(pairs: &[(&str, &str)]) -> Record<CborValue> {
-    pairs
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), text(v)))
-        .collect()
-}
-
-fn meta(columns: &[&str]) -> VistaMetadata {
-    let mut m = VistaMetadata::new();
-    for c in columns {
-        let col = if *c == "id" {
-            Column::new("id", "String").with_flag("id")
-        } else {
-            Column::new(*c, "String")
-        };
-        m = m.with_column(col);
-    }
-    m.with_id_column("id")
-}
+use vantage_vista::{Catalog, Vista};
 
 /// Master with `count` rows `r0..rN`, cheap columns only (id, modified).
 fn master_vista(count: usize) -> Vista {
@@ -53,103 +31,6 @@ fn master_vista(count: usize) -> Vista {
         shell = shell.with_record(&id, record(&[("id", &id), ("modified", "t1")]));
     }
     Vista::new("runs", shell.with_metadata(meta(&["id", "modified"])))
-}
-
-/// Gated, logging detail shell. Every `get` records its id in dispatch order,
-/// counts concurrent entries, then blocks until the test grants a permit.
-mod gated {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
-
-    use async_trait::async_trait;
-    use ciborium::Value as CborValue;
-    use indexmap::IndexMap;
-    use tokio::sync::Semaphore;
-    use vantage_core::{Result, error};
-    use vantage_types::Record;
-    use vantage_vista::{
-        Capability, Column, Condition, Page, Preview, Reference, TableShell, Vista,
-        VistaCapabilities, VistaMetadata, unsupported,
-    };
-
-    #[derive(Clone)]
-    pub struct GatedDetailShell {
-        pub rows: Arc<IndexMap<String, Record<CborValue>>>,
-        /// Ids in the order fetches were dispatched.
-        pub log: Arc<Mutex<Vec<String>>>,
-        /// Fetch admission: each `get` consumes one permit. Starts closed;
-        /// the test opens it with `add_permits`.
-        pub gate: Arc<Semaphore>,
-        pub concurrent: Arc<AtomicUsize>,
-        pub max_concurrent: Arc<AtomicUsize>,
-        metadata: VistaMetadata,
-        capabilities: VistaCapabilities,
-    }
-
-    impl GatedDetailShell {
-        pub fn new(rows: IndexMap<String, Record<CborValue>>) -> Self {
-            let metadata = VistaMetadata::new()
-                .with_column(Column::new("id", "String").with_flag("id"))
-                .with_column(Column::new("size", "String"))
-                .with_id_column("id");
-            Self {
-                rows: Arc::new(rows),
-                log: Arc::new(Mutex::new(Vec::new())),
-                gate: Arc::new(Semaphore::new(0)),
-                concurrent: Arc::new(AtomicUsize::new(0)),
-                max_concurrent: Arc::new(AtomicUsize::new(0)),
-                metadata,
-                capabilities: VistaCapabilities::new(),
-            }
-        }
-    }
-
-    /// Get-only: it lists nothing and takes no narrowing.
-    #[async_trait]
-    impl TableShell for GatedDetailShell {
-        fn columns(&self) -> &IndexMap<String, Column> {
-            &self.metadata.columns
-        }
-        fn references(&self) -> &IndexMap<String, Reference> {
-            &self.metadata.references
-        }
-        fn id_column(&self) -> Option<&str> {
-            self.metadata.id_column.as_deref()
-        }
-        fn capabilities(&self) -> &VistaCapabilities {
-            &self.capabilities
-        }
-        fn driver_name(&self) -> &'static str {
-            "gated-detail"
-        }
-        fn preview(&self) -> Preview {
-            Preview::new("gated-detail")
-        }
-        async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
-            Ok(IndexMap::new())
-        }
-        async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
-            let now = self.concurrent.fetch_add(1, Ordering::SeqCst) + 1;
-            self.max_concurrent.fetch_max(now, Ordering::SeqCst);
-            self.log.lock().unwrap().push(id.to_string());
-            let permit = self.gate.acquire().await.expect("gate open");
-            permit.forget(); // each permit admits exactly one fetch
-            self.concurrent.fetch_sub(1, Ordering::SeqCst);
-            Ok(self.rows.get(id).cloned())
-        }
-        async fn count(&self) -> Result<i64> {
-            Ok(0)
-        }
-        async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
-            unsupported(Capability::Window)
-        }
-        fn add_condition(&mut self, _condition: &Condition) -> Result<()> {
-            Err(error!("a get-only detail shell takes no conditions").mark_unimplemented())
-        }
-        fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
-            unsupported(Capability::Traverse)
-        }
-    }
 }
 
 struct Fixture {
@@ -169,7 +50,7 @@ async fn fixture(rows: usize, workers: usize) -> Fixture {
         let size = format!("{}", (i + 1) * 100);
         detail_rows.insert(id.clone(), record(&[("id", &id), ("size", &size)]));
     }
-    let detail = gated::GatedDetailShell::new(detail_rows);
+    let detail = DetailShell::gated(detail_rows);
     let log = detail.log.clone();
     let gate = detail.gate.clone();
     let max_concurrent = detail.max_concurrent.clone();
@@ -187,7 +68,7 @@ async fn fixture(rows: usize, workers: usize) -> Fixture {
         .await
         .expect("make_dio")
         .augment(
-            Arc::new(VistaCatalog::new()),
+            Arc::new(Catalog::new()),
             vec![Augmentation {
                 detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
                 source: Source::Id,

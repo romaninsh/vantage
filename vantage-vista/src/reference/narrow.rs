@@ -8,38 +8,39 @@ use super::{JoinKey, Reference};
 use crate::filter::FilterOp;
 use crate::vista::Vista;
 
+#[cfg(test)]
+mod tests;
+
 impl Reference {
     /// Narrow this join's bare `target` to the rows related to `row`.
     ///
-    /// Each key reads the parent's `from` column, passes the value through
-    /// `coerce` (a driver that compares ids by type re-tags string ids here;
-    /// others pass it through unchanged), and constrains the target's
-    /// [`target_column`](JoinKey::target_column) through
+    /// Each key reads the parent's `from` column and constrains the target's
+    /// [`target_column`](JoinKey::target_column) to that value through
     /// [`Vista::add_condition`]. The target's `query()` therefore records the
-    /// join, and the target must declare the constrained column.
+    /// join, and the target must take the constrained column. A driver that
+    /// compares ids by type converts the value in its own `add_condition`.
     ///
-    /// Errors carry `relation` and `column` context. A refusal (`Unsupported`
-    /// or `Unimplemented`, such as a computed join column) stays a refusal;
-    /// any other failure is a normal error.
-    pub fn narrow(
-        &self,
-        mut target: Vista,
-        row: &Record<CborValue>,
-        coerce: impl Fn(&CborValue) -> CborValue,
-    ) -> Result<Vista> {
+    /// A contained relation, or a join whose public `keys` were emptied, has
+    /// nothing to narrow by and is an `IncorrectUsage` error. Other errors
+    /// carry `relation` and `column` context. A refusal (`Unsupported` or
+    /// `Unimplemented`, such as a computed join column) stays a refusal; any
+    /// other failure is a normal error.
+    pub fn narrow(&self, mut target: Vista, row: &Record<CborValue>) -> Result<Vista> {
+        if self.kind.is_contained() || self.keys.is_empty() {
+            return Err(error!(
+                "relation has no join keys to narrow by",
+                relation = self.name.as_str(),
+                kind = self.kind.as_str()
+            )
+            .mark_incorrect_usage());
+        }
         for key in &self.keys {
-            self.narrow_key(&mut target, key, row, &coerce)?;
+            self.narrow_key(&mut target, key, row)?;
         }
         Ok(target)
     }
 
-    fn narrow_key(
-        &self,
-        target: &mut Vista,
-        key: &JoinKey,
-        row: &Record<CborValue>,
-        coerce: &impl Fn(&CborValue) -> CborValue,
-    ) -> Result<()> {
+    fn narrow_key(&self, target: &mut Vista, key: &JoinKey, row: &Record<CborValue>) -> Result<()> {
         let relation = self.name.as_str();
         let value = row.get(&key.from).ok_or_else(|| {
             error!(
@@ -53,7 +54,7 @@ impl Reference {
             Err(e) => return Err(wrap(e, relation, &key.from)),
         };
         target
-            .add_condition(&column, FilterOp::Eq, coerce(value))
+            .add_condition(&column, FilterOp::Eq, value.clone())
             .map_err(|e| wrap(e, relation, &column))
     }
 }
@@ -77,120 +78,5 @@ fn wrap(err: VantageError, relation: &str, column: &str) -> VantageError {
         wrapped.mark_unimplemented()
     } else {
         wrapped
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mocks::MockShell;
-    use crate::{Capability, Column, ColumnFlag, ReferenceKind, VistaMetadata};
-
-    fn rec(pairs: &[(&str, &str)]) -> Record<CborValue> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), CborValue::Text(v.to_string())))
-            .collect()
-    }
-
-    fn target(metadata: VistaMetadata) -> Vista {
-        Vista::new(
-            "order",
-            MockShell::new()
-                .with_metadata(metadata)
-                .with_capabilities([Capability::FilterOps].into_iter().collect()),
-        )
-    }
-
-    fn orders() -> Reference {
-        Reference::new(
-            "orders",
-            "order",
-            ReferenceKind::HasMany,
-            vec![JoinKey::new("id", "client_id")],
-        )
-    }
-
-    #[test]
-    fn narrows_through_the_vista_with_the_coerced_value() {
-        let schema = VistaMetadata::new()
-            .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
-            .with_column(Column::new("client_id", "string"))
-            .with_id_column("id");
-        let narrowed = orders()
-            .narrow(target(schema), &rec(&[("id", "alice")]), |v| match v {
-                CborValue::Text(s) => CborValue::Text(format!("client:{s}")),
-                other => other.clone(),
-            })
-            .unwrap();
-        let condition = &narrowed.query().conditions[0];
-        assert_eq!(condition.column, "client_id");
-        assert_eq!(condition.value, CborValue::Text("client:alice".into()));
-    }
-
-    #[test]
-    fn a_missing_parent_column_names_relation_and_column() {
-        let err = orders()
-            .narrow(target(VistaMetadata::new()), &rec(&[]), CborValue::clone)
-            .unwrap_err();
-        assert_eq!(
-            err.context.get("relation").map(String::as_str),
-            Some("\"orders\"")
-        );
-        assert_eq!(
-            err.context.get("column").map(String::as_str),
-            Some("\"id\"")
-        );
-    }
-
-    #[cfg(feature = "rhai")]
-    #[test]
-    fn a_computed_join_column_stays_a_refusal() {
-        let schema = VistaMetadata::new()
-            .with_column(Column::new("id", "string"))
-            .with_column(
-                Column::new("client_id", "string")
-                    .with_expression("row.id")
-                    .unwrap(),
-            )
-            .with_id_column("id");
-        let err = orders()
-            .narrow(target(schema), &rec(&[("id", "alice")]), CborValue::clone)
-            .unwrap_err();
-        assert!(err.is_unsupported(), "{err:?}");
-        assert_eq!(
-            err.context.get("relation").map(String::as_str),
-            Some("\"orders\"")
-        );
-        assert_eq!(
-            err.context.get("column").map(String::as_str),
-            Some("\"client_id\"")
-        );
-    }
-
-    #[test]
-    fn a_target_without_an_id_column_names_the_relation() {
-        let client = Reference::new(
-            "client",
-            "client",
-            ReferenceKind::HasOne,
-            vec![JoinKey::to_target_id("client_id")],
-        );
-        let err = client
-            .narrow(
-                target(VistaMetadata::new()),
-                &rec(&[("client_id", "a")]),
-                CborValue::clone,
-            )
-            .unwrap_err();
-        assert!(!err.is_unsupported() && !err.is_unimplemented(), "{err:?}");
-        assert_eq!(
-            err.context.get("relation").map(String::as_str),
-            Some("\"client\"")
-        );
-        assert_eq!(
-            err.context.get("column").map(String::as_str),
-            Some("\"client_id\"")
-        );
     }
 }

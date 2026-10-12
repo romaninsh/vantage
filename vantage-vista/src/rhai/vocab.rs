@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use vantage_core::Result;
 use vantage_rhai::Vocab;
 use vantage_rhai::rhai::Engine;
 
@@ -11,14 +10,11 @@ use super::narrow::register_narrowing;
 use super::read::register_reads;
 use super::record::register_record;
 use super::write::register_writes;
-use crate::vista::Vista;
-
-/// Resolve a table name to a fresh, unconditioned [`Vista`]. The host owns
-/// the by-name catalog; vantage-vista only calls it.
-pub type TargetResolver = Arc<dyn Fn(&str) -> Result<Vista> + Send + Sync>;
+use crate::VistaResolver;
 
 /// Whether a [`Terminals::ReadWrite`] host may write.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Writes {
     Allowed,
     /// Every write verb exists but throws this message.
@@ -26,63 +22,56 @@ pub enum Writes {
 }
 
 /// Which terminal verbs a host registers on top of the narrowing verbs.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Terminals {
     /// Narrowing only. The script's result is a handle the host reads.
     Describe,
-    /// Read verbs; `limit` caps every `list()`.
-    Read { limit: Option<usize> },
-    /// Read and write verbs.
+    /// Read and write verbs; `limit` caps every `list()`. A read-only host
+    /// passes [`Writes::Denied`], so every write throws its message.
     ReadWrite {
         limit: Option<usize>,
         writes: Writes,
     },
 }
 
-/// The table handle vocabulary: `table(name)` (when `resolver` is set), the
-/// narrowing verbs, and the terminals `terminals` allows.
+/// The table handle vocabulary: the narrowing verbs, the terminals
+/// `terminals` allows, and `table(name)` once a resolver is set.
 ///
-/// Register it after any backend vocabulary
-/// ([`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions)),
-/// so its `table(name)` wins over a backend's own `table` function.
+/// ```
+/// # use std::sync::Arc;
+/// # use vantage_vista::VistaResolver;
+/// use vantage_vista::rhai::{DataVocab, Terminals, Writes};
+///
+/// fn agent_vocab(tables: Arc<dyn VistaResolver>) -> DataVocab {
+///     let terminals = Terminals::ReadWrite { limit: Some(50), writes: Writes::Allowed };
+///     DataVocab::new(terminals).with_resolver(tables)
+/// }
+/// ```
+///
+/// Backend vocabulary
+/// ([`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions))
+/// shares no names with it, so the two register in either order.
 #[derive(Clone)]
 pub struct DataVocab {
-    pub resolver: Option<TargetResolver>,
-    pub terminals: Terminals,
+    resolver: Option<Arc<dyn VistaResolver>>,
+    terminals: Terminals,
 }
 
 impl DataVocab {
-    /// Narrowing only ([`Terminals::Describe`]).
-    pub fn describe(resolver: Option<TargetResolver>) -> Self {
+    /// The vocabulary with `terminals` and no `table(name)`: scripts reach
+    /// data only through handles the host passes in.
+    pub fn new(terminals: Terminals) -> Self {
         Self {
-            resolver,
-            terminals: Terminals::Describe,
+            resolver: None,
+            terminals,
         }
     }
 
-    /// Read verbs, `limit` capping every `list()` ([`Terminals::Read`]).
-    pub fn read(resolver: Option<TargetResolver>, limit: Option<usize>) -> Self {
-        Self {
-            resolver,
-            terminals: Terminals::Read { limit },
-        }
-    }
-
-    /// Read and write verbs, writes allowed, `list()` uncapped.
-    pub fn read_write(resolver: Option<TargetResolver>) -> Self {
-        Self::read_write_with(resolver, None, Writes::Allowed)
-    }
-
-    /// Read and write verbs with an explicit `limit` and [`Writes`].
-    pub fn read_write_with(
-        resolver: Option<TargetResolver>,
-        limit: Option<usize>,
-        writes: Writes,
-    ) -> Self {
-        Self {
-            resolver,
-            terminals: Terminals::ReadWrite { limit, writes },
-        }
+    /// Register `table(name)`, resolving each name through `resolver`.
+    pub fn with_resolver(mut self, resolver: Arc<dyn VistaResolver>) -> Self {
+        self.resolver = Some(resolver);
+        self
     }
 }
 
@@ -91,14 +80,6 @@ impl Vocab for DataVocab {
         register_narrowing(engine, self.resolver.clone());
         match &self.terminals {
             Terminals::Describe => {}
-            Terminals::Read { limit } => {
-                register_reads(engine, self.resolver.clone(), *limit);
-                register_record(
-                    engine,
-                    self.resolver.clone(),
-                    Writes::Denied("writes aren't available here".to_string()),
-                );
-            }
             Terminals::ReadWrite { limit, writes } => {
                 register_reads(engine, self.resolver.clone(), *limit);
                 register_writes(engine, self.resolver.clone(), writes.clone());

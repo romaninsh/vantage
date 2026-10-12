@@ -12,8 +12,8 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
-use vantage_mongodb::vista::{MongoSpecResolver, MongoVistaSpec};
-use vantage_vista::VistaFactory;
+use vantage_mongodb::vista::MongoVistaSpec;
+use vantage_vista::{SpecResolver, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -36,7 +36,7 @@ async fn teardown(db: &MongoDB, db_name: &str) {
         .unwrap_or_else(|e| eprintln!("drop {db_name}: {e}"));
 }
 
-fn resolver(specs: Vec<MongoVistaSpec>) -> MongoSpecResolver {
+fn resolver(specs: Vec<MongoVistaSpec>) -> SpecResolver<MongoVistaSpec> {
     let map: IndexMap<String, MongoVistaSpec> =
         specs.into_iter().map(|s| (s.name.clone(), s)).collect();
     Arc::new(move |name: &str| map.get(name).cloned())

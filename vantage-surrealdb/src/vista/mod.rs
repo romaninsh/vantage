@@ -15,7 +15,7 @@ pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
-pub use factory::{SurrealSpecResolver, SurrealVistaFactory};
+pub use factory::SurrealVistaFactory;
 pub use source::SurrealTableShell;
 pub use spec::{
     InheritBlock, SurrealColumnBlock, SurrealColumnExtras, SurrealTableBlock, SurrealTableExtras,

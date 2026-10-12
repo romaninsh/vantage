@@ -155,7 +155,7 @@ pub(crate) struct DioInner {
     /// `augmented_columns` is the union of every augmentation's merged columns,
     /// used to route conditions/sort on a client-side column to local emulation.
     pub(crate) augmentations: std::sync::RwLock<Option<Arc<Vec<crate::augment::Augmentation>>>>,
-    pub(crate) augment_catalog: std::sync::RwLock<Option<Arc<vantage_vista_factory::VistaCatalog>>>,
+    pub(crate) augment_resolver: std::sync::RwLock<Option<Arc<dyn vantage_vista::VistaResolver>>>,
     pub(crate) augmented_columns: std::sync::RwLock<std::collections::HashSet<String>>,
     /// Deduplicating registry of live table sceneries, keyed by
     /// `(shape, conditions, sort)`. Holds `Weak` handles so it
@@ -618,7 +618,8 @@ impl Dio {
 
     /// Configure two-pass augmentation on this Dio: a cheap master list pass plus
     /// a per-row detail pass that resolves each [`Augmentation`](crate::Augmentation)'s detail Vista
-    /// through `catalog`, fetches it, and merges its columns onto the row.
+    /// through `resolver`, fetches it, and merges its columns onto the row. A
+    /// [`Catalog`](vantage_vista::Catalog) or a closure goes in as the resolver.
     ///
     /// Augmentation is a property of the Dio, not the Lens — so different Dios
     /// sharing one Lens can enrich differently. The merged columns are recorded
@@ -628,7 +629,7 @@ impl Dio {
     /// Call before opening sceneries. Returns a clone so calls chain.
     pub fn augment(
         &self,
-        catalog: Arc<vantage_vista_factory::VistaCatalog>,
+        resolver: Arc<dyn vantage_vista::VistaResolver>,
         augmentations: Vec<crate::augment::Augmentation>,
     ) -> Self {
         let mut cols = std::collections::HashSet::new();
@@ -638,7 +639,7 @@ impl Dio {
             }
         }
         *self.inner.augmented_columns.write().unwrap() = cols;
-        *self.inner.augment_catalog.write().unwrap() = Some(catalog);
+        *self.inner.augment_resolver.write().unwrap() = Some(resolver);
         *self.inner.augmentations.write().unwrap() = Some(Arc::new(augmentations));
         self.inner.ensure_augment_workers();
         self.clone()
@@ -761,8 +762,8 @@ impl Dio {
     /// [`Vista::add_condition`] without affecting other consumers.
     ///
     /// The facade's schema mirrors `master` (forwarded through
-    /// [`DioShell`]'s [`columns`](vantage_vista::TableShell::columns)
-    /// etc.) while reads route through the cache and writes route
+    /// [`DioShell`]'s [`metadata`](vantage_vista::TableShell::metadata))
+    /// while reads route through the cache and writes route
     /// through the Dio's queue.
     pub fn vista(&self) -> Vista {
         let name = self.master().name().to_string();

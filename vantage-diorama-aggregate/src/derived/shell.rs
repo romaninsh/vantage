@@ -15,8 +15,8 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Column, ColumnFlag, Condition, FilterOp, Page, Preview, Reference, SortDirection,
-    TableShell, Vista, VistaCapabilities, unsupported,
+    Capability, Column, ColumnFlag, Condition, FilterOp, Page, Preview, SortDirection, TableShell,
+    VistaCapabilities, VistaMetadata, unsupported,
 };
 
 use crate::aggregation::DerivedRows;
@@ -31,9 +31,8 @@ pub(crate) type SharedRows = Arc<RwLock<DerivedRows>>;
 #[derive(Clone)]
 pub(crate) struct AggregateShell {
     rows: SharedRows,
-    columns: IndexMap<String, Column>,
-    references: IndexMap<String, Reference>,
-    id_column: Option<String>,
+    /// The derived schema; derived rows carry no relations.
+    metadata: VistaMetadata,
     capabilities: VistaCapabilities,
 
     conditions: Vec<(String, CborValue)>,
@@ -48,24 +47,21 @@ impl AggregateShell {
     /// not a convenience: the whole derived set is in memory, so there is no
     /// column this shell genuinely cannot order or search by.
     pub(crate) fn new(rows: SharedRows, schema: &[Column]) -> Self {
-        let mut columns = IndexMap::new();
-        let mut id_column = None;
+        let mut metadata = VistaMetadata::new();
         for column in schema {
             let column = column
                 .clone()
                 .with_flag(ColumnFlag::Orderable)
                 .with_flag(ColumnFlag::Searchable);
-            if column.has_flag(ColumnFlag::Id) && id_column.is_none() {
-                id_column = Some(column.name.clone());
+            if column.has_flag(ColumnFlag::Id) && metadata.id_column.is_none() {
+                metadata.id_column = Some(column.name.clone());
             }
-            columns.insert(column.name.clone(), column);
+            metadata.columns.insert(column.name.clone(), column);
         }
 
         Self {
             rows,
-            columns,
-            references: IndexMap::new(),
-            id_column,
+            metadata,
             // Derived rows are read-only: they are a function of the source,
             // so a write here would have nowhere to land.
             capabilities: [Capability::Order, Capability::Search, Capability::Window]
@@ -106,7 +102,7 @@ impl AggregateShell {
     }
 
     fn known_column(&self, field: &str) -> Result<()> {
-        if self.columns.contains_key(field) {
+        if self.metadata.columns.contains_key(field) {
             return Ok(());
         }
         Err(error!("unknown column on an aggregate", column = field))
@@ -115,16 +111,8 @@ impl AggregateShell {
 
 #[async_trait]
 impl TableShell for AggregateShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        &self.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, Reference> {
-        &self.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -163,7 +151,7 @@ impl TableShell for AggregateShell {
             note.push_str(" Applied to the derived rows: ");
             note.push_str(&clauses.join(", "));
         }
-        Preview::new("aggregate").with_note(note)
+        Preview::new().with_note(note)
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -183,9 +171,7 @@ impl TableShell for AggregateShell {
     }
 
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        let rows = self.view();
-        let total = rows.len() as i64;
-        Ok(Page::new(rows.into_iter().skip(offset).take(limit).collect()).with_total(total))
+        Ok(Page::from_listing(self.view(), offset, limit))
     }
 
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
@@ -209,10 +195,5 @@ impl TableShell for AggregateShell {
     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
         self.search = text.map(str::to_string);
         Ok(())
-    }
-
-    /// Derived rows carry no relations.
-    fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
-        unsupported(Capability::Traverse)
     }
 }

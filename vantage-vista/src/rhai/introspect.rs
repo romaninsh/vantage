@@ -14,7 +14,8 @@ pub(crate) fn capabilities_map(vista: &Vista) -> RhaiMap {
         .collect()
 }
 
-/// `[{ name, type, flags }, …]` — one entry per column.
+/// `[{ name, type, flags }, …]` — one entry per column; `type` is `()` for
+/// a column with no declared type.
 pub(crate) fn columns_array(vista: &Vista) -> Array {
     vista
         .columns()
@@ -22,7 +23,11 @@ pub(crate) fn columns_array(vista: &Vista) -> Array {
         .map(|col| {
             let mut m = RhaiMap::new();
             m.insert("name".into(), col.name.clone().into());
-            m.insert("type".into(), col.original_type.clone().into());
+            let ty = col
+                .original_type
+                .clone()
+                .map_or(Dynamic::UNIT, Dynamic::from);
+            m.insert("type".into(), ty);
             let flags: Array = col.flags().iter().map(|f| f.as_str().into()).collect();
             m.insert("flags".into(), Dynamic::from_array(flags));
             Dynamic::from_map(m)
@@ -30,7 +35,8 @@ pub(crate) fn columns_array(vista: &Vista) -> Array {
         .collect()
 }
 
-/// `[{ name, kind, contained }, …]` — joined and contained relations.
+/// `[{ name, kind, contained }, …]` — joined and contained relations; `kind`
+/// is the YAML name (`has_one`, `has_many`, `contains_one`, `contains_many`).
 pub(crate) fn references_array(vista: &Vista) -> Array {
     vista
         .references()
@@ -38,7 +44,7 @@ pub(crate) fn references_array(vista: &Vista) -> Array {
         .map(|r| {
             let mut m = RhaiMap::new();
             m.insert("name".into(), r.name.clone().into());
-            m.insert("kind".into(), format!("{:?}", r.kind).into());
+            m.insert("kind".into(), r.kind.as_str().into());
             m.insert("contained".into(), r.kind.is_contained().into());
             Dynamic::from_map(m)
         })

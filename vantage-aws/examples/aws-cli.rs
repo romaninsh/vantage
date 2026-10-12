@@ -174,7 +174,7 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
         .map(|(k, v)| {
             let declared = vista
                 .column(k)
-                .map(|c| c.original_type.as_str())
+                .and_then(|c| c.original_type.as_deref())
                 .unwrap_or("");
             (k.clone(), AnyAwsType::from_cbor_typed(v.clone(), declared))
         })
@@ -237,7 +237,7 @@ fn column_types_static(vista: &Vista) -> IndexMap<String, &'static str> {
     for name in vista.columns().keys() {
         let original = vista
             .column(name)
-            .map(|c| c.original_type.as_str())
+            .and_then(|c| c.original_type.as_deref())
             .unwrap_or("");
         let leaked: &'static str = Box::leak(original.to_owned().into_boxed_str());
         out.insert(name.to_string(), leaked);
@@ -257,7 +257,7 @@ fn typed_records_borrowed(
                 .map(|(k, v)| {
                     let declared = vista
                         .column(k)
-                        .map(|c| c.original_type.as_str())
+                        .and_then(|c| c.original_type.as_deref())
                         .unwrap_or("");
                     (k.clone(), AnyAwsType::from_cbor_typed(v.clone(), declared))
                 })

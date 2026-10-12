@@ -302,7 +302,7 @@ columns:
     type: string
 surreal:
   rhai: |
-    select().from("product").field("id").field("name").where(expr("price > 15"))
+    surreal::select().from("product").field("id").field("name").where(surreal::expr("price > 15"))
 "#;
         let read_only = db.vista_factory().from_yaml(yaml)?;
         assert!(!read_only.capabilities().has(Capability::Insert));
@@ -553,7 +553,7 @@ columns:
     type: string
 surreal:
   rhai: |
-    select().from("product").field("id").field("name").where(expr("price > 15"))
+    surreal::select().from("product").field("id").field("name").where(surreal::expr("price > 15"))
 "#;
 
     let vista = db.vista_factory().from_yaml(yaml)?;
@@ -576,6 +576,38 @@ surreal:
     Ok(())
 }
 
+/// Each verb on `self` starts from the built vista, and the script's value is
+/// the result: the discarded `cheap` handle (which would leave no row) must
+/// not narrow the `live` one built from `self` after it.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn modify_script_resolves_self_twice() -> TestResult {
+    let (db, _) = setup().await;
+    seed_row(&db, "product", "a", "A", 10, false).await?;
+    seed_row(&db, "product", "b", "B", 20, false).await?;
+    seed_row(&db, "product", "c", "C", 30, true).await?;
+
+    let yaml = r#"
+name: product
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+  price: { type: int }
+  is_deleted: { type: bool }
+surreal:
+  modify: |
+    let cheap = self.where("price", "<", 15);
+    let live = self.with_condition(surreal::ident("is_deleted") == false);
+    live.where("price", ">", 15)
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let ids: Vec<String> = vista.list_values().await?.into_keys().collect();
+    assert_eq!(ids, vec!["product:b"]);
+    assert_eq!(vista.query().conditions.len(), 1);
+    assert_eq!(vista.query().native.len(), 1);
+    Ok(())
+}
+
 /// A derived vista: `base: client` resolves eagerly through the factory's
 /// resolver, the base table's `select()` is seeded into the Rhai engine as
 /// `base` (transform mode), and the listed columns are inherited from the base.
@@ -584,7 +616,8 @@ surreal:
 #[tokio::test]
 async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
     use std::sync::Arc;
-    use vantage_surrealdb::vista::{SurrealSpecResolver, SurrealVistaSpec};
+    use vantage_surrealdb::vista::SurrealVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, _) = setup().await;
     seed_client(&db, "alice", "Alice").await?;
@@ -604,7 +637,7 @@ surreal:
   inherit:
     columns: [id, name]
   rhai: |
-    base.where(expr("name = 'Alice'"))
+    base.where(surreal::expr("name = 'Alice'"))
 "#;
 
     let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(client_yaml)?;
@@ -613,7 +646,8 @@ surreal:
     let map: indexmap::IndexMap<String, SurrealVistaSpec> =
         [("client".to_string(), client_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: SurrealSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<SurrealVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()
@@ -644,7 +678,8 @@ surreal:
 #[tokio::test]
 async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
     use std::sync::Arc;
-    use vantage_surrealdb::vista::{SurrealSpecResolver, SurrealVistaSpec};
+    use vantage_surrealdb::vista::SurrealVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, _) = setup().await;
     seed_order(&db, "o1", "alice", 10).await?;
@@ -668,7 +703,7 @@ surreal:
   inherit:
     columns: [client_id]
   rhai: |
-    base.clear_fields().field("client_id").expression(expr("math::sum(total) AS total_due")).group_by(expr("client_id"))
+    base.clear_fields().field("client_id").expression(surreal::expr("math::sum(total) AS total_due")).group_by(surreal::expr("client_id"))
 "#;
 
     let orders_spec: SurrealVistaSpec = serde_yaml_ng::from_str(orders_yaml)?;
@@ -677,7 +712,8 @@ surreal:
     let map: indexmap::IndexMap<String, SurrealVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: SurrealSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<SurrealVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()
@@ -726,10 +762,10 @@ columns:
   id: {{ type: thing, flags: [id] }}
   qty: {{ type: int }}
   price: {{ type: int }}
-  total: {{ type: int, expr: 'mul(ident("qty"), ident("price"))' }}
+  total: {{ type: int, expr: 'surreal::mul(surreal::ident("qty"), surreal::ident("price"))' }}
   label:
     type: string
-    expr: 'expr("string::concat(\"item-\", <string>qty)")'
+    expr: 'surreal::expr("string::concat(\"item-\", <string>qty)")'
 surreal:
   table: {table_name}
 "#

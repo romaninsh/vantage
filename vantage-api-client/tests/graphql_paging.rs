@@ -101,7 +101,40 @@ async fn paging_capabilities_follow_paginate() {
 
     let off = vista(&server, "  dialect: generic\n");
     assert!(!off.capabilities().has(Capability::Window));
-    assert!(off.fetch_window(0, 10).await.unwrap_err().is_unsupported());
+    assert!(off.fetch_window(1, 10).await.unwrap_err().is_unsupported());
+    assert_eq!(support::requests(&server).await, 0);
+}
+
+/// Without paging, the leading window is cut from one unpaged listing: no
+/// `limit`/`offset` is sent, and the page carries the listing's length.
+#[tokio::test]
+async fn the_leading_window_without_paging_is_cut_from_the_listing() {
+    let server = MockServer::start().await;
+    answer(
+        &server,
+        json!({ "query": "query { launches { id name } }" }),
+        rows(0, 5),
+    )
+    .await;
+    let vista = vista(&server, "  dialect: generic\n");
+
+    let page = vista.fetch_window(0, 2).await.unwrap();
+    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["0", "1"]);
+    assert_eq!(page.total, Some(5));
+}
+
+/// The preview's query names the endpoint the document is posted to, so
+/// nothing is left for the note.
+#[tokio::test]
+async fn preview_posts_the_document_to_the_endpoint() {
+    let server = MockServer::start().await;
+    let preview = vista(&server, "  dialect: generic\n").preview();
+    assert_eq!(
+        preview.query.as_deref(),
+        Some(format!("POST {}\nquery {{ launches {{ id name }} }}", server.uri()).as_str())
+    );
+    assert_eq!(preview.note, None);
 }
 
 /// With filtering done locally a server page would come back short, so
@@ -113,7 +146,7 @@ async fn paging_is_not_advertised_with_filter_false() {
     assert!(!vista.capabilities().has(Capability::Window));
     assert!(
         vista
-            .fetch_window(0, 10)
+            .fetch_window(5, 10)
             .await
             .unwrap_err()
             .is_unsupported()

@@ -4,12 +4,17 @@ use vantage_dataset::traits::ReadableValueSet;
 
 use super::Probe;
 use super::narrowing::narrow_into;
+use super::window::leading_into;
 use crate::{Capability, Vista};
 
 /// For each capability the vista advertises, call its method once.
 ///
-/// - `Window`, `Cursor`, `Subscribe`: `fetch_window(0, 1)`,
-///   `fetch_cursor(None, 1)` and `watch()` must succeed.
+/// - The leading window, advertised `Window` or not: `fetch_window(0, n)`
+///   returns `min(n, listed)` rows of the set, the first in the set's order
+///   when an order is applied.
+/// - `Window`, `Cursor`, `Subscribe`: `fetch_window(1, 1)` (an offset past
+///   the leading window), `fetch_cursor(None, 1)` and `watch()` must
+///   succeed.
 /// - `Search`, `Order`, `FilterOps`, `NativeConditions`: probed on clones,
 ///   see [`check_narrowing`](super::check_narrowing).
 /// - `Traverse`: `get_ref` on every reference, joined or contained, with a
@@ -22,9 +27,11 @@ pub async fn check_advertised(vista: &Vista) {
     let mut probe = Probe::default();
     for capability in vista.capabilities().iter() {
         match capability {
-            Capability::Window => {
-                probe.check_ok(capability, "fetch_window", &vista.fetch_window(0, 1).await)
-            }
+            Capability::Window => probe.check_ok(
+                capability,
+                "fetch_window(1, 1)",
+                &vista.fetch_window(1, 1).await,
+            ),
             Capability::Cursor => probe.check_ok(
                 capability,
                 "fetch_cursor",
@@ -46,6 +53,7 @@ pub async fn check_advertised(vista: &Vista) {
             | Capability::ConfineWrites => {}
         }
     }
+    leading_into(vista, &mut probe).await;
     narrow_into(vista, &mut probe).await;
     probe.finish();
 }

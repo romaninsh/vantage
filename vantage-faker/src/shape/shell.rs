@@ -41,13 +41,13 @@ forward_table_shell!(ShapedShell, inner, {
         let shaped = format!(
             "simulated backend over {}: latency and faults are layered over the wrapped \
              shell without altering its query",
-            inner.driver
+            self.inner.driver_name()
         );
         let note = match &inner.note {
             Some(note) => format!("{shaped}; {note}"),
             None => shaped,
         };
-        let preview = Preview::new("faker-shaped").with_note(note);
+        let preview = Preview::new().with_note(note);
         match inner.query {
             Some(query) => preview.with_query(query),
             None => preview,
