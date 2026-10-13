@@ -10,9 +10,13 @@ use vantage_vista::Page;
 use super::{MongoTableShell, keyset};
 
 impl MongoTableShell {
-    /// `skip(offset).limit(limit)` in the set's order.
+    /// `skip(offset).limit(limit)` in the set's order with an `_id`
+    /// tiebreak. Windows are separate queries: without a total order,
+    /// MongoDB orders tied rows arbitrarily per query, so consecutive windows
+    /// would repeat some and skip others at their boundaries.
     pub(super) async fn window(&self, offset: usize, limit: usize) -> Result<Page> {
         let mut window = self.table.clone();
+        keyset::add_id_tiebreak(&mut window);
         window.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
         Ok(Page::new(self.to_rows(window.list_values().await?)))
     }

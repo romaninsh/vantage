@@ -26,6 +26,7 @@ on:
       - "vantage-types/**"
       - "vantage-rhai/**"
       - "surreal-client/**"
+      - "vantage-inventory/**"
       - "bakery_model3/**"
       - "Cargo.toml"
       - "Cargo.lock"

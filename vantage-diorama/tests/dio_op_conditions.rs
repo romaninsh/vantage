@@ -92,3 +92,37 @@ async fn runtime_filter_terms_narrow_and_clear() {
         .await;
     assert!(view.scenery().filter_terms().is_empty());
 }
+
+/// A datetime operand (`Tag(0, rfc3339)`, what a script's `days_ago(..)`
+/// sends) orders against dates a source stores as text.
+#[tokio::test]
+async fn datetime_operand_orders_against_text_dates() {
+    use support::{meta, record};
+    use vantage_diorama::OpCondition;
+    use vantage_vista::{Vista, mocks::MockShell};
+
+    let shell = MockShell::new()
+        .with_record(
+            "old",
+            record(&[("id", "old"), ("updated_at", "2026-10-01T00:00:00Z")]),
+        )
+        .with_record(
+            "new",
+            record(&[("id", "new"), ("updated_at", "2026-10-09T00:00:00Z")]),
+        )
+        .with_metadata(meta(&["id", "updated_at"]));
+    let dio: Dio = eager_dio(Vista::new("events", shell)).await;
+    let view = MockView::open(&dio, 10).await;
+    view.settle_until("all rows", |v| v.row_count() == 2).await;
+
+    let since = CborValue::Tag(0, Box::new(CborValue::Text("2026-10-05T00:00:00Z".into())));
+    let after = vec![OpCondition::new("updated_at", FilterOp::Gt, since)];
+    assert_eq!(
+        view.scenery().count_where(after.clone()).await.unwrap(),
+        Some(1)
+    );
+    view.scenery().set_filter_terms(after);
+    view.settle_until("only the later row", |v| v.row_count() == 1)
+        .await;
+    assert_eq!(view.col_at(0, "id").as_deref(), Some("new"));
+}

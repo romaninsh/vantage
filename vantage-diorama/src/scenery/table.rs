@@ -19,6 +19,7 @@
 
 mod builder;
 mod capped;
+mod count;
 mod handle;
 mod helpers;
 mod load_failure;
@@ -230,6 +231,34 @@ pub trait TableScenery: Send + Sync {
     /// persisted-filter store reads, so there is one list, held here.
     fn filter_terms(&self) -> Vec<OpCondition> {
         Vec::new()
+    }
+
+    /// How many rows this view would hold with `terms` in place of its
+    /// current UI filter terms. The view's other clauses (its conditions,
+    /// filter chips and search) and the Dio's residual still apply.
+    ///
+    /// - A paged view whose master takes the whole query counts at the
+    ///   master. One that leaves a clause over counts the complete set its
+    ///   Lens copies through an eager start, and without one has no count.
+    /// - An eager view counts its cache once it has settled.
+    /// - A two-pass view has no count.
+    ///
+    /// `Ok(None)` means no honest count. The future is runtime-agnostic: it
+    /// may be awaited from any executor, and dropping it abandons the count.
+    fn count_where(
+        &self,
+        _terms: Vec<OpCondition>,
+    ) -> futures::future::BoxFuture<'static, vantage_core::Result<Option<usize>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Whether [`Self::set_filter_terms`] with `terms` leaves the view able
+    /// to answer: a paged view needs a master that takes every term, or a
+    /// Lens that copies the whole set when it doesn't; an eager or two-pass
+    /// view evaluates them over its own rows, unless a titles-only picker
+    /// would have to judge an augmented column it never hydrates.
+    fn terms_supported(&self, _terms: &[OpCondition]) -> bool {
+        false
     }
 
     /// Replace the quicksearch text (replace semantics; `None` or blank

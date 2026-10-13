@@ -7,8 +7,9 @@
 //!
 //! - a cell is read by [`cell_get`], for conditions and order alike: a flat
 //!   key, or a dotted path into nested maps;
-//! - values compare by [`cbor_cmp`]: integers and floats numerically, and
-//!   `3 == 3.0` for equality and set membership;
+//! - values compare by [`cbor_cmp`]: integers and floats numerically, a
+//!   datetime (`Tag(0, Text)`) as its text, and `3 == 3.0` for equality and
+//!   set membership;
 //! - a sort puts absent and null cells last in either direction, and breaks
 //!   ties on id;
 //! - search is a case-insensitive substring of any cell's text: text,
@@ -34,6 +35,7 @@ mod search;
 #[cfg(test)]
 mod tests;
 
+use compare::datetime_as_text;
 use search::matches_search;
 
 pub use compare::cbor_cmp;
@@ -130,8 +132,10 @@ pub(crate) fn compare_rows(
     ordering.then_with(|| a_id.cmp(b_id))
 }
 
-/// Equal values, or an integer and a float of the same number.
+/// Equal values, an integer and a float of the same number, or a datetime
+/// and the same text.
 fn same(a: &CborValue, b: &CborValue) -> bool {
+    let (a, b) = (datetime_as_text(a), datetime_as_text(b));
     let int_and_float = matches!(
         (a, b),
         (CborValue::Integer(_), CborValue::Float(_)) | (CborValue::Float(_), CborValue::Integer(_))

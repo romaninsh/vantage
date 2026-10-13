@@ -34,17 +34,36 @@ fn number(v: &CborValue) -> Option<f64> {
 }
 
 /// Order two non-null values of the same kind; numbers compare across int
-/// and float. `None` for different kinds.
+/// and float, and a CBOR datetime (`Tag(0, Text)`) compares with text as
+/// text. `None` for other kind mixes.
 pub fn cmp_values(a: &CborValue, b: &CborValue) -> Option<Ordering> {
     match (a, b) {
         (CborValue::Integer(x), CborValue::Integer(y)) => Some(i128::from(*x).cmp(&i128::from(*y))),
-        (CborValue::Text(x), CborValue::Text(y)) => Some(x.cmp(y)),
         (CborValue::Bool(x), CborValue::Bool(y)) => Some(x.cmp(y)),
-        _ => number(a)?.partial_cmp(&number(b)?),
+        _ => match (text_or_datetime(a), text_or_datetime(b)) {
+            (Some(x), Some(y)) => Some(x.cmp(y)),
+            _ => number(a)?.partial_cmp(&number(b)?),
+        },
     }
 }
 
-/// Equality that treats `1` and `1.0` as equal; other values compare exactly.
+/// The text of a plain text value or of a CBOR standard datetime
+/// (`Tag(0, Text)`), so a datetime operand orders against, and equals,
+/// dates a source stores as text. RFC 3339 strings with the same offset
+/// sort lexically. Twin: `vantage-vista/src/eval/compare.rs`.
+fn text_or_datetime(v: &CborValue) -> Option<&str> {
+    match v {
+        CborValue::Text(s) => Some(s),
+        CborValue::Tag(0, inner) => match inner.as_ref() {
+            CborValue::Text(s) => Some(s),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Equality over [`cmp_values`]: `1` equals `1.0`, and a CBOR datetime
+/// equals the same text. Kinds `cmp_values` can't order compare exactly.
 pub fn values_eq(a: &CborValue, b: &CborValue) -> bool {
     match cmp_values(a, b) {
         Some(o) => o == Ordering::Equal,
