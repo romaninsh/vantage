@@ -4,7 +4,7 @@
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_types::{Entity, Record};
-use vantage_vista::{Reference, Vista, VistaMetadata};
+use vantage_vista::{Reference, Vista, VistaMetadata, unknown_relation};
 
 use super::dialect::{Shell, SqlShellDialect};
 use crate::types::{cbor_to_json, parse_json_host};
@@ -21,7 +21,7 @@ where
     ) -> Result<Vista> {
         let reference = reference(&self.metadata, relation)?;
         if reference.kind.is_contained() {
-            return self.contained_target(relation, contained_row(relation, row)?);
+            return self.contained_target(relation, row);
         }
         T::join_target(self, relation, reference, row)
     }
@@ -37,20 +37,26 @@ where
         let target = self.table.get_ref_target_erased(relation)?;
         let target = T::target_factory(self)(target)?;
         match row {
-            Some(row) => reference.narrow(target, row, CborValue::clone),
+            Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
     }
 
     /// SQL has no native nesting, so the host column stores the collection
     /// as JSON: parsed on read, re-serialized on write. The shared
-    /// `Table::get_contained_ref` does the rest.
-    fn contained_target(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        let parent_id = parent_id(relation, self.metadata.id_column.as_deref(), row)?;
+    /// `Table::get_contained_ref` does the rest; without a row it gives the
+    /// bare target.
+    fn contained_target(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
+        let parent = match row {
+            Some(row) => Some((
+                row,
+                parent_id(relation, self.metadata.id_column.as_deref(), row)?,
+            )),
+            None => None,
+        };
         self.table.get_contained_ref(
             relation,
-            row,
-            parent_id,
+            parent,
             T::target_factory(self),
             parse_json_host,
             |c| CborValue::Text(cbor_to_json(c).to_string()),
@@ -63,21 +69,7 @@ fn reference<'a>(metadata: &'a VistaMetadata, relation: &str) -> Result<&'a Refe
     metadata
         .references
         .get(relation)
-        .ok_or_else(|| error!("Reference not found on vista", relation = relation).mark_not_found())
-}
-
-/// The parent row a contained relation needs: its records live in the row.
-fn contained_row<'a>(
-    relation: &str,
-    row: Option<&'a Record<CborValue>>,
-) -> Result<&'a Record<CborValue>> {
-    row.ok_or_else(|| {
-        error!(
-            "contained relation is traversed from a parent row",
-            relation = relation
-        )
-        .mark_incorrect_usage()
-    })
+        .ok_or_else(|| unknown_relation(relation))
 }
 
 /// The parent row's id as the string the host-column writeback patches by.

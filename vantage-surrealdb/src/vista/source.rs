@@ -32,14 +32,14 @@ use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Condition, NativeCondition, Page, Preview, Reference as VistaReference,
-    SortDirection, TableShell, Vista, VistaCapabilities, VistaChangeStream, VistaMetadata,
+    Condition, NativeCondition, Page, Preview, SortDirection, SpecResolver, TableShell, Vista,
+    VistaCapabilities, VistaChangeStream, VistaMetadata,
 };
 
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
 use crate::types::AnySurrealType;
-use crate::vista::factory::SurrealSpecResolver;
+use crate::vista::spec::SurrealVistaSpec;
 
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
@@ -56,7 +56,7 @@ where
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
     /// Spec resolver handed to the factories that build traversal targets.
-    pub(crate) resolver: Option<SurrealSpecResolver>,
+    pub(crate) resolver: Option<SpecResolver<SurrealVistaSpec>>,
 }
 
 impl<E> SurrealTableShell<E>
@@ -67,7 +67,7 @@ where
         table: Table<SurrealDB, E>,
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
-        resolver: Option<SurrealSpecResolver>,
+        resolver: Option<SpecResolver<SurrealVistaSpec>>,
     ) -> Self {
         Self {
             table,
@@ -118,16 +118,8 @@ impl<E> TableShell for SurrealTableShell<E>
 where
     E: Entity<AnySurrealType> + 'static,
 {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -142,7 +134,7 @@ where
     /// rendered inline. A window's `LIMIT`/`START` is added at fetch time, so
     /// it is absent here.
     fn preview(&self) -> Preview {
-        Preview::new("surrealdb").with_query(self.table.select().preview())
+        Preview::new().with_query(self.table.select().preview())
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -181,8 +173,7 @@ where
     }
 
     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
-        self.apply_search(text);
-        Ok(())
+        self.apply_search(text)
     }
 
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
@@ -239,8 +230,9 @@ where
         self.ref_target(relation, row)
     }
 
-    /// SurrealDB's expression vocabulary, `self.with_condition(<expr>)` and
-    /// the `me` anchor; see [`register_extensions`].
+    /// SurrealDB's expression vocabulary under `surreal::` (with the
+    /// `surreal::me` anchor) and `self.with_condition(<expr>)`; see
+    /// [`register_extensions`].
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
         register_extensions(engine);

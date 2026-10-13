@@ -13,10 +13,10 @@ use bson::oid::ObjectId;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
-use vantage_mongodb::vista::{MongoSpecResolver, MongoVistaSpec};
+use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoId};
 use vantage_types::Record;
-use vantage_vista::{Capability, FilterOp, SortDirection, Vista, VistaFactory};
+use vantage_vista::{Capability, FilterOp, SortDirection, SpecResolver, Vista, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -84,7 +84,7 @@ references:
     foreign_key: client_id
 "#;
 
-fn resolver() -> MongoSpecResolver {
+fn resolver() -> SpecResolver<MongoVistaSpec> {
     let map: IndexMap<String, MongoVistaSpec> = [COUNTRY, CLIENT, ORDER]
         .into_iter()
         .map(|y| {

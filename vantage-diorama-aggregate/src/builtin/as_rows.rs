@@ -159,6 +159,6 @@ mod tests {
     #[test]
     fn the_column_type_follows_the_value() {
         let ints = AsRows::new("n", Count::rows()).compute(&events());
-        assert_eq!(ints.columns[0].original_type, "i64");
+        assert_eq!(ints.columns[0].original_type.as_deref(), Some("i64"));
     }
 }

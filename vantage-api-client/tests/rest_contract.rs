@@ -10,7 +10,7 @@ use vantage_api_client::{
 };
 use vantage_vista::contract;
 use wiremock::matchers::{method, path, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 const CLIENT: &str = r#"
 name: client
@@ -74,7 +74,7 @@ async fn serve() -> MockServer {
         .await;
     Mock::given(method("GET"))
         .and(path("/order"))
-        .respond_with(page(json!([
+        .respond_with(paged(json!([
             { "id": "o1", "client_id": "c1", "item": "skateboard" },
             { "id": "o2", "client_id": "c1", "item": "almanac" },
             { "id": "o3", "client_id": "c2", "item": "flux capacitor" }
@@ -83,13 +83,32 @@ async fn serve() -> MockServer {
         .await;
     Mock::given(method("GET"))
         .and(path("/client"))
-        .respond_with(page(json!([
+        .respond_with(paged(json!([
             { "id": "c1", "name": "Marty" },
             { "id": "c2", "name": "Doc" }
         ])))
         .mount(&server)
         .await;
     server
+}
+
+/// A paging server over `rows`: `offset`/`limit` slice them, and `count` is
+/// always the whole set's.
+fn paged(rows: Value) -> impl Fn(&Request) -> ResponseTemplate {
+    move |request: &Request| {
+        let rows = rows.as_array().expect("rows are an array");
+        let param = |name: &str| {
+            request
+                .url
+                .query_pairs()
+                .find(|(key, _)| key == name)
+                .and_then(|(_, value)| value.parse::<usize>().ok())
+        };
+        let offset = param("offset").unwrap_or(0).min(rows.len());
+        let limit = param("limit").unwrap_or(rows.len());
+        let window: Vec<&Value> = rows.iter().skip(offset).take(limit).collect();
+        ResponseTemplate::new(200).set_body_json(json!({ "count": rows.len(), "results": window }))
+    }
 }
 
 fn factory(server: &MockServer) -> RestApiVistaFactory {

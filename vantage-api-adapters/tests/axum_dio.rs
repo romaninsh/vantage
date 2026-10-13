@@ -18,8 +18,7 @@ use vantage_api_adapters::axum_dio::DioRouter;
 use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
-use vantage_vista_factory::VistaCatalog;
+use vantage_vista::{Catalog, Column, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -58,8 +57,7 @@ mod gated {
     use vantage_core::{Result, error};
     use vantage_types::Record;
     use vantage_vista::{
-        Capability, Column, Condition, Page, Preview, Reference, TableShell, Vista,
-        VistaCapabilities, VistaMetadata, unsupported,
+        Column, Condition, Page, Preview, TableShell, VistaCapabilities, VistaMetadata,
     };
 
     #[derive(Clone)]
@@ -93,14 +91,8 @@ mod gated {
     /// Get-only: it lists nothing and takes no narrowing.
     #[async_trait]
     impl TableShell for GatedDetailShell {
-        fn columns(&self) -> &IndexMap<String, Column> {
-            &self.metadata.columns
-        }
-        fn references(&self) -> &IndexMap<String, Reference> {
-            &self.metadata.references
-        }
-        fn id_column(&self) -> Option<&str> {
-            self.metadata.id_column.as_deref()
+        fn metadata(&self) -> &VistaMetadata {
+            &self.metadata
         }
         fn capabilities(&self) -> &VistaCapabilities {
             &self.capabilities
@@ -109,7 +101,7 @@ mod gated {
             "gated-detail"
         }
         fn preview(&self) -> Preview {
-            Preview::new("gated-detail")
+            Preview::new()
         }
         async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
             Ok(IndexMap::new())
@@ -124,14 +116,11 @@ mod gated {
         async fn count(&self) -> Result<i64> {
             Ok(0)
         }
-        async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
-            unsupported(Capability::Window)
+        async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+            Ok(Page::from_listing(IndexMap::new(), offset, limit))
         }
         fn add_condition(&mut self, _condition: &Condition) -> Result<()> {
             Err(error!("a get-only detail shell takes no conditions").mark_unimplemented())
-        }
-        fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
-            unsupported(Capability::Traverse)
         }
     }
 }
@@ -174,7 +163,7 @@ async fn fixture(open_permits: usize) -> Fixture {
             .expect("lens builds"),
     );
     let dio = lens.make_dio(master).await.expect("make_dio").augment(
-        Arc::new(VistaCatalog::new()),
+        Arc::new(Catalog::new()),
         vec![Augmentation {
             detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
             source: Source::Id,

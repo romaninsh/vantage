@@ -171,8 +171,10 @@ async fn query_primitives_return_unsupported() -> Result<()> {
         .expect_err("AWS doesn't advertise filter_ops");
     assert_eq!(op_err.kind(), ErrorKind::Unsupported);
 
+    // The leading window is answered from the listing; any later offset is
+    // refused.
     let window_err = vista
-        .fetch_window(0, 10)
+        .fetch_window(10, 10)
         .await
         .expect_err("AWS doesn't advertise window");
     assert_eq!(window_err.kind(), ErrorKind::Unsupported);
@@ -195,24 +197,24 @@ fn column_original_type_carries_renderer_keys() -> Result<()> {
     let factory = aws().vista_factory();
     let vista = factory.from_table(iam::users_table(aws()))?;
 
-    let arn = vista.column("Arn").expect("Arn column exists");
+    let type_of = |name: &str| {
+        let column = vista.column(name).expect("column exists");
+        column.original_type.clone().unwrap_or_default()
+    };
+
+    let arn = type_of("Arn");
     assert!(
-        arn.original_type.ends_with("::Arn"),
-        "expected Arn column to carry an ::Arn-suffixed type name, got `{}`",
-        arn.original_type,
+        arn.ends_with("::Arn"),
+        "expected Arn column to carry an ::Arn-suffixed type name, got `{arn}`",
     );
 
-    let created = vista
-        .column("CreateDate")
-        .expect("CreateDate column exists");
+    let created = type_of("CreateDate");
     assert!(
-        created.original_type.ends_with("::AwsDateTime"),
-        "expected CreateDate column to carry an ::AwsDateTime-suffixed type name, got `{}`",
-        created.original_type,
+        created.ends_with("::AwsDateTime"),
+        "expected CreateDate column to carry an ::AwsDateTime-suffixed type name, got `{created}`",
     );
 
-    let user_name = vista.column("UserName").expect("UserName column exists");
-    assert_eq!(user_name.original_type, "alloc::string::String");
+    assert_eq!(type_of("UserName"), "alloc::string::String");
     Ok(())
 }
 
@@ -266,10 +268,11 @@ fn add_condition_on_a_declared_column_is_recorded() -> Result<()> {
 }
 
 /// Every relation traversed from a parent row comes back narrowed by its
-/// join key, so its target takes the join column. Building and narrowing a
-/// target issues no request.
+/// join key, so its target takes the join column, and the reference names
+/// that target by its table name. Building and narrowing a target issues no
+/// request.
 #[test]
-fn every_relation_narrows_its_target_from_a_row() {
+fn every_relation_narrows_its_named_target_from_a_row() {
     let factory = Factory::new(aws());
     let mut failures = Vec::new();
     for name in Factory::known_names() {
@@ -281,6 +284,12 @@ fn every_relation_narrows_its_target_from_a_row() {
                 .map(|k| (k.from.clone(), CborValue::Text("x".into())))
                 .collect();
             match vista.get_ref(&reference.name, Some(&row)) {
+                Ok(target) if target.name() != reference.target => failures.push(format!(
+                    "{name}:{} names target `{}`, built `{}`",
+                    reference.name,
+                    reference.target,
+                    target.name()
+                )),
                 Ok(target) if target.is_narrowed() => {}
                 Ok(_) => failures.push(format!("{name}:{} is not narrowed", reference.name)),
                 Err(e) => failures.push(format!("{name}:{}: {e:?}", reference.name)),

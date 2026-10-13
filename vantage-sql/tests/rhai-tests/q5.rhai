@@ -1,17 +1,17 @@
 // Q5: Client Balance Report (paying vs non-paying)
 // Features: CASE grouping, COUNT/SUM/AVG aggregates, GROUP BY
 
-let c = table("client").alias("c");
+let c = sql::ident("client").alias("c");
 
-select()
+sql::select()
     .from(c)
     .expression(
-        case_when()
-            .when(c["is_paying_client"] == true, expr("'Paying'"))
-            .else_(expr("'Non-Paying'"))
+        sql::case_when()
+            .when(c["is_paying_client"] == true, sql::expr("'Paying'"))
+            .else_(sql::expr("'Non-Paying'"))
             .expr()
             .alias("client_type"))
-    .expression(count(c["id"]).alias("client_count"))
-    .expression(sum(c["balance"]).alias("total_balance"))
-    .expression(avg(c["balance"]).alias("avg_balance"))
+    .expression(sql::count(c["id"]).alias("client_count"))
+    .expression(sql::sum(c["balance"]).alias("total_balance"))
+    .expression(sql::avg(c["balance"]).alias("avg_balance"))
     .group_by(c["is_paying_client"])

@@ -99,7 +99,9 @@ async fn dotted_condition_is_evaluated_over_the_cache() -> Result<()> {
     Ok(())
 }
 
-/// Records every condition the master receives.
+/// Records every condition the master receives. A dotted path stops here,
+/// accepted, because the mock underneath doesn't evaluate nested paths; a
+/// document store would push it.
 #[derive(Clone)]
 struct Recording {
     inner: Box<dyn TableShell>,
@@ -109,6 +111,9 @@ struct Recording {
 forward_table_shell!(Recording, inner, {
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         self.seen.lock().unwrap().push(condition.clone());
+        if condition.column.contains('.') {
+            return Ok(());
+        }
         self.inner.add_condition(condition)
     }
 });

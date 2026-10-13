@@ -1,6 +1,6 @@
 //! Generic augmentation, end-to-end: a master Vista listed cheaply, each row
 //! enriched one-at-a-time from a *separate* detail Vista resolved through a
-//! [`VistaCatalog`]. Proves the `.augment(...)` wiring drives the two-pass
+//! [`Catalog`]. Proves the `.augment(...)` wiring drives the two-pass
 //! machinery without any hand-written list/detail callbacks.
 //!
 //! Both vistas are in-memory `MockShell`s — independent handles resolved by
@@ -14,38 +14,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
+use support::detail_shell::DetailShell;
+use support::{meta, record, text};
 use tempfile::TempDir;
 use vantage_diorama::{
     Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
 };
-use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
-use vantage_vista_factory::VistaCatalog;
-
-fn text(s: &str) -> CborValue {
-    CborValue::Text(s.into())
-}
-
-fn record(pairs: &[(&str, &str)]) -> Record<CborValue> {
-    pairs
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), text(v)))
-        .collect()
-}
-
-fn meta(columns: &[&str]) -> VistaMetadata {
-    let mut m = VistaMetadata::new();
-    for c in columns {
-        let col = if *c == "id" {
-            Column::new("id", "String").with_flag("id")
-        } else {
-            Column::new(*c, "String")
-        };
-        m = m.with_column(col);
-    }
-    m.with_id_column("id")
-}
+use vantage_vista::{Catalog, Column, Vista, VistaMetadata, VistaResolver};
 
 /// Master: two rows with cheap columns only (id, branch).
 fn master_vista() -> Vista {
@@ -74,11 +50,17 @@ fn extra_vista() -> Vista {
     Vista::new("runs-extra", shell)
 }
 
-fn catalog() -> Arc<VistaCatalog> {
-    let mut c = VistaCatalog::new();
-    c.register("runs-detail", Arc::new(|| Ok(detail_vista())));
-    c.register("runs-extra", Arc::new(|| Ok(extra_vista())));
-    Arc::new(c)
+fn catalog() -> Arc<dyn VistaResolver> {
+    Arc::new(
+        Catalog::new()
+            .with("runs-detail", |_: &str| Ok(detail_vista()))
+            .with("runs-extra", |_: &str| Ok(extra_vista())),
+    )
+}
+
+/// A resolver that knows no names, for augmentations over a fixed handle.
+fn empty_catalog() -> Arc<dyn VistaResolver> {
+    Arc::new(Catalog::new())
 }
 
 fn aug(table: &str, source: Source, merge: &[&str]) -> Augmentation {
@@ -315,7 +297,7 @@ async fn fixed_detail_vista_hydrates_without_a_catalog() {
         .await
         .expect("make_dio")
         .augment(
-            Arc::new(VistaCatalog::new()), // EMPTY — the fixed handle needs no catalog
+            empty_catalog(), // the fixed handle needs no catalog
             vec![Augmentation {
                 detail: Detail::Fixed(fixed),
                 source: Source::Column {
@@ -375,7 +357,7 @@ async fn changed_master_row_refetches_its_augment() {
         .await
         .expect("make_dio")
         .augment(
-            Arc::new(VistaCatalog::new()),
+            empty_catalog(),
             vec![Augmentation {
                 detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail_shell))),
                 source: Source::Id,
@@ -422,88 +404,6 @@ async fn changed_master_row_refetches_its_augment() {
 // `modified` moved) refetches — and only that row.
 // ---------------------------------------------------------------------------
 
-/// Get-only detail shell that counts fetches, so tests can assert an
-/// unchanged row issued zero refetches across refreshes.
-mod counting {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
-
-    use async_trait::async_trait;
-    use ciborium::Value as CborValue;
-    use indexmap::IndexMap;
-    use vantage_core::{Result, error};
-    use vantage_types::Record;
-    use vantage_vista::{
-        Capability, Column, Condition, Page, Preview, Reference, TableShell, Vista,
-        VistaCapabilities, VistaMetadata, unsupported,
-    };
-
-    #[derive(Clone)]
-    pub struct CountingDetailShell {
-        pub rows: Arc<Mutex<IndexMap<String, Record<CborValue>>>>,
-        pub gets: Arc<AtomicUsize>,
-        metadata: VistaMetadata,
-        capabilities: VistaCapabilities,
-    }
-
-    impl CountingDetailShell {
-        pub fn new(rows: IndexMap<String, Record<CborValue>>) -> Self {
-            let metadata = VistaMetadata::new()
-                .with_column(Column::new("id", "String").with_flag("id"))
-                .with_column(Column::new("size", "String"))
-                .with_id_column("id");
-            Self {
-                rows: Arc::new(Mutex::new(rows)),
-                gets: Arc::new(AtomicUsize::new(0)),
-                metadata,
-                capabilities: VistaCapabilities::new(),
-            }
-        }
-    }
-
-    /// Get-only: it lists nothing and takes no narrowing.
-    #[async_trait]
-    impl TableShell for CountingDetailShell {
-        fn columns(&self) -> &IndexMap<String, Column> {
-            &self.metadata.columns
-        }
-        fn references(&self) -> &IndexMap<String, Reference> {
-            &self.metadata.references
-        }
-        fn id_column(&self) -> Option<&str> {
-            self.metadata.id_column.as_deref()
-        }
-        fn capabilities(&self) -> &VistaCapabilities {
-            &self.capabilities
-        }
-        fn driver_name(&self) -> &'static str {
-            "counting-detail"
-        }
-        fn preview(&self) -> Preview {
-            Preview::new("counting-detail")
-        }
-        async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
-            Ok(IndexMap::new())
-        }
-        async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
-            self.gets.fetch_add(1, Ordering::SeqCst);
-            Ok(self.rows.lock().unwrap().get(id).cloned())
-        }
-        async fn count(&self) -> Result<i64> {
-            Ok(0)
-        }
-        async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
-            unsupported(Capability::Window)
-        }
-        fn add_condition(&mut self, _condition: &Condition) -> Result<()> {
-            Err(error!("a get-only detail shell takes no conditions").mark_unimplemented())
-        }
-        fn get_ref(&self, _relation: &str, _row: Option<&Record<CborValue>>) -> Result<Vista> {
-            unsupported(Capability::Traverse)
-        }
-    }
-}
-
 #[tokio::test]
 async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
     use std::sync::atomic::Ordering;
@@ -530,7 +430,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         record(&[("id", "logs"), ("size", "4096")]),
     );
     detail_rows.insert("tmp".to_string(), record(&[("id", "tmp"), ("size", "512")]));
-    let detail = counting::CountingDetailShell::new(detail_rows);
+    let detail = DetailShell::new(detail_rows);
     let gets = detail.gets.clone();
 
     let lens = Arc::new(
@@ -545,7 +445,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         .await
         .expect("make_dio")
         .augment(
-            Arc::new(VistaCatalog::new()),
+            empty_catalog(),
             vec![Augmentation {
                 detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
                 source: Source::Id,
@@ -672,7 +572,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         record(&[("id", "logs"), ("size", "4096")]),
     );
     detail_rows.insert("tmp".to_string(), record(&[("id", "tmp"), ("size", "512")]));
-    let detail = counting::CountingDetailShell::new(detail_rows);
+    let detail = DetailShell::new(detail_rows);
     let gets = detail.gets.clone();
 
     let lens = Arc::new(
@@ -687,7 +587,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         .await
         .expect("make_dio")
         .augment(
-            Arc::new(VistaCatalog::new()),
+            empty_catalog(),
             vec![Augmentation {
                 detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
                 source: Source::Id,

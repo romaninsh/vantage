@@ -1,12 +1,13 @@
 //! Live integration tests against the `vantage-demo-products` DynamoDB
 //! table provisioned by `test-tf/dynamodb.tf`.
 //!
-//! Skipped (`return Ok(())`) when AWS credentials aren't configured, so
-//! CI without AWS access stays green. Locally:
+//! These tests write to a real AWS account, so they are opt-in: they skip
+//! (`return Ok(())`) unless `VANTAGE_AWS_LIVE=1` is set and credentials are
+//! configured. Having `~/.aws/credentials` alone never runs them. Locally:
 //!
 //! ```sh
 //! cd test-tf && tofu apply
-//! cd ../vantage-aws && cargo test --test dynamodb_live -- --test-threads=1
+//! cd ../vantage-aws && VANTAGE_AWS_LIVE=1 cargo test --test dynamodb_live -- --test-threads=1
 //! ```
 //!
 //! Tests use a per-run id prefix so concurrent runs (or rerun-after-failure
@@ -26,10 +27,18 @@ const PRODUCTS_TABLE: &str = "vantage-demo-products";
 /// because the developer's `~/.aws/config` default may point elsewhere.
 const TEST_REGION: &str = "eu-west-2";
 
+/// The live account, or `None` (with the reason on stderr) when the run
+/// isn't opted in or has no credentials.
 fn account_or_skip() -> Option<AwsAccount> {
-    AwsAccount::from_default()
-        .ok()
-        .map(|a| a.with_region(TEST_REGION))
+    if std::env::var("VANTAGE_AWS_LIVE").as_deref() != Ok("1") {
+        eprintln!("skipping: set VANTAGE_AWS_LIVE=1 to run against real AWS");
+        return None;
+    }
+    let Ok(aws) = AwsAccount::from_default() else {
+        eprintln!("skipping: AWS credentials not configured");
+        return None;
+    };
+    Some(aws.with_region(TEST_REGION))
 }
 
 /// Build a unique id prefix for one test run so cleanup of leftovers
@@ -66,7 +75,6 @@ fn build_record(id: &str, name: &str, price: i64) -> Record<AnyDynamoType> {
 #[tokio::test]
 async fn insert_get_delete_round_trip() -> vantage_core::Result<()> {
     let Some(aws) = account_or_skip() else {
-        eprintln!("skipping: AWS credentials not configured");
         return Ok(());
     };
     let db = DynamoDB::new(aws);
@@ -104,7 +112,6 @@ async fn insert_get_delete_round_trip() -> vantage_core::Result<()> {
 #[tokio::test]
 async fn list_returns_inserted_items() -> vantage_core::Result<()> {
     let Some(aws) = account_or_skip() else {
-        eprintln!("skipping: AWS credentials not configured");
         return Ok(());
     };
     let db = DynamoDB::new(aws);
@@ -141,7 +148,6 @@ async fn list_returns_inserted_items() -> vantage_core::Result<()> {
 #[tokio::test]
 async fn replace_overwrites_existing_item() -> vantage_core::Result<()> {
     let Some(aws) = account_or_skip() else {
-        eprintln!("skipping: AWS credentials not configured");
         return Ok(());
     };
     let db = DynamoDB::new(aws);
@@ -171,7 +177,6 @@ async fn replace_overwrites_existing_item() -> vantage_core::Result<()> {
 #[tokio::test]
 async fn get_value_returns_none_for_missing_id() -> vantage_core::Result<()> {
     let Some(aws) = account_or_skip() else {
-        eprintln!("skipping: AWS credentials not configured");
         return Ok(());
     };
     let db = DynamoDB::new(aws);
@@ -188,7 +193,6 @@ async fn delete_all_keeps_rows_outside_the_set() -> vantage_core::Result<()> {
     use vantage_aws::dynamodb::DynamoCondition;
 
     let Some(aws) = account_or_skip() else {
-        eprintln!("skipping: AWS credentials not configured");
         return Ok(());
     };
     let all = products_table(DynamoDB::new(aws));
@@ -267,7 +271,6 @@ async fn contract_checks_live() -> vantage_core::Result<()> {
     use vantage_dataset::contract::{self, Fixture};
 
     let Some(aws) = account_or_skip() else {
-        eprintln!("skipping: AWS credentials not configured");
         return Ok(());
     };
     let all = products_table(DynamoDB::new(aws));

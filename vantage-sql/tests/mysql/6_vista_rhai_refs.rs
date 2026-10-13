@@ -12,9 +12,9 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
 use vantage_sql::mysql::MysqlDB;
-use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
+use vantage_sql::mysql::vista::MysqlVistaSpec;
 use vantage_types::Record;
-use vantage_vista::{Capability, VistaFactory};
+use vantage_vista::{Capability, SpecResolver, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -100,7 +100,7 @@ columns:
   name: {{ type: string, flags: [title] }}
 mysql:
   rhai: |
-    select().from("{client_t}").field("id").field("name")
+    sql::select().from("{client_t}").field("id").field("name")
 references:
   orders:
     table: orders
@@ -165,7 +165,7 @@ mysql:
         ))
     }
 
-    fn resolver(&self) -> MysqlSpecResolver {
+    fn resolver(&self) -> SpecResolver<MysqlVistaSpec> {
         let map: IndexMap<String, MysqlVistaSpec> = [
             ("orders".to_string(), self.orders_spec()),
             ("client_base".to_string(), self.client_base_spec()),

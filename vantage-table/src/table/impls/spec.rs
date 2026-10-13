@@ -81,7 +81,7 @@ where
     ) -> Result<Self> {
         for (relation, reference) in references {
             let target = reference.table.clone();
-            let foreign_key = reference.foreign_key_or(relation);
+            let foreign_key = reference.foreign_key(relation);
             let resolver = resolver.clone();
             let build_target = move |source: T| -> Table<T, EmptyEntity> {
                 if let Some(r) = &resolver

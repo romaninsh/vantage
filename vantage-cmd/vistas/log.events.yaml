@@ -8,7 +8,7 @@ columns:
     flags: [title]
   logGroupName:
     type: string
-    flags: [hidden]
+    flags: [hidden, request_param]
   timestamp:
     type: int
   message:

@@ -4,9 +4,11 @@ use vantage_types::Record;
 
 use super::MockShell;
 use crate::{
-    Capability, Column, ColumnFlag, FilterOp, JoinKey, Reference, ReferenceKind, Vista,
-    VistaCapabilities, VistaMetadata,
+    Capability, Column, ColumnFlag, FilterOp, JoinKey, Reference, Vista, VistaCapabilities,
+    VistaMetadata,
 };
+
+mod conditions;
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -26,11 +28,10 @@ fn user_vista(source: MockShell) -> Vista {
         .with_column(Column::new("email", "String").with_flag(ColumnFlag::Hidden))
         .with_column(Column::new("vip_flag", "bool"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_many(
             "orders",
             "orders",
-            ReferenceKind::HasMany,
-            vec![JoinKey::new("id", "user_id")],
+            JoinKey::new("id", "user_id"),
         ));
     Vista::new("users", source.with_metadata(metadata))
 }
@@ -249,11 +250,10 @@ async fn a_target_id_key_constrains_the_targets_id_column() {
         .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
         .with_column(Column::new("user_id", "String"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_one(
             "user",
             "users",
-            ReferenceKind::HasOne,
-            vec![JoinKey::to_target_id("user_id")],
+            JoinKey::to_target_id("user_id"),
         ));
     let orders = Vista::new(
         "orders",

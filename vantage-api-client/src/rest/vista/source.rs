@@ -11,6 +11,8 @@
 //! `RestApi` is configured. A condition names a declared column or a path
 //! placeholder (`teams/{team_id}/users`), which the spec needn't declare.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -20,12 +22,12 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, FilterOp, Page, Preview,
-    Reference as VistaReference, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaMetadata, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, Reference as VistaReference, SortDirection,
+    TableShell, Vista, VistaCapabilities, VistaMetadata, VistaResolver, unknown_relation,
+    unsupported,
 };
 
-use super::factory::{ModelResolver, RestApiVistaFactory};
+use super::factory::RestApiVistaFactory;
 use crate::RestApi;
 use crate::rest::api::REST_DRIVER;
 
@@ -41,7 +43,7 @@ pub struct RestApiTableShell {
     /// Set on a shell built from a YAML spec: each reference's target is
     /// built by name through it. A shell wrapped from a typed table has
     /// `None` and traverses the table's own `with_one`/`with_many`.
-    pub(crate) resolver: Option<ModelResolver>,
+    pub(crate) resolver: Option<Arc<dyn VistaResolver>>,
     /// The sort set by `set_order`, sent as the API's ordering query param
     /// on every windowed fetch.
     pub(crate) order: Option<(String, SortDirection)>,
@@ -62,7 +64,7 @@ impl RestApiTableShell {
         }
     }
 
-    pub(crate) fn with_resolver(mut self, resolver: ModelResolver) -> Self {
+    pub(crate) fn with_resolver(mut self, resolver: Arc<dyn VistaResolver>) -> Self {
         self.resolver = Some(resolver);
         self
     }
@@ -76,7 +78,7 @@ impl RestApiTableShell {
     /// The bare target of `relation`, before any join narrowing.
     fn ref_target(&self, reference: &VistaReference) -> Result<Vista> {
         if let Some(resolver) = &self.resolver {
-            return resolver(&reference.target);
+            return resolver.vista(&reference.target);
         }
         let target = self.table.get_ref_target_erased(&reference.name)?;
         RestApiVistaFactory::new(self.table.data_source().clone()).from_table(target)
@@ -85,16 +87,8 @@ impl RestApiTableShell {
 
 #[async_trait]
 impl TableShell for RestApiTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -150,12 +144,13 @@ impl TableShell for RestApiTableShell {
         api.get_table_count(&self.table).await
     }
 
-    /// A REST envelope with a `total_key` reports the grand total on every
-    /// reply, so the page carries it and a grid can size its scrollbar
-    /// without a second request.
+    /// An API that pages is asked for the window itself; a REST envelope with
+    /// a `total_key` reports the grand total on every reply, so the page
+    /// carries it and a grid can size its scrollbar without a second request.
+    /// An API that doesn't page answers the leading window from the listing.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
         if !self.capabilities.has(Capability::Window) {
-            return unsupported(Capability::Window);
+            return Ok(Page::from_listing(self.list().await?, offset, limit));
         }
         let id_field = self.table.id_field().map(|c| c.name().to_string());
         let (records, total) = self
@@ -164,7 +159,7 @@ impl TableShell for RestApiTableShell {
             .fetch_window_records_counted(
                 self.table.table_name(),
                 id_field.as_deref(),
-                &crate::rest::required_fields(&self.table),
+                &crate::rest::row_fields(&self.table),
                 (offset as i64, limit as i64),
                 self.order(),
                 self.table.conditions(),
@@ -226,10 +221,10 @@ impl TableShell for RestApiTableShell {
             .metadata
             .references
             .get(relation)
-            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())?;
+            .ok_or_else(|| unknown_relation(relation))?;
         let target = self.ref_target(reference)?;
         match row {
-            Some(row) => reference.narrow(target, row, CborValue::clone),
+            Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
     }

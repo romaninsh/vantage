@@ -39,7 +39,7 @@ pub struct SurrealTableBlock {
     /// YAML table (columns/references/source) is constructed. The vista is
     /// exposed as `self`; the script narrows or tweaks it with the conventional
     /// verbs plus vendor expression conditions YAML can't express, e.g.
-    /// `self.with_condition(ident("is_paying_client") == true)`. Composes with
+    /// `self.with_condition(surreal::ident("is_paying_client") == true)`. Composes with
     /// `table`/`rhai`/`base` (it runs last). Requires the `rhai` feature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modify: Option<String>,
@@ -191,7 +191,7 @@ surreal:
     columns: [id, name]
     relations: [orders]
   rhai: |
-    base.where(expr("name = 'Alice'"))
+    base.where(surreal::expr("name = 'Alice'"))
 "#;
         let spec: SurrealVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let block = spec.driver.surreal.as_ref().expect("surreal block");

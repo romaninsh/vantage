@@ -1,25 +1,26 @@
 // v4 Q10: SPLIT in a subquery + conditional banding
-// Tier 1: count(), avg, round, case_when().when().else_().expr(). The inner SPLIT subquery is a
-// nested select().split("tags").subquery() used as the FROM source; `tags AS tag` and the
-// `product_count` order-by reference columns/aliases by name via ident().
-select()
+// Tier 1: surreal::count(), avg, round, surreal::case_when().when().else_().expr(). The inner
+// SPLIT subquery is a nested surreal::select().split("tags").subquery() used as the FROM source;
+// `tags AS tag` and the `product_count` order-by reference columns/aliases by name via
+// surreal::ident().
+surreal::select()
     .from(
-        select()
-            .expression(ident("tags").alias("tag"))
+        surreal::select()
+            .expression(surreal::ident("tags").alias("tag"))
             .field("price")
             .from("product")
             .split("tags")
             .subquery())
     .field("tag")
-    .expression(count().alias("product_count"))
-    .expression(round(avg(ident("price"))).alias("avg_price"))
+    .expression(surreal::count().alias("product_count"))
+    .expression(surreal::round(surreal::avg(surreal::ident("price"))).alias("avg_price"))
     .expression(
-        case_when()
-            .when(avg(ident("price")) >= 250, "premium")
-            .when(avg(ident("price")) >= 150, "mid")
+        surreal::case_when()
+            .when(surreal::avg(surreal::ident("price")) >= 250, "premium")
+            .when(surreal::avg(surreal::ident("price")) >= 150, "mid")
             .else_("value")
             .expr()
             .alias("price_band"))
-    .group_by(ident("tag"))
-    .order_by(ident("product_count"), "desc")
-    .order_by(ident("tag"), "asc")
+    .group_by(surreal::ident("tag"))
+    .order_by(surreal::ident("product_count"), "desc")
+    .order_by(surreal::ident("tag"), "asc")

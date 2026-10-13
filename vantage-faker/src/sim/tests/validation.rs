@@ -75,6 +75,14 @@ fn bad_defs_are_rejected_with_a_clear_message() {
             "Sim script does not compile",
             "",
         ),
+        (
+            SimDef {
+                script: r#"let t = table(); t.where("who", "a"); t.ids();"#.into(),
+                ..ok()
+            },
+            "Sim script drops a narrowed table handle",
+            "table handle is discarded",
+        ),
     ];
     for (def, want, value) in cases {
         let got = err(def);
@@ -82,6 +90,21 @@ fn bad_defs_are_rejected_with_a_clear_message() {
         assert!(got.contains(value), "{got:?} lacks {value:?}");
         assert!(got.contains("sim: \"s\""), "{got:?}");
     }
+}
+
+#[test]
+fn an_in_place_array_sort_is_not_a_dropped_handle() {
+    let script = r#"
+        let all = table().ids();
+        all.sort();
+        all.sort(|a, b| if a < b { -1 } else { 1 });
+        for id in all { table().patch(id, #{ seen: true }); }
+    "#;
+    let def = SimDef {
+        script: script.into(),
+        ..ok()
+    };
+    def.validate().unwrap_or_else(|e| panic!("{e}"));
 }
 
 fn start_err(defs: Vec<SimDef>) -> String {

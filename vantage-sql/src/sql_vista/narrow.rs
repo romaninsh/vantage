@@ -30,8 +30,18 @@ where
     T: SqlShellDialect,
     E: Entity<T::Value> + 'static,
 {
+    /// A dotted column is refused rather than compared as a column name:
+    /// SQL evaluates neither a nested path into a column's value
+    /// (`address.city`) nor a condition on an imported column (`author.name`),
+    /// which exists only as a projection alias.
     pub(super) fn apply_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
+        if field.contains('.') {
+            return Err(error!(
+                "a dotted column (a nested path or an imported column) can't be filtered in SQL",
+                field = field
+            ));
+        }
         let column = self
             .table
             .columns()
@@ -70,9 +80,10 @@ where
     }
 
     /// Replace the quicksearch condition; `None` drops it.
-    pub(super) fn apply_search(&mut self, text: Option<&str>) {
-        if let Some(handle) = self.current_search_handle.take() {
-            let _ = self.table.temp_remove_condition(handle);
+    pub(super) fn apply_search(&mut self, text: Option<&str>) -> Result<()> {
+        if let Some(handle) = self.current_search_handle {
+            self.table.temp_remove_condition(handle)?;
+            self.current_search_handle = None;
         }
         if let Some(text) = text {
             let condition = self
@@ -81,6 +92,7 @@ where
                 .search_table_condition(&self.table, text);
             self.current_search_handle = Some(self.table.temp_add_condition(condition));
         }
+        Ok(())
     }
 
     /// The row just inserted under `id`, read with the quicksearch lifted: a
@@ -90,7 +102,7 @@ where
     pub(super) async fn read_back(&self, id: &str) -> Result<Record<CborValue>> {
         let mut table = self.table.clone();
         if let Some(handle) = self.current_search_handle {
-            let _ = table.temp_remove_condition(handle);
+            table.temp_remove_condition(handle)?;
         }
         table
             .get_value(id)

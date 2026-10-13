@@ -72,7 +72,7 @@ async fn detail_get_drops_a_row_for_another_id() {
 /// Rows `alpha` and `beta`, keyed by `name`, with an `args` has-many whose
 /// script passes each condition value to the command, which echoes it back
 /// as a row keyed by `arg`. The join column `owner` is a request flag, so
-/// it is declared hidden: the echoed rows don't carry it.
+/// it is declared `RequestParam`: the echoed rows don't carry it.
 fn items() -> Vista {
     let list = r#"parse_json(run([]).stdout).items"#;
     let echo_args = r#"
@@ -90,7 +90,7 @@ fn items() -> Vista {
             let cmd = cmd.with_table("args", spec);
             Table::<Cmd, EmptyEntity>::new("args", cmd)
                 .with_id_column("arg")
-                .with_column(Column::<String>::new("owner").with_flag(ColumnFlag::Hidden))
+                .with_column(Column::<String>::new("owner").with_flag(ColumnFlag::RequestParam))
         });
     cmd.vista_factory().from_table(table).unwrap()
 }
@@ -123,8 +123,8 @@ async fn cmd_refuses_conditions_it_cant_apply() {
     assert!(vista.query().is_empty());
 }
 
-/// Row `a` has `kind`, row `b` lacks it, and neither carries the hidden
-/// `mode` request flag.
+/// Row `a` has `kind` and `note`, row `b` lacks both, and neither carries
+/// the `mode` request flag. `note` is hidden: not shown, but a row field.
 fn rides() -> Vista {
     use vantage_vista::VistaFactory;
 
@@ -133,10 +133,11 @@ name: rides
 columns:
   id: { type: string, flags: [id] }
   kind: { type: string }
-  mode: { type: string, flags: [hidden] }
+  note: { type: string, flags: [hidden] }
+  mode: { type: string, flags: [request_param] }
 cmd:
   rhai: |
-    [#{ "id": "a", "kind": "ride" }, #{ "id": "b" }]
+    [#{ "id": "a", "kind": "ride", "note": "x" }, #{ "id": "b" }]
 "#;
     Cmd::new(fixture("echo_json.sh"))
         .vista_factory()
@@ -154,12 +155,47 @@ async fn cmd_row_missing_a_visible_filtered_column_is_excluded() {
 }
 
 #[tokio::test]
-async fn cmd_row_missing_a_hidden_filtered_column_is_kept() {
+async fn cmd_row_missing_a_hidden_filtered_column_is_excluded() {
+    let vista = rides().with_condition("note", FilterOp::Eq, "x").unwrap();
+    let rows = vista.list_values().await.unwrap();
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["a"]);
+}
+
+#[tokio::test]
+async fn cmd_row_missing_a_request_param_filtered_column_is_kept() {
     let vista = rides()
         .with_condition("mode", FilterOp::Eq, "summary")
         .unwrap();
     let rows = vista.list_values().await.unwrap();
     assert_eq!(rows.keys().collect::<Vec<_>>(), ["a", "b"]);
+}
+
+/// The bundled relation targets declare their join columns as request flags
+/// that are also hidden: rows don't carry them, and grids don't show them.
+#[test]
+fn bundled_request_flag_columns_are_hidden_request_params() {
+    use vantage_cmd::models::CmdModelFactory;
+    use vantage_vista::ColumnFlag as VistaFlag;
+
+    let factory = CmdModelFactory::new(Cmd::new(fixture("echo_json.sh")));
+    let columns = [
+        ("ecs.services", "cluster"),
+        ("ecs.tasks", "cluster"),
+        ("iam.access_keys", "UserName"),
+        ("iam.user_groups", "UserName"),
+        ("iam.user_policies", "UserName"),
+        ("lambda.aliases", "FunctionName"),
+        ("lambda.versions", "FunctionName"),
+        ("log.events", "logGroupName"),
+        ("log.streams", "logGroupName"),
+        ("s3.objects", "Bucket"),
+    ];
+    for (model, column) in columns {
+        let (vista, _) = factory.for_name(model).expect(model);
+        let column = vista.column(column).expect(column);
+        assert!(column.has_flag(VistaFlag::Hidden), "{model}");
+        assert!(column.has_flag(VistaFlag::RequestParam), "{model}");
+    }
 }
 
 /// A script that ignores its conditions still can't widen the set: `In` is
@@ -187,10 +223,11 @@ async fn cmd_get_lists_and_picks_without_a_detail_script() {
     assert!(vista.get_value("alpha").await.unwrap().is_none());
 }
 
-/// Joins are strict, so every bundled relation's target must declare the
-/// column its join key constrains. Building a target runs no command.
+/// Every bundled relation names its target by the target's table name.
+/// Joins are strict, so the target must declare the column its join key
+/// constrains. Building a target runs no command.
 #[test]
-fn bundled_relation_targets_declare_their_join_columns() {
+fn bundled_relation_targets_are_named_and_declare_their_join_columns() {
     use vantage_cmd::models::CmdModelFactory;
 
     let factory = CmdModelFactory::new(Cmd::new("aws"));
@@ -200,6 +237,7 @@ fn bundled_relation_targets_declare_their_join_columns() {
             .unwrap_or_else(|| panic!("{name} must build"));
         for reference in vista.references().values() {
             let target = vista.get_ref(&reference.name, None).unwrap();
+            assert_eq!(reference.target, target.name(), "{name}:{}", reference.name);
             for key in &reference.keys {
                 let column = key.target_column(&target).unwrap();
                 assert!(

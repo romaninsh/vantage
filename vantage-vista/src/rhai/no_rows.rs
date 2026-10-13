@@ -51,7 +51,7 @@ forward_table_shell!(NoRowsShell, inner, {
         &self.capabilities
     }
     fn preview(&self) -> Preview {
-        Preview::new(self.inner.driver_name()).with_note("`ref` over no rows: nothing is queried")
+        Preview::new().with_note("`ref` over no rows: nothing is queried")
     }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {

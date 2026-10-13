@@ -7,10 +7,12 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_expressions::Expressive;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
+use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::{
-    Capability, Condition, FilterOp, NativeCondition, SortDirection, operand_text, unsupported,
+    Capability, Condition, FilterOp, NativeCondition, ReferenceKind, SortDirection, operand_text,
+    unsupported,
 };
 
 use super::SurrealTableShell;
@@ -33,14 +35,70 @@ where
     /// condition on it matches nothing. Such a column is therefore filtered
     /// on its (parenthesised) expression.
     ///
-    /// `None` when the table has no such column.
+    /// A dotted path (`address.city`) that is not itself a column is
+    /// evaluated natively: SurrealQL walks into a nested object, or follows a
+    /// record link, from a stored root column. Its root must be declared and
+    /// stored.
+    ///
+    /// `None` when neither the field nor such a root is a column.
     fn condition_subject(&self, field: &str) -> Option<Expr> {
         if self.table.is_calculated_column(field)
             && let Some(expression) = self.table.get_column_expr(field)
         {
             return Some(surreal_expr!("({})", (expression)));
         }
-        self.table.columns().get(field).map(|column| column.expr())
+        if let Some(column) = self.table.columns().get(field) {
+            return Some(column.expr());
+        }
+        let (root, path) = field.split_once('.')?;
+        if self.table.is_calculated_column(root) {
+            return None;
+        }
+        let root = self.table.columns().get(root)?.expr();
+        Some(path.split('.').fold(root, |subject, segment| {
+            surreal_expr!("{}.{}", (subject), (Identifier::new(segment)))
+        }))
+    }
+
+    /// `value` as `field` compares it. SurrealDB compares record ids by type,
+    /// so a record id held as text (one that round-tripped through JSON or a
+    /// script, or a key held by another backend's row) would match nothing:
+    /// - on the id column, a `table:key` or bare key becomes this table's
+    ///   record id (see `parse_id`);
+    /// - on a record-link column (see `is_record_link`), a `table:key` text
+    ///   becomes a record id; other text is left as it is.
+    ///
+    /// An `IN` list converts each element.
+    fn operand(&self, field: &str, value: &CborValue) -> CborValue {
+        match value {
+            CborValue::Text(id) if self.metadata.id_column.as_deref().unwrap_or("id") == field => {
+                self.parse_id(id).to_cbor()
+            }
+            CborValue::Text(_) if self.is_record_link(field) => self
+                .table
+                .data_source()
+                .coerce_reference_value(AnySurrealType::from(value.clone()))
+                .into_value(),
+            CborValue::Array(items) => {
+                CborValue::Array(items.iter().map(|v| self.operand(field, v)).collect())
+            }
+            _ => value.clone(),
+        }
+    }
+
+    /// A `Thing`-typed column, or the column one of this table's has-one
+    /// references reads (YAML declares links as `type: string, references:`).
+    fn is_record_link(&self, field: &str) -> bool {
+        let typed = self
+            .table
+            .columns()
+            .get(field)
+            .is_some_and(|column| column.get_type() == std::any::type_name::<Thing>());
+        typed
+            || self.metadata.references.values().any(|reference| {
+                reference.kind == ReferenceKind::HasOne
+                    && reference.keys.iter().any(|key| key.from == field)
+            })
     }
 
     pub(super) fn apply_condition(&mut self, condition: &Condition) -> Result<()> {
@@ -49,19 +107,7 @@ where
             .condition_subject(field)
             .ok_or_else(|| error!("Unknown column for condition", field = field))?;
         let value = &condition.value;
-        // Id-column comparisons coerce a string value into a Thing —
-        // SurrealDB compares record ids by type, so a quoted string
-        // (`id = "MG78-N25S"` or `id = "tag:MG78-N25S"`) never matches.
-        // `parse_id` accepts both the bare-key and `table:key` forms. This is
-        // what lets a cross-persistence relation narrow a surreal table from
-        // a plain string held by another backend's row.
-        let id_field = self.metadata.id_column.as_deref().unwrap_or("id");
-        let operand = || match value {
-            CborValue::Text(s) if field == id_field => {
-                AnySurrealType::from(self.parse_id(s).to_cbor())
-            }
-            _ => AnySurrealType::from(value.clone()),
-        };
+        let operand = || AnySurrealType::from(self.operand(field, value));
         let expr = match condition.op {
             FilterOp::Eq => subject.eq(operand()),
             FilterOp::Ne => subject.ne(operand()),
@@ -112,9 +158,10 @@ where
     }
 
     /// Replace the quicksearch condition; `None` drops it.
-    pub(super) fn apply_search(&mut self, text: Option<&str>) {
-        if let Some(handle) = self.current_search_handle.take() {
-            let _ = self.table.temp_remove_condition(handle);
+    pub(super) fn apply_search(&mut self, text: Option<&str>) -> Result<()> {
+        if let Some(handle) = self.current_search_handle {
+            self.table.temp_remove_condition(handle)?;
+            self.current_search_handle = None;
         }
         if let Some(text) = text {
             let condition = self
@@ -123,6 +170,7 @@ where
                 .search_table_condition(&self.table, text);
             self.current_search_handle = Some(self.table.temp_add_condition(condition));
         }
+        Ok(())
     }
 
     /// Replace the order; `None` drops it.
@@ -153,7 +201,7 @@ where
     pub(super) async fn read_back(&self, thing: &Thing) -> Result<Record<CborValue>> {
         let mut table = self.table.clone();
         if let Some(handle) = self.current_search_handle {
-            let _ = table.temp_remove_condition(handle);
+            table.temp_remove_condition(handle)?;
         }
         table
             .get_value(thing.clone())

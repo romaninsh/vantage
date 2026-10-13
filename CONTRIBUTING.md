@@ -5,7 +5,6 @@
 The public API of these crates is recorded in `api/<crate>.txt`:
 
 - vantage-vista
-- vantage-vista-factory
 - vantage-diorama
 - vantage-diorama-aggregate
 

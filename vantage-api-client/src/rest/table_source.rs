@@ -8,7 +8,6 @@ use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::DataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -40,7 +39,7 @@ impl RestApi {
         self.fetch_records(
             table.table_name(),
             id_field_name(table).as_deref(),
-            &required_fields(table),
+            &row_fields(table),
             table.pagination(),
             order,
             table.conditions(),
@@ -49,21 +48,14 @@ impl RestApi {
     }
 }
 
-/// The condition fields a row must carry to match a client-side filter: the
-/// declared columns, less the `hidden` ones and the endpoint's
-/// `{placeholder}`s. Those two carry request parameters, which the server
-/// applies without echoing them in the rows, as does a field the table
-/// doesn't declare at all.
-pub(crate) fn required_fields<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Vec<String> {
+/// The fields a returned row carries: the table's
+/// [`row_fields`](Table::row_fields), less the endpoint's `{placeholder}`s,
+/// whose values fill the URL path and needn't come back in the rows.
+pub(crate) fn row_fields<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Vec<String> {
     let placeholders: Vec<&str> = crate::rest::placeholders(table.table_name()).collect();
-    table
-        .columns()
-        .iter()
-        .filter(|(name, column)| {
-            !column.flags().contains(&ColumnFlag::Hidden) && !placeholders.contains(&name.as_str())
-        })
-        .map(|(name, _)| name.clone())
-        .collect()
+    let mut fields = table.row_fields();
+    fields.retain(|name| !placeholders.contains(&name.as_str()));
+    fields
 }
 
 impl ExprDataSource<CborValue> for RestApi {

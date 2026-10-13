@@ -204,8 +204,9 @@ impl SpacetimeTableShell {
     }
 
     /// Refuse a write the shell doesn't advertise before any request is sent,
-    /// naming why: an anonymous caller would otherwise get a permission error
-    /// that says nothing about the cause.
+    /// naming why. Through a `Vista` the write is refused before the shell is
+    /// called; this guards a direct call on the shell, which would otherwise
+    /// get a server permission error that says nothing about the cause.
     fn require(&self, capability: Capability) -> Result<()> {
         if self.capabilities.has(capability) {
             return Ok(());

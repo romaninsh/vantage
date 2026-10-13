@@ -1,10 +1,9 @@
 use serde_json::json;
-use vantage_vista::Terminals;
 
-use super::support::{host, json, read_write, run, store};
+use super::support::{host, json, read_only_terminals, read_write, run, store};
 
 fn capped(limit: usize) -> vantage_rhai::Host {
-    host(&store(), Terminals::Read { limit: Some(limit) })
+    host(&store(), read_only_terminals(Some(limit)))
 }
 
 #[test]

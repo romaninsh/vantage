@@ -9,12 +9,12 @@
 //! ```rhai
 //! servo.set("name", "Coffee");
 //! if servo.is_dirty() {
-//!     let id = servo.save();       // flash + settle; the record's id
+//!     let id = servo.flash();      // flash + settle; the record's id
 //! }
 //! ```
 //!
-//! Rhai is synchronous; [`Servo::flash`] is async. `save()` runs the
-//! flash via `vantage_vista::rhai::block_on`, which is only legal on a
+//! Rhai is synchronous; [`Servo::flash`] is async. `flash()` runs it
+//! via `vantage_vista::rhai::block_on`, which is only legal on a
 //! thread with a runtime *context* but no async *frame* — the same
 //! contract as vantage-vista's fetch verbs (see
 //! `vantage-vista/src/rhai/runtime.rs`): evaluate scripts under
@@ -26,7 +26,7 @@ use vantage_rhai::Vocab;
 use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 // One converter for the whole data layer: a record id renders as `table:id`
 // in a servo script exactly as it does in a vista script.
-pub use vantage_vista::{cbor_to_dynamic, dynamic_to_cbor, record_to_map};
+use vantage_vista::rhai::{cbor_to_dynamic, dynamic_to_cbor, record_to_map};
 
 use crate::servo::{Servo, ServoStatus};
 
@@ -107,7 +107,7 @@ pub fn register_servo_onto(engine: &mut Engine) {
         }
     });
 
-    // The last save's rejection: `()` unless status is failed, else a
+    // The last flash's rejection: `()` unless status is failed, else a
     // map of `message` plus per-field errors under `fields`.
     engine.register_fn("rejection", |servo: &mut Arc<Servo>| -> Dynamic {
         match servo.status() {
@@ -133,11 +133,11 @@ pub fn register_servo_onto(engine: &mut Engine) {
     // nothing was dirty and no id is bound yet); a rejected write is a
     // script error, with the draft surviving on the servo.
     engine.register_fn(
-        "save",
+        "flash",
         |servo: &mut Arc<Servo>| -> Result<Dynamic, Box<EvalAltResult>> {
             vantage_vista::rhai::block_on(servo.flash())
                 .and_then(|flashed| flashed)
-                .map_err(|e| Box::<EvalAltResult>::from(format!("save failed: {e}")))?;
+                .map_err(|e| Box::<EvalAltResult>::from(format!("flash failed: {e}")))?;
             Ok(servo.id().map(Dynamic::from).unwrap_or(Dynamic::UNIT))
         },
     );

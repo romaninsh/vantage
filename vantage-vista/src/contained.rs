@@ -20,6 +20,7 @@ use crate::{
     capabilities::{Capability, VistaCapabilities},
     metadata::VistaMetadata,
     reference::{Reference, ReferenceKind},
+    resolver::VistaResolver,
     vista::Vista,
 };
 
@@ -34,25 +35,22 @@ mod shell;
 pub type ContainedWriteback =
     Arc<dyn Fn(CborValue) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
 
-/// Resolves a relation *of* a contained record (e.g. a line's `product`) back
-/// into the real table as a `Vista`. Supplied by the host at traversal time,
-/// capturing the contained table's own relations.
-pub type ContainedRefResolver =
-    Arc<dyn Fn(&str, &Record<CborValue>) -> Result<Vista> + Send + Sync>;
-
 /// [`TableShell`](crate::TableShell) over a contained relation's records.
 ///
 /// Reads and narrowing run over the seeded rows; writes apply to them and
-/// then flush the whole collection through [`ContainedWriteback`]. A clone
-/// shares the rows and the writeback and owns its conditions.
+/// then flush the whole collection through [`ContainedWriteback`]. Without
+/// a writeback (no parent row) writes are refused. A clone shares the rows
+/// and the writeback and owns its conditions.
 #[derive(Clone)]
 pub(crate) struct ContainedShell {
     im: ImTable<EmptyEntity, CborValue>,
     schema: VistaMetadata,
     kind: ReferenceKind,
     capabilities: VistaCapabilities,
-    writeback: ContainedWriteback,
-    ref_resolver: Option<ContainedRefResolver>,
+    writeback: Option<ContainedWriteback>,
+    /// The bare targets of the contained records' own relations, by
+    /// target name.
+    resolver: Option<Arc<dyn VistaResolver>>,
     conditions: Vec<crate::query::Condition>,
 }
 
@@ -64,14 +62,23 @@ pub(crate) struct ContainedShell {
 /// records are addressed by position, a `contains_one` record by `"0"`).
 /// `host_value` is the parent row's host column: a map for `contains_one`, an
 /// array of maps for `contains_many`, or `None` for an empty set.
-/// `writeback` runs after every mutation with the re-serialized collection;
-/// `ref_resolver`, when given, serves the contained records' own relations.
+/// `writeback` runs after every mutation with the re-serialized collection.
+/// Without one the sub-Vista is the relation's bare target: no parent row,
+/// no records, and no write capabilities.
+///
+/// The contained records' own relations (a line's `product`) are declared
+/// in `schema`'s references. `resolver`, when given, maps each relation's
+/// `target` name to its bare target, the same names a
+/// [`Catalog`](crate::Catalog) holds; the sub-Vista then advertises
+/// [`Traverse`](Capability::Traverse) and narrows that target to a record
+/// by the relation's keys, through [`Reference::narrow`]. A relation's
+/// `build_script` is not evaluated here.
 pub fn build_contained_vista(
     reference: &Reference,
     schema: VistaMetadata,
     host_value: Option<&CborValue>,
-    writeback: ContainedWriteback,
-    ref_resolver: Option<ContainedRefResolver>,
+    writeback: Option<ContainedWriteback>,
+    resolver: Option<Arc<dyn VistaResolver>>,
 ) -> Result<Vista> {
     if !reference.kind.is_contained() {
         return Err(error!(
@@ -84,16 +91,15 @@ pub fn build_contained_vista(
     let im = ImTable::<EmptyEntity, CborValue>::new(&ds, &reference.name);
     im.seed(seed_records(reference.kind, &schema, host_value));
 
-    let mut capabilities: VistaCapabilities = [
-        Capability::Insert,
-        Capability::Update,
-        Capability::Delete,
-        Capability::FilterOps,
-        Capability::Window,
-    ]
-    .into_iter()
-    .collect();
-    if ref_resolver.is_some() {
+    let mut capabilities: VistaCapabilities = [Capability::FilterOps, Capability::Window]
+        .into_iter()
+        .collect();
+    if writeback.is_some() {
+        for write in [Capability::Insert, Capability::Update, Capability::Delete] {
+            capabilities = capabilities.with(write);
+        }
+    }
+    if resolver.is_some() {
         capabilities = capabilities.with(Capability::Traverse);
     }
     let shell = ContainedShell {
@@ -102,7 +108,7 @@ pub fn build_contained_vista(
         kind: reference.kind,
         capabilities,
         writeback,
-        ref_resolver,
+        resolver,
         conditions: Vec::new(),
     };
     Ok(Vista::new(reference.name.clone(), shell))

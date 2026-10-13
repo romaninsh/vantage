@@ -29,8 +29,8 @@ use spacetimedb_sats::ProductType;
 use vantage_core::{Result, error};
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, Page, Preview, Reference as VistaReference,
-    TableShell, Vista, VistaCapabilities, VistaChangeStream, VistaMetadata, unsupported,
+    Capability, Condition, Page, Preview, TableShell, VistaCapabilities, VistaChangeStream,
+    VistaMetadata, unsupported,
 };
 
 use crate::client::SpacetimeDb;
@@ -88,16 +88,8 @@ impl SpacetimeTableShell {
 
 #[async_trait]
 impl TableShell for SpacetimeTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -110,7 +102,7 @@ impl TableShell for SpacetimeTableShell {
 
     /// The `SELECT` a list sends. A subscription sends the same statement.
     fn preview(&self) -> Preview {
-        let preview = Preview::new("spacetimedb");
+        let preview = Preview::new();
         match self.select() {
             Ok(select) => preview.with_query(select.render()),
             Err(_) => preview.with_note("the relation name cannot be quoted as an identifier"),
@@ -195,9 +187,6 @@ impl TableShell for SpacetimeTableShell {
         self.delete_rows().await
     }
 
-    /// A SpacetimeDB module declares no foreign keys, so the shell has no
-    /// references and refuses traversal.
-    fn get_ref(&self, _relation: &str, _row: Option<&Rec>) -> Result<Vista> {
-        unsupported(Capability::Traverse)
-    }
+    // A SpacetimeDB module declares no foreign keys, so the shell has no
+    // references and `get_ref` keeps the trait's `Traverse` refusal.
 }

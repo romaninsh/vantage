@@ -62,10 +62,11 @@ async fn an_unknown_order_column_is_an_error() {
     assert!(!err.is_unsupported(), "{err:?}");
 }
 
-/// Joins are strict, so every relation's target must declare the column its
-/// join key constrains. Building a target issues no request.
+/// Every relation names its target by the target's table name. Joins are
+/// strict, so the target must declare the column its join key constrains.
+/// Building a target issues no request.
 #[tokio::test]
-async fn relation_targets_declare_their_join_columns() {
+async fn relation_targets_are_named_and_declare_their_join_columns() {
     let factory = Factory::new(offline_cluster());
     for name in Factory::known_names() {
         let (vista, _) = factory
@@ -73,6 +74,7 @@ async fn relation_targets_declare_their_join_columns() {
             .unwrap_or_else(|| panic!("{name} must build"));
         for reference in vista.references().values() {
             let target = vista.get_ref(&reference.name, None).unwrap();
+            assert_eq!(reference.target, target.name(), "{name}:{}", reference.name);
             for key in &reference.keys {
                 let column = key.target_column(&target).unwrap();
                 assert!(

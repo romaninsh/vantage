@@ -10,7 +10,7 @@ use support::MockView;
 use vantage_diorama::{Dio, Lens};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, JoinKey, Reference, ReferenceKind, Vista, VistaMetadata};
+use vantage_vista::{Column, JoinKey, Reference, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -50,11 +50,10 @@ fn launch_master() -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_many(
             "crew",
             "launch_crew",
-            ReferenceKind::HasMany,
-            vec![JoinKey::new("id", "launch_id")],
+            JoinKey::new("id", "launch_id"),
         ));
     let shell = MockShell::new()
         .with_metadata(meta)

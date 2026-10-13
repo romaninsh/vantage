@@ -206,6 +206,17 @@ impl Expressive<AnyCsvType> for AnyCsvType {
         Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
     }
 }
+
+/// The value as a condition preview shows it: text quoted, anything else as
+/// stored.
+impl std::fmt::Display for AnyCsvType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.type_variant() {
+            Some(CsvTypeVariants::String) => write!(f, "{:?}", self.value()),
+            _ => f.write_str(self.value()),
+        }
+    }
+}
 impl From<serde_json::Value> for AnyCsvType {
     fn from(v: serde_json::Value) -> Self {
         match v {

@@ -33,7 +33,7 @@ pub struct User {
 /// `ListUsers` table — every IAM user in the account. Optional
 /// filters: `PathPrefix` to narrow by path, `MaxItems` to cap the
 /// page (v0 still only reads the first page either way). `PathPrefix` is
-/// declared as a hidden request-param column, so a Vista can set it too;
+/// declared as a `RequestParam` column, so a Vista can set it too;
 /// `MaxItems` is the typed table's only.
 ///
 /// Three relations:

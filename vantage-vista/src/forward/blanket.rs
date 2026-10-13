@@ -9,22 +9,16 @@ use vantage_types::Record;
 
 use super::ForwardShell;
 use crate::{
-    Column, Condition, NativeCondition, Page, Preview, Reference, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaChangeStream,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaChangeStream, VistaMetadata,
 };
 
 type Rec = Record<CborValue>;
 
 #[async_trait]
 impl<T: ForwardShell + Clone> TableShell for T {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        ForwardShell::columns(self)
-    }
-    fn references(&self) -> &IndexMap<String, Reference> {
-        ForwardShell::references(self)
-    }
-    fn id_column(&self) -> Option<&str> {
-        ForwardShell::id_column(self)
+    fn metadata(&self) -> &VistaMetadata {
+        ForwardShell::metadata(self)
     }
     fn capabilities(&self) -> &VistaCapabilities {
         ForwardShell::capabilities(self)

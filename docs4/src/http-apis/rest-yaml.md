@@ -70,8 +70,9 @@ target's `endpoint`, becomes a query parameter, or filters rows, by the rules ab
 - `has_many`: the parent's id narrows the target's `foreign_key` column.
 
 Targets are found by name. `register_yaml` keeps them in the factory's own registry. If the
-models live across several drivers, `with_model_resolver(ModelResolver)` installs a closure
-that returns a built `Vista` for a name instead.
+models live across several drivers, `with_model_resolver(resolver)` takes an
+`Arc<dyn VistaResolver>` that returns a built `Vista` for a name instead: a closure, or a
+[`Catalog`](vantage_vista::Catalog).
 
 ## Builder settings
 

@@ -7,9 +7,8 @@ use indexmap::IndexMap;
 use serde_json::json;
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
-use vantage_vista::{
-    DataVocab, Handle, RecordDraft, TargetResolver, Vista, Writes, mocks::MockShell,
-};
+use vantage_vista::rhai::{DataVocab, Handle, RecordDraft, Terminals, Writes};
+use vantage_vista::{Vista, VistaResolver, mocks::MockShell};
 
 use super::support::{json, read_write, run, shop};
 
@@ -20,7 +19,7 @@ o["total"] = 45;
 
 let was = o.baseline().status;
 let staged = [o.dirty("status"), o.dirty("client")];
-o.save();   // patches `status` and `total`, nothing else
+o.flash();   // patches `status` and `total`, nothing else
 
 #{
     was: was,
@@ -47,7 +46,7 @@ fn edit_existing() {
 const NEW_ROW: &str = r#"
 let n = table("client").record();
 n.set(#{ name: "Dee", vip: false });
-let id = n.save();   // an insert under a new UUIDv7 id
+let id = n.flash();   // an insert under a new UUIDv7 id
 
 #{
     same_id: n.id == id,
@@ -83,13 +82,13 @@ fn revert() {
     assert_eq!(json(&host, REVERT), json!([true, false, "Ben"]));
 }
 
-const FAILED_SAVE: &str = r#"
+const FAILED_FLASH: &str = r#"
 let o = table("order").record("o3");
 table("order").delete("o3");   // the row goes away underneath the draft
 
 o.status = "refunded";
 let threw = false;
-try { o.save(); } catch (err) { threw = true; }
+try { o.flash(); } catch (err) { threw = true; }
 
 #{
     threw: threw,
@@ -100,9 +99,9 @@ try { o.save(); } catch (err) { threw = true; }
 "#;
 
 #[test]
-fn failed_save() {
+fn failed_flash() {
     let host = read_write(&shop());
-    let out = json(&host, FAILED_SAVE);
+    let out = json(&host, FAILED_FLASH);
     assert_eq!(out["threw"], json!(true));
     assert_eq!(out["status"], json!("failed"));
     assert_eq!(out["staged"], json!(true));
@@ -112,10 +111,10 @@ fn failed_save() {
 
 const ROW_WITHOUT_TABLE: &str = r#"
 row.status = "void";   // staged on the draft
-let saved = true;
-try { row.save(); } catch (err) { saved = false; }
+let flashed = true;
+try { row.flash(); } catch (err) { flashed = false; }
 
-#{ status: row.status, was: row.baseline().status, saved: saved }
+#{ status: row.status, was: row.baseline().status, flashed: flashed }
 "#;
 
 #[test]
@@ -127,7 +126,8 @@ fn row_without_table() {
     .into_iter()
     .collect();
 
-    let no_table: TargetResolver = Arc::new(|_| Ok(Vista::new("row", MockShell::new())));
+    let no_table: Arc<dyn VistaResolver> =
+        Arc::new(|_: &str| Ok(Vista::new("row", MockShell::new())));
     let row = RecordDraft::from_row(
         Handle::named("row"),
         Some(no_table),
@@ -137,13 +137,16 @@ fn row_without_table() {
     );
 
     let host = Host::builder(Limits::Ui)
-        .vocab(DataVocab::read(None, None))
+        .vocab(DataVocab::new(Terminals::ReadWrite {
+            limit: None,
+            writes: Writes::Denied("this row is read-only".into()),
+        }))
         .build();
     let env = Env::new().var("row", Dynamic::from(row.clone()));
     let script = host.compile(&Block::from(ROW_WITHOUT_TABLE)).unwrap();
     assert_eq!(
         vantage_rhai::to_json(&script.eval(&env).unwrap()),
-        json!({"status": "void", "was": "paid", "saved": false})
+        json!({"status": "void", "was": "paid", "flashed": false})
     );
     assert_eq!(row.changes().len(), 1);
 

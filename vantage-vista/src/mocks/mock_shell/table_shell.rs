@@ -9,11 +9,10 @@ use vantage_core::{Result, error};
 
 use super::{MockShell, Rec};
 use crate::{
-    capabilities::{Capability, VistaCapabilities, unsupported},
-    column::Column,
+    capabilities::{Capability, VistaCapabilities, unknown_relation, unsupported},
+    metadata::VistaMetadata,
     page::{Page, Preview},
     query::Condition,
-    reference::Reference,
     shell::TableShell,
     sort::SortDirection,
     vista::Vista,
@@ -31,14 +30,8 @@ impl MockShell {
 
 #[async_trait]
 impl TableShell for MockShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        &self.metadata.columns
-    }
-    fn references(&self) -> &IndexMap<String, Reference> {
-        &self.metadata.references
-    }
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
@@ -48,7 +41,7 @@ impl TableShell for MockShell {
     }
     /// The mock has no query language, so it reports its narrowing.
     fn preview(&self) -> Preview {
-        Preview::new("mock").with_query(self.render_query())
+        Preview::new().with_query(self.render_query())
     }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {
@@ -90,7 +83,23 @@ impl TableShell for MockShell {
         Ok(Page::new(window).with_total(total))
     }
 
+    /// Conditions evaluate against a row's own cells, so a dotted path is
+    /// refused rather than matching nothing. A mock that declares columns
+    /// refuses an undeclared one too; a mock that declares none takes any
+    /// column, as a schemaless store would.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        let column = condition.column.as_str();
+        if column.contains('.') {
+            return Err(error!("nested paths are not evaluated", column = column));
+        }
+        let columns = &self.metadata.columns;
+        if !(columns.is_empty() || columns.contains_key(column)) {
+            return Err(error!(
+                "Unknown column",
+                column = column,
+                verb = "add_condition"
+            ));
+        }
         self.filters.push(condition.clone());
         Ok(())
     }
@@ -191,7 +200,7 @@ impl TableShell for MockShell {
             .metadata
             .references
             .get(relation)
-            .ok_or_else(|| error!("unknown relation", relation = relation).mark_not_found())?;
+            .ok_or_else(|| unknown_relation(relation))?;
         if reference.kind.is_contained() {
             self.contained_ref(reference, row)
         } else {

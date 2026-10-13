@@ -1,3 +1,3 @@
 // E4: Missing closing bracket in indexer
-let u = table("users").alias("u");
-select().from(u).field(u["name)
+let u = sql::ident("users").alias("u");
+sql::select().from(u).field(u["name)

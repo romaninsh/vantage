@@ -1,7 +1,6 @@
 //! What a `Vista` records of the clauses applied to it.
 
 use ciborium::Value as CborValue;
-use indexmap::IndexMap;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
 
@@ -10,6 +9,8 @@ use crate::{
     Capability, Column, ColumnFlag, Condition, FilterOp, NativeCondition, SortDirection,
     TableShell, Vista, VistaCapabilities, VistaMetadata, VistaQuery, forward_table_shell,
 };
+
+mod reads;
 
 fn row(n: i64, name: &str) -> Record<CborValue> {
     [
@@ -160,16 +161,23 @@ fn an_undeclared_column_is_an_error_not_a_refusal() {
 }
 
 /// Where no refusal is pending, the shell owns its column vocabulary: an
-/// equality on a column it doesn't declare reaches it and is recorded.
+/// equality on a column the Vista doesn't declare reaches the shell, which
+/// decides. A schemaless mock takes it and the Vista records it; a mock
+/// with a schema rejects it.
 #[test]
 fn an_undeclared_equality_column_is_the_shells_call() {
-    let vista = refusing()
+    let caps = VistaCapabilities::new().with(Capability::Window);
+    let vista = Vista::new("t", MockShell::new().with_capabilities(caps))
         .with_condition("placeholder", FilterOp::Eq, "x")
         .unwrap();
     assert_eq!(
         vista.query().conditions,
         [Condition::new("placeholder", FilterOp::Eq, "x")]
     );
+    let err = refusing()
+        .with_condition("placeholder", FilterOp::Eq, "x")
+        .unwrap_err();
+    assert!(!err.is_unsupported(), "{err}");
 }
 
 #[test]
@@ -223,12 +231,12 @@ fn native_conditions_are_recorded_by_key() {
 #[derive(Clone)]
 struct Wrapped {
     inner: Box<dyn TableShell>,
-    columns: IndexMap<String, Column>,
+    metadata: VistaMetadata,
 }
 
 forward_table_shell!(Wrapped, inner, {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        &self.columns
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 });
 
@@ -242,7 +250,7 @@ fn map_shell_keeps_the_name_and_applied_query() {
     let applied = vista.query().clone();
     let wrapped = vista.map_shell(|inner| Wrapped {
         inner,
-        columns: IndexMap::new(),
+        metadata: VistaMetadata::new(),
     });
     assert_eq!(wrapped.name(), "t");
     assert_eq!(wrapped.query(), &applied);

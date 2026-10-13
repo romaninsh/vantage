@@ -8,17 +8,11 @@
 //!   decimal text.
 //!
 //! Every other value, and every cell of an undeclared column or of one
-//! declared without a type, is left as is.
-
-use std::collections::BTreeSet;
+//! declared [without a type](vantage_vista::Column::untyped), is left as is.
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 use vantage_vista::{Column, VistaMetadata};
-
-/// Columns declared without a type. Their metadata may still name one for
-/// display (a spec defaults it to `string`), but nothing is converted.
-pub(crate) type Untyped = BTreeSet<String>;
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Affinity {
@@ -30,17 +24,9 @@ pub(crate) enum Affinity {
 
 impl Affinity {
     /// The affinity of `name` in `metadata`, whose id column is `id_column`.
-    pub(crate) fn of(
-        metadata: &VistaMetadata,
-        untyped: &Untyped,
-        id_column: &str,
-        name: &str,
-    ) -> Self {
+    pub(crate) fn of(metadata: &VistaMetadata, id_column: &str, name: &str) -> Self {
         if name == id_column {
             return Affinity::Text;
-        }
-        if untyped.contains(name) {
-            return Affinity::None;
         }
         metadata.columns.get(name).map_or(Affinity::None, column)
     }
@@ -62,11 +48,12 @@ fn column(column: &Column) -> Affinity {
     if column.is_computed() {
         return Affinity::None;
     }
-    match column.original_type.to_ascii_lowercase().as_str() {
-        "int" | "integer" | "i64" | "i32" | "u64" | "u32" | "bigint" | "smallint" => {
+    let ty = column.original_type.as_deref().map(str::to_ascii_lowercase);
+    match ty.as_deref() {
+        Some("int" | "integer" | "i64" | "i32" | "u64" | "u32" | "bigint" | "smallint") => {
             Affinity::Integer
         }
-        "string" | "text" | "str" | "varchar" => Affinity::Text,
+        Some("string" | "text" | "str" | "varchar") => Affinity::Text,
         _ => Affinity::None,
     }
 }
@@ -74,12 +61,11 @@ fn column(column: &Column) -> Affinity {
 /// Every cell of `record` in its stored form.
 pub(crate) fn conform_record(
     metadata: &VistaMetadata,
-    untyped: &Untyped,
     id_column: &str,
     record: &mut Record<CborValue>,
 ) {
     for (name, value) in record.iter_mut() {
-        let affinity = Affinity::of(metadata, untyped, id_column, name);
+        let affinity = Affinity::of(metadata, id_column, name);
         if affinity != Affinity::None {
             *value = affinity.conform(value);
         }

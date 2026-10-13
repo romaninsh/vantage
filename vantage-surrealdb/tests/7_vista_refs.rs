@@ -17,8 +17,8 @@ use vantage_dataset::prelude::*;
 use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
-use vantage_surrealdb::vista::{SurrealSpecResolver, SurrealVistaFactory, SurrealVistaSpec};
-use vantage_vista::VistaFactory;
+use vantage_surrealdb::vista::{SurrealVistaFactory, SurrealVistaSpec};
+use vantage_vista::{SpecResolver, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -70,7 +70,7 @@ async fn seed_v2_like(
     Ok(())
 }
 
-fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SurrealSpecResolver {
+fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SpecResolver<SurrealVistaSpec> {
     let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
     let map = Arc::new(map);
     Arc::new(move |name: &str| map.get(name).cloned())

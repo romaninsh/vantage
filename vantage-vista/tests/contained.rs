@@ -7,8 +7,12 @@ use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 use vantage_vista::{
-    Column, ColumnFlag, FilterOp, Reference, ReferenceKind, Vista, VistaMetadata, mocks::MockShell,
+    Capability, Column, ColumnFlag, FilterOp, Reference, ReferenceKind, Vista, VistaMetadata,
+    mocks::MockShell,
 };
+
+#[path = "contained/record_refs.rs"]
+mod record_refs;
 
 fn t(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -57,10 +61,7 @@ fn order_vista() -> Vista {
     ]);
     let shell = MockShell::new()
         .with_metadata(id_column().with_column(Column::new("client", "String")))
-        .with_contained(
-            Reference::contained("lines", ReferenceKind::ContainsMany, "lines"),
-            line_schema,
-        )
+        .with_contained(Reference::contains_many("lines", "lines"), line_schema)
         .with_record("order1", order);
     Vista::new("order", shell)
 }
@@ -123,7 +124,7 @@ async fn contains_one_patch_updates_the_embedded_object() {
     let shell = MockShell::new()
         .with_metadata(id_column().with_column(Column::new("name", "String")))
         .with_contained(
-            Reference::contained("inventory", ReferenceKind::ContainsOne, "inventory"),
+            Reference::contains_one("inventory", "inventory"),
             VistaMetadata::new().with_column(Column::new("stock", "i64")),
         )
         .with_record(
@@ -173,8 +174,19 @@ async fn contained_conditions_refuse_dotted_and_undeclared_columns() {
     );
 }
 
+/// Without a parent row a contained relation is its bare target: the
+/// contained schema, no records, and no writes.
 #[tokio::test]
-async fn a_contained_relation_needs_the_parent_row() {
-    let err = order_vista().get_ref("lines", None).unwrap_err();
-    assert!(err.to_string().contains("parent row"), "{err}");
+async fn a_contained_relation_without_a_row_is_its_bare_target() {
+    let bare = order_vista().get_ref("lines", None).unwrap();
+    assert!(bare.column("quantity").is_some());
+    assert!(bare.list_values().await.unwrap().is_empty());
+    for write in [Capability::Insert, Capability::Update, Capability::Delete] {
+        assert!(!bare.capabilities().has(write), "{write}");
+    }
+    let err = bare
+        .insert_return_id_value(&Record::new())
+        .await
+        .unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
 }

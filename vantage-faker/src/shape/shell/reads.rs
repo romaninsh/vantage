@@ -9,9 +9,12 @@ use super::super::{OpClass, ShapedShell};
 impl ShapedShell {
     /// The inner window at a possibly skewed offset. The total rides the
     /// same response envelope as the rows (no second toll), with the
-    /// configured lie applied.
+    /// configured lie applied. The leading window (offset 0) is the floor
+    /// every readable shell answers; any other offset needs `Window`.
     pub(super) async fn shaped_fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        self.gate(Capability::Window)?;
+        if offset > 0 {
+            self.gate(Capability::Window)?;
+        }
         tracing::debug!(target: "vantage_faker::shape", op = "window", offset, limit, "request");
         self.toll(OpClass::Window).await?;
         let offset = self.skewed_offset(offset);

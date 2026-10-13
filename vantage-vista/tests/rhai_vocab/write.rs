@@ -93,15 +93,26 @@ fn writes_stay_in_the_set() {
     );
 }
 
+/// A narrowed target imports row by row.
 #[test]
 fn row_by_row_import_skips_existing_ids() {
     let host = read_write(&store());
-    assert_eq!(
-        json(&host, r#"table("mock").import_from(table("t"))"#),
-        json!({"inserted": 2, "skipped": 1, "rejected": 0, "cancelled": false})
+    eval::<String>(
+        &host,
+        r#"table("copy").insert(#{ id: "r1", a: 1, tag: "kept" })"#,
     );
-    assert_eq!(json(&host, r#"table("mock").get("r1")"#)["a"], json!(7));
-    assert_eq!(json(&host, r#"table("mock").get("r3")"#)["n"], json!(2));
+    assert_eq!(
+        json(
+            &host,
+            r#"table("copy").where("a", 1).import_from(table("t").where("a", 1))"#
+        ),
+        json!({"inserted": 1, "skipped": 1, "rejected": 0, "cancelled": false})
+    );
+    assert_eq!(
+        json(&host, r#"table("copy").get("r1")"#)["tag"],
+        json!("kept")
+    );
+    assert_eq!(json(&host, r#"table("copy").get("r3")"#)["n"], json!(2));
 }
 
 #[test]

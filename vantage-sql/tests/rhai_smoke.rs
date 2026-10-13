@@ -41,7 +41,7 @@ mod rhai_smoke {
 
     #[test]
     fn ident_creates_identifier() {
-        let result = eval_rhai(r#"ident("name")"#);
+        let result = eval_rhai(r#"sql::ident("name")"#);
         let id = result
             .try_cast::<vantage_sql::rhai_engine::RhaiIdent>()
             .expect("should be RhaiIdent");
@@ -51,7 +51,7 @@ mod rhai_smoke {
 
     #[test]
     fn ident_dot_of() {
-        let result = eval_rhai(r#"ident("name").dot_of("u")"#);
+        let result = eval_rhai(r#"sql::ident("name").dot_of("u")"#);
         let id = result
             .try_cast::<vantage_sql::rhai_engine::RhaiIdent>()
             .expect("should be RhaiIdent");
@@ -59,11 +59,33 @@ mod rhai_smoke {
         assert_eq!(expr.preview(), r#""u"."name""#);
     }
 
+    /// The free functions answer only under `sql::`; `table` is no alias for
+    /// `ident` any more, so it stays free for the data vocabulary.
     #[test]
-    fn table_and_indexer() {
+    fn free_functions_need_the_namespace() {
+        for (code, name) in [
+            (r#"ident("users")"#, "ident"),
+            (r#"table("users")"#, "table"),
+            (r#"sql::table("users")"#, "sql::table"),
+            ("select()", "select"),
+        ] {
+            let err = host()
+                .compile(&Block::from(code))
+                .and_then(|script| script.eval(&Env::new()))
+                .expect_err(code)
+                .to_string();
+            assert!(
+                err.contains("Function not found") && err.contains(name),
+                "{code}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn ident_and_indexer() {
         let result = eval_rhai(
             r#"
-            let t = table("users").alias("u");
+            let t = sql::ident("users").alias("u");
             t["name"]
         "#,
         );
@@ -75,8 +97,8 @@ mod rhai_smoke {
     }
 
     #[test]
-    fn table_as_alias() {
-        let result = eval_rhai(r#"table("users").alias("u")"#);
+    fn ident_as_alias() {
+        let result = eval_rhai(r#"sql::ident("users").alias("u")"#);
         let id = result
             .try_cast::<vantage_sql::rhai_engine::RhaiIdent>()
             .expect("should be RhaiIdent");
@@ -86,7 +108,7 @@ mod rhai_smoke {
 
     #[test]
     fn expr_as_alias() {
-        let result = eval_rhai(r#"expr("COUNT(*)").alias("total")"#);
+        let result = eval_rhai(r#"sql::expr("COUNT(*)").alias("total")"#);
         let ex = result
             .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
             .expect("should be RhaiExpr");
@@ -97,8 +119,8 @@ mod rhai_smoke {
     fn sum_aggregate() {
         let result = eval_rhai(
             r#"
-            let ol = table("order_line").alias("ol");
-            sum(ol["price"])
+            let ol = sql::ident("order_line").alias("ol");
+            sql::sum(ol["price"])
         "#,
         );
         let ex = result
@@ -111,8 +133,8 @@ mod rhai_smoke {
     fn coalesce_with_mul() {
         let result = eval_rhai(
             r#"
-            let ol = table("order_line").alias("ol");
-            coalesce(mul(ol["quantity"], ol["price"]), expr("0"))
+            let ol = sql::ident("order_line").alias("ol");
+            sql::coalesce(sql::mul(ol["quantity"], ol["price"]), sql::expr("0"))
         "#,
         );
         let ex = result
@@ -137,7 +159,7 @@ mod rhai_smoke {
     fn select_basic() {
         let result = eval_rhai(
             r#"
-            select()
+            sql::select()
                 .from("users")
                 .field("name")
                 .field("email")
@@ -156,10 +178,10 @@ mod rhai_smoke {
     fn select_with_where_order_limit() {
         let result = eval_rhai(
             r#"
-            let u = table("users").alias("u");
-            select()
+            let u = sql::ident("users").alias("u");
+            sql::select()
                 .from(u)
-                .expression(expr("{}", [u["name"]]))
+                .expression(sql::expr("{}", [u["name"]]))
                 .where(u["salary"] > 50000)
                 .order_by(u["name"], "asc")
                 .limit(10, 0)
@@ -180,13 +202,13 @@ mod rhai_smoke {
     fn select_with_inner_join() {
         let result = eval_rhai(
             r#"
-            let u = table("users").alias("u");
-            select()
+            let u = sql::ident("users").alias("u");
+            sql::select()
                 .from(u)
                 .inner_join("departments", "d",
-                    ident("department_id").dot_of("u") == ident("id").dot_of("d"))
-                .expression(expr("{}", [u["name"]]))
-                .expression(ident("name").dot_of("d").alias("dept"))
+                    sql::ident("department_id").dot_of("u") == sql::ident("id").dot_of("d"))
+                .expression(sql::expr("{}", [u["name"]]))
+                .expression(sql::ident("name").dot_of("d").alias("dept"))
         "#,
         );
         let sel = result
@@ -205,17 +227,17 @@ mod rhai_smoke {
     fn select_with_left_join_and_group_by() {
         let result = eval_rhai(
             r#"
-            let u = table("users").alias("u");
-            let o = table("orders").alias("o");
-            select()
+            let u = sql::ident("users").alias("u");
+            let o = sql::ident("orders").alias("o");
+            sql::select()
                 .from(u)
                 .left_join("orders", "o",
-                    ident("user_id").dot_of("o") == ident("id").dot_of("u"))
-                .expression(expr("{}", [u["name"]]))
-                .expression(count(o["id"]).alias("order_count"))
+                    sql::ident("user_id").dot_of("o") == sql::ident("id").dot_of("u"))
+                .expression(sql::expr("{}", [u["name"]]))
+                .expression(sql::count(o["id"]).alias("order_count"))
                 .group_by(u["id"])
                 .group_by(u["name"])
-                .order_by(expr("order_count"), "desc")
+                .order_by(sql::expr("order_count"), "desc")
         "#,
         );
         let sel = result
@@ -230,7 +252,7 @@ mod rhai_smoke {
     fn select_distinct() {
         let result = eval_rhai(
             r#"
-            select()
+            sql::select()
                 .from("products")
                 .distinct()
                 .field("category")
@@ -247,13 +269,13 @@ mod rhai_smoke {
     fn select_with_having() {
         let result = eval_rhai(
             r#"
-            let p = table("products").alias("p");
-            select()
+            let p = sql::ident("products").alias("p");
+            sql::select()
                 .from(p)
                 .field("category")
-                .expression(count(expr("*")).alias("cnt"))
+                .expression(sql::count(sql::expr("*")).alias("cnt"))
                 .group_by(p["category"])
-                .having(count(expr("*")) > 5)
+                .having(sql::count(sql::expr("*")) > 5)
         "#,
         );
         let sel = result
@@ -269,7 +291,7 @@ mod rhai_smoke {
     fn op_ident_eq_int() {
         let result = eval_rhai(
             r#"
-            let u = table("users").alias("u");
+            let u = sql::ident("users").alias("u");
             u["id"] == 42
         "#,
         );
@@ -283,7 +305,7 @@ mod rhai_smoke {
     fn op_ident_eq_string() {
         let result = eval_rhai(
             r#"
-            let u = table("users").alias("u");
+            let u = sql::ident("users").alias("u");
             u["role"] == "admin"
         "#,
         );
@@ -297,7 +319,7 @@ mod rhai_smoke {
     fn op_ident_eq_bool() {
         let result = eval_rhai(
             r#"
-            let p = table("product").alias("p");
+            let p = sql::ident("product").alias("p");
             p["is_deleted"] == false
         "#,
         );
@@ -311,7 +333,7 @@ mod rhai_smoke {
     fn op_ident_gt_ident() {
         let result = eval_rhai(
             r#"
-            let u = table("users").alias("u");
+            let u = sql::ident("users").alias("u");
             u["salary"] > u["min_salary"]
         "#,
         );
@@ -325,7 +347,7 @@ mod rhai_smoke {
     fn op_ident_ne_float() {
         let result = eval_rhai(
             r#"
-            let p = table("product").alias("p");
+            let p = sql::ident("product").alias("p");
             p["price"] != 0.0
         "#,
         );
@@ -339,7 +361,7 @@ mod rhai_smoke {
     fn op_ident_le_int() {
         let result = eval_rhai(
             r#"
-            let u = table("users").alias("u");
+            let u = sql::ident("users").alias("u");
             u["age"] <= 65
         "#,
         );

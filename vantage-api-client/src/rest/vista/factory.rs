@@ -14,19 +14,12 @@ use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Capability, Reference as VistaReference, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
+    Capability, Vista, VistaCapabilities, VistaFactory, VistaMetadata, VistaResolver,
 };
 
 use super::source::RestApiTableShell;
 use super::spec::{ApiColumnExtras, ApiReferenceExtras, ApiTableExtras, RestApiVistaSpec};
 use crate::RestApi;
-use crate::join_keys::spec_join_keys;
-
-/// Callback that maps a model name to its `Vista`. The factory uses
-/// it at relation-traversal time so cross-driver lookups (an application
-/// catalogue spanning several data sources) and same-driver lookups (the
-/// internal `register_yaml` registry) flow through one channel.
-pub type ModelResolver = Arc<dyn Fn(&str) -> Result<Vista> + Send + Sync>;
 
 type SpecRegistry = Arc<RwLock<HashMap<String, RestApiVistaSpec>>>;
 
@@ -38,17 +31,19 @@ type SpecRegistry = Arc<RwLock<HashMap<String, RestApiVistaSpec>>>;
 pub struct RestApiVistaFactory {
     api: RestApi,
     specs: SpecRegistry,
-    resolver: Option<ModelResolver>,
+    resolver: Option<Arc<dyn VistaResolver>>,
 }
 
-/// A registered spec by name. A writer that panicked can't leave a map
-/// insert half-done, so a poisoned lock is read through.
-fn registry_get(specs: &SpecRegistry, name: &str) -> Option<RestApiVistaSpec> {
+/// A registered spec by name; a name never registered is not-found. A writer
+/// that panicked can't leave a map insert half-done, so a poisoned lock is
+/// read through.
+fn registry_get(specs: &SpecRegistry, name: &str) -> Result<RestApiVistaSpec> {
     specs
         .read()
         .unwrap_or_else(PoisonError::into_inner)
         .get(name)
         .cloned()
+        .ok_or_else(|| error!("No registered spec for model name", name = name).mark_not_found())
 }
 
 impl RestApiVistaFactory {
@@ -66,10 +61,10 @@ impl RestApiVistaFactory {
         &self.api
     }
 
-    /// Install a model-resolver callback. Use this when models live
-    /// across multiple drivers and the caller decides which factory
-    /// builds each model.
-    pub fn with_model_resolver(mut self, resolver: ModelResolver) -> Self {
+    /// Build reference targets by name through `resolver` (a
+    /// [`Catalog`](vantage_vista::Catalog) spanning several data sources,
+    /// say) in place of the factory's own registry.
+    pub fn with_model_resolver(mut self, resolver: Arc<dyn VistaResolver>) -> Self {
         self.resolver = Some(resolver);
         self
     }
@@ -96,9 +91,7 @@ impl RestApiVistaFactory {
     /// the internal registry; the installed resolver (if any) takes
     /// over at relation traversal time.
     pub fn build(&self, name: &str) -> Result<Vista> {
-        let spec = registry_get(&self.specs, name)
-            .ok_or_else(|| error!("No registered spec for model name", name = name.to_string()))?;
-        self.build_from_spec(spec)
+        self.build_from_spec(registry_get(&self.specs, name)?)
     }
 
     /// Wrap a typed `Table<RestApi, E>` as a `Vista`. Column metadata,
@@ -118,23 +111,16 @@ impl RestApiVistaFactory {
         Ok(Vista::new(name, shell))
     }
 
-    /// Resolve a model name to a Vista — either via the installed
-    /// resolver or through the internal registry.
-    fn resolver_for_specs(&self) -> ModelResolver {
+    /// The installed resolver, else one that builds registered specs by name
+    /// and reports any other name as not found.
+    fn resolver_for_specs(&self) -> Arc<dyn VistaResolver> {
         if let Some(r) = &self.resolver {
             return r.clone();
         }
-        // Default resolver: recursively build_from_spec against the
-        // shared registry. Cloning the Arc keeps the closure cheap.
         let specs = self.specs.clone();
         let api = self.api.clone();
         Arc::new(move |name: &str| -> Result<Vista> {
-            let spec = registry_get(&specs, name).ok_or_else(|| {
-                error!(
-                    "Model resolver: no spec registered for name",
-                    name = name.to_string()
-                )
-            })?;
+            let spec = registry_get(&specs, name)?;
             // Reuse the same factory pipeline as the top-level build.
             let mut factory = RestApiVistaFactory::new(api.clone());
             factory.specs = specs.clone();
@@ -156,15 +142,9 @@ impl VistaFactory for RestApiVistaFactory {
         // `vista.references()`. A target's URL form is its own concern (its
         // `api.endpoint`); the parent only declares the join.
         let mut metadata = metadata_from_table(&table, false);
-        let source_id = spec.resolve_id_column();
+        let source_id = spec.resolve_id_column("id");
         for (relation, reference) in &spec.references {
-            let keys = spec_join_keys(relation, reference, &source_id)?;
-            metadata = metadata.with_reference(VistaReference::new(
-                relation.clone(),
-                reference.table.clone(),
-                reference.kind,
-                keys,
-            ));
+            metadata = metadata.with_reference(reference.to_reference(relation, &source_id)?);
         }
 
         let capabilities = rest_capabilities(table.data_source());
@@ -203,7 +183,7 @@ impl RestApiVistaFactory {
 
         let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, self.api.clone());
         table.add_spec_columns(&spec.columns, build_column)?;
-        table.set_spec_id_field(&spec.resolve_id_column())?;
+        table.set_spec_id_field(&spec.resolve_id_column("id"))?;
         Ok(table)
     }
 }

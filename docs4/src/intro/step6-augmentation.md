@@ -154,7 +154,7 @@ let augmenter = aws
     .from_table(Readings::table(aws.clone(), BUCKET))?;
 
 let dio = lens.make_dio(master).await?.augment(
-    Arc::new(VistaCatalog::new()),
+    Arc::new(Catalog::new()),
     vec![Augmentation {
         detail: Detail::Fixed(Arc::new(augmenter)),
         source: Source::Column {
@@ -173,9 +173,9 @@ An [`Augmentation`](vantage_diorama::Augmentation) answers four questions:
 
 - **`detail`** — *where do detail records come from?* `Detail::Fixed` holds our augmenter Vista
   directly. (`Detail::Catalog(name)` resolves one by name instead — the config-driven form,
-  which is also why `augment` takes a [`VistaCatalog`](vantage_vista_factory::VistaCatalog).
-  Building an empty catalog just to satisfy the signature is admittedly awkward; the parameter
-  earns its place only in the catalog form.)
+  which is also why `augment` takes a resolver, here an empty
+  [`Catalog`](vantage_vista::Catalog). Building an empty catalog just to satisfy the signature is
+  admittedly awkward; the parameter earns its place only in the catalog form.)
 - **`source`** — *how does a master row select its detail record?* `Source::Column` maps the
   master's `Key` onto the detail table's `prefix` condition. A full filename used as an S3
   prefix matches exactly one object — so each fetch narrows the augmenter to a one-row listing,
