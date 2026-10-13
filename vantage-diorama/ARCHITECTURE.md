@@ -177,13 +177,13 @@ alive as long as any handle outlives the original `Dio`.
 3. If `on_start` is registered, the lens fires it. By default `make_dio`
    awaits the callback (`on_start_blocking = true`); set `false` to make it
    fire-and-forget.
-4. The Dio is returned. Callers can immediately call `.vista()`, `.scenery()`.
+4. The Dio is returned. Callers can immediately call `.cached()`, `.scenery()`.
 
 ### Dio public surface
 
 ```rust
 impl Dio {
-    pub fn vista(&self) -> Vista { /* DioShell-backed */ }
+    pub fn cached(&self) -> Vista { /* DioShell-backed */ }
     pub fn table_scenery(&self) -> TableSceneryBuilder { /* ... */ }
     pub async fn record_scenery(&self, id: impl Into<String>) -> Result<Arc<dyn RecordScenery>>;
     pub fn record_scenery_with(&self, id: impl Into<String>, rec: Record<CborValue>) -> Arc<dyn RecordScenery>;
@@ -207,7 +207,7 @@ impl Dio {
 
 ## DioShell — TableShell impl
 
-The Vista returned by `dio.vista()` is a plain `vantage_vista::Vista`. Its
+The Vista returned by `dio.cached()` is a plain `vantage_vista::Vista`. Its
 internal `Box<dyn TableShell>` is `DioShell`, which routes reads through the
 cache and writes through the Dio's write queue.
 
@@ -560,7 +560,7 @@ pub enum RowStatus {
 `Record<CborValue>` and layers metadata on top. The `dirty_fields` slot
 supports form-edit scenarios where only some columns have unsaved changes.
 
-For non-Scenery contexts (CLI, business logic via `dio.vista()`), bare
+For non-Scenery contexts (CLI, business logic via `dio.cached()`), bare
 `Record<CborValue>` flows through unchanged — the enrichment is Scenery-only.
 
 ## Hot tier (reserved)
@@ -627,7 +627,7 @@ Diorama errors fall into three categories:
 
 1. **Setup errors** — invalid Lens configuration, cache backend unreachable.
    Surface as `Result<Lens, LensBuildError>` at `build()` time.
-2. **Operation errors** — `dio.vista().insert(...)` may fail synchronously
+2. **Operation errors** — `dio.cached().insert(...)` may fail synchronously
    (queue full) or asynchronously (the queued write rejected by master). Sync
    errors return `Result`; async errors emit `DioEvent::WriteFailed`.
 3. **Callback errors** — user callbacks return `Result<()>`. Errors are

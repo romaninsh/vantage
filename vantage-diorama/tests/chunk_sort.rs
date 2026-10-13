@@ -46,7 +46,7 @@ async fn client_sort_survives_refresh() -> Result<()> {
         ("c".into(), rec("v2")),
     ]));
     let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 
@@ -96,7 +96,7 @@ async fn refresh_recounts_appended_rows() -> Result<()> {
         ("b".into(), rec("v2")),
     ]));
     let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 

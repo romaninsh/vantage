@@ -1,4 +1,5 @@
-//! Pure servo-loop arithmetic — no locks, no async, exhaustively testable.
+//! Tracking upstream: the servo-loop arithmetic, and the bus task that feeds
+//! it measurements.
 //!
 //! The vocabulary is a servomechanism's: `data` holds the commanded
 //! setpoints, `baseline` the measured upstream state, and the **error
@@ -6,8 +7,16 @@
 //! *continuous tracking* (it follows the measurement); a field with a
 //! commanded setpoint is *locked* (it holds until actuated or released).
 
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
+
 use ciborium::Value as CborValue;
+use tokio::sync::broadcast;
 use vantage_types::Record;
+
+use super::{ServoState, ServoStatus};
+use crate::dio::{DioEvent, DioInner};
+use crate::ops::{FlashKind, FlashRejection};
 
 /// The error signal: every field of `data` whose value differs from the
 /// baseline. With no baseline (a record that doesn't exist yet), every
@@ -78,129 +87,80 @@ pub(crate) fn absorb(
     *baseline = Some(inc);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn text(s: &str) -> CborValue {
-        CborValue::Text(s.to_string())
-    }
-
-    fn rec(pairs: &[(&str, &str)]) -> Record<CborValue> {
-        let mut r = Record::new();
-        for (k, v) in pairs {
-            r.insert((*k).to_string(), text(v));
+/// The bus-tracking loop: every event about the bound record feeds the
+/// measurement side of the loop from the cache. While this servo's own
+/// flash is in flight, everything is held off — `flash` takes its own
+/// measurement on resolution, so the optimistic stage of our own write
+/// never reads as upstream truth.
+pub(super) async fn track_loop(
+    state: Arc<ServoState>,
+    dio_weak: Weak<DioInner>,
+    mut bus: broadcast::Receiver<DioEvent>,
+) {
+    loop {
+        if dio_weak.upgrade().is_none() {
+            return;
         }
-        r
-    }
-
-    #[test]
-    fn zero_error_when_data_matches_baseline() {
-        let baseline = rec(&[("a", "1"), ("b", "2")]);
-        let data = baseline.clone();
-        assert!(error_of(Some(&baseline), &data).is_empty());
-    }
-
-    #[test]
-    fn error_carries_only_differing_fields() {
-        let baseline = rec(&[("a", "1"), ("b", "2")]);
-        let data = rec(&[("a", "1"), ("b", "CHANGED")]);
-        let error = error_of(Some(&baseline), &data);
-        assert_eq!(error.len(), 1);
-        assert_eq!(error.get("b"), Some(&text("CHANGED")));
-    }
-
-    #[test]
-    fn without_baseline_every_field_is_error() {
-        let data = rec(&[("a", "1"), ("b", "2")]);
-        assert_eq!(error_of(None, &data).len(), 2);
-    }
-
-    #[test]
-    fn tracking_fields_adopt_the_measurement() {
-        let mut baseline = Some(rec(&[("a", "1"), ("b", "2")]));
-        let mut data = rec(&[("a", "1"), ("b", "2")]);
-        absorb(
-            &mut baseline,
-            &mut data,
-            Some(rec(&[("a", "9"), ("b", "2")])),
-        );
-        assert_eq!(data.get("a"), Some(&text("9")));
-        assert!(error_of(baseline.as_ref(), &data).is_empty(), "still clean");
-    }
-
-    #[test]
-    fn locked_fields_hold_their_setpoint() {
-        let mut baseline = Some(rec(&[("a", "1"), ("b", "2")]));
-        let mut data = rec(&[("a", "LOCKED"), ("b", "2")]);
-        absorb(
-            &mut baseline,
-            &mut data,
-            Some(rec(&[("a", "9"), ("b", "7")])),
-        );
-        assert_eq!(data.get("a"), Some(&text("LOCKED")), "setpoint held");
-        assert_eq!(data.get("b"), Some(&text("7")), "tracking field adopted");
-        let error = error_of(baseline.as_ref(), &data);
-        assert_eq!(error.len(), 1, "only the locked field is error");
-    }
-
-    #[test]
-    fn convergence_releases_the_lock() {
-        let mut baseline = Some(rec(&[("a", "1")]));
-        let mut data = rec(&[("a", "TARGET")]);
-        absorb(&mut baseline, &mut data, Some(rec(&[("a", "TARGET")])));
-        assert!(error_of(baseline.as_ref(), &data).is_empty());
-    }
-
-    #[test]
-    fn new_upstream_fields_arrive_clean() {
-        let mut baseline = Some(rec(&[("a", "1")]));
-        let mut data = rec(&[("a", "1")]);
-        absorb(
-            &mut baseline,
-            &mut data,
-            Some(rec(&[("a", "1"), ("new", "x")])),
-        );
-        assert_eq!(data.get("new"), Some(&text("x")));
-        assert!(error_of(baseline.as_ref(), &data).is_empty());
-    }
-
-    #[test]
-    fn tracking_fields_follow_upstream_removal_locked_additions_survive() {
-        let mut baseline = Some(rec(&[("gone", "1"), ("kept", "2")]));
-        let mut data = rec(&[("gone", "1"), ("kept", "2"), ("added", "MINE")]);
-        absorb(&mut baseline, &mut data, Some(rec(&[("kept", "2")])));
-        assert!(
-            data.get("gone").is_none(),
-            "tracking field dropped with upstream"
-        );
-        assert_eq!(
-            data.get("added"),
-            Some(&text("MINE")),
-            "commanded addition held"
-        );
-    }
-
-    #[test]
-    fn vanished_record_clears_the_baseline_and_keeps_setpoints() {
-        let mut baseline = Some(rec(&[("a", "1")]));
-        let mut data = rec(&[("a", "EDIT")]);
-        absorb(&mut baseline, &mut data, None);
-        assert!(baseline.is_none());
-        assert_eq!(data.get("a"), Some(&text("EDIT")));
-        assert_eq!(error_of(baseline.as_ref(), &data).len(), 1);
-    }
-
-    #[test]
-    fn absorb_into_empty_servo_adopts_everything() {
-        let mut baseline = None;
-        let mut data = Record::new();
-        absorb(
-            &mut baseline,
-            &mut data,
-            Some(rec(&[("a", "1"), ("b", "2")])),
-        );
-        assert_eq!(data.len(), 2);
-        assert!(error_of(baseline.as_ref(), &data).is_empty());
+        let event = match bus.recv().await {
+            Ok(event) => event,
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                // Missed events: re-measure from the cache.
+                if state.in_flight.load(Ordering::SeqCst) == 0 {
+                    absorb_from_cache(&state, &dio_weak).await;
+                }
+                continue;
+            }
+            Err(broadcast::error::RecvError::Closed) => return,
+        };
+        if state.in_flight.load(Ordering::SeqCst) > 0 {
+            continue;
+        }
+        let bound = |id: &str| state.id.read().unwrap().as_deref() == Some(id);
+        // Only editing kinds are this servo's business: a staged or reverted
+        // Delete/Clear belongs to its issuer (the confirm dialog), and a form
+        // displaying the record must not adopt it as its own write.
+        let editing = |kind: FlashKind| !matches!(kind, FlashKind::Delete | FlashKind::Clear);
+        match event {
+            DioEvent::RecordChanged { id }
+            | DioEvent::RecordInserted { id }
+            | DioEvent::RecordRemoved { id }
+                if bound(&id) =>
+            {
+                absorb_from_cache(&state, &dio_weak).await;
+            }
+            // `Seeded` alongside `DatasetChanged`: a servo bound before the
+            // eager load finished has nothing to absorb until it lands.
+            DioEvent::DatasetChanged | DioEvent::Seeded => {
+                absorb_from_cache(&state, &dio_weak).await;
+            }
+            DioEvent::WritePending { id, kind } if bound(&id) && editing(kind) => {
+                state.set_status(ServoStatus::Pending);
+            }
+            DioEvent::WriteReverted { id, error, kind } if bound(&id) => {
+                if editing(kind) {
+                    state.set_status(ServoStatus::Failed(FlashRejection::new(error)));
+                }
+                absorb_from_cache(&state, &dio_weak).await;
+            }
+            _ => {}
+        }
     }
 }
+
+/// Measure the bound record from the cache: the row the Dio's residual
+/// admits, or none.
+async fn absorb_from_cache(state: &Arc<ServoState>, dio_weak: &Weak<DioInner>) {
+    let Some(inner) = dio_weak.upgrade() else {
+        return;
+    };
+    let Some(id) = state.id.read().unwrap().clone() else {
+        return;
+    };
+    match inner.read_admitted(inner.cache.as_ref(), &id).await {
+        Ok(value) => state.absorb(value),
+        Err(e) => tracing::error!(error = %e, "servo measurement read failed"),
+    }
+}
+
+#[cfg(test)]
+mod tests;

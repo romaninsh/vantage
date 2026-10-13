@@ -1,6 +1,7 @@
 //! A condition on a dotted path (`root.leaf`) into a declared column either
-//! errors or narrows; it is never accepted and then matched against nothing
-//! or ignored.
+//! narrows or is refused as `Unimplemented`
+//! ([`condition_column_error`](crate::condition_column_error)). It never fails with a plain error,
+//! and is never accepted and then matched against nothing or ignored.
 
 use vantage_dataset::traits::ReadableValueSet;
 
@@ -42,9 +43,24 @@ pub(super) async fn dotted_path(vista: &Vista, listed: Option<&Rows>, probe: &mu
             (format!("{root}.{PROBE_LEAF}"), unmatchable)
         }
     };
-    // Rejecting the path is one of the two allowed answers.
-    let Ok(narrowed) = vista.clone().with_condition(&path, FilterOp::Eq, value) else {
-        return;
+    // Refusing the path as Unimplemented is one of the two allowed answers.
+    // A plain error is a fault the caller can't evaluate around, and an
+    // Unsupported one names a capability where none describes paths.
+    let narrowed = match vista.clone().with_condition(&path, FilterOp::Eq, value) {
+        Ok(narrowed) => narrowed,
+        Err(e) if e.is_unimplemented() => return,
+        Err(e) => {
+            let kind = if e.is_unsupported() {
+                "is refused as Unsupported"
+            } else {
+                "fails with a plain error"
+            };
+            probe.fail(format!(
+                "with_condition({path} == ..) {kind}: {e}; a dotted path into a declared column \
+                 must narrow or be refused as Unimplemented with condition_column_error"
+            ));
+            return;
+        }
     };
     let rows = match narrowed.list_values().await {
         Ok(rows) => rows,
@@ -61,7 +77,7 @@ pub(super) async fn dotted_path(vista: &Vista, listed: Option<&Rows>, probe: &mu
     if !rows.contains_key(&sample.id) {
         probe.fail(format!(
             "with_condition({path} == <row {}'s value>) is accepted but leaves out row {}: \
-             a dotted path must narrow or be rejected, not match nothing",
+             a dotted path must narrow or be refused, not match nothing",
             sample.id, sample.id
         ));
     }

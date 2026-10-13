@@ -5,12 +5,13 @@
 //! runs every probe, then panics once, listing every broken rule.
 //!
 //! - [`check_advertised`]: every advertised read, narrowing and traversal
-//!   [`Capability`](crate::Capability) is backed by a working method. Reads
+//!   [`Capability`] is backed by a working method. Reads
 //!   and narrowing must succeed on a valid fixture; traversal and native
 //!   conditions only must not be refused (a missing join value or a foreign
 //!   condition type is not a contract break). On a fixture with rows, search,
 //!   order and operator filters must also change what is read. A condition
-//!   on a dotted path into a declared column may be rejected; whether an
+//!   on a dotted path into a declared column narrows or is refused as
+//!   `Unimplemented`, never failing with a plain error; whether an
 //!   accepted one narrows is checked only on a fixture with a row holding a
 //!   map in a declared column. Every shell that lists must answer the
 //!   leading window, advertised `Window` or not: when `list` works,

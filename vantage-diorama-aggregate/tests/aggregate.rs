@@ -12,21 +12,7 @@ use vantage_diorama_aggregate::{
 use vantage_types::Record;
 use vantage_vista::{Capability, Column, SortDirection, Vista};
 
-use support::{BumpCounter, DEBOUNCE, int, master, record, settle, source, text};
-
-fn lens() -> std::sync::Arc<AggregateLens> {
-    AggregateLens::in_memory()
-        .debounce(DEBOUNCE)
-        .build()
-        .expect("aggregate lens builds")
-}
-
-fn as_i64(value: Option<CborValue>) -> Option<i64> {
-    match value {
-        Some(CborValue::Integer(i)) => Some(i128::from(i) as i64),
-        _ => None,
-    }
-}
+use support::{BumpCounter, DEBOUNCE, as_i64, int, lens, master, record, settle, source, text};
 
 /// The revenue-per-status reducer used by the grouping tests — the "custom
 /// Rust callback" shape a consumer writes.
@@ -315,7 +301,7 @@ async fn group_by_produces_a_queryable_derived_dio() -> Result<()> {
         .derive(&src, "by_status", GroupBy::column("status", revenue()))
         .await?;
 
-    let rows = derived.vista().list_values().await?;
+    let rows = derived.cached().list_values().await?;
     assert_eq!(rows.len(), 2, "two groups");
     let open = rows.get("open").expect("open group");
     assert_eq!(open.get("orders"), Some(&int(2)));
@@ -327,7 +313,7 @@ async fn group_by_produces_a_queryable_derived_dio() -> Result<()> {
     src.refresh().await?;
     settle().await;
 
-    let rows = derived.vista().list_values().await?;
+    let rows = derived.cached().list_values().await?;
     assert_eq!(rows.len(), 1, "the emptied group is gone");
     assert_eq!(
         rows.get("done").and_then(|r| r.get("orders")),
@@ -371,7 +357,7 @@ async fn the_derived_vista_honours_the_capabilities_it_advertises() -> Result<()
 
     // Ordering, on a fresh narrowing so the shared master is untouched.
     let ordered =
-        Vista::clone(&derived.master()).with_order("revenue", SortDirection::Descending)?;
+        Vista::clone(derived.master()).with_order("revenue", SortDirection::Descending)?;
     let by_revenue: Vec<String> = ordered.list_values().await?.into_keys().collect();
     assert_eq!(by_revenue, vec!["beta", "gamma", "alpha"]);
 
@@ -379,7 +365,7 @@ async fn the_derived_vista_honours_the_capabilities_it_advertises() -> Result<()
     assert_eq!(derived.master().count().await?, 3);
 
     // Search.
-    let searched = Vista::clone(&derived.master()).with_search("bet")?;
+    let searched = Vista::clone(derived.master()).with_search("bet")?;
     let hits: Vec<String> = searched.list_values().await?.into_keys().collect();
     assert_eq!(hits, vec!["beta"]);
     Ok(())
@@ -448,7 +434,7 @@ async fn an_empty_source_aggregates_to_empty() -> Result<()> {
     settle().await;
 
     assert_eq!(as_i64(total.value()), Some(0), "an empty sum is zero");
-    assert!(derived.vista().list_values().await?.is_empty());
+    assert!(derived.cached().list_values().await?.is_empty());
     Ok(())
 }
 
@@ -470,7 +456,7 @@ async fn dropping_the_aggregate_stops_it_following_the_source() -> Result<()> {
     settle().await;
     // Nothing to assert on the dropped handle; what matters is that the source
     // still works and the task did not keep it pinned.
-    assert_eq!(src.vista().list_values().await?.len(), 1);
+    assert_eq!(src.cached().list_values().await?.len(), 1);
     Ok(())
 }
 

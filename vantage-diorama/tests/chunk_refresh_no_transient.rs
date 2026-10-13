@@ -1,17 +1,16 @@
-//! A client-sorted, chunk-loaded scenery must never expose the master's native
-//! order — not even for the brief window between a refresh's in-place refetch
-//! and the re-sort that follows it.
+//! A client-sorted scenery over a paged master must never expose the master's
+//! native order — not even for the brief window between a refresh's in-place
+//! refetch and the re-sort that follows it.
 //!
 //! The grid repaints on its own timer (independent of generation bumps), so any
-//! moment the displayed rows sit in master order is a visible flicker: the order
-//! jumps to the server's order while the chunk lands, then snaps back once the
-//! sort is re-imposed. The fix makes the displayed map a pure projection of the
-//! cache via the re-sort, so `push` fills the cache without ever stamping
-//! server-ordered rows into the visible map.
+//! moment the displayed rows sit in master order is a visible flicker. A paged
+//! view whose order the master can't take is served from the whole set its
+//! Lens copies through the eager start, so a refresh re-sorts the cache and no
+//! window is fetched at all while the sort holds.
 //!
-//! This test observes the rows *from inside* `on_load_chunk`, right after the
-//! pushes and before the loader's re-sort — exactly the window the grid can
-//! repaint in.
+//! This test observes the rows *from inside* the paged loader, right after the
+//! pushes — exactly the window the grid can repaint in — and asserts that no
+//! such load runs under the sort.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -19,7 +18,7 @@ use std::sync::{Arc, Mutex, Weak};
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Lens, SortDir, TableScenery};
+use vantage_diorama::{Cache, Lens, Loader, SortDir, TableScenery};
 use vantage_types::Record;
 use vantage_vista::Vista;
 
@@ -41,9 +40,9 @@ fn master() -> Vista {
 }
 
 /// Master native order is (a=v3, b=v1, c=v2). Sorted ascending the view is
-/// (v1, v2, v3). On a refresh, `on_load_chunk` pushes in master order; the test
-/// reads `row(0)` straight after those pushes (before the loader re-sorts) and
-/// asserts it is still the sorted top — never the master top.
+/// (v1, v2, v3). Were a refresh to refetch a window, the paged loader would
+/// push in master order; the test would read `row(0)` straight after those
+/// pushes. Under the sort no window load runs, and the order stays sorted.
 #[tokio::test]
 async fn refresh_never_exposes_master_order_midload() -> Result<()> {
     let tmp = TempDir::new().unwrap();
@@ -61,51 +60,50 @@ async fn refresh_never_exposes_master_order_midload() -> Result<()> {
 
     let lens = {
         let backend = backend.clone();
-        let total = backend.clone();
+        let whole = backend.clone();
         let scenery_slot = scenery_slot.clone();
         let observed = observed.clone();
         let load_count = load_count.clone();
-        Arc::new(
-            Lens::new()
-                .cache_at(tmp.path().join("c.redb"))
-                .total_provider(move |_dio| {
-                    let b = total.clone();
-                    async move { Ok(b.lock().unwrap().len()) }
-                })
-                .on_load_chunk(move |_dio, range, _sort, sink| {
-                    let b = backend.clone();
-                    let scenery_slot = scenery_slot.clone();
-                    let observed = observed.clone();
-                    let load_count = load_count.clone();
-                    async move {
-                        let rows = b.lock().unwrap().clone();
-                        for idx in range {
-                            if let Some((id, r)) = rows.get(idx) {
-                                sink.push(idx, id.clone(), r.clone()).await?;
-                            }
-                        }
-                        // Second load == the refresh's in-place refetch. Snapshot
-                        // the visible order in the post-push / pre-resort window.
-                        if load_count.fetch_add(1, Ordering::SeqCst) == 1
-                            && let Some(scenery) = scenery_slot
-                                .lock()
-                                .unwrap()
-                                .as_ref()
-                                .and_then(Weak::upgrade)
-                        {
-                            let snap: Vec<String> =
-                                (0..3).filter_map(|i| value(&scenery, i)).collect();
-                            *observed.lock().unwrap() = snap;
-                        }
-                        Ok(())
+        let loader = Loader::paged(move |_cx, range, _query, sink| {
+            let b = backend.clone();
+            let scenery_slot = scenery_slot.clone();
+            let observed = observed.clone();
+            let load_count = load_count.clone();
+            async move {
+                let rows = b.lock().unwrap().clone();
+                sink.set_total(rows.len());
+                for idx in range {
+                    if let Some((id, r)) = rows.get(idx) {
+                        sink.push(idx, id.clone(), r.clone()).await?;
                     }
-                })
-                .build()
-                .expect("build paged lens"),
-        )
+                }
+                // Second load == the refresh's in-place refetch. Snapshot
+                // the visible order in the post-push / pre-resort window.
+                if load_count.fetch_add(1, Ordering::SeqCst) == 1
+                    && let Some(scenery) = scenery_slot
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(Weak::upgrade)
+                {
+                    let snap: Vec<String> = (0..3).filter_map(|i| value(&scenery, i)).collect();
+                    *observed.lock().unwrap() = snap;
+                }
+                Ok(())
+            }
+        })
+        .or_eager(move |cx| {
+            let rows: indexmap::IndexMap<_, _> = whole.lock().unwrap().iter().cloned().collect();
+            async move { cx.cache().insert_values(rows).await }
+        });
+        Lens::builder()
+            .cache(Cache::redb(tmp.path().join("c.redb")))
+            .loader(loader)
+            .build()
+            .expect("build paged lens")
     };
 
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery = dio.table_scenery().open().await?;
     *scenery_slot.lock().unwrap() = Some(Arc::downgrade(&scenery));
     let mut gen_rx = scenery.subscribe();
@@ -114,6 +112,8 @@ async fn refresh_never_exposes_master_order_midload() -> Result<()> {
     scenery.set_viewport(0..3);
     wait_for_gen(&mut gen_rx, g0).await;
 
+    let loads_before_sort = load_count.load(Ordering::SeqCst);
+    observed.lock().unwrap().clear();
     let g1 = u64::from(*gen_rx.borrow_and_update());
     scenery.set_sort(Some("v".to_string()), SortDir::Asc);
     wait_for_gen(&mut gen_rx, g1).await;
@@ -123,12 +123,16 @@ async fn refresh_never_exposes_master_order_midload() -> Result<()> {
     dio.refresh().await?;
     wait_for_gen(&mut gen_rx, g2).await;
 
-    // What the grid could have repainted mid-refresh.
-    let observed = observed.lock().unwrap().clone();
+    // What the grid could have repainted mid-refresh: nothing, because no
+    // window load ran under the sort.
     assert_eq!(
-        observed,
-        vec!["v1".to_string(), "v2".to_string(), "v3".to_string()],
-        "mid-refresh the visible order must stay sorted, never the master's (v3,v1,v2)"
+        load_count.load(Ordering::SeqCst),
+        loads_before_sort,
+        "a sorted view over a master that can't order fetches no window"
+    );
+    assert!(
+        observed.lock().unwrap().is_empty(),
+        "mid-refresh the visible order never passes through the master's (v3,v1,v2)"
     );
 
     // And the settled order is sorted too.

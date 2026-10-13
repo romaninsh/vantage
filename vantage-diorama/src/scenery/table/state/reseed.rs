@@ -8,39 +8,45 @@ use vantage_types::Record;
 
 use crate::scenery::enriched_record::EnrichedRecord;
 
-use super::super::helpers::{
-    cmp_sort, matches_conditions, matches_op_conditions, matches_search, record_get_path,
-};
+use super::super::plan::{Serving, admitted_by_view};
 use super::TableSceneryState;
+use crate::scenery::table::LoadFailure;
 
 impl TableSceneryState {
-    /// Replace the sparse map from a freshly-listed cache snapshot.
-    /// Applies conditions/sort in memory (v1-compat path).
+    /// Replace the sparse map from a freshly-listed cache snapshot, with the
+    /// whole view query and the Dio's residual evaluated over it.
+    ///
+    /// A paged view served from the cache first waits for the Dio's whole
+    /// copy, so the cache it refines is the complete set. A failed view
+    /// keeps showing nothing, and so does one whose serving a setter changed
+    /// while this awaited: the reload that change triggered owns the rows.
     pub(crate) async fn reseed_from_cache(&self) -> vantage_core::Result<()> {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return Ok(());
         };
+        let began = self.serving();
+        match &began {
+            Serving::Failed(_) => return Ok(()),
+            Serving::Cache if self.paged && !self.two_pass => {
+                if let Err(e) = dio_inner.copy_whole().await {
+                    if self.still_serving(&began) {
+                        let failure = LoadFailure::new(dio_inner.master.name(), e.to_string());
+                        self.fail(&dio_inner, failure);
+                    }
+                    return Ok(());
+                }
+                if !self.still_serving(&began) {
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
         let all = self.reader(&dio_inner).list_values().await?;
 
-        let conditions = self.conditions.read().unwrap().clone();
-        let op_conditions = self.op_conditions.read().unwrap().clone();
-        // The UI's own filter set (grid chips, toolbar filter panel). Applied
-        // here as well as on the two-pass path, because `local_refine` — which
-        // gates that path — is false for a single-pass scenery, so a table
-        // with no augmentation and no detail loader would take `set_filters`
-        // and narrow nothing.
-        let ui_filters = self.ui_filters.read().unwrap().clone();
-        let ui_terms = self.ui_terms.read().unwrap().clone();
-        let sort = self.sort.read().unwrap().clone();
-        let search = self.search.read().unwrap().clone();
-
+        let query = self.view_query();
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
-            .filter(|(_, rec)| matches_conditions(rec, &conditions))
-            .filter(|(_, rec)| matches_conditions(rec, &ui_filters))
-            .filter(|(_, rec)| matches_op_conditions(rec, &op_conditions))
-            .filter(|(_, rec)| matches_op_conditions(rec, &ui_terms))
-            .filter(|(_, rec)| matches_search(rec, search.as_deref()))
+            .filter(|(_, rec)| admitted_by_view(&dio_inner, &query, rec))
             .collect();
 
         // A paged view whose MASTER does the ordering cannot position cached
@@ -68,18 +74,20 @@ impl TableSceneryState {
         // Count MATCHING rows, not cached rows: `total` describes the narrowed
         // set, so a cache full of rows the search excludes would otherwise
         // clear the bar while the matching rows are still a sample.
+        //
+        // A view serving windows has no residual, so any order it holds is
+        // the one the master applies.
         let holds_everything = match *self.total.read().unwrap() {
             Some(total) => filtered.len() >= total,
             None => false,
         };
-        if self.paged
-            && !self.two_pass
-            && self
-                .master_capabilities
-                .has(vantage_vista::Capability::Order)
-            && sort.is_some()
-            && !holds_everything
-        {
+        // Filtering and sorting a large cache takes time a setter can use to
+        // move the view on, so the serving is re-checked just before each
+        // write.
+        if !self.still_serving(&began) {
+            return Ok(());
+        }
+        if self.is_chunk_loaded() && query.order.is_some() && !holds_everything {
             self.rows.write().unwrap().clear();
             self.id_to_idx.write().unwrap().clear();
             tracing::debug!(
@@ -103,20 +111,13 @@ impl TableSceneryState {
             return Ok(());
         }
 
-        if let Some((col, dir)) = sort {
-            let missing = filtered
-                .iter()
-                .filter(|(_, r)| record_get_path(r, &col).is_none())
-                .count();
-            filtered.sort_by(|(_, a), (_, b)| {
-                cmp_sort(record_get_path(a, &col), record_get_path(b, &col), dir)
-            });
+        if let Some((col, dir)) = &query.order {
+            query.sort_rows(&mut filtered, &dio_inner.metadata);
             tracing::debug!(
                 target: "vantage_diorama::sort",
                 col = %col,
                 dir = ?dir,
                 rows = filtered.len(),
-                rows_missing_sort_value = missing,
                 "reseed_from_cache applied sort",
             );
         }
@@ -126,6 +127,9 @@ impl TableSceneryState {
         for (idx, (id, rec)) in filtered.into_iter().enumerate() {
             rows.insert(idx, Arc::new(EnrichedRecord::fresh(rec)));
             id_to_idx.insert(id, idx);
+        }
+        if !self.still_serving(&began) {
+            return Ok(());
         }
         *self.rows.write().unwrap() = super::super::row_map::RowMap::from_map(rows);
         *self.id_to_idx.write().unwrap() = id_to_idx;

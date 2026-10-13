@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![cfg_attr(not(test), deny(clippy::unimplemented, clippy::todo))]
 
 mod capabilities;
 mod catalog;
@@ -8,17 +9,18 @@ mod computed;
 mod contained;
 #[cfg(feature = "contract")]
 pub mod contract;
+pub mod eval;
 mod factory;
 mod filter;
 mod forward;
 mod insert;
-mod local;
 mod metadata;
 #[cfg(any(test, feature = "mocks"))]
 pub mod mocks;
 mod page;
 mod query;
 mod reference;
+mod refuse;
 mod resolver;
 #[cfg(feature = "rhai")]
 pub mod rhai;
@@ -38,6 +40,7 @@ pub use metadata::VistaMetadata;
 pub use page::{NativeCondition, Page, Preview};
 pub use query::{Condition, VistaQuery};
 pub use reference::{JoinKey, Reference, ReferenceKind};
+pub use refuse::condition_column_error;
 pub use resolver::VistaResolver;
 pub use shell::{CloneTableShell, TableShell};
 pub use sort::SortDirection;

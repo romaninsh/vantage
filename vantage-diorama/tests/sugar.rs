@@ -6,10 +6,13 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Lens, SortDir, Sugar, SugarFn, TableScenery};
+use vantage_diorama::{Dio, SortDir, Sugar, SugarFn, TableScenery};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+
+mod support;
+use support::chunk::redb_lens;
+use support::copy_master;
 
 fn cbor_text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -36,19 +39,12 @@ fn seeded_master() -> Vista {
     Vista::new("items", shell)
 }
 
-async fn build_lens(cache_path: std::path::PathBuf) -> Result<Arc<Lens>> {
-    let lens = Lens::new()
-        .cache_at(cache_path)
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await
-            }
-        })
+/// An eager Dio over [`seeded_master`], cached in redb under `cache_path`.
+async fn seeded_dio(cache_path: std::path::PathBuf) -> Result<Dio> {
+    redb_lens(cache_path, copy_master())
+        .dio(seeded_master())
         .build()
-        .expect("build lens");
-    Ok(Arc::new(lens))
+        .await
 }
 
 async fn wait_for_gen(
@@ -110,8 +106,7 @@ fn twice_of(scenery: &Arc<dyn TableScenery>, name: &str) -> Option<CborValue> {
 #[tokio::test]
 async fn a_sugared_view_sorts_by_an_output_and_a_plain_view_sees_none() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(tmp.path().join("cache.redb")).await?;
 
     let sweet = dio
         .table_scenery()
@@ -133,12 +128,13 @@ async fn a_sugared_view_sorts_by_an_output_and_a_plain_view_sees_none() -> Resul
 #[tokio::test]
 async fn outputs_never_reach_the_cache() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(tmp.path().join("cache.redb")).await?;
 
     let sweet = dio.table_scenery().sugar(doubling()).open().await?;
     assert_eq!(sweet.row_count(), 3);
-    let cached = dio.cache().get_value("a").await?.unwrap();
+    let cached = vantage_dataset::prelude::ReadableValueSet::get_value(&dio.cached(), "a")
+        .await?
+        .unwrap();
     assert!(cached.get("twice").is_none());
     Ok(())
 }
@@ -146,8 +142,7 @@ async fn outputs_never_reach_the_cache() -> Result<()> {
 #[tokio::test]
 async fn a_changed_row_is_recomputed() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(tmp.path().join("cache.redb")).await?;
 
     let sweet = dio.table_scenery().sugar(doubling()).open().await?;
     assert_eq!(
@@ -157,7 +152,11 @@ async fn a_changed_row_is_recomputed() -> Result<()> {
     let mut gen_rx = sweet.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
-    dio.patched("a", record("alpha", 50)).await?;
+    dio.apply_change(vantage_diorama::ChangeEvent::Updated {
+        id: "a".into(),
+        new: Some(record("alpha", 50)),
+    })
+    .await?;
     wait_for_gen(&mut gen_rx, initial).await;
 
     assert_eq!(
@@ -170,8 +169,7 @@ async fn a_changed_row_is_recomputed() -> Result<()> {
 #[tokio::test]
 async fn a_record_scenery_reads_the_sugared_row() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(tmp.path().join("cache.redb")).await?;
 
     let sweet = dio.record_scenery_sugared("b", doubling()).await?;
     let plain = dio.record_scenery("b").await?;

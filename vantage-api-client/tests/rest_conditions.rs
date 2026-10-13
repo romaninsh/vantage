@@ -64,6 +64,25 @@ fn an_undeclared_column_is_an_error() {
     assert!(vista.query().conditions.is_empty());
 }
 
+/// A dotted path into a declared column is refused as unimplemented, not
+/// sent: `with_query` hands it back for the caller to evaluate over a
+/// complete set, and a paged view with no eager start fails on it.
+#[test]
+fn a_dotted_path_is_refused_and_left_for_local_evaluation() {
+    let mut vista = albums();
+    let err = vista
+        .add_condition("title.first", FilterOp::Eq, "Quidem")
+        .unwrap_err();
+    assert!(err.is_unimplemented(), "{err}");
+    assert!(vista.query().conditions.is_empty());
+
+    let dotted = Condition::new("title.first", FilterOp::Eq, "Quidem");
+    let query = VistaQuery::new().with_condition(dotted.clone());
+    let (vista, residual) = albums().with_query(&query).expect("with_query");
+    assert_eq!(residual.conditions, vec![dotted]);
+    assert!(vista.query().conditions.is_empty());
+}
+
 #[test]
 fn a_null_value_is_refused() {
     let mut vista = albums();

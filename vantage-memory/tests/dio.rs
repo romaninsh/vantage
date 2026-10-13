@@ -1,9 +1,8 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::Lens;
+use vantage_diorama::{Cache, Lens, Loader, LoaderCx};
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_vista::{Capability, VistaFactory};
 
@@ -12,7 +11,7 @@ const T: &str =
 
 async fn wait_for(dio: &vantage_diorama::Dio, id: &str, expect: Option<i64>) {
     for _ in 0..40 {
-        let got = dio.cache().get_value(id).await.unwrap();
+        let got = dio.cached().get_value(id).await.unwrap();
         let n = got.and_then(|r| match r.get("n") {
             Some(CborValue::Integer(i)) => Some(i128::from(*i) as i64),
             _ => None,
@@ -36,23 +35,16 @@ async fn dio_over_memory_stays_live_through_watch_alone() {
             .collect(),
     );
     let master = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("lens"),
-    );
-    let dio = lens.make_dio(master).await.unwrap();
-    assert!(dio.master().capabilities().has(Capability::Subscribe));
-    dio.watch().await.unwrap();
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()
+        .expect("lens");
+    assert!(master.capabilities().has(Capability::Subscribe));
+    let dio = lens.dio(master).live().build().await.unwrap();
 
     t.patch(
         "a",

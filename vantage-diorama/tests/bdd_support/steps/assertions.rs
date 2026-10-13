@@ -64,6 +64,15 @@ async fn event_log_snapshot(w: &mut DioramaWorld, name: String) {
     });
 }
 
+#[then("the event log contains WriteFailed")]
+async fn has_write_failed(w: &mut DioramaWorld) {
+    let events = w.snapshot_events().await;
+    let found = events
+        .iter()
+        .any(|e| matches!(e, DioEvent::WriteFailed { .. }));
+    assert!(found, "expected a WriteFailed event; got: {events:?}");
+}
+
 #[then("the event log contains no DatasetChanged")]
 async fn no_dataset_changed(w: &mut DioramaWorld) {
     let events = w.snapshot_events().await;

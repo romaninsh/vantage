@@ -11,17 +11,16 @@
 mod support;
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use support::detail_shell::DetailShell;
-use support::{meta, record};
+use support::{augmented_dio, fixed_augmentation, meta, record, size_detail};
 use tempfile::TempDir;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
+use vantage_diorama::{Cache, CacheBackend, Dio, Lens, RedbCache, TableScenery, Tuning};
+use vantage_types::Record;
+use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Catalog, Vista};
 
 /// Master with `count` rows `r0..rN`, cheap columns only (id, modified).
 fn master_vista(count: usize) -> Vista {
@@ -35,54 +34,65 @@ fn master_vista(count: usize) -> Vista {
 
 struct Fixture {
     dio: Dio,
-    log: Arc<std::sync::Mutex<Vec<String>>>,
+    /// The detail source: its `get_log` and `max_concurrent_gets` observe
+    /// the scheduler.
+    detail: MockShell,
     gate: Arc<tokio::sync::Semaphore>,
-    max_concurrent: Arc<std::sync::atomic::AtomicUsize>,
+    /// The Dio's cache backend, to read rows without the facade's hydration.
+    cache: Arc<RedbCache>,
     _tmp: TempDir,
+}
+
+impl Fixture {
+    /// The ids fetched so far, in dispatch order.
+    fn log(&self) -> Vec<String> {
+        self.detail.get_log()
+    }
+
+    /// The cached row `id`, as stored.
+    async fn cached(&self, id: &str) -> Option<Record<CborValue>> {
+        let table = self.cache.open_table("runs").await.unwrap();
+        table.get_value(id).await.unwrap()
+    }
 }
 
 /// A Dio over `rows` master rows, augmented with a gated `size` detail.
 async fn fixture(rows: usize, workers: usize) -> Fixture {
     let tmp = TempDir::new().unwrap();
-    let mut detail_rows = indexmap::IndexMap::new();
-    for i in 0..rows {
-        let id = format!("r{i}");
-        let size = format!("{}", (i + 1) * 100);
-        detail_rows.insert(id.clone(), record(&[("id", &id), ("size", &size)]));
-    }
-    let detail = DetailShell::gated(detail_rows);
-    let log = detail.log.clone();
-    let gate = detail.gate.clone();
-    let max_concurrent = detail.max_concurrent.clone();
+    let ids: Vec<String> = (0..rows).map(|i| format!("r{i}")).collect();
+    let sizes: Vec<String> = (0..rows).map(|i| format!("{}", (i + 1) * 100)).collect();
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let detail = size_detail(
+        ids.iter()
+            .map(String::as_str)
+            .zip(sizes.iter().map(String::as_str)),
+    )
+    .gated(gate.clone());
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .augment_workers(workers)
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens
-        .make_dio(master_vista(rows))
-        .await
-        .expect("make_dio")
-        .augment(
-            Arc::new(Catalog::new()),
-            vec![Augmentation {
-                detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
-                source: Source::Id,
-                fetch: Fetch::PerRow,
-                merge: MergeRule {
-                    columns: vec!["size".into()],
-                },
-            }],
-        );
+    let cache = Arc::new(RedbCache::open(tmp.path().join("cache.redb")).expect("redb opens"));
+    let lens = Lens::builder()
+        .cache(Cache::backend(cache.clone()))
+        .tuning(
+            Tuning::default()
+                .with_viewport_debounce(Duration::from_millis(1))
+                .with_augment_workers(workers),
+        )
+        .build()
+        .expect("lens builds");
+    let dio = augmented_dio(
+        &lens,
+        master_vista(rows),
+        vec![fixed_augmentation(
+            Vista::new("sizes", detail.clone()),
+            &["size"],
+        )],
+    )
+    .await;
     Fixture {
         dio,
-        log,
+        detail,
         gate,
-        max_concurrent,
+        cache,
         _tmp: tmp,
     }
 }
@@ -123,7 +133,7 @@ async fn overlapping_viewports_share_one_fetch_and_both_update() {
         .await
         .unwrap();
     a.set_viewport(0..2);
-    eventually("worker holds r0", || fx.log.lock().unwrap().len() == 1).await;
+    eventually("worker holds r0", || fx.log().len() == 1).await;
 
     let b = fx
         .dio
@@ -133,7 +143,17 @@ async fn overlapping_viewports_share_one_fetch_and_both_update() {
         .await
         .unwrap();
     b.set_viewport(0..2);
-    assert_eq!(fx.dio.live_table_scenery_count(), 2, "distinct sceneries");
+    #[cfg(feature = "diagnostics")]
+    assert_eq!(
+        fx.dio
+            .diagnostics()
+            .await
+            .expect("diagnostics")
+            .sceneries
+            .len(),
+        2,
+        "distinct sceneries"
+    );
     tokio::time::sleep(Duration::from_millis(50)).await; // b's viewport enqueued
 
     fx.gate.add_permits(16);
@@ -146,7 +166,7 @@ async fn overlapping_viewports_share_one_fetch_and_both_update() {
     .await;
 
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let log = fx.log.lock().unwrap().clone();
+    let log = fx.log();
     assert_eq!(log.len(), 2, "each row fetched exactly once: {log:?}");
     let mut sorted = log.clone();
     sorted.sort();
@@ -168,10 +188,7 @@ async fn disjoint_viewports_interleave_round_robin() {
         .await
         .unwrap();
     a.set_viewport(0..4);
-    eventually("worker holds a's first row", || {
-        fx.log.lock().unwrap().len() == 1
-    })
-    .await;
+    eventually("worker holds a's first row", || fx.log().len() == 1).await;
 
     let b = fx
         .dio
@@ -184,9 +201,9 @@ async fn disjoint_viewports_interleave_round_robin() {
     tokio::time::sleep(Duration::from_millis(50)).await; // b's viewport enqueued
 
     fx.gate.add_permits(64);
-    eventually("all eight fetched", || fx.log.lock().unwrap().len() == 8).await;
+    eventually("all eight fetched", || fx.log().len() == 8).await;
 
-    let log = fx.log.lock().unwrap().clone();
+    let log = fx.log();
     let requester = |id: &str| {
         let n: usize = id[1..].parse().unwrap();
         n / 4 // r0..r3 → view A, r4..r7 → view B
@@ -216,7 +233,7 @@ async fn two_workers_fetch_in_parallel() {
 
     // Both workers should dispatch a fetch and block on the closed gate.
     eventually("two fetches in flight", || {
-        fx.max_concurrent.load(Ordering::SeqCst) >= 2
+        fx.detail.max_concurrent_gets() >= 2
     })
     .await;
 
@@ -225,7 +242,7 @@ async fn two_workers_fetch_in_parallel() {
         (0..4).all(|i| col_of(&scenery, i, "size").is_some())
     })
     .await;
-    assert_eq!(fx.max_concurrent.load(Ordering::SeqCst), 2);
+    assert_eq!(fx.detail.max_concurrent_gets(), 2);
 }
 
 /// Closing a view withdraws its queued rows: only the fetch already in
@@ -242,7 +259,7 @@ async fn dropping_a_scenery_withdraws_its_queued_ids() {
         .await
         .unwrap();
     scenery.set_viewport(0..4);
-    eventually("worker holds r0", || fx.log.lock().unwrap().len() == 1).await;
+    eventually("worker holds r0", || fx.log().len() == 1).await;
 
     drop(scenery);
     fx.gate.add_permits(64);
@@ -253,7 +270,7 @@ async fn dropping_a_scenery_withdraws_its_queued_ids() {
     // async cache read, hence the inline loop).
     let mut landed = false;
     for _ in 0..200 {
-        let r0 = fx.dio.cache().get_value("r0").await.unwrap().unwrap();
+        let r0 = fx.cached("r0").await.unwrap();
         if r0.get("size").is_some() {
             landed = true;
             break;
@@ -264,13 +281,13 @@ async fn dropping_a_scenery_withdraws_its_queued_ids() {
 
     // Quiescence window: after the withdrawal nothing else may fetch.
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let log = fx.log.lock().unwrap().clone();
+    let log = fx.log();
     assert_eq!(
         log,
         vec!["r0".to_string()],
         "only the in-flight fetch ran; queued ids were withdrawn"
     );
-    let r1 = fx.dio.cache().get_value("r1").await.unwrap().unwrap();
+    let r1 = fx.cached("r1").await.unwrap();
     assert!(r1.get("size").is_none(), "withdrawn row was never fetched");
 }
 
@@ -298,8 +315,14 @@ async fn exclusive_sceneries_keep_their_own_viewports() {
         .open()
         .await
         .unwrap();
+    #[cfg(feature = "diagnostics")]
     assert_eq!(
-        fx.dio.live_table_scenery_count(),
+        fx.dio
+            .diagnostics()
+            .await
+            .expect("diagnostics")
+            .sceneries
+            .len(),
         2,
         "identical queries, but exclusive views never share"
     );
@@ -329,9 +352,9 @@ async fn facade_hydrate_shares_in_flight_fetch_with_scenery() {
         .await
         .unwrap();
     scenery.set_viewport(0..2);
-    eventually("worker holds r0", || fx.log.lock().unwrap().len() == 1).await;
+    eventually("worker holds r0", || fx.log().len() == 1).await;
 
-    let vista = fx.dio.vista();
+    let vista = fx.dio.cached();
     let read = tokio::spawn(async move { vista.get_value("r0").await });
     tokio::time::sleep(Duration::from_millis(50)).await; // read joins the r0 flight
 
@@ -352,7 +375,7 @@ async fn facade_hydrate_shares_in_flight_fetch_with_scenery() {
     })
     .await;
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let log = fx.log.lock().unwrap().clone();
+    let log = fx.log();
     assert_eq!(
         log.iter().filter(|id| id.as_str() == "r0").count(),
         1,

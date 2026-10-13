@@ -31,4 +31,5 @@ pub use crate::conditions::ConditionHandle;
 pub use crate::cbor_ext::CborValueExt;
 
 // Mock functionality for testing
+#[cfg(any(test, feature = "mocks"))]
 pub use crate::mocks::mock_table_source::MockTableSource;

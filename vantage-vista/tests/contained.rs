@@ -7,8 +7,8 @@ use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Column, ColumnFlag, FilterOp, Reference, ReferenceKind, Vista, VistaMetadata,
-    mocks::MockShell,
+    Capability, Column, ColumnFlag, Condition, FilterOp, Reference, ReferenceKind, Vista,
+    VistaMetadata, VistaQuery, mocks::MockShell,
 };
 
 #[path = "contained/record_refs.rs"]
@@ -160,18 +160,30 @@ async fn contained_conditions_refuse_dotted_and_undeclared_columns() {
     let order = vista.get_value("order1").await.unwrap().unwrap();
     let lines = vista.get_ref("lines", Some(&order)).unwrap();
 
+    // A path into a declared column is refused, for the caller to evaluate.
     let dotted = lines
         .clone()
         .with_condition("product.name", FilterOp::Eq, "flux")
         .unwrap_err();
-    assert!(dotted.to_string().contains("Unknown column"), "{dotted}");
-    let undeclared = lines
-        .with_condition("sku", FilterOp::Eq, "flux")
-        .unwrap_err();
-    assert!(
-        undeclared.to_string().contains("Unknown column"),
-        "{undeclared}"
-    );
+    assert!(dotted.is_unimplemented(), "{dotted:?}");
+    let path = Condition::new("product.name", FilterOp::Eq, "flux");
+    let (_, residual) = lines
+        .clone()
+        .with_query(&VistaQuery::new().with_condition(path.clone()))
+        .unwrap();
+    assert_eq!(residual.conditions, vec![path]);
+    // An undeclared column, or a path under one, is a plain error.
+    for column in ["sku", "sku.code"] {
+        let undeclared = lines
+            .clone()
+            .with_condition(column, FilterOp::Eq, "flux")
+            .unwrap_err();
+        assert!(!undeclared.is_unimplemented(), "{undeclared:?}");
+        assert!(
+            undeclared.to_string().contains("Unknown column"),
+            "{undeclared}"
+        );
+    }
 }
 
 /// Without a parent row a contained relation is its bare target: the

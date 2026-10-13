@@ -1,6 +1,5 @@
 //! Reading and refreshing individual rows and the loaded window.
 
-use std::ops::Range;
 use std::sync::Arc;
 
 use crate::dio::DioInner;
@@ -20,28 +19,6 @@ impl TableSceneryState {
         self.read_cache
             .clone()
             .unwrap_or_else(|| dio_inner.cache.clone())
-    }
-
-    /// React to `DioEvent::RecordChanged { id }`: if the id is in our
-    /// sparse map, re-read it from cache and update the slot in place.
-    /// Bumps generation.
-    pub(crate) async fn update_by_id(&self, id: &str) -> vantage_core::Result<()> {
-        let Some(dio_inner) = self.dio_weak.upgrade() else {
-            return Ok(());
-        };
-        let idx = match self.id_to_idx.read().unwrap().get(id).copied() {
-            Some(i) => i,
-            None => return Ok(()),
-        };
-        let Some(rec) = self.reader(&dio_inner).get_value(id).await? else {
-            return Ok(());
-        };
-        self.rows
-            .write()
-            .unwrap()
-            .insert(idx, Arc::new(EnrichedRecord::fresh(rec)));
-        self.bump_generation();
-        Ok(())
     }
 
     /// Stamp the slot for `id` with `status`, re-reading its current cache
@@ -68,26 +45,33 @@ impl TableSceneryState {
         self.bump_generation();
     }
 
-    /// True if every index in `range` is loaded.
-    pub(crate) fn range_fully_cached(&self, range: &Range<usize>) -> bool {
-        let rows = self.rows.read().unwrap();
-        range.clone().all(|i| rows.contains_key(&i))
+    /// True for a single-pass scenery serving its current query from windows
+    /// the paged loader reads ([`Serving::Windows`](super::super::plan::Serving)).
+    /// This is the variant whose refresh re-fetches the visible window in
+    /// place instead of reseeding from cache — reseeding would only re-show
+    /// whatever happens to be cached (and shows nothing if the cache was just
+    /// cleared).
+    ///
+    /// Only a view whose [`paged`](Self::paged) decision, recorded at open,
+    /// is true can serve windows, for the reason given there. Asking the lens
+    /// instead makes every scenery under a shared lens claim to be paged, and
+    /// an eager one then answers a landed dataset by re-fetching a viewport it
+    /// never fetches through — so the rows its eager start just wrote to the
+    /// cache never reach the visible map, and the grid stays empty until
+    /// something reopens it over the warm cache.
+    pub(crate) fn is_chunk_loaded(&self) -> bool {
+        self.serving.read().unwrap().is_windows()
     }
 
-    /// True for a single-pass, chunk-loaded scenery (paged/lazy via
-    /// `on_load_chunk`). This is the variant whose refresh re-fetches the
-    /// visible window in place instead of reseeding from cache — reseeding
-    /// would only re-show whatever happens to be cached (and shows nothing
-    /// if the cache was just cleared).
-    ///
-    /// Reads the decision [`paged`](Self::paged) recorded at open, for the
-    /// reason given there. Asking the lens instead makes every scenery under a
-    /// shared lens claim to be paged, and an eager one then answers a landed
-    /// dataset by re-fetching a viewport it never fetches through — so the rows
-    /// its `on_start` just wrote to the cache never reach the visible map, and
-    /// the grid stays empty until something reopens it over the warm cache.
-    pub(crate) fn is_chunk_loaded(&self) -> bool {
-        !self.two_pass && self.paged
+    /// Reload the view after a clause changed: a view serving windows
+    /// refetches the rows on screen in place; any other re-derives its rows
+    /// on the reactor.
+    pub(crate) fn reload_view(&self, priority: vantage_core::Priority) {
+        if self.is_chunk_loaded() {
+            self.refresh_loaded_viewport(priority);
+        } else {
+            self.reload_notify.notify_one();
+        }
     }
 
     /// Re-fetch the loaded rows in place so a refresh updates them without

@@ -1,19 +1,17 @@
-//! Stage 3 demo: a writable in-memory master + redb cache + an `on_flash`
-//! route that mirrors every flash into both. Inserts go through the facade
-//! Vista, get enqueued, the worker drains, and subsequent reads (from
-//! the cache) show the result.
+//! Write-through demo: a writable in-memory master + redb cache + a Lens
+//! writer that sends every flash to the master. Inserts go through the
+//! facade Vista, which stages them in the cache, queues them for the writer
+//! and returns once they are confirmed; subsequent reads (from the cache)
+//! show the result.
 //!
 //! Run with:
 //!   cargo run -p vantage-diorama --example write_through
-
-use std::sync::Arc;
-use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
-use vantage_diorama::{FlashKind, Lens};
+use vantage_diorama::{Cache, ChangeFlash, FlashKind, FlashOutcome, Lens, LoaderCx};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -35,66 +33,49 @@ fn record(name: &str) -> Record<CborValue> {
 async fn main() -> Result<()> {
     let tmp = TempDir::new().expect("tempdir");
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .on_flash(|dio, flash| {
-                let dio = dio.clone();
-                async move {
-                    let label = flash.id().unwrap_or("*");
-                    println!("on_flash: {:?} {label} → master + cache", flash.kind());
-                    match flash.kind() {
-                        FlashKind::Insert => {
-                            let id = flash.id().expect("insert has id").to_string();
-                            dio.master().insert_value(id.clone(), flash.patch()).await?;
-                            dio.cache().insert_value(&id, flash.patch()).await?;
-                        }
-                        FlashKind::Replace => {
-                            let id = flash.id().expect("replace has id").to_string();
-                            dio.master()
-                                .replace_value(id.clone(), flash.patch())
-                                .await?;
-                            dio.cache().insert_value(&id, flash.patch()).await?;
-                        }
-                        FlashKind::Upsert => {
-                            let id = flash.id().expect("upsert has id").to_string();
-                            dio.master().upsert_value(id.clone(), flash.patch()).await?;
-                            dio.cache().insert_value(&id, flash.patch()).await?;
-                        }
-                        FlashKind::Patch => {
-                            let id = flash.id().expect("patch has id").to_string();
-                            dio.master().patch_value(id.clone(), flash.patch()).await?;
-                            // The flash already knows the merged result.
-                            let merged = flash.after().expect("patch has an after");
-                            dio.cache().insert_value(&id, &merged).await?;
-                        }
-                        FlashKind::Delete => {
-                            let id = flash.id().expect("delete has id").to_string();
-                            dio.master().delete(id.clone()).await?;
-                            dio.cache().delete_value(&id).await?;
-                        }
-                        FlashKind::Clear => {
-                            dio.master().delete_all().await?;
-                            dio.cache().clear().await?;
-                        }
-                    }
-                    Ok(())
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .writer(|cx: LoaderCx, flash: ChangeFlash| async move {
+            let label = flash.id().unwrap_or("*");
+            println!("writer: {:?} {label} → master", flash.kind());
+            let master = cx.master();
+            match flash.kind() {
+                FlashKind::Insert => {
+                    let id = flash.id().expect("insert has id").to_string();
+                    master.insert_value(id, flash.patch()).await?;
                 }
-            })
-            .build()
-            .expect("build lens"),
-    );
+                FlashKind::Replace => {
+                    let id = flash.id().expect("replace has id").to_string();
+                    master.replace_value(id, flash.patch()).await?;
+                }
+                FlashKind::Upsert => {
+                    let id = flash.id().expect("upsert has id").to_string();
+                    master.upsert_value(id, flash.patch()).await?;
+                }
+                FlashKind::Patch => {
+                    let id = flash.id().expect("patch has id").to_string();
+                    master.patch_value(id, flash.patch()).await?;
+                }
+                FlashKind::Delete => {
+                    let id = flash.id().expect("delete has id").to_string();
+                    master.delete(id).await?;
+                }
+                FlashKind::Clear => master.delete_all().await?,
+            }
+            // The Dio already staged the change in the cache; a confirmed
+            // write keeps it.
+            Ok(FlashOutcome::applied())
+        })
+        .build()?;
 
-    let dio = lens.make_dio(master()).await?;
-    let facade = dio.vista();
+    let dio = lens.dio(master()).build().await?;
+    let facade = dio.cached();
 
+    // Each facade write returns once the writer has confirmed it.
     facade.insert_value("t1", &record("write docs")).await?;
     facade.insert_value("t2", &record("ship stage 3")).await?;
 
-    // Worker drains the queue.
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    println!("\ncache reads after writes drained:");
+    println!("\ncache reads after the writes:");
     for (id, row) in facade.list_values().await? {
         let name = row.get("name").and_then(|v| match v {
             CborValue::Text(s) => Some(s.as_str()),

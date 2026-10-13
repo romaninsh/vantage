@@ -8,13 +8,14 @@ use vantage_core::Result;
 use vantage_vista::{Capability, VistaCapabilities};
 
 use crate::dio::query_index::index_key;
-use crate::dio::{Dio, DioInner, Generation};
+use crate::dio::{DioInner, Generation};
 
+use super::handle::{SceneryGuard, TableSceneryImpl};
 use super::helpers::op_conditions_key;
 use super::loader::{enqueue_viewport, viewport_loop};
 use super::reactor::reload_loop;
 use super::state::TableSceneryState;
-use super::{SceneryGuard, SortDir, TableScenery, TableSceneryImpl, ViewportRequest};
+use super::{SortDir, TableScenery, ViewportRequest};
 
 /// Builder produced by [`Dio::table_scenery`](crate::Dio::table_scenery).
 pub struct TableSceneryBuilder {
@@ -141,11 +142,12 @@ impl TableSceneryBuilder {
         self
     }
 
-    /// Open the Scenery — runs `total_provider` (if configured),
-    /// seeds the sparse map from the cache, spawns the reactor and
-    /// viewport-debounce tasks, optionally schedules a background
-    /// initial-load. Returns the live handle.
+    /// Open the Scenery — seeds the sparse map from the cache, spawns the
+    /// reactor and viewport-debounce tasks, optionally schedules a background
+    /// initial-load, and requests a background refresh when the cache is
+    /// older than the refresher's `max_age`. Returns the live handle.
     pub async fn open(self) -> Result<Arc<dyn TableScenery>> {
+        self.dio.refresh_if_stale();
         let TableSceneryBuilder {
             dio,
             conditions,
@@ -158,23 +160,23 @@ impl TableSceneryBuilder {
             exclusive,
             sugar,
         } = self;
+        let sugar_columns = sugar.as_ref().map(|s| s.outputs()).unwrap_or_default();
         let read_cache =
             sugar.map(|s| crate::scenery::sugar::SugaredCache::wrap(dio.cache.clone(), s));
 
-        // Inherit the Dio's base query semantics. The Dio owns "what this table
-        // is" (base conditions + default order); this view layers its own
-        // conditions on top and falls back to the Dio's order when it sets none.
-        let conditions = {
-            let base = dio.base_conditions.read().unwrap();
-            if base.is_empty() {
-                conditions
-            } else {
-                let mut merged = base.clone();
-                merged.extend(conditions);
-                merged
-            }
-        };
-        let sort = sort.or_else(|| dio.base_sort.read().unwrap().clone());
+        // The master already holds every clause it accepted; the Dio's
+        // residual reaches the view through its plan. Without an order of its
+        // own the view keeps the Dio's, so a cache filled in arbitrary order
+        // still reads back sorted.
+        let sort = sort.or_else(|| {
+            dio.query.order.as_ref().map(|(column, dir)| {
+                let dir = match dir {
+                    vantage_vista::SortDirection::Ascending => SortDir::Asc,
+                    vantage_vista::SortDirection::Descending => SortDir::Desc,
+                };
+                (column.clone(), dir)
+            })
+        });
 
         // Dedup key over (shape, conditions, sort, titles_only). A live
         // scenery for the same query is shared — one reactor, one cache window,
@@ -195,7 +197,7 @@ impl TableSceneryBuilder {
             };
             let mut key = format!(
                 "table\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
-                index_key(&dio.master.read().unwrap(), &conditions, sort.as_ref()),
+                index_key(&dio.master, &conditions, sort.as_ref()),
                 op_conditions_key(&op_conditions),
                 titles_only as u8,
                 demand_key,
@@ -217,19 +219,19 @@ impl TableSceneryBuilder {
         let (gen_tx, _gen_rx) = watch::channel(Generation::default());
         let (viewport_tx, viewport_rx) = mpsc::unbounded_channel();
 
-        let master_capabilities = *dio.master.read().unwrap().capabilities();
+        let master_capabilities = *dio.master.capabilities();
 
-        // Two-pass engages when the Dio owns augmentation, or the Lens registers
-        // an explicit `on_load_detail` callback. The shared per-query index is
-        // keyed by the master Vista's index key over the scenery's conditions +
-        // sort, so reopening the same variant reuses the already-built index.
-        let two_pass = dio.is_two_pass();
+        // Two-pass engages when the Dio owns augmentation. The shared per-query
+        // index is keyed by the master Vista's index key over the scenery's
+        // conditions + sort, so reopening the same variant reuses the
+        // already-built index.
+        let two_pass = dio.has_dio_augment();
         // Whether the visible set is refined locally is derived from the query
         // as it stands — see `TableSceneryState::local_refine`. It is not
         // captured here: `set_sort` changes the answer, and a
         // value frozen at open made a later sort a silent no-op.
         let index = if two_pass {
-            let mut key = index_key(&dio.master.read().unwrap(), &conditions, sort.as_ref());
+            let mut key = index_key(&dio.master, &conditions, sort.as_ref());
             // Operator filters live outside the eq-only index key, so
             // fold them into the shared-index key here — two op-filter variants
             // must not collide onto one ordered index.
@@ -253,6 +255,7 @@ impl TableSceneryBuilder {
             _tally: crate::stats::Tally::table_scenery(),
             dio_weak: Arc::downgrade(&dio),
             read_cache,
+            sugar_columns,
             conditions: RwLock::new(conditions),
             op_conditions: RwLock::new(op_conditions),
             sort: RwLock::new(sort),
@@ -275,11 +278,14 @@ impl TableSceneryBuilder {
             total_ever_stated: std::sync::atomic::AtomicBool::new(false),
             paged: pages_lazily(&dio, &master_capabilities),
             settled: std::sync::atomic::AtomicBool::new(false),
+            omits_failed_rows: std::sync::atomic::AtomicBool::new(false),
             master_capabilities,
             two_pass,
             ui_filters: RwLock::new(Vec::new()),
             ui_terms: RwLock::new(Vec::new()),
             search: RwLock::new(None),
+            view_plan: RwLock::new(None),
+            serving: RwLock::new(super::plan::Serving::Windows),
             titles_only,
             demand,
             index: RwLock::new(index),
@@ -287,11 +293,11 @@ impl TableSceneryBuilder {
             augment_ticket,
             list_in_flight: Mutex::new(false),
             debug_tap: dio.tap().clone(),
-            dio_name: dio.master.read().unwrap().name().to_string(),
             last_debug_state: Mutex::new(None),
             payload_named: std::sync::atomic::AtomicBool::new(false),
             last_served: Mutex::new(None),
         });
+        state.replan();
 
         // What the source can do decides everything that follows — which work
         // is pushed down, and which the layers above have to do themselves.
@@ -338,68 +344,25 @@ impl TableSceneryBuilder {
             );
         }
 
-        // 1. total_provider runs once per open, result cached.
-        //
-        // This is the only network round trip an open is allowed to BLOCK on,
-        // and the caller is usually a UI thread waiting to mount a page — so
-        // say how long it took. A grand total from a remote count query has
-        // been the whole of a multi-second open before now, and from the
-        // outside that is indistinguishable from a slow cache.
-        if let Some(cb) = dio.lens.callbacks.total_provider.as_ref() {
-            let dio_handle = Dio { inner: dio.clone() };
-            let started = std::time::Instant::now();
-            // Essential: this is the one round trip the open blocks on, and
-            // its `?` fails the open. A transport that only retries what is
-            // awaited must retry this — failing a page open on a single 503
-            // from the count, while the chunk fetch beside it retries, is the
-            // exact asymmetry the priority exists to prevent.
-            let total = vantage_core::Priority::Essential
-                .scope(cb(&dio_handle))
-                .await?;
-            let ms = started.elapsed().as_millis() as u64;
-            tracing::info!(
-                target: "vantage_diorama::cache",
-                table = %dio.master.read().unwrap().name(),
-                total,
-                ms,
-                "total_provider — grand total fetched, blocking the open",
-            );
-            *state.total.write().unwrap() = Some(total);
-            // A provider-stated total is a fact, like one stated in a fetch
-            // response — the unknown-total horizon rule must never override it.
-            state
-                .total_ever_stated
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-        }
-
-        // 2. Seed the sparse map.
+        // 1. Seed the sparse map.
         if state.two_pass {
             // Two-pass: seed from the shared per-query index if it is already
             // populated (reused variant — no list call); otherwise run the
             // first list page. The detail pass stays dormant until a viewport
             // is set, so opening yields `Incomplete` rows with zero detail
             // calls.
-            let index_empty = state.index().map(|i| i.is_empty()).unwrap_or(true);
-            if index_empty {
+            // A refined view evaluates its query over the whole index, so a
+            // shared index still being listed is one it lists to the end.
+            let index_ready = state
+                .index()
+                .is_some_and(|i| !i.is_empty() && (i.is_complete() || !state.local_refine()));
+            if !index_ready {
                 // The first list page is a query against the datasource, and
                 // awaiting it here put a whole round trip on the open path —
                 // which is a UI thread waiting to mount. On a slow source that
                 // is the entire cost of opening the page: one measured
                 // SurrealDB list of 872 rows took 13.5s, and the window was
                 // frozen for all of it.
-                //
-                // So run it detached. The scenery opens empty and the rows
-                // arrive with a generation bump, exactly as the eager path
-                // already behaves (`on_start_blocking(false)`) — a grid is
-                // reactive, and "empty, filling in" is a state it renders
-                // every day. Nothing downstream may assume rows exist the
-                // moment `open()` returns.
-                // The first list page is a query against the datasource, and
-                // awaiting it here put a whole round trip on the open path —
-                // which is a UI thread waiting to mount. On a slow source that
-                // is the entire cost of opening the page: one measured
-                // SurrealDB list took 13.5s, and the window was frozen for all
-                // of it.
                 //
                 // So run it detached. The scenery opens in
                 // `LoadState::Loading`, the rows arrive with a generation bump,
@@ -408,13 +371,6 @@ impl TableSceneryBuilder {
                 let seed_state = state.clone();
                 dio.lens.runtime.spawn(async move {
                     super::two_pass::run_list_page(seed_state.clone()).await;
-                    // Locally-refined views filter/sort the just-seeded rows
-                    // over the cache. With an augmented-column condition this
-                    // yields an empty set until hydration confirms matches.
-                    if seed_state.local_refine() {
-                        super::two_pass::reseed_filtered(&seed_state).await;
-                        seed_state.bump_generation();
-                    }
                     // A viewport set before the list landed found an empty
                     // index and enqueued nothing, so hydration would wait for
                     // the user to scroll. Re-drive it now that there are rows
@@ -424,17 +380,32 @@ impl TableSceneryBuilder {
             } else {
                 // A populated shared index costs no query — it is already in
                 // memory, so seeding from it stays inline and the scenery opens
-                // with its rows.
-                super::two_pass::seed_from_index(&state).await;
-                state.mark_settled("open: seeded from shared index");
-                state.bump_generation();
+                // with its rows. A refined view publishes only its refined
+                // map, never the index's raw rows.
+                // A refined view settles itself once its map answers the
+                // query, which on an augmented value means once its sweep is
+                // done; the sweep starts here.
                 if state.local_refine() {
                     super::two_pass::reseed_filtered(&state).await;
-                    state.bump_generation();
+                    super::two_pass::resume_hydration(&state);
+                } else {
+                    super::two_pass::seed_from_index(&state).await;
+                    state.mark_settled("open: seeded from shared index");
                 }
+                state.bump_generation();
             }
-        } else if state.paged && dio.lens.callbacks.on_start.is_none() {
-            // Pure paged lens (lazy chunk loading, no eager `on_start` warm).
+        } else if state.paged && !state.is_chunk_loaded() {
+            // A paged view whose query the master can't answer whole. Either
+            // it failed already (`replan` withheld the rows), or the reactor
+            // copies the whole set and refines it; the view opens loading
+            // until then.
+            if !matches!(state.serving(), super::plan::Serving::Failed(_)) {
+                state.reload_notify.notify_one();
+            }
+            state.bump_generation();
+        } else if state.paged {
+            // A paged view: rows arrive a window at a time, and no eager start
+            // ran for this Dio.
             //
             // A WARM cache is shown at once rather than thrown away: navigating
             // back to a grid whose rows are still cached must not flash a
@@ -457,11 +428,15 @@ impl TableSceneryBuilder {
             //
             // Both reads happen before the macro: the count is awaited, and a
             // lock taken inside the argument list would be held across it.
-            let table = dio.master.read().unwrap().name().to_string();
-            let cached_rows = dio.cache.count().await.unwrap_or(0);
+            let table = dio.master.name().to_string();
+            let cached_rows = cached_count(&dio).await;
             if cached_rows > 0 {
                 state.reseed_from_cache().await?;
-                restore_meta_total(&state, &dio).await;
+                // The remembered total is the whole table's, so a view whose
+                // query narrows the set doesn't take it.
+                if !state.view_narrows() {
+                    restore_meta_total(&state, &dio).await;
+                }
                 state.mark_settled("open: paged view seeded from warm cache");
                 tracing::debug!(
                     target: "vantage_diorama::cache",
@@ -490,21 +465,13 @@ impl TableSceneryBuilder {
             }
             state.bump_generation();
         } else {
-            // Eager single-pass (or `on_start`-warmed hybrid): the cache IS the
-            // row set; seed (and order) from it directly.
+            // Eager single-pass: the cache IS the row set; seed (and order)
+            // from it directly.
             state.reseed_from_cache().await?;
-            // A PAGED view under a hybrid lens (the shared backend lens
-            // carries both offers) sizes itself from the remembered total, so
-            // a warm reopen has its final geometry from the first frame — the
-            // alternative is a visible jump when the first counted response
-            // lands. Eager views derive their count from the rows themselves.
-            if state.paged {
-                restore_meta_total(&state, &dio).await;
-            }
             let seeded_rows = state.rows.read().unwrap().len();
             tracing::debug!(
                 target: "vantage_diorama::cache",
-                table = %dio.master.read().unwrap().name(),
+                table = %dio.master.name(),
                 seeded_rows,
                 "cache seeded the visible map",
             );
@@ -522,20 +489,18 @@ impl TableSceneryBuilder {
             // skip its loading state and paint "no rows" over a load that had
             // not started. Wait for the reactor's reseed in that case.
             //
-            // Unless nothing more is coming — a blocking `on_start` has already
-            // run by now, so zero rows is a real answer and there will be no
-            // second reseed to wait for.
+            // Unless nothing more is coming — no eager start is still running
+            // (`seed_complete`), so zero rows is a real answer and there will
+            // be no second reseed to wait for. The reactor applies the same
+            // rule.
             let seeded_any = !state.rows.read().unwrap().is_empty();
-            if seeded_any
-                || dio.lens.defaults.on_start_blocking
-                || dio.lens.callbacks.on_start.is_none()
-            {
+            if seeded_any || dio.seed_complete.load(std::sync::atomic::Ordering::SeqCst) {
                 state.mark_settled("open: seeded from cache");
             }
             state.bump_generation();
         }
 
-        // 3. Spawn reactor. Handle retained by the scenery's drop guard so a
+        // 2. Spawn reactor. Handle retained by the scenery's drop guard so a
         //    released scenery stops reacting (and frees its state) instead of
         //    living for the Dio's whole lifetime.
         let bus_rx = dio.event_bus.subscribe();
@@ -544,34 +509,37 @@ impl TableSceneryBuilder {
             reload_loop(reactor_state, bus_rx).await;
         });
 
-        // 4. Spawn viewport-debounce loop. This task owns every in-flight
+        // 3. Spawn viewport-debounce loop. This task owns every in-flight
         //    fetch inline, so aborting it on drop cancels outstanding loads —
         //    a closing grid stops pulling.
         let viewport_state = state.clone();
-        let debounce = dio.lens.defaults.viewport_debounce;
+        let debounce = dio.lens.tuning().viewport_debounce;
         let viewport_handle = dio.lens.runtime.spawn(async move {
             viewport_loop(viewport_state, viewport_rx, debounce).await;
         });
 
-        // 5. Optional refresh-on-open: schedule a viewport for the
-        //    initial range so the configured on_load_chunk re-fetches
-        //    the first page in the background. Skipped for two-pass — its
-        //    detail pass must wait for an explicit viewport so that opening
-        //    never triggers detail fetches.
+        // 4. Optional refresh-on-open: schedule a viewport for the
+        //    initial range so the paged loader re-fetches the first page
+        //    in the background. Skipped for two-pass — its detail pass waits
+        //    for an explicit viewport, so opening triggers no detail fetches.
+        //    The one exception is a view whose predicate names an augmented
+        //    value: it sweeps its whole index as soon as the list pass has
+        //    listed it, viewport or not, because it can't settle until every
+        //    row is hydrated (see `two_pass::detail::resume_hydration`).
         //
         //    `force_load` so the fetch runs even when the cache seed already
         //    filled this range: the cache is id-keyed (arbitrary order), but the
         //    server applies the query's ordering, so the on-open fetch must
         //    actually hit the server to replace the seed with ordered rows —
         //    otherwise the grid shows cache order until a manual refresh.
-        if !two_pass && dio.lens.defaults.refresh_on_open && state.paged {
+        if dio.lens.tuning().refresh_on_open && state.is_chunk_loaded() {
             let range = initial_range.unwrap_or(0..page_size);
             // `force_load` means this fetch runs even when the cache already
             // covers the range — i.e. opening ALWAYS goes to the master. That
             // is the other half of why a warm cache saves nothing here.
             // Read before the macro — see the sibling log above.
-            let table = dio.master.read().unwrap().name().to_string();
-            let cached_rows = dio.cache.count().await.unwrap_or(0);
+            let table = dio.master.name().to_string();
+            let cached_rows = cached_count(&dio).await;
             tracing::debug!(
                 target: "vantage_diorama::cache",
                 table = %table,
@@ -632,7 +600,7 @@ async fn restore_meta_total(state: &Arc<TableSceneryState>, dio: &Arc<DioInner>)
             );
             tracing::debug!(
                 target: "vantage_diorama::cache",
-                table = %dio.master.read().unwrap().name(),
+                table = %dio.master.name(),
                 total,
                 "restored the remembered grand total",
             );
@@ -646,22 +614,32 @@ async fn restore_meta_total(state: &Arc<TableSceneryState>, dio: &Arc<DioInner>)
     }
 }
 
+/// How many rows the cache holds. A cache that can't count is opened as
+/// cold, the safe reading: the view shows its loading state and the on-open
+/// fetch fills it from the master. The failure is logged.
+async fn cached_count(dio: &Arc<DioInner>) -> i64 {
+    match dio.cache.count().await {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::warn!(
+                target: "vantage_diorama::cache",
+                table = %dio.cache_table_name,
+                error = %e,
+                "the cache can't count its rows; the view opens as over a cold cache",
+            );
+            0
+        }
+    }
+}
+
 /// Whether this view pages rows in lazily rather than warming from the cache.
 ///
-/// Both behaviours are *offers*: `on_load_chunk` says the lens can fetch a
-/// window, `on_start` says it can copy the whole set up front. Which offer
-/// applies is a property of the **master**, not of the lens — a source that can
-/// serve `[offset, limit)` should be paged, and one that cannot must be warmed
-/// whole. Reading it off the lens instead (the older rule: "chunked, and no
-/// `on_start`") forced a separate Lens per table shape, because a lens carrying
-/// both offers was silently treated as eager for every table under it.
-///
-/// A lens making only one offer keeps that offer regardless of capability:
-/// there is no alternative to fall back to, and a paged lens over a master that
-/// does not advertise `Window` is a legitimate arrangement — the
-/// callback may know how to window a source the Vista can't describe.
+/// A loader with both halves (`Loader::paged(..).or_eager(..)`) decides by the
+/// **master**: a source that can serve `[offset, limit)` is paged, and one that
+/// cannot is warmed whole, so one Lens serves both shapes. A loader with one
+/// half keeps it regardless of capability: a paged loader over a master that
+/// doesn't advertise `Window` is legitimate — the loader may know how to window
+/// a source the Vista can't describe.
 fn pages_lazily(dio: &Arc<DioInner>, master: &VistaCapabilities) -> bool {
-    let can_page = dio.lens.callbacks.on_load_chunk.is_some();
-    let can_warm = dio.lens.callbacks.on_start.is_some();
-    can_page && (!can_warm || master.has(Capability::Window))
+    dio.lens.callbacks.loader.pages(master)
 }

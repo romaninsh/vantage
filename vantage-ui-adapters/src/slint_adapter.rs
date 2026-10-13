@@ -30,13 +30,13 @@ impl<D: DataSet + 'static> SlintTableModel<D> {
 
     async fn load_real_data(&self) {
         // Load column names from the store
-        if let Ok(column_info) = self.store.column_info().await {
-            if let Ok(mut column_names) = self.column_names.try_borrow_mut() {
-                *column_names = column_info
-                    .into_iter()
-                    .map(|col| SharedString::from(col.name))
-                    .collect();
-            }
+        if let Ok(column_info) = self.store.column_info().await
+            && let Ok(mut column_names) = self.column_names.try_borrow_mut()
+        {
+            *column_names = column_info
+                .into_iter()
+                .map(|col| SharedString::from(col.name))
+                .collect();
         }
 
         // Load actual data from the store
@@ -71,13 +71,12 @@ impl<D: DataSet + 'static> SlintTableModel<D> {
     }
 
     pub fn update_cell(&self, row: usize, col: usize, value: String) {
-        if let Ok(rows) = self.rows.try_borrow_mut() {
-            if let Some(mut row_data) = rows.row_data(row) {
-                if col < row_data.cells.len() {
-                    row_data.cells[col] = SharedString::from(value);
-                    rows.set_row_data(row, row_data);
-                }
-            }
+        if let Ok(rows) = self.rows.try_borrow_mut()
+            && let Some(mut row_data) = rows.row_data(row)
+            && col < row_data.cells.len()
+        {
+            row_data.cells[col] = SharedString::from(value);
+            rows.set_row_data(row, row_data);
         }
     }
 
@@ -98,10 +97,10 @@ impl<D: DataSet + 'static> SlintTableModel<D> {
     }
 
     pub fn remove_row(&self, index: usize) {
-        if let Ok(rows) = self.rows.try_borrow_mut() {
-            if index < rows.row_count() {
-                rows.remove(index);
-            }
+        if let Ok(rows) = self.rows.try_borrow_mut()
+            && index < rows.row_count()
+        {
+            rows.remove(index);
         }
     }
 
@@ -127,12 +126,11 @@ impl<D: DataSet + 'static> SlintTableModel<D> {
     }
 
     pub fn get_cell_value(&self, row: usize, col: usize) -> String {
-        if let Ok(rows) = self.rows.try_borrow() {
-            if let Some(row_data) = rows.row_data(row) {
-                if let Some(cell) = row_data.cells.get(col) {
-                    return cell.to_string();
-                }
-            }
+        if let Ok(rows) = self.rows.try_borrow()
+            && let Some(row_data) = rows.row_data(row)
+            && let Some(cell) = row_data.cells.get(col)
+        {
+            return cell.to_string();
         }
         String::new()
     }

@@ -19,10 +19,9 @@ use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
-use vantage_cmd::{Cmd, CmdSpec, eq};
+use vantage_cmd::{Cmd, CmdSpec};
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Dio, Lens, RowStatus, SortDir, TableScenery};
-use vantage_table::pagination::Pagination;
+use vantage_diorama::{Cache, Dio, Lens, Loader, RowStatus, SortDir, TableScenery};
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
 
@@ -54,8 +53,8 @@ fn make_cmd(log: &Path) -> Cmd {
         .with_table(ENTITY, CmdSpec::new(LIST).with_detail(DETAIL))
 }
 
-/// Build a master `Vista` over the cmd source — used by the Dio only for its
-/// name (cache table key) and `index_key`.
+/// A `Vista` over the cmd source: its list script serves windows, and its
+/// detail script answers a read by id.
 fn master(cmd: &Cmd) -> vantage_vista::Vista {
     let table = Table::<Cmd, EmptyEntity>::new(ENTITY, cmd.clone())
         .with_id_column("id")
@@ -71,47 +70,10 @@ fn cbor_text(v: &CborValue) -> Option<String> {
     }
 }
 
-/// Build a two-pass Lens: `on_list_page` runs the cmd list script for the
-/// requested window/conditions; `on_load_detail` runs the cmd detail script for
-/// one id. Registering `on_load_detail` is what opts the Dio into two-pass.
-fn two_pass_lens(cache_dir: &Path, log: &Path) -> Arc<Lens> {
-    let list_cmd = make_cmd(log);
-    let detail_cmd = make_cmd(log);
-    let lens = Lens::new()
-        .cache_at(cache_dir.join("cache.redb"))
-        .viewport_debounce(Duration::from_millis(1))
-        .on_list_page(move |_dio, q| {
-            let cmd = list_cmd.clone();
-            async move {
-                let mut table = Table::<Cmd, EmptyEntity>::new(ENTITY, cmd)
-                    .with_id_column("id")
-                    .with_column_of::<String>("branch");
-                for (field, value) in &q.conditions {
-                    table.add_condition(eq(field.clone(), value.clone()));
-                }
-                let limit = q.limit.max(1) as i64;
-                let page = (q.offset as i64 / limit) + 1;
-                table.set_pagination(Some(Pagination::new(page, limit)));
-                let rows = table.list_values().await?;
-                Ok(rows.into_iter().collect::<Vec<_>>())
-            }
-        })
-        .on_load_detail(move |_dio, id| {
-            let cmd = detail_cmd.clone();
-            async move {
-                let table = Table::<Cmd, EmptyEntity>::new(ENTITY, cmd)
-                    .with_id_column("id")
-                    .with_column_of::<String>("branch")
-                    .with_column_of::<String>("detail");
-                table
-                    .get_value(&id)
-                    .await?
-                    .ok_or_else(|| vantage_core::error!("detail: no record for id"))
-            }
-        })
-        .build()
-        .expect("lens builds");
-    Arc::new(lens)
+/// A no-loader Lens over the redb file in `cache_dir`: the two-pass Dio fills
+/// its own cache through its list and detail passes.
+fn two_pass_lens(cache_dir: &Path) -> Arc<Lens> {
+    support::quick_lens(Cache::redb(cache_dir.join("cache.redb")))
 }
 
 /// Read the fixture's invocation log back as lines.
@@ -158,8 +120,20 @@ fn branch_of(scenery: &Arc<dyn TableScenery>, idx: usize) -> Option<String> {
         .and_then(|r| r.record.get("branch").and_then(cbor_text))
 }
 
+/// The two-pass Dio: the master's list script is the list pass, and an
+/// augmentation merging `detail` from `detail_cmd`'s detail script, one id at
+/// a time, is the detail pass. Augmenting is what makes the Dio two-pass.
+async fn two_pass_dio(lens: &Arc<Lens>, list_cmd: &Cmd, detail_cmd: &Cmd) -> Dio {
+    support::augmented_dio(
+        lens,
+        master(list_cmd),
+        vec![support::fixed_augmentation(master(detail_cmd), &["detail"])],
+    )
+    .await
+}
+
 async fn open_dio(lens: &Arc<Lens>, cmd: &Cmd) -> Dio {
-    lens.make_dio(master(cmd)).await.expect("make_dio")
+    two_pass_dio(lens, cmd, cmd).await
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +145,7 @@ async fn open_dio(lens: &Arc<Lens>, cmd: &Cmd) -> Dio {
 async fn list_pass_creates_incomplete_rows_and_no_detail_calls() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
-    let lens = two_pass_lens(tmp.path(), &log);
+    let lens = two_pass_lens(tmp.path());
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     let scenery = support::open_listed(&dio, 2).await;
@@ -205,7 +179,7 @@ async fn list_pass_creates_incomplete_rows_and_no_detail_calls() {
 async fn detail_pass_hydrates_visible_rows_once_in_order() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
-    let lens = two_pass_lens(tmp.path(), &log);
+    let lens = two_pass_lens(tmp.path());
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     let scenery = support::open_listed(&dio, 2).await;
@@ -248,7 +222,7 @@ async fn detail_pass_hydrates_visible_rows_once_in_order() {
 async fn sort_change_restarts_augmentation_without_scrolling() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
-    let lens = two_pass_lens(tmp.path(), &log);
+    let lens = two_pass_lens(tmp.path());
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     let scenery = support::open_listed(&dio, 2).await;
@@ -294,6 +268,15 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
         Some("full-r1"),
         "ascending by branch puts dev (r1) above main (r0)"
     );
+    // The sorted view shows r1 and r3 (both dev) in the viewport 0..2. r3 has
+    // never hydrated, so the restarted detail pass fetches it: the rows on
+    // screen, not whichever ids sit at those positions in the index. Let that
+    // land before counting, so the revert below is measured on its own.
+    eventually("the sorted view hydrates the rows it shows", || {
+        matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
+            && detail_of(&scenery, 1).as_deref() == Some("full-r3")
+    })
+    .await;
 
     // Reverting to a variant already listed reorders straight from cache — its
     // index exists and its rows are `Complete`, so neither a list nor a detail
@@ -330,7 +313,7 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
 async fn titles_only_picker_skips_detail_hydration() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
-    let lens = two_pass_lens(tmp.path(), &log);
+    let lens = two_pass_lens(tmp.path());
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     let picker = dio
@@ -371,7 +354,15 @@ async fn titles_only_picker_skips_detail_hydration() {
         !std::sync::Arc::ptr_eq(&picker, &grid),
         "titles_only keys distinctly from a full grid"
     );
-    assert_eq!(dio.live_table_scenery_count(), 2);
+    #[cfg(feature = "diagnostics")]
+    assert_eq!(
+        dio.diagnostics()
+            .await
+            .expect("diagnostics")
+            .sceneries
+            .len(),
+        2
+    );
 
     grid.set_viewport(0..2);
     eventually("grid hydrates", || {
@@ -387,11 +378,12 @@ async fn titles_only_picker_skips_detail_hydration() {
 /// `dio.diagnostics()` reports every open scenery with its refcount and
 /// hydration breakdown, the cache size, and dedup-aware sharing — and empties
 /// as handles are released.
+#[cfg(feature = "diagnostics")]
 #[tokio::test]
-async fn diagnostics_report_sceneries_refcount_and_hydration() {
+async fn diagnostics_report_sceneries_refcount_and_hydration() -> vantage_core::Result<()> {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
-    let lens = two_pass_lens(tmp.path(), &log);
+    let lens = two_pass_lens(tmp.path());
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     // A picker (titles_only) lists cheap rows — Incomplete, never hydrated.
@@ -411,7 +403,8 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
     })
     .await;
 
-    let d = dio.diagnostics().await;
+    let d = dio.diagnostics().await?;
+    assert!(!d.live, "built without DioBuilder::live");
     assert_eq!(d.sceneries.len(), 1);
     assert_eq!(d.sceneries[0].refcount, 1);
     assert!(
@@ -429,7 +422,7 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
         .open()
         .await
         .unwrap();
-    assert_eq!(dio.diagnostics().await.sceneries[0].refcount, 2);
+    assert_eq!(dio.diagnostics().await?.sceneries[0].refcount, 2);
 
     // A full grid is a distinct scenery that hydrates → Fresh rows.
     let grid = support::open_listed(&dio, 2).await;
@@ -440,7 +433,7 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
     })
     .await;
 
-    let d = dio.diagnostics().await;
+    let d = dio.diagnostics().await?;
     assert_eq!(d.sceneries.len(), 2, "picker + grid");
     assert!(d.augmented_rows() >= 2, "grid contributes Fresh rows");
     assert!(d.cache_rows >= 2);
@@ -449,8 +442,9 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
     drop(picker);
     drop(picker2);
     drop(grid);
-    let d = dio.diagnostics().await;
-    assert_eq!(d.sceneries.len(), 0, "released sceneries are pruned");
+    let d = dio.diagnostics().await?;
+    assert_eq!(d.sceneries.len(), 0, "released sceneries are not reported");
+    Ok(())
 }
 
 /// Sequential, no-total paging: each `request_load_more` fetches the next list
@@ -459,7 +453,7 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() {
 async fn sequential_paging_stops_on_short_page() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
-    let lens = two_pass_lens(tmp.path(), &log);
+    let lens = two_pass_lens(tmp.path());
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     let scenery = support::open_listed(&dio, 2).await;
@@ -500,7 +494,7 @@ async fn sequential_paging_stops_on_short_page() {
 async fn shared_detail_across_filter_variants() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
-    let lens = two_pass_lens(tmp.path(), &log);
+    let lens = two_pass_lens(tmp.path());
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     // Unfiltered: page through all 5 and hydrate them.
@@ -578,7 +572,7 @@ async fn reopen_resumes_without_refetching_complete_rows() {
     // First run: hydrate the first page, then drop everything.
     {
         let log = cache_dir.join("run1.log");
-        let lens = two_pass_lens(&cache_dir, &log);
+        let lens = two_pass_lens(&cache_dir);
         let dio = open_dio(&lens, &make_cmd(&log)).await;
         let scenery = support::open_listed(&dio, 2).await;
         scenery.set_viewport(0..2);
@@ -592,7 +586,7 @@ async fn reopen_resumes_without_refetching_complete_rows() {
     // Second run: a fresh log against the SAME cache file. The list pass rebuilds
     // the index, but the persisted `Complete` rows mean zero detail calls.
     let log2 = cache_dir.join("run2.log");
-    let lens2 = two_pass_lens(&cache_dir, &log2);
+    let lens2 = two_pass_lens(&cache_dir);
     let dio2 = open_dio(&lens2, &make_cmd(&log2)).await;
     let scenery2 = dio2.table_scenery().page_size(2).open().await.unwrap();
 
@@ -617,48 +611,12 @@ async fn detail_failure_marks_only_that_row() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
 
-    // Reuse the two-pass lens but bake FAIL_ID into the detail cmd so r1 errors.
-    let list_cmd = make_cmd(&log);
+    // Bake FAIL_ID into the detail cmd so r1 errors.
     let detail_cmd = make_cmd(&log)
         .with_env("FAIL_ID", "r1")
         .with_table(ENTITY, CmdSpec::new(LIST).with_detail(DETAIL));
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .on_list_page(move |_dio, q| {
-                let cmd = list_cmd.clone();
-                async move {
-                    let mut table = Table::<Cmd, EmptyEntity>::new(ENTITY, cmd)
-                        .with_id_column("id")
-                        .with_column_of::<String>("branch");
-                    for (field, value) in &q.conditions {
-                        table.add_condition(eq(field.clone(), value.clone()));
-                    }
-                    let limit = q.limit.max(1) as i64;
-                    let page = (q.offset as i64 / limit) + 1;
-                    table.set_pagination(Some(Pagination::new(page, limit)));
-                    Ok(table.list_values().await?.into_iter().collect::<Vec<_>>())
-                }
-            })
-            .on_load_detail(move |_dio, id| {
-                let cmd = detail_cmd.clone();
-                async move {
-                    let table = Table::<Cmd, EmptyEntity>::new(ENTITY, cmd)
-                        .with_id_column("id")
-                        .with_column_of::<String>("branch")
-                        .with_column_of::<String>("detail");
-                    table
-                        .get_value(&id)
-                        .await?
-                        .ok_or_else(|| vantage_core::error!("detail: no record"))
-                }
-            })
-            .build()
-            .expect("lens"),
-    );
-
-    let dio = open_dio(&lens, &make_cmd(&log)).await;
+    let lens = two_pass_lens(tmp.path());
+    let dio = two_pass_dio(&lens, &make_cmd(&log), &detail_cmd).await;
     let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
@@ -673,36 +631,35 @@ async fn detail_failure_marks_only_that_row() {
     assert_eq!(branch_of(&scenery, 1).as_deref(), Some("dev"));
 }
 
-/// Opt-in guard: with no `on_load_detail`, the scenery uses the legacy
-/// single-pass path — rows are `Fresh` immediately and no index is built.
+/// Opt-in guard: a Dio without augmentation uses the single-pass path —
+/// rows are `Fresh` immediately and no index is built.
 #[tokio::test]
-async fn no_detail_callback_uses_single_pass() {
-    use vantage_dataset::prelude::ReadableValueSet as _;
-
+async fn no_augmentation_uses_single_pass() {
     let tmp = TempDir::new().unwrap();
     let log = tmp.path().join("calls.log");
     let load_cmd = make_cmd(&log);
 
-    // Legacy lens: on_start copies the full list into the cache; no detail.
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .on_start(move |dio| {
-                let dio = dio.clone();
-                let cmd = load_cmd.clone();
-                async move {
-                    let table = Table::<Cmd, EmptyEntity>::new(ENTITY, cmd)
-                        .with_id_column("id")
-                        .with_column_of::<String>("branch");
-                    let rows = table.list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("lens"),
-    );
+    // An eager start copies the full list into the cache; no detail.
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .loader(Loader::eager(move |cx| {
+            let cmd = load_cmd.clone();
+            async move {
+                let table = Table::<Cmd, EmptyEntity>::new(ENTITY, cmd)
+                    .with_id_column("id")
+                    .with_column_of::<String>("branch");
+                let rows = table.list_values().await?;
+                cx.cache().insert_values(rows).await
+            }
+        }))
+        .build()
+        .expect("lens");
 
-    let dio = open_dio(&lens, &make_cmd(&log)).await;
+    let dio = lens
+        .dio(master(&make_cmd(&log)))
+        .build()
+        .await
+        .expect("dio builds");
     let scenery = dio.table_scenery().page_size(50).open().await.unwrap();
 
     // Single-pass: every cached row is Fresh, no Incomplete stubs.

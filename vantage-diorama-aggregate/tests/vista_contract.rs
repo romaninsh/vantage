@@ -33,10 +33,10 @@ async fn derived() -> DerivedDio {
 
 #[tokio::test]
 async fn aggregate_contract_advertised() {
-    contract::check_advertised(&derived().await.master()).await;
+    contract::check_advertised(derived().await.master()).await;
 }
 
 #[tokio::test]
 async fn aggregate_contract_clone() {
-    contract::check_clone(&derived().await.master(), "orders", int(1)).await;
+    contract::check_clone(derived().await.master(), "orders", int(1)).await;
 }

@@ -9,27 +9,40 @@
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
+use vantage_vista::eval::cell_get;
+use vantage_vista::{Column, Condition, FilterOp, VistaMetadata};
 
 use crate::aggregation::{Aggregation, Rows};
 use crate::cmp;
+
+#[cfg(test)]
+mod tests;
 
 /// Equality terms, ANDed together.
 ///
 /// # Matching
 ///
-/// A term matches when the row's value equals the expected value, compared
-/// first as CBOR and then — only if that fails — as rendered scalars. The
-/// second pass is what makes configuration-driven conditions usable: a YAML
-/// file says `code: 200` with no way to know whether the backend sends
-/// `200` or `"200"`, and a filter that silently matched nothing because the
-/// column was text would be a wrong answer rather than an error.
+/// A term is a vista [`Condition`], matched by vista's in-memory evaluator,
+/// so an integer and a float of the same number are equal (`3 == 3.0`). When
+/// that fails, the row's value and the expected value are compared as
+/// rendered scalars. The second pass is what makes configuration-driven
+/// conditions usable: a YAML file says `code: 200` with no way to know
+/// whether the backend sends `200` or `"200"`, and a filter that silently
+/// matched nothing because the column was text would be a wrong answer
+/// rather than an error.
 ///
-/// A term naming a column the row doesn't have never matches. Absence is not
-/// a value, so treating a missing column as a pass would let a typo silently
-/// widen the aggregation to every row.
+/// A term naming a column the row doesn't have never matches, and neither
+/// does a null cell against a number. Absence is not a value, so treating a
+/// missing column as a pass would let a typo silently widen the aggregation
+/// to every row.
 #[derive(Debug, Clone, Default)]
 pub struct Conditions {
-    terms: Vec<(String, CborValue)>,
+    terms: Vec<Condition>,
+    /// Declares every term's column as a flat key. The evaluator reads a
+    /// dotted column as a nested path unless the schema declares it, and an
+    /// aggregation never sees its source's schema, so a row that holds the
+    /// column's literal key is read with this.
+    flat: VistaMetadata,
 }
 
 impl Conditions {
@@ -38,9 +51,14 @@ impl Conditions {
     }
 
     /// Add `column == value`. The column may be a dotted path into a nested
-    /// record (`Message.Headers.Subject`).
+    /// record (`Message.Headers.Subject`); a row holding the literal dotted
+    /// key is read by that key instead.
     pub fn eq(mut self, column: impl Into<String>, value: impl Into<CborValue>) -> Self {
-        self.terms.push((column.into(), value.into()));
+        let column = column.into();
+        self.flat
+            .columns
+            .insert(column.clone(), Column::new(column.clone(), "any"));
+        self.terms.push(Condition::new(column, FilterOp::Eq, value));
         self
     }
 
@@ -50,8 +68,16 @@ impl Conditions {
 
     /// Whether one row satisfies every term.
     pub fn matches(&self, record: &Record<CborValue>) -> bool {
-        self.terms.iter().all(|(column, expected)| {
-            cmp::column(record, column).is_some_and(|actual| value_eq(actual, expected))
+        let nested = VistaMetadata::new();
+        self.terms.iter().all(|term| {
+            let metadata = if record.contains_key(&term.column) {
+                &self.flat
+            } else {
+                &nested
+            };
+            term.matches(record, metadata)
+                || cell_get(record, &term.column, metadata)
+                    .is_some_and(|actual| same_scalar_text(actual, &term.value))
         })
     }
 
@@ -70,12 +96,9 @@ impl Conditions {
     }
 }
 
-/// CBOR equality, falling back to comparing scalar renderings so a
-/// configured `"200"` matches an integer `200`. See [`Conditions`].
-fn value_eq(actual: &CborValue, expected: &CborValue) -> bool {
-    if actual == expected {
-        return true;
-    }
+/// Whether two scalars render to the same text, so a configured `"200"`
+/// matches an integer `200`. See [`Conditions`].
+fn same_scalar_text(actual: &CborValue, expected: &CborValue) -> bool {
     match (cmp::scalar_text(actual), cmp::scalar_text(expected)) {
         (Some(a), Some(b)) => a == b,
         _ => false,
@@ -103,120 +126,5 @@ impl<A: Aggregation> Aggregation for Where<A> {
 
     fn compute(&self, rows: &Rows) -> Self::Output {
         self.inner.compute(&self.conditions.narrow(rows))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::builtin::{Count, Sum};
-
-    fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
-        let mut r = Record::new();
-        for (k, v) in pairs {
-            r.insert((*k).to_string(), v.clone());
-        }
-        r
-    }
-
-    fn rows(records: Vec<Record<CborValue>>) -> Rows {
-        records
-            .into_iter()
-            .enumerate()
-            .map(|(i, r)| (i.to_string(), r))
-            .collect()
-    }
-
-    fn text(s: &str) -> CborValue {
-        CborValue::Text(s.to_string())
-    }
-
-    fn events() -> Rows {
-        rows(vec![
-            record(&[
-                ("Event", text("opened")),
-                ("Size", CborValue::Integer(10.into())),
-            ]),
-            record(&[
-                ("Event", text("failed")),
-                ("Size", CborValue::Integer(20.into())),
-            ]),
-            record(&[
-                ("Event", text("opened")),
-                ("Size", CborValue::Integer(30.into())),
-            ]),
-        ])
-    }
-
-    #[test]
-    fn where_narrows_a_count() {
-        let agg = Where::new(Conditions::new().eq("Event", text("opened")), Count::rows());
-        assert_eq!(agg.compute(&events()), CborValue::Integer(2.into()));
-    }
-
-    /// The reason this is a combinator and not a `CountWhere` twin: the same
-    /// conditions narrow any reduction.
-    #[test]
-    fn where_narrows_a_sum() {
-        let agg = Where::new(
-            Conditions::new().eq("Event", text("opened")),
-            Sum::new("Size"),
-        );
-        // 10 + 30, not 60.
-        assert_eq!(agg.compute(&events()), CborValue::Integer(40.into()));
-    }
-
-    #[test]
-    fn no_conditions_passes_every_row_through() {
-        let agg = Where::new(Conditions::new(), Count::rows());
-        assert_eq!(agg.compute(&events()), CborValue::Integer(3.into()));
-    }
-
-    #[test]
-    fn a_term_on_an_absent_column_matches_nothing() {
-        let agg = Where::new(Conditions::new().eq("Nope", text("opened")), Count::rows());
-        assert_eq!(agg.compute(&events()), CborValue::Integer(0.into()));
-    }
-
-    /// Configuration carries strings; the data may not. Matching only on CBOR
-    /// equality would make `code: 200` in a YAML file silently count zero.
-    #[test]
-    fn a_text_term_matches_a_numeric_column() {
-        let numeric = rows(vec![
-            record(&[("code", CborValue::Integer(200.into()))]),
-            record(&[("code", CborValue::Integer(500.into()))]),
-        ]);
-        let agg = Where::new(Conditions::new().eq("code", text("200")), Count::rows());
-        assert_eq!(agg.compute(&numeric), CborValue::Integer(1.into()));
-    }
-
-    #[test]
-    fn terms_reach_into_nested_records_by_dotted_path() {
-        let nested = rows(vec![
-            record(&[(
-                "Message",
-                CborValue::Map(vec![(text("Transport"), text("smtp"))]),
-            )]),
-            record(&[(
-                "Message",
-                CborValue::Map(vec![(text("Transport"), text("api"))]),
-            )]),
-        ]);
-        let agg = Where::new(
-            Conditions::new().eq("Message.Transport", text("smtp")),
-            Count::rows(),
-        );
-        assert_eq!(agg.compute(&nested), CborValue::Integer(1.into()));
-    }
-
-    #[test]
-    fn terms_are_anded() {
-        let agg = Where::new(
-            Conditions::new()
-                .eq("Event", text("opened"))
-                .eq("Size", CborValue::Integer(30.into())),
-            Count::rows(),
-        );
-        assert_eq!(agg.compute(&events()), CborValue::Integer(1.into()));
     }
 }

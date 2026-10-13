@@ -1,16 +1,15 @@
-//! `vantage_vista::contract` over the Dio facade (`dio.vista()`), mastered by
+//! `vantage_vista::contract` over the Dio facade (`dio.cached()`), mastered by
 //! in-memory SQLite, a master that can page, order, search and filter. The
 //! facade advertises only what it answers itself, whatever the master can do.
 
-use std::sync::Arc;
-
 use ciborium::Value as CborValue;
-use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Dio, Lens};
+use vantage_diorama::Dio;
 use vantage_sql::sqlite::SqliteDB;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use vantage_vista::contract;
+use vantage_vista::{Capability, contract};
+
+mod support;
 
 /// Products `p1`..`p3`, two of them in category `drink`.
 async fn master() -> vantage_vista::Vista {
@@ -30,35 +29,43 @@ async fn master() -> vantage_vista::Vista {
 
 /// A Dio whose in-memory cache is filled from the master on start.
 async fn dio() -> Dio {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("lens"),
-    );
-    lens.make_dio(master().await).await.unwrap()
+    support::eager_dio(master().await).await
 }
 
 #[tokio::test]
 async fn facade_contract_advertised() {
-    contract::check_advertised(&dio().await.vista()).await;
+    contract::check_advertised(&dio().await.cached()).await;
 }
 
 #[tokio::test]
 async fn facade_contract_advertised_writes() {
-    contract::check_advertised_writes(&dio().await.vista()).await;
+    contract::check_advertised_writes(&dio().await.cached()).await;
 }
 
 #[tokio::test]
 async fn facade_contract_clone() {
     let dio = dio().await;
-    contract::check_clone(&dio.vista(), "category", CborValue::Text("drink".into())).await;
+    contract::check_clone(&dio.cached(), "category", CborValue::Text("drink".into())).await;
+}
+
+/// The facade evaluates search and operator conditions itself, so it
+/// advertises both; it advertises nothing it would refuse.
+#[tokio::test]
+async fn facade_capability_set() {
+    let facade = dio().await.cached();
+    let mut advertised: Vec<Capability> = facade.capabilities().iter().collect();
+    advertised.sort_by_key(|c| format!("{c:?}"));
+    let mut expected = vec![
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::Subscribe,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::Order,
+        Capability::Window,
+        Capability::ConfineWrites,
+    ];
+    expected.sort_by_key(|c| format!("{c:?}"));
+    assert_eq!(advertised, expected);
 }

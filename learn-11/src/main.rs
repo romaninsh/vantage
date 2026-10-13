@@ -2,12 +2,11 @@
 //!
 //! Identical in shape to the Postgres chapter's server, with two lines changed:
 //! the Vista comes from `SurrealVistaFactory` instead of `db.vista_factory()`,
-//! and the live feed is a single transparent `dio.watch()` instead of a
+//! and the live feed is a single transparent `live()` instead of a
 //! hand-wired NOTIFY listener. The Dio, Lens, `DioRouter`, and React frontend
 //! are byte-for-byte the same reactive stack — the whole point of the exercise.
 
 use std::process::Termination;
-use std::sync::Arc;
 
 use learn_11::db;
 use learn_11::product::Product;
@@ -35,41 +34,26 @@ async fn run() -> Result<()> {
         SurrealVistaFactory::new(db.clone()).from_table(Product::surreal_table(db.clone()))?;
     master.set_order(Some(("created", SortDirection::Ascending)))?;
 
-    // Eager cache, no refresh timer: `dio.watch()` reconciles the instant a
-    // change lands. `on_refresh` still matters — the watch task falls back to it
-    // to reconcile if the live subscription ever drops and re-subscribes.
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().clear().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .context("build lens")?,
-    );
-    let dio = lens.make_dio(master).await?;
+    // Eager cache, no refresh timer: the live follow applies each change the
+    // instant it lands. The eager start still matters after that: a refresh
+    // re-runs it, and the follow refreshes if the live subscription ever lags
+    // or drops.
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()
+        .context("build lens")?;
 
     // The transparent live feed. Because the master Vista advertises
-    // `can_watch`, this subscribes to SurrealDB `LIVE SELECT` and applies each
-    // CREATE/UPDATE/DELETE to the cache as it happens — no polling, no
+    // `can_watch`, `live()` subscribes to SurrealDB `LIVE SELECT` and applies
+    // each CREATE/UPDATE/DELETE to the cache as it happens — no polling, no
     // backend-specific code here. Nothing in *this* process writes to `product`;
     // the separate `mutator` binary does, so whatever you see arrived over the
     // database.
-    dio.watch().await?;
+    let dio = lens.dio(master).live().build().await?;
 
     let api = DioRouter::new(dio.clone())
         .with_column("id", "id")

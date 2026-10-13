@@ -51,6 +51,8 @@
 //! a warm start rather than durability: a restart paints the last known value
 //! immediately and recomputes behind it.
 
+#![cfg_attr(not(test), deny(clippy::unimplemented, clippy::todo))]
+
 mod aggregation;
 mod builtin;
 mod catalog;

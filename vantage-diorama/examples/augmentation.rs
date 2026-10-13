@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use vantage_diorama::{Augmentation, Detail, Fetch, Lens, MergeRule, RowStatus, Source};
+use vantage_diorama::{
+    Augmentation, Cache, Detail, Fetch, Lens, LoadState, MergeRule, RowStatus, Source, Tuning,
+};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Catalog, Column, Vista, VistaMetadata};
@@ -94,29 +96,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The catalog resolves the detail source by name (any persistence).
     let catalog = Catalog::new().with("tfstate-detail", |_: &str| Ok(detail()));
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(&cache)
-            .viewport_debounce(Duration::from_millis(1))
-            .build()?,
-    );
+    let lens = Lens::builder()
+        .cache(Cache::redb(&cache))
+        .tuning(Tuning::default().with_viewport_debounce(Duration::from_millis(1)))
+        .build()?;
 
-    // Augmentation is a property of the Dio, not the Lens: configure it after
-    // make_dio, before opening any scenery.
-    let dio = lens.make_dio(master()).await?.augment(
-        Arc::new(catalog),
-        vec![Augmentation {
-            // catalog name of the detail Vista (`Detail::Fixed` takes a
-            // direct handle for catalog-less get-only sources)
-            detail: Detail::Catalog("tfstate-detail".into()),
+    // Augmentation is a property of the Dio, not the Lens: it is fixed when
+    // the Dio is built.
+    let dio = lens
+        .dio(master())
+        .augment(vec![Augmentation {
+            // the detail Vista, resolved by name through the catalog
+            // (`Detail::Fixed` takes a direct handle for get-only sources no
+            // resolver knows)
+            detail: Detail::Resolved {
+                resolver: Arc::new(catalog),
+                name: "tfstate-detail".into(),
+            },
             source: Source::Id,   // master.id -> detail.id
             fetch: Fetch::PerRow, // one detail record per master row
             merge: MergeRule {
                 columns: vec!["resources".into(), "serial".into()],
             },
-        }],
-    );
+        }])
+        .build()
+        .await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;
+    // The list pass runs detached: the scenery opens `Loading` and the rows
+    // arrive with a generation bump.
+    for _ in 0..100 {
+        if !matches!(scenery.load_state(), LoadState::Loading) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
     let n = scenery.row_count();
 
     println!("after list pass (cheap columns only, rows are Incomplete):");

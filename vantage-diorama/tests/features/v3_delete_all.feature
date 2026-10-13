@@ -1,8 +1,9 @@
 Feature: Write path — Clear
 
   v3 — facade `delete_all` enqueues a `Clear` `ChangeFlash`. Default-write
-  routes to master (clearing it), the Mirror helper clears both, and an
-  erroring `on_flash` publishes `WriteFailed`.
+  routes to master (clearing it) and the cache follows once confirmed, the
+  Mirror helper clears the master, and an erroring `on_flash` publishes
+  `WriteFailed` (a `Clear` stages no row).
 
   Scenario: default_write routes Clear to master when on_flash is missing
     Given a master with rows
@@ -13,7 +14,7 @@ Feature: Write path — Clear
     When the dio is created
     And I delete all via the facade
     Then the master has 0 rows
-    And the cache still has 2 rows
+    And the cache has 0 rows
 
   Scenario: WriteFailed lands on the bus when on_flash errors for Clear
     Given a master with rows

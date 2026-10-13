@@ -2,7 +2,7 @@
 //!
 //! A text-mode polling loop watches the Scenery's generation channel
 //! and reprints every row on each bump. We then prove reactivity by
-//! mutating the cache from outside and watching the loop pick it up.
+//! applying an external change and watching the loop pick it up.
 //!
 //! Run with:
 //!   cargo run -p vantage-diorama --example scenery_basic
@@ -14,7 +14,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Lens, SortDir, TableScenery};
+use vantage_diorama::{Cache, ChangeEvent, Lens, Loader, LoaderCx, SortDir, TableScenery};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -63,21 +63,15 @@ fn print_scenery(label: &str, scenery: &Arc<dyn TableScenery>) {
 async fn main() -> Result<()> {
     let tmp = TempDir::new().expect("tempdir");
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.cache().insert_values(rows).await
+        }))
+        .build()?;
 
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery: Arc<dyn TableScenery> = dio
         .table_scenery()
         .sort("price", SortDir::Asc)
@@ -102,9 +96,12 @@ async fn main() -> Result<()> {
     print_scenery("after set_sort(price, desc)", &scenery);
 
     // External system tells us about a new row.
-    dio.cache().insert_value("c4", &record("water", 1)).await?;
-    dio.notify_record_changed("c4");
     let last = u64::from(*gen_rx.borrow_and_update());
+    dio.apply_change(ChangeEvent::Inserted {
+        id: "c4".to_string(),
+        new: Some(record("water", 1)),
+    })
+    .await?;
     let _ = tokio::time::timeout(Duration::from_millis(200), async {
         loop {
             if u64::from(*gen_rx.borrow_and_update()) > last {
@@ -114,7 +111,7 @@ async fn main() -> Result<()> {
         }
     })
     .await;
-    print_scenery("after external insert + invalidate", &scenery);
+    print_scenery("after external insert", &scenery);
 
     Ok(())
 }

@@ -4,12 +4,13 @@ pub struct vantage_diorama_aggregate::prelude::AggregateLens
 impl vantage_diorama_aggregate::AggregateLens
 pub fn vantage_diorama_aggregate::AggregateLens::at(impl core::convert::AsRef<std::path::Path>) -> vantage_core::util::error::Result<vantage_diorama_aggregate::AggregateLensBuilder>
 pub async fn vantage_diorama_aggregate::AggregateLens::close(&self)
-pub async fn vantage_diorama_aggregate::AggregateLens::derive<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio> where A: vantage_diorama_aggregate::Aggregation<Output = vantage_diorama_aggregate::DerivedRows>
-pub async fn vantage_diorama_aggregate::AggregateLens::derive_value(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, &str, vantage_diorama_aggregate::ScalarAggregation) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio>
 pub fn vantage_diorama_aggregate::AggregateLens::in_memory() -> vantage_diorama_aggregate::AggregateLensBuilder
 pub async fn vantage_diorama_aggregate::AggregateLens::retain(&self, &[&str]) -> vantage_core::util::error::Result<()>
-pub async fn vantage_diorama_aggregate::AggregateLens::value<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::scenery::value::ValueScenery>> where A: vantage_diorama_aggregate::Aggregation<Output = ciborium::value::Value>
 pub fn vantage_diorama_aggregate::AggregateLens::with_backend(alloc::rcs::arc::Arc<dyn vantage_diorama::lens::cache_backend::CacheBackend>) -> vantage_diorama_aggregate::AggregateLensBuilder
+impl vantage_diorama_aggregate::AggregateLens
+pub async fn vantage_diorama_aggregate::AggregateLens::derive<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio> where A: vantage_diorama_aggregate::Aggregation<Output = vantage_diorama_aggregate::DerivedRows>
+pub async fn vantage_diorama_aggregate::AggregateLens::derive_value(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, &str, vantage_diorama_aggregate::ScalarAggregation) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio>
+pub async fn vantage_diorama_aggregate::AggregateLens::value<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::scenery::value::ValueScenery>> where A: vantage_diorama_aggregate::Aggregation<Output = ciborium::value::Value>
 impl core::marker::Freeze for vantage_diorama_aggregate::AggregateLens
 impl core::marker::Send for vantage_diorama_aggregate::AggregateLens
 impl core::marker::Sync for vantage_diorama_aggregate::AggregateLens
@@ -168,12 +169,13 @@ pub struct vantage_diorama_aggregate::AggregateLens
 impl vantage_diorama_aggregate::AggregateLens
 pub fn vantage_diorama_aggregate::AggregateLens::at(impl core::convert::AsRef<std::path::Path>) -> vantage_core::util::error::Result<vantage_diorama_aggregate::AggregateLensBuilder>
 pub async fn vantage_diorama_aggregate::AggregateLens::close(&self)
-pub async fn vantage_diorama_aggregate::AggregateLens::derive<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio> where A: vantage_diorama_aggregate::Aggregation<Output = vantage_diorama_aggregate::DerivedRows>
-pub async fn vantage_diorama_aggregate::AggregateLens::derive_value(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, &str, vantage_diorama_aggregate::ScalarAggregation) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio>
 pub fn vantage_diorama_aggregate::AggregateLens::in_memory() -> vantage_diorama_aggregate::AggregateLensBuilder
 pub async fn vantage_diorama_aggregate::AggregateLens::retain(&self, &[&str]) -> vantage_core::util::error::Result<()>
-pub async fn vantage_diorama_aggregate::AggregateLens::value<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::scenery::value::ValueScenery>> where A: vantage_diorama_aggregate::Aggregation<Output = ciborium::value::Value>
 pub fn vantage_diorama_aggregate::AggregateLens::with_backend(alloc::rcs::arc::Arc<dyn vantage_diorama::lens::cache_backend::CacheBackend>) -> vantage_diorama_aggregate::AggregateLensBuilder
+impl vantage_diorama_aggregate::AggregateLens
+pub async fn vantage_diorama_aggregate::AggregateLens::derive<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio> where A: vantage_diorama_aggregate::Aggregation<Output = vantage_diorama_aggregate::DerivedRows>
+pub async fn vantage_diorama_aggregate::AggregateLens::derive_value(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, &str, vantage_diorama_aggregate::ScalarAggregation) -> vantage_core::util::error::Result<vantage_diorama_aggregate::DerivedDio>
+pub async fn vantage_diorama_aggregate::AggregateLens::value<A>(&alloc::rcs::arc::Arc<Self>, &vantage_diorama::dio::Dio, &str, A) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::scenery::value::ValueScenery>> where A: vantage_diorama_aggregate::Aggregation<Output = ciborium::value::Value>
 impl core::marker::Freeze for vantage_diorama_aggregate::AggregateLens
 impl core::marker::Send for vantage_diorama_aggregate::AggregateLens
 impl core::marker::Sync for vantage_diorama_aggregate::AggregateLens
@@ -233,8 +235,8 @@ impl core::marker::Send for vantage_diorama_aggregate::AggregationSpec
 impl core::marker::Sync for vantage_diorama_aggregate::AggregationSpec
 impl core::marker::Unpin for vantage_diorama_aggregate::AggregationSpec
 impl core::marker::UnsafeUnpin for vantage_diorama_aggregate::AggregationSpec
-impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama_aggregate::AggregationSpec
-impl core::panic::unwind_safe::UnwindSafe for vantage_diorama_aggregate::AggregationSpec
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama_aggregate::AggregationSpec
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama_aggregate::AggregationSpec
 pub struct vantage_diorama_aggregate::AsRows<A>
 impl<A> vantage_diorama_aggregate::AsRows<A>
 pub fn vantage_diorama_aggregate::AsRows<A>::new(impl core::convert::Into<alloc::string::String>, A) -> Self
@@ -279,8 +281,8 @@ impl core::marker::Send for vantage_diorama_aggregate::Conditions
 impl core::marker::Sync for vantage_diorama_aggregate::Conditions
 impl core::marker::Unpin for vantage_diorama_aggregate::Conditions
 impl core::marker::UnsafeUnpin for vantage_diorama_aggregate::Conditions
-impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama_aggregate::Conditions
-impl core::panic::unwind_safe::UnwindSafe for vantage_diorama_aggregate::Conditions
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama_aggregate::Conditions
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama_aggregate::Conditions
 pub struct vantage_diorama_aggregate::Count
 impl vantage_diorama_aggregate::Count
 pub fn vantage_diorama_aggregate::Count::rows() -> Self
@@ -435,8 +437,8 @@ impl<A> core::marker::Send for vantage_diorama_aggregate::Where<A> where A: core
 impl<A> core::marker::Sync for vantage_diorama_aggregate::Where<A> where A: core::marker::Sync
 impl<A> core::marker::Unpin for vantage_diorama_aggregate::Where<A> where A: core::marker::Unpin
 impl<A> core::marker::UnsafeUnpin for vantage_diorama_aggregate::Where<A> where A: core::marker::UnsafeUnpin
-impl<A> core::panic::unwind_safe::RefUnwindSafe for vantage_diorama_aggregate::Where<A> where A: core::panic::unwind_safe::RefUnwindSafe
-impl<A> core::panic::unwind_safe::UnwindSafe for vantage_diorama_aggregate::Where<A> where A: core::panic::unwind_safe::UnwindSafe
+impl<A> !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama_aggregate::Where<A>
+impl<A> !core::panic::unwind_safe::UnwindSafe for vantage_diorama_aggregate::Where<A>
 pub trait vantage_diorama_aggregate::AggregateOutput: core::cmp::PartialEq + core::clone::Clone + core::marker::Send + core::marker::Sync + 'static
 impl vantage_diorama_aggregate::AggregateOutput for ciborium::value::Value
 impl vantage_diorama_aggregate::AggregateOutput for vantage_diorama_aggregate::DerivedRows

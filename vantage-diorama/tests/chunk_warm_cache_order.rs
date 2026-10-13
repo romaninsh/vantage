@@ -33,7 +33,7 @@ fn master() -> Vista {
     master_cols(&[("name", "String"), ("pos", "i64")])
 }
 
-/// `on_load_chunk` serves rows by `pos` DESC — the master's native order, which
+/// The paged loader serves rows by `pos` DESC — the master's native order, which
 /// is deliberately different from id order.
 fn paged_lens(cache: std::path::PathBuf, backend: Backend) -> Arc<vantage_diorama::Lens> {
     paged_lens_native_desc(cache, backend, "pos")
@@ -50,7 +50,7 @@ async fn warm_cache_reopen_shows_master_order_not_id_order() -> Result<()> {
         ("3".into(), rec("three", 20)),
     ]));
     let lens = paged_lens(cache, backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
 
     // First open warms the cache via a viewport load.
     {
@@ -96,7 +96,7 @@ async fn warm_reopen_drops_cached_rows_past_the_stated_total() -> Result<()> {
         ("3".into(), rec("three", 20)),
     ]));
     let lens = paged_lens(cache, backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
 
     {
         let s1 = dio.table_scenery().open().await?;
@@ -144,7 +144,7 @@ async fn warm_reopen_is_settled_at_once_cold_open_is_loading() -> Result<()> {
         ("3".into(), rec("three", 20)),
     ]));
     let lens = paged_lens(cache, backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
 
     // Cold open: nothing cached yet, so the view reports loading.
     {

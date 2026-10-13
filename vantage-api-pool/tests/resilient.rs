@@ -6,9 +6,9 @@ mod support;
 use std::time::Duration;
 
 use support::{
-    fast_retry, mount, mount_delayed, mount_script, mount_status, requests, scripted_refresher,
+    fast_retry, local_client, mount, mount_delayed, mount_script, mount_status, requests,
+    scripted_refresher,
 };
-use vantage_api_pool::ResilientClient;
 use vantage_api_pool::resilient::{ClientError, ErrorKind};
 use wiremock::matchers::{header, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -18,7 +18,7 @@ async fn retries_429_then_succeeds() {
     let server = MockServer::start().await;
     mount_script(&server, [429, 429, 200]).await;
 
-    let client = ResilientClient::builder().retry(fast_retry(5)).build();
+    let client = local_client().retry(fast_retry(5)).build();
     let url = format!("{}/x", server.uri());
     let resp = client
         .execute(|h| h.get(&url))
@@ -33,7 +33,7 @@ async fn retries_500_then_succeeds() {
     let server = MockServer::start().await;
     mount_script(&server, [503, 200]).await;
 
-    let client = ResilientClient::builder().retry(fast_retry(5)).build();
+    let client = local_client().retry(fast_retry(5)).build();
     let url = server.uri();
     let resp = client
         .execute(|h| h.get(&url))
@@ -48,7 +48,7 @@ async fn does_not_retry_4xx() {
     let server = MockServer::start().await;
     mount_status(&server, 404).await;
 
-    let client = ResilientClient::builder().retry(fast_retry(5)).build();
+    let client = local_client().retry(fast_retry(5)).build();
     let url = server.uri();
     let r = client.execute(|h| h.get(&url)).await;
     assert!(r.is_err(), "404 is terminal");
@@ -71,7 +71,7 @@ async fn refreshes_token_on_401_and_replays() {
     let (refresher, calls) =
         scripted_refresher(|n| Ok(if n == 0 { "stale" } else { "good" }.to_string()));
 
-    let client = ResilientClient::builder()
+    let client = local_client()
         .retry(fast_retry(2))
         .bearer_auth(refresher)
         .build();
@@ -89,7 +89,7 @@ async fn circuit_breaker_opens_and_fails_fast() {
     let server = MockServer::start().await;
     mount_status(&server, 500).await;
 
-    let client = ResilientClient::builder()
+    let client = local_client()
         .retry(fast_retry(0)) // 1 request per execute
         .circuit_breaker(2, Duration::from_secs(60))
         .build();
@@ -113,7 +113,7 @@ async fn caps_parallelism() {
     let server = MockServer::start().await;
     mount_delayed(&server, 200, Duration::from_millis(100)).await;
 
-    let client = ResilientClient::builder().max_parallel(3).build();
+    let client = local_client().max_parallel(3).build();
     let url = server.uri();
 
     let mut handles = Vec::new();
@@ -140,7 +140,7 @@ async fn caps_parallelism() {
 async fn error_carries_status_and_attempts() {
     let server = MockServer::start().await;
     mount_status(&server, 404).await;
-    let client = ResilientClient::builder().retry(fast_retry(3)).build();
+    let client = local_client().retry(fast_retry(3)).build();
     let url = server.uri();
     let err: ClientError = client.execute(|h| h.get(&url)).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Status(404));
@@ -160,7 +160,7 @@ async fn error_carries_the_servers_own_message() {
             .set_body_string(r#"{"error":"name must not be empty"}"#),
     )
     .await;
-    let client = ResilientClient::builder().retry(fast_retry(3)).build();
+    let client = local_client().retry(fast_retry(3)).build();
     let url = server.uri();
     let err = client.execute(|h| h.get(&url)).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Status(422));
@@ -184,7 +184,7 @@ async fn a_long_error_body_is_capped() {
         ResponseTemplate::new(400).set_body_string("é".repeat(4000)),
     )
     .await;
-    let client = ResilientClient::builder().retry(fast_retry(0)).build();
+    let client = local_client().retry(fast_retry(0)).build();
     let url = server.uri();
     let body = client
         .execute(|h| h.get(&url))
@@ -205,7 +205,7 @@ async fn a_long_error_body_is_capped() {
 async fn exhausted_retries_report_last_status_and_attempt_count() {
     let server = MockServer::start().await;
     mount_status(&server, 503).await;
-    let client = ResilientClient::builder().retry(fast_retry(2)).build();
+    let client = local_client().retry(fast_retry(2)).build();
     let url = server.uri();
     let err = client.execute(|h| h.get(&url)).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Status(503));

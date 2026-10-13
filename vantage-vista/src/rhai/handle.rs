@@ -10,6 +10,7 @@
 //! handle, and a statement whose result is dropped changes nothing. The
 //! script's value is the handle it ends on.
 
+mod query;
 mod step;
 
 use std::sync::Arc;
@@ -27,6 +28,9 @@ pub struct Handle {
     /// The resolver `table(name)` was called with, used when a caller
     /// resolves without one.
     resolver: Option<Arc<dyn VistaResolver>>,
+    /// The extension verb that last narrowed the base with a native
+    /// condition, which [`Handle::query`] can't express.
+    native_verb: Option<String>,
 }
 
 #[derive(Clone)]
@@ -53,6 +57,7 @@ impl Handle {
             base,
             steps: Arc::new(Vec::new()),
             resolver: None,
+            native_verb: None,
         }
     }
 
@@ -158,6 +163,7 @@ impl Handle {
         let narrowed = Vista::clone(source).with_native_condition(condition)?;
         Ok(Handle {
             base: Base::Vista(Arc::new(narrowed)),
+            native_verb: Some(verb.to_string()),
             ..self.clone()
         })
     }

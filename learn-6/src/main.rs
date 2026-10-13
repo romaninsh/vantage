@@ -32,43 +32,22 @@ async fn run() -> VantageResult<()> {
         .vista_factory()
         .from_table(Readings::table(aws.clone(), BUCKET))?;
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at("cache.redb")
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move { sync(&dio).await }
-            })
-            // Don't wait for the sync: the UI opens on whatever the cache
-            // holds (nothing, on a first run) and rows stream in behind it.
-            .on_start_blocking(false)
-            // The scenery's list pages come straight from the warmed cache —
-            // zero network. The master is only contacted by the refresh
-            // reconcile and the per-row detail fetches.
-            .on_list_page(|dio, q| {
-                let dio = dio.clone();
-                async move {
-                    Ok(dio
-                        .cache()
-                        .list_values()
-                        .await?
-                        .into_iter()
-                        .skip(q.offset)
-                        .take(q.limit)
-                        .collect())
-                }
-            })
-            // Reconcile against the bucket once a minute: new files appear
-            // as un-hydrated rows, vanished ones drop out, changed ones are
-            // demoted for re-hydration.
-            .refresh_every(Duration::from_secs(60))
-            .build()
-            .context("Failed to build lens")?,
-    );
+    let lens = Lens::builder()
+        .cache(Cache::redb("cache.redb"))
+        // Don't wait for the sync: it warms the cache for later runs in the
+        // background, while the view lists the bucket itself.
+        .loader(Loader::eager(|cx: LoaderCx| async move { sync(&cx).await }).blocking(false))
+        // Reconcile against the bucket once a minute: new files appear
+        // as un-hydrated rows, vanished ones drop out, changed ones are
+        // demoted for re-hydration. The augmentation's refresh pass does
+        // the work; the refresher only sets the interval.
+        .refresher(Refresher::new(|_cx: LoaderCx| async { Ok(()) }).every(Duration::from_secs(60)))
+        .build()
+        .context("Failed to build lens")?;
 
-    let dio = lens.make_dio(master).await?.augment(
-        Arc::new(vantage_vista::Catalog::new()),
-        vec![Augmentation {
+    let dio = lens
+        .dio(master)
+        .augment(vec![Augmentation {
             detail: Detail::Fixed(Arc::new(augmenter)),
             source: Source::Column {
                 from: "Key".into(),
@@ -78,8 +57,9 @@ async fn run() -> VantageResult<()> {
             merge: MergeRule {
                 columns: vec!["rows".into(), "latest".into()],
             },
-        }],
-    );
+        }])
+        .build()
+        .await?;
 
     // One list page covers the whole cached listing (~122k station files);
     // the viewport's detail pass hydrates whatever is on screen first.
@@ -100,11 +80,10 @@ async fn run() -> VantageResult<()> {
         .context("terminal UI failed")
 }
 
-/// Same page-by-page sync as learn-4 (resuming from the last cached key),
-/// except each landed page is announced on the bus — open sceneries re-list
-/// and the table grows under the user's cursor.
-async fn sync(dio: &Dio) -> VantageResult<()> {
-    let mut token: Option<CborValue> = dio
+/// Same page-by-page sync as learn-4, resuming from the last cached key.
+/// The Dio announces the rows once the detached sync finishes.
+async fn sync(cx: &LoaderCx) -> VantageResult<()> {
+    let mut token: Option<CborValue> = cx
         .cache()
         .list_values()
         .await?
@@ -113,11 +92,10 @@ async fn sync(dio: &Dio) -> VantageResult<()> {
         .cloned()
         .map(Into::into);
     loop {
-        let (page, next) = dio.master().fetch_cursor(token, PAGE_SIZE).await?;
-        dio.cache()
+        let (page, next) = cx.master().fetch_cursor(token, PAGE_SIZE).await?;
+        cx.cache()
             .insert_values(page.rows.into_iter().collect())
             .await?;
-        dio.notify_dataset_changed();
         if next.is_none() {
             return Ok(());
         }
