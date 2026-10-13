@@ -49,7 +49,7 @@ async fn refresh_after_reorder_does_not_duplicate_rows() -> Result<()> {
         ("d".into(), rec("d", 10)),
     ]));
     let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 

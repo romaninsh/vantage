@@ -2,6 +2,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
+use vantage_vista::eval::cbor_cmp;
 use vantage_vista::{Column, ColumnFlag};
 
 use crate::aggregation::{Aggregation, DerivedRows, Rows};
@@ -97,7 +98,7 @@ impl<R: GroupReducer> Aggregation for GroupBy<R> {
             }
         }
 
-        groups.sort_by(|(a, _), (b, _)| cmp::compare(a, b));
+        groups.sort_by(|(a, _), (b, _)| cbor_cmp(a, b));
 
         let derived = groups
             .into_iter()

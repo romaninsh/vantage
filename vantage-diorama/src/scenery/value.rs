@@ -1,11 +1,13 @@
 //! `ValueScenery` — reactive single-scalar view.
 //!
 //! Wraps one [`Aggregate`] over the Dio's cache and bumps a watch
-//! channel when the computed value (or status) changes. Used by
-//! menu-bar badges, dashboard counters, anywhere "one number that
-//! refreshes" is the UI shape.
+//! channel when the computed value (or status) changes. The canned
+//! aggregates read only the cached rows the Dio's residual admits, hydrated
+//! first when the residual or the aggregated column names an augmented
+//! value. It suits any "one number that refreshes" shape: a badge, a
+//! dashboard counter.
 //!
-//! Status + value transitions in v1:
+//! Status + value transitions:
 //!
 //! | Trigger                              | Status     | Value                  | Bump |
 //! |--------------------------------------|------------|------------------------|------|
@@ -16,10 +18,10 @@
 //! | Recompute failed                     | `Error(_)` | **last good preserved**| yes  |
 //! | Recompute OK after failure           | `Fresh`    | new                    | yes  |
 //!
-//! Deliberately *not* in v1:
+//! Not supported:
 //!
-//! - **Push-down via vista 5b** — `Sum`/`Max`/`Min` scan the cache
-//!   locally instead of calling `dio.vista().get_sum(field)` etc.
+//! - **Push-down** — `Sum`/`Max`/`Min` scan the cache locally; nothing
+//!   is asked of the master.
 //! - **Float arithmetic** — `Sum`/`Max`/`Min` recognize CBOR
 //!   integers only; any other type for the target field yields
 //!   `Error("non-integer field")`.
@@ -36,7 +38,10 @@ use ciborium::Value as CborValue;
 use tokio::sync::{broadcast, watch};
 use vantage_core::{Result, error};
 
-use crate::dio::{Dio, DioEvent, DioInner, Generation};
+use vantage_types::Record;
+use vantage_vista::VistaQuery;
+
+use crate::dio::{Dio, DioEvent, DioInner, Generation, admitted_by_dio};
 
 #[derive(Debug, Clone)]
 pub enum ValueStatus {
@@ -74,18 +79,17 @@ where
     Box::new(move |dio| Box::pin(f(dio)))
 }
 
-/// What a `ValueScenery` computes. Variants land here as direct cache
-/// scans; vista 5b will add push-down via `dio.vista()`.
+/// What a `ValueScenery` computes. The canned variants scan the cache.
 pub enum Aggregate {
-    /// Row count over the entire cache.
+    /// Row count over the Dio's rows.
     Count,
     /// Row count over rows matching every `(col, value)` equality.
     CountWhere(Vec<(String, CborValue)>),
-    /// Sum of the named column (integer fields only in v1).
+    /// Sum of the named column (integer fields only).
     Sum(String),
-    /// Max of the named column (integer fields only in v1).
+    /// Max of the named column (integer fields only).
     Max(String),
-    /// Min of the named column (integer fields only in v1).
+    /// Min of the named column (integer fields only).
     Min(String),
     /// Free-form aggregate — closure receives the Dio and returns
     /// any [`CborValue`]. Use this for join-style or schema-specific
@@ -240,16 +244,38 @@ impl ValueSceneryState {
     }
 }
 
+/// The Dio's rows in its cache: every cached row its residual admits. The
+/// rows are hydrated first when the residual or one of the aggregate's
+/// `columns` names an augmented value, so neither judges nor sums a gap.
+async fn dio_rows(dio: &Dio, columns: &[&str]) -> Result<Vec<Record<CborValue>>> {
+    let mut rows = dio.inner.cache.list_values().await?;
+    let inner = &dio.inner;
+    if inner.names_augmented(&VistaQuery::new())
+        || columns.iter().any(|c| inner.may_be_augmented(c))
+    {
+        inner.hydrate(&mut rows).await?;
+    }
+    Ok(rows
+        .into_values()
+        .filter(|rec| admitted_by_dio(inner, rec))
+        .collect())
+}
+
 async fn dispatch(agg: &Aggregate, dio: &Dio) -> Result<CborValue> {
     match agg {
+        Aggregate::Count if !dio.inner.residual_narrows() => {
+            let n = dio.inner.cache.count().await?;
+            Ok(CborValue::Integer(n.into()))
+        }
         Aggregate::Count => {
-            let n = dio.cache().count().await?;
+            let n = dio_rows(dio, &[]).await?.len() as i64;
             Ok(CborValue::Integer(n.into()))
         }
         Aggregate::CountWhere(conds) => {
-            let rows = dio.cache().list_values().await?;
-            let n = rows
-                .values()
+            let columns: Vec<&str> = conds.iter().map(|(c, _)| c.as_str()).collect();
+            let n = dio_rows(dio, &columns)
+                .await?
+                .iter()
                 .filter(|rec| conds.iter().all(|(col, v)| rec.get(col) == Some(v)))
                 .count() as i64;
             Ok(CborValue::Integer(n.into()))
@@ -262,9 +288,8 @@ async fn dispatch(agg: &Aggregate, dio: &Dio) -> Result<CborValue> {
 }
 
 async fn scan_sum(dio: &Dio, field: &str) -> Result<CborValue> {
-    let rows = dio.cache().list_values().await?;
     let mut sum: i128 = 0;
-    for (_, rec) in rows {
+    for rec in dio_rows(dio, &[field]).await? {
         match rec.get(field) {
             Some(CborValue::Integer(i)) => sum = sum.saturating_add(i128::from(*i)),
             Some(_) => {
@@ -286,9 +311,8 @@ async fn scan_sum(dio: &Dio, field: &str) -> Result<CborValue> {
 }
 
 async fn scan_extreme(dio: &Dio, field: &str, max: bool) -> Result<CborValue> {
-    let rows = dio.cache().list_values().await?;
     let mut acc: Option<i128> = None;
-    for (_, rec) in rows {
+    for rec in dio_rows(dio, &[field]).await? {
         match rec.get(field) {
             Some(CborValue::Integer(i)) => {
                 let v = i128::from(*i);

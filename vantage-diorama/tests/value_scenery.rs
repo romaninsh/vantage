@@ -8,7 +8,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::Lens;
+use vantage_diorama::{Cache, ChangeEvent, Dio, Lens, Loader};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -37,20 +37,17 @@ fn seeded_master() -> Vista {
     Vista::new("items", shell)
 }
 
-async fn build_lens(cache_path: std::path::PathBuf) -> Result<Arc<Lens>> {
-    Ok(Arc::new(
-        Lens::new()
-            .cache_at(cache_path)
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("build lens"),
-    ))
+/// A Dio over the seeded master on a redb cache in `tmp`, copied whole by an
+/// eager start.
+async fn seeded_dio(tmp: &TempDir) -> Result<Dio> {
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .loader(Loader::eager(|cx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()?;
+    lens.dio(seeded_master()).build().await
 }
 
 async fn wait_for_gen(
@@ -81,8 +78,7 @@ fn cbor_int(v: &CborValue) -> Option<i128> {
 #[tokio::test]
 async fn count_returns_cache_size() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let scenery = dio.value_scenery().count().open().await?;
     let v = scenery.value().expect("computed");
@@ -93,8 +89,7 @@ async fn count_returns_cache_size() -> Result<()> {
 #[tokio::test]
 async fn count_where_filters() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let scenery = dio
         .value_scenery()
@@ -108,8 +103,7 @@ async fn count_where_filters() -> Result<()> {
 #[tokio::test]
 async fn sum_over_integer_column() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let scenery = dio.value_scenery().sum("price").open().await?;
     assert_eq!(cbor_int(&scenery.value().unwrap()), Some(60));
@@ -119,8 +113,7 @@ async fn sum_over_integer_column() -> Result<()> {
 #[tokio::test]
 async fn max_and_min_over_integer_column() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let max = dio.value_scenery().max("price").open().await?;
     let min = dio.value_scenery().min("price").open().await?;
@@ -132,15 +125,18 @@ async fn max_and_min_over_integer_column() -> Result<()> {
 #[tokio::test]
 async fn external_invalidate_triggers_recompute() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let scenery = dio.value_scenery().count().open().await?;
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
-    dio.cache().insert_value("d", &record("delta", 5)).await?;
-    dio.notify_record_changed("d");
+    let delta = Some(record("delta", 5));
+    dio.apply_change(ChangeEvent::Inserted {
+        id: "d".into(),
+        new: delta,
+    })
+    .await?;
     wait_for_gen(&mut gen_rx, initial).await;
 
     assert_eq!(cbor_int(&scenery.value().unwrap()), Some(4));
@@ -150,15 +146,18 @@ async fn external_invalidate_triggers_recompute() -> Result<()> {
 #[tokio::test]
 async fn unchanged_value_does_not_bump_generation() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let scenery = dio.value_scenery().count().open().await?;
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
     // Touch the bus without changing the count.
-    dio.notify_record_changed("nonexistent");
+    dio.apply_change(ChangeEvent::Updated {
+        id: "nonexistent".into(),
+        new: None,
+    })
+    .await?;
     tokio::time::sleep(Duration::from_millis(100)).await;
     let after = u64::from(*gen_rx.borrow_and_update());
     assert_eq!(after, initial, "count unchanged → no generation bump");
@@ -168,15 +167,14 @@ async fn unchanged_value_does_not_bump_generation() -> Result<()> {
 #[tokio::test]
 async fn custom_aggregate_runs() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let scenery = dio
         .value_scenery()
         .custom(|dio| {
             let dio = dio.clone();
             async move {
-                let rows = dio.cache().list_values().await?;
+                let rows = dio.cached().list_values().await?;
                 // Average price as integer.
                 let mut sum: i64 = 0;
                 let mut n: i64 = 0;
@@ -201,8 +199,7 @@ async fn custom_aggregate_runs() -> Result<()> {
 #[tokio::test]
 async fn custom_aggregate_error_preserves_last_value() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     // Counter so the custom aggregate alternates between OK and Err.
     let calls = Arc::new(AtomicU64::new(0));
@@ -227,8 +224,8 @@ async fn custom_aggregate_error_preserves_last_value() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
-    // Trigger a recompute that will fail.
-    dio.notify_dataset_changed();
+    // Trigger a recompute that will fail: the set is re-read.
+    dio.apply_change(ChangeEvent::Invalidated).await?;
     wait_for_gen(&mut gen_rx, initial).await;
 
     // Value preserved; status flipped to Error.
@@ -243,8 +240,7 @@ async fn custom_aggregate_error_preserves_last_value() -> Result<()> {
 #[tokio::test]
 async fn scenery_outlives_dio_handle_drop() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = seeded_dio(&tmp).await?;
 
     let scenery = dio.value_scenery().count().open().await?;
     assert_eq!(cbor_int(&scenery.value().unwrap()), Some(3));

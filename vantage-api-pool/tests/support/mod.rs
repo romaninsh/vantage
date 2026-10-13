@@ -12,13 +12,36 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tokio::task::JoinHandle;
-use vantage_api_pool::ResilientClient;
 use vantage_api_pool::resilient::{
     AuthRefresher, BreakerMode, CallPolicy, ErrorKind, RetryMode, RetryPolicy, TransportEvent,
     TransportObserver,
 };
+use vantage_api_pool::{ResilientClient, ResilientClientBuilder};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+
+/// The library's default request timeout.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// A builder whose HTTP client skips the system proxy lookup, built here
+/// rather than on the first request. On macOS that lookup can block for
+/// seconds, and on a current-thread test runtime it starves the deadlines
+/// in [`within`] and [`wait_for_requests`]. Every test against the local
+/// mock server starts from this.
+pub fn local_client() -> ResilientClientBuilder {
+    local_client_with_timeout(Some(DEFAULT_TIMEOUT))
+}
+
+/// [`local_client`] with its request timeout set to `timeout` (`None` for
+/// none). `http_client` ignores `request_timeout`, so the timeout has to be
+/// set on the supplied client.
+pub fn local_client_with_timeout(timeout: Option<Duration>) -> ResilientClientBuilder {
+    let mut http = reqwest::Client::builder().no_proxy();
+    if let Some(timeout) = timeout {
+        http = http.timeout(timeout);
+    }
+    ResilientClient::builder().http_client(http.build().expect("build the test HTTP client"))
+}
 
 /// A bounded retry policy with the back-off compressed to 1–5 ms, so a test
 /// that needs several retries finishes in milliseconds.

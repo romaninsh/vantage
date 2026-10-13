@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::dio::{Dio, DioEvent};
-use crate::lens::ChunkSink;
+use crate::lens::{ChunkSink, LoaderCx};
 use crate::scenery::table::ViewportRequest;
 use crate::scenery::table::state::{InFlightMarker, TableSceneryState};
 use crate::scenery::table::view_stats::TotalKind;
@@ -9,8 +9,8 @@ use crate::scenery::table::view_stats::TotalKind;
 use super::guards::{CancelOnDrop, PendingChunk};
 use super::range::compute_fetch_range;
 
-/// Always emits `ViewportChanged`. If the range is fully cached or no
-/// `on_load_chunk` callback is registered, returns `None` without touching
+/// Always emits `ViewportChanged`. If the range is fully cached or the view
+/// doesn't serve its query from windows, returns `None` without touching
 /// the cache. Otherwise dispatches the callback against an edge-anchored
 /// "effective" range (see [`compute_fetch_range`]) and, once it resolves,
 /// returns `Some(PendingChunk)` for
@@ -83,8 +83,7 @@ pub(super) async fn run_chunk_callback(
     // (`Exact`), and probing it again on every viewport costs a wasted fetch;
     // a refresh re-fetches anyway, so growth is still picked up.
     let end_is_guess = total.is_none() || *state.total_kind.read().unwrap() == TotalKind::Horizon;
-    let horizon_probe = state.paged
-        && !state.two_pass
+    let horizon_probe = state.is_chunk_loaded()
         && !force_load
         && !state.total_ever_stated()
         && end_is_guess
@@ -111,7 +110,7 @@ pub(super) async fn run_chunk_callback(
             None => {
                 tracing::debug!(
                     target: "vantage_diorama::source",
-                    table = %dio_inner.master.read().unwrap().name(),
+                    table = %dio_inner.master.name(),
                     range = ?visible,
                     rows = visible_cached,
                     "CACHE — served locally, no master fetch",
@@ -137,24 +136,24 @@ pub(super) async fn run_chunk_callback(
         }
     };
 
-    // Only a paged view fetches windows. An eager lens holds every row
-    // already, so it registers no `on_load_chunk` — its viewport moving is its
-    // steady state, not a fault. Logged at DEBUG like the fully-cached skip
-    // above: anything that re-drives the viewport on a timer (a relation
-    // list's periodic re-pull, `refresh_loaded_viewport`) would otherwise emit
-    // a warning per tick, forever.
-    let Some(cb) = dio_inner
-        .lens
-        .callbacks
-        .on_load_chunk
-        .as_ref()
-        .filter(|_| state.paged)
-    else {
+    // Only a view serving windows fetches them: one whose query the master
+    // takes whole, so it has a plan with no residual. An eager view holds
+    // every row already, so its viewport moving is its steady state, not a
+    // fault; a paged view whose query leaves a residual is answered from the
+    // cache or has failed, and a window would answer neither. Logged at
+    // DEBUG like the fully-cached skip above: anything that re-drives the
+    // viewport on a timer (a relation list's periodic re-pull,
+    // `refresh_loaded_viewport`) would otherwise emit a line per tick,
+    // forever.
+    let (Some(cb), Some(plan)) = (
+        dio_inner.lens.callbacks.loader.paged.as_ref(),
+        state.view_plan().filter(|_| state.is_chunk_loaded()),
+    ) else {
         tracing::debug!(
             target: "vantage_diorama::viewport",
             visible = ?visible,
             paged = state.paged,
-            "fire_chunk_load: SKIP (this view does not page)",
+            "fire_chunk_load: SKIP (this view does not serve its query from windows)",
         );
         return None;
     };
@@ -213,18 +212,13 @@ pub(super) async fn run_chunk_callback(
     // can be committed once it returns.
     let writer = sink.clone();
 
-    let dio = Dio {
+    let cx = LoaderCx::new(Dio {
         inner: dio_inner.clone(),
-    };
+    });
     let t = std::time::Instant::now();
-    // Built here (rather than beside the `cb` call below) so the "load
-    // dispatch" tapline can report the query the fetch is about to run —
-    // sort/search included.
-    let query = crate::lens::ChunkQuery {
-        sort: state.sort.read().unwrap().clone(),
-        search: state.search.read().unwrap().clone(),
-        filters: state.ui_terms.read().unwrap().clone(),
-    };
+    // A view serving windows has a plan with no residual: the master takes
+    // this whole query.
+    let query = plan.query().clone();
     tracing::debug!(
         target: "vantage_diorama::viewport",
         visible = ?visible,
@@ -241,7 +235,7 @@ pub(super) async fn run_chunk_callback(
         },
         force_load,
         priority = ?priority,
-        "fire_chunk_load: dispatching on_load_chunk",
+        "fire_chunk_load: dispatching the paged loader",
     );
     // The counterpart of the CACHE line above: this is the moment a range
     // costs a round trip. `already_cached` says how much of what we are about
@@ -250,7 +244,7 @@ pub(super) async fn run_chunk_callback(
     // otherwise is worth explaining.
     tracing::debug!(
         target: "vantage_diorama::source",
-        table = %dio_inner.master.read().unwrap().name(),
+        table = %dio_inner.master.name(),
         range = ?effective_range,
         rows = effective_to_fetch,
         already_cached = effective_cached,
@@ -271,7 +265,7 @@ pub(super) async fn run_chunk_callback(
         },
         effective_to_fetch,
         effective_cached,
-        match &query.sort {
+        match &query.order {
             Some((col, dir)) => format!(" · sorted by {col} {dir:?}"),
             None => String::new(),
         },
@@ -301,7 +295,7 @@ pub(super) async fn run_chunk_callback(
         writer: writer.clone(),
     };
     let result = priority
-        .scope(cb(&dio, effective_range.clone(), query, sink))
+        .scope(cb(cx, effective_range.clone(), query, sink))
         .await;
     cancel_guard.armed = false;
 

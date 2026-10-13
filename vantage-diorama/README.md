@@ -59,7 +59,7 @@ let lens = Arc::new(
 let products = lens.make_dio(products_vista).await?;
 
 // Use it like any other Vista — but reads are instant, served from cache:
-let mut facade = products.vista();
+let mut facade = products.cached();
 facade.add_condition_eq("category", "books".into())?;
 let books = facade.list_values().await?;
 

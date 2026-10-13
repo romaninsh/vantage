@@ -18,36 +18,32 @@ async fn set_on_start_blocking(w: &mut DioramaWorld, val: String) {
     w.lens_builder.on_start_blocking = Some(val == "true");
 }
 
-#[when("I spawn make_dio")]
-async fn spawn_make_dio(w: &mut DioramaWorld) {
-    let cache = w.cache_source();
-    let lens = w
-        .lens_builder
-        .build(cache, &w.spies, w.backend)
-        .expect("build lens");
+#[when("I spawn the dio build")]
+async fn spawn_dio_build(w: &mut DioramaWorld) {
+    let lens = w.build_lens();
     let master = w.master.take().expect("master not set");
     w.lens = Some(lens.clone());
-    let handle = tokio::spawn(async move { lens.make_dio(master).await });
+    let handle = tokio::spawn(async move { lens.dio(master).build().await });
     w.pending_dio = Some(handle);
     w.settle().await;
 }
 
-#[then("make_dio is still pending")]
-async fn make_dio_pending(w: &mut DioramaWorld) {
-    let handle = w.pending_dio.as_ref().expect("no pending make_dio");
+#[then("the dio build is still pending")]
+async fn dio_build_pending(w: &mut DioramaWorld) {
+    let handle = w.pending_dio.as_ref().expect("no pending dio build");
     assert!(
         !handle.is_finished(),
-        "expected make_dio to be parked on on_start gate, but it finished early"
+        "expected the dio build to be parked on the on_start gate, but it finished early"
     );
 }
 
-#[then("make_dio completes")]
-async fn make_dio_completes(w: &mut DioramaWorld) {
-    let handle = w.pending_dio.take().expect("no pending make_dio");
+#[then("the dio build completes")]
+async fn dio_build_completes(w: &mut DioramaWorld) {
+    let handle = w.pending_dio.take().expect("no pending dio build");
     let dio = handle
         .await
-        .expect("make_dio task panicked")
-        .expect("make_dio returned err");
+        .expect("dio build task panicked")
+        .expect("dio build returned err");
     w.start_recorder(dio.subscribe_events());
     w.dio = Some(dio);
 }
@@ -84,7 +80,7 @@ async fn drop_dio(w: &mut DioramaWorld) {
     }
     let _ = w.dio.take();
     w.extra_dios.clear();
-    // Drop the Arc<Lens> too — make_dio held a clone inside DioInner,
+    // Drop the Arc<Lens> too — the Dio holds a clone inside DioInner,
     // but the outer Arc the test holds also keeps the cache backend alive.
     let _ = w.lens.take();
     w.settle().await;

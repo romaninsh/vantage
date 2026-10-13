@@ -6,10 +6,13 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Lens, SortDir, TableScenery};
+use vantage_diorama::{Cache, CacheBackend, ChangeEvent, Lens, RedbCache, SortDir, TableScenery};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+
+mod support;
+use support::chunk::redb_lens;
+use support::copy_master;
 
 fn cbor_text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -37,21 +40,10 @@ fn seeded_master() -> Vista {
     Vista::new("items", shell)
 }
 
-/// Build a Lens whose `on_start` copies the master into the cache so
+/// Build a Lens whose eager start copies the master into the cache so
 /// the Scenery has something to read.
 async fn build_lens(cache_path: std::path::PathBuf) -> Result<Arc<Lens>> {
-    let lens = Lens::new()
-        .cache_at(cache_path)
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await
-            }
-        })
-        .build()
-        .expect("build lens");
-    Ok(Arc::new(lens))
+    Ok(redb_lens(cache_path, copy_master()))
 }
 
 /// Wait for the Scenery's generation to advance past `current`.
@@ -76,7 +68,7 @@ async fn wait_for_gen(
 async fn scenery_loads_rows_from_cache() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio.table_scenery().open().await?;
     assert_eq!(scenery.row_count(), 3);
@@ -90,7 +82,7 @@ async fn scenery_loads_rows_from_cache() -> Result<()> {
 async fn set_sort_reorders_and_bumps_generation() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
@@ -110,7 +102,7 @@ async fn set_sort_reorders_and_bumps_generation() -> Result<()> {
 async fn where_eq_at_builder_time_filters_rows() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio
         .table_scenery()
@@ -128,16 +120,26 @@ async fn where_eq_at_builder_time_filters_rows() -> Result<()> {
 #[tokio::test]
 async fn external_notify_record_changed_triggers_reload() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let backend = Arc::new(RedbCache::open(tmp.path().join("cache.redb"))?);
+    let lens = Lens::builder()
+        .cache(Cache::backend(backend.clone()))
+        .loader(copy_master())
+        .build()?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
-    // External system tells the Dio about a new row, then publishes a change.
-    dio.cache().insert_value("d", &record("delta", 5)).await?;
-    dio.notify_record_changed("d");
+    // External system writes a new row into the cache, then publishes a
+    // notify-only change.
+    let table = backend.open_table("items").await?;
+    table.insert_value("d", &record("delta", 5)).await?;
+    dio.apply_change(ChangeEvent::Updated {
+        id: "d".into(),
+        new: None,
+    })
+    .await?;
 
     wait_for_gen(&mut gen_rx, initial).await;
     assert_eq!(scenery.row_count(), 4);
@@ -148,14 +150,18 @@ async fn external_notify_record_changed_triggers_reload() -> Result<()> {
 async fn patched_updates_visible_rows() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
     // Live stream renamed "alpha" → "alphabet".
-    dio.patched("a", record("alphabet", 30)).await?;
+    dio.apply_change(ChangeEvent::Updated {
+        id: "a".into(),
+        new: Some(record("alphabet", 30)),
+    })
+    .await?;
     wait_for_gen(&mut gen_rx, initial).await;
 
     let updated = scenery
@@ -178,22 +184,23 @@ async fn patched_updates_visible_rows() -> Result<()> {
     Ok(())
 }
 
-/// `dio.removed(id)` wipes the cache entry AND publishes the bus
-/// event so a subscribed TableScenery's reseed actually drops the
-/// row. The bare `notify_record_changed(id)` path leaves the cache
-/// untouched — sceneries would reload the deleted row right back in.
+/// An applied `Deleted` change wipes the cache entry AND publishes the bus
+/// event so a subscribed TableScenery's reseed actually drops the row. A
+/// notify-only change leaves the cache untouched — sceneries would reload
+/// the deleted row right back in.
 #[tokio::test]
 async fn removed_drops_row_from_visible_set() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
     assert_eq!(scenery.row_count(), 3);
 
-    dio.removed("b").await?;
+    dio.apply_change(ChangeEvent::Deleted { id: "b".into() })
+        .await?;
     wait_for_gen(&mut gen_rx, initial).await;
 
     assert_eq!(scenery.row_count(), 2);
@@ -206,17 +213,20 @@ async fn removed_drops_row_from_visible_set() -> Result<()> {
     Ok(())
 }
 
-/// `dio.removed(id)` is idempotent — calling on an absent id is a
-/// no-op (still publishes the event so any reseed-style scenery
-/// re-syncs harmlessly).
+/// A `Deleted` change is idempotent — applying one for an absent id is a
+/// no-op (still publishes the event so any reseed-style scenery re-syncs
+/// harmlessly).
 #[tokio::test]
 async fn removed_is_idempotent_on_missing_id() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let _scenery = dio.table_scenery().open().await?;
-    dio.removed("does-not-exist").await?;
+    dio.apply_change(ChangeEvent::Deleted {
+        id: "does-not-exist".into(),
+    })
+    .await?;
     Ok(())
 }
 
@@ -224,7 +234,7 @@ async fn removed_is_idempotent_on_missing_id() -> Result<()> {
 async fn scenery_outlives_dio_handle_drop() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio.table_scenery().open().await?;
     assert_eq!(scenery.row_count(), 3);
@@ -242,7 +252,7 @@ async fn scenery_outlives_dio_handle_drop() -> Result<()> {
 async fn capped_scenery_bounds_the_view() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.make_dio(seeded_master()).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio.table_scenery().open().await?;
     let capped = vantage_diorama::CappedScenery::wrap(scenery.clone(), 2);

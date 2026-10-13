@@ -13,12 +13,15 @@ use axum::http::{Request, StatusCode};
 use ciborium::Value as CborValue;
 use futures_util::StreamExt;
 use tempfile::TempDir;
+use tokio::sync::Semaphore;
 use tower::ServiceExt;
 use vantage_api_adapters::axum_dio::DioRouter;
-use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source};
+use vantage_diorama::{
+    Augmentation, Cache, ChangeEvent, Detail, Dio, Fetch, Lens, MergeRule, Source, Tuning,
+};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Catalog, Column, Vista, VistaMetadata};
+use vantage_vista::{Column, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -44,97 +47,17 @@ fn meta(columns: &[&str]) -> VistaMetadata {
     m.with_id_column("id")
 }
 
-/// Gated, counting detail shell (same shape as the diorama scheduler tests):
-/// each `get` logs and then waits for a semaphore permit.
-mod gated {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
-
-    use async_trait::async_trait;
-    use ciborium::Value as CborValue;
-    use indexmap::IndexMap;
-    use tokio::sync::Semaphore;
-    use vantage_core::{Result, error};
-    use vantage_types::Record;
-    use vantage_vista::{
-        Column, Condition, Page, Preview, TableShell, VistaCapabilities, VistaMetadata,
-    };
-
-    #[derive(Clone)]
-    pub struct GatedDetailShell {
-        pub rows: Arc<IndexMap<String, Record<CborValue>>>,
-        pub gets: Arc<AtomicUsize>,
-        pub log: Arc<Mutex<Vec<String>>>,
-        pub gate: Arc<Semaphore>,
-        metadata: VistaMetadata,
-        capabilities: VistaCapabilities,
-    }
-
-    impl GatedDetailShell {
-        /// `open` permits pre-loaded; pass a large number for an ungated shell.
-        pub fn new(rows: IndexMap<String, Record<CborValue>>, open: usize) -> Self {
-            let metadata = VistaMetadata::new()
-                .with_column(Column::new("id", "String").with_flag("id"))
-                .with_column(Column::new("size", "String"))
-                .with_id_column("id");
-            Self {
-                rows: Arc::new(rows),
-                gets: Arc::new(AtomicUsize::new(0)),
-                log: Arc::new(Mutex::new(Vec::new())),
-                gate: Arc::new(Semaphore::new(open)),
-                metadata,
-                capabilities: VistaCapabilities::new(),
-            }
-        }
-    }
-
-    /// Get-only: it lists nothing and takes no narrowing.
-    #[async_trait]
-    impl TableShell for GatedDetailShell {
-        fn metadata(&self) -> &VistaMetadata {
-            &self.metadata
-        }
-        fn capabilities(&self) -> &VistaCapabilities {
-            &self.capabilities
-        }
-        fn driver_name(&self) -> &'static str {
-            "gated-detail"
-        }
-        fn preview(&self) -> Preview {
-            Preview::new()
-        }
-        async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
-            Ok(IndexMap::new())
-        }
-        async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
-            self.gets.fetch_add(1, Ordering::SeqCst);
-            self.log.lock().unwrap().push(id.to_string());
-            let permit = self.gate.acquire().await.expect("gate open");
-            permit.forget();
-            Ok(self.rows.get(id).cloned())
-        }
-        async fn count(&self) -> Result<i64> {
-            Ok(0)
-        }
-        async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-            Ok(Page::from_listing(IndexMap::new(), offset, limit))
-        }
-        fn add_condition(&mut self, _condition: &Condition) -> Result<()> {
-            Err(error!("a get-only detail shell takes no conditions").mark_unimplemented())
-        }
-    }
-}
-
 struct Fixture {
     dio: Dio,
     router: Router,
-    gets: Arc<std::sync::atomic::AtomicUsize>,
-    gate: Arc<tokio::sync::Semaphore>,
+    /// The gated get-only detail source; its get log counts the fetches.
+    detail: MockShell,
+    gate: Arc<Semaphore>,
     _tmp: TempDir,
 }
 
 /// Dio over two master rows (id, modified) augmented with a `size` detail;
-/// the cache is pre-seeded the way a server's `on_start` sync would.
+/// the cache is pre-seeded the way a server's startup sync would.
 async fn fixture(open_permits: usize) -> Fixture {
     let tmp = TempDir::new().unwrap();
 
@@ -148,38 +71,39 @@ async fn fixture(open_permits: usize) -> Fixture {
     }
     let master = Vista::new("files", master.with_metadata(meta(&["id", "modified"])));
 
-    let mut detail_rows = indexmap::IndexMap::new();
-    detail_rows.insert("r0".to_string(), record(&[("id", "r0"), ("size", "100")]));
-    detail_rows.insert("r1".to_string(), record(&[("id", "r1"), ("size", "200")]));
-    let detail = gated::GatedDetailShell::new(detail_rows, open_permits);
-    let gets = detail.gets.clone();
-    let gate = detail.gate.clone();
+    let gate = Arc::new(Semaphore::new(open_permits));
+    let detail = MockShell::new()
+        .with_metadata(meta(&["id", "size"]))
+        .with_record("r0", record(&[("id", "r0"), ("size", "100")]))
+        .with_record("r1", record(&[("id", "r1"), ("size", "200")]))
+        .get_only()
+        .gated(gate.clone());
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens.make_dio(master).await.expect("make_dio").augment(
-        Arc::new(Catalog::new()),
-        vec![Augmentation {
-            detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .tuning(Tuning::default().with_viewport_debounce(Duration::from_millis(1)))
+        .build()
+        .expect("lens builds");
+    let dio = lens
+        .dio(master)
+        .augment(vec![Augmentation {
+            detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail.clone()))),
             source: Source::Id,
             fetch: Fetch::PerRow,
             merge: MergeRule {
                 columns: vec!["size".into()],
             },
-        }],
-    );
+        }])
+        .build()
+        .await
+        .expect("dio builds");
 
     // Seed the cache like a startup sync pump would.
     let seed: indexmap::IndexMap<String, Record<CborValue>> = master_rows
         .iter()
         .map(|(id, rec)| (id.to_string(), rec.clone()))
         .collect();
-    dio.cache().insert_values(seed).await.expect("seed cache");
+    dio.reconcile(seed).await.expect("seed cache");
 
     let router = DioRouter::new(dio.clone())
         .with_column("name", "id")
@@ -191,7 +115,7 @@ async fn fixture(open_permits: usize) -> Fixture {
     Fixture {
         dio,
         router,
-        gets,
+        detail,
         gate,
         _tmp: tmp,
     }
@@ -256,16 +180,6 @@ impl LineReader {
     }
 }
 
-async fn eventually(label: &str, f: impl Fn() -> bool) {
-    for _ in 0..200 {
-        if f() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    panic!("condition '{label}' not met within timeout");
-}
-
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -281,7 +195,7 @@ async fn get_listing_returns_cache_window_without_fetching() {
     assert_eq!(items[0]["modified"], "t1");
     assert_eq!(items[0]["size"], serde_json::Value::Null, "not hydrated");
     assert_eq!(
-        fx.gets.load(std::sync::atomic::Ordering::SeqCst),
+        fx.detail.get_log().len(),
         0,
         "a plain GET never fetches details"
     );
@@ -301,12 +215,12 @@ async fn get_detail_hydrates_once_and_serves_cache_after() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["size"], "100", "detail GET returns the hydrated row");
     assert_eq!(body["modified"], "t1", "cheap columns survive");
-    assert_eq!(fx.gets.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(fx.detail.get_log().len(), 1);
 
     let (_, again) = get_json(&fx.router, "/r0").await;
     assert_eq!(again["size"], "100");
     assert_eq!(
-        fx.gets.load(std::sync::atomic::Ordering::SeqCst),
+        fx.detail.get_log().len(),
         1,
         "repeat detail GET is a cache hit"
     );
@@ -346,22 +260,28 @@ async fn watch_listing_streams_added_then_modified_with_augment() {
 }
 
 #[tokio::test]
-async fn dropping_watch_connection_releases_the_scenery() {
+async fn dropping_watch_connection_releases_the_scenery() -> vantage_core::Result<()> {
     let fx = fixture(0).await;
 
     let mut lines = get_stream(&fx.router, "/?offset=0&limit=2&watch=true").await;
     let _ = lines.next().await;
     assert_eq!(
-        fx.dio.live_table_scenery_count(),
+        fx.dio.diagnostics().await?.sceneries.len(),
         1,
         "watch holds a scenery"
     );
 
     drop(lines);
-    eventually("scenery released after disconnect", || {
-        fx.dio.live_table_scenery_count() == 0
-    })
-    .await;
+    let mut released = false;
+    for _ in 0..200 {
+        if fx.dio.diagnostics().await?.sceneries.is_empty() {
+            released = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(released, "scenery released after disconnect");
+    Ok(())
 }
 
 #[tokio::test]
@@ -375,12 +295,12 @@ async fn watch_detail_streams_record_changes() {
 
     // An external change lands in the cache → the watch pushes MODIFIED.
     fx.dio
-        .patched(
-            "r0",
-            record(&[("id", "r0"), ("modified", "t2"), ("size", "101")]),
-        )
+        .apply_change(ChangeEvent::Updated {
+            id: "r0".into(),
+            new: Some(record(&[("id", "r0"), ("modified", "t2"), ("size", "101")])),
+        })
         .await
-        .expect("patched");
+        .expect("apply_change");
     let modified = lines.next().await;
     assert_eq!(modified["type"], "MODIFIED");
     assert_eq!(modified["object"]["modified"], "t2");

@@ -8,8 +8,7 @@ use super::telemetry::{tap_cache_write, tap_payload_columns};
 
 /// Commits the rows a resolved chunk callback buffered, then runs the
 /// bookkeeping that depends on the commit having happened — total
-/// inference, the client-side resort, the "rows nobody can deliver" clamp,
-/// and the generation bump. `viewport_loop` only calls this once
+/// inference, the "rows nobody can deliver" clamp and the generation bump. `viewport_loop` only calls this once
 /// `run_chunk_callback`'s future has resolved on its own — never raced
 /// against the viewport channel — so none of it can be cancelled.
 pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: PendingChunk) {
@@ -51,6 +50,16 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
 
     let cached_after = state.rows.read().unwrap().len();
     match result {
+        Ok(()) if !state.is_chunk_loaded() => {
+            // The view's query moved off windows while this load ran (to the
+            // cache, or to a failure). Its rows reached the cache only, and
+            // nothing of the old query's answer settles the view.
+            tracing::debug!(
+                target: "vantage_diorama::viewport",
+                effective = ?effective_range,
+                "fire_chunk_load: the view no longer serves windows; rows cached only",
+            );
+        }
         Ok(()) => {
             tap_cache_write(tap, state, flush_report.as_ref());
             // The window came back — whatever it contained, this view now has
@@ -61,8 +70,9 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             // One line per fetch is for reading a session; the ledger is for
             // counting one. `already_cached` rows are the waste signal — rows
             // paid for that the cache already held.
+            #[cfg(feature = "diagnostics")]
             crate::stats::record_fetch(
-                dio_inner.master.read().unwrap().name(),
+                dio_inner.master.name(),
                 &effective_range,
                 pushed,
                 effective_cached,
@@ -70,7 +80,7 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             );
             tracing::debug!(
                 target: "vantage_diorama::source",
-                table = %dio_inner.master.read().unwrap().name(),
+                table = %dio_inner.master.name(),
                 range = ?effective_range,
                 received = pushed,
                 ms,
@@ -89,34 +99,8 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             let mut total_changed =
                 settle_total(state, &dio_inner, &effective_range, pushed, total_before).await;
 
-            // A client-side sort can't push down to a paged, non-orderable
-            // master, so this load (a viewport fetch, a scroll, or a refresh's
-            // in-place refetch) lands rows in the master's native order. Re-impose
-            // the active sort over the freshly-cached rows so the order survives
-            // the refetch instead of snapping back to native order. It orders only
-            // the loaded rows — the documented cost of sorting a lazily-paged
-            // source that can't order server-side.
-            // Only re-sort client-side when the master couldn't order it for us.
-            // An `Order`-capable master fetched this window server-ordered (via
-            // `Dio::fetch_window_ordered`), so `write_chunk_row` already stamped
-            // the rows in the right order — reseeding would be redundant.
-            let resorted = if state.sort.read().unwrap().is_some()
-                && !state
-                    .master_capabilities
-                    .has(vantage_vista::Capability::Order)
-            {
-                if let Err(e) = state.reseed_from_cache().await {
-                    tracing::error!(error = %e, "post-load resort failed");
-                    false
-                } else {
-                    true
-                }
-            } else {
-                false
-            };
-
-            // Measured after the resort because a client-side sort rebuilds the
-            // visible map from the cache once the load lands.
+            // A view serving windows has its order pushed: the window arrived
+            // in the view's order, and `write_chunk_row` already placed it.
             total_changed |= clamp_to_reachable(
                 state,
                 &dio_inner,
@@ -129,12 +113,12 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             // Drain the dirty flag regardless (so it doesn't leak into the next
             // load). Bump when this was a forced refetch (a refresh or load-more —
             // it carries the single repaint for the whole refresh, including a
-            // `refresh_total` that updated the count without bumping), when the
-            // order was re-imposed, when a row changed (a refresh of byte-identical
-            // rows leaves the flag clear), or when the total moved (so `row_count`
-            // consumers — scrollbars, `ListDio` — repaint).
+            // `refresh_total` that updated the count without bumping), when a
+            // row changed (a refresh of byte-identical rows leaves the flag
+            // clear), or when the total moved (so `row_count` consumers —
+            // scrollbars, `ListDio` — repaint).
             let dirty = state.take_load_dirty();
-            if force_load || resorted || dirty || total_changed {
+            if force_load || dirty || total_changed {
                 state.bump_generation();
             }
             state.note_state("chunk load");
@@ -217,7 +201,7 @@ async fn settle_total(
         let stated = *state.total.read().unwrap();
         tracing::debug!(
             target: "vantage_diorama::source",
-            table = %dio_inner.master.read().unwrap().name(),
+            table = %dio_inner.master.name(),
             total = ?stated,
             "total stated by the fetch itself — no count request needed",
         );
@@ -241,8 +225,7 @@ async fn settle_total(
         // filter describes the narrowed set and must not be
         // remembered — the next open would restore it as the whole.
         if changed
-            && state.search.read().unwrap().is_none()
-            && state.ui_terms.read().unwrap().is_empty()
+            && !state.view_narrows()
             && let Some(total) = stated
             && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
         {
@@ -288,7 +271,7 @@ async fn settle_total(
     let extended = range.end + effective_len;
     tracing::debug!(
         target: "vantage_diorama::source",
-        table = %dio_inner.master.read().unwrap().name(),
+        table = %dio_inner.master.name(),
         extended,
         "full page reached the inferred horizon — extending it",
     );
@@ -343,7 +326,7 @@ fn clamp_to_reachable(
     }
     tracing::warn!(
         target: "vantage_diorama::source",
-        table = %dio_inner.master.read().unwrap().name(),
+        table = %dio_inner.master.name(),
         range = ?range,
         received = pushed,
         stated_total = ?stated,

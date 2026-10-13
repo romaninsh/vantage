@@ -1,9 +1,8 @@
 //! A facade insert must put the id into the vista's own id column.
 //!
-//! Today the facade synthesises the inserted record with
-//! `with_injected_id`, which writes the id under a literal `"id"` key
-//! whatever the metadata declares. In 2.0 the id column is resolved once,
-//! when the Dio is built, and every write path uses it.
+//! The id column is resolved once, when the Dio is built, and every write
+//! path uses it: the record the facade hands back and the row the master
+//! stores both carry the id under `key`, never under a literal `"id"`.
 
 use std::time::Duration;
 
@@ -37,14 +36,13 @@ fn fields_holding<'a>(
 }
 
 #[tokio::test]
-#[ignore = "v2 phase 3: facade insert hardcodes the id column as \"id\""]
 async fn id_column_not_hardcoded() -> Result<()> {
     let shell = keyed_shell();
     let dio = eager_dio(Vista::new("keyed", shell.clone())).await;
     let worker = dio.take_write_worker_handle().await.expect("worker handle");
 
     let inserted = dio
-        .vista()
+        .cached()
         .insert_value("k1", &record(&[("name", "first")]))
         .await?;
 

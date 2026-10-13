@@ -1,6 +1,7 @@
 ---
 source: vantage-diorama/tests/bdd_support/steps/assertions.rs
-assertion_line: 62
+assertion_line: 63
 expression: events
 ---
-[]
+- "WritePending { id: \"a\", kind: Delete }"
+- "RecordRemoved { id: \"a\" }"

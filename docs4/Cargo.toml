@@ -7,7 +7,8 @@ edition = "2024"
 [dependencies]
 vantage-core = { path = "../vantage-core" }
 vantage-dataset = { path = "../vantage-dataset" }
-vantage-diorama = { path = "../vantage-diorama" }
+# `diagnostics` so the optimising chapters' links (stats::reset_fetch_stats, …) resolve.
+vantage-diorama = { path = "../vantage-diorama", features = ["diagnostics"] }
 vantage-expressions = { path = "../vantage-expressions" }
 vantage-mongodb = { path = "../vantage-mongodb" }
 vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres"] }

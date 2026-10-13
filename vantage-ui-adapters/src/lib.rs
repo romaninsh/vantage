@@ -199,10 +199,10 @@ impl<D: DataSet> TableStore<D> {
         // Update cache if row is cached
         {
             let mut cached = self.cached_rows.write().unwrap();
-            if let Some(cached_row) = cached.get_mut(&row) {
-                if let Some(cell) = cached_row.get_mut(col) {
-                    *cell = value;
-                }
+            if let Some(cached_row) = cached.get_mut(&row)
+                && let Some(cell) = cached_row.get_mut(col)
+            {
+                *cell = value;
             }
         }
         Ok(())
@@ -250,9 +250,10 @@ impl<D: DataSet> TableStore<D> {
 /// Loads all rows at construction and caches them — the UI layer reads from
 /// the cache. Works with any persistence: build a Vista via the driver's
 /// `vista_factory().from_table(...)` (or `from_yaml(...)`) before passing
-/// it in.
+/// it in. A failed load is kept, and every row read returns it as
+/// [`TableStoreError::FetchError`] rather than showing an empty table.
 pub struct VantageTableAdapter {
-    cached_data: Vec<TableRow>,
+    cached_data: std::result::Result<Vec<TableRow>, String>,
     cached_columns: Vec<ColumnInfo>,
 }
 
@@ -269,37 +270,53 @@ impl VantageTableAdapter {
             })
             .collect();
 
-        let records: IndexMap<String, Record<CborValue>> =
-            vista.list_values().await.unwrap_or_default();
-        let cached_data: Vec<TableRow> = records
-            .into_values()
-            .map(|record| {
-                column_names
-                    .iter()
-                    .map(|name| match record.get(name) {
-                        // Vista carries Record<ciborium::Value>; convert to
-                        // serde_json::Value once for the existing cell
-                        // mapper. The presentation dialect renders tagged
-                        // values (record ids, datetimes) as their display
-                        // text instead of nulling them.
-                        Some(value) => {
-                            let json = vantage_types::cbor_to_json(
-                                &vantage_types::PresentationDialect,
-                                value.clone(),
-                            );
-                            json_to_cell(&json)
-                        }
-                        None => CellValue::Null,
-                    })
-                    .collect()
-            })
-            .collect();
+        let cached_data = vista
+            .list_values()
+            .await
+            .map(|records| table_rows(&column_names, records))
+            .map_err(|e| e.to_string());
 
         Self {
             cached_data,
             cached_columns,
         }
     }
+
+    fn rows(&self) -> Result<&[TableRow]> {
+        self.cached_data
+            .as_deref()
+            .map_err(|e| TableStoreError::FetchError(e.clone()))
+    }
+}
+
+/// Lay out `records` as rows of cells in `column_names` order.
+fn table_rows(
+    column_names: &[String],
+    records: IndexMap<String, Record<CborValue>>,
+) -> Vec<TableRow> {
+    records
+        .into_values()
+        .map(|record| {
+            column_names
+                .iter()
+                .map(|name| match record.get(name) {
+                    // Vista carries Record<ciborium::Value>; convert to
+                    // serde_json::Value once for the existing cell
+                    // mapper. The presentation dialect renders tagged
+                    // values (record ids, datetimes) as their display
+                    // text instead of nulling them.
+                    Some(value) => {
+                        let json = vantage_types::cbor_to_json(
+                            &vantage_types::PresentationDialect,
+                            value.clone(),
+                        );
+                        json_to_cell(&json)
+                    }
+                    None => CellValue::Null,
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn json_to_cell(value: &serde_json::Value) -> CellValue {
@@ -324,7 +341,7 @@ fn json_to_cell(value: &serde_json::Value) -> CellValue {
 #[async_trait]
 impl DataSet for VantageTableAdapter {
     async fn row_count(&self) -> Result<usize> {
-        Ok(self.cached_data.len())
+        Ok(self.rows()?.len())
     }
 
     async fn column_info(&self) -> Result<Vec<ColumnInfo>> {
@@ -332,15 +349,16 @@ impl DataSet for VantageTableAdapter {
     }
 
     async fn fetch_rows(&self, start: usize, count: usize) -> Result<Vec<TableRow>> {
-        let end = (start + count).min(self.cached_data.len());
-        if start >= self.cached_data.len() {
+        let rows = self.rows()?;
+        let end = (start + count).min(rows.len());
+        if start >= rows.len() {
             return Ok(vec![]);
         }
-        Ok(self.cached_data[start..end].to_vec())
+        Ok(rows[start..end].to_vec())
     }
 
     async fn fetch_row(&self, index: usize) -> Result<TableRow> {
-        self.cached_data
+        self.rows()?
             .get(index)
             .cloned()
             .ok_or(TableStoreError::IndexError)
@@ -368,3 +386,6 @@ pub mod ratatui_dio;
 
 #[cfg(feature = "cursive")]
 pub mod cursive_adapter;
+
+#[cfg(test)]
+mod tests;

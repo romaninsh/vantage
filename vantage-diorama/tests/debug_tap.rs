@@ -8,12 +8,12 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::layer::{Context, SubscriberExt};
 
 use ciborium::Value as CborValue;
-use vantage_diorama::{Lens, LoadState};
+use vantage_diorama::{Cache, Lens, LoadState, Loader, Tuning};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
 mod support;
-use support::chunk::{Backend, master as chunk_master};
+use support::chunk::{Backend, master as chunk_master, serve_backend};
 
 /// Collects every `vantage_diorama::debug` event as one flat string:
 /// `"<message> ds=<..> <field>=<..> ..."` — order of fields as emitted.
@@ -85,43 +85,67 @@ fn master() -> Vista {
     Vista::new("books", MockShell::new().with_metadata(metadata))
 }
 
+/// A Lens over an in-memory cache with a 1ms viewport debounce, the debug
+/// tap on (datasource `faker-ds`) when `debug`, and `loader` if given.
+fn tap_lens(debug: bool, loader: Option<Loader>) -> Arc<Lens> {
+    let mut builder = Lens::builder()
+        .cache(Cache::memory())
+        .tuning(Tuning::default().with_viewport_debounce(std::time::Duration::from_millis(1)))
+        .runtime(tokio::runtime::Handle::current());
+    if debug {
+        builder = builder.debug_datasource("faker-ds");
+    }
+    if let Some(loader) = loader {
+        builder = builder.loader(loader);
+    }
+    builder.build().unwrap()
+}
+
+/// A 100-row backend: ids `id0..id99`, each with a `v` column `row<i>`.
+fn hundred_rows() -> Backend {
+    Arc::new(Mutex::new(
+        (0..100)
+            .map(|i| {
+                let mut r = Record::new();
+                r.insert("v".to_string(), CborValue::Text(format!("row{i}")));
+                (format!("id{i}"), r)
+            })
+            .collect(),
+    ))
+}
+
+/// `n` wide rows `row0..`: `id`, `name` and 50 one-kilobyte `extra_*` fields,
+/// 52 columns in all.
+fn wide_rows(n: usize) -> Backend {
+    Arc::new(Mutex::new(
+        (0..n)
+            .map(|i| {
+                let mut r = Record::new();
+                r.insert("id".to_string(), CborValue::Text(format!("row{i}")));
+                r.insert("name".to_string(), CborValue::Text(format!("Row {i}")));
+                for n in 1..=50 {
+                    r.insert(format!("extra_{n:04}"), CborValue::Text("x".repeat(1024)));
+                }
+                (format!("row{i}"), r)
+            })
+            .collect(),
+    ))
+}
+
 #[tokio::test]
 async fn builder_flag_reaches_the_dio_and_off_means_off() {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .debug_datasource("faker-ds")
-            .runtime(tokio::runtime::Handle::current())
-            .build()
-            .unwrap(),
-    );
-    let dio = lens.make_dio(master()).await.unwrap();
+    let dio = tap_lens(true, None).dio(master()).build().await.unwrap();
     assert!(dio.debug_tap().enabled());
     assert_eq!(dio.debug_tap().ds(), "faker-ds");
 
-    let quiet = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .runtime(tokio::runtime::Handle::current())
-            .build()
-            .unwrap(),
-    );
-    let dio = quiet.make_dio(master()).await.unwrap();
+    let dio = tap_lens(false, None).dio(master()).build().await.unwrap();
     assert!(!dio.debug_tap().enabled());
 }
 
 #[tokio::test]
 async fn census_lines_fire_on_scenery_open_and_drop() {
     let (_guard, log) = capture();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .debug_datasource("faker-ds")
-            .runtime(tokio::runtime::Handle::current())
-            .build()
-            .unwrap(),
-    );
-    let dio = lens.make_dio(master()).await.unwrap();
+    let dio = tap_lens(true, None).dio(master()).build().await.unwrap();
 
     let scenery = dio.table_scenery().open().await.unwrap();
     let opens = lines_containing(&log, "+1 table scenery");
@@ -151,7 +175,7 @@ async fn wait_until(label: &str, mut pred: impl FnMut() -> bool) {
     .unwrap_or_else(|_| panic!("timed out waiting for: {label}"));
 }
 
-/// A 100-row paged master served by `on_load_chunk`, with the debug tap on.
+/// A 100-row paged master served by the paged loader, with the debug tap on.
 /// Exercises the full load lifecycle: dispatch/return correlated by `req`,
 /// the resulting `Loading -> Complete` state transition, the stated total's
 /// provenance, and a second pass over the same viewport hitting cache instead
@@ -160,44 +184,9 @@ async fn wait_until(label: &str, mut pred: impl FnMut() -> bool) {
 async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
     let (_guard, log) = capture();
 
-    let backend: Backend = Arc::new(Mutex::new(
-        (0..100)
-            .map(|i| {
-                let mut r = Record::new();
-                r.insert("v".to_string(), CborValue::Text(format!("row{i}")));
-                (format!("id{i}"), r)
-            })
-            .collect(),
-    ));
-
-    let lens = {
-        let backend = backend.clone();
-        Arc::new(
-            Lens::new()
-                .cache_in_memory()
-                .debug_datasource("faker-ds")
-                .viewport_debounce(std::time::Duration::from_millis(1))
-                .runtime(tokio::runtime::Handle::current())
-                .on_load_chunk(move |_dio, range, _query, sink| {
-                    let backend = backend.clone();
-                    async move {
-                        let rows = backend.lock().unwrap().clone();
-                        sink.set_total(rows.len());
-                        for idx in range {
-                            if let Some((id, r)) = rows.get(idx) {
-                                sink.push(idx, id.clone(), r.clone()).await?;
-                            }
-                        }
-                        Ok(())
-                    }
-                })
-                .build()
-                .unwrap(),
-        )
-    };
-
-    let dio = lens
-        .make_dio(chunk_master(&[("v", "String")]))
+    let dio = tap_lens(true, Some(serve_backend(hundred_rows())))
+        .dio(chunk_master(&[("v", "String")]))
+        .build()
         .await
         .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
@@ -266,34 +255,9 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
 async fn column_line_exposes_undemanded_wide_fields() {
     let (_guard, log) = capture();
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .debug_datasource("faker-ds")
-            .viewport_debounce(std::time::Duration::from_millis(1))
-            .runtime(tokio::runtime::Handle::current())
-            .on_load_chunk(move |_dio, range, _query, sink| async move {
-                for idx in range {
-                    if idx != 0 {
-                        continue;
-                    }
-                    let mut r = Record::new();
-                    r.insert("id".to_string(), CborValue::Text("row0".to_string()));
-                    r.insert("name".to_string(), CborValue::Text("Row Zero".to_string()));
-                    for n in 1..=50 {
-                        r.insert(format!("extra_{n:04}"), CborValue::Text("x".repeat(1024)));
-                    }
-                    sink.set_total(1);
-                    sink.push(idx, "row0".to_string(), r).await?;
-                }
-                Ok(())
-            })
-            .build()
-            .unwrap(),
-    );
-
-    let dio = lens
-        .make_dio(chunk_master(&[("name", "String")]))
+    let dio = tap_lens(true, Some(serve_backend(wide_rows(1))))
+        .dio(chunk_master(&[("name", "String")]))
+        .build()
         .await
         .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
@@ -333,34 +297,9 @@ async fn column_line_exposes_undemanded_wide_fields() {
 async fn column_line_dedups_across_multiple_wide_rows() {
     let (_guard, log) = capture();
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .debug_datasource("faker-ds")
-            .viewport_debounce(std::time::Duration::from_millis(1))
-            .runtime(tokio::runtime::Handle::current())
-            .on_load_chunk(move |_dio, range, _query, sink| async move {
-                sink.set_total(10);
-                for idx in range {
-                    if idx >= 10 {
-                        continue;
-                    }
-                    let mut r = Record::new();
-                    r.insert("id".to_string(), CborValue::Text(format!("row{idx}")));
-                    r.insert("name".to_string(), CborValue::Text(format!("Row {idx}")));
-                    for n in 1..=50 {
-                        r.insert(format!("extra_{n:04}"), CborValue::Text("x".repeat(1024)));
-                    }
-                    sink.push(idx, format!("row{idx}"), r).await?;
-                }
-                Ok(())
-            })
-            .build()
-            .unwrap(),
-    );
-
-    let dio = lens
-        .make_dio(chunk_master(&[("name", "String")]))
+    let dio = tap_lens(true, Some(serve_backend(wide_rows(10))))
+        .dio(chunk_master(&[("name", "String")]))
+        .build()
         .await
         .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
@@ -395,36 +334,32 @@ async fn column_line_dedups_across_multiple_wide_rows() {
 async fn two_pass_list_and_detail_lifecycle_is_logged() {
     let (_guard, log) = capture();
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .debug_datasource("faker-ds")
-            .viewport_debounce(std::time::Duration::from_millis(1))
-            .runtime(tokio::runtime::Handle::current())
-            .on_list_page(move |_dio, q| async move {
-                let start = q.offset.min(40);
-                let end = (q.offset + q.limit).min(40);
-                let mut out = Vec::new();
-                for i in start..end {
-                    let mut r = Record::new();
-                    r.insert("name".to_string(), CborValue::Text(format!("Row {i}")));
-                    out.push((format!("id{i}"), r));
-                }
-                Ok(out)
-            })
-            .on_load_detail(move |_dio, id| async move {
-                let mut r = Record::new();
-                r.insert(
-                    "detail".to_string(),
-                    CborValue::Text(format!("Detail for {id}")),
-                );
-                Ok(r)
-            })
-            .build()
-            .unwrap(),
+    let ids: Vec<String> = (0..40).map(|i| format!("id{i}")).collect();
+    let listed = ids.iter().enumerate().fold(
+        MockShell::new().with_metadata(support::meta(&["id", "name"])),
+        |shell, (i, id)| {
+            shell.with_record(
+                id,
+                support::record(&[("id", id), ("name", &format!("Row {i}"))]),
+            )
+        },
     );
-
-    let dio = lens.make_dio(master()).await.unwrap();
+    let details = ids.iter().fold(
+        MockShell::new().with_metadata(support::meta(&["id", "detail"])),
+        |shell, id| {
+            let detail = format!("Detail for {id}");
+            shell.with_record(id, support::record(&[("id", id), ("detail", &detail)]))
+        },
+    );
+    let dio = tap_lens(true, None)
+        .dio(Vista::new("books", listed))
+        .augment(vec![support::fixed_augmentation(
+            Vista::new("details", details.get_only()),
+            &["detail"],
+        )])
+        .build()
+        .await
+        .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
 
     // The seed list page runs detached from `open()`; wait for it to land.
@@ -484,44 +419,9 @@ async fn two_pass_list_and_detail_lifecycle_is_logged() {
 async fn cache_writes_report_new_updated_and_percentage() {
     let (_guard, log) = capture();
 
-    let backend: Backend = Arc::new(Mutex::new(
-        (0..100)
-            .map(|i| {
-                let mut r = Record::new();
-                r.insert("v".to_string(), CborValue::Text(format!("row{i}")));
-                (format!("id{i}"), r)
-            })
-            .collect(),
-    ));
-
-    let lens = {
-        let backend = backend.clone();
-        Arc::new(
-            Lens::new()
-                .cache_in_memory()
-                .debug_datasource("faker-ds")
-                .viewport_debounce(std::time::Duration::from_millis(1))
-                .runtime(tokio::runtime::Handle::current())
-                .on_load_chunk(move |_dio, range, _query, sink| {
-                    let backend = backend.clone();
-                    async move {
-                        let rows = backend.lock().unwrap().clone();
-                        sink.set_total(rows.len());
-                        for idx in range {
-                            if let Some((id, r)) = rows.get(idx) {
-                                sink.push(idx, id.clone(), r.clone()).await?;
-                            }
-                        }
-                        Ok(())
-                    }
-                })
-                .build()
-                .unwrap(),
-        )
-    };
-
-    let dio = lens
-        .make_dio(chunk_master(&[("v", "String")]))
+    let dio = tap_lens(true, Some(serve_backend(hundred_rows())))
+        .dio(chunk_master(&[("v", "String")]))
+        .build()
         .await
         .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
@@ -553,43 +453,9 @@ async fn cache_writes_report_new_updated_and_percentage() {
 async fn a_non_debug_lens_emits_nothing_on_the_load_path() {
     let (_guard, log) = capture();
 
-    let backend: Backend = Arc::new(Mutex::new(
-        (0..100)
-            .map(|i| {
-                let mut r = Record::new();
-                r.insert("v".to_string(), CborValue::Text(format!("row{i}")));
-                (format!("id{i}"), r)
-            })
-            .collect(),
-    ));
-
-    let lens = {
-        let backend = backend.clone();
-        Arc::new(
-            Lens::new()
-                .cache_in_memory()
-                .viewport_debounce(std::time::Duration::from_millis(1))
-                .runtime(tokio::runtime::Handle::current())
-                .on_load_chunk(move |_dio, range, _query, sink| {
-                    let backend = backend.clone();
-                    async move {
-                        let rows = backend.lock().unwrap().clone();
-                        sink.set_total(rows.len());
-                        for idx in range {
-                            if let Some((id, r)) = rows.get(idx) {
-                                sink.push(idx, id.clone(), r.clone()).await?;
-                            }
-                        }
-                        Ok(())
-                    }
-                })
-                .build()
-                .unwrap(),
-        )
-    };
-
-    let dio = lens
-        .make_dio(chunk_master(&[("v", "String")]))
+    let dio = tap_lens(false, Some(serve_backend(hundred_rows())))
+        .dio(chunk_master(&[("v", "String")]))
+        .build()
         .await
         .unwrap();
     assert!(!dio.debug_tap().enabled());

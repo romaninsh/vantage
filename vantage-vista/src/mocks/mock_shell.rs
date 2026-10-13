@@ -9,14 +9,14 @@ use vantage_types::Record;
 
 use crate::{
     capabilities::{Capability, VistaCapabilities},
+    eval::compare_rows,
     filter::FilterOp,
-    local,
     metadata::VistaMetadata,
-    query::Condition,
+    query::VistaQuery,
     reference::Reference,
-    sort::SortDirection,
 };
 
+mod get_only;
 mod refs;
 mod store;
 mod table_shell;
@@ -29,19 +29,20 @@ type Rec = Record<CborValue>;
 ///
 /// The rows, the auto-id counter and the read-failure switch are shared by
 /// every clone, so a handle kept before the shell went into a `Vista` sees
-/// and changes the same store. The conditions, search and order are plain
-/// fields: a clone carries them and narrows on its own.
+/// and changes the same store. The narrowing is a plain field: a clone
+/// carries it and narrows on its own.
 ///
-/// Conditions take every [`FilterOp`]; search matches any text cell,
-/// case-insensitively.
+/// Conditions take every [`FilterOp`] on a flat column and refuse a dotted
+/// path ([`condition_column_error`](crate::condition_column_error)); the rows are evaluated by
+/// [`VistaQuery::matches`] and sorted as [`VistaQuery::sort_rows`] sorts.
 #[derive(Clone)]
 pub struct MockShell {
     data: Arc<Mutex<IndexMap<String, Rec>>>,
     next_auto_id: Arc<Mutex<i64>>,
     fail_reads: Arc<AtomicBool>,
-    filters: Vec<Condition>,
-    order: Option<(String, SortDirection)>,
-    search: Option<String>,
+    /// Conditions, search and order; never a native condition, which the
+    /// mock refuses.
+    query: VistaQuery,
     capabilities: VistaCapabilities,
     metadata: VistaMetadata,
     /// Join targets by relation, see [`Self::with_ref_target`].
@@ -50,6 +51,8 @@ pub struct MockShell {
     contained: IndexMap<String, VistaMetadata>,
     /// See [`Self::with_id_prefix`].
     id_prefix: Option<String>,
+    /// See [`Self::get_only`] and [`Self::gated`].
+    gets: get_only::GetMode,
 }
 
 impl MockShell {
@@ -60,9 +63,7 @@ impl MockShell {
             data: Arc::default(),
             next_auto_id: Arc::new(Mutex::new(1)),
             fail_reads: Arc::default(),
-            filters: Vec::new(),
-            order: None,
-            search: None,
+            query: VistaQuery::default(),
             capabilities: [
                 Capability::Insert,
                 Capability::Update,
@@ -80,6 +81,7 @@ impl MockShell {
             ref_targets: IndexMap::new(),
             contained: IndexMap::new(),
             id_prefix: None,
+            gets: get_only::GetMode::default(),
         }
     }
 
@@ -149,19 +151,16 @@ impl MockShell {
     }
 
     /// Whether `record` belongs to this shell's narrowed set.
-    fn in_set(&self, record: &Rec) -> bool {
-        self.filters.iter().all(|c| local::matches(c, record))
-            && self
-                .search
-                .as_deref()
-                .is_none_or(|needle| local::matches_search(needle, record))
+    fn in_set(&self, record: &Rec) -> Result<bool> {
+        self.query.matches(record, &self.metadata)
     }
 
     /// `record` as stored under `key`: conformed to the equality filters,
     /// keyed in the id column, and required to land inside the set.
     fn fit(&self, record: &Rec, key: &str) -> Result<Rec> {
         let invariants: IndexMap<String, CborValue> = self
-            .filters
+            .query
+            .conditions
             .iter()
             .filter(|c| c.op == FilterOp::Eq)
             .map(|c| (c.column.clone(), c.value.clone()))
@@ -172,7 +171,7 @@ impl MockShell {
             self.id_field().to_string(),
             CborValue::Text(key.to_string()),
         );
-        if !self.in_set(&stored) {
+        if !self.in_set(&stored)? {
             return Err(error!("Record would fall outside the set", id = key).mark_conflict());
         }
         Ok(stored)
@@ -186,18 +185,28 @@ impl MockShell {
     }
 
     /// The rows in the set, in order, borrowed from `data`.
-    fn matching<'a>(&self, data: &'a IndexMap<String, Rec>) -> Vec<(&'a String, &'a Rec)> {
-        let mut rows: Vec<_> = data.iter().filter(|(_, r)| self.in_set(r)).collect();
-        if let Some((field, dir)) = &self.order {
-            rows.sort_by(|a, b| {
-                let ord = local::cbor_cmp(a.1.get(field), b.1.get(field));
-                match dir {
-                    SortDirection::Ascending => ord,
-                    SortDirection::Descending => ord.reverse(),
-                }
+    fn matching<'a>(&self, data: &'a IndexMap<String, Rec>) -> Result<Vec<(&'a String, &'a Rec)>> {
+        let mut rows = Vec::new();
+        for (id, row) in data {
+            if self.in_set(row)? {
+                rows.push((id, row));
+            }
+        }
+        if let Some((column, dir)) = &self.query.order {
+            let metadata = &self.metadata;
+            rows.sort_by(|(a_id, a), (b_id, b)| {
+                compare_rows(column, *dir, metadata, (a_id, a), (b_id, b))
             });
         }
-        rows
+        Ok(rows)
+    }
+
+    /// The store row under `key` when it is in the set.
+    fn held<'a>(&self, data: &'a IndexMap<String, Rec>, key: &str) -> Result<Option<&'a Rec>> {
+        match data.get(key) {
+            Some(row) if self.in_set(row)? => Ok(Some(row)),
+            _ => Ok(None),
+        }
     }
 }
 

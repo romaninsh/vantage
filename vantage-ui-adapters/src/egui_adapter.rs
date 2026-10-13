@@ -31,10 +31,10 @@ impl<D: DataSet + 'static> EguiTableViewer<D> {
 
     async fn load_data(&self) {
         // Load column names
-        if let Ok(column_info) = self.store.column_info().await {
-            if let Ok(mut columns) = self.cached_columns.try_borrow_mut() {
-                *columns = Some(column_info.into_iter().map(|col| col.name).collect());
-            }
+        if let Ok(column_info) = self.store.column_info().await
+            && let Ok(mut columns) = self.cached_columns.try_borrow_mut()
+        {
+            *columns = Some(column_info.into_iter().map(|col| col.name).collect());
         }
 
         // Load row data
@@ -56,16 +56,16 @@ impl<D: DataSet + 'static> EguiTableViewer<D> {
 
     fn ensure_data_loaded(&self) {
         // Initialize empty data structures if not loaded
-        if let Ok(mut columns) = self.cached_columns.try_borrow_mut() {
-            if columns.is_none() {
-                *columns = Some(vec![]);
-            }
+        if let Ok(mut columns) = self.cached_columns.try_borrow_mut()
+            && columns.is_none()
+        {
+            *columns = Some(vec![]);
         }
 
-        if let Ok(mut data) = self.cached_data.try_borrow_mut() {
-            if data.is_none() {
-                *data = Some(vec![]);
-            }
+        if let Ok(mut data) = self.cached_data.try_borrow_mut()
+            && data.is_none()
+        {
+            *data = Some(vec![]);
         }
     }
 }
@@ -73,10 +73,10 @@ impl<D: DataSet + 'static> EguiTableViewer<D> {
 impl<D: DataSet + 'static> RowViewer<EguiTableRow> for EguiTableViewer<D> {
     fn num_columns(&mut self) -> usize {
         self.ensure_data_loaded();
-        if let Ok(columns) = self.cached_columns.try_borrow() {
-            if let Some(ref cols) = *columns {
-                return cols.len();
-            }
+        if let Ok(columns) = self.cached_columns.try_borrow()
+            && let Some(ref cols) = *columns
+        {
+            return cols.len();
         }
         0
     }
@@ -153,14 +153,14 @@ impl<D: DataSet + 'static> EguiTable<D> {
         let mut data_table = DataTable::new();
 
         // Load actual data from the viewer
-        if let Ok(data) = viewer.cached_data.try_borrow() {
-            if let Some(ref data) = *data {
-                for (index, row_data) in data.iter().enumerate() {
-                    data_table.push(EguiTableRow {
-                        index,
-                        data: row_data.clone(),
-                    });
-                }
+        if let Ok(data) = viewer.cached_data.try_borrow()
+            && let Some(ref data) = *data
+        {
+            for (index, row_data) in data.iter().enumerate() {
+                data_table.push(EguiTableRow {
+                    index,
+                    data: row_data.clone(),
+                });
             }
         }
 

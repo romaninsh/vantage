@@ -6,6 +6,8 @@
 //! cleared the cache and waited for a refill (any lag or error blanked the
 //! visible rows while their count survived).
 
+mod support;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,9 +15,10 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Generation, Lens, TableScenery};
+use vantage_diorama::TableScenery;
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+
+use support::chunk::{Backend, col_at, master, paged_lens, paged_lens_failing, wait_for_gen};
 
 fn rec(v: &str) -> Record<CborValue> {
     let mut r = Record::new();
@@ -24,71 +27,7 @@ fn rec(v: &str) -> Record<CborValue> {
 }
 
 fn value(scenery: &Arc<dyn TableScenery>, idx: usize) -> Option<String> {
-    scenery.row(idx).and_then(|r| match r.record.get("v") {
-        Some(CborValue::Text(s)) => Some(s.clone()),
-        _ => None,
-    })
-}
-
-/// A master is required to build a Dio; this scenery loads from `backend`
-/// via `on_load_chunk`, not the master, so a bare MockShell suffices.
-fn master() -> Vista {
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("v", "String"))
-        .with_id_column("id");
-    Vista::new("items", MockShell::new().with_metadata(metadata))
-}
-
-type Backend = Arc<Mutex<Vec<(String, Record<CborValue>)>>>;
-
-/// Paged lens with NO `on_refresh` — refresh flows through the scenery's
-/// in-place viewport refetch, the path under test.
-fn paged_lens(
-    cache: std::path::PathBuf,
-    backend: Backend,
-    fail_next: Arc<AtomicBool>,
-) -> Arc<Lens> {
-    let total = backend.clone();
-    let lens = Lens::new()
-        .cache_at(cache)
-        .total_provider(move |_dio| {
-            let b = total.clone();
-            async move { Ok(b.lock().unwrap().len()) }
-        })
-        .on_load_chunk(move |_dio, range, _sort, sink| {
-            let b = backend.clone();
-            let fail = fail_next.clone();
-            async move {
-                if fail.swap(false, Ordering::SeqCst) {
-                    return Err(vantage_core::error!("simulated chunk failure"));
-                }
-                let rows = b.lock().unwrap().clone();
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
-                Ok(())
-            }
-        })
-        .build()
-        .expect("build paged lens");
-    Arc::new(lens)
-}
-
-async fn wait_for_gen(rx: &mut tokio::sync::watch::Receiver<Generation>, current: u64) -> u64 {
-    // Bounds a hang, not a speed — see `support/chunk.rs::wait_for_gen`.
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if u64::from(*rx.borrow_and_update()) > current {
-                return u64::from(*rx.borrow());
-            }
-            rx.changed().await.expect("watch channel closed");
-        }
-    })
-    .await
-    .expect("timed out waiting for generation bump")
+    col_at(scenery, idx, "v")
 }
 
 #[tokio::test]
@@ -98,9 +37,8 @@ async fn refresh_updates_visible_rows_in_place() -> Result<()> {
         ("a".into(), rec("v1")),
         ("b".into(), rec("v1")),
     ]));
-    let fail_next = Arc::new(AtomicBool::new(false));
-    let lens = paged_lens(tmp.path().join("c.redb"), backend.clone(), fail_next);
-    let dio = lens.make_dio(master()).await?;
+    let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
+    let dio = lens.dio(master(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 
@@ -129,12 +67,12 @@ async fn failed_refresh_keeps_rows_instead_of_blanking() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let backend: Backend = Arc::new(Mutex::new(vec![("a".into(), rec("v1"))]));
     let fail_next = Arc::new(AtomicBool::new(false));
-    let lens = paged_lens(
+    let lens = paged_lens_failing(
         tmp.path().join("c.redb"),
         backend.clone(),
         fail_next.clone(),
     );
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 

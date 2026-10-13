@@ -13,7 +13,7 @@
 //! never re-fetched.
 
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ciborium::Value as CborValue;
 use vantage_vista::{Condition, FilterOp, Vista, VistaQuery};
@@ -39,16 +39,12 @@ pub(crate) fn index_key(
 }
 
 /// Ordered ids for one query variant, plus the bookkeeping the sequential
-/// (no-total) list pass needs: whether paging is exhausted and how many list
-/// pages have been fetched.
+/// (no-total) list pass needs: whether paging is exhausted.
 #[derive(Debug, Default)]
 pub(crate) struct QueryIndex {
     ids: RwLock<Vec<String>>,
     /// Set once the list pass sees a short/empty page — no more pages exist.
     complete: AtomicBool,
-    /// Number of list-page fetches that have populated this index. Drives
-    /// diagnostics and the BDD invocation-count assertions.
-    list_pages_fetched: AtomicUsize,
 }
 
 impl QueryIndex {
@@ -91,10 +87,14 @@ impl QueryIndex {
     /// span sceneries) — appending both copies would duplicate every row.
     /// Returns `(base, appended)`: the position the new ids landed at and the
     /// ids that were actually new, for seeding the caller's sparse map.
+    ///
+    /// A `total` the source states completes the index once it holds that
+    /// many ids, so a set that ends on a full page needs no empty one.
     pub(crate) fn append_page(
         &self,
         ids: Vec<String>,
         requested_limit: usize,
+        total: Option<usize>,
     ) -> (usize, Vec<String>) {
         let fetched = ids.len();
         let mut guard = self.ids.write().unwrap();
@@ -107,9 +107,9 @@ impl QueryIndex {
             .collect();
         let base = guard.len();
         guard.extend(appended.iter().cloned());
+        let len = guard.len();
         drop(guard);
-        self.list_pages_fetched.fetch_add(1, Ordering::SeqCst);
-        if fetched < requested_limit {
+        if fetched < requested_limit || total.is_some_and(|t| len >= t) {
             self.complete.store(true, Ordering::SeqCst);
         }
         (base, appended)
@@ -120,8 +120,11 @@ impl QueryIndex {
         self.complete.load(Ordering::SeqCst)
     }
 
-    pub(crate) fn list_pages_fetched(&self) -> usize {
-        self.list_pages_fetched.load(Ordering::SeqCst)
+    /// Mark the index complete without a short page, when the list pass
+    /// finds the source repeats what it gave (it ignores the offset), so the
+    /// index can't grow.
+    pub(crate) fn mark_complete(&self) {
+        self.complete.store(true, Ordering::SeqCst);
     }
 }
 
@@ -133,7 +136,7 @@ mod tests {
     fn append_page_grows_index_and_preserves_order() {
         let idx = QueryIndex::new();
         assert!(idx.is_empty());
-        let (base, appended) = idx.append_page(vec!["a".into(), "b".into(), "c".into()], 3);
+        let (base, appended) = idx.append_page(vec!["a".into(), "b".into(), "c".into()], 3, None);
         assert_eq!(base, 0);
         assert_eq!(appended, vec!["a", "b", "c"]);
         assert_eq!(idx.len(), 3);
@@ -146,31 +149,37 @@ mod tests {
     fn full_page_does_not_complete_short_page_does() {
         let idx = QueryIndex::new();
         // A full page (page_len == requested_limit) leaves room for more.
-        idx.append_page(vec!["a".into(), "b".into()], 2);
+        idx.append_page(vec!["a".into(), "b".into()], 2, None);
         assert!(!idx.is_complete(), "a full page must not end paging");
-        assert_eq!(idx.list_pages_fetched(), 1);
 
         // A short page ends paging.
-        idx.append_page(vec!["c".into()], 2);
+        idx.append_page(vec!["c".into()], 2, None);
         assert!(idx.is_complete(), "a short page must end paging");
         assert_eq!(idx.len(), 3);
-        assert_eq!(idx.list_pages_fetched(), 2);
     }
 
     #[test]
     fn empty_page_completes() {
         let idx = QueryIndex::new();
-        idx.append_page(Vec::new(), 50);
+        idx.append_page(Vec::new(), 50, None);
         assert!(idx.is_complete(), "an empty page must end paging");
         assert_eq!(idx.len(), 0);
-        assert_eq!(idx.list_pages_fetched(), 1);
+    }
+
+    #[test]
+    fn a_full_page_reaching_the_stated_total_completes() {
+        let idx = QueryIndex::new();
+        idx.append_page(vec!["a".into(), "b".into()], 2, Some(4));
+        assert!(!idx.is_complete(), "two of four");
+        idx.append_page(vec!["c".into(), "d".into()], 2, Some(4));
+        assert!(idx.is_complete(), "four of four needs no empty page");
     }
 
     /// An id repeated WITHIN one incoming page is accepted once.
     #[test]
     fn intra_page_duplicates_are_skipped_on_append() {
         let idx = QueryIndex::new();
-        let (base, appended) = idx.append_page(vec!["a".into(), "a".into(), "b".into()], 3);
+        let (base, appended) = idx.append_page(vec!["a".into(), "a".into(), "b".into()], 3, None);
         assert_eq!(base, 0);
         assert_eq!(appended, vec!["a", "b"]);
         assert_eq!(idx.ids(), vec!["a", "b"]);
@@ -181,8 +190,8 @@ mod tests {
     #[test]
     fn duplicate_ids_are_skipped_on_append() {
         let idx = QueryIndex::new();
-        idx.append_page(vec!["a".into(), "b".into()], 2);
-        let (base, appended) = idx.append_page(vec!["a".into(), "b".into(), "c".into()], 3);
+        idx.append_page(vec!["a".into(), "b".into()], 2, None);
+        let (base, appended) = idx.append_page(vec!["a".into(), "b".into(), "c".into()], 3, None);
         assert_eq!(base, 2, "novel ids land at the tail");
         assert_eq!(appended, vec!["c"]);
         assert_eq!(idx.ids(), vec!["a", "b", "c"], "no duplicates");

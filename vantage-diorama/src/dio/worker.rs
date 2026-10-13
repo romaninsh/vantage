@@ -1,118 +1,155 @@
-//! Write-queue worker — consumes `QueuedFlash`es from `DioInner::write_queue`.
+//! The write queue's worker: runs each [`QueuedFlash`] through the Lens's
+//! writer, or the master when the Lens has none, settles it, and answers the
+//! caller waiting in [`Dio::flash`](crate::Dio::flash).
 //!
-//! For each flash the worker either invokes the lens's `on_flash` route
-//! (when registered) or applies the flash directly to `dio.master()`.
-//! Route errors are logged via `tracing` and emitted on the event
-//! bus as [`DioEvent::WriteFailed`].
+//! One worker per Dio takes one flash at a time, so the write-throughs of a
+//! Dio never overlap and land in the order they were queued.
 //!
 //! **Drain, not drop**: every queued flash carries a strong
 //! `Arc<DioInner>`, so flashes already accepted keep the whole pipeline
-//! (master, cache, routes, event bus) alive until they land — dropping
-//! the last external handle never discards queued work. Once the queue
-//! is empty and the last keep-alive drops, `DioInner` drops, its sender
-//! side disappears, `recv()` returns `None`, and the worker exits
-//! cleanly.
+//! (master, cache, routes, event bus) alive until they land. Dropping the
+//! last external handle never discards queued work. Once the queue is empty
+//! and the last keep-alive drops, `DioInner` drops, its sender side
+//! disappears, `recv()` returns `None`, and the worker exits cleanly.
 
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
-use tokio::sync::mpsc;
+use futures::FutureExt as _;
+use tokio::sync::{mpsc, oneshot};
 use vantage_core::{Context as _, Result, error};
-use vantage_dataset::traits::WritableValueSet;
+use vantage_dataset::traits::{InsertableValueSet as _, WritableValueSet};
 use vantage_types::Record;
 
-use crate::dio::{Dio, DioEvent, DioInner};
-use crate::ops::{ChangeFlash, FlashKind};
+use super::flash::settle;
+use super::pending::PendingFlashGuard;
+use crate::dio::{Dio, DioInner};
+use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
 
-/// One unit of queued work: the flash plus the strong handle that keeps
-/// the pipeline alive until it lands. The temporary reference cycle
-/// (`DioInner` → sender → channel buffer → `Arc<DioInner>`) resolves as
-/// the worker drains — that transience is exactly the keep-alive
-/// guarantee.
+/// One unit of queued work. The temporary reference cycle (`DioInner` →
+/// sender → channel buffer → `Arc<DioInner>`) resolves as the worker drains;
+/// that transience is exactly the keep-alive guarantee.
 pub(crate) struct QueuedFlash {
     pub(crate) flash: ChangeFlash,
+    /// The cached row before the flash was staged, which a failed write
+    /// restores.
+    pub(crate) pre: Option<Record<CborValue>>,
+    /// What the flash staged under its id (`None` for a removal, or for an
+    /// id-less flash, which stages nothing). A rollback restores `pre` only
+    /// while the row still holds it.
+    pub(crate) staged: Option<Record<CborValue>>,
+    /// Marks the staged row in flight until the flash settles.
+    pub(crate) pending: Option<PendingFlashGuard>,
+    /// Where the settled outcome goes. The caller may have stopped waiting.
+    pub(crate) reply: oneshot::Sender<Result<FlashOutcome>>,
     pub(crate) keep_alive: Arc<DioInner>,
 }
 
 /// The per-Dio write worker loop. Owns nothing but the receiver; each
 /// message brings its own `Arc<DioInner>`.
 pub(crate) async fn write_worker_loop(mut rx: mpsc::Receiver<QueuedFlash>) {
-    while let Some(QueuedFlash { flash, keep_alive }) = rx.recv().await {
+    while let Some(queued) = rx.recv().await {
+        let QueuedFlash {
+            flash,
+            pre,
+            staged,
+            pending,
+            reply,
+            keep_alive,
+        } = queued;
         let dio = Dio { inner: keep_alive };
-        let id_for_event = flash.id().map(str::to_string);
-        let outcome = run_write_through(&dio, flash).await;
-        if let Err(err) = outcome {
-            tracing::error!(error = %err, "Dio flash failed");
-            let _ = dio.inner.event_bus.send(DioEvent::WriteFailed {
-                id: id_for_event,
-                error: err.to_string(),
+        // A panicking route is a failed write: the flash rolls back and the
+        // worker carries on with the next one.
+        let written = AssertUnwindSafe(run_write_through(&dio, flash.clone()))
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|_| {
+                Err(error!(
+                    "the write route panicked",
+                    table = dio.inner.cache_table_name
+                ))
             });
+        let settled = settle(&dio, &flash, pre.as_ref(), staged.as_ref(), written).await;
+        if let Err(err) = &settled {
+            tracing::debug!(error = %err, "Dio flash failed");
         }
+        drop(pending);
+        let _ = reply.send(settled);
     }
 }
 
-/// Run a flash through the lens's `on_flash` route, or the default
-/// write-to-master path when none is registered. Shared by the
-/// fire-and-forget queue worker and the optimistic path
-/// ([`Dio::flash`](crate::Dio::flash)).
-///
-/// Returns the record a new row was stored as, when the write path
-/// produced one. A driver is free to keep the record under an id of its
-/// own, so the caller reads the stored record's id rather than assuming
-/// the flash's id survived. A routed write reports nothing: the route
-/// owns the destination and the caller cannot read its id.
-pub(crate) async fn run_write_through(
-    dio: &Dio,
-    flash: ChangeFlash,
-) -> Result<Option<Record<CborValue>>> {
-    if let Some(route) = dio.inner.lens.callbacks.on_flash.as_ref() {
-        route(dio, flash).await.map(|()| None)
-    } else {
-        default_write(dio, flash).await
+tokio::task_local! {
+    /// The Dio whose Lens writer the current task is running, by the address
+    /// of its shared state.
+    static WRITING_FOR: usize;
+}
+
+/// Whether the current task is running `inner`'s Lens writer. A flash on
+/// the same Dio from there would queue behind the write it is part of and
+/// never settle.
+pub(crate) fn writing_for(inner: &Arc<DioInner>) -> bool {
+    WRITING_FOR
+        .try_with(|writing| *writing == Arc::as_ptr(inner) as usize)
+        .unwrap_or(false)
+}
+
+/// Run a flash through the Lens's writer, or the default write-to-master
+/// path when it has none.
+async fn run_write_through(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
+    match dio.inner.lens.callbacks.writer.as_ref() {
+        Some(writer) => {
+            let writing = Arc::as_ptr(&dio.inner) as usize;
+            let cx = crate::lens::LoaderCx::new(dio.clone());
+            WRITING_FOR
+                .scope(writing, async move { writer(cx, flash).await })
+                .await
+        }
+        None => default_write(dio, flash).await,
     }
 }
 
-/// Default-write path — fires when no `on_flash` route is registered.
-/// Applies the flash directly to `dio.master()`. The cache is *not*
-/// touched here; the optimistic path stages it, and routes that want a
-/// write-through cache update both sides explicitly.
-async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<Option<Record<CborValue>>> {
+/// The write when the Lens has no writer: apply the flash to `dio.master()`.
+/// The cache is not touched here; [`settle`] does that.
+async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
     let master = dio.master();
-    let need_id = || {
-        flash
-            .id()
-            .map(str::to_string)
-            .ok_or_else(|| error!("flash without an id cannot target a row"))
-    };
-    match flash.kind() {
+    let applied = FlashOutcome::applied();
+    let written = match (flash.kind(), flash.id()) {
         // The insert is the one write whose id can move: the record the
         // master stored carries the id it settled on.
-        FlashKind::Insert => master
-            .insert_value(need_id()?, flash.patch())
+        (FlashKind::Insert, Some(id)) => master
+            .insert_value(id, flash.patch())
             .await
-            .map(Some),
-        FlashKind::Replace => master
-            .replace_value(need_id()?, flash.patch())
+            .map(|stored| applied.with_record(stored)),
+        (FlashKind::Insert, None) => master
+            .insert_return_id_value(flash.patch())
             .await
-            .map(|_| None),
-        FlashKind::Upsert => master
-            .upsert_value(need_id()?, flash.patch())
+            .map(|id| applied.with_id(id)),
+        (FlashKind::Replace, Some(id)) => master
+            .replace_value(id, flash.patch())
             .await
-            .map(|_| None),
-        FlashKind::Patch => master
-            .patch_value(need_id()?, flash.patch())
+            .map(|_| applied),
+        (FlashKind::Upsert, Some(id)) => master
+            .upsert_value(id, flash.patch())
             .await
-            .map(|_| None),
-        FlashKind::Delete => master.delete(need_id()?).await.map(|()| None),
-        FlashKind::Clear => master.delete_all().await.map(|()| None),
-    }
+            .map(|_| applied),
+        (FlashKind::Patch, Some(id)) => {
+            master.patch_value(id, flash.patch()).await.map(|_| applied)
+        }
+        (FlashKind::Delete, Some(id)) => master.delete(id).await.map(|()| applied),
+        (FlashKind::Clear, _) => master.delete_all().await.map(|()| applied),
+        (kind, None) => Err(error!(
+            "flash without an id cannot target a row",
+            kind = format!("{kind:?}")
+        )),
+    };
     // Wrapped, not replaced. The cause has to reach two audiences: a
     // form footer or wizard error line, which shows this string and for
-    // which "default write failed" alone turns a fixable input problem
+    // which "write failed" alone turns a fixable input problem
     // (a missing `int` the backend named precisely) into a dead end;
     // and `FlashRejection::from_error`, which walks the SOURCE chain for
-    // the per-field errors a form highlights. `context` keeps both —
+    // the per-field errors a form highlights. `context` keeps both:
     // `Display` renders "write failed: <driver error>" and the driver's
     // error stays reachable underneath.
-    .context(error!("write failed"))
+    written.context(error!("write failed"))
 }

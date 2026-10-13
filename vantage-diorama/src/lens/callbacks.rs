@@ -1,217 +1,62 @@
+//! The boxed forms of the closures a [`LensBuilder`](super::LensBuilder)
+//! takes. Each receives an owned [`LoaderCx`] and returns a `'static` future,
+//! so one boxed closure serves every Dio of the Lens.
+
 use std::future::Future;
 use std::ops::Range;
 use std::pin::Pin;
 
-use ciborium::Value as CborValue;
 use vantage_core::Result;
-use vantage_types::Record;
+use vantage_vista::VistaQuery;
 
-use crate::SortDir;
-use crate::dio::Dio;
-use crate::lens::chunk_sink::ChunkSink;
-use crate::ops::{ChangeEvent, ChangeFlash, QueryDescriptor};
+use super::chunk_sink::ChunkSink;
+use super::loader::Loader;
+use super::loader_cx::LoaderCx;
+use super::refresher::Refresher;
+use crate::ops::{ChangeFlash, FlashOutcome};
 
-/// Future returned by a Dio callback. Borrows from the supplied `&Dio`.
-pub type DioCallbackFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+pub(crate) type BoxFuture<T> = Pin<Box<dyn Future<Output = Result<T>> + Send + 'static>>;
 
-/// Callback shape: borrow `&Dio`, return a borrowed future. Box the
-/// closure once at registration; the HRTB lets a single boxed closure
-/// be invoked against any `&Dio` lifetime.
-pub type DioCallback =
-    Box<dyn for<'a> Fn(&'a Dio) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
+/// An eager start or a refresh: one call per Dio, with the Dio's context.
+pub(crate) type CxFn = Box<dyn Fn(LoaderCx) -> BoxFuture<()> + Send + Sync>;
 
-/// The write-routing callback: every [`ChangeFlash`] the Dio's write
-/// pipeline carries is handed here when registered. `Ok` resolves the
-/// write (for an optimistic flash the staged cache value stands);
-/// `Err` triggers rollback and surfaces as
-/// [`WriteReverted`](crate::DioEvent::WriteReverted) /
-/// [`WriteFailed`](crate::DioEvent::WriteFailed).
-pub type DioFlashCallback =
-    Box<dyn for<'a> Fn(&'a Dio, ChangeFlash) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
+/// A paged loader: fetch `range` of the view's query and push it into the sink.
+pub(crate) type ChunkFn =
+    Box<dyn Fn(LoaderCx, Range<usize>, VistaQuery, ChunkSink) -> BoxFuture<()> + Send + Sync>;
 
-pub type DioEventCallback =
-    Box<dyn for<'a> Fn(&'a Dio, ChangeEvent) -> DioCallbackFuture<'a> + Send + Sync + 'static>;
+/// A writer: carry one flash to wherever the Dio's writes go.
+pub(crate) type WriteFn =
+    Box<dyn Fn(LoaderCx, ChangeFlash) -> BoxFuture<FlashOutcome> + Send + Sync>;
 
-/// Future returned by a [`DioTotalProviderCallback`]. Carries a row
-/// count back to the Scenery; runs once per scenery open and is
-/// cached for the scenery's lifetime.
-pub type DioTotalProviderFuture<'a> = Pin<Box<dyn Future<Output = Result<usize>> + Send + 'a>>;
-
-pub type DioTotalProviderCallback =
-    Box<dyn for<'a> Fn(&'a Dio) -> DioTotalProviderFuture<'a> + Send + Sync + 'static>;
-
-/// How the requesting scenery wants a chunk shaped: its active order and its
-/// active quicksearch. Carried by value into every chunk fetch, because two
-/// sceneries over one Dio (a grid and a picker) load concurrently and must
-/// never see each other's narrowing.
-///
-/// `From<Option<(String, SortDir)>>` keeps sort-only construction terse for
-/// callers that predate search.
-#[derive(Debug, Clone, Default)]
-pub struct ChunkQuery {
-    /// The scenery's active order (`None` if unsorted).
-    pub sort: Option<(String, SortDir)>,
-    /// The scenery's active quicksearch text (`None` when not searching).
-    pub search: Option<String>,
-    /// The scenery's active operator filters (the grid's filter panel),
-    /// ANDed. Empty when none are set.
-    pub filters: Vec<crate::scenery::OpCondition>,
-}
-
-impl ChunkQuery {
-    /// The same clauses as a [`VistaQuery`](vantage_vista::VistaQuery), to
-    /// offer to a master.
-    pub(crate) fn to_vista_query(&self) -> vantage_vista::VistaQuery {
-        let mut query = vantage_vista::VistaQuery::new();
-        for term in &self.filters {
-            query = query.with_condition(vantage_vista::Condition::new(
-                &term.column,
-                term.op,
-                term.value.clone(),
-            ));
-        }
-        if let Some(text) = &self.search {
-            query = query.with_search(text.clone());
-        }
-        if let Some((column, dir)) = &self.sort {
-            query = query.with_order(column, dir.to_vista());
-        }
-        query
-    }
-}
-
-impl From<Option<(String, SortDir)>> for ChunkQuery {
-    fn from(sort: Option<(String, SortDir)>) -> Self {
-        Self {
-            sort,
-            search: None,
-            filters: Vec::new(),
-        }
-    }
-}
-
-/// Callback that fetches a contiguous range of rows from the master
-/// and pushes them into the Scenery via [`ChunkSink::push`]. Returns
-/// `Ok(())` once it is done pushing for this invocation.
-///
-/// The [`ChunkQuery`] is the requesting scenery's active order + search.
-/// Callbacks should fetch through [`Dio::fetch_window_ordered`], which pushes
-/// what the master supports (order, search, filters) to a narrowed clone
-/// and otherwise returns the native window (the scenery then refines over
-/// the cache where it honestly can).
-pub type DioLoadChunkCallback = Box<
-    dyn for<'a> Fn(&'a Dio, Range<usize>, ChunkQuery, ChunkSink) -> DioCallbackFuture<'a>
-        + Send
-        + Sync
-        + 'static,
->;
-
-/// Future returned by a [`DioListPageCallback`]. Yields one page of
-/// `(id, cheap-record)` rows for the two-pass list pass.
-pub type DioListPageFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Vec<(String, Record<CborValue>)>>> + Send + 'a>>;
-
-/// Two-pass **list pass**. Given a [`QueryDescriptor`] (conditions, sort, and
-/// the `offset`/`limit` window), fetch one page of rows carrying only the
-/// cheap/list columns and return them in order. The scenery writes them to the
-/// detail table as [`Incomplete`](crate::lens::CacheStatus::Incomplete) and
-/// appends their ids to the per-query index. A page shorter than `limit` ends
-/// sequential paging.
-pub type DioListPageCallback =
-    Box<dyn for<'a> Fn(&'a Dio, QueryDescriptor) -> DioListPageFuture<'a> + Send + Sync + 'static>;
-
-/// Future returned by a [`DioLoadDetailCallback`]. Yields the fully-hydrated
-/// record for a single id.
-pub type DioLoadDetailFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Record<CborValue>>> + Send + 'a>>;
-
-/// Two-pass **detail pass**. Given one id, fetch its expensive detail columns
-/// and return the complete record. The scenery merges it into the detail table
-/// as [`Complete`](crate::lens::CacheStatus::Complete) and flips the row to
-/// `Fresh`. Registering this callback is what opts a Dio into two-pass loading.
-pub type DioLoadDetailCallback =
-    Box<dyn for<'a> Fn(&'a Dio, String) -> DioLoadDetailFuture<'a> + Send + Sync + 'static>;
-
-/// The callback slots a Lens may hold. Each is independently
-/// optional; the Lens treats absent slots as "use the default path"
-/// (read from cache, write to master, etc.).
-#[derive(Default)]
-pub struct LensCallbacks {
-    pub on_start: Option<DioCallback>,
-    pub on_refresh: Option<DioCallback>,
-    pub on_flash: Option<DioFlashCallback>,
-    pub on_event: Option<DioEventCallback>,
-    pub total_provider: Option<DioTotalProviderCallback>,
-    pub on_load_chunk: Option<DioLoadChunkCallback>,
-    pub on_list_page: Option<DioListPageCallback>,
-    pub on_load_detail: Option<DioLoadDetailCallback>,
-}
-
-/// Wrap a user closure into a [`DioCallback`].
-///
-/// The canonical user pattern is `move |dio| { let dio = dio.clone();
-/// async move { ... dio.cache().insert_values(...).await } }` —
-/// cloning the Dio inside the closure produces a `'static` future,
-/// which avoids the lifetime gymnastics of borrowing `&Dio` across an
-/// await.
-pub fn boxed_dio_callback<F, Fut>(f: F) -> DioCallback
+pub(crate) fn boxed_cx<F, Fut>(f: F) -> CxFn
 where
-    F: for<'a> Fn(&'a Dio) -> Fut + Send + Sync + 'static,
+    F: Fn(LoaderCx) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
-    Box::new(move |dio| Box::pin(f(dio)))
+    Box::new(move |cx| Box::pin(f(cx)))
 }
 
-/// Wrap a user closure into a [`DioFlashCallback`].
-pub fn boxed_dio_flash_callback<F, Fut>(f: F) -> DioFlashCallback
+pub(crate) fn boxed_chunk<F, Fut>(f: F) -> ChunkFn
 where
-    F: for<'a> Fn(&'a Dio, ChangeFlash) -> Fut + Send + Sync + 'static,
+    F: Fn(LoaderCx, Range<usize>, VistaQuery, ChunkSink) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
-    Box::new(move |dio, flash| Box::pin(f(dio, flash)))
+    Box::new(move |cx, range, query, sink| Box::pin(f(cx, range, query, sink)))
 }
 
-/// Wrap a user closure into a [`DioEventCallback`].
-pub fn boxed_dio_event_callback<F, Fut>(f: F) -> DioEventCallback
+pub(crate) fn boxed_writer<F, Fut>(f: F) -> WriteFn
 where
-    F: for<'a> Fn(&'a Dio, ChangeEvent) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<()>> + Send + 'static,
+    F: Fn(LoaderCx, ChangeFlash) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<FlashOutcome>> + Send + 'static,
 {
-    Box::new(move |dio, ev| Box::pin(f(dio, ev)))
+    Box::new(move |cx, flash| Box::pin(f(cx, flash)))
 }
 
-/// Wrap a user closure into a [`DioTotalProviderCallback`].
-pub fn boxed_total_provider_callback<F, Fut>(f: F) -> DioTotalProviderCallback
-where
-    F: for<'a> Fn(&'a Dio) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<usize>> + Send + 'static,
-{
-    Box::new(move |dio| Box::pin(f(dio)))
-}
-
-/// Wrap a user closure into a [`DioLoadChunkCallback`].
-pub fn boxed_load_chunk_callback<F, Fut>(f: F) -> DioLoadChunkCallback
-where
-    F: for<'a> Fn(&'a Dio, Range<usize>, ChunkQuery, ChunkSink) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<()>> + Send + 'static,
-{
-    Box::new(move |dio, range, query, sink| Box::pin(f(dio, range, query, sink)))
-}
-
-/// Wrap a user closure into a [`DioListPageCallback`].
-pub fn boxed_list_page_callback<F, Fut>(f: F) -> DioListPageCallback
-where
-    F: for<'a> Fn(&'a Dio, QueryDescriptor) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<Vec<(String, Record<CborValue>)>>> + Send + 'static,
-{
-    Box::new(move |dio, q| Box::pin(f(dio, q)))
-}
-
-/// Wrap a user closure into a [`DioLoadDetailCallback`].
-pub fn boxed_load_detail_callback<F, Fut>(f: F) -> DioLoadDetailCallback
-where
-    F: for<'a> Fn(&'a Dio, String) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<Record<CborValue>>> + Send + 'static,
-{
-    Box::new(move |dio, id| Box::pin(f(dio, id)))
+/// Everything a built Lens calls back into. Absent parts take the default
+/// path: no loader means the cache is all there is, no refresher means no
+/// timer, and no writer means writes go to the master.
+pub(crate) struct LensCallbacks {
+    pub(crate) loader: Loader,
+    pub(crate) refresher: Option<Refresher>,
+    pub(crate) writer: Option<WriteFn>,
 }

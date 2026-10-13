@@ -89,6 +89,19 @@ fn an_unknown_column_is_a_plain_error() {
     assert!(err.to_string().contains("Unknown column"), "{err}");
 }
 
+/// The dialect has no path syntax, so a path into a declared column is
+/// refused for the caller to evaluate, and nothing is recorded.
+#[test]
+fn a_dotted_path_into_a_declared_column_is_refused() {
+    let mut shell = shell(filtering());
+    let before = query(&shell);
+    let err = shell
+        .add_condition(&Condition::new("status.code", FilterOp::Eq, 1))
+        .unwrap_err();
+    assert!(err.is_unimplemented(), "{err:?}");
+    assert_eq!(query(&shell), before);
+}
+
 #[test]
 fn a_null_or_array_has_no_literal_and_is_left_to_the_caller() {
     let mut shell = shell(filtering());

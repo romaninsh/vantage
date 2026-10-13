@@ -1,24 +1,24 @@
 Feature: Lens lifecycle
 
   The three contracts that make a Lens behave predictably: on_start
-  blocks make_dio iff `on_start_blocking` is true, and the per-Dio
+  blocks the dio build iff `on_start_blocking` is true, and the per-Dio
   write worker shuts down cleanly when the last external Dio handle
   drops.
 
-  Scenario: on_start_blocking=true makes make_dio wait for the callback
+  Scenario: on_start_blocking=true makes the dio build wait for the callback
     Given a master with rows
       | id | title |
       | a  | one   |
     And a gated on_start that copies master to cache
     And on_start_blocking is true
-    When I spawn make_dio
-    Then make_dio is still pending
+    When I spawn the dio build
+    Then the dio build is still pending
     And on_start has been called 0 times
     When I release on_start
-    Then make_dio completes
+    Then the dio build completes
     And on_start has been called 1 time
 
-  Scenario: on_start_blocking=false lets make_dio return immediately
+  Scenario: on_start_blocking=false lets the dio build return immediately
     Given a master with rows
       | id | title |
       | a  | one   |

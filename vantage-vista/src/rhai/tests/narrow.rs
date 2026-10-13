@@ -62,7 +62,7 @@ fn run(host: &Host, script: &str) -> Result<Dynamic, String> {
         .map_err(|e| e.to_string())
 }
 
-fn eval<T: Clone + 'static>(host: &Host, script: &str) -> T {
+pub(super) fn eval<T: Clone + 'static>(host: &Host, script: &str) -> T {
     run(host, script)
         .unwrap()
         .try_cast::<T>()
@@ -128,8 +128,8 @@ fn resolve_applies_steps_in_order() {
 
 /// Takes any native condition; the Vista records its key.
 #[derive(Clone)]
-struct Native {
-    inner: Box<dyn TableShell>,
+pub(super) struct Native {
+    pub(super) inner: Box<dyn TableShell>,
 }
 
 forward_table_shell!(Native, inner, {
@@ -138,7 +138,7 @@ forward_table_shell!(Native, inner, {
     }
 });
 
-fn only_vip() -> NativeCondition {
+pub(super) fn only_vip() -> NativeCondition {
     NativeCondition::new((), "vip_flag = true")
 }
 

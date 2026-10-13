@@ -7,7 +7,10 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::traits::table_source::TableSource as _;
-use vantage_vista::{Capability, Condition, FilterOp, SortDirection, operand_text, unsupported};
+use vantage_vista::{
+    Capability, Condition, FilterOp, SortDirection, condition_column_error, operand_text,
+    unsupported,
+};
 
 use crate::graphql::impls::get_by_id::{id_for_column, is_integer_column};
 use crate::graphql::impls::search::contains_pattern;
@@ -20,19 +23,18 @@ impl GraphqlApiTableShell {
     /// (Hasura, with filter push-down on). Elsewhere it is refused, and the
     /// consumer evaluates it over the rows it reads. Each operand is typed by
     /// its column ([`operand`](Self::operand)). With filter push-down
-    /// on, a dotted path that isn't a declared column (`id.part`) is a normal
-    /// error: it can't be sent as a filter key. Filtering locally, the path is
-    /// walked in each row.
+    /// on, a dotted path that isn't a declared column (`id.part`) can't be
+    /// sent as a filter key: under a declared column it is refused with
+    /// [`condition_column_error`], for the caller to
+    /// evaluate, and under an unknown one it is a normal error. Filtering
+    /// locally, the path is walked in each row.
     pub(crate) fn apply_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         if field.contains('.')
             && self.table.data_source().can_filter()
             && !self.table.columns().contains_key(field)
         {
-            return Err(error!(
-                "a dotted path can't be sent as a GraphQL filter key",
-                field = field
-            ));
+            return Err(condition_column_error(&self.metadata, field));
         }
         let op = condition.op;
         if op != FilterOp::Eq && !self.capabilities.has(Capability::FilterOps) {
@@ -158,8 +160,22 @@ mod tests {
         let probe = Condition::new("id.part", FilterOp::Eq, "x");
         let mut pushed = shell(VistaCapabilities::new());
         let err = pushed.add_condition(&probe).unwrap_err();
-        assert!(!err.is_unsupported(), "{err}");
+        assert!(err.is_unimplemented(), "{err:?}");
         assert_eq!(pushed.table.conditions().count(), 0);
+
+        // Under a column the schema doesn't declare, the path is unknown.
+        let declared = VistaMetadata::new().with_column(vantage_vista::Column::new("id", "String"));
+        let mut known = GraphqlApiTableShell::new(
+            Table::<GraphqlApi, EmptyEntity>::new(
+                "runs",
+                GraphqlApi::new("https://api.test/graphql"),
+            ),
+            VistaCapabilities::new(),
+            declared,
+        );
+        let unknown = Condition::new("colour.hue", FilterOp::Eq, "x");
+        let err = known.add_condition(&unknown).unwrap_err();
+        assert!(!err.is_unimplemented() && !err.is_unsupported(), "{err:?}");
 
         let local_api = GraphqlApi::builder("https://api.test/graphql")
             .supports(crate::graphql::api::Supports::default().with_filter(false))

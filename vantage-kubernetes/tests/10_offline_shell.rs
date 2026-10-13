@@ -33,6 +33,11 @@ async fn conditions_need_a_declared_column_and_equality() {
         .add_condition("colour", FilterOp::Eq, "red")
         .unwrap_err();
     assert!(!unknown.is_unsupported(), "{unknown:?}");
+    // A path into a declared column is refused, for the caller to evaluate.
+    let path = vista
+        .add_condition("namespace.part", FilterOp::Eq, "demo")
+        .unwrap_err();
+    assert!(path.is_unimplemented(), "{path:?}");
     assert!(vista.query().is_empty());
 
     let narrowed = vista

@@ -1,16 +1,15 @@
-//! Stage 4: a traversed (`get_ref`) child Dio is first-class — it carries the
-//! Dio-level query semantics from Stages 1/3, so a condition set on the child
-//! filters its rows locally, exactly like a top-level Dio. This is the
-//! composition of reference traversal with local emulation.
+//! A traversed (`get_ref`) child Dio is first-class: a Dio derived from it
+//! narrows its rows exactly like one derived from a top-level Dio. This is the
+//! composition of reference traversal with derivation.
 
 mod support;
 
 use ciborium::Value as CborValue;
 use support::MockView;
-use vantage_diorama::{Dio, Lens};
+use vantage_diorama::Dio;
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, JoinKey, Reference, Vista, VistaMetadata};
+use vantage_vista::{Column, FilterOp, JoinKey, Reference, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -65,21 +64,7 @@ fn launch_master() -> Vista {
 
 /// Single-pass eager Dio over the launches master (in-memory cache).
 async fn launches_dio() -> Dio {
-    let lens = std::sync::Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    use vantage_dataset::prelude::ReadableValueSet;
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("lens builds"),
-    );
-    lens.make_dio(launch_master()).await.expect("make_dio")
+    support::eager_dio(launch_master()).await
 }
 
 #[tokio::test]
@@ -87,11 +72,16 @@ async fn traversed_child_carries_a_local_condition() {
     let launches = launches_dio().await;
     let l1 = rec(&[("id", "L1"), ("name", "Apollo 11")]);
 
-    // Traverse launch L1 → its crew (two members), then narrow with a Dio-level
-    // condition on the child. The child reuses the parent's lens and filters
-    // locally just like a top-level Dio.
-    let crew = launches.get_ref("crew", &l1).await.expect("get_ref crew");
-    crew.with_condition_eq("name", "Buzz");
+    // Traverse launch L1 → its crew (two members), then derive a narrower Dio
+    // from the child. The child reuses the parent's lens and narrows just
+    // like a top-level Dio.
+    let crew = launches
+        .get_ref("crew", &l1)
+        .await
+        .expect("get_ref crew")
+        .with_query(&support::cond("name", FilterOp::Eq, "Buzz"))
+        .await
+        .expect("derives");
 
     let view = MockView::open(&crew, 10).await;
     view.settle_until("child filtered to Buzz", |v| v.loaded_rows() == 1)

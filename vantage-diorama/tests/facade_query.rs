@@ -1,7 +1,6 @@
-//! Facade narrowing: `dio.vista()` honours condition and order, pushing each
-//! into the master where it can answer it and applying it over the cache where
-//! it cannot. Search is not lifted — see
-//! `the_facade_refuses_a_search_it_cannot_answer`.
+//! Facade narrowing: `dio.cached()` honours conditions (any operator), search
+//! and order, pushing each into the master where it can answer it and
+//! evaluating it over the rows read where it cannot.
 //!
 //! The CSV cases are the ones that matter most. CSV is the canonical
 //! capability-poor master — it advertises no `Order`, and its factory flags
@@ -9,19 +8,19 @@
 //! by the Dio. A mock master with the flags set by hand would pass while the
 //! real thing failed.
 
-use std::sync::Arc;
-
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_csv::Csv;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Dio, Lens};
+use vantage_diorama::Dio;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Column, ColumnFlag, FilterOp, SortDirection, Vista, VistaMetadata, mocks::MockShell,
 };
+
+mod support;
 
 // ---- fixtures --------------------------------------------------------------
 
@@ -62,21 +61,7 @@ fn capable_master() -> MockShell {
 }
 
 async fn eager_dio(master: Vista) -> Result<Dio> {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("lens"),
-    );
-    lens.make_dio(master).await
+    Ok(support::eager_dio(master).await)
 }
 
 fn names(rows: &IndexMap<String, Record<CborValue>>) -> Vec<String> {
@@ -100,14 +85,14 @@ async fn csv_sorts_over_the_cache() -> Result<()> {
         "the CSV master genuinely cannot order — that is the point of this test",
     );
 
-    let mut by_name = dio.vista();
+    let mut by_name = dio.cached();
     by_name.set_order(Some(("name", SortDirection::Ascending)))?;
     assert_eq!(
         names(&by_name.list_values().await?),
         vec!["Cappuccino", "Espresso", "Flat White", "Latte"],
     );
 
-    let mut by_price = dio.vista();
+    let mut by_price = dio.cached();
     by_price.set_order(Some(("price", SortDirection::Descending)))?;
     assert_eq!(
         names(&by_price.list_values().await?),
@@ -123,9 +108,13 @@ async fn csv_sorts_over_the_cache() -> Result<()> {
 async fn csv_sorts_numbers_numerically() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
     // A double-digit price alongside the single-digit fixture rows.
-    dio.patched("p9", row("Magnum", 10)).await?;
+    dio.apply_change(vantage_diorama::ChangeEvent::Inserted {
+        id: "p9".into(),
+        new: Some(row("Magnum", 10)),
+    })
+    .await?;
 
-    let mut by_price = dio.vista();
+    let mut by_price = dio.cached();
     by_price.set_order(Some(("price", SortDirection::Ascending)))?;
     assert_eq!(
         names(&by_price.list_values().await?)
@@ -141,7 +130,7 @@ async fn csv_sorts_numbers_numerically() -> Result<()> {
 async fn csv_filters_over_the_cache() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
 
-    let fivers = dio.vista().with_condition("price", FilterOp::Eq, 5)?;
+    let fivers = dio.cached().with_condition("price", FilterOp::Eq, 5)?;
     let mut got = names(&fivers.list_values().await?);
     got.sort();
     assert_eq!(got, vec!["Cappuccino", "Flat White"]);
@@ -154,7 +143,7 @@ async fn csv_filters_over_the_cache() -> Result<()> {
 async fn csv_combines_condition_and_order() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
     let narrowed = dio
-        .vista()
+        .cached()
         .with_condition("price", FilterOp::Eq, 5)?
         .with_order("name", SortDirection::Descending)?;
     assert_eq!(
@@ -168,7 +157,7 @@ async fn csv_combines_condition_and_order() -> Result<()> {
 #[tokio::test]
 async fn csv_narrowing_hides_rows_from_get() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
-    let cheap = dio.vista().with_condition("price", FilterOp::Eq, 4)?;
+    let cheap = dio.cached().with_condition("price", FilterOp::Eq, 4)?;
 
     assert!(cheap.get_value("p1").await?.is_some(), "Espresso is 4");
     assert!(
@@ -185,7 +174,7 @@ async fn csv_narrowing_hides_rows_from_get() -> Result<()> {
 #[tokio::test]
 async fn the_facade_honours_the_capabilities_it_advertises() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
-    let facade = dio.vista();
+    let facade = dio.cached();
     assert!(facade.capabilities().has(Capability::Order));
 
     let mut facade = facade;
@@ -199,32 +188,63 @@ async fn the_facade_honours_the_capabilities_it_advertises() -> Result<()> {
     Ok(())
 }
 
-/// The facade does NOT lift search the way it lifts ordering. It has no
-/// search of its own and nowhere to forward the term to, so it advertises
-/// no `Search` and refuses the call — rather than accepting it and
-/// handing back the unfiltered set, which is what a silent local filter
-/// amounted to once the term could not be pushed down.
+/// CSV has no search; the facade advertises one anyway and evaluates it over
+/// the cache, case-insensitively, across every cell.
 #[tokio::test]
-async fn the_facade_refuses_a_search_it_cannot_answer() -> Result<()> {
+async fn csv_searches_over_the_cache() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
-    let facade = dio.vista();
-    assert!(!facade.capabilities().has(Capability::Search));
+    let facade = dio.cached();
+    assert!(facade.capabilities().has(Capability::Search));
 
-    let mut facade = facade;
-    assert!(
-        facade.set_search(Some("esp")).is_err(),
-        "an accepted search that never runs is worse than a refused one",
+    let searched = facade.with_search("ESP")?;
+    assert_eq!(names(&searched.list_values().await?), vec!["Espresso"]);
+    assert_eq!(searched.count().await?, 1);
+    Ok(())
+}
+
+/// Operators other than equality are evaluated over the cache too, and
+/// combine with the order.
+#[tokio::test]
+async fn csv_takes_operator_conditions() -> Result<()> {
+    let dio = eager_dio(csv_master()?).await?;
+    assert!(dio.cached().capabilities().has(Capability::FilterOps));
+
+    let dear = dio
+        .cached()
+        .with_condition("price", FilterOp::Gt, 4)?
+        .with_condition("price", FilterOp::Lt, 6)?
+        .with_order("name", SortDirection::Ascending)?;
+    assert_eq!(
+        names(&dear.list_values().await?),
+        vec!["Cappuccino", "Flat White"]
     );
+    let page = dear.fetch_window(1, 5).await?;
+    assert_eq!(page.total, Some(2));
+    assert_eq!(page.rows.len(), 1);
+    Ok(())
+}
+
+/// A search the master can run is run there, over the master's whole set.
+#[tokio::test]
+async fn a_capable_master_answers_the_search_itself() -> Result<()> {
+    let shell = capable_master();
+    shell.set_record("a", row("gamma", 3));
+    let dio = eager_dio(Vista::new("items", shell.clone())).await?;
+    shell.set_record("c", row("beta", 2));
+
+    let searched = dio.cached().with_search("bet")?;
+    assert_eq!(names(&searched.list_values().await?), vec!["beta"]);
     Ok(())
 }
 
 // ---- push-down side ---------------------------------------------------------
 
-/// The same calls against a master that *can* order and search are answered at
-/// the source instead. Observable because the master holds a row the cache
-/// never received.
+/// An order on its own never moves a read off the cache, even when the master
+/// could sort: re-sorting never changes which rows a handle shows, and every
+/// read method agrees on them. Observable because the master holds a row the
+/// cache never received.
 #[tokio::test]
-async fn a_capable_master_answers_the_narrowing_itself() -> Result<()> {
+async fn an_order_alone_reads_the_cache() -> Result<()> {
     let shell = capable_master();
     shell.set_record("a", row("gamma", 3));
     shell.set_record("b", row("alpha", 1));
@@ -233,19 +253,31 @@ async fn a_capable_master_answers_the_narrowing_itself() -> Result<()> {
     // Appears upstream only — the cache does not have it.
     shell.set_record("c", row("beta", 2));
 
-    let mut ordered = dio.vista();
-    ordered.set_order(Some(("name", SortDirection::Ascending)))?;
+    let ordered = dio.cached().with_order("name", SortDirection::Ascending)?;
+    let listed = ordered.list_values().await?;
+    assert_eq!(names(&listed), vec!["alpha", "gamma"]);
+    assert_eq!(ordered.count().await?, listed.len() as i64);
     assert_eq!(
-        names(&ordered.list_values().await?),
-        vec!["alpha", "beta", "gamma"],
-        "a pushed-down order is answered over the master's whole set",
+        ordered.fetch_window(0, 10).await?.total,
+        Some(listed.len() as i64)
     );
+    assert!(ordered.get_value("c").await?.is_none(), "not cached");
+    Ok(())
+}
 
-    assert_eq!(
-        dio.vista().list_values().await?.len(),
-        2,
-        "while an unnarrowed read still comes from the cache",
-    );
+/// A condition the master takes is answered at the source, over the
+/// master's whole set.
+#[tokio::test]
+async fn a_capable_master_answers_a_condition_itself() -> Result<()> {
+    let shell = capable_master();
+    shell.set_record("a", row("gamma", 3));
+    let dio = eager_dio(Vista::new("items", shell.clone())).await?;
+    shell.set_record("c", row("beta", 2));
+
+    let beta = dio.cached().with_condition("name", FilterOp::Eq, "beta")?;
+    assert_eq!(names(&beta.list_values().await?), vec!["beta"]);
+    assert_eq!(beta.count().await?, 1);
+    assert!(beta.get_value("c").await?.is_some());
     Ok(())
 }
 
@@ -257,9 +289,9 @@ async fn a_capable_master_answers_the_narrowing_itself() -> Result<()> {
 async fn two_facades_narrow_independently() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
 
-    let mut ascending = dio.vista();
+    let mut ascending = dio.cached();
     ascending.set_order(Some(("name", SortDirection::Ascending)))?;
-    let mut descending = dio.vista();
+    let mut descending = dio.cached();
     descending.set_order(Some(("name", SortDirection::Descending)))?;
 
     assert_eq!(
@@ -275,7 +307,7 @@ async fn two_facades_narrow_independently() -> Result<()> {
         Some("Latte")
     );
     assert_eq!(
-        dio.vista().list_values().await?.len(),
+        dio.cached().list_values().await?.len(),
         4,
         "a fresh facade is unnarrowed"
     );
@@ -287,7 +319,7 @@ async fn two_facades_narrow_independently() -> Result<()> {
 async fn a_cloned_facade_inherits_but_does_not_share() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
 
-    let base = dio.vista().with_condition("price", FilterOp::Eq, 5)?;
+    let base = dio.cached().with_condition("price", FilterOp::Eq, 5)?;
     let cloned = base.clone().with_order("name", SortDirection::Descending)?;
 
     assert_eq!(
@@ -312,7 +344,7 @@ async fn an_unnarrowed_facade_reads_the_cache() -> Result<()> {
 
     shell.set_record("z", row("zeta", 9));
     assert_eq!(
-        dio.vista().list_values().await?.len(),
+        dio.cached().list_values().await?.len(),
         1,
         "the cache-first contract is unchanged for an unnarrowed handle",
     );
@@ -331,7 +363,7 @@ async fn preview_reports_a_pushed_down_condition_on_the_master() -> Result<()> {
     let dio = eager_dio(Vista::new("items", shell.clone())).await?;
 
     let narrowed = dio
-        .vista()
+        .cached()
         .with_condition("name", FilterOp::Eq, "gamma")?
         .with_order("price", SortDirection::Descending)?;
 
@@ -359,7 +391,7 @@ async fn preview_reports_a_pushed_down_condition_on_the_master() -> Result<()> {
 async fn preview_reports_a_refused_order_on_the_facade() -> Result<()> {
     let dio = eager_dio(csv_master()?).await?;
 
-    let narrowed = dio.vista().with_order("name", SortDirection::Ascending)?;
+    let narrowed = dio.cached().with_order("name", SortDirection::Ascending)?;
 
     let preview = narrowed.preview();
     assert!(

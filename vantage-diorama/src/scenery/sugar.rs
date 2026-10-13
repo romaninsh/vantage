@@ -39,6 +39,12 @@ impl Sugar {
             outputs: Arc::new(outputs.into_iter().map(Into::into).collect()),
         }
     }
+
+    /// The output columns: the master has never heard of them, so a view's
+    /// clause on one is evaluated over the rows the view reads.
+    pub(crate) fn outputs(&self) -> Arc<HashSet<String>> {
+        self.outputs.clone()
+    }
 }
 
 pub(crate) struct SugaredCache {
@@ -224,6 +230,14 @@ impl CacheTable for SugaredCache {
 
     async fn set_meta_total(&self, total: u64) -> Result<()> {
         self.inner.set_meta_total(total).await
+    }
+
+    async fn meta_refreshed_at(&self) -> Result<Option<std::time::SystemTime>> {
+        self.inner.meta_refreshed_at().await
+    }
+
+    async fn set_meta_refreshed_at(&self, at: std::time::SystemTime) -> Result<()> {
+        self.inner.set_meta_refreshed_at(at).await
     }
 }
 

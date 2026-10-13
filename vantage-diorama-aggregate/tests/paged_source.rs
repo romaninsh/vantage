@@ -18,26 +18,12 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
-use vantage_diorama::{Dio, Lens};
-use vantage_diorama_aggregate::{AggregateLens, Count, CountWhere};
+use vantage_diorama::{Cache, Dio, Lens, Loader};
+use vantage_diorama_aggregate::{Count, CountWhere};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
 
-use support::{DEBOUNCE, record, settle, text};
-
-fn lens() -> Arc<AggregateLens> {
-    AggregateLens::in_memory()
-        .debounce(DEBOUNCE)
-        .build()
-        .expect("aggregate lens builds")
-}
-
-fn as_i64(value: Option<CborValue>) -> Option<i64> {
-    match value {
-        Some(CborValue::Integer(i)) => Some(i128::from(i) as i64),
-        _ => None,
-    }
-}
+use support::{as_i64, lens, record, settle, text};
 
 /// Rows the paged source will serve, alternating status so a filtered count has
 /// something to disagree with.
@@ -62,24 +48,22 @@ async fn paged_source(backing: Vec<(String, Record<CborValue>)>) -> Dio {
             .with_metadata(metadata)
             .with_capabilities(VistaCapabilities::new()),
     );
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_load_chunk(move |_dio, range, _sort, sink| {
-                let backing = backing.clone();
-                async move {
-                    for idx in range {
-                        if let Some((id, r)) = backing.get(idx) {
-                            sink.push(idx, id.clone(), r.clone()).await?;
-                        }
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::paged(move |_cx, range, _query, sink| {
+            let backing = backing.clone();
+            async move {
+                for idx in range {
+                    if let Some((id, r)) = backing.get(idx) {
+                        sink.push(idx, id.clone(), r.clone()).await?;
                     }
-                    Ok(())
                 }
-            })
-            .build()
-            .expect("paged lens builds"),
-    );
-    lens.make_dio(vista).await.expect("paged source dio")
+                Ok(())
+            }
+        }))
+        .build()
+        .expect("paged lens builds");
+    lens.dio(vista).build().await.expect("paged source dio")
 }
 
 /// The figures track rows as they arrive, page by page — they do not freeze at

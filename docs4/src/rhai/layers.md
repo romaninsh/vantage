@@ -22,7 +22,7 @@ if a data verb looks close.
 
 ## Dio: no vocabulary of its own
 
-A Dio doesn't add script words. [`Dio::vista()`](vantage_diorama::Dio::vista) returns a Vista whose
+A Dio doesn't add script words. [`Dio::cached()`](vantage_diorama::Dio::cached) returns a Vista whose
 reads come from the Dio's cache and whose writes are queued as flashes and written through to the
 master. A host that resolves `table(name)` to Dio Vistas gives scripts cached reads and optimistic
 writes, and the scripts are the same ones that would run against the bare backend. Vantage UI's

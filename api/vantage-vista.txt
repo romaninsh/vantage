@@ -4,6 +4,10 @@ pub async fn vantage_vista::contract::check_advertised(&vantage_vista::Vista)
 pub async fn vantage_vista::contract::check_advertised_writes(&vantage_vista::Vista)
 pub async fn vantage_vista::contract::check_clone(&vantage_vista::Vista, &str, vantage_vista::CborValue)
 pub async fn vantage_vista::contract::check_narrowing(&vantage_vista::Vista)
+pub mod vantage_vista::eval
+pub fn vantage_vista::eval::cbor_cmp(&ciborium::value::Value, &ciborium::value::Value) -> core::cmp::Ordering
+pub fn vantage_vista::eval::cell_get<'a>(&'a vantage_types::record::Record<ciborium::value::Value>, &str, &vantage_vista::VistaMetadata) -> core::option::Option<&'a ciborium::value::Value>
+pub fn vantage_vista::eval::path_get<'a>(&'a vantage_types::record::Record<ciborium::value::Value>, &str) -> core::option::Option<&'a ciborium::value::Value>
 pub mod vantage_vista::mocks
 pub struct vantage_vista::mocks::MockShell
 impl vantage_vista::mocks::MockShell
@@ -16,6 +20,11 @@ pub fn vantage_vista::mocks::MockShell::remove_record(&self, &str)
 pub fn vantage_vista::mocks::MockShell::set_fail_reads(&self, bool)
 pub fn vantage_vista::mocks::MockShell::set_field(&self, &str, &str, ciborium::value::Value)
 pub fn vantage_vista::mocks::MockShell::set_record(&self, impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>)
+impl vantage_vista::mocks::MockShell
+pub fn vantage_vista::mocks::MockShell::gated(self, alloc::rcs::arc::Arc<tokio::sync::semaphore::Semaphore>) -> Self
+pub fn vantage_vista::mocks::MockShell::get_log(&self) -> alloc::vec::Vec<alloc::string::String>
+pub fn vantage_vista::mocks::MockShell::get_only(self) -> Self
+pub fn vantage_vista::mocks::MockShell::max_concurrent_gets(&self) -> usize
 impl vantage_vista::mocks::MockShell
 pub fn vantage_vista::mocks::MockShell::new() -> Self
 pub fn vantage_vista::mocks::MockShell::with_capabilities(self, vantage_vista::VistaCapabilities) -> Self
@@ -176,6 +185,8 @@ pub vantage_vista::prelude::Condition::column: alloc::string::String
 pub vantage_vista::prelude::Condition::op: vantage_vista::FilterOp
 pub vantage_vista::prelude::Condition::value: ciborium::value::Value
 impl vantage_vista::Condition
+pub fn vantage_vista::Condition::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> bool
+impl vantage_vista::Condition
 pub fn vantage_vista::Condition::new(impl core::convert::Into<alloc::string::String>, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> Self
 impl core::clone::Clone for vantage_vista::Condition
 pub fn vantage_vista::Condition::clone(&self) -> Self
@@ -266,6 +277,10 @@ pub fn vantage_vista::VistaQuery::new() -> Self
 pub fn vantage_vista::VistaQuery::with_condition(self, vantage_vista::Condition) -> Self
 pub fn vantage_vista::VistaQuery::with_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_search(self, impl core::convert::Into<alloc::string::String>) -> Self
+impl vantage_vista::VistaQuery
+pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
+pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
+pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
 impl core::clone::Clone for vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::clone(&self) -> Self
 impl core::cmp::PartialEq for vantage_vista::VistaQuery
@@ -341,6 +356,8 @@ pub fn vantage_vista::rhai::Handle::named(impl core::convert::Into<alloc::string
 pub fn vantage_vista::rhai::Handle::resolve(&self, core::option::Option<&dyn vantage_vista::VistaResolver>) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::rhai::Handle::table_name(&self) -> core::option::Option<&str>
 pub fn vantage_vista::rhai::Handle::with_native_condition(&self, &str, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<vantage_vista::rhai::Handle>
+impl vantage_vista::rhai::Handle
+pub fn vantage_vista::rhai::Handle::query(&self) -> vantage_core::util::error::Result<vantage_vista::VistaQuery>
 impl core::clone::Clone for vantage_vista::rhai::Handle
 pub fn vantage_vista::rhai::Handle::clone(&self) -> Self
 impl core::marker::Freeze for vantage_vista::rhai::Handle
@@ -684,6 +701,8 @@ pub vantage_vista::Condition::column: alloc::string::String
 pub vantage_vista::Condition::op: vantage_vista::FilterOp
 pub vantage_vista::Condition::value: ciborium::value::Value
 impl vantage_vista::Condition
+pub fn vantage_vista::Condition::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> bool
+impl vantage_vista::Condition
 pub fn vantage_vista::Condition::new(impl core::convert::Into<alloc::string::String>, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> Self
 impl core::clone::Clone for vantage_vista::Condition
 pub fn vantage_vista::Condition::clone(&self) -> Self
@@ -1016,6 +1035,10 @@ pub fn vantage_vista::VistaQuery::new() -> Self
 pub fn vantage_vista::VistaQuery::with_condition(self, vantage_vista::Condition) -> Self
 pub fn vantage_vista::VistaQuery::with_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_search(self, impl core::convert::Into<alloc::string::String>) -> Self
+impl vantage_vista::VistaQuery
+pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
+pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
+pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
 impl core::clone::Clone for vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::clone(&self) -> Self
 impl core::cmp::PartialEq for vantage_vista::VistaQuery
@@ -1146,6 +1169,7 @@ pub fn vantage_vista::Catalog::vista(&self, &str) -> vantage_core::util::error::
 impl<F: core::ops::function::Fn(&str) -> vantage_core::util::error::Result<vantage_vista::Vista> + core::marker::Send + core::marker::Sync> vantage_vista::VistaResolver for F
 pub fn F::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::build_contained_vista(&vantage_vista::Reference, vantage_vista::VistaMetadata, core::option::Option<&ciborium::value::Value>, core::option::Option<vantage_vista::ContainedWriteback>, core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>>) -> vantage_core::util::error::Result<vantage_vista::Vista>
+pub fn vantage_vista::condition_column_error(&vantage_vista::VistaMetadata, &str) -> vantage_core::util::error::VantageError
 pub fn vantage_vista::operand_text(&ciborium::value::Value) -> alloc::string::String
 pub fn vantage_vista::resolve_base_spec<S>(core::option::Option<vantage_vista::SpecResolver<S>>, &str) -> vantage_core::util::error::Result<(vantage_vista::SpecResolver<S>, S)>
 pub fn vantage_vista::unknown_relation(&str) -> vantage_core::util::error::VantageError
