@@ -23,7 +23,8 @@ mod effect;
 /// must not be refused.
 ///
 /// Every vista also gets an equality on a dotted path (`root.leaf`) into a
-/// declared column, which the shell may reject. The effect of an accepted
+/// declared column, which the shell may refuse as `Unimplemented`
+/// ([`condition_column_error`](crate::condition_column_error)); a plain error fails. The effect of an accepted
 /// path is checked only when a fixture row holds a map in a declared column:
 /// the condition built from that map must list the row, and leave out a row
 /// whose map lacks the entry. Without such a row, an accepted path must only

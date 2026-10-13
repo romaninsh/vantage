@@ -1,17 +1,17 @@
-//! `DioShell`'s `TableShell` writes check a row's existence — cache first,
+//! The facade's (`dio.cached()`) writes check a row's existence — cache first,
 //! master on a cache miss — before enqueueing a patch or delete. A patch of
 //! an id absent everywhere is `NotFound` up front rather than a later
 //! `DioEvent::WriteFailed`; a delete of one is an idempotent `Ok` that
 //! queues nothing.
 
-use std::sync::Arc;
-
 use ciborium::Value as CborValue;
 use vantage_core::Result;
-use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
-use vantage_diorama::{Dio, Lens};
+use vantage_dataset::traits::WritableValueSet;
+use vantage_diorama::Dio;
 use vantage_types::Record;
 use vantage_vista::{Capability, Column, Vista, VistaMetadata, mocks::MockShell};
+
+mod support;
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -43,13 +43,7 @@ async fn dio_with_one_row() -> Result<(Dio, MockShell)> {
         )
         .with_metadata(metadata())
         .with_record("1", rec(&[("id", "1"), ("name", "a")]));
-    let master = Vista::new("items", shell.clone());
-
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    let dio = lens.make_dio(master).await?;
-    for (id, row) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &row).await?;
-    }
+    let dio = support::eager_dio(Vista::new("items", shell.clone())).await;
     Ok((dio, shell))
 }
 
@@ -59,7 +53,7 @@ async fn dio_with_one_row() -> Result<(Dio, MockShell)> {
 #[tokio::test]
 async fn cached_row_skips_the_master_read() -> Result<()> {
     let (dio, master) = dio_with_one_row().await?;
-    let vista = dio.vista();
+    let vista = dio.cached();
     master.set_fail_reads(true);
 
     vista.patch_value("1", &rec(&[("name", "b")])).await?;
@@ -77,7 +71,7 @@ async fn cached_row_skips_the_master_read() -> Result<()> {
 #[tokio::test]
 async fn patch_missing_is_not_found_delete_missing_succeeds() -> Result<()> {
     let (dio, _master) = dio_with_one_row().await?;
-    let vista = dio.vista();
+    let vista = dio.cached();
 
     let err = vista
         .patch_value("nope", &rec(&[("name", "x")]))

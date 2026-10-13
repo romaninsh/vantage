@@ -1,6 +1,5 @@
 mod files;
 
-use std::sync::Arc;
 use std::time::Instant;
 
 use files::File;
@@ -8,6 +7,7 @@ use vantage_aws::prelude::*;
 use vantage_diorama::prelude::*;
 use vantage_vista::prelude::*;
 
+const CACHE_FILE: &str = "cache.redb";
 const BUCKET: &str = "noaa-ghcn-pds";
 const PREFIX: &str = "csv/by_station/GM";
 /// Keys per listing request; S3 returns at most 1000.
@@ -26,25 +26,20 @@ async fn run() -> VantageResult<()> {
         .vista_factory()
         .from_table(File::table(aws, BUCKET, PREFIX))?;
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at("cache.redb")
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move { sync(&dio).await }
-            })
-            .build()
-            .context("Failed to build lens")?,
-    );
-    let dio = lens.make_dio(master).await?;
-
+    // A fresh cache file makes the eager start list the bucket from the top.
     if std::env::args().any(|a| a == "--invalidate") {
-        dio.cache().clear().await?;
-        sync(&dio).await?;
+        remove_cache()?;
     }
 
+    let lens = Lens::builder()
+        .cache(Cache::redb(CACHE_FILE))
+        .loader(Loader::eager(|cx: LoaderCx| async move { sync(&cx).await }))
+        .build()
+        .context("Failed to build lens")?;
+    let dio = lens.dio(master).build().await?;
+
     let start = Instant::now();
-    let listing = dio.vista().list_values().await?;
+    let listing = dio.cached().list_values().await?;
     for (filename, file) in &listing {
         let size = file.get("Size").and_then(|v| v.as_str()).unwrap_or("");
         println!("{size:>10}  {filename}");
@@ -57,12 +52,21 @@ async fn run() -> VantageResult<()> {
     Ok(())
 }
 
+fn remove_cache() -> VantageResult<()> {
+    match std::fs::remove_file(CACHE_FILE) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(e).context("Failed to remove the cache")
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Pump the master listing into the cache, one page per request. S3's
 /// paging cursor is simply "the last key seen" — so the last key already
 /// in the cache resumes the listing, and pages loaded by an earlier run
 /// (even one that was interrupted) are never fetched again.
-async fn sync(dio: &Dio) -> VantageResult<()> {
-    let mut token: Option<CborValue> = dio
+async fn sync(cx: &LoaderCx) -> VantageResult<()> {
+    let mut token: Option<CborValue> = cx
         .cache()
         .list_values()
         .await?
@@ -72,9 +76,9 @@ async fn sync(dio: &Dio) -> VantageResult<()> {
         .map(Into::into);
     loop {
         let start = Instant::now();
-        let (page, next) = dio.master().fetch_cursor(token, PAGE_SIZE).await?;
+        let (page, next) = cx.master().fetch_cursor(token, PAGE_SIZE).await?;
         let count = page.rows.len();
-        dio.cache()
+        cx.cache()
             .insert_values(page.rows.into_iter().collect())
             .await?;
         println!("fetched {count} files in {:?}", start.elapsed());

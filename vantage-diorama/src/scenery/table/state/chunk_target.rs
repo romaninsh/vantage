@@ -13,7 +13,7 @@ use super::TableSceneryState;
 
 impl SceneryChunkTarget for TableSceneryState {
     /// A total learned from the chunk fetch itself. This is how a paged lens
-    /// sizes the scrollbar without a `total_provider` — i.e. without a second
+    /// sizes the scrollbar without a separate count — i.e. without a second
     /// request on open, which is the one network call `open()` used to await.
     fn set_chunk_total(&self, total: usize) -> bool {
         self.load_total_reported.store(true, Ordering::SeqCst);
@@ -25,19 +25,12 @@ impl SceneryChunkTarget for TableSceneryState {
         // Count every received row (before the skips below), so the loader can
         // tell a short page (end of set) from a full one.
         self.load_push_count.fetch_add(1, Ordering::SeqCst);
-        // With a *client-side* sort active, the displayed map is a pure
-        // projection of the cache, rebuilt by `reseed_from_cache` once the load
-        // finishes (the loader re-sorts whenever `sort` is set). Stamping this
-        // native-order row into the visible map would expose the master's order
-        // in the window before the re-sort runs — a flicker. Let reseed own the
-        // map. But an `Order`-capable master fetched this window *already* in sort
-        // order (`Dio::fetch_window_ordered`) and there is no client re-sort, so
-        // these rows must be written straight through.
-        if self.sort.read().unwrap().is_some()
-            && !self
-                .master_capabilities
-                .has(vantage_vista::Capability::Order)
-        {
+        // A window answers the view only while the view serves windows: a load
+        // landing after its query moved to the cache or failed writes the
+        // cache, never the visible map. A view serving windows has its order
+        // pushed, so the window is already in the view's order and is written
+        // straight through.
+        if !self.is_chunk_loaded() {
             return ChunkWrite::Skipped;
         }
         // Skip the write entirely when this slot already holds the same fresh
@@ -104,17 +97,13 @@ impl SceneryChunkTarget for TableSceneryState {
         let Some(dio) = self.dio_weak.upgrade() else {
             return;
         };
-        let id_column = dio
-            .master
-            .read()
-            .unwrap()
-            .id_column()
-            .unwrap_or("id")
-            .to_string();
         let rows = self.rows.read().unwrap();
         for idx in &touched {
             if let Some(record) = rows.get(idx)
-                && let Some(id) = record.record.get(&id_column).and_then(cbor_id_to_string)
+                && let Some(id) = record
+                    .record
+                    .get(&dio.id_column)
+                    .and_then(cbor_id_to_string)
             {
                 id_to_idx.insert(id, *idx);
             }

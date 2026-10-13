@@ -23,7 +23,6 @@ futures = "0.3"
 indexmap = "2"
 redb = "2.6"
 serde = { version = "1", features = ["derive"] }
-thiserror = "2"
 tokio = { version = "1", features = ["sync", "rt", "time"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v7"] }
@@ -34,6 +33,10 @@ uuid = { version = "1", features = ["v7"] }
 # for the shared CBOR ⇄ Dynamic converters, so a value round-trips the same
 # way in a servo script as in a vista script.
 rhai = ["dep:vantage-rhai", "vantage-vista/rhai"]
+# The debug tap, its formatters, process stats and Dio diagnostics.
+diagnostics = []
+# Hooks for test harnesses that observe a Dio's internals.
+test-util = []
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -57,7 +60,12 @@ futures = "0.3"
 [[test]]
 name = "bdd"
 harness = false
+required-features = ["diagnostics", "test-util"]
 
 [[test]]
 name = "rhai_servo"
 required-features = ["rhai"]
+
+[[test]]
+name = "debug_tap"
+required-features = ["diagnostics"]

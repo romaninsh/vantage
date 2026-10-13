@@ -14,6 +14,10 @@ use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 
+/// Both tests write `contained_test` rows. SurrealDB answers concurrent
+/// writes to one table with a transaction conflict, so they take turns.
+static TABLE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn v2_db() -> SurrealDB {
     let dsn = "cbor://root:root@localhost:8000/bakery/v2";
     let client = surreal_client::SurrealConnection::dsn(dsn)
@@ -62,6 +66,7 @@ fn test_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
 
 #[tokio::test]
 async fn contains_many_eager_writeback_on_real_surreal() {
+    let _turn = TABLE_LOCK.lock().await;
     let db = v2_db().await;
     let vista = SurrealVistaFactory::new(db.clone())
         .from_table(test_table(db.clone()))
@@ -143,6 +148,7 @@ fn linked_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
 
 #[tokio::test]
 async fn contained_record_traverses_out_to_product() {
+    let _turn = TABLE_LOCK.lock().await;
     let db = v2_db().await;
     let vista = SurrealVistaFactory::new(db.clone())
         .from_table(linked_table(db.clone()))

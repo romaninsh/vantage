@@ -86,14 +86,13 @@ impl<D: DataSet + 'static> TableDelegate for GpuiTableDelegate<D> {
         }
 
         let store = self.store.clone();
-        let count = self.block_on(async move {
+
+        self.block_on(async move {
             match store.column_info().await {
                 Ok(columns) => columns.len(),
                 Err(_) => 0,
             }
-        });
-
-        count
+        })
     }
 
     fn rows_count(&self, _cx: &App) -> usize {

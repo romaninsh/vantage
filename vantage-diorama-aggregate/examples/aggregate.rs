@@ -10,7 +10,7 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Lens, SortDir, TableScenery};
+use vantage_diorama::{Cache, Lens, Loader, SortDir, TableScenery};
 use vantage_diorama_aggregate::{AggregateLens, Count, GroupBy, Reduce, Sum};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
@@ -35,30 +35,19 @@ async fn main() -> Result<()> {
     shell.set_record("2", order("open", 80));
     shell.set_record("3", order("shipped", 45));
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().clear().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .map_err(|e| vantage_core::error!("lens", detail = e.to_string()))?,
-    );
-    let orders = lens.make_dio(Vista::new("orders", shell.clone())).await?;
+    // The eager loader copies the whole master into the cache; a refresh
+    // re-runs it.
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(|cx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()?;
+    let orders = lens
+        .dio(Vista::new("orders", shell.clone()))
+        .build()
+        .await?;
 
     // ---- the aggregates ----------------------------------------------------
     let aggregates = AggregateLens::in_memory()

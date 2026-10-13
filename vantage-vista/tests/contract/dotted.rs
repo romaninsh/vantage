@@ -1,5 +1,6 @@
 //! The dotted-path probe: a condition on `root.leaf` into a declared column
-//! is rejected or narrows, never accepted and matched against nothing.
+//! is refused or narrows, never a plain error and never accepted and
+//! matched against nothing.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -32,10 +33,32 @@ fn boxes() -> MockShell {
         .with_record("b2", rec(&[("id", t("b2")), ("dims", dims("narrow"))]))
 }
 
-/// The mock rejects dotted paths, which passes.
+/// The mock refuses dotted paths with `condition_column_error`, which passes.
 #[tokio::test]
-async fn mock_contract_narrowing_accepts_a_rejected_dotted_path() {
+async fn mock_contract_narrowing_accepts_a_refused_dotted_path() {
     contract::check_narrowing(&Vista::new("box", boxes())).await;
+}
+
+/// Rejects a dotted condition with a plain error instead of refusing it.
+#[derive(Clone)]
+struct Plain {
+    inner: Box<dyn TableShell>,
+}
+
+vantage_vista::forward_table_shell!(Plain, inner, {
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        if condition.column.contains('.') {
+            return Err(vantage_core::error!("no paths here"));
+        }
+        self.inner.add_condition(condition)
+    }
+});
+
+#[tokio::test]
+#[should_panic(expected = "fails with a plain error")]
+async fn mock_contract_narrowing_catches_a_plain_error_on_a_dotted_path() {
+    let vista = Vista::new("box", boxes()).map_shell(|inner| Plain { inner });
+    contract::check_narrowing(&vista).await;
 }
 
 /// Evaluates `root.leaf == value` against the nested map; other conditions
@@ -104,7 +127,7 @@ vantage_vista::forward_table_shell!(Blind, inner, {
 });
 
 #[tokio::test]
-#[should_panic(expected = "a dotted path must narrow or be rejected, not match nothing")]
+#[should_panic(expected = "a dotted path must narrow or be refused, not match nothing")]
 async fn mock_contract_narrowing_catches_a_dotted_path_matching_nothing() {
     let vista = Vista::new("box", boxes()).map_shell(|inner| Blind {
         inner,

@@ -2,17 +2,18 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
-use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
-use vantage_diorama::{Dio, Lens};
+use vantage_dataset::traits::WritableValueSet;
+use vantage_diorama::{Cache, ChangeFlash, Dio, FlashKind, FlashOutcome, Lens};
 use vantage_types::Record;
 use vantage_vista::{
     Column, FilterOp, Page, TableShell, Vista, VistaMetadata, forward_table_shell, mocks::MockShell,
 };
+
+mod support;
 
 fn rec(pairs: &[(&str, &str)]) -> Record<CborValue> {
     let mut r = Record::new();
@@ -44,12 +45,7 @@ fn team_shell() -> MockShell {
 }
 
 async fn warmed_dio(master: Vista) -> Result<Dio> {
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    let dio = lens.make_dio(master).await?;
-    for (id, row) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &row).await?;
-    }
-    Ok(dio)
+    Ok(support::eager_dio(master).await)
 }
 
 /// A shell that refuses every read of the whole set once `refuse` is set,
@@ -84,25 +80,13 @@ forward_table_shell!(ListRefusingShell, inner, {
     }
 });
 
-/// Writes are queued; wait until the store stops shrinking.
-async fn settle(shell: &MockShell, expected_len: usize) {
-    for _ in 0..200 {
-        if shell.len() <= expected_len {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    tokio::time::sleep(Duration::from_millis(50)).await;
-}
-
 #[tokio::test]
 async fn narrowed_delete_all_keeps_rows_outside_the_set() -> Result<()> {
     let (dio, shell) = teams().await?;
-    let mut red = dio.vista();
+    let mut red = dio.cached();
     red.add_condition("team", FilterOp::Eq, "red")?;
 
     red.delete_all().await?;
-    settle(&shell, 1).await;
 
     assert_eq!(
         shell.record_ids(),
@@ -129,28 +113,16 @@ async fn assert_outside_red(red: &Vista, id: &str) {
     );
 }
 
-/// Poll `pred(shell)` every 10 ms for up to 2 s.
-async fn settle_until(shell: &MockShell, pred: impl Fn(&MockShell) -> bool) {
-    for _ in 0..200 {
-        if pred(shell) {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
 #[tokio::test]
 async fn narrowed_facade_writes_stay_in_the_set() -> Result<()> {
     let (dio, shell) = teams().await?;
-    let mut red = dio.vista();
+    let mut red = dio.cached();
     red.add_condition("team", FilterOp::Eq, "red")?;
 
     red.delete("3").await?; // blue: outside the set
     assert_outside_red(&red, "3").await;
     red.insert_value("4", &rec(&[("id", "4")])).await?; // team filled
     red.delete("ghost").await?; // idempotent
-    settle_until(&shell, |s| s.get_record("4").is_some()).await;
-
     assert!(shell.get_record("3").is_some(), "blue row untouched");
     assert_eq!(
         shell.get_record("4").unwrap()["team"],
@@ -170,7 +142,7 @@ async fn narrowed_writes_read_one_row_not_the_set() -> Result<()> {
         refuse: refuse.clone(),
     });
     let dio = warmed_dio(master).await?;
-    let mut red = dio.vista();
+    let mut red = dio.cached();
     red.add_condition("team", FilterOp::Eq, "red")?;
     refuse.store(true, Ordering::SeqCst);
 
@@ -186,7 +158,7 @@ async fn narrowed_writes_read_one_row_not_the_set() -> Result<()> {
 #[tokio::test]
 async fn narrowed_writes_find_rows_only_the_master_holds() -> Result<()> {
     let (dio, shell) = teams().await?;
-    let mut red = dio.vista();
+    let mut red = dio.cached();
     red.add_condition("team", FilterOp::Eq, "red")?;
     shell.set_record("5", rec(&[("id", "5"), ("team", "red")]));
     shell.set_record("6", rec(&[("id", "6"), ("team", "blue")]));
@@ -195,7 +167,6 @@ async fn narrowed_writes_find_rows_only_the_master_holds() -> Result<()> {
     assert_outside_red(&red, "6").await;
     red.delete("6").await?; // outside: nothing queued
     red.delete("5").await?;
-    settle_until(&shell, |s| s.get_record("5").is_none()).await;
 
     assert!(shell.get_record("5").is_none(), "red row deleted");
     assert!(shell.get_record("6").is_some(), "blue row untouched");
@@ -207,19 +178,50 @@ async fn narrowed_writes_find_rows_only_the_master_holds() -> Result<()> {
 #[tokio::test]
 async fn narrowed_write_ignores_a_stale_cache_row() -> Result<()> {
     let (dio, shell) = teams().await?;
-    let mut red = dio.vista();
+    let mut red = dio.cached();
     red.add_condition("team", FilterOp::Eq, "red")?;
     shell.set_field("1", "team", CborValue::Text("blue".into()));
 
     assert_outside_red(&red, "1").await;
     red.delete("1").await?;
     red.delete("2").await?;
-    settle_until(&shell, |s| s.get_record("2").is_none()).await;
 
     assert_eq!(
         shell.get_record("1").unwrap()["team"],
         CborValue::Text("blue".into())
     );
+    Ok(())
+}
+
+/// A handle whose condition the master refuses reads its set from the cache.
+/// `delete_all` judges each id as a single delete does, against the master,
+/// so a stale cached row the master has moved out of the set is kept.
+#[tokio::test]
+async fn narrowed_delete_all_skips_a_stale_cached_row() -> Result<()> {
+    use vantage_vista::Capability;
+    let shell = team_shell().with_capabilities(
+        [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::ConfineWrites,
+        ]
+        .into_iter()
+        .collect(),
+    );
+    let dio = warmed_dio(Vista::new("teams", shell.clone())).await?;
+    let mut not_blue = dio.cached();
+    not_blue.add_condition("team", FilterOp::Ne, "blue")?;
+    shell.set_field("1", "team", CborValue::Text("blue".into()));
+
+    not_blue.delete_all().await?;
+
+    assert!(shell.get_record("2").is_none(), "red row 2 deleted");
+    assert!(
+        shell.get_record("1").is_some(),
+        "row 1 left the set upstream"
+    );
+    assert!(shell.get_record("3").is_some(), "blue row untouched");
     Ok(())
 }
 
@@ -244,7 +246,7 @@ async fn riga_people() -> Result<(Vista, MockShell)> {
     row.insert("address".into(), address("Riga"));
     shell.set_record("1", row);
     let dio = warmed_dio(Vista::new("people", shell.clone())).await?;
-    let mut riga = dio.vista();
+    let mut riga = dio.cached();
     riga.add_condition("address.city", FilterOp::Eq, "Riga")?;
     Ok((riga, shell))
 }
@@ -278,7 +280,6 @@ async fn dotted_path_narrowing_fills_no_literal_key() -> Result<()> {
     let mut inside = rec(&[("id", "4")]);
     inside.insert("address".into(), address("Riga"));
     riga.insert_value("4", &inside).await?;
-    settle_until(&shell, |s| s.get_record("4").is_some()).await;
     let stored = shell.get_record("4").expect("row 4 written");
     assert!(stored.get("address.city").is_none(), "{stored:?}");
     assert_eq!(stored.get("address"), Some(&address("Riga")));
@@ -314,11 +315,6 @@ async fn dotted_path_set_ignores_a_literal_dotted_key() -> Result<()> {
 async fn dotted_path_set_takes_an_in_set_patch() -> Result<()> {
     let (riga, shell) = riga_people().await?;
     riga.patch_value("1", &rec(&[("name", "Ada L.")])).await?;
-    let renamed = |s: &MockShell| {
-        s.get_record("1")
-            .is_some_and(|r| r.get("name") == Some(&CborValue::Text("Ada L.".into())))
-    };
-    settle_until(&shell, renamed).await;
     let stored = shell.get_record("1").expect("row 1");
     assert_eq!(stored.get("name"), Some(&CborValue::Text("Ada L.".into())));
     assert_eq!(stored.get("address"), Some(&address("Riga")));
@@ -327,18 +323,142 @@ async fn dotted_path_set_takes_an_in_set_patch() -> Result<()> {
 
 #[tokio::test]
 async fn retried_insert_flash_is_a_no_op() -> Result<()> {
-    let (dio, _shell) = teams().await?;
-    let mut events = dio.subscribe_events();
-    dio.flash_insert("9".to_string(), rec(&[("id", "9"), ("team", "red")]))
+    let (dio, shell) = teams().await?;
+    let insert = || ChangeFlash::insert("9", rec(&[("id", "9"), ("team", "red")]));
+    dio.flash(insert()).await?;
+    dio.flash(insert()).await?;
+    assert_eq!(shell.len(), 4);
+    Ok(())
+}
+
+// ---- a derived Dio's writes stay inside its full query ---------------------
+
+/// The team shell, writable and confining, but without `FilterOps`: a `Ne`
+/// condition is refused and becomes a derived Dio's residual.
+fn residual_shell() -> MockShell {
+    use vantage_vista::Capability;
+    team_shell().with_capabilities(
+        [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::ConfineWrites,
+        ]
+        .into_iter()
+        .collect(),
+    )
+}
+
+/// A Dio over the team shell narrowed to `team != blue`, a clause its master
+/// refuses: the master holds every row and the residual does the narrowing.
+async fn not_blue() -> Result<(Dio, MockShell)> {
+    let shell = residual_shell();
+    let dio = warmed_dio(Vista::new("teams", shell.clone())).await?;
+    let not_blue = dio
+        .with_query(&support::cond("team", FilterOp::Ne, "blue"))
         .await?;
-    dio.flash_insert("9".to_string(), rec(&[("id", "9"), ("team", "red")]))
+    assert!(!not_blue.residual().conditions.is_empty());
+    Ok((not_blue, shell))
+}
+
+/// `delete_all` on a derived Dio's facade deletes only the rows its residual
+/// admits.
+#[tokio::test]
+async fn derived_delete_all_keeps_rows_outside_the_residual() -> Result<()> {
+    let (not_blue, shell) = not_blue().await?;
+    not_blue.cached().delete_all().await?;
+    assert_eq!(shell.record_ids(), vec!["3".to_string()]);
+    Ok(())
+}
+
+/// Facade and Dio writes on a derived Dio are held to its residual before
+/// anything is staged.
+#[tokio::test]
+async fn derived_writes_are_refused_outside_the_residual() -> Result<()> {
+    let (not_blue, shell) = not_blue().await?;
+    let facade = not_blue.cached();
+
+    let blue = rec(&[("id", "4"), ("team", "blue")]);
+    assert!(
+        facade
+            .insert_value("4", &blue)
+            .await
+            .unwrap_err()
+            .is_conflict()
+    );
+    let moved = ChangeFlash::partial("1", rec(&[("team", "blue")]));
+    assert!(not_blue.flash(moved).await.unwrap_err().is_conflict());
+    let outside = ChangeFlash::delete("3");
+    assert!(not_blue.flash(outside).await.unwrap_err().is_conflict());
+    let taken = ChangeFlash::replace("3", rec(&[("id", "3"), ("team", "red")]));
+    assert!(not_blue.flash(taken).await.unwrap_err().is_conflict());
+
+    facade
+        .insert_value("5", &rec(&[("id", "5"), ("team", "green")]))
         .await?;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    while let Ok(e) = events.try_recv() {
-        assert!(
-            !matches!(e, vantage_diorama::DioEvent::WriteFailed { .. }),
-            "{e:?}"
-        );
-    }
+    assert_eq!(shell.len(), 4, "only the in-set insert landed");
+    assert_eq!(
+        shell.get_record("1").unwrap()["team"],
+        CborValue::Text("red".into())
+    );
+    assert!(shell.get_record("3").is_some());
+    Ok(())
+}
+
+/// What a recording writer saw: the kind, the id and the record of each flash.
+type Seen = Arc<std::sync::Mutex<Vec<(FlashKind, Option<String>, Record<CborValue>)>>>;
+
+/// A Dio over the team shell narrowed to `team == red`, which the master
+/// takes, whose Lens writer records every flash and writes nothing.
+async fn routed_red() -> Result<(Dio, Seen)> {
+    let seen = Seen::default();
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(support::copy_master())
+        .writer({
+            let seen = seen.clone();
+            move |_cx, flash| {
+                let entry = (
+                    *flash.kind(),
+                    flash.id().map(str::to_string),
+                    flash.patch().clone(),
+                );
+                seen.lock().unwrap().push(entry);
+                async { Ok(FlashOutcome::applied()) }
+            }
+        })
+        .build()?;
+    let dio = lens.dio(Vista::new("teams", team_shell())).build().await?;
+    let red = dio
+        .with_query(&support::cond("team", FilterOp::Eq, "red"))
+        .await?;
+    assert!(red.residual().is_empty(), "the master took the condition");
+    Ok((red, seen))
+}
+
+/// A writer bypasses the master's own confinement, so a Dio with a writer
+/// checks its whole query: a `Clear` becomes one delete per row in the set,
+/// an insert gets the set's value filled in, and a row outside the set is
+/// never written.
+#[tokio::test]
+async fn a_writer_route_is_confined_to_the_full_query() -> Result<()> {
+    let (red, seen) = routed_red().await?;
+
+    red.cached().delete_all().await?;
+    red.flash(ChangeFlash::insert("4", rec(&[("id", "4")])))
+        .await?;
+    let missing = red
+        .flash(ChangeFlash::partial("3", rec(&[("team", "red")])))
+        .await;
+    assert!(missing.unwrap_err().is_not_found(), "3 is not in the set");
+    red.flash(ChangeFlash::delete("3")).await?;
+
+    let seen = seen.lock().unwrap();
+    let flashes: Vec<String> = seen
+        .iter()
+        .map(|(kind, id, _)| format!("{kind:?} {}", id.as_deref().unwrap_or("-")))
+        .collect();
+    assert_eq!(flashes, ["Delete 1", "Delete 2", "Insert 4"]);
+    assert_eq!(seen[2].2.get("team"), Some(&CborValue::Text("red".into())));
     Ok(())
 }

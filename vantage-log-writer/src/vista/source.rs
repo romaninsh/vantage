@@ -13,13 +13,13 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use serde_json::Value;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::WritableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, Page, Preview, TableShell, VistaCapabilities, VistaMetadata,
-    unsupported,
+    condition_column_error, unsupported,
 };
 
 use crate::log_writer::LogWriter;
@@ -112,11 +112,12 @@ impl TableShell for LogWriterTableShell {
         refuse_read()
     }
 
-    /// Equality on a declared column, recorded on this handle only.
+    /// Equality on a declared column, recorded on this handle only. A dotted
+    /// path into a declared column is refused, for the caller to evaluate.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         if !self.metadata.columns.contains_key(field) {
-            return Err(error!("Unknown column for condition", field = field));
+            return Err(condition_column_error(&self.metadata, field));
         }
         if condition.op != FilterOp::Eq {
             return unsupported(Capability::FilterOps);

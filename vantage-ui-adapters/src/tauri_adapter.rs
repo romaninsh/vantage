@@ -28,10 +28,10 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
 
     async fn load_data(&self) {
         // Load column names
-        if let Ok(column_info) = self.store.column_info().await {
-            if let Ok(mut column_names) = self.column_names.write() {
-                *column_names = column_info.into_iter().map(|col| col.name).collect();
-            }
+        if let Ok(column_info) = self.store.column_info().await
+            && let Ok(mut column_names) = self.column_names.write()
+        {
+            *column_names = column_info.into_iter().map(|col| col.name).collect();
         }
 
         // Load row data
@@ -62,12 +62,11 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
     }
 
     pub fn update_cell(&self, row: usize, col: usize, value: String) {
-        if let Ok(mut rows) = self.rows.write() {
-            if let Some(row_data) = rows.get_mut(row) {
-                if col < row_data.cells.len() {
-                    row_data.cells[col] = value;
-                }
-            }
+        if let Ok(mut rows) = self.rows.write()
+            && let Some(row_data) = rows.get_mut(row)
+            && col < row_data.cells.len()
+        {
+            row_data.cells[col] = value;
         }
     }
 
@@ -87,10 +86,10 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
     }
 
     pub fn remove_row(&self, index: usize) {
-        if let Ok(mut rows) = self.rows.write() {
-            if index < rows.len() {
-                rows.remove(index);
-            }
+        if let Ok(mut rows) = self.rows.write()
+            && index < rows.len()
+        {
+            rows.remove(index);
         }
     }
 
@@ -106,12 +105,11 @@ impl<D: DataSet + 'static> TauriTableModel<D> {
     }
 
     pub fn get_cell_value(&self, row: usize, col: usize) -> String {
-        if let Ok(rows) = self.rows.read() {
-            if let Some(row_data) = rows.get(row) {
-                if let Some(cell) = row_data.cells.get(col) {
-                    return cell.clone();
-                }
-            }
+        if let Ok(rows) = self.rows.read()
+            && let Some(row_data) = rows.get(row)
+            && let Some(cell) = row_data.cells.get(col)
+        {
+            return cell.clone();
         }
         String::new()
     }

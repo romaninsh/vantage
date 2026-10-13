@@ -1,6 +1,7 @@
-//! Client-side sort must survive a LIVE `patched` insert on an eager
+//! Client-side sort must survive a LIVE pushed insert on an eager
 //! (single-pass) Dio — the analogue of `chunk_sort.rs`'s refresh guarantee, but
-//! for the live push path (`dio.patched`) that a streaming source (faker) drives.
+//! for the live push path (`dio.apply_change`) that a streaming source (faker)
+//! drives.
 //! A newly inserted row must land at its *sorted* position, not be appended in
 //! insertion order. This is the path that decayed the faker dashboard's sorted
 //! pie chart: correct at open, drifting as fifo inserts arrived.
@@ -11,7 +12,7 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Dio, Lens, SortDir, TableScenery};
+use vantage_diorama::{Cache, ChangeEvent, Dio, Lens, Refresher, SortDir, TableScenery};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Column, Vista, VistaMetadata};
@@ -51,6 +52,14 @@ fn order(scenery: &Arc<dyn TableScenery>) -> Vec<String> {
         .collect()
 }
 
+/// A live push of `record` under `id`: the cache upsert and `RecordChanged`
+/// a streaming forwarder drives.
+async fn pushed(dio: &Dio, id: &str, record: Record<CborValue>) -> Result<()> {
+    let new = Some(record);
+    dio.apply_change(ChangeEvent::Updated { id: id.into(), new })
+        .await
+}
+
 #[tokio::test]
 async fn client_sort_survives_live_patched_insert() -> Result<()> {
     let dio = eager_dio(master()).await;
@@ -65,7 +74,7 @@ async fn client_sort_survives_live_patched_insert() -> Result<()> {
 
     // A live insert of the smallest amount must land at the BOTTOM.
     let g1 = u64::from(*gen_rx.borrow_and_update());
-    dio.patched("d", amount_rec("d", 5)).await?;
+    pushed(&dio, "d", amount_rec("d", 5)).await?;
     wait_for_gen(&mut gen_rx, g1).await;
     assert_eq!(
         order(&scenery),
@@ -75,7 +84,7 @@ async fn client_sort_survives_live_patched_insert() -> Result<()> {
 
     // A live insert of a middle amount must land in its sorted position.
     let g2 = u64::from(*gen_rx.borrow_and_update());
-    dio.patched("e", amount_rec("e", 25)).await?;
+    pushed(&dio, "e", amount_rec("e", 25)).await?;
     wait_for_gen(&mut gen_rx, g2).await;
     assert_eq!(
         order(&scenery),
@@ -145,33 +154,19 @@ fn is_desc(scenery: &Arc<dyn TableScenery>) -> bool {
     amounts(scenery).windows(2).all(|w| w[0] >= w[1])
 }
 
-/// Eager Dio whose `on_refresh` snapshot-replaces the cache from the master —
+/// Eager Dio whose refresher snapshot-replaces the cache from the master —
 /// exactly `vantage-ui`'s `build_eager_lens` shape (the path faker uses).
 async fn eager_dio_with_refresh(master: Vista) -> Dio {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().clear().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("lens builds"),
-    );
-    lens.make_dio(master).await.expect("make_dio")
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(support::copy_master())
+        .refresher(Refresher::new(|cx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()
+        .expect("lens builds");
+    lens.dio(master).build().await.expect("dio builds")
 }
 
 /// Mirrors the running faker dashboard: one sorted scenery and one unsorted
@@ -213,7 +208,7 @@ async fn client_sort_survives_shared_dio_live_stream() -> Result<()> {
         master_handle.set_record(&id, amount_rec(&id, amount));
         // ...forwarder patches the Dio cache + broadcasts RecordChanged.
         let gp = u64::from(*gen_rx.borrow_and_update());
-        dio.patched(&id, amount_rec(&id, amount)).await?;
+        pushed(&dio, &id, amount_rec(&id, amount)).await?;
         wait_for_gen(&mut gen_rx, gp).await;
 
         // The list's 2s poll fires a whole-Dio refresh on some ticks.

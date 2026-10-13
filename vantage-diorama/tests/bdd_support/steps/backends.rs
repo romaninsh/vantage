@@ -16,7 +16,7 @@ async fn select_backend(w: &mut DioramaWorld, kind: String) {
 #[then(regex = r"^the facade lists (\d+) rows?$")]
 async fn facade_list_count(w: &mut DioramaWorld, expected: u64) {
     let dio = w.dio.as_ref().expect("dio not created");
-    let rows = dio.vista().list_values().await.expect("facade list");
+    let rows = dio.cached().list_values().await.expect("facade list");
     assert_eq!(
         rows.len() as u64,
         expected,
@@ -29,7 +29,7 @@ async fn facade_list_count(w: &mut DioramaWorld, expected: u64) {
 async fn get_value_returns_title(w: &mut DioramaWorld, id: String, expected: String) {
     let dio = w.dio.as_ref().expect("dio not created");
     let row = dio
-        .vista()
+        .cached()
         .get_value(&id)
         .await
         .expect("facade get_value")
@@ -47,6 +47,6 @@ async fn get_value_returns_title(w: &mut DioramaWorld, id: String, expected: Str
 #[then(regex = r"^the facade count is (\d+)$")]
 async fn facade_count(w: &mut DioramaWorld, expected: i64) {
     let dio = w.dio.as_ref().expect("dio not created");
-    let got = dio.vista().count().await.expect("facade count");
+    let got = dio.cached().count().await.expect("facade count");
     assert_eq!(got, expected, "facade count: want {expected}, got {got}");
 }

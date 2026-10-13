@@ -7,13 +7,19 @@
 //! `flash()` freezes the error signal into an immutable [`ChangeFlash`]
 //! carrying only the changed fields.
 
+use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
+use futures::future::BoxFuture;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Dio, FlashKind, FlashRejection, Generation, IdStrategy, Lens, ServoStatus};
+use vantage_diorama::{
+    Cache, ChangeEvent, ChangeFlash, Dio, DioEvent, FlashKind, FlashOutcome, FlashRejection,
+    Generation, IdStrategy, Lens, LoaderCx, ServoStatus,
+};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -59,12 +65,59 @@ fn product_vista(shell: &MockShell) -> Vista {
 
 /// Dio over an in-memory cache seeded from the master's current rows.
 async fn dio_over(shell: &MockShell) -> Result<Dio> {
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    let dio = lens.make_dio(product_vista(shell)).await?;
-    for (id, r) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &r).await?;
-    }
+    let lens = Lens::builder().cache(Cache::memory()).build()?;
+    seeded(lens.dio(product_vista(shell)).build().await?).await
+}
+
+/// [`dio_over`] whose Lens routes every write through `writer`.
+async fn routed_dio<F, Fut>(shell: &MockShell, writer: F) -> Result<Dio>
+where
+    F: Fn(LoaderCx, ChangeFlash) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<FlashOutcome>> + Send + 'static,
+{
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .writer(writer)
+        .build()?;
+    seeded(lens.dio(product_vista(shell)).build().await?).await
+}
+
+async fn seeded(dio: Dio) -> Result<Dio> {
+    dio.reconcile(dio.master().list_values().await?).await?;
     Ok(dio)
+}
+
+/// A writer that saves each flash into the Dio's master, failing while
+/// `reject` is set.
+fn saving_writer(
+    reject: Arc<AtomicBool>,
+) -> impl Fn(LoaderCx, ChangeFlash) -> BoxFuture<'static, Result<FlashOutcome>> + Send + Sync {
+    move |cx, flash| {
+        let reject = reject.clone();
+        let master = cx.master().clone();
+        Box::pin(async move {
+            if reject.load(Ordering::SeqCst) {
+                return Err(vantage_core::error!("route rejected the flash"));
+            }
+            flash.active_record(&master)?.save().await?;
+            Ok(FlashOutcome::applied())
+        })
+    }
+}
+
+/// An upstream change to `p1`, pushed into the Dio.
+async fn upstream(dio: &Dio, name: &str, stock: i64) -> Result<()> {
+    let row = rec(&[
+        ("id", text("p1")),
+        ("name", text(name)),
+        ("price", int(3)),
+        ("stock", int(stock)),
+    ]);
+    dio.apply_change(ChangeEvent::Updated {
+        id: "p1".into(),
+        new: Some(row),
+    })
+    .await
 }
 
 async fn wait_for_gen(rx: &mut tokio::sync::watch::Receiver<Generation>, current: u64) -> u64 {
@@ -156,16 +209,7 @@ async fn clean_fields_track_upstream_while_a_field_is_locked() -> Result<()> {
     let g = u64::from(*gen_rx.borrow_and_update());
 
     // Upstream reports a new state: stock moved, name unchanged upstream.
-    dio.patched(
-        "p1",
-        rec(&[
-            ("id", text("p1")),
-            ("name", text("Coffee")),
-            ("price", int(3)),
-            ("stock", int(99)),
-        ]),
-    )
-    .await?;
+    upstream(&dio, "Coffee", 99).await?;
     wait_for_gen(&mut gen_rx, g).await;
 
     assert_eq!(
@@ -194,16 +238,7 @@ async fn upstream_convergence_zeroes_the_error() -> Result<()> {
     let g = u64::from(*gen_rx.borrow_and_update());
 
     // Upstream independently arrives at the commanded value.
-    dio.patched(
-        "p1",
-        rec(&[
-            ("id", text("p1")),
-            ("name", text("Tea")),
-            ("price", int(3)),
-            ("stock", int(10)),
-        ]),
-    )
-    .await?;
+    upstream(&dio, "Tea", 10).await?;
     wait_for_gen(&mut gen_rx, g).await;
 
     assert!(
@@ -330,7 +365,7 @@ async fn servo_delete_flashes_a_delete() -> Result<()> {
         "master row gone"
     );
     assert!(
-        dio.cache().get_value("p1").await?.is_none(),
+        dio.cached().get_value("p1").await?.is_none(),
         "cache row gone"
     );
     Ok(())
@@ -341,19 +376,7 @@ async fn servo_delete_flashes_a_delete() -> Result<()> {
 #[tokio::test]
 async fn rejected_flash_reverts_and_reports_failed() -> Result<()> {
     let shell = product_shell();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(|_dio, _flash| async move {
-                Err(vantage_core::error!("route rejected the flash"))
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(product_vista(&shell)).await?;
-    for (id, r) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &r).await?;
-    }
+    let dio = routed_dio(&shell, saving_writer(Arc::new(AtomicBool::new(true)))).await?;
     let servo = dio.servo("p1").await?;
 
     servo.set("name", text("Tea"));
@@ -364,7 +387,7 @@ async fn rejected_flash_reverts_and_reports_failed() -> Result<()> {
     // but the servo is a draft: the setpoint survives the failure.
     assert!(matches!(servo.status(), ServoStatus::Failed(_)));
     assert_eq!(
-        dio.cache().get_value("p1").await?.unwrap().get("name"),
+        dio.cached().get_value("p1").await?.unwrap().get("name"),
         Some(&text("Coffee")),
         "cache pre-image restored"
     );
@@ -390,32 +413,27 @@ async fn draft_holds_through_pending() -> Result<()> {
     let shell = product_shell();
     let gate = Arc::new(tokio::sync::Notify::new());
     let release = gate.clone();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(move |_dio, _flash| {
-                let gate = gate.clone();
-                async move {
-                    gate.notified().await;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(product_vista(&shell)).await?;
-    for (id, r) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &r).await?;
-    }
+    let dio = routed_dio(&shell, move |_cx, _flash| {
+        let gate = gate.clone();
+        async move {
+            gate.notified().await;
+            Ok(FlashOutcome::applied())
+        }
+    })
+    .await?;
     let servo = Arc::new(dio.servo("p1").await?);
+    let mut bus = dio.subscribe_events();
 
     servo.set("name", text("Tea"));
     let in_flight = {
         let servo = servo.clone();
         tokio::spawn(async move { servo.flash().await })
     };
-    // Give the flash time to stage and block on the gate.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Wait for the flash to stage; its writer then blocks on the gate.
+    let staged = async { while !matches!(bus.recv().await, Ok(DioEvent::WritePending { .. })) {} };
+    tokio::time::timeout(Duration::from_secs(5), staged)
+        .await
+        .expect("the flash was never staged");
 
     assert!(matches!(servo.status(), ServoStatus::Pending));
     assert_eq!(servo.get("name"), Some(text("Tea")), "setpoint locked");
@@ -436,35 +454,9 @@ async fn draft_holds_through_pending() -> Result<()> {
 
 #[tokio::test]
 async fn failed_save_retries_successfully() -> Result<()> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
     let shell = product_shell();
     let reject = Arc::new(AtomicBool::new(true));
-    let reject_flag = reject.clone();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(move |dio, flash| {
-                let reject = reject_flag.clone();
-                let master = dio.master();
-                async move {
-                    if reject.load(Ordering::SeqCst) {
-                        return Err(vantage_core::error!("route rejected the flash"));
-                    }
-                    flash
-                        .active_record(master.as_ref())?
-                        .save()
-                        .await
-                        .map(|_| ())
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(product_vista(&shell)).await?;
-    for (id, r) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &r).await?;
-    }
+    let dio = routed_dio(&shell, saving_writer(reject.clone())).await?;
     let servo = dio.servo("p1").await?;
 
     servo.set("name", text("Tea"));
@@ -519,32 +511,9 @@ async fn uuid_strategy_mints_identity_up_front() -> Result<()> {
 
 #[tokio::test]
 async fn uuid_create_retry_reuses_the_id() -> Result<()> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
     let shell = product_shell();
     let reject = Arc::new(AtomicBool::new(true));
-    let reject_flag = reject.clone();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(move |dio, flash| {
-                let reject = reject_flag.clone();
-                let master = dio.master();
-                async move {
-                    if reject.load(Ordering::SeqCst) {
-                        return Err(vantage_core::error!("route rejected the flash"));
-                    }
-                    flash
-                        .active_record(master.as_ref())?
-                        .save()
-                        .await
-                        .map(|_| ())
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(product_vista(&shell)).await?;
+    let dio = routed_dio(&shell, saving_writer(reject.clone())).await?;
     let servo = dio.servo_new(IdStrategy::Uuid);
     let id = servo.id().expect("minted at creation");
 
@@ -577,11 +546,11 @@ async fn a_create_settles_on_the_id_the_driver_stored() -> Result<()> {
     assert_eq!(flash.id(), Some(settled.as_str()));
     assert_eq!(servo.id().as_deref(), Some(settled.as_str()));
     assert!(
-        dio.cache().get_value(&minted).await?.is_none(),
+        dio.cached().get_value(&minted).await?.is_none(),
         "the minted key is retired"
     );
     assert!(
-        dio.cache().get_value(&settled).await?.is_some(),
+        dio.cached().get_value(&settled).await?.is_some(),
         "the row lives under the id the driver reported"
     );
     assert_eq!(shell.len(), 1, "one record upstream");
@@ -601,8 +570,8 @@ async fn a_create_settles_on_a_renamed_id_column() -> Result<()> {
         .with_column(Column::new("name", "String").with_flag("title"))
         .with_id_column("sku");
     let vista = Vista::new("products", shell.clone().with_metadata(metadata));
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    let dio = lens.make_dio(vista).await?;
+    let lens = Lens::builder().cache(Cache::memory()).build()?;
+    let dio = lens.dio(vista).build().await?;
 
     let servo = dio.servo_new(IdStrategy::Uuid);
     let minted = servo.id().expect("minted at creation");
@@ -613,11 +582,11 @@ async fn a_create_settles_on_a_renamed_id_column() -> Result<()> {
     assert_eq!(flash.id(), Some(settled.as_str()));
     assert_eq!(servo.id().as_deref(), Some(settled.as_str()));
     assert!(
-        dio.cache().get_value(&minted).await?.is_none(),
+        dio.cached().get_value(&minted).await?.is_none(),
         "the minted key is retired"
     );
     let row = dio
-        .cache()
+        .cached()
         .get_value(&settled)
         .await?
         .expect("the row lives under the id the driver reported");
@@ -654,7 +623,7 @@ async fn an_auto_create_binds_the_id_the_driver_qualified() -> Result<()> {
         "the bound id resolves upstream"
     );
     assert!(
-        dio.cache().get_value(&id).await?.is_some(),
+        dio.cached().get_value(&id).await?.is_some(),
         "cache seeded under that same id"
     );
     Ok(())
@@ -676,7 +645,7 @@ async fn auto_strategy_binds_the_backend_id() -> Result<()> {
     let id = servo.id().expect("bound to the created row");
     assert_eq!(flash.id(), Some(id.as_str()));
     assert!(
-        dio.cache().get_value(&id).await?.is_some(),
+        dio.cached().get_value(&id).await?.is_some(),
         "cache seeded with the created row"
     );
     assert!(!servo.is_dirty(), "converged clean on the created row");
@@ -689,24 +658,45 @@ async fn auto_strategy_binds_the_backend_id() -> Result<()> {
     Ok(())
 }
 
+/// A servo on a row a derived Dio's residual leaves out starts with no
+/// baseline, and its flash is refused before anything is written.
+#[tokio::test]
+async fn a_servo_outside_the_set_starts_empty_and_is_confined() -> Result<()> {
+    use vantage_vista::{Capability, Condition, FilterOp, VistaQuery};
+    let shell = product_shell().with_capabilities(
+        [Capability::Insert, Capability::Update, Capability::Delete]
+            .into_iter()
+            .collect(),
+    );
+    let dio = dio_over(&shell).await?;
+    let not_coffee = dio
+        .with_query(&VistaQuery::new().with_condition(Condition::new(
+            "name",
+            FilterOp::Ne,
+            "Coffee",
+        )))
+        .await?;
+    assert!(!not_coffee.residual().conditions.is_empty());
+
+    let servo = not_coffee.servo("p1").await?;
+    assert!(servo.baseline().is_none(), "p1 is outside the set");
+    servo.set("price", int(9));
+    let err = servo.flash().await.unwrap_err();
+    assert!(err.is_conflict(), "{err}");
+    assert!(matches!(servo.status(), ServoStatus::Failed(_)));
+    assert_eq!(shell.get_record("p1").unwrap().get("price"), Some(&int(3)));
+    Ok(())
+}
+
 #[tokio::test]
 async fn rejection_field_errors_reach_the_status() -> Result<()> {
     let shell = product_shell();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(|_dio, _flash| async move {
-                Err(FlashRejection::new("validation failed")
-                    .with_field("price", "must be positive")
-                    .into_error())
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(product_vista(&shell)).await?;
-    for (id, r) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &r).await?;
-    }
+    let dio = routed_dio(&shell, |_cx, _flash| async move {
+        Err(FlashRejection::new("validation failed")
+            .with_field("price", "must be positive")
+            .into_error())
+    })
+    .await?;
     let servo = dio.servo("p1").await?;
 
     servo.set("price", int(-5));
@@ -730,28 +720,19 @@ async fn foreign_delete_failure_leaves_servo_tracking() -> Result<()> {
     // that record: the revert restores the row, but the failure belongs
     // to the delete's issuer (the confirm dialog) — not the edit form.
     let shell = product_shell();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(|_dio, flash| async move {
-                if flash.kind() == &FlashKind::Delete {
-                    Err(vantage_core::error!("FOREIGN KEY constraint failed"))
-                } else {
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(product_vista(&shell)).await?;
-    for (id, r) in dio.master().list_values().await? {
-        dio.cache().insert_value(&id, &r).await?;
-    }
+    let dio = routed_dio(&shell, |_cx, flash| async move {
+        if flash.kind() == &FlashKind::Delete {
+            Err(vantage_core::error!("FOREIGN KEY constraint failed"))
+        } else {
+            Ok(FlashOutcome::applied())
+        }
+    })
+    .await?;
     let servo = dio.servo("p1").await?;
     let mut gen_rx = servo.subscribe();
     let g = u64::from(*gen_rx.borrow_and_update());
 
-    let result = dio.flash_delete("p1").await;
+    let result = dio.flash(ChangeFlash::delete("p1")).await;
     assert!(
         result.is_err(),
         "the rejection surfaces to the delete caller"
@@ -768,7 +749,7 @@ async fn foreign_delete_failure_leaves_servo_tracking() -> Result<()> {
         servo.status()
     );
     assert_eq!(
-        dio.cache().get_value("p1").await?.unwrap().get("name"),
+        dio.cached().get_value("p1").await?.unwrap().get("name"),
         Some(&text("Coffee")),
         "cache pre-image restored"
     );

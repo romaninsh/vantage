@@ -1,8 +1,8 @@
 //! Stage 6 demo: RecordScenery as a "detail sheet" surface.
 //!
 //! A text-mode polling loop prints the current record + status on each
-//! generation bump. We then mutate the cache from outside and watch
-//! the loop pick it up.
+//! generation bump. We then apply external changes and watch the loop
+//! pick them up.
 //!
 //! Run with:
 //!   cargo run -p vantage-diorama --example sheet_demo
@@ -14,7 +14,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Lens, RecordScenery};
+use vantage_diorama::{Cache, ChangeEvent, Lens, Loader, LoaderCx, RecordScenery};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -79,21 +79,15 @@ async fn wait_for_bump(
 async fn main() -> Result<()> {
     let tmp = TempDir::new().expect("tempdir");
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.cache().insert_values(rows).await
+        }))
+        .build()?;
 
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
 
     // Open the sheet for a known row.
     let sheet = dio.record_scenery("c1").await?;
@@ -102,19 +96,27 @@ async fn main() -> Result<()> {
     // External system renames the row.
     let mut gen_rx = sheet.subscribe();
     let last = u64::from(*gen_rx.borrow_and_update());
-    dio.patched("c1", record("espresso", 5)).await?;
-    let last = wait_for_bump(&mut gen_rx, last).await;
-    print_scenery("after patched", &sheet);
+    dio.apply_change(updated("c1", record("espresso", 5)))
+        .await?;
+    wait_for_bump(&mut gen_rx, last).await;
+    print_scenery("after the update", &sheet);
 
     // Open another sheet for a missing id — NotFound, no master fetch.
     let missing = dio.record_scenery("nope").await?;
     print_scenery("for missing id", &missing);
 
-    // Land that row through `patched`; the existing sheet observes the change.
-    dio.patched("nope", record("appeared", 2)).await?;
+    // Land that row through the change ingress; the open sheet observes it.
+    dio.apply_change(updated("nope", record("appeared", 2)))
+        .await?;
     let _ = wait_for_bump(&mut missing.subscribe(), 0).await;
-    print_scenery("after patched (missing → appeared)", &missing);
+    print_scenery("after the update (missing → appeared)", &missing);
 
-    let _ = last;
     Ok(())
+}
+
+fn updated(id: &str, record: Record<CborValue>) -> ChangeEvent {
+    ChangeEvent::Updated {
+        id: id.to_string(),
+        new: Some(record),
+    }
 }

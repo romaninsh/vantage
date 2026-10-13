@@ -10,13 +10,13 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
-    VistaMetadata, unknown_relation, unsupported,
+    VistaMetadata, condition_column_error, unknown_relation, unsupported,
 };
 
 use crate::csv::Csv;
@@ -106,14 +106,16 @@ impl TableShell for CsvTableShell {
         Ok(Page::from_listing(self.read_all().await?, offset, limit))
     }
 
-    /// Equality on a declared column. CSV evaluates no other operator.
+    /// Equality on a declared column. CSV evaluates no other operator, and
+    /// refuses a dotted path into a declared column for the caller to
+    /// evaluate.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         let column = self
             .table
             .columns()
             .get(field)
-            .ok_or_else(|| error!("Unknown column for condition", field = field))?
+            .ok_or_else(|| condition_column_error(&self.metadata, field))?
             .clone();
         if condition.op != FilterOp::Eq {
             return unsupported(Capability::FilterOps);

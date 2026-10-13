@@ -1,7 +1,6 @@
 mod product;
 mod sim;
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use product::Product;
@@ -32,36 +31,18 @@ async fn run() -> VantageResult<()> {
     // capability to inject, only a live local copy to keep.
     let master = db.vista_factory().from_table(Product::table(db.clone()))?;
 
-    // An eager, reactive lens. `on_start` loads the whole table into an
+    // An eager, reactive lens. The eager start loads the whole table into an
     // in-memory cache before the server answers a single request; every second
-    // `on_refresh` rebuilds it from the master, so a sale the till commits — or
-    // an edit you make with `sqlite3` — appears on the next tick. Reads never
+    // the refresher reconciles it with the master, so a sale the till commits —
+    // or an edit you make with `sqlite3` — appears on the next tick. Reads never
     // touch SQLite; only the reconcile does.
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().clear().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .refresh_every(Duration::from_secs(1))
-            .build()
-            .context("build lens")?,
-    );
-    let dio = lens.make_dio(master).await?;
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(reload))
+        .refresher(Refresher::new(reload).every(Duration::from_secs(1)))
+        .build()
+        .context("build lens")?;
+    let dio = lens.dio(master).build().await?;
 
     // The bar's till: a background task selling and restocking, so the data
     // actually moves while a watch is open.
@@ -86,6 +67,12 @@ async fn run() -> VantageResult<()> {
          try: curl -N 'localhost:3008/api/products?watch=true'"
     );
     axum::serve(listener, app).await.context("server failed")
+}
+
+/// Make the cache hold exactly the master's rows.
+async fn reload(cx: LoaderCx) -> VantageResult<()> {
+    let rows = cx.master().list_values().await?;
+    cx.reconcile(rows).await
 }
 
 /// Create the `product` table if absent and stock the shelf on first run.

@@ -1,7 +1,7 @@
 //! Generic augmentation, end-to-end: a master Vista listed cheaply, each row
 //! enriched one-at-a-time from a *separate* detail Vista resolved through a
-//! [`Catalog`]. Proves the `.augment(...)` wiring drives the two-pass
-//! machinery without any hand-written list/detail callbacks.
+//! [`Catalog`]. Proves `DioBuilder::augment` drives the two-pass machinery
+//! without any hand-written list/detail callbacks.
 //!
 //! Both vistas are in-memory `MockShell`s — independent handles resolved by
 //! name, which is exactly the "wire two generic Vistas into one Dio" shape (the
@@ -14,11 +14,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use support::detail_shell::DetailShell;
-use support::{meta, record, text};
+use support::{augmented_dio, fixed_augmentation, meta, quick_lens, record, size_detail, text};
 use tempfile::TempDir;
 use vantage_diorama::{
-    Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
+    Augmentation, Cache, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
 };
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Catalog, Column, Vista, VistaMetadata, VistaResolver};
@@ -58,14 +57,16 @@ fn catalog() -> Arc<dyn VistaResolver> {
     )
 }
 
-/// A resolver that knows no names, for augmentations over a fixed handle.
-fn empty_catalog() -> Arc<dyn VistaResolver> {
-    Arc::new(Catalog::new())
+fn resolved(table: &str) -> Detail {
+    Detail::Resolved {
+        resolver: catalog(),
+        name: table.into(),
+    }
 }
 
 fn aug(table: &str, source: Source, merge: &[&str]) -> Augmentation {
     Augmentation {
-        detail: Detail::Catalog(table.into()),
+        detail: resolved(table),
         source,
         fetch: Fetch::PerRow,
         merge: MergeRule {
@@ -74,16 +75,13 @@ fn aug(table: &str, source: Source, merge: &[&str]) -> Augmentation {
     }
 }
 
+/// A no-loader Lens over a redb file in `tmp`.
+fn redb_lens(tmp: &TempDir) -> Arc<Lens> {
+    quick_lens(Cache::redb(tmp.path().join("cache.redb")))
+}
+
 async fn open(tmp: &TempDir, augmentations: Vec<Augmentation>) -> Dio {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens.make_dio(master_vista()).await.expect("make_dio");
-    dio.augment(catalog(), augmentations)
+    augmented_dio(&redb_lens(tmp), master_vista(), augmentations).await
 }
 
 fn status_of(s: &Arc<dyn TableScenery>, i: usize) -> Option<RowStatus> {
@@ -105,6 +103,18 @@ async fn eventually(label: &str, f: impl Fn() -> bool) {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     panic!("condition '{label}' not met within timeout");
+}
+
+/// Open a two-row listing over `dio`, ask for both rows, and wait until row
+/// `row` is `Fresh`.
+async fn hydrated(dio: &Dio, row: usize) -> Arc<dyn TableScenery> {
+    let scenery = support::open_listed(dio, 2).await;
+    scenery.set_viewport(0..2);
+    eventually("hydrated", || {
+        matches!(status_of(&scenery, row), Some(RowStatus::Fresh))
+    })
+    .await;
+    scenery
 }
 
 // ---------------------------------------------------------------------------
@@ -151,13 +161,7 @@ async fn column_source_keyed_by_field() {
         to: None,
     };
     let dio = open(&tmp, vec![aug("runs-detail", source, &["detail"])]).await;
-    let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
-
-    eventually("hydrated", || {
-        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
-    })
-    .await;
+    let scenery = hydrated(&dio, 0).await;
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
 }
 
@@ -173,13 +177,7 @@ async fn multiple_augmentations_merge_independently() {
         ],
     )
     .await;
-    let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
-
-    eventually("hydrated", || {
-        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
-    })
-    .await;
+    let scenery = hydrated(&dio, 0).await;
 
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
     assert_eq!(col_of(&scenery, 0, "extra").as_deref(), Some("x0"));
@@ -213,12 +211,7 @@ async fn missing_key_field_marks_row_failed() {
 async fn refresh_keeps_hydrated_detail_when_master_unchanged() {
     let tmp = TempDir::new().unwrap();
     let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
-    let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
-    eventually("hydrated", || {
-        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
-    })
-    .await;
+    let scenery = hydrated(&dio, 0).await;
 
     dio.refresh().await.expect("refresh");
     tokio::time::sleep(Duration::from_millis(20)).await;
@@ -236,9 +229,9 @@ async fn custom_fetch_closure_reads_narrowed_detail() {
 
     let tmp = TempDir::new().unwrap();
     let augmentation = Augmentation {
-        detail: Detail::Catalog("runs-detail".into()),
+        detail: resolved("runs-detail"),
         source: Source::Id,
-        fetch: Fetch::Custom(Arc::new(|detail: V| {
+        fetch: Fetch::Custom(Arc::new(|detail: V, _row| {
             Box::pin(async move { Ok(detail.list_values().await?.into_values().collect()) })
         })),
         merge: MergeRule {
@@ -246,14 +239,37 @@ async fn custom_fetch_closure_reads_narrowed_detail() {
         },
     };
     let dio = open(&tmp, vec![augmentation]).await;
-    let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
-
-    eventually("hydrated", || {
-        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
-    })
-    .await;
+    let scenery = hydrated(&dio, 0).await;
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
+}
+
+/// A [`Fetch::Custom`] closure receives the listed master row beside the
+/// narrowed detail vista: here it reads `branch`, a field the detail vista
+/// doesn't have, the way cmd's row script reads its inputs.
+#[tokio::test]
+async fn custom_fetch_closure_reads_the_master_row() {
+    let tmp = TempDir::new().unwrap();
+    let augmentation = Augmentation {
+        detail: resolved("runs-detail"),
+        source: Source::Id,
+        fetch: Fetch::Custom(Arc::new(|detail: Vista, row| {
+            Box::pin(async move {
+                assert!(detail.column("branch").is_none(), "only the row has it");
+                let branch = match row.get("branch") {
+                    Some(CborValue::Text(b)) => b.clone(),
+                    other => panic!("the listed row carries its branch: {other:?}"),
+                };
+                Ok(vec![record(&[("label", &format!("on {branch}"))])])
+            })
+        })),
+        merge: MergeRule {
+            columns: vec!["label".into()],
+        },
+    };
+    let dio = open(&tmp, vec![augmentation]).await;
+    let scenery = hydrated(&dio, 1).await;
+    assert_eq!(col_of(&scenery, 0, "label").as_deref(), Some("on main"));
+    assert_eq!(col_of(&scenery, 1, "label").as_deref(), Some("on dev"));
 }
 
 /// The finder/live_folder shape: the detail is a FIXED get-only Vista handle,
@@ -285,31 +301,22 @@ async fn fixed_detail_vista_hydrates_without_a_catalog() {
         .with_record("r0", record(&[("id", "r0"), ("path", "a/logs")]))
         .with_record("r1", record(&[("id", "r1"), ("path", "a/tmp")]))
         .with_metadata(meta(&["id", "path"]));
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens
-        .make_dio(Vista::new("listing", master))
-        .await
-        .expect("make_dio")
-        .augment(
-            empty_catalog(), // the fixed handle needs no catalog
-            vec![Augmentation {
-                detail: Detail::Fixed(fixed),
-                source: Source::Column {
-                    from: "path".into(),
-                    to: None,
-                },
-                fetch: Fetch::PerRow,
-                merge: MergeRule {
-                    columns: vec!["size".into(), "file_count".into()],
-                },
-            }],
-        );
+    let dio = augmented_dio(
+        &redb_lens(&tmp),
+        Vista::new("listing", master),
+        vec![Augmentation {
+            detail: Detail::Fixed(fixed),
+            source: Source::Column {
+                from: "path".into(),
+                to: None,
+            },
+            fetch: Fetch::PerRow,
+            merge: MergeRule {
+                columns: vec!["size".into(), "file_count".into()],
+            },
+        }],
+    )
+    .await;
     let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..2);
 
@@ -345,28 +352,15 @@ async fn changed_master_row_refetches_its_augment() {
     let master_writer = Vista::new("m", master_shell.clone());
     let detail_writer = Vista::new("d", detail_shell.clone());
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens
-        .make_dio(Vista::new("listing", master_shell))
-        .await
-        .expect("make_dio")
-        .augment(
-            empty_catalog(),
-            vec![Augmentation {
-                detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail_shell))),
-                source: Source::Id,
-                fetch: Fetch::PerRow,
-                merge: MergeRule {
-                    columns: vec!["size".into()],
-                },
-            }],
-        );
+    let dio = augmented_dio(
+        &redb_lens(&tmp),
+        Vista::new("listing", master_shell),
+        vec![fixed_augmentation(
+            Vista::new("sizes", detail_shell),
+            &["size"],
+        )],
+    )
+    .await;
     let scenery = support::open_listed(&dio, 2).await;
     scenery.set_viewport(0..1);
     eventually("hydrated with the first size", || {
@@ -406,7 +400,6 @@ async fn changed_master_row_refetches_its_augment() {
 
 #[tokio::test]
 async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
-    use std::sync::atomic::Ordering;
     use vantage_dataset::prelude::WritableValueSet;
 
     let tmp = TempDir::new().unwrap();
@@ -424,50 +417,13 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         .with_metadata(meta(&["id", "modified", "size"]));
     let master_writer = Vista::new("m", master_shell.clone());
 
-    let mut detail_rows = indexmap::IndexMap::new();
-    detail_rows.insert(
-        "logs".to_string(),
-        record(&[("id", "logs"), ("size", "4096")]),
-    );
-    detail_rows.insert("tmp".to_string(), record(&[("id", "tmp"), ("size", "512")]));
-    let detail = DetailShell::new(detail_rows);
-    let gets = detail.gets.clone();
-
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens
-        .make_dio(Vista::new("listing", master_shell))
-        .await
-        .expect("make_dio")
-        .augment(
-            empty_catalog(),
-            vec![Augmentation {
-                detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
-                source: Source::Id,
-                fetch: Fetch::PerRow,
-                merge: MergeRule {
-                    columns: vec!["size".into()],
-                },
-            }],
-        );
+    let (dio, detail) = folder_size_dio(&tmp, master_shell).await;
+    let gets = || detail.get_log().len();
     let scenery = dio.table_scenery().page_size(4).open().await.unwrap();
     // Row order shifts as reseeds re-list the cache — address rows by id.
     let by_id = |id: &'static str, c: &'static str| {
         let scenery = scenery.clone();
-        move || {
-            (0..scenery.row_count())
-                .filter_map(|i| scenery.row(i))
-                .find(|r| matches!(r.record.get("id"), Some(CborValue::Text(t)) if t == id))
-                .and_then(|r| match r.record.get(c) {
-                    Some(CborValue::Text(t)) => Some(t.clone()),
-                    _ => None,
-                })
-        }
+        move || col_by_id(&scenery, id, c)
     };
     scenery.set_viewport(0..3);
     eventually("folder rows hydrated", || {
@@ -476,7 +432,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
     })
     .await;
     assert_eq!(
-        gets.load(Ordering::SeqCst),
+        gets(),
         2,
         "gap rule: only the two folders fetched — the file's list-supplied size is no gap"
     );
@@ -499,11 +455,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         );
         assert_eq!(by_id("tmp", "size")().as_deref(), Some("512"));
     }
-    assert_eq!(
-        gets.load(Ordering::SeqCst),
-        2,
-        "unchanged rows never refetch their augment"
-    );
+    assert_eq!(gets(), 2, "unchanged rows never refetch their augment");
 
     // One folder's `modified` moves: its augment clears (the gap is open
     // again) and ONLY that row refetches. A moved FILE row never fetches —
@@ -528,15 +480,32 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         by_id("logs", "modified")().as_deref() == Some("t2")
             && by_id("logs", "size")().as_deref() == Some("4096")
             && by_id("run.log", "size")().as_deref() == Some("96")
-            && gets.load(Ordering::SeqCst) == 3
+            && gets() == 3
     })
     .await;
     assert_eq!(
-        gets.load(Ordering::SeqCst),
+        gets(),
         3,
         "exactly the changed folder refetched; its sibling and the file stayed cold"
     );
     assert_eq!(by_id("tmp", "size")().as_deref(), Some("512"));
+}
+
+/// A Dio over `master_shell` whose `size` comes from a fixed get-only detail
+/// holding the `logs` and `tmp` folder sizes. The detail shell comes back too,
+/// so a test can count its gets.
+async fn folder_size_dio(tmp: &TempDir, master_shell: MockShell) -> (Dio, MockShell) {
+    let detail = size_detail([("logs", "4096"), ("tmp", "512")]);
+    let dio = augmented_dio(
+        &redb_lens(tmp),
+        Vista::new("listing", master_shell),
+        vec![fixed_augmentation(
+            Vista::new("sizes", detail.clone()),
+            &["size"],
+        )],
+    )
+    .await;
+    (dio, detail)
 }
 
 /// A row's column by id, order-independent (reseeds re-list the cache).
@@ -556,7 +525,6 @@ fn col_by_id(s: &Arc<dyn TableScenery>, id: &str, c: &str) -> Option<String> {
 /// leaves the augment blank until something demands it again.
 #[tokio::test]
 async fn augment_fetches_only_while_a_view_demands_augment_columns() {
-    use std::sync::atomic::Ordering;
     use vantage_dataset::prelude::WritableValueSet;
 
     let tmp = TempDir::new().unwrap();
@@ -566,37 +534,8 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         .with_metadata(meta(&["id", "modified"]));
     let master_writer = Vista::new("m", master_shell.clone());
 
-    let mut detail_rows = indexmap::IndexMap::new();
-    detail_rows.insert(
-        "logs".to_string(),
-        record(&[("id", "logs"), ("size", "4096")]),
-    );
-    detail_rows.insert("tmp".to_string(), record(&[("id", "tmp"), ("size", "512")]));
-    let detail = DetailShell::new(detail_rows);
-    let gets = detail.gets.clone();
-
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .viewport_debounce(Duration::from_millis(1))
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens
-        .make_dio(Vista::new("listing", master_shell))
-        .await
-        .expect("make_dio")
-        .augment(
-            empty_catalog(),
-            vec![Augmentation {
-                detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail))),
-                source: Source::Id,
-                fetch: Fetch::PerRow,
-                merge: MergeRule {
-                    columns: vec!["size".into()],
-                },
-            }],
-        );
+    let (dio, detail) = folder_size_dio(&tmp, master_shell).await;
+    let gets = || detail.get_log().len();
 
     // A tree-shaped view: demands only cheap columns. Gap rows exist, a
     // viewport is held — and still nothing fetches.
@@ -610,7 +549,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
     tree.set_viewport(0..2);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
-        gets.load(Ordering::SeqCst),
+        gets(),
         0,
         "no open view demands an augment column — the detail pass stays idle"
     );
@@ -630,7 +569,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
             && col_by_id(&listing, "tmp", "size").as_deref() == Some("512")
     })
     .await;
-    assert_eq!(gets.load(Ordering::SeqCst), 2, "one fetch per gap row");
+    assert_eq!(gets(), 2, "one fetch per gap row");
 
     // The listing closes: demand drains. A demoted row KEEPS its stale
     // augment value (stale-while-refetch — the display never blanks once
@@ -644,7 +583,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
     tree.set_viewport(0..2);
     tokio::time::sleep(Duration::from_millis(120)).await;
     assert_eq!(
-        gets.load(Ordering::SeqCst),
+        gets(),
         2,
         "demand drained — the demoted row does not refetch"
     );
@@ -665,10 +604,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
     listing.set_viewport(0..2);
     // The stale value already reads "4096", so the wait must be on the FETCH
     // COUNTER — the visible value merely stops being stale when it lands.
-    eventually("re-demanded row refetches", || {
-        gets.load(Ordering::SeqCst) == 3
-    })
-    .await;
+    eventually("re-demanded row refetches", || gets() == 3).await;
     assert_eq!(
         col_by_id(&listing, "logs", "size").as_deref(),
         Some("4096"),

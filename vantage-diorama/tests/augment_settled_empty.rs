@@ -22,10 +22,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use support::chunk::col_at;
-use support::{meta, record};
+use support::{augmented_dio, meta, record};
 use tempfile::TempDir;
 use vantage_diorama::{
-    Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
+    Augmentation, Cache, Detail, Dio, Fetch, Lens, MergeRule, Refresher, RowStatus, Source,
+    TableScenery, Tuning,
 };
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Catalog, Vista, VistaResolver};
@@ -59,9 +60,12 @@ fn counting_catalog(hits: Arc<AtomicUsize>) -> Arc<dyn VistaResolver> {
     }))
 }
 
-fn aug() -> Augmentation {
+fn aug(hits: Arc<AtomicUsize>) -> Augmentation {
     Augmentation {
-        detail: Detail::Catalog("runs-detail".into()),
+        detail: Detail::Resolved {
+            resolver: counting_catalog(hits),
+            name: "runs-detail".into(),
+        },
         source: Source::Id,
         fetch: Fetch::PerRow,
         merge: MergeRule {
@@ -70,22 +74,18 @@ fn aug() -> Augmentation {
     }
 }
 
-/// `refresh_every` only spawns the ticker when an `on_refresh` callback exists,
-/// so register a no-op one. An augmenting Dio never calls it — it runs its own
-/// reconciling pass — but its presence is what starts the timer, which is the
-/// path under test.
+/// The ticker is the refresher's `every`, so give the Lens a no-op refresher
+/// with that interval. Each tick runs the augmenting Dio's reconciling pass,
+/// which is the path under test.
 async fn open_with_ticker(tmp: &TempDir, hits: Arc<AtomicUsize>, tick: Option<Duration>) -> Dio {
-    let mut lens = Lens::new()
-        .cache_at(tmp.path().join("cache.redb"))
-        .viewport_debounce(Duration::from_millis(1));
+    let mut lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .tuning(Tuning::default().with_viewport_debounce(Duration::from_millis(1)));
     if let Some(tick) = tick {
-        lens = lens
-            .refresh_every(tick)
-            .on_refresh(|_dio: &Dio| async move { Ok(()) });
+        lens = lens.refresher(Refresher::new(|_cx| async { Ok(()) }).every(tick));
     }
-    let lens = Arc::new(lens.build().expect("lens builds"));
-    let dio = lens.make_dio(master_vista()).await.expect("make_dio");
-    dio.augment(counting_catalog(hits), vec![aug()])
+    let lens = lens.build().expect("lens builds");
+    augmented_dio(&lens, master_vista(), vec![aug(hits)]).await
 }
 
 fn status_of(s: &Arc<dyn TableScenery>, i: usize) -> Option<RowStatus> {

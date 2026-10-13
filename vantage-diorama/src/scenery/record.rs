@@ -1,8 +1,9 @@
 //! `RecordScenery` — reactive single-row view.
 //!
 //! Opens for one record id, exposes its current cached row + status,
-//! and bumps a watch channel when the underlying row changes. Status
-//! transitions in v1:
+//! and bumps a watch channel when the underlying row changes. A row outside
+//! the Dio's residual is not found; when the residual names an augmented
+//! value, the row is hydrated before it is judged. Status transitions:
 //!
 //! | Trigger                              | Status     |
 //! |--------------------------------------|------------|
@@ -12,16 +13,15 @@
 //! | Reload finds nothing                 | `NotFound` |
 //! | Reload errored (backend failure)     | `Error(_)` |
 //!
-//! Deliberately *not* in v1:
+//! Not supported:
 //!
 //! - **Master fetch on cache miss** — the cache is the source of
-//!   truth. Use [`Dio::patched`](crate::Dio::patched) to seed the row.
-//! - **`PendingWrite` status + `mark_pending_write`** — optimistic
-//!   write tracking lands when the UI adapter (stage 8) exercises it.
-//! - **`Stale` status** — no producer until refresh/TTL tracking
-//!   gains a real signal.
-//! - **`dirty_fields`** — the form view manages its own draft state;
-//!   `EnrichedRecord` carries the slot for the future binding.
+//!   truth. Use [`Dio::apply_change`](crate::Dio::apply_change) to seed the
+//!   row.
+//! - **A `PendingWrite` status** — an in-flight write shows as the row's
+//!   [`EnrichedRecord`] state, not as a status.
+//! - **`Stale` status** — nothing produces it.
+//! - **`dirty_fields`** — the form view manages its own draft state.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -78,11 +78,13 @@ impl RecordSceneryState {
     }
 
     /// Re-read the row from cache, update record + status, bump generation.
+    /// A row outside the Dio's residual is not found.
     async fn reload(&self) -> Result<()> {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return Ok(());
         };
-        match self.reader(&dio_inner).get_value(&self.id).await {
+        let reader = self.reader(&dio_inner);
+        match dio_inner.read_admitted(reader.as_ref(), &self.id).await {
             Ok(Some(rec)) => self.set_loaded(rec),
             Ok(None) => self.set_not_found(),
             Err(e) => self.set_error(e.to_string()),
@@ -112,9 +114,14 @@ impl RecordSceneryState {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return;
         };
-        if let Ok(Some(rec)) = self.reader(&dio_inner).get_value(&self.id).await {
-            *self.record.write().unwrap() = Some(Arc::new(EnrichedRecord::pending_write(rec)));
-            self.bump_generation();
+        match self.reader(&dio_inner).get_value(&self.id).await {
+            Ok(Some(rec)) => {
+                *self.record.write().unwrap() = Some(Arc::new(EnrichedRecord::pending_write(rec)));
+                self.bump_generation();
+            }
+            // Nothing staged under this id (an id-less insert): nothing to show.
+            Ok(None) => {}
+            Err(e) => self.set_error(e.to_string()),
         }
     }
 
@@ -130,7 +137,12 @@ impl RecordSceneryState {
                     Some(Arc::new(EnrichedRecord::write_failed(rec, error)));
             }
             // Pre-image was absent (a failed insert): drop the row.
-            _ => *self.record.write().unwrap() = None,
+            Ok(None) => *self.record.write().unwrap() = None,
+            // The restored row can't be read: keep what is shown, and say
+            // both why the write failed and why the row isn't current.
+            Err(e) => {
+                return self.set_error(format!("{error}; reading the restored row failed: {e}"));
+            }
         }
         self.bump_generation();
     }
@@ -239,9 +251,8 @@ impl RecordScenery for RecordSceneryImpl {
     }
 }
 
-/// Internal constructor — wires the bus task and returns the impl.
-/// Used by [`Dio::record_scenery`](crate::Dio::record_scenery) and
-/// [`Dio::record_scenery_with`](crate::Dio::record_scenery_with).
+/// Wire the bus task and return the view over `id`, starting from
+/// `initial_record` and `initial_status`.
 pub(crate) fn spawn_record_scenery(
     dio: &Arc<DioInner>,
     id: String,

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -10,7 +11,7 @@ use vantage_types::Record;
 ///
 /// Each Dio under a Lens claims one named table within the backend.
 /// `open_table(name)` returns the per-Dio handle that DioShell reads
-/// from and that `on_start` callbacks write to.
+/// from and that loaders write to.
 #[async_trait]
 pub trait CacheBackend: Send + Sync + 'static {
     /// Open (or create) the named cache table. Backends are free to
@@ -25,35 +26,27 @@ pub trait CacheBackend: Send + Sync + 'static {
     /// that is only ever closed by dropping — at an exit that may never run
     /// destructors — degrades startup permanently.
     ///
-    /// Idempotent and safe to call while readers still hold tables: the
-    /// default does nothing, which is right for stores with no such state.
-    async fn close(&self) {}
+    /// Idempotent and safe to call while readers still hold tables. A store
+    /// with no such state implements it as a no-op.
+    async fn close(&self);
 
     /// Every table currently present in the backend.
     ///
     /// The counterpart to [`drop_table`](Self::drop_table): a consumer that
     /// encodes query variants (or a config epoch) into the *table* name needs
-    /// to enumerate what is there to know what is stale. Backends that cannot
-    /// enumerate return an empty list, which reads as "nothing to reclaim" —
-    /// safe, because the only caller is a sweep.
-    async fn list_tables(&self) -> Result<Vec<String>> {
-        Ok(Vec::new())
-    }
+    /// to enumerate what is there to know what is stale. A backend that
+    /// cannot enumerate returns an error.
+    async fn list_tables(&self) -> Result<Vec<String>>;
 
     /// Remove a table and its rows entirely.
     ///
     /// Distinct from [`CacheTable::clear`], which empties a table that stays
-    /// open: this reclaims the name. Dropping a table that does not exist is
-    /// not an error. Backends that cannot drop leave the default no-op — the
-    /// rows simply stay, which costs space but is never incorrect.
-    async fn drop_table(&self, _name: &str) -> Result<()> {
-        Ok(())
-    }
+    /// open: this reclaims the name, and the table's meta goes with it.
+    /// Dropping a table that does not exist is not an error.
+    async fn drop_table(&self, name: &str) -> Result<()>;
 
     /// Short human label for diagnostics (`"redb"`, `"memory"`).
-    fn name(&self) -> &'static str {
-        "unknown"
-    }
+    fn name(&self) -> &'static str;
 }
 
 /// Persisted completeness of a cached record. Two-pass loading writes
@@ -77,9 +70,11 @@ pub enum CacheStatus {
 /// flags on the facade Vista flip according to whether the cache or
 /// the master answers a given operation.
 ///
-/// The status-agnostic methods (`get_value`, `insert_value`, …) treat
+/// The status-agnostic writes (`insert_value`, `insert_values`) store
 /// every record as [`CacheStatus::Complete`]; two-pass callers use the
-/// `*_with_status` variants to read/write completeness.
+/// `*_with_status` variants to read/write completeness. Every method is
+/// required: a backend that dropped the status would silently break
+/// two-pass resume.
 #[async_trait]
 pub trait CacheTable: Send + Sync + 'static {
     async fn list_values(&self) -> Result<IndexMap<String, Record<CborValue>>>;
@@ -88,67 +83,57 @@ pub trait CacheTable: Send + Sync + 'static {
 
     async fn insert_value(&self, id: &str, record: &Record<CborValue>) -> Result<()>;
 
-    /// Bulk write — typical `on_start` shape. Implementations may
+    /// Bulk write — typical eager-start shape. Implementations may
     /// commit in a single transaction.
     async fn insert_values(&self, rows: IndexMap<String, Record<CborValue>>) -> Result<()>;
 
     async fn delete_value(&self, id: &str) -> Result<()>;
 
+    /// Remove every row. Also forgets [`meta_refreshed_at`](Self::meta_refreshed_at),
+    /// so an emptied table never looks fresh; the stated total stays.
     async fn clear(&self) -> Result<()>;
 
     async fn count(&self) -> Result<i64>;
 
     /// The master set's grand total as last STATED by a fetch (a counted
-    /// window response or a `total_provider`) — persisted so a reopened
+    /// window response) — persisted so a reopened
     /// paged view can size itself to its final geometry before any fetch
     /// runs, instead of growing in a visible step when the first counted
-    /// response lands. `None` = never learned. Defaults keep meta-less
-    /// backends valid: they simply reopen without a remembered total.
-    async fn meta_total(&self) -> Result<Option<u64>> {
-        Ok(None)
-    }
+    /// response lands. `None` = never learned.
+    async fn meta_total(&self) -> Result<Option<u64>>;
 
     /// Persist the stated grand total — see [`Self::meta_total`]. Callers
     /// must not write totals of a *narrowed* fetch (an active quicksearch):
     /// the meta describes the table the next open will show.
-    async fn set_meta_total(&self, _total: u64) -> Result<()> {
-        Ok(())
-    }
+    async fn set_meta_total(&self, total: u64) -> Result<()>;
 
-    /// Read a record together with its persisted [`CacheStatus`]. The
-    /// default treats any stored record as `Complete`; persisting backends
-    /// override this.
+    /// When the table's contents were last refreshed from the master, as
+    /// recorded by [`set_meta_refreshed_at`](Self::set_meta_refreshed_at).
+    /// `None` = never recorded. Persisted so a refresher's maximum age holds
+    /// across restarts.
+    async fn meta_refreshed_at(&self) -> Result<Option<SystemTime>>;
+
+    /// Record when the table's contents were refreshed — see
+    /// [`Self::meta_refreshed_at`]. A backend may refuse a time it can't
+    /// store with an error; redb refuses one before the Unix epoch.
+    async fn set_meta_refreshed_at(&self, at: SystemTime) -> Result<()>;
+
+    /// Read a record together with its persisted [`CacheStatus`].
     async fn get_value_with_status(
         &self,
         id: &str,
-    ) -> Result<Option<(Record<CborValue>, CacheStatus)>> {
-        Ok(self
-            .get_value(id)
-            .await?
-            .map(|r| (r, CacheStatus::Complete)))
-    }
+    ) -> Result<Option<(Record<CborValue>, CacheStatus)>>;
 
-    /// Write a record with an explicit [`CacheStatus`]. The default drops
-    /// the status (writes a plain record); persisting backends override.
+    /// Write a record with an explicit [`CacheStatus`].
     async fn insert_value_with_status(
         &self,
         id: &str,
         record: &Record<CborValue>,
-        _status: CacheStatus,
-    ) -> Result<()> {
-        self.insert_value(id, record).await
-    }
+        status: CacheStatus,
+    ) -> Result<()>;
 
-    /// List records together with their persisted statuses. The default
-    /// reports every record as `Complete`.
+    /// List records together with their persisted statuses.
     async fn list_values_with_status(
         &self,
-    ) -> Result<IndexMap<String, (Record<CborValue>, CacheStatus)>> {
-        Ok(self
-            .list_values()
-            .await?
-            .into_iter()
-            .map(|(id, r)| (id, (r, CacheStatus::Complete)))
-            .collect())
-    }
+    ) -> Result<IndexMap<String, (Record<CborValue>, CacheStatus)>>;
 }

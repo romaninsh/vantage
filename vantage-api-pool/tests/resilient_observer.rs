@@ -7,10 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use support::{
-    Recorder, background_error, counting_refresher, essential_fast, mount_script, mount_status,
-    requests, scripted_refresher, within,
+    Recorder, background_error, counting_refresher, essential_fast, local_client, mount_script,
+    mount_status, requests, scripted_refresher, within,
 };
-use vantage_api_pool::ResilientClient;
 use vantage_api_pool::resilient::{ErrorKind, TransportEvent};
 use wiremock::MockServer;
 
@@ -19,7 +18,7 @@ async fn observer_sees_every_attempt_retry_and_breaker_transition() {
     let server = MockServer::start().await;
     mount_script(&server, [503, 503, 200]).await;
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
+    let client = local_client()
         .observer("local", rec.clone())
         .circuit_breaker_growing(2, Duration::from_millis(1), Duration::from_millis(1))
         .build();
@@ -56,7 +55,7 @@ async fn observer_pairs_the_401_attempt_with_a_failed_event() {
 
     let (refresher, calls) = counting_refresher();
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
+    let client = local_client()
         .observer("local", rec.clone())
         .bearer_auth(refresher)
         .build();
@@ -84,7 +83,7 @@ async fn a_failing_refresher_reports_a_failed_event() {
 
     let (refresher, _) = scripted_refresher(|_| Err(anyhow::anyhow!("token endpoint down")));
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
+    let client = local_client()
         .observer("local", rec.clone())
         .bearer_auth(refresher)
         .build();
@@ -110,7 +109,7 @@ async fn a_failing_reacquire_reports_its_own_started() {
         _ => Err(anyhow::anyhow!("token endpoint down")),
     });
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
+    let client = local_client()
         .observer("local", rec.clone())
         .bearer_auth(refresher)
         .build();
@@ -132,7 +131,7 @@ async fn observer_reports_fail_fast_and_probe_closing_on_404() {
     mount_script(&server, [503, 404]).await;
 
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
+    let client = local_client()
         .observer("local", rec.clone())
         .circuit_breaker_growing(1, Duration::from_millis(20), Duration::from_millis(20))
         .build();
@@ -181,7 +180,7 @@ async fn observer_ms_excludes_the_breaker_wait() {
     mount_script(&server, [503, 200]).await;
 
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
+    let client = local_client()
         .observer("local", rec.clone())
         .circuit_breaker_growing(1, Duration::from_millis(200), Duration::from_millis(200))
         .build();

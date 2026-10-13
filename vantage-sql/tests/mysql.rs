@@ -3,6 +3,10 @@
 #[path = "common/safe_writes.rs"]
 mod safe_writes_contract;
 
+#[cfg(all(feature = "mysql", feature = "vista"))]
+#[path = "common/dotted.rs"]
+mod dotted;
+
 #[cfg(feature = "mysql")]
 mod mysql {
     /// True when the server under test is MariaDB rather than MySQL — for

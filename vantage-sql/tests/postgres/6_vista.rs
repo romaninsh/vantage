@@ -115,6 +115,16 @@ async fn vista_count_with_eq_condition() -> TestResult {
 }
 
 #[tokio::test]
+async fn vista_condition_on_a_dotted_path_is_refused() -> TestResult {
+    let (db, name) = setup("dotted").await;
+    let vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &name))?;
+    crate::dotted::assert_dotted_path_is_refused(&vista, "name.first");
+    Ok(())
+}
+
+#[tokio::test]
 async fn vista_yaml_loads_table_and_columns() -> TestResult {
     let (db, name) = setup("yaml").await;
 

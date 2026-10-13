@@ -56,5 +56,6 @@ mod tests {
     mod capped;
     mod eval;
     mod narrow;
+    mod query;
     mod runtime;
 }

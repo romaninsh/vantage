@@ -27,14 +27,9 @@ async fn lens_with_on_start_load(w: &mut DioramaWorld) {
 
 #[when("the dio is created")]
 async fn create_dio(w: &mut DioramaWorld) {
-    let cache = w.cache_source();
-    let lens = w
-        .lens_builder
-        .build(cache, &w.spies, w.backend)
-        .expect("build lens");
+    let lens = w.build_lens();
     let master = w.master.take().expect("master not set");
-    let dio = lens.make_dio(master).await.expect("make_dio");
-    w.start_recorder(dio.subscribe_events());
+    let dio = w.build_dio(&lens, master).await;
     w.lens = Some(lens);
     w.dio = Some(dio);
 }

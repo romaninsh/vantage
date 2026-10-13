@@ -2,6 +2,10 @@
 #[path = "common/safe_writes.rs"]
 mod safe_writes_contract;
 
+#[cfg(feature = "vista")]
+#[path = "common/dotted.rs"]
+mod dotted;
+
 mod sqlite {
     #[path = "4_aggregates.rs"]
     mod aggregates;
