@@ -75,22 +75,23 @@ impl MockShell {
     /// search …`, or `all rows`.
     pub(super) fn render_query(&self) -> String {
         let mut parts = Vec::new();
-        if !self.filters.is_empty() {
-            let filters: Vec<String> = self
-                .filters
+        let query = &self.query;
+        if !query.conditions.is_empty() {
+            let filters: Vec<String> = query
+                .conditions
                 .iter()
                 .map(|c| format!("{} {} {:?}", c.column, c.op.key_symbol(), c.value))
                 .collect();
             parts.push(format!("where {}", filters.join(" and ")));
         }
-        if let Some((column, dir)) = &self.order {
+        if let Some((column, dir)) = &query.order {
             let dir = match dir {
                 crate::SortDirection::Ascending => "asc",
                 crate::SortDirection::Descending => "desc",
             };
             parts.push(format!("order by {column} {dir}"));
         }
-        if let Some(text) = &self.search {
+        if let Some(text) = &query.search {
             parts.push(format!("search {text:?}"));
         }
         if parts.is_empty() {

@@ -7,7 +7,9 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_types::{Entity, Record};
-use vantage_vista::{Capability, Condition, FilterOp, SortDirection, unsupported};
+use vantage_vista::{
+    Capability, Condition, FilterOp, SortDirection, condition_column_error, unsupported,
+};
 
 use super::dialect::{Shell, SqlShellDialect};
 use super::shell::cbor_record;
@@ -30,17 +32,16 @@ where
     T: SqlShellDialect,
     E: Entity<T::Value> + 'static,
 {
-    /// A dotted column is refused rather than compared as a column name:
-    /// SQL evaluates neither a nested path into a column's value
+    /// A dotted column is refused with [`condition_column_error`] rather than
+    /// compared as a column name, so a caller can evaluate it over the rows
+    /// it reads: SQL evaluates neither a nested path into a column's value
     /// (`address.city`) nor a condition on an imported column (`author.name`),
-    /// which exists only as a projection alias.
+    /// which exists only as a projection alias. A path under an unknown
+    /// column is a plain error.
     pub(super) fn apply_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         if field.contains('.') {
-            return Err(error!(
-                "a dotted column (a nested path or an imported column) can't be filtered in SQL",
-                field = field
-            ));
+            return Err(condition_column_error(&self.metadata, field));
         }
         let column = self
             .table

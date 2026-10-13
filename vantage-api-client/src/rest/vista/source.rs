@@ -23,8 +23,8 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, Page, Preview, Reference as VistaReference, SortDirection,
-    TableShell, Vista, VistaCapabilities, VistaMetadata, VistaResolver, unknown_relation,
-    unsupported,
+    TableShell, Vista, VistaCapabilities, VistaMetadata, VistaResolver, condition_column_error,
+    unknown_relation, unsupported,
 };
 
 use super::factory::RestApiVistaFactory;
@@ -181,13 +181,14 @@ impl TableShell for RestApiTableShell {
 
     /// Equality on a declared column or an endpoint `{placeholder}`, with a
     /// value that renders as one URL param. Null and compound values have no
-    /// such form, so they are refused for the caller to evaluate locally.
+    /// such form, and a dotted path into a declared column has no param, so
+    /// they are refused for the caller to evaluate locally.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         let known = self.metadata.columns.contains_key(field)
             || crate::rest::placeholders(self.table.table_name()).any(|p| p == field);
         if !known {
-            return Err(error!("Unknown column for condition", field = field));
+            return Err(condition_column_error(&self.metadata, field));
         }
         if condition.op != FilterOp::Eq || crate::cbor_to_query_string(&condition.value).is_none() {
             return unsupported(Capability::FilterOps);

@@ -57,7 +57,7 @@ jobs:
         run: cargo build --workspace
 
       - name: Run all tests
-        run: cargo test --workspace --exclude surreal-client --exclude vantage-surrealdb --exclude vantage-sql --exclude bakery_model3 --exclude vantage-mongodb
+        run: cargo test --workspace --exclude surreal-client --exclude vantage-surrealdb --exclude vantage-sql --exclude bakery_model3 --exclude vantage-mongodb --features vantage-table/mocks,vantage-diorama/diagnostics,vantage-diorama/test-util
 
       - name: Run API client and pool tests with all features
         run: cargo test -p vantage-api-client -p vantage-api-pool --all-features
@@ -71,7 +71,15 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --workspace --exclude surreal-client --exclude vantage-surrealdb --exclude vantage-sql --exclude bakery_model3 --exclude vantage-mongodb --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude surreal-client --exclude vantage-surrealdb --exclude vantage-sql --exclude bakery_model3 --exclude vantage-mongodb --features vantage-table/mocks --all-targets -- -D warnings
+
+      # Every workspace step above builds diorama with `diagnostics` (the
+      # aggregate and adapter crates enable it, and the test step names it), so
+      # its default build, the surface most consumers get, is checked on its own.
+      - name: Check diorama's default build
+        run: |
+          cargo check -p vantage-diorama --no-default-features --lib
+          cargo clippy -p vantage-diorama --all-targets -- -D warnings
 
       - name: Run clippy on API client and pool with all features
         run: cargo clippy -p vantage-api-client -p vantage-api-pool --all-features --all-targets -- -D warnings

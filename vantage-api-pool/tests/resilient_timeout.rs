@@ -19,12 +19,33 @@ async fn slow_server(delay: Duration) -> MockServer {
     server
 }
 
+/// The one test that goes through the default, lazily-built client, so the
+/// builder's `request_timeout` reaching it stays covered. Its first request
+/// includes the system proxy lookup, which can block for seconds on macOS,
+/// hence the longer deadline.
 #[tokio::test]
-async fn a_response_slower_than_the_timeout_is_a_transport_error() {
+async fn the_default_client_applies_the_request_timeout() {
     let server = slow_server(Duration::from_millis(600)).await;
     let client = ResilientClient::builder()
         .request_timeout(Duration::from_millis(100))
         .build();
+    let url = server.uri();
+
+    let err = within_secs(
+        30,
+        client.execute_with(&CallPolicy::background(), |h| h.get(&url)),
+    )
+    .await
+    .expect_err("the server answers after the timeout");
+
+    assert!(matches!(err.kind, ErrorKind::Transport(_)), "{err}");
+    assert_eq!(err.attempts, 1);
+}
+
+#[tokio::test]
+async fn a_response_slower_than_the_timeout_is_a_transport_error() {
+    let server = slow_server(Duration::from_millis(600)).await;
+    let client = local_client_with_timeout(Some(Duration::from_millis(100))).build();
     let url = server.uri();
 
     let err = within(client.execute_with(&CallPolicy::background(), |h| h.get(&url)))
@@ -38,9 +59,7 @@ async fn a_response_slower_than_the_timeout_is_a_transport_error() {
 #[tokio::test]
 async fn a_timed_out_attempt_is_retried() {
     let server = slow_server(Duration::from_millis(600)).await;
-    let client = ResilientClient::builder()
-        .request_timeout(Duration::from_millis(100))
-        .build();
+    let client = local_client_with_timeout(Some(Duration::from_millis(100))).build();
     let url = server.uri();
     let policy = CallPolicy::bounded(RetryPolicy::new(
         1,
@@ -58,7 +77,7 @@ async fn a_timed_out_attempt_is_retried() {
 #[tokio::test]
 async fn disabling_the_timeout_waits_for_a_slow_answer() {
     let server = slow_server(Duration::from_millis(300)).await;
-    let client = ResilientClient::builder().no_request_timeout().build();
+    let client = local_client_with_timeout(None).build();
     let url = server.uri();
 
     let resp = within(client.execute_with(&CallPolicy::background(), |h| h.get(&url)))
@@ -73,7 +92,7 @@ async fn a_supplied_client_keeps_its_own_timeout_setting() {
     let server = slow_server(Duration::from_millis(300)).await;
     let client = ResilientClient::builder()
         .request_timeout(Duration::from_millis(50))
-        .http_client(reqwest::Client::new())
+        .http_client(reqwest::Client::builder().no_proxy().build().unwrap())
         .build();
     let url = server.uri();
 

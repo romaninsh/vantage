@@ -214,16 +214,13 @@ columns:
     Ok(())
 }
 
-/// SQL compares whole column values, so a path into one is refused.
+/// SQL compares whole column values, so a path into one is refused as
+/// `Unimplemented`, and `with_query` hands it back as residual.
 #[tokio::test]
 async fn vista_condition_on_a_dotted_path_is_refused() -> TestResult {
     let db = setup().await;
     let vista = db.vista_factory().from_table(product_table(db.clone()))?;
-    let err = vista
-        .with_condition("name.first", FilterOp::Eq, CborValue::Text("A".into()))
-        .unwrap_err();
-    assert!(!err.is_unsupported(), "{err}");
-    assert!(err.to_string().contains("dotted column"), "{err}");
+    crate::dotted::assert_dotted_path_is_refused(&vista, "name.first");
     Ok(())
 }
 

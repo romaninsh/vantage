@@ -4,7 +4,7 @@
 use std::sync::atomic::Ordering;
 
 use cucumber::{given, then, when};
-use vantage_diorama::DioEvent;
+use vantage_diorama::{ChangeEvent, DioEvent};
 
 use crate::bdd_support::backend::MasterRows;
 use crate::bdd_support::world::{DioramaWorld, OnLoadChunkKind, OnStartLoad, TotalProviderKind};
@@ -170,8 +170,10 @@ async fn call_load_more(w: &mut DioramaWorld) {
     w.settle().await;
 }
 
-#[when(regex = r"^dio\.notify_record_changed is called for the id at index (\d+)$")]
-async fn notify_record_changed_at_index(w: &mut DioramaWorld, idx: usize) {
+#[when(
+    regex = r"^dio\.apply_change is called with Updated for the id at index (\d+) and no record$"
+)]
+async fn updated_without_record_at_index(w: &mut DioramaWorld, idx: usize) {
     let scenery = w.scenery.as_ref().expect("scenery not opened");
     let row = scenery
         .row(idx)
@@ -180,7 +182,12 @@ async fn notify_record_changed_at_index(w: &mut DioramaWorld, idx: usize) {
     // smuggling id from the enriched record (which intentionally
     // doesn't carry the id field).
     let dio = w.dio.as_ref().expect("dio not created");
-    let all = dio.cache().list_values().await.expect("cache list");
+    let all = w
+        .cache_of(dio)
+        .await
+        .list_values()
+        .await
+        .expect("cache list");
     let (id, _) = all
         .iter()
         .find(|(_, rec)| {
@@ -189,7 +196,12 @@ async fn notify_record_changed_at_index(w: &mut DioramaWorld, idx: usize) {
             row.record.get("title") == rec.get("title")
         })
         .unwrap_or_else(|| panic!("cache has no row matching index {idx}"));
-    dio.notify_record_changed(id.clone());
+    dio.apply_change(ChangeEvent::Updated {
+        id: id.clone(),
+        new: None,
+    })
+    .await
+    .expect("apply_change");
     w.settle().await;
 }
 

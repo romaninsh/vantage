@@ -38,6 +38,7 @@ tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-async-trait = "0.1"
 indexmap = "2"
+# `diagnostics`: the watch tests count a Dio's open sceneries.
+vantage-diorama = { path = "../vantage-diorama", features = ["diagnostics"] }
 vantage-vista = { path = "../vantage-vista", features = ["mocks"] }

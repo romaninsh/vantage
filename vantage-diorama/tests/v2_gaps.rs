@@ -10,9 +10,10 @@ mod v2_gaps {
     mod dio_base_conditions_reach_every_path;
     mod dio_with_does_not_mutate_holders;
     mod fixtures;
+    // Awaits the write worker's exit through `take_write_worker_handle`.
+    #[cfg(feature = "test-util")]
     mod id_column_not_hardcoded;
     mod paged_scenery_conditions;
     mod paged_search_on_uncloneable_master;
     mod shared_scenery_cross_talk;
-    mod two_pass_detail_without_list_page;
 }

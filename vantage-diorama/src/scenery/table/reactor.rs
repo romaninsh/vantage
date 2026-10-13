@@ -78,7 +78,7 @@ pub(crate) async fn reload_loop(
                     Ok(DioEvent::Seeded) => {
                         if state.two_pass {
                             super::two_pass::refresh_index(&state).await;
-                        } else if !state.paged {
+                        } else if !state.is_chunk_loaded() {
                             reseed(&state).await;
                         }
                     }
@@ -86,8 +86,12 @@ pub(crate) async fn reload_loop(
                     // stamp the slot so the grid shows the failure (single-pass
                     // rows load through their own chunk pipeline, not the
                     // scheduler, so only two-pass reacts).
+                    // A refined view re-derives its set instead: it no longer
+                    // waits for that row before it settles.
                     Ok(DioEvent::RecordLoadFailed { id, error }) => {
-                        if state.two_pass {
+                        if state.two_pass && state.local_refine() {
+                            super::two_pass::update_row_from_cache(&state, &id).await;
+                        } else if state.two_pass {
                             super::two_pass::mark_detail_failed(&state, &id, &error);
                         }
                     }
@@ -135,16 +139,13 @@ pub(crate) async fn reload_loop(
 /// from a fresh list pass. A chunk-loaded (paged/lazy) scenery re-fetches its
 /// last viewport in place — `force_load` overwrites each slot as fresh rows
 /// land and a failed refetch keeps the existing rows, so the grid never
-/// blanks. Other sceneries reseed the sparse map from the cache (which their
-/// `on_refresh` has already restaged).
+/// blanks, and the refetch restates the total when the loader reports one.
+/// Other sceneries reseed the sparse map from the cache (which the refresh has
+/// already restaged).
 async fn refresh(state: &Arc<TableSceneryState>) {
     if state.two_pass {
         crate::scenery::table::two_pass::refresh_index(state).await;
     } else if state.is_chunk_loaded() {
-        // Re-count first: a chunk-loaded scenery caches its total at open and
-        // would otherwise never notice a row that appeared (or vanished)
-        // server-side. Then re-fetch the current viewport in place.
-        state.refresh_total().await;
         // The poll: nobody typed anything and the rows are already on screen,
         // so this re-pull is background work behind them.
         state.refresh_loaded_viewport(vantage_core::Priority::Background);
@@ -166,13 +167,13 @@ async fn reseed(state: &Arc<TableSceneryState>) {
         // answer if nothing further is coming, and both shapes have a way to
         // still be waiting:
         //
-        // - **paged** — the cache is not the row source at all; rows arrive
-        //   from the master a window at a time. A grid applying its default
+        // - **serving windows** — the cache is not the row source at all;
+        //   rows arrive from the master a window at a time. A grid applying its default
         //   sort at mount pings this loop, and that reseed landed milliseconds
         //   before the first fetch even dispatched. The loader settles it when
         //   the window arrives.
-        // - **eager** — the cache IS the row source, but a detached `on_start`
-        //   may still be filling it. An empty cache and an empty table are
+        // - **eager** — the cache IS the row source, but a detached eager
+        //   start may still be filling it. An empty cache and an empty table are
         //   indistinguishable from here; `seed_complete` is what tells them
         //   apart. Without it a grid flashed "no rows" and then filled in.
         //
@@ -183,7 +184,7 @@ async fn reseed(state: &Arc<TableSceneryState>) {
             .upgrade()
             .map(|d| d.seed_complete.load(std::sync::atomic::Ordering::SeqCst))
             .unwrap_or(true);
-        if has_rows || (!state.paged && seeded) {
+        if has_rows || (!state.is_chunk_loaded() && seeded) {
             state.mark_settled("reactor reseed");
         }
         state.bump_generation();

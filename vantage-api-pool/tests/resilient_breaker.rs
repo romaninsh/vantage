@@ -7,10 +7,9 @@ use std::time::Duration;
 
 use support::{
     HalfFailing, background_error, background_ok, cancel, counting_refresher, essential_fast,
-    mount, mount_delayed, mount_script, mount_status, open_breaker, requests, spawn_essential,
-    wait_for_requests, within, within_secs,
+    local_client, mount, mount_delayed, mount_script, mount_status, open_breaker, requests,
+    spawn_essential, wait_for_requests, within, within_secs,
 };
-use vantage_api_pool::ResilientClient;
 use vantage_api_pool::resilient::{BreakerState, ErrorKind};
 use wiremock::MockServer;
 
@@ -18,7 +17,7 @@ use wiremock::MockServer;
 async fn cooldown_doubles_after_each_failed_probe() {
     let server = MockServer::start().await;
     mount_status(&server, 503).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(200), Duration::from_millis(800))
         .build();
     let url = server.uri();
@@ -61,7 +60,7 @@ async fn success_resets_the_cooldown() {
     // Two failures, a failed probe, a succeeding probe, then two fresh
     // failures and the probe that must be let through after the BASE cooldown.
     mount_script(&server, [503, 503, 503, 200, 503, 503, 503]).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(80))
         .build();
     let url = server.uri();
@@ -85,7 +84,7 @@ async fn success_resets_the_cooldown() {
 async fn wait_for_probe_sleeps_through_the_cooldown_and_takes_the_probe() {
     let server = MockServer::start().await;
     mount_script(&server, [503, 503, 200]).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(30), Duration::from_millis(30))
         .build();
     let url = server.uri();
@@ -106,7 +105,7 @@ async fn wait_for_probe_sleeps_through_the_cooldown_and_takes_the_probe() {
 async fn four_xx_does_not_count_toward_breaker() {
     let server = MockServer::start().await;
     mount_status(&server, 404).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(20), Duration::from_millis(20))
         .build();
     let url = server.uri();
@@ -125,7 +124,7 @@ async fn four_xx_does_not_count_toward_breaker() {
 async fn interleaved_4xx_does_not_stop_the_breaker_opening() {
     let server = MockServer::start().await;
     mount_script(&server, [503, 404, 503, 404, 503]).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(3, Duration::from_secs(30), Duration::from_secs(30))
         .build();
     let url = server.uri();
@@ -155,12 +154,12 @@ async fn breaker_state_reports_open_half_open_and_closed() {
     mount_script(&server, [503, 200]).await;
 
     assert_eq!(
-        ResilientClient::builder().build().breaker_state(),
+        local_client().build().breaker_state(),
         None,
         "no breaker configured"
     );
 
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker(1, Duration::from_millis(60))
         .build();
     let url = server.uri();
@@ -187,7 +186,7 @@ async fn breaker_state_reports_open_half_open_and_closed() {
 async fn probe_that_gets_404_closes_the_breaker() {
     let server = MockServer::start().await;
     mount_script(&server, [503, 503, 404]).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(10))
         .build();
     let url = server.uri();
@@ -210,7 +209,7 @@ async fn probe_that_gets_404_closes_the_breaker() {
 async fn cancelled_probe_frees_the_slot_for_the_next_caller() {
     let server = MockServer::start().await;
     mount_delayed(&server, 503, Duration::from_millis(200)).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(10))
         .build();
     let url = server.uri();
@@ -233,7 +232,7 @@ async fn cancelled_probe_frees_the_slot_for_the_next_caller() {
 async fn second_probe_in_one_call_still_excludes_other_callers() {
     let server = MockServer::start().await;
     mount_delayed(&server, 503, Duration::from_millis(200)).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(20), Duration::from_millis(20))
         .build();
     let url = server.uri();
@@ -258,7 +257,7 @@ async fn probe_that_gets_401_refreshes_and_continues_without_jamming() {
     mount_script(&server, [503, 503, 401, 200]).await;
 
     let (refresher, calls) = counting_refresher();
-    let client = ResilientClient::builder()
+    let client = local_client()
         .circuit_breaker_growing(2, Duration::from_millis(10), Duration::from_millis(10))
         .bearer_auth(refresher)
         .build();
@@ -285,7 +284,7 @@ async fn probe_that_gets_401_refreshes_and_continues_without_jamming() {
 async fn concurrent_callers_all_recover_from_a_half_failing_server() {
     let server = MockServer::start().await;
     mount(&server, HalfFailing::default()).await;
-    let client = ResilientClient::builder()
+    let client = local_client()
         .max_parallel(2)
         .circuit_breaker_growing(3, Duration::from_millis(20), Duration::from_millis(20))
         .build();

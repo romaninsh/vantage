@@ -69,10 +69,10 @@ pub struct ViewFilter {
 /// Where a [`ViewFilter`] came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterOrigin {
-    /// Part of what the view is: the Dio's base conditions and the
-    /// builder's `where_eq` / `where_op`. A drill-down narrowed with
-    /// [`Dio::with_condition_eq`](crate::Dio::with_condition_eq) lands here;
-    /// one narrowed inside the master vista is invisible to the scenery.
+    /// Part of what the view is: the Dio's residual conditions and the
+    /// builder's `where_eq` / `where_op`. A condition a derived Dio's master
+    /// accepted (see [`Dio::with_query`](crate::Dio::with_query)) is
+    /// applied inside the master and is invisible to the scenery.
     Query,
     /// Set at runtime by the consumer: filter chips
     /// ([`set_filters`](super::TableScenery::set_filters)) and the filter
@@ -86,7 +86,8 @@ pub enum ViewState {
     /// No load has finished; the view has no answer yet.
     #[default]
     Loading,
-    /// Some rows failed to load or to write.
+    /// The view can't answer its query ([`LoadState::Failed`]), or some rows
+    /// failed to load or to write.
     Failed,
     /// Some rows carry an optimistic write still in flight.
     PendingWrites,
@@ -100,10 +101,10 @@ pub enum ViewState {
 impl ViewState {
     /// Pick the marker from the load state, the row breakdown and whether a
     /// fetch is in flight.
-    pub fn derive(load: LoadState, rows: &RowStatusSummary, fetching: bool) -> Self {
-        if load == LoadState::Loading {
+    pub fn derive(load: &LoadState, rows: &RowStatusSummary, fetching: bool) -> Self {
+        if *load == LoadState::Loading {
             ViewState::Loading
-        } else if rows.failed > 0 {
+        } else if matches!(load, LoadState::Failed(_)) || rows.failed > 0 {
             ViewState::Failed
         } else if rows.pending_write > 0 {
             ViewState::PendingWrites
@@ -211,7 +212,7 @@ impl ViewStats {
             order: None,
             search: None,
             filters: view_filters(&[], &[], &[], &scenery.filter_terms()),
-            state: ViewState::derive(load, &rows, false),
+            state: ViewState::derive(&load, &rows, false),
             pending_writes: rows.pending_write,
             failed: rows.failed,
         }

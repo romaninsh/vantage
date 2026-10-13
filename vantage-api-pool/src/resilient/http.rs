@@ -118,7 +118,7 @@ mod tests {
     #[tokio::test]
     async fn supplied_client_is_used_as_is() {
         let client = ResilientClient::builder()
-            .http_client(reqwest::Client::new())
+            .http_client(reqwest::Client::builder().no_proxy().build().unwrap())
             .build();
         assert!(client.http.is_built());
     }

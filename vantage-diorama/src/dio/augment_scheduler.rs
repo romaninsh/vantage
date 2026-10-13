@@ -4,7 +4,7 @@
 //! read blocking on its window — registers a requester queue via
 //! [`AugmentScheduler::ticket`] and enqueues row ids into it. A small pool of
 //! worker tasks (default one, see
-//! [`LensBuilder::augment_workers`](crate::lens::LensBuilder::augment_workers))
+//! [`Tuning::augment_workers`](crate::Tuning::augment_workers))
 //! drains the queues **round-robin across requesters**, so two views with
 //! disjoint viewports interleave instead of one starving the other, and the
 //! fetch order under a single worker is deterministic.
@@ -166,6 +166,13 @@ impl AugmentTicket {
         }
     }
 
+    /// Whether this requester has nothing queued (a fetch it asked for may
+    /// still be in flight).
+    pub(crate) fn is_idle(&self) -> bool {
+        let s = self.sched.state.lock().unwrap();
+        s.queues.get(&self.id).is_none_or(|queue| queue.is_empty())
+    }
+
     /// Queue `ids` and block until every one has settled — the facade path.
     /// Ids already in flight are not re-queued; their waiter fires when the
     /// running fetch completes. Returns the first failure.
@@ -251,6 +258,7 @@ pub(crate) async fn augment_worker_loop(dio: Weak<DioInner>, sched: Arc<AugmentS
             Ok(()) => Ok(()),
             Err(e) => {
                 let error = e.to_string();
+                inner.augment_failed.lock().unwrap().insert(id.clone());
                 let _ = inner.event_bus.send(DioEvent::RecordLoadFailed {
                     id: id.clone(),
                     error: error.clone(),

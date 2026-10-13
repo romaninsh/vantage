@@ -253,7 +253,7 @@ async fn listing(State(st): State<ApiState>, Query(q): Query<ListParams>) -> Api
 
     // Plain GET: a window over the cache, no hydration. Instant regardless
     // of how many augment columns are still unfilled.
-    let all = st.dio.cache().list_values().await?;
+    let all = st.dio.cached().list_values().await?;
     let total = all.len();
     let items: Vec<serde_json::Value> = all
         .iter()
@@ -383,7 +383,7 @@ async fn detail(
     let key = st.cache_key(&id);
     let row = st
         .dio
-        .vista()
+        .cached()
         .get_value(key.clone())
         .await?
         .ok_or_else(|| st.not_found(&key))?;
@@ -396,7 +396,7 @@ async fn watch_detail(st: ApiState, id: String) -> ApiResult<Response> {
     let key = st.cache_key(&id);
     let row = st
         .dio
-        .vista()
+        .cached()
         .get_value(key.clone())
         .await?
         .ok_or_else(|| st.not_found(&key))?;

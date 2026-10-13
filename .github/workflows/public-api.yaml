@@ -78,3 +78,6 @@ jobs:
             echo "::error::Public API differs from api/*.txt. Run 'mise run api-snapshot' and commit the result."
             exit 1
           fi
+
+      - name: Check API rules
+        run: bash api/rules.sh

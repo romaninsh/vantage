@@ -26,11 +26,11 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use spacetimedb_sats::ProductType;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::{
     Capability, Condition, Page, Preview, TableShell, VistaCapabilities, VistaChangeStream,
-    VistaMetadata, unsupported,
+    VistaMetadata, condition_column_error, unsupported,
 };
 
 use crate::client::SpacetimeDb;
@@ -145,15 +145,12 @@ impl TableShell for SpacetimeTableShell {
     /// spells `=`, `!=`, `>`, `>=`, `<` and `<=`; `InSet`, `NotInSet` and
     /// `Like` have no spelling and are refused as `Unsupported`, so the caller
     /// evaluates them over the rows it reads. A value with no SQL literal (a
-    /// null, an array) is refused as `Unsupported` for the same reason.
+    /// null, an array) is refused as `Unsupported` for the same reason, and a
+    /// dotted path into a declared column as `Unimplemented`.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         let column = condition.column.as_str();
         if !self.metadata.columns.contains_key(column) {
-            return Err(error!(
-                "Unknown column for condition",
-                table = self.relation.as_str(),
-                field = column
-            ));
+            return Err(condition_column_error(&self.metadata, column));
         }
         let cond = Cond::new(Ident::new(column)?, condition.op, &condition.value)?;
         self.conditions.push(cond);

@@ -41,40 +41,21 @@ async fn run() -> VantageResult<()> {
         aws.vista_factory()
             .from_table(Readings::table(aws.clone(), BUCKET, contents))?;
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_source(cache)
-            // Pre-fetch: on_start blocks make_dio (the default), so the
-            // server starts answering only once the listing is cached. A
-            // restart resumes from redb with a single confirming request.
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move { sync(&dio).await }
-            })
-            // Watch sceneries list their pages straight from the warmed
-            // cache — the master is only contacted by the refresh reconcile
-            // and the per-row detail fetches.
-            .on_list_page(|dio, q| {
-                let dio = dio.clone();
-                async move {
-                    Ok(dio
-                        .cache()
-                        .list_values()
-                        .await?
-                        .into_iter()
-                        .skip(q.offset)
-                        .take(q.limit)
-                        .collect())
-                }
-            })
-            .refresh_every(Duration::from_secs(60))
-            .build()
-            .context("Failed to build lens")?,
-    );
+    let lens = Lens::builder()
+        .cache(Cache::backend(cache))
+        // Pre-fetch: the eager start blocks the Dio's build (the default),
+        // so the server starts answering only once the listing is cached. A
+        // restart resumes from redb with a single confirming request.
+        .loader(Loader::eager(|cx: LoaderCx| async move { sync(&cx).await }))
+        // The augmentation's refresh pass reconciles the listing once a
+        // minute; the refresher only sets the interval.
+        .refresher(Refresher::new(|_cx: LoaderCx| async { Ok(()) }).every(Duration::from_secs(60)))
+        .build()
+        .context("Failed to build lens")?;
 
-    let dio = lens.make_dio(master).await?.augment(
-        Arc::new(vantage_vista::Catalog::new()),
-        vec![Augmentation {
+    let dio = lens
+        .dio(master)
+        .augment(vec![Augmentation {
             detail: Detail::Fixed(Arc::new(augmenter)),
             source: Source::Column {
                 from: "Key".into(),
@@ -84,8 +65,9 @@ async fn run() -> VantageResult<()> {
             merge: MergeRule {
                 columns: vec!["rows".into(), "latest".into()],
             },
-        }],
-    );
+        }])
+        .build()
+        .await?;
 
     // The whole API surface: GET + watch on the listing and on each file.
     let api = DioRouter::new(dio.clone())
@@ -109,8 +91,8 @@ async fn run() -> VantageResult<()> {
 
 /// Same page-by-page sync as learn-4: pump the listing into the cache one
 /// page per request, resuming from the last cached key.
-async fn sync(dio: &Dio) -> VantageResult<()> {
-    let mut token: Option<CborValue> = dio
+async fn sync(cx: &LoaderCx) -> VantageResult<()> {
+    let mut token: Option<CborValue> = cx
         .cache()
         .list_values()
         .await?
@@ -120,9 +102,9 @@ async fn sync(dio: &Dio) -> VantageResult<()> {
         .map(Into::into);
     loop {
         let start = Instant::now();
-        let (page, next) = dio.master().fetch_cursor(token, PAGE_SIZE).await?;
+        let (page, next) = cx.master().fetch_cursor(token, PAGE_SIZE).await?;
         let count = page.rows.len();
-        dio.cache()
+        cx.cache()
             .insert_values(page.rows.into_iter().collect())
             .await?;
         println!("fetched {count} files in {:?}", start.elapsed());

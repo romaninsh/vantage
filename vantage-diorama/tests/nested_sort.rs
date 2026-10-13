@@ -6,15 +6,17 @@
 use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
-use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{ChunkQuery, Lens, OpCondition, SortDir, TableScenery};
+use vantage_diorama::{Clause, LoadState, SortDir, TableScenery};
 use vantage_types::Record;
 use vantage_vista::{
-    Column, Condition, FilterOp, TableShell, Vista, VistaMetadata, forward_table_shell,
+    Column, Condition, FilterOp, TableShell, Vista, VistaMetadata, VistaQuery, forward_table_shell,
     mocks::MockShell,
 };
+
+mod support;
+use support::{eager_dio, paged_dio, paged_or_eager_dio, wait_listed};
 
 fn nested(provider_name: &str) -> CborValue {
     CborValue::Map(vec![(
@@ -57,42 +59,24 @@ fn master() -> Vista {
     Vista::new("items", master_shell())
 }
 
-async fn eager_lens(cache: std::path::PathBuf) -> Arc<Lens> {
-    Arc::new(
-        Lens::new()
-            .cache_at(cache)
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("build lens"),
-    )
-}
-
 /// A facade condition on a dotted path into a master column is evaluated over
 /// the cache, where the nested value is resolved. A path whose root isn't a
 /// master column is an error.
 #[tokio::test]
 async fn dotted_condition_is_evaluated_over_the_cache() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = eager_lens(tmp.path().join("c.redb")).await;
     let shell = master_shell();
-    let dio = lens.make_dio(Vista::new("items", shell.clone())).await?;
+    let dio = eager_dio(Vista::new("items", shell.clone())).await;
     // Upstream only: a cache-side evaluation never sees it.
     shell.set_record("d", record("Agency"));
 
     let agency = dio
-        .vista()
+        .cached()
         .with_condition("provider.name", FilterOp::Eq, "Agency")?;
     let ids: Vec<String> = agency.list_values().await?.into_keys().collect();
     assert_eq!(ids, vec!["b"]);
 
     let err = dio
-        .vista()
+        .cached()
         .with_condition("client.name", FilterOp::Eq, "Agency")
         .unwrap_err();
     assert!(!err.is_unsupported(), "{err}");
@@ -118,24 +102,22 @@ forward_table_shell!(Recording, inner, {
     }
 });
 
-/// A chunk fetch doesn't evaluate what the master leaves, so a dotted
-/// filter goes to the master, which decides (a document store pushes it).
+/// A fetch doesn't evaluate what the master leaves, so a dotted filter goes
+/// to the master, which decides (a document store pushes it). This one
+/// accepts it, so nothing comes back refused.
 #[tokio::test]
 async fn dotted_chunk_filter_reaches_the_master() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = eager_lens(tmp.path().join("c.redb")).await;
     let seen = Arc::new(Mutex::new(Vec::new()));
     let master = master().map_shell(|inner| Recording {
         inner,
         seen: seen.clone(),
     });
-    let dio = lens.make_dio(master).await?;
+    let dio = eager_dio(master).await;
 
-    let query = ChunkQuery {
-        filters: vec![OpCondition::new("provider.name", FilterOp::Ne, "Agency")],
-        ..ChunkQuery::default()
-    };
-    dio.fetch_window_ordered(0, 10, query).await?;
+    let query =
+        VistaQuery::new().with_condition(Condition::new("provider.name", FilterOp::Ne, "Agency"));
+    let fetched = dio.fetch(0..10, &query).await?;
+    assert!(fetched.refused.is_empty(), "the master took the path");
     let columns: Vec<String> = seen
         .lock()
         .unwrap()
@@ -146,17 +128,45 @@ async fn dotted_chunk_filter_reaches_the_master() -> Result<()> {
     Ok(())
 }
 
-/// A facade over a master that declares no columns can't check one, and
-/// takes any.
+/// A paged view whose master refuses the dotted path, with no eager start,
+/// fails loudly rather than show an unfiltered window as the filtered set.
+/// With an eager start, the path is evaluated over the whole copy.
+#[tokio::test]
+async fn a_refused_dotted_chunk_filter_fails_a_paged_view() -> Result<()> {
+    let filtered = |b: vantage_diorama::TableSceneryBuilder| {
+        b.where_op("provider.name", FilterOp::Ne, "Agency")
+    };
+
+    let dio = paged_dio(master()).await;
+    let scenery = filtered(dio.table_scenery()).open().await?;
+    wait_listed(&scenery).await;
+    match scenery.load_state() {
+        LoadState::Failed(failure) => {
+            assert_eq!(failure.clause, Some(Clause::Filter("provider.name".into())));
+        }
+        other => panic!("expected a loud failure, got {other:?}"),
+    }
+    assert_eq!(scenery.row_count(), 0);
+
+    let dio = paged_or_eager_dio(master()).await;
+    let scenery = filtered(dio.table_scenery()).open().await?;
+    wait_listed(&scenery).await;
+    let mut names: Vec<String> = (0..scenery.row_count())
+        .filter_map(|i| provider_at(&scenery, i))
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Rocket Lab", "SpaceX"]);
+    Ok(())
+}
+
+/// A facade over a master that declares no columns (only which one is the
+/// id) can't check one, and takes any.
 #[tokio::test]
 async fn a_schemaless_facade_takes_any_column() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let dio = eager_lens(tmp.path().join("c.redb"))
-        .await
-        .make_dio(Vista::new("bare", MockShell::new()))
-        .await?;
+    let bare = MockShell::new().with_metadata(VistaMetadata::new().with_id_column("id"));
+    let dio = eager_dio(Vista::new("bare", bare)).await;
     assert!(
-        dio.vista()
+        dio.cached()
             .with_condition("anything", FilterOp::Eq, "x")
             .is_ok()
     );
@@ -165,9 +175,7 @@ async fn a_schemaless_facade_takes_any_column() -> Result<()> {
 
 #[tokio::test]
 async fn sort_by_dotted_nested_column() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = eager_lens(tmp.path().join("c.redb")).await;
-    let dio = lens.make_dio(master()).await?;
+    let dio = eager_dio(master()).await;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
     let g = u64::from(*gen_rx.borrow_and_update());

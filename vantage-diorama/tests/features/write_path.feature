@@ -1,8 +1,8 @@
 Feature: Write path
 
   Phase 3 — `on_flash` route wiring, capability lifting on the
-  facade Vista, and the `WriteFailed` event contract when an `on_flash`
-  route returns an error.
+  facade Vista, and the `WritePending` / `WriteReverted` event contract
+  when an `on_flash` route returns an error.
 
   Scenario: on_flash lifts can_insert/can_update/can_delete on the facade
     Given a master with rows
@@ -25,9 +25,9 @@ Feature: Write path
       | id | title |
       | b  | two   |
     Then the master has 2 rows
-    And the cache still has 1 row
+    And the cache has 2 rows
 
-  Scenario: WriteFailed lands on the bus when on_flash errors
+  Scenario: the insert is reverted on the bus when on_flash errors
     Given a master with rows
       | id | title |
       | a  | one   |
@@ -38,6 +38,9 @@ Feature: Write path
       | id | title |
       | b  | two   |
     Then the event log matches snapshot "write_failed"
+    And the facade write failed with "on_flash rejected"
+    And the cache has 1 row
+    And the cache record "b" is absent
 
   Scenario Outline: write path works against real backends
     Given the backend is <backend>

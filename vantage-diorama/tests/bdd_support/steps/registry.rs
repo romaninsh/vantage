@@ -37,7 +37,12 @@ async fn same_object(w: &mut DioramaWorld) {
 #[then(regex = r"^the dio has (\d+) live table scener(?:y|ies)$")]
 async fn live_count(w: &mut DioramaWorld, expected: usize) {
     let dio = w.dio.as_ref().expect("dio not created");
-    let got = dio.live_table_scenery_count();
+    let got = dio
+        .diagnostics()
+        .await
+        .expect("diagnostics")
+        .sceneries
+        .len();
     assert_eq!(
         got, expected,
         "live table scenery count: want {expected}, got {got}"

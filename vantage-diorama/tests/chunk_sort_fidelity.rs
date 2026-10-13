@@ -1,5 +1,5 @@
 //! High-fidelity reproduction of the launch-control launches grid:
-//!   - paged/chunk-loaded, NO eager `on_start` (cache fills via viewport loads)
+//!   - paged/chunk-loaded, no eager start (cache fills via viewport loads)
 //!   - master serves rows in its own native order (`ordering=-last_updated`),
 //!     which DIFFERS from the user's chosen sort column AND changes between
 //!     refreshes (the live simulator bumps `last_updated`)
@@ -39,7 +39,7 @@ fn master() -> Vista {
     master_cols(&[("v", "String"), ("lu", "i64")])
 }
 
-/// Paged lens whose `on_load_chunk` serves rows in native order = `lu`
+/// Paged lens whose loader serves rows in native order = `lu`
 /// descending (mirrors the launches URL `?ordering=-last_updated`), windowed.
 fn paged_lens(cache: std::path::PathBuf, backend: Backend) -> Arc<vantage_diorama::Lens> {
     paged_lens_native_desc(cache, backend, "lu")
@@ -55,7 +55,7 @@ async fn client_sort_holds_through_reordering_refreshes() -> Result<()> {
         ("c".into(), rec("c", 30)),
     ]));
     let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 
@@ -124,7 +124,7 @@ async fn client_sort_with_partial_then_full_load() -> Result<()> {
         ("e".into(), rec("e", 50)),
     ]));
     let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 

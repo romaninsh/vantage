@@ -21,13 +21,13 @@ mod tests;
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
-    VistaMetadata, unknown_relation, unsupported,
+    VistaMetadata, condition_column_error, unknown_relation, unsupported,
 };
 
 use crate::AwsAccount;
@@ -143,11 +143,12 @@ impl TableShell for AwsTableShell {
     }
 
     /// Equality on a declared column or a path placeholder. The value is
-    /// sent as-is; the wire builders convert it at execute time.
+    /// sent as-is; the wire builders convert it at execute time. A dotted
+    /// path into a declared column is refused, for the caller to evaluate.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         if !self.knows_field(field) {
-            return Err(error!("Unknown column for condition", field = field));
+            return Err(condition_column_error(&self.metadata, field));
         }
         if condition.op != FilterOp::Eq {
             return unsupported(Capability::FilterOps);

@@ -16,11 +16,13 @@ use vantage_core::{Result, error};
 use vantage_types::Record;
 use vantage_vista::{
     Capability, Column, ColumnFlag, Condition, FilterOp, Page, Preview, SortDirection, TableShell,
-    VistaCapabilities, VistaMetadata, unsupported,
+    VistaCapabilities, VistaMetadata, VistaQuery, condition_column_error, unsupported,
 };
 
 use crate::aggregation::DerivedRows;
-use crate::cmp;
+
+#[cfg(test)]
+mod tests;
 
 /// The rows an aggregation last produced, shared between the engine (which
 /// replaces them) and every Vista clone (which reads them).
@@ -34,10 +36,9 @@ pub(crate) struct AggregateShell {
     /// The derived schema; derived rows carry no relations.
     metadata: VistaMetadata,
     capabilities: VistaCapabilities,
-
-    conditions: Vec<(String, CborValue)>,
-    order: Option<(String, SortDirection)>,
-    search: Option<String>,
+    /// This clone's conditions, search and order, evaluated by vista's
+    /// in-memory evaluator.
+    query: VistaQuery,
 }
 
 impl AggregateShell {
@@ -67,38 +68,20 @@ impl AggregateShell {
             capabilities: [Capability::Order, Capability::Search, Capability::Window]
                 .into_iter()
                 .collect(),
-            conditions: Vec::new(),
-            order: None,
-            search: None,
+            query: VistaQuery::new(),
         }
     }
 
     /// Apply this clone's conditions, search and order to the current rows.
-    fn view(&self) -> Vec<(String, Record<CborValue>)> {
-        let guard = self.rows.read().expect("aggregate rows poisoned");
-        let mut rows: Vec<(String, Record<CborValue>)> = guard
-            .rows
-            .iter()
-            .filter(|(_, record)| {
-                self.conditions.iter().all(|(field, expected)| {
-                    cmp::column(record, field).is_some_and(|actual| actual == expected)
-                })
-            })
-            .filter(|(_, record)| match &self.search {
-                Some(needle) => cmp::matches_search(record, needle),
-                None => true,
-            })
-            .cloned()
-            .collect();
-        drop(guard);
-
-        if let Some((field, direction)) = &self.order {
-            let descending = matches!(direction, SortDirection::Descending);
-            rows.sort_by(|(a_id, a), (b_id, b)| {
-                cmp::compare_rows((a_id, a), (b_id, b), field, descending)
-            });
+    fn view(&self) -> Result<Vec<(String, Record<CborValue>)>> {
+        let mut rows = Vec::new();
+        for (id, record) in &self.rows.read().expect("aggregate rows poisoned").rows {
+            if self.query.matches(record, &self.metadata)? {
+                rows.push((id.clone(), record.clone()));
+            }
         }
-        rows
+        self.query.sort_rows(&mut rows, &self.metadata);
+        Ok(rows)
     }
 
     fn known_column(&self, field: &str) -> Result<()> {
@@ -129,14 +112,15 @@ impl TableShell for AggregateShell {
     /// table.
     fn preview(&self) -> Preview {
         let mut clauses: Vec<String> = self
+            .query
             .conditions
             .iter()
-            .map(|(field, value)| format!("{field} = {value:?}"))
+            .map(|c| format!("{} = {:?}", c.column, c.value))
             .collect();
-        if let Some(text) = &self.search {
+        if let Some(text) = &self.query.search {
             clauses.push(format!("search {text:?}"));
         }
-        if let Some((column, dir)) = &self.order {
+        if let Some((column, dir)) = &self.query.order {
             let dir = match dir {
                 SortDirection::Ascending => "asc",
                 SortDirection::Descending => "desc",
@@ -155,32 +139,33 @@ impl TableShell for AggregateShell {
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
-        Ok(self.view().into_iter().collect())
+        Ok(self.view()?.into_iter().collect())
     }
 
     async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
         Ok(self
-            .view()
+            .view()?
             .into_iter()
             .find(|(row_id, _)| row_id == id)
             .map(|(_, record)| record))
     }
 
     async fn count(&self) -> Result<i64> {
-        Ok(self.view().len() as i64)
+        Ok(self.view()?.len() as i64)
     }
 
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        Ok(Page::from_listing(self.view(), offset, limit))
+        Ok(Page::from_listing(self.view()?, offset, limit))
     }
 
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         if condition.op != FilterOp::Eq {
             return unsupported(Capability::FilterOps);
         }
-        self.known_column(&condition.column)?;
-        self.conditions
-            .push((condition.column.clone(), condition.value.clone()));
+        if !self.metadata.columns.contains_key(&condition.column) {
+            return Err(condition_column_error(&self.metadata, &condition.column));
+        }
+        self.query.conditions.push(condition.clone());
         Ok(())
     }
 
@@ -188,12 +173,12 @@ impl TableShell for AggregateShell {
         if let Some((field, _)) = order {
             self.known_column(field)?;
         }
-        self.order = order.map(|(field, dir)| (field.to_string(), dir));
+        self.query.order = order.map(|(field, dir)| (field.to_string(), dir));
         Ok(())
     }
 
     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
-        self.search = text.map(str::to_string);
+        self.query.search = text.map(str::to_string);
         Ok(())
     }
 }

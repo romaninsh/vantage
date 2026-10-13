@@ -1,7 +1,5 @@
 //! Grand total, row count and "more pages" answers.
 
-use std::sync::atomic::Ordering;
-
 use super::TableSceneryState;
 
 impl TableSceneryState {
@@ -60,8 +58,8 @@ impl TableSceneryState {
 
     /// See [`TableScenery::has_more`](super::super::TableScenery::has_more).
     pub(crate) fn has_more(&self) -> bool {
-        // A locally-refined view materializes its whole visible set from the
-        // (already-listed) index, so there is no further page to ask for.
+        // A locally-refined view lists its whole index before it publishes
+        // its visible set, so there is no further page to ask for.
         if self.local_refine() {
             return false;
         }
@@ -81,48 +79,5 @@ impl TableSceneryState {
     /// See [`TableScenery::status_summary`](super::super::TableScenery::status_summary).
     pub(crate) fn status_summary(&self) -> super::super::RowStatusSummary {
         self.rows.read().unwrap().summary()
-    }
-
-    /// Re-invoke the lens `total_provider` and update the cached grand total, so
-    /// a row that appeared (or vanished) server-side since open grows (or shrinks)
-    /// the scrollbar instead of staying frozen at the open-time total. No-op when
-    /// no provider is registered (the total then self-corrects from short pages).
-    ///
-    /// Deliberately does NOT bump the generation: it runs at the *start* of a
-    /// refresh, before the in-place refetch repopulates the rows. Bumping here
-    /// would repaint an intermediate frame (new count, rows not yet refreshed /
-    /// re-sorted) — a visible flicker. The forced refetch that follows carries
-    /// the single repaint, so the new count and the refreshed+re-sorted rows land
-    /// together.
-    pub(crate) async fn refresh_total(&self) {
-        let Some(dio_inner) = self.dio_weak.upgrade() else {
-            return;
-        };
-        let Some(cb) = dio_inner.lens.callbacks.total_provider.as_ref() else {
-            return;
-        };
-        let dio = crate::Dio {
-            inner: dio_inner.clone(),
-        };
-        match cb(&dio).await {
-            Ok(total) => {
-                // Stated, not inferred — latch it so the unknown-total
-                // horizon rule stays out of the way (see `total_ever_stated`).
-                self.total_ever_stated.store(true, Ordering::SeqCst);
-                self.set_total(Some(total));
-                // Remember it for the next open's head start (skipped under
-                // an active search — that total describes the narrowed set).
-                if self.search.read().unwrap().is_none()
-                    && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
-                {
-                    tracing::debug!(
-                        target: "vantage_diorama::cache",
-                        error = %e,
-                        "persisting the provider total failed",
-                    );
-                }
-            }
-            Err(e) => tracing::error!(error = %e, "refresh_total failed"),
-        }
     }
 }

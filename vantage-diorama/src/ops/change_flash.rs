@@ -3,7 +3,7 @@
 //! The mirror of [`ChangeEvent`](crate::ops::ChangeEvent): inbound light
 //! paints the scenery, outbound light is a flash. One `ChangeFlash` is a
 //! single unit of work for the write pipeline — servo → queue → worker →
-//! routing (`on_flash`) or the default write-to-master path.
+//! the Lens writer or the default write-to-master path.
 //!
 //! A flash is frozen at fire time and self-contained: it carries the
 //! `patch` (only the fields that changed), the `before` pre-image (what
@@ -49,7 +49,9 @@ pub struct ChangeFlash {
 }
 
 impl ChangeFlash {
-    pub fn new(kind: FlashKind, id: Option<String>, patch: Record<CborValue>) -> Self {
+    /// Private: each kind has its own constructor below, which pairs it with
+    /// an id (or none, for `Clear` and `insert_new`) the queue can act on.
+    fn new(kind: FlashKind, id: Option<String>, patch: Record<CborValue>) -> Self {
         Self {
             kind,
             id,
@@ -61,6 +63,19 @@ impl ChangeFlash {
     /// A new row with a known id.
     pub fn insert(id: impl Into<String>, record: Record<CborValue>) -> Self {
         Self::new(FlashKind::Insert, Some(id.into()), record)
+    }
+
+    /// A new row whose id the backend makes. Nothing is staged before the
+    /// write: the row joins the cache under the id the write reports, which
+    /// [`FlashOutcome::id`](crate::FlashOutcome) carries.
+    pub fn insert_new(record: Record<CborValue>) -> Self {
+        Self::new(FlashKind::Insert, None, record)
+    }
+
+    /// Merge `fields` into the row at `id`; columns not named keep their
+    /// values.
+    pub fn partial(id: impl Into<String>, fields: Record<CborValue>) -> Self {
+        Self::new(FlashKind::Patch, Some(id.into()), fields)
     }
 
     /// Full-record overwrite (drops fields absent from `record`).
@@ -78,8 +93,9 @@ impl ChangeFlash {
         Self::new(FlashKind::Delete, Some(id.into()), Record::new())
     }
 
-    /// Remove every row. Id-less; runs straight through the write path
-    /// with no optimistic staging.
+    /// Remove every row of the set. Id-less, so nothing is staged; on a Dio
+    /// whose set the write route can't confine by itself, it runs as one
+    /// delete per row in the set.
     pub fn clear() -> Self {
         Self::new(FlashKind::Clear, None, Record::new())
     }
@@ -106,6 +122,12 @@ impl ChangeFlash {
     /// the flash back to learn where the row landed.
     pub(crate) fn rebind_id(&mut self, id: impl Into<String>) {
         self.id = Some(id.into());
+    }
+
+    /// Replace the record the flash carries: confinement fills a set's
+    /// equality conditions into it before it is staged.
+    pub(crate) fn set_patch(&mut self, patch: Record<CborValue>) {
+        self.patch = patch;
     }
 
     pub fn kind(&self) -> &FlashKind {
@@ -145,7 +167,7 @@ impl ChangeFlash {
     }
 
     /// Bind this flash's merged record to a *different* destination
-    /// dataset — the routing ergonomic for `on_flash` callbacks: take
+    /// dataset — the routing ergonomic for Lens writers: take
     /// the change, re-bind it to wherever it should land, `save()`.
     ///
     /// Errors when the flash has no record shape to bind (`Delete`,

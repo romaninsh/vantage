@@ -28,12 +28,16 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = "2.14"
-mockall = "0.12"
 paste = "1.0"
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync"] }
 rust_decimal = { version = "1.42.0", features = ["macros", "serde"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[features]
+# `vantage_table::mocks`: in-memory `TableSource`, column, reference and type
+# system for tests. Enable from `[dev-dependencies]` only.
+mocks = []
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync"] }
@@ -52,7 +56,20 @@ url = { version = "2.5", features = ["serde"] }
 name = "expr"
 path = "tests/expr.rs"
 test = false
+required-features = ["mocks"]
 
 [[test]]
 name = "table_like"
 path = "tests/table_like.rs"
+
+[[test]]
+name = "generic1"
+required-features = ["mocks"]
+
+[[test]]
+name = "mock_contract"
+required-features = ["mocks"]
+
+[[test]]
+name = "record_methods"
+required-features = ["mocks"]

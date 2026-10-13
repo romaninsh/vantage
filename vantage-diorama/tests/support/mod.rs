@@ -5,21 +5,152 @@
 //!   `is_loading`/`total`, and settle on generation bumps. No gpui, no UI types.
 //! - bucket fixtures — an object-list master augmented with per-object detail,
 //!   the canonical "cmd bucket of JSON" shape.
+//! - Lens builders — [`memory_lens`], [`eager_dio`], [`paged_dio`] — so a test
+//!   states only the loader it cares about.
 
 #![allow(dead_code)]
 
 pub mod chunk;
-pub mod detail_shell;
+pub mod spy_cache;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
+use vantage_diorama::{
+    Augmentation, Cache, Detail, Dio, Fetch, Lens, Loader, MergeRule, Source, TableScenery, Tuning,
+};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Catalog, Column, Vista, VistaMetadata, VistaResolver};
+use vantage_vista::{
+    Catalog, Column, Condition, FilterOp, SortDirection, Vista, VistaMetadata, VistaQuery,
+    VistaResolver,
+};
+
+// ---- lens builders -------------------------------------------------------
+
+/// A Lens over an in-memory cache with `loader`.
+pub fn memory_lens(loader: Loader) -> Arc<Lens> {
+    Lens::builder()
+        .cache(Cache::memory())
+        .loader(loader)
+        .build()
+        .expect("lens builds")
+}
+
+/// An eager loader that copies the whole master into the cache.
+pub fn copy_master() -> Loader {
+    Loader::eager(copy_whole_master)
+}
+
+async fn copy_whole_master(cx: vantage_diorama::LoaderCx) -> vantage_core::Result<()> {
+    let rows = cx.master().list_values().await?;
+    cx.reconcile(rows).await
+}
+
+/// A paged loader that reads each window from the master, narrowed by the
+/// view's query, and reports the master's total. A clause the master refuses
+/// fails the load: this loader can't evaluate it over a window.
+pub fn page_master() -> Loader {
+    Loader::paged(|cx, range, query, sink| async move {
+        let fetched = cx.fetch(range.clone(), &query).await?;
+        if !fetched.refused.is_empty() {
+            return Err(vantage_core::error!(
+                "the master refused part of the view's query",
+                refused = fetched.refused
+            ));
+        }
+        let page = fetched.page;
+        if let Some(total) = page.total {
+            sink.set_total(total.max(0) as usize);
+        }
+        for (i, (id, record)) in page.rows.into_iter().enumerate() {
+            sink.push(range.start + i, id, record).await?;
+        }
+        Ok(())
+    })
+}
+
+/// A Dio over `master` whose cache is filled once by copying the master.
+pub async fn eager_dio(master: Vista) -> Dio {
+    memory_lens(copy_master())
+        .dio(master)
+        .build()
+        .await
+        .expect("dio builds")
+}
+
+/// A Dio over `master` whose table sceneries page windows from the master.
+pub async fn paged_dio(master: Vista) -> Dio {
+    memory_lens(page_master())
+        .dio(master)
+        .build()
+        .await
+        .expect("dio builds")
+}
+
+/// A Dio over `master` whose table sceneries page windows from the master,
+/// and copy the whole master through an eager start when a view's query
+/// leaves a clause the master can't apply. The master must advertise
+/// `Window`, or every view is copied whole.
+pub async fn paged_or_eager_dio(master: Vista) -> Dio {
+    memory_lens(page_master().or_eager(copy_whole_master))
+        .dio(master)
+        .build()
+        .await
+        .expect("dio builds")
+}
+
+/// A Lens over `cache` with no loader and a 1ms viewport debounce: the shape
+/// the augmentation tests drive, where the Dio's own list pass fills the
+/// cache.
+pub fn quick_lens(cache: Cache) -> Arc<Lens> {
+    Lens::builder()
+        .cache(cache)
+        .tuning(Tuning::default().with_viewport_debounce(Duration::from_millis(1)))
+        .build()
+        .expect("lens builds")
+}
+
+/// A Dio over `master` on `lens`, augmented by `augmentations`.
+pub async fn augmented_dio(
+    lens: &Arc<Lens>,
+    master: Vista,
+    augmentations: Vec<Augmentation>,
+) -> Dio {
+    lens.dio(master)
+        .augment(augmentations)
+        .build()
+        .await
+        .expect("dio builds")
+}
+
+/// An augmentation reading `columns` from `detail`, a fixed Vista no
+/// resolver knows, keyed by the master id.
+pub fn fixed_augmentation(detail: Vista, columns: &[&str]) -> Augmentation {
+    Augmentation {
+        detail: Detail::Fixed(Arc::new(detail)),
+        source: Source::Id,
+        fetch: Fetch::PerRow,
+        merge: MergeRule {
+            columns: columns.iter().map(|c| c.to_string()).collect(),
+        },
+    }
+}
+
+/// A detail source keyed by id with columns `id` and `size`: `get` answers
+/// from `sizes` (`(id, size)` pairs), while `list`, `count` and
+/// `fetch_window` refuse. Its `get_log` records every lookup.
+pub fn size_detail<'a>(sizes: impl IntoIterator<Item = (&'a str, &'a str)>) -> MockShell {
+    sizes
+        .into_iter()
+        .fold(
+            MockShell::new().with_metadata(meta(&["id", "size"])),
+            |shell, (id, size)| shell.with_record(id, record(&[("id", id), ("size", size)])),
+        )
+        .get_only()
+}
 
 // ---- record/metadata helpers ---------------------------------------------
 
@@ -45,6 +176,20 @@ pub fn meta(columns: &[&str]) -> VistaMetadata {
         m = m.with_column(col);
     }
     m.with_id_column("id")
+}
+
+// ---- one-clause queries, for `Dio::with_query` ----------------------------
+
+pub fn cond(column: &str, op: FilterOp, value: impl Into<CborValue>) -> VistaQuery {
+    VistaQuery::new().with_condition(Condition::new(column, op, value))
+}
+
+pub fn search(text: &str) -> VistaQuery {
+    VistaQuery::new().with_search(text)
+}
+
+pub fn order(column: &str, dir: SortDirection) -> VistaQuery {
+    VistaQuery::new().with_order(column, dir)
 }
 
 // ---- bucket fixture ------------------------------------------------------
@@ -76,7 +221,10 @@ pub fn bucket_catalog() -> Arc<dyn VistaResolver> {
 
 pub fn augment_name() -> Augmentation {
     Augmentation {
-        detail: Detail::Catalog("names".into()),
+        detail: Detail::Resolved {
+            resolver: bucket_catalog(),
+            name: "names".into(),
+        },
         source: Source::Id,
         fetch: Fetch::PerRow,
         merge: MergeRule {
@@ -87,17 +235,14 @@ pub fn augment_name() -> Augmentation {
 
 /// A Dio over the bucket master, augmenting each row's `name` from the `names`
 /// detail source, backed by an in-memory cache (no TempDir). Augmentation is
-/// configured on the **Dio** (`dio.augment`), not the Lens.
+/// configured on the **Dio** (`DioBuilder::augment`), not the Lens.
 pub async fn bucket_dio() -> Dio {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .viewport_debounce(Duration::from_millis(1))
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens.make_dio(bucket_master()).await.expect("make_dio");
-    dio.augment(bucket_catalog(), vec![augment_name()])
+    augmented_dio(
+        &quick_lens(Cache::memory()),
+        bucket_master(),
+        vec![augment_name()],
+    )
+    .await
 }
 
 // ---- single-pass (eager) fixture -----------------------------------------
@@ -111,27 +256,6 @@ pub fn teams_master() -> Vista {
         .with_record("c", record(&[("id", "c"), ("team", "red")]))
         .with_metadata(meta(&["id", "team"]));
     Vista::new("members", shell)
-}
-
-/// A single-pass Dio whose `on_start` eagerly copies the master into an
-/// in-memory cache. No augmentation — the scenery filters/sorts the cache
-/// locally (the v1-compat path).
-pub async fn eager_dio(master: Vista) -> Dio {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("lens builds"),
-    );
-    lens.make_dio(master).await.expect("make_dio")
 }
 
 /// Open a two-pass scenery and wait until its first rows have landed.

@@ -8,26 +8,29 @@ impl TableSceneryState {
     /// Whether the visible set is *locally refined* — filtered and ordered over
     /// the cache rather than served in the index's own order.
     ///
-    /// Engaged when a two-pass view carries any condition, filter chip or sort:
-    /// the list pass can't push those down (and an augmented column doesn't
-    /// exist until a row hydrates), so the visible map — not the index — is
-    /// authoritative for `row_count`.
+    /// Engaged when a two-pass view's query holds any clause — a condition, a
+    /// filter chip, a search or an order: the list pass pushes none of them
+    /// (and an augmented column doesn't exist until a row hydrates), so the
+    /// visible map — not the index — is authoritative for `row_count`.
     ///
-    /// **Derived, never stored.** It used to be a `bool` computed once in the
-    /// builder, which made `set_sort` on a view opened without one a permanent
-    /// no-op: the flag stayed `false`, so every path that would have applied the
-    /// new order skipped it. Filter chips, which also arrive after open, had
-    /// needed their own wrapper around the same stale flag; deriving the whole
-    /// answer subsumes that.
+    /// **Derived, never stored**: a sort or filter chips set after open change
+    /// the answer, and a flag computed at open would ignore them.
+    ///
+    /// The Dio's residual counts too: the master never applied it, so the
+    /// index holds rows outside the Dio.
+    ///
+    /// A titles-only picker refines too: its list rows carry the cheap
+    /// columns its clauses can name. A clause on an augmented column, which
+    /// a picker never hydrates, fails it instead (see `Serving::decide`).
     pub(crate) fn local_refine(&self) -> bool {
-        if !self.two_pass || self.titles_only {
+        if !self.two_pass {
             return false;
         }
-        !self.conditions.read().unwrap().is_empty()
-            || !self.op_conditions.read().unwrap().is_empty()
-            || !self.ui_filters.read().unwrap().is_empty()
-            || !self.ui_terms.read().unwrap().is_empty()
-            || self.sort.read().unwrap().is_some()
+        !self.view_query().is_empty()
+            || self
+                .dio_weak
+                .upgrade()
+                .is_some_and(|dio| dio.residual_narrows())
     }
 
     /// Current two-pass index (cloned `Arc`), or `None` in single-pass mode.

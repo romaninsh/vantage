@@ -8,11 +8,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use support::{
-    Recorder, cancel, essential_fast, fast_retry, mount_delayed, mount_script, mount_status,
-    requests, scripted_refresher, spawn_essential, wait_for_requests, wait_until, within,
+    Recorder, cancel, essential_fast, fast_retry, local_client, mount_delayed, mount_script,
+    mount_status, requests, scripted_refresher, spawn_essential, wait_for_requests, wait_until,
+    within,
 };
+use vantage_api_pool::RetryPolicy;
 use vantage_api_pool::resilient::{CallPolicy, ErrorKind};
-use vantage_api_pool::{ResilientClient, RetryPolicy};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -20,7 +21,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 async fn background_call_makes_exactly_one_attempt() {
     let server = MockServer::start().await;
     mount_status(&server, 503).await;
-    let client = ResilientClient::builder().build();
+    let client = local_client().build();
     let url = server.uri();
     let err = client
         .execute_with(&CallPolicy::background(), |h| h.get(&url))
@@ -35,7 +36,7 @@ async fn background_call_makes_exactly_one_attempt() {
 async fn essential_call_retries_until_the_server_recovers() {
     let server = MockServer::start().await;
     mount_script(&server, [503, 503, 503, 503, 503, 503, 503, 200]).await;
-    let client = ResilientClient::builder().build();
+    let client = local_client().build();
     let url = server.uri();
     let resp = within(client.execute_with(&essential_fast(), |h| h.get(&url)))
         .await
@@ -48,7 +49,7 @@ async fn essential_call_retries_until_the_server_recovers() {
 async fn essential_call_stops_when_dropped() {
     let server = MockServer::start().await;
     mount_status(&server, 503).await;
-    let client = ResilientClient::builder().build();
+    let client = local_client().build();
     let url = server.uri();
     let task = spawn_essential(&client, &url);
     // Drop the future only once it has demonstrably been retrying.
@@ -68,7 +69,7 @@ async fn essential_call_stops_when_dropped() {
 async fn cancelled_call_leaves_nothing_in_flight() {
     let server = MockServer::start().await;
     mount_delayed(&server, 200, Duration::from_millis(300)).await;
-    let client = ResilientClient::builder().build();
+    let client = local_client().build();
     let url = server.uri();
     let task = spawn_essential(&client, &url);
     wait_for_requests(&server, 1, Duration::from_secs(2)).await;
@@ -88,9 +89,7 @@ async fn a_cancelled_call_reports_cancelled_as_its_terminal_event() {
     let server = MockServer::start().await;
     mount_delayed(&server, 200, Duration::from_millis(300)).await;
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
-        .observer("local", rec.clone())
-        .build();
+    let client = local_client().observer("local", rec.clone()).build();
     let url = server.uri();
     let task = spawn_essential(&client, &url);
     wait_for_requests(&server, 1, Duration::from_secs(2)).await;
@@ -107,7 +106,7 @@ async fn a_cancelled_call_reports_cancelled_as_its_terminal_event() {
 async fn four_xx_is_final_even_for_essential_calls() {
     let server = MockServer::start().await;
     mount_status(&server, 404).await;
-    let client = ResilientClient::builder().build();
+    let client = local_client().build();
     let url = server.uri();
     let err = within(client.execute_with(&essential_fast(), |h| h.get(&url)))
         .await
@@ -120,7 +119,7 @@ async fn four_xx_is_final_even_for_essential_calls() {
 async fn bounded_policy_per_call_overrides_client_default() {
     let server = MockServer::start().await;
     mount_status(&server, 503).await;
-    let client = ResilientClient::builder().retry(fast_retry(9)).build();
+    let client = local_client().retry(fast_retry(9)).build();
     let url = server.uri();
     let err = client
         .execute_with(&CallPolicy::bounded(fast_retry(1)), |h| h.get(&url))
@@ -133,7 +132,7 @@ async fn bounded_policy_per_call_overrides_client_default() {
 async fn execute_keeps_the_client_default_policy() {
     let server = MockServer::start().await;
     mount_status(&server, 503).await;
-    let client = ResilientClient::builder().retry(fast_retry(2)).build();
+    let client = local_client().retry(fast_retry(2)).build();
     let url = server.uri();
     let err = client.execute(|h| h.get(&url)).await.unwrap_err();
     assert_eq!(err.attempts, 3);
@@ -149,11 +148,7 @@ async fn retry_after_is_clamped_to_the_policy_ceiling() {
         .mount(&server)
         .await;
     mount_status(&server, 200).await;
-    // A supplied client keeps the default client's first-request build out
-    // of the timed window.
-    let client = ResilientClient::builder()
-        .http_client(reqwest::Client::builder().no_proxy().build().unwrap())
-        .build();
+    let client = local_client().build();
     let url = server.uri();
     let policy = CallPolicy::bounded(RetryPolicy::new(
         1,
@@ -181,7 +176,7 @@ async fn a_failing_refresher_fails_the_call_before_any_request() {
     mount_status(&server, 200).await;
 
     let (refresher, calls) = scripted_refresher(|_| Err(anyhow::anyhow!("token endpoint down")));
-    let client = ResilientClient::builder().bearer_auth(refresher).build();
+    let client = local_client().bearer_auth(refresher).build();
     let url = server.uri();
     let err = within(client.execute_with(&essential_fast(), |h| h.get(&url)))
         .await

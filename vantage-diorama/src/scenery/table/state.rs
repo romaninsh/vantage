@@ -16,6 +16,7 @@ mod load_state;
 mod query;
 mod reseed;
 mod rows;
+mod set_query;
 mod totals;
 
 /// Internal state shared by the public scenery handle, the reactor
@@ -29,6 +30,9 @@ pub(crate) struct TableSceneryState {
     /// A sugared wrapper this view reads rows through, when opened with
     /// [`sugar`](super::TableSceneryBuilder::sugar). See [`Self::reader`].
     pub(crate) read_cache: Option<Arc<dyn crate::lens::cache_backend::CacheTable>>,
+    /// The sugar's output columns, empty without sugar. A clause on one is
+    /// never offered to the master.
+    pub(crate) sugar_columns: Arc<std::collections::HashSet<String>>,
 
     pub(crate) conditions: RwLock<Vec<(String, CborValue)>>,
     /// Non-equality filters applied locally over the cache (see
@@ -105,21 +109,27 @@ pub(crate) struct TableSceneryState {
     /// "No rows" and "no rows *yet*" are the same picture and opposite
     /// meanings: a grid that paints its empty state while the first fetch is
     /// still in flight tells the user the table is empty, and they believe it.
-    /// Set once, by whichever path first puts rows in front of the user —
-    /// a seed from cache, a chunk load, or the two-pass list — and never
-    /// cleared, because a later refresh returning nothing is a real answer.
+    /// Set by whichever path first puts rows in front of the user — a seed
+    /// from cache, a chunk load, or the two-pass list. A later refresh
+    /// returning nothing is a real answer, so only a change of
+    /// [`serving`](Self::serving), which drops the rows, clears it.
     pub(crate) settled: std::sync::atomic::AtomicBool,
+
+    /// Whether the visible map leaves out a listed row its query couldn't
+    /// judge, because the row's detail fetch failed. The view then reads
+    /// `Partial`: its set is short by those rows.
+    pub(crate) omits_failed_rows: std::sync::atomic::AtomicBool,
 
     /// Whether this view loads a window at a time (rather than over a cache the
     /// lens filled whole). Decided once at open from the lens's offers and the
     /// master's capabilities — see `builder::pages_lazily`.
     ///
     /// Recorded rather than re-derived because the two consumers must not be
-    /// able to disagree. The loader used to infer it from "is an `on_load_chunk`
-    /// registered", which was the same answer only while every table had its own
-    /// lens. Sharing one lens across a datasource made that callback always
-    /// present, and an eager table's viewport then asked a source for a window
-    /// it had never claimed to serve.
+    /// able to disagree. Inferring it from "does the Lens have a paged loader"
+    /// gives the same answer only while every table has its own lens. Sharing
+    /// one lens across a datasource makes that loader always present, and an
+    /// eager table's viewport then asks a source for a window it never claimed
+    /// to serve.
     pub(crate) paged: bool,
 
     /// Snapshot of the master Vista's capability flags taken at open
@@ -131,7 +141,7 @@ pub(crate) struct TableSceneryState {
 
     // ---- two-pass loading -------------------------------------------------
     //
-    // Populated only when the Lens registers an `on_load_detail` callback.
+    // Populated only when the Dio owns augmentation.
     // `two_pass == false` leaves every field below inert and the scenery on
     // the legacy single-pass path.
     /// Whether this scenery drives two-pass (list + detail) loading.
@@ -149,10 +159,16 @@ pub(crate) struct TableSceneryState {
     pub(crate) ui_terms: RwLock<Vec<super::OpCondition>>,
 
     /// Active quicksearch text (`None` when not searching). Paged sceneries
-    /// carry it into every chunk fetch (`ChunkQuery`); eager ones apply it as
+    /// carry it into every chunk fetch (the loader's query); eager ones apply it as
     /// a local predicate in `reseed_from_cache` — honest there, because the
     /// cache is (or becomes) the complete set.
     pub(crate) search: RwLock<Option<String>>,
+    /// The Dio's plan for the view query, recomputed by every setter that
+    /// changes a clause. See [`ViewPlan`](super::plan::ViewPlan).
+    pub(crate) view_plan: RwLock<Option<Arc<super::plan::ViewPlan>>>,
+    /// Where the answer to the view query comes from, decided with the plan.
+    /// See [`Serving`](super::plan::Serving).
+    pub(crate) serving: RwLock<super::plan::Serving>,
     /// Dropdown / autocomplete projection: serve the cheap list columns and
     /// **skip the detail pass** even on a two-pass table. The list pass still
     /// runs (rows carry id + title columns); per-row hydration never fires.
@@ -188,9 +204,6 @@ pub(crate) struct TableSceneryState {
     /// runs deep inside the loader after the Dio has already been consulted) —
     /// carrying the tap here means `note_state` needs no other path to reach it.
     pub(crate) debug_tap: crate::debug::DebugTap,
-    /// The Dio's master name at open, for the same reason `debug_tap` is
-    /// carried here rather than reached through `dio_weak`.
-    pub(crate) dio_name: String,
     /// The [`LoadState`](super::LoadState) last emitted by
     /// [`note_state`](Self::note_state), so a repeat call (settling, then the
     /// same load's generation bump) doesn't double-log an unchanged state.

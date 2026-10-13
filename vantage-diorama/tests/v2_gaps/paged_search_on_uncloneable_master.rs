@@ -1,8 +1,8 @@
 //! A paged search over a master that can search and window must return only
 //! the matching rows.
 //!
-//! The loader fetches through `Dio::fetch_window_ordered_counted`, which
-//! narrows a per-call clone of the master (`with_query`). In 1.x a master
+//! The loader (`support::page_master`) narrows a per-call clone of the
+//! master (`with_query`) for each window. In 1.x a master
 //! that couldn't be cloned fell back to an un-narrowed window, dropping the
 //! search without a word. In 2.0 every shell is cloneable, so the master
 //! here is a plain `#[derive(Clone)]` wrapper and the search reaches the
@@ -12,14 +12,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use vantage_core::Result;
-use vantage_diorama::{Lens, TableScenery};
+use vantage_diorama::TableScenery;
 use vantage_vista::{
     Capability, Page, TableShell, Vista, VistaCapabilities, forward_table_shell, mocks::MockShell,
 };
 
 use super::fixtures::eventually;
 use crate::support::chunk::order;
-use crate::support::{meta, record};
+use crate::support::{meta, paged_dio, record};
 
 /// Bounds each wait on the view; not a speed assertion.
 const WAIT: Duration = Duration::from_secs(10);
@@ -73,29 +73,7 @@ fn shown(scenery: &Arc<dyn TableScenery>) -> (Vec<String>, Option<usize>) {
 
 #[tokio::test]
 async fn paged_search_on_uncloneable_master() -> Result<()> {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .viewport_debounce(Duration::from_millis(1))
-            .on_load_chunk(|dio, range, query, sink| {
-                let dio = dio.clone();
-                async move {
-                    let (rows, total) = dio
-                        .fetch_window_ordered_counted(range.start, range.len(), query)
-                        .await?;
-                    if let Some(total) = total {
-                        sink.set_total(total as usize);
-                    }
-                    for (offset, (id, row)) in rows.into_iter().enumerate() {
-                        sink.push(range.start + offset, id, row).await?;
-                    }
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("lens builds"),
-    );
-    let dio = lens.make_dio(paged_search_master()).await?;
+    let dio = paged_dio(paged_search_master()).await;
     let scenery = dio.table_scenery().page_size(10).open().await?;
     assert!(scenery.search_supported(), "the master advertises Search");
 

@@ -1,24 +1,23 @@
 //! Deriving a narrowed Dio must leave the original alone.
 //!
-//! Today `with_condition_eq` pushes into the shared `DioInner` and returns a
-//! clone of the same `Arc`, so every holder of the original is narrowed too.
-//! In 2.0 `with_*` derives a new Dio over a narrowed master, and the
-//! original keeps its own query.
-//!
-//! Both Dios warm through the Lens's blocking `on_start`, which lists each
-//! one's own master, so the derived Dio's cache is seeded independently.
+//! `with_query` derives a new Dio over a narrowed master, and the
+//! original keeps its own query. Both Dios warm through the Lens's blocking
+//! eager start, which lists each one's own master, so the derived Dio's
+//! cache is seeded independently.
 
 use vantage_core::Result;
+use vantage_vista::FilterOp;
 
 use super::fixtures::scenery_ids;
-use crate::support::{eager_dio, teams_master, text};
+use crate::support::{cond, eager_dio, teams_master, text};
 
 #[tokio::test]
-#[ignore = "v2 phase 3: with_condition_eq mutates every holder of the Dio"]
 async fn dio_with_does_not_mutate_holders() -> Result<()> {
     // Members a (red), b (blue), c (red).
     let a = eager_dio(teams_master()).await;
-    let b = a.with_condition_eq("team", text("red"));
+    let b = a
+        .with_query(&cond("team", FilterOp::Eq, text("red")))
+        .await?;
 
     let from_a = a.table_scenery().open().await?;
     let from_b = b.table_scenery().open().await?;
@@ -30,6 +29,11 @@ async fn dio_with_does_not_mutate_holders() -> Result<()> {
             vec!["a".to_string(), "c".to_string()],
         ),
         "the original Dio must stay un-narrowed; only the derived one is red-only"
+    );
+    #[cfg(feature = "diagnostics")]
+    assert_ne!(
+        a.diagnostics().await?.cache_table,
+        b.diagnostics().await?.cache_table
     );
     Ok(())
 }

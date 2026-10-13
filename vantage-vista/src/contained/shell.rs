@@ -3,18 +3,18 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 
 use super::{ContainedShell, ContainedWriteback, ONE_ID, cbor_scalar_string};
 use crate::{
     capabilities::{Capability, VistaCapabilities, unknown_relation, unsupported},
-    local,
     metadata::VistaMetadata,
     page::{Page, Preview},
     query::Condition,
     reference::ReferenceKind,
+    refuse::condition_column_error,
     shell::TableShell,
     vista::Vista,
 };
@@ -23,7 +23,9 @@ type Rec = Record<CborValue>;
 
 impl ContainedShell {
     fn in_set(&self, record: &Rec) -> bool {
-        self.conditions.iter().all(|c| local::matches(c, record))
+        self.conditions
+            .iter()
+            .all(|c| c.matches(record, &self.schema))
     }
 
     async fn rows(&self) -> Result<IndexMap<String, Rec>> {
@@ -102,15 +104,13 @@ impl TableShell for ContainedShell {
     }
 
     /// Conditions evaluate against the record's own cells, so only columns
-    /// the contained schema declares can narrow. Dotted paths are refused
-    /// rather than matching nothing.
+    /// the contained schema declares can narrow. A dotted path into a
+    /// declared column is refused with
+    /// [`condition_column_error`](crate::condition_column_error), for the
+    /// caller to evaluate; any other undeclared column is an error.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         if !self.schema.columns.contains_key(&condition.column) {
-            return Err(error!(
-                "Unknown column",
-                column = condition.column.clone(),
-                verb = "add_condition"
-            ));
+            return Err(condition_column_error(&self.schema, &condition.column));
         }
         self.conditions.push(condition.clone());
         Ok(())

@@ -13,7 +13,8 @@ use ciborium::Value as CborValue;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{DebugTap, Dio, DioEvent};
+use vantage_diorama::debug::DebugTap;
+use vantage_diorama::{Dio, DioEvent};
 
 use crate::aggregation::{AggregateOutput, Aggregation};
 

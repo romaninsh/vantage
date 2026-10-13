@@ -3,6 +3,10 @@
 #[path = "common/safe_writes.rs"]
 mod safe_writes_contract;
 
+#[cfg(all(feature = "postgres", feature = "vista"))]
+#[path = "common/dotted.rs"]
+mod dotted;
+
 #[cfg(feature = "postgres")]
 mod postgres {
     #[path = "4_aggregates.rs"]

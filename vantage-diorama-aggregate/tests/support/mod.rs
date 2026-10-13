@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Dio, Generation, Lens};
+use vantage_diorama::{Cache, Dio, Generation, Lens, LensBuilder, Loader, Refresher};
+use vantage_diorama_aggregate::AggregateLens;
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -19,6 +20,22 @@ pub const DEBOUNCE: Duration = Duration::from_millis(40);
 /// flush to all land.
 pub async fn settle() {
     tokio::time::sleep(DEBOUNCE * 5).await;
+}
+
+/// An in-memory aggregate lens on the suite's [`DEBOUNCE`].
+pub fn lens() -> Arc<AggregateLens> {
+    AggregateLens::in_memory()
+        .debounce(DEBOUNCE)
+        .build()
+        .expect("aggregate lens builds")
+}
+
+/// An aggregate's integer value, or `None` for anything else.
+pub fn as_i64(value: Option<CborValue>) -> Option<i64> {
+    match value {
+        Some(CborValue::Integer(i)) => Some(i128::from(i) as i64),
+        _ => None,
+    }
 }
 
 pub fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
@@ -46,9 +63,10 @@ pub fn master(columns: &[(&str, &str)]) -> MockShell {
     MockShell::new().with_metadata(metadata.with_id_column("id"))
 }
 
-/// An eager source Dio: `on_start` copies the master into the cache,
-/// `on_refresh` replaces it. Mutating the shell then calling
-/// [`Dio::refresh`] is how a test simulates the datasource changing.
+/// An eager source Dio: the eager loader copies the master into the cache,
+/// and a refresh re-runs it, reconciling the cache with the master. Mutating
+/// the shell then calling [`Dio::refresh`] is how a test simulates the
+/// datasource changing.
 pub async fn source(shell: MockShell) -> Dio {
     build_source(shell, None).await
 }
@@ -59,12 +77,12 @@ pub async fn source_with_debug(shell: MockShell, ds_name: &str) -> Dio {
     build_source(shell, Some(ds_name)).await
 }
 
-/// A debug-tapped source whose `on_refresh` always fails.
+/// A debug-tapped source whose refresher always fails.
 ///
 /// `AggregateValue::request_refresh` always calls the source's `refresh()`
 /// *and then* nudges the engine loop directly — the nudge is there for a
 /// source with no refresh route, so the value doesn't just sit inert. A
-/// working `on_refresh` makes those two signals arrive together (the
+/// working refresh makes those two signals arrive together (the
 /// refresh's own `DatasetChanged` and the nudge, both ready before the
 /// engine loop gets a chance to poll), which makes the wake a genuine race:
 /// `trigger` could land as either. Failing the refresh suppresses
@@ -72,59 +90,40 @@ pub async fn source_with_debug(shell: MockShell, ds_name: &str) -> Dio {
 /// still fires unconditionally, so a test wanting the `"nudge"` trigger on
 /// its own, deterministically, needs a source like this one.
 pub async fn source_with_debug_and_failing_refresh(shell: MockShell, ds_name: &str) -> Dio {
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .debug_datasource(ds_name)
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|_dio| async move {
-                Err(vantage_core::error!(
-                    "test: refresh always fails to isolate the nudge trigger"
-                ))
-            })
-            .build()
-            .expect("source lens builds"),
-    );
-    let vista = Vista::new("items", shell);
-    lens.make_dio(vista).await.expect("source dio")
+    let lens = eager_lens(Some(ds_name))
+        .refresher(Refresher::new(|_cx| async move {
+            Err(vantage_core::error!(
+                "test: refresh always fails to isolate the nudge trigger"
+            ))
+        }))
+        .build()
+        .expect("source lens builds");
+    open_items(&lens, shell).await
 }
 
 async fn build_source(shell: MockShell, debug: Option<&str>) -> Dio {
-    let mut builder = Lens::new().cache_in_memory();
-    if let Some(name) = debug {
-        builder = builder.debug_datasource(name);
+    let lens = eager_lens(debug).build().expect("source lens builds");
+    open_items(&lens, shell).await
+}
+
+/// An in-memory Lens whose eager loader reconciles the cache with the whole
+/// master, with the debug stream on when `debug` names a datasource.
+fn eager_lens(debug: Option<&str>) -> LensBuilder {
+    let builder = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(|cx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }));
+    match debug {
+        Some(name) => builder.debug_datasource(name),
+        None => builder,
     }
-    let lens = Arc::new(
-        builder
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().clear().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("source lens builds"),
-    );
+}
+
+async fn open_items(lens: &Arc<Lens>, shell: MockShell) -> Dio {
     let vista = Vista::new("items", shell);
-    lens.make_dio(vista).await.expect("source dio")
+    lens.dio(vista).build().await.expect("source dio")
 }
 
 /// Counts generation bumps on a scenery's watch channel.

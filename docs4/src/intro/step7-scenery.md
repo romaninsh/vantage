@@ -246,8 +246,8 @@ viewport reaches them. The passes are separately pluggable. The detail pass is a
 it's chapter 6's augmentation. The list pass, left alone, would ask the master — a full
 122-request S3 walk every time a view (re)builds its spine. But chapter 5 built something better:
 a cache that *is* the listing. Registering `on_list_page` overrides the list pass; the
-[`QueryDescriptor`](vantage_diorama::QueryDescriptor) argument carries the window (`offset`,
-`limit` — plus conditions, sort, and search when the view has them), and our implementation is a
+[`VistaQuery`](vantage_vista::VistaQuery) a loader receives carries the view's conditions,
+search and sort (the window travels separately, as a range), and our implementation is a
 window over the cache. The scenery's spine now costs zero network.
 
 **`refresh_every`** completes the freshness story. Once a minute the Dio reconciles its cache

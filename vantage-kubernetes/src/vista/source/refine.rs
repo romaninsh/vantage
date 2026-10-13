@@ -1,35 +1,28 @@
 //! Client-side quicksearch and ordering over a listed collection.
 
-use std::cmp::Ordering;
-
 use ciborium::Value as CborValue;
+use vantage_core::Result;
 use vantage_types::Record;
-use vantage_vista::SortDirection;
+use vantage_vista::{SortDirection, VistaMetadata, VistaQuery};
 
 type Rows = Vec<(String, Record<CborValue>)>;
 
-/// Keep the rows matching `search` (case-insensitive, against the id and
-/// every text field), then sort them by `order`. With no order the listing's
-/// own order is kept; the sort is stable, so equal keys keep it too.
+/// Keep the rows `refinement` matches (its search, by vista's
+/// [`eval`](vantage_vista::eval) rule), then sort them by its order, ties
+/// broken on id. With no order the listing's own order is kept.
 pub(super) fn refine(
-    mut rows: Rows,
-    search: Option<&str>,
-    order: Option<&(String, SortDirection)>,
-) -> Rows {
-    if let Some(needle) = search {
-        let needle = needle.to_lowercase();
-        rows.retain(|(id, record)| row_matches(id, record, &needle));
+    rows: Rows,
+    refinement: &VistaQuery,
+    metadata: &VistaMetadata,
+) -> Result<Rows> {
+    let mut kept = Rows::with_capacity(rows.len());
+    for (id, record) in rows {
+        if refinement.matches(&record, metadata)? {
+            kept.push((id, record));
+        }
     }
-    if let Some((field, dir)) = order {
-        rows.sort_by(|(_, a), (_, b)| {
-            let ord = cmp_values(a.get(field), b.get(field));
-            match dir {
-                SortDirection::Ascending => ord,
-                SortDirection::Descending => ord.reverse(),
-            }
-        });
-    }
-    rows
+    refinement.sort_rows(&mut kept, metadata);
+    Ok(kept)
 }
 
 /// Row `id` of `rows`, when it is there.
@@ -67,42 +60,16 @@ pub(super) fn describe<'a>(
     format!("the whole collection is listed; applied in memory afterwards: {applied}")
 }
 
-/// Quicksearch predicate: the needle (already lowercased) appears in the id
-/// or in any text-valued field of the record.
-fn row_matches(id: &str, record: &Record<CborValue>, needle: &str) -> bool {
-    if id.to_lowercase().contains(needle) {
-        return true;
-    }
-    record.values().any(|v| match v {
-        CborValue::Text(s) => s.to_lowercase().contains(needle),
-        _ => false,
-    })
-}
-
-/// Order two optional CBOR values. Missing fields sort last; types compare
-/// within kind, with a stable fallback across kinds.
-fn cmp_values(a: Option<&CborValue>, b: Option<&CborValue>) -> Ordering {
-    match (a, b) {
-        (None, None) => Ordering::Equal,
-        (None, Some(_)) => Ordering::Greater,
-        (Some(_), None) => Ordering::Less,
-        (Some(a), Some(b)) => match (a, b) {
-            (CborValue::Integer(x), CborValue::Integer(y)) => i128::from(*x).cmp(&i128::from(*y)),
-            (CborValue::Float(x), CborValue::Float(y)) => {
-                x.partial_cmp(y).unwrap_or(Ordering::Equal)
-            }
-            (CborValue::Text(x), CborValue::Text(y)) => x.cmp(y),
-            (CborValue::Bool(x), CborValue::Bool(y)) => x.cmp(y),
-            // Mixed or other kinds: a textual rendering keeps the sort total
-            // and deterministic.
-            _ => format!("{a:?}").cmp(&format!("{b:?}")),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn refine(rows: Rows, search: Option<&str>, order: Option<&(String, SortDirection)>) -> Rows {
+        let mut refinement = VistaQuery::new();
+        refinement.search = search.map(str::to_string);
+        refinement.order = order.cloned();
+        super::refine(rows, &refinement, &VistaMetadata::new()).unwrap()
+    }
 
     fn rows() -> Rows {
         ["web-b", "Sidecar", "web-a"]
@@ -159,10 +126,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_fields_sort_last() {
-        assert_eq!(
-            cmp_values(None, Some(&CborValue::from(1_i64))),
-            Ordering::Greater
-        );
+    fn missing_fields_sort_last_both_ways() {
+        let mut with_gap = rows();
+        with_gap.insert(0, ("id-none".to_string(), Record::new()));
+        for dir in [SortDirection::Ascending, SortDirection::Descending] {
+            let order = ("name".to_string(), dir);
+            let sorted = refine(with_gap.clone(), None, Some(&order));
+            assert_eq!(sorted.last().unwrap().0, "id-none", "{dir:?}");
+        }
     }
 }

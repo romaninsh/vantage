@@ -24,9 +24,10 @@ thiserror = "2.0"
 vantage-rhai = { version = "1.0.0", path = "../vantage-rhai", optional = true }
 # The agent-tool runners (`run_script`, `preview_script`) answer in JSON.
 serde_json = { version = "1", optional = true }
+# `sync` for the semaphore that gates a mock's `get`. The `rhai` feature adds
 # `rt`/`rt-multi-thread` for the spawn_blocking + Handle::block_on bridge that
 # drives the async Vista fetches from the synchronous Rhai engine.
-tokio = { version = "1.52", features = ["rt", "rt-multi-thread"], optional = true }
+tokio = { version = "1.52", features = ["sync"], optional = true }
 # Scripts hand `dynamic_to_cbor` chrono instants (a host's `now()`).
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 # Rhai inserts without an id mint a UUIDv7 before the first attempt.
@@ -41,6 +42,8 @@ rhai = [
     "dep:vantage-rhai",
     "dep:serde_json",
     "dep:tokio",
+    "tokio/rt",
+    "tokio/rt-multi-thread",
     "dep:chrono",
     "dep:uuid",
     "vantage-types/serde",
@@ -50,10 +53,10 @@ rhai = [
 contract = []
 # `vantage_vista::mocks`: an in-memory `TableShell` for tests and examples.
 # Enable from `[dev-dependencies]` only.
-mocks = []
+mocks = ["dep:tokio"]
 
 [dev-dependencies]
-tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync", "time"] }
 vantage-dataset = { version = "1.1.0", path = "../vantage-dataset", features = ["contract"] }
 serde_json = "1"
 # Memory-backed Vistas for the script vocabulary tests. Integration tests only:

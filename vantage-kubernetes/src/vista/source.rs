@@ -10,7 +10,7 @@
 //! free-text search, so the shell honours them **client-side**: every read
 //! lists the (cluster-sized) collection once, applies the quicksearch filter
 //! and the sort (see [`refine`]), and windows slice the result. The search
-//! text and order live in plain fields, so a clone carries them. Writes stay
+//! text and order live in a plain field, so a clone carries them. Writes stay
 //! unsupported; only read capabilities are advertised.
 //!
 //! ## Rhai
@@ -31,7 +31,8 @@ use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, Page, Preview, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaMetadata, unknown_relation, unsupported,
+    VistaCapabilities, VistaMetadata, VistaQuery, condition_column_error, unknown_relation,
+    unsupported,
 };
 
 use crate::cluster::KubernetesCluster;
@@ -43,10 +44,9 @@ pub struct KubeTableShell {
     pub(crate) table: Table<KubernetesCluster, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
-    /// Client-side sort over the listed rows.
-    order: Option<(String, SortDirection)>,
-    /// Client-side quicksearch substring (case-insensitive).
-    search: Option<String>,
+    /// The quicksearch and sort applied client-side over the listed rows;
+    /// it never holds conditions, which go to the table.
+    refinement: VistaQuery,
 }
 
 impl KubeTableShell {
@@ -59,8 +59,7 @@ impl KubeTableShell {
             table,
             capabilities,
             metadata,
-            order: None,
-            search: None,
+            refinement: VistaQuery::new(),
         }
     }
 
@@ -68,11 +67,7 @@ impl KubeTableShell {
     /// searched and sorted client-side.
     async fn materialize(&self) -> Result<Vec<(String, Record<CborValue>)>> {
         let rows = self.table.list_values().await?.into_iter().collect();
-        Ok(refine::refine(
-            rows,
-            self.search.as_deref(),
-            self.order.as_ref(),
-        ))
+        refine::refine(rows, &self.refinement, &self.metadata)
     }
 }
 
@@ -98,8 +93,8 @@ impl TableShell for KubeTableShell {
             .with_query(format!("GET {}", self.table.table_name()))
             .with_note(refine::describe(
                 self.table.conditions().map(KubeCondition::field),
-                self.search.as_deref(),
-                self.order.as_ref(),
+                self.refinement.search.as_deref(),
+                self.refinement.order.as_ref(),
             ))
     }
 
@@ -123,10 +118,12 @@ impl TableShell for KubeTableShell {
     }
 
     /// Equality on a declared column, matched against the projected record.
+    /// A dotted path into a declared column is refused, for the caller to
+    /// evaluate.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         if !self.metadata.columns.contains_key(field) {
-            return Err(error!("Unknown column for condition", field = field));
+            return Err(condition_column_error(&self.metadata, field));
         }
         if condition.op != FilterOp::Eq {
             return unsupported(Capability::FilterOps);
@@ -137,7 +134,7 @@ impl TableShell for KubeTableShell {
     }
 
     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
-        self.search = text.map(str::to_string);
+        self.refinement.search = text.map(str::to_string);
         Ok(())
     }
 
@@ -147,7 +144,7 @@ impl TableShell for KubeTableShell {
         {
             return Err(error!("Unknown column for order", field = field));
         }
-        self.order = order.map(|(field, dir)| (field.to_string(), dir));
+        self.refinement.order = order.map(|(field, dir)| (field.to_string(), dir));
         Ok(())
     }
 

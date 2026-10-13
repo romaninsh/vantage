@@ -6,8 +6,7 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
-use support::{Recorder, mount_status, requests};
-use vantage_api_pool::ResilientClient;
+use support::{Recorder, local_client, mount_status, requests};
 use wiremock::MockServer;
 
 #[tokio::test]
@@ -16,7 +15,7 @@ async fn rate_limit_spaces_requests_out() {
     mount_status(&server, 200).await;
     // 100/s → 10 ms apart. `rate_limit(100.0)` would allow a burst of 100 and
     // defeat the test, so the burst is set explicitly.
-    let client = ResilientClient::builder()
+    let client = local_client()
         .rate_limit_with_burst(100.0, 1)
         .max_parallel(8)
         .build();
@@ -38,9 +37,8 @@ async fn observer_ms_excludes_the_rate_wait() {
     mount_status(&server, 200).await;
 
     let rec = Arc::new(Recorder::default());
-    let client = ResilientClient::builder()
+    let client = local_client()
         .observer("local", rec.clone())
-        .http_client(reqwest::Client::new())
         .rate_limit_with_burst(10.0, 1)
         .build();
     let url = server.uri();

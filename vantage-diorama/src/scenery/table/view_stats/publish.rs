@@ -99,7 +99,7 @@ impl TableSceneryState {
     fn compute_view_stats(&self) -> ViewStats {
         let load = compute_load_state(self);
         let rows = self.status_summary();
-        let (total, total_exact) = self.stats_total(rows.loaded, load);
+        let (total, total_exact) = self.stats_total(rows.loaded, &load);
         let fetching =
             self.load_in_flight.lock().unwrap().is_some() || *self.list_in_flight.lock().unwrap();
         let shown = self.stats.shown.read().unwrap().clone();
@@ -117,7 +117,7 @@ impl TableSceneryState {
                 &self.ui_filters.read().unwrap(),
                 &self.ui_terms.read().unwrap(),
             ),
-            state: ViewState::derive(load, &rows, fetching),
+            state: ViewState::derive(&load, &rows, fetching),
             pending_writes: rows.pending_write,
             failed: rows.failed,
         }
@@ -129,7 +129,7 @@ impl TableSceneryState {
     /// A two-pass index still listing is a lower bound, not an estimate: its
     /// length is what has been listed so far. A view the cache holds whole
     /// counts its own rows once it has an answer.
-    fn stats_total(&self, loaded: usize, load: LoadState) -> (Option<usize>, bool) {
+    fn stats_total(&self, loaded: usize, load: &LoadState) -> (Option<usize>, bool) {
         if let Some(index) = self.index() {
             let len = if self.local_refine() {
                 loaded
@@ -149,7 +149,12 @@ impl TableSceneryState {
             (Some(total), TotalKind::Exact) => (Some(total), true),
             (Some(total), TotalKind::Remembered) => (Some(total), false),
             (Some(_), TotalKind::Horizon) => (None, false),
-            (None, _) if !self.paged && load != LoadState::Loading => (Some(loaded), true),
+            (None, _)
+                if !self.is_chunk_loaded()
+                    && matches!(load, LoadState::Partial | LoadState::Complete) =>
+            {
+                (Some(loaded), true)
+            }
             (None, _) => (None, false),
         }
     }

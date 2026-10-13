@@ -1,21 +1,21 @@
 //! The two-pass augmentation passes, owned by the Dio.
 //!
-//! A Dio configured with [`Dio::augment`](crate::Dio::augment) drives its own
-//! list / detail / refresh passes from the augmentation config it holds. These
-//! free functions are the shared bodies, read off `DioInner` — distinct from a
-//! Lens that registers explicit `on_list_page`/`on_load_detail` callbacks for
-//! hand-rolled two-pass.
+//! A Dio built with [`DioBuilder::augment`](crate::DioBuilder::augment) drives
+//! its own list / detail / refresh passes from the augmentations it holds.
+//! These free functions are the shared bodies, read off `DioInner`.
+//! Augmentation is the only way to declare two-pass loading.
+
+mod hydrate;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista::VistaResolver;
 
-use crate::augment::Augmentation;
 use crate::dio::Dio;
 use crate::lens::CacheStatus;
-use crate::ops::QueryDescriptor;
+
+pub(crate) use hydrate::{hydrate_gaps, hydrate_one};
 
 /// What prompted a refresh — the two differ in how much they are entitled to
 /// assume about the DETAIL source.
@@ -26,7 +26,7 @@ use crate::ops::QueryDescriptor;
 /// saying "re-check everything", and pays for a full re-probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefreshKind {
-    /// The periodic ticker (`refresh_interval`).
+    /// The periodic timer (`Refresher::every`).
     Scheduled,
     /// Someone asked — a Refresh button, `Dio::refresh`, a scenery's
     /// `request_refresh`.
@@ -36,160 +36,27 @@ pub(crate) enum RefreshKind {
 /// Capability-aware **list pass**: push the `[offset, offset+limit)` window down
 /// to the master when it advertises `Window`, otherwise list the whole
 /// set and window it locally so sequential paging still terminates.
+///
+/// Returns the window's rows and the set's total when it is known: the one
+/// the master states, or the whole list's length.
 pub(crate) async fn list_page(
     dio: &Dio,
-    desc: QueryDescriptor,
-) -> Result<Vec<(String, Record<CborValue>)>> {
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<(String, Record<CborValue>)>, Option<usize>)> {
     let master = dio.master();
     if master.capabilities().has(vantage_vista::Capability::Window) {
-        Ok(master.fetch_window(desc.offset, desc.limit).await?.rows)
+        let page = master.fetch_window(offset, limit).await?;
+        let total = page.total.and_then(|t| usize::try_from(t).ok());
+        Ok((page.rows, total))
     } else {
         let rows = master.list_values().await?;
-        Ok(rows
-            .into_iter()
-            .skip(desc.offset)
-            .take(desc.limit)
-            .collect())
+        let total = rows.len();
+        Ok((
+            rows.into_iter().skip(offset).take(limit).collect(),
+            Some(total),
+        ))
     }
-}
-
-/// **Detail pass**: read the cheap list-pass row from the cache, run every
-/// [`Augmentation`] against it (resolve a detail Vista, fetch, merge), return the
-/// enriched row.
-pub(crate) async fn load_detail_with(
-    dio: &Dio,
-    id: String,
-    resolver: &dyn VistaResolver,
-    augmentations: &[Augmentation],
-) -> Result<Record<CborValue>> {
-    let mut row = dio.cache().get_value(&id).await?.unwrap_or_default();
-    let master_id_column = dio.master().id_column().unwrap_or("id").to_string();
-    let dio_name = dio.master().name().to_string();
-    for aug in augmentations {
-        aug.augment_row(&dio_name, &master_id_column, &mut row, resolver)
-            .await?;
-    }
-    Ok(row)
-}
-
-/// The canonical per-row hydration body, run by the augment scheduler's
-/// workers: re-check the cache (an id another requester already settled
-/// costs one read and zero fetches — this is what makes cross-view dedup
-/// total), fetch the detail, merge it onto the cheap list-pass row, persist
-/// as `Complete`, and broadcast `RecordChanged` so every open view updates
-/// its slot.
-pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &str) -> Result<()> {
-    let augmented = inner.augmented_columns.read().unwrap().clone();
-    let gap_aware = inner.has_dio_augment() && !augmented.is_empty();
-    if inner.augment_settled_empty.lock().unwrap().contains(id) {
-        // Hydrated before and found no detail record — a legitimate,
-        // permanent gap until the next refresh clears the set.
-        return Ok(());
-    }
-    if let Some((row, CacheStatus::Complete)) =
-        inner.cache.get_value_with_status(id).await.ok().flatten()
-        && (!gap_aware || !has_augment_gap(&row, &augmented))
-    {
-        return Ok(());
-    }
-
-    let dio = Dio {
-        inner: inner.clone(),
-    };
-    let detail = if inner.has_dio_augment() {
-        let resolver = inner.augment_resolver.read().unwrap().clone();
-        let augmentations = inner.augmentations.read().unwrap().clone();
-        match (resolver, augmentations) {
-            (Some(resolver), Some(augmentations)) => {
-                load_detail_with(&dio, id.to_string(), resolver.as_ref(), &augmentations).await?
-            }
-            _ => Default::default(),
-        }
-    } else if let Some(cb) = inner.lens.callbacks.on_load_detail.as_ref() {
-        cb(&dio, id.to_string()).await?
-    } else {
-        return Ok(());
-    };
-
-    // Merge the detail columns onto the cheap list-pass row so the list
-    // columns survive hydration, then mark the row Complete.
-    let mut merged = inner
-        .cache
-        .get_value(id)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    for (k, v) in detail {
-        merged.insert(k, v);
-    }
-    inner
-        .cache
-        .insert_value_with_status(id, &merged, CacheStatus::Complete)
-        .await?;
-    // Record which way this row settled. Gapped AFTER hydration means the
-    // detail source has no record to fill it (legitimate absence); filled
-    // means it is done. Either way the sweep must be able to skip it without
-    // reading it back — otherwise gap → hydrate → still gapped → generation
-    // bump → sweep is a busy loop, and even a filled row costs a cache read
-    // on every sweep to re-establish what we already know here. Both sets are
-    // cleared by the refresh pass.
-    if gap_aware && has_augment_gap(&merged, &augmented) {
-        inner
-            .augment_settled_empty
-            .lock()
-            .unwrap()
-            .insert(id.to_string());
-    } else {
-        inner.augment_settled.lock().unwrap().insert(id.to_string());
-    }
-    let _ = inner
-        .event_bus
-        .send(crate::DioEvent::RecordChanged { id: id.to_string() });
-    Ok(())
-}
-
-/// Hydrate every row in `rows` that still has an augment gap, blocking until
-/// the scheduler has settled them all, then swap the enriched rows into
-/// `rows` from the cache. Before the sweep a single
-/// [`DioEvent::Hydrating`](crate::DioEvent::Hydrating) carries the pending
-/// count — a consumer blocking on a facade read can tell the user what's
-/// coming — and every hydrated row emits `RecordChanged` for progress. Going
-/// through the scheduler means a facade read racing a scenery's viewport
-/// shares its fetches instead of duplicating them.
-pub(crate) async fn hydrate_gaps(
-    dio: &Dio,
-    rows: &mut indexmap::IndexMap<String, Record<CborValue>>,
-) -> Result<()> {
-    // Two-pass covers both declarative augmentation and a hand-rolled
-    // `on_load_detail` lens callback — facade reads hydrate through either.
-    if !dio.inner.is_two_pass() {
-        return Ok(());
-    }
-    let augmented = dio.inner.augmented_columns.read().unwrap().clone();
-    let pending: Vec<String> = rows
-        .iter()
-        .filter(|(_, row)| has_augment_gap(row, &augmented))
-        .map(|(id, _)| id.clone())
-        .collect();
-    if pending.is_empty() {
-        return Ok(());
-    }
-    let _ = dio.inner.event_bus.send(crate::DioEvent::Hydrating {
-        pending: pending.len(),
-    });
-    dio.inner.ensure_augment_workers();
-    let ticket = dio.inner.augment_scheduler.ticket();
-    ticket
-        .enqueue_and_wait(pending.clone())
-        .await
-        .map_err(|e| vantage_core::error!("augment hydration failed", detail = e))?;
-    for id in pending {
-        if let Some(full) = dio.inner.cache.get_value(&id).await? {
-            rows.insert(id, full);
-        }
-    }
-    Ok(())
 }
 
 /// **Refresh pass**: re-run the cheap list pass and reconcile against the cache
@@ -208,9 +75,9 @@ pub(crate) async fn hydrate_gaps(
 /// reserved for rows that were never filled.
 pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
     let fresh = dio.master().list_values().await?;
-    let cache = dio.cache();
+    let cache = &dio.inner.cache;
     let existing = cache.list_values_with_status().await?;
-    let augmented = dio.inner.augmented_columns.read().unwrap().clone();
+    let augmented = &dio.inner.augmented_columns;
     // A refreshed detail source may have gained records for rows that
     // previously settled empty — let them fetch again. Only on an explicit
     // request, though.
@@ -235,6 +102,7 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
     // pass refetch them, and a memo saying "settled" would have the sweep skip
     // them forever. Costs one re-read per row on the next sweep, no fetches.
     dio.inner.augment_settled.lock().unwrap().clear();
+    dio.inner.augment_failed.lock().unwrap().clear();
 
     if matches!(kind, RefreshKind::Requested) {
         let cleared = {
@@ -258,7 +126,7 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
         if dio.inner.pending_flashes.contains(id) {
             continue;
         }
-        let gap = has_augment_gap(list_row, &augmented);
+        let gap = has_augment_gap(list_row, augmented);
         let status = if gap {
             CacheStatus::Incomplete
         } else {
@@ -266,7 +134,7 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
         };
         match existing.get(id) {
             Some((old, _)) => {
-                if !list_fields_changed(list_row, old, &augmented) {
+                if !list_fields_changed(list_row, old, augmented) {
                     continue;
                 }
                 tracing::debug!(
