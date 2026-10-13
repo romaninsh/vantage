@@ -1,20 +1,20 @@
 //! The `Record` draft type: `table(name).record(id)` (existing row) or
-//! `table(name).record()` (new row), staged edits, and `save()`/`delete()`.
+//! `table(name).record()` (new row), staged edits, and `flash()`/`delete()`.
 //!
-//! A draft tracks its own `id`, a `baseline` (the last saved state, `None`
-//! for a never-saved row) and `changes` (staged but unsaved edits). `save()`
+//! A draft tracks its own `id`, a `baseline` (the last flashed state, `None`
+//! for a row never written) and `changes` (staged, unwritten edits). `flash()`
 //! inserts a new row or patches only the changed fields of an existing one;
-//! `delete()` requires a saved id. Both report through `status()`
+//! `delete()` requires a written id. Both report through `status()`
 //! (`"tracking"` | `"pending"` | `"failed"`) and `rejection()`.
 //!
-//! Writes go through the same capability checks and [`Writes::Denied`]
-//! message as the write terminals (see [`super::write`]); [`save`] calls
-//! their helpers rather than duplicating the insert/patch/found logic.
+//! Writes go through the same [`Writes::Denied`] message and Vista
+//! capability gates as the write terminals (see [`super::write`]); [`flash`]
+//! calls their helpers rather than duplicating the insert/patch/found logic.
 //!
 //! This file holds the draft state; [`verbs`] registers the Rhai surface.
 
 mod dotted;
-mod save;
+mod flash;
 mod verbs;
 
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,9 @@ use vantage_dataset::ReadableValueSet;
 
 use super::bridge::block_on;
 use super::handle::Handle;
-use super::vocab::{TargetResolver, Writes};
+use super::vocab::Writes;
+use super::write::Gate;
+use crate::VistaResolver;
 
 pub(crate) use verbs::register_record;
 
@@ -49,8 +51,7 @@ impl DraftStatus {
 
 struct DraftState {
     handle: Handle,
-    resolver: Option<TargetResolver>,
-    writes: Writes,
+    gate: Gate,
     id: Option<String>,
     baseline: Option<IndexMap<String, CborValue>>,
     changes: IndexMap<String, CborValue>,
@@ -58,7 +59,7 @@ struct DraftState {
     rejection: Option<String>,
     /// The write target's id column, resolved on the first field set.
     id_column: Option<String>,
-    /// The id minted for a new row on its first save attempt, reused by a
+    /// The id minted for a new row on its first flash attempt, reused by a
     /// retry so a write that landed unseen isn't inserted twice.
     minted_id: Option<String>,
 }
@@ -70,19 +71,25 @@ pub struct RecordDraft {
 }
 
 impl RecordDraft {
-    pub fn new_row(handle: Handle, resolver: Option<TargetResolver>, writes: Writes) -> Self {
-        Self::build(handle, resolver, writes, None, None)
+    /// A draft of a row not written yet; its first `flash()` inserts it.
+    /// `resolver` resolves a named `handle`, as in [`Handle::resolve`].
+    pub fn new_row(
+        handle: Handle,
+        resolver: Option<Arc<dyn VistaResolver>>,
+        writes: Writes,
+    ) -> Self {
+        Self::build(handle, Gate::new(resolver, writes), None, None)
     }
 
     /// A draft of an existing row, fetched through `handle`. Errors (marked
     /// not-found) when no row has `id`.
     pub fn load(
         handle: Handle,
-        resolver: Option<TargetResolver>,
+        resolver: Option<Arc<dyn VistaResolver>>,
         writes: Writes,
         id: &str,
     ) -> CoreResult<Self> {
-        let vista = handle.resolve(resolver.as_ref())?;
+        let vista = handle.resolve(resolver.as_deref())?;
         let record = block_on(vista.get_value(id.to_string()))??
             .ok_or_else(|| error!("record not found", id = id).mark_not_found())?;
         Ok(Self::from_row(
@@ -97,26 +104,24 @@ impl RecordDraft {
     /// A draft of a row already in hand, without a fetch.
     pub fn from_row(
         handle: Handle,
-        resolver: Option<TargetResolver>,
+        resolver: Option<Arc<dyn VistaResolver>>,
         writes: Writes,
         id: String,
         row: IndexMap<String, CborValue>,
     ) -> Self {
-        Self::build(handle, resolver, writes, Some(id), Some(row))
+        Self::build(handle, Gate::new(resolver, writes), Some(id), Some(row))
     }
 
     fn build(
         handle: Handle,
-        resolver: Option<TargetResolver>,
-        writes: Writes,
+        gate: Gate,
         id: Option<String>,
         baseline: Option<IndexMap<String, CborValue>>,
     ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(DraftState {
                 handle,
-                resolver,
-                writes,
+                gate,
                 id,
                 baseline,
                 changes: IndexMap::new(),
@@ -128,12 +133,12 @@ impl RecordDraft {
         }
     }
 
-    /// The currently staged, unsaved edits.
+    /// The currently staged, unwritten edits.
     pub fn changes(&self) -> IndexMap<String, CborValue> {
         self.inner.lock().unwrap().changes.clone()
     }
 
-    /// The row's id; `None` until a new row is saved.
+    /// The row's id; `None` until a new row is flashed.
     pub fn id(&self) -> Option<String> {
         self.inner.lock().unwrap().id.clone()
     }

@@ -15,7 +15,6 @@ members = [
     "learn-11",
     "vantage-vista",
     "vantage-rhai",
-    "vantage-vista-factory",
     "vantage-diorama",
     "vantage-diorama-aggregate",
     "vantage-action",

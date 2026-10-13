@@ -24,7 +24,6 @@ pub mod spec;
 mod traversal;
 
 pub use factory::GraphqlApiVistaFactory;
-pub use lowering::GraphqlSpecResolver;
 pub use source::GraphqlApiTableShell;
 pub use spec::{
     GraphqlApiVistaSpec, GraphqlBlock, GraphqlColumnBlock, GraphqlColumnExtras, GraphqlTableExtras,

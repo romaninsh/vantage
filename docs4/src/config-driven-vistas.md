@@ -178,16 +178,18 @@ A reference names its target *by spec name* — so the factory needs a way to fi
 current spec at traversal time. That's the **spec resolver**, attached once:
 
 ```rust
-let resolver: SqliteSpecResolver = Arc::new(move |name| specs.get(name).cloned());
+let resolver: SpecResolver<SqliteVistaSpec> =
+    Arc::new(move |name: &str| specs.get(name).cloned());
 let factory = db.vista_factory().with_resolver(resolver);
 let category = factory.from_yaml(category_yaml)?;
 
 // Traversal rebuilds `product` from its live spec:
 let row = /* a category row */;
-let products = category.get_ref("products", &row)?;
+let products = category.get_ref("products", Some(&row))?;
 ```
 
-The resolver is a plain closure — back it with an in-memory map, a folder of `.yaml` files, or a
+[`SpecResolver<S>`](vantage_vista::SpecResolver) is the same type for every driver, with the
+driver's spec type as `S`. The resolver is a plain closure — back it with an in-memory map, a folder of `.yaml` files, or a
 hot-reloading inventory. Because targets are re-resolved on every traversal, editing a spec changes
 what the *next* traversal builds. Without a resolver, a traversal falls back to a column-less
 target and the next query fails loudly.
@@ -200,7 +202,9 @@ YAML declares structure. For anything with an expression in it, specs escalate t
 small, embeddable scripting language whose Vantage vocabulary compiles to native queries. The
 expression primitives are shared across backends where the concept overlaps (`count`, `avg`,
 `coalesce`, `case_when`, `date_format` …) — see [SQL Primitives](./sql/primitives.md) and
-[SurrealDB Primitives](./surrealdb/primitives.md) for the full vocabularies. Rhai appears in a spec
+[SurrealDB Primitives](./surrealdb/primitives.md) for the full vocabularies. A script calls them
+through its backend's namespace (`sql::count(..)`, `surreal::count(..)`, `mongo::oid(..)`), so they
+never shadow the data vocabulary's `table(name)`. Rhai appears in a spec
 in five places, each with a distinct job. The first two build native queries; the next two use the
 data vocabulary taught in [Scripting with Rhai](./rhai.md); the last computes a column from one
 row.
@@ -216,7 +220,7 @@ columns:
   name: { type: string }
 sqlite:
   rhai: |
-    select().from("product").field("id").field("name").where(expr("price > 150"))
+    sql::select().from("product").field("id").field("name").where(sql::expr("price > 150"))
 ```
 
 The script runs once at build time and its SELECT becomes the vista's source. A query-sourced
@@ -240,8 +244,8 @@ sqlite:
     columns: [category_id]
   rhai: |
     base.clear_fields().field("category_id")
-        .expression(expr("SUM(price) AS total_price"))
-        .group_by(expr("category_id"))
+        .expression(sql::expr("SUM(price) AS total_price"))
+        .group_by(sql::expr("category_id"))
 ```
 
 This is the aggregate pattern: group the base by a key, declare the aggregate outputs as the
@@ -262,7 +266,7 @@ columns:
 surreal:
   table: product
   modify: |
-    self.with_condition(ident("is_deleted") == false)
+    self.with_condition(surreal::ident("is_deleted") == false)
         .sort("name", "asc")
 ```
 
@@ -358,31 +362,34 @@ mechanics — and the sharp edges — are covered in
 
 ---
 
-## Cross-persistence: the VistaCatalog
+## Cross-persistence: the Catalog
 
 A single Vista is strictly single-backend. When a system spans several — categories in Postgres,
-products behind a REST API — [`VistaCatalog`](vantage_vista_factory) sits one layer up: it holds a
-loader per model name and traverses relations whose target lives in a *different* persistence:
+products behind a REST API — a [`Catalog`](vantage_vista::Catalog) sits one layer up: it holds a
+loader per model name, and a relation whose target lives in a *different* persistence is a
+[`Reference`](vantage_vista::Reference) narrowed over the target the catalog builds:
 
 ```rust
-let mut catalog = VistaCatalog::new();
-catalog.register("category", Arc::new(move || pg_factory.from_yaml(&category_yaml)));
-catalog.register("product",  Arc::new(move || api_factory.from_yaml(&product_yaml)));
-catalog.register_relation("category", Relation::single_key(
-    "products", "product", ReferenceKind::HasMany,
-    "category_id",   // target column to constrain
-    "id",            // parent-row field whose value narrows it
-));
+let catalog = Catalog::new()
+    .with("category", move |_: &str| pg_factory.from_yaml(&category_yaml))
+    .with("product", move |_: &str| api_factory.from_yaml(&product_yaml));
+let relation = Reference::has_many(
+    "products",
+    "product",
+    JoinKey::new("id", "category_id"), // parent `id` constrains the target's `category_id`
+);
 
-let category = catalog.build_vista("category")?;
+let category = catalog.vista("category")?;
 let row = /* a category row */;
-let products = catalog.traverse_from("category", "products", &row)?;  // Postgres → REST
+let products = relation.narrow(catalog.vista(&relation.target)?, &row)?;  // Postgres → REST
 ```
 
 Loaders return a *fresh, unconditioned* Vista on every call, so the catalog composes with
-hot-reloading inventories the same way spec resolvers do. The catalog is also what
-[Augmentation](./augmentation.md) uses to resolve its detail sources — the `augment:` block in a
-table's configuration is this same machinery pointed at row enrichment.
+hot-reloading inventories the same way spec resolvers do. A name the catalog doesn't hold is a
+not-found error; a loader that fails keeps its own error. The catalog is a
+[`VistaResolver`](vantage_vista::VistaResolver), so it goes wherever a resolver is expected: it is
+also what [Augmentation](./augmentation.md) uses to resolve its detail sources — the `augment:`
+block in a table's configuration is this same machinery pointed at row enrichment.
 
 ---
 

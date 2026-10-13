@@ -6,7 +6,9 @@ use vantage_core::Result;
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, resolve_base_spec};
+use vantage_vista::{
+    ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata, resolve_base_spec,
+};
 
 use crate::sql_vista::{column_for_type, metadata_options, sql_capabilities};
 use crate::sqlite::SqliteDB;
@@ -15,13 +17,9 @@ use crate::sqlite::types::AnySqliteType;
 use crate::sqlite::vista::source::SqliteTableShell;
 use crate::sqlite::vista::spec::{SqliteColumnExtras, SqliteTableExtras, SqliteVistaSpec};
 
-/// Resolves a YAML spec by table name, so references and `base:` can rebuild
-/// their tables from the live spec.
-pub type SqliteSpecResolver = SpecResolver<SqliteVistaSpec>;
-
 pub struct SqliteVistaFactory {
     db: SqliteDB,
-    resolver: Option<SqliteSpecResolver>,
+    resolver: Option<SpecResolver<SqliteVistaSpec>>,
 }
 
 impl SqliteVistaFactory {
@@ -29,10 +27,11 @@ impl SqliteVistaFactory {
         Self { db, resolver: None }
     }
 
-    /// Attach a spec resolver. Required for YAML-declared references to resolve
-    /// their target tables — without it, a traversal yields a column-less target
-    /// `Table` and the next query fails loudly.
-    pub fn with_resolver(mut self, resolver: SqliteSpecResolver) -> Self {
+    /// Attach a spec resolver, which finds a YAML spec by table name so
+    /// references and `base:` can rebuild their tables from the live spec.
+    /// Without it, a traversal yields a column-less target `Table` and the
+    /// next query fails loudly.
+    pub fn with_resolver(mut self, resolver: SpecResolver<SqliteVistaSpec>) -> Self {
         self.resolver = Some(resolver);
         self
     }
@@ -45,18 +44,24 @@ impl SqliteVistaFactory {
         E: Entity<AnySqliteType> + 'static,
     {
         let name = table.table_name().to_string();
-        Ok(self.wrap(table, name, false))
+        let metadata = table.vista_metadata(metadata_options());
+        Ok(self.wrap(table, name, metadata, false))
     }
 
     /// Single source-construction site shared by `from_table` and
     /// `build_from_spec`. Keeps the capability set and `Vista::new` call in
     /// one place so a future capability flip is a one-line edit. A query-sourced
     /// (e.g. `rhai:`) vista is `read_only`, which clears the write capabilities.
-    fn wrap<E>(&self, table: Table<SqliteDB, E>, name: String, read_only: bool) -> Vista
+    fn wrap<E>(
+        &self,
+        table: Table<SqliteDB, E>,
+        name: String,
+        metadata: VistaMetadata,
+        read_only: bool,
+    ) -> Vista
     where
         E: Entity<AnySqliteType> + 'static,
     {
-        let metadata = table.vista_metadata(metadata_options());
         let shell = SqliteTableShell::new(table, sql_capabilities(read_only), metadata, ());
         Vista::new(name, shell)
     }
@@ -81,7 +86,9 @@ impl VistaFactory for SqliteVistaFactory {
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
-        Ok(self.wrap(table, vista_name, read_only))
+        let mut metadata = table.vista_metadata(metadata_options());
+        table.name_spec_targets(&mut metadata, &spec.references, |_| None)?;
+        Ok(self.wrap(table, vista_name, metadata, read_only))
     }
 }
 
@@ -91,7 +98,7 @@ impl VistaFactory for SqliteVistaFactory {
 pub(crate) fn build_sqlite_table(
     spec: &SqliteVistaSpec,
     db: SqliteDB,
-    resolver: Option<SqliteSpecResolver>,
+    resolver: Option<SpecResolver<SqliteVistaSpec>>,
 ) -> Result<Table<SqliteDB, EmptyEntity>> {
     let block = spec.driver.sqlite.as_ref();
 
@@ -118,7 +125,7 @@ pub(crate) fn build_sqlite_table(
     for (name, col_spec) in spec.columns.iter().filter(|(n, _)| !n.contains('.')) {
         table.add_spec_column(name, col_spec, build_column)?;
     }
-    table.set_spec_id_field(&spec.resolve_id_column())?;
+    table.set_spec_id_field(&spec.resolve_id_column("id"))?;
 
     let mut table = table.with_spec_references(&spec.references, resolver, build_sqlite_table)?;
 
@@ -174,7 +181,7 @@ fn build_derived_table(
     spec: &SqliteVistaSpec,
     base_name: &str,
     db: SqliteDB,
-    resolver: Option<SqliteSpecResolver>,
+    resolver: Option<SpecResolver<SqliteVistaSpec>>,
 ) -> Result<Table<SqliteDB, EmptyEntity>> {
     let (resolver, base_spec) = resolve_base_spec(resolver, base_name)?;
     let base_table = build_sqlite_table(&base_spec, db, Some(resolver.clone()))?;

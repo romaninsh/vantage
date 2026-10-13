@@ -5,7 +5,7 @@ pub mod seed;
 pub mod store;
 pub mod typed;
 pub mod types;
-pub mod vista;
+mod vista;
 
 pub use eval::{MemoryCondition, Query};
 pub use store::{
@@ -14,8 +14,8 @@ pub use store::{
 pub use typed::{MemoryDB, operation::MemoryOperation};
 pub use types::{AnyMemoryType, MemoryType, MemoryTypeVariants};
 pub use vista::{
-    MemoryTableShell,
-    factory::{MemoryVistaFactory, MemoryVistaSpec},
+    MemoryBlock, MemoryCatalog, MemoryTableExtras, MemoryTableShell, MemoryVistaFactory,
+    MemoryVistaSpec,
 };
 
 pub mod prelude {

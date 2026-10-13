@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
-use vantage_memory::vista::Catalog;
-use vantage_memory::{MemoryStore, MemoryTableShell};
+use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{
-    Column, ColumnFlag, DataVocab, TargetResolver, Terminals, Vista, VistaMetadata, Writes,
-};
+use vantage_vista::rhai::{DataVocab, Terminals, Writes};
+use vantage_vista::{Column, ColumnFlag, Vista, VistaMetadata, VistaResolver};
 
 pub fn rec(pairs: &[(&str, i64)]) -> Record<CborValue> {
     pairs
@@ -31,7 +29,7 @@ pub fn store() -> MemoryStore {
 /// Memory Vistas over `store`, declaring `id`, `a`, `n` and `tag`; `mock` a mock
 /// without bulk import that already holds `r1 {a:7}`, `auto` and `intid`
 /// empty mocks with a numeric id column, flagged `auto` on `auto`.
-pub fn resolver(store: &MemoryStore) -> TargetResolver {
+pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
     let store = store.clone();
     let mock = MockShell::new()
         .with_metadata(
@@ -58,28 +56,42 @@ pub fn resolver(store: &MemoryStore) -> TargetResolver {
             .with_column(Column::new("n", "int").with_flag(ColumnFlag::Orderable))
             .with_column(Column::new("tag", "String"))
             .with_id_column("id");
-        let shell = MemoryTableShell::new(store.table(name), metadata, Catalog::new(store.clone()));
+        let catalog = MemoryCatalog::new(store.clone());
+        let shell = MemoryTableShell::new(store.table(name), metadata, catalog);
         Ok(Vista::new(name, shell))
     })
 }
 
-pub fn host(store: &MemoryStore, terminals: Terminals) -> Host {
+/// A host whose `table(name)` goes through `resolver`.
+pub fn host_with(resolver: Arc<dyn VistaResolver>, terminals: Terminals) -> Host {
     Host::builder(Limits::background())
-        .vocab(DataVocab {
-            resolver: Some(resolver(store)),
-            terminals,
-        })
+        .vocab(DataVocab::new(terminals).with_resolver(resolver))
         .build()
 }
 
+pub fn host(store: &MemoryStore, terminals: Terminals) -> Host {
+    host_with(resolver(store), terminals)
+}
+
+/// Read and write terminals, writes allowed, `list()` uncapped.
+pub fn read_write_terminals() -> Terminals {
+    Terminals::ReadWrite {
+        limit: None,
+        writes: Writes::Allowed,
+    }
+}
+
+/// Read and write terminals whose writes throw "writes aren't available
+/// here", with `list()` capped at `limit`.
+pub fn read_only_terminals(limit: Option<usize>) -> Terminals {
+    Terminals::ReadWrite {
+        limit,
+        writes: Writes::Denied("writes aren't available here".into()),
+    }
+}
+
 pub fn read_write(store: &MemoryStore) -> Host {
-    host(
-        store,
-        Terminals::ReadWrite {
-            limit: None,
-            writes: Writes::Allowed,
-        },
-    )
+    host(store, read_write_terminals())
 }
 
 pub fn run(host: &Host, script: &str) -> Result<Dynamic, String> {

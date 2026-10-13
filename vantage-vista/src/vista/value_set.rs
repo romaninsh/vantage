@@ -32,17 +32,10 @@ impl ReadableValueSet for Vista {
         Ok(row)
     }
 
-    /// The first row of the set: a one-row window, or the first listed row
-    /// when the shell can't window.
+    /// The first row of the set: the leading window `fetch_window(0, 1)`,
+    /// which every shell that lists answers.
     async fn get_some_value(&self) -> Result<Option<(String, Rec)>> {
-        let first = match self.shell().fetch_window(0, 1).await {
-            Ok(page) => page.rows.into_iter().next(),
-            Err(e) if e.is_unsupported() => self.shell().list().await?.into_iter().next(),
-            Err(e) => return Err(e),
-        };
-        let mut first = first;
-        self.fill_computed_rows(first.as_mut().map(|(_, r)| r))?;
-        Ok(first)
+        Ok(self.fetch_window(0, 1).await?.rows.into_iter().next())
     }
 }
 

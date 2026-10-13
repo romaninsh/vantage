@@ -31,6 +31,12 @@ impl<T: ColumnType> MockColumn<T> {
         }
     }
 
+    /// This column with `flag` set.
+    pub fn with_flag(mut self, flag: ColumnFlag) -> Self {
+        self.flags.insert(flag);
+        self
+    }
+
     pub fn into_type<T2: ColumnType>(self) -> MockColumn<T2>
     where
         T: ColumnType,

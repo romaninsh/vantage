@@ -5,8 +5,8 @@ use vantage_core::{Result, error};
 
 use super::bridge::block_on;
 use super::no_rows::NoRowsShell;
-use super::read::fetch_capped;
-use crate::{FilterOp, vista::Vista};
+use super::read::fetch_rows;
+use crate::{FilterOp, unknown_relation, vista::Vista};
 
 /// Most rows a multi-row `ref` step will collect keys from.
 const REF_ROW_CAP: usize = 1000;
@@ -18,16 +18,14 @@ const REF_ROW_CAP: usize = 1000;
 /// on one key.
 pub(crate) fn traverse(vista: &Vista, rel: &str, limit: Option<usize>) -> Result<Vista> {
     let cap = limit.map_or(REF_ROW_CAP + 1, |n| n.min(REF_ROW_CAP + 1));
-    let rows = block_on(fetch_capped(vista, Some(cap)))??;
+    let rows = block_on(fetch_rows(vista, Some(cap)))??;
     if rows.len() > REF_ROW_CAP {
         return Err(error!("ref over too many rows", limit = REF_ROW_CAP));
     }
     if let [(_, row)] = rows.as_slice() {
         return vista.get_ref(rel, Some(row));
     }
-    let reference = vista
-        .reference(rel)
-        .ok_or_else(|| error!("No reference with this name", relation = rel))?;
+    let reference = vista.reference(rel).ok_or_else(|| unknown_relation(rel))?;
     let [key] = reference.keys.as_slice() else {
         return Err(error!(
             "ref over several rows needs a relation joined on one key",

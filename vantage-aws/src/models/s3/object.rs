@@ -27,7 +27,7 @@ pub struct Object {
 /// `ListObjectsV2` table. Requires `eq("Bucket", "...")` — without it
 /// the path placeholder errors out at request-build time. Optional
 /// `prefix` / `delimiter` / `max-keys` filters become query params if
-/// supplied. `prefix` and `delimiter` are declared as hidden request-param
+/// supplied. `prefix` and `delimiter` are declared as `RequestParam`
 /// columns, so a Vista can set them too; `max-keys` is the typed table's
 /// and the cursor's.
 ///

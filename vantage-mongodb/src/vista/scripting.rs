@@ -8,7 +8,8 @@ use bson::{Bson, Document};
 use vantage_core::{Context, Result, error};
 use vantage_rhai::rhai::{Array, Dynamic, Map};
 use vantage_rhai::{Block, Env, Host, Limits};
-use vantage_vista::{DataVocab, TargetResolver, Vista, VistaFactory};
+use vantage_vista::rhai::{DataVocab, Terminals, eval_modify_script};
+use vantage_vista::{Vista, VistaFactory, VistaResolver};
 
 use crate::rhai_engine::{MongoVocab, dynamic_to_bson};
 use crate::vista::factory::MongoVistaFactory;
@@ -64,23 +65,24 @@ pub(crate) fn eval_pipeline(code: &str, args: &[(String, String)]) -> Result<Vec
 /// Run a `modify:` script against a built vista, exposed as `self`.
 pub(crate) fn apply_modify(factory: &MongoVistaFactory, vista: Vista, code: &str) -> Result<Vista> {
     let host = script_host(factory.clone());
-    vantage_vista::eval_modify_script(&host, code, vista)
+    eval_modify_script(&host, code, vista)
 }
 
 /// The shell's MongoDB vocabulary first, then vantage-vista's describe-only
 /// data verbs, with `table(name)` building the named vista through
 /// `factory`.
 pub(crate) fn script_host(factory: MongoVistaFactory) -> Host {
+    let data = DataVocab::new(Terminals::Describe).with_resolver(target_resolver(factory));
     Host::builder(Limits::background())
         .vocab_fn(register_extensions)
-        .vocab(DataVocab::describe(Some(target_resolver(factory))))
+        .vocab(data)
         .build()
 }
 
 /// `table(name)` → the vista the factory builds from
 /// [`MongoVistaFactory::script_spec`].
-fn target_resolver(factory: MongoVistaFactory) -> TargetResolver {
-    Arc::new(move |name| factory.build_from_spec(factory.script_spec(name)?))
+fn target_resolver(factory: MongoVistaFactory) -> Arc<dyn VistaResolver> {
+    Arc::new(move |name: &str| factory.build_from_spec(factory.script_spec(name)?))
 }
 
 #[cfg(test)]
@@ -93,7 +95,7 @@ mod tests {
         let code = r#"
             let stages = [];
             if args.cat != "" { stages.push(#{"$match": #{category: args.cat}}); }
-            stages.push(#{"$sort": doc([["n", -1], ["_id", 1]])});
+            stages.push(#{"$sort": mongo::doc([["n", -1], ["_id", 1]])});
             stages
         "#;
         let stages = eval_pipeline(code, &[("cat".into(), "cake".into())]).unwrap();

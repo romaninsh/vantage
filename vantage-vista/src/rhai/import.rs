@@ -28,9 +28,8 @@ use vantage_types::{Record, cbor_id_to_string};
 use super::bridge::block_on;
 use super::convert::dynamic_to_cbor;
 use super::handle::Handle;
-use super::read::{RhaiResult, fetch_capped, rhai_err, run};
-use super::vocab::TargetResolver;
-use crate::vista::Vista;
+use super::read::{RhaiResult, fetch_rows, rhai_err, run};
+use crate::{Capability, VistaResolver, vista::Vista};
 
 type Rows = IndexMap<String, Record<CborValue>>;
 
@@ -38,8 +37,9 @@ type Rows = IndexMap<String, Record<CborValue>>;
 pub(crate) fn import_rows(
     vista: &Vista,
     source: &Handle,
-    resolver: Option<&TargetResolver>,
+    resolver: Option<&dyn VistaResolver>,
 ) -> RhaiResult<RhaiMap> {
+    vista.require(Capability::Import).map_err(rhai_err)?;
     write_records(vista, &source_rows(source, resolver)?)
 }
 
@@ -48,30 +48,32 @@ pub(crate) fn import_rows_mapped(
     vista: &Vista,
     source: &Handle,
     mapping: &RhaiMap,
-    resolver: Option<&TargetResolver>,
+    resolver: Option<&dyn VistaResolver>,
 ) -> RhaiResult<RhaiMap> {
+    vista.require(Capability::Import).map_err(rhai_err)?;
     let rows = source_rows(source, resolver)?;
     let id_column = vista.id_column().unwrap_or("id");
     let records = mapped_records(&rows, mapping, id_column, vista.name())?;
     write_records(vista, &records)
 }
 
-fn source_rows(source: &Handle, resolver: Option<&TargetResolver>) -> RhaiResult<Rows> {
+fn source_rows(source: &Handle, resolver: Option<&dyn VistaResolver>) -> RhaiResult<Rows> {
     let vista = source.resolve(resolver).map_err(rhai_err)?;
-    let rows = run(fetch_capped(&vista, source.row_limit()))?;
+    let rows = run(fetch_rows(&vista, source.row_limit()))?;
     Ok(rows.into_iter().collect())
 }
 
-/// Bulk import when the backend can and the target isn't narrowed, one insert
-/// per row otherwise.
+/// Bulk import into a whole table, one insert per row into a narrowed set.
+/// Either way the target must advertise [`Import`](Capability::Import),
+/// which the callers check before reading the source.
 ///
-/// Either way, rows the target already held count as skipped. Row by row, a
-/// row that conflicts with the target's set is rejected and the import carries
-/// on; any other insert failure stops it.
+/// Rows the target already held count as skipped. Row by row, a row that
+/// conflicts with the target's set is rejected and the import carries on;
+/// any other insert failure stops it.
 /// A backend whose import was cancelled part-way returns an error carrying
 /// [`IMPORT_CANCELLED`]; that becomes a `cancelled` report, not a throw.
 fn write_records(vista: &Vista, records: &Rows) -> RhaiResult<RhaiMap> {
-    if vista.capabilities().has(crate::Capability::Import) && !vista.is_narrowed() {
+    if !vista.is_narrowed() {
         return match block_on(vista.import_values(records)).map_err(rhai_err)? {
             Ok(inserted) => Ok(report(
                 inserted,

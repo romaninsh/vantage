@@ -10,7 +10,6 @@ use vantage_expressions::Expression;
 use vantage_types::{EmptyEntity, Entity, Record};
 
 use crate::{
-    column::flags::ColumnFlag,
     references::{ContainedRelation, HasMany, HasOne, Reference},
     table::Table,
     traits::{column_like::ColumnLike, table_source::TableSource},
@@ -73,13 +72,8 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         host_column: &str,
         build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
     ) -> Self {
-        self.contained.push(ContainedRelation::new(
-            relation,
-            host_column,
-            vantage_vista::ReferenceKind::ContainsOne,
-            None,
-            build_target,
-        ));
+        self.contained
+            .push(ContainedRelation::one(relation, host_column, build_target));
         self
     }
 
@@ -102,58 +96,37 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
         id_column: Option<&str>,
     ) -> Self {
-        self.contained.push(ContainedRelation::new(
+        self.contained.push(ContainedRelation::many(
             relation,
             host_column,
-            vantage_vista::ReferenceKind::ContainsMany,
             id_column.map(str::to_string),
             build_target,
         ));
         self
     }
 
-    /// Harvest this table's columns as Vista columns (name + declared type,
-    /// hidden flag). Used to give a contained sub-Vista its schema.
-    pub fn vista_columns(&self) -> Vec<vantage_vista::Column>
-    where
-        T::Column<T::AnyType>: ColumnLike<T::AnyType>,
-    {
-        self.columns()
-            .iter()
-            .map(|(name, col)| {
-                let mut vc = vantage_vista::Column::new(name.clone(), col.get_type().to_string());
-                if col.flags().contains(&ColumnFlag::Hidden) {
-                    vc = vc.with_flag(vantage_vista::ColumnFlag::Hidden);
-                }
-                // Imported implicit-reference columns are read-only: flag them
-                // `calculated` so consumers render them read-only and keep them
-                // out of forms/write payloads (mirrors the write-side strip).
-                if self.imported_columns.contains(name) {
-                    vc = vc.with_flag(vantage_vista::ColumnFlag::Calculated);
-                }
-                vc
-            })
-            .collect()
-    }
-
-    /// Resolve a contained relation embedded in `row` into a sub-`Vista`.
+    /// Resolve a contained relation embedded in a parent row into a
+    /// sub-`Vista`.
     ///
     /// This is the backend-agnostic skeleton every driver shares: seed the
     /// embedded records, wire the eager writeback (patch the host column on the
-    /// parent row), and the traverse-out resolver. The driver supplies only the
-    /// three things it alone knows:
-    /// - `parent_id` — the row's id in the driver's native id type;
-    /// - `wrap` — turn a target `Table` into a `Vista` via the driver's factory
-    ///   (used when a contained record traverses out to a real table);
+    /// parent row), and the traverse-out resolver. The contained records'
+    /// relations are the contained table's own; the sub-Vista narrows each
+    /// bare target by the relation's keys. The driver supplies only the
+    /// things it alone knows:
+    /// - `parent` — the parent row and its id in the driver's native id
+    ///   type, or `None` for the relation's bare target: the contained
+    ///   schema with no records and no writes;
+    /// - `wrap` — turn a relation's bare target `Table` into a `Vista` via the
+    ///   driver's factory (used when a contained record traverses out to a
+    ///   real table);
     /// - `decode_host` / `encode_host` — the host-column codec: native
     ///   passthrough, or JSON parse/serialize for backends without nested
     ///   columns.
-    #[allow(clippy::too_many_arguments)]
     pub fn get_contained_ref(
         &self,
         relation: &str,
-        row: &Record<CborValue>,
-        parent_id: T::Id,
+        parent: Option<(&Record<CborValue>, T::Id)>,
         wrap: impl Fn(Table<T, EmptyEntity>) -> Result<vantage_vista::Vista> + Send + Sync + 'static,
         decode_host: impl Fn(&CborValue) -> Option<CborValue>,
         encode_host: impl Fn(CborValue) -> CborValue + Send + Sync + 'static,
@@ -166,42 +139,43 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         let rel = self
             .contained_relation(relation)
             .ok_or_else(|| error!("unknown contained relation", relation = relation))?;
-        let host_value = row.get(rel.host_column()).and_then(decode_host);
 
         let contained_table = rel.build_target(self.data_source().clone());
-        let mut schema = contained_table
-            .vista_columns()
-            .into_iter()
-            .fold(vantage_vista::VistaMetadata::new(), |m, c| m.with_column(c));
+        let mut schema = vantage_vista::VistaMetadata::new();
+        for column in contained_table.vista_columns() {
+            schema = schema.with_column(column);
+        }
+        // A contained record's own key is its relation's id column.
+        let source_id = rel
+            .id_column()
+            .map_or_else(|| contained_table.id_field_name(), str::to_string);
+        // The resolver is keyed by target table name; each target is built
+        // through the first relation that names it.
+        let mut relation_by_target: IndexMap<String, String> = IndexMap::new();
+        for reference in contained_table.vista_references_keyed(&source_id) {
+            relation_by_target
+                .entry(reference.target.clone())
+                .or_insert_with(|| reference.name.clone());
+            schema = schema.with_reference(reference);
+        }
         if let Some(id) = rel.id_column() {
             schema = schema.with_id_column(id);
         }
 
-        let host_column = rel.host_column().to_string();
-        let parent_table = self.clone();
-        let writeback: vantage_vista::ContainedWriteback =
-            Arc::new(move |collection: CborValue| {
-                let parent_table = parent_table.clone();
-                let host_column = host_column.clone();
-                let parent_id = parent_id.clone();
-                let value = T::Value::from(encode_host(collection));
-                Box::pin(async move {
-                    let mut patch: Record<T::Value> = Record::new();
-                    patch.insert(host_column, value);
-                    parent_table.patch_value(parent_id.clone(), &patch).await?;
-                    Ok(())
-                })
-            });
+        let (host_value, writeback) = match parent {
+            Some((row, parent_id)) => (
+                row.get(rel.host_column()).and_then(decode_host),
+                Some(self.host_writeback(rel.host_column(), parent_id, encode_host)),
+            ),
+            None => (None, None),
+        };
 
-        let ref_resolver: vantage_vista::ContainedRefResolver =
-            Arc::new(move |relation: &str, child_row: &Record<CborValue>| {
-                let native: Record<T::Value> = child_row
-                    .iter()
-                    .map(|(k, v)| (k.clone(), T::Value::from(v.clone())))
-                    .collect();
-                let target = contained_table.get_ref_from_row::<EmptyEntity>(relation, &native)?;
-                wrap(target)
-            });
+        let ref_resolver: Arc<dyn vantage_vista::VistaResolver> = Arc::new(move |target: &str| {
+            let relation = relation_by_target.get(target).ok_or_else(|| {
+                error!("unknown relation target", target = target).mark_not_found()
+            })?;
+            wrap(contained_table.get_ref_target_erased(relation)?)
+        });
 
         vantage_vista::build_contained_vista(
             &rel.reference(),
@@ -210,6 +184,34 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             writeback,
             Some(ref_resolver),
         )
+    }
+
+    /// Patches `host_column` on the parent row `parent_id` with each
+    /// re-serialized collection, encoded by `encode_host`.
+    fn host_writeback(
+        &self,
+        host_column: &str,
+        parent_id: T::Id,
+        encode_host: impl Fn(CborValue) -> CborValue + Send + Sync + 'static,
+    ) -> vantage_vista::ContainedWriteback
+    where
+        T::Value: From<CborValue> + Send + Sync + vantage_types::InvariantValue,
+        T::Id: Clone + Send + Sync,
+    {
+        let host_column = host_column.to_string();
+        let parent_table = self.clone();
+        Arc::new(move |collection: CborValue| {
+            let parent_table = parent_table.clone();
+            let host_column = host_column.clone();
+            let parent_id = parent_id.clone();
+            let value = T::Value::from(encode_host(collection));
+            Box::pin(async move {
+                let mut patch: Record<T::Value> = Record::new();
+                patch.insert(host_column, value);
+                parent_table.patch_value(parent_id.clone(), &patch).await?;
+                Ok(())
+            })
+        })
     }
 
     /// Lower a YAML `contained:` section into `with_contained_*` registrations,
@@ -580,7 +582,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     /// Look up cardinality for a registered relation.
     pub fn ref_cardinality(&self, relation: &str) -> Result<vantage_vista::ReferenceKind> {
         let (reference, _) = self.lookup_ref(relation)?;
-        Ok(reference.cardinality())
+        Ok(reference.cardinality().into())
     }
 
     /// Look up the foreign-key/link field for a registered relation. For a
@@ -598,7 +600,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             .as_ref()
             .map(|refs| {
                 refs.iter()
-                    .map(|(name, r)| (name.clone(), r.cardinality()))
+                    .map(|(name, r)| (name.clone(), r.cardinality().into()))
                     .collect()
             })
             .unwrap_or_default()

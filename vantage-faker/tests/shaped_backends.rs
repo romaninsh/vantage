@@ -14,8 +14,7 @@ use vantage_faker::{
     BackendShape, DatasetGen, ExtraFields, FakerColumn, FaultSchedule, Latency, LatencyModel,
     Offline, ShapedShell, TableGen,
 };
-use vantage_memory::vista::Catalog;
-use vantage_memory::{MemoryStore, MemoryTableShell};
+use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
 use vantage_vista::{
     Capability, Column, ColumnFlag, FilterOp, Vista, VistaCapabilities, VistaMetadata,
 };
@@ -71,7 +70,7 @@ fn memory_rows(table: TableGen, seed: Option<u64>) -> Vista {
         .generate(&store)
         .expect("dataset generates");
 
-    let catalog = Catalog::new(store.clone());
+    let catalog = MemoryCatalog::new(store.clone());
     catalog.register("shaped", meta.clone());
     Vista::new(
         "shaped",
@@ -452,7 +451,7 @@ async fn a_shaped_memory_table_pushes_changes() {
         VistaMetadata::new()
             .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
             .with_id_column("id"),
-        Catalog::new(store.clone()),
+        MemoryCatalog::new(store.clone()),
     );
     let vista =
         Vista::new("t", shell).map_shell(|inner| ShapedShell::new(inner, BackendShape::default()));

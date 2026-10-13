@@ -11,10 +11,9 @@ use vantage_types::Record;
 use crate::{
     capabilities::{Capability, VistaCapabilities, unsupported},
     change::VistaChangeStream,
-    column::Column,
+    metadata::VistaMetadata,
     page::{NativeCondition, Page, Preview},
     query::Condition,
-    reference::Reference,
     sort::SortDirection,
     vista::Vista,
 };
@@ -39,9 +38,9 @@ type Rec = Record<CborValue>;
 pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     // ---- Schema -------------------------------------------------------------
 
-    fn columns(&self) -> &IndexMap<String, Column>;
-    fn references(&self) -> &IndexMap<String, Reference>;
-    fn id_column(&self) -> Option<&str>;
+    /// The set's columns, references and id column. `Vista` reads its
+    /// metadata vocabulary (`columns`, `column`, `id_column`, …) from here.
+    fn metadata(&self) -> &VistaMetadata;
     fn capabilities(&self) -> &VistaCapabilities;
     /// Short label for the driver (`"csv"`, `"sqlite"`, `"mongodb"`).
     fn driver_name(&self) -> &'static str;
@@ -49,6 +48,7 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// The query the next read would send, rendered without sending it.
     /// Synchronous and performs no I/O: a value known only at fetch time
     /// renders as a placeholder. Lossy is acceptable, wrong is not.
+    /// See [`Preview`] for what `query` and `note` each hold.
     fn preview(&self) -> Preview;
 
     // ---- Reads --------------------------------------------------------------
@@ -58,18 +58,21 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// Row `id` when it is in the set.
     async fn get(&self, id: &str) -> Result<Option<Rec>>;
     async fn count(&self) -> Result<i64>;
-    /// Rows `[offset, offset + limit)` of the set, in its order
-    /// ([`Window`](Capability::Window)). A shell that can't address rows by
-    /// position answers `unsupported(Capability::Window)`. A shell that can
-    /// serve only a leading window may answer `offset == 0` and refuse every
-    /// other offset with `unsupported(Capability::Window)`, without
-    /// advertising `Window`.
+    /// Rows `[offset, offset + limit)` of the set, in its order.
+    ///
+    /// The leading window (`offset == 0`) is required of every shell whose
+    /// [`list`](Self::list) works: it is how a capped read and
+    /// `get_some_value` read. A shell that can't push a window to its
+    /// backend answers it with [`Page::from_listing`] over its listed rows.
+    /// [`Window`](Capability::Window) means any offset; `Vista` refuses
+    /// `offset > 0` without it before the shell is called.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page>;
 
     /// Up to `limit` rows after `token` (`None` starts at the beginning) and
     /// the token for the next call, `None` once the set is exhausted
     /// ([`Cursor`](Capability::Cursor)). The token is driver-private; callers
-    /// hand it back unchanged.
+    /// hand it back unchanged. `Vista` refuses the call without `Cursor`
+    /// before the shell is called.
     async fn fetch_cursor(
         &self,
         _token: Option<CborValue>,
@@ -91,7 +94,8 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     ///
     /// Advertise `Subscribe` only when the driver pushes with no further
     /// setup, or the application declared the setup done: a stream that stays
-    /// silent can't be told apart from nothing happening.
+    /// silent can't be told apart from nothing happening. `Vista` refuses
+    /// the call without `Subscribe` before the shell is called.
     async fn watch(&self) -> Result<VistaChangeStream> {
         unsupported(Capability::Subscribe)
     }
@@ -108,6 +112,11 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// refuses other operators unless the shell advertises
     /// [`FilterOps`](Capability::FilterOps). An unknown column or a bad value
     /// is a normal error, not `Unsupported`.
+    ///
+    /// A dotted column (`root.leaf`) names a field nested in a declared
+    /// root's value. The shell either evaluates it (narrowing to the rows
+    /// whose `root` holds a matching `leaf`) or rejects it with a normal
+    /// error. It never accepts the path and matches nothing.
     fn add_condition(&mut self, condition: &Condition) -> Result<()>;
 
     /// Narrow the set by a condition in the driver's own type
@@ -189,17 +198,21 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// The target of `relation` ([`Traverse`](Capability::Traverse)): with a
     /// parent `row` (from this shell's set), the related rows; with `None`,
     /// the bare target a new related row is inserted into. Contained
-    /// relations route through here too.
+    /// relations route through here too: from a row, the records it embeds;
+    /// with `None`, the contained schema with no records and no write
+    /// capabilities, since there is no parent row to write into.
     ///
     /// Narrow a target for a row through `Vista::add_condition` (or
     /// `with_condition`, `with_native_condition`), never through the target
     /// shell directly, so that the returned Vista's `query()` records the
     /// join and `is_narrowed()` holds.
-    fn get_ref(&self, relation: &str, row: Option<&Rec>) -> Result<Vista>;
+    fn get_ref(&self, _relation: &str, _row: Option<&Rec>) -> Result<Vista> {
+        unsupported(Capability::Traverse)
+    }
 
     // ---- Scripting ----------------------------------------------------------
 
-    /// Register backend vocabulary on a Rhai engine before vantage-vista's
+    /// Register backend vocabulary on a Rhai engine alongside vantage-vista's
     /// `DataVocab`: expression constructors, a `with_condition(<expr>)` verb
     /// routed through [`add_native_condition`](Self::add_native_condition),
     /// and any per-evaluation constants. A backend with no expression engine

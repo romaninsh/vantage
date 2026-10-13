@@ -41,9 +41,9 @@ Rhai fits that job:
 | Read a set of rows, count it, follow a relation | `table("client").where("vip", true).ref("orders").count()` | [The table handle](./rhai/tables.md) |
 | Insert, patch, delete, copy rows between tables | `table("order").patch(id, #{ status: "paid" })` | [Writes](./rhai/writes.md) |
 | Compute a column from the other columns of a row | `lazy: "row.net + row.vat"` | [Computed columns](./rhai/computed.md) |
-| Edit one row field by field and save what changed | `row.status = "paid"; row.save();` | [Records](./rhai/records.md) |
+| Edit one row field by field and write what changed | `row.status = "paid"; row.flash();` | [Records](./rhai/records.md) |
 | Narrow a table in YAML, or build a relation's target | `self.where("vip", true)` | [Surfaces](./rhai/surfaces.md) |
-| Build a backend's native query | `select().from("product").field("id")` | [Expression dialects](./rhai/dialects.md) |
+| Build a backend's native query | `sql::select().from("product").field("id")` | [Expression dialects](./rhai/dialects.md) |
 
 ## Where scripts run
 
@@ -56,10 +56,10 @@ legal in one place and refused in another.
 |---|---|---|
 | Agent data scripts (`run_script`) | an MCP tool reading or fixing data | read, and write if the host allows it |
 | Query preview (`preview_script`) | an MCP tool showing the query a script would run | describe a set, never read it |
-| YAML `modify:`, reference build scripts, augmentation sources | `self.where("vip", true)` | describe a set |
+| YAML `modify:`, reference build scripts | `self.where("vip", true)` | describe a set |
 | YAML `lazy:` columns | `row.net / 5` | compute one value from one row |
 | An application's form `options:` (e.g. Vantage UI) | a dropdown filled from another table | read |
-| An application's action bodies, form `on_submit`, wizard workers (e.g. Vantage UI) | `row.status = "paid"; row.save();` | read and write |
+| An application's action bodies, form `on_submit`, wizard workers (e.g. Vantage UI) | `row.status = "paid"; row.flash();` | read and write |
 | Faker sims | an order that ships, then disappears | read and write a memory store, plus time and random verbs |
 
 [Hosts](./rhai/hosts.md) explains how a host is put together, and [Surfaces](./rhai/surfaces.md)
@@ -148,7 +148,7 @@ a SQL `select()` or a SurrealDB condition. They aren't data scripts and have the
   each returns when a row is missing or outside the set.
 - [Computed columns](./rhai/computed.md): `lazy:` columns that the Vista fills on every read, and
   what they refuse.
-- [Records](./rhai/records.md): drafts of one row that stage edits and save only what changed.
+- [Records](./rhai/records.md): drafts of one row that stage edits and flash only what changed.
 - [Surfaces](./rhai/surfaces.md): every place the vocabulary runs, with a tested example for each,
   plus backend extensions such as SurrealDB's `with_condition`.
 - [Layers](./rhai/layers.md): Servo, Scenery and faker sims next to the data vocabulary.
@@ -173,7 +173,7 @@ example `rhai_guide::tables::first_script` in `vantage-vista/tests/rhai_guide/`.
 | Narrow | `where(col, value)`, `where(col, op, value)`, `sort(col)`, `sort(col, dir)`, `search(text)`, `limit(n)`, `ref(relation)` |
 | Read | `list()`, `get(id)`, `first()`, `count()`, `ids()`, `columns()`, `references()`, `capabilities()` |
 | Write | `insert(map)`, `upsert(id, map)`, `patch(id, map)`, `delete(id)`, `import_from(source)`, `import_from(source, mapping)` |
-| Record | `record()`, `record(id)`; on a record: `r.col`, `r["col"]`, `set(map)`, `id`, `is_dirty()`, `dirty(col)`, `baseline()`, `revert()`, `revert(col)`, `save()`, `delete()`, `status()`, `rejection()` |
+| Record | `record()`, `record(id)`; on a record: `r.col`, `r["col"]`, `set(map)`, `id`, `is_dirty()`, `dirty(col)`, `baseline()`, `revert()`, `revert(col)`, `flash()`, `delete()`, `status()`, `rejection()` |
 | Computed column | `row` (the record as read); the last expression is the value |
 
 `where` takes the operators `=` / `==` / `eq`, `!=` / `ne`, `>` / `gt`, `>=` / `gte`, `<` / `lt`,

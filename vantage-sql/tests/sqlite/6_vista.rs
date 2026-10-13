@@ -12,7 +12,7 @@ use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record, entity};
-use vantage_vista::{Capability, FilterOp, ReferenceKind, VistaFactory};
+use vantage_vista::{Capability, FilterOp, JoinKey, ReferenceKind, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -184,6 +184,46 @@ sqlite:
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
     assert!(rows.contains_key("a"));
+    Ok(())
+}
+
+/// The YAML flags with a typed counterpart reach the vista column through
+/// the typed table.
+#[tokio::test]
+async fn vista_yaml_column_flags_reach_the_vista() -> TestResult {
+    use vantage_vista::ColumnFlag;
+
+    let db = setup().await;
+    let yaml = r#"
+name: product
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [searchable, mandatory] }
+  is_deleted: { type: bool, flags: [label] }
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+
+    let name = vista.column("name").expect("name");
+    assert!(name.has_flag(ColumnFlag::Searchable), "{name:?}");
+    assert!(name.has_flag(ColumnFlag::Mandatory), "{name:?}");
+    let is_deleted = vista.column("is_deleted").expect("is_deleted");
+    assert!(
+        is_deleted.has_flag(ColumnFlag::from("label")),
+        "{is_deleted:?}"
+    );
+    Ok(())
+}
+
+/// SQL compares whole column values, so a path into one is refused.
+#[tokio::test]
+async fn vista_condition_on_a_dotted_path_is_refused() -> TestResult {
+    let db = setup().await;
+    let vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let err = vista
+        .with_condition("name.first", FilterOp::Eq, CborValue::Text("A".into()))
+        .unwrap_err();
+    assert!(!err.is_unsupported(), "{err}");
+    assert!(err.to_string().contains("dotted column"), "{err}");
     Ok(())
 }
 
@@ -372,7 +412,7 @@ columns:
     type: string
 sqlite:
   rhai: |
-    select().from("product").field("id").field("name").where(expr("price > 15"))
+    sql::select().from("product").field("id").field("name").where(sql::expr("price > 15"))
 "#;
 
     let vista = db.vista_factory().from_yaml(yaml)?;
@@ -395,7 +435,7 @@ sqlite:
     Ok(())
 }
 
-async fn setup_clients_orders() -> SqliteDB {
+pub(super) async fn setup_clients_orders() -> SqliteDB {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
     sqlx::query("CREATE TABLE client (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
         .execute(db.pool())
@@ -418,14 +458,14 @@ async fn setup_clients_orders() -> SqliteDB {
     db
 }
 
-fn orders_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
+pub(super) fn orders_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
     Table::<SqliteDB, EmptyEntity>::new("orders", db)
         .with_id_column("id")
         .with_column_of::<String>("client_id")
         .with_column_of::<i64>("total")
 }
 
-fn clients_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
+pub(super) fn clients_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
     let db_clone = db.clone();
     Table::<SqliteDB, EmptyEntity>::new("client", db)
         .with_id_column("id")
@@ -506,7 +546,7 @@ async fn vista_get_ref_has_one_narrows_by_the_target_id() -> TestResult {
 
     let client = &orders.references()["client"];
     assert_eq!(client.kind, ReferenceKind::HasOne);
-    assert_eq!(client.foreign_key(), Some("client_id"));
+    assert_eq!(client.keys, [JoinKey::to_target_id("client_id")]);
 
     let o3 = orders.get_value("o3").await?.expect("o3 exists");
     let bob = orders.get_ref("client", Some(&o3))?;
@@ -528,6 +568,7 @@ async fn vista_get_ref_unknown_relation_is_an_error() -> TestResult {
         !err.is_unsupported(),
         "an unknown relation is a normal error"
     );
+    assert!(err.is_not_found(), "{err}");
     Ok(())
 }
 
@@ -591,7 +632,7 @@ async fn vista_list_references_surfaces_cardinality() -> TestResult {
     assert_eq!(refs.len(), 1);
     let orders = &refs["orders"];
     assert_eq!(orders.kind, ReferenceKind::HasMany);
-    assert_eq!(orders.foreign_key(), Some("client_id"));
+    assert_eq!(orders.keys, [JoinKey::new("id", "client_id")]);
     Ok(())
 }
 
@@ -602,7 +643,8 @@ async fn vista_list_references_surfaces_cardinality() -> TestResult {
 async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+    use vantage_sql::sqlite::vista::SqliteVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let db = setup_clients_orders().await;
 
@@ -631,7 +673,8 @@ columns:
     let map: IndexMap<String, SqliteVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<SqliteVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let factory = db.vista_factory().with_resolver(resolver);
     let clients = factory.build_from_spec(client_spec)?;
@@ -663,7 +706,8 @@ columns:
 async fn vista_yaml_base_derived_declares_own_reference() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+    use vantage_sql::sqlite::vista::SqliteVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let db = setup_clients_orders().await;
 
@@ -701,7 +745,8 @@ references:
     .into_iter()
     .collect();
     let map = Arc::new(map);
-    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<SqliteVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let derived_spec: SqliteVistaSpec = serde_yaml_ng::from_str(derived_yaml)?;
     let derived = db
@@ -733,7 +778,8 @@ references:
 async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+    use vantage_sql::sqlite::vista::SqliteVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let db = setup_clients_orders().await;
 
@@ -751,7 +797,7 @@ sqlite:
   inherit:
     columns: [id, name]
   rhai: |
-    base.where(expr("name = 'Alice'"))
+    base.where(sql::expr("name = 'Alice'"))
 "#;
 
     let client_spec: SqliteVistaSpec = serde_yaml_ng::from_str(client_yaml)?;
@@ -760,7 +806,8 @@ sqlite:
     let map: IndexMap<String, SqliteVistaSpec> =
         [("client".to_string(), client_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<SqliteVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()
@@ -792,7 +839,8 @@ sqlite:
 async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
     use indexmap::IndexMap;
     use std::sync::Arc;
-    use vantage_sql::sqlite::vista::{SqliteSpecResolver, SqliteVistaSpec};
+    use vantage_sql::sqlite::vista::SqliteVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let db = setup_clients_orders().await;
 
@@ -813,7 +861,7 @@ sqlite:
   inherit:
     columns: [client_id]
   rhai: |
-    base.clear_fields().field("client_id").expression(expr("SUM(total) AS total_due")).group_by(expr("client_id"))
+    base.clear_fields().field("client_id").expression(sql::expr("SUM(total) AS total_due")).group_by(sql::expr("client_id"))
 "#;
 
     let orders_spec: SqliteVistaSpec = serde_yaml_ng::from_str(orders_yaml)?;
@@ -822,7 +870,8 @@ sqlite:
     let map: IndexMap<String, SqliteVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: SqliteSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
+    let resolver: SpecResolver<SqliteVistaSpec> =
+        Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
         .vista_factory()
@@ -1032,7 +1081,9 @@ async fn vista_preview_renders_the_select() -> TestResult {
         .from_table(product_table(db.clone()))?
         .with_condition("price", FilterOp::Gt, CborValue::Integer(15i64.into()))?;
     let preview = vista.preview();
-    assert_eq!(preview.driver, "sqlite");
+    assert_eq!(vista.driver_name(), "sqlite");
+    // Every condition is pushed into the SELECT, so nothing is left to note.
+    assert_eq!(preview.note, None);
     let sql = preview.query.expect("a SELECT");
     assert!(sql.contains("product") && sql.contains("15"), "{sql}");
     Ok(())
@@ -1120,9 +1171,11 @@ async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
         ReferenceKind::ContainsMany
     );
 
-    // A contained relation lives in a parent row, so it needs one.
-    let err = vista.get_ref("items", None).unwrap_err();
-    assert!(err.is_incorrect_usage(), "{err}");
+    // Without a parent row, the bare target: the schema, no records, no writes.
+    let bare = vista.get_ref("items", None)?;
+    assert!(bare.column("sku").is_some());
+    assert!(bare.list_values().await?.is_empty());
+    assert!(!bare.capabilities().has(Capability::Insert));
 
     // The host column reads back as a JSON string; the sub-Vista parses it.
     let cart = vista.get_value("c1").await?.unwrap();

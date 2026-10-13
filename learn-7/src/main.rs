@@ -73,7 +73,7 @@ async fn run() -> VantageResult<()> {
     );
 
     let dio = lens.make_dio(master).await?.augment(
-        Arc::new(VistaCatalog::new()),
+        Arc::new(vantage_vista::Catalog::new()),
         vec![Augmentation {
             detail: Detail::Fixed(Arc::new(augmenter)),
             source: Source::Column {

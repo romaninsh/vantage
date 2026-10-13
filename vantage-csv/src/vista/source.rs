@@ -15,8 +15,8 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, FilterOp, Page, Preview,
-    Reference as VistaReference, TableShell, Vista, VistaCapabilities, VistaMetadata, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, unknown_relation, unsupported,
 };
 
 use crate::csv::Csv;
@@ -59,16 +59,8 @@ fn csv_record_to_cbor(record: Record<AnyCsvType>) -> Record<CborValue> {
 
 #[async_trait]
 impl TableShell for CsvTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -79,19 +71,20 @@ impl TableShell for CsvTableShell {
         "csv"
     }
 
-    /// The file a read opens. Conditions never reach a server: they filter
-    /// the parsed rows after the whole file is read.
+    /// The file a read opens and the conditions that filter its parsed rows.
     fn preview(&self) -> Preview {
         let file = self
             .table
             .data_source()
             .base_dir()
             .join(format!("{}.csv", self.table.table_name()));
-        Preview::new("csv")
-            .with_query(format!("read {}", file.display()))
-            .with_note(
-                "the whole file is read; conditions and windows are applied in memory afterwards",
-            )
+        let mut query = format!("read {}", file.display());
+        let conditions: Vec<String> = self.table.conditions().map(|c| c.preview()).collect();
+        if !conditions.is_empty() {
+            query.push_str(" where ");
+            query.push_str(&conditions.join(" and "));
+        }
+        Preview::new().with_query(query)
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -110,10 +103,7 @@ impl TableShell for CsvTableShell {
     /// The window is cut from the filtered rows, which are all read anyway,
     /// so the page carries the set's total for free.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        let rows = self.read_all().await?;
-        let total = rows.len() as i64;
-        let window = rows.into_iter().skip(offset).take(limit).collect();
-        Ok(Page::new(window).with_total(total))
+        Ok(Page::from_listing(self.read_all().await?, offset, limit))
     }
 
     /// Equality on a declared column. CSV evaluates no other operator.
@@ -140,11 +130,11 @@ impl TableShell for CsvTableShell {
             .metadata
             .references
             .get(relation)
-            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())?;
+            .ok_or_else(|| unknown_relation(relation))?;
         let target = self.table.get_ref_target_erased(relation)?;
         let target = CsvVistaFactory::new(self.table.data_source().clone()).from_table(target)?;
         match row {
-            Some(row) => reference.narrow(target, row, CborValue::clone),
+            Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
     }

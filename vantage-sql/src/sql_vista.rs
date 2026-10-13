@@ -24,11 +24,14 @@ use vantage_table::table::{Orderable, VistaMetadataOptions};
 use vantage_vista::{Capability, VistaCapabilities};
 
 /// SQL can ORDER BY any column server-side, computed ones included (they
-/// order by their output alias); computed columns are read-only.
+/// order by their output alias); computed columns are read-only. Every
+/// typed column flag (a YAML `searchable`, `mandatory`, `label`, …) reaches
+/// the vista column.
 pub(crate) fn metadata_options() -> VistaMetadataOptions {
     VistaMetadataOptions {
         orderable: Orderable::All,
         calculated: true,
+        column_flags: true,
         references: true,
         contained: true,
         ..VistaMetadataOptions::default()

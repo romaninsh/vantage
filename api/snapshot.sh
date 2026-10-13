@@ -13,7 +13,6 @@ PUBLIC_API_VERSION="0.52.0"
 
 CRATES=(
   vantage-vista
-  vantage-vista-factory
   vantage-diorama
   vantage-diorama-aggregate
 )

@@ -14,9 +14,9 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
-use vantage_mongodb::vista::{MongoSpecResolver, MongoVistaSpec};
+use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_types::Record;
-use vantage_vista::{Capability, VistaFactory, contract};
+use vantage_vista::{Capability, SpecResolver, VistaFactory, contract};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -43,7 +43,7 @@ fn spec(yaml: &str) -> MongoVistaSpec {
     serde_yaml_ng::from_str(yaml).expect("spec yaml")
 }
 
-fn resolver(specs: Vec<MongoVistaSpec>) -> MongoSpecResolver {
+fn resolver(specs: Vec<MongoVistaSpec>) -> SpecResolver<MongoVistaSpec> {
     let map: IndexMap<String, MongoVistaSpec> =
         specs.into_iter().map(|s| (s.name.clone(), s)).collect();
     Arc::new(move |name: &str| map.get(name).cloned())
@@ -126,13 +126,49 @@ columns:
   at: {{ type: datetime }}
 mongo:
   modify: |
-    self.with_condition(#{{_id: oid("{hex}"), at: #{{"$gte": date("2026-01-01T00:00:00Z")}}}})
+    self.with_condition(#{{_id: mongo::oid("{hex}"), at: #{{"$gte": mongo::date("2026-01-01T00:00:00Z")}}}})
 "#,
         hex = keep.to_hex()
     );
     let v = db.vista_factory().build_from_spec(spec(&yaml))?;
     let ids: Vec<String> = v.list_values().await?.into_keys().collect();
     assert_eq!(ids, vec![keep.to_hex()]);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+/// Each verb on `self` starts from the built vista, and the script's value is
+/// the result: the discarded `cheap` handle (which would leave no row) must
+/// not narrow the `pricey` one built from `self` after it.
+#[tokio::test]
+async fn modify_script_resolves_self_twice() -> TestResult {
+    let (db, name) = setup().await;
+    seed_products(&db).await?;
+    let yaml = PLAIN_PRODUCT.to_string()
+        + r#"  modify: |
+    let cheap = self.where("price", "<", 10);
+    let pricey = self.with_condition(#{price: #{"$gt": 100}});
+    pricey.where("category", "cake")
+"#;
+    let v = db.vista_factory().build_from_spec(spec(&yaml))?;
+
+    let all = db.vista_factory().build_from_spec(spec(PLAIN_PRODUCT))?;
+    let expected: Vec<String> = all
+        .list_values()
+        .await?
+        .into_iter()
+        .filter(|(_, r)| {
+            text(r, "category").as_deref() == Some("cake")
+                && r.get("price") == Some(&CborValue::Integer(150.into()))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(expected.len(), 1);
+    let ids: Vec<String> = v.list_values().await?.into_keys().collect();
+    assert_eq!(ids, expected);
+    assert_eq!(v.query().conditions.len(), 1);
+    assert_eq!(v.query().native.len(), 1);
 
     teardown(&db, &name).await;
     Ok(())
@@ -301,7 +337,7 @@ async fn build_script_reference_refuses_with_condition_on_table() -> TestResult 
     let (db, name) = setup().await;
     let client = CLIENT.replace(
         r#"table("order").where("client_id", me._id).where("status", "open")"#,
-        r#"table("order").with_condition(#{client_id: oid(row._id)})"#,
+        r#"table("order").with_condition(#{client_id: mongo::oid(row._id)})"#,
     );
     let (client_spec, order_spec) = (spec(&client), spec(ORDER));
     let factory = db

@@ -258,4 +258,26 @@ fn build_unknown_name_errors() {
         Err(e) => e,
     };
     assert!(err.to_string().contains("No registered spec"), "got: {err}");
+    assert!(err.is_not_found(), "got: {err}");
+}
+
+/// A reference to a model the registry doesn't hold fails the traversal as
+/// not-found, the resolver contract.
+#[test]
+fn a_reference_to_an_unregistered_model_is_not_found() {
+    let spec: RestApiVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: users
+columns:
+  id: { type: int, flags: [id] }
+references:
+  posts: { table: posts, kind: has_many, foreign_key: userId }
+"#,
+    )
+    .unwrap();
+    let vista = factory().build_from_spec(spec).expect("build");
+    let err = vista.get_ref("posts", None).unwrap_err();
+    assert!(err.is_not_found(), "got: {err}");
+    let err = vista.get_ref("comments", None).unwrap_err();
+    assert!(err.is_not_found(), "got: {err}");
 }

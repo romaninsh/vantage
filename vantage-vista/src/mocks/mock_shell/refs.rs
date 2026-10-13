@@ -26,23 +26,20 @@ impl MockShell {
             })?;
         let target = Vista::new(reference.target.clone(), target);
         match row {
-            Some(row) => reference.narrow(target, row, CborValue::clone),
+            Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
     }
 
     /// Serve contained relation `reference` from `row`'s host column, writing
-    /// changes back into the parent record in this store.
+    /// changes back into the parent record in this store. Without a row, the
+    /// bare target: the contained schema with no records and no writes.
     pub(super) fn contained_ref(&self, reference: &Reference, row: Option<&Rec>) -> Result<Vista> {
         let relation = reference.name.as_str();
-        let row = row.ok_or_else(|| {
-            error!(
-                "a contained relation needs the parent row",
-                relation = relation
-            )
-            .mark_incorrect_usage()
-        })?;
         let schema = self.contained.get(relation).cloned().unwrap_or_default();
+        let Some(row) = row else {
+            return build_contained_vista(reference, schema, None, None, None);
+        };
         let host_column = reference.host_column.clone().unwrap_or_default();
         let parent_id = match row.get(self.id_field()) {
             Some(CborValue::Text(s)) => self.key(s),
@@ -65,7 +62,13 @@ impl MockShell {
                 Ok(())
             })
         });
-        build_contained_vista(reference, schema, host_value.as_ref(), writeback, None)
+        build_contained_vista(
+            reference,
+            schema,
+            host_value.as_ref(),
+            Some(writeback),
+            None,
+        )
     }
 
     /// The narrowing a real driver would translate: `where … order by …

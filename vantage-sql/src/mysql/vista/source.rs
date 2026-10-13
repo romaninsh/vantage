@@ -17,20 +17,22 @@ use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
-use vantage_vista::{Capability, NativeCondition, Reference, Vista, unsupported};
+use vantage_vista::{NativeCondition, Reference, SpecResolver, Vista};
 
 use crate::condition::{MysqlCondition, build_sql_binary};
 use crate::mysql::MysqlDB;
 use crate::mysql::operation::MysqlOperation;
 use crate::mysql::types::AnyMysqlType;
-use crate::mysql::vista::factory::{MysqlSpecResolver, MysqlVistaFactory};
+use crate::mysql::vista::MysqlVistaSpec;
+use crate::mysql::vista::factory::MysqlVistaFactory;
 use crate::primitives::identifier::ident;
 use crate::sql_vista::{Shell, SqlShellDialect, SqlTableShell};
 
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
 
-pub type MysqlTableShell<E = EmptyEntity> = SqlTableShell<MysqlDB, E, Option<MysqlSpecResolver>>;
+pub type MysqlTableShell<E = EmptyEntity> =
+    SqlTableShell<MysqlDB, E, Option<SpecResolver<MysqlVistaSpec>>>;
 
 impl<E> MysqlTableShell<E>
 where
@@ -48,7 +50,7 @@ where
 
 #[async_trait]
 impl SqlShellDialect for MysqlDB {
-    type Extra = Option<MysqlSpecResolver>;
+    type Extra = Option<SpecResolver<MysqlVistaSpec>>;
 
     const DRIVER: &'static str = "mysql";
 
@@ -162,7 +164,8 @@ impl SqlShellDialect for MysqlDB {
         Ok(())
     }
 
-    /// A query-sourced vista doesn't advertise `Import`, and refuses it.
+    /// A query-sourced vista doesn't advertise `Import`, so `Vista::import`
+    /// refuses it before the shell is asked.
     async fn import<E>(
         shell: &Shell<Self, E>,
         records: &IndexMap<String, Record<CborValue>>,
@@ -170,15 +173,12 @@ impl SqlShellDialect for MysqlDB {
     where
         E: Entity<AnyMysqlType> + 'static,
     {
-        if !shell.capabilities.has(Capability::Import) {
-            return unsupported(Capability::Import);
-        }
         import::import(shell, records).await
     }
 
-    /// The MySQL query vocabulary (`select`, `ident`, `expr`, operators, …)
-    /// plus `self.with_condition(<expr>)`, which pushes the expression through
-    /// `add_native_condition`.
+    /// The MySQL query vocabulary (`sql::select`, `sql::ident`, `sql::expr`,
+    /// operators, …) plus `self.with_condition(<expr>)`, which pushes the
+    /// expression through `add_native_condition`.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(engine: &mut vantage_rhai::rhai::Engine) {
         register_extensions(engine);

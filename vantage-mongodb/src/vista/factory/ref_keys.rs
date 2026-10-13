@@ -18,9 +18,8 @@
 use vantage_core::{Result, error};
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use vantage_vista::ReferenceKind;
+use vantage_vista::{ReferenceKind, SpecResolver};
 
-use super::MongoSpecResolver;
 use crate::mongodb::MongoDB;
 use crate::vista::spec::MongoVistaSpec;
 
@@ -28,7 +27,7 @@ use crate::vista::spec::MongoVistaSpec;
 /// know is a bare collection keyed by `_id`, stored as `_id`.
 pub(super) fn check_spec(
     spec: &MongoVistaSpec,
-    resolver: Option<&MongoSpecResolver>,
+    resolver: Option<&SpecResolver<MongoVistaSpec>>,
 ) -> Result<()> {
     for (relation, reference) in &spec.references {
         let scripted = reference
@@ -39,11 +38,11 @@ pub(super) fn check_spec(
         if scripted && cfg!(feature = "rhai") {
             continue;
         }
-        let fk = reference.foreign_key_or(relation);
+        let fk = reference.foreign_key(relation);
         let target = resolver.and_then(|resolve| resolve(&reference.table));
         let (own, on_target) = match reference.kind {
-            ReferenceKind::HasOne => (fk, target.as_ref().map(|t| t.resolve_id_column_or("_id"))),
-            ReferenceKind::HasMany => (spec.resolve_id_column_or("_id"), Some(fk)),
+            ReferenceKind::HasOne => (fk, target.as_ref().map(|t| t.resolve_id_column("_id"))),
+            ReferenceKind::HasMany => (spec.resolve_id_column("_id"), Some(fk)),
             // A contained kind has no join keys; the table build refuses it
             // under `references:`.
             _ => continue,
@@ -126,7 +125,7 @@ columns:
   name: {}
 "#;
 
-    fn resolver(target: &'static str) -> MongoSpecResolver {
+    fn resolver(target: &'static str) -> SpecResolver<MongoVistaSpec> {
         Arc::new(move |name: &str| (name == "client" || name == "order").then(|| spec(target)))
     }
 

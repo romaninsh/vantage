@@ -1,4 +1,4 @@
-// graph() arity 7 (anchor + 6 segments) → fn_graph7, the current overload ceiling.
-select()
+// surreal::graph() arity 7 (anchor + 6 segments) → fn_graph7, the current overload ceiling.
+surreal::select()
     .from("employee")
-    .expression(graph(me, "a", "b", "c", "d", "e", "f").alias("path"))
+    .expression(surreal::graph(surreal::me, "a", "b", "c", "d", "e", "f").alias("path"))

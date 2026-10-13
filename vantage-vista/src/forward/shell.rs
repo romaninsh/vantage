@@ -8,8 +8,8 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use crate::{
-    Column, Condition, NativeCondition, Page, Preview, Reference, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaChangeStream,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaChangeStream, VistaMetadata,
 };
 
 type Rec = Record<CborValue>;
@@ -26,14 +26,8 @@ pub trait ForwardShell: Send + Sync + 'static {
     fn inner(&self) -> &dyn TableShell;
     fn inner_mut(&mut self) -> &mut dyn TableShell;
 
-    fn columns(&self) -> &IndexMap<String, Column> {
-        self.inner().columns()
-    }
-    fn references(&self) -> &IndexMap<String, Reference> {
-        self.inner().references()
-    }
-    fn id_column(&self) -> Option<&str> {
-        self.inner().id_column()
+    fn metadata(&self) -> &VistaMetadata {
+        self.inner().metadata()
     }
     fn capabilities(&self) -> &VistaCapabilities {
         self.inner().capabilities()

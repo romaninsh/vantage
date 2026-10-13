@@ -8,6 +8,7 @@ use vantage_types::Record;
 use super::Probe;
 use crate::{Capability, CborValue, ColumnFlag, FilterOp, NativeCondition, SortDirection, Vista};
 
+mod dotted;
 mod effect;
 
 /// For each advertised narrowing capability, apply its clause to a clone of
@@ -19,7 +20,14 @@ mod effect;
 ///   every row holds the same value in the order column.
 ///
 /// `NativeConditions` gets a condition of a type no driver takes, so it only
-/// must not be refused. `vista` itself is left as it was.
+/// must not be refused.
+///
+/// Every vista also gets an equality on a dotted path (`root.leaf`) into a
+/// declared column, which the shell may reject. The effect of an accepted
+/// path is checked only when a fixture row holds a map in a declared column:
+/// the condition built from that map must list the row, and leave out a row
+/// whose map lacks the entry. Without such a row, an accepted path must only
+/// read. `vista` itself is left as it was.
 pub async fn check_narrowing(vista: &Vista) {
     let mut probe = Probe::default();
     narrow_into(vista, &mut probe).await;
@@ -34,13 +42,14 @@ const UNMATCHABLE: &str = "3f9c2a7e-0b4d-4e61-9a85-d17c5be04f2a";
 
 type Rows = IndexMap<String, Record<CborValue>>;
 
-/// The search, order, operator-filter and native-condition probes, recorded
-/// into `probe`.
+/// The search, order, operator-filter, native-condition and dotted-path
+/// probes, recorded into `probe`.
 pub(super) async fn narrow_into(vista: &Vista, probe: &mut Probe) {
     let caps = *vista.capabilities();
     // The un-narrowed rows the effect probes compare against. A fixture
     // that can't list, or lists nothing, is held to "not refused" only.
-    let all: Option<Rows> = vista.list_values().await.ok().filter(|r| !r.is_empty());
+    let listed: Option<Rows> = vista.list_values().await.ok();
+    let all = listed.as_ref().filter(|r| !r.is_empty());
 
     if caps.has(Capability::Search) {
         let searched = vista.clone().with_search(UNMATCHABLE);
@@ -57,7 +66,7 @@ pub(super) async fn narrow_into(vista: &Vista, probe: &mut Probe) {
                 let ordered = vista.clone().with_order(&column, SortDirection::Ascending);
                 if let Some(asc) =
                     read_through(probe, Capability::Order, "with_order", ordered).await
-                    && let Some(all) = &all
+                    && let Some(all) = all
                 {
                     effect::order(vista, &asc, &column, all, probe).await;
                 }
@@ -67,8 +76,9 @@ pub(super) async fn narrow_into(vista: &Vista, probe: &mut Probe) {
         }
     }
     if caps.has(Capability::FilterOps) {
-        filter_ops(vista, all.as_ref(), probe).await;
+        filter_ops(vista, all, probe).await;
     }
+    dotted::dotted_path(vista, listed.as_ref(), probe).await;
     if caps.has(Capability::NativeConditions) {
         let result = vista
             .clone()

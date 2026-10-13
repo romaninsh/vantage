@@ -27,19 +27,32 @@ impl MongoTableShell {
     /// spec, or a traversal target the resolver doesn't know) declares only
     /// `_id`, so it takes equality on any top-level field. That is how a
     /// traversal or a script's `where(..)` narrows such a set by a field.
+    ///
+    /// A dotted path (`address.city`) whose root is a declared column is
+    /// evaluated natively: MongoDB's dot notation walks into the root's
+    /// stored document.
     pub(super) fn apply_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         let as_stored = self.column_paths.is_empty() && condition.op == FilterOp::Eq;
-        if !as_stored && !self.table.columns().contains_key(field) {
-            return Err(error!("Unknown column for condition", field = field));
-        }
-        let filter = conditions::op_filter(
-            &self.dotted_path(field),
-            condition.op,
-            &cbor_to_bson(&condition.value),
-        )?;
+        let path = if as_stored || self.table.columns().contains_key(field) {
+            self.dotted_path(field)
+        } else {
+            self.nested_path(field)
+                .ok_or_else(|| error!("Unknown column for condition", field = field))?
+        };
+        let filter = conditions::op_filter(&path, condition.op, &cbor_to_bson(&condition.value))?;
         self.table.add_condition(filter);
         Ok(())
+    }
+
+    /// The BSON path of `root.rest`, when `root` is a declared column: the
+    /// root's own path with `rest` appended.
+    fn nested_path(&self, field: &str) -> Option<String> {
+        let (root, rest) = field.split_once('.')?;
+        self.table
+            .columns()
+            .contains_key(root)
+            .then(|| format!("{}.{rest}", self.dotted_path(root)))
     }
 
     /// Takes a `bson::Document` or a `MongoCondition`. Field names are raw
@@ -51,14 +64,16 @@ impl MongoTableShell {
     }
 
     /// Replace the quicksearch condition; `None` drops it.
-    pub(super) fn apply_search(&mut self, text: Option<&str>) {
-        if let Some(handle) = self.current_search_handle.take() {
-            let _ = self.table.temp_remove_condition(handle);
+    pub(super) fn apply_search(&mut self, text: Option<&str>) -> Result<()> {
+        if let Some(handle) = self.current_search_handle {
+            self.table.temp_remove_condition(handle)?;
+            self.current_search_handle = None;
         }
         if let Some(text) = text {
             let condition = self.search_condition(text);
             self.current_search_handle = Some(self.table.temp_add_condition(condition));
         }
+        Ok(())
     }
 
     /// Replace the order; `None` drops it. MongoDB sorts on any field the
@@ -126,7 +141,7 @@ impl MongoTableShell {
     pub(super) async fn read_back(&self, id: &MongoId) -> Result<Record<CborValue>> {
         let mut table = self.table.clone();
         if let Some(handle) = self.current_search_handle {
-            let _ = table.temp_remove_condition(handle);
+            table.temp_remove_condition(handle)?;
         }
         table
             .get_value(id.clone())

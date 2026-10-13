@@ -16,8 +16,8 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, FilterOp, Page, Preview,
-    Reference as VistaReference, TableShell, Vista, VistaCapabilities, VistaMetadata, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, unknown_relation, unsupported,
 };
 
 use crate::cmd::Cmd;
@@ -77,16 +77,8 @@ impl CmdTableShell {
 
 #[async_trait]
 impl TableShell for CmdTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -99,14 +91,10 @@ impl TableShell for CmdTableShell {
 
     /// A cmd table's argv is built *by* its Rhai script, which calls `run(...)`
     /// itself, so there is no argv to render without running the command. The
-    /// preview reports what decides it instead.
+    /// query is what decides it instead: the command, the script, and the
+    /// scope it is evaluated with, every condition included.
     fn preview(&self) -> Preview {
-        Preview::new("cmd")
-            .with_query(self.preview_scope().to_string())
-            .with_note(
-                "the script builds its own argv and runs it; these are the scope \
-                 values it would be evaluated with",
-            )
+        Preview::new().with_query(self.preview_scope().to_string())
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -138,10 +126,11 @@ impl TableShell for CmdTableShell {
     /// The window is cut from the listed rows, which are all read anyway, so
     /// the page carries the set's total for free.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        let rows = self.table.list_values().await?;
-        let total = rows.len() as i64;
-        let window = rows.into_iter().skip(offset).take(limit).collect();
-        Ok(Page::new(window).with_total(total))
+        Ok(Page::from_listing(
+            self.table.list_values().await?,
+            offset,
+            limit,
+        ))
     }
 
     /// Equality on a declared column. The script receives it in its
@@ -166,11 +155,11 @@ impl TableShell for CmdTableShell {
             .metadata
             .references
             .get(relation)
-            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())?;
+            .ok_or_else(|| unknown_relation(relation))?;
         let target = self.table.get_ref_target_erased(relation)?;
         let target = CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)?;
         match row {
-            Some(row) => reference.narrow(target, row, CborValue::clone),
+            Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
     }

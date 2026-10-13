@@ -13,19 +13,14 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use vantage_vista::{ColumnFlag as VistaColumnFlag, ColumnSpec, SpecResolver};
+use vantage_vista::{ColumnSpec, SpecResolver};
 
 use crate::graphql::api::{GraphqlApi, Supports, split_response_path};
 use crate::graphql::name::{validate, validate_path, validate_root_args};
 use crate::graphql::types::AnyGraphqlType;
 use crate::graphql::vista::spec::{GraphqlApiVistaSpec, GraphqlBlock, GraphqlColumnExtras};
-
-/// Resolves a YAML spec by model name, so references can rebuild their
-/// target tables from the live spec.
-pub type GraphqlSpecResolver = SpecResolver<GraphqlApiVistaSpec>;
 
 /// A reference target's spec, with the API it is lowered onto: the
 /// factory's, before any table's `graphql:` block was applied.
@@ -35,10 +30,13 @@ pub(crate) struct TargetSpec {
     pub(crate) api: GraphqlApi,
 }
 
-pub(crate) type TargetResolver = SpecResolver<TargetSpec>;
+pub(crate) type TargetSpecResolver = SpecResolver<TargetSpec>;
 
 /// Pair every spec `specs` resolves with `api`.
-pub(crate) fn target_resolver(api: GraphqlApi, specs: GraphqlSpecResolver) -> TargetResolver {
+pub(crate) fn target_resolver(
+    api: GraphqlApi,
+    specs: SpecResolver<GraphqlApiVistaSpec>,
+) -> TargetSpecResolver {
     Arc::new(move |name: &str| {
         specs(name).map(|spec| TargetSpec {
             spec,
@@ -51,7 +49,7 @@ pub(crate) fn target_resolver(api: GraphqlApi, specs: GraphqlSpecResolver) -> Ta
 pub(crate) fn build_table(
     spec: &GraphqlApiVistaSpec,
     api: &GraphqlApi,
-    resolver: Option<TargetResolver>,
+    resolver: Option<TargetSpecResolver>,
 ) -> Result<Table<GraphqlApi, EmptyEntity>> {
     if let Some((relation, _)) = spec.references.iter().find(|(_, r)| !r.keys.is_empty()) {
         return Err(error!(
@@ -77,7 +75,7 @@ pub(crate) fn build_table(
 
     let mut table = Table::<GraphqlApi, EmptyEntity>::new(root_field, api);
     table.add_spec_columns(&spec.columns, build_column)?;
-    table.set_spec_id_field(&spec.resolve_id_column())?;
+    table.set_spec_id_field(&spec.resolve_id_column("id"))?;
     table.with_spec_references(&spec.references, resolver, build_target_table)
 }
 
@@ -86,7 +84,7 @@ pub(crate) fn build_table(
 fn build_target_table(
     target: &TargetSpec,
     _parent_api: GraphqlApi,
-    resolver: Option<TargetResolver>,
+    resolver: Option<TargetSpecResolver>,
 ) -> Result<Table<GraphqlApi, EmptyEntity>> {
     build_table(&target.spec, &target.api, resolver)
 }
@@ -162,7 +160,6 @@ fn field_aliases(spec: &GraphqlApiVistaSpec) -> Result<IndexMap<String, String>>
     Ok(aliases)
 }
 
-/// The `searchable` flag carries over so quicksearch can pick its columns.
 /// Only stored columns reach here (a `lazy:` one is never selected), and
 /// each is a field path in the selection set, so its name is checked.
 fn build_column(
@@ -170,12 +167,7 @@ fn build_column(
     col_spec: &ColumnSpec<GraphqlColumnExtras>,
 ) -> Result<TableColumn<AnyGraphqlType>> {
     validate_path("field", name)?;
-    let column = TableColumn::from_spec(name, col_spec, None, column_for_type)?;
-    Ok(if col_spec.has_flag(VistaColumnFlag::Searchable) {
-        column.with_flag(ColumnFlag::Searchable)
-    } else {
-        column
-    })
+    TableColumn::from_spec(name, col_spec, None, column_for_type)
 }
 
 /// Map YAML scalar names to typed columns under `AnyGraphqlType`.

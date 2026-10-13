@@ -1,18 +1,15 @@
-//! With writes denied, every write verb must throw the denial message.
-//!
-//! Today `insert`, `upsert`, `patch` and `import_from` throw it, but the
-//! table's `delete(id)` and `Record.delete()` return `false`, which a script
-//! can't tell apart from a delete the backend doesn't support. In 2.0 a denied
-//! or unsupported write always throws.
+//! With writes denied, every write verb must throw the denial message:
+//! `insert`, `upsert`, `patch`, `import_from`, the table's `delete(id)` and
+//! `Record.delete()`. A delete never answers `false` for a denial, so a
+//! script can't mistake a refused write for a missing row.
 
-use vantage_vista::{Terminals, Writes};
+use vantage_vista::rhai::{Terminals, Writes};
 
 use super::rhai_support::{host, mock, run};
 
 const DENIED: &str = "writes are turned off here";
 
 #[test]
-#[ignore = "v2 phase 2: a denied delete throws like the other write verbs"]
 fn rhai_denied_writes_consistent() {
     let shell = mock();
     let host = host(

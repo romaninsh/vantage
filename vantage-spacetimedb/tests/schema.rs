@@ -169,14 +169,17 @@ fn wide_integers_map_to_string_rather_than_silently_truncating() {
     let schema = ModuleSchema::from_v10_json(V10).unwrap();
     let metadata = schema.metadata_for("person").unwrap();
 
+    let type_of = |metadata: &vantage_vista::VistaMetadata, column: &str| {
+        metadata.columns[column].original_type.clone()
+    };
     // u64 still fits Vista's integer carrier, so `big` is an int...
-    assert_eq!(metadata.columns["big"].original_type, "int");
-    assert_eq!(metadata.columns["score"].original_type, "int");
-    assert_eq!(metadata.columns["active"].original_type, "bool");
-    assert_eq!(metadata.columns["handle"].original_type, "string");
+    assert_eq!(type_of(&metadata, "big").as_deref(), Some("int"));
+    assert_eq!(type_of(&metadata, "score").as_deref(), Some("int"));
+    assert_eq!(type_of(&metadata, "active").as_deref(), Some("bool"));
+    assert_eq!(type_of(&metadata, "handle").as_deref(), Some("string"));
 
     let reading = schema.metadata_for("reading").unwrap();
-    assert_eq!(reading.columns["value"].original_type, "float");
+    assert_eq!(type_of(&reading, "value").as_deref(), Some("float"));
 }
 
 #[test]

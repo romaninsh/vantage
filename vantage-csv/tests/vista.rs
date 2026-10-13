@@ -114,6 +114,7 @@ async fn vista_resolves_bare_target_of_typed_relation() -> Result<()> {
                 .with_column_of::<String>("name")
         });
     let vista = csv.vista_factory().from_table(table)?;
+    assert_eq!(vista.references()["bakery"].target, "bakery");
 
     let target = vista.get_ref("bakery", None)?;
     assert_eq!(target.name(), "bakery");
@@ -243,6 +244,37 @@ async fn vista_opts_out_of_query_primitives() -> Result<()> {
         .expect_err("an unknown column is an error");
     assert_ne!(unknown.kind(), ErrorKind::Unsupported);
     assert!(vista.query().is_empty(), "refused clauses are not recorded");
+    Ok(())
+}
+
+#[test]
+fn vista_preview_lists_the_applied_conditions() -> Result<()> {
+    let csv = csv();
+    let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<bool>("is_paying_client");
+    let vista = csv.vista_factory().from_table(table)?;
+    let file = format!("{}/data/client.csv", env!("CARGO_MANIFEST_DIR"));
+
+    let preview = vista.preview();
+    assert_eq!(
+        preview.query.as_deref(),
+        Some(format!("read {file}").as_str())
+    );
+    assert_eq!(preview.note, None);
+
+    let narrowed = vista
+        .with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?
+        .with_condition("name", FilterOp::Eq, "Doc Brown")?;
+    let preview = narrowed.preview();
+    assert_eq!(
+        preview.query.as_deref(),
+        Some(
+            format!("read {file} where is_paying_client = true and name = \"Doc Brown\"").as_str()
+        )
+    );
+    assert_eq!(narrowed.driver_name(), "csv");
     Ok(())
 }
 

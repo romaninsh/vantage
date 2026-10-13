@@ -74,3 +74,10 @@ fn unsupported_is_marked_and_names_the_capability() {
     assert!(err.is_unsupported());
     assert!(err.context["capability"].contains("cursor"), "{err}");
 }
+
+#[test]
+fn unknown_relation_is_not_found_and_names_the_relation() {
+    let err = unknown_relation("orders");
+    assert!(err.is_not_found());
+    assert!(err.context["relation"].contains("orders"), "{err}");
+}

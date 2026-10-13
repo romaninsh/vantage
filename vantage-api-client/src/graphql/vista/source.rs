@@ -21,15 +21,15 @@ use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, Page, Preview, Reference as VistaReference,
-    SortDirection, TableShell, Vista, VistaCapabilities, VistaMetadata, unsupported,
+    Capability, Condition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, unsupported,
 };
 
 use crate::graphql::api::GraphqlApi;
 use crate::graphql::types::AnyGraphqlType;
-use crate::graphql::vista::lowering::TargetResolver;
+use crate::graphql::vista::lowering::TargetSpecResolver;
 
-/// The shell's `driver_name`, also stamped on its previews.
+/// The shell's `driver_name`.
 const DRIVER: &str = "graphql";
 
 /// The `TableShell` behind a GraphQL-backed `Vista`: an erased
@@ -48,7 +48,7 @@ pub struct GraphqlApiTableShell {
     /// Set on a shell built from a YAML spec: every reference it holds came
     /// from `references:`, and its target spec is looked up here at
     /// traversal time (see `traversal.rs`).
-    pub(crate) resolver: Option<TargetResolver>,
+    pub(crate) resolver: Option<TargetSpecResolver>,
 }
 
 impl GraphqlApiTableShell {
@@ -66,7 +66,7 @@ impl GraphqlApiTableShell {
         }
     }
 
-    pub(crate) fn with_resolver(mut self, resolver: Option<TargetResolver>) -> Self {
+    pub(crate) fn with_resolver(mut self, resolver: Option<TargetSpecResolver>) -> Self {
         self.resolver = resolver;
         self
     }
@@ -81,16 +81,8 @@ impl GraphqlApiTableShell {
 
 #[async_trait]
 impl TableShell for GraphqlApiTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -104,11 +96,14 @@ impl TableShell for GraphqlApiTableShell {
     /// `GraphqlSelect::preview` is the synchronous renderer: it produces the
     /// real document, and spells out any condition whose value is only known
     /// at fetch time rather than resolving it. The executed form differs only
-    /// in those deferred branches.
+    /// in those deferred branches. The document is posted to the endpoint
+    /// named on the first line.
     fn preview(&self) -> Preview {
-        Preview::new(DRIVER)
-            .with_query(self.table.select().preview())
-            .with_note(format!("POST {}", self.table.data_source().endpoint()))
+        Preview::new().with_query(format!(
+            "POST {}\n{}",
+            self.table.data_source().endpoint(),
+            self.table.select().preview()
+        ))
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -127,12 +122,13 @@ impl TableShell for GraphqlApiTableShell {
         self.table.get_count().await
     }
 
-    /// `limit:`/`offset:` on a clone of the table, only when the root field
-    /// takes them and conditions reach the server. A GraphQL list reports no
-    /// total, so the page carries none.
+    /// `limit:`/`offset:` on a clone of the table, when the root field takes
+    /// them and conditions reach the server. A GraphQL list reports no total,
+    /// so the page carries none. Otherwise the leading window is cut from
+    /// the listing.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
         if !self.capabilities.has(Capability::Window) {
-            return unsupported(Capability::Window);
+            return Ok(Page::from_listing(self.list().await?, offset, limit));
         }
         let rows = self
             .list_paginated(Pagination::window(offset as i64, limit as i64))
@@ -148,8 +144,7 @@ impl TableShell for GraphqlApiTableShell {
         if !self.capabilities.has(Capability::Search) {
             return unsupported(Capability::Search);
         }
-        self.apply_search(text);
-        Ok(())
+        self.apply_search(text)
     }
 
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {

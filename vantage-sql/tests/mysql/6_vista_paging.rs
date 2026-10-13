@@ -213,7 +213,7 @@ columns:
     type: string
 mysql:
   rhai: |
-    select().from("{name}").field("id").field("name")
+    sql::select().from("{name}").field("id").field("name")
 "#
     );
     let mut vista = db.vista_factory().from_yaml(&yaml)?;

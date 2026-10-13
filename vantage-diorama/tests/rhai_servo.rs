@@ -1,7 +1,7 @@
 //! Servo driven from Rhai — the `rhai` feature's contract.
 //!
 //! Scripts evaluate under `spawn_blocking` (runtime context, no async
-//! frame), exactly the posture `save()` documents: it `block_on`s the
+//! frame), exactly the posture `flash()` documents: it `block_on`s the
 //! servo's flash from inside the synchronous script.
 
 use std::sync::Arc;
@@ -53,7 +53,7 @@ async fn eval(servo: Arc<Servo>, script: &'static str) -> std::result::Result<Dy
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn set_save_settles_a_new_record() -> Result<()> {
+async fn set_flash_settles_a_new_record() -> Result<()> {
     let shell = MockShell::new();
     let dio = dio_over(&shell).await?;
     let servo = Arc::new(dio.servo_new(IdStrategy::FromRecord));
@@ -65,7 +65,7 @@ async fn set_save_settles_a_new_record() -> Result<()> {
             servo.set("status", "unregistered");
             if !servo.is_dirty() { throw "draft should be dirty"; }
             if !servo.dirty("status") { throw "field should be dirty"; }
-            servo.save()
+            servo.flash()
         "#,
     )
     .await
@@ -115,7 +115,7 @@ async fn get_error_status_read_the_draft() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn rejected_save_is_a_script_error_and_the_draft_survives() -> Result<()> {
+async fn rejected_flash_is_a_script_error_and_the_draft_survives() -> Result<()> {
     let shell = MockShell::new();
     let lens = Arc::new(
         Lens::new()
@@ -133,12 +133,12 @@ async fn rejected_save_is_a_script_error_and_the_draft_survives() -> Result<()> 
         servo.clone(),
         r#"
             servo.set("id", "tag:XX99-YY88");
-            servo.save()
+            servo.flash()
         "#,
     )
     .await
     .expect_err("the rejection surfaces as a script error");
-    assert!(err.contains("save failed"), "{err}");
+    assert!(err.contains("flash failed"), "{err}");
 
     let status = eval(
         servo.clone(),

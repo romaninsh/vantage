@@ -124,7 +124,7 @@ fn introspection() {
         json!({
             "insert": true,
             "columns": ["id", "client", "total", "status"],
-            "references": ["client HasOne"],
+            "references": ["client has_one"],
         })
     );
 }
@@ -142,5 +142,5 @@ fn late_error() {
         err.contains("Step can't be applied (step: Ref(\"invoices\"))"),
         "{err}"
     );
-    assert!(err.contains("No reference with this name"), "{err}");
+    assert!(err.contains("unknown relation"), "{err}");
 }

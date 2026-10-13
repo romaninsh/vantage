@@ -30,9 +30,8 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column as VistaColumn, Condition, FilterOp, Page, Preview,
-    Reference as VistaReference, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaMetadata, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, SortDirection, TableShell, Vista,
+    VistaCapabilities, VistaMetadata, unknown_relation, unsupported,
 };
 
 use crate::cluster::KubernetesCluster;
@@ -79,16 +78,8 @@ impl KubeTableShell {
 
 #[async_trait]
 impl TableShell for KubeTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -103,7 +94,7 @@ impl TableShell for KubeTableShell {
     /// the API answers. Conditions, search and ordering never reach the API
     /// server.
     fn preview(&self) -> Preview {
-        Preview::new("kubernetes")
+        Preview::new()
             .with_query(format!("GET {}", self.table.table_name()))
             .with_note(refine::describe(
                 self.table.conditions().map(KubeCondition::field),
@@ -128,10 +119,7 @@ impl TableShell for KubeTableShell {
     /// The window is cut from the refined listing, which is read whole
     /// anyway, so the page carries the set's total for free.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        let rows = self.materialize().await?;
-        let total = rows.len() as i64;
-        let window = rows.into_iter().skip(offset).take(limit).collect();
-        Ok(Page::new(window).with_total(total))
+        Ok(Page::from_listing(self.materialize().await?, offset, limit))
     }
 
     /// Equality on a declared column, matched against the projected record.
@@ -170,11 +158,11 @@ impl TableShell for KubeTableShell {
             .metadata
             .references
             .get(relation)
-            .ok_or_else(|| error!("Unknown relation", relation = relation).mark_not_found())?;
+            .ok_or_else(|| unknown_relation(relation))?;
         let target = self.table.get_ref_target_erased(relation)?;
         let target = KubeVistaFactory::new(self.table.data_source().clone()).from_table(target)?;
         match row {
-            Some(row) => reference.narrow(target, row, CborValue::clone),
+            Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
     }

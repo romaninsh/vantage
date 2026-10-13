@@ -1,8 +1,12 @@
 pub mod mock_column;
+#[cfg(test)]
+mod mock_reference;
 pub mod mock_table_source;
 pub mod mock_type_system;
 
 pub use mock_column::MockColumn;
+#[cfg(test)]
+pub(crate) use mock_reference::MockReference;
 
 #[cfg(test)]
 mod tests {

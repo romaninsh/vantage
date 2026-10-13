@@ -15,7 +15,7 @@ pub mod rhai_source;
 pub mod source;
 pub mod spec;
 
-pub use factory::{PostgresSpecResolver, PostgresVistaFactory};
+pub use factory::PostgresVistaFactory;
 pub use source::PostgresTableShell;
 pub use spec::{
     InheritBlock, PostgresColumnBlock, PostgresColumnExtras, PostgresTableBlock,

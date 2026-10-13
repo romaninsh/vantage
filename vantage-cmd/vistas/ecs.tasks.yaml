@@ -5,7 +5,7 @@ columns:
     flags: [id, title, searchable]
   cluster:
     type: string
-    flags: [hidden]
+    flags: [hidden, request_param]
 cmd:
   rhai: |
     let args = ["ecs", "list-tasks", "--output", "json"];

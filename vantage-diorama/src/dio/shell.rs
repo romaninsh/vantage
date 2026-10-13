@@ -4,15 +4,21 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_vista::{
-    Capability, Column, ColumnFlag, Condition, FilterOp, Reference, SortDirection, Vista,
-    VistaCapabilities, VistaQuery,
+    Capability, ColumnFlag, Condition, FilterOp, SortDirection, Vista, VistaCapabilities,
+    VistaMetadata, VistaQuery,
 };
 
 use super::DioInner;
-use super::impls::table_shell::record_get;
+use super::impls::table_shell::{path_get, record_get};
 use vantage_types::Record;
 
 mod watch;
+
+/// `field` names a flat cell: it has no dot, or `metadata` declares it with
+/// one in its name.
+fn is_flat(field: &str, metadata: &VistaMetadata) -> bool {
+    !field.contains('.') || metadata.columns.contains_key(field)
+}
 
 /// Narrowing applied to a facade handle.
 ///
@@ -30,16 +36,30 @@ impl FacadeQuery {
         self.conditions.is_empty() && self.order.is_none()
     }
 
-    /// The facade's equality conditions, as set invariants.
-    pub(crate) fn invariants(&self) -> IndexMap<String, CborValue> {
-        self.conditions.iter().cloned().collect()
-    }
-
-    /// Whether `row` satisfies every condition, evaluated locally.
-    pub(crate) fn matches(&self, row: &Record<CborValue>) -> bool {
+    /// The facade's equality conditions on flat cells, as set invariants. A
+    /// dotted path into a nested map has no flat cell to fill, so writes are
+    /// left to the set check; a column `metadata` declares with a dot in its
+    /// name is a flat cell.
+    pub(crate) fn invariants(&self, metadata: &VistaMetadata) -> IndexMap<String, CborValue> {
         self.conditions
             .iter()
-            .all(|(field, expected)| record_get(row, field) == Some(expected))
+            .filter(|(field, _)| is_flat(field, metadata))
+            .cloned()
+            .collect()
+    }
+
+    /// Whether `row` satisfies every condition, evaluated locally. A flat
+    /// cell is read by its key; a dotted path into a map is read by walking
+    /// the path only, so a literal `"a.b"` key in `row` can't stand in for it.
+    pub(crate) fn matches(&self, row: &Record<CborValue>, metadata: &VistaMetadata) -> bool {
+        self.conditions.iter().all(|(field, expected)| {
+            let cell = if is_flat(field, metadata) {
+                record_get(row, field)
+            } else {
+                path_get(row, field)
+            };
+            cell == Some(expected)
+        })
     }
 
     fn to_vista_query(&self) -> VistaQuery {
@@ -79,9 +99,7 @@ impl FacadeQuery {
 pub struct DioShell {
     pub(crate) dio: Arc<DioInner>,
     pub(crate) capabilities: VistaCapabilities,
-    pub(crate) columns: IndexMap<String, Column>,
-    pub(crate) references: IndexMap<String, Reference>,
-    pub(crate) id_column: Option<String>,
+    pub(crate) metadata: VistaMetadata,
     /// This handle's narrowing. Per-handle, and cloned rather than shared, so
     /// narrowing one facade never reorders another's view of the same Dio.
     pub(crate) query: FacadeQuery,
@@ -97,7 +115,8 @@ impl DioShell {
         // cache, so refusing here would deny a sort the Dio is perfectly able
         // to perform. `Searchable` gets no such treatment: the facade has no
         // search of its own to fall back on.
-        let columns = master
+        let mut metadata = VistaMetadata::new();
+        metadata.columns = master
             .columns()
             .iter()
             .map(|(name, column)| {
@@ -107,8 +126,8 @@ impl DioShell {
                 )
             })
             .collect();
-        let references = master.references().clone();
-        let id_column = master.id_column().map(str::to_string);
+        metadata.references = master.references().clone();
+        metadata.id_column = master.id_column().map(str::to_string);
         drop(master);
         let write_caps = dio.write_capabilities();
 
@@ -140,22 +159,18 @@ impl DioShell {
         Self {
             dio,
             capabilities,
-            columns,
-            references,
-            id_column,
+            metadata,
             query: FacadeQuery::default(),
         }
     }
 
-    /// A handle over `dio` narrowed by `query`, with no schema or
+    /// A handle over `dio` narrowed by `query`, with `metadata` and no
     /// capabilities — enough to read the narrowed set and nothing else.
-    fn reader(dio: Arc<DioInner>, query: FacadeQuery) -> Self {
+    fn reader(dio: Arc<DioInner>, query: FacadeQuery, metadata: VistaMetadata) -> Self {
         Self {
             dio,
             capabilities: VistaCapabilities::default(),
-            columns: IndexMap::new(),
-            references: IndexMap::new(),
-            id_column: None,
+            metadata,
             query,
         }
     }

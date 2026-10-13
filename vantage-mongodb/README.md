@@ -242,11 +242,11 @@ mongo:
     self.with_condition(#{n: #{"$gt": 1}})
 ```
 
-Maps convert straight to BSON. `oid("…")` builds an `ObjectId`, and `date("2026-01-01T00:00:00Z")` builds a BSON date. A reference can also be built by a script (`references: { orders: { …, mongo: { rhai: 'table("order").where("client_id", me._id)' } } }`). This is how the rows of a `$group` view lead to other tables.
+Maps convert straight to BSON. The BSON constructors live in the `mongo::` namespace: `mongo::oid("…")` builds an `ObjectId`, and `mongo::date("2026-01-01T00:00:00Z")` builds a BSON date. A reference can also be built by a script (`references: { orders: { …, mongo: { rhai: 'table("order").where("client_id", me._id)' } } }`). This is how the rows of a `$group` view lead to other tables.
 
 **Key order.** YAML `pipeline:` keeps keys in the order you wrote them. Rhai map literals sort their keys, so `#{b: 1, a: -1}` reaches MongoDB as `{a: -1, b: 1}`. Most of the time this doesn't matter: `$match` filters, `$group` fields and `$project` fields ignore key order. Two cases do care:
 
-- A multi-key `$sort`, or `$setWindowFields`' `sortBy`, sorts by key order. Build it with `doc([["b", 1], ["a", -1]])`, which keeps the order given.
+- A multi-key `$sort`, or `$setWindowFields`' `sortBy`, sorts by key order. Build it with `mongo::doc([["b", 1], ["a", -1]])`, which keeps the order given.
 - An exact match on an embedded document compares key order too. Match nested fields by dotted path instead: `#{"address.city": "Riga"}`, not `#{address: #{city: "Riga"}}`.
 
 **Missing args.** If the host didn't set `args.x`, it reads as `()`, which becomes BSON `null`, and the filter then matches only documents where the field is null or absent. Guard optional args with `"x" in args`.

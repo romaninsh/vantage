@@ -113,7 +113,7 @@ impl SpacetimeTableShell {
             // No key of any kind: hash the row's own bytes. Sound here because a
             // SpacetimeDB delete carries the whole row, so a delete hashes to the
             // same id as the insert that created it.
-            None => Ok(content_hash(raw)),
+            None => content_hash(raw),
         }
     }
 }
@@ -138,13 +138,16 @@ pub(super) fn cbor_to_id(value: &CborValue) -> String {
 ///
 /// FNV-1a over the row's BSATN encoding: deterministic across processes and
 /// versions (unlike `DefaultHasher`), which matters because this id has to match
-/// between a row read over SQL and the same row arriving on a change feed.
-pub(super) fn content_hash(row: &ProductValue) -> String {
-    let bytes = spacetimedb_sats::bsatn::to_vec(row).unwrap_or_default();
+/// between a row read over SQL and the same row arriving on a change feed. A
+/// row that doesn't encode is an error: hashing no bytes would give every
+/// such row the same id.
+pub(super) fn content_hash(row: &ProductValue) -> Result<String> {
+    let bytes = spacetimedb_sats::bsatn::to_vec(row)
+        .map_err(|e| error!("row can't be encoded to BSATN for its id", detail = e))?;
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in bytes {
         hash ^= byte as u64;
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    format!("{hash:016x}")
+    Ok(format!("{hash:016x}"))
 }

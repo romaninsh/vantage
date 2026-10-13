@@ -5,7 +5,7 @@ columns:
     flags: [id, title]
   UserName:
     type: string
-    flags: [hidden]
+    flags: [hidden, request_param]
   Status:
     type: string
   CreateDate:

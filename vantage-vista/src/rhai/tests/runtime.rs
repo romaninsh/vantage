@@ -5,9 +5,10 @@ use serde_json::json;
 use vantage_types::Record;
 
 use crate::mocks::MockShell;
-use crate::rhai::{TargetResolver, Writes, preview_script, run_script};
+use crate::rhai::write::new_id;
+use crate::rhai::{Writes, preview_script, run_script};
 use crate::vista::Vista;
-use crate::{Column, ColumnFlag, JoinKey, Reference, ReferenceKind, VistaMetadata};
+use crate::{Column, ColumnFlag, JoinKey, Reference, VistaMetadata, VistaResolver};
 
 fn user(id: &str, name: &str) -> Record<CborValue> {
     [("id", id), ("name", name)]
@@ -25,12 +26,12 @@ fn users_vista() -> Vista {
                 .with_flag(ColumnFlag::Title)
                 .with_flag(ColumnFlag::Orderable),
         )
+        .with_column(Column::untyped("nick"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_many(
             "posts",
             "posts",
-            ReferenceKind::HasMany,
-            vec![JoinKey::new("id", "author")],
+            JoinKey::new("id", "author"),
         ));
     let source = MockShell::new()
         .with_record("1", user("1", "Alice"))
@@ -41,7 +42,7 @@ fn users_vista() -> Vista {
     Vista::new("users", source)
 }
 
-fn resolver() -> TargetResolver {
+fn resolver() -> Arc<dyn VistaResolver> {
     Arc::new(|name: &str| {
         if name == "users" {
             Ok(users_vista())
@@ -89,6 +90,46 @@ async fn columns_lists_schema() {
     let json = run(r#"table("users").columns()"#, 5).await.unwrap();
     let cols = json.as_array().unwrap();
     assert!(cols.iter().any(|c| c["name"] == json!("name")));
+    assert_eq!(cols[1]["type"], json!("String"));
+    assert_eq!(cols[2]["name"], json!("nick"));
+    assert_eq!(
+        cols[2]["type"],
+        json!(null),
+        "an untyped column's type is ()"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn references_name_their_kind_as_yaml_does() {
+    let json = run(r#"table("users").references()"#, 5).await.unwrap();
+    assert_eq!(
+        json,
+        json!([{"name": "posts", "kind": "has_many", "contained": false}])
+    );
+}
+
+#[test]
+fn an_untyped_id_column_takes_a_client_made_id() {
+    let untyped = Vista::new(
+        "notes",
+        MockShell::new().with_metadata(
+            VistaMetadata::new()
+                .with_column(Column::untyped("id"))
+                .with_id_column("id"),
+        ),
+    );
+    assert!(new_id(&untyped, "id").is_ok());
+
+    let numeric = Vista::new(
+        "notes",
+        MockShell::new().with_metadata(
+            VistaMetadata::new()
+                .with_column(Column::new("id", "int"))
+                .with_id_column("id"),
+        ),
+    );
+    let err = new_id(&numeric, "id").unwrap_err();
+    assert!(err.to_string().contains("id column holds numbers"), "{err}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 
 pub mod chunk;
+pub mod detail_shell;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,8 +19,7 @@ use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Augmentation, Detail, Dio, Fetch, Lens, MergeRule, Source, TableScenery};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
-use vantage_vista_factory::VistaCatalog;
+use vantage_vista::{Catalog, Column, Vista, VistaMetadata, VistaResolver};
 
 // ---- record/metadata helpers ---------------------------------------------
 
@@ -70,10 +70,8 @@ pub fn names_detail() -> Vista {
     Vista::new("names", shell)
 }
 
-pub fn bucket_catalog() -> Arc<VistaCatalog> {
-    let mut c = VistaCatalog::new();
-    c.register("names", Arc::new(|| Ok(names_detail())));
-    Arc::new(c)
+pub fn bucket_catalog() -> Arc<dyn VistaResolver> {
+    Arc::new(Catalog::new().with("names", |_: &str| Ok(names_detail())))
 }
 
 pub fn augment_name() -> Augmentation {

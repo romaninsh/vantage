@@ -61,7 +61,7 @@ impl SpacetimeVistaFactory {
     /// Build a Vista over an already-loaded schema, without touching the network.
     ///
     /// This is the shape the rest of Vantage can actually call. `build_from_spec`
-    /// is `fn(&self)` and a `ModelLoader` is `Fn() -> Result<Vista>` — both
+    /// is `fn(&self)` and a `VistaResolver` is `fn vista(&self, name)` — both
     /// synchronous — so an `async fn(&mut self)` constructor, whatever else it
     /// is, cannot be registered in a catalog, reached from the CLI, or named in
     /// a UI inventory. Doing the two requests once in [`Self::load`] and leaving

@@ -9,8 +9,14 @@
 //!   and narrowing must succeed on a valid fixture; traversal and native
 //!   conditions only must not be refused (a missing join value or a foreign
 //!   condition type is not a contract break). On a fixture with rows, search,
-//!   order and operator filters must also change what is read. Narrowing
-//!   probes run on clones, so the vista passed in is left as it was.
+//!   order and operator filters must also change what is read. A condition
+//!   on a dotted path into a declared column may be rejected; whether an
+//!   accepted one narrows is checked only on a fixture with a row holding a
+//!   map in a declared column. Every shell that lists must answer the
+//!   leading window, advertised `Window` or not: when `list` works,
+//!   `fetch_window(0, n)` returns `min(n, listed)` rows of the set, the first
+//!   in the set's order when an order is applied. Narrowing probes run on
+//!   clones, so the vista passed in is left as it was.
 //! - [`check_narrowing`]: the narrowing half of `check_advertised` alone.
 //! - [`check_advertised_writes`]: the write capabilities, held to the lenient
 //!   rule. Run it only on a disposable fixture, since a successful probe may
@@ -25,6 +31,7 @@
 mod advertised;
 mod clone;
 mod narrowing;
+mod window;
 mod writes;
 
 pub use advertised::check_advertised;

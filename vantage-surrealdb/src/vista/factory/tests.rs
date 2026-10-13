@@ -5,7 +5,7 @@ use super::*;
 use indexmap::IndexMap;
 use std::sync::Arc;
 use surreal_client::{MockSurrealEngine, SurrealClient};
-use vantage_vista::ColumnFlag;
+use vantage_vista::{ColumnFlag, JoinKey, ReferenceKind};
 
 fn test_db() -> SurrealDB {
     let client = SurrealClient::new(
@@ -20,7 +20,7 @@ fn parse(yaml: &str) -> SurrealVistaSpec {
     serde_yaml_ng::from_str(yaml).expect("yaml parse")
 }
 
-fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SurrealSpecResolver {
+fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SpecResolver<SurrealVistaSpec> {
     let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
     let map = Arc::new(map);
     Arc::new(move |name: &str| map.get(name).cloned())
@@ -131,7 +131,7 @@ name: tag
 columns:
   id: { type: string, flags: [id] }
   batch: { type: string }
-  batch_name: { type: string, expr: 'ident("batch")["name"]' }
+  batch_name: { type: string, expr: 'surreal::ident("batch")["name"]' }
 "#;
     let spec = parse(yaml);
     let table = build_surreal_table(&spec, test_db(), None).expect("build");
@@ -156,7 +156,7 @@ columns:
   id: { type: string, flags: [id] }
   qty: { type: int }
   price: { type: int }
-  total: { type: int, expr: 'mul(ident("qty"), ident("price"))' }
+  total: { type: int, expr: 'surreal::mul(surreal::ident("qty"), surreal::ident("price"))' }
 "#;
     let table = build_surreal_table(&parse(yaml), test_db(), None).expect("build");
     let metadata = metadata_from_table(&table);
@@ -321,7 +321,6 @@ references:
     assert_eq!(products.target, "product");
     assert_eq!(products.kind, ReferenceKind::HasMany);
     assert_eq!(products.keys, vec![JoinKey::new("id", "bakery")]);
-    assert_eq!(products.foreign_key(), Some("bakery"));
 
     let primary = vista.reference("primary_product").expect("primary ref");
     assert_eq!(primary.kind, ReferenceKind::HasOne);
@@ -447,7 +446,7 @@ references:
     foreign_key: bakery
     surreal:
       rhai: |
-        table("product").with_condition(ident("bakery") == row.id)
+        table("product").with_condition(surreal::ident("bakery") == row.id)
 "#;
     let product_yaml = r#"
 name: product
@@ -494,7 +493,7 @@ columns:
 surreal:
   table: clients
   modify: |
-    self.with_condition(ident("is_paying_client") == true)
+    self.with_condition(surreal::ident("is_paying_client") == true)
        .sort("name", "asc")
 "#;
     let spec = parse(yaml);
