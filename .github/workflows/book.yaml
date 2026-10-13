@@ -6,18 +6,21 @@ on:
       - main
     paths:
       - "docs4/**"
+      - "script/book-llms.py"
       - ".github/workflows/book.yaml"
 
   pull_request:
     paths:
       - "docs4/**"
+      - "script/book-llms.py"
       - ".github/workflows/book.yaml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # gh-pages redirect
+      id-token: write # OIDC for AWS
 
     steps:
       - uses: actions/checkout@v4
@@ -59,9 +62,42 @@ jobs:
         working-directory: ./docs4
         run: mdbook build
 
-      - name: Deploy
+      - name: Generate llms.txt and markdown chapters
+        run: python3 -I script/book-llms.py docs4
+
+      # The book lives at vantage-ui.com/book/. vantage-web's own deploy
+      # excludes book/* from its --delete sync, so the two never clobber each
+      # other. Auth is GitHub OIDC into the release-uploader role (see
+      # vantage-terraform, github_release_repos); no long-lived AWS keys.
+      # Pinned by SHA: this step mints credentials that can write the site and
+      # releases buckets.
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        if: ${{ github.ref == 'refs/heads/main' }}
+        with:
+          role-to-assume: arn:aws:iam::578465001751:role/vantage-demo-release-uploader
+          aws-region: eu-west-2
+
+      - name: Publish to vantage-ui.com/book/
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          aws s3 sync docs4/book/ s3://vantage-ui.com/book/ --delete
+          # The sync guesses text types without a charset; browsers then
+          # mangle non-ASCII. Re-upload the markdown and llms files with one.
+          aws s3 cp docs4/book/ s3://vantage-ui.com/book/ --recursive --exclude '*' --include '*.md' \
+            --content-type 'text/markdown; charset=utf-8'
+          aws s3 cp docs4/book/ s3://vantage-ui.com/book/ --recursive --exclude '*' --include 'llms*.txt' \
+            --content-type 'text/plain; charset=utf-8'
+          aws cloudfront create-invalidation --distribution-id E18KQTM4QLF7KJ --paths '/book/*'
+
+      # romaninsh.github.io/vantage now only redirects: the same page as
+      # index.html and 404.html sends every old URL to its /book/ twin.
+      - name: Prepare github.io redirect
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: cp docs4/redirect/index.html docs4/redirect/404.html
+
+      - name: Deploy github.io redirect
         uses: peaceiris/actions-gh-pages@v4
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs4/book
+          publish_dir: ./docs4/redirect
