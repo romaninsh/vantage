@@ -113,6 +113,39 @@ fn integers_and_floats_compare_numerically() {
     assert_eq!(cbor_cmp(&int(3), &CborValue::Float(4.95)), Ordering::Less);
 }
 
+fn datetime(s: &str) -> CborValue {
+    CborValue::Tag(0, Box::new(text(s)))
+}
+
+/// A datetime operand (`Tag(0, rfc3339)`) compares as text with dates a
+/// source stores as text, and with stored datetimes.
+#[test]
+fn a_datetime_compares_as_its_text() {
+    let m = schemaless();
+    let mid = || datetime("2026-10-05T00:00:00Z");
+    let at = |op, r: &Record<CborValue>| Condition::new("at", op, mid()).matches(r, &m);
+    let early_text = row(&[("at", text("2026-10-01T00:00:00Z"))]);
+    let late_tag = row(&[("at", datetime("2026-10-09T00:00:00Z"))]);
+
+    assert!(at(FilterOp::Lt, &early_text));
+    assert!(!at(FilterOp::Lt, &late_tag));
+    assert!(at(FilterOp::Gt, &late_tag));
+    assert!(!at(FilterOp::Gt, &early_text));
+
+    let equal_text = row(&[("at", text("2026-10-05T00:00:00Z"))]);
+    assert!(at(FilterOp::Eq, &equal_text));
+    assert!(at(FilterOp::Eq, &row(&[("at", mid())])));
+    assert!(!at(FilterOp::Eq, &early_text));
+    assert!(!at(FilterOp::Ne, &equal_text));
+    let set = CborValue::Array(vec![text("2026-10-05T00:00:00Z")]);
+    assert!(Condition::new("at", FilterOp::InSet, set).matches(&row(&[("at", mid())]), &m));
+
+    assert_eq!(
+        cbor_cmp(&datetime("2026-10-01T00:00:00Z"), &int(5)),
+        cbor_cmp(&text("2026-10-01T00:00:00Z"), &int(5))
+    );
+}
+
 /// Mixed types with no common order still compare, and the same way
 /// every time.
 #[test]

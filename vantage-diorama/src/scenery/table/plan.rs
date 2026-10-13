@@ -51,6 +51,11 @@ impl ViewPlan {
         &self.query
     }
 
+    /// The master narrowed by every clause it took.
+    pub(crate) fn narrowed(&self) -> &vantage_vista::Vista {
+        &self.plan.narrowed
+    }
+
     /// Whether a window read from the master leaves anything out: a clause
     /// of the view query the master refused or diorama kept (order
     /// included), or a condition or search of the Dio's own residual.
@@ -81,6 +86,13 @@ impl TableSceneryState {
     /// call, because two sceneries over one Dio load concurrently and must
     /// never see each other's narrowing.
     pub(crate) fn view_query(&self) -> VistaQuery {
+        let terms = self.ui_terms.read().unwrap().clone();
+        self.query_with_terms(&terms)
+    }
+
+    /// [`view_query`](Self::view_query) with `terms` standing in for the
+    /// view's operator terms.
+    pub(crate) fn query_with_terms(&self, terms: &[super::OpCondition]) -> VistaQuery {
         let eq = |(column, value): &(String, CborValue)| {
             Condition::new(column, FilterOp::Eq, value.clone())
         };
@@ -96,9 +108,7 @@ impl TableSceneryState {
         query
             .conditions
             .extend(self.ui_filters.read().unwrap().iter().map(eq));
-        query
-            .conditions
-            .extend(self.ui_terms.read().unwrap().iter().map(op));
+        query.conditions.extend(terms.iter().map(op));
         query.search = self.search.read().unwrap().clone();
         query.order = self
             .sort
@@ -124,8 +134,7 @@ impl TableSceneryState {
         let Some(dio) = self.dio_weak.upgrade() else {
             return false;
         };
-        let (offered, sugar) = self.split_sugar(self.view_query());
-        let planned = ViewPlan::new(&dio, offered.clone());
+        let (offered, sugar, planned) = self.plan_query(&dio, self.view_query());
         let next = Serving::decide(self, &dio, &offered, &sugar, planned.as_ref());
         *self.view_plan.write().unwrap() = match planned {
             Ok(plan) => Some(Arc::new(plan)),
@@ -141,6 +150,19 @@ impl TableSceneryState {
         };
         let previous = std::mem::replace(&mut *self.serving.write().unwrap(), next.clone());
         self.enter(&dio, &previous, &next)
+    }
+
+    /// Plan `query` as this view plans its own: the clauses offered to the
+    /// master, those on sugar outputs, and the Dio's plan for the offered
+    /// ones.
+    pub(super) fn plan_query(
+        &self,
+        dio: &DioInner,
+        query: VistaQuery,
+    ) -> (VistaQuery, VistaQuery, Result<ViewPlan>) {
+        let (offered, sugar) = self.split_sugar(query);
+        let planned = ViewPlan::new(dio, offered.clone());
+        (offered, sugar, planned)
     }
 
     /// Split `query` into what may be offered to the master and the clauses

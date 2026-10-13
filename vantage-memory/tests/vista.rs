@@ -155,6 +155,43 @@ fn an_unknown_relation_is_not_found() {
     assert!(err.is_not_found(), "{err:?}");
 }
 
+fn datetime(s: &str) -> CborValue {
+    CborValue::Tag(0, Box::new(text(s)))
+}
+
+/// A datetime operand (`Tag(0, rfc3339)`) compares as text with dates stored
+/// as text and with stored datetimes.
+#[tokio::test]
+async fn datetime_operand_orders_against_text_dates() {
+    let store = MemoryStore::new();
+    let f = MemoryVistaFactory::new(store.clone());
+    let events = store.table("event");
+    events.upsert(
+        "old",
+        record(&[("updated_at", text("2026-10-01T00:00:00Z"))]),
+    );
+    events.upsert(
+        "mid",
+        record(&[("updated_at", text("2026-10-05T00:00:00Z"))]),
+    );
+    events.upsert(
+        "new",
+        record(&[("updated_at", datetime("2026-10-09T00:00:00Z"))]),
+    );
+    let yaml = "name: event\nid_column: id\ncolumns:\n  id: { type: string, flags: [id] }\n  updated_at: { type: string }\n";
+
+    for (op, expected) in [
+        (FilterOp::Gt, "new"),
+        (FilterOp::Lt, "old"),
+        (FilterOp::Eq, "mid"),
+    ] {
+        let mut v = f.from_yaml(yaml).unwrap();
+        v.add_condition("updated_at", op, datetime("2026-10-05T00:00:00Z"))
+            .unwrap();
+        assert_eq!(ids(&v).await, [expected], "{op:?}");
+    }
+}
+
 #[tokio::test]
 async fn set_order_replaces_previous_order() {
     let (_s, f) = setup();

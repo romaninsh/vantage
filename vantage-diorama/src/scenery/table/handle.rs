@@ -10,10 +10,11 @@ use vantage_vista::{Capability, VistaCapabilities};
 use crate::dio::{DioInner, Generation};
 use crate::scenery::enriched_record::EnrichedRecord;
 
+use super::plan::Serving;
 use super::state::TableSceneryState;
 use super::{
     LoadState, OpCondition, RowStatusSummary, SortDir, TableScenery, ViewStats, ViewportRequest,
-    loader, two_pass,
+    count, loader, two_pass,
 };
 
 pub(crate) struct TableSceneryImpl {
@@ -191,6 +192,23 @@ impl TableScenery for TableSceneryImpl {
 
     fn filter_terms(&self) -> Vec<OpCondition> {
         self.inner.ui_terms.read().unwrap().clone()
+    }
+
+    fn count_where(
+        &self,
+        terms: Vec<OpCondition>,
+    ) -> futures::future::BoxFuture<'static, vantage_core::Result<Option<usize>>> {
+        count::count_where(&self.inner, terms)
+    }
+
+    fn terms_supported(&self, terms: &[OpCondition]) -> bool {
+        let Some(dio) = self.inner.dio_weak.upgrade() else {
+            return false;
+        };
+        let query = self.inner.query_with_terms(terms);
+        let (offered, sugar, planned) = self.inner.plan_query(&dio, query);
+        let serving = Serving::decide(&self.inner, &dio, &offered, &sugar, planned.as_ref());
+        !matches!(serving, Serving::Failed(_))
     }
 
     fn set_search(&self, query: Option<String>) {

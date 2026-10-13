@@ -143,9 +143,15 @@ impl TableShell for MongoTableShell {
         self.render_preview()
     }
 
+    /// An ordered list breaks ties on `_id`, so it reads the same total order
+    /// as the windows over it.
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        let mut table = self.table.clone();
+        if !keyset::effective_sort(&table).is_empty() {
+            keyset::add_id_tiebreak(&mut table);
+        }
         Ok(self
-            .to_rows(self.table.list_values().await?)
+            .to_rows(table.list_values().await?)
             .into_iter()
             .collect())
     }

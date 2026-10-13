@@ -15,6 +15,9 @@ use ciborium::Value as CborValue;
 ///   - An integer beyond 2^53 is rounded to the nearest float to meet a
 ///     float, so it can equal a float a few units away.
 /// - Text compares by code point, bool `false` before `true`.
+/// - A CBOR standard datetime (`Tag(0, Text)`) is taken as its text, so it
+///   orders against, and equals, dates a source stores as text. RFC 3339
+///   strings with the same offset sort lexically.
 /// - Any other pair, of mixed or compound types, compares by its debug
 ///   text. That claims no meaning, but keeps sorting deterministic.
 ///
@@ -23,6 +26,7 @@ use ciborium::Value as CborValue;
 ///
 /// [`VistaQuery::sort_rows`]: crate::VistaQuery::sort_rows
 pub fn cbor_cmp(a: &CborValue, b: &CborValue) -> Ordering {
+    let (a, b) = (datetime_as_text(a), datetime_as_text(b));
     match (a, b) {
         (CborValue::Integer(l), CborValue::Integer(r)) => i128::from(*l).cmp(&i128::from(*r)),
         (CborValue::Text(l), CborValue::Text(r)) => l.cmp(r),
@@ -31,6 +35,15 @@ pub fn cbor_cmp(a: &CborValue, b: &CborValue) -> Ordering {
             (Some(l), Some(r)) => l.total_cmp(&r),
             _ => format!("{a:?}").cmp(&format!("{b:?}")),
         },
+    }
+}
+
+/// The text inside a CBOR standard datetime (`Tag(0, Text)`), or `value`
+/// itself. Twin: `vantage-memory/src/eval/compare.rs`.
+pub(crate) fn datetime_as_text(value: &CborValue) -> &CborValue {
+    match value {
+        CborValue::Tag(0, inner) if matches!(inner.as_ref(), CborValue::Text(_)) => inner,
+        _ => value,
     }
 }
 
