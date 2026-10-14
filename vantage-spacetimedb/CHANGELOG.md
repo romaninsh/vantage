@@ -4,7 +4,30 @@ All notable changes to `vantage-spacetimedb` are documented here.
 
 ## 0.7.0 — unreleased
 
-- Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0.
+### Breaking changes
+
+- The shell implements `TableShell` 2.0.
+- `IN`, `NOT IN` and `LIKE` are refused as `unsupported(FilterOps)`, so they are evaluated
+  locally.
+- Keyless tables advertise no writes. That includes `delete_all`.
+- Writes through a narrowed handle are refused; `ConfineWrites` is not advertised.
+- `fetch_window` serves only the first window, and `Window` is not advertised.
+- `insert(Some(id))` for an id the set holds returns the stored row, and `insert(None)` is
+  `Unsupported`.
+- `replace` and `upsert` create a missing row; `replace` failed on one.
+- An unknown column is "Unknown column for condition" with a `field` key; the `table` key is gone.
+- A keyless row that fails to encode to BSATN is an error; it hashed to the empty byte string's
+  id.
+- A dotted path into a declared column is refused as `Unimplemented`.
+- `preview()` is `{query, note}`; the driver name is `vista.driver_name()`.
+
+### Other changes
+
+- Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0, through path dependencies.
+- An update skips undeclared columns.
+- An insert that races another re-reads the row; a replace that races is a `Conflict`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.6.0 — unreleased
 

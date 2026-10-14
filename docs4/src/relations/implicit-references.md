@@ -30,6 +30,58 @@ Client relates to Bakery via `client.bakery_id`, declared as relations `"client"
 with `with_one`:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Bakery {
+#     pub name: String,
+# }
+#
+# impl Bakery {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Bakery> {
+#         Table::new("bakery", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+#     pub bakery_id: Option<String>,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<String>("bakery_id")
+#             .with_one("bakery", "bakery_id", Bakery::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_one("client", "client_id", Client::sqlite_table)
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
 // Plain names restrict projection; dotted names traverse has_one relations.
 let orders = Order::sqlite_table(db).with_active_columns(&[
     "id",
@@ -37,6 +89,9 @@ let orders = Order::sqlite_table(db).with_active_columns(&[
     "client.name",        // one hop:  client_order -> client
     "client.bakery.name", // two hops: client_order -> client -> bakery
 ])?;
+# let _ = orders;
+# Ok(())
+# }
 ```
 
 `client.name` is one hop. `client.bakery.name` recurses through two — traversal supports an
@@ -51,9 +106,64 @@ SELECT id,
 FROM client_order
 ```
 
-The alias is the dotted name itself, so rows come back with a **flat key equal to the dotted name**:
+The alias is the dotted name itself, so rows come back with a **flat key equal to the dotted
+name**. Reading them needs a populated database, so this block is compiled but not run:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Bakery {
+#     pub name: String,
+# }
+#
+# impl Bakery {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Bakery> {
+#         Table::new("bakery", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+#     pub bakery_id: Option<String>,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<String>("bakery_id")
+#             .with_one("bakery", "bakery_id", Bakery::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_one("client", "client_id", Client::sqlite_table)
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:bakery.sqlite").await.context("connect")?;
+# let orders = Order::sqlite_table(db)
+#     .with_active_columns(&["id", "client.name", "client.bakery.name"])?;
 for row in orders.list_values().await?.values() {
     let get = |k: &str| row.get(k).map(|v| format!("{v}")).unwrap_or_default();
     println!(
@@ -63,6 +173,8 @@ for row in orders.list_values().await?.values() {
         get("client.bakery.name"),
     );
 }
+# Ok(())
+# }
 ```
 
 There is no nested object to unwrap — `row.get("client.bakery.name")` is a plain lookup on a flat
@@ -80,8 +192,9 @@ mistake surfaces there, never as a silently empty column at fetch time:
 - a `has_many` hop — traversal is `has_one`-only, because a to-many field is a set, not a value
   (for an aggregate over the set, a count or a sum, use the previous chapter's
   `get_count_query`);
-- a backend that can lower neither a correlated subquery nor a native path (CSV, REST) —
-  its `TableSource::supports_traversal` is `false`, and dotted names are refused up front.
+- a backend that can lower neither a correlated subquery nor a native path nor a join (CSV,
+  REST) — its `TableSource::supports_traversal` is `false`, and dotted names are refused up
+  front. MongoDB lowers dotted names into `$lookup` stages, except over a `pipeline:` view.
   Traversal is also same-datasource only; enriching rows with fields from a *different*
   datasource belongs to Dio augmentation ([Dio](./dio.md)).
 
@@ -167,5 +280,4 @@ At this point you should be able to:
    expression.
 
 The next page, [Vista, YAML and Rhai](./vistas.md), covers how the same declarations work from
-YAML specs, and how the `calculated` flag and the `can_traverse_in_columns` capability surface at
-the erased layer.
+YAML specs, and how the `calculated` flag surfaces at the erased layer.

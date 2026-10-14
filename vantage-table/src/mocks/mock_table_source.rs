@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use vantage_dataset::{WritableValueSet, im::{ImDataSource, ImTable}};
+use vantage_dataset::{
+    WritableValueSet,
+    im::{ImDataSource, ImTable},
+};
 use vantage_expressions::{
     mocks::datasource::MockSelectableDataSource, traits::datasource::DataSource,
 };

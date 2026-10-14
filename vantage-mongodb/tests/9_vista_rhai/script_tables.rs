@@ -71,9 +71,11 @@ async fn script_where_on_bare_collection_without_resolver() -> TestResult {
             doc! { "_id": "o2", "client_id": "c2", "item": "almanac" },
         ])
         .await?;
-    let clients = db.vista_factory().build_from_spec(spec(&client_with_script(
-        r#"table("orders").where("client_id", me._id)"#,
-    )))?;
+    let clients = db
+        .vista_factory()
+        .build_from_spec(spec(&client_with_script(
+            r#"table("orders").where("client_id", me._id)"#,
+        )))?;
     let mut row = Record::new();
     row.insert("_id".to_string(), CborValue::Text("c1".into()));
     let orders = clients.get_ref("orders", Some(&row))?;

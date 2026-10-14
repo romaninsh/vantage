@@ -15,7 +15,7 @@ columns get the methods for free.
 
 For SQL backends, a macro generates the trait:
 
-```rust
+```text
 // In vantage-sql/src/sqlite/operation.rs
 define_sql_operation!(
     SqliteOperation,
@@ -36,7 +36,7 @@ This produces:
 Each method builds an `Expression<T>` from the two operands, then converts it to the backend's
 condition type via `From<Expression<T>>`:
 
-```rust
+```text
 fn gt(&self, value: impl Expressive<T>) -> SqliteCondition {
     let expr: Expression<T> = Expression::new("{} > {}", vec![
         ExpressiveEnum::Nested(self.expr()),
@@ -56,9 +56,12 @@ Because `SqliteCondition` implements `Expressive<AnySqliteType>`, the blanket gi
 `SqliteOperation<AnySqliteType>`. This enables:
 
 ```rust
+# use vantage_sql::sqlite::operation::SqliteOperation;
+# use vantage_table::column::core::Column;
 let price = Column::<i64>::new("price");
 price.gt(10).eq(false)
 // => SqliteCondition wrapping: (price > 10) = 0
+# ;
 ```
 
 The first operation (`.gt(10)`) enforces type safety — `10` must be `Expressive<i64>`. The second
@@ -70,7 +73,7 @@ any backend-compatible type is accepted.
 For backends that don't use expression trees for conditions (like MongoDB), you implement the
 operation trait manually instead of using the macro. MongoDB produces BSON documents:
 
-```rust
+```text
 pub trait MongoOperation<T>: Expressive<T> {
     fn eq(&self, value: impl Into<AnyMongoType>) -> MongoCondition {
         let field = self.expr().template.clone();
@@ -108,8 +111,14 @@ Each backend's operation trait lives in its own module (e.g. `sqlite::operation:
 Users import only the trait they need:
 
 ```rust
+# mod sqlite {
+#     pub mod operation {
+#         pub use vantage_sql::sqlite::operation::SqliteOperation;
+#     }
+# }
 // In your prelude:
 pub use crate::sqlite::operation::SqliteOperation;
+# fn main() {}
 ```
 
 ### Condition type requirements

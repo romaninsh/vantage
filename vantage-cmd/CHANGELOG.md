@@ -2,7 +2,34 @@
 
 ## 0.7.0 — 2026-10-14
 
+### Breaking changes
+
+- The shell implements `TableShell` 2.0 and advertises `Window` and `Traverse`; there is no
+  cursor and no write.
+- A DETAIL script answers `get(id)` only with the row keyed by `id`, or with a single id-less row
+  (stamped with `id`); the first-row fallback is gone.
+- On a narrowed set, `get` returns nothing for ids outside the set.
+- The shell no longer passes a listed row to the DETAIL script; diorama's `Fetch::Custom` hands
+  it over. `Cmd::get_table_value_with_row` stays.
+- A condition takes `Eq` on a declared column; any other operator is `unsupported(FilterOps)`, and
+  an unknown column is an error.
+- Join traversal is strict. `iam.user_groups` and `iam.user_policies` declare a hidden `UserName`
+  column.
+- The bundled vistas flag their foreign-key and request columns `[hidden, request_param]`, so rows
+  needn't carry them.
+- A client-side filter keeps a row lacking the field only for a `request_param` column or an
+  undeclared field; a `hidden` column is a row field.
+- A dotted path into a declared column is refused as `Unimplemented`.
+- `preview()` is `{query}`: the scope JSON, with no `note`.
+- A bundled spec declaring a contained relation makes `for_name` return `None`.
+
+### Other changes
+
 - Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0 and vantage-table 2.0.0.
+- `fetch_window` slices the listed rows and sets `total`, since a script may ignore the scope's
+  `limit` and `offset`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.6.10 — 2026-10-07
 

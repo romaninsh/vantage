@@ -67,7 +67,7 @@ call it, and when you'd want to:
 | --- | --- |
 | Record → Table | You hold an `ActiveRecord` or `ActiveEntity` — physical row data, loaded. `client_record.get_ref("orders")?` hands back a table narrowed to that client. Models typically wrap this in typed methods, so application code calls `client_record.ref_orders()` and gets a `Table<SqliteDB, Order>`. |
 | Table → Table | True set traversal — no data loaded on either side. Start with the table of VIP clients, traverse to their orders, aggregate: one query, and you hold the sum of all VIP clients' orders. |
-| Vista → Vista | Type-erased, for generic consumers. Record and table traversal stay inside one datasource; a `Vista` respects the relationships declared on the wrapped table, and the `VistaCatalog` additionally lets you register relations between catalog models — including targets in a *different* datasource. |
+| Vista → Vista | Type-erased, for generic consumers. Record and table traversal stay inside one datasource; a `Vista` respects the relationships declared on the wrapped table, and a `Catalog` builds models by name, so a `Reference` can narrow a target that lives in a *different* datasource. |
 | Dio | Not a new traversal — the caching layer over the ones above. A traversed detail set gets its own live cache, and *augmentation* merges a related source's columns into the master's cached rows, one visible row at a time. |
 
 Why is there a Dio layer at all, if the catalog already crosses datasources? Because catalog
@@ -104,6 +104,35 @@ what makes this natural: pass a closure that narrows the target, and the relatio
 *meaningful subset*, not just a foreign key:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Invoice {
+#     pub client_id: Option<String>,
+#     pub status: String,
+# }
+#
+# impl Invoice {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, Invoice> {
+#         Table::new("invoice", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_column_of::<String>("status")
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# pub fn client_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#     Table::new("client", db)
+#         .with_id_column("id")
+#         .with_column_of::<String>("name")
 .with_many("paid_invoices", "client_id", |db| {
     let mut t = Invoice::table(db);
     t.add_condition(t["status"].eq("paid"));
@@ -114,6 +143,7 @@ what makes this natural: pass a closure that narrows the target, and the relatio
     t.add_condition(t["status"].eq("due"));
     t
 })
+# }
 ```
 
 With the extension-trait convention (below), application code reads
@@ -164,17 +194,47 @@ layer will, later.
 `with_one`, `with_many`, and `get_ref` are convenience. A traversal is just "build a table, add a
 condition from what I'm holding" — and nothing stops you from writing exactly that as an
 extension method on a loaded record, without registering any reference at all. It doesn't even
-have to stay in the same datasource:
+have to stay in the same datasource. Here the client lives in SQLite and the mail log is a CSV
+export:
 
 ```rust
+# use vantage_csv::operation::CsvOperation;
+# use vantage_csv::{AnyCsvType, Csv};
+# use vantage_dataset::ActiveEntity;
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Client {
+#     pub name: String,
+#     pub email: String,
+# }
+#
+# #[entity(CsvType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct MailLogEntry {
+#     pub email: String,
+#     pub subject: String,
+# }
+#
+# impl MailLogEntry {
+#     pub fn table(csv: Csv) -> Table<Csv, MailLogEntry> {
+#         Table::new("mail_log", csv)
+#             .with_column_of::<String>("email")
+#             .with_column_of::<String>("subject")
+#     }
+# }
+#
 pub trait ClientMailLog {
-    fn ref_mail_log(&self) -> Table<Mailchimp, MailLogEntry>;
+    fn ref_mail_log(&self) -> Table<Csv, MailLogEntry>;
 }
 
 impl<'a> ClientMailLog for ActiveEntity<'a, Table<SqliteDB, Client>, Client> {
-    fn ref_mail_log(&self) -> Table<Mailchimp, MailLogEntry> {
-        let mut log = MailLogEntry::table(mailchimp());
-        log.add_condition(log["email"].eq(self.email.clone()));
+    fn ref_mail_log(&self) -> Table<Csv, MailLogEntry> {
+        let mut log = MailLogEntry::table(Csv::new("exports"));
+        log.add_condition(log["email"].eq(AnyCsvType::new(self.email.clone())));
         log
     }
 }
@@ -185,8 +245,8 @@ fields are right there. An untyped `ActiveRecord` derefs to the raw `Record` ins
 same value is `self.get("email")`.)
 
 From the caller's side `client.ref_mail_log()` is indistinguishable from a declared relation —
-but there is no foreign key here, no registry entry, just a Mailchimp-backed table conditioned by
-the client's email. What the declared forms add over hand-rolling is everything that needs the
+but there is no foreign key here, no registry entry, just a CSV-backed table conditioned by the
+client's email. What the declared forms add over hand-rolling is everything that needs the
 *registry*: string-addressable traversal for the generic layers (vistas, implicit references),
 and the foreign-key invariant on inserts. Reach for a hand-rolled method when the link doesn't
 fit an FK eq-match; declare a relation when you want the machinery.
@@ -204,6 +264,39 @@ This uncertainty is exactly why the model wraps every relation once, in an exten
 to the table definition:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_one("client", "client_id", Client::sqlite_table)
+#     }
+# }
+#
 pub trait ClientTable {
     fn ref_orders(&self) -> Table<SqliteDB, Order>;
 }
@@ -218,6 +311,39 @@ impl ClientTable for Table<SqliteDB, Client> {
 And the same on the other side — `Order` gets `ref_client()`:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_one("client", "client_id", Client::sqlite_table)
+#     }
+# }
+#
 pub trait OrderTable {
     fn ref_client(&self) -> Table<SqliteDB, Client>;
 }
@@ -241,10 +367,45 @@ one place with no opportunity to name the wrong entity. The
 ## Declaring relations on the model
 
 Here is `Client` from `bakery_model3/src/client.rs` — the entity struct and its SQLite table
-constructor:
+constructor. The real file lists six type systems in `#[entity(..)]`, one per backend it
+targets; this excerpt keeps SQLite's:
 
 ```rust
-#[entity(CsvType, SurrealType, SqliteType, PostgresType, MongoType, DynamoType)]
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Bakery {
+#     pub name: String,
+# }
+#
+# impl Bakery {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Bakery> {
+#         Table::new("bakery", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+#     pub is_deleted: bool,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_one("client", "client_id", Client::sqlite_table)
+#     }
+# }
+#
+#[entity(SqliteType)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Client {
     pub name: String,
@@ -276,6 +437,31 @@ already live.
 And here is the other end, from `order.rs`:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+#     pub is_deleted: bool,
+# }
+#
 impl Order {
     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
         Table::new("client_order", db)
@@ -311,11 +497,52 @@ Traversal is set-to-set: narrow the source set, traverse, and the target set arr
 narrowed by the relationship. Here's "orders of paying clients":
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+#     pub is_paying_client: bool,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<bool>("is_paying_client")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_one("client", "client_id", Client::sqlite_table)
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
 let mut paying = Client::sqlite_table(db.clone());
 paying.add_condition(paying["is_paying_client"].eq(true));
 
 // Table<SqliteDB, Order>, narrowed to orders of paying clients
 let orders = paying.get_ref_as::<Order>("orders")?;
+# let _ = orders;
+# Ok(())
+# }
 ```
 
 No query has run yet — `orders` is a `Table<SqliteDB, Order>` like any other, and you can add
@@ -334,7 +561,56 @@ In application code, the string and the turbofish disappear behind the wrapper f
 [coercion section](#coercion--pinning-get_refs-type) above:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#     }
+# }
+#
+# pub trait ClientTable {
+#     fn ref_orders(&self) -> Table<SqliteDB, Order>;
+# }
+#
+# impl ClientTable for Table<SqliteDB, Client> {
+#     fn ref_orders(&self) -> Table<SqliteDB, Order> {
+#         self.get_ref_as("orders").unwrap()
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
+# let paying = Client::sqlite_table(db);
 let orders = paying.ref_orders();   // Table<SqliteDB, Order> — type inferred, no string
+# let _ = orders;
+# Ok(())
+# }
 ```
 
 The next chapter covers the full range of traversal forms; this is just the first taste.
@@ -346,6 +622,51 @@ rendered `table:key`) rather than a scalar. The declaration shape is identical; 
 differs. From the same `bakery_model3/src/client.rs`:
 
 ```rust
+# use vantage_surrealdb::surrealdb::SurrealDB;
+# use vantage_surrealdb::thing::Thing;
+# use vantage_surrealdb::types::AnySurrealType;
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Bakery {
+#     pub name: String,
+# }
+#
+# impl Bakery {
+#     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Bakery> {
+#         Table::new("bakery", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub is_deleted: bool,
+# }
+#
+# impl Order {
+#     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Order> {
+#         Table::new("order", db)
+#             .with_id_column("id")
+#             .with_column_of::<Thing>("client")
+#             .with_column_of::<bool>("is_deleted")
+#     }
+# }
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+#     pub email: String,
+#     pub contact_details: String,
+#     pub is_paying_client: bool,
+# }
+#
+# impl Client {
 pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Client> {
     Table::new("client", db)
         .with_id_column("id")
@@ -356,6 +677,7 @@ pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Client> {
         .with_one("bakery", "bakery", Bakery::surreal_table)
         .with_many("orders", "client", Order::surreal_table)
 }
+# }
 ```
 
 What changes is the column's *content*, not its name — that is a database-design choice. Any
@@ -376,15 +698,61 @@ The next chapter covers what each traversal form generates per backend.
 
 ## Writing into a traversed set
 
-A traversed set is not read-only. Insert into it, and the new record *belongs* to the set you
-traversed to:
+A traversed set is not read-only. Traverse from a loaded client, insert into the result, and the
+new record *belongs* to the set you traversed to:
 
-```rust
-client.ref_orders().insert_return_id(&order).await?;
+```rust,no_run
+# use vantage_dataset::prelude::ActiveEntitySet;
+# use vantage_sql::prelude::*;
+# use vantage_table::prelude::GetRefExt;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+#     pub is_deleted: bool,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#             .with_column_of::<bool>("is_deleted")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:bakery.sqlite").await.context("connect")?;
+let clients = Client::sqlite_table(db);
+let client = clients.get_entity("marty").await?.expect("client exists");
+
+let orders = client.get_ref::<Order>("orders")?;
+orders.insert_return_id(&Order::default()).await?;
+# Ok(())
+# }
 ```
 
-The order's `client_id` is filled in automatically — you don't set it, and if you set a
-*conflicting* one the write is rejected. How that enforcement works (set invariants, lifecycle
+The order's `client_id` is filled in from the client — you don't set it, and if you set a
+*conflicting* one the write is rejected. The block reads a populated bakery database, so it is
+compiled but not run here. How that enforcement works (set invariants, lifecycle
 hooks) is covered in [Records: Traversal, Invariants & Hooks](record-lifecycle.md).
 
 ## Where this guide goes

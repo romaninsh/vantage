@@ -17,12 +17,52 @@ You have a *set* — a table narrowed by conditions, possibly matching many rows
 loaded. `Table::get_ref_as::<E2>(relation)` traverses from the whole set at once:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+#     pub is_paying_client: bool,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<bool>("is_paying_client")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
 let mut paying = Client::sqlite_table(db.clone());
 paying.add_condition(paying["is_paying_client"].eq(true));
 
 let orders = paying.get_ref_as::<Order>("orders")?;
 // SELECT ... FROM "client_order"
 // WHERE "client_id" IN (SELECT "id" FROM "client" WHERE "is_paying_client" = 1)
+# let _ = orders;
+# Ok(())
+# }
 ```
 
 No client rows are fetched. The traversal generates an `IN (subquery)` condition on the target,
@@ -75,8 +115,47 @@ rows can be *fetched* on their own, `Table::get_subquery_as::<E2>(relation)` att
 **correlated** condition — target column against source column, row by row:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
+# let clients = Client::sqlite_table(db);
 let orders = clients.get_ref_as::<Order>("orders")?;      // fetch:  WHERE client_id IN (SELECT id FROM client …)
 let orders = clients.get_subquery_as::<Order>("orders")?; // embed:  WHERE client_id = client.id
+# let _ = orders;
+# Ok(())
+# }
 ```
 
 A correlated table is useless to fetch standalone — its condition references the source's rows —
@@ -99,8 +178,49 @@ nothing to compute: the join value is sitting in the row. `Table::get_ref_from_r
 &row)` reads it out and applies it as a single eq-condition on the target:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "client_id", Order::sqlite_table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub client_id: Option<String>,
+# }
+#
+# impl Order {
+#     pub fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("client_order", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("client_id")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
+# let clients = Client::sqlite_table(db);
+# let mut row: Record<AnySqliteType> = Record::new();
+# row.insert("id".to_string(), AnySqliteType::new("marty".to_string()));
 let orders = clients.get_ref_from_row::<Order>("orders", &row)?;
 // WHERE "client_id" = <the id read out of row> — one eq-condition
+# let _ = orders;
+# Ok(())
+# }
 ```
 
 Which field gets read depends on the relation's direction: a `HasOne` relation reads its stored
@@ -141,6 +261,47 @@ SurrealDB's `Order` carries an embedded `array<object>` of order lines — decla
 From `bakery_model3/src/order.rs`:
 
 ```rust
+# use vantage_surrealdb::surrealdb::SurrealDB;
+# use vantage_surrealdb::thing::Thing;
+# use vantage_surrealdb::types::AnySurrealType;
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
+#     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Client> {
+#         Table::new("client", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Product {
+#     pub name: String,
+# }
+#
+# impl Product {
+#     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub is_deleted: bool,
+# }
+#
+# impl Order {
 pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Order> {
     Table::new("order", db)
         .with_id_column("id")
@@ -166,6 +327,7 @@ pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Order> {
             None,
         )
 }
+# }
 ```
 
 Contained relations are a K/V-and-document-store shape: the value already holds the related

@@ -31,8 +31,8 @@ By the end of this page you'll be able to:
 
 1. Wrap a typed `Table` into a Vista
 2. Read schema metadata (columns, references, id column) from a Vista
-3. Add conditions, search, and ordering through the Vista API
-4. Fetch paginated results with `fetch_page` and `fetch_next`
+3. Narrow a Vista with conditions, search, and ordering
+4. Read a window of rows with `fetch_window`, or walk a cursor with `fetch_cursor`
 5. Traverse relationships and cross-backend references
 6. Understand capabilities — the explicit contract between Vista and its driver
 ```
@@ -43,7 +43,7 @@ By the end of this page you'll be able to:
 
 A `Vista` wraps a typed `Table<DB, E>` and erases both the backend and the entity. All data flows
 through `Record<CborValue>` — an ordered map of string keys to CBOR values. All schema lives on the
-Vista itself: columns (with types and flags), references, id column, and a set of capability flags.
+Vista itself: columns (with types and flags), references, id column, and a set of capabilities.
 
 Think of the progression:
 
@@ -72,21 +72,42 @@ If you need JSON (for an HTTP response, for example), convert at the boundary �
 
 ## Wrapping a typed Table
 
-Each backend ships a factory that turns a typed table into a Vista. For SQLite:
+Each backend ships a factory that turns a typed table into a Vista. For SQLite, the database hands
+you one:
 
-```rust
-use vantage_sql::prelude::*;
-use vantage_vista::Vista;
-
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<i64>("category_id")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
 let table = Product::table(db.clone());
-let vista = SqliteVistaFactory::new(db).from_table(table)?;
+let vista: Vista = db.vista_factory().from_table(table)?;
+# Ok(())
+# }
 ```
 
 That's it. The factory harvests columns, id field, title fields, and references from the typed table
 definition you already built in chapter 2. No extra mapping code.
 
-For MongoDB it would be `MongoVistaFactory`, for AWS it would be `AwsVistaFactory` — same shape,
-different import. The resulting `Vista` is identical regardless of which factory produced it.
+For MongoDB the factory is a `MongoVistaFactory`, for AWS an `AwsVistaFactory` — same shape,
+different import. The resulting `Vista` is the same type regardless of which factory produced it.
+
+This chapter's snippets read `products.db`, the file chapters 1–3 built, so they compile but are not
+run by the book's tests.
 
 ---
 
@@ -94,167 +115,366 @@ different import. The resulting `Vista` is identical regardless of which factory
 
 Once you have a Vista, everything is runtime introspection:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Category { name: String }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<i64>("category_id")
+#             .with_one("category", "category_id", Category::table)
+#     }
+# }
+# impl Category {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#         Table::new("category", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("products", "category_id", Product::table)
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
 // Columns — name, original type, flags
-for name in vista.get_column_names() {
-    let col = vista.get_column(name).unwrap();
-    println!("{}: {}", col.name, col.original_type);
+for (name, column) in vista.columns() {
+    let ty = column.original_type.as_deref().unwrap_or("?");
+    println!("{name}: {ty}");
 }
-// name: String
 // price: i64
-// is_deleted: bool
+// …
 
 // ID column
-if let Some(id_col) = vista.get_id_column() {
-    println!("id column: {}", id_col);
+if let Some(id_column) = vista.id_column() {
+    println!("id column: {id_column}");
 }
 
 // Title columns — the human-readable ones
-for title in vista.get_title_columns() {
-    println!("title: {}", title);
+for title in vista.title_columns() {
+    println!("title: {title}");
 }
 
 // References — relationships declared on the typed table
-for (name, kind) in vista.list_references() {
-    println!("ref: {} ({:?})", name, kind);
+for (name, reference) in vista.references() {
+    println!("ref: {name} ({})", reference.kind.as_str());
 }
-// ref: products (HasMany)
+// ref: category (has_one)
+# Ok(())
+# }
 ```
 
-[`Column`](vantage_vista::Column) carries an `original_type` string (preserved from the typed column
-definition) and a set of flags. The standard flag vocabulary:
+[`Column`](vantage_vista::Column) carries an `original_type` (the Rust type name the typed column
+was declared with, or `None` when nothing declares one) and a set of
+[`ColumnFlag`](vantage_vista::ColumnFlag)s. The flags the data layer acts on:
 
-| Flag           | Meaning                        |
-| -------------- | ------------------------------ |
-| `"id"`         | This column is the primary key |
-| `"title"`      | Human-readable label column    |
-| `"searchable"` | Included in quicksearch        |
-| `"orderable"`  | Can be sorted server-side      |
-| `"hidden"`     | Don't show in default views    |
-| `"mandatory"`  | Required on insert             |
+| Flag           | Meaning                                                  |
+| -------------- | -------------------------------------------------------- |
+| `Id`           | This column is the primary key                           |
+| `Title`        | Human-readable label column                              |
+| `Searchable`   | Included in quicksearch                                  |
+| `Orderable`    | Can be sorted server-side                                |
+| `Hidden`       | Don't show in default views                              |
+| `Mandatory`    | Required on insert                                       |
+| `RequestParam` | Sent to the backend as a request parameter (a URL slot)  |
+| `Calculated`   | Computed, not stored; read-only, and writes drop it      |
+| `Auto`         | The backend makes the value (auto-increment, record ids) |
 
-Flags are open — drivers and consumers can add their own.
+Any other name is kept as `ColumnFlag::Other` for the layer that reads it — a UI's presentation
+flag, for instance. Vista itself never interprets those.
 
 ---
 
-## Adding conditions
+## Narrowing
 
 Vista doesn't carry its own condition type. Instead, it delegates to a
 [`TableShell`](vantage_vista::TableShell) — the per-driver executor every Vista wraps, and the
 piece each factory actually builds — which translates the value into whatever the backend speaks:
 
-```rust
-let mut v = vista.clone();
-v.add_condition_eq("category_id", 1.into())?;
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<i64>("category_id")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
+let cakes = vista.clone().with_condition("category_id", FilterOp::Eq, 1)?;
 
-let rows = v.list_values().await?;
-// Only products with category_id == 1
+let rows = cakes.list_values().await?;
+// Only products with category_id == 1; `vista` still holds every product
+# Ok(())
+# }
 ```
 
-`.into()` converts the `i64` into a `CborValue`. The driver's shell translates that into a native
-condition — `Expression` for SQL, `bson::Document` for MongoDB, `AwsCondition::Eq` for AWS — and
-pushes it onto the wrapped table.
+The value converts into a `CborValue`. The driver's shell translates the condition into a native
+one — an `Expression` for SQL, a `bson::Document` for MongoDB, an `AwsCondition` for AWS — and
+pushes it onto the wrapped table. [`FilterOp`](vantage_vista::FilterOp) has the other comparisons
+too (`Gt`, `In`, …); every shell takes `Eq`, and the rest need the `FilterOps` capability.
 
-```admonish info title="Conditions mutate the shell"
-Unlike `Table`'s `.with_condition()` (which consumes and returns a new table), Vista's
-`add_condition_eq` mutates in place. Vista is a runtime handle — there's no builder pattern to
-preserve. The mutability rules:
+### Why `with_*` consumes
 
-| Operation                     | Semantics                                                  |
-| ----------------------------- | ---------------------------------------------------------- |
-| `add_condition_eq`, `with_id` | **Accrete** — each call narrows further; none can be removed |
-| `set_search`, `set_order`     | **Replace** — calling again swaps the previous one out     |
-| Widening                      | **Clone first** — narrow the clone, keep the original      |
+A `Vista` is a value, the same as the `Table` it wraps. It owns its query state, so
+`vista.clone().with_condition(..)` hands back a new, smaller set and leaves `vista` exactly as it
+was. That's the property generic code leans on: a function that receives a Vista can narrow it for
+its own purposes without changing what the caller sees, and a cached "all products" Vista can be the
+starting point for every request that needs a subset.
 
-A narrowed Vista is a *different, smaller set* — not a view you toggle filters on.
+The `with_*` methods take `self` and return `Result<Self>`, so they chain:
+
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<i64>("category_id")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
+let v = vista
+    .clone()
+    .with_condition("category_id", FilterOp::Eq, 1)?
+    .with_order("price", SortDirection::Descending)?;
+# Ok(())
+# }
 ```
+
+When you hold a Vista of your own and want to change it in place — a UI handle whose search box
+the user keeps editing — the `&mut self` methods do the same work: `add_condition`, `set_search`,
+`set_order`. They exist for the owner of the value, not for narrowing someone else's.
+
+| Operation                                        | Semantics                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------ |
+| `with_condition`, `with_id` / `add_condition`    | **Accrete** — each call narrows further; none can be removed |
+| `with_search`, `with_order` / `set_search`, `set_order` | **Replace** — a later call swaps the earlier one out; `None` clears it |
+| Widening                                         | **Clone first** — narrow the clone, keep the original        |
+
+A narrowed Vista is a *different, smaller set* — not a view you toggle filters on. Each clause the
+shell accepted is recorded on [`query()`](vantage_vista::Vista::query), so the layers above (the
+cache in the next chapter, for one) can tell two narrowed Vistas apart.
 
 ### Narrowing by id
 
 A common pattern — "I have an id and want the row":
 
-```rust
-let mut v = vista.clone();
-v.with_id("7")?;
-let row = v.get_some_value().await?;
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<i64>("category_id")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
+let row = vista.clone().with_id(7)?.get_some_value().await?;
+// Some(("7", record)) when the row exists
+# Ok(())
+# }
 ```
 
-[`with_id`](vantage_vista::Vista::with_id) reads the id column name from the schema and calls
-`add_condition_eq` for you. Returns `&mut Self` so you can chain.
+[`with_id`](vantage_vista::Vista::with_id) reads the id column name from the schema and adds the
+equality condition for you.
 
 ---
 
 ## Search and ordering
 
-```rust
-let mut v = vista.clone();
-
-// Quicksearch — fans across columns flagged SEARCHABLE
-v.set_search(Some("tart"))?;
-
-// Sort by column
-v.set_order(Some(("price", SortDirection::Descending)))?;
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<i64>("category_id")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
+// Quicksearch — fans across columns flagged Searchable — then sort by column
+let v = vista
+    .clone()
+    .with_search("tart")?
+    .with_order("price", SortDirection::Descending)?;
 
 let rows = v.list_values().await?;
+# Ok(())
+# }
 ```
 
-Both are **replace semantics** — calling again drops the previous filter/order. Both return an error
-if the driver doesn't support them. Check capabilities first (or just try and handle the error).
+Both have **replace semantics** — a second search drops the first. Both return an error if the
+driver doesn't support them, and ordering also refuses a column that isn't flagged `Orderable`.
+Check capabilities first, or try and handle the error.
 
 ```admonish warning title="Not every driver supports these"
-A CSV file can't sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. Each driver declares its capability flags accordingly:
+A CSV file can't sort or search server-side — it loads everything into memory. DynamoDB can only order by its declared sort key. Each driver advertises its capabilities accordingly. Calling a method the driver doesn't advertise returns an `Unsupported` error naming the capability. This is by design — it's better to fail clearly than to silently return unfiltered results.
+```
 
-~~~rust
-let caps = vista.capabilities();
-if caps.can_search {
+Generic code branches on the capabilities instead, here on a Vista it owns:
+
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
+let mut v = vista.clone();
+if v.capabilities().has(Capability::Search) {
     v.set_search(Some("query"))?;
 }
-if caps.can_order {
+if v.capabilities().has(Capability::Order) {
     v.set_order(Some(("name", SortDirection::Ascending)))?;
 }
-~~~
-
-Calling a method the driver doesn't advertise returns an `Unsupported` error. This is by design — it's better to fail clearly than to silently return unfiltered results.
+# Ok(())
+# }
 ```
 
 ---
 
-## Pagination
+## Reading windows
 
-Vista exposes two pagination primitives. Not every driver supports both — capabilities tell you
+Vista has two ways to read part of a set. Not every driver supports both — capabilities tell you
 which to use.
 
-### Offset pagination: `fetch_page`
+### A window by offset: `fetch_window`
 
-Random-access — jump to any page by number:
+Random access — any `[offset, offset + limit)` slice of the set, in its order:
 
-```rust
-let mut v = vista.clone();
-v.set_page_size(25)?;
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
+let first = vista.fetch_window(0, 25).await?;    // rows 0..25
+let second = vista.fetch_window(25, 25).await?;  // rows 25..50
 
-let page1 = v.fetch_page(1).await?;   // first 25 rows
-let page2 = v.fetch_page(2).await?;   // next 25 rows
+println!("{} rows, total {:?}", first.rows.len(), first.total);
+# Ok(())
+# }
 ```
 
-Works for SQL databases, MongoDB, anything with `LIMIT … OFFSET`. Requires `can_fetch_page`.
+A [`Page`](vantage_vista::Page) holds the rows and, when the fetch learned it, the set's total —
+`None` means "didn't say", never zero. The leading window (`offset == 0`) works on every driver
+that lists; any other offset needs the `Window` capability. SQL databases and MongoDB have it,
+anything with `LIMIT … OFFSET`.
 
-### Cursor pagination: `fetch_next`
+### A cursor: `fetch_cursor`
 
-Forward-only — each call returns a token for the next:
+Forward only — each call returns up to `limit` rows and a token for the next call:
 
-```rust
-let v = vista.clone();
-
-let (rows, token) = v.fetch_next(None).await?;        // first page
-let (rows, token) = v.fetch_next(token).await?;      // second page
-// token is None when exhausted
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
+if vista.capabilities().has(Capability::Cursor) {
+    let (page, token) = vista.fetch_cursor(None, 100).await?;   // first page
+    let (page, token) = vista.fetch_cursor(token, 100).await?;  // second page
+    // token is None when the set is exhausted
+}
+# Ok(())
+# }
 ```
 
 The token is **opaque** — its shape is driver-private (a DynamoDB `LastEvaluatedKey`, a REST
-`nextToken`, an offset counter). Just round-trip it. Requires `can_fetch_next`.
+`nextToken`, the last key S3 returned). Just round-trip it. Requires the `Cursor` capability, which
+SQLite doesn't advertise and the S3 listing in the next chapter does.
 
 ```admonish info title="When neither is available"
-If both `can_fetch_page` and `can_fetch_next` are `false`, the driver has no native pagination. Fall through to `list_values()` which returns everything. This is the CSV case — fine for small datasets.
+Without `Window` and `Cursor`, the leading window and `list_values()` are what the driver offers. That's the CSV case — fine for small datasets.
 ```
 
 ---
@@ -264,28 +484,64 @@ If both `can_fetch_page` and `can_fetch_next` are `false`, the driver has no nat
 Same-persistence references (the `with_many` / `with_one` from chapter 2) come through
 automatically. Given a parent row, `get_ref` resolves the relationship:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Category { name: String }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<i64>("category_id")
+#             .with_one("category", "category_id", Category::table)
+#     }
+# }
+# impl Category {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#         Table::new("category", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("products", "category_id", Product::table)
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+let categories = db.vista_factory().from_table(Category::table(db.clone()))?;
+
 // Given a category row, traverse to its products
-let products = vista.get_ref("products", &category_row)?;
-for (id, row) in products.list_values().await? {
-    println!("  {} — {:?}", id, row["name"]);
+if let Some((_, category)) = categories.get_some_value().await? {
+    let products = categories.get_ref("products", Some(&category))?;
+    for (id, row) in products.list_values().await? {
+        println!("  {id} — {:?}", row.get("name"));
+    }
 }
+# Ok(())
+# }
 ```
 
-`get_ref` needs a `Record<CborValue>` — the parent row. It reads the join field (e.g. `category_id`)
-out of that row to build the eq-condition on the target. You can't traverse from a Vista alone; you
-need a row first. Typical flow: fetch the parent with `get_some_value()` or `list_values()`, then
-traverse from each row.
+`get_ref` takes the parent row as a `Record<CborValue>`. It reads the join field (e.g.
+`category_id`) out of that row to build the condition on the target, so a traversal starts from a
+row: fetch the parent with `get_some_value()` or `list_values()`, then traverse from each row. With
+`None` in place of the row, you get the bare target — the set a new related row goes into.
 
-`get_ref` routes in order:
+`get_ref` resolves two kinds of relation:
 
 1. **Contained relations** — records embedded in a column of the parent row (an order's `lines`
-   array) resolve first, as an editable sub-Vista.
+   array) come back as an editable sub-Vista.
 2. **Foreign-key references** — the shell forwards to the `with_one` / `with_many` relationships
    declared on the typed table, and re-wraps the narrowed target as a fresh Vista.
 
 Either way the result is another `Vista`, so traversal chains without ever leaving the universal
-surface.
+surface. Traversal needs the `Traverse` capability.
 
 ### Cross-backend references
 
@@ -293,7 +549,7 @@ What if your categories live in PostgreSQL and your products in MongoDB? That is
 *not* a Vista's job — a Vista honestly describes one backend, and there is no engine that could
 execute a join across two. Cross-persistence traversal lives one layer up, in a
 [`Catalog`](vantage_vista::Catalog): register a loader per model name, and
-`relation.narrow(catalog.vista(&relation.target)?, &row)` builds the target in *its* backend and
+`reference.narrow(catalog.vista(&reference.target)?, &row)` builds the target in *its* backend and
 narrows it by values read from the parent row. The consumer still just
 receives a Vista — see [Config-Driven Vistas](../config-driven-vistas.md) for the catalog in
 action.
@@ -302,29 +558,54 @@ action.
 
 ## Capabilities — the explicit contract
 
-[`VistaCapabilities`](vantage_vista::VistaCapabilities) is a struct of booleans. The driver sets
-each flag to reflect what it actually implements:
+[`VistaCapabilities`](vantage_vista::VistaCapabilities) is a set of
+[`Capability`](vantage_vista::Capability) values. The driver puts in exactly what it implements:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# use vantage_vista::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product { name: String, price: i64 }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
+# let vista = db.vista_factory().from_table(Product::table(db.clone()))?;
 let caps = vista.capabilities();
-println!("can_count: {}", caps.can_count);
-println!("can_insert: {}", caps.can_insert);
-println!("can_update: {}", caps.can_update);
-println!("can_delete: {}", caps.can_delete);
-println!("can_order: {}", caps.can_order);
-println!("can_search: {}", caps.can_search);
-println!("can_fetch_page: {}", caps.can_fetch_page);
-println!("can_fetch_next: {}", caps.can_fetch_next);
+for capability in caps.iter() {
+    println!("{capability}");
+}
+// order, search, filter_ops, window, traverse, insert, update, delete, …
+
+if caps.has(Capability::Insert) {
+    println!("writable");
+}
+# Ok(())
+# }
 ```
 
-A CSV file sets `can_count` and nothing else — it's read-only. A SQL database sets everything. AWS
-DynamoDB sets `can_count` and `can_fetch_next` (cursor-only) but not `can_fetch_page` (no random
-access).
+Each capability names one method family: `Insert`, `Update`, `Delete`, `Import`, `Subscribe`,
+`Order`, `Search`, `FilterOps`, `NativeConditions`, `Window`, `Cursor`, `Traverse` and
+`ConfineWrites` (writes through a narrowed Vista stay inside its set). Listing, getting a row,
+counting and equality conditions have no capability: every driver answers them.
+
+A CSV file advertises `Window` and `Traverse` — it's read-only. SQLite advertises reads, writes,
+`Window` and `Traverse`, but not `Cursor`. An S3 listing advertises `Cursor` and `Traverse`: no
+random access, no search, no writes.
 
 ```admonish warning title="Calling unsupported methods is an error"
-The capability flags aren't suggestions — they're a contract. If `can_search` is `false`, calling `set_search()` returns an `Unsupported` error. If a flag is `true` but the driver forgot to implement the method, you get an `Unimplemented` error instead. Both are `VantageError` variants you can match on.
+The capabilities aren't suggestions — they're a contract. If `Search` isn't in the set, `set_search()` returns an `Unsupported` error, which `VantageError::is_unsupported()` recognises. A contract test calls every advertised capability on every shell in the workspace, so a driver can't advertise a method it doesn't answer.
 
-UI adapters branch on these flags to decide which controls to show. A data grid checks `can_fetch_page` to decide between a scrollbar (random access) and a "load more" button (cursor-based).
+UI adapters branch on these to decide which controls to show. A data grid checks `Window` to decide between a scrollbar (random access) and a "load more" button (`Cursor`).
 ```
 
 ---
@@ -334,34 +615,31 @@ UI adapters branch on these flags to decide which controls to show. A data grid 
 Here's a small function that takes any Vista and prints a summary — works with any backend:
 
 ```rust
-use vantage_vista::Vista;
-
+# use vantage_core::Result as VantageResult;
+# use vantage_vista::prelude::*;
 async fn print_vista(vista: &Vista) -> VantageResult<()> {
-    let columns = vista.get_column_names();
-    let caps = vista.capabilities();
+    let columns: Vec<&String> = vista.columns().keys().collect();
 
     // Header
-    print!("  {:>12} ", vista.get_id_column().unwrap_or("id"));
+    print!("  {:>12} ", vista.id_column().unwrap_or("id"));
     for col in &columns {
-        print!("{:>16} ", col);
+        print!("{col:>16} ");
     }
     println!();
 
-    // Count
-    if caps.can_count {
-        println!("  ({} rows)", vista.get_count().await?);
-    }
+    // Count — every driver answers it
+    println!("  ({} rows)", vista.count().await?);
 
     // Rows
     let rows = vista.list_values().await?;
     for (id, record) in &rows {
-        print!("  {:>12} ", id);
+        print!("  {id:>12} ");
         for col in &columns {
             let val = record
-                .get(col)
-                .map(|v| format!("{:?}", v))
+                .get(col.as_str())
+                .map(|v| format!("{v:?}"))
                 .unwrap_or_default();
-            print!("{:>16} ", val);
+            print!("{val:>16} ");
         }
         println!();
     }
@@ -382,10 +660,12 @@ MongoDB Vista, an AWS Vista — anything the framework can produce.
 | [`TableShell`](vantage_vista::TableShell)               | Per-driver executor that Vista delegates to             |
 | [`VistaCapabilities`](vantage_vista::VistaCapabilities) | Explicit contract of what the driver supports           |
 | [`Column`](vantage_vista::Column)                       | Column metadata with name, type, and flags              |
-| `add_condition_eq`                                      | Narrow results to field == value                        |
+| `columns()` / `id_column()` / `references()`            | Read the schema at runtime                              |
+| `clone().with_condition(..)`                            | Narrow a copy; the original is untouched                |
 | `with_id`                                               | Convenience: narrow by primary key                      |
-| `set_search` / `set_order`                              | Quicksearch and sorting (replace semantics)             |
-| `fetch_page` / `fetch_next`                             | Offset and cursor pagination                            |
+| `with_search` / `with_order`                            | Quicksearch and sorting (replace semantics)             |
+| `add_condition` / `set_search` / `set_order`            | The same, in place, on a Vista you own                  |
+| `fetch_window` / `fetch_cursor`                         | Offset windows and cursor pages                         |
 | `get_ref`                                               | Traverse a relationship from a parent row               |
 | [`Catalog`](vantage_vista::Catalog)                     | Cross-persistence traversal, one layer above Vista      |
 

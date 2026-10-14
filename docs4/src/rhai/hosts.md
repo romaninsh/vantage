@@ -15,7 +15,35 @@ A host is built once and reused. Compiling through it is cached, so evaluating t
 every row costs one parse:
 
 <!-- tested: rhai_guide::hosts::build_a_host -->
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use ciborium::Value as CborValue;
+# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_rhai::{Block, Env, Host, Limits};
+# use vantage_vista::rhai::{DataVocab, Terminals, Writes};
+# use vantage_vista::{Column, ColumnFlag, VistaMetadata, VistaResolver};
+# fn shop() -> MemoryStore {
+#     let store = MemoryStore::new();
+#     for (id, status) in [("o1", "paid"), ("o2", "due"), ("o3", "paid"), ("o4", "due")] {
+#         let row = [("status".to_string(), CborValue::Text(status.into()))]
+#             .into_iter()
+#             .collect();
+#         store.table("order").insert_as(id, row).unwrap();
+#     }
+#     store
+# }
+# fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
+#     let catalog = MemoryCatalog::new(store.clone());
+#     catalog.register(
+#         "order",
+#         VistaMetadata::new()
+#             .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+#             .with_column(Column::new("status", "String"))
+#             .with_id_column("id"),
+#     );
+#     Arc::new(catalog)
+# }
+# let store = shop();
 let terminals = Terminals::ReadWrite {
     limit: Some(50),
     writes: Writes::Allowed,
@@ -30,15 +58,17 @@ let script = host
     ))
     .unwrap();
 let due = script.eval(&Env::new()).unwrap();
+# assert_eq!(due.as_int().unwrap(), 2);
 ```
 
 The three pieces:
 
 - **[`Vocab`](vantage_rhai::Vocab)**: anything that registers functions and types on an engine.
   `DataVocab` is the data vocabulary. `ServoVocab` (diorama) and `SceneryVocab` (vantage-ui) are
-  others. A host can carry several. When two register the same name, the one registered last wins,
-  so register a backend's extensions first and `DataVocab` after them (SurrealDB has its own `table`
-  function, an alias for `ident`, which `DataVocab`'s `table(name)` must override).
+  others. A host can carry several. When two register the same function under the same name and
+  argument types, the one registered last wins. The backends keep their free functions in their
+  own namespaces (`sql::`, `surreal::`, `mongo::`), so none of them can replace `table(name)` or
+  another data verb, whatever the order.
 - **[`Limits`](vantage_rhai::Limits)**: `Limits::Ui` caps a script at 500,000 operations, for
   anything the UI thread waits on. `Limits::background()` allows 50 million, for scripts on worker
   threads: agent tools, imports, faker sims. A script that runs past its limit fails instead of
@@ -49,7 +79,13 @@ The three pieces:
 
 ## `DataVocab`
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_vista::VistaResolver;
+# use vantage_vista::rhai::{DataVocab, Terminals};
+# let terminals = Terminals::Describe;
+# let resolver: Arc<dyn VistaResolver> = Arc::new(MemoryCatalog::new(MemoryStore::new()));
 let vocab = DataVocab::new(terminals).with_resolver(resolver);
 ```
 
@@ -82,14 +118,22 @@ Result<Vista>`, which includes a closure `Fn(&str) -> Result<Vista>` and a
 a not-found error. This is the resolver the guide's tests use, over an in-memory store:
 
 <!-- tested: rhai_guide::hosts::build_a_host -->
-```rust,ignore
-pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
+```rust
+# use std::sync::Arc;
+# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_vista::VistaResolver;
+# fn catalog(store: &MemoryStore) -> MemoryCatalog {
+#     MemoryCatalog::new(store.clone())
+# }
+fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
     let catalog = catalog(store);
     Arc::new(move |name: &str| {
         catalog.store().table(name);
         catalog.vista(name)
     })
 }
+# let store = MemoryStore::new();
+# assert_eq!(resolver(&store).vista("order").unwrap().name(), "order");
 ```
 
 `catalog` is a `MemoryCatalog` holding each table's metadata. Creating the store table first means
@@ -125,7 +169,23 @@ Blocking on a runtime from inside an async task panics in tokio, so a host that 
 evaluates scripts on a blocking thread:
 
 <!-- tested: rhai_guide::hosts::under_spawn_blocking -->
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use ciborium::Value as CborValue;
+# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_rhai::{Block, Env, Host, Limits};
+# use vantage_vista::VistaResolver;
+# use vantage_vista::rhai::{DataVocab, Terminals, Writes};
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let store = MemoryStore::new();
+# for id in ["o1", "o2", "o3"] {
+#     let row = [("status".to_string(), CborValue::Text("due".into()))]
+#         .into_iter()
+#         .collect();
+#     store.table("order").insert_as(id, row)?;
+# }
+# let resolver: Arc<dyn VistaResolver> = Arc::new(MemoryCatalog::new(store));
 let rows = tokio::task::spawn_blocking(move || {
     let terminals = Terminals::ReadWrite {
         limit: Some(2),
@@ -141,6 +201,9 @@ let rows = tokio::task::spawn_blocking(move || {
 .await
 .unwrap()
 .unwrap();
+# assert_eq!(rows.as_array().unwrap().len(), 2);
+# Ok(())
+# }
 ```
 
 [`run_script`](vantage_vista::rhai::run_script) does exactly this for you. Action bodies in Vantage UI

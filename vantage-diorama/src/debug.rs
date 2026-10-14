@@ -34,6 +34,7 @@
 //! | `payload` | columns received against columns displayed, and the bytes |
 //! | `total` | the grand total changed, and what decided it |
 //! | `sort` / `search` | the query changed, and whether it was pushed to the source |
+//! | `filter` | runtime filters changed, and whether they were pushed to the source |
 //! | `hydrate` | a two-pass detail sweep queued its pending ids |
 //! | `derive` | an [`aggregate`](crate::aggregate) layer recomputed |
 //! | `summary` | the end-of-session ledger (see [`stats::emit_debug_summary`](crate::stats::emit_debug_summary)) |

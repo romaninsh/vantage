@@ -1,5 +1,9 @@
 # The Vantage Journey
 
+```admonish note title="Historical snippets"
+Each snippet shows the API of the release its section describes. They aren't compiled against the current crates.
+```
+
 Vantage didn't start as a multi-backend entity framework. It started as a weekend experiment to see
 if Rust could build SQL queries without feeling like Rust.
 
@@ -35,7 +39,7 @@ proudly opinionated. Everything lived in one crate.
 The core idea was already there: **Data Sets**. Instead of loading records eagerly, you describe
 _what_ you want and let the framework figure out the query.
 
-```rust
+```rust,ignore
 let clients = Client::table();           // Table<Postgres, Client>
 let paying = clients.with_condition(
     clients.is_paying_client().eq(&true)
@@ -95,7 +99,7 @@ a clear view of your data — no matter where it lives or how complex the relati
 The same month brought the first Axum integration (`bakery_api`), proving that data sets could drive
 REST endpoints naturally:
 
-```rust
+```rust,ignore
 async fn list_orders(
     client: axum::extract::Query<OrderRequest>,
     pager: axum::extract::Query<Pagination>,
@@ -123,7 +127,7 @@ structure business logic."
 The key insight: entities aren't just database rows. They're **business objects** that might live in
 SQL, NoSQL, a REST API, or a message queue — and your code shouldn't care which.
 
-```rust
+```rust,ignore
 impl Client {
     fn table() -> Table<Client, Oracle> { /* ... */ }
     fn registration_queue() -> impl Insertable<Client> { /* Kafka */ }
@@ -141,7 +145,7 @@ contract matters.
 This release also introduced the idea of **struct projection** — using different Rust types against
 the same data set to control which fields get queried:
 
-```rust
+```rust,ignore
 struct MiniClient { name: String }
 struct FullClient { name: String, email: String, balance: Decimal }
 
@@ -167,7 +171,7 @@ with a focused responsibility.
 
 Table definitions moved from static initialization to a **builder pattern**:
 
-```rust
+```rust,ignore
 // 0.2 — static, Postgres-only
 Table::new_with_entity("bakery", postgres())
     .with_id_column("id")
@@ -185,7 +189,7 @@ Table::<SurrealDB, Client>::new("client", ds.clone())
 Field accessors now return `Expression` instead of column objects — making them composable across
 query builders:
 
-```rust
+```rust,ignore
 // Build conditions from expressions
 let active = clients.is_paying_client().eq(true);
 let big_spenders = clients.balance().gt(1000);
@@ -195,7 +199,7 @@ let query = clients.with_condition(active).with_condition(big_spenders);
 The **`AnyTable`** type-erasure system arrived, enabling generic code that works with any
 datasource:
 
-```rust
+```rust,ignore
 let tables: Vec<AnyTable> = vec![
     AnyTable::new(Client::table()),   // SurrealDB
     AnyTable::new(Product::table()),  // SQLite
@@ -243,7 +247,7 @@ with **`Vista`** — a universal, schema-bearing data handle. A Vista wraps any 
 erases both backend and entity, and carries its own schema (columns, references, capabilities) while
 delegating execution to a per-driver `TableShell`.
 
-```rust
+```rust,ignore
 // Wrap any typed table — SQLite, MongoDB, AWS, all the same shape
 let vista = SqliteVistaFactory::new(db).from_table(Product::table(db.clone()))?;
 
@@ -276,7 +280,7 @@ Not every backend can do everything. A CSV file can't sort server-side; DynamoDB
 its sort key; a REST API may paginate by cursor but not by page number. Vista makes this explicit
 with a struct of capability flags, and each driver declares exactly what it supports:
 
-```rust
+```rust,ignore
 let caps = vista.capabilities();
 if caps.can_search { v.add_search("query")?; }
 if caps.can_fetch_page { /* random-access pager */ } else { /* load-more button */ }
@@ -292,7 +296,7 @@ declared in a **YAML spec** (`VistaSpec`) and loaded by the driver's factory. Fo
 can't express — vendor-specific expressions, derived sources, scripted reference traversal — there's
 an optional **Rhai** DSL that compiles to native queries:
 
-```rust
+```rust,ignore
 let users = table("users").alias("u");
 select()
     .from(users)
@@ -326,7 +330,7 @@ consumes it. Three concepts:
 - **Scenery** — a reactive view onto a Dio (ordered tables, individual records, aggregates) that a
   UI binds to.
 
-```rust
+```rust,ignore
 let lens = Arc::new(
     Lens::new()
         .cache_at("./cache.redb")

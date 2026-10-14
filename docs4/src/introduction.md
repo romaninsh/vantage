@@ -17,7 +17,8 @@ local copy, and it reconciles with the source over time. That's how a user inter
 any kind. Live mode is built on top of transactional mode, so everything you learn about the
 first carries into the second.
 
-This documentation tracks the current **0.6** release line.
+This documentation tracks the **2.0** line of `vantage-table` and `vantage-vista`, and the
+drivers and `vantage-diorama` releases built on it.
 
 ## Ethos
 
@@ -116,8 +117,8 @@ follow it down whichever path is yours:
 - **A facade over an API you don't control** — a slow, read-only cloud API that can't sort,
   search, or paginate. Diorama caches it and fills the gaps.
 - **A live view in front of your own database** — a relational database you own and write to.
-  Diorama gives it a cached, watchable facade, and the path ends by moving the same app from
-  SQLite to PostgreSQL with a single switch.
+  Diorama gives it a cached, watchable facade, and the path moves the same app from SQLite to
+  PostgreSQL with a single switch, then on to SurrealDB.
 
 Same abstractions, opposite backends — that contrast is the point.
 

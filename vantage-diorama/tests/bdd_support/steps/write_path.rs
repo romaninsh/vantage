@@ -10,8 +10,7 @@ use vantage_diorama::ChangeFlash;
 use vantage_types::Record;
 
 use crate::bdd_support::{
-    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld,
-    world::config::OnFlashMode,
+    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld, world::config::OnFlashMode,
 };
 
 /// Parse a gherkin data table whose first row is the header (with an `id`

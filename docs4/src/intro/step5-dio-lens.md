@@ -10,9 +10,9 @@ and whatever consumes it, and does three things:
 
 1. **Transparent caching.** Keep a local copy of your data. Reads come from cache, not from the
    master — a listing that costs seconds over the network costs microseconds after the first fetch.
-2. **Capability injection.** A Vista backed by S3 can't sort, search, or paginate a listing.
-   Diorama caches the dataset locally and answers those queries from cache — the consumer sees a
-   richer handle than the backend actually offers.
+2. **Capability injection.** A Vista backed by S3 can't sort, search, or read a window at an
+   offset. Diorama caches the dataset locally and answers those queries from cache — the consumer
+   sees a richer handle than the backend actually offers.
 3. **Custom write routing.** Writes don't have to go to the master — useful when the master can't
    take them at all. You decide what a write means: a queue, a different store, an API call.
 
@@ -40,11 +40,11 @@ chapter 2, each one trades something away for something new:
 | **Purpose**      | Model your data; business logic | Let generic code consume any table | Keep a live local copy of a data segment |
 | **Typing**       | Compile-time entity & backend   | Schema carried at runtime        | Same records as Vista                      |
 | **Reads**        | Query the backend               | Query the backend                | Served from a local cache                  |
-| **Writes**       | Applied immediately             | Applied immediately              | Enqueued — routed by policy                |
+| **Writes**       | Applied immediately             | Applied immediately              | Queued — through the master or a Lens writer |
 | **Changes**      | You re-query                    | You re-query                     | Announced on an event bus                  |
 | **Capabilities** | Whatever the backend supports   | Honestly advertised              | Extended — the cache fills the gaps        |
 | **Mode**         | Transactional                   | Transactional                    | Live                                       |
-| **Lifecycle**    | A definition — cheap to clone, narrowed per use | A handle — built, narrowed, dropped | Long-lived — owns its cache, queue, and background tasks |
+| **Lifecycle**    | A value — cheap to clone, narrowed per use | A value — cloned, narrowed, dropped | A shared handle — owns its cache, queue, and background tasks |
 
 ### Caching
 
@@ -84,7 +84,7 @@ runs on the record store alone.
   <!-- Consumers -->
   <rect x="580" y="45" width="160" height="58" rx="10" fill="#7c2d8f"/>
   <text x="660" y="69" text-anchor="middle" fill="#fff" font-weight="bold">facade Vista</text>
-  <text x="660" y="88" text-anchor="middle" fill="#fff" font-size="12">dio.vista()</text>
+  <text x="660" y="88" text-anchor="middle" fill="#fff" font-size="12">dio.cached()</text>
 
   <rect x="580" y="140" width="160" height="58" rx="10" fill="#7c2d8f" fill-opacity="0.55"/>
   <text x="660" y="164" text-anchor="middle" fill="#fff" font-weight="bold">Sceneries</text>
@@ -101,35 +101,62 @@ away — and a *cache*, the local copy. What it deliberately does **not** decide
 cache fills, when it goes stale, what a write means. There are too many valid answers for one
 default — seed once and keep forever, re-fetch on a timer, reconcile from a push stream, write
 through to the master, write somewhere else entirely. That's what the **Lens** is for: it
-describes how the cache is used. The simplest possible Lens pumps the master into the cache once,
-when the Dio loads:
+describes how the cache is used. The simplest useful Lens pumps the master into the cache once,
+when the Dio is built:
 
-```rust
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("cache.redb")
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                // Pump: read everything from the master, write it to the cache.
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await
-            }
-        })
-        .build()?,
-);
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# use vantage_diorama::prelude::*;
+# use vantage_diorama::{Cache, Loader, LoaderCx};
+# use vantage_vista::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# struct File {
+#     #[serde(rename = "Key")]
+#     filename: String,
+#     #[serde(rename = "Size")]
+#     size: String,
+# }
+# impl File {
+#     fn table(aws: AwsAccount, bucket: &str, prefix: &str) -> Table<AwsAccount, File> {
+#         Table::new(
+#             "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+#             aws,
+#         )
+#         .with_id_column("Key")
+#         .with_column_of::<String>("Size")
+#         .with_condition(eq("Bucket", bucket))
+#         .with_condition(eq("prefix", prefix))
+#         .with_condition(eq("max-keys", 100))
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let aws = AwsAccount::public("us-east-1");
+# let master = aws
+#     .vista_factory()
+#     .from_table(File::table(aws, "noaa-ghcn-pds", "csv/by_station/GM"))?;
+let lens = Lens::builder()
+    .cache(Cache::redb("cache.redb"))
+    .loader(Loader::eager(|cx: LoaderCx| async move {
+        // Pump: read everything from the master, make the cache hold exactly that.
+        let rows = cx.master().list_values().await?;
+        cx.reconcile(rows).await
+    }))
+    .build()?;
 
-let dio = lens.make_dio(vista).await?;   // runs on_start, returns a warm Dio
+let dio = lens.dio(master).build().await?;   // runs the eager start, returns a warm Dio
+# Ok(())
+# }
 ```
 
 With the Dio in place, there are two ways to consume it. The first is the **facade Vista** —
-`dio.vista()` — for *proactive* querying: you ask, it answers, exactly like the backend's own
+`dio.cached()` — for *proactive* querying: you ask, it answers, exactly like the backend's own
 Vista from chapter 4. Same interface, same records — except the answers come from the cache, and
-the capability set can be *wider* than the master's, because the Lens decides what to add: a
-read-only master gains writes when the Lens routes them somewhere, and counting is always on the
-menu because the cache can count. The second way in is the **Scenery** — a standing, *reactive*
-view that keeps itself current and tells you when it changed. UIs bind to sceneries; chapter 7
-lives there.
+the capability set can be *wider* than the master's: the facade searches, orders and reads windows
+whatever the master can do, and a read-only master gains writes when the Lens routes them
+somewhere. The second way in is the **Scenery** — a standing, *reactive* view that keeps itself
+current and tells you when it changed. UIs bind to sceneries; chapter 7 lives there.
 
 <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
   <defs>
@@ -146,7 +173,7 @@ lives there.
   <!-- facade Vista (pull) -->
   <rect x="540" y="30" width="190" height="70" rx="10" fill="#7c2d8f"/>
   <text x="635" y="59" text-anchor="middle" fill="#fff" font-weight="bold">facade Vista</text>
-  <text x="635" y="80" text-anchor="middle" fill="#fff" font-size="12">dio.vista()</text>
+  <text x="635" y="80" text-anchor="middle" fill="#fff" font-size="12">dio.cached()</text>
 
   <!-- request: facade → dio -->
   <line x1="540" y1="50" x2="218" y2="50" stroke="#888" stroke-width="2" marker-end="url(#arrow2)"/>
@@ -169,22 +196,24 @@ lives there.
 
 ### The facade Vista
 
-Hand `dio.vista()` to chapter 4's `print_vista` and it just works — it never learns a cache is
-underneath. What makes the facade interesting is its capability set. Chapter 4's contract was
-honest but rigid: whatever the backend can't do, your application can't have. The facade solves
-that — it
-carries the master's capabilities, and the Lens can manipulate and extend them. Our read-only S3
-listing gains `can_insert` the moment an `on_write` callback gives writes somewhere to go. The
-honesty contract still holds; the facade just advertises what the *pipeline* can do, not what the
-backend alone can.
+Hand `dio.cached()` to chapter 4's `print_vista` and it just works — it never learns a cache is
+underneath. Each call returns a fresh, independent Vista, so you narrow it with `with_*` like any
+other and no other consumer sees the change.
+
+What makes the facade interesting is its capability set. Chapter 4's contract was honest but
+rigid: whatever the backend can't do, your application can't have. The facade advertises what the
+*pipeline* can do: `Search`, `Order`, `FilterOps` and `Window` always (a clause the master takes is
+pushed down, and the rest is evaluated over the cached rows), `Subscribe` because the event bus
+backs it, and the writes the master can take — or all of them once a Lens `writer` gives writes
+somewhere to go. The honesty contract still holds; it just describes a different engine.
 
 |                      | facade Vista                                | Scenery                                          |
 | -------------------- | ------------------------------------------- | ------------------------------------------------ |
 | **Access style**     | Proactive — you ask, it answers             | Reactive — a standing view that stays current    |
 | **Interface**        | Chapter 4's Vista API, unchanged            | Purpose-built: rows by index, a record, a scalar |
 | **Freshness**        | As fresh as the cache when you ask          | Recomputes on every change                       |
-| **Change awareness** | None — ask again                            | `subscribe()` → generation channel               |
-| **Capabilities**     | The master's, plus whatever the Lens adds   | Ordering, search, viewport — regardless of backend |
+| **Change awareness** | None — ask again                            | A generation counter that bumps on each change   |
+| **Capabilities**     | Search, order, windows, plus the writes the pipeline routes | Ordering, search, viewport — regardless of backend |
 | **Typical consumer** | Handlers, scripts, CLI commands             | UIs, dashboards, live views                      |
 
 ---
@@ -221,6 +250,9 @@ cargo add vantage-aws vantage-diorama vantage-vista
 itself, so there's no AWS SDK in the tree. `vantage-diorama` is what this chapter is about. The
 code splits into two files: `files.rs` holds the table definition, `main.rs` uses it.
 
+Every snippet that talks to S3 or opens `cache.redb` compiles in the book's tests but doesn't run
+there; the definitions without either do run.
+
 ---
 
 ## `files.rs` — the listing as a table
@@ -247,6 +279,15 @@ The serde renames map S3's wire names onto the fields we actually want to write 
 is a `String` because that's what the XML carries — no silent coercion.
 
 ```rust
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct File {
+#     #[serde(rename = "Key")]
+#     pub filename: String,
+#     #[serde(rename = "Size")]
+#     pub size: String,
+# }
 impl File {
     /// `ListObjectsV2` narrowed to one bucket and prefix. S3 sends at
     /// most `max-keys` keys per response; the `@continuation-token`
@@ -293,11 +334,34 @@ protocol lists the valid ones. Nothing is guessed and nothing fails silently.
 
 ## A first listing
 
-`main.rs`, shortest possible version — build the table, list it, print:
+`main.rs`, shortest possible version. It starts with `mod files;`, then builds the table, lists it
+and prints:
 
-```rust
-mod files;
-
+```rust,no_run
+# mod files {
+#     use serde::{Deserialize, Serialize};
+#     use vantage_aws::prelude::*;
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct File {
+#         #[serde(rename = "Key")]
+#         pub filename: String,
+#         #[serde(rename = "Size")]
+#         pub size: String,
+#     }
+#     impl File {
+#         pub fn table(aws: AwsAccount, bucket: &str, prefix: &str) -> Table<AwsAccount, File> {
+#             Table::new(
+#                 "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+#                 aws,
+#             )
+#             .with_id_column("Key")
+#             .with_column_of::<String>("Size")
+#             .with_condition(eq("Bucket", bucket))
+#             .with_condition(eq("prefix", prefix))
+#             .with_condition(eq("max-keys", 100))
+#         }
+#     }
+# }
 use files::File;
 use vantage_aws::prelude::*;
 
@@ -343,64 +407,182 @@ scratches.
 
 The Dio wants a Vista for its master, so we erase the typed table the same way chapter 4 did:
 
-```rust
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# struct File {
+#     #[serde(rename = "Key")]
+#     filename: String,
+#     #[serde(rename = "Size")]
+#     size: String,
+# }
+# impl File {
+#     fn table(aws: AwsAccount, bucket: &str, prefix: &str) -> Table<AwsAccount, File> {
+#         Table::new(
+#             "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+#             aws,
+#         )
+#         .with_id_column("Key")
+#         .with_column_of::<String>("Size")
+#         .with_condition(eq("Bucket", bucket))
+#         .with_condition(eq("prefix", prefix))
+#         .with_condition(eq("max-keys", 100))
+#     }
+# }
+# const BUCKET: &str = "noaa-ghcn-pds";
+# const PREFIX: &str = "csv/by_station/GM";
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+let aws = AwsAccount::public("us-east-1");
 let master = aws
     .vista_factory()
-    .from_table(File::table(aws.clone(), BUCKET, PREFIX))?;
+    .from_table(File::table(aws, BUCKET, PREFIX))?;
+# Ok(())
+# }
 ```
 
 Ask this Vista what it can do, and you'll see why this backend needs a Diorama:
 
-```rust
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# use vantage_vista::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# struct File {
+#     #[serde(rename = "Key")]
+#     filename: String,
+#     #[serde(rename = "Size")]
+#     size: String,
+# }
+# impl File {
+#     fn table(aws: AwsAccount, bucket: &str, prefix: &str) -> Table<AwsAccount, File> {
+#         Table::new(
+#             "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+#             aws,
+#         )
+#         .with_id_column("Key")
+#         .with_column_of::<String>("Size")
+#         .with_condition(eq("Bucket", bucket))
+#         .with_condition(eq("prefix", prefix))
+#         .with_condition(eq("max-keys", 100))
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let aws = AwsAccount::public("us-east-1");
+# let master = aws
+#     .vista_factory()
+#     .from_table(File::table(aws, "noaa-ghcn-pds", "csv/by_station/GM"))?;
 let caps = master.capabilities();
-// can_count: true    can_fetch_next: true — and that's it.
-// can_search: false   can_order: false   can_insert: false
+// Cursor and Traverse — and that's it.
+assert!(caps.has(Capability::Cursor));
+assert!(!caps.has(Capability::Search) && !caps.has(Capability::Order));
+assert!(!caps.has(Capability::Window) && !caps.has(Capability::Insert));
+# Ok(())
+# }
 ```
 
-`can_fetch_next` is worth pausing on — it's the one capability this chapter leans on.
-`fetch_next(token)` is Vista's *cursor-style* pagination from chapter 4: pass `None` for the
-first page, pass back the returned token for the next one. For S3 the driver defines the token
-as **the last key of the previous page**, because S3 lists keys in order and accepts any key as
-a starting point (`start-after`). That has a consequence the generic contract doesn't promise:
-this cursor survives process restarts. Any key you already hold — say, the last key in a cache —
+`Cursor` is worth pausing on — it's the one capability this chapter leans on.
+`fetch_cursor(token, limit)` is Vista's cursor pagination from chapter 4: pass `None` for the
+first page, pass back the returned token for the next one. For S3 the driver defines the token as
+**the last key of the previous page**, because S3 lists keys in order and accepts any key as a
+starting point (`start-after`). That has a consequence the generic contract doesn't promise: this
+cursor survives process restarts. Any key you already hold — say, the last key in a cache —
 resumes the listing right after it.
 
 ## The Lens: pump pages, resume where you left off
 
-Now the Lens. One callback — on start, synchronize the cache with the bucket:
+Now the Lens. One setting does the work — an eager loader that, when the Dio is built,
+synchronizes the cache with the bucket:
 
-```rust
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("cache.redb")
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move { sync(&dio).await }
-        })
-        .build()
-        .context("Failed to build lens")?,
-);
-let dio = lens.make_dio(master).await?;
+```rust,no_run
+# use std::time::Instant;
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# use vantage_diorama::prelude::*;
+# use vantage_diorama::{Cache, Loader, LoaderCx};
+# use vantage_vista::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# struct File {
+#     #[serde(rename = "Key")]
+#     filename: String,
+#     #[serde(rename = "Size")]
+#     size: String,
+# }
+# impl File {
+#     fn table(aws: AwsAccount, bucket: &str, prefix: &str) -> Table<AwsAccount, File> {
+#         Table::new(
+#             "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+#             aws,
+#         )
+#         .with_id_column("Key")
+#         .with_column_of::<String>("Size")
+#         .with_condition(eq("Bucket", bucket))
+#         .with_condition(eq("prefix", prefix))
+#         .with_condition(eq("max-keys", 100))
+#     }
+# }
+# const CACHE_FILE: &str = "cache.redb";
+# const PAGE_SIZE: usize = 1000;
+# async fn sync(cx: &LoaderCx) -> VantageResult<()> {
+#     let mut token: Option<CborValue> =
+#         cx.cache().list_values().await?.keys().last().cloned().map(Into::into);
+#     loop {
+#         let start = Instant::now();
+#         let (page, next) = cx.master().fetch_cursor(token, PAGE_SIZE).await?;
+#         let count = page.rows.len();
+#         cx.cache().insert_values(page.rows.into_iter().collect()).await?;
+#         println!("fetched {count} files in {:?}", start.elapsed());
+#         if next.is_none() {
+#             return Ok(());
+#         }
+#         token = next;
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let aws = AwsAccount::public("us-east-1");
+# let master = aws
+#     .vista_factory()
+#     .from_table(File::table(aws, "noaa-ghcn-pds", "csv/by_station/GM"))?;
+let lens = Lens::builder()
+    .cache(Cache::redb(CACHE_FILE))
+    .loader(Loader::eager(|cx: LoaderCx| async move { sync(&cx).await }))
+    .build()
+    .context("Failed to build lens")?;
+let dio = lens.dio(master).build().await?;
+# Ok(())
+# }
 ```
 
-- **`.cache_at("cache.redb")`** opens a [redb](https://docs.rs/redb) file on disk. This is why
-  the cache survives process restarts. An in-memory alternative, `.cache_in_memory()`, is there
-  for when persistence isn't wanted.
-- **`.on_start(...)`** fires once, inside `make_dio`. Callbacks receive `&Dio` and clone it to
-  hold across `.await` — a cheap `Arc` bump; every Lens callback follows this shape.
-- **`make_dio`** does the rest in one call: opens a cache table named after the master, spawns
-  the write worker, runs `on_start`, and hands back the [`Dio`](vantage_diorama::Dio).
+- **`Lens::builder()`** collects the settings; **`.build()`** checks them and returns the Lens,
+  already in an `Arc` because every Dio it builds shares it.
+- **`.cache(Cache::redb(CACHE_FILE))`** opens a [redb](https://docs.rs/redb) file on disk. This
+  is why the cache survives process restarts. `Cache::memory()` is the alternative for when
+  persistence isn't wanted.
+- **`Loader::eager(...)`** runs once per Dio, inside `build()`, which waits for it. The callback
+  gets a [`LoaderCx`](vantage_diorama::LoaderCx): an owned, cheap-to-clone context with the Dio's
+  `master()` and `cache()`, so the future can hold it across `.await` without borrowing anything.
+- **`lens.dio(master).build().await`** does the rest in one call: opens a cache table named after
+  the master, spawns the write worker, runs the eager start, and hands back the
+  [`Dio`](vantage_diorama::Dio).
 
 `sync` is where the cursor pays off. Instead of one big `list_values()`, it pulls the listing
 **one page at a time** and seeds the cursor from the cache:
 
 ```rust
+# use std::time::Instant;
+# use vantage_aws::prelude::*;
+# use vantage_diorama::LoaderCx;
+# use vantage_vista::prelude::*;
+# const PAGE_SIZE: usize = 1000;
 /// Pump the master listing into the cache, one page per request. S3's
 /// paging cursor is simply "the last key seen" — so the last key already
 /// in the cache resumes the listing, and pages loaded by an earlier run
 /// (even one that was interrupted) are never fetched again.
-async fn sync(dio: &Dio) -> VantageResult<()> {
-    let mut token: Option<CborValue> = dio
+async fn sync(cx: &LoaderCx) -> VantageResult<()> {
+    let mut token: Option<CborValue> = cx
         .cache()
         .list_values()
         .await?
@@ -410,9 +592,11 @@ async fn sync(dio: &Dio) -> VantageResult<()> {
         .map(Into::into);
     loop {
         let start = Instant::now();
-        let (page, next) = dio.master().fetch_next(token).await?;
-        let count = page.len();
-        dio.cache().insert_values(page.into_iter().collect()).await?;
+        let (page, next) = cx.master().fetch_cursor(token, PAGE_SIZE).await?;
+        let count = page.rows.len();
+        cx.cache()
+            .insert_values(page.rows.into_iter().collect())
+            .await?;
         println!("fetched {count} files in {:?}", start.elapsed());
         if next.is_none() {
             return Ok(());
@@ -426,25 +610,60 @@ Read the first statement again: the initial token is *the last filename already 
 cold cache that's `None` — start from the top. On a warm cache it's the end of what we have —
 S3 continues from there. Kill the process halfway through a sync and run it again: the pages you
 already paid for are never fetched twice. The cache isn't just an answer store; it's the resume
-point.
+point. `PAGE_SIZE` is the most keys one request asks for; S3 returns at most 1000.
 
 ## Reads come from the cache
 
 The listing loop stops asking S3 and starts asking the Dio — through the **facade Vista** from
 the first half of the chapter. Notice who talks to what: `sync`, being Lens plumbing, addresses
-the Dio's two sides directly (`dio.master()` to fetch, `dio.cache()` to store and resume);
-a *consumer* asks `dio.vista()` and never learns what's underneath. The records come back as
-`Record<CborValue>` — the erased form from chapter 4 — so field access goes through the
+the Dio's two sides through its `LoaderCx` (`cx.master()` to fetch, `cx.cache()` to store and
+resume); a *consumer* asks `dio.cached()` and never learns what's underneath. The records come
+back as `Record<CborValue>` — the erased form from chapter 4 — so field access goes through the
 `CborValueExt` helpers the prelude brings in:
 
-```rust
+```rust,no_run
+# use std::time::Instant;
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# use vantage_diorama::prelude::*;
+# use vantage_diorama::Cache;
+# use vantage_vista::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# struct File {
+#     #[serde(rename = "Key")]
+#     filename: String,
+#     #[serde(rename = "Size")]
+#     size: String,
+# }
+# impl File {
+#     fn table(aws: AwsAccount, bucket: &str, prefix: &str) -> Table<AwsAccount, File> {
+#         Table::new(
+#             "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+#             aws,
+#         )
+#         .with_id_column("Key")
+#         .with_column_of::<String>("Size")
+#         .with_condition(eq("Bucket", bucket))
+#         .with_condition(eq("prefix", prefix))
+#         .with_condition(eq("max-keys", 100))
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let aws = AwsAccount::public("us-east-1");
+# let master = aws
+#     .vista_factory()
+#     .from_table(File::table(aws, "noaa-ghcn-pds", "csv/by_station/GM"))?;
+# let dio = Lens::builder().cache(Cache::redb("cache.redb")).build()?.dio(master).build().await?;
 let start = Instant::now();
-let listing = dio.vista().list_values().await?;
+let listing = dio.cached().list_values().await?;
 for (filename, file) in &listing {
     let size = file.get("Size").and_then(|v| v.as_str()).unwrap_or("");
     println!("{size:>10}  {filename}");
 }
 println!("{} files from cache in {:?}", listing.len(), start.elapsed());
+# Ok(())
+# }
 ```
 
 First run — cold cache, the sync pump narrating each page:
@@ -474,19 +693,35 @@ on exactly that request, without re-fetching the thousand we already hold.
 ## Invalidating
 
 A resuming cache has one blind spot: it only ever looks *past* what it holds, so files deleted
-from the bucket linger locally. The honest fix is to start over — wipe and re-pump:
+from the bucket linger locally. The honest fix is to start over. The Lens opens `cache.redb` when
+it is built, so the place to start over is before that: delete the file, and the eager start finds
+an empty cache and lists the bucket from the top.
 
-```rust
+```rust,no_run
+# use vantage_aws::prelude::*;
+# const CACHE_FILE: &str = "cache.redb";
+# fn main() -> VantageResult<()> {
+// In `run`, before the Lens is built:
 if std::env::args().any(|a| a == "--invalidate") {
-    dio.cache().clear().await?;
-    sync(&dio).await?;
+    remove_cache()?;
+}
+# Ok(())
+# }
+
+fn remove_cache() -> VantageResult<()> {
+    match std::fs::remove_file(CACHE_FILE) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(e).context("Failed to remove the cache")
+        }
+        _ => Ok(()),
+    }
 }
 ```
 
 ```text
 $ cargo run -- --invalidate
-fetched 0 files in 370ms
 fetched 100 files in 215ms
+fetched 100 files in 217ms
 ...
 1122 files from cache in 18ms
 ```
@@ -498,51 +733,158 @@ escape hatch back to the truth.
 
 ## The event bus
 
-One more thing `make_dio` set up, invisibly: every Dio carries a **broadcast event bus**.
-Anything that changes data announces it there as a [`DioEvent`](vantage_diorama::DioEvent) —
-`DatasetChanged` when the set of records was rewritten wholesale, `RecordChanged` /
-`RecordInserted` / `RecordRemoved` for row-level changes, `Refreshing` when a reconcile starts,
-`WriteFailed` when a queued write fails. Nothing in this chapter listens yet; chapter 7's
-sceneries subscribe to this bus to know when to recompute, and chapter 6's hydration uses it to
-report progress.
+One more thing `build()` set up, invisibly: every Dio carries a **broadcast event bus**, which
+`dio.subscribe_events()` listens to. Anything that changes data announces it there as a
+[`DioEvent`](vantage_diorama::DioEvent): `Seeded` when an eager start has put the whole set in
+the cache, `DatasetChanged` when the set was rewritten wholesale, `RecordChanged` /
+`RecordInserted` / `RecordRemoved` for row-level changes, `Refreshing` and `RefreshFailed` around
+a re-read, and `WritePending` / `WriteReverted` / `WriteFailed` as writes move through the queue.
+Nothing in this chapter listens yet; chapter 7's sceneries subscribe to this bus to know when to
+recompute, and chapter 6's hydration uses it to report progress.
 
 One rule is worth forming as a habit now: **direct cache writes are silent**. Our `sync` calls
-`dio.cache().insert_values(...)`, which stores rows and announces nothing — harmless while
-nothing listens, invisible data the moment something does. When observers exist, either use the
-Dio's row-level helpers that write *and* announce in one motion — `patched(id, record)`,
-`removed(id)` — or follow a bulk cache write with `notify_dataset_changed()`, the "re-read
-everything" announcement. Chapter 7's live view does exactly that.
+`cx.cache().insert_values(...)`, which stores rows and announces nothing. Inside an eager start
+that's fine — the Dio publishes `Seeded` once the start returns, and every scenery reloads from
+the cache. Anywhere else, use the calls that write *and* announce in one motion:
+`cx.reconcile(rows)` makes the cache hold exactly the set you hand it (writing what differs,
+deleting what's gone) and publishes one `DatasetChanged`; `dio.apply_change(...)` takes one
+upstream [`ChangeEvent`](vantage_diorama::ChangeEvent) — `Inserted`, `Updated`, `Deleted` or
+`Invalidated` — and publishes the matching row event.
 
 ```admonish info title="Poll or push — the Lens doesn't care"
-Our S3 listing has no way to notify us, so freshness is *pulled*: `sync` on start,
-`--invalidate` by hand, or `refresh_every(duration)` on a timer (chapter 7's live view uses it).
-Backends that can push — a SurrealDB live query, a Kafka topic, a webhook — feed
-[`ChangeEvent`](vantage_diorama::ChangeEvent)s into `dio.handle_event(...)` and reconcile through
-an `on_event` callback instead, using the same row-level helpers. Same cache, same events — only
-the trigger differs.
+Our S3 listing has no way to notify us, so freshness is *pulled*: the eager start on every run,
+`--invalidate` by hand, or a `Refresher` on a timer (chapter 7's live view uses one). Backends
+that can push take the other route: `lens.dio(master).live()` follows a master that advertises
+`Subscribe` (a SurrealDB live query, Postgres `LISTEN/NOTIFY`), and anything else — a Kafka
+topic, a webhook — calls `dio.apply_change(...)` itself. Same cache, same events — only the
+trigger differs.
 ```
 
-```admonish info title="Writes, on a read-only master"
-S3's listing Vista advertises `can_insert: false`, and the facade won't pretend otherwise — by
-default. Register an **`on_write`** callback on the Lens and the write queue becomes yours:
-each queued `WriteOp` is handed to your closure, which can append to
-a journal, call a different API, or write a queue — this is exactly the introduction's
-"a read-only CSV file accepts writes by routing them into a queue". Without `on_write`, queued
-ops are applied to the master directly, and a master that can't take them surfaces
-`DioEvent::WriteFailed` on the bus — never a silent drop.
+## Writes, on a read-only master
+
+S3's listing Vista doesn't advertise `Insert`, and the facade won't pretend otherwise — by
+default. A write enters a Dio as a [`ChangeFlash`](vantage_diorama::ChangeFlash) handed to
+`dio.flash(...)` (the facade's own `insert_value` and friends become flashes too). The flash is
+staged in the cache at once, joins the Dio's write queue, and the queue writes it through the
+master. A master that can't take it fails the write: the staged row is rolled back,
+`WriteReverted` goes out on the bus, and `flash` returns the error — never a silent drop.
+
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# use vantage_diorama::prelude::*;
+# use vantage_diorama::Cache;
+# use vantage_types::Record;
+# use vantage_vista::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# struct File {
+#     #[serde(rename = "Key")]
+#     filename: String,
+#     #[serde(rename = "Size")]
+#     size: String,
+# }
+# impl File {
+#     fn table(aws: AwsAccount, bucket: &str, prefix: &str) -> Table<AwsAccount, File> {
+#         Table::new(
+#             "restxml/Contents@continuation-token=NextContinuationToken:s3/GET /{Bucket}?list-type=2",
+#             aws,
+#         )
+#         .with_id_column("Key")
+#         .with_column_of::<String>("Size")
+#         .with_condition(eq("Bucket", bucket))
+#         .with_condition(eq("prefix", prefix))
+#         .with_condition(eq("max-keys", 100))
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let aws = AwsAccount::public("us-east-1");
+# let master = aws
+#     .vista_factory()
+#     .from_table(File::table(aws, "noaa-ghcn-pds", "csv/by_station/GM"))?;
+# let dio = Lens::builder().cache(Cache::redb("cache.redb")).build()?.dio(master).build().await?;
+let mut row = Record::new();
+row.insert("Size".to_string(), CborValue::from("0"));
+
+let written = dio.flash(ChangeFlash::insert("csv/by_station/NOTE.csv", row)).await;
+// Err: the S3 listing takes no inserts, and the staged row is rolled back
+# Ok(())
+# }
 ```
 
-## Callback summary
+To make the write mean something else, give the Lens a **`writer`**. Every flash the queue runs
+is then handed to your closure instead of the master — append to a journal, call a different API,
+publish to a queue. This is exactly the introduction's "a read-only CSV file accepts writes by
+routing them into a queue". `Ok` confirms the write and keeps the staged row; `Err` rolls it
+back. A writer also makes every Dio of the Lens advertise the writes on its facade:
 
-| Callback         | When it fires              | In this chapter                       |
-| ---------------- | -------------------------- | ------------------------------------- |
-| `on_start`       | Once at `make_dio`         | `sync` — pump pages, resume from cache |
-| `on_refresh`     | `refresh()` + timer        | (not used — chapter 7 reconciles on a timer) |
-| `on_write`       | Every `WriteOp`            | (not used — S3 listing is read-only)  |
-| `on_event`       | Upstream `ChangeEvent`     | (not used — S3 can't push)            |
-| `on_list_page`   | Scenery list pass          | Chapter 7                             |
-| `on_load_detail` | Scenery detail pass        | Chapter 7                             |
-| `total_provider` / `on_load_chunk` | Scenery loading | Chapter 7                          |
+```rust,no_run
+# use vantage_aws::prelude::*;
+# use vantage_diorama::prelude::*;
+# use vantage_diorama::{Cache, FlashOutcome, LoaderCx};
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+let lens = Lens::builder()
+    .cache(Cache::redb("cache.redb"))
+    .writer(|_cx: LoaderCx, flash: ChangeFlash| async move {
+        println!("journal: {:?} {:?}", flash.kind(), flash.id());
+        Ok(FlashOutcome::applied())
+    })
+    .build()?;
+# Ok(())
+# }
+```
+
+## The four settings
+
+A Lens has four settings, each with its own moment:
+
+| Setting | When it runs | In this chapter |
+| ------- | ------------ | --------------- |
+| [`Loader`](vantage_diorama::Loader) | `eager`: once per Dio, inside `build()` (or in the background with `.blocking(false)`). `paged`: each window a table scenery asks for. `paged(..).or_eager(..)`: pages a master with `Window`, copies one without | `Loader::eager` — `sync`, resuming from the cache |
+| [`Refresher`](vantage_diorama::Refresher) | On `dio.refresh()`; every interval with `.every(..)`; at build and scenery open when the cache is older than `.max_age(..)` | Not used — chapter 7 refreshes on a timer |
+| `writer` | Every write the Dio's queue runs, in order, one at a time | Not used — the S3 listing is read-only |
+| [`Tuning`](vantage_diorama::Tuning) | Never runs; read by every Dio: write-queue size, viewport debounce, augmentation workers, refresh on open, aggregate debounce | Defaults |
+
+Everything a Dio adds beyond these — augmentation in chapter 6, a live follow with `.live()` — is
+chosen on `lens.dio(master)` before `build()`, because it belongs to that one Dio, not to every Dio
+the Lens builds.
+
+### Why a builder that can refuse?
+
+`Lens::builder().build()` returns a `Result`, and it does refuse things. Some settings only make
+sense together, and each wrong combination would otherwise fail much later, in a way that's hard
+to trace back: `Loader::blocking` on a loader with no eager start (there's nothing to block on),
+`Refresher::every(Duration::ZERO)` (a timer with no period), a write queue of size zero (a queue
+that can never take a write), a Lens built outside a tokio runtime (nowhere to spawn its tasks). `build()` checks the combination once and
+names the setting at fault, so a misconfiguration is an error at startup, not a stall at the first
+write:
+
+```rust
+# use std::time::Duration;
+# use vantage_diorama::prelude::*;
+# use vantage_diorama::{Cache, LoaderCx, Refresher};
+# use vantage_vista::prelude::*;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+let refused = Lens::builder()
+    .cache(Cache::memory())
+    .refresher(
+        Refresher::new(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        })
+        .every(Duration::ZERO),
+    )
+    .build();
+
+assert!(refused.is_err()); // "Refresher::every needs a non-zero interval"
+# Ok(())
+# }
+```
+
+The cost is one `?` at the call site. A builder that took anything and guessed would save that,
+and turn each of these mistakes into a hang.
 
 ---
 
@@ -552,13 +894,14 @@ ops are applied to the master directly, and a master that can't take them surfac
 | --------------------------------------------------- | ---------------------------------------------------------------- |
 | `AwsAccount::public(region)`                        | Unsigned requests — public buckets, no credentials               |
 | Cursor in the table name (`@req=resp`)              | Auto-pagination: one `list()`, as many requests as needed        |
-| [`Lens`](vantage_diorama::Lens)                     | Shared infrastructure: cache, callbacks, refresh policy          |
-| [`Dio`](vantage_diorama::Dio)                       | Binding of master Vista + Lens; owns cache, queue, event bus     |
-| `cache_at` / [`CacheBackend`](vantage_diorama::CacheBackend) | Persistent (redb) or in-memory storage for cached rows  |
-| `fetch_next(token)`                                 | One page per call; S3's token is the last key — durable          |
-| `dio.cache()` / `dio.master()`                      | The two sides of the Dio, directly addressable from callbacks    |
-| `dio.vista()`                                       | Facade Vista: reads from cache, writes through the queue         |
-| [`DioEvent`](vantage_diorama::DioEvent)             | Bus event: invalidated, record-level changes, write failures     |
+| [`Lens`](vantage_diorama::Lens)                     | Shared policy: cache, loader, refresher, writer, tuning          |
+| [`Cache`](vantage_diorama::Cache)                   | `redb(path)` on disk, `memory()` in process                      |
+| [`Dio`](vantage_diorama::Dio)                       | Master Vista + cache under a Lens; owns the queue and event bus  |
+| `fetch_cursor(token, limit)`                        | One page per call; S3's token is the last key — durable          |
+| [`LoaderCx`](vantage_diorama::LoaderCx)             | The Dio's `master()` and `cache()`, handed to every callback     |
+| `dio.cached()`                                      | Facade Vista: reads from cache, writes through the queue         |
+| `dio.flash(ChangeFlash::…)`                         | A write: staged, queued, written through, confirmed or reverted  |
+| [`DioEvent`](vantage_diorama::DioEvent)             | Bus event: seeded, dataset and row changes, write progress       |
 
 ```admonish tip title="What's next"
 The inventory knows every file's name and size — and nothing about what's inside. The next

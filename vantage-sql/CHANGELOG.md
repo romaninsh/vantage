@@ -2,8 +2,61 @@
 
 ## 0.9.0 — 2026-10-14
 
-- Vista 2.0 driver cleanup: one generic spec builder for the three dialects; spec `keys:` honoured.
-- Quicksearch reads the columns flagged `Searchable`, or every column when none is.
+### Breaking changes
+
+- The SQLite, PostgreSQL and MySQL shells implement `TableShell` 2.0: `fetch_page`, `fetch_next`
+  and `set_page_size` are gone, `fetch_window` returns a `Page`, and no SQL vista advertises
+  `Cursor`.
+- `SqliteTableShell`, `PostgresTableShell` and `MysqlTableShell` are aliases of one generic
+  `SqlTableShell<DB, E>`.
+- `SqliteSpecResolver`, `PostgresSpecResolver` and `MysqlSpecResolver` are removed;
+  `with_resolver` takes `Arc<dyn SpecResolver<XVistaSpec>>`. A closure passed there needs an
+  annotated parameter (`|name: &str| ..`).
+- The `DriverBlockArgs` trait is removed from `{sqlite,postgres,mysql}::vista::spec`.
+- Join traversal is strict: the target must declare the join column (a has-many's foreign key).
+  A join that can't narrow its target is an error naming the relation and the column.
+- A condition or order on an undeclared column is an error, and the shell is left unchanged.
+- A dotted column, whether a nested path or an imported column such as `author.name`, is refused
+  as `Unimplemented` ("this shell doesn't evaluate a dotted path"), so `Vista::with_query` hands
+  it back in the residual.
+- `get_ref` on an undeclared relation is "unknown relation (relation: x)", still `is_not_found()`.
+- `get_ref(rel, None)` on a contained relation returns the bare target without write
+  capabilities; it was `IncorrectUsage`.
+- A `rhai:` or `base:` vista advertises no writes, and Vista refuses them before the shell.
+- `insert(None)` reads the stored row back through the set and errors when it can't; it returned
+  the record as sent.
+- `preview()` is `{query}`: the SELECT with every condition in it. The driver name is
+  `vista.driver_name()`.
+- Rhai query scripts call free functions through one `sql::` namespace for all three dialects
+  (`sql::select()`, `sql::ident("x")`, `sql::window()`, `sql::case_when()`, …): in `rhai:` and
+  `base:` sources, `mysql: { modify }`, `mysql: { rhai }` reference scripts and
+  `mysql::vista::eval_select`. A bare call is "Function not found".
+- The `table("x")` alias for `ident` is removed; write `sql::ident("x")`.
+- `register_constructors!`, `register_select!` and `register_window_case!` take the namespace
+  after the engine. `register_engine!` is unchanged.
+- A MySQL script's `table(name)` for a name the spec resolver doesn't know is `is_not_found()`.
+- A `mysql: { rhai }` reference build-script without the `rhai` feature fails the build.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is. A table with
+  `name` flagged no longer searches every column.
+- A spec reference with `keys:` narrows on every declared key; only `foreign_key` was used before.
+
+### Other changes
+
+- Vista 2.0 driver cleanup: one generic spec builder for the three dialects, with `base:` handled
+  one way through `resolve_base_spec`.
+- Spec references lower through `ReferenceSpec::to_reference`, and column-level `references:`
+  reach the vista metadata as has-one references.
+- A YAML reference's `target` is its spec name and a typed relation's is its table name, so
+  `catalog.vista(&reference.target)` resolves; it was the Rust type name.
+- Typed and YAML column flags (`mandatory`, `hidden`, `searchable`, `indexed`, `label`,
+  `request_param`) reach the vista column.
+- `upsert` is one native statement on each dialect (`INSERT OR REPLACE`, `ON CONFLICT DO UPDATE`,
+  `ON DUPLICATE KEY UPDATE`).
+- PostgreSQL `watch` and MySQL `import` are refused by Vista without `Subscribe` and `Import`.
+- MySQL native conditions are keyed by their rendered SQL; a condition of a foreign type is
+  `IncorrectUsage`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.8.0 — 2026-10-10
 

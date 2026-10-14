@@ -13,7 +13,7 @@ Legend:
 
 ### MySQL
 
-[tests/mysql/1_chrono.rs](tests/mysql/1_chrono.rs)
+[tests/mysql/1_chrono.rs](https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/mysql/1_chrono.rs)
 
 | Column \ Rust type | NaiveDate | NaiveTime | NaiveDateTime | DateTime\<Utc\> | DateTime\<FixedOffset\> |
 |---|---|---|---|---|---|
@@ -34,7 +34,7 @@ Legend:
 
 ### PostgreSQL
 
-[tests/postgres/1_chrono.rs](tests/postgres/1_chrono.rs)
+[tests/postgres/1_chrono.rs](https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/postgres/1_chrono.rs)
 
 | Column \ Rust type | NaiveDate | NaiveTime | NaiveDateTime | DateTime\<Utc\> | DateTime\<FixedOffset\> |
 |---|---|---|---|---|---|
@@ -52,7 +52,7 @@ Legend:
 
 ### SQLite
 
-[tests/sqlite/1_chrono.rs](tests/sqlite/1_chrono.rs)
+[tests/sqlite/1_chrono.rs](https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/sqlite/1_chrono.rs)
 
 | Column \ Rust type | NaiveDate | NaiveTime | NaiveDateTime | DateTime\<Utc\> | DateTime\<FixedOffset\> |
 |---|---|---|---|---|---|
@@ -65,7 +65,7 @@ Legend:
 
 ### MySQL
 
-[tests/mysql/1_decimal.rs](tests/mysql/1_decimal.rs)
+[tests/mysql/1_decimal.rs](https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/mysql/1_decimal.rs)
 
 | Column \ Rust type | Decimal | i64 | f64 |
 |---|---|---|---|
@@ -81,7 +81,7 @@ Legend:
 
 ### PostgreSQL
 
-[tests/postgres/1_decimal.rs](tests/postgres/1_decimal.rs)
+[tests/postgres/1_decimal.rs](https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/postgres/1_decimal.rs)
 
 | Column \ Rust type | Decimal | i64 | f64 |
 |---|---|---|---|
@@ -96,7 +96,7 @@ Legend:
 
 ### SQLite
 
-[tests/sqlite/1_decimal.rs](tests/sqlite/1_decimal.rs)
+[tests/sqlite/1_decimal.rs](https://github.com/romaninsh/vantage/blob/main/vantage-sql/tests/sqlite/1_decimal.rs)
 
 | Column \ Rust type | Decimal | i64 | f64 |
 |---|---|---|---|

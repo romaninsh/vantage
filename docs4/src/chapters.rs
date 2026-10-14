@@ -1,0 +1,99 @@
+//! The book's chapters, compiled as doctests: `cargo test -p vantage-docs --doc`.
+
+macro_rules! chapters {
+    ($($name:ident => $path:literal,)*) => {
+        #[cfg(doctest)]
+        mod compiled {
+            $(
+                #[doc = include_str!($path)]
+                pub struct $name;
+            )*
+        }
+
+        #[cfg(test)]
+        pub(crate) const CHAPTERS: &[&str] = &[$($path),*];
+    };
+}
+
+chapters! {
+    IntroductionChapter => "introduction.md",
+    Step1FirstQueryChapter => "intro/step1-first-query.md",
+    Step2TablesChapter => "intro/step2-tables.md",
+    Step3AxumServerChapter => "intro/step3-axum-server.md",
+    Step4VistaChapter => "intro/step4-vista.md",
+    ForkChapter => "intro/fork.md",
+    Step5DioLensChapter => "intro/step5-dio-lens.md",
+    Step6AugmentationChapter => "intro/step6-augmentation.md",
+    Step7SceneryChapter => "intro/step7-scenery.md",
+    Step8AxumDioChapter => "intro/step8-axum-dio.md",
+    Step5SqlDioChapter => "intro/step5-sql-dio.md",
+    Step6SqlWatchChapter => "intro/step6-sql-watch.md",
+    Step7SqlPostgresChapter => "intro/step7-sql-postgres.md",
+    Step8SqlNotifyChapter => "intro/step8-sql-notify.md",
+    Step9SurrealChapter => "intro/step9-surreal.md",
+    HistoryChapter => "history.md",
+    WhatsNew04Chapter => "whats-new-04.md",
+    WhatsNewIn05Chapter => "whats-new-in-05.md",
+    Migration20Chapter => "migration-2.0.md",
+    Migration20VistaChapter => "migration-2.0/vista.md",
+    Migration20ReferencesCatalogRhaiChapter => "migration-2.0/references-catalog-rhai.md",
+    Migration20DioLensChapter => "migration-2.0/dio-lens.md",
+    Migration20WritesIngressChapter => "migration-2.0/writes-ingress.md",
+    Migration20SceneriesChapter => "migration-2.0/sceneries.md",
+    Migration20AggregatesChapter => "migration-2.0/aggregates.md",
+    Migration20SurfaceChapter => "migration-2.0/surface.md",
+    Migration20DriversChapter => "migration-2.0/drivers.md",
+    Migration20DownstreamChapter => "migration-2.0/downstream.md",
+    ExpressionsChapter => "expressions.md",
+    RecordLifecycleChapter => "record-lifecycle.md",
+    RelationsChapter => "relations.md",
+    RelationsTraversalChapter => "relations/traversal.md",
+    RelationsExpressionsChapter => "relations/expressions.md",
+    RelationsImplicitReferencesChapter => "relations/implicit-references.md",
+    RelationsVistasChapter => "relations/vistas.md",
+    RelationsDioChapter => "relations/dio.md",
+    MdaChapter => "mda.md",
+    ThreePathsChapter => "three-paths.md",
+    ConfigDrivenVistasChapter => "config-driven-vistas.md",
+    RhaiChapter => "rhai.md",
+    RhaiHostsChapter => "rhai/hosts.md",
+    RhaiTablesChapter => "rhai/tables.md",
+    RhaiWritesChapter => "rhai/writes.md",
+    RhaiComputedChapter => "rhai/computed.md",
+    RhaiRecordsChapter => "rhai/records.md",
+    RhaiSurfacesChapter => "rhai/surfaces.md",
+    RhaiLayersChapter => "rhai/layers.md",
+    RhaiFakerChapter => "rhai/faker.md",
+    RhaiDialectsChapter => "rhai/dialects.md",
+    RhaiQueryTablesChapter => "rhai/query-tables.md",
+    RhaiQueryBuildersChapter => "rhai/query-builders.md",
+    LiveDataChapter => "live-data.md",
+    OptimisingDioramaChapter => "optimising-diorama.md",
+    OptimisingDioramaStackChapter => "optimising-diorama/stack.md",
+    OptimisingDioramaDebugStreamChapter => "optimising-diorama/debug-stream.md",
+    OptimisingDioramaCapabilitiesChapter => "optimising-diorama/capabilities.md",
+    OptimisingDioramaWasteChapter => "optimising-diorama/waste.md",
+    OptimisingDioramaFaultsChapter => "optimising-diorama/faults.md",
+    OptimisingDioramaRegressionChapter => "optimising-diorama/regression.md",
+    NewPersistenceChapter => "new-persistence.md",
+    NewPersistenceStep1TypesChapter => "new-persistence/step1-types.md",
+    NewPersistenceStep2ExpressionsChapter => "new-persistence/step2-expressions.md",
+    NewPersistenceStep3OperatorsChapter => "new-persistence/step3-operators.md",
+    NewPersistenceStep4QueryBuilderChapter => "new-persistence/step4-query-builder.md",
+    NewPersistenceStep5TableCrudChapter => "new-persistence/step5-table-crud.md",
+    NewPersistenceStep6RelationshipsChapter => "new-persistence/step6-relationships.md",
+    NewPersistenceStep7MultiBackendChapter => "new-persistence/step7-multi-backend.md",
+    NewPersistenceStep8VistaIntegrationChapter => "new-persistence/step8-vista-integration.md",
+    NewPersistenceStep9ContainedRelationsChapter => "new-persistence/step9-contained-relations.md",
+    AugmentationChapter => "augmentation.md",
+    TypeSystemChapter => "type-system.md",
+    TypeSystemCustomTypesChapter => "type-system/custom-types.md",
+    SqlChapter => "sql.md",
+    SqlPrimitivesChapter => "sql/primitives.md",
+    SqlTypeConversionsChapter => "sql/type-conversions.md",
+    SurrealdbChapter => "surrealdb.md",
+    SurrealdbPrimitivesChapter => "surrealdb/primitives.md",
+    HttpApisChapter => "http-apis.md",
+    HttpApisRestYamlChapter => "http-apis/rest-yaml.md",
+    HttpApisGraphqlYamlChapter => "http-apis/graphql-yaml.md",
+}

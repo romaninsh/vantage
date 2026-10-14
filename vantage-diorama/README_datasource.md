@@ -1,402 +1,291 @@
 # Implementing a Data Source
 
-This document is for someone writing a new Vista driver — a `TableShell`
-implementation that wraps a particular backend (a REST API, a custom binary
-file format, a niche database). It explains what your driver needs to do to
-play well with Diorama, and what Diorama compensates for so you don't have
-to.
+A source reaches Diorama in two halves. The **driver** is a `TableShell`
+behind a `Vista`: it says what the backend can do and does it. The
+**loader** is the Lens's side: it decides how the driver's rows get into a
+Dio's cache. This guide covers what each half owes the other, and the one
+rule Diorama holds both to.
 
 If you haven't written a Vista driver yet, start with the persistence
-walkthrough at `docs4/src/new-persistence/step8-vista-integration.md` and
-read the [`TableShell` trait](../vantage-vista/src/source.rs) — that's the
-canonical contract. This document picks up where those leave off.
+walkthrough in the book and the `TableShell` docs in `vantage-vista`. This
+guide picks up where they leave off.
 
-> **Implementation status.** The contracts described below all sit on
-> Vista's `TableShell`; the actual method names (`list_vista_values`,
-> `get_vista_value`, `fetch_page`, `fetch_next`, `add_eq_condition`,
-> `add_order`, `add_search`, `get_ref`, etc.) live there. The
-> `Page<Id, Rec>` shape sketched in this doc maps onto vista's `fetch_page`
-> / `fetch_next` (token-based) pagination — see vista's
-> [`source.rs`](../vantage-vista/src/source.rs) for the live signatures.
+## The driver: be honest
 
-## The shortest possible Diorama-compatible driver
+There is no Diorama trait to implement. A driver that implements
+`TableShell` and advertises its capabilities truthfully is already a good
+Diorama source. Diorama wraps it, caches it and asks it hard questions; the
+driver's whole job is to answer them accurately.
 
-A driver that satisfies Vista's `TableShell` trait and reports honest
-capabilities is automatically Diorama-compatible. There is no separate
-"Diorama trait" to implement. What changes is the way you think about your
-driver's role: Diorama will wrap it, compose it, cache reads against it, and
-ask hard questions about what it can and can't do. Your job is to answer
-those questions accurately.
+### Capabilities
 
-The four things that matter:
+`VistaCapabilities` is a set of `Capability` values. Each capability names
+one method family, and a shell that advertises it must answer that family
+without refusing:
 
-1. **Advertise capabilities honestly.**
-2. **Implement `fetch_one` reliably.**
-3. **Support cursor-based pagination if your backend has any pagination at
-   all.**
-4. **Optionally implement change subscription.**
+| Capability | What Diorama does with it |
+|---|---|
+| `Window` | A table view pages windows at any offset through a paged loader. Without it, the loader copies the set whole. |
+| `Cursor` | An eager start can copy the set page by page and resume. |
+| `Order`, `Search`, `FilterOps` | A view's order, search and non-equality conditions are pushed to the backend. Without them, Diorama evaluates them over a complete set. |
+| `Subscribe` | `.live()` on the Dio builder follows `watch()`. Without it, the refresher keeps the cache fresh. |
+| `Insert`, `Update`, `Delete` | A flash goes through to the master. Without them, the Dio is read-only unless the Lens has a writer. |
 
-Everything else — sort, search, filter, persistence, retries, optimistic
-writes — Diorama can compensate for. You don't have to.
-
-## What Diorama needs from your Vista
-
-### Capability advertisement
-
-`VistaCapabilities` is the contract. Every flag on it tells Diorama what your
-driver can do natively versus what Diorama has to fill in:
+`list`, `get`, `count`, equality conditions and the leading window
+(`fetch_window(0, n)`) carry no capability: every shell answers them.
 
 ```rust
-pub struct VistaCapabilities {
-    pub can_count: bool,
-    pub can_insert: bool,
-    pub can_update: bool,
-    pub can_delete: bool,
-    pub can_subscribe: bool,
-    pub can_invalidate: bool,
-    pub can_order: bool,
-    pub can_search: bool,
-    pub can_set_page_size: bool,
-    pub can_fetch_page: bool,
-    pub can_fetch_next: bool,
+let shell = MockShell::new()
+    .with_metadata(metadata)
+    .with_capabilities(VistaCapabilities::new().with(Capability::Window));
+```
+
+### Refuse, don't reject
+
+A method can fail two ways, and Diorama treats them differently:
+
+- **Refused**: an `Unsupported` (or `Unimplemented`) error. "I can't do
+  this here." `Vista::with_query` hands the clause back to the caller, and
+  Diorama evaluates it itself.
+- **Rejected**: any other error. "This is wrong." An unknown column, a value
+  the backend can't express. The view fails, naming the clause.
+
+The REST shell in `vantage-api-client` shows both in one method, trimmed
+here to the two decisions:
+
+```rust
+fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+    let field = condition.column.as_str();
+    if !self.metadata.columns.contains_key(field) {
+        return Err(condition_column_error(&self.metadata, field));
+    }
+    if condition.op != FilterOp::Eq {
+        return unsupported(Capability::FilterOps);
+    }
+    self.table.add_condition(crate::eq_condition(field, condition.value.clone()));
+    Ok(())
 }
 ```
 
-Report what's true. If your driver can sort on indexed columns but not on
-arbitrary ones, set `can_order = true` and reject unsupported sorts at
-execution time with a clear error. If your driver returns up to N rows per
-request but has no concept of "next page," set `can_fetch_page = true` and
-`can_fetch_next = false`. Diorama uses these flags to decide what to push
-down and what to handle itself.
+An unknown column is rejected, so a typo never turns into a silent local
+filter. An operator the API has no query parameter for is refused, so
+Diorama filters on it instead. `condition_column_error` refuses a dotted
+path into a declared column (Diorama can evaluate `dims.w` over the rows),
+and rejects everything else.
 
-### Honest errors
+Refusing per call is how a backend that sorts only on indexed columns
+advertises `Order` and still tells the truth: `set_order` refuses the
+unindexed ones.
 
-When something doesn't work, return a structured error. Don't panic, don't
-return empty results that pretend the operation succeeded, don't return
-partial data without a continuation cursor.
+### Totals
 
-Diorama's `on_query` and `on_refresh` callbacks treat errors as data — they
-log, mark the cache stale, emit events. A driver that fakes success robs the
-user of the chance to handle the failure.
+A window read returns a `Page { rows, total }`. When the backend knows the
+grand total of the narrowed set, put it in `total` (`Page::with_total`); a
+paged view sizes its scrollbar from it before the rows load. When the
+backend doesn't know, leave it `None`. A guessed total is worse than none:
+the view believes it.
 
-### Reliable `fetch_one`
+### Change streams
 
-Many of Diorama's optimizations depend on fetching a single record by id
-cheaply. Even if your backend doesn't have a native "get by id" — e.g., it
-only returns paginated lists — implement `fetch_one` by scanning. Document the
-cost so users know it's not free; but ship it.
+Advertise `Subscribe` only when `watch()` pushes with no further setup. A
+stream that stays silent can't be told apart from nothing happening, so a
+driver that needs the application to configure something first doesn't
+advertise it until the application has.
+
+Granularity is up to the backend. Per-row `VistaChange::Updated { id, value }`
+lets Diorama update one cache slot; `VistaChange::Invalidated` makes it
+re-read the set. Both are correct; the first is cheaper.
+
+A backend with no change stream leaves `Subscribe` off. Polling a REST API
+and diffing it into synthetic events is a policy (how often, how to dedupe,
+how to spot deletes), and policy belongs in the Lens's refresher, where the
+application can change it.
+
+### Contract checks
+
+`vantage_vista::contract` (feature `contract`) probes every advertised
+capability and fails, listing every broken rule, when one isn't backed by a
+working method:
 
 ```rust
-async fn fetch_one(&self, id: &RecordId) -> Result<Option<Record<CborValue>>> {
-    // Native:
-    self.api.get(format!("/products/{id}")).await.into_record()
-
-    // Fallback if backend has no GET-by-id:
-    // self.list_all().await?.into_iter().find(|r| r.id() == *id)
+#[tokio::test]
+async fn csv_contract_advertised() {
+    contract::check_advertised(&clients()).await;
 }
 ```
 
-If your driver advertises `can_subscribe = true`, Diorama may call
-`fetch_one(id)` in response to a change event to repopulate a single cache
-slot. A correct `fetch_one` is what makes incremental cache updates possible.
+Run it against your own fixture. It is the cheapest way to find out that a
+capability you advertise is one Diorama will lean on and your driver can't
+deliver.
 
-### Cursor-based pagination, if you have any
+## The loader: fill the cache
 
-Diorama treats pagination as a per-driver opt-in. If your backend supports it
-in any form — page numbers, offset/limit, opaque continuation tokens — wrap it
-in the cursor protocol:
+The loader is set on the Lens, and it is where a source's shape meets the
+cache. `README_lens.md` covers the Lens as a whole; this is the source-facing
+part.
+
+### Eager
+
+`Loader::eager(start)` copies the whole set once, when the Dio is built. The
+start receives a `LoaderCx` and either hands the set to `cx.reconcile(rows)`
+or writes `cx.cache()` directly:
 
 ```rust
-pub struct Page<Id, Rec> {
-    pub rows: Vec<(Id, Rec)>,
-    pub next_cursor: Option<Vec<u8>>,
-    pub total_estimated: Option<u64>,
-}
-
-async fn fetch_page(
-    &self,
-    query: &Query,
-    cursor: Option<Vec<u8>>,
-    limit: usize,
-) -> Result<Page<RecordId, Record<CborValue>>>;
+let loader = Loader::eager(|cx| async move {
+    let rows = cx.master().list_values().await?;
+    cx.reconcile(rows).await
+});
 ```
 
-The cursor is your driver's private business — Diorama doesn't inspect it,
-just stores it and hands it back. Use whatever encoding makes sense (page
-number, last-seen-id, opaque token) and serialize to bytes.
+`reconcile` makes the cache hold exactly `rows`: changed rows are written,
+vanished ones deleted, and rows with a flash in flight left alone, because
+the listing may predate the write. A start that copies page by page through
+`fetch_cursor` writes `cx.cache()` instead and resumes from the last cached
+key on the next launch; the Dio announces the set once the start returns.
 
-`total_estimated` is optional. If your backend tells you "approximately
-12,000 results match," report it for the UI scrollbar. If you don't know,
-return `None` — Diorama handles unknown counts (see `README_ui.md` for the
-infinite-scroll model).
+### Paged
 
-### What if my backend has no pagination at all?
-
-Set `can_fetch_page = false` and implement a single batch fetch. Diorama will
-load everything in one shot and cache it. This is fine for sources with
-bounded data sizes (config tables, lookup data, small datasets). For sources
-that could return millions of rows without pagination, document the risk —
-the user should know not to wrap an unbounded source.
-
-### Optional: change subscription
-
-If your backend can push changes — SurrealDB LIVE queries, Postgres
-LISTEN/NOTIFY, Kafka topics, websocket feeds — implement the subscription
-hook:
+`Loader::paged(chunk)` fetches the windows a table view asks for, as it asks
+for them. `chunk` receives the context, the window, the view's query and a
+`ChunkSink`:
 
 ```rust
-fn subscribe(&self) -> Pin<Box<dyn Stream<Item = ChangeEvent> + Send>>;
+let loader = Loader::paged(|cx, range, query, sink| async move {
+    let fetched = cx.fetch(range.clone(), &query).await?;
+    if !fetched.refused.is_empty() {
+        return Err(vantage_core::error!(
+            "the master refused part of the view's query",
+            refused = fetched.refused
+        ));
+    }
+    let page = fetched.page;
+    if let Some(total) = page.total {
+        sink.set_total(total.max(0) as usize);
+    }
+    for (i, (id, record)) in page.rows.into_iter().enumerate() {
+        sink.push(range.start + i, id, record).await?;
+    }
+    Ok(())
+});
 ```
 
-The events you emit drive Diorama's `on_event` callbacks. Granularity matters:
-emit per-record events (`ChangeEvent::Updated { id, new }`) when your backend
-provides them; fall back to `ChangeEvent::Invalidated` for wholesale "something
-changed" notifications. The latter forces full refreshes; the former lets
-Diorama update individual cache slots.
+- `cx.fetch(window, &query)` applies the query to a clone of the master, so
+  differently sorted views never race on the shared one. It returns a
+  `Fetched`: the `page`, and every clause the page doesn't reflect in
+  `refused`. It never applies those clauses to the window itself (see
+  [the residual rule](#the-residual-rule)).
+- `sink.push(idx, id, record)` binds one row to a row index of the view. The
+  row is visible as soon as `push` resolves; the pushed rows reach the cache
+  in one write once the loader returns, and the view repaints once per
+  window rather than once per row.
+- `sink.set_total(n)` is the only way a paged view learns its total. A
+  loader that says nothing leaves the total as it was.
 
-If your backend doesn't push changes, leave `can_subscribe = false`. Diorama
-will use polling refresh instead. Users wire the refresh interval in the
-Lens.
+A loader may push fewer rows than it was asked for (the set ran out), out of
+order, or across awaits as a slow API trickles in. It may also be dropped
+before it finishes, when the viewport moves on. So it must not detach work
+it expects to finish. Rows it already pushed are put back the way it found
+them: the record that was in the slot, or nothing. A loader that returns
+`Err` unwinds the same way, so a failed re-pull leaves the view showing what
+it showed before.
 
-## What Diorama handles for you
+`vantage_core::Priority::current()` tells the loader whether a view is
+waiting on it (`Essential`) or not (`Background`), for a retry policy that
+tries harder when someone is looking.
 
-You don't need to implement any of these. If a user wraps your Vista in a
-Diorama, the Lens fills in:
+### Paged with an eager fallback
 
-- **Caching.** Disk-backed, in-memory, or anywhere else the user points it.
-  Reads come from the cache; your driver only sees a request when the cache
-  is cold.
-- **Retries.** Failed operations are retried by user policy. Your driver
-  should return real errors and let the user decide.
-- **Rate limiting.** Users can stack a `RateLimitedDio` in front of your
-  driver if they need it.
-- **Local sort, search, filter.** When the user's Lens wraps your Vista with
-  a sort capability and your driver doesn't support it, Diorama loads the
-  data and sorts in memory.
-- **Write coalescing.** If a user makes ten edits to the same record in
-  quick succession, Diorama can coalesce them before your driver sees a
-  single write. Driver-side, you see whatever the user's `on_write` callback
-  decides to send.
-- **Optimistic UI updates.** Sceneries reflect a write the instant it's
-  enqueued; your driver sees it on the worker thread after.
-- **Live invalidation propagation.** Even if your driver can't subscribe,
-  users can plug in external event sources (Kafka, MQTT, custom websockets)
-  via the Lens's `on_event`. Your driver just needs to refresh accurately
-  when asked.
-
-The dividing line: **your driver is the source of truth and the only thing
-that talks to the backend**. Everything time-shaped — caches, queues, timers,
-retries — lives in the Lens.
-
-## Capability cheatsheet
-
-Map your driver's natural shape to the right flags:
-
-| Your backend                              | Capability flags to set                       |
-|-------------------------------------------|------------------------------------------------|
-| Read-only file (CSV, parquet)             | `can_fetch_page` if your reader can chunk     |
-| REST API with limit/offset                | `can_fetch_page = true`, `can_fetch_next = true` |
-| REST API with cursor tokens               | same; encode the token as bytes               |
-| GraphQL with cursor pagination            | same                                          |
-| KV store (DynamoDB, Redis)                | `can_fetch_page = false` usually; `can_count = false` |
-| SQL with indexed columns                  | `can_order = true` on indexed cols only       |
-| Search engine (Elasticsearch, Meilisearch)| `can_search = true`, `can_order = true`       |
-| Event log (Kafka, Pulsar)                 | `can_subscribe = true`; `can_fetch_page = true` only if the topic supports replay |
-| In-memory mock                            | everything `true` — the easy case             |
-
-The MongoDB driver advertises `can_order` and `can_search` because the
-backend handles both natively. The CSV driver advertises neither — Diorama
-sorts and filters in memory if a user wraps a CSV in a sort-capable Lens.
-This is the model: be honest about what you do; Diorama fills the rest.
-
-## Implementing change subscription against a backend that doesn't have one
-
-Sometimes you'll want to wrap a backend that has no native change stream —
-say, a REST API that's polled. You can still build a `ChangeEvent` stream
-synthetically: poll periodically, diff against the last seen, emit events for
-what changed.
-
-But this isn't the driver's job. Leave `can_subscribe = false` and let the
-user configure polling refresh on the Lens. Synthetic event streams are a
-user-level policy decision (how often to poll, how to dedupe, how to handle
-deletes that aren't in the diff). Don't bake assumptions into the driver
-that the user might want to override.
-
-## Testing your driver against Diorama
-
-A quick integration check: wrap your Vista in a minimal Lens and exercise
-the surface.
+`Loader::paged(chunk).or_eager(start)` pages a master that advertises
+`Window` and copies one that doesn't, so one Lens serves both kinds of
+table. The eager half is also what lets a paged view answer a query the
+master can't: the view copies the whole set through `start` and evaluates
+the leftover clauses over it.
 
 ```rust
-use std::time::Duration;
-use vantage_diorama::Lens;
-
-let lens = Lens::new()
-    .cache_at("./test-cache.redb")
-    .on_start(|dio| async move {
-        let data = dio.master().list_values().await?;
-        dio.cache().insert_values(data).await?;
-        Ok(())
-    })
-    .on_write(|dio, op| async move {
-        dio.master().apply(&op).await?;
-        dio.refresh().await?;
-        Ok(())
-    })
-    .refresh_every(Duration::from_secs(10))
-    .build()
-    .await?;
-
-let dio = lens.make_dio(my_driver.vista()?);
-
-// Read should hit the cache after first call.
-let rows = dio.vista().list_values().await?;
-assert!(!rows.is_empty());
-
-// Write should round-trip through your driver.
-let new = sample_record();
-dio.vista().insert(new.clone()).await?;
-dio.refresh().await?;
-let rows = dio.vista().list_values().await?;
-assert!(rows.iter().any(|r| r.id() == new.id()));
-
-// Capability flags should be reported correctly.
-assert_eq!(dio.vista().capabilities().can_subscribe, true /* if driver advertises it */);
+let loader = Loader::paged(page_window).or_eager(|cx| async move {
+    let rows = cx.master().list_values().await?;
+    cx.reconcile(rows).await
+});
 ```
 
-If reads work, writes round-trip, and the Lens's `on_start` /`on_refresh` /
-`on_write` all fire as expected, your driver is Diorama-compatible. The full
-test matrix (composition with other drivers, capability propagation, error
-surfaces) lives in `vantage-diorama/tests/`.
+`or_eager` on a loader with no paged half fails the Lens build, as does
+`blocking` on one with no eager start.
 
-### Scripting a fake source (latency, faults, live mutation)
+## The residual rule
 
-You rarely want a real network in a behavioural test — it's slow and
-non-deterministic. `MockShell` is the in-memory `TableShell` Diorama's own BDD
-suite drives, and it doubles as a **scriptable source**: its store is
-`Arc`-shared, so a clone taken before you box it into a `Vista` stays a live
-handle you can mutate mid-test to simulate an upstream that changed between
-reads.
+Every clause the master refuses is evaluated by Diorama over a complete
+set, or the read fails loudly. Nothing in between.
+
+What "a complete set" is depends on the read:
+
+- **An eager view** evaluates the clause over the cache, which holds the
+  whole set.
+- **A paged view** whose master takes the whole query is served window by
+  window. If anything is left over, the view copies the whole set through
+  the loader's eager start and evaluates it there. With no eager start, the
+  view fails: no rows, `load_state()` is `LoadState::Failed(failure)` naming
+  the table and the clause, and `LoadFailed` goes out on the bus.
+- **`Dio::fetch`** reads one window, so it applies nothing and hands the
+  leftovers back in `Fetched::refused`, for the caller to decide.
+- **A derived Dio** (`dio.derive().with_condition(..).build()`) keeps what
+  its master refused in `dio.residual()`. Every read of it (views, the
+  facade, a record scenery, a servo, an aggregate) keeps only the rows the
+  residual admits.
+- **A query the master rejects** fails every view, eager ones included: an
+  unknown column is never evaluated locally.
+
+### Why not filter the window?
+
+Because the result is a lie that looks like an answer. Fifty rows filtered
+down to three is not "the three matching rows"; it is three of an unknown
+number, presented as the set. The total is wrong, the scrollbar is wrong,
+and scrolling shows a different handful each time. A user can work with "this
+view can't filter on that column". Nobody can work with a filtered grid that
+silently isn't.
+
+## Testing against Diorama
+
+`MockShell` from `vantage_vista::mocks` is the in-memory shell Diorama's own
+tests drive, and it doubles as a scriptable source. Its store is shared by
+every clone, so a handle taken before the shell goes into a `Vista` changes
+what the master reads:
 
 ```rust
-use ciborium::Value as CborValue;
-use vantage_vista::{Vista, mocks::MockShell};
-
-// Seed, then keep a handle to the live store.
 let source = MockShell::new()
-    .with_metadata(my_metadata())
-    .with_record("42", record(&[("title", CborValue::Text("before".into()))]));
-let control = source.clone();                  // shares the same rows
-let master = Vista::new("items", Box::new(source));
+    .with_metadata(metadata)
+    .with_record("42", record(&[("title", "before")]));
+let control = source.clone();
+let dio = lens.dio(Vista::new("items", source)).build().await?;
+let view = dio.table_scenery().open().await?;
 
-let dio = lens.make_dio(master).await?;
-let scenery = dio.table_scenery().open().await?;
-// ... first read sees "before" ...
-
-// Simulate the upstream changing, then reconcile:
 control.set_field("42", "title", CborValue::Text("after".into()));
-dio.refresh().await?;                           // re-fetches in place
-// ... the next read sees "after", and the grid never blanked ...
+dio.refresh().await?;
 
-control.remove_record("42");                    // row vanishes upstream
-control.set_record("99", record(&[/* … */]));   // a new row appears
-control.clear_records();                         // empty upstream
+control.remove_record("42");
+control.set_record("99", record(&[("title", "new")]));
+control.set_fail_reads(true);
 ```
 
-For **latency** and **injected failures** under deterministic virtual time, the
-BDD harness wraps the source's reads in a gate driven by `tokio::time::pause()`
-— see `tests/features/source_control.feature` and the `the source has a read
-latency of N milliseconds` / `the source fails the next N reads` steps. That
-same harness is the stand-in for the real transport: the machinery is exercised
-against slow/failing/mutating sources without a socket in sight.
+`set_fail_reads(true)` makes every read fail, for the outage path. For
+latency under virtual time, the BDD suite gates the source's reads behind
+`tokio::time::pause()`: see `tests/features/source_control.feature`.
 
-## A small worked example
+The wider matrix (residuals over real drivers, refusals, paged totals)
+lives in `vantage-diorama/tests/`. `tests/residual/drivers.rs` runs a
+refused dotted filter over CSV and SQLite and checks that the view fails
+rather than showing the unfiltered window.
 
-A REST API for a product catalog. Pagination via `?page=N`. No native search.
-No subscription.
+## Data source checklist
 
-```rust
-use vantage_vista::{Vista, VistaCapabilities, TableShell};
+A source ready for Diorama has:
 
-pub struct RestVista {
-    base_url: String,
-    client: reqwest::Client,
-}
-
-#[async_trait]
-impl TableShell for RestVista {
-    fn capabilities(&self) -> VistaCapabilities {
-        VistaCapabilities {
-            can_count: true,            // /products/count exists
-            can_insert: true,
-            can_update: true,
-            can_delete: true,
-            can_fetch_page: true,
-            can_fetch_next: true,
-            // The rest default to false.
-            ..Default::default()
-        }
-    }
-
-    async fn fetch_page(
-        &self,
-        _query: &Query,
-        cursor: Option<Vec<u8>>,
-        limit: usize,
-    ) -> Result<Page<RecordId, Record<CborValue>>> {
-        let page: u32 = cursor.as_ref()
-            .map(|c| u32::from_le_bytes(c[..4].try_into().unwrap_or([0; 4])))
-            .unwrap_or(0);
-        let resp: ApiResponse = self.client
-            .get(format!("{}/products?page={page}&limit={limit}", self.base_url))
-            .send().await?
-            .json().await?;
-        Ok(Page {
-            rows: resp.items.into_iter().map(|p| (p.id.clone(), p.into_record())).collect(),
-            next_cursor: resp.next_page.map(|n| n.to_le_bytes().to_vec()),
-            total_estimated: resp.total,
-        })
-    }
-
-    async fn fetch_one(&self, id: &RecordId) -> Result<Option<Record<CborValue>>> {
-        let url = format!("{}/products/{id}", self.base_url);
-        match self.client.get(url).send().await?.error_for_status() {
-            Ok(r) => Ok(Some(r.json::<Product>().await?.into_record())),
-            Err(e) if e.status() == Some(reqwest::StatusCode::NOT_FOUND) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    // insert / update / delete similarly.
-}
-```
-
-A user wraps this in a Lens that adds caching and search-in-memory:
-
-```rust
-let lens = Lens::new()
-    .cache_at("./products-cache.redb")
-    .on_start(|dio| async move {
-        let mut cursor = None;
-        loop {
-            let page = dio.master().fetch_page(&Query::all(), cursor, 100).await?;
-            dio.cache().insert_values(page.rows.into_iter().map(|(_, r)| r).collect()).await?;
-            cursor = page.next_cursor;
-            if cursor.is_none() { break; }
-        }
-        Ok(())
-    })
-    .refresh_every(Duration::from_secs(900))
-    .build()
-    .await?;
-
-let products = lens.make_dio(rest_vista.into_vista()?);
-
-// Search works even though the REST API doesn't support it — Diorama uses the cache.
-let cakes: Vec<_> = products.vista()
-    .add_search("cake")
-    .list_values()
-    .await?;
-```
-
-The driver did the minimum. Diorama provides the rest.
+1. **Capabilities** that are all true, checked by
+   `contract::check_advertised` against a fixture.
+2. **Refusals** (`unsupported(..)`) for what the backend can't do on a call,
+   and plain errors for what is wrong, so Diorama evaluates the first and
+   fails on the second.
+3. **Totals** reported only when the backend knows them.
+4. **`Subscribe`** only when the stream pushes with no further setup.
+5. **A loader** that matches the master: eager for sets that fit, paged for
+   `Window` masters, `or_eager` for a Lens that serves both or for views
+   whose queries the master can't take whole.

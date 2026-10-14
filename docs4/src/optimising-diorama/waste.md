@@ -112,7 +112,9 @@ the line reports against that demand:
 wide  payload  5 of 206 columns wanted · 201 fetched and dropped · 19.6MB
 ```
 
-This grid declares nothing. The combined demand is therefore "all columns".
+This grid declares nothing. The combined demand is therefore "all columns". In Rust a view
+declares its demand when it opens, with
+[`TableSceneryBuilder::columns`](vantage_diorama::TableSceneryBuilder::columns).
 
 The framework cannot tell the difference between a view that wants all 206 columns and a view that
 never declared its columns. It assumes the first, and it fetches all the columns.

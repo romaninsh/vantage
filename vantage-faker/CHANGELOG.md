@@ -2,9 +2,35 @@
 
 ## 2.0.0 — 2026-10-14
 
-- Vista 2.0: breaking API changes; see the migration guide (phase 5).
-- The ShapedShell preview note no longer names the driver.
+### Breaking changes
+
+- `ShapedShell` implements `TableShell` 2.0: `fetch_page` and `set_page_size` are gone.
+- `BackendShape.capabilities` is a set of `Capability` values; the `can_*` flags, `can_count`
+  included, are gone.
+- `BackendShape.page_size` caps the rows of one `fetch_cursor` page.
+- `fetch_cursor` with a limit of 0 is an error.
+- `ShapedShell::get_ref` is `unsupported(Traverse)`; it was `Unimplemented`.
+- Sim scripts use vista's 2.0 rhai verbs: a record draft's `save()` is `flash()`.
+- A sim statement that narrows a table handle and drops it is refused by `SimDef::validate`, so
+  by `start()` and config loading: "Sim script drops a narrowed table handle". Chain the calls or
+  assign the handle.
+- A sim's `table(name)` for a table the store doesn't hold is `is_not_found()`.
+- A sim's `columns()` gives `type: ()` for columns declared through `SimEngineBuilder::columns`;
+  the faker type stays a hint for `fake_row()`.
+- `SimStats.writes` counts the store's writes that changed a row since `start()`, the app's own
+  included; a `patch` or `replace` that leaves the row as it was no longer counts.
 - Quicksearch reads the columns flagged `Searchable`, or every column when none is.
+
+### Other changes
+
+- A shape grants nothing its inner shell lacks.
+- The leading window, `fetch_window(0, n)`, is answered whatever the shape lists.
+- Upsert on a shape needs only the `Update` capability.
+- A clone of a shaped vista keeps its search toll.
+- The ShapedShell preview note no longer names the driver: the shell forwards the wrapped
+  shell's query and note.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 1.2.0 — 2026-10-07
 

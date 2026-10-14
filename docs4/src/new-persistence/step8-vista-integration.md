@@ -1,668 +1,647 @@
 # Step 8: Vista Integration
 
-By the end of Step 6 your backend is a fully-featured persistence — typed `Table<T, E>`, conditions,
-relationships, the lot. That's exactly what business logic wants. It's also exactly what generic
-code can't consume.
+By the end of Step 6 your backend is a typed persistence: `Table<T, E>`, conditions, relationships.
+That's what business logic wants, and it's exactly what generic code can't use.
 
 A CLI that lists "any table from any backend" can't carry an entity generic. A web admin that draws
 forms from a YAML schema doesn't know your `Product` struct exists. A Rhai script that filters rows
-by a string field name shouldn't have to compile against your backend's condition type. **Vista** is
-the bridge: a schema-bearing handle that wraps a typed `Table` and exposes it through a uniform,
-CBOR-typed surface.
+by a column name shouldn't compile against your backend's condition type. **Vista** is the bridge: a
+schema-bearing handle over one table of one backend, with CBOR values and string ids at its surface.
 
-This step adds Vista support to your backend. The work is small — one factory, one source, a few
-hundred lines — but it's the doorway through which UI, CLI, and config-driven tooling start
-seeing your database at all.
+This step adds two pieces to your backend: a **shell** that executes reads, narrowing and writes for
+a Vista, and a **factory** that builds a Vista from a typed `Table` or a YAML spec.
 
-### Before you start
+### What Vista is
 
-Vista is a thin layer over what Steps 1–6 already gave you. Most of the work here is decisions
-rather than code. Confirm you have:
+[`Vista`](vantage_vista::Vista) is a concrete struct, not a trait. It holds a name, the clauses
+applied to it (a [`VistaQuery`](vantage_vista::VistaQuery)) and a boxed
+[`TableShell`](vantage_vista::TableShell): your driver's executor. The schema and the capabilities
+live on the shell. `Vista` reads them from there and checks every call against them before the
+shell sees it.
 
-- A working `TableSource` impl (Step 4) — Vista's read/write path delegates to it unchanged.
-- A native value type with an `Into<CborValue>` story (Step 1). If your value type is already JSON-
-  shaped you're done; otherwise you need a dedicated bridge (see `cbor.rs` below).
-- An id type that round-trips through `String` — `FromStr` and `Display` impls. If the native id
-  doesn't have these yet, add them before going further. The vista boundary stringifies ids
-  unconditionally.
+A `Vista` is a value. `vista.clone().with_condition(..)` gives a narrowed set and leaves `vista`
+alone, and it does that by cloning the shell and narrowing the clone. That's why `TableShell` has
+`Clone` as a supertrait: a shell's clone must carry its current narrowing and own it, while sharing
+the connection or the store.
 
-### What Vista actually is
+### Why not hand around `Table<T, E>`?
 
-`Vista` is a concrete struct in `vantage-vista` (no consumer-facing trait surface). It owns
-universal metadata — name, columns, references, capabilities, id column — and a boxed `TableShell`
-that does the real work. Your job as a driver author is two-fold:
+You can, and wherever the entity is known at compile time you should: it's typed, it composes, and
+it's what the previous steps built. Vista is for the cases where the entity isn't known at compile
+time, or the backend is chosen at runtime:
 
-1. A **factory** that produces a `Vista` from either a typed `Table<YourDB, E>` or a YAML schema.
-2. A **source** that implements `TableShell` — the per-driver executor `Vista` delegates to.
+- a CLI driven by `--source surreal --table client list`, with no `Client` struct in scope;
+- an admin tool that reads its schema from YAML;
+- a Rhai callback that filters rows by a column name.
 
-Both construction paths converge on the same source-creation code. That's a deliberate constraint:
-post-construction Vista usage is fully database-agnostic, so the same UI/CLI/script drives a Mongo
-Vista, a SurrealDB Vista, or your CSV one without caring how it got built.
+The price of erasure is that values become `CborValue` and ids become `String`. Generic code renders
+values; it doesn't deserialize them into structs, so it doesn't miss the types.
 
-### Why not just hand around `Table<T, E>`?
+### Setting it up
 
-You can! Anywhere the entity is known at compile time, `Table<T, E>` is the better tool — it's
-typed, it composes, and it's what you've spent six steps building. Vista exists for the cases where
-the entity *isn't* known at compile time, or where the backend itself is chosen at runtime:
-
-- A CLI driven by `--source surreal --table client list` — no `Client` struct in scope.
-- A YAML-driven admin tool that reads schema from disk.
-- A Rhai callback running in an editor that filters rows by a string column name.
-
-For those cases you need erasure. The price of erasure is that values become `CborValue` and ids
-become `String` at the boundary; the type system from Step 1 doesn't propagate any further. That's
-fine — generic code is rendering values, not deserialising into structs.
-
-### Cargo wiring
-
-The bridge is opt-in via a `vista` feature so non-Vista users don't transitively pull in
-`vantage-vista`:
+The bridge is opt-in behind a `vista` feature, so a crate that only uses `Table` doesn't pull in
+`vantage-vista`. The contract checks used in the tests come from vantage-vista's `contract`
+feature, enabled for tests only:
 
 ```toml
-# in your backend's Cargo.toml
 [features]
 default = []
 vista = ["dep:vantage-vista"]
 
 [dependencies]
 vantage-vista = { path = "../vantage-vista", optional = true }
+
+[dev-dependencies]
+vantage-vista = { path = "../vantage-vista", features = ["contract"] }
 ```
 
-Everything Vista-related — the factory module, the source, the YAML extras — sits under
-`#[cfg(feature = "vista")]`. The `TableSource` path is unaffected, and downstream crates compile
-without `vantage-vista` in their tree.
+Everything Vista-related sits under `#[cfg(feature = "vista")]`. CSV's layout is the one to copy:
 
-### File layout
-
-Both in-tree drivers (CSV and MongoDB) converged on the same shape:
-
-```
-<driver>/src/vista/
-├── mod.rs       re-exports + <Driver>::vista_factory() inherent impl
-├── spec.rs      <Driver>TableExtras / <Driver>ColumnExtras / <Driver>VistaSpec
-├── factory.rs   <Driver>VistaFactory + impl VistaFactory + spec→table helpers
-├── source.rs    <Driver>TableShell + impl TableShell
-└── cbor.rs      native ↔ CBOR bridge (only when native value type ≠ JSON-shaped)
+```text
+<driver>/src/vista.rs          re-exports, and <Driver>::vista_factory()
+<driver>/src/vista/spec.rs     <Driver>TableExtras, <Driver>ColumnExtras, <Driver>VistaSpec
+<driver>/src/vista/factory.rs  <Driver>VistaFactory and its impl VistaFactory
+<driver>/src/vista/source.rs   <Driver>TableShell and its impl TableShell
 ```
 
-CSV doesn't have `cbor.rs` — `From<AnyCsvType> for CborValue` already lived in the type-system
-module for the `AnyTable` path, and the source reuses it. MongoDB's `bson::Bson` needs a richer
-bridge (ObjectId, DateTime, Timestamp, Decimal128 each have lossy paths) so it gets a dedicated
-file. Pick whichever fits — the trait shape doesn't change either way.
+A backend whose native values aren't CBOR-shaped also needs a bridge between the two. MongoDB keeps
+its BSON ↔ CBOR conversion in `types/cbor.rs`.
 
-### The factory
+#### The shell
 
-Drivers expose a `vista_factory()` inherent method on the data source struct, so users construct
-factories without naming an extra type:
+Here is a complete shell over rows held in memory. It's the smallest backend there is, so
+everything in it is the trait's shape rather than a driver's detail. It evaluates every clause with
+the same evaluator a cache uses ([`VistaQuery::matches`](vantage_vista::VistaQuery::matches) and
+[`VistaQuery::sort_rows`](vantage_vista::VistaQuery::sort_rows)), so it can advertise operator
+filters, search and order:
 
 ```rust
-impl YourDB {
-    pub fn vista_factory(&self) -> YourVistaFactory {
-        YourVistaFactory::new(self.clone())
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use indexmap::IndexMap;
+use vantage_core::Result;
+use vantage_types::Record;
+use vantage_vista::{
+    Capability, CborValue, Column, ColumnFlag, Condition, FilterOp, Page, Preview, SortDirection,
+    TableShell, Vista, VistaCapabilities, VistaMetadata, VistaQuery, condition_column_error,
+};
+
+type Rec = Record<CborValue>;
+
+/// Rows held in memory. A clone shares the rows and owns its narrowing.
+#[derive(Clone)]
+struct VecShell {
+    rows: Arc<Vec<(String, Rec)>>,
+    query: VistaQuery,
+    metadata: VistaMetadata,
+    capabilities: VistaCapabilities,
+}
+
+impl VecShell {
+    fn new(rows: Arc<Vec<(String, Rec)>>, metadata: VistaMetadata) -> Self {
+        let capabilities = [
+            Capability::FilterOps,
+            Capability::Search,
+            Capability::Order,
+            Capability::Window,
+        ]
+        .into_iter()
+        .collect();
+        Self { rows, query: VistaQuery::new(), metadata, capabilities }
     }
-}
-```
 
-The factory struct holds whatever connection state it needs, plus two entry points and a trait
-impl:
-
-```rust
-pub struct YourVistaFactory { db: YourDB }
-
-impl YourVistaFactory {
-    pub fn new(db: YourDB) -> Self { Self { db } }
-
-    /// Typed entry point — kept off the `VistaFactory` trait to avoid making
-    /// vantage-vista depend on vantage-table.
-    pub fn from_table<E>(&self, table: Table<YourDB, E>) -> Result<Vista>
-    where E: Entity<AnyYourType> + 'static
-    { /* ... */ }
-}
-
-impl VistaFactory for YourVistaFactory {
-    type TableExtras = YourTableExtras;
-    type ColumnExtras = YourColumnExtras;
-    type ReferenceExtras = NoExtras;
-
-    fn build_from_spec(&self, spec: YourVistaSpec) -> Result<Vista> { /* ... */ }
-}
-```
-
-The `from_table` method is **inherent**, not on the trait. That's deliberate: putting it on the
-trait would force `vantage-vista` to depend on `vantage-table`, which would couple the two crates
-unnecessarily. Drivers want both, of course — but the universal Vista crate doesn't.
-
-#### One source, two paths
-
-The two construction paths must converge on identical source-creation code. Here's the pattern from
-`MongoVistaFactory`:
-
-```rust
-pub fn from_table<E>(&self, table: Table<YourDB, E>) -> Result<Vista>
-where E: Entity<AnyYourType> + 'static
-{
-    let name = table.table_name().to_string();
-    let any_table = table.into_entity::<EmptyEntity>();
-    let column_paths = paths_from_table_columns(&any_table);   // typed → paths
-    Ok(self.wrap(any_table, column_paths, name))
-}
-
-fn build_from_spec(&self, spec: YourVistaSpec) -> Result<Vista> {
-    let column_paths = self.paths_from_spec(&spec)?;            // YAML → paths
-    let table = self.table_from_spec(&spec)?;
-    Ok(self.wrap(table, column_paths, spec.name))
-}
-
-fn wrap(&self, table: Table<YourDB, EmptyEntity>, column_paths: ..., name: String) -> Vista {
-    // single Vista::new call site — capability flags, source construction
-}
-```
-
-The two paths only differ in *where they get their inputs from* — column metadata, the path map,
-the table itself. Once the inputs are gathered, they go through the same `wrap` helper. That means a
-future capability flip (advertising `can_subscribe`, say) is a one-line edit, not two. Drift between
-the two construction paths is the most common Vista bug; this pattern is what keeps it out.
-
-#### Two boundary details that bite
-
-Two more details that look incidental but trip every driver:
-
-**The vista's display name comes from `spec.name`, not the underlying table name.** A spec called
-`client` mapped to a Mongo `clients` collection should expose `vista.name() == "client"` — that's
-what UIs label their tabs with. The pattern: build the table from the spec (it gets the
-collection/file/table name), wrap it via the same code as `from_table` (which sets the vista's name
-from the table), then call `vista.set_name(spec.name)` to override. CSV's factory does this in
-`build_from_spec` with one extra line; the typed `from_table` path doesn't need it because there
-is no separate spec name.
-
-**Resolve the id column in a fixed order**: explicit `spec.id_column` first, then the first column
-flagged with `id`, then a backend default (`"_id"` for Mongo, `"id"` for most SQL, whatever your
-backend's idiom is). Both in-tree drivers ship a `resolve_id_column` helper following exactly this
-order. Don't reverse it — `spec.id_column` overrides flags is the rule that lets a YAML author
-correct a bad column flag without editing the schema source.
-
-### Harvesting metadata from a typed table
-
-The typed entry path needs to project the typed table's columns into vista's universal column
-metadata. Both in-tree drivers ship a near-identical helper:
-
-```rust
-fn metadata_from_table<T, E>(table: &Table<T, E>) -> VistaMetadata
-where
-    T: TableSource,
-    E: Entity<T::Value>,
-    T::Column<T::AnyType>: ColumnLike<T::AnyType>,
-{
-    let mut metadata = VistaMetadata::new();
-    for (name, col) in table.columns() {
-        let mut vc = VistaColumn::new(name.clone(), col.get_type().to_string());
-        if col.flags().contains(&ColumnFlag::Hidden) {
-            vc = vc.with_flag(vista_flags::HIDDEN);
+    /// The rows the narrowing keeps, in its order.
+    fn set(&self) -> Result<Vec<(String, Rec)>> {
+        let mut rows = Vec::new();
+        for (id, row) in self.rows.iter() {
+            if self.query.matches(row, &self.metadata)? {
+                rows.push((id.clone(), row.clone()));
+            }
         }
-        metadata = metadata.with_column(vc);
+        self.query.sort_rows(&mut rows, &self.metadata);
+        Ok(rows)
     }
-    if let Some(id) = table.id_field() {
-        metadata = metadata.with_id_column(id.name().to_string());
-    }
-    for title in table.title_fields() {
-        if let Some(col) = metadata.columns.get_mut(title) {
-            col.flags.push(vista_flags::TITLE.to_string());
+
+    /// A declared column, or a dotted path into one.
+    fn check_column(&self, column: &str) -> Result<()> {
+        let root = column.split('.').next().unwrap_or(column);
+        let columns = &self.metadata.columns;
+        if columns.contains_key(column) || columns.contains_key(root) {
+            Ok(())
+        } else {
+            Err(condition_column_error(&self.metadata, column))
         }
     }
-    metadata
 }
-```
 
-The helper is generic enough to live in `vantage-vista` itself, but the in-tree drivers keep their
-own copy. The reason is that `metadata` is *just* the universal projection — the moment you start
-adding driver-specific column attributes (Mongo's BSON path, CSV's header alias) the helper has to
-diverge. Keeping it next to the factory leaves room for that divergence without a refactor.
-
-### The source
-
-`TableShell` is the trait your executor implements. It mirrors `TableSource` in spirit — most
-methods take `&Vista` so the source can read the current condition state, columns, and metadata —
-but the value carrier is `CborValue` and the id is `String`:
-
-```rust
 #[async_trait]
-impl TableShell for YourTableShell {
-    async fn list_vista_values(&self, _vista: &Vista)
-        -> Result<IndexMap<String, Record<CborValue>>>
-    { self.read_all().await }
+impl TableShell for VecShell {
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
+    }
 
-    async fn get_vista_value(&self, _vista: &Vista, id: &String)
-        -> Result<Option<Record<CborValue>>>
-    { /* ... */ }
+    fn capabilities(&self) -> &VistaCapabilities {
+        &self.capabilities
+    }
 
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        let condition = /* translate (field, value) → native condition */;
-        self.table.add_condition(condition);
+    fn driver_name(&self) -> &'static str {
+        "vec"
+    }
+
+    fn preview(&self) -> Preview {
+        Preview::new().with_note("every clause is evaluated in memory")
+    }
+
+    async fn list(&self) -> Result<IndexMap<String, Rec>> {
+        Ok(self.set()?.into_iter().collect())
+    }
+
+    async fn get(&self, id: &str) -> Result<Option<Rec>> {
+        Ok(self.set()?.into_iter().find(|(key, _)| key == id).map(|(_, row)| row))
+    }
+
+    async fn count(&self) -> Result<i64> {
+        Ok(self.set()?.len() as i64)
+    }
+
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        Ok(Page::from_listing(self.set()?, offset, limit))
+    }
+
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        self.check_column(&condition.column)?;
+        self.query.conditions.push(condition.clone());
         Ok(())
     }
 
-    fn capabilities(&self) -> &VistaCapabilities { &self.capabilities }
+    fn set_search(&mut self, text: Option<&str>) -> Result<()> {
+        self.query.search = text.map(str::to_string);
+        Ok(())
+    }
+
+    fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
+        if let Some((column, _)) = order {
+            self.check_column(column)?;
+        }
+        self.query.order = order.map(|(column, dir)| (column.to_string(), dir));
+        Ok(())
+    }
 }
+
+fn row(id: &str, name: &str, category: &str) -> (String, Rec) {
+    let cells = [("id", id), ("name", name), ("category", category)];
+    let record = cells.into_iter().map(|(k, v)| (k.to_string(), CborValue::from(v))).collect();
+    (id.to_string(), record)
+}
+
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+let metadata = VistaMetadata::new()
+    .with_column(Column::new("id", "string").with_flag(ColumnFlag::Orderable))
+    .with_column(Column::new("name", "string").with_flag(ColumnFlag::Searchable))
+    .with_column(Column::new("category", "string"))
+    .with_id_column("id");
+let rows = Arc::new(vec![
+    row("p1", "Tea", "drink"),
+    row("p2", "Cake", "food"),
+    row("p3", "Coffee", "drink"),
+]);
+let products = Vista::new("product", VecShell::new(rows, metadata));
+
+let drinks = products.clone().with_condition("category", FilterOp::Eq, "drink")?;
+assert_eq!(drinks.count().await?, 2);
+assert_eq!(products.count().await?, 3);
+# Ok(())
+# }
 ```
 
-Two boundary conventions you must honour:
+The methods split into what every shell answers and what it opts into.
 
-- **Ids stringify at the boundary.** Mongo's `ObjectId` becomes its 24-char hex; SurrealDB's `Thing`
-  becomes its `table:id` form; AWS composite keys become whatever stable string they round-trip
-  through. Inside the source you parse the string back to the native id type. `MongoTableShell`'s
-  `parse_id` is one line — `MongoId::from_str(id)` with a `String` fallback so non-hex ids still
-  flow through the same call.
+**Every shell** answers `metadata`, `capabilities`, `driver_name`, `preview`, `list`, `get`, `count`,
+`fetch_window` and `add_condition` with equality.
 
-- **Values translate to CBOR at the boundary.** Drivers with already-JSON-shaped values
-  (CSV strings, REST JSON) reuse their existing `Into<CborValue>` impls. Drivers with richer native
-  values (BSON, Surreal CBOR) need a dedicated bridge. The `cbor.rs` module is where lossy paths
-  live — flag them in module docs, write round-trip tests for the lossless ones, and document the
-  rest. Mongo's `bson_to_cbor` collapses `ObjectId`, `DateTime`, `Decimal128`, `Regex`,
-  `JavaScriptCode`, and `Symbol` to strings; consumers wanting the native types back need to go
-  through `Table<T, E>` directly.
+- `metadata` is the schema. A shell over a typed table doesn't build it by hand: CSV's factory asks
+  the table for it with `table.vista_metadata(VistaMetadataOptions { references: true, .. })`, which
+  carries the column types, the id and title columns and the relations.
+- `fetch_window` with `offset == 0` is how a capped read and `get_some_value` read, so every shell
+  that lists must answer it. A backend that can only list cuts the window from its listing with
+  [`Page::from_listing`](vantage_vista::Page::from_listing), which also fills the page's total. A
+  backend that pages natively pushes `LIMIT`/`OFFSET` and sets the total only when the fetch learned
+  it (`Page::new(rows).with_total(n)`).
+- `add_condition` refuses a column the shell doesn't take with
+  [`condition_column_error`](vantage_vista::condition_column_error). That gives a plain
+  unknown-column error for a column the schema doesn't declare, and an `Unimplemented` refusal for a
+  dotted path the shell can't evaluate. The kinds matter: `Vista::with_query` hands a refused clause
+  back to the caller to evaluate locally, and passes a plain error on. A shell that errors must leave
+  its narrowing unchanged, which is why `VecShell` checks before it pushes.
+- `preview` renders the query the next read would send, without sending it. Lossy is fine, wrong is
+  not: it must not show a clause the shell wouldn't send.
 
-  Two non-obvious conventions: on the way in (CBOR → native), unwrap `CborValue::Tag(_, inner)` and
-  drop the tag — the inner value is what the backend stores. And integers wider than your native
-  signed 64-bit type (`i128`, big BigInts) should stringify rather than silently truncate. Mongo's
-  `cbor_to_bson` does both. Keep the bridge module-private (`pub(crate)` at most); a leaking BSON
-  ↔ CBOR conversion gets called from places that should be going through `Vista` instead.
+**A shell opts into** the rest by implementing the method and advertising its
+[`Capability`](vantage_vista::Capability). Each default answers
+[`unsupported`](vantage_vista::unsupported) with the capability that names it:
 
-### Optional overrides
+| Capability         | Methods                                            |
+| ------------------ | -------------------------------------------------- |
+| `Insert`           | `insert`                                           |
+| `Update`           | `replace`, `upsert`, `patch`                       |
+| `Delete`           | `delete`, `delete_all`                             |
+| `Import`           | `import`, one atomic batch that counts new rows    |
+| `Subscribe`        | `watch`                                            |
+| `Order`            | `set_order`                                        |
+| `Search`           | `set_search`                                       |
+| `FilterOps`        | `add_condition` with any operator other than `Eq`  |
+| `NativeConditions` | `add_native_condition`                             |
+| `Window`           | `fetch_window` at any offset                       |
+| `Cursor`           | `fetch_cursor`                                     |
+| `Traverse`         | `get_ref`                                          |
+| `ConfineWrites`    | every write keeps to the narrowed set              |
 
-`TableShell` ships defaults for several methods beyond the read/write quartet the example above
-overrides. The defaults are safe — each either returns the right error kind or falls back to a
-slow-but-correct path — but most drivers can do better:
+`Vista` refuses most of these before the shell is called: writes, search, order, operator filters,
+windows past the first, cursors and subscriptions. `get_ref` and `add_native_condition` reach the
+shell, and the default refuses them there. CSV pushes only equality, so it doesn't advertise
+`FilterOps`, and a `Gt` never reaches it. Its `add_condition` still answers
+`unsupported(Capability::FilterOps)` for any other operator, so the shell is correct on its own.
 
-- **`get_vista_count`** defaults to `list_vista_values(...).await?.len()`. Override with the
-  backend's native count path: `SELECT COUNT(*)` for SQL, `count_documents` for Mongo, whatever
-  yours gives you for free. The default is fine for testing; it stops being fine the first time
-  someone calls `vista.get_count()` on a 50M-row table.
-- **`stream_vista_values`** defaults to materialising the full result via `list_vista_values` and
-  yielding from the resulting map. Cursor-based backends — Mongo find cursors, paginated REST
-  endpoints — should override to stream lazily. Same reasoning as the count override: the default
-  works, it just doesn't scale.
-- **`insert_vista_return_id_value`** defaults to `Unsupported`. Override when the backend generates
-  the id server-side (Mongo's `ObjectId::new()`, Postgres' `RETURNING id`, a REST POST returning a
-  `Location` header), and advertise `can_insert: true` to match.
-- **`driver_name`** defaults to `"unknown"`. Override it unconditionally; a one-line
-  `fn driver_name(&self) -> &'static str { "yourdriver" }` lights up `Vista::driver()` for CLI
-  output and diagnostics, and there's no reason not to.
+Two of the opt-in methods need more than the table above says:
 
-The defaults exist for cases where the override would be a no-op or a net pessimisation. Otherwise:
-override. Leaving `get_vista_count` defaulted on a real table is the same shape of bug as not
-pushing down conditions — it works, but it works the wrong way.
+- `get_ref(relation, row)` is the one traversal method. With a parent row it returns the related
+  rows; with `None` it returns the bare target, which is what an edit form lists to pick a related
+  record from. A shell over a typed table forwards both to
+  [`Table::traverse_erased`](vantage_table::table::Table::traverse_erased), passing its own factory
+  to wrap the target, and answers an undeclared relation with
+  [`unknown_relation`](vantage_vista::unknown_relation). CSV's `get_ref` looks the reference up in
+  its metadata and makes that one call. Contained relations route through the same method (Step 9).
+- `add_native_condition` takes a [`NativeCondition`](vantage_vista::NativeCondition): a condition
+  in your driver's own type, passed through Vista unread. Downcast it to the type you take. Another
+  type is the caller's mistake, so it's an `IncorrectUsage` error, not `Unsupported`.
 
-### Capabilities — the explicit contract
+#### The factory
 
-`VistaCapabilities` is six booleans plus a `PaginateKind`. They're the contract a generic UI relies
-on to decide which buttons to draw:
+The factory is where both construction paths meet. Expose it as an inherent `vista_factory()` on the
+data source, so callers don't name an extra type. It carries two entry points:
+
+- `from_table<E>(table: Table<YourDB, E>) -> Result<Vista>`, inherent, because putting it on the
+  trait would make vantage-vista depend on vantage-table;
+- `impl VistaFactory`, whose `build_from_spec` lowers a parsed YAML spec. The default `from_yaml`
+  parses the YAML and calls it.
+
+Keep them on one path. CSV's `build_from_spec` builds a `Table<Csv, EmptyEntity>` from the spec,
+hands it to `from_table`, and renames the result with `with_name(spec.name)`, so a spec called
+`client` over a file `clients.csv` shows as `client`. A capability added later is then a one-line
+edit in one place, and the two paths can't drift apart.
+
+For the memory shell above there is no typed table, so the factory lowers the spec straight into
+metadata:
 
 ```rust
-VistaCapabilities {
-    can_count: true,
-    can_insert: true,
-    can_update: true,
-    can_delete: true,
-    can_subscribe: false,
-    can_invalidate: false,
-    paginate_kind: PaginateKind::None,
+# use std::sync::Arc;
+# use async_trait::async_trait;
+# use indexmap::IndexMap;
+# use vantage_core::Result;
+# use vantage_types::Record;
+# use vantage_vista::{
+#     Capability, CborValue, Column, Condition, Page, Preview, SortDirection, TableShell, Vista,
+#     VistaCapabilities, VistaMetadata, VistaQuery, condition_column_error,
+# };
+# type Rec = Record<CborValue>;
+# #[derive(Clone)]
+# struct VecShell {
+#     rows: Arc<Vec<(String, Rec)>>,
+#     query: VistaQuery,
+#     metadata: VistaMetadata,
+#     capabilities: VistaCapabilities,
+# }
+# impl VecShell {
+#     fn new(rows: Arc<Vec<(String, Rec)>>, metadata: VistaMetadata) -> Self {
+#         let capabilities = [
+#             Capability::FilterOps,
+#             Capability::Search,
+#             Capability::Order,
+#             Capability::Window,
+#         ]
+#         .into_iter()
+#         .collect();
+#         Self { rows, query: VistaQuery::new(), metadata, capabilities }
+#     }
+#     fn set(&self) -> Result<Vec<(String, Rec)>> {
+#         let mut rows = Vec::new();
+#         for (id, row) in self.rows.iter() {
+#             if self.query.matches(row, &self.metadata)? {
+#                 rows.push((id.clone(), row.clone()));
+#             }
+#         }
+#         self.query.sort_rows(&mut rows, &self.metadata);
+#         Ok(rows)
+#     }
+#     fn check_column(&self, column: &str) -> Result<()> {
+#         let root = column.split('.').next().unwrap_or(column);
+#         let columns = &self.metadata.columns;
+#         if columns.contains_key(column) || columns.contains_key(root) {
+#             Ok(())
+#         } else {
+#             Err(condition_column_error(&self.metadata, column))
+#         }
+#     }
+# }
+# #[async_trait]
+# impl TableShell for VecShell {
+#     fn metadata(&self) -> &VistaMetadata {
+#         &self.metadata
+#     }
+#     fn capabilities(&self) -> &VistaCapabilities {
+#         &self.capabilities
+#     }
+#     fn driver_name(&self) -> &'static str {
+#         "vec"
+#     }
+#     fn preview(&self) -> Preview {
+#         Preview::new().with_note("every clause is evaluated in memory")
+#     }
+#     async fn list(&self) -> Result<IndexMap<String, Rec>> {
+#         Ok(self.set()?.into_iter().collect())
+#     }
+#     async fn get(&self, id: &str) -> Result<Option<Rec>> {
+#         Ok(self.set()?.into_iter().find(|(key, _)| key == id).map(|(_, row)| row))
+#     }
+#     async fn count(&self) -> Result<i64> {
+#         Ok(self.set()?.len() as i64)
+#     }
+#     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+#         Ok(Page::from_listing(self.set()?, offset, limit))
+#     }
+#     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+#         self.check_column(&condition.column)?;
+#         self.query.conditions.push(condition.clone());
+#         Ok(())
+#     }
+#     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
+#         self.query.search = text.map(str::to_string);
+#         Ok(())
+#     }
+#     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
+#         if let Some((column, _)) = order {
+#             self.check_column(column)?;
+#         }
+#         self.query.order = order.map(|(column, dir)| (column.to_string(), dir));
+#         Ok(())
+#     }
+# }
+# fn row(id: &str, name: &str, category: &str) -> (String, Rec) {
+#     let cells = [("id", id), ("name", name), ("category", category)];
+#     let record = cells.into_iter().map(|(k, v)| (k.to_string(), CborValue::from(v))).collect();
+#     (id.to_string(), record)
+# }
+use vantage_vista::{NoExtras, VistaFactory, VistaSpec};
+
+struct VecVistaFactory {
+    rows: Arc<Vec<(String, Rec)>>,
 }
-```
 
-Set a flag to `true` *only* if you actually override the matching `TableShell` method. Default
-trait impls return `default_error(method, capability, vista)`, which produces one of two error
-kinds:
+impl VistaFactory for VecVistaFactory {
+    type TableExtras = NoExtras;
+    type ColumnExtras = NoExtras;
+    type ReferenceExtras = NoExtras;
 
-- Flag is `false` → `ErrorKind::Unsupported` ("backend doesn't claim to do this; caller should have
-  checked capabilities first").
-- Flag is `true` → `ErrorKind::Unimplemented` ("backend advertised support but didn't override the
-  method — placeholder bug").
-
-This is the **lie detector**. If a UI sees `can_insert: true` and calls `insert_value`, it must
-either succeed or fail with a real driver error — never a "you advertised this but didn't ship it"
-placeholder. CSV illustrates the read-only end of this: `can_count: true` and everything else
-`false`, so writes return `Unsupported` and the test asserts the kind explicitly.
-
-### Conditions delegate; they never live on Vista
-
-This is the design decision that made everything else click into place, and it's worth dwelling on
-because the original plan had it backwards.
-
-`Vista::add_condition_eq(field, CborValue)` delegates straight to
-`TableShell::add_eq_condition(&mut self, field, value)`. The source translates the pair into the
-driver's native condition type and pushes it onto the wrapped `Table`'s condition list. Vista
-itself stores no condition state.
-
-```rust
-fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-    // CSV: build an Expression<AnyCsvType> via the operation trait
-    let column = self.table.columns().get(field)
-        .ok_or_else(|| error!("Unknown column for eq condition", field = field))?
-        .clone();
-    let csv_value: AnyCsvType = value.clone().into();
-    self.table.add_condition(column.eq(csv_value));
-    Ok(())
+    fn build_from_spec(&self, spec: VistaSpec) -> Result<Vista> {
+        let mut metadata = VistaMetadata::new().with_id_column(spec.resolve_id_column("id"));
+        for (name, column) in &spec.columns {
+            let declared = match &column.col_type {
+                Some(ty) => Column::new(name, ty),
+                None => Column::untyped(name),
+            };
+            let declared = column.flags.iter().cloned().fold(declared, Column::with_flag);
+            metadata = metadata.with_column(declared);
+        }
+        Ok(Vista::new(spec.name, VecShell::new(self.rows.clone(), metadata)))
+    }
 }
 
-// Mongo: build a bson::Document with dot-notation for nested fields
-fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-    let dotted = self.dotted_path(field);
-    let bson_value = cbor_to_bson(value);
-    self.table.add_condition(doc! { dotted: bson_value });
-    Ok(())
-}
-```
-
-#### Why not filter in memory after the fetch?
-
-Because that defeats the database. A REST source pulling 50,000 rows over the wire to discard 49,990
-in-memory is not a useful product. Every backend that supports server-side filtering — and that's
-all of them — benefits from push-down. SQL drivers translate to `WHERE`, Mongo to `find` filter,
-REST to query parameters, AWS to DynamoDB filter expressions. The universal CBOR pair is the lowest
-common denominator that drivers translate up from.
-
-#### Why `&CborValue` and not a typed value?
-
-Because at the Vista boundary the Rust type isn't known. The caller is a CLI parsing a string
-argument, or a YAML field, or a Rhai script. CBOR is the carrier; the driver decides how to project
-it onto its native type. CSV's `From<CborValue> for AnyCsvType` and Mongo's `cbor_to_bson` are the
-two halves of that translation in the in-tree drivers.
-
-### References delegate too
-
-`Vista::get_ref(relation, row)` is the eq-condition delegation one rung up: same principle, same
-Vista-stores-nothing rule. The call lands on `TableShell::get_ref`, which forwards through to the
-wrapped `Table`'s `with_one`/`with_many` machinery and re-wraps the result as a fresh `Vista`.
-Vista itself holds reference *metadata* (the YAML-friendly
-`Reference { name, target, kind, foreign_key }` struct) but no live traversal state.
-
-The default trait impl returns `Unimplemented`. This is the most-forgotten override on the trait,
-because the underlying `Table<T, E>` you handed to the factory already supports traversal —
-nothing rewires it into the Vista surface unless you write the glue (SQLite's shell, verbatim):
-
-```rust
-fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-    let native_row = to_native_record(row);
-    let target = self.table.get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-    let factory = SqliteVistaFactory::new(self.table.data_source().clone());
-    factory.from_table(target)
-}
-```
-
-**`get_ref` has a twin: `get_ref_target`.** Where `get_ref` resolves a relation *for a known
-parent row* (join condition applied), `get_ref_target` builds the **bare** target — the same table
-with **no** condition. It has the same three-line shape, but calls the typed table's
-`get_ref_target_erased(relation)` instead of `get_ref_from_row`:
-
-```rust
-fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-    let target = self.table.get_ref_target_erased(relation)?;
-    let factory = SqliteVistaFactory::new(self.table.data_source().clone());
-    factory.from_table(target)
-}
-```
-
-If your `get_ref` threads a resolver or converts the row into a native type, mirror that here
-(minus the row) — the wrap is identical. **Override both or neither:** a shell that forwards
-`get_ref` but leaves `get_ref_target` on the default lets read-side traversal work while every
-edit-form reference dropdown — which calls `Dio::get_ref_target(relation)` to list the eligible
-rows to pick from — silently fails with `Unimplemented`. That split is exactly the bug the SQL and
-Mongo drivers avoid by shipping both from day one.
-
-Two notes worth dwelling on:
-
-- The result is *another* `Vista`, not the inner table. Consumers stay on the universal surface;
-  each hop fetches a row and traverses from it without falling out of Vista.
-- Traversal here is strictly **same-persistence** — a Vista describes one backend. Cross-backend
-  relations live one layer up in a [`Catalog`](vantage_vista::Catalog), which resolves the
-  target by name in *its* driver, and [`Reference::narrow`](vantage_vista::Reference::narrow)
-  narrows it with universal eq-conditions. Your shell doesn't need any code for that to work.
-
-#### Native conditions from outside: `add_raw_condition`
-
-Universal eq-conditions cover the CBOR vocabulary, but some callers hold a condition already in
-your backend's *native* type — the Rhai layer is the in-tree case: a `modify:` script builds a
-vendor `Expression` that no `(field, value)` pair can carry, and hands it over through an extension
-verb your shell registers in `register_rhai_extensions` (SurrealDB's `self.with_condition(expr)`;
-see [Backend extensions](../rhai/surfaces.md#backend-extensions)).
-`TableShell::add_raw_condition` is the hatch for exactly that: it receives a `Box<dyn Any>`,
-downcasts to the driver's native condition type, and pushes it onto the wrapped table — SurrealDB's
-shell is the worked example (it rejects anything that isn't an `Expression<AnySurrealType>`, with a
-clear message). If your driver has no scripted-condition story, leave the default in place; the
-advertise-what-you-mean rule applies here the same as everywhere else.
-
-#### What if my backend doesn't traverse?
-
-LogWriter is the worked example: an insert-only sink has no references, doesn't read its own
-writes, and forwarding `get_ref` makes no sense. Leave the default. The error message includes
-the driver type name and the relation name, so the caller sees "get_ref not implemented for
-`LogWriterTableShell`" — accurate, unsurprising, consistent with everything else returning
-`Unimplemented` from this trait.
-
-### Nested fields: the `column_paths` pattern
-
-The MongoDB rollout surfaced a problem that any document-shaped backend will hit eventually: how do
-you let a column called `city` in the spec map to `address.city` in the underlying document?
-
-The answer is `column_paths: IndexMap<String, Vec<String>>` — a per-source map from spec column
-name to BSON path segments. The source uses it three ways:
-
-- **On read**, walk the path through the raw document and project the value out under the spec
-  name.
-- **On write**, rebuild intermediate sub-documents so `{ "address.city", "address.zip" }` lands as
-  one `address: { city, zip }` BSON entry.
-- **On filter**, join the path with `.` so Mongo can use the index server-side.
-
-The path map is computed once at construction. Typed-table sources read column aliases (single-level
-renames, since `with_alias` doesn't carry dotted paths). YAML-driven sources read each column's
-`mongo: { nested_path: "address.city" }` block. Both feed the same `wrap` helper, so reads, writes,
-and filters all see the same translation.
-
-This is the second piece of accumulated wisdom from the rollout (alongside the eq-condition
-delegation). Document-shaped backends — Surreal nested objects, REST JSON paths, AWS attribute maps
-— should reuse the pattern. SQL backends won't need it: their column-to-field mapping is already
-flat, and aliases ride on `with_alias`.
-
-### YAML extras: three associated types, one `deny_unknown_fields`
-
-Driver-specific YAML lives under three associated types on `VistaFactory`:
-
-```rust
-pub trait VistaFactory: Send + Sync + 'static {
-    type TableExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
-    type ColumnExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
-    type ReferenceExtras: Serialize + DeserializeOwned + Default + Send + Sync + 'static;
-    /* ... */
-}
-```
-
-Each defaults to `NoExtras` for drivers with no driver-specific blocks. The convention is a
-top-level key named after the driver — `csv:`, `mongo:`, `surreal:` — and the same key inside each
-column entry:
-
-```yaml
-name: client
+const PRODUCT: &str = r#"
+name: product
 columns:
-  _id:
-    type: object_id
-    flags: [id]
-  full_name:
-    type: string
-    flags: [title]
-    mongo:
-      field: fullName        # column-level extras under `mongo:`
-  city:
-    type: string
-    mongo:
-      nested_path: address.city
-mongo:
-  collection: clients         # table-level extras under `mongo:`
+  id: { type: string, flags: [id, orderable] }
+  name: { type: string, flags: [title, searchable] }
+  category: { type: string }
+"#;
+
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+let rows = vec![row("p1", "Tea", "drink"), row("p2", "Cake", "food"), row("p3", "Coffee", "drink")];
+let factory = VecVistaFactory { rows: Arc::new(rows) };
+let products = factory.from_yaml(PRODUCT)?;
+assert_eq!(products.id_column(), Some("id"));
+assert_eq!(products.title_columns(), ["name"]);
+# Ok(())
+# }
 ```
 
-Set `#[serde(deny_unknown_fields)]` on every extras struct. The outer `VistaSpec` can't (it uses
-`#[serde(flatten)]` to merge the driver block in), but each *driver-owned* block must reject
-typos — otherwise `mongo: { collctiom: clients }` silently falls back to defaults and you're
-debugging a missing collection at runtime instead of at parse time.
+Three spec rules hold for every driver:
 
-Make every field inside the block `Option<T>` with `#[serde(default)]`, so the entire block can be
-omitted when the spec name is enough. CSV's `csv: { path }` is mandatory (no path means no file);
-Mongo's `mongo: { collection }` is optional and falls back to `spec.name`. Pick the convention that
-fits your backend, but lean *omit* over *required* — YAML authors hate writing the same name twice.
+- **Resolve the id column in a fixed order**: `id_column:` first, then the first column flagged
+  `id`, then the backend's own default (`"id"` for SQL, `"_id"` for MongoDB).
+  `VistaSpec::resolve_id_column` does exactly that. Don't reverse it: an explicit `id_column:` is how
+  a YAML author corrects a bad flag without editing the schema source.
+- **Driver blocks reject typos.** Driver-specific YAML lives under the three associated types,
+  conventionally under a key named after the driver (`csv: { path }`, `mongo: { collection }`). Put
+  `#[serde(deny_unknown_fields)]` on every extras struct, or `mongo: { collctiom: clients }` falls
+  back to defaults and you debug a missing collection at runtime instead of at parse time. Make the
+  fields `Option<T>` with `#[serde(default)]` where the spec name is a sensible fallback.
+- **Validate up front.** Reject bad paths and conflicting options in `build_from_spec`, with the
+  column name in the error, so the YAML author can find the entry.
 
-Treat YAML errors as *parse errors*, not runtime errors. Validate paths, reject empty segments,
-reject mutually-exclusive options up-front in `build_from_spec` and friends. The Mongo driver's
-`MongoColumnBlock::resolved_path` is a worked example — it errors on empty `nested_path`, on
-`a..b` style paths, and on empty `field` — woven with the column name so the YAML author can find
-the bad entry.
+#### The boundary
+
+- **Ids stringify.** MongoDB's `ObjectId` becomes its hex form, SurrealDB's `Thing` its `table:id`
+  form. Inside the shell you parse the string back. Round-trip it in a test: `get` must find a row by
+  the very string `list` returned for it.
+- **Values become CBOR.** On the way in, unwrap `CborValue::Tag(_, inner)` and store the inner
+  value. Stringify integers wider than your native type rather than truncating them. Keep the bridge
+  module-private: a public BSON ↔ CBOR conversion gets called from places that should go through a
+  Vista instead.
+
+### Why must every advertised capability work?
+
+Because a capability is the only thing a generic caller checks. A UI draws an "add" button when the
+shell advertises `Insert`, a grid offers sorting when it advertises `Order`, and a cache pushes a
+filter down instead of evaluating it itself when it advertises `FilterOps`. Nothing else warns the
+caller, so a flag the shell can't honour turns a clean "not supported" into a failure in front of a
+user.
+
+`vantage_vista::contract` makes that a test failure instead. `check_advertised` calls the method
+behind each advertised capability on your fixture, and fails when one refuses, errors on a valid
+fixture, or does nothing: a search that counts as many rows as before, an ascending and a
+descending order that list the same row first, a `Gt` that keeps its own pivot row. It also holds
+every shell to the leading window and to the dotted-path rule above. `check_clone` checks that a
+narrowed clone leaves the original alone. Each driver runs both against its own fixture:
+
+```rust
+# use std::sync::Arc;
+# use async_trait::async_trait;
+# use indexmap::IndexMap;
+# use vantage_core::Result;
+# use vantage_types::Record;
+# use vantage_vista::{
+#     Capability, CborValue, Column, ColumnFlag, Condition, Page, Preview, SortDirection,
+#     TableShell, Vista, VistaCapabilities, VistaMetadata, VistaQuery, condition_column_error,
+# };
+# type Rec = Record<CborValue>;
+# #[derive(Clone)]
+# struct VecShell {
+#     rows: Arc<Vec<(String, Rec)>>,
+#     query: VistaQuery,
+#     metadata: VistaMetadata,
+#     capabilities: VistaCapabilities,
+# }
+# impl VecShell {
+#     fn new(rows: Arc<Vec<(String, Rec)>>, metadata: VistaMetadata) -> Self {
+#         let capabilities = [
+#             Capability::FilterOps,
+#             Capability::Search,
+#             Capability::Order,
+#             Capability::Window,
+#         ]
+#         .into_iter()
+#         .collect();
+#         Self { rows, query: VistaQuery::new(), metadata, capabilities }
+#     }
+#     fn set(&self) -> Result<Vec<(String, Rec)>> {
+#         let mut rows = Vec::new();
+#         for (id, row) in self.rows.iter() {
+#             if self.query.matches(row, &self.metadata)? {
+#                 rows.push((id.clone(), row.clone()));
+#             }
+#         }
+#         self.query.sort_rows(&mut rows, &self.metadata);
+#         Ok(rows)
+#     }
+#     fn check_column(&self, column: &str) -> Result<()> {
+#         let root = column.split('.').next().unwrap_or(column);
+#         let columns = &self.metadata.columns;
+#         if columns.contains_key(column) || columns.contains_key(root) {
+#             Ok(())
+#         } else {
+#             Err(condition_column_error(&self.metadata, column))
+#         }
+#     }
+# }
+# #[async_trait]
+# impl TableShell for VecShell {
+#     fn metadata(&self) -> &VistaMetadata {
+#         &self.metadata
+#     }
+#     fn capabilities(&self) -> &VistaCapabilities {
+#         &self.capabilities
+#     }
+#     fn driver_name(&self) -> &'static str {
+#         "vec"
+#     }
+#     fn preview(&self) -> Preview {
+#         Preview::new().with_note("every clause is evaluated in memory")
+#     }
+#     async fn list(&self) -> Result<IndexMap<String, Rec>> {
+#         Ok(self.set()?.into_iter().collect())
+#     }
+#     async fn get(&self, id: &str) -> Result<Option<Rec>> {
+#         Ok(self.set()?.into_iter().find(|(key, _)| key == id).map(|(_, row)| row))
+#     }
+#     async fn count(&self) -> Result<i64> {
+#         Ok(self.set()?.len() as i64)
+#     }
+#     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+#         Ok(Page::from_listing(self.set()?, offset, limit))
+#     }
+#     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+#         self.check_column(&condition.column)?;
+#         self.query.conditions.push(condition.clone());
+#         Ok(())
+#     }
+#     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
+#         self.query.search = text.map(str::to_string);
+#         Ok(())
+#     }
+#     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
+#         if let Some((column, _)) = order {
+#             self.check_column(column)?;
+#         }
+#         self.query.order = order.map(|(column, dir)| (column.to_string(), dir));
+#         Ok(())
+#     }
+# }
+# fn row(id: &str, name: &str, category: &str) -> (String, Rec) {
+#     let cells = [("id", id), ("name", name), ("category", category)];
+#     let record = cells.into_iter().map(|(k, v)| (k.to_string(), CborValue::from(v))).collect();
+#     (id.to_string(), record)
+# }
+# fn products() -> Vista {
+#     let metadata = VistaMetadata::new()
+#         .with_column(Column::new("id", "string").with_flag(ColumnFlag::Orderable))
+#         .with_column(Column::new("name", "string").with_flag(ColumnFlag::Searchable))
+#         .with_column(Column::new("category", "string"))
+#         .with_id_column("id");
+#     let rows = vec![row("p1", "Tea", "drink"), row("p2", "Cake", "food"), row("p3", "Coffee", "drink")];
+#     Vista::new("product", VecShell::new(Arc::new(rows), metadata))
+# }
+use vantage_vista::contract;
+
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+contract::check_advertised(&products()).await;
+contract::check_clone(&products(), "category", CborValue::from("drink")).await;
+# Ok(())
+# }
+```
+
+A third check, `check_advertised_writes`, probes the write capabilities. Run it only on a disposable
+fixture, since a successful probe stores a row.
+
+Leaving a flag off costs nothing: `Vista` refuses the call, and the caller evaluates the clause
+itself or hides the control. So start narrow and add a flag the day its method works. A shell that
+ships `Subscribe` the week LIVE queries land is healthier than one that advertised it on day one.
+Postgres is the cautionary case for `Subscribe`: `LISTEN` succeeds on a channel no trigger feeds, so
+its capability is opt-in (`PostgresVistaFactory::with_notify`), not inferred from the table being
+writable. A silent stream can't be told apart from an idle table.
 
 ### Tests
 
-Vista tests are gated on `feature = "vista"` and run against the **real** backend, not a mock —
-same as the `TableSource` tests in earlier steps. Use `Result<(), Box<dyn Error>>` so `?` covers
-both your driver's native error type and `vantage_core::Error` uniformly:
+Gate the Vista tests on `feature = "vista"`. The contract runs against the real backend, as the
+`TableSource` tests in earlier steps do. Around it:
 
-```rust
-#![cfg(feature = "vista")]
+- **Unit tests** that need no backend: the CBOR bridge round-trips every native variant (lossy ones
+  assert their documented form), and the YAML spec parses, with an unknown field in the driver block
+  failing.
+- **Typed and YAML construction**: `from_table` and `from_yaml` list, get and count the seeded rows,
+  and the spec name overrides the table name.
+- **Push-down**: a condition narrows both `count` and `list_values`, and a second one stacks.
+- **Traversal**: `get_ref` from a row and with `None`, for every relation. A test file that never
+  traverses won't notice a shell that forgot to forward it.
+- **Ids**: `get_value` finds each row by the id `list_values` returned for it.
 
-type TestResult = std::result::Result<(), Box<dyn Error>>;
+### Step 8 checklist
 
-#[tokio::test]
-async fn vista_lists_typed_as_cbor() -> TestResult {
-    let (db, name) = setup().await;          // fresh randomised database
-    let table = product_table(db.clone());
-    /* seed a row */
-    let vista = db.vista_factory().from_table(table)?;
+At this point your backend has:
 
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 1);
-    /* assert CborValue shapes */
+1. **A `vista` feature** gating the bridge, and `vantage-vista`'s `contract` feature in
+   `[dev-dependencies]`.
 
-    teardown(&db, &name).await;
-    Ok(())
-}
-```
+2. **`<Driver>::vista_factory()`**, returning a `<Driver>VistaFactory` with an inherent
+   `from_table<E>` and an `impl VistaFactory` whose `build_from_spec` routes through the same path.
 
-Ship two layers. Cheap unit tests (no backend needed) cover:
+3. **`<Driver>TableShell`** implementing `TableShell`:
+   - `Clone` carries the narrowing and shares the connection;
+   - `metadata` from `table.vista_metadata(..)`;
+   - `list`, `get`, `count`, the leading window, and `add_condition` with equality, refusing columns
+     through `condition_column_error`;
+   - `get_ref` through `Table::traverse_erased`, from a row and with `None`;
+   - `preview` and `driver_name`;
+   - the opt-in methods the backend can honour, and `capabilities()` advertising exactly those.
 
-- **The CBOR bridge** — round-trip every native variant through CBOR and back. Scalars, nested
-  maps, nested arrays. Lossy variants assert the documented lossy form rather than equality.
-- **YAML parsing** — a minimal spec parses, an unknown field in the driver block errors loudly,
-  optional blocks can be omitted.
+4. **YAML extras** in `spec.rs`, each with `deny_unknown_fields`, and the id column resolved in the
+   fixed order.
 
-Gated integration tests against the real backend then cover:
+5. **Tests**: `check_advertised` and `check_clone` against a real fixture, `check_advertised_writes`
+   where the fixture is disposable, and the construction, push-down, traversal and id tests.
 
-- **Typed `from_table` round-trip** — list, get-by-id, count match the seeded data.
-- **YAML `from_yaml` round-trip** — same, plus the spec name overrides the underlying table name.
-- **`add_condition_eq` push-down** — the count and list both honour the filter, and a second
-  condition stacks via AND.
-- **Capability advertisement** — the booleans match what the driver actually overrode. Read-only
-  drivers must assert `can_insert: false` etc.
-- **Read-only error kinds** — for an unsupported op, assert `ErrorKind::Unsupported` *and* that the
-  message mentions the capability name. This is what catches the "advertised but unimplemented"
-  drift.
-- **Write round-trip via CBOR** (writeable drivers only) — insert, get, delete via the spec column
-  names; verify the raw underlying document has the native shape (e.g. nested sub-doc rather than
-  flattened keys).
-- **Nested-path read/write/filter** (drivers using `column_paths`) — the most subtle of the lot,
-  since it's where read, write, and filter must agree on the path map.
-
-### Sharp edges
-
-A few things bite every driver. They're worth flagging up front rather than discovering during
-review.
-
-**Id translation is the most common bug.** Round-trip your native id through `String` and back.
-Assert that `vista.get_value(&id)` finds what `vista.list_values()` returned the id for — using
-the *same* string, not a re-parsed one. Mongo's `MongoId::from_str` falling back to `String` for
-non-hex inputs is the kind of asymmetry that hides until production.
-
-**Aliases at the table level may not survive.** `Column::with_alias` is honoured by some
-`TableSource` impls and ignored by others when materialising records — Mongo's `doc_to_record`
-ignores them, which is why MongoDB's vista layer routes single-level renames through
-`column_paths` instead. Audit your read path before relying on aliases for column renames; if the
-table layer doesn't honour them, do the renaming in the vista source.
-
-**`get_ref` and `get_ref_target` are the easiest methods to forget — and forgetting just one is
-worse than forgetting both.** The defaults return `Unimplemented` even though the typed
-`Table<T, E>` you wrapped has full `with_one`/`with_many` support sitting right there. Forwarding
-each is three lines (see "References delegate too" above), but a test file that never traverses
-won't catch a missing override — and these are exactly the entry points YAML-driven UIs and CLIs
-reach for first (`get_ref` for drill-down, `get_ref_target` for the edit-form pick-a-related-record
-dropdown). Add a smoke test that exercises **both** to every driver's `tests/N_vista.rs`.
-
-**Cursor-only backends should not advertise offset.** `PaginateKind` is a UI hint as much as a
-declaration; getting it wrong means the UI offers an offset slider that never works. If the
-backend is genuinely cursor-only (DynamoDB, many REST APIs), say so, and let consumers reject the
-pagination shape they can't render.
-
-**Conditions stay driver-typed for now.** Universal/portable conditions are a later stage. Until
-then, only translate `eq`, and reject the rest at construction with a clear message — "operator
-`Lt` not yet supported on `<DriverTableShell>`" beats a silent fall-back to in-memory filtering
-every time.
-
-**Capability flags are cheap to flip later.** Start narrow. A driver that ships with
-`can_subscribe: false` and turns it on the day LIVE-query lands is a healthier state than one that
-flagged it `true` in week one and has been shipping `Unimplemented` errors ever since.
-
-### Step 7 conclusion
-
-At this point your backend should have:
-
-1. **A `vista` cargo feature** gating the bridge so non-Vista users don't pull in `vantage-vista`.
-
-2. **`<Driver>::vista_factory()`** — inherent method on the data source returning a
-   `<Driver>VistaFactory`.
-
-3. **`<Driver>VistaFactory`** with two entry points and a trait impl:
-   - `from_table<E>(Table<YourDB, E>) -> Result<Vista>` (inherent, typed path).
-   - `impl VistaFactory` with `build_from_spec` (YAML path).
-   - Both routing through one `wrap` helper that calls `Vista::new` exactly once.
-
-4. **`<Driver>TableShell`** implementing `TableShell`:
-   - Read methods translate native ids → `String` and native values → `CborValue` at the boundary.
-   - Write methods (where supported) translate the other way.
-   - `add_eq_condition` pushes a native condition onto the wrapped `Table`.
-   - `get_ref` **and** `get_ref_target` forward reference traversal through the wrapped `Table` and
-     re-wrap the result as a fresh `Vista` — `get_ref` with the parent-row join condition,
-     `get_ref_target` as the bare eligible-rows target the edit-form dropdown lists. Ship both or
-     neither. `add_raw_condition` is also overridden if the driver participates in cross-backend
-     YAML references.
-   - `driver_name` returns a stable short label; `get_vista_count` and `stream_vista_values` are
-     overridden where the backend has a native fast path.
-   - `capabilities()` returns a `VistaCapabilities` whose `true` flags exactly match the methods
-     you actually overrode.
-
-5. **Live subscription** (optional) — `watch_vista` plus `can_subscribe`, if the backend can push
-   changes at all. Four promises bind every implementation:
-   - The stream **may be coarser than the vista**. Subscribing table-wide and letting the consumer
-     discard the rest is a legitimate v1; callers always pass the full vista and never depend on
-     how narrowly you filter, so you can tighten scope later without breaking them.
-   - **Rows you push may fall outside the vista's conditions**, precisely because of the above.
-     Either reconcile in the driver — SurrealDB re-reads each notified id *through* the conditions,
-     so a row that no longer matches surfaces as `Deleted` — or leave it to the consumer, but say
-     which in your docs.
-   - `VistaChange::Invalidated` means **"re-read everything"**. Emit it when you have a signal but
-     no payload; Postgres `LISTEN/NOTIFY` has nothing else to offer.
-   - **Ending the stream is normal.** Consumers resubscribe with backoff and reconcile the gap, so
-     you need no internal reconnect loop.
-
-   Advertise `can_subscribe` only when the feed works with **no further setup**, or when the
-   application has explicitly declared that setup exists. Postgres is the cautionary case: `LISTEN`
-   succeeds on a channel no trigger ever feeds, so its capability is opt-in
-   (`PostgresVistaFactory::with_notify`) rather than inferred from the table being writable. A flag
-   left `true` over a permanently silent stream is worse than one left `false` — consumers cannot
-   tell it apart from an idle table.
-
-6. **YAML extras** under `spec.rs`:
-   - `<Driver>TableExtras` and `<Driver>ColumnExtras` — both `deny_unknown_fields`.
-   - `<Driver>VistaSpec` type alias resolving the three associated types.
-   - Up-front validation of paths, mutual-exclusion rules, etc., as part of spec lowering.
-
-7. **Tests** in `tests/<n>_vista.rs` — gated on `feature = "vista"`, run against a real backend,
-   covering typed/YAML construction, read, write (where supported), `add_condition_eq` push-down,
-   capability advertisement, and the `Unsupported` vs `Unimplemented` error-kind boundary.
-
-Once Vista's wired up, the same generic CLI, admin UI, or scripting layer that already drives CSV
-and MongoDB drives your backend too — without recompiling, without an entity import, without a
-single backend-specific line of code on the consumer side. That's what the six previous steps were
-clearing the runway for.
+The same generic CLI, admin UI or script that drives CSV and MongoDB now drives your backend, with
+no entity import and no backend-specific line on the consumer side.

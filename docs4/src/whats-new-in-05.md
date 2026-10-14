@@ -1,5 +1,9 @@
 # What's New in Vantage 0.5
 
+```admonish note title="Historical snippets"
+The snippets show the 0.5 API. They aren't compiled against the current crates.
+```
+
 Version 0.4 made the type system precise — every backend carries its own types, and a persistence
 implements only what its engine supports. Version 0.5 answers the question that follows: **how does
 code that doesn't know your entity type talk to your data?**
@@ -30,7 +34,7 @@ Each backend ships a factory that turns a typed table into a Vista. The factory 
 field, title fields, and references from the table definition you already built — no extra mapping
 code:
 
-```rust
+```rust,ignore
 use vantage_sql::prelude::*;
 use vantage_vista::Vista;
 
@@ -42,7 +46,7 @@ For MongoDB it's `MongoVistaFactory`, for AWS `AwsVistaFactory` — same shape, 
 resulting `Vista` is identical regardless of which factory produced it. From there, everything is
 runtime introspection:
 
-```rust
+```rust,ignore
 // Schema — no entity type required
 for name in vista.get_column_names() {
     let col = vista.get_column(name).unwrap();
@@ -90,7 +94,7 @@ numbers. Vista makes this explicit with
 [`VistaCapabilities`](vantage_vista::VistaCapabilities) — a struct of booleans where each driver
 declares exactly what it supports:
 
-```rust
+```rust,ignore
 let caps = vista.capabilities();
 if caps.can_search { v.add_search("query")?; }
 if caps.can_fetch_page {
@@ -132,7 +136,7 @@ For everything YAML can't express — vendor-specific expressions, derived sourc
 traversal — there's an optional **Rhai** DSL that compiles to native queries. The same script
 renders dialect-correct SQL across all three SQL backends:
 
-```rust
+```rust,ignore
 let users = table("users").alias("u");
 select()
     .from(users)
@@ -164,7 +168,7 @@ requirement.
 Embedded objects and arrays — an order's `lines` array, a row's JSON column — now surface as a fully
 **editable sub-Vista**:
 
-```rust
+```rust,ignore
 let order = Order::table(db)
     .with_contained_many("lines", |line| {
         line.with_column("product_id").with_column("quantity")
@@ -219,7 +223,7 @@ Four words you'll see throughout:
 - **Scenery** — a reactive view onto a Dio (ordered tables, individual records, aggregates). The UI
   binds here.
 
-```rust
+```rust,ignore
 let lens = Arc::new(
     Lens::new()
         .cache_at("./cache.redb")
@@ -265,7 +269,7 @@ no longer a `Vista` concern (a `Vista` is strictly single-backend). It moved up 
 `build_vista(name)` materializes a Vista and `traverse(relation, parent_row)` resolves and narrows
 the related Vista regardless of which persistence backs it.
 
-```rust
+```rust,ignore
 let catalog = VistaCatalog::new();
 catalog.register("category", |name| postgres_factory.build(name));
 catalog.register("product",  |name| mongo_factory.build(name));

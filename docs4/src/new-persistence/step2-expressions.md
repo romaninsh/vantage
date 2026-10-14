@@ -10,6 +10,7 @@ Define a macro that produces `Expression<YourAnyType>`. SurrealDB has `surreal_e
 `sqlite_expr!`:
 
 ```rust
+# use vantage_sql::sqlite_expr;
 let expr = sqlite_expr!("SELECT * FROM product WHERE price > {}", 100i64);
 ```
 
@@ -34,7 +35,7 @@ Vantage centralises this in the `Identifier` struct (`vantage-sql/src/primitives
 `Identifier` is quote-agnostic — it stores the name parts and optional alias, but the actual quoting
 happens in the `Expressive<T>` implementation for each backend type:
 
-```rust
+```text
 impl Expressive<AnyMysqlType> for Identifier {
     fn expr(&self) -> Expression<AnyMysqlType> {
         Expression::new(self.render_with('`'), vec![])  // `name`
@@ -49,6 +50,7 @@ In practice you use the `ident()` shorthand and pass it into the vendor macro wi
 `(...)` syntax calls `.expr()` automatically, so quoting is handled by the type context:
 
 ```rust
+# use vantage_sql::{mysql_expr, postgres_expr};
 use vantage_sql::primitives::identifier::{Identifier, ident};
 
 // The (ident(...)) syntax invokes Expressive — quoting is automatic
@@ -64,7 +66,9 @@ let expr = postgres_expr!("SELECT {} FROM {} WHERE {} = {}",
 For qualified identifiers (table.column) and aliases:
 
 ```rust
-let expr = sqlite_expr!("SELECT {}", (Identifier::with_dot("u", "name")));
+# use vantage_sql::primitives::identifier::{Identifier, ident};
+# use vantage_sql::{mysql_expr, sqlite_expr};
+let expr = sqlite_expr!("SELECT {}", (ident("name").dot_of("u")));
 // → SELECT "u"."name"
 
 let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
@@ -97,6 +101,16 @@ The best way to test this is INSERT + SELECT round-trips. A single insert exerci
 macro, parameter binding, type markers, and result parsing:
 
 ```rust
+# use vantage_expressions::ExprDataSource;
+# use vantage_sql::sqlite::SqliteDB;
+# use vantage_sql::sqlite_expr;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+# db.execute(&sqlite_expr!(
+#     "CREATE TABLE product (id TEXT PRIMARY KEY, name TEXT, price INTEGER, is_deleted BOOLEAN)"
+# ))
+# .await?;
 let insert = sqlite_expr!(
     "INSERT INTO product (id, name, price, is_deleted) VALUES ({}, {}, {}, {})",
     "cupcake", "Flux Cupcake", 120i64, false
@@ -105,11 +119,23 @@ db.execute(&insert).await?;
 
 let select = sqlite_expr!("SELECT * FROM product WHERE id = {}", "cupcake");
 let result = db.execute(&select).await?;
+# Ok(())
+# }
 ```
 
 Nested expressions let you build multi-row inserts from composable parts:
 
 ```rust
+# use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_sql::sqlite_expr;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+# db.execute(&sqlite_expr!(
+#     "CREATE TABLE product (id TEXT PRIMARY KEY, name TEXT, price INTEGER, is_deleted BOOLEAN)"
+# ))
+# .await?;
 let row1 = sqlite_expr!("({}, {}, {}, {})", "tart", "Time Tart", 220i64, false);
 let row2 = sqlite_expr!("({}, {}, {}, {})", "pie", "Sea Pie", 299i64, true);
 
@@ -122,6 +148,10 @@ let insert = Expression::<AnySqliteType>::new(
     vec![ExpressiveEnum::Nested(rows)],
 );
 db.execute(&insert).await?;
+# let count = db.execute(&sqlite_expr!("SELECT COUNT(*) FROM product")).await?;
+# assert_eq!(count.unwrap_scalar().try_get::<i64>(), Some(2));
+# Ok(())
+# }
 ```
 
 The `ExpressionFlattener` collapses all nesting into one flat template with positional parameters —
@@ -136,6 +166,28 @@ This is not a subquery. The deferred query runs first, produces a concrete value
 gets bound as a regular parameter in the outer query.
 
 ```rust
+# use vantage_expressions::{ExprDataSource, Expression, ExpressiveEnum};
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_sql::sqlite_expr;
+# async fn setup() -> (SqliteDB, SqliteDB) {
+#     let config_db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+#     for sql in [
+#         "CREATE TABLE config (key TEXT PRIMARY KEY, value INTEGER)",
+#         "INSERT INTO config VALUES ('min_price', 150)",
+#     ] {
+#         config_db.execute(&sqlite_expr!(sql)).await.unwrap();
+#     }
+#     let shop_db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+#     for sql in [
+#         "CREATE TABLE product (name TEXT, price INTEGER)",
+#         "INSERT INTO product VALUES ('Cheap', 50), ('Tart', 220), ('Pie', 299)",
+#     ] {
+#         shop_db.execute(&sqlite_expr!(sql)).await.unwrap();
+#     }
+#     (config_db, shop_db)
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
 let (config_db, shop_db) = setup().await;
 
 // This doesn't execute yet — it's a closure
@@ -153,6 +205,8 @@ let shop_query = Expression::<AnySqliteType>::new(
 // 2. Replaces the Deferred param with Scalar(150)
 // 3. Flattens and binds: SELECT name FROM product WHERE price >= ?1
 let result = shop_db.execute(&shop_query).await?;
+# Ok(())
+# }
 ```
 
 Your `execute()` implementation needs to resolve deferred parameters before flattening. Walk the
@@ -169,15 +223,31 @@ query, that value wraps a JSON array of row objects. To work with individual row
 Records:
 
 ```rust
+# use serde_json::Value as JsonValue;
+# use vantage_expressions::ExprDataSource;
+# use vantage_sql::sqlite::SqliteDB;
+# use vantage_sql::sqlite_expr;
+# use vantage_types::Record;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+# for sql in [
+#     "CREATE TABLE product (id TEXT PRIMARY KEY, name TEXT, price INTEGER)",
+#     "INSERT INTO product VALUES ('a', 'Cheap', 50), ('b', 'Tart', 220), ('c', 'Pie', 299)",
+# ] {
+#     db.execute(&sqlite_expr!(sql)).await?;
+# }
 let result = db.execute(&sqlite_expr!("SELECT * FROM product")).await?;
 
 // Result is AnySqliteType wrapping [{"id":"a","name":"Cheap","price":50}, ...]
 // Convert to records manually:
-let rows: Vec<JsonValue> = match result.into_value() {
-    JsonValue::Array(arr) => arr,
+let rows: Vec<ciborium::Value> = match result.into_value() {
+    ciborium::Value::Array(arr) => arr,
     _ => panic!("expected rows"),
 };
-let record: Record<JsonValue> = rows[0].clone().into();
+let record: Record<ciborium::Value> = rows[0].clone().into();
+# Ok(())
+# }
 ```
 
 That works but it's verbose. The `TryFrom<AnyType>` impls from Step 1 make this cleaner through
@@ -185,6 +255,20 @@ That works but it's verbose. The `TryFrom<AnyType>` impls from Step 1 make this 
 its return type — `.get()` executes and converts in one step:
 
 ```rust
+# use serde_json::Value as JsonValue;
+# use vantage_expressions::ExprDataSource;
+# use vantage_sql::sqlite::SqliteDB;
+# use vantage_sql::sqlite_expr;
+# use vantage_types::Record;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+# for sql in [
+#     "CREATE TABLE product (id TEXT PRIMARY KEY, name TEXT, price INTEGER)",
+#     "INSERT INTO product VALUES ('a', 'Cheap', 50), ('b', 'Tart', 220), ('c', 'Pie', 299)",
+# ] {
+#     db.execute(&sqlite_expr!(sql)).await?;
+# }
 // Scalar — extracts single value from single-row result
 let count = db.associate::<i64>(sqlite_expr!("SELECT COUNT(*) FROM product"));
 assert_eq!(count.get().await?, 3);
@@ -193,11 +277,27 @@ assert_eq!(count.get().await?, 3);
 let record: Record<JsonValue> = db
     .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
     .get().await?;
+# assert_eq!(record["name"], "Pie");
+# Ok(())
+# }
 ```
 
 From a Record, you can deserialize into a struct. For the `#[entity]` path:
 
 ```rust
+# use vantage_expressions::ExprDataSource;
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_sql::sqlite_expr;
+# use vantage_types::{Record, TryFromRecord, entity};
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+# for sql in [
+#     "CREATE TABLE product (id TEXT PRIMARY KEY, name TEXT, price INTEGER)",
+#     "INSERT INTO product VALUES ('a', 'Cheap', 50), ('b', 'Tart', 220), ('c', 'Pie', 299)",
+# ] {
+#     db.execute(&sqlite_expr!(sql)).await?;
+# }
 #[entity(SqliteType)]
 struct Product { id: String, name: String, price: i64 }
 
@@ -205,11 +305,29 @@ let record: Record<AnySqliteType> = db
     .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
     .get().await?;
 let product = Product::from_record(record)?;
+# assert_eq!(product.price, 299);
+# Ok(())
+# }
 ```
 
 Or for the serde path with `Record<JsonValue>`:
 
 ```rust
+# use serde::Deserialize;
+# use serde_json::Value as JsonValue;
+# use vantage_expressions::ExprDataSource;
+# use vantage_sql::sqlite::SqliteDB;
+# use vantage_sql::sqlite_expr;
+# use vantage_types::{Record, TryFromRecord};
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite::memory:").await?;
+# for sql in [
+#     "CREATE TABLE product (id TEXT PRIMARY KEY, name TEXT, price INTEGER)",
+#     "INSERT INTO product VALUES ('a', 'Cheap', 50), ('b', 'Tart', 220), ('c', 'Pie', 299)",
+# ] {
+#     db.execute(&sqlite_expr!(sql)).await?;
+# }
 #[derive(Deserialize)]
 struct Product { id: String, name: String, price: i64 }
 
@@ -217,6 +335,9 @@ let record: Record<JsonValue> = db
     .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "c"))
     .get().await?;
 let product: Product = Product::from_record(record)?;
+# assert_eq!(product.name, "Pie");
+# Ok(())
+# }
 ```
 
 Testing the failure modes (missing fields, NULL into required field, wrong types) can help spot
