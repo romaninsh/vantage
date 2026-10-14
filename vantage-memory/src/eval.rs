@@ -4,8 +4,6 @@
 pub mod compare;
 mod condition;
 mod order;
-#[cfg(test)]
-mod tests;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;

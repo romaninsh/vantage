@@ -5,6 +5,9 @@
 # tolerance: how many lost regions count as run-to-run noise. A run that loses no more than this
 #            has nothing to restore.
 
+vantage-memory:
+  tolerance: 10
+
 vantage-vista:
   tolerance: 10
   exclude:

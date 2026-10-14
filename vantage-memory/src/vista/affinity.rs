@@ -1,14 +1,7 @@
-//! Declared-type affinity, SQLite-style: a cell is stored in the form its
-//! declared column type names, so a seed file's `client_id: 1` and a join's
-//! `"1"` meet. Only the integer/text pair converts, and only losslessly:
-//!
-//! - a column declared as an integer stores canonical integer text as an
-//!   integer;
-//! - a column declared as text, and the id column, store an integer as its
-//!   decimal text.
-//!
-//! Every other value, and every cell of an undeclared column or of one
-//! declared [without a type](vantage_vista::Column::untyped), is left as is.
+//! Declared-type affinity: an integer column stores canonical integer text as
+//! an integer; a text column and the id column store an integer as decimal
+//! text. Anything else, including cells of an undeclared or
+//! [untyped](vantage_vista::Column::untyped) column, is left as is.
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;

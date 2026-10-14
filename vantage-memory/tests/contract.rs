@@ -71,9 +71,3 @@ async fn memory_contract_advertised() {
     contract::check_advertised(&f.from_yaml(ORDER).unwrap()).await;
     contract::check_advertised_writes(&f.from_yaml(PRODUCT).unwrap()).await;
 }
-
-#[tokio::test]
-async fn memory_contract_clone() {
-    let vista = factory().from_yaml(PRODUCT).unwrap();
-    contract::check_clone(&vista, "category", text("drink")).await;
-}

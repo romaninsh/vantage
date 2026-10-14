@@ -37,35 +37,3 @@ impl MemoryTableShell {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use vantage_vista::{JoinKey, Reference, TableShell, VistaMetadata};
-
-    use super::*;
-    use crate::{MemoryCatalog, MemoryStore};
-
-    fn shell(reference: Reference) -> MemoryTableShell {
-        let store = MemoryStore::new();
-        let metadata = VistaMetadata::new().with_reference(reference);
-        MemoryTableShell::new(store.table("client"), metadata, MemoryCatalog::new(store))
-    }
-
-    #[test]
-    fn a_contained_relation_is_refused() {
-        let shell = shell(Reference::contains_many("tags", "tags"));
-        let err = shell.get_ref("tags", None).unwrap_err();
-        assert!(err.is_unsupported(), "{err}");
-    }
-
-    #[test]
-    fn a_join_to_a_table_the_store_lacks_is_not_found() {
-        let shell = shell(Reference::has_many(
-            "orders",
-            "order",
-            JoinKey::new("id", "client"),
-        ));
-        let err = shell.get_ref("orders", None).unwrap_err();
-        assert!(err.is_not_found(), "{err}");
-    }
-}

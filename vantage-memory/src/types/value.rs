@@ -4,10 +4,8 @@ use super::{AnyMemoryType, MemoryType, MemoryTypeNullMarker};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 impl AnyMemoryType {
-    /// Create an `AnyMemoryType` with no type marker. Used for values coming
-    /// back from the store (or constructed by deferred resolution) where we
-    /// don't have an authoritative variant yet. `try_get` on these values
-    /// bypasses variant checking.
+    /// A value with no type marker, for cells read back from the store.
+    /// `try_get` on it skips variant checking.
     pub fn untyped(value: ciborium::Value) -> Self {
         Self {
             value,
@@ -16,7 +14,6 @@ impl AnyMemoryType {
     }
 }
 
-/// AnyMemoryType is itself a MemoryType — passthrough for type-erased values.
 impl MemoryType for AnyMemoryType {
     type Target = MemoryTypeNullMarker;
 
@@ -52,7 +49,6 @@ where
     }
 }
 
-// From impls for common types
 macro_rules! impl_from_for_memory {
     ($($ty:ty),*) => {
         $(
@@ -73,7 +69,6 @@ impl From<&str> for AnyMemoryType {
     }
 }
 
-// Expressive impls — let scalars flow into condition builders.
 macro_rules! impl_expressive_for_memory_scalar {
     ($($ty:ty),*) => {
         $(

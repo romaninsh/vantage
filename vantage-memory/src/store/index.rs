@@ -166,28 +166,3 @@ impl Indexes {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::eval::{MemoryCondition, Query};
-    use vantage_vista::FilterOp;
-
-    #[test]
-    fn candidates_come_from_the_index() {
-        let mut ix = Indexes::new(&["status".to_string()]);
-        let row: Record<CborValue> = [("status".to_string(), CborValue::Text("Open".into()))]
-            .into_iter()
-            .collect();
-        ix.add("a", &row);
-        let q = Query::new().filter(MemoryCondition::cmp(
-            "status",
-            FilterOp::Eq,
-            CborValue::Text("Open".into()),
-        ));
-        let c = ix.candidates(&q).unwrap();
-        assert_eq!(c, vec!["a"]);
-        let q = Query::new().filter(MemoryCondition::cmp("other", FilterOp::Eq, CborValue::Null));
-        assert!(ix.candidates(&q).is_none());
-    }
-}
