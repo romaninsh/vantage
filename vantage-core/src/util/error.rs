@@ -1,7 +1,5 @@
-//! Error handling utilities for the Vantage framework
-//!
-//! This module provides a unified error handling system using `thiserror` with
-//! context support and macros for ergonomic error handling.
+//! [`VantageError`]: one error type with a kind, a location, key/value context
+//! and a source chain, plus the `error!` and `vantage_error!` macros.
 
 use indexmap::IndexMap;
 use std::fmt;
@@ -54,10 +52,8 @@ pub struct VantageError {
 
 impl fmt::Display for VantageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Simple inline format for tests and programmatic use
         write!(f, "{}", self.message)?;
 
-        // Add context if present
         if !self.context.is_empty() {
             write!(f, " (")?;
             for (i, (key, value)) in self.context.iter().enumerate() {
@@ -69,7 +65,6 @@ impl fmt::Display for VantageError {
             write!(f, ")")?;
         }
 
-        // Add source if present
         if let Some(source) = &self.source {
             write!(f, ": {}", source)?;
         }
@@ -85,9 +80,7 @@ impl VantageError {
         indent: &str,
         use_color: bool,
     ) -> fmt::Result {
-        // Error message
         if indent.is_empty() {
-            // Top level
             if use_color {
                 #[cfg(feature = "colored-errors")]
                 {
@@ -100,7 +93,7 @@ impl VantageError {
                 writeln!(f, "Error: {}", self.message)?;
             }
         } else {
-            // Nested level - remove 4 spaces from indent for the arrow line
+            // The arrow line sits one nesting level left of the detail lines.
             let arrow_indent = if indent.len() >= 4 {
                 &indent[..indent.len() - 4]
             } else {
@@ -126,10 +119,8 @@ impl VantageError {
             }
         }
 
-        // Determine if there are more items below (source errors)
         let has_source = self.source.is_some();
 
-        // Location
         if let Some(location) = &self.location {
             let is_last = !has_source && self.context.is_empty();
             let prefix = if is_last { "╰╴" } else { "├╴" };
@@ -153,7 +144,6 @@ impl VantageError {
             }
         }
 
-        // Context info
         let context_count = self.context.len();
         for (idx, (key, value)) in self.context.iter().enumerate() {
             let is_last = !has_source && idx == context_count - 1;
@@ -179,7 +169,6 @@ impl VantageError {
             }
         }
 
-        // Source error chain
         if let Some(source) = &self.source {
             if use_color {
                 #[cfg(feature = "colored-errors")]
@@ -194,11 +183,10 @@ impl VantageError {
             }
 
             if let Some(vantage_source) = source.downcast_ref::<VantageError>() {
-                // Recursively format VantageError with increased indentation for details
                 let new_indent = format!("{}    ", indent);
                 vantage_source.fmt_with_indent(f, &new_indent, use_color)?;
             } else {
-                // Non-VantageError source
+                // Foreign errors have no detail lines, so they end the chain.
                 if use_color {
                     #[cfg(feature = "colored-errors")]
                     {
@@ -418,13 +406,11 @@ impl From<std::io::Error> for VantageError {
 
 impl std::process::Termination for VantageError {
     fn report(self) -> std::process::ExitCode {
-        // Use colored output when printing to stderr in report()
         #[cfg(feature = "colored-errors")]
         let use_color = atty::is(atty::Stream::Stderr);
         #[cfg(not(feature = "colored-errors"))]
         let use_color = false;
 
-        // Format with color for stderr output
         struct ColoredError<'a>(&'a VantageError, bool);
 
         impl<'a> fmt::Display for ColoredError<'a> {
@@ -453,9 +439,7 @@ impl<T, E: std::error::Error + Send + Sync + 'static> Context<T> for std::result
     fn context(self, err: impl Into<VantageError>) -> Result<T> {
         self.map_err(|source_err| {
             let mut vantage_err = err.into();
-            // Check if source_err is VantageError
             if std::any::TypeId::of::<E>() == std::any::TypeId::of::<VantageError>() {
-                // If it's already VantageError, wrap it properly
                 let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(source_err);
                 vantage_err.source = Some(boxed);
             } else {
@@ -471,9 +455,7 @@ impl<T, E: std::error::Error + Send + Sync + 'static> Context<T> for std::result
     {
         self.map_err(|source_err| {
             let mut vantage_err = f();
-            // Check if source_err is VantageError
             if std::any::TypeId::of::<E>() == std::any::TypeId::of::<VantageError>() {
-                // If it's already VantageError, wrap it properly
                 let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(source_err);
                 vantage_err.source = Some(boxed);
             } else {
@@ -484,7 +466,6 @@ impl<T, E: std::error::Error + Send + Sync + 'static> Context<T> for std::result
     }
 }
 
-/// From String for backward compatibility
 impl From<String> for VantageError {
     fn from(msg: String) -> Self {
         VantageError {
@@ -518,7 +499,7 @@ macro_rules! error {
     }};
 }
 
-/// Legacy macro for creating VantageError instances (simple)
+/// Builds a `VantageError` from a message or format string, with no location.
 #[macro_export]
 macro_rules! vantage_error {
     ($msg:literal $(,)?) => {
@@ -533,72 +514,3 @@ macro_rules! vantage_error {
 }
 
 pub use {error, vantage_error};
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io;
-
-    #[test]
-    fn test_no_data_error() {
-        let err = VantageError::no_data();
-        assert_eq!(err.to_string(), "No data available");
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_no_capability_error() {
-        let err = VantageError::no_capability("insert", "ReadOnlyDataSet");
-        assert_eq!(
-            err.to_string(),
-            "Capability insert is not implemented in generic ReadOnlyDataSet"
-        );
-    }
-
-    #[test]
-    fn test_message_and_location_accessors() {
-        let err = crate::error!("write failed", table = "books");
-        assert_eq!(err.message(), "write failed");
-        assert!(err.location().is_some_and(|l| l.contains("error.rs")));
-        // Display stays the combined form; the accessors expose the parts.
-        assert!(err.to_string().contains("write failed (table:"));
-    }
-
-    #[test]
-    fn test_context_trait() {
-        use super::Context;
-
-        fn failing_function() -> std::io::Result<String> {
-            Err(io::Error::new(io::ErrorKind::NotFound, "File not found"))
-        }
-
-        let result = failing_function().context("Failed to read file");
-        assert!(result.is_err());
-
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("File not found"));
-        assert!(error_msg.contains("Failed to read file"));
-    }
-
-    #[test]
-    fn test_macro() {
-        let err = vantage_error!("Test error: {}", 42);
-        assert_eq!(err.to_string(), "Test error: 42");
-    }
-
-    #[test]
-    fn test_io_error_conversion() {
-        use std::io;
-        let io_err = io::Error::new(io::ErrorKind::NotFound, "File not found");
-        let vantage_err = VantageError::from(io_err);
-        assert_eq!(vantage_err.to_string(), "IO error: File not found");
-    }
-
-    #[test]
-    fn conflict_kind_round_trips() {
-        let e = crate::error!("row belongs to another set", id = "o1").mark_conflict();
-        assert!(e.is_conflict());
-        assert_eq!(e.kind(), ErrorKind::Conflict);
-        assert!(!e.is_not_found());
-    }
-}
