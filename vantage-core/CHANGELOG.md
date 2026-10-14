@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 — 2026-10-14
+
+- The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or
+  behaviour change.
+
 ## 1.1.0 — 2026-10-05
 
 - `ErrorKind::Conflict`, `mark_conflict()`, `is_conflict()`: a write that disagrees with the set it
