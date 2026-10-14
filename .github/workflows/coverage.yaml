@@ -1,0 +1,146 @@
+name: Coverage
+
+# One instrumented run of the whole workspace, so code one crate's tests
+# exercise in another (vista code under diorama's tests) counts where it lives.
+# Every backend the tests reach is started here; the excluded workspaces
+# (aws, cmd, kubernetes, spacetimedb) have their own workflows.
+
+on:
+  push:
+    branches: ["main", "v2"]
+  pull_request:
+    branches: ["main", "v2"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vantage
+          POSTGRES_PASSWORD: vantage
+          POSTGRES_DB: vantage
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U vantage -d vantage"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: vantage
+          MYSQL_PASSWORD: vantage
+          MYSQL_DATABASE: vantage
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-on-failure: true
+          key: "coverage-v1"
+
+      - name: Start SurrealDB
+        run: |
+          docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:latest \
+            start --user root --pass root memory
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 1
+          done
+          docker logs surrealdb
+          exit 1
+
+      # The image ships the CLI; a shim runs it there rather than installing one.
+      - name: Populate SurrealDB
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec docker exec -i surrealdb /surreal "$@"\n' > "$RUNNER_TEMP/bin/surreal"
+          chmod +x "$RUNNER_TEMP/bin/surreal"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          cd vantage-surrealdb/scripts
+          printf 'DB_ENDPOINT=ws://localhost:8000\nDB_USER=root\nDB_PASS=root\nDB_AUTH_LEVEL=root\nDB_NS=bakery\n' > .env
+          bash ingress.sh
+
+      - name: Start and seed MongoDB
+        run: |
+          docker run -d --name mongo-vantage -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo-vantage mongosh --quiet --eval "db.runCommand({ping:1})" > /dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec mongo-vantage mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for i in $(seq 1 30); do
+            docker exec mongo-vantage mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true && break
+            sleep 1
+          done
+          docker exec -i mongo-vantage mongosh vantage < vantage-mongodb/scripts/db/v2.js
+
+      - name: Populate SQLite, PostgreSQL and MySQL
+        run: |
+          bash vantage-sql/scripts/sqlite/ingress.sh
+          cd vantage-sql/scripts/postgres
+          for f in db/v[0-3]*.sql; do
+            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage -f "$f"
+          done
+          for f in db/v*.sql; do
+            db="vantage_$(basename "$f" .sql)"
+            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d postgres -c "CREATE DATABASE \"$db\" OWNER vantage;"
+            PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d "$db" -f "$f"
+          done
+          cd ../mysql
+          for f in db/v[0-3]*.sql; do
+            mysql -h 127.0.0.1 -uvantage -pvantage vantage < "$f"
+          done
+          for f in db/v*.sql; do
+            db="vantage_$(basename "$f" .sql)"
+            mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE \`$db\`; GRANT ALL PRIVILEGES ON \`$db\`.* TO 'vantage'@'%';"
+            mysql -h 127.0.0.1 -uvantage -pvantage "$db" < "$f"
+          done
+
+      # nextest can't list diorama's `bdd` (cucumber, harness = false); the
+      # example config filters it out and serialises the SurrealDB tests, and
+      # `bdd` runs through cargo test into the same profile data.
+      - name: Run tests with coverage
+        run: |
+          cp .config/nextest.toml.example .config/nextest.toml
+          cargo llvm-cov nextest --workspace --all-features --no-fail-fast --no-report
+          cargo llvm-cov --no-report -p vantage-diorama --all-features --test bdd
+          cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex "$IGNORE"
+        env:
+          # Tutorials, and the aws/cmd workspaces measured in their own runs.
+          IGNORE: "(^|/)(learn-[0-9]+|bakery_model4|vantage-aws|vantage-cmd)/"
+          DB_ENDPOINT: cbor://localhost:8000/rpc
+          DB_USER: root
+          DB_PASS: root
+          DB_AUTH_LEVEL: root
+          DB_NS: bakery
+          MONGODB_URL: mongodb://localhost:27017/?directConnection=true
+
+      - uses: k1LoW/octocov-action@a167dc0dee441b7ffc45e1b862ab55ec0d87f278 # v1.5.2
