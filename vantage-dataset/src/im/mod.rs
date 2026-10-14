@@ -1,4 +1,4 @@
-// src/im/mod.rs
+//! In-memory storage: [`ImDataSource`] holds named tables, [`ImTable`] is a typed handle onto one.
 
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -26,7 +26,6 @@ type TableStorage<V> = Arc<Mutex<HashMap<String, IndexMap<String, Record<V>>>>>;
 /// `Vista` machinery). Defaults to `serde_json::Value` for back-compat.
 #[derive(Debug)]
 pub struct ImDataSource<V = serde_json::Value> {
-    // table_name -> IndexMap<id, record>
     tables: TableStorage<V>,
 }
 

@@ -16,9 +16,7 @@ where
     async fn insert(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
         let id = id.into();
         self.data_source.with_table_mut(&self.table_name, |table| {
-            // Check if record already exists (idempotent behavior)
             if let Some(existing_record) = table.get(&id) {
-                // Return existing entity; add the id field back for conversion
                 let mut record_with_id = existing_record.clone();
                 record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
@@ -27,7 +25,7 @@ where
                 });
             }
 
-            // Convert entity to record for storage (remove id field since it's in the key)
+            // The id lives in the key, not in the stored record.
             let mut record: Record<serde_json::Value> =
                 entity.clone().try_into_record().map_err(|e| {
                     vantage_core::error!("Failed to serialize entity to record", error = e)
@@ -41,7 +39,6 @@ where
 
     async fn replace(&self, id: impl Into<Self::Id> + Send, entity: &E) -> Result<E> {
         let id = id.into();
-        // Convert entity to record for storage (remove id field since it's in the key)
         let mut record: Record<serde_json::Value> = entity
             .clone()
             .try_into_record()
@@ -57,14 +54,12 @@ where
 
     async fn patch(&self, id: impl Into<Self::Id> + Send, partial: &E) -> Result<E> {
         let id = id.into();
-        // Convert partial entity to record
         let partial_record: Record<serde_json::Value> = partial
             .clone()
             .try_into_record()
             .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
         self.data_source.with_table_mut(&self.table_name, |table| {
-            // Check if record exists
             let mut existing_record = table
                 .get(&id)
                 .ok_or_else(|| {
@@ -72,17 +67,15 @@ where
                 })?
                 .clone();
 
-            // Merge the partial fields into the existing record
             for (key, value) in partial_record.iter() {
+                // The id is the key; a patch can't rename the row.
                 if key != "id" {
-                    // Don't allow patching the id field
                     existing_record.insert(key.clone(), value.clone());
                 }
             }
 
             table.insert(id.clone(), existing_record.clone());
 
-            // Return the merged entity
             let mut record_with_id = existing_record;
             record_with_id.insert("id".to_string(), serde_json::Value::String(id));
 
@@ -91,5 +84,3 @@ where
         })
     }
 }
-
-// Tests are in tests/im_dataset.rs integration tests

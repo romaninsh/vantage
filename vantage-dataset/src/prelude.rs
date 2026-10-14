@@ -1,24 +1,14 @@
-//! Prelude module for vantage-dataset
-//!
-//! This module re-exports the most commonly used types and traits from vantage-dataset,
-//! allowing users to import them with a single `use vantage_dataset::prelude::*;` statement.
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
+//! The commonly used traits and types, for `use vantage_dataset::prelude::*;`.
 
-// Dataset traits for working with data
 pub use crate::traits::{
     ActiveEntitySet, Importable, InsertableDataSet, InsertableValueSet, ReadableDataSet,
     ReadableValueSet, Result, VantageError, WritableDataSet, WritableValueSet,
 };
 
-// // DataSource traits for dataset discovery and creation
-// pub use crate::datasetsource::{
-//     DataSetSource, InsertableDataSetSource, ReadableDataSetSource, WritableDataSetSource,
-// };
-
 pub use crate::im::{ImDataSource, ImTable};
 
-// Record functionality
 pub use crate::record::{ActiveEntity, ActiveRecord};
 
-// Re-export commonly used external dependencies
 pub use async_trait::async_trait;
 pub use serde::{Deserialize, Serialize};

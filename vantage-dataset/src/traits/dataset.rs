@@ -475,7 +475,7 @@ where
         ActiveEntity::new(id, entity, self)
     }
 }
-// Auto-implement for any type that has both readable and writable traits
+
 impl<T, E> ActiveEntitySet<E> for T
 where
     T: ReadableDataSet<E> + WritableDataSet<E>,
@@ -487,25 +487,3 @@ where
         + Clone,
 {
 }
-
-// // Auto-implement for any type that has both readable and writable traits
-// #[async_trait]
-// impl<T> entityValueSet for T
-// where
-//     T: ReadableValueSet + WritableValueSet,
-//     Self::Value: Send + Sync + Clone,
-// {
-//     async fn get_value_entity(&self, id: &Self::Id) -> Result<entityValue<'_, Self>> {
-//         let value = self.get_value(id).await?;
-//         Ok(entityValue::new(id, value, self))
-//     }
-
-//     async fn list_value_entities(&self) -> Result<Vec<entityValue<'_, Self>>> {
-//         let items = self.list_values().await?;
-
-//         Ok(items
-//             .into_iter()
-//             .map(|(id, value)| entityValue::new(id, value, self))
-//             .collect::<Vec<_>>())
-//     }
-// }
