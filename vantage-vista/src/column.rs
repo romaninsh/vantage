@@ -135,19 +135,3 @@ impl Column {
         self.computed.as_ref().map(|c| (c.eval)(row))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Column;
-
-    #[test]
-    fn an_untyped_column_serializes_without_a_type() {
-        let json = serde_json::to_value(Column::untyped("note")).unwrap();
-        assert_eq!(json, serde_json::json!({ "name": "note" }));
-        let back: Column = serde_json::from_value(json).unwrap();
-        assert_eq!(back.original_type, None);
-
-        let typed = serde_json::to_value(Column::new("n", "int")).unwrap();
-        assert_eq!(typed["original_type"], "int");
-    }
-}

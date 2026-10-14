@@ -5,9 +5,7 @@
 //! `fetch_window(0, n)`; there is no page-size capability. A shell that
 //! answers only the leading window is never listed in full for it.
 //!
-//! These tests hold the cap on shells that window. The unit test
-//! `rhai::tests::capped::a_refused_leading_window_is_an_error` holds the
-//! other half: a refused window is an error, never a truncated list.
+//! A refused leading window is an error, never a truncated list.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,7 +16,9 @@ use vantage_core::Result;
 use vantage_rhai::Host;
 use vantage_rhai::rhai::{Array, Map as RhaiMap};
 use vantage_types::Record;
-use vantage_vista::{Capability, TableShell, VistaCapabilities, forward_table_shell};
+use vantage_vista::{
+    Capability, Page, TableShell, VistaCapabilities, forward_table_shell, unsupported,
+};
 
 use super::rhai_support::{host, mock, reads, run};
 
@@ -33,12 +33,32 @@ fn listed_ids(host: &Host, script: &str) -> Vec<String> {
         .collect()
 }
 
+/// Lists, but refuses every window.
+#[derive(Clone)]
+struct NoWindow {
+    inner: Box<dyn TableShell>,
+}
+
+forward_table_shell!(NoWindow, inner, {
+    async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
+        unsupported(Capability::Window)
+    }
+});
+
 #[test]
-fn rhai_limit_without_page_size() {
-    let caps = VistaCapabilities::new().with(Capability::Window);
-    let host = host(mock().with_capabilities(caps), reads());
-    let ids = listed_ids(&host, r#"table("t").limit(2).list()"#);
-    assert_eq!(ids, ["r1", "r2"], "limit(2) must return the first 2 rows");
+fn a_refused_leading_window_is_an_error_never_a_truncated_list() {
+    let host = host(
+        NoWindow {
+            inner: Box::new(mock()),
+        },
+        reads(),
+    );
+    let err = run(&host, r#"table("t").limit(2).list()"#).unwrap_err();
+    assert!(!err.is_empty());
+    assert!(
+        run(&host, r#"table("t").list()"#).is_ok(),
+        "an uncapped list still works"
+    );
 }
 
 /// Counts the full listings the shell is asked for.

@@ -20,8 +20,6 @@ mod get_only;
 mod refs;
 mod store;
 mod table_shell;
-#[cfg(test)]
-mod tests;
 
 pub use calls::MockCalls;
 

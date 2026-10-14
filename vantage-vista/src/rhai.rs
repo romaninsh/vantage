@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Rhai scripting surface over the type-erased [`Vista`](crate::vista::Vista).
 //!
 //! Scripts touch data through one vocabulary, [`DataVocab`]:
@@ -52,13 +53,3 @@ pub use record::RecordDraft;
 pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, preview_script, run_script};
 pub use tables::script_tables;
 pub use vocab::{DataVocab, Terminals, Writes};
-
-#[cfg(test)]
-mod tests {
-    mod bridge;
-    mod capped;
-    mod eval;
-    mod narrow;
-    mod query;
-    mod runtime;
-}

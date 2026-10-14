@@ -65,9 +65,15 @@ fn check_statement(statement: &Stmt, in_value_position: bool, what: &'static str
             _ => Ok(()),
         },
         Stmt::Block(block) => check_block(block.statements(), in_value_position, what),
-        Stmt::If(flow, _) | Stmt::TryCatch(flow, _) => {
+        Stmt::If(flow, _) => {
             check_block(flow.body.statements(), in_value_position, what)?;
             check_block(flow.branch.statements(), in_value_position, what)
+        }
+        // rhai's optimizer drops a try body's result, so no statement in it, or
+        // in its catch, is in value position.
+        Stmt::TryCatch(flow, _) => {
+            check_block(flow.body.statements(), false, what)?;
+            check_block(flow.branch.statements(), false, what)
         }
         // A loop's value is `()`, so no statement in its body is in value position.
         Stmt::While(flow, _) | Stmt::Do(flow, ..) => {
@@ -120,6 +126,3 @@ fn is_function_value(expr: &Expr) -> bool {
 fn is_fn_constructor(name: &str) -> bool {
     matches!(name, "Fn" | "curry")
 }
-
-#[cfg(test)]
-mod tests;

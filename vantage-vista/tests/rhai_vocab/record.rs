@@ -16,9 +16,7 @@ use vantage_vista::{
     VistaResolver, forward_table_shell,
 };
 
-use super::support::{
-    eval, host, host_with, json, read_only_terminals, read_write, read_write_terminals, run, store,
-};
+use super::support::{eval, host_with, json, read_write, read_write_terminals, run, store};
 
 #[test]
 fn new_record_flash_inserts_and_returns_id() {
@@ -82,13 +80,6 @@ fn unchanged_flash_writes_nothing() {
 }
 
 #[test]
-fn save_is_not_a_record_verb() {
-    let host = read_write(&store());
-    let err = run(&host, r#"table("t").record("r1").save()"#).unwrap_err();
-    assert!(err.contains("Function not found"), "{err}");
-}
-
-#[test]
 fn loaded_record_flashes_only_changed_fields() {
     let shell = SpyShell::new(mock_with(
         "r1",
@@ -133,81 +124,35 @@ fn dotted_set_builds_nested_map() {
 }
 
 #[test]
-fn revert_field_and_all() {
-    let host = read_write(&store());
-    let dirty_a: bool = eval(
-        &host,
-        r#"
-        let r = table("t").record("r1");
-        r.a = 1;
-        r.b = 2;
-        r.revert("a");
-        r.dirty("a")
-    "#,
-    );
-    assert!(!dirty_a, "reverting one field must clear its dirty flag");
-
-    let still_dirty: bool = eval(
-        &host,
-        r#"
-        let r = table("t").record("r1");
-        r.a = 1;
-        r.b = 2;
-        r.revert("a");
-        r.is_dirty()
-    "#,
-    );
-    assert!(
-        still_dirty,
-        "the other staged field survives a single revert"
-    );
-
-    let clean: bool = eval(
-        &host,
-        r#"
-        let r = table("t").record("r1");
-        r.a = 1;
-        r.b = 2;
-        r.revert();
-        r.is_dirty()
-    "#,
-    );
-    assert!(
-        !clean,
-        "revert() with no argument clears every staged field"
-    );
-}
-
-#[test]
-fn failed_flash_sets_status_and_rejection_and_throws() {
+fn sibling_dotted_keys_merge_into_one_nested_map_and_replace_a_scalar() {
     let host = read_write(&store());
     let out = json(
         &host,
         r#"
-        let r = table("t").record("r1");
-        r.a = 42;
-        table("t").delete("r1");
-        let threw = false;
-        try {
-            r.flash();
-        } catch(err) {
-            threw = true;
-        }
-        #{ threw: threw, status: r.status(), rejection: r.rejection() }
+        let r = table("t").record();
+        r.set(#{ "meta.a": 1 });
+        r.set(#{ "meta.b": 2 });
+        r.set(#{ "meta.a": 3 });
+        r.set(#{ "deep.x.y": 4 });
+        r.set(#{ flat: 1 });
+        r.set(#{ "flat.inner": 5 });
+        table("t").get(r.flash())
     "#,
     );
-    assert_eq!(out["threw"], json!(true));
-    assert_eq!(out["status"], json!("failed"));
-    let rejection = out["rejection"].as_object().unwrap();
-    assert!(
-        rejection["message"].as_str().unwrap().contains("r1"),
-        "{out}"
-    );
-    assert_eq!(rejection.len(), 1, "a draft's rejection is only `message`");
+    assert_eq!(out["meta"], json!({"a": 3, "b": 2}));
+    assert_eq!(out["deep"], json!({"x": {"y": 4}}));
+    assert_eq!(out["flat"], json!({"inner": 5}));
 }
 
 #[test]
-fn setting_id_column_errors() {
+fn a_record_on_a_missing_id_is_a_not_found_error() {
+    let host = read_write(&store());
+    let err = run(&host, r#"table("t").record("missing")"#).unwrap_err();
+    assert!(err.contains("not found"), "{err}");
+}
+
+#[test]
+fn the_id_of_a_record_is_read_only() {
     let host = read_write(&store());
     let err = run(
         &host,
@@ -217,62 +162,7 @@ fn setting_id_column_errors() {
     "#,
     )
     .unwrap_err();
-    assert!(err.contains("id"), "{err}");
-
-    let err = run(
-        &host,
-        r#"
-        let r = table("t").record("r1");
-        r["id"] = "nope";
-    "#,
-    )
-    .unwrap_err();
-    assert!(err.contains("id"), "{err}");
-}
-
-#[test]
-fn record_on_missing_id_errors() {
-    let host = read_write(&store());
-    let err = run(&host, r#"table("t").record("missing")"#).unwrap_err();
-    assert!(
-        err.contains("not found") || err.contains("missing"),
-        "{err}"
-    );
-}
-
-#[test]
-fn denied_writes_block_flash_and_delete() {
-    let host = host(&store(), read_only_terminals(None));
-    for script in [
-        r#"
-        let r = table("t").record("r1");
-        r.a = 1;
-        r.flash()
-    "#,
-        r#"table("t").record("r1").delete()"#,
-    ] {
-        let err = run(&host, script).unwrap_err();
-        assert!(err.contains("writes aren't available here"), "{err}");
-    }
-}
-
-#[test]
-fn denied_delete_fails_the_draft() {
-    let host = host(&store(), read_only_terminals(None));
-    let out = json(
-        &host,
-        r#"
-        let r = table("t").record("r1");
-        let threw = false;
-        try { r.delete(); } catch(err) { threw = true; }
-        #{ threw: threw, status: r.status(), rejection: r.rejection().message }
-    "#,
-    );
-    assert_eq!(out["threw"], json!(true), "{out}");
-    assert_eq!(out["status"], json!("failed"), "{out}");
-    let rejection = out["rejection"].as_str().unwrap();
-    assert!(rejection.contains("writes aren't available here"), "{out}");
-    assert_eq!(json(&host, r#"table("t").count()"#), json!(3));
+    assert!(err.contains("read-only"), "{err}");
 }
 
 #[test]

@@ -1,0 +1,140 @@
+# @llm-protected: approved test exceptions. Add entries only with coverage/vend-exception.sh.
+#
+# Each entry keeps one test out of the matrix's deletion candidates. The token signs the
+# package (this file's name), the test and the reason: edit either and the entry stops counting.
+
+- test: rhai_guide::rhai_guide::writes::insert_existing_id
+  reason: 'named by the book: docs4/src/rhai/writes.md tests its insert-existing-id example with it'
+  token: f5c6392d-af0356ab452f
+
+- test: rhai_guide::rhai_guide::computed::closure
+  reason: 'named by the book: docs4/src/rhai/computed.md:130 tests its example with it'
+  token: fd589ec6-a721cd23b0ce
+
+- test: rhai_guide::rhai_guide::computed::declare_in_rust
+  reason: 'named by the book: docs4/src/rhai/computed.md:102 tests its example with it'
+  token: 042a23c1-b417a40631e3
+
+- test: rhai_guide::rhai_guide::computed::reads
+  reason: 'named by the book: docs4/src/rhai/computed.md:54 tests its example with it'
+  token: 008a1db9-ca627bd23f23
+
+- test: rhai_guide::rhai_guide::computed::writes
+  reason: 'named by the book: docs4/src/rhai/computed.md:143 tests its example with it'
+  token: c0da63bb-a56804114336
+
+- test: rhai_guide::rhai_guide::hosts::build_a_host
+  reason: 'named by the book: docs4/src/rhai/hosts.md:17 tests its example with it'
+  token: 0e83f38e-f4e0ee79d426
+
+- test: rhai_guide::rhai_guide::hosts::under_spawn_blocking
+  reason: 'named by the book: docs4/src/rhai/hosts.md:171 tests its example with it'
+  token: 30fbd990-366d023d087b
+
+- test: rhai_guide::rhai_guide::surfaces::agent_script
+  reason: 'named by the book: docs4/src/rhai/surfaces.md:35 tests its example with it'
+  token: d302779a-12eeda238b9a
+
+- test: rhai_guide::rhai_guide::surfaces::extension_chains
+  reason: 'named by the book: docs4/src/rhai/surfaces.md:161 tests its example with it'
+  token: 6e85359b-7bb22567abae
+
+- test: rhai_guide::rhai_guide::surfaces::preview
+  reason: 'named by the book: docs4/src/rhai/surfaces.md:102 tests its example with it'
+  token: 59253be4-4848db9d6408
+
+- test: rhai_guide::rhai_guide::surfaces::ref_build
+  reason: 'named by the book: docs4/src/rhai/surfaces.md:237 tests its example with it'
+  token: 6bfdac6c-ab1831d12e4a
+
+- test: rhai_guide::rhai_guide::tables::first_script
+  reason: 'named by the book: docs4/src/rhai.md:93 tests its example with it'
+  token: 88a9974e-287ad55e853d
+
+- test: rhai_guide::rhai_guide::tables::limit_and_ref
+  reason: 'named by the book: docs4/src/rhai/tables.md:130 tests its example with it'
+  token: 88ce0c23-4ae7aa9a39a0
+
+- test: rhai_guide::rhai_guide::tables::narrowing
+  reason: 'named by the book: docs4/src/rhai/tables.md:12 tests its example with it'
+  token: 7b450e0a-d923e7bd35b3
+
+- test: rhai_guide::rhai_guide::writes::explicit_ids
+  reason: 'named by the book: docs4/src/rhai/writes.md:57 tests its example with it'
+  token: a200bd8b-ba168b2619c7
+
+- test: rhai_guide::rhai_guide::writes::import_limited
+  reason: 'named by the book: docs4/src/rhai/writes.md:133 tests its example with it'
+  token: 60ff174b-07474238300a
+
+- test: rhai_guide::rhai_guide::writes::import_mapped
+  reason: 'named by the book: docs4/src/rhai/writes.md:146 tests its example with it'
+  token: c158c069-0caee534b810
+
+- test: rhai_guide::rhai_guide::writes::import_twice
+  reason: 'named by the book: docs4/src/rhai/writes.md:171 tests its example with it'
+  token: e78d1af4-fd2b7feb2023
+
+- test: rhai_guide::rhai_guide::computed::refused
+  reason: 'named by the book: docs4/src/rhai/computed.md:157 tests its example with it'
+  token: e47f6300-a076bf4a920d
+
+- test: rhai_guide::rhai_guide::computed::relations
+  reason: 'named by the book: docs4/src/rhai/computed.md:183 tests its example with it'
+  token: 8ff53520-f3b170dcb53f
+
+- test: rhai_guide::rhai_guide::records::edit_existing
+  reason: 'named by the book: docs4/src/rhai/records.md:15 tests its example with it'
+  token: 8bb44df6-b8c19d2c6453
+
+- test: rhai_guide::rhai_guide::records::new_row
+  reason: 'named by the book: docs4/src/rhai/records.md:46 tests its example with it'
+  token: cebf4df9-5c0b8b392161
+
+- test: rhai_guide::rhai_guide::records::id_is_read_only
+  reason: 'named by the book: docs4/src/rhai/records.md:68 tests its example with it'
+  token: e2ed4d12-69ee6d8ce6fe
+
+- test: rhai_guide::rhai_guide::records::revert
+  reason: 'named by the book: docs4/src/rhai/records.md:82 tests its example with it'
+  token: a5f704a3-addc173a52e4
+
+- test: rhai_guide::rhai_guide::records::failed_flash
+  reason: 'named by the book: docs4/src/rhai/records.md:110 tests its example with it'
+  token: daa96f0c-9b6e4f8c57ff
+
+- test: rhai_guide::rhai_guide::records::row_without_table
+  reason: 'named by the book: docs4/src/rhai/records.md:165 tests its example with it'
+  token: 337a3e49-1d1bfde47473
+
+- test: rhai_guide::rhai_guide::surfaces::modify
+  reason: 'named by the book: docs4/src/rhai/surfaces.md:119 tests its example with it'
+  token: 25709a4c-1ac9e79fa46d
+
+- test: rhai_guide::rhai_guide::surfaces::read_host
+  reason: 'named by the book: docs4/src/rhai/surfaces.md:269 tests its example with it'
+  token: a6913cb1-a86454c131bc
+
+- test: rhai_guide::rhai_guide::tables::late_error
+  reason: 'named by the book: docs4/src/rhai/tables.md:53 tests its example with it'
+  token: 1117e17a-b09029434f95
+
+- test: rhai_guide::rhai_guide::tables::reads
+  reason: 'named by the book: docs4/src/rhai/tables.md:64 tests its example with it'
+  token: 9ca8a889-0d51f14cba00
+
+- test: rhai_guide::rhai_guide::tables::ref_sets
+  reason: 'named by the book: docs4/src/rhai/tables.md:102 tests its example with it'
+  token: 5c4a77d7-8afa3aabb675
+
+- test: rhai_guide::rhai_guide::tables::introspection
+  reason: 'named by the book: docs4/src/rhai/tables.md:153 tests its example with it'
+  token: 2a6cc7ad-ad2c9a6d5ccb
+
+- test: rhai_guide::rhai_guide::writes::write_verbs
+  reason: 'named by the book: docs4/src/rhai/writes.md:12 tests its example with it'
+  token: cc4487ce-d73f3f134cac
+
+- test: rhai_guide::rhai_guide::writes::writes_stay_in_the_set
+  reason: 'named by the book: docs4/src/rhai/writes.md:85 tests its example with it'
+  token: cabda695-953790dd6c31

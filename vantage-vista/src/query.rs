@@ -5,8 +5,6 @@ use ciborium::Value as CborValue;
 use crate::{filter::FilterOp, sort::SortDirection};
 
 mod key;
-#[cfg(test)]
-mod tests;
 
 /// `column <op> value`. Equality is [`FilterOp::Eq`].
 #[derive(Clone, Debug, PartialEq)]

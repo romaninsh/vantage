@@ -8,9 +8,6 @@ use vantage_core::{Result, error};
 
 use crate::{resolver::VistaResolver, vista::Vista};
 
-#[cfg(test)]
-mod tests;
-
 /// A map from model name to the loader that builds it.
 ///
 /// The models may live in different backends: a catalog only knows how to

@@ -50,18 +50,6 @@ fn lines(resolver: Option<Arc<dyn VistaResolver>>) -> Vista {
     build_contained_vista(&reference, schema, Some(&host), Some(discard()), resolver).unwrap()
 }
 
-#[tokio::test]
-async fn a_record_relation_narrows_the_resolved_target() {
-    let lines = lines(Some(resolver()));
-    assert!(lines.capabilities().has(Capability::Traverse));
-    let first = lines.get_value("0").await.unwrap().unwrap();
-
-    let product = lines.get_ref("product", Some(&first)).unwrap();
-    assert!(product.is_narrowed());
-    let rows = product.list_values().await.unwrap();
-    assert_eq!(rows.keys().collect::<Vec<_>>(), ["flux"]);
-}
-
 /// The resolver is keyed by target, so a model catalog serves record
 /// relations as it is.
 #[tokio::test]

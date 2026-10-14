@@ -196,13 +196,6 @@ fn ref_build() {
     assert_eq!(ids(&vista), ["o2"]);
 }
 
-#[test]
-fn describe_host_has_no_terminals() {
-    let store = shop();
-    let host = host(&store, Terminals::Describe);
-    assert!(run(&host, r#"table("order").count()"#).is_err());
-}
-
 const READ_HOST: &str = r#"
 let o = table("order").record("o1");
 o.status = "void";

@@ -1,12 +1,7 @@
 //! A `modify:` script must be able to resolve `self` more than once.
 //!
-//! In 1.x `Handle::over` kept the Vista in a take-once slot: over a shell
-//! without `clone_shell`, the first resolve (`self.count()`) moved the Vista
-//! out and the script's result couldn't be resolved. In 2.0 every shell is
-//! Clone, so the handle base is a Vista cloned on each resolve.
-//!
-//! `Wrapped` stands where the uncloneable wrapper stood: a wrapper written
-//! with `forward_table_shell!`, which derives Clone.
+//! Every shell is Clone, so the handle base is a Vista cloned on each
+//! resolve. `Wrapped` is a wrapper written with `forward_table_shell!`.
 
 use vantage_dataset::ReadableValueSet;
 use vantage_vista::rhai::{block_on, eval_modify_script};

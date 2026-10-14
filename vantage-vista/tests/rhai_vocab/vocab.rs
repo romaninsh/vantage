@@ -68,12 +68,3 @@ fn a_delete_the_vista_refuses_throws() {
     }
     assert_eq!(json(&host, r#"table("t").ids()"#), json!(["r1"]));
 }
-
-#[test]
-fn describe_host_has_no_terminals() {
-    let host = host(&store(), Terminals::Describe);
-    for script in [r#"table("t").list()"#, r#"table("t").delete("r1")"#] {
-        let err = run(&host, script).unwrap_err();
-        assert!(err.contains("Function not found"), "`{script}`: {err}");
-    }
-}

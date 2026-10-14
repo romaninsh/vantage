@@ -8,8 +8,7 @@
 //! (`"tracking"` | `"pending"` | `"failed"`) and `rejection()`.
 //!
 //! Writes go through the same [`Writes::Denied`] message and Vista
-//! capability gates as the write terminals (see [`super::write`]); [`flash`]
-//! calls their helpers rather than duplicating the insert/patch/found logic.
+//! capability gates as the write terminals (see [`super::write`]).
 //!
 //! This file holds the draft state; [`verbs`] registers the Rhai surface.
 

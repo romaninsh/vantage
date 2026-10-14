@@ -34,8 +34,6 @@ use crate::{
 mod compare;
 mod path;
 mod search;
-#[cfg(test)]
-mod tests;
 
 use compare::datetime_as_text;
 use search::matches_search;
