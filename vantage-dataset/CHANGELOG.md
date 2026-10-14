@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.3 — 2026-10-14
+
+- The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or
+  behaviour change.
+
 ## 1.1.2 — 2026-10-14
 
 - `ImTable` is `Clone` without requiring `E: Clone`.
