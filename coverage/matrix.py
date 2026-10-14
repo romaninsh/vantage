@@ -44,11 +44,16 @@ def run(idx_test):
                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     if not os.path.exists(raw):
         return (bid, name, res.returncode, None)
-    subprocess.run([PROFDATA, "merge", "-sparse", raw, "-o", data], check=True)
-    exp = subprocess.run([LLVMCOV, "export", "-format=text", f"-instr-profile={data}",
-                          binary, *sources], capture_output=True, text=True)
-    os.remove(raw)
-    os.remove(data)
+    # A failed merge or export marks this one test unmeasured; it doesn't abort the run.
+    merged = subprocess.run([PROFDATA, "merge", "-sparse", raw, "-o", data])
+    exp = merged.returncode == 0 and subprocess.run(
+        [LLVMCOV, "export", "-format=text", f"-instr-profile={data}", binary, *sources],
+        capture_output=True, text=True)
+    for f in (raw, data):
+        if os.path.exists(f):
+            os.remove(f)
+    if not exp or exp.returncode != 0:
+        return (bid, name, res.returncode or 1, None)
     regions = set()
     for fn in json.loads(exp.stdout)["data"][0]["functions"]:
         files = fn["filenames"]

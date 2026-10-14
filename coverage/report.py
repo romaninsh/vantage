@@ -1,6 +1,6 @@
 """Agent-readable reports of overlapping tests from matrix.py's output.
 
-usage: python3 -I report.py <out_dir> <crate_dir> [jaccard]
+usage: python3 -I report.py <out_dir> <crate_dir> <package> [jaccard]
 
 Writes into <out_dir>: index.md, clusters-NN.md (8 clusters each, with a
 decision column) and internal.md (tests under src/). report_html.py renders
@@ -14,9 +14,9 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from overlap import load  # noqa: E402
 
-OUT, CRATE = sys.argv[1], sys.argv[2]
+OUT, CRATE, PACKAGE = sys.argv[1], sys.argv[2], sys.argv[3]
 CHUNK = 8
-o = load(OUT, CRATE, float(sys.argv[3]) if len(sys.argv) > 3 else 0.9)
+o = load(OUT, CRATE, PACKAGE, float(sys.argv[4]) if len(sys.argv) > 4 else 0.9)
 
 
 def md(text):

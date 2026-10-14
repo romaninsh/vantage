@@ -12,12 +12,14 @@ import config
 import exceptions
 
 
-def load(out, crate, jaccard=0.9):
+def load(out, crate, package, jaccard=0.9):
+    """`package` is the Cargo package name, which config.yaml and the exceptions
+    files are keyed by; a crate's directory can be named differently."""
     crate = os.path.abspath(crate)
     matrix = json.load(open(os.path.join(out, "matrix.json")))
     data = json.load(open(os.path.join(out, "regions.json")))
     regions = [tuple(r) for r in data["regions"]]
-    left_out = config.excluded(os.path.basename(crate))
+    left_out = config.excluded(package)
     dropped = {i for i, r in enumerate(regions) if left_out(r[0])}
     all_sets = {k: set(v) - dropped for k, v in data["tests"].items()}
 
@@ -127,13 +129,13 @@ def load(out, crate, jaccard=0.9):
     def short(key):
         return key.split("::", 1)[1]
 
-    accepted, rejected = exceptions.check(os.path.basename(crate))
+    accepted, rejected = exceptions.check(package)
     exempt = {k: accepted[short(k)] for k in all_sets if short(k) in accepted}
 
     return SimpleNamespace(
         exempt=exempt, rejected=rejected,
-        excluded=config.patterns(os.path.basename(crate)), dropped=dropped,
-        crate=crate, crate_name=os.path.basename(crate), jaccard=jaccard, matrix=matrix,
+        excluded=config.patterns(package), dropped=dropped,
+        crate=crate, crate_name=package, jaccard=jaccard, matrix=matrix,
         regions=regions, texts=texts, loc=loc, internal=internal, sets=sets, keys=keys,
         unique=unique, clusters=clusters, clustered=clustered, loners=loners,
         candidates=candidates, relation=relation, kind=kind, where=where, short=short,
