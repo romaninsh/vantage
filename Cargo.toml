@@ -48,3 +48,9 @@ exclude = [
     "vantage-spacetimedb",
 ]
 resolver = "3"
+
+# Dev builds are for compiling fast, not for a debugger: no debug info halves a
+# cold build and leaves no codegen objects behind in target/debug/deps.
+# Set CARGO_PROFILE_DEV_DEBUG=true for a session that needs one.
+[profile.dev]
+debug = false

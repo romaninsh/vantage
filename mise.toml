@@ -1,2 +1,9 @@
 [tools]
 aws = { version = "latest", symlink_bins = "true" }
+
+# Debug builds with debug info on macOS keep each relink's codegen objects in
+# target/debug/deps, and every rustc lists that folder at startup. Run by hand
+# now and then; libraries are kept, so it never causes a rebuild.
+[tasks.sweep]
+description = "Delete leftover codegen objects in target/ older than an hour"
+run = "find . -path '*/target/debug/deps/*.rcgu.o' -mmin +60 -delete"
