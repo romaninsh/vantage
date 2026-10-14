@@ -7,13 +7,15 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_vista::{Capability, SortDirection, VistaQuery};
 
 use super::fixtures::{items, open, wait_for_ids};
-use crate::support::{eager_dio, order};
+use crate::support::eager_dio;
 
 #[tokio::test]
 async fn a_residual_order_is_one_order_across_every_read() -> Result<()> {
     let dio = eager_dio(items(&[Capability::Search, Capability::FilterOps])).await;
     let by_n = dio
-        .with_query(&order("n", SortDirection::Descending))
+        .derive()
+        .with_order("n", SortDirection::Descending)
+        .build()
         .await?;
     assert!(by_n.residual().order.is_some(), "the master refused it");
 

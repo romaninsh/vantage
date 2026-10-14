@@ -10,7 +10,7 @@ use vantage_diorama::{Clause, Loader};
 use vantage_vista::{Capability, SortDirection, Vista, VistaQuery};
 
 use super::fixtures::{assert_fails, ids, items, metadata, open, shell, wait_for_ids};
-use crate::support::{eager_dio, memory_lens, paged_dio, search};
+use crate::support::{eager_dio, memory_lens, paged_dio};
 
 /// A master that can't search.
 fn unsearchable() -> Vista {
@@ -43,7 +43,9 @@ async fn a_residual_search() -> Result<()> {
 async fn the_dio_search_as_the_only_residual() -> Result<()> {
     let eager = eager_dio(unsearchable())
         .await
-        .with_query(&search("re"))
+        .derive()
+        .with_search("re")
+        .build()
         .await?;
     assert_eq!(eager.residual().search.as_deref(), Some("re"));
     let view = open(&eager, |b| b).await;
@@ -51,7 +53,9 @@ async fn the_dio_search_as_the_only_residual() -> Result<()> {
 
     let paged = paged_dio(unsearchable())
         .await
-        .with_query(&search("re"))
+        .derive()
+        .with_search("re")
+        .build()
         .await?;
     let view = open(&paged, |b| b).await;
     assert_fails(&view, Clause::Search);
@@ -67,7 +71,9 @@ async fn the_dio_search_as_the_only_residual() -> Result<()> {
 async fn a_view_search_beside_the_dio_search() -> Result<()> {
     let eager = eager_dio(unsearchable())
         .await
-        .with_query(&search("re"))
+        .derive()
+        .with_search("re")
+        .build()
         .await?;
     let view = open(&eager, |b| b).await;
     view.set_search(Some("3".into()));
@@ -75,7 +81,9 @@ async fn a_view_search_beside_the_dio_search() -> Result<()> {
 
     let paged = paged_dio(unsearchable())
         .await
-        .with_query(&search("re"))
+        .derive()
+        .with_search("re")
+        .build()
         .await?;
     let view = open(&paged, |b| b).await;
     view.set_search(Some("3".into()));

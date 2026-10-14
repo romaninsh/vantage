@@ -127,7 +127,9 @@ mod tests {
         let lens = Lens::builder().cache(Cache::memory()).build().expect("lens");
         let dio = lens.dio(master).build().await.expect("dio builds");
         let derived = dio
-            .with_query(&VistaQuery::new().with_search("x"))
+            .derive()
+            .with_search("x")
+            .build()
             .await
             .expect("derives");
         assert_eq!(derived.master().query().search.as_deref(), Some("x"));

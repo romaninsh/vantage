@@ -35,7 +35,7 @@
 //! | `total` | the grand total changed, and what decided it |
 //! | `sort` / `search` | the query changed, and whether it was pushed to the source |
 //! | `hydrate` | a two-pass detail sweep queued its pending ids |
-//! | `derive` | a `vantage-diorama-aggregate` layer recomputed |
+//! | `derive` | an [`aggregate`](crate::aggregate) layer recomputed |
 //! | `summary` | the end-of-session ledger (see [`stats::emit_debug_summary`](crate::stats::emit_debug_summary)) |
 //!
 //! `fetch #N` / `list #N` is a per-dio counter tying a request to its outcome;
@@ -44,10 +44,9 @@
 //! inside the operation the return line closes — so correlate on the id rather
 //! than on adjacency.
 //!
-//! A `derive()`'s first load emits two `derive` lines: an eager compute that
-//! seeds the derived Vista's schema, then the engine's own seed pass over the
-//! same rows, which reports `unchanged` because it reads what the eager pass
-//! just published. Both are real recomputations.
+//! A [`Dio::aggregate`](crate::Dio::aggregate) mount emits one `derive` line
+//! on its first load, labelled `initial`: the compute that seeds the derived
+//! Vista's schema. The engine then waits for the source to change.
 //!
 //! # Feature
 //!
@@ -120,10 +119,6 @@ macro_rules! tapline {
 pub(crate) use tapline;
 
 /// A duration in the unit a reader thinks in: `840ms`, `3.0s`, `1m12s`.
-///
-/// Public because the stream is a shared format: a crate that writes into
-/// `vantage_diorama::debug` — `vantage-diorama-aggregate` does — has to print
-/// its numbers the same way, or the reader meets two conventions in one log.
 pub fn dur(ms: u64) -> String {
     if ms < 1_000 {
         format!("{ms}ms")

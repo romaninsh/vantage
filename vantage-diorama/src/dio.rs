@@ -1,3 +1,4 @@
+mod abort_on_drop;
 pub(crate) mod augment_passes;
 pub(crate) mod augment_scheduler;
 mod augmented;
@@ -30,9 +31,11 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use vantage_vista::{Vista, VistaQuery};
 
+pub(crate) use abort_on_drop::AbortOnDrop;
 pub(crate) use augmented::AugmentedClause;
 pub use builder::DioBuilder;
 pub(crate) use builder::DioParts;
+pub use derive::DeriveBuilder;
 pub(crate) use detail_state::DetailState;
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{DioDiagnostics, SceneryDiagnostic};
@@ -68,7 +71,7 @@ impl From<Generation> for u64 {
 ///
 /// Cheap to clone — wraps an `Arc<DioInner>` so all clones share the
 /// same write queue, event bus, and refresh task. Narrowing never changes a
-/// Dio: [`with_query`](Self::with_query) and its siblings derive a new one.
+/// Dio: [`derive`](Self::derive) and its siblings build a new one.
 ///
 /// The Dio lives until its last strong holder drops: `Dio` clones, an open
 /// form's [`Servo`](crate::Servo), a facade from [`cached`](Self::cached), or a

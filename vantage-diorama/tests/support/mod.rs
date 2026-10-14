@@ -10,6 +10,9 @@
 
 #![allow(dead_code)]
 
+pub mod aggregate;
+#[cfg(feature = "diagnostics")]
+pub mod capture;
 pub mod chunk;
 pub mod flash;
 pub mod spy_cache;
@@ -194,7 +197,7 @@ pub fn meta(columns: &[&str]) -> VistaMetadata {
     m.with_id_column("id")
 }
 
-// ---- one-clause queries, for `Dio::with_query` ----------------------------
+// ---- one-clause queries, for `DeriveBuilder::with_query` ------------------
 
 pub fn cond(column: &str, op: FilterOp, value: impl Into<CborValue>) -> VistaQuery {
     VistaQuery::new().with_condition(Condition::new(column, op, value))

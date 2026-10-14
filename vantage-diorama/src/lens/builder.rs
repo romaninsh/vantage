@@ -95,6 +95,13 @@ impl LensBuilder {
         self
     }
 
+    /// Carry another Lens's debug stream, for a Lens that serves Dios on its
+    /// behalf.
+    pub(crate) fn tap(mut self, tap: crate::debug::DebugTap) -> Self {
+        self.debug = tap;
+        self
+    }
+
     /// Validate the settings and build the Lens. Every problem is an error
     /// naming the setting; this never panics.
     pub fn build(self) -> Result<Arc<Lens>> {

@@ -355,7 +355,9 @@ async fn not_blue() -> Result<(Dio, MockShell)> {
     let shell = residual_shell();
     let dio = warmed_dio(Vista::new("teams", shell.clone())).await?;
     let not_blue = dio
+        .derive()
         .with_query(&support::cond("team", FilterOp::Ne, "blue"))
+        .build()
         .await?;
     assert!(!not_blue.residual().conditions.is_empty());
     Ok((not_blue, shell))
@@ -430,7 +432,9 @@ async fn routed_red() -> Result<(Dio, Seen)> {
         .build()?;
     let dio = lens.dio(Vista::new("teams", team_shell())).build().await?;
     let red = dio
+        .derive()
         .with_query(&support::cond("team", FilterOp::Eq, "red"))
+        .build()
         .await?;
     assert!(red.residual().is_empty(), "the master took the condition");
     Ok((red, seen))

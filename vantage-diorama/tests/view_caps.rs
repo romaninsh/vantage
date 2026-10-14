@@ -139,7 +139,9 @@ async fn clearing_the_order_of_a_tail_view_fails_it() -> Result<()> {
 async fn clearing_a_tail_order_keeps_the_dio_order() -> Result<()> {
     let dio = eager_dio(Vista::new("t", numbers())).await;
     let descending = dio
-        .with_query(&support::order("n", SortDirection::Descending))
+        .derive()
+        .with_order("n", SortDirection::Descending)
+        .build()
         .await?;
     let view = descending
         .table_scenery()

@@ -3,7 +3,8 @@ use std::cmp::Ordering;
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
-use super::{cbor_cmp, cell_get, path_get};
+use super::path::path_get;
+use super::{cbor_cmp, cell_get};
 use crate::{Column, Condition, FilterOp, VistaMetadata, VistaQuery, filter::operand_text};
 
 mod search;
