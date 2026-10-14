@@ -20,7 +20,7 @@
 set -euo pipefail
 
 baseline=0
-if [ "${1:-}" = "--baseline" ]; then baseline=1; shift; fi
+if [[ "${1:-}" = "--baseline" ]]; then baseline=1; shift; fi
 pkg=$1
 jaccard=${2:-0.9}
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -49,13 +49,13 @@ print(next(os.path.dirname(p["manifest_path"]) for p in m["packages"] if p["name
 python3 -I "$root/coverage/matrix.py" "$out/list.json" "$dir" "$out" "${JOBS:-10}" | tee -a "$log"
 python3 -I "$root/coverage/report.py" "$out" "$dir" "$jaccard" | tee -a "$log"
 
-if [ "$baseline" = 1 ]; then
+if [[ "$baseline" = 1 ]]; then
   rm -rf "$base"
   cp -R "$out" "$base"
   # lost.py maps baseline regions onto the current sources through this copy.
   mkdir -p "$base/source"
   cp -R "$dir/src" "$base/source/src"
   echo "baseline saved: $base"
-elif [ -d "$base" ]; then
+elif [[ -d "$base" ]]; then
   python3 -I "$root/coverage/lost.py" "$pkg" "$dir" "$base" "$out" | tee "$out/lost.txt"
 fi

@@ -70,7 +70,7 @@ for f, lines in sorted(o.texts.items()):
     for i, line in enumerate(lines):
         if line.strip() != "#[cfg(test)]" or i + 1 >= len(lines):
             continue
-        m = re.match(r"(pub(\(crate\))?\s+)?mod\s+(\w+)\s*(;|\{)", lines[i + 1].strip())
+        m = re.match(r"(pub(\(crate\))?\s+)?mod\s+(\w+)\s*([;{])", lines[i + 1].strip())
         if not m:
             continue
         if m.group(4) == ";":

@@ -63,7 +63,7 @@ for path, ls, cs, le, ce in lost:
     by_file[path].append((ls, cs, le, ce))
 
 if "--json" in sys.argv:
-    json.dump({f: rs for f, rs in by_file.items()}, sys.stdout, indent=1)
+    json.dump(dict(by_file), sys.stdout, indent=1)
     sys.exit(0)
 
 print(f"{len(before)} regions before, {len(after)} after, {len(lost)} lost, {len(after - before)} gained"

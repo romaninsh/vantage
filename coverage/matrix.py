@@ -26,7 +26,7 @@ suites = json.load(open(LIST))["rust-suites"]
 tests = []
 for suite in suites.values():
     for name, case in suite["testcases"].items():
-        if case.get("ignored") or not case.get("filter-match", {}).get("status") == "matches":
+        if case.get("ignored") or case.get("filter-match", {}).get("status") != "matches":
             continue
         tests.append((suite["binary-id"], suite["binary-path"], suite["cwd"], name))
 
@@ -98,7 +98,7 @@ universe = set(hits)
 remaining, keep = set(universe), []
 pool_left = dict(covered)
 while remaining:
-    best = max(pool_left, key=lambda k: len(pool_left[k] & remaining))
+    best = max(pool_left, key=lambda k, rem=remaining: len(pool_left[k] & rem))
     gain = pool_left[best] & remaining
     if not gain:
         break
