@@ -1,13 +1,11 @@
 //! Runner: walks the parsed token stream and drives the Vista.
 //!
-//! Wired through to real Vista calls: `Op::Eq` conditions, `[N]`
-//! narrow-to-single, `:relation` traversal, column overrides, sort
-//! (`[+col]` / `[-col]` → `Vista::set_order`), and search (`?keyword`
-//! → `Vista::set_search`). Still stubbed (the `Renderer::note_stub`
-//! hook reports the call name): operator vocabulary beyond `eq`,
-//! range slicing (`[N:M]`), and aggregates. Drivers without the
-//! matching [`Capability`](vantage_vista::Capability) return
-//! `Unsupported` from the corresponding Vista method.
+//! Wired to Vista: `Op::Eq` conditions, `[N]` narrowing, `:relation`
+//! traversal, column overrides, sort (`Vista::set_order`) and search
+//! (`Vista::set_search`). Reported through `Renderer::note_stub` instead:
+//! operators beyond `eq`, range slicing (`[N:M]`) and aggregates.
+//! Drivers lacking the matching [`Capability`](vantage_vista::Capability)
+//! return `Unsupported` from the Vista method.
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
@@ -58,9 +56,6 @@ pub async fn run<F: ModelFactory, R: Renderer>(
     .await
 }
 
-/// In-flight runner state: vista, mode, accumulated column override, and
-/// pending aggregate. Kept in one struct so token application is a single
-/// `&mut self` call rather than a wad of locals threaded through every branch.
 struct RunState {
     vista: Vista,
     mode: Mode,
@@ -69,7 +64,6 @@ struct RunState {
 }
 
 impl RunState {
-    /// Consume the first token to obtain the initial Vista + mode.
     async fn resolve_first<F: ModelFactory, R: Renderer>(
         factory: &F,
         renderer: &R,
@@ -176,16 +170,13 @@ impl RunState {
             Some(ReferenceKind::HasOne | ReferenceKind::ContainsOne) => Mode::Single,
             _ => Mode::List,
         };
-        // A new Vista deserves its own default columns.
         self.column_override = None;
         self.mode = apply_selector_opt(&mut self.vista, self.mode, sel, renderer).await?;
         Ok(())
     }
 }
 
-/// Aggregates short-circuit normal list/single rendering with a single
-/// scalar. The underlying `Vista::get_sum` / `get_count` / etc. APIs
-/// haven't landed yet, so this still notes a stub and renders `Null`.
+// Stub: Vista has no aggregate API yet, so this renders `Null`.
 fn render_aggregate<R: Renderer>(
     renderer: &R,
     vista: &Vista,
@@ -224,12 +215,8 @@ async fn render_final<R: Renderer>(
     Ok(())
 }
 
-/// Apply a `[…]` selector to `vista` in place. Returns the new mode
-/// (single when a `[N]` index slice narrowed to one record, otherwise
-/// the incoming mode). Sort routes through `Vista::set_order`; slice's
-/// `Index` variant uses the real narrow-to-single path. Slice's `Range`
-/// variant is stubbed — Vista's pagination surface is page-based, so an
-/// arbitrary `[start:end]` offset doesn't map cleanly yet.
+/// Returns `Mode::Single` when an `[N]` index narrowed to one record,
+/// otherwise the incoming mode. Sort is applied before slicing.
 async fn apply_selector<R: Renderer>(
     vista: &mut Vista,
     mode: Mode,
@@ -243,8 +230,7 @@ async fn apply_selector<R: Renderer>(
         None => Ok(mode),
         Some(Slice::Index(n)) => apply_index(vista, n).await,
         Some(Slice::Range { start, end }) => {
-            // TODO: vista.set_pagination(start, end) once Vista grows an
-            // offset-style range primitive — today's surface is page-based.
+            // TODO: Vista's pagination is page-based; needs an offset range primitive.
             renderer.note_stub(&format!("set_pagination({start}, {end:?})"));
             Ok(mode)
         }
@@ -270,17 +256,12 @@ async fn apply_selector_opt<R: Renderer>(
     }
 }
 
-/// Apply an operator condition. Returns `Some(Mode::Single)` when the
-/// condition uses the `id=` alias (which forces single-record mode),
-/// `None` otherwise. Only `Op::Eq` is wired; all other ops note a stub
-/// and return without mutating the vista.
+/// Returns `Some(Mode::Single)` for the `id=` alias, `None` otherwise.
+/// Only `Op::Eq` reaches the vista; other ops note a stub.
 ///
-/// For `Op::Eq`, `value_raw` carries the original user text when the
-/// parser took the auto-detect path. Run-time coercion against the
-/// target column's declared type then wins, so `name=true` on a string
-/// column produces `Text("true")` rather than `Bool(true)`. When
-/// `value_raw` is `None` the user explicitly forced a type via
-/// `#literal` and `value` is honoured as-is.
+/// With `value_raw` set, the column's declared type decides the value
+/// (`name=true` on a string column is `Text("true")`); without it the
+/// user forced a type via `#literal` and `value` is used as-is.
 fn apply_condition<R: Renderer>(
     vista: &mut Vista,
     field: &str,
@@ -290,7 +271,7 @@ fn apply_condition<R: Renderer>(
     renderer: &R,
 ) -> Result<Option<Mode>> {
     if op.is_nullary() {
-        // TODO: vista.add_condition(field, op, None) once stage 5 lands.
+        // TODO: wire nullary ops to Vista conditions.
         renderer.note_stub(&format!("add_condition({field:?}, {})", op.name()));
         return Ok(None);
     }
@@ -320,16 +301,14 @@ fn apply_condition<R: Renderer>(
             })
         }
         _ => {
-            // TODO: vista.add_condition(field, op, v) once stage 5 lands.
+            // TODO: wire the remaining operators to Vista conditions.
             renderer.note_stub(&format!("add_condition({field:?}, {}, {v:?})", op.name()));
             Ok(None)
         }
     }
 }
 
-/// List the vista, take the Nth row, narrow the vista to that row by
-/// adding `eq(id_field, that_id)`. Returns `Mode::Single` so subsequent
-/// traversals see one parent.
+/// Narrow the vista to its Nth row with an `eq` condition on the id column.
 async fn apply_index(vista: &mut Vista, index: usize) -> Result<Mode> {
     let records = vista.list_values().await?;
     let total = records.len();

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 — 2026-10-14
+
+- The in-crate unit tests move to the blackbox suite under `tests/`; comments trimmed. No API or
+  behaviour change.
+
 ## 0.1.1 — 2026-10-11
 
 - `ensure_gitignore` returns an error for an unreadable `.gitignore` instead of overwriting it.

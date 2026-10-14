@@ -2,13 +2,11 @@
 //! values and kept current as the files change.
 //!
 //! Two layers:
-//! - the load pipeline for one file: read → parse → `!include` → hash →
-//!   JSON → JSON-schema validate → deserialize ([`load_document`],
-//!   [`validate_into`]). Generic over the target type; it knows nothing
-//!   about the documents it loads;
+//! - the load pipeline for one file ([`load_document`], [`validate_into`]),
+//!   generic over the target type;
 //! - the registry for a whole project: each [`Kind`] says where its files
-//!   live and how they parse and cross-check, and an [`Inventory`] walks
-//!   the folders, holds one [`Leaf`] per file, reloads single paths
+//!   live and how they parse and cross-check, and an [`Inventory`] holds
+//!   one [`Leaf`] per file, reloads single paths
 //!   ([`Inventory::reload_path`]) and writes schemas, READMEs and a
 //!   `.gitignore` block for editors. With the `watch` feature, `watch`
 //!   supplies the changed paths.

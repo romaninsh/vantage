@@ -1,6 +1,5 @@
 //! Finding a kind's files on disk, and mapping a changed path back to the
-//! kind and key it belongs to. Apart from loading documents, every
-//! filesystem query the registry makes goes through this module.
+//! kind and key it belongs to.
 //!
 //! Keys are file stems. A [`Depth::OneLevel`] folder also reads one level
 //! of subfolders and keys those files `<sub>/<stem>`. In folders only
@@ -142,8 +141,6 @@ pub(crate) fn raw_hash(path: &Path) -> u64 {
     hasher.finish()
 }
 
-/// `path` relative to `root`, trying the spelling given, then the
-/// canonical root, then the canonical parent of `path`.
 fn relative(root: &Path, path: &Path) -> Option<PathBuf> {
     if let Ok(rel) = path.strip_prefix(root) {
         return Some(rel.to_path_buf());
