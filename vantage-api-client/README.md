@@ -6,7 +6,7 @@ REST and GraphQL backends for the [Vantage](https://github.com/romaninsh/vantage
 
 You've built an application against a SQL or document database and now a partner exposes their data through a third-party API. You could write a one-off HTTP client and a hand-rolled DTO layer, but that means duplicating the typed entities, condition composition, and relationship traversal you already have. You could try a generic GraphQL or REST client, but then your query logic doesn't compose with the rest of your Vantage code.
 
-`vantage-api-client` gives you the same `Table<RestApi, E>` / `Table<GraphqlApi, E>` shape you already use for SQL or MongoDB — typed columns, conditions, pagination, references — talking to whatever HTTP endpoint happens to be on the other side. Mix REST and GraphQL tables in a single `AnyTable` collection. Drive them from YAML when you don't want a Rust factory per model.
+`vantage-api-client` gives you the same `Table<RestApi, E>` / `Table<GraphqlApi, E>` shape you already use for SQL or MongoDB — typed columns, conditions, pagination, references — talking to whatever HTTP endpoint happens to be on the other side. Mix REST and GraphQL tables in a single `Vec<Vista>`. Drive them from YAML when you don't want a Rust factory per model.
 
 ## REST: Conditions Become Query Params
 
@@ -114,24 +114,27 @@ let launches = vista.list_values().await?;
 
 The same shape exists for REST (`RestApiVistaSpec`) with an `api:` block carrying URL templates and a built-in registry. `RestApiVistaFactory::register_yaml(&str)` accumulates specs and resolves cross-model references through the registry — declare `users.yaml`, `albums.yaml`, `photos.yaml` and traversing `users id=1 :albums :photos` works without writing any Rust.
 
-GraphQL specs take `references:` too: `GraphqlApiVistaFactory::register_yaml` collects specs for traversal, or `with_resolver` supplies them from elsewhere. GraphQL column types map to typed Vantage columns: `int`, `bigint`, `float`, `bool`, `string`, `datetime`, `date`, `time`, `uuid`, `json`. Unknown types fail loudly at build time. Every key of the `api:` and `graphql:` blocks is listed in the Vantage book's "HTTP APIs: REST & GraphQL" chapter.
+GraphQL specs take `references:` too: `GraphqlApiVistaFactory::register_yaml` collects specs for traversal, or `with_resolver` supplies them from elsewhere. GraphQL column types map to typed Vantage columns: `int`, `bigint`, `float`, `bool`, `string`, `datetime`, `date`, `time`, `uuid`, `json`. Unknown types fail loudly at build time. With the `rhai` feature, `lazy:` columns in a spec are computed by the Vista from each returned record. Every key of the `api:` and `graphql:` blocks is listed in the Vantage book's "HTTP APIs: REST & GraphQL" chapter.
 
 ## Mixing Backends
 
-Both adapters bridge into `AnyTable` through the shared `CborAdapter`, so a heterogeneous `Vec<AnyTable>` works without further wiring:
+Type erasure goes through `Vista`. `RestApi::vista_factory()` and `GraphqlApi::vista_factory()` turn a typed table into a `Vista`, so a heterogeneous `Vec<Vista>` works without further wiring:
 
 ```rust
-let rest = AnyTable::from_table(Table::<RestApi, EmptyEntity>::new(
-    "users", RestApi::new("https://api.example.com"),
-));
-let graphql = AnyTable::from_table(Table::<GraphqlApi, EmptyEntity>::new(
-    "launches", GraphqlApi::new("https://api.spacex.land/graphql"),
-));
+let rest_api = RestApi::new("https://api.example.com");
+let rest = rest_api
+    .vista_factory()
+    .from_table(Table::<RestApi, EmptyEntity>::new("users", rest_api.clone()))?;
 
-let backends: Vec<AnyTable> = vec![rest, graphql];
+let gql_api = GraphqlApi::new("https://spacex-api.fly.dev/graphql");
+let graphql = gql_api
+    .vista_factory()
+    .from_table(Table::<GraphqlApi, EmptyEntity>::new("launches", gql_api.clone()))?;
+
+let backends: Vec<Vista> = vec![rest, graphql];
 ```
 
-The same Vista bridge applies — `RestApi::vista_factory()` and `GraphqlApi::vista_factory()` both produce `Vista` instances whose `driver()` reports `"rest-api"` or `"graphql"` so generic UI code can branch on capability when needed.
+Each `Vista`'s `driver()` reports `"rest-api"` or `"graphql"` so generic UI code can branch on capability when needed.
 
 ## Relationship Traversal
 

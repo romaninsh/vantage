@@ -89,7 +89,7 @@ clients.add_condition(doc! { "is_paying_client": true });
 
 // Traverse: paying clients -> their orders
 let orders = clients
-    .get_ref_as::<MongoDB, ClientOrder>("orders")
+    .get_ref_as::<ClientOrder>("orders")
     .unwrap();
 
 let order_list = orders.list().await?;
@@ -112,7 +112,7 @@ orders.add_condition(doc! { "_id": "order1" });
 
 // Traverse: order -> its client
 let client = orders
-    .get_ref_as::<MongoDB, Client>("client")
+    .get_ref_as::<Client>("client")
     .unwrap();
 
 let client_list = client.list().await?;
@@ -258,12 +258,12 @@ Because `vantage-mongodb` implements the same `TableSource` trait as every other
 ```rust
 // Same entity, different backends
 let pg_products = Product::postgres_table(pg_db);
-let mongo_products = Product::mongo_table(mongo_db);
+let mongo_products = Product::mongo_table(mongo_db.clone());
 let csv_products = Product::csv_table(csv);
 
-// Type-erased — works with any backend
-let any_table = AnyTable::from_table(Product::mongo_table(db));
-let records = any_table.list_values().await?;
+// Type-erased through Vista (`vista` feature), works with any backend
+let vista = mongo_db.vista_factory().from_table(mongo_products)?;
+let records = vista.list_values().await?;
 ```
 
 The `bakery_model3` example in the Vantage repo demonstrates a CLI tool that queries the same entities across CSV, SQLite, PostgreSQL, SurrealDB, and MongoDB — choosing the backend at runtime.

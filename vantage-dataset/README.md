@@ -24,14 +24,14 @@ let im_source = ImDataSource::new();
 let users: ImTable<User> = ImTable::new(&im_source, "users");
 
 // Insert and retrieve with type safety
-let id = users.insert_return_id(User {
+let id = users.insert_return_id(&User {
     name: "Alice".to_string(),
     email: "alice@example.com".to_string(),
     age: 30,
 }).await?;
 
 let all_users = users.list().await?;
-let alice = users.get(&id).await?;
+let alice: Option<User> = users.get(id).await?;
 ```
 
 The trait system allows the same code patterns to work across vastly different storage backends -
@@ -43,10 +43,12 @@ from local CSV files to distributed databases.
 - **Capability-based traits**: [`ReadableDataSet`], [`InsertableDataSet`], [`WritableDataSet`]
   represent what operations a data source supports
 - **Type-safe operations**: Work with native Rust structs while maintaining storage abstraction
-- **Record change tracking**: `RecordDataSet` provides edit sessions with automatic persistence
+- **Active records**: `ActiveEntitySet` and [`ActiveRecordSet`] wrap a loaded row so you can edit
+  it in place and `save()` it back
 - **Value-level access**: [`ValueSet`] traits for working with raw JSON-like values
 - **In-memory implementation**: [`ImTable`] for local caching and testing scenarios
-- **Cross-dataset imports**: Move data between different storage types seamlessly
+- **Cross-dataset imports**: an `Importable` trait for moving data between storage types (no
+  implementations yet)
 - **Enterprise-ready**: Built for large codebases requiring storage migration and refactoring
 
 Vantage Dataset solves the problem of data source abstraction by providing a unified interface that
@@ -71,22 +73,26 @@ trait ValueSet {
 
 // Value-level operations - work with raw storage data
 trait ReadableValueSet: ValueSet {
-    async fn list_values(&self) -> Result<IndexMap<Self::Id, Self::Value>>;
-    async fn get_value(&self, id: &Self::Id) -> Result<Self::Value>;
-    async fn get_some_value(&self) -> Result<Option<(Self::Id, Self::Value)>>;
+    async fn list_values(&self) -> Result<IndexMap<Self::Id, Record<Self::Value>>>;
+    async fn get_value(&self, id: impl Into<Self::Id>) -> Result<Option<Record<Self::Value>>>;
+    async fn get_some_value(&self) -> Result<Option<(Self::Id, Record<Self::Value>)>>;
 }
 
 trait WritableValueSet: ValueSet {
-    async fn insert_value(&self, id: &Self::Id, record: Self::Value) -> Result<()>;
-    async fn replace_value(&self, id: &Self::Id, record: Self::Value) -> Result<()>;
-    async fn patch_value(&self, id: &Self::Id, partial: Self::Value) -> Result<()>;
-    async fn delete(&self, id: &Self::Id) -> Result<()>;
+    async fn insert_value(&self, id: impl Into<Self::Id>, record: &Record<Self::Value>) -> Result<Record<Self::Value>>;
+    async fn replace_value(&self, id: impl Into<Self::Id>, record: &Record<Self::Value>) -> Result<Record<Self::Value>>;
+    async fn patch_value(&self, id: impl Into<Self::Id>, partial: &Record<Self::Value>) -> Result<Record<Self::Value>>;
+    async fn delete(&self, id: impl Into<Self::Id>) -> Result<()>;
     async fn delete_all(&self) -> Result<()>;
 }
 
-trait RecordValueSet: ReadableValueSet + WritableValueSet {
-    async fn get_value_record(&self, id: &Self::Id) -> Result<RecordValue<'_, Self>>;
-    async fn list_value_records(&self) -> Result<Vec<RecordValue<'_, Self>>>;
+trait InsertableValueSet: ValueSet {
+    async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id>;
+}
+
+trait ActiveRecordSet: ReadableValueSet + WritableValueSet {
+    async fn get_value_record(&self, id: impl Into<Self::Id>) -> Result<Option<ActiveRecord<'_, Self>>>;
+    async fn list_value_records(&self) -> Result<Vec<ActiveRecord<'_, Self>>>;
 }
 ```
 
@@ -101,24 +107,27 @@ trait DataSet<E: Entity>: ValueSet {}
 // Capability traits - implement what your data source supports
 trait ReadableDataSet<E>: DataSet<E> {
     async fn list(&self) -> Result<IndexMap<Self::Id, E>>;
-    async fn get(&self, id: &Self::Id) -> Result<E>;
+    async fn get(&self, id: impl Into<Self::Id>) -> Result<Option<E>>;
 
     async fn get_some(&self) -> Result<Option<(Self::Id, E)>>;
 }
 
 trait InsertableDataSet<E>: DataSet<E> {
-    async fn insert_return_id(&self, record: E) -> Result<Self::Id>;
+    async fn insert_return_id(&self, entity: &E) -> Result<Self::Id>;
 }
 
 trait WritableDataSet<E>: DataSet<E> {
-    async fn insert(&self, id: &Self::Id, record: E) -> Result<()>;
-    async fn replace(&self, id: &Self::Id, record: E) -> Result<()>;
-    async fn patch(&self, id: &Self::Id, partial: E) -> Result<()>;
+    async fn insert(&self, id: impl Into<Self::Id>, entity: &E) -> Result<E>;
+    async fn replace(&self, id: impl Into<Self::Id>, entity: &E) -> Result<E>;
+    async fn patch(&self, id: impl Into<Self::Id>, partial: &E) -> Result<E>;
+    async fn patch_changed(&self, id: impl Into<Self::Id>, before: &E, after: &E) -> Result<()>;
 }
 
-trait RecordDataSet<E>: ReadableDataSet<E> + WritableDataSet<E> {
-    async fn get_record(&self, id: &Self::Id) -> Result<Option<Record<'_, Self, E>>>;
-    async fn list_records(&self) -> Result<Vec<Record<'_, Self, E>>>;
+trait ActiveEntitySet<E>: ReadableDataSet<E> + WritableDataSet<E> {
+    async fn get_entity(&self, id: impl Into<Self::Id>) -> Result<Option<ActiveEntity<'_, Self, E>>>;
+    async fn list_entities(&self) -> Result<Vec<ActiveEntity<'_, Self, E>>>;
+    async fn get_some_entity(&self) -> Result<Option<ActiveEntity<'_, Self, E>>>;
+    fn new_entity(&self, id: Self::Id, entity: E) -> ActiveEntity<'_, Self, E>;
 }
 ```
 
@@ -142,14 +151,14 @@ Work directly with storage values without entity deserialization for performance
 ```rust,ignore
 // Work directly with raw storage values
 let raw_values = users.list_values().await?;
-let user_value = users.get_value(&user_id).await?;
+let user_value = users.get_value(user_id.clone()).await?;
 
 // Patch specific fields without full entity round-trip
-let partial_update = json!({ "last_login": "2024-01-15T10:30:00Z" });
-users.patch_value(&user_id, partial_update).await?;
+let partial_update: Record<Value> = json!({ "last_login": "2024-01-15T10:30:00Z" }).into();
+users.patch_value(user_id.clone(), &partial_update).await?;
 
 // Delete operations at value level
-users.delete(&user_id).await?;
+users.delete(user_id).await?;
 users.delete_all().await?;
 ```
 
@@ -161,31 +170,31 @@ Value-level operations are essential for:
 
 ## Record Pattern
 
-The `RecordDataSet` and `RecordValueSet` traits provide change tracking for interactive editing:
+The `ActiveEntitySet` and [`ActiveRecordSet`] traits wrap a loaded row in [`ActiveEntity`] or
+`ActiveRecord` for interactive editing. Both are implemented automatically for any set that is
+readable and writable:
 
 ```rust,ignore
-// Get entity wrapped in Record for change tracking
-let mut user_record = users.get_record(&user_id).await?.unwrap();
+// Get entity wrapped in ActiveEntity
+let mut user_record = users.get_entity(user_id.clone()).await?.unwrap();
 
 // Modify through mutable deref
 user_record.email = "newemail@example.com".to_string();
 user_record.age = 31;
 
-// Persist changes automatically
+// Write it back
 user_record.save().await?;
 
 // Or work with raw values
-let mut value_record = users.get_value_record(&user_id).await?;
-value_record["status"] = json!("active");
+let mut value_record = users.get_value_record(user_id).await?.unwrap();
+value_record.insert("status".to_string(), json!("active"));
 value_record.save().await?;
 ```
 
-Records track modifications and only persist changed fields, enabling:
-
-- Efficient updates with minimal database operations
-- Conflict detection in concurrent environments
-- Undo/redo functionality for interactive applications
-- Optimistic locking patterns
+`save()` is a full replace: it creates the row if missing and drops fields absent from the
+in-memory copy. To write only the fields that changed, use
+`WritableDataSet::patch_changed(id, &before, &after)`, which compares two entity values and patches
+the difference (and writes nothing when they are equal).
 
 ## In-Memory Implementation
 
@@ -198,9 +207,9 @@ let data_source = ImDataSource::new();
 let users: ImTable<User> = ImTable::new(&data_source, "users");
 
 // Full CRUD operations in memory
-let id = users.insert_return_id(user).await?;
+let id = users.insert_return_id(&user).await?;
 let all_users = users.list().await?;
-let mut user_record = users.get_record(&id).await?.unwrap();
+let mut user_record = users.get_entity(id).await?.unwrap();
 user_record.name = "Updated Name".to_string();
 user_record.save().await?;
 ```
@@ -219,25 +228,21 @@ Import data between different storage types while preserving type safety:
 ```rust,ignore
 // Import from CSV to database
 let csv_users: CsvFile<User> = CsvFile::new(csv_source, "users.csv");
-let db_users: DatabaseTable<User> = db.table("users");
+let mut db_users: DatabaseTable<User> = db.table("users");
 
-// Type-safe import with automatic conversion
+// Type-safe import with automatic conversion (Importable::import takes &mut self)
 db_users.import(csv_users).await?;
 ```
 
-The import system handles:
-
-- ID generation and mapping between different systems
-- Type conversion when storage formats differ
-- Batch operations for performance
-- Error recovery and partial import scenarios
+`Importable` is only a trait at this stage: no dataset in this repository implements it yet, so ID
+mapping, type conversion and batching are left to the implementation.
 
 ## Integration with Vantage Framework
 
 Dataset traits form the foundation for higher-level Vantage components:
 
 - **vantage-table**: Builds structured tables with schema validation on top of Dataset traits
-- **vantage-live**: Provides caching and synchronization layers using Dataset as persistence
+- **vantage-vista**: The type-erased `Vista` handle implements the `ValueSet` family
 - **vantage-expressions**: Query building that targets datasets as data sources
 - **UI adapters**: Generic table components that work with any Dataset implementation
 
@@ -250,10 +255,10 @@ All traits use `vantage_core::Result<T>` and `VantageError` for consistent error
 Vantage ecosystem:
 
 ```rust,ignore
-use vantage_core::{Result, VantageError};
+use vantage_core::{Context, Result};
 
 // All trait methods return Result<T>
-async fn get_user(&self, id: &str) -> Result<User> {
+async fn get_user(&self, id: &str) -> Result<Option<User>> {
     self.get(id).await
         .context("Failed to retrieve user")
 }

@@ -44,8 +44,8 @@ user.save().await?;
   data sources
 - **Type Safety**: Full compile-time validation of entity structure and field access
 - **Flexible Queries**: Integration with vantage-expressions for complex query building
-- **Relationships**: Same-persistence traversal via `with_one`/`with_many`, cross-persistence via
-  `with_foreign`
+- **Relationships**: Same-persistence traversal via `with_one`/`with_many`. Cross-persistence
+  references live in vantage-vista-factory's `VistaCatalog`
 
 ## Core Operations
 
@@ -110,8 +110,10 @@ for mut user in active_users.list_entities().await? {
 
 Conditions can be added in two ways.
 
-**Using columns and operators** — persistence-agnostic, works the same everywhere. The `Operation`
-trait provides `.eq()`, `.gt()`, `.lt()`, `.gte()`, `.lte()`, `.ne()`, `.in_()` on any column:
+**Using columns and operators** — the same call syntax on every persistence. Each driver ships its
+own operation trait (`PostgresOperation`, `SqliteOperation`, `MongoOperation`, `SurrealOperation`,
+...) that provides `.eq()`, `.gt()`, `.lt()`, `.gte()`, `.lte()`, `.ne()`, `.in_()` on its columns
+and builds that driver's condition type:
 
 ```rust
 // Works on PostgreSQL, SQLite, MongoDB, SurrealDB — any persistence
@@ -194,8 +196,8 @@ impl User {
 
     /// In-memory mock — for tests
     #[cfg(test)]
-    pub fn from_mock(data: Vec<User>) -> Table<MockTableSource, User> {
-        let ds = MockTableSource::from_data("user", data);
+    pub async fn from_mock(data: Vec<serde_json::Value>) -> Table<MockTableSource, User> {
+        let ds = MockTableSource::new().with_data("user", data).await;
         Table::new("user", ds)
             .with_column_of::<String>("name")
             .with_column_of::<String>("email")
@@ -211,8 +213,9 @@ layouts, or SQL syntax — and may not even be aware whether data comes from Pos
 migrated to a REST API:
 
 When you need to pass a table into generic code that doesn't care about the persistence type (CLI
-rendering, admin panels, API handlers), wrap it with `AnyTable::from_table()` to erase the types —
-see the [AnyTable](#anytable) section below.
+rendering, admin panels, API handlers), turn it into a `Vista` with the driver's
+`vista_factory().from_table()` to erase the types — see the [Type erasure](#type-erasure-vista)
+section below.
 
 ```rust
 pub trait UserTable {
@@ -251,7 +254,7 @@ impl UserTable for Table<PostgresDB, User> {
 
         let mut select = orders.select();
         select.clear_fields();
-        select.add_expression(discount, Some("discount".into()));
+        select.add_expression(discount);
 
         self.data_source().associate::<f64>(select.expr())
     }
@@ -287,58 +290,57 @@ if active_subscription.get_some_value().await?.is_some() {
 }
 ```
 
-Vantage also supports foreign references via `with_foreign()` — relationships that cross
-persistence boundaries (e.g. PostgreSQL users → billing API subscriptions). The closure
-receives the source table and returns an `AnyTable` with deferred conditions. See the
-[vantage-expressions README](vantage-expressions/README.md) for details on `DeferredFn` and
-cross-persistence query building.
+A typed `Table<T, E>` is single-backend by construction. Relationships that cross persistence
+boundaries (e.g. PostgreSQL users → billing API subscriptions) are no longer defined on the table
+(`with_foreign()` was removed). They live one layer up, in vantage-vista-factory's `VistaCatalog`,
+which builds models by name and follows a `Relation` from a parent row into another datasource.
 
-### AnyTable
+### Type erasure (Vista)
 
-`AnyTable` erases the persistence and entity types, exposing a uniform `serde_json::Value`-based
-interface. This is useful for generic code — CLI tools, API handlers, admin panels — that doesn't
-need to know which database is behind it:
+`AnyTable` has been removed. Type erasure now goes through `Vista` from vantage-vista: each driver
+has a `vista_factory()` whose `from_table()` turns a typed table into a `Vista`. A Vista exposes the
+same value-level interface for every persistence, with `ciborium::Value` values and `String` ids.
+This is useful for generic code — CLI tools, API handlers, admin panels — that doesn't need to know
+which database is behind it:
 
 ```rust
 // Wrap any typed table
-let any_table = AnyTable::from_table(Product::postgres_table(db));
+let vista = db.vista_factory().from_table(Product::postgres_table(db.clone()))?;
 
 // Same interface regardless of persistence
-let records = any_table.list_values().await?;
-let count = any_table.get_count().await?;
-any_table.insert_value(&id, &record).await?;
-any_table.delete(&id).await?;
+let records = vista.list_values().await?;
+let count = vista.get_count().await?;
+vista.insert_value(id.clone(), &record).await?;
+vista.delete(id).await?;
 ```
 
 A CLI tool that works with multiple persistence sources at runtime:
 
 ```rust
-let table: AnyTable = match source {
-    "postgres" => AnyTable::from_table(Product::postgres_table(pg_db)),
-    "mongo"    => AnyTable::from_table(Product::mongo_table(mongo_db)),
-    "csv"      => AnyTable::from_table(Product::csv_table(csv)),
+// Each driver's `vista_factory()` needs that driver's `vista` feature.
+let vista: Vista = match source {
+    "postgres" => pg_db.vista_factory().from_table(Product::postgres_table(pg_db.clone()))?,
+    "mongo"    => mongo_db.vista_factory().from_table(Product::mongo_table(mongo_db.clone()))?,
+    "csv"      => csv.vista_factory().from_table(Product::csv_table(csv.clone()))?,
     _ => panic!("unknown source"),
 };
 
 // All commands work identically — list, count, insert, delete
-let records = table.list_values().await?;
+let records = vista.list_values().await?;
 render_records(&records);
 ```
 
-Values flow through as `serde_json::Value` — booleans render as `true`/`false`, numbers stay
-numeric, nulls render cleanly. Your persistence's type system (defined in Step 1 of the persistence
-guide) ensures values arrive with the right JSON type rather than everything being a string.
-
 Most application code works directly with `Table<T, E>` instead — this gives access to typed
-entities, persistence-specific conditions, and relationship traversal. `AnyTable` is for the layer
-above, where persistence choice is a runtime decision.
+entities, persistence-specific conditions, and relationship traversal. `Vista` is for the layer
+above, where persistence choice is a runtime decision. See the vantage-vista README for the rest of
+its interface.
 
 ### Loading Records
 
 There are multiple ways to load records depending on your needs:
 
 - **`get_entity(id)`** — Load ActiveEntity by ID (returns `None` if not found)
-- **`get_value(id)`** — Load raw record data by ID
+- **`get_value(id)`** — Load raw record data by ID (returns `None` if not found)
 - **`list()`** — Load all raw entities as `IndexMap<Id, Entity>`
 - **`list_entities()`** — Load all entities as `Vec<ActiveEntity>`
 - **`list_values()`** — Load all raw record data
@@ -351,7 +353,7 @@ for (id, user) in users {
 }
 
 // Load raw record data for inspection
-if let Ok(record) = table.get_value(&"user123".to_string()).await {
+if let Some(record) = table.get_value("user123".to_string()).await? {
     println!("Raw data: {:?}", record);
     println!("Name field: {:?}", record["name"]);
 }
@@ -373,20 +375,22 @@ Various ways to interact with table metadata and statistics:
 let count: i64 = table.get_count().await?;
 
 // Get count as AssociatedExpression for use in other queries
-let count_expr = table.get_table_expr_count();
+let count_expr = table.get_expr_count();
 let result = count_expr.get().await?;
 
-// Aggregated values
-let max_age = table.get_table_expr_max(&table["age"]);
+// Aggregated values (also get_expr_sum / get_expr_min)
+let max_age = table.get_expr_max(&table.get_column::<i64>("age").unwrap());
 let max_value = max_age.get().await?;
 
-// Select query builder
-let select = table.get_select_query();
-let results = select
-    .with_field("name")
+// Plain expressions, without a data source attached
+let count_query = table.get_count_query();
+
+// Select query builder, pre-filled with the table's columns and conditions
+let select = table
+    .select()
     .with_condition(expr!("active = true"))
-    .with_limit(10)
-    .execute().await?;
+    .with_limit(Some(10), None);
+let results = table.data_source().execute_select(&select).await?;
 ```
 
 ## Diverse Data Persistence Support
@@ -421,7 +425,7 @@ to implement those yourself.
 | Trait                  | Crate               | Purpose                                                                                                                                                                            |
 | ---------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`ExprDataSource`**   | vantage-expressions | Execute expressions and create deferred closures. Required by SQL persistence for subquery-based relationship traversal. Not needed by document-oriented persistence like MongoDB. |
-| **`TableExprSource`**  | vantage-table       | Expression-returning aggregations (`get_table_expr_count`, `get_table_expr_max`) for use in subqueries or deferred execution.                                                      |
+| **`TableExprSource`**  | vantage-table       | Expression-returning aggregations (`get_table_count_expr`, `get_table_max_expr`, ...) behind `Table::get_expr_count` / `get_expr_max`, for use in subqueries or deferred execution. |
 | **`TableQuerySource`** | vantage-table       | SELECT query builder support for persistence that can compose structured queries.                                                                                                  |
 
 #### What You Get for Free
@@ -432,10 +436,13 @@ Once `TableSource` is implemented, `Table<T, E>` provides:
 - **`ReadableDataSet<E>`** / **`WritableDataSet<E>`** — typed entity CRUD with automatic
   Record-Entity conversion
 - **`ActiveEntitySet<E>`** — change-tracked entity wrappers with `.save()`
-- **`TableLike`** — dyn-safe interface with conditions, pagination, ordering, and search
-- **`AnyTable`** — type-erased wrapper for heterogeneous table collections
-- **Relationship traversal** — `with_one()`, `with_many()`, `with_foreign()`, `get_ref_as()`,
-  `get_ref()`
+- **Relationship traversal** — `with_one()`, `with_many()` and `get_ref_as()` on tables, and
+  `get_ref()` on active entities
+
+Type erasure is not part of this list any more. To hand tables to driver-agnostic code, also give
+your driver a vista factory: a struct implementing vantage-vista's `VistaFactory` trait plus an
+inherent `from_table()` that returns `Result<Vista>`, exposed as `vista_factory()` on your data
+source.
 
 #### Supporting Crates
 
@@ -460,6 +467,8 @@ Part of the Vantage framework:
 - **vantage-types**: Type system, entity definitions, and `TerminalRender` trait
 - **vantage-expressions**: Query building and database abstraction
 - **vantage-dataset**: CRUD operation traits
+- **vantage-vista**: Type-erased `Vista` handle built from a typed table by each driver
+- **vantage-vista-factory**: `VistaCatalog` for name-based models and cross-persistence references
 - **vantage-core**: Error handling and utilities
 - **vantage-csv**: CSV file data source
 - **vantage-sql**: SQL persistence (PostgreSQL, MySQL, SQLite)
