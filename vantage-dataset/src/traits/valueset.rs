@@ -272,7 +272,6 @@ pub trait ActiveRecordSet: ReadableValueSet + WritableValueSet {
     async fn list_value_records(&self) -> Result<Vec<ActiveRecord<'_, Self>>>;
 }
 
-// Auto-implement for any type that has both readable and writable traits
 #[async_trait]
 impl<T> ActiveRecordSet for T
 where

@@ -1,11 +1,17 @@
-/// Implements a type system through a macro
+/// Generates a type system: a trait, a variants enum with marker types, and a
+/// type-erased `Any<Trait>` wrapper.
 ///
+/// ```ignore
 /// vantage_type_system! {
 ///     type_trait: Type3,
 ///     method_name: my_value,
 ///     value_type: MyValueType,
 ///     type_variants: [String, Email]
 /// }
+/// ```
+///
+/// An optional `null_when: <pattern>,` line before `type_variants` says which
+/// stored values are null.
 #[macro_export]
 macro_rules! vantage_type_system {
     (
@@ -15,19 +21,16 @@ macro_rules! vantage_type_system {
         $( null_when: $null_when:pat, )?
         type_variants: [$($variant:ident),* $(,)?]
     ) => {
-        // Generate enum for type variants
         paste::paste! {
             #[derive(Debug, PartialEq, Copy, Clone)]
             pub enum [<$trait_name Variants>] {
                 $($variant,)*
             }
 
-            // Generate marker trait
             pub trait [<$trait_name Marker>] {
                 const TYPE_ENUM: [<$trait_name Variants>];
             }
 
-            // Generate marker structs for each variant
             $(
                 pub struct [<$trait_name $variant Marker>];
                 impl [<$trait_name Marker>] for [<$trait_name $variant Marker>] {
@@ -35,7 +38,6 @@ macro_rules! vantage_type_system {
                 }
             )*
 
-            // Main trait
             pub trait $trait_name: 'static + Sized {
                 type Target: [<$trait_name Marker>];
 
@@ -43,7 +45,6 @@ macro_rules! vantage_type_system {
                 fn [<from_ $method_name>](value: $value_type) -> Option<Self>;
             }
 
-            // Any type wrapper
             #[derive(Clone, Debug)]
             pub struct [<Any $trait_name>] {
                 value: $value_type,
@@ -110,7 +111,6 @@ macro_rules! vantage_type_system {
                 }
             }
 
-            // Into/From trait implementations for AnyType ↔ ValueType
             impl From<[<Any $trait_name>]> for $value_type {
                 fn from(any_value: [<Any $trait_name>]) -> Self {
                     any_value.into_value()
@@ -127,7 +127,6 @@ macro_rules! vantage_type_system {
                 }
             }
 
-            // Set-invariant enforcement (see vantage_types::InvariantValue).
             // `null_when` (optional) gives the underlying null pattern; without
             // it the representation is non-nullable and is_null is always false.
             impl $crate::InvariantValue for [<Any $trait_name>] {
@@ -142,12 +141,11 @@ macro_rules! vantage_type_system {
                 }
             }
 
-            // Persistence trait for structs
             pub trait [<$trait_name Persistence>]: Sized {
                 fn [<to_ $trait_name:lower _map>](&self) -> indexmap::IndexMap<String, [<Any $trait_name>]>;
                 fn [<from_ $trait_name:lower _map>](map: indexmap::IndexMap<String, [<Any $trait_name>]>) -> vantage_core::Result<Self>;
 
-                // Convenient conversion methods that don't conflict with orphan rules
+                // Methods rather than `Into` impls, to stay clear of the orphan rule.
                 fn [<to_ $trait_name:lower _record>](&self) -> vantage_types::Record<[<Any $trait_name>]> {
                     self.[<to_ $trait_name:lower _map>]().into()
                 }

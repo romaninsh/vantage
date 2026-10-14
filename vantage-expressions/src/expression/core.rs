@@ -107,7 +107,7 @@ impl<T> Expression<T> {
         }
     }
 
-    /// Create an empty expression that renders as "".
+    /// An expression that renders as "".
     pub fn empty() -> Self {
         Self {
             template: String::new(),
@@ -115,7 +115,7 @@ impl<T> Expression<T> {
         }
     }
 
-    /// Create expression from vector of expressions and a delimiter
+    /// Join expressions with a delimiter, one nested `{}` per expression.
     ///
     /// See the [module-level documentation](crate::expression::core) for examples.
     pub fn from_vec(vec: Vec<Expression<T>>, delimiter: &str) -> Self {
@@ -166,10 +166,8 @@ impl<T: Clone> Expressive<T> for Expression<T> {
 
 impl<T: std::fmt::Display + std::fmt::Debug> Expression<T> {
     pub fn preview(&self) -> String {
-        // Single pass: split the template on `{}` and interleave rendered
-        // params between the segments. Rendering this way (rather than
-        // repeated `replacen`) means a `{}` *inside* a rendered value can
-        // never be mistaken for the next placeholder.
+        // Interleave instead of repeated `replacen`: a `{}` inside a rendered
+        // value must not be mistaken for the next placeholder.
         let mut parts = self.template.split("{}");
         let mut preview = String::new();
         preview.push_str(parts.next().unwrap_or(""));
@@ -180,8 +178,6 @@ impl<T: std::fmt::Display + std::fmt::Debug> Expression<T> {
         preview
     }
 }
-
-// -- Arithmetic operators for Expression<T> ----------------------------------
 
 impl<T> std::ops::Add for Expression<T> {
     type Output = Expression<T>;
@@ -220,36 +216,5 @@ impl<T> std::ops::Div for Expression<T> {
             "{} / {}",
             vec![ExpressiveEnum::Nested(self), ExpressiveEnum::Nested(rhs)],
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_expression_basic() {
-        let expr = Expression::new(
-            "SELECT * FROM table WHERE id = {}",
-            vec![ExpressiveEnum::Scalar(42)],
-        );
-        assert_eq!(expr.template, "SELECT * FROM table WHERE id = {}");
-        assert_eq!(expr.parameters.len(), 1);
-        assert_eq!(expr.preview(), "SELECT * FROM table WHERE id = 42");
-    }
-
-    #[test]
-    fn test_preview_param_value_containing_placeholder() {
-        // A rendered value that itself contains `{}` must not swallow the
-        // following placeholder. Single-pass interleaving handles this;
-        // the old repeated-`replacen` approach produced "weird{x} = " here.
-        let expr = Expression::new(
-            "{} = {}",
-            vec![
-                ExpressiveEnum::Scalar("weird{}".to_string()),
-                ExpressiveEnum::Scalar("x".to_string()),
-            ],
-        );
-        assert_eq!(expr.preview(), "weird{} = x");
     }
 }

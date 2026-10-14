@@ -35,7 +35,6 @@ pub trait DataSetCandidate: Send + Sync {
     }
 }
 
-// Auto-implement Clone for Box<dyn DataSetCandidate>
 impl Clone for Box<dyn DataSetCandidate> {
     fn clone(&self) -> Self {
         self.clone_box()

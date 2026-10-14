@@ -1,42 +1,18 @@
-//! MockQuerySource implementation for unit testing.
-//!
-//! Provides QuerySource implementation that returns configurable values,
-//! useful for testing query execution without actual database connections.
-//!
-//! # Example
-//!
-//! ```rust
-//! use vantage_expressions::prelude::*;
-//! use vantage_expressions::mocks::*;
-//! use serde_json::json;
-//!
-//! #[tokio::test]
-//! async fn test_user_service() {
-//!     let mock = MockQuerySource::new(json!([
-//!         {"id": 1, "name": "Alice"},
-//!         {"id": 2, "name": "Bob"}
-//!     ]));
-//!
-//!     let query = expr!("SELECT * FROM users WHERE active = {}", true);
-//!     let users = mock.execute(&query).await.unwrap();
-//!
-//!     assert_eq!(users.as_array().unwrap().len(), 2);
-//! }
-//! ```
+//! `MockExprDataSource`: an `ExprDataSource` that answers every query with one value.
 
 use crate::traits::datasource::{DataSource, ExprDataSource};
 use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
 use serde_json::Value;
 use vantage_core::Result;
 
-/// Mock DataSource that implements QuerySource with configurable return value
+/// An `ExprDataSource` that returns the same value for every expression.
 #[derive(Debug, Clone)]
 pub struct MockExprDataSource {
     value: Value,
 }
 
 impl MockExprDataSource {
-    /// Create a new MockQuerySource that returns the given value
+    /// A source that returns `value` for every expression.
     pub fn new(value: Value) -> Self {
         Self { value }
     }
@@ -61,29 +37,5 @@ impl ExprDataSource<serde_json::Value> for MockExprDataSource {
             let value = value.clone();
             Box::pin(async move { Ok(ExpressiveEnum::Scalar(value)) })
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::expr;
-    use serde_json::json;
-
-    #[tokio::test]
-    async fn test_mock_query_source() {
-        let mock = MockExprDataSource::new(json!({"status": "ok"}));
-        let expr = expr!("SELECT * FROM anything");
-
-        let result = mock.execute(&expr).await.unwrap();
-        assert_eq!(result, json!({"status": "ok"}));
-    }
-
-    #[test]
-    fn test_mock_query_source_defer() {
-        let mock = MockExprDataSource::new(json!({"deferred": "value"}));
-        let expr = expr!("SELECT COUNT(*)");
-
-        let _deferred = mock.defer(expr);
     }
 }

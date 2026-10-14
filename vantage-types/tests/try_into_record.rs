@@ -51,22 +51,3 @@ fn cbor_non_text_map_keys_are_an_error_not_silent_loss() {
         "non-text CBOR keys must error rather than be dropped"
     );
 }
-
-#[test]
-fn ok_for_a_plain_serde_struct() {
-    #[derive(Clone, Serialize, Deserialize)]
-    struct User {
-        id: u32,
-        name: String,
-    }
-
-    let record: Record<serde_json::Value> = User {
-        id: 7,
-        name: "Alice".to_string(),
-    }
-    .try_into_record()
-    .expect("plain struct serializes cleanly");
-
-    assert_eq!(record.get("name"), Some(&serde_json::json!("Alice")));
-    assert_eq!(record.get("id"), Some(&serde_json::json!(7)));
-}

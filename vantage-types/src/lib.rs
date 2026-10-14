@@ -1,7 +1,9 @@
-// Re-export proc-macros from entity subcrate
+//! Typed values and records: `vantage_type_system!` generates a type system,
+//! `Record` carries a row of values, and `#[entity]` converts structs to and
+//! from records.
+
 pub use vantage_types_entity::entity;
 
-// Include type_system module with regular macros
 #[cfg(feature = "serde")]
 pub mod cbor_json;
 pub mod null;
@@ -24,18 +26,14 @@ pub use terminal_render::{RichText, Span, Style, TerminalRender};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EmptyEntity;
 
-/// Entity trait with conversion requirements and default Value type
-///
-/// This trait combines the Entity requirements from vantage-core with
-/// the conversion traits needed for Record operations. It defaults to
-/// serde_json::Value as the value type for convenience.
+/// A type convertible to and from `Record<Value>`, defaulting to
+/// `serde_json::Value`. Implemented for every type that satisfies the bounds.
 #[cfg(feature = "serde")]
 pub trait Entity<Value: Clone = serde_json::Value>:
     TryIntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone
 {
 }
 
-// Blanket implementation for any type that satisfies the bounds
 #[cfg(feature = "serde")]
 impl<T, Value> Entity<Value> for T
 where
@@ -44,14 +42,13 @@ where
 {
 }
 
-/// Entity trait without serde feature - no default Value type
+/// Without the `serde` feature there is no default `Value` type.
 #[cfg(not(feature = "serde"))]
 pub trait Entity<Value: Clone>:
     TryIntoRecord<Value> + TryFromRecord<Value> + Send + Sync + Clone
 {
 }
 
-// Blanket implementation for any type that satisfies the bounds
 #[cfg(not(feature = "serde"))]
 impl<T, Value> Entity<Value> for T
 where
@@ -60,7 +57,6 @@ where
 {
 }
 
-// Implement conversion traits for EmptyEntity with any value type
 impl<V: Clone> IntoRecord<V> for EmptyEntity {
     fn into_record(self) -> Record<V> {
         Record::new()
@@ -68,7 +64,7 @@ impl<V: Clone> IntoRecord<V> for EmptyEntity {
 }
 
 impl<V: Clone> TryIntoRecord<V> for EmptyEntity {
-    type Error = std::convert::Infallible; // No conversion can fail for empty entity
+    type Error = std::convert::Infallible;
 
     fn try_into_record(self) -> Result<Record<V>, Self::Error> {
         Ok(Record::new())
@@ -76,7 +72,7 @@ impl<V: Clone> TryIntoRecord<V> for EmptyEntity {
 }
 
 impl<V: Clone> TryFromRecord<V> for EmptyEntity {
-    type Error = (); // No conversion can fail for empty entity
+    type Error = ();
 
     fn from_record(_record: Record<V>) -> Result<Self, Self::Error> {
         Ok(EmptyEntity)

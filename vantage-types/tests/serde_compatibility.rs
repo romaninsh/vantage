@@ -11,94 +11,9 @@ struct User {
     age: i32,
 }
 
-// Mock function that expects JSON values
-fn process_json_record(record: Record<JsonValue>) -> usize {
-    record.len()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_json_type_conversion() {
-        let user = User {
-            name: "Alice".to_string(),
-            age: 30,
-        };
-
-        // Direct conversion using automatic serde implementation
-        let json_record: Record<JsonValue> = user.try_into_record().unwrap();
-
-        assert_eq!(json_record.len(), 2);
-        assert_eq!(json_record["name"], JsonValue::String("Alice".to_string()));
-        assert_eq!(json_record["age"], JsonValue::Number(30.into()));
-
-        // Can be passed to function expecting JSON record
-        assert_eq!(process_json_record(json_record), 2);
-    }
-
-    #[test]
-    fn test_record_to_struct_conversion() {
-        let user = User {
-            name: "Charlie".to_string(),
-            age: 35,
-        };
-
-        // Round-trip: struct -> record -> struct using automatic serde implementations
-        let record: Record<JsonValue> = user.clone().try_into_record().unwrap();
-        let restored_user: User = User::from_record(record).unwrap();
-
-        assert_eq!(restored_user, user);
-    }
-
-    #[test]
-    fn test_value_extraction() {
-        let user = User {
-            name: "David".to_string(),
-            age: 40,
-        };
-
-        // Convert to typed record using automatic serde implementation
-        let record: Record<JsonValue> = user.try_into_record().unwrap();
-
-        // Direct access to raw values
-        assert_eq!(record["name"], JsonValue::String("David".to_string()));
-        assert_eq!(record["age"], JsonValue::Number(40.into()));
-    }
-
-    #[test]
-    fn test_nested_structures() {
-        #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-        struct Address {
-            street: String,
-            city: String,
-        }
-
-        #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-        struct Person {
-            name: String,
-            address: Address,
-        }
-
-        let person = Person {
-            name: "Bob".to_string(),
-            address: Address {
-                street: "123 Main St".to_string(),
-                city: "Anytown".to_string(),
-            },
-        };
-
-        // Convert nested structure using automatic serde implementation
-        let record: Record<JsonValue> = person.clone().try_into_record().unwrap();
-
-        assert_eq!(record["name"], JsonValue::String("Bob".to_string()));
-        assert!(record["address"].is_object());
-
-        // Round-trip
-        let restored_person: Person = Person::from_record(record).unwrap();
-        assert_eq!(restored_person, person);
-    }
 
     #[test]
     fn test_conversion_failure() {

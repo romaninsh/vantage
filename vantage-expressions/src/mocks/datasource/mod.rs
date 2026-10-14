@@ -1,9 +1,5 @@
-//! DataSource mock implementations for testing.
-//!
-//! Modules:
-//! - [`mock_data_source`] - Basic `DataSource` marker trait mock
-//! - [`mock_expr_data_source`] - `ExprDataSource` with configurable return values
-//! - [`mock_selectable_data_source`] - `SelectableDataSource` with configurable return values
+//! DataSource mocks: [`mock_data_source`], [`mock_expr_data_source`] and
+//! [`mock_selectable_data_source`].
 //!
 //! ## MockDataSource
 //!
@@ -51,7 +47,6 @@
 //! assert_eq!(products[0]["name"], "Flux Capacitor Cupcake");
 //! # });
 //! ```
-//!
 
 pub mod mock_data_source;
 pub mod mock_expr_data_source;

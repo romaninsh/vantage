@@ -29,7 +29,6 @@ where
 
         let mut records = IndexMap::new();
         for (id, record) in rows {
-            // Add the id field to the record for conversion
             let mut record_with_id = record;
             record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
@@ -69,7 +68,6 @@ where
             return Ok(None);
         };
 
-        // Add the id field to the record for conversion
         let mut record_with_id = record;
         record_with_id.insert("id".to_string(), serde_json::Value::String(id.clone()));
 
@@ -78,5 +76,3 @@ where
         Ok(Some((id, entity)))
     }
 }
-
-// Tests are in tests/im_dataset.rs integration tests

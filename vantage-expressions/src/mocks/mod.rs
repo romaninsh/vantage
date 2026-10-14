@@ -1,14 +1,6 @@
-//! Mock implementations for testing database operations.
-//!
-//! Modules:
-//! - [`datasource`] - DataSource trait mock implementations
-//! - [`select`] - MockSelect query builder
-//! - [`mockbuilder`] - Pattern-based mock builder
-//!
-//! ## Mock Testing
-//!
-//! QuerySource implementation that returns configurable values for testing query execution.
-//! Also available: MockDataSource (basic DataSource marker) and MockSelectSource (for select builders).
+//! Mock datasources for testing query execution without a database:
+//! [`datasource`] mocks, the [`select`] builder and the pattern-based
+//! [`mockbuilder`].
 //!
 //! ```rust
 //! use vantage_expressions::prelude::*;
