@@ -9,7 +9,7 @@ use crate::metadata::VistaMetadata;
 ///
 /// A column without a dot, or one `metadata` declares with a dot in its
 /// name (SQL's imported `author.name`), is a flat key. Any other dotted
-/// column is a path into nested maps, read by [`path_get`], so a literal
+/// column is a path into nested maps, read segment by segment, so a literal
 /// `"a.b"` key in the row never stands in for the path.
 pub fn cell_get<'a>(
     row: &'a Record<CborValue>,
@@ -26,7 +26,7 @@ pub fn cell_get<'a>(
 /// The value at dotted `path` inside nested maps: the first segment is a
 /// key of `row`, each later one a text key of the map before it. A path
 /// without a dot is a plain key.
-pub fn path_get<'a>(row: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
+pub(crate) fn path_get<'a>(row: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
     let mut segments = path.split('.');
     let mut current = row.get(segments.next()?)?;
     for segment in segments {

@@ -1,7 +1,8 @@
 //! A memory cache that reports what is done to it: how many refresh times
 //! were recorded, rows written, rows read and whole-table lists, and, once
 //! armed, a single-row write that lands and then stalls, catching a flash
-//! mid-stage. Single-row inserts can also be made to fail outright.
+//! mid-stage. Single-row inserts and whole-table lists can also be made to
+//! fail outright.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -36,6 +37,8 @@ pub struct SpyTable {
     /// While set, `insert_value` and `insert_value_with_status` fail without
     /// writing.
     pub fail_inserts: AtomicBool,
+    /// While set, `list_values` fails (and still counts as a list).
+    pub fail_lists: AtomicBool,
 }
 
 impl SpyTable {
@@ -51,6 +54,9 @@ impl SpyTable {
 impl CacheTable for SpyTable {
     async fn list_values(&self) -> Result<IndexMap<String, Rec>> {
         self.lists.fetch_add(1, Ordering::SeqCst);
+        if self.fail_lists.load(Ordering::SeqCst) {
+            return Err(vantage_core::error!("cache list failed"));
+        }
         self.inner.list_values().await
     }
     async fn get_value(&self, id: &str) -> Result<Option<Rec>> {

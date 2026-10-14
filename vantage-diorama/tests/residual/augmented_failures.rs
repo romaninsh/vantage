@@ -31,7 +31,9 @@ async fn failing_dio() -> vantage_diorama::Dio {
 async fn an_eq_view_leaves_a_failed_row_out_and_reads_partial() -> Result<()> {
     let johns = failing_dio()
         .await
+        .derive()
         .with_query(&cond("name", FilterOp::Eq, "John"))
+        .build()
         .await?;
     let view = johns.table_scenery().page_size(20).open().await?;
     view.set_viewport(0..20, 0..0);
@@ -45,7 +47,9 @@ async fn an_eq_view_leaves_a_failed_row_out_and_reads_partial() -> Result<()> {
 async fn a_ne_view_never_admits_a_failed_row_and_reads_partial() -> Result<()> {
     let others = failing_dio()
         .await
+        .derive()
         .with_query(&cond("name", FilterOp::Ne, "John"))
+        .build()
         .await?;
     let view = others.table_scenery().page_size(20).open().await?;
     view.set_viewport(0..20, 0..0);

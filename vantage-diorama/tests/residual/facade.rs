@@ -17,7 +17,11 @@ use crate::support::{bucket_dio, cond, eager_dio, record};
 /// `FilterOps` refuses: the residual holds it, and the cache holds a, b, c.
 async fn above_one() -> Result<Dio> {
     let parent = eager_dio(items(&[Capability::Order, Capability::Search])).await;
-    let dio = parent.with_query(&cond("n", FilterOp::Gt, 1)).await?;
+    let dio = parent
+        .derive()
+        .with_query(&cond("n", FilterOp::Gt, 1))
+        .build()
+        .await?;
     assert_eq!(dio.residual().conditions.len(), 1, "the master refused it");
     #[cfg(feature = "diagnostics")]
     assert_eq!(dio.diagnostics().await?.cache_rows, 3, "the cache holds a");
@@ -117,7 +121,9 @@ async fn a_window_at_an_offset_is_cut_after_the_residual() -> Result<()> {
 async fn an_unhydrated_row_is_hydrated_before_the_residual_judges_it() -> Result<()> {
     let johns = bucket_dio()
         .await
+        .derive()
         .with_query(&cond("name", FilterOp::Eq, "John"))
+        .build()
         .await?;
     for (id, kind) in [("o1", "red"), ("o2", "blue"), ("o3", "red")] {
         listed(&johns, record(&[("id", id), ("kind", kind)])).await?;
@@ -141,7 +147,9 @@ async fn an_unhydrated_row_is_hydrated_before_the_residual_judges_it() -> Result
 async fn an_augmented_facade_applies_the_residual() -> Result<()> {
     let johns = bucket_dio()
         .await
+        .derive()
         .with_query(&cond("name", FilterOp::Eq, "John"))
+        .build()
         .await?;
     assert_eq!(johns.residual().conditions.len(), 1, "kept by diorama");
     for (id, kind, name) in [("o1", "red", "John"), ("o2", "blue", "Jane")] {

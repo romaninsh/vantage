@@ -74,7 +74,7 @@ pub enum FilterOrigin {
     /// Part of what the view is: the Dio's residual conditions and the
     /// builder's [`filter`](super::TableSceneryBuilder::filter)s. A condition
     /// a derived Dio's master accepted (see
-    /// [`Dio::with_query`](crate::Dio::with_query)) is applied inside the
+    /// [`Dio::derive`](crate::Dio::derive)) is applied inside the
     /// master and is invisible to the scenery.
     Query,
     /// Set at runtime by the consumer through

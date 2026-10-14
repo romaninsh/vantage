@@ -96,7 +96,9 @@ async fn no_update_of_a_narrowed_picker_shows_an_excluded_row() -> Result<()> {
     )
     .await;
     let narrowed = parent
+        .derive()
         .with_query(&crate::support::cond("kind", FilterOp::Ne, "blue"))
+        .build()
         .await?;
     let admitted: Vec<String> = (1..=ROWS).filter(|i| kind(*i) != "blue").map(id).collect();
 

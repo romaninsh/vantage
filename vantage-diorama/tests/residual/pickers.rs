@@ -11,7 +11,7 @@ use vantage_vista::{
 
 use super::fixtures::wait_for_ids;
 use crate::support::{
-    augment_name, augmented_dio, bucket_dio, cond, meta, quick_lens, record, wait_listed,
+    augment_name, augmented_dio, bucket_dio, meta, quick_lens, record, wait_listed,
 };
 
 async fn picker(dio: &Dio) -> std::sync::Arc<dyn TableScenery> {
@@ -60,7 +60,9 @@ async fn a_picker_lists_only_the_rows_the_dio_residual_admits() -> Result<()> {
     )
     .await;
     let reds = parent
-        .with_query(&cond("kind", FilterOp::Ne, "blue"))
+        .derive()
+        .with_condition(Condition::new("kind", FilterOp::Ne, "blue"))
+        .build()
         .await?;
     assert_eq!(reds.residual().conditions.len(), 1, "the master refused it");
     let view = picker(&reds).await;
@@ -101,7 +103,9 @@ async fn a_picker_filtered_on_an_augmented_column_fails() -> Result<()> {
 async fn a_picker_over_a_dio_narrowed_on_an_augmented_column_fails() -> Result<()> {
     let johns = bucket_dio()
         .await
-        .with_query(&cond("name", FilterOp::Eq, "John"))
+        .derive()
+        .with_condition(Condition::new("name", FilterOp::Eq, "John"))
+        .build()
         .await?;
     assert_eq!(johns.residual().conditions.len(), 1, "augmented: residual");
     let view = johns.table_scenery().titles_only().open().await?;

@@ -15,7 +15,7 @@ use crate::lens::registry::DioKey;
 ///
 /// Augmentation and live follow are chosen here and can't change after
 /// [`build`](Self::build). To narrow a built Dio, derive a new one with
-/// [`Dio::with_query`] and its siblings.
+/// [`Dio::derive`].
 #[must_use = "a DioBuilder does nothing until `build().await`"]
 pub struct DioBuilder {
     lens: Arc<Lens>,

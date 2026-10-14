@@ -79,7 +79,9 @@ async fn traversed_child_carries_a_local_condition() {
         .get_ref("crew", &l1)
         .await
         .expect("get_ref crew")
+        .derive()
         .with_query(&support::cond("name", FilterOp::Eq, "Buzz"))
+        .build()
         .await
         .expect("derives");
 

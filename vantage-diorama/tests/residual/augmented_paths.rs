@@ -88,7 +88,9 @@ async fn detail_dio() -> (Dio, Arc<Mutex<Vec<String>>>) {
 async fn a_dotted_condition_under_an_augmented_column_stays_in_the_residual() -> Result<()> {
     let (dio, offered) = detail_dio().await;
     let fives = dio
+        .derive()
         .with_query(&cond("detail.size", FilterOp::Eq, 5))
+        .build()
         .await?;
     assert_eq!(fives.residual().conditions.len(), 1, "kept by diorama");
     assert!(fives.master().query().conditions.is_empty());

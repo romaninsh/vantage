@@ -1,20 +1,19 @@
-//! A Dio narrowed with `with_query` must be narrowed on every read path,
-//! not only in table sceneries.
+//! A Dio narrowed with `derive` must be narrowed on every read path, not
+//! only in table sceneries.
 //!
-//! `with_query` derives a new Dio whose master carries the condition, so
+//! `derive` builds a new Dio whose master carries the condition, so
 //! every path sees it. The cache is warmed by the Lens's blocking eager
 //! start, which lists the derived Dio's own narrowed master, so `b` never
 //! reaches its cache and the record and servo checks bite.
 //!
-//! The aggregate path is checked in vantage-diorama-aggregate, which depends
-//! on this crate and so can't be a dependency of its tests:
-//! `narrowed_dio_aggregates_the_narrowed_set` in that crate's
-//! `tests/narrowed_source.rs`.
+//! The aggregate path is checked by `narrowed_dio_aggregates_the_narrowed_set`
+//! in `tests/aggregate_narrowed_source.rs`.
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::RecordStatus;
+use vantage_diorama::aggregate::Count;
 use vantage_vista::{FilterOp, VistaQuery};
 
 use super::fixtures::{assert_no_failures, scenery_ids};
@@ -25,7 +24,9 @@ async fn dio_base_conditions_reach_every_path() -> Result<()> {
     // Members a (red), b (blue), c (red); narrowed to red, so b is outside.
     let dio = eager_dio(teams_master())
         .await
+        .derive()
         .with_query(&cond("team", FilterOp::Eq, text("red")))
+        .build()
         .await?;
     let mut failures = Vec::new();
 
@@ -58,7 +59,7 @@ async fn dio_base_conditions_reach_every_path() -> Result<()> {
         failures.push(format!("table scenery must show a, c; shows {table_ids:?}"));
     }
 
-    let count = dio.value_scenery().count().open().await?.value();
+    let count = dio.value_scenery(Count::rows()).open().await?.value();
     if count != Some(CborValue::Integer(2.into())) {
         failures.push(format!("value scenery count must be 2; is {count:?}"));
     }

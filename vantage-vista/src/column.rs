@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use vantage_core::Result;
 use vantage_types::Record;
 
+mod family;
 mod flag;
+pub use family::ColumnFamily;
 pub use flag::ColumnFlag;
 
 /// Computes one column value from a record: the record as read so far goes

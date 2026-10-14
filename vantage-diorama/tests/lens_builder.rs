@@ -321,7 +321,7 @@ async fn or_eager_copies_only_a_master_without_window() -> Result<()> {
 
     let red = cond("team", FilterOp::Eq, "red");
     let windowed = lens.dio(teams_master()).build().await?;
-    windowed.with_query(&red).await?;
+    windowed.derive().with_query(&red).build().await?;
     assert_eq!(starts.load(Ordering::SeqCst), 0, "a Window master pages");
 
     let shell = MockShell::new()
@@ -330,7 +330,7 @@ async fn or_eager_copies_only_a_master_without_window() -> Result<()> {
     let caps = shell.capabilities().without(Capability::Window);
     let unwindowed = Vista::new("unwindowed", shell.with_capabilities(caps));
     let copied = lens.dio(unwindowed).build().await?;
-    copied.with_query(&red).await?;
+    copied.derive().with_query(&red).build().await?;
     assert_eq!(
         starts.load(Ordering::SeqCst),
         2,

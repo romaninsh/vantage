@@ -16,7 +16,6 @@ members = [
     "vantage-vista",
     "vantage-rhai",
     "vantage-diorama",
-    "vantage-diorama-aggregate",
     "vantage-action",
     "vantage-bundle",
     "vantage-api-adapters",

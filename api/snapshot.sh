@@ -14,7 +14,6 @@ PUBLIC_API_VERSION="0.52.0"
 CRATES=(
   vantage-vista
   vantage-diorama
-  vantage-diorama-aggregate
 )
 
 cd "$(dirname "$0")/.."
