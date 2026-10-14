@@ -17,6 +17,8 @@
 #
 # The instrumented build has its own target dir, so it never replaces the
 # regular debug build. Needs cargo-llvm-cov and cargo-nextest.
+#
+#   MATRIX_TARGET_DIR=<dir>   use another instrumented target dir (one per lane)
 set -euo pipefail
 
 baseline=0
@@ -31,7 +33,9 @@ mkdir -p "$out"
 log="$out/run.log"
 
 eval "$(cargo llvm-cov show-env --export-prefix)"
-export CARGO_TARGET_DIR="$root/target/llvm-cov-target"
+# MATRIX_TARGET_DIR gives a lane its own build, so a parallel lane rebuilding a
+# shared dependency can't swap test binaries under a running matrix.
+export CARGO_TARGET_DIR="${MATRIX_TARGET_DIR:-$root/target/llvm-cov-target}"
 
 echo "building and listing $pkg tests (log: $log)"
 # diorama's `bdd` is cucumber (harness = false) and can't be listed.
