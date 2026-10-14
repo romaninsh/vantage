@@ -123,7 +123,8 @@ question at the top of your report. Don't ask about anything these instructions 
 When you write or restore a test, it checks behaviour the public API **promises**, not behaviour the
 code happens to have.
 
-1. **Name the behaviour:** the public item, the input, the promise.
+1. **Name the behaviour:** the public item, the input, the promise. The test's name states that
+   behaviour, and matches what it asserts: a test of `FilterOp::Gt` isn't named for equality.
 2. **Find the contract before opening the implementation:**
    - the item's doc comment;
    - the book (`docs4/src`; `docs4/src/migration-2.0/` for what changed in 2.0);
