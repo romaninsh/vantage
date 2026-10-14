@@ -201,4 +201,5 @@ let users = Vista::new("user", MockShell::new().with_record("u1", record));
 - vantage-dataset: the `ValueSet` traits `Vista` implements
 - vantage-types: the `Record<V>` carrier
 - vantage-core: `Result` / `VantageError`
+- vantage-rhai: the script host behind the `rhai` feature
 - vantage-diorama: the `Lens`/`Dio` cache and the sceneries that sit on a `Vista`

@@ -6,34 +6,42 @@ on:
       - main
     paths:
       - "docs4/**"
+      - "script/book-llms.py"
       - ".github/workflows/book.yaml"
 
   pull_request:
     paths:
       - "docs4/**"
+      - "script/book-llms.py"
       - ".github/workflows/book.yaml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # gh-pages redirect
+      id-token: write # OIDC for AWS
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v2
-        with:
-          mdbook-version: "0.5.4"
+      # Actions are pinned by SHA to Node 24 releases; the AWS step below
+      # mints credentials that can write the site and releases buckets.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The key names every preprocessor version: changing one must miss the
       # cache, or `command -v` below keeps the old binary.
       - name: Cache cargo bin
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin
           key: mdbook-preprocessors-${{ runner.os }}-toc0.15.4-mermaid0.17.1-rustdoclinks3.0.2
+
+      # peaceiris/actions-mdbook has no Node 24 release; install-action is a
+      # composite (shell) action. It installs into ~/.cargo/bin, so it runs
+      # after the cache restore above.
+      - name: Setup mdBook
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: mdbook@0.5.4
 
       - name: Install preprocessors
         run: |
@@ -59,9 +67,40 @@ jobs:
         working-directory: ./docs4
         run: mdbook build
 
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Generate llms.txt and markdown chapters
+        run: python3 -I script/book-llms.py docs4
+
+      # The book lives at vantage-ui.com/book/. vantage-web's own deploy
+      # excludes book/* from its --delete sync, so the two never clobber each
+      # other. Auth is GitHub OIDC into the release-uploader role (see
+      # vantage-terraform, github_release_repos); no long-lived AWS keys.
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        if: ${{ github.ref == 'refs/heads/main' }}
+        with:
+          role-to-assume: arn:aws:iam::578465001751:role/vantage-demo-release-uploader
+          aws-region: eu-west-2
+
+      - name: Publish to vantage-ui.com/book/
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          aws s3 sync docs4/book/ s3://vantage-ui.com/book/ --delete
+          # The sync guesses text types without a charset; browsers then
+          # mangle non-ASCII. Re-upload the markdown and llms files with one.
+          aws s3 cp docs4/book/ s3://vantage-ui.com/book/ --recursive --exclude '*' --include '*.md' \
+            --content-type 'text/markdown; charset=utf-8'
+          aws s3 cp docs4/book/ s3://vantage-ui.com/book/ --recursive --exclude '*' --include 'llms*.txt' \
+            --content-type 'text/plain; charset=utf-8'
+          aws cloudfront create-invalidation --distribution-id E18KQTM4QLF7KJ --paths '/book/*'
+
+      # romaninsh.github.io/vantage now only redirects: the same page as
+      # index.html and 404.html sends every old URL to its /book/ twin.
+      - name: Prepare github.io redirect
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: cp docs4/redirect/index.html docs4/redirect/404.html
+
+      - name: Deploy github.io redirect
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs4/book
+          publish_dir: ./docs4/redirect

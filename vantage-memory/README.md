@@ -111,6 +111,9 @@ A column without `type:` is untyped: its cells are stored as written, so an inte
 integer. A typed column (`int`, `string`) stores and compares its cells in that form, so a
 condition `price = "5"` finds the row holding `5`.
 
+With the `rhai` feature, a spec can also declare `lazy:` columns, which the Vista computes from
+each row.
+
 ### Narrowing
 
 A `Vista` is a value. `with_*` consumes it and returns the narrowed one; `add_condition`,

@@ -5,13 +5,13 @@
 //! This crate provides definition for Columns, TableSource - necessary trait for Database SDKs to implement.
 //!
 //! Type erasure for cross-driver work lives one layer up in [`vantage-vista`](https://docs.rs/vantage-vista):
-//! wrap any typed `Table<T, E>` with `T::vista_factory().from_table(...)` to get a `Vista`
+//! wrap any typed `Table<T, E>` with `db.vista_factory().from_table(table)?` to get a `Vista`
 //! that talks `Record<ciborium::Value>` regardless of the underlying driver.
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use vantage_table::{Table, Column, EmptyEntity};
+//! use vantage_table::prelude::{Column, Table};
 //! use vantage_expressions::expr;
 //!
 //! // Create a new table with a datasource
