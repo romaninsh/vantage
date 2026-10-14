@@ -54,13 +54,8 @@ impl DioShell {
         id: &str,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
-        self.row_in_view_or_conflict(id).await?;
-        let record = self.rule().conform(record)?;
-        let outcome = self
-            .dio()
-            .flash(ChangeFlash::replace(id, record.clone()))
-            .await?;
-        Ok(self.stored(outcome, id, Some(&record)))
+        self.write_whole_row(id, record, |id, record| ChangeFlash::replace(id, record))
+            .await
     }
 
     pub(super) async fn upsert_row(
@@ -68,12 +63,21 @@ impl DioShell {
         id: &str,
         record: &Record<CborValue>,
     ) -> Result<Record<CborValue>> {
+        self.write_whole_row(id, record, |id, record| ChangeFlash::upsert(id, record))
+            .await
+    }
+
+    /// A full-record write of `id` made by `make`: refused as `Conflict` when
+    /// the id is held outside the narrowing, conformed to it otherwise.
+    async fn write_whole_row(
+        &self,
+        id: &str,
+        record: &Record<CborValue>,
+        make: fn(&str, Record<CborValue>) -> ChangeFlash,
+    ) -> Result<Record<CborValue>> {
         self.row_in_view_or_conflict(id).await?;
         let record = self.rule().conform(record)?;
-        let outcome = self
-            .dio()
-            .flash(ChangeFlash::upsert(id, record.clone()))
-            .await?;
+        let outcome = self.dio().flash(make(id, record.clone())).await?;
         Ok(self.stored(outcome, id, Some(&record)))
     }
 

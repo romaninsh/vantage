@@ -1,18 +1,60 @@
-//! A view's setters: order, runtime filters and search.
+//! A view's setters: viewport, order, runtime filters and search.
 //!
-//! Each writes the view's own slot under `repointing` and re-points the view
-//! at the rows of its new query (see `repoint`). A refused tail records the
-//! slot and stays put until an order lifts the refusal.
+//! Each clause setter writes the view's own slot under `repointing` and
+//! re-points the view at the rows of its new query (see `repoint`). A refused
+//! tail records the slot and stays put until an order lifts the refusal.
+
+use std::ops::Range;
 
 use vantage_vista::{Condition, SortDirection, VistaQuery};
 
 use crate::scenery::table::plan::Serving;
+use crate::scenery::table::state::SharedRows;
+use crate::scenery::table::{ViewportRequest, loader};
 
-use super::TableView;
 use super::repoint::Change;
 use super::tail::Refusal;
+use super::{Placing, TableView};
 
 impl TableView {
+    /// Ask the rows for `loaded` (in the view's indices, mapped through its
+    /// cap), and record `shown` as the rows on screen; empty means none.
+    /// The load is serialised with re-points, so a viewport is never
+    /// recorded into rows the view has just left.
+    pub(crate) fn set_viewport(&self, loaded: Range<usize>, shown: Range<usize>) {
+        {
+            let _serial = self.repointing.lock().unwrap_or_else(|e| e.into_inner());
+            let shared = self.shared();
+            let range = match self.placing(&shared) {
+                Placing::Whole => loaded,
+                Placing::Capped(cap, len) => cap.shared_range(loaded, len, shared.two_pass),
+                Placing::Unplaced(cap) => cap.shared_range(loaded, 0, shared.two_pass),
+            };
+            self.ask(&shared, range);
+        }
+        let shown = self.cap().map_or(shown.clone(), |cap| cap.clamp(shown));
+        let shown = Some(shown).filter(|r| !r.is_empty());
+        let previous = std::mem::replace(&mut *self.shown.write().unwrap(), shown.clone());
+        if previous != shown {
+            self.signal.bump_stats();
+        }
+    }
+
+    /// Record `range` as the shared rows this view asks for, and ask for
+    /// them. The caller holds `repointing`.
+    pub(super) fn ask(&self, shared: &SharedRows, range: Range<usize>) {
+        shared.record_viewport(self.id, range.clone());
+        loader::enqueue_viewport(
+            shared,
+            ViewportRequest {
+                range,
+                force_load: false,
+                priority: vantage_core::Priority::Essential,
+                view: Some(self.id),
+            },
+        );
+    }
+
     pub(crate) fn set_order(&self, order: Option<(String, SortDirection)>) {
         tracing::debug!(
             target: "vantage_diorama::sort",

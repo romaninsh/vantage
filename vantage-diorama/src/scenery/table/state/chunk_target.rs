@@ -48,7 +48,7 @@ impl SceneryChunkTarget for SharedRows {
         }
         let enriched = Arc::new(EnrichedRecord::fresh(record));
         let previous = self.rows.write().unwrap().insert(idx, enriched);
-        self.id_to_idx.write().unwrap().insert(id, idx);
+        self.write_id_to_idx(|id_to_idx| id_to_idx.insert(id, idx));
         self.load_dirty.store(true, Ordering::SeqCst);
         ChunkWrite::Bound { previous }
     }
@@ -96,6 +96,7 @@ impl SceneryChunkTarget for SharedRows {
         let rows = self.rows.read().unwrap();
         let mut id_to_idx = self.id_to_idx.write().unwrap();
         id_to_idx.retain(|_, idx| !touched.contains(idx));
+        self.forget_idx_to_id();
         let Some(dio) = self.dio_weak.upgrade() else {
             return;
         };

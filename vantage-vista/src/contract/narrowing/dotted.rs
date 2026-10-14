@@ -1,7 +1,8 @@
 //! A condition on a dotted path (`root.leaf`) into a declared column either
 //! narrows or is refused as `Unimplemented`
-//! ([`condition_column_error`](crate::condition_column_error)). It never fails with a plain error,
-//! and is never accepted and then matched against nothing or ignored.
+//! ([`condition_column_error`](crate::condition_column_error)). It never
+//! fails with a plain error, and is never accepted and then matched against
+//! nothing or ignored.
 
 use vantage_dataset::traits::ReadableValueSet;
 
