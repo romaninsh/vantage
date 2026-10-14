@@ -345,7 +345,7 @@ pub fn fn_similarity(arg: rhai::Dynamic, term: &str) -> Result<RhaiExpr, Box<rha
     Ok(RhaiExpr(primitives::similarity(unwrap_expr(arg)?, term)))
 }
 
-/// `coalesce(a, b)` → `a ?? b`.
+/// `coalesce(a, b)` → `(a ?? b)`.
 pub fn fn_coalesce(
     a: rhai::Dynamic,
     b: rhai::Dynamic,
