@@ -704,26 +704,15 @@ above also works directly against a log Vista with no Scenery at all.
 
 ## Where the adapter code lives
 
-UI-framework-specific glue lives in `vantage-ui-adapters`. The Diorama GPUI
-adapter lands there alongside the existing shared types:
+UI-framework-specific glue lives in `vantage-ui-adapters`. Today it has one
+Scenery-aware adapter, `ratatui_dio::SceneryTable` (behind the `ratatui`
+feature). The other adapters there still work on the older `DataSet` /
+`TableStore` types.
 
-```
-vantage-ui-adapters/src/diorama/
-├── mod.rs
-├── table_entity.rs        // TableSceneryEntity
-├── record_entity.rs       // RecordSceneryEntity
-├── value_entity.rs        // ValueSceneryEntity
-└── delegate.rs            // example delegates
-```
-
-Cursive, slint, egui, tauri adapters slot in as sibling modules. Each is
-20–80 lines: define the framework-native entity, bridge the watch channel,
-delegate to the Scenery.
-
-This module isn't written yet (see
-[plans/8-gpui-adapter.md](plans/8-gpui-adapter.md)). The patterns above
-describe what it will contain; you can hand-roll them today against the
-Scenery trait directly.
+There is no GPUI Scenery adapter in this repository; Vantage UI keeps its
+own. An adapter for another framework is 20–80 lines: define the
+framework-native entity, bridge the watch channel, delegate to the Scenery.
+The patterns above are what it contains.
 
 ## Pull-on-render performance
 

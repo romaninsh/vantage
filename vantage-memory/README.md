@@ -97,6 +97,9 @@ exists, as long as its id column agrees with the spec's). `memory.seed` points a
 rebuilding a vista keeps edits made since. A relative seed path is resolved against the process
 working directory, not the spec file's location.
 
+With the `rhai` feature, a spec can also declare `lazy:` columns, which the Vista computes from
+each row.
+
 ### Live changes
 
 ```rust

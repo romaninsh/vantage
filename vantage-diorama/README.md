@@ -95,14 +95,16 @@ Pick the role that matches what you're trying to do.
 
 ## Status
 
-Stages 1–7 of [the plan](plans/0-overview.md) are landed: `Lens`, `Dio`,
-the event bus, and v1 of all three Scenery types ship today. Stage 8 (the
-GPUI adapter crate in `vantage-ui-adapters`) and stage 9 (composition
-primitives) are next. The reactive surface works against the real driver
-crates (`vantage-csv`, `vantage-sql`, `vantage-surrealdb`,
-`vantage-mongodb`, `vantage-api-client`, `vantage-log-writer`); the GPUI
-bindings described in [`README_ui.md`](README_ui.md) are the pattern you'd
-hand-roll today and the shape the adapter crate will provide.
+`Lens`, `Dio`, the event bus, and v1 of all three Scenery types ship
+today, along with augmentation (`augment`), servos (`servo`) and the debug
+tap (`debug`). The composition primitives (`Diorama::overlay`,
+`Diorama::merge`) are still stubs. The reactive surface works against the
+real driver crates (`vantage-csv`, `vantage-sql`, `vantage-surrealdb`,
+`vantage-mongodb`, `vantage-api-client`, `vantage-log-writer`).
 
-See [`vantage-vista/plans/`](../vantage-vista/plans/) for the broader
-vista roadmap that this work sits inside.
+GPUI widgets bound to Scenery live in the separate `vantage-ui` project, not
+in this repository; [`README_ui.md`](README_ui.md) describes the pattern.
+In this repository, `vantage-ui-adapters` has a ratatui table over a
+`TableScenery`, `vantage-api-adapters` serves a Dio over HTTP, and
+`vantage-diorama-aggregate` keeps counts, sums and group-bys live on top of
+a Dio.

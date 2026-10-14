@@ -14,11 +14,14 @@ Define the table once, in the model layer. Then wrap it with the matching driver
 
 ```rust,ignore
 use bakery_model3::Product;
-use vantage_sql::sqlite::SqliteVistaFactory;
+use vantage_sql::sqlite::vista::SqliteVistaFactory;
 
 let factory = SqliteVistaFactory::new(db.clone());
-let products: Vista = factory.from_table(Product::sqlite_table(db));
+let products: Vista = factory.from_table(Product::sqlite_table(db))?;
 ```
+
+Each driver also hands out its factory directly, so `db.vista_factory()` gives the same
+`SqliteVistaFactory`. `from_table` returns `Result<Vista>`.
 
 `from_table` consumes the typed table and produces a `Vista` that knows its columns, references, id
 field, and the backend's capabilities. The schema is locked from there — `Vista` has no
@@ -86,7 +89,7 @@ flags tell the UI which buttons to draw.
 
 ## Narrow with conditions
 
-Exact-equality only at this stage:
+Equality works on every backend:
 
 ```rust,ignore
 products.add_condition_eq("category", CborValue::Text("pastries".into()))?;
@@ -96,7 +99,19 @@ let count    = products.get_count().await?;     // also honours it
 ```
 
 A conditioned Vista is a narrowed view of the data set, not a query result — same mental model as
-`Table::with_condition`. Richer conditions arrive later without breaking this surface.
+`Table::with_condition`.
+
+Other operators go through `add_condition(field, FilterOp, value)` (`Ne`, `Gt`, `Gte`, `Lt`, `Lte`,
+`InSet`, `NotInSet`, ...). They need the driver to set `can_filter_operators`; otherwise the call
+returns an `Unimplemented` error and the caller filters locally:
+
+```rust,ignore
+if products.capabilities().can_filter_operators {
+    products.add_condition("price", FilterOp::Gte, CborValue::Integer(100.into()))?;
+}
+```
+
+`with_id`, `add_search` and `add_order(column, SortDirection)` narrow and sort the same way.
 
 ## CRUD over CBOR
 
@@ -122,16 +137,28 @@ due.ref("client").list()
 reads (`list`, `get`, `first`, `count`, `ids`), writes (`insert`, `upsert`, `patch`, `delete`,
 `import_from`) or opens a `record` draft. A host picks the tables behind `table(name)` and which
 verbs exist. The full guide is
-[Scripting with Rhai](https://romaninsh.github.io/vantage/rhai.html) in the Vantage book.
+[Scripting with Rhai](https://vantage-ui.com/book/rhai.html) in the Vantage book.
 
 ## Status
 
-Incubating. Ships `Vista`, `TableShell`, `VistaMetadata`, `VistaCapabilities`, `Column`,
-`Reference`, plus `MockShell` for tests. Driver factories (SQLite, Mongo, AWS, …) and the YAML
-loader land in later crates.
+Ships `Vista`, `TableShell`, `VistaFactory` (with a default `from_yaml`), `VistaMetadata`,
+`VistaCapabilities`, `Column`, `Reference` and `ContainedSpec`, plus `MockShell`, `EmptyShell` and
+`ForwardShell`. On top of reads and writes, a Vista does paging (`set_page_size`, `fetch_page`,
+`fetch_next`, `fetch_window`), aggregates (`aggregate(&AggregateSpec)` returns
+`Result<Option<Vista>>`, `None` when the driver can't answer it), reference traversal
+(`get_ref(relation, row)`, `get_ref_target`) and live changes (`can_watch`,
+`watch()` returning a `VistaChangeStream`). Drivers that can't do one of these say so through
+`capabilities()` or return `None` / an error. Driver factories
+(`SqliteVistaFactory`, `MongoVistaFactory`, `CsvVistaFactory`, `AwsVistaFactory`, ...) live in the
+driver crates.
 
 ## Integration
 
 - vantage-dataset — `ValueSet` traits Vista implements
 - vantage-types — `Record<V>` carrier
 - vantage-core — `Result` / `VantageError`
+- vantage-rhai — script host behind the optional `rhai` feature
+- vantage-expressions and vantage-table depend on this crate (`AnyExpression` and `ExpressionLike`
+  live here), so drivers can build a Vista straight from a typed `Table`
+- vantage-vista-factory — `VistaCatalog`, a name-to-Vista registry that also follows references
+  across datasources

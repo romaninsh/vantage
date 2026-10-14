@@ -70,7 +70,7 @@ let select = PostgresSelect::new()
     .with_field("email")
     .with_condition(ident("role").eq("admin"))
     .with_condition(ident("salary").gt(50000.0f64))
-    .with_order(ident("name"), true);
+    .with_order(ident("name"), Order::Asc);
 ```
 
 A few things to notice:
@@ -237,7 +237,7 @@ let select = PostgresSelect::new()
         Some("monthly_revenue".into()),
     )
     .with_group_by(ident("month"))
-    .with_order(ident("month"), false);
+    .with_order(ident("month"), Order::Desc);
 ```
 
 `Fx::new("sum", ...)` and `Fx::new("round", ...)` are the general-purpose function primitive — they
@@ -345,7 +345,8 @@ implements the trait.
 This guide covered the fundamentals — selecting, filtering, composing expressions, and building
 vendor-aware primitives. But the query builder goes much further:
 
-- **Joins** — `inner`, `left`, and subquery joins via `SelectJoin`. Qualified identifiers with
+- **Joins** — `inner`, `left`, and subquery joins via `PostgresSelectJoin`, `MysqlSelectJoin` and
+  `SqliteSelectJoin`. Qualified identifiers with
   `ident("name").dot_of("u")` get vendor-correct quoting throughout.
 - **Aggregates and grouping** — `Fx::new("sum", ...)`, `with_group_by`, `with_having`. The universal
   `Fx` primitive handles any SQL function that's spelled the same everywhere.
@@ -438,11 +439,36 @@ On top of this type system, Vantage builds:
   SurrealDB) means defining a type system, an expression renderer, and a table source. The
   Persistence Guide walks through every step. The community has used this to add support for CSV
   files and REST APIs with progressive pagination.
-- **Multi-backend applications** — `AnyTable` provides type-erased wrappers so your application
-  logic can work against any backend. A CLI tool that queries PostgreSQL, SQLite, and a REST API in
-  the same session isn't a special case — it's the normal way to use Vantage.
+- **Multi-backend applications** — each driver's `vista_factory()` turns a typed table into a
+  type-erased `Vista`, so your application logic can work against any backend. A CLI tool that
+  queries PostgreSQL, SQLite, and a REST API in the same session isn't a special case — it's the
+  normal way to use Vantage.
 - **Polyglot interfaces** — because the abstraction is clean, it can be exposed to other languages.
   Mobile applications, Python scripts, and web frontends can all work with the same entity
   definitions through FFI or API boundaries.
+
+### Tables and Vista
+
+The same crate provides the table layer. `SqliteDB`, `PostgresDB` and `MysqlDB` are data sources
+for a typed `Table`, and with the `vista` feature each one has a `vista_factory()`:
+
+```rust
+let db = SqliteDB::connect("sqlite::memory:")
+    .await
+    .context("Failed to connect")?;
+
+let products = Table::<SqliteDB, EmptyEntity>::new("product", db.clone())
+    .with_id_column("id")
+    .with_column_of::<String>("name")
+    .with_column_of::<i64>("price");
+
+let vista = db.vista_factory().from_table(products)?;
+let rows = vista.list_values().await?;
+```
+
+On PostgreSQL a vista can also receive pushed changes through `LISTEN/NOTIFY` on the
+`{table}_changed` channel. Postgres cannot tell whether a trigger exists, so you install the trigger
+yourself and opt in with `db.vista_factory().with_notify(true)`. SQLite and MySQL vistas have no
+`watch()`; consumers such as Diorama re-read them on a timer.
 
 The query builder gives you vendor-agnostic SQL. Vantage gives you vendor-agnostic _persistence_.

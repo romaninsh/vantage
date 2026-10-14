@@ -158,9 +158,9 @@ observer. Never build a `RestApi` per table inside the library.
 
 ## Mixing backends
 
-Both adapters bridge into `AnyTable` and into `Vista`, so an application
-can hold a `Vec<AnyTable>` of SQL, REST and GraphQL tables or hand a REST
-Vista to Diorama exactly like a SQLite one. `Vista::driver()` reports
+Both adapters bridge into `Vista`, so an application can hold a
+`Vec<Vista>` of SQL, REST and GraphQL tables or hand a REST Vista to
+Diorama exactly like a SQLite one. `Vista::driver()` reports
 `"rest-api"` or `"graphql"` for code that needs to branch on the backend.
 See [README_rest.md](README_rest.md), [README_graphql.md](README_graphql.md)
 and [README_transport.md](README_transport.md) for the details of each
