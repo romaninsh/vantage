@@ -51,7 +51,7 @@ m = json.load(sys.stdin)
 print(next(os.path.dirname(p["manifest_path"]) for p in m["packages"] if p["name"] == sys.argv[1]))' "$pkg")
 
 python3 -I "$root/coverage/matrix.py" "$out/list.json" "$dir" "$out" "${JOBS:-10}" | tee -a "$log"
-python3 -I "$root/coverage/report.py" "$out" "$dir" "$jaccard" | tee -a "$log"
+python3 -I "$root/coverage/report.py" "$out" "$dir" "$pkg" "$jaccard" | tee -a "$log"
 
 if [[ "$baseline" = 1 ]]; then
   rm -rf "$base"

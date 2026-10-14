@@ -68,11 +68,15 @@ def check(package=None):
     tokens = {}
     for p in packages():
         for e in entries(p):
-            tokens[str(e.get("token"))] = tokens.get(str(e.get("token")), 0) + 1
+            if isinstance(e, dict):
+                tokens[str(e.get("token"))] = tokens.get(str(e.get("token")), 0) + 1
     accepted, rejected = {}, []
     for p in [package] if package else packages():
         seen = set()
         for e in entries(p):
+            if not isinstance(e, dict):
+                rejected.append(({"test": str(e)}, "an entry must be a mapping of test, reason, token"))
+                continue
             test, reason, token = (str(e.get(f, "")) for f in ("test", "reason", "token"))
             nonce, _, sig = token.partition("-")
             if set(e) != {"test", "reason", "token"}:
