@@ -1,6 +1,6 @@
 //! Vista pieces the SQL dialects share: the generic shell and what it asks
-//! of a dialect, the YAML column types, the metadata flags and the
-//! capability set.
+//! of a dialect, YAML spec lowering, the YAML column types, the metadata
+//! flags and the capability set.
 
 mod dialect;
 // The backends name the shell publicly (`PostgresTableShell`, …) while the
@@ -12,11 +12,13 @@ mod narrow;
 mod refs;
 #[allow(private_bounds, private_interfaces)]
 mod shell;
+mod spec_table;
 
 pub(crate) use dialect::{Shell, SqlShellDialect};
 pub use shell::SqlTableShell;
 #[cfg(feature = "mysql")]
 pub(crate) use shell::native_record;
+pub(crate) use spec_table::{SourceBlock, SqlSpecDialect, build_spec_table, lower_spec};
 
 use vantage_core::{Result, error};
 use vantage_table::column::core::{Column, ColumnType};

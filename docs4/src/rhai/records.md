@@ -150,12 +150,14 @@ but must not change it.
 ## Records in Rust
 
 A host that already holds a row can give it to a script without a second fetch:
-[`RecordDraft::from_row(handle, resolver, writes, id, row)`](vantage_vista::rhai::RecordDraft::from_row).
+[`RecordDraft::from_row(handle, writes, id, row)`](vantage_vista::rhai::RecordDraft::from_row).
+A named handle resolves through the resolver it carries, set with
+[`Handle::with_resolver`](vantage_vista::rhai::Handle::with_resolver).
 After the script runs, `changes()` returns what it staged and `values()` the row as the script
 last saw it. Vantage UI builds the action body's `row` this way, over the page's Dio Vista.
 
 A row that belongs to no table, such as the `row` an action predicate reads, still needs a
-resolver: the first field set asks it for the id column. A Vista over an empty
+handle with a resolver: the first field set asks it for the id column. A Vista over an empty
 [`MockShell`](vantage_vista::mocks::MockShell) (feature `mocks`) serves:
 
 <!-- tested: rhai_guide::records::row_without_table -->
@@ -163,8 +165,7 @@ resolver: the first field set asks it for the id column. A Vista over an empty
 let no_table: Arc<dyn VistaResolver> =
     Arc::new(|_: &str| Ok(Vista::new("row", MockShell::new())));
 let row = RecordDraft::from_row(
-    Handle::named("row"),
-    Some(no_table),
+    Handle::named("row").with_resolver(no_table),
     Writes::Denied("this row is read-only".into()),
     "o1".into(),
     values,

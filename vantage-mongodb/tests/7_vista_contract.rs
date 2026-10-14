@@ -73,7 +73,7 @@ async fn setup() -> (MongoDB, MongoVistaFactory) {
         .into_iter()
         .map(|s| (s.name.clone(), s))
         .collect();
-    let resolver: SpecResolver<MongoVistaSpec> =
+    let resolver: Arc<dyn SpecResolver<MongoVistaSpec>> =
         Arc::new(move |name: &str| specs.get(name).cloned());
     let factory = db.vista_factory().with_resolver(resolver);
     (db, factory)

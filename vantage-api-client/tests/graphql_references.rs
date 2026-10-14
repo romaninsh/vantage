@@ -96,7 +96,8 @@ async fn with_resolver_targets_ignore_the_parent_overrides() {
         .map(|yaml| serde_yaml_ng::from_str::<GraphqlApiVistaSpec>(yaml).unwrap())
         .map(|spec| (spec.name.clone(), spec))
         .collect();
-    let factory = factory(&server).with_resolver(Arc::new(move |name| specs.get(name).cloned()));
+    let factory =
+        factory(&server).with_resolver(Arc::new(move |name: &str| specs.get(name).cloned()));
     let order: GraphqlApiVistaSpec =
         serde_yaml_ng::from_str(&order_yaml("  filter_arg: by\n  args: { input: {} }\n")).unwrap();
     let orders = factory.build_from_spec(order).unwrap();

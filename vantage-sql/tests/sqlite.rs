@@ -6,6 +6,11 @@ mod safe_writes_contract;
 #[path = "common/dotted.rs"]
 mod dotted;
 
+#[cfg(feature = "vista")]
+#[macro_use]
+#[path = "common/vista.rs"]
+mod vista_suite;
+
 mod sqlite {
     #[path = "4_aggregates.rs"]
     mod aggregates;

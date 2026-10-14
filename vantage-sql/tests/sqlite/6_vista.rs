@@ -1,6 +1,7 @@
 //! Vista integration: typed `Table<SqliteDB, _>` → `Vista` and YAML → `Vista`.
 //!
-//! Uses in-memory SQLite — no external setup required.
+//! Uses in-memory SQLite — no external setup required. The cases every SQL
+//! backend shares come from `vista_tests!` (`tests/common/vista.rs`).
 
 #![cfg(feature = "vista")]
 
@@ -8,6 +9,7 @@ use std::error::Error;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
+use vantage_sql::sqlite::vista::SqliteVistaSpec;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_sql::sqlite_expr;
 use vantage_table::table::Table;
@@ -52,6 +54,19 @@ fn product_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
         .with_column_of::<bool>("is_deleted")
 }
 
+/// Every test gets its own in-memory database, so `_suffix` names nothing.
+async fn product(_suffix: &str) -> (SqliteDB, Table<SqliteDB, EmptyEntity>) {
+    let db = setup().await;
+    (db.clone(), product_table(db))
+}
+
+async fn clients_orders(_suffix: &str) -> (SqliteDB, String, String) {
+    let db = setup_clients_orders().await;
+    (db, "client".to_string(), "orders".to_string())
+}
+
+vista_tests!(SqliteVistaSpec, "sqlite");
+
 #[tokio::test]
 async fn vista_lists_typed_sqlite_as_cbor() -> TestResult {
     let db = setup().await;
@@ -70,39 +85,6 @@ async fn vista_lists_typed_sqlite_as_cbor() -> TestResult {
         Some(&CborValue::Text("Alpha".to_string()))
     );
     assert_eq!(alpha.get("price"), Some(&CborValue::Integer(10i64.into())));
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_get_value_by_id() -> TestResult {
-    let db = setup().await;
-    let table = product_table(db.clone());
-    let vista = db.vista_factory().from_table(table)?;
-
-    let row = vista.get_value("b").await?.expect("row b exists");
-    assert_eq!(row.get("name"), Some(&CborValue::Text("Beta".to_string())));
-
-    let missing = vista.get_value("nope").await?;
-    assert!(missing.is_none());
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_count_with_eq_condition() -> TestResult {
-    let db = setup().await;
-    let table = product_table(db.clone());
-    let mut vista = db.vista_factory().from_table(table)?;
-
-    assert_eq!(vista.count().await?, 3);
-
-    vista.add_condition("is_deleted", FilterOp::Eq, CborValue::Bool(false))?;
-    assert_eq!(vista.count().await?, 2);
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2);
-    assert!(rows.contains_key("a"));
-    assert!(rows.contains_key("c"));
-    assert!(!rows.contains_key("b"));
     Ok(())
 }
 
@@ -156,37 +138,6 @@ async fn vista_pushes_operator_conditions_server_side() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
-async fn vista_yaml_loads_table_and_columns() -> TestResult {
-    let db = setup().await;
-
-    let yaml = r#"
-name: product_view
-columns:
-  id:
-    type: string
-    flags: [id]
-  name:
-    type: string
-    flags: [title, searchable]
-  price:
-    type: int
-sqlite:
-  table: product
-"#;
-
-    let vista = db.vista_factory().from_yaml(yaml)?;
-
-    assert_eq!(vista.name(), "product_view");
-    assert_eq!(vista.id_column(), Some("id"));
-    assert_eq!(vista.title_columns(), vec!["name"]);
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 3);
-    assert!(rows.contains_key("a"));
-    Ok(())
-}
-
 /// The YAML flags with a typed counterpart reach the vista column through
 /// the typed table.
 #[tokio::test]
@@ -211,16 +162,6 @@ columns:
         is_deleted.has_flag(ColumnFlag::from("label")),
         "{is_deleted:?}"
     );
-    Ok(())
-}
-
-/// SQL compares whole column values, so a path into one is refused as
-/// `Unimplemented`, and `with_query` hands it back as residual.
-#[tokio::test]
-async fn vista_condition_on_a_dotted_path_is_refused() -> TestResult {
-    let db = setup().await;
-    let vista = db.vista_factory().from_table(product_table(db.clone()))?;
-    crate::dotted::assert_dotted_path_is_refused(&vista, "name.first");
     Ok(())
 }
 
@@ -281,30 +222,6 @@ sqlite:
         fetched.get("price_label"),
         Some(&CborValue::Text("Delta: 40".into()))
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_writes_round_trip_via_cbor() -> TestResult {
-    let db = setup().await;
-    let table = product_table(db.clone());
-    let vista = db.vista_factory().from_table(table)?;
-
-    let record: Record<CborValue> = vec![
-        ("name".to_string(), CborValue::Text("Delta".into())),
-        ("price".to_string(), CborValue::Integer(99i64.into())),
-        ("is_deleted".to_string(), CborValue::Bool(false)),
-    ]
-    .into_iter()
-    .collect();
-
-    vista.insert_value("d", &record).await?;
-
-    let fetched = vista.get_value("d").await?.expect("inserted");
-    assert_eq!(fetched.get("name"), Some(&CborValue::Text("Delta".into())));
-
-    vista.delete("d").await?;
-    assert!(vista.get_value("d").await?.is_none());
     Ok(())
 }
 
@@ -388,47 +305,6 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
             "sqlite doesn't advertise {capability}"
         );
     }
-    Ok(())
-}
-
-/// A vista whose source is a Rhai-built SELECT (not a physical table). The
-/// script filters `price > 15`, so only two products surface, and the vista is
-/// read-only.
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn vista_yaml_rhai_source_is_read_only_and_filters() -> TestResult {
-    let db = setup().await;
-
-    let yaml = r#"
-name: expensive_products
-columns:
-  id:
-    type: string
-    flags: [id]
-  name:
-    type: string
-sqlite:
-  rhai: |
-    sql::select().from("product").field("id").field("name").where(sql::expr("price > 15"))
-"#;
-
-    let vista = db.vista_factory().from_yaml(yaml)?;
-    assert_eq!(vista.name(), "expensive_products");
-
-    let caps = vista.capabilities();
-    assert!(
-        !caps.has(Capability::Insert),
-        "rhai-sourced vista is read-only"
-    );
-    assert!(!caps.has(Capability::Update));
-    assert!(!caps.has(Capability::Delete));
-    assert!(!caps.has(Capability::ConfineWrites));
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2, "only products with price > 15");
-    assert!(rows.contains_key("b"));
-    assert!(rows.contains_key("c"));
-    assert!(!rows.contains_key("a"));
     Ok(())
 }
 
@@ -633,70 +509,6 @@ async fn vista_list_references_surfaces_cardinality() -> TestResult {
     Ok(())
 }
 
-/// YAML-declared `references:` lower to `with_one`/`with_many`, with the
-/// target table resolved by name through a spec resolver attached to the
-/// factory. Mirrors the SurrealDB resolver pattern.
-#[tokio::test]
-async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-    use vantage_sql::sqlite::vista::SqliteVistaSpec;
-    use vantage_vista::SpecResolver;
-
-    let db = setup_clients_orders().await;
-
-    let client_yaml = r#"
-name: client
-columns:
-  id: { type: string, flags: [id] }
-  name: { type: string, flags: [title] }
-references:
-  orders:
-    table: orders
-    kind: has_many
-    foreign_key: client_id
-"#;
-    let orders_yaml = r#"
-name: orders
-columns:
-  id: { type: string, flags: [id] }
-  client_id: { type: string }
-  total: { type: int }
-"#;
-
-    let client_spec: SqliteVistaSpec = serde_yaml_ng::from_str(client_yaml)?;
-    let orders_spec: SqliteVistaSpec = serde_yaml_ng::from_str(orders_yaml)?;
-
-    let map: IndexMap<String, SqliteVistaSpec> =
-        [("orders".to_string(), orders_spec)].into_iter().collect();
-    let map = Arc::new(map);
-    let resolver: SpecResolver<SqliteVistaSpec> =
-        Arc::new(move |name: &str| map.get(name).cloned());
-
-    let factory = db.vista_factory().with_resolver(resolver);
-    let clients = factory.build_from_spec(client_spec)?;
-
-    // Reference metadata surfaces from the wired relation.
-    let refs = clients.references();
-    assert_eq!(refs.len(), 1);
-    assert_eq!(refs["orders"].kind, ReferenceKind::HasMany);
-
-    // Traversal resolves `orders` via the resolver and filters to alice's rows.
-    let (_id, alice) = clients
-        .clone()
-        .with_id(CborValue::Text("alice".into()))?
-        .get_some_value()
-        .await?
-        .expect("alice exists");
-    let alice_orders = clients.get_ref("orders", Some(&alice))?;
-    let rows = alice_orders.list_values().await?;
-    assert_eq!(rows.len(), 2, "alice has 2 orders");
-    assert!(rows.contains_key("o1"));
-    assert!(rows.contains_key("o2"));
-    assert!(!rows.contains_key("o3"));
-    Ok(())
-}
-
 /// A `base:`-derived vista keeps the `references:` it declares itself, next
 /// to whatever it inherits from the base (here: nothing).
 #[tokio::test]
@@ -742,7 +554,7 @@ references:
     .into_iter()
     .collect();
     let map = Arc::new(map);
-    let resolver: SpecResolver<SqliteVistaSpec> =
+    let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
         Arc::new(move |name: &str| map.get(name).cloned());
 
     let derived_spec: SqliteVistaSpec = serde_yaml_ng::from_str(derived_yaml)?;
@@ -763,131 +575,6 @@ references:
     let mut ids: Vec<&String> = rows.keys().collect();
     ids.sort();
     assert_eq!(ids, ["o1", "o2"]);
-    Ok(())
-}
-
-/// A derived vista: `base: client` resolves eagerly through the factory's
-/// resolver, the base table's `select()` is seeded into the Rhai engine as
-/// `base` (transform mode), and the listed columns are inherited from the
-/// base. The query source makes it read-only.
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-    use vantage_sql::sqlite::vista::SqliteVistaSpec;
-    use vantage_vista::SpecResolver;
-
-    let db = setup_clients_orders().await;
-
-    let client_yaml = r#"
-name: client
-columns:
-  id: { type: string, flags: [id] }
-  name: { type: string, flags: [title] }
-"#;
-    let vip_yaml = r#"
-name: vip_clients
-columns: {}
-sqlite:
-  base: client
-  inherit:
-    columns: [id, name]
-  rhai: |
-    base.where(sql::expr("name = 'Alice'"))
-"#;
-
-    let client_spec: SqliteVistaSpec = serde_yaml_ng::from_str(client_yaml)?;
-    let vip_spec: SqliteVistaSpec = serde_yaml_ng::from_str(vip_yaml)?;
-
-    let map: IndexMap<String, SqliteVistaSpec> =
-        [("client".to_string(), client_spec)].into_iter().collect();
-    let map = Arc::new(map);
-    let resolver: SpecResolver<SqliteVistaSpec> =
-        Arc::new(move |name: &str| map.get(name).cloned());
-
-    let vista = db
-        .vista_factory()
-        .with_resolver(resolver)
-        .build_from_spec(vip_spec)?;
-
-    // Query-sourced → read-only.
-    let caps = vista.capabilities();
-    assert!(
-        !caps.has(Capability::Insert),
-        "derived (query-sourced) vista is read-only"
-    );
-    assert!(!caps.has(Capability::Update));
-    assert!(!caps.has(Capability::Delete));
-
-    // Transform applied (only Alice) and inherited columns surface.
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 1, "rhai transform filtered to Alice");
-    let alice = rows.get("alice").expect("alice present");
-    assert_eq!(alice.get("name"), Some(&CborValue::Text("Alice".into())));
-    Ok(())
-}
-
-/// The headline "derived aggregate" case: a `debtors`-style vista derived from
-/// `orders`, grouping by client and summing totals into a declared `total_due`
-/// column, with the grouping key inherited and re-keyed via `id_column`.
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-    use vantage_sql::sqlite::vista::SqliteVistaSpec;
-    use vantage_vista::SpecResolver;
-
-    let db = setup_clients_orders().await;
-
-    let orders_yaml = r#"
-name: orders
-columns:
-  id: { type: string, flags: [id] }
-  client_id: { type: string }
-  total: { type: int }
-"#;
-    let totals_yaml = r#"
-name: client_totals
-id_column: client_id
-columns:
-  total_due: { type: int }
-sqlite:
-  base: orders
-  inherit:
-    columns: [client_id]
-  rhai: |
-    base.clear_fields().field("client_id").expression(sql::expr("SUM(total) AS total_due")).group_by(sql::expr("client_id"))
-"#;
-
-    let orders_spec: SqliteVistaSpec = serde_yaml_ng::from_str(orders_yaml)?;
-    let totals_spec: SqliteVistaSpec = serde_yaml_ng::from_str(totals_yaml)?;
-
-    let map: IndexMap<String, SqliteVistaSpec> =
-        [("orders".to_string(), orders_spec)].into_iter().collect();
-    let map = Arc::new(map);
-    let resolver: SpecResolver<SqliteVistaSpec> =
-        Arc::new(move |name: &str| map.get(name).cloned());
-
-    let vista = db
-        .vista_factory()
-        .with_resolver(resolver)
-        .build_from_spec(totals_spec)?;
-
-    // Re-keyed by client_id; one row per client with the summed total.
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2, "one row per client");
-    let alice = rows.get("alice").expect("alice total");
-    assert_eq!(
-        alice.get("total_due"),
-        Some(&CborValue::Integer(30i64.into()))
-    );
-    let bob = rows.get("bob").expect("bob total");
-    assert_eq!(
-        bob.get("total_due"),
-        Some(&CborValue::Integer(30i64.into()))
-    );
     Ok(())
 }
 

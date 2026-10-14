@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.0 — 2026-10-14
+
+- Vista 2.0: breaking API changes; see the migration guide (phase 5).
+- References lowered through `ReferenceSpec::to_reference`; spec `keys:` honoured.
+
 ## 1.1.1 — 2026-10-12
 
 - Fix: `fetch_window` and `fetch_page` sort ties by `_id`, so consecutive windows no longer repeat or skip rows that tie on the sort.

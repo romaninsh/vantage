@@ -34,7 +34,7 @@ impl GraphqlApiTableShell {
             return Ok(None);
         };
         let target_name = reference.target.as_str();
-        let target = resolver(target_name).ok_or_else(|| {
+        let target = resolver.resolve(target_name).ok_or_else(|| {
             error!(
                 "GraphQL reference target has no registered spec; register it with \
                  `register_yaml` or resolve it through `with_resolver`",

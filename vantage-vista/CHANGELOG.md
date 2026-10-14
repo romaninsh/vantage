@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.0 — 2026-10-14
+
+- Vista 2.0: breaking API changes; see the migration guide (phase 5).
+- `SpecResolver` is a trait; `rhai::script_tables`; `Handle::with_resolver` is public, and `RecordDraft` constructors take the resolver from the handle.
+
 ## 1.2.1 — 2026-10-07
 
 - `MockShell::get_vista_value` honours the vista's filters.

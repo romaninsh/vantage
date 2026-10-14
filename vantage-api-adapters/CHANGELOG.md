@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-10-14
+
+- Vista 2.0: the axum diorama adapter reads rows through `cached()`.
+
 ## 0.6.4 — 2026-10-05
 
 - `Conflict` errors answer 409.

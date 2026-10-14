@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0 — 2026-10-14
+
+- Vista 2.0: breaking API changes; see the migration guide (phase 5).
+
 ## 0.14.3 — 2026-10-11
 
 - `TableScenery::count_where(terms)`: pushed-down count with replacement filter terms.

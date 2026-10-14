@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.0 — 2026-10-14
+
+- Vista 2.0: breaking API changes; see the migration guide (phase 5).
+- `Cardinality` removed in favour of `Reference::vista_reference`; `Table::traverse_erased`; column-level `references:` lowered in the spec path; `name_spec_targets` removed.
+
 ## 1.3.0 — 2026-10-10
 
 - `Table::prepare_insert` and `Table::finish_insert`, the building blocks for bulk insert;

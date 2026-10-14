@@ -8,6 +8,8 @@ mod import;
 #[cfg(feature = "rhai")]
 mod scripted;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -32,7 +34,7 @@ use crate::sql_vista::{Shell, SqlShellDialect, SqlTableShell};
 pub(crate) use scripted::register_extensions;
 
 pub type MysqlTableShell<E = EmptyEntity> =
-    SqlTableShell<MysqlDB, E, Option<SpecResolver<MysqlVistaSpec>>>;
+    SqlTableShell<MysqlDB, E, Option<Arc<dyn SpecResolver<MysqlVistaSpec>>>>;
 
 impl<E> MysqlTableShell<E>
 where
@@ -50,7 +52,7 @@ where
 
 #[async_trait]
 impl SqlShellDialect for MysqlDB {
-    type Extra = Option<SpecResolver<MysqlVistaSpec>>;
+    type Extra = Option<Arc<dyn SpecResolver<MysqlVistaSpec>>>;
 
     const DRIVER: &'static str = "mysql";
 
