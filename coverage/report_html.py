@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from overlap import load  # noqa: E402
 
 OUT, CRATE = sys.argv[1], sys.argv[2]
-o = load(OUT, CRATE, float(sys.argv[3]) if len(sys.argv) > 3 else 0.9)
+# The run dir is coverage/report/<package>, named by matrix.sh.
+o = load(OUT, CRATE, os.path.basename(os.path.normpath(OUT)), float(sys.argv[3]) if len(sys.argv) > 3 else 0.9)
 DEST = os.path.join(OUT, "report.html")
 
 
@@ -77,7 +78,7 @@ tiles = [
     ("Tests measured", o.matrix["measured"]),
     ("Internal (src/)", len(o.internal)),
     ("Blackbox (tests/)", len(o.sets)),
-    ("Regions covered", f"{len(o.regions):,}"),
+    ("Regions covered", f"{len(o.regions) - len(o.dropped):,}"),
     ("Overlap clusters", len(o.clusters)),
     ("Tests in clusters", len(o.clustered)),
     ("No unique region", sum(1 for k in o.keys if o.unique[k] == 0)),

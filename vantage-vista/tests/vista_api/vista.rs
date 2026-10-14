@@ -79,7 +79,7 @@ fn a_vista_reports_its_schema_and_name() {
 }
 
 #[tokio::test]
-async fn an_equality_condition_narrows_and_is_recorded() {
+async fn an_operator_condition_narrows_and_is_recorded() {
     let vista = people()
         .with_condition("age", FilterOp::Gt, 25_i64)
         .unwrap();
