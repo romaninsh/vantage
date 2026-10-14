@@ -42,6 +42,7 @@ use search::matches_search;
 
 pub use compare::cbor_cmp;
 pub use path::cell_get;
+pub(crate) use path::path_get;
 
 type Rec = Record<CborValue>;
 
