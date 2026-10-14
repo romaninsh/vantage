@@ -129,7 +129,9 @@ async fn sum_over_a_fractional_column_is_a_float() -> Result<()> {
         .with_column(Column::new("n", "f64"))
         .with_id_column("id");
     let n = |v: f64| -> Record<CborValue> {
-        [("n".to_string(), CborValue::Float(v))].into_iter().collect()
+        [("n".to_string(), CborValue::Float(v))]
+            .into_iter()
+            .collect()
     };
     let shell = MockShell::new()
         .with_metadata(metadata)
@@ -248,5 +250,3 @@ async fn scenery_outlives_dio_handle_drop() -> Result<()> {
     assert_eq!(cbor_int(&scenery.value().unwrap()), Some(3));
     Ok(())
 }
-
-

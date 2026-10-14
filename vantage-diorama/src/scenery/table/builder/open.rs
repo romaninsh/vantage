@@ -12,9 +12,7 @@ use crate::scenery::table::cap::Cap;
 use crate::scenery::table::handle::TableSceneryImpl;
 use crate::scenery::table::loader::enqueue_viewport;
 use crate::scenery::table::state::{Init, SharedRows};
-use crate::scenery::table::view::{
-    TableView, ViewHook, ViewId, ViewSignal, compose, follow_tail,
-};
+use crate::scenery::table::view::{TableView, ViewHook, ViewId, ViewSignal, compose, follow_tail};
 use crate::scenery::table::{TableScenery, ViewportRequest};
 
 use super::TableSceneryBuilder;
@@ -51,7 +49,10 @@ impl TableSceneryBuilder {
         let order = order.or_else(|| dio.query.order.clone());
         let cap = match (limit, tail) {
             (Some(_), Some(_)) => {
-                return Err(error!("limit and tail are exclusive", table = dio.master.name()));
+                return Err(error!(
+                    "limit and tail are exclusive",
+                    table = dio.master.name()
+                ));
             }
             (Some(n), None) => Some(Cap::Limit(n)),
             (None, Some(_)) if order.is_none() => {

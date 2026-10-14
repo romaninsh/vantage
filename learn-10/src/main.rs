@@ -3,6 +3,7 @@ use learn_10::product::Product;
 use tower_http::services::ServeDir;
 use vantage_api_adapters::axum_dio::DioRouter;
 use vantage_diorama::prelude::*;
+use vantage_diorama::{Cache, Loader, LoaderCx};
 use vantage_sql::prelude::*;
 use vantage_vista::SortDirection;
 

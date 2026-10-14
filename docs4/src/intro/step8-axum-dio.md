@@ -53,11 +53,10 @@ Nothing in the example code changes for this — the scheduler sits under the sa
 `set_viewport` and `fetch_window` calls the previous chapters used. What changes is what you
 can now safely do: open as many sceneries as you have HTTP connections.
 
-One builder flag is new. Sceneries de-duplicate: two identical opens share one instance, which
-is right for two widgets showing the same grid — but wrong for two *clients* watching different
-pages of the same query, where each connection must keep its own viewport. The adapter opens
-its sceneries with `.exclusive()`: never shared, still counted in the **demand union** — the
-Dio hydrates the union of the columns every open scenery demands — and still released on drop.
+Every open is its own view. Two identical opens share one set of rows, which is right for two
+widgets showing the same grid, and each still keeps its own viewport, which is right for two
+*clients* watching different pages of the same query. Every view counts in the **demand union** —
+the Dio hydrates the union of the columns every open scenery demands — and is released on drop.
 
 ## The adapter: `DioRouter`
 
@@ -85,7 +84,7 @@ plain `axum::Router` with two routes, each in two modes:
 | Request                        | Answered by                               | Cost                          |
 | ------------------------------ | ----------------------------------------- | ----------------------------- |
 | `GET /?offset=&limit=`         | A window over the cache                   | Instant; never fetches        |
-| `GET /?watch=true&…`           | An `.exclusive()` `TableScenery`          | Streams while connected       |
+| `GET /?watch=true&…`           | A `TableScenery` view of its own          | Streams while connected       |
 | `GET /{id}`                    | A bounded facade read (`get_value`)       | Hydrates that one row; cached |
 | `GET /{id}?watch=true`         | A `RecordScenery`                         | Streams that record's changes |
 
@@ -289,7 +288,7 @@ explorer: title, file count, Prev/Next, and a table filling itself in.
 | ---------------------------------------- | ----------------------------------------------------------------------- |
 | Augment scheduler                        | Dio-owned detail fetches: round-robin across views, one flight per row  |
 | `augment_workers(n)`                     | Worker pool size — 1 (deterministic order) by default                   |
-| `.exclusive()`                           | A scenery that never shares — one standing view per HTTP connection     |
+| One view per open                        | Shared rows, own viewport — one standing view per HTTP connection       |
 | `DioRouter` (vantage-api-adapters)       | `.with_column()` + `.with_page_size()` → an axum router; columns double as demand |
 | `GET` vs `?watch=true`                   | Snapshot of current knowledge vs a Scenery streaming NDJSON events      |
 | `ADDED` / `MODIFIED` lines               | Kubernetes-style watch events, diffed per row per connection            |

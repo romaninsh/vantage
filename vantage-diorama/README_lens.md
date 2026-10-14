@@ -175,7 +175,7 @@ returns `Err` unwinds the same way, so a failed re-pull leaves the grid
 showing exactly what it showed before.
 
 By default a TableScenery opens, paints whatever it finds in the
-cache, then fires `set_viewport(0..page_size)` against itself so the
+cache, then fires `set_viewport(0..page_size, 0..0)` against itself so the
 configured `on_load_chunk` re-fetches the first page in the
 background. Turn that off when the cache is fully populated by an
 upstream pipeline and you don't want the open path to round-trip:

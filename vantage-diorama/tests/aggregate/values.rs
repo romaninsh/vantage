@@ -4,9 +4,7 @@
 use vantage_core::Result;
 use vantage_diorama::aggregate::{Conditions, Count, Max, Sum, Where};
 
-use crate::support::aggregate::{
-    BumpCounter, as_i64, int, master, record, settle, source, text,
-};
+use crate::support::aggregate::{BumpCounter, as_i64, int, master, record, settle, source, text};
 
 #[tokio::test]
 async fn value_tracks_inserts_updates_and_deletes() -> Result<()> {

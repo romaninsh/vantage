@@ -7,9 +7,8 @@ use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
-use vantage_table::traits::table_source::TableSource;
 use vantage_types::Record;
-use vantage_vista::{ColumnFlag, Condition, FilterOp, NativeCondition, SortDirection};
+use vantage_vista::{Condition, FilterOp, NativeCondition, SortDirection};
 
 use super::{MongoTableShell, conditions};
 use crate::condition::MongoCondition;
@@ -65,14 +64,10 @@ impl MongoTableShell {
 
     /// Replace the quicksearch condition; `None` drops it.
     pub(super) fn apply_search(&mut self, text: Option<&str>) -> Result<()> {
-        if let Some(handle) = self.current_search_handle {
-            self.table.temp_remove_condition(handle)?;
-            self.current_search_handle = None;
-        }
-        if let Some(text) = text {
-            let condition = self.search_condition(text);
-            self.current_search_handle = Some(self.table.temp_add_condition(condition));
-        }
+        let condition = text.map(|text| self.search_condition(text));
+        self.current_search_handle = self
+            .table
+            .replace_temp_condition(self.current_search_handle, condition)?;
         Ok(())
     }
 
@@ -101,23 +96,17 @@ impl MongoTableShell {
         Ok(())
     }
 
-    /// Quicksearch filter over the columns flagged `searchable`. A shell over
-    /// a typed table that flags none searches every column instead, matching
-    /// `MongoDB::search_table_condition`.
+    /// Quicksearch filter over [`VistaMetadata::search_columns`], each at its
+    /// BSON path.
+    ///
+    /// [`VistaMetadata::search_columns`]: vantage_vista::VistaMetadata::search_columns
     fn search_condition(&self, text: &str) -> MongoCondition {
         let paths: Vec<String> = self
             .metadata
-            .columns
-            .iter()
-            .filter(|(_, col)| col.has_flag(ColumnFlag::Searchable))
-            .map(|(name, _)| self.dotted_path(name))
+            .search_columns()
+            .into_iter()
+            .map(|name| self.dotted_path(name))
             .collect();
-        if paths.is_empty() && self.search_unflagged_columns {
-            return self
-                .table
-                .data_source()
-                .search_table_condition(&self.table, text);
-        }
         conditions::search_filter(&paths, text).into()
     }
 
@@ -140,9 +129,7 @@ impl MongoTableShell {
     /// say) is an error.
     pub(super) async fn read_back(&self, id: &MongoId) -> Result<Record<CborValue>> {
         let mut table = self.table.clone();
-        if let Some(handle) = self.current_search_handle {
-            table.temp_remove_condition(handle)?;
-        }
+        table.replace_temp_condition(self.current_search_handle, None)?;
         table
             .get_value(id.clone())
             .await?

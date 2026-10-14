@@ -123,6 +123,7 @@ impl DebugRowCount for CborValue {
 /// The schema is what the derived `Dio`'s Vista advertises, so a group-by's
 /// output columns are as real to everything downstream as any table's.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct DerivedRows {
     /// Rows in their final display order. Must be deterministic — see
     /// [`Aggregation`].

@@ -12,9 +12,11 @@
 //!   set membership;
 //! - a sort puts absent and null cells last in either direction, and breaks
 //!   ties on id;
-//! - search is a case-insensitive substring of any cell's text: text,
-//!   numbers, bools, tagged values such as record ids, and the values
-//!   nested in arrays and maps. An empty needle matches every row.
+//! - search is a case-insensitive substring of the text of a column
+//!   [`VistaMetadata::search_columns`] names (every cell when the metadata
+//!   declares no columns): text, numbers, bools, tagged values such as
+//!   record ids, and the values nested in arrays and maps. An empty needle
+//!   matches every row.
 
 use std::cmp::Ordering;
 
@@ -86,7 +88,7 @@ impl VistaQuery {
             && self
                 .search
                 .as_deref()
-                .is_none_or(|needle| matches_search(needle, row)))
+                .is_none_or(|needle| matches_search(needle, row, metadata)))
     }
 
     /// Sort `rows` by this query's order; without one, `rows` keep theirs.

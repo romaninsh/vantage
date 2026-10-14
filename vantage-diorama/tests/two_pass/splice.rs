@@ -55,11 +55,13 @@ async fn a_confirmed_delete_splices_the_index() {
 
     dio.flash(ChangeFlash::delete("b")).await.unwrap();
 
-    let spliced = support::eventually(Duration::from_secs(3), || {
-        views::ids(&view) == ["c", "a"]
-    })
-    .await;
-    assert!(spliced, "the row didn't leave in place: {:?}", views::ids(&view));
+    let spliced =
+        support::eventually(Duration::from_secs(3), || views::ids(&view) == ["c", "a"]).await;
+    assert!(
+        spliced,
+        "the row didn't leave in place: {:?}",
+        views::ids(&view)
+    );
     tokio::time::sleep(Duration::from_millis(30)).await;
     assert_eq!(views::ids(&view), ["c", "a"]);
     assert_eq!(listings(&master), before, "the delete re-listed the master");

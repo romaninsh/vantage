@@ -3,8 +3,15 @@
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
+use super::cell_get;
+use crate::metadata::VistaMetadata;
+
 /// Whether `row` matches the search `needle`: a case-insensitive substring
-/// of the text of any cell. An empty needle matches every row.
+/// of the text of a cell it searches. An empty needle matches every row.
+///
+/// The cells searched are those of [`VistaMetadata::search_columns`], read by
+/// [`cell_get`]. Metadata that declares no columns searches every cell of
+/// the row.
 ///
 /// A driver searches server-side with a cast to text, so it also finds a
 /// number, a bool, a record id and a field of an embedded object. This rule
@@ -16,9 +23,23 @@ use vantage_types::Record;
 ///   through to its content;
 /// - arrays and maps are read item by item, map values only, at any depth;
 /// - null and bytes hold no text.
-pub(super) fn matches_search(needle: &str, row: &Record<CborValue>) -> bool {
+pub(super) fn matches_search(
+    needle: &str,
+    row: &Record<CborValue>,
+    metadata: &VistaMetadata,
+) -> bool {
     let needle = needle.to_lowercase();
-    needle.is_empty() || row.values().any(|cell| contains(cell, &needle))
+    if needle.is_empty() {
+        return true;
+    }
+    if metadata.columns.is_empty() {
+        return row.values().any(|cell| contains(cell, &needle));
+    }
+    metadata
+        .search_columns()
+        .into_iter()
+        .filter_map(|column| cell_get(row, column, metadata))
+        .any(|cell| contains(cell, &needle))
 }
 
 /// Whether `needle`, already lower case, is in the text of `value` or of

@@ -344,6 +344,12 @@ async fn write_master(master: Vista, flash: ChangeFlash) -> Result<()> {
         FlashKind::Patch => drop(master.patch_value(id(), flash.patch()).await?),
         FlashKind::Delete => master.delete(id()).await?,
         FlashKind::Clear => master.delete_all().await?,
+        other => {
+            return Err(vantage_core::error!(
+                "the mirroring writer has no route for this flash kind",
+                kind = format!("{other:?}")
+            ));
+        }
     }
     Ok(())
 }

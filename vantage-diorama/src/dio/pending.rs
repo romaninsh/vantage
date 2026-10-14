@@ -51,7 +51,12 @@ impl PendingFlashes {
 
     /// Mark `id` in flight until the returned guard drops.
     pub(crate) fn begin(self: &Arc<Self>, id: String) -> PendingFlashGuard {
-        self.ids.lock().unwrap().entry(id.clone()).or_default().depth += 1;
+        self.ids
+            .lock()
+            .unwrap()
+            .entry(id.clone())
+            .or_default()
+            .depth += 1;
         PendingFlashGuard {
             registry: self.clone(),
             id,
@@ -127,7 +132,9 @@ impl PendingFlashGuard {
     /// Run `f` over this flash's id's flight, under the registry's lock.
     pub(crate) fn flight<R>(&self, f: impl FnOnce(&mut Flight) -> R) -> R {
         let mut ids = self.registry.ids.lock().unwrap();
-        f(ids.get_mut(&self.id).expect("a live guard keeps its flight"))
+        f(ids
+            .get_mut(&self.id)
+            .expect("a live guard keeps its flight"))
     }
 }
 

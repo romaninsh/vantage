@@ -25,7 +25,11 @@ async fn a_paged_refresh_leaves_no_copy_for_an_augmented_dio() {
         .build()
         .expect("lens builds");
     let master = views::shell();
-    let plain = lens.dio(Vista::new("files", master.clone())).build().await.unwrap();
+    let plain = lens
+        .dio(Vista::new("files", master.clone()))
+        .build()
+        .await
+        .unwrap();
     let window = plain.table_scenery().page_size(1).open().await.unwrap();
     window.set_viewport(0..1, 0..1);
     let paged = support::eventually(Duration::from_secs(3), || window.row(0).is_some()).await;
@@ -40,7 +44,10 @@ async fn a_paged_refresh_leaves_no_copy_for_an_augmented_dio() {
     let view = listed(&augmented).await;
 
     assert_eq!(views::ids(&view), ["a", "b", "c"]);
-    assert!(listings(&master) > before, "the augmented Dio read the windows");
+    assert!(
+        listings(&master) > before,
+        "the augmented Dio read the windows"
+    );
 }
 
 /// `a` is cached from an earlier read and gone upstream: the listing that
@@ -76,7 +83,10 @@ fn named(shell: MockShell, ids: &[&str]) -> MockShell {
 #[tokio::test]
 async fn a_listing_ended_on_a_guess_stamps_no_copy() {
     let backend = Arc::new(MemoryCache::new());
-    let master = named(MockShell::new().with_metadata(meta(&["id", "name"])), &["a", "b", "c", "d"]);
+    let master = named(
+        MockShell::new().with_metadata(meta(&["id", "name"])),
+        &["a", "b", "c", "d"],
+    );
     let dio = two_pass(&super::listing::lens_on(&backend, false), &master).await;
     let view = support::open_listed(&dio, 2).await;
     assert_eq!(views::ids(&view), ["a", "b"]);
@@ -106,7 +116,10 @@ async fn a_listing_over_two_pages_stamps_and_prunes_nothing() {
         .insert_value("c", &record(&[("id", "c"), ("name", "c")]))
         .await
         .unwrap();
-    let master = named(MockShell::new().with_metadata(meta(&["id", "name"])), &["a", "b", "c", "d"]);
+    let master = named(
+        MockShell::new().with_metadata(meta(&["id", "name"])),
+        &["a", "b", "c", "d"],
+    );
     let dio = two_pass(&super::listing::lens_on(&backend, false), &master).await;
     let view = support::open_listed(&dio, 2).await;
     assert_eq!(views::ids(&view), ["a", "b"]);
@@ -118,5 +131,8 @@ async fn a_listing_over_two_pages_stamps_and_prunes_nothing() {
     assert_eq!(views::ids(&view), ["a", "b", "d"]);
 
     assert_eq!(table.meta_copied_at().await.unwrap(), None);
-    assert!(table.get_value("c").await.unwrap().is_some(), "c was pruned");
+    assert!(
+        table.get_value("c").await.unwrap().is_some(),
+        "c was pruned"
+    );
 }

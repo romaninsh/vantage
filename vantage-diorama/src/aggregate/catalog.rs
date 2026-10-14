@@ -50,6 +50,7 @@ impl Aggregation for ScalarAggregation {
 
 /// What a builder is handed: everything a declared aggregation can say about
 /// itself besides its name.
+#[non_exhaustive]
 pub struct AggregationSpec {
     /// The column the reduction reads. `None` for reductions over whole rows.
     pub column: Option<String>,
@@ -59,6 +60,10 @@ pub struct AggregationSpec {
 }
 
 impl AggregationSpec {
+    pub fn new(column: Option<String>, conditions: Conditions) -> Self {
+        Self { column, conditions }
+    }
+
     /// The column, or a clear error naming the op that needed one.
     pub fn require_column(&self, op: &str) -> Result<String> {
         self.column.clone().ok_or_else(|| {

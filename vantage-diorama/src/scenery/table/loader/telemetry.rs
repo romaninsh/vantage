@@ -17,11 +17,7 @@ use crate::scenery::table::state::SharedRows;
 /// before counting, so `cache_rows_after` would read `0` — not the cache's
 /// real size, just "not measured" — and a line for zero rows written is not a
 /// write at all.
-pub(super) fn tap_cache_write(
-    tap: &DebugTap,
-    state: &SharedRows,
-    report: Option<&FlushReport>,
-) {
+pub(super) fn tap_cache_write(tap: &DebugTap, state: &SharedRows, report: Option<&FlushReport>) {
     let Some(report) = report else {
         return;
     };

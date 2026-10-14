@@ -1,6 +1,9 @@
 use indexmap::IndexMap;
 
-use crate::{column::Column, reference::Reference};
+use crate::{
+    column::{Column, ColumnFlag},
+    reference::Reference,
+};
 
 /// Schema a `Vista` is built around.
 ///
@@ -55,5 +58,22 @@ impl VistaMetadata {
     pub fn with_id_column(mut self, name: impl Into<String>) -> Self {
         self.id_column = Some(name.into());
         self
+    }
+
+    /// The columns a quicksearch reads: those flagged `Searchable`, or, when
+    /// none is, every column. Dotted paths and imported columns are the
+    /// driver's to exclude.
+    pub fn search_columns(&self) -> Vec<&str> {
+        let flagged: Vec<&str> = self
+            .columns
+            .values()
+            .filter(|column| column.has_flag(ColumnFlag::Searchable))
+            .map(|column| column.name.as_str())
+            .collect();
+        if flagged.is_empty() {
+            self.columns.keys().map(String::as_str).collect()
+        } else {
+            flagged
+        }
     }
 }

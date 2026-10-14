@@ -17,8 +17,12 @@ pub enum MemoryCondition {
         op: FilterOp,
         value: CborValue,
     },
-    /// Case-insensitive substring over every text or number cell.
-    Search(String),
+    /// Case-insensitive substring over the text or number cells `columns`
+    /// names, or every cell when `columns` is empty.
+    Search {
+        text: String,
+        columns: Vec<String>,
+    },
     And(Vec<MemoryCondition>),
     Or(Vec<MemoryCondition>),
     Not(Box<MemoryCondition>),
@@ -38,10 +42,18 @@ impl MemoryCondition {
         }
     }
 
+    /// A search for `text` over every cell.
+    pub fn search(text: impl Into<String>) -> Self {
+        Self::Search {
+            text: text.into(),
+            columns: Vec::new(),
+        }
+    }
+
     pub fn matches(&self, record: &Record<CborValue>) -> Result<bool> {
         Ok(match self {
             Self::Cmp { path, op, value } => cmp_matches(lookup(record, path), *op, value),
-            Self::Search(text) => search_matches(record, text),
+            Self::Search { text, columns } => search_matches(record, text, columns),
             Self::And(all) => {
                 for c in all {
                     if !c.matches(record)? {
@@ -128,9 +140,17 @@ fn cmp_matches(cell: Option<&CborValue>, op: FilterOp, value: &CborValue) -> boo
     }
 }
 
-fn search_matches(record: &Record<CborValue>, text: &str) -> bool {
+/// Whether the text or number of a cell `columns` names (every cell when
+/// `columns` is empty) holds `text`, case-insensitively.
+pub(super) fn search_matches(record: &Record<CborValue>, text: &str, columns: &[String]) -> bool {
     let needle = text.to_lowercase();
-    record
-        .values()
-        .any(|v| text_of(v).is_some_and(|t| t.to_lowercase().contains(&needle)))
+    let found = |v: &CborValue| text_of(v).is_some_and(|t| t.to_lowercase().contains(&needle));
+    if columns.is_empty() {
+        record.values().any(found)
+    } else {
+        columns
+            .iter()
+            .filter_map(|column| lookup(record, column))
+            .any(found)
+    }
 }

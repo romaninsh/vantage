@@ -115,7 +115,11 @@ async fn view_stats_list_the_dio_residual_first() -> Result<()> {
         .with_condition(Condition::new("n", FilterOp::Gt, 1))
         .build()
         .await?;
-    assert_eq!(above_one.residual().conditions.len(), 1, "the master refused it");
+    assert_eq!(
+        above_one.residual().conditions.len(),
+        1,
+        "the master refused it"
+    );
     let view = open(&above_one, |b| {
         b.filter(Condition::new("n", FilterOp::Ne, 3))
     })

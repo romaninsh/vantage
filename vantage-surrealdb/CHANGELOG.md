@@ -4,6 +4,7 @@
 
 - Vista 2.0: breaking API changes; see the migration guide (phase 5).
 - References lowered through `ReferenceSpec::to_reference`; spec `keys:` honoured.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is.
 
 ## 1.0.1 — 2026-10-10
 

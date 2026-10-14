@@ -5,7 +5,9 @@ use vantage_types::Record;
 
 use super::path::path_get;
 use super::{cbor_cmp, cell_get};
-use crate::{Column, Condition, FilterOp, VistaMetadata, VistaQuery, filter::operand_text};
+use crate::{
+    Column, ColumnFlag, Condition, FilterOp, VistaMetadata, VistaQuery, filter::operand_text,
+};
 
 mod search;
 mod sort;

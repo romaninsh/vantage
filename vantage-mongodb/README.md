@@ -172,13 +172,14 @@ products.add_condition(condition);
 // Generates: { "$or": [{ "name": { "$regex": "cupcake", "$options": "i" } }, ...] }
 ```
 
-Each column in the table gets an `$or` branch, at its stored BSON path (the column alias). This is a simple substring search — for more sophisticated text search, use MongoDB's `$text` operator directly via `doc!{}`.
+Each column flagged `Searchable` (every column, when none is) gets an `$or` branch, at its stored BSON path (the column alias). This is a simple substring search — for more sophisticated text search, use MongoDB's `$text` operator directly via `doc!{}`.
 
 ## Vista capabilities
 
 With the `vista` feature, a MongoDB vista advertises:
 
-- Always: count, order, search (over `SEARCHABLE` columns by BSON path), page, keyset `fetch_next`,
+- Always: count, order, search (over `SEARCHABLE` columns, or every column when none is, by BSON
+  path), page, keyset `fetch_next`,
   `fetch_window`, operator filters (`can_filter_operators`).
 - Unless it is a pipeline view (read-only): insert, update, delete, confined writes, and reference
   traversal (`can_traverse_to_record`, `can_traverse_to_set`, `can_traverse_in_columns` for dotted
@@ -205,9 +206,8 @@ built, unless the reference carries a `mongo: { rhai: }` script. A typed
 `table.select()` run through `execute_select` does not lower joined columns; `list_values` and the
 vista do.
 
-A spec-built vista searches only its `SEARCHABLE` columns. A target reached through `get_ref` or
-`get_ref_target` is wrapped with `from_table`: it searches every column when none is flagged, and
-does not run that target spec's `modify:` script or its reference scripts.
+A target reached through `get_ref` or `get_ref_target` is wrapped with `from_table`: it does not
+run that target spec's `modify:` script or its reference scripts.
 
 YAML column types include `object_id`, `datetime` (aliases `date`, `timestamp`) and `decimal`. Typed
 columns parse written text back into ObjectId, DateTime or Decimal128, and reject text that doesn't parse.

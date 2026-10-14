@@ -17,11 +17,7 @@ use super::{cached, enriched, list, variant_key};
 /// `Fresh`/`Incomplete` per its status. Built detached and swapped in one
 /// write, so the map never passes through a partial state a concurrent
 /// `row`/`row_count` could observe.
-async fn publish_index_order(
-    state: &Arc<SharedRows>,
-    dio_inner: &Arc<DioInner>,
-    ids: &[String],
-) {
+async fn publish_index_order(state: &Arc<SharedRows>, dio_inner: &Arc<DioInner>, ids: &[String]) {
     let mut rows = BTreeMap::new();
     let mut id_to_idx = HashMap::new();
     for (i, id) in ids.iter().enumerate() {

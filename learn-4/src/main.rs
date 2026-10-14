@@ -5,6 +5,7 @@ use std::time::Instant;
 use files::File;
 use vantage_aws::prelude::*;
 use vantage_diorama::prelude::*;
+use vantage_diorama::{Cache, Loader, LoaderCx};
 use vantage_vista::prelude::*;
 
 const CACHE_FILE: &str = "cache.redb";

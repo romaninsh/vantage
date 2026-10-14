@@ -33,7 +33,10 @@ async fn spied_dio() -> Result<(Arc<SpyTable>, Dio)> {
         .cache(Cache::backend(Arc::new(SpyCache(table.clone()))))
         .loader(copy_master())
         .build()?;
-    let dio = lens.dio(Vista::new("items", seeded_shell())).build().await?;
+    let dio = lens
+        .dio(Vista::new("items", seeded_shell()))
+        .build()
+        .await?;
     Ok((table, dio))
 }
 

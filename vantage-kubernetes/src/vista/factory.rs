@@ -76,9 +76,8 @@ where
         // every column is sortable.
         orderable: Orderable::All,
         id_flag: true,
-        // The quicksearch scans all text fields; flagging the title tells
-        // UIs which one is primary.
-        searchable_titles: true,
+        // No column is flagged `Searchable`, so the quicksearch reads every
+        // column (every field when the table declares none).
         references: true,
         ..VistaMetadataOptions::default()
     })

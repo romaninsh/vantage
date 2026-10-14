@@ -69,11 +69,7 @@ impl SharedRows {
         init: Init,
         view: (ViewId, ViewHook),
         copy: Option<&SharedRows>,
-    ) -> (
-        Arc<Self>,
-        mpsc::UnboundedReceiver<ViewportRequest>,
-        bool,
-    ) {
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<ViewportRequest>, bool) {
         let (viewport_tx, viewport_rx) = mpsc::unbounded_channel();
         let two_pass = dio.has_dio_augment();
         let sweep_ticket = two_pass.then(|| {

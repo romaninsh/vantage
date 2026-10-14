@@ -47,11 +47,10 @@ struct Fixture {
 }
 
 async fn fixture(rows: impl IntoIterator<Item = (String, Record<CborValue>)>) -> Fixture {
-    let master = rows
-        .into_iter()
-        .fold(MockShell::new().with_metadata(metadata()), |shell, (id, r)| {
-            shell.with_record(id, r)
-        });
+    let master = rows.into_iter().fold(
+        MockShell::new().with_metadata(metadata()),
+        |shell, (id, r)| shell.with_record(id, r),
+    );
     let spy = Arc::new(SpyTable::default());
     let lens = Lens::builder()
         .cache(Cache::backend(Arc::new(SpyCache(spy.clone()))))
@@ -70,7 +69,10 @@ impl Fixture {
     async fn view(&self, dir: SortDirection) -> Result<Arc<dyn TableScenery>> {
         let view = self.dio.table_scenery().order("amount", dir).open().await?;
         let len = self.master.len();
-        assert!(eventually(SETTLE, || view.row_count() == len).await, "seeded");
+        assert!(
+            eventually(SETTLE, || view.row_count() == len).await,
+            "seeded"
+        );
         Ok(view)
     }
 
@@ -138,7 +140,11 @@ async fn a_patch_moves_one_row_without_a_reseed() -> Result<()> {
     let lists = f.lists().await;
 
     let new = Some(rec("r10", int(10_000)));
-    f.push(ChangeEvent::Updated { id: "r10".into(), new }).await?;
+    f.push(ChangeEvent::Updated {
+        id: "r10".into(),
+        new,
+    })
+    .await?;
     let last = |v: &Arc<dyn TableScenery>| {
         v.row(499)
             .is_some_and(|r| r.record.get("id") == Some(&CborValue::Text("r10".into())))
@@ -156,7 +162,11 @@ async fn an_insert_and_a_delete_splice_in_place() -> Result<()> {
     let lists = f.lists().await;
 
     let new = Some(rec("new", int(40)));
-    f.push(ChangeEvent::Inserted { id: "new".into(), new }).await?;
+    f.push(ChangeEvent::Inserted {
+        id: "new".into(),
+        new,
+    })
+    .await?;
     let expected = f.sorted(SortDirection::Ascending).await?;
     assert_eq!(expected.len(), 501);
     assert!(shows(&view, &expected).await, "inserted: {:?}", ids(&view));
@@ -216,9 +226,16 @@ async fn a_splice_places_nulls_and_ties_as_a_full_sort_does() -> Result<()> {
     ];
     for (step, change) in changes.into_iter().enumerate() {
         f.push(change).await?;
-        for (view, dir) in [(&asc, SortDirection::Ascending), (&desc, SortDirection::Descending)] {
+        for (view, dir) in [
+            (&asc, SortDirection::Ascending),
+            (&desc, SortDirection::Descending),
+        ] {
             let expected = f.sorted(dir).await?;
-            assert!(shows(view, &expected).await, "step {step} {dir:?}: {:?}", ids(view));
+            assert!(
+                shows(view, &expected).await,
+                "step {step} {dir:?}: {:?}",
+                ids(view)
+            );
         }
     }
     assert_eq!(f.lists().await, lists, "no whole-cache list");

@@ -83,7 +83,10 @@ impl SharedRows {
     /// The live signals of the attached views.
     pub(crate) fn signals(&self) -> Vec<Arc<ViewSignal>> {
         let views = self.views.lock().unwrap();
-        views.values().filter_map(|hook| hook.signal.upgrade()).collect()
+        views
+            .values()
+            .filter_map(|hook| hook.signal.upgrade())
+            .collect()
     }
 
     /// Release the two-pass list single-flight and republish, so the

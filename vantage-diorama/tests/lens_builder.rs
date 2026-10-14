@@ -82,8 +82,10 @@ async fn or_eager_on_an_eager_loader_is_refused() {
 #[tokio::test]
 async fn refresher_settings_are_validated() {
     let refresh = || Refresher::new(|_cx| async { Ok(()) });
-    let err = refused(memory().refresher(refresh().max_age(TTL)));
-    assert_eq!(setting(&err), Some("refresher.max_age"));
+    memory()
+        .refresher(refresh().max_age(TTL))
+        .build()
+        .expect("max_age alone is accepted");
     let err = refused(memory().refresher(refresh().every(Duration::ZERO)));
     assert_eq!(setting(&err), Some("refresher.every"));
 }
@@ -243,6 +245,38 @@ async fn max_age_is_checked_again_when_a_scenery_opens() -> Result<()> {
     assert!(
         refreshed(&mut rx, Duration::from_secs(1)).await,
         "record scenery open"
+    );
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn max_age_without_every_refreshes_a_stale_cache_on_open() -> Result<()> {
+    let (refresher, mut rx) = counting_refresher();
+    let backend = Arc::new(MemoryCache::new());
+    let lens = counting_lens(backend.clone(), refresher.max_age(TTL));
+    let dio = build(&lens).await;
+    assert!(
+        refreshed(&mut rx, Duration::from_secs(1)).await,
+        "unstamped cache refreshes on build"
+    );
+
+    settle().await;
+    let _table = dio.table_scenery().open().await?;
+    assert!(
+        !refreshed(&mut rx, Duration::from_secs(1)).await,
+        "a fresh stamp is left alone"
+    );
+
+    // No timer: time passing alone refreshes nothing.
+    assert!(
+        !refreshed(&mut rx, Duration::from_secs(600)).await,
+        "no timer without every"
+    );
+    stamp(&backend, TTL * 2).await?;
+    let _record = dio.record_scenery("a").open().await?;
+    assert!(
+        refreshed(&mut rx, Duration::from_secs(1)).await,
+        "the stamp has outlived max_age at the next open"
     );
     Ok(())
 }

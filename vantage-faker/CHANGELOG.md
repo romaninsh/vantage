@@ -4,6 +4,7 @@
 
 - Vista 2.0: breaking API changes; see the migration guide (phase 5).
 - The ShapedShell preview note no longer names the driver.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is.
 
 ## 1.2.0 — 2026-10-07
 

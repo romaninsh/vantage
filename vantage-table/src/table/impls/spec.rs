@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::{Result, VantageError, error};
 use vantage_expressions::{Expressive, SelectableDataSource};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
@@ -99,6 +99,7 @@ where
             let (target, kind, foreign_key) = match sugar {
                 ReferenceSugar::Sugar(target) => (target, ReferenceKind::HasOne, column.clone()),
                 ReferenceSugar::Full(r) => (&r.table, r.kind, r.foreign_key(column)),
+                _ => return Err(unknown_sugar(column)),
             };
             self =
                 self.with_spec_join(column, target, kind, &foreign_key, resolver.clone(), build)?;
@@ -156,9 +157,17 @@ pub fn spec_references<X, C, R>(
                 vantage_vista::Reference::has_one(column, target, JoinKey::to_target_id(column))
             }
             ReferenceSugar::Full(r) => r.to_reference(column, source_id)?,
+            _ => return Err(unknown_sugar(column)),
         });
     }
     Ok(out)
+}
+
+fn unknown_sugar(column: &str) -> VantageError {
+    error!(
+        "column references: takes a table name or a full reference",
+        column = column
+    )
 }
 
 /// The column-level `references:` of `spec` that no `references:` entry

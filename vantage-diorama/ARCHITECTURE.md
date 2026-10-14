@@ -185,9 +185,8 @@ alive as long as any handle outlives the original `Dio`.
 impl Dio {
     pub fn cached(&self) -> Vista { /* DioShell-backed */ }
     pub fn table_scenery(&self) -> TableSceneryBuilder { /* ... */ }
-    pub async fn record_scenery(&self, id: impl Into<String>) -> Result<Arc<dyn RecordScenery>>;
-    pub fn record_scenery_with(&self, id: impl Into<String>, rec: Record<CborValue>) -> Arc<dyn RecordScenery>;
-    pub fn value_scenery(&self) -> ValueSceneryBuilder { /* ... */ }
+    pub fn record_scenery(&self, id: impl Into<String>) -> RecordSceneryBuilder { /* .sugar/.seed/.load_on_miss/.open */ }
+    pub fn value_scenery<A: Aggregation<Output = CborValue>>(&self, agg: A) -> ValueSceneryBuilder<A>;
 
     pub fn master(&self) -> &Vista { &self.inner.master }
     pub fn cache(&self) -> &Arc<dyn CacheTable> { &self.inner.cache }
@@ -326,11 +325,12 @@ pub trait TableScenery: Send + Sync {
     // UI-driven hints. Random-access masters (`can_fetch_page`) drive
     // fetching through `set_viewport`; cursor-only masters
     // (`can_fetch_next`) drive it through `request_load_more`.
-    fn set_viewport(&self, range: Range<usize>);
+    fn set_viewport(&self, loaded: Range<usize>, shown: Range<usize>);
     fn request_load_more(&self);
-    fn request_refresh(&self);
-    fn set_search(&self, query: Option<String>);
-    fn set_sort(&self, column: Option<String>, dir: SortDir);
+    fn refresh_source(&self);
+    fn set_search(&self, text: Option<String>);
+    fn set_order(&self, order: Option<(String, SortDirection)>);
+    fn set_filters(&self, filters: Vec<Condition>);
 
     // Notification + capability advertisement.
     fn subscribe(&self) -> watch::Receiver<Generation>;
@@ -341,7 +341,7 @@ pub trait RecordScenery: Send + Sync {
     fn record(&self) -> Option<Arc<EnrichedRecord>>;
     fn status(&self) -> RecordStatus;
 
-    fn request_refresh(&self);
+    fn refresh_source(&self);
     fn subscribe(&self) -> watch::Receiver<Generation>;
 }
 
@@ -349,7 +349,7 @@ pub trait ValueScenery: Send + Sync {
     fn value(&self) -> Option<CborValue>;
     fn status(&self) -> ValueStatus;
 
-    fn request_refresh(&self);
+    fn refresh_source(&self);
     fn subscribe(&self) -> watch::Receiver<Generation>;
 }
 ```
@@ -363,16 +363,15 @@ pub trait ValueScenery: Send + Sync {
 pub struct TableSceneryBuilder {
     dio: Arc<DioInner>,
     conditions: Vec<Condition>,
-    sort: Option<(String, SortDir)>,
+    order: Option<(String, SortDirection)>,
     search: Option<String>,
     page_size: usize,                   // default 100 — hint range for request_load_more
-    eager: bool,                        // currently inert; kept for API stability
-    initial_range: Option<Range<usize>>,// override the refresh-on-open viewport (default 0..page_size)
+    cap: Option<Cap>,                   // limit(n) or tail(n)
 }
 ```
 
-Setters: `.where_eq(col, value)`, `.sort(col, dir)`, `.search(q)`,
-`.page_size(n)`, `.initial_range(r)`, `.open() -> Arc<dyn TableScenery>`.
+Setters: `.filter(condition)`, `.order(col, dir)`, `.search(q)`, `.limit(n)`, `.tail(n)`,
+`.page_size(n)`, `.open() -> Arc<dyn TableScenery>`.
 
 ### Scenery internal state
 
@@ -381,8 +380,8 @@ struct TableSceneryState {
     dio_weak: Weak<DioInner>,         // weak so Sceneries don't pin the Dio
 
     // Query parameters — mutable through setters on the Scenery.
-    conditions: RwLock<Vec<(String, CborValue)>>,
-    sort: RwLock<Option<(String, SortDir)>>,
+    conditions: RwLock<Vec<Condition>>,
+    order: RwLock<Option<(String, SortDirection)>>,
     search: RwLock<Option<String>>,
 
     // Loaded data — sparse, keyed by row index. Whatever's not in the
@@ -466,7 +465,7 @@ prefix, so a grep for it still finds the whole pipeline.
 
 Every `ViewportRequest` carries a `vantage_core::Priority` set by its
 producer. Essential — someone is waiting on these rows: `set_viewport`,
-`request_load_more`, `set_search`, `set_filter_terms`, the re-order on
+`request_load_more`, `set_search`, `set_filters`, the re-order on
 a `can_order` master, a cold on-open fetch (empty cache) and the
 open-blocking `total_provider` call, which is the one round trip an
 open awaits and whose failure fails the open. Background — nobody is:
@@ -542,23 +541,21 @@ when offline-first scrollbar precision matters.
 pub struct EnrichedRecord {
     pub record: Record<CborValue>,
     pub status: RowStatus,
-    pub dirty_fields: Option<Vec<String>>,     // when wrapping an in-progress edit
-    pub fetched_at: Option<Timestamp>,
+    pub fetched_at: Option<SystemTime>,
 }
 
+#[non_exhaustive]
 pub enum RowStatus {
     Fresh,
-    Stale,
-    Loading,
+    Incomplete,
     PendingWrite,
     WriteFailed { error: String },
-    NotFound,
+    LoadFailed { error: String },
 }
 ```
 
 `EnrichedRecord` is what Sceneries hand to UI code. It preserves the underlying
-`Record<CborValue>` and layers metadata on top. The `dirty_fields` slot
-supports form-edit scenarios where only some columns have unsaved changes.
+`Record<CborValue>` and layers metadata on top.
 
 For non-Scenery contexts (CLI, business logic via `dio.cached()`), bare
 `Record<CborValue>` flows through unchanged — the enrichment is Scenery-only.

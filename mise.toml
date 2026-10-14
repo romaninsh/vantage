@@ -5,3 +5,10 @@ aws = { version = "latest", symlink_bins = "true" }
 [tasks.api-snapshot]
 description = "Regenerate the public-API snapshots in api/"
 run = "api/snapshot.sh"
+
+# Debug builds with debuginfo leave each relink's object files in target/debug/deps
+# (macOS split-debuginfo = "unpacked"); thousands of them slow every rustc's startup.
+# [profile.dev] debug = false stops that; this clears leftovers. Run by hand, not per build.
+[tasks.sweep]
+description = "Delete leftover .rcgu.o objects in target/ older than an hour"
+run = "find target -path '*/debug/deps/*.rcgu.o' -mmin +60 -delete"

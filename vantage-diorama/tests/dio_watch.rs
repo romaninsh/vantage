@@ -236,8 +236,10 @@ async fn a_failed_recovery_reread_publishes_refresh_failed() -> Result<()> {
     let shell = master();
     shell.set_fail_reads(true);
     let capabilities = shell.capabilities().with(Capability::Subscribe);
-    let vista = Vista::new("shipment", shell)
-        .map_shell(|inner| InvalidatingShell { inner, capabilities });
+    let vista = Vista::new("shipment", shell).map_shell(|inner| InvalidatingShell {
+        inner,
+        capabilities,
+    });
     let lens = Lens::builder().cache(Cache::memory()).build()?;
     let dio = lens.dio(vista).live().build().await?;
     let mut bus = dio.subscribe_events();

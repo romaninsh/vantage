@@ -3,6 +3,7 @@ pub mod conditions;
 pub mod expr;
 pub mod pagination;
 pub mod refereces;
+mod search_columns;
 pub mod selectable;
 pub mod sorting;
 pub mod spec;
