@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "1.2.1"
+version = "2.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -12,7 +12,7 @@ doctest = false
 [dependencies]
 vantage-core = { version = "1.1.0", path = "../vantage-core" }
 vantage-types = { version = "1.0.0", path = "../vantage-types" }
-vantage-dataset = { version = "1.1.0", path = "../vantage-dataset" }
+vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = { version = "2.14", features = ["serde"] }
 async-stream = "0.3"
@@ -21,7 +21,7 @@ futures-core = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
-vantage-rhai = { version = "1.0.0", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "1.1.0", path = "../vantage-rhai", optional = true }
 # The agent-tool runners (`run_script`, `preview_script`) answer in JSON.
 serde_json = { version = "1", optional = true }
 # `sync` for the semaphore that gates a mock's `get`. The `rhai` feature adds
@@ -57,7 +57,7 @@ mocks = ["dep:tokio"]
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync", "time"] }
-vantage-dataset = { version = "1.1.0", path = "../vantage-dataset", features = ["contract"] }
+vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }
 serde_json = "1"
 # Memory-backed Vistas for the script vocabulary tests. Integration tests only:
 # vantage-memory depends on this crate, so unit tests would see two copies.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.4 — 2026-10-14
+
+- Vista CLI follows the Vista 2.0 API.
+
 ## 0.6.3 — 2026-10-04
 
 - Error messages carry context fields instead of formatted text.

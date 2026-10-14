@@ -61,7 +61,9 @@ impl Handle {
         }
     }
 
-    pub(crate) fn with_resolver(mut self, resolver: Arc<dyn VistaResolver>) -> Self {
+    /// The resolver a named base goes through when a caller resolves without
+    /// one. A [`RecordDraft`](super::RecordDraft) reads and writes through it.
+    pub fn with_resolver(mut self, resolver: Arc<dyn VistaResolver>) -> Self {
         self.resolver = Some(resolver);
         self
     }

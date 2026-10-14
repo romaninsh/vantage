@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2 — 2026-10-14
+
+- Requires vantage-table 2.0.0, vantage-expressions 1.2.0 and vantage-dataset 1.1.2.
+
 ## 0.7.1 — 2026-10-07
 
 - `Redb::execute` builds on `vantage_expressions::execute_strict`; its errors name the backend in a `backend` context key.

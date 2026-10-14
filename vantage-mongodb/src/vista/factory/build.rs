@@ -1,6 +1,8 @@
 //! Spec → `Table<MongoDB, EmptyEntity>`: the collection, its pipeline view,
 //! columns, references, joined (dotted) columns and contained relations.
 
+use std::sync::Arc;
+
 use bson::Document;
 use vantage_core::{Context, Result, error};
 use vantage_table::column::core::Column as TableColumn;
@@ -15,13 +17,13 @@ use crate::types::AnyMongoType;
 use crate::vista::spec::{MongoBlock, MongoVistaSpec};
 
 /// Build a `Table<MongoDB, EmptyEntity>` from a spec. A spec without columns
-/// still gets an `_id` column, so the table knows its key. Each `references:`
-/// entry rebuilds its target through `resolver` at traversal time (see
+/// still gets an `_id` column, so the table knows its key. Each reference the
+/// spec declares rebuilds its target through `resolver` at traversal time (see
 /// `Table::with_spec_references`).
 pub(crate) fn build_mongo_table(
     spec: &MongoVistaSpec,
     db: MongoDB,
-    resolver: Option<SpecResolver<MongoVistaSpec>>,
+    resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
 ) -> Result<Table<MongoDB, EmptyEntity>> {
     let block = spec.driver.mongo.as_ref();
     let collection = block
@@ -56,7 +58,7 @@ pub(crate) fn build_mongo_table(
         table.add_spec_columns(&spec.columns, build_column)?;
         table.set_spec_id_field(&spec.resolve_id_column("_id"))?;
     }
-    let mut table = table.with_spec_references(&spec.references, resolver, build_mongo_table)?;
+    let mut table = table.with_spec_references(spec, resolver, build_mongo_table)?;
     // A dotted column name is a join through `has_one` references, which
     // must be declared first; resolving the chains now turns a broken one
     // into a build-time error.

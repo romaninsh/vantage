@@ -11,7 +11,9 @@ use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
 use vantage_sql::sqlite::SqliteDB;
 use vantage_sql::sqlite::vista::SqliteVistaSpec;
-use vantage_vista::{Catalog, SpecResolver, Vista, VistaFactory, VistaResolver};
+use vantage_vista::{
+    Catalog, JoinKey, ReferenceKind, SpecResolver, Vista, VistaFactory, VistaResolver,
+};
 
 use super::vista::{clients_table, orders_table, setup_clients_orders};
 
@@ -61,13 +63,36 @@ columns:
     )?;
     let specs: Arc<IndexMap<String, SqliteVistaSpec>> =
         Arc::new([("order_book".to_string(), order_book)].into());
-    let resolver: SpecResolver<SqliteVistaSpec> = Arc::new(move |n: &str| specs.get(n).cloned());
+    let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
+        Arc::new(move |n: &str| specs.get(n).cloned());
 
     let clients = db
         .vista_factory()
         .with_resolver(resolver)
         .build_from_spec(client)?;
     assert_eq!(clients.references()["orders"].target, "order_book");
+    Ok(())
+}
+
+/// A column-level `references:` is a has-one named after its column, keyed
+/// by that column, and targets the spec name it gives.
+#[tokio::test]
+async fn column_references_reach_the_metadata_as_has_one() -> TestResult {
+    let db = setup_clients_orders().await;
+    let orders: SqliteVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: orders
+columns:
+  id: { type: string, flags: [id] }
+  client_id: { type: string, references: client }
+"#,
+    )?;
+
+    let orders = db.vista_factory().build_from_spec(orders)?;
+    let reference = &orders.references()["client_id"];
+    assert_eq!(reference.kind, ReferenceKind::HasOne);
+    assert_eq!(reference.target, "client");
+    assert_eq!(reference.keys, [JoinKey::to_target_id("client_id")]);
     Ok(())
 }
 

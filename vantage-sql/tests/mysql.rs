@@ -7,6 +7,11 @@ mod safe_writes_contract;
 #[path = "common/dotted.rs"]
 mod dotted;
 
+#[cfg(all(feature = "mysql", feature = "vista"))]
+#[macro_use]
+#[path = "common/vista.rs"]
+mod vista_suite;
+
 #[cfg(feature = "mysql")]
 mod mysql {
     /// True when the server under test is MariaDB rather than MySQL — for

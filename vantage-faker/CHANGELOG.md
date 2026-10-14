@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.0 — 2026-10-14
+
+- Vista 2.0: breaking API changes; see the migration guide (phase 5).
+- The ShapedShell preview note no longer names the driver.
+
 ## 1.2.0 — 2026-10-07
 
 - **Breaking:** `TableSpec.count` is `Option<usize>`. Unset now resolves to the dataset's `count`, then 20, where it used to mean 0 rows; write `count: 0` for an empty table.

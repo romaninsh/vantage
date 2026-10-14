@@ -70,7 +70,9 @@ async fn seed_v2_like(
     Ok(())
 }
 
-fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SpecResolver<SurrealVistaSpec> {
+fn registry_resolver(
+    specs: Vec<(String, SurrealVistaSpec)>,
+) -> Arc<dyn SpecResolver<SurrealVistaSpec>> {
     let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
     let map = Arc::new(map);
     Arc::new(move |name: &str| map.get(name).cloned())

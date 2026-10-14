@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 — 2026-10-14
+
+- `Namespace`, a builder for registering a named module of functions and variables on an engine.
+
 ## 1.0.1 — 2026-10-05
 
 - The `invalidation` example uses `AtomicU64::try_update` (Rust 1.99 deprecates `fetch_update`).

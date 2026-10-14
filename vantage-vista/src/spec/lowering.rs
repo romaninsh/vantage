@@ -8,9 +8,19 @@ use super::{ColumnSpec, ReferenceSpec, VistaSpec};
 use crate::column::ColumnFlag;
 use crate::reference::{JoinKey, Reference, ReferenceKind};
 
-/// Looks up a spec by vista name. Factories hand clones into each reference
-/// so a child table is rebuilt from the current spec at traversal time.
-pub type SpecResolver<S> = Arc<dyn Fn(&str) -> Option<S> + Send + Sync>;
+/// Looks up a spec by vista name. Factories hold it as
+/// `Arc<dyn SpecResolver<S>>` and hand clones into each reference, so a child
+/// table is rebuilt from the current spec at traversal time. Any
+/// `Fn(&str) -> Option<S>` closure is a resolver.
+pub trait SpecResolver<S>: Send + Sync {
+    fn resolve(&self, name: &str) -> Option<S>;
+}
+
+impl<S, F: Fn(&str) -> Option<S> + Send + Sync> SpecResolver<S> for F {
+    fn resolve(&self, name: &str) -> Option<S> {
+        self(name)
+    }
+}
 
 impl<T, C, R> VistaSpec<T, C, R> {
     /// The id column: `id_column:`, else the first column flagged `id`, else
@@ -76,17 +86,18 @@ impl<R> ReferenceSpec<R> {
 /// Resolve the spec a `base:` vista derives from. Errors when no resolver is
 /// attached or the base isn't known to it.
 pub fn resolve_base_spec<S>(
-    resolver: Option<SpecResolver<S>>,
+    resolver: Option<Arc<dyn SpecResolver<S>>>,
     base: &str,
-) -> Result<(SpecResolver<S>, S)> {
+) -> Result<(Arc<dyn SpecResolver<S>>, S)> {
     let resolver = resolver.ok_or_else(|| {
         error!(
             "vista declares `base:` but no spec resolver is attached to the factory",
             base = base
         )
     })?;
-    let spec =
-        resolver(base).ok_or_else(|| error!("base vista not found via resolver", base = base))?;
+    let spec = resolver
+        .resolve(base)
+        .ok_or_else(|| error!("base vista not found via resolver", base = base))?;
     Ok((resolver, spec))
 }
 
@@ -166,10 +177,10 @@ mod tests {
 
     #[test]
     fn base_spec_needs_a_resolver_that_knows_it() {
-        let none: Option<SpecResolver<u8>> = None;
+        let none: Option<Arc<dyn SpecResolver<u8>>> = None;
         assert!(resolve_base_spec(none, "b").is_err());
 
-        let resolver: SpecResolver<u8> = Arc::new(|name| (name == "b").then_some(7));
+        let resolver: Arc<dyn SpecResolver<u8>> = Arc::new(|name: &str| (name == "b").then_some(7));
         assert!(resolve_base_spec(Some(resolver.clone()), "c").is_err());
         assert_eq!(resolve_base_spec(Some(resolver), "b").unwrap().1, 7);
     }

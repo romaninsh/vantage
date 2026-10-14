@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2 — 2026-10-14
+
+- `ImTable` is `Clone` without requiring `E: Clone`.
+
 ## 1.1.1 — 2026-10-07
 
 - `ImTable` and `MockCsv` errors carry details as context keys; a missing record or file is marked not-found.

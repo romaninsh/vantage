@@ -24,37 +24,22 @@ pub use contained::ContainedRelation;
 pub use many::HasMany;
 pub use one::HasOne;
 
-/// How many target records a join between two tables yields. Contained
-/// relations are [`ContainedRelation`]s, not joins, so they have no
-/// cardinality here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Cardinality {
-    /// At most one record: the foreign key lives on the source.
-    HasOne,
-    /// Any number of records: the foreign key lives on the target.
-    HasMany,
-}
-
-impl From<Cardinality> for vantage_vista::ReferenceKind {
-    fn from(cardinality: Cardinality) -> Self {
-        match cardinality {
-            Cardinality::HasOne => vantage_vista::ReferenceKind::HasOne,
-            Cardinality::HasMany => vantage_vista::ReferenceKind::HasMany,
-        }
-    }
-}
-
 /// Describes a relationship between two tables.
 pub trait Reference: Send + Sync {
     /// Given source and target id field names, return (source_column, target_column).
     fn columns(&self, source_id: &str, target_id: &str) -> (String, String);
 
-    /// The foreign-key column carried by this relation. For `HasOne` it names a
-    /// column on the *source* table (set to the related row's id after the
-    /// related row is inserted); for `HasMany` it names a column on the *target*
-    /// table (set to the parent's id when inserting each child). Drives nested
-    /// insert at the Vista layer.
-    fn foreign_key(&self) -> &str;
+    /// This relation as Vista metadata: a join named `name` onto `target`.
+    /// `source_id` is the source column a `has_many` reads its join value
+    /// from; a `has_one` ignores it and constrains the target's id column,
+    /// resolved at traversal. Only joins implement this trait, so the result
+    /// is never a contained kind.
+    fn vista_reference(
+        &self,
+        name: &str,
+        target: String,
+        source_id: &str,
+    ) -> vantage_vista::Reference;
 
     /// Produce a fresh target table (no conditions applied), wrapped in
     /// `Box<dyn Any>` so callers can downcast back to the concrete
@@ -69,11 +54,6 @@ pub trait Reference: Send + Sync {
     /// the caller need not know the concrete target entity type — used by
     /// implicit-reference traversal, which walks relations by name.
     fn build_target_erased(&self, data_source: &dyn Any) -> Box<dyn Any>;
-
-    /// How many records traversing this relation yields. Surfaced through
-    /// `Vista::references` so CLIs and UIs can pick a record card or a
-    /// list grid.
-    fn cardinality(&self) -> Cardinality;
 
     /// Resolve traversal using a known source row. Returns the target table
     /// (entity type erased to `EmptyEntity`) wrapped in `Box<dyn Any>`, with

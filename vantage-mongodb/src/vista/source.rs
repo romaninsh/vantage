@@ -11,6 +11,7 @@
 //! shares the client.
 
 use std::str::FromStr;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -62,7 +63,7 @@ pub struct MongoTableShell {
     /// `from_table` paths without columns).
     pub(crate) column_paths: IndexMap<String, Vec<String>>,
     /// Spec resolver handed to the factories that build traversal targets.
-    pub(crate) resolver: Option<SpecResolver<MongoVistaSpec>>,
+    pub(crate) resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
     /// Handle for the active quicksearch condition, removed when the search
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
@@ -87,7 +88,7 @@ impl MongoTableShell {
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
         column_paths: IndexMap<String, Vec<String>>,
-        resolver: Option<SpecResolver<MongoVistaSpec>>,
+        resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
         search_unflagged_columns: bool,
         change_streams: Option<bool>,
     ) -> Self {

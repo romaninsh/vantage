@@ -106,7 +106,7 @@ impl TableShell for ContainedShell {
     /// Conditions evaluate against the record's own cells, so only columns
     /// the contained schema declares can narrow. A dotted path into a
     /// declared column is refused with
-    /// [`condition_column_error`](crate::condition_column_error), for the
+    /// [`condition_column_error`], for the
     /// caller to evaluate; any other undeclared column is an error.
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         if !self.schema.columns.contains_key(&condition.column) {

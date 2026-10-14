@@ -157,11 +157,8 @@ impl TableShell for CmdTableShell {
             .references
             .get(relation)
             .ok_or_else(|| unknown_relation(relation))?;
-        let target = self.table.get_ref_target_erased(relation)?;
-        let target = CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)?;
-        match row {
-            Some(row) => reference.narrow(target, row),
-            None => Ok(target),
-        }
+        self.table.traverse_erased(reference, row, |target| {
+            CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)
+        })
     }
 }

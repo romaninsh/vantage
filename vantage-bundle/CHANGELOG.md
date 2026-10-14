@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 — 2026-10-14
+
+- Requires vantage-vista 2.0.0.
+
 ## 0.6.1 — 2026-10-03
 
 - Depends on `vantage-core` 1.0.0, `vantage-vista` 1.0.0, `vantage-action` 0.6.1.

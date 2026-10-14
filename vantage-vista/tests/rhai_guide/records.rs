@@ -129,8 +129,7 @@ fn row_without_table() {
     let no_table: Arc<dyn VistaResolver> =
         Arc::new(|_: &str| Ok(Vista::new("row", MockShell::new())));
     let row = RecordDraft::from_row(
-        Handle::named("row"),
-        Some(no_table),
+        Handle::named("row").with_resolver(no_table),
         Writes::Denied("this row is read-only".into()),
         "o1".into(),
         values,

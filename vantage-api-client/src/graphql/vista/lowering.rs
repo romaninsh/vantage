@@ -1,6 +1,7 @@
 //! Lowering a [`GraphqlApiVistaSpec`] onto a `Table<GraphqlApi, EmptyEntity>`:
 //! the spec's `graphql:` block applied to the API, its columns typed, and its
-//! `references:` registered through `Table::with_spec_references`.
+//! references (`references:` entries and column-level `references:`)
+//! registered through `Table::with_spec_references`.
 //!
 //! A reference target is rebuilt at traversal time from its own spec. The
 //! traversal hands the build the *parent's* `GraphqlApi`, which carries the
@@ -30,15 +31,15 @@ pub(crate) struct TargetSpec {
     pub(crate) api: GraphqlApi,
 }
 
-pub(crate) type TargetSpecResolver = SpecResolver<TargetSpec>;
+pub(crate) type TargetSpecResolver = Arc<dyn SpecResolver<TargetSpec>>;
 
 /// Pair every spec `specs` resolves with `api`.
 pub(crate) fn target_resolver(
     api: GraphqlApi,
-    specs: SpecResolver<GraphqlApiVistaSpec>,
+    specs: Arc<dyn SpecResolver<GraphqlApiVistaSpec>>,
 ) -> TargetSpecResolver {
     Arc::new(move |name: &str| {
-        specs(name).map(|spec| TargetSpec {
+        specs.resolve(name).map(|spec| TargetSpec {
             spec,
             api: api.clone(),
         })
@@ -76,7 +77,7 @@ pub(crate) fn build_table(
     let mut table = Table::<GraphqlApi, EmptyEntity>::new(root_field, api);
     table.add_spec_columns(&spec.columns, build_column)?;
     table.set_spec_id_field(&spec.resolve_id_column("id"))?;
-    table.with_spec_references(&spec.references, resolver, build_target_table)
+    table.with_spec_references(spec, resolver, build_target_table)
 }
 
 /// The `with_spec_references` builder. The parent's API is ignored in favour
