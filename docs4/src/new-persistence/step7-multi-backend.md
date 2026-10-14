@@ -19,9 +19,31 @@ what makes it possible to write generic UI, CLI, or API code that doesn't care w
 behind it:
 
 ```rust
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone)]
+# struct Product {
+#     name: String,
+#     price: i64,
+# }
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite::memory:").await?;
 // Wrap any typed Table<Driver, Entity> as a backend-agnostic Vista:
-let products = Product::sqlite_table(db).vista_factory().from_table(Product::sqlite_table(db));
+let products = db.vista_factory().from_table(Product::sqlite_table(db.clone()))?;
 // (or surreal/csv/mongo — the call site is identical)
+# Ok(())
+# }
 ```
 
 Erasure works because each driver's vista factory bridges its native `AnyType` to the CBOR value

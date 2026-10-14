@@ -1,543 +1,561 @@
 # Diorama Architecture
 
-This document describes the internal structure of `vantage-diorama` — the
-trait surfaces, the type relationships, the concurrency model, and the rules
-that govern how callbacks fire and capabilities propagate. It's the reference
-for anyone maintaining the crate or writing adapters that plug into it.
+This describes the inside of `vantage-diorama`: the types behind the public
+surface, how they own each other, the tasks they run and the rules that keep
+a view's rows honest. It is for maintainers and for authors of adapters and
+loaders. The role READMEs ([README_lens.md](README_lens.md),
+[README_ui.md](README_ui.md) and the rest) cover the public surface;
+[README_rust_dev.md](README_rust_dev.md) covers the module map, features and
+tests.
 
-The role-specific READMEs (`README_lens.md`, `README_ui.md`, etc.) cover the
-public-facing surface. This file covers the rest.
+## Layers
 
-## Layer diagram
-
-```
-+----------------------------------------------------------+
-|                       Application                        |
-|                                                          |
-|  vista() — snapshot reads/writes   scenery() — reactive  |
-+----------------------------------------------------------+
-                  ▲                          ▲
-                  │                          │
-+----------------------------------------------------------+
-|                          Dio                             |
-|                                                          |
-|  master: Vista (low-cap)  cache: Arc<dyn CacheTable>     |
-|  write queue (mpsc)       event bus (broadcast)          |
-|  refresh task                                            |
-+----------------------------------------------------------+
-                            ▲
-                            │
-+----------------------------------------------------------+
-|                          Lens                            |
-|                                                          |
-|  cache_source: Arc<dyn TableSource>   (redb default)     |
-|  callbacks: Arc<LensCallbacks>        (HRTB async)       |
-|  default policies (TTL, retries, refresh interval)       |
-|  runtime: tokio::Handle                                  |
-+----------------------------------------------------------+
-                            ▲
-                            │
-+----------------------------------------------------------+
-|                    Storage / Network                     |
-|                                                          |
-|  redb file       moka hot tier      remote Vistas        |
-+----------------------------------------------------------+
+```text
++--------------------------------------------------------------------+
+|                            Application                             |
+|  dio.cached(): Vista      sceneries: Table / Record / Value  Servo |
++--------------------------------------------------------------------+
+                 |                        |
++--------------------------------------------------------------------+
+|                                Dio                                 |
+|  master (narrowed Vista)   residual   cache table   event bus      |
+|  write queue + worker      shared-rows registry     open views     |
+|  augment scheduler         query indexes            live follow    |
++--------------------------------------------------------------------+
+                 |
++--------------------------------------------------------------------+
+|                                Lens                                |
+|  cache backend   loader   refresher   writer   tuning   runtime    |
+|  registry of live Dios                debug tap                    |
++--------------------------------------------------------------------+
+                 |
++--------------------------------------------------------------------+
+|        redb file / memory          master Vistas (any driver)      |
++--------------------------------------------------------------------+
 ```
 
-A single `Lens` is shared by many `Dio`s. A single `Dio` produces many
-short-lived `Vista` and `Scenery` handles. Storage is shared at the `Lens`
-level (one redb file backs all Dios under that Lens).
+One Lens serves many Dios, and one cache backend backs them all: each Dio
+claims one named table in it. A Dio produces facades, sceneries and servos,
+which are cheap to open and cheap to drop.
 
 ## Lens
 
-A Lens is configured once and built into an immutable handle. After build, the
-Lens accepts `make_dio(vista)` calls and never mutates its own configuration.
+A Lens is built once with `Lens::builder()` and is immutable after
+`build()`, which validates the parts and returns `Arc<Lens>`:
 
 ```rust
 pub struct Lens {
-    cache_source: Arc<dyn TableSource>,
-    callbacks: Arc<LensCallbacks>,
-    defaults: LensDefaults,
-    runtime: tokio::runtime::Handle,
-}
-
-pub struct LensBuilder {
-    cache_source:    Option<Arc<dyn TableSource>>,
-    on_start:        Option<DioCallback>,
-    on_refresh:      Option<DioCallback>,
-    on_write:        Option<DioWriteCallback>,
-    on_event:        Option<DioEventCallback>,
-    on_query:        Option<DioQueryCallback>,
-    total_provider:  Option<DioTotalProviderCallback>,  // TableScenery: one-shot row-count probe
-    on_load_chunk:   Option<DioLoadChunkCallback>,      // TableScenery: paged fetch
-    defaults: LensDefaults,
-}
-
-pub struct LensDefaults {
-    pub refresh_interval: Option<Duration>,
-    pub cache_ttl: Option<Duration>,
-    pub write_queue_capacity: usize,         // default 256
-    pub on_start_blocking: bool,             // default true — block make_dio until on_start completes
-    pub refresh_on_open: bool,               // default true — scenery fires initial set_viewport at open
-    pub viewport_debounce: Duration,         // default 50ms — coalesces rapid set_viewport calls
+    pub(crate) cache: Arc<dyn CacheBackend>,
+    pub(crate) callbacks: LensCallbacks,   // loader, refresher, writer
+    tuning: Tuning,
+    pub(crate) runtime: Handle,
+    pub(crate) debug: DebugTap,
+    pub(crate) dios: DioRegistry,
 }
 ```
 
-### Callback signatures
+The builder takes:
 
-Callbacks borrow `&Dio` and return a future that may borrow from it. This is
-the HRTB pattern; the closure itself is `'static` but the returned future is
-not. Storing many different closures with this shape requires boxing.
+- `cache(Cache)`: `Cache::redb(path)`, `Cache::memory()` or
+  `Cache::backend(arc)` for any `CacheBackend`.
+- `loader(Loader)`: how a Dio's cache is filled. `Loader::eager(start)`
+  copies the whole set once per Dio, awaited by the build unless
+  `.blocking(false)`. `Loader::paged(chunk)` fetches the windows views ask
+  for. `Loader::paged(..).or_eager(..)` pages a master that advertises
+  `Window` and copies one that doesn't. No loader means the cache is all
+  there is.
+- `refresher(Refresher)`: `Refresher::new(f)`, with `.every(interval)` for a
+  timer and `.max_age(ttl)` to refresh a cache found too old at build or at
+  open.
+- `writer(f)`: where flashes go instead of the master. A writer lifts the
+  Dio's write capabilities to all three.
+- `tuning(Tuning)`: `write_queue` (256), `viewport_debounce` (50 ms),
+  `augment_workers` (1), `refresh_on_open` (true), `aggregate_debounce`
+  (250 ms).
+- `runtime(handle)`, and `debug_datasource(name)` with `diagnostics`.
+
+### Callbacks
+
+Every callback receives an owned `LoaderCx` and returns a `'static` future:
 
 ```rust
-pub type DioCallback = Box<
-    dyn for<'a> Fn(&'a Dio) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
-    + Send + Sync,
->;
-
-pub type DioWriteCallback = Box<
-    dyn for<'a> Fn(&'a Dio, WriteOp) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
-    + Send + Sync,
->;
-
-pub type DioEventCallback = Box<
-    dyn for<'a> Fn(&'a Dio, ChangeEvent) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
-    + Send + Sync,
->;
-
-pub type DioQueryCallback = Box<
-    dyn for<'a> Fn(&'a Dio, QueryDescriptor) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
-    + Send + Sync,
->;
-
-pub type DioTotalProviderCallback = Box<
-    dyn for<'a> Fn(&'a Dio) -> Pin<Box<dyn Future<Output = Result<usize>> + Send + 'a>>
-    + Send + Sync,
->;
-
-pub type DioLoadChunkCallback = Box<
-    dyn for<'a> Fn(&'a Dio, Range<usize>, ChunkSink) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
-    + Send + Sync,
->;
+type CxFn    = Box<dyn Fn(LoaderCx) -> BoxFuture<()> + Send + Sync>;
+type ChunkFn = Box<dyn Fn(LoaderCx, Range<usize>, VistaQuery, ChunkSink) -> BoxFuture<()> + Send + Sync>;
+type WriteFn = Box<dyn Fn(LoaderCx, ChangeFlash) -> BoxFuture<FlashOutcome> + Send + Sync>;
 ```
 
-A `LensBuilder::on_start(F)` accepts any `F: for<'a> Fn(&'a Dio) -> Fut + …`
-where `Fut: Future<Output = Result<()>> + Send + 'a` and wraps it into the
-boxed shape above. The `total_provider` and `on_load_chunk` setters
-follow the same pattern, with different `Fut` output types — `usize`
-and `()` respectively.
+`LoaderCx` is the Dio a callback serves: `master()`, `cache()`, `fetch(window,
+query)` and `reconcile(snapshot)`. It takes a settle mark when it is handed
+out, so a `reconcile` through it skips rows whose flash settled after the
+callback began listing; `Dio::reconcile` can't know when a snapshot was taken
+and assumes "now".
 
-`ChunkSink::push(idx, id, record).await` is the only way for an
-`on_load_chunk` callback to deliver rows to the calling Scenery. It
-writes the row to the cache and inserts it into the sparse map.
-Cheap to clone; safe to call from anywhere inside the callback
-future. Returns `Err` if the originating Scenery has dropped — the
-callback should treat that as "give up, the user navigated away".
+### Why an owned context instead of a borrowed `&Dio`?
 
-### Cache backend
+A borrowed Dio makes the callback's future borrow from its argument, which
+needs a higher-ranked closure type that is hard to name and harder to store.
+An owned, cheap-to-clone context makes the future `'static`, so one boxed
+closure serves every Dio of the Lens and the future can be held across awaits.
+It also narrows what a callback can do: there is no way to reach the Dio's
+sceneries or its write queue from a loader, and so no way to flash the Dio it
+is writing for. The writer is refused at runtime too (`writing_for`).
 
-`cache_source` is an [`Arc<dyn CacheBackend>`](src/lens/cache_backend.rs) —
-a narrow trait specific to Diorama (deliberately not `TableSource`: the
-cache is dumb id-keyed storage, no conditions or sorting). The default
-implementation is redb via `.cache_at(path)`; substitute anything that
-implements `CacheBackend` if you want an in-memory store, a remote object
-store, or sqlite. Each Dio under a Lens claims one named `CacheTable`
-within the backend — the name comes from `master.name()`.
+### The registry of live Dios
+
+`lens.dio(vista).build()` first looks in `Lens::dios`. A Dio with the same
+cache identity, the same augmentations `Arc` and the same `live` setting that
+some holder still keeps is returned as it is, after a `max_age` check. The
+registry holds `Weak`s: once every holder drops, the next build makes a new
+Dio.
+
+### Cache backend and cache identity
+
+`CacheBackend` opens named `CacheTable`s; a `CacheTable` is deliberately
+narrow: id-keyed rows with a `CacheStatus` (`Complete` or `Incomplete`), bulk
+writes, a count, and three meta values. It has no conditions, sorting or
+search. Query planning lives on the Dio side.
+
+A Dio's table name is its cache identity: the vista's name, or
+`name?<query key>` when the master's applied query plus the residual narrows
+or orders it. Two Dios share a table only when their queries are the same.
+Control characters, `%` and a `?` in the name are percent-encoded, so no
+narrowed table can pass for another vista's.
+
+### What persists
+
+The redb backend stores each row as a status tag byte followed by the CBOR
+record, and each table's meta in a sibling table:
+
+- the grand total a fetch last stated, so a reopened paged view sizes itself
+  before its first fetch (`ViewCount::Estimated` until restated);
+- when the table was last refreshed, for `Refresher::max_age` across
+  restarts;
+- when the table last became a whole copy of the set, so a view can serve the
+  whole set from the cache.
+
+Row positions are not persisted. A view re-derives them when it opens: an
+eager view reseeds from the cache in its order, a paged view refetches its
+first window, and a two-pass view re-lists its index, from the whole copy when
+the cache holds one and from the master otherwise. The persisted
+`CacheStatus` is what lets a two-pass view resume hydration across a restart
+instead of fetching every row's detail again.
 
 ## Dio
 
 ```rust
 pub struct Dio {
-    inner: Arc<DioInner>,
+    pub(crate) inner: Arc<DioInner>,
 }
 
-struct DioInner {
+pub(crate) struct DioInner {
     lens: Arc<Lens>,
-    master: Vista,
-    cache: Arc<dyn CacheTable>,                // opened from lens.cache_source
-    cache_table_name: String,
-    write_queue: mpsc::Sender<WriteOp>,
+    master: Vista,                 // narrowed by every clause it accepted
+    residual: VistaQuery,          // clauses the master refused
+    query: VistaQuery,             // master's query + residual; its key is the cache identity
+    cache: Arc<dyn CacheTable>,
+    write_queue: mpsc::Sender<QueuedFlash>,
     event_bus: broadcast::Sender<DioEvent>,
-    refresh_task: Mutex<Option<JoinHandle<()>>>,
-    write_worker: Mutex<Option<JoinHandle<()>>>,
-    hot_tier: Arc<HotTier>,                    // reserved slot; not active in v1
+    pending_flashes: Arc<PendingFlashes>,
+    shared_rows: Mutex<HashMap<String, Weak<SharedRows>>>,
+    table_views: Mutex<Vec<Weak<TableView>>>,
+    query_indexes: Mutex<HashMap<String, Arc<QueryIndex>>>,
+    augmentations: Option<Arc<Vec<Augmentation>>>,
+    augment_scheduler: Arc<AugmentScheduler>,
+    detail_state: Mutex<HashMap<String, DetailState>>,
+    seed_complete: AtomicBool,
+    // … refresh and worker handles, live-follow cancel, census counters
 }
 ```
 
-`Dio` is `Clone` (cheap — clones the `Arc`). Sceneries hold `Arc<DioInner>`
-indirectly through their own state. The `Arc` keeps all per-Dio infrastructure
-alive as long as any handle outlives the original `Dio`.
+`Dio` is `Clone` and cheap: every clone shares the inner state. It lives until
+its last strong holder drops: `Dio` clones, a `Servo`, a facade from
+`cached()`, or a queued flash still landing. Sceneries hold it weakly. A built
+Dio never changes; `derive()` builds a narrowed one, and `get_ref` /
+`get_ref_target` build Dios over related rows on the same Lens.
 
-### Lifecycle
+### Building
 
-1. `lens.make_dio(vista)` constructs `DioInner` with empty queues, the master
-   vista, and a fresh cache vista pointing at the lens's `cache_source` with
-   table `vista.name()`.
-2. The Lens spawns the write worker task and the refresh task.
-3. If `on_start` is registered, the lens fires it. By default `make_dio`
-   awaits the callback (`on_start_blocking = true`); set `false` to make it
-   fire-and-forget.
-4. The Dio is returned. Callers can immediately call `.cached()`, `.scenery()`.
+`DioBuilder::build` resolves the id column (a Vista without one fails), the
+query and the cache identity, checks the registry, and otherwise spawns:
 
-### Dio public surface
+1. Open the cache table and build `DioInner`.
+2. Spawn the write worker and, with `Refresher::every`, the refresh timer.
+3. On an augmented Dio, start the augment worker pool.
+4. With `live()`, subscribe to the master's change stream before any copy.
+5. Run the eager start when the loader has one for this master: awaited, or
+   detached with `seed_complete` false until it lands and announces `Seeded`.
+   Otherwise request a refresh if the cache is older than `max_age`.
+6. Start the live follow, applying changes made during the copy over it.
+7. Register the Dio in the Lens's registry.
+
+### Surface
 
 ```rust
 impl Dio {
-    pub fn cached(&self) -> Vista { /* DioShell-backed */ }
-    pub fn table_scenery(&self) -> TableSceneryBuilder { /* ... */ }
-    pub fn record_scenery(&self, id: impl Into<String>) -> RecordSceneryBuilder { /* .sugar/.seed/.load_on_miss/.open */ }
+    // Views
+    pub fn cached(&self) -> Vista;
+    pub fn table_scenery(&self) -> TableSceneryBuilder;
+    pub fn record_scenery(&self, id: impl Into<String>) -> RecordSceneryBuilder;
     pub fn value_scenery<A: Aggregation<Output = CborValue>>(&self, agg: A) -> ValueSceneryBuilder<A>;
+    pub async fn aggregate<A: Aggregation<Output = DerivedRows>>(&self, agg: A) -> Result<Dio>;
+    pub async fn servo(&self, id: impl Into<String>) -> Result<Servo>;
+    pub fn servo_new(&self, strategy: IdStrategy) -> Servo;
 
-    pub fn master(&self) -> &Vista { &self.inner.master }
-    pub fn cache(&self) -> &Arc<dyn CacheTable> { &self.inner.cache }
+    // Narrowing and relations
+    pub fn derive(&self) -> DeriveBuilder;
+    pub async fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Dio>;
+    pub async fn get_ref_target(&self, relation: &str) -> Result<Dio>;
+
+    // Data in and out
+    pub async fn flash(&self, flash: ChangeFlash) -> Result<FlashOutcome>;
+    pub async fn apply_change(&self, change: ChangeEvent) -> Result<()>;
+    pub async fn reconcile(&self, snapshot: IndexMap<String, Record<CborValue>>) -> Result<()>;
+    pub async fn refresh(&self) -> Result<()>;
+    pub async fn fetch(&self, window: Range<usize>, query: &VistaQuery) -> Result<Fetched>;
+    pub async fn import_values(&self, rows: IndexMap<String, Record<CborValue>>,
+                               progress: impl FnMut(usize, usize) -> ControlFlow<()> + Send)
+        -> Result<ImportOutcome>;
+
+    // Introspection
+    pub fn master(&self) -> &Vista;
+    pub fn residual(&self) -> &VistaQuery;
+    pub fn id_column(&self) -> &str;
     pub fn subscribe_events(&self) -> broadcast::Receiver<DioEvent>;
-
-    pub async fn refresh(&self) -> Result<()> { /* fires on_refresh */ }
-    pub async fn handle_event(&self, evt: ChangeEvent) -> Result<()> {
-        // dispatches to lens.on_event if registered
-    }
-    pub fn notify_record_changed(&self, id: impl Into<String>) { /* publishes event */ }
-    pub fn notify_dataset_changed(&self) { /* publishes event */ }
-    pub async fn patched(&self, id: impl Into<String>, record: Record<CborValue>) -> Result<()> {
-        // user-driven patch: writes to cache + publishes RecordChanged
-    }
+    pub fn write_capabilities(&self) -> WriteCapabilities;
+    pub fn downgrade(&self) -> WeakDio;
+    pub async fn diagnostics(&self) -> Result<DioDiagnostics>;   // diagnostics
+    pub fn debug_tap(&self) -> DebugTap;                         // diagnostics
 }
 ```
 
-## DioShell — TableShell impl
+`apply_change` is the one door for a single upstream change: `Inserted` and
+`Updated` upsert the cache when they carry the row and publish
+`RecordInserted` / `RecordChanged`; `Deleted` removes it and publishes
+`RecordRemoved`; `Invalidated` refreshes. `reconcile` is the door for a full
+set: rows that differ are written, cached rows absent from the snapshot are
+deleted, rows with a flash in flight are left alone, the refresh and the whole
+copy are stamped, and one `DatasetChanged` is published.
 
-The Vista returned by `dio.cached()` is a plain `vantage_vista::Vista`. Its
-internal `Box<dyn TableShell>` is `DioShell`, which routes reads through the
-cache and writes through the Dio's write queue.
+### Why doesn't `Dio` hand out its cache table?
 
-```rust
-struct DioShell {
-    dio: Arc<DioInner>,
-}
+Because a write to the raw cache table raises no event and ignores a flash in
+flight. Code holding it could make the cache disagree with every open view, or
+overwrite a value the user just saved with a snapshot taken before the save.
+Every write that views must see goes through `flash`, `apply_change` or
+`reconcile`. A loader still writes the table directly through
+`LoaderCx::cache()` during an eager start, because nothing is shown from it
+yet and the start announces `Seeded` when it lands.
 
-impl TableShell for DioShell {
-    async fn list_vista_values(&self, ...) -> Result<Vec<Record<CborValue>>> {
-        // 1. Try cache first.
-        // 2. If lens.callbacks.on_query is registered AND cache is cold for this query,
-        //    fire on_query(dio, descriptor) and re-read cache.
-        // 3. Return rows from cache.
-    }
+## The facade: `DioShell`
 
-    async fn insert_vista_value(&self, record: Record<CborValue>) -> Result<()> {
-        let op = WriteOp::Insert(record);
-        self.dio.write_queue.send(op).await?;
-        Ok(())
-    }
-    // update, delete, replace similarly enqueue.
-    // get_vista_value reads cache, falls through to on_query if registered.
-}
-```
+`dio.cached()` is a plain `Vista` whose `TableShell` is `DioShell`. Its schema
+is the master's with every column marked orderable, and it advertises what it
+answers itself:
 
-### Capability re-derivation
+| Capability | Why |
+|---|---|
+| `Insert`, `Update`, `Delete` | as `Dio::write_capabilities`: the master's, or all three under a Lens writer |
+| `Subscribe` | the event bus backs `watch`, re-evaluated through the handle's narrowing |
+| `Search`, `FilterOps`, `Order` | pushed into the master when it takes them, evaluated over the rows read when it doesn't |
+| `Window` | windowed over the rows read, hydrating augmented gaps first |
+| `ConfineWrites` | every write stays inside the handle's narrowing and the Dio's set |
 
-The capabilities `DioShell` reports are computed from `master.capabilities()`
-combined with `lens.callbacks`:
+Not advertised: `Import` (bulk import is `Dio::import_values`), `Traverse`
+(`Dio::get_ref`), `Cursor` and `NativeConditions`.
 
-| Capability       | Source                                                          |
-|------------------|-----------------------------------------------------------------|
-| `can_insert`     | `master.can_insert() OR on_write is registered`                 |
-| `can_update`     | `master.can_update() OR on_write is registered`                 |
-| `can_delete`     | `master.can_delete() OR on_write is registered`                 |
-| `can_subscribe`  | always `true` (Dio fans out events to Sceneries)                |
-| `can_order`      | `cache.can_order()` — cache table source determines this        |
-| `can_search`     | `cache.can_search()` — same                                     |
-| `can_fetch_page` | `cache.can_fetch_page()` — same                                 |
-| `can_fetch_next` | `cache.can_fetch_next() OR master.can_fetch_next()`             |
+A read plans once. A handle that doesn't narrow reads the cache, with any
+order applied over it, so sorting never changes which rows a handle shows. An
+augmented Dio always reads the cache, because augmented columns exist nowhere
+else. Otherwise the master takes what it can: when it took a condition or the
+search the read goes to the narrowed master, whose answer covers the whole
+set, and refused clauses are evaluated over it. Every read applies the Dio's
+residual on top.
 
-`can_order`/`can_search`/`can_fetch_page` reflect the cache because that's
-what answers the queries. If the master can't sort but redb can (it can, on
-indexed columns), the Dio reports `can_order = true`.
+## Writes
 
-## Write queue and worker
+`Dio::flash` is the one write path, and the facade's writes use it:
 
-The write worker is a single task per Dio. It owns the receiver end of the
-mpsc queue and serializes writes:
+1. **Confine.** The write must stay inside the Dio's set: the residual through
+   the master, the whole query under a Lens writer (which bypasses the master's
+   narrowing). Equality conditions are filled into a record; a record or a
+   patch result outside the set is refused as `Conflict` before anything is
+   staged.
+2. **Stage.** A flash with an id is written to the cache, marked in flight in
+   `PendingFlashes` (so a reconcile skips it), and announced as
+   `WritePending`.
+3. **Queue.** The flash, its pre-image and a strong `Arc<DioInner>` join the
+   write queue. A full queue makes the caller wait for room, which surfaces
+   overload instead of hiding it.
+4. **Write and settle.** One worker per Dio takes one flash at a time, in
+   order, through the writer or the master. A confirmed write publishes
+   `RecordInserted`, `RecordChanged` or `RecordRemoved`; a failed one restores
+   the pre-image and publishes `WriteReverted`. With several flashes on one id
+   in flight, a rollback restores the last confirmed row. An id-less flash that
+   fails publishes `WriteFailed`.
 
-```rust
-async fn write_worker_loop(mut rx: mpsc::Receiver<WriteOp>, dio_inner: Arc<DioInner>) {
-    let dio_handle = Dio { inner: dio_inner };
-    while let Some(op) = rx.recv().await {
-        if let Some(on_write) = &dio_handle.inner.lens.callbacks.on_write {
-            let result = on_write(&dio_handle, op).await;
-            if let Err(e) = result {
-                // log; emit DioEvent::WriteFailed; do not panic
-            }
-        } else {
-            // No on_write registered — default: write to cache and master.
-            default_write(&dio_handle, op).await;
-        }
-    }
-}
-```
-
-Backpressure: the queue has a fixed capacity (`LensDefaults::write_queue_capacity`,
-default 256). Writes past the cap block the caller. This is intentional — it
-surfaces overload rather than hiding it.
+The queued `Arc<DioInner>` is the drain guarantee: dropping the last external
+handle never discards an accepted write. A panicking writer is a failed
+write; the worker carries on. A writer that flashes the Dio it is writing for
+gets an error instead of a deadlock.
 
 ## Event bus
 
-Each Dio owns a `tokio::sync::broadcast` channel that carries `DioEvent`
-notifications. Sceneries subscribe; the Dio publishes.
+Each Dio owns a `broadcast` channel of 64 `DioEvent`s:
 
 ```rust
+#[non_exhaustive]
 pub enum DioEvent {
     RecordChanged { id: String },
     RecordInserted { id: String },
     RecordRemoved { id: String },
-    DatasetChanged,                                       // wholesale: the set of records changed
-    Refreshing,                                           // refresh started
+    DatasetChanged,                     // membership moved: re-derive
+    Seeded,                             // the eager start's whole set is in the cache
+    Refreshing,                         // leading edge of a refresh
     WriteFailed { id: Option<String>, error: String },
-    ViewportChanged { range: Range<usize> },              // TableScenery: viewport committed
-    RangeLoaded { range: Range<usize> },                  // TableScenery: on_load_chunk Ok
-    LoadFailed { range: Range<usize>, error: String },    // TableScenery: on_load_chunk Err
+    WritePending { id: String, kind: FlashKind },
+    WriteReverted { id: String, error: String, kind: FlashKind },
+    ViewportChanged { range: Range<usize> },
+    RangeLoaded { range: Range<usize> },
+    LoadFailed { range: Range<usize>, error: String },
+    RefreshFailed { error: String },    // a live follow's re-read failed
+    RecordLoadFailed { id: String, error: String },
+    Hydrating { pending: usize },       // a facade read is about to hydrate
 }
 ```
 
-The `ViewportChanged` / `RangeLoaded` / `LoadFailed` variants are
-emitted *by* `TableScenery`'s viewport pipeline; the scenery's own
-reactor ignores them on the way back in so it doesn't loop on its
-own output. See [Sceneries](#sceneries) below.
+`ChangeEvent` is the upstream shape (what a LIVE stream or a webhook
+delivers); `DioEvent` is the internal fan-out shape views react to. A
+subscriber that falls more than 64 events behind gets `Lagged`, and a view's
+reactor answers that by re-deriving its whole set, since it can't know what it
+missed. A view's own viewport events are emitted by its loader and ignored by
+its reactor.
 
-Sceneries hold a `broadcast::Receiver<DioEvent>` and react. The Lens itself
-never directly touches Sceneries — all UI updates flow through the event bus.
+## Table views
 
-The user's callbacks can publish into this bus via `dio.notify_record_changed(id)`,
-`dio.notify_dataset_changed()`, `dio.patched(id, record)`. This is how `on_event`
-turns external live-stream events into Scenery updates.
-
-## Sceneries
-
-Three trait shapes:
+A table view is two objects: the `TableView` its caller owns, and the
+`SharedRows` it reads.
 
 ```rust
-pub trait TableScenery: Send + Sync {
-    // Cheap synchronous reads — must be hot-path safe.
-    fn row_count(&self) -> usize;
-    fn has_more(&self) -> bool;
-    fn estimated_total(&self) -> Option<usize>;
-    fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>>;
-
-    // UI-driven hints. Random-access masters (`can_fetch_page`) drive
-    // fetching through `set_viewport`; cursor-only masters
-    // (`can_fetch_next`) drive it through `request_load_more`.
-    fn set_viewport(&self, loaded: Range<usize>, shown: Range<usize>);
-    fn request_load_more(&self);
-    fn refresh_source(&self);
-    fn set_search(&self, text: Option<String>);
-    fn set_order(&self, order: Option<(String, SortDirection)>);
-    fn set_filters(&self, filters: Vec<Condition>);
-
-    // Notification + capability advertisement.
-    fn subscribe(&self) -> watch::Receiver<Generation>;
-    fn master_capabilities(&self) -> &VistaCapabilities;
-}
-
-pub trait RecordScenery: Send + Sync {
-    fn record(&self) -> Option<Arc<EnrichedRecord>>;
-    fn status(&self) -> RecordStatus;
-
-    fn refresh_source(&self);
-    fn subscribe(&self) -> watch::Receiver<Generation>;
-}
-
-pub trait ValueScenery: Send + Sync {
-    fn value(&self) -> Option<CborValue>;
-    fn status(&self) -> ValueStatus;
-
-    fn refresh_source(&self);
-    fn subscribe(&self) -> watch::Receiver<Generation>;
-}
-```
-
-`Generation` is a `u64` that increments on any change. UI adapters bridge the
-`watch::Receiver<Generation>` into their native notification system.
-
-### TableSceneryBuilder
-
-```rust
-pub struct TableSceneryBuilder {
-    dio: Arc<DioInner>,
-    conditions: Vec<Condition>,
-    order: Option<(String, SortDirection)>,
-    search: Option<String>,
-    page_size: usize,                   // default 100 — hint range for request_load_more
-    cap: Option<Cap>,                   // limit(n) or tail(n)
-}
-```
-
-Setters: `.filter(condition)`, `.order(col, dir)`, `.search(q)`, `.limit(n)`, `.tail(n)`,
-`.page_size(n)`, `.open() -> Arc<dyn TableScenery>`.
-
-### Scenery internal state
-
-```rust
-struct TableSceneryState {
-    dio_weak: Weak<DioInner>,         // weak so Sceneries don't pin the Dio
-
-    // Query parameters — mutable through setters on the Scenery.
-    conditions: RwLock<Vec<Condition>>,
-    order: RwLock<Option<(String, SortDirection)>>,
+pub(crate) struct TableView {
+    id: ViewId,
+    dio_weak: Weak<DioInner>,
+    base: Vec<Condition>,                       // builder filters, fixed
+    filters: RwLock<Vec<Condition>>,            // runtime filters
     search: RwLock<Option<String>>,
+    order: RwLock<Option<(String, SortDirection)>>,
+    cap: RwLock<Option<Cap>>,                   // Limit, Tail or FlippedTail
+    shared: RwLock<Arc<SharedRows>>,            // held strongly
+    shown: RwLock<Option<Range<usize>>>,
+    signal: Arc<ViewSignal>,                    // generation + view-stats channels
+    ticket: Option<Arc<AugmentTicket>>,         // two-pass round-robin place
+    repointing: Mutex<()>,
+    // … page size, titles_only, demand, sugared, refusal, census tally
+}
 
-    // Loaded data — sparse, keyed by row index. Whatever's not in the
-    // map is unloaded; row(i) returns None for missing slots.
-    rows: RwLock<BTreeMap<usize, Arc<EnrichedRecord>>>,
+pub(crate) struct SharedRows {
+    key: String,                                // shared_key of `query`
+    query: VistaQuery,                          // fixed at creation
+    rows: RwLock<RowMap>,                       // sparse idx -> row, with status counts
     id_to_idx: RwLock<HashMap<String, usize>>,
-    total: RwLock<Option<usize>>,     // populated by total_provider; drives row_count / estimated_total
-
-    page_size: usize,
-
-    // Notification.
-    generation: AtomicU64,
-    generation_tx: watch::Sender<Generation>,
-
-    // Background-loop wiring.
-    reload_notify: Arc<Notify>,
+    idx_to_id: Mutex<Option<Vec<String>>>,      // splice's reverse index, rebuilt when stale
+    total: RwLock<Option<usize>>,
+    total_kind: RwLock<TotalKind>,              // Exact, Remembered or Horizon
+    views: Mutex<HashMap<ViewId, ViewHook>>,    // attached views, their viewports
     viewport_tx: mpsc::UnboundedSender<ViewportRequest>,
-    load_in_flight: Mutex<Option<Range<usize>>>,
+    serving: RwLock<Serving>,                   // Windows, Cache or Failed
+    index: RwLock<Option<Arc<QueryIndex>>>,     // two-pass only
+    tasks: TaskGuard,                           // reactor, viewport loop, list pass
+    // … settled, placed, paged, two_pass, titles_only, load bookkeeping, debug state
 }
 ```
 
-`open()` runs four steps in order:
+The split puts each piece of state where its owner is. The query, the rows,
+the total and the tasks that keep them current belong to the query, so views
+of one query share them. The clauses, the cap, the shown range and the change
+channels belong to the caller, so a view that re-points keeps its subscribers,
+and two views over one set of rows never see each other's view-only changes.
+`SharedRows` fans each bump out to its attached views through their hooks,
+which hold the signals weakly.
 
-1. If `total_provider` is registered, fire it once and stash the result.
-   This drives `row_count()` and `estimated_total()` for the scenery's
-   lifetime; future `DatasetChanged` events do *not* re-fire it.
-2. Seed the sparse map from `cache.list_values()` in iteration order.
-   Whatever's already in the cache (warm from disk on restart, or
-   freshly written by an `on_start` callback) goes to indices
-   `0..len-1`. Filter / sort / search apply in memory at this step.
-3. Spawn the reactor (consumes the Dio event bus) and the viewport
-   loop (debounces `set_viewport` / `request_load_more`).
-4. If `LensDefaults::refresh_on_open` is true *and* `on_load_chunk`
-   is registered, enqueue an initial `set_viewport(0..page_size)`
-   so the configured callback re-fetches the first page in the
-   background. UIs paint the cache immediately, then repaint when
-   the fresh chunk arrives.
+### The shared-rows registry
 
-The reactor handles single-row and whole-set events but **ignores**
-its own viewport events. v2 starts simple: any `RecordChanged{id}` /
-`RecordInserted{id}` / `RecordRemoved{id}` / `DatasetChanged` /
-`Refreshing` drops the sparse map and re-seeds from
-`cache.list_values()`. The targeted "update one slot by id" path is
-sketched in `TableSceneryState::update_by_id` and reserved for a
-future iteration once cache-vs-master ordering guarantees are
-tightened.
+`DioInner::shared_rows` maps `shared_key(query, titles_only)` (the Dio's cache
+table, the query's order-insensitive key, and the `titles_only` flag) to
+`Weak<SharedRows>`. Page size and demand are view settings and stay out of the
+key. Rows whose last view has left count as gone: the registry never hands
+them back, and `try_attach` refuses them under the same `views` lock that
+`detach` takes, so a view never joins rows whose work was aborted. A sugared
+view's rows are never registered.
+
+### Opening a view
+
+`TableSceneryBuilder::open`:
+
+1. Validates the cap (`limit` with `tail` fails, a `tail` without an order
+   fails), takes the Dio's order when the view has none, and requests a
+   refresh if the cache is older than `max_age`.
+2. Composes the query and its key, and attaches to live rows under that key
+   when there are some: no seed, no fetch.
+3. Otherwise builds `SharedRows::new`, seeds it from the cache, starts its
+   tasks (the reactor, the viewport loop, and on two-pass rows the coalesced
+   reseed), schedules the on-open fetch, and registers it. Losing the
+   registration race to a concurrent open joins the winner's rows; ours drop
+   and abort.
+4. Builds the `TableView`, adds it to the Dio's live-view list, starts the
+   tail follower for a `tail`, and emits the census line.
+
+The on-open fetch runs for a view serving windows when
+`Tuning::refresh_on_open` is set. It is `force_load`, so it reaches the master
+even over a warm cache: the cache is keyed by id and only the master knows the
+query's order. Its priority is `Essential` over an empty cache and
+`Background` over a warm one.
+
+### Re-pointing and copy-on-write
+
+A setter takes `repointing`, writes the view's own clause and calls `repoint`:
+
+- The new query's key equals the old one: only the view's own clauses moved;
+  bump its stats.
+- Live rows exist under the new key: detach from the old rows and attach to
+  those, re-asking the view's viewport (free when they hold it).
+- Otherwise build `SharedRows::copied_from(old)`: the rows, their places, the
+  total and the settled flag, sharing the old index on two-pass rows until the
+  reload re-points it. Publish it (or join a concurrent winner), then reload:
+  a windows view refetches its viewport in place, `Essential`; other rows
+  reseed on their reactor.
+
+A filter change clears the copied total. A tail turning flipped drops the copy,
+because its rows are in the other order. The old rows are never written: other
+views of the old query keep reading them, and when the re-pointing view was
+their last, `detach` aborted their work, including a load in flight for the old
+query, which therefore never lands in the copy.
+
+### Lifecycle
+
+`TableView::drop` detaches from its rows. `SharedRows::detach` removes the
+hook and, when it was the last, calls `TaskGuard::abort_all` under the same
+lock. Aborting at detach rather than at the rows' drop matters: a task in the
+middle of a load holds an upgraded `Arc<SharedRows>`, so waiting for the drop
+would let a closed grid keep pulling until the load finished.
+
+### The reactor
+
+`reload_loop` holds the rows weakly and reacts to the bus:
+
+| Event | Single-pass rows | Two-pass rows |
+|---|---|---|
+| `RecordChanged`, `RecordInserted`, `RecordRemoved` | splice the one row when the rows hold their ordered set whole; otherwise refresh | update or splice the row in the index |
+| `DatasetChanged`, `Lagged` | windows: refetch the viewport in place (`Background`); cache: reseed | re-list the index |
+| `Seeded` | cache-served rows reseed; windows ignore it | re-list the index |
+| `Refreshing` | cache-served rows reseed | ignored |
+| `WritePending`, `WriteReverted` | stamp the row `PendingWrite` / `WriteFailed` | same |
+| `RecordLoadFailed` | ignored | stamp the row `LoadFailed`, or re-derive a refined view |
+
+A splice finds the row's new slot by binary search with the query's
+comparator, reading neighbours through the reverse index `idx_to_id`. Every
+other writer of `rows` or `id_to_idx` invalidates that index, and the next
+splice rebuilds it, so it never places a row by stale neighbours.
 
 ### Viewport pipeline
 
-`set_viewport(range)` and `request_load_more()` enqueue a
-`ViewportRequest` on an unbounded mpsc. A dedicated debounce loop
-reads requests with a `tokio::time::timeout(viewport_debounce, recv)`;
-any burst that arrives within the window collapses into the *most
-recent* request before firing.
+`set_viewport(loaded, shown)` maps `loaded` through the cap, records it as
+the view's viewport in its hook, and queues a `ViewportRequest { view, range,
+force_load, priority }`; `shown` is the view's own and only feeds `ViewStats`.
+`viewport_loop` (`scenery/table/loader.rs`) holds one pending request per view
+and absorbs requests until the channel has been quiet for
+`Tuning::viewport_debounce`. A merged request takes the newest range, and
+keeps `force_load` and `Essential` if any absorbed request carried them: both
+describe the wait, not the range.
 
-When a request fires:
+`run_chunk_callback` (`loader/dispatch.rs`) emits `ViewportChanged`, then:
 
-1. `DioEvent::ViewportChanged { range }` is emitted unconditionally.
-2. If the range is fully cached (and `force_load` is false — only
-   `request_load_more` sets `force_load`), the pipeline stops here.
-3. Otherwise the `on_load_chunk` callback is dispatched with a
-   `ChunkSink`. The callback pushes rows via `sink.push(idx, id, rec)`
-   for each row it fetches. Each push writes to the cache and inserts
-   into the sparse map immediately — slow streaming APIs can `push`
-   multiple times across `await`s and have their rows land
-   incrementally. The scenery's generation does not bump per push;
-   one bump fires at the end so UIs render a single repaint per chunk.
-4. On `Ok` the pipeline bumps generation and emits
-   `DioEvent::RangeLoaded { range }`. On `Err` it emits
-   `DioEvent::LoadFailed { range, error }` and leaves the cache /
-   sparse map untouched (no generation bump).
+- on two-pass rows, runs the detail pass for the range under the asking
+  view's ticket (nothing for `titles_only`), and stops;
+- otherwise picks the effective window (`choose_window`, edge-anchored, with
+  the horizon probe past an inferred end), and stops when it is cached and not
+  forced, or when the rows don't serve windows;
+- otherwise claims the in-flight range and calls the paged loader with a
+  `ChunkSink` and the query its plan says the master takes whole.
+
+`ChunkSink::push(idx, id, record)` binds the row into the visible map at once
+and buffers it; a row with a flash in flight binds to the cached, staged value
+and is not buffered. `ChunkSink::set_total` states the grand total.
+`finish_chunk_load` (`loader/commit.rs`) writes the buffer to the cache in one
+write, infers the total (stated, short page, horizon), re-sorts, settles the
+rows, bumps once and publishes `RangeLoaded`, or on `Err` restores the bound
+rows and publishes `LoadFailed`.
 
 ### Chunk loads: priority and cancellation
 
-`viewport_loop` (in `scenery/table/loader/mod.rs`) is the debounce
-loop behind the pipeline above. `run_chunk_callback`
-(`loader/dispatch.rs`) runs the `on_load_chunk` callback and
-`finish_chunk_load` (`loader/commit.rs`) commits its result; the
-tracing and tap lines both emit keep the older `fire_chunk_load:`
-prefix, so a grep for it still finds the whole pipeline.
+Every request carries a `vantage_core::Priority` set by its producer.
+`Essential` means someone is waiting: `set_viewport`, `request_load_more`, the
+reload after a re-point, the refill after a re-order dropped row positions,
+and a cold on-open fetch. `Background` means nobody is: the refresh poll, a
+warm on-open re-pull, hydration resuming after a two-pass index change, and
+the horizon probe. `force_load` doesn't decide this; it means "consult the
+master rather than the cache", which a search does as much as a poll. The
+callback runs inside the viewport task under `priority.scope(..)`, so an HTTP
+transport reads it to pick a retry policy; spawning the callback would lose
+the task-local.
 
-Every `ViewportRequest` carries a `vantage_core::Priority` set by its
-producer. Essential — someone is waiting on these rows: `set_viewport`,
-`request_load_more`, `set_search`, `set_filters`, the re-order on
-a `can_order` master, a cold on-open fetch (empty cache) and the
-open-blocking `total_provider` call, which is the one round trip an
-open awaits and whose failure fails the open. Background — nobody is:
-the refresh poll, a warm on-open re-pull, two-pass detail hydration,
-and the horizon probe (the past-the-inferred-end check that detects a
-table growing past what `total_provider` last reported). `force_load`
-does not decide this: it says "consult the master rather than the
-cache", which a search does as much as a poll. HTTP transports read
-the priority to pick their retry policy.
+While a load is in flight, `viewport_loop` races it against the channel. A
+request from the same view for a different range cancels it by dropping its
+future, and `CancelOnDrop` restores exactly the slots the load bound,
+putting back the row each one held. Slots the sink skipped (a client-sort
+hold-back, an unchanged row) are not touched. A same-range request is
+absorbed; a same-range `force_load` and any other view's request are parked
+until the load finishes, and a superseded park ORs its `force_load` and
+priority onto the request that wins.
 
-When the debounce coalesces a burst, the merged request takes the
-newest *range* but the strongest *wait*: `Essential` if any absorbed
-request carried it. An essential scroll absorbed with a background
-refresh still has a user waiting on the result.
+That is why a load has two halves. `run_chunk_callback` owns the callback's
+future and the cancel guard, and can be dropped. `finish_chunk_load` (the
+commit, the total, the re-sort and the bump) runs to completion outside the
+race: once the master has answered, nothing may unwind it.
 
-While a chunk callback is in flight, `viewport_loop` races it against
-the viewport channel in a `select!`: a request for a *different* range
-cancels the in-flight load by dropping its future — `CancelOnDrop`
-then restores the slots `write_chunk_row` reported as `Bound`, putting
-back the record each one held (or emptying it again, when it was
-empty). Only those: a client-sort hold-back or an
-identical-fresh-record dedup answers `Skipped`, having written
-nothing, and undoing such an index would overwrite a row the cancelled
-load never touched. The same restore runs on the `Err` path in
-`finish_chunk_load`, so a failed refresh that had already pushed rows
-is as invisible to the grid as one that failed before its first push.
-A row bound through the flash-pending path is recorded and restored
-like any other. What that path never does is buffer the row for the
-cache write: a row with a flash in flight keeps the staged value the
-cache already holds, and the fetched (possibly pre-write) snapshot
-must not overwrite it. A request for the *same* range is absorbed and
-the running load continues; a same-range request with `force_load` is
-parked and runs once the current load finishes — and if something else
-supersedes it first, both its `force_load` and its priority are OR'd
-onto the request that wins. A cancelled load's in-flight marker is cleared
-with it, so the next request for that range is not skipped as a
-duplicate.
+### Two-pass loading
 
-This is why the load is split into two phases. `run_chunk_callback`
-is the cancellable half — it owns the callback's future and the
-`CancelOnDrop` guard. Once it resolves, `finish_chunk_load` — the
-commit, the total inference, the client-side resort and the
-generation bump — runs to completion outside the `select!`: once the
-master has answered, nothing may unwind it.
+A Dio built with `augment(..)` makes every table view two-pass:
 
-A two-pass scenery's detail sweep runs inside the cancellable half
-too, so a viewport that moves on drops it mid-flight. That is safe
-because the sweep self-heals: the superseding viewport sweeps its own
-rows and bumps the generation, and hydration dedups against ids
-already `Complete`, so a half-finished sweep costs at most a repeat of
-the rows it did not reach.
+- A **list pass** lists cheap rows into a `QueryIndex`, the ordered ids of one
+  variant (the builder filters and the order). The Dio keeps one index per
+  variant and every view of it shares it, so re-opening a filter or order
+  costs no list call. Runtime filters and search never key an index; a view
+  refines them over it. The first list page pins the listing's source: the
+  cache's whole copy when the Dio holds one, the master otherwise.
+- A **detail pass** hydrates the ids in a view's `loaded` range. Every
+  consumer (a view's viewport, a blocking facade read, a record scenery) queues
+  ids through a ticket into the Dio's `AugmentScheduler`, whose worker pool
+  (`Tuning::augment_workers`) drains tickets round-robin. An id in flight or
+  already `Complete` is never fetched twice, and dropping a ticket withdraws
+  what it still has queued. Each row's last answer lives in `detail_state`, so
+  a row whose detail source has no record isn't re-asked on every tick.
+- A **refined** view, one whose clauses name augmented values, is evaluated
+  over the cache, and has to hydrate every listed row before it settles. A row
+  that moves marks it dirty, and `reseed_loop` re-derives it once per batch,
+  one debounce after the first mark.
 
-The callback itself runs inside the viewport task, never spawned onto
-another task, so the `Priority` scope set around it reaches the
-transport; spawning would lose that task-local.
+A sweep runs inside the cancellable half of the viewport pipeline, so a
+viewport that moves on drops it mid-flight; the superseding viewport sweeps
+its own rows, and the dedup makes a half-finished sweep cost at most a repeat
+of the rows it didn't reach.
 
-### Sparse-map persistence
+### Serving
 
-The id-keyed cache (redb by default) is persisted across restarts;
-the sparse `BTreeMap<usize, …>` is not. On restart, the scenery
-re-derives index assignments from `cache.list_values()`. That works
-because (a) `on_start` is expected to write rows in master order and
-(b) cache iteration is stable for the chosen backend. Sort, search,
-or filter changes invalidate the index assignments outright — the
-sparse map is dropped, the cache stays warm, and the next viewport
-call refetches positions. Persisting the index map (e.g. a second
-redb table keyed by `(sort_key, idx) → id`) is a future direction
-when offline-first scrollbar precision matters.
+`Serving` records where a view's answer comes from, decided from its plan:
 
-### EnrichedRecord
+- `Windows`: a paged view whose master takes the whole query. Each window
+  read from the master is the answer for its rows.
+- `Cache`: every clause is evaluated over the complete set in the cache: an
+  eager view, a two-pass view over its index, or a paged view whose Lens
+  copies the whole set through `or_eager` when the master refused something.
+- `Failed(LoadFailure)`: the master rejected a clause, or refused one with no
+  complete set to evaluate it over. The view holds no rows until its query
+  changes. It never shows a window as the filtered set.
+
+### `EnrichedRecord`
 
 ```rust
+#[non_exhaustive]
 pub struct EnrichedRecord {
     pub record: Record<CborValue>,
     pub status: RowStatus,
@@ -547,207 +565,145 @@ pub struct EnrichedRecord {
 #[non_exhaustive]
 pub enum RowStatus {
     Fresh,
-    Incomplete,
+    Incomplete,                     // awaiting its detail pass
     PendingWrite,
     WriteFailed { error: String },
-    LoadFailed { error: String },
+    LoadFailed { error: String },   // its detail fetch failed
 }
 ```
 
-`EnrichedRecord` is what Sceneries hand to UI code. It preserves the underlying
-`Record<CborValue>` and layers metadata on top.
+Views hand these to UI code. The facade hands back bare `Record<CborValue>`;
+statuses are a view concern.
 
-For non-Scenery contexts (CLI, business logic via `dio.cached()`), bare
-`Record<CborValue>` flows through unchanged — the enrichment is Scenery-only.
+## Record and value sceneries
 
-## Hot tier (reserved)
+A `RecordScenery` opens on the cache once (or on a seeded row), then reloads
+its id on every event naming it. Its reads go through `read_admitted`, so a
+row outside the residual is `NotFound`; on an augmented Dio it queues the row
+on a ticket of its own and reads `Incomplete` until the detail lands. A
+`load_on_miss` fetch caches only a row the residual admits, augmented in
+memory first so the residual judges the whole row.
 
-A `HotTier` slot exists on `DioInner` for a planned per-Dio moka cache that
-will deduplicate `Arc<EnrichedRecord>` across multiple Sceneries opened on
-the same Dio. v1 doesn't activate it — each Scenery owns its own
-`Vec<Arc<EnrichedRecord>>` populated from a single cache scan. Sharing
-`Arc<dyn TableScenery>` between consumers is the current way to dedupe.
+A `ValueScenery` and a derived aggregate Dio are both mounts of the aggregate
+engine (`aggregate/engine.rs`): compute once so the mount opens holding a
+value, then recompute on source events with a leading edge and one trailing
+flush per `Tuning::aggregate_debounce`, publishing only a changed output. The
+rows they reduce are the Dio's admitted rows, hydrated first when the residual
+or the aggregation's `Reads` names an augmented value.
 
-When the tier activates, `TableScenery::row(idx)` will still return cheaply
-(it already reads from the in-memory vector) — the change is upstream:
-multiple Sceneries seeing the same `(id, generation)` resolve to the same
-`Arc<EnrichedRecord>`. TTL and size will be inherited from
-`LensDefaults::cache_ttl`.
+A `Servo` holds a strong `Dio`, a baseline and a draft. Its bus task absorbs
+upstream changes into untouched fields; `flash()` sends the diff through
+`Dio::flash`.
 
-## Refresh scheduling
+## Refresh
 
-Per-Dio task spawned at `make_dio` time:
-
-```rust
-async fn refresh_loop(dio_inner: Arc<DioInner>, interval: Duration) {
-    let mut tick = tokio::time::interval(interval);
-    tick.tick().await;                             // skip the immediate fire
-    let dio_handle = Dio { inner: dio_inner.clone() };
-    loop {
-        tick.tick().await;
-        if let Some(cb) = &dio_inner.lens.callbacks.on_refresh {
-            let _ = cb(&dio_handle).await;         // errors are logged, not propagated
-        }
-        dio_inner.event_bus.send(DioEvent::DatasetChanged).ok();
-    }
-}
-```
-
-Manual refresh via `dio.refresh().await` fires the same callback synchronously
-and publishes `DatasetChanged` on completion.
-
-## Cross-Dio interactions
-
-Dios are independent. A change in one Dio doesn't propagate to another. If you
-want cross-Dio invalidation (e.g., editing an `Order` invalidates a `Client`
-view that aggregates orders), the user's `on_write` callback explicitly calls
-`other_dio.notify_record_changed(...)` or `other_dio.refresh()`.
-
-Future direction: a Lens-level event bus that all Dios under the lens publish
-into, with subscribers able to filter by Dio name. Not in v1.
+- `Dio::refresh` publishes `Refreshing`, runs the augmentation refresh pass
+  on an augmented Dio, then the Lens's refresher, and publishes
+  `DatasetChanged` (unless the refresher reconciled, which already did).
+  Without either, it re-reads the set the way it was loaded: a paging Dio
+  publishes `DatasetChanged` so each view refetches its window, an eager one
+  re-runs its start, any other reconciles with `master.list()`.
+- The timer (`Refresher::every`) sleeps first, then takes the scheduled path,
+  which leaves rows known to have no detail record alone. Its errors are
+  logged.
+- `refresh_if_stale` runs at build and at every table or record open when the
+  refresher has a `max_age`: at most one check per Dio at a time, never while a
+  detached eager start is still copying.
+- A live follow (`DioBuilder::live`) applies the master's change stream through
+  `apply_change`. A lagged or failed stream re-reads the set, publishing
+  `RefreshFailed` and retrying with backoff when that fails.
 
 ## Concurrency model
 
-- One write worker task per Dio, processing `WriteOp`s sequentially.
-- One refresh task per Dio (if `refresh_every` is set).
-- One background fetcher per Scenery, processing prefetch requests.
-- The event bus uses `tokio::sync::broadcast`, lagging consumers see lost-event
-  errors; Sceneries respond by re-reading state and bumping generation.
+- One write worker per Dio, one flash at a time.
+- At most one refresh timer per Dio, and one live-follow task.
+- Per set of shared rows: one reactor, one viewport loop, and on two-pass rows
+  one reseed loop and any detached list pass, all held weakly and aborted by
+  the last view's detach.
+- One augment worker pool per augmented Dio, started on first need and aborted
+  when the Dio drops.
+- One recomputation task per value scenery and per derived Dio.
 
-All shared state lives behind `Arc`. Mutable state uses `tokio::sync::RwLock`
-or `parking_lot::Mutex` depending on whether the lock is held across awaits.
-The hot tier uses `moka` which is async-aware.
+Shared state lives behind `Arc`. Locks held across an await are tokio locks
+(`reseed_lock`, the worker and refresh handles); everything else is a
+`std::sync` lock taken and released without awaiting. Where two locks are
+taken together the order is fixed: `rows` before `id_to_idx`, and
+`idx_to_id` after both.
 
-## Error handling
+## Errors
 
-Diorama errors fall into three categories:
-
-1. **Setup errors** — invalid Lens configuration, cache backend unreachable.
-   Surface as `Result<Lens, LensBuildError>` at `build()` time.
-2. **Operation errors** — `dio.cached().insert(...)` may fail synchronously
-   (queue full) or asynchronously (the queued write rejected by master). Sync
-   errors return `Result`; async errors emit `DioEvent::WriteFailed`.
-3. **Callback errors** — user callbacks return `Result<()>`. Errors are
-   logged via `tracing` and emitted as `DioEvent::WriteFailed` or
-   `DioEvent::RefreshFailed`. The Dio survives; callbacks fire again on the
-   next trigger.
-
-No callback failure ever poisons the Dio. The user's strategy decides whether
-a failed refresh marks data stale or hides it; Diorama just reports.
+- **Build.** `LensBuilder::build` validates the tuning, the loader and the
+  refresher and fails with the setting named. `DioBuilder::build` fails for a
+  Vista without an id column, a cache table that won't open, a blocking eager
+  start that fails, or a live subscription that can't be made.
+- **Writes.** `Dio::flash` returns the write's error after the rollback, and
+  the views show `WriteFailed` for the row.
+- **Loads.** A failed window publishes `LoadFailed` and leaves the visible map
+  as it was. A view that can't answer its query reads `LoadState::Failed`
+  with a `LoadFailure` naming the table and the clause.
+- **Background work.** Timer refreshes, `max_age` refreshes and scenery
+  `refresh_source` calls log their errors. None of them poisons the Dio; the
+  next trigger runs again.
 
 ## Debug stream
 
-Every `Lens` carries a `DebugTap` — a cheap-to-clone, cheap-to-check switch
-threaded through `Dio`, every `Scenery`, and every task either spawns. It is
-off by default. `LensBuilder::debug_datasource(name)` turns it on for every
-`Dio` that Lens produces; `name` is stamped as `ds=<name>` on every line the
-tap emits. Off means nothing is emitted and nothing is paid for: every call
-site checks `tap.enabled()` before doing any work a line needs — building a
-query descriptor, counting a column set, snapshotting process stats — not
-just before formatting the line itself.
+Every Lens carries a `DebugTap`, off by default and cheap to check. With the
+`diagnostics` feature, `LensBuilder::debug_datasource(name)` turns it on for
+every Dio of that Lens. Each call site checks `tap.enabled()` before doing any
+work a line needs, so an off tap costs a branch.
 
-### The tap and the target
+Lines go to `info` under the one target `vantage_diorama::debug`, shaped
+`<datasource>  <tag>  <clause>`, with human units (`3.0s`, `24KB`,
+`200,000`). The tag is the grep anchor, from a closed set: `dio`, `source`,
+`scenery`, `census`, `viewport`, `cache`, `payload`, `total`, `sort`,
+`search`, `filter`, `hydrate`, `derive`, `summary`. `fetch #N` and `list #N`
+tie a request to its outcome; lines from one load are not emitted in a fixed
+order, so correlate on the number. The table of tags and what each says lives
+in the `debug` module's documentation (`src/debug.rs`).
 
-Enabled lines emit at `info` under the single target `vantage_diorama::debug`
-— visible in a default log with no `RUST_LOG` required. Every line carries
-`ds=<datasource>`; every line about a specific Dio also carries
-`dio=<master table name>`, so a multi-table session's stream can be grepped
-per table. A monotonic per-Dio counter (`req=N`) ties a dispatch line to its
-matching return or failed line — the correlator for a load whose response
-lands after other lines have interleaved.
-
-### The frozen message strings
-
-These strings and their field sets are a contract: a downstream BDD harness
-greps them. Changing one is a breaking change to that harness, not just a
-log-message rewording.
-
-| Message | Fields | Fires when |
-|---|---|---|
-| `"load dispatch"` | `req, dio, visible, effective, rows_to_fetch, already_cached, sort, search, force_load` | a viewport fetch is about to run |
-| `"load return"` | `req, dio, received, ms, cached_after` | that fetch returned `Ok` |
-| `"load failed"` | `req, dio, ms, error` | that fetch returned `Err` |
-| `"cache hit — viewport served locally"` | `dio, range, rows` | a viewport is fully cached; no fetch fires |
-| `"total"` | `dio, total, provenance` | the grand total changed; `provenance` ∈ `stated` \| `short-page` \| `horizon-extended` \| `hole-clamped` |
-| `"state"` | `dio, from, to, reason` | a `LoadState` transition (`Loading` / `Partial` / `Complete`) |
-| `"cache write"` | `dio, written, new, updated, cached_rows, known_total, cached_pct` | a load committed rows to the cache; only emitted when `written > 0` |
-| `"cache seed"` | `dio, mode, rows` | a scenery seeded its rows from the cache at open; `mode` ∈ `warm` \| `cold` |
-| `"columns"` | `dio, demanded, received_count, received_sample, undemanded_count, payload_bytes, rows` | the wide-data detector — what a chunk actually carried against what was demanded |
-| `"census: <kind> <verb>"` | `dio, table_sceneries, record_sceneries, servos, uptime_ms, cpu_ms, peak_rss_mb` | a consumer opened or closed; `kind` ∈ `table scenery` \| `record scenery` \| `servo`, `verb` ∈ `opened` \| `closed` |
-| `"list page dispatch"` | `req, dio, offset, limit, conditions, sort` | a two-pass list page is about to be fetched |
-| `"list page return"` | `req, rows, ms, index_len, complete` | that list page returned |
-| `"detail pass"` | `dio, requested, pending, already_complete` | a two-pass detail (augment) sweep queued its pending ids |
-| `"aggregate recompute"` | `aggregate, trigger, rows_in, rows_out, ms, unchanged` | an `aggregate` layer recomputed |
-
-`aggregate recompute`'s `trigger` is `initial`, `debounce-trailing`, `nudge`,
-`lagged`, or a `DioEvent` variant name (`RecordChanged`, `DatasetChanged`,
-…) Debug-formatted and trimmed to its variant name. A `derive()`'s first
-load emits two `initial` lines: an eager compute that seeds the derived
-Vista's schema before the engine loop even exists (`unchanged = false`),
-immediately followed by the engine's own seed pass reading that same output
-back (`unchanged = true`). Both are genuine recomputations — the second is
-what proves the engine's own loop agrees with the eager pass before anything
-has changed, not a duplicated log call.
-
-### Census
-
-`emit_census(kind, verb)` on `DioInner` fires on every table-scenery,
-record-scenery, and servo open/close (when the tap is enabled) with a
-`"census: <kind> <verb>"` message, the live counts of each consumer kind on
-that Dio, and a process snapshot (`uptime_ms`, `cpu_ms`, `peak_rss_mb`) via
-`process_stats()`. This is the resource-accounting evidence: how many
-consumers a Dio is carrying and what the process is paying, sampled at every
-boundary a consumer's lifetime crosses.
-
-### Exit summary
-
-`stats::debug_summary_lines()` renders the session's cache evidence as plain
-strings, in order:
-
-1. Header: `"— diorama session summary —"`.
-2. One ledger line per table that had a fetch, busiest first: fetch count,
-   repeat count, rows received, redundant rows, total and max fetch time.
-3. A `"live:"` line: dios, table sceneries, record sceneries, servos still
-   open.
-4. A `"process:"` line: uptime, CPU time, peak RSS.
-
-`stats::emit_debug_summary()` logs each line at `info` under
-`vantage_diorama::debug`, unconditionally — it does not check the tap,
-since the caller (typically a shutdown hook) decides when a summary is
-warranted regardless of whether per-line tracing was ever turned on for
-this session.
+The census line fires on every table-view, record-scenery and servo open and
+close, with the live counts on that Dio and the process's peak RSS.
+`stats::debug_summary_lines()` renders the session's fetch ledger, the live
+counts and the process cost; `stats::emit_debug_summary()` logs them
+unconditionally, for a shutdown hook to call.
 
 ## File layout
 
-```
+```text
 vantage-diorama/src/
-├── lib.rs                    re-exports
-├── lens/
-│   ├── mod.rs                Lens, LensBuilder
-│   ├── callbacks.rs          callback type aliases + boxing helpers
-│   ├── defaults.rs           LensDefaults
-│   └── build.rs              build() and validation
-├── dio/
-│   ├── mod.rs                Dio, DioInner
-│   ├── shell.rs              DioShell : TableShell
-│   ├── worker.rs             write queue worker
-│   ├── refresh.rs            refresh task
-│   ├── event_bus.rs          DioEvent + broadcast wiring
-│   └── hot_tier.rs           moka wrapper
-├── scenery/
-│   ├── mod.rs                trait re-exports
-│   ├── table.rs              TableScenery + TableSceneryBuilder + state
-│   ├── record.rs             RecordScenery
-│   ├── value.rs              ValueScenery
-│   └── enriched_record.rs    EnrichedRecord + RowStatus
-├── ops/
-│   ├── write_op.rs           WriteOp enum
-│   ├── query_descriptor.rs   QueryDescriptor (for on_query)
-│   └── change_event.rs       ChangeEvent (for on_event)
-└── error.rs                  LensBuildError, DioError
+├── lib.rs              root re-exports and the prelude
+├── lens.rs             Lens; lens/: builder, cache, cache_backend, callbacks,
+│                       chunk_sink, loader, loader_cx, memory_cache, redb_cache,
+│                       refresher, registry, spawn, tuning
+├── dio.rs              Dio, WeakDio, Generation; dio/: builder, derive, inner
+│                       (shared_rows, sceneries), shell, flash, worker, pending,
+│                       ingress, refresh, watch, fetch, import, plan, residual,
+│                       open, diagnostics, augment_passes, augment_scheduler,
+│                       query_index, detail_state, whole_copy, event_bus
+├── scenery.rs          scenery/: table, record, value, sugar, enriched_record
+├── scenery/table.rs    TableScenery, LoadState; table/: builder, view, state,
+│                       loader, reactor, plan, two_pass, cap, count, row_map,
+│                       view_stats, handle, load_failure
+├── aggregate.rs        aggregate/: aggregation, builtin, catalog, coerce, cmp,
+│                       engine, mount, source, value, derived
+├── augment.rs          Augmentation, Detail, Source, Fetch, MergeRule
+├── servo.rs            Servo; servo/: draft, flash, delete, tracking
+├── ops.rs              ops/: change_event, change_flash, flash_outcome,
+│                       flash_rejection
+├── debug.rs            DebugTap, tapline!, formatters; debug/process.rs
+├── stats.rs            live counts; stats/: ledger, summary
+└── rhai.rs             Servo as a Rhai type
 ```
 
-This layout mirrors `vantage-live`'s `live_table/` for the worker/event-consumer
-split and follows the workspace convention of putting trait impls under
-`impls/` subdirs (e.g., `dio/impls/table_shell.rs` for the `TableShell` impl
-on `DioShell`).
+A module `x.rs` keeps its children in `x/`; there is no `mod.rs` in `src/`.
+
+## Invariants
+
+- A view's setters never write its `SharedRows`; they move the view.
+- Rows whose last view has left are never handed out again, and their work is
+  aborted at that detach.
+- Every writer of `rows` or `id_to_idx` invalidates `idx_to_id`.
+- A cancelled load restores exactly the slots it bound.
+- A commit, once the master has answered, runs to completion.
+- No reconcile-shaped write overwrites a row with a flash in flight.
+- A view never shows a window as a filtered set.

@@ -28,25 +28,51 @@ graph TD
 ## ① Entity Framework
 
 The most common path. Define entities, build tables, use `DataSet` and `ActiveEntity` for CRUD —
-your code never touches SQL or any query language.
+your code never touches SQL or any query language. The block reads and writes a populated
+database, so it is compiled but not run:
 
-```rust
+```rust,no_run
+# use vantage_dataset::prelude::ActiveEntitySet;
+# use vantage_sql::postgres::AnyPostgresType;
+# use vantage_sql::prelude::*;
+# use vantage_surrealdb::types::AnySurrealType;
+# use vantage_types::prelude::*;
+#
 // Define once
 #[entity(SurrealType, SqliteType, PostgresType)]
+#[derive(Debug, Clone, Default)]
 struct Product {
     name: String,
     price: i64,
     is_deleted: bool,
 }
+#
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<bool>("is_deleted")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:bakery.sqlite").await.context("connect")?;
+# let id = "flux_cupcake";
 
 // Use everywhere
-let table = Product::surreal_table(db);
-let expensive = table.with_condition(table["price"].gt(200));
+let table = Product::sqlite_table(db);
+let expensive = table.clone().with_condition(table["price"].gt(200i64));
 let count = expensive.get_count().await?;
 
-let mut item = table.get_entity(&id).await?.unwrap();
+let mut item = table.get_entity(id).await?.unwrap();
 item.price = 350;
 item.save().await?;
+# let _ = count;
+# Ok(())
+# }
 ```
 
 This is the bread and butter of enterprise development — hundreds of entities, each with
@@ -68,6 +94,11 @@ array aggregation, recursive queries — drop into the vendor-specific query bui
 ### SQLite — CASE, UNION, window functions
 
 ```rust
+# use vantage_expressions::{Expressive, Order, Selectable};
+# use vantage_sql::primitives::alias::AliasExt;
+# use vantage_sql::sqlite::sqlite_ident as ident;
+# use vantage_sql::sqlite::statements::SqliteSelect;
+# use vantage_sql::sqlite_expr;
 use vantage_sql::primitives::case::Case;
 
 let select = SqliteSelect::new()
@@ -84,11 +115,18 @@ let select = SqliteSelect::new()
             .as_alias("band"),
     )
     .with_order(ident("salary"), Order::Desc);
+# assert!(select.preview().starts_with(r#"SELECT "name", "salary", CASE WHEN"#));
 ```
 
 ### PostgreSQL — DISTINCT ON, LATERAL JOIN, array ops
 
 ```rust
+# use vantage_expressions::{Expressive, Order, Selectable};
+# use vantage_sql::postgres::operation::PostgresOperation;
+# use vantage_sql::postgres::pg_ident as ident;
+# use vantage_sql::postgres::statements::PostgresSelect;
+# use vantage_sql::postgres::statements::select::join::PostgresSelectJoin;
+# use vantage_sql::primitives::alias::AliasExt;
 let select = PostgresSelect::new()
     .with_distinct_on(ident("user_id").dot_of("o"))
     .with_source_as("orders", "o")
@@ -132,23 +170,54 @@ produces data:
 - **Resilient transport** — `vantage-api-pool` adds retry, a circuit breaker, rate limiting and auth
   refresh to API traffic
 - **CSV files** — `vantage-csv` reads structured files with in-memory conditions
-- **Local caches** — `vantage-live` syncs fast cache (ImTable, ReDB) with slow backend (Postgres,
-  SurrealDB) for responsive UIs
+- **Local caches** — `vantage-diorama` keeps a local copy (in memory or in a redb file) of any
+  slow backend (Postgres, SurrealDB, a REST API) for responsive UIs
 - **Message queues** — implement `InsertableDataSet` for append-only sources like Kafka topics
 - **Mixed sources** — read from SQL, write through a queue, cache in memory — same `Table` interface
 
-```rust
-// Read from a REST API
-let api_products = Product::api_table(RestApi::new("https://api.example.com/products"));
+A cache sits above the backend rather than replacing it. Wrap the permanent table as a `Vista`,
+put a Dio in front of it, and the Dio hands back the cached copy as another `Vista`. The cache
+is filled from a database, so the block is compiled but not run:
 
-// Cache locally for fast UI
-let live = LiveTable::new(
-    Product::surreal_table(db),   // permanent backend
-    ImTable::new(&cache, "products"),  // fast cache
-);
+```rust,no_run
+# use vantage_dataset::ReadableValueSet;
+# use vantage_diorama::{Cache, Lens, Loader};
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product {
+#     name: String,
+# }
+#
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db).with_id_column("id").with_column_of::<String>("name")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:bakery.sqlite").await.context("connect")?;
+// The permanent backend, type-erased
+let products = db.vista_factory().from_table(Product::sqlite_table(db.clone()))?;
 
-// Both implement the same traits — your UI code doesn't care
-let products: Vec<Product> = live.list().await?.into_values().collect();
+// A local cache in front of it
+let lens = Lens::builder()
+    .cache(Cache::redb("cache.redb"))
+    .loader(Loader::eager(|cx| async move {
+        let rows = cx.master().list_values().await?;
+        cx.reconcile(rows).await
+    }))
+    .build()?;
+let cached = lens.dio(products).build().await?;
+
+// Reads come from the cache; your UI code doesn't care which it holds
+let rows = cached.cached().list_values().await?;
+# let _ = rows;
+# Ok(())
+# }
 ```
 
 ```admonish tip title="When to use this path"
@@ -172,10 +241,10 @@ giving you one interface for the entire organisation's data.
 │   Table<SurrealDB, Client>    ← entity framework             │
 │   Table<PostgresDB, Report>   ← complex queries              │
 │   Table<RestApi, ExternalData> ← custom persistence          │
-│   Table<LiveTable, Product>   ← cached + reactive            │
+│   Dio over any Vista          ← cached + reactive            │
 │                                                              │
-│   All implement: DataSet · ValueSet · ActiveEntitySet         │
-│   All wrap into: Vista (type-erased, generic code)          │
+│   Tables implement: DataSet · ValueSet · ActiveEntitySet     │
+│   All wrap into: Vista (type-erased, generic code)           │
 └──────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐

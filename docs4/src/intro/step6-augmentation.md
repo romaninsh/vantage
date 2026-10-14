@@ -69,6 +69,15 @@ expressions apply in declaration order, and each callback *borrows the record as
 including the columns earlier lazy expressions added. That ordering rule is the whole trick:
 
 ```rust
+# use serde::{Deserialize, Serialize};
+# use vantage_aws::prelude::*;
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Readings {
+#     #[serde(rename = "Key")]
+#     pub filename: String,
+#     pub rows: i64,
+#     pub latest: String,
+# }
 impl Readings {
     pub fn table(aws: AwsAccount, bucket: &str) -> Table<AwsAccount, Readings> {
         let bucket = bucket.to_string();
@@ -146,16 +155,32 @@ what **augmentation** declares.
 ## Wiring the augmentation
 
 Back in `main.rs`. The augmenter becomes a Vista like any table, and the Dio is told how to use
-it — this is the only structural addition to chapter 5's `run()`:
+it. Chapter 5 built its Dio with `lens.dio(master).build()`; the augmentation slots in between
+the two calls, and that's the only structural change to `run()`:
 
-```rust
+```rust,no_run
+# use std::sync::Arc;
+# use vantage_aws::prelude::*;
+# use vantage_diorama::{Augmentation, Detail, Fetch, Lens, MergeRule, Source};
+# use vantage_types::EmptyEntity;
+# use vantage_vista::Vista;
+# const BUCKET: &str = "noaa-ghcn-pds";
+# struct Readings;
+# impl Readings {
+#     fn table(aws: AwsAccount, bucket: &str) -> Table<AwsAccount, EmptyEntity> {
+#         Table::new("restxml/Contents:s3/GET /{Bucket}?list-type=2", aws)
+#             .with_id_column("Key")
+#             .with_condition(eq("Bucket", bucket))
+#     }
+# }
+# async fn run(aws: AwsAccount, lens: Arc<Lens>, master: Vista) -> vantage_core::Result<()> {
 let augmenter = aws
     .vista_factory()
     .from_table(Readings::table(aws.clone(), BUCKET))?;
 
-let dio = lens.make_dio(master).await?.augment(
-    Arc::new(Catalog::new()),
-    vec![Augmentation::new(
+let dio = lens
+    .dio(master)
+    .augment(vec![Augmentation::new(
         Detail::Fixed(Arc::new(augmenter)),
         Source::Column {
             from: "Key".into(),
@@ -163,17 +188,22 @@ let dio = lens.make_dio(master).await?.augment(
         },
         Fetch::PerRow,
         MergeRule::lift(["rows", "latest"]),
-    )],
-);
+    )])
+    .build()
+    .await?;
+# let _ = dio;
+# Ok(())
+# }
 ```
 
 An [`Augmentation`](vantage_diorama::Augmentation) answers four questions:
 
-- **`detail`** — *where do detail records come from?* `Detail::Fixed` holds our augmenter Vista
-  directly. (`Detail::Catalog(name)` resolves one by name instead — the config-driven form,
-  which is also why `augment` takes a resolver, here an empty
-  [`Catalog`](vantage_vista::Catalog). Building an empty catalog just to satisfy the signature is
-  admittedly awkward; the parameter earns its place only in the catalog form.)
+- **`detail`**: *where do detail records come from?* `Detail::Fixed` holds our augmenter Vista
+  directly. The config-driven form is `Detail::Resolved { resolver, name }`: a config carries
+  only a name, so the detail Vista is looked up by that name on each fetch, through a
+  [`VistaResolver`](vantage_vista::VistaResolver) such as a [`Catalog`](vantage_vista::Catalog).
+  The resolver travels with the detail, so the Dio needs no catalog of its own and `augment`
+  takes nothing but the list.
 - **`source`** — *how does a master row select its detail record?* `Source::Column` maps the
   master's `Key` onto the detail table's `prefix` condition. A full filename used as an S3
   prefix matches exactly one object — so each fetch narrows the augmenter to a one-row listing,
@@ -213,7 +243,7 @@ columns runs the detail fetch first, and the result is written back to the cache
   <!-- facade Vista -->
   <rect x="560" y="55" width="170" height="70" rx="10" fill="#7c2d8f"/>
   <text x="645" y="84" text-anchor="middle" fill="#fff" font-weight="bold">facade Vista</text>
-  <text x="645" y="104" text-anchor="middle" fill="#fff" font-size="12">dio.vista()</text>
+  <text x="645" y="104" text-anchor="middle" fill="#fff" font-size="12">dio.cached()</text>
 
   <!-- request: facade → dio -->
   <line x1="556" y1="72" x2="324" y2="72" stroke="#888" stroke-width="2" marker-end="url(#arrow3)"/>
@@ -244,26 +274,40 @@ Not every read, though. The listing must stay what chapter 5 made it — instant
 **bounded reads**: `get_value` for one record, `fetch_window` for a range. The rows you ask for
 are the rows that pay:
 
-```rust
+```rust,no_run
+# use std::time::Instant;
+# use vantage_aws::prelude::*;
+# use vantage_diorama::Dio;
+# async fn run(dio: Dio) -> vantage_core::Result<()> {
 // The listing stays instant — cheap rows, no downloads.
-let listing = dio.vista().list_values().await?;
+let start = Instant::now();
+let listing = dio.cached().list_values().await?;
 println!("{} files (listed in {:?})", listing.len(), start.elapsed());
 
 // Details are paid for by the rows you ask for: a window of ten.
-let window = dio.vista().fetch_window(0, 10).await?;
-for (filename, file) in &window {
+let start = Instant::now();
+let window = dio.cached().fetch_window(0, 10).await?;
+for (filename, file) in &window.rows {
     let size = file.get("Size").and_then(|v| v.as_str()).unwrap_or("");
     let rows = file.get("rows").and_then(|v| v.as_i64()).unwrap_or(0);
     let latest = file.get("latest").and_then(|v| v.as_str()).unwrap_or("");
     println!("{size:>10} {rows:>8} {latest:>10}  {filename}");
 }
+println!("{} files detailed in {:?}", window.rows.len(), start.elapsed());
+# Ok(())
+# }
 ```
+
+`dio.cached()` is the Dio's facade: a Vista with the master's schema that reads through the
+cache. `fetch_window` returns a page, whose `rows` keep the window's order.
 
 Ten downloads is still a wait worth narrating, and the Dio announces it: one
 `DioEvent::Hydrating` with the pending count before the first fetch, then a `RecordChanged` per
 row as each lands. A dozen lines of event plumbing become the progress display:
 
-```rust
+```rust,no_run
+# use vantage_diorama::{Dio, DioEvent};
+# fn run(dio: Dio) {
 let mut events = dio.subscribe_events();
 tokio::spawn(async move {
     while let Ok(event) = events.recv().await {
@@ -274,6 +318,7 @@ tokio::spawn(async move {
         }
     }
 });
+# }
 ```
 
 First run — chapter 5's sync, the instant listing, then the window doing its downloads:
@@ -331,7 +376,9 @@ the fetch is retried the next time the viewport reaches for it.
 | `with_lazy_expression(name, callback)`              | A column computed in Rust on the returned record; chains in order |
 | `s3::get_object`                                    | Raw object fetch through the same (unsigned) driver               |
 | [`Augmentation`](vantage_diorama::Augmentation)     | Declares detail source, row→detail mapping, fetch style, merge    |
-| `Detail::Fixed` / `Detail::Catalog`                 | Detail Vista held directly, or resolved by name from a catalog    |
+| `Detail::Fixed` / `Detail::Resolved`                | Detail Vista held directly, or looked up by name through a resolver |
+| `lens.dio(master).augment(..).build()`              | Declares the augmentations when the Dio is built                  |
+| `dio.cached()`                                      | The Dio's facade Vista, read through the cache                    |
 | `Source::Column { from, to }`                       | Master column → detail condition (our `Key` → `prefix`)           |
 | `MergeRule`                                         | Which detail columns land on the master row — and which don't     |
 | Bounded facade reads hydrate                        | `get_value` / `fetch_window` fill gaps for the rows they return; `list_values` stays cheap |

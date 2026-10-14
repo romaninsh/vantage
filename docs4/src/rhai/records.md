@@ -154,14 +154,27 @@ A host that already holds a row can give it to a script without a second fetch:
 A named handle resolves through the resolver it carries, set with
 [`Handle::with_resolver`](vantage_vista::rhai::Handle::with_resolver).
 After the script runs, `changes()` returns what it staged and `values()` the row as the script
-last saw it. Vantage UI builds the action body's `row` this way, over the page's Dio Vista.
+last saw it. Vantage UI builds the action body's `row` this way, over the Vista that
+[`Dio::cached()`](vantage_diorama::Dio::cached) returns for the page's table, so the flash goes
+through the Dio's write queue.
 
 A row that belongs to no table, such as the `row` an action predicate reads, still needs a
 handle with a resolver: the first field set asks it for the id column. A Vista over an empty
 [`MockShell`](vantage_vista::mocks::MockShell) (feature `mocks`) serves:
 
 <!-- tested: rhai_guide::records::row_without_table -->
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use ciborium::Value as CborValue;
+# use vantage_vista::mocks::MockShell;
+# use vantage_vista::rhai::{Handle, RecordDraft, Writes};
+# use vantage_vista::{Vista, VistaResolver};
+# let values = [
+#     ("status".to_string(), CborValue::Text("paid".into())),
+#     ("total".to_string(), CborValue::Integer(120.into())),
+# ]
+# .into_iter()
+# .collect();
 let no_table: Arc<dyn VistaResolver> =
     Arc::new(|_: &str| Ok(Vista::new("row", MockShell::new())));
 let row = RecordDraft::from_row(
@@ -170,6 +183,7 @@ let row = RecordDraft::from_row(
     "o1".into(),
     values,
 );
+# assert!(row.changes().is_empty());
 ```
 
 A script given this `row` can read it and stage fields, and every flash throws the denial:

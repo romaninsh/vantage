@@ -236,7 +236,7 @@ increases while you move between pages, something keeps views alive after their 
 | --- | --- |
 | `latency.window: 3s` | Separates the events, so that you can attribute each line to a moment |
 | `~/Library/Caches/Vantage/<project>-<hash>/` | The location of the cache. Delete it for a cold run. |
-| `debug: true` | Switches the stream on for one datasource. The others stay silent. |
+| `debug: true` | Switches the stream on for one datasource. The others stay silent. In Rust: `LensBuilder::debug_datasource(name)` |
 | `vantage_diorama::debug` | The one target, at `info`. It appears without `RUST_LOG`. |
 | time · datasource · tag · clause | The four parts of each line. `fetch #N` connects a request to its result. |
 | `served locally — no fetch` | The line that reports a viewport that cost nothing |

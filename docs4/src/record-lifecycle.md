@@ -18,8 +18,51 @@ everything here works the same on SQLite, Postgres, MySQL, Mongo, etc.
 `Table::get_ref_as` / `get_ref_from_row` traverse a relation from a *table* (both covered in
 [Relations & Traversal](relations/traversal.md)). The `GetRefExt` trait adds the record-level
 equivalent: traverse straight from a loaded `ActiveEntity` (typed) or `ActiveRecord` (untyped).
+The block reads and writes a launch database, so it is compiled but not run:
 
-```rust
+```rust,no_run
+# use vantage_dataset::prelude::ActiveEntitySet;
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Launch {
+#     pub name: String,
+# }
+#
+# impl Launch {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, Launch> {
+#         Table::new("launch", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("launch_crew", "launch_id", LaunchCrew::table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct LaunchCrew {
+#     pub launch_id: Option<String>,
+#     pub astronaut_id: Option<String>,
+#     pub role: Option<String>,
+# }
+#
+# impl LaunchCrew {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, LaunchCrew> {
+#         Table::new("launch_crew", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("launch_id")
+#             .with_column_of::<String>("astronaut_id")
+#             .with_column_of::<String>("role")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:launches.db").await.context("connect")?;
+# let launches = Launch::table(db);
+# let (id, a) = ("apollo-11", "armstrong".to_string());
 use vantage_table::prelude::GetRefExt;
 
 let launch = launches.get_entity(id).await?.expect("launch");
@@ -27,6 +70,8 @@ let launch = launches.get_entity(id).await?.expect("launch");
 // A child set scoped to this launch — and carrying its foreign key (see invariants below).
 let crew = launch.get_ref::<LaunchCrew>("launch_crew")?;
 crew.insert_return_id(&LaunchCrew { astronaut_id: Some(a), role: Some("Pilot".into()), ..Default::default() }).await?;
+# Ok(())
+# }
 ```
 
 `get_ref::<E2>(relation)` returns a `Table<T, E2>` scoped to the parent. For a typed `ActiveEntity`
@@ -93,7 +138,7 @@ Invariants are registered automatically wherever the scope is a plain `column = 
 - `Table::with_id(id)` — narrows by the id column.
 - has-many / has-one traversal (`Reference::resolve_from_row`) — narrows by the foreign key.
 - **every literal `column = value` passed to `add_condition` / `with_condition`**.
-- a Vista's `add_condition_eq`.
+- a Vista's `add_condition` with `FilterOp::Eq`, which `Vista::get_ref` uses for each join key.
 - Rhai `where(col, value)`.
 
 Expression scopes never register an invariant. You can also set one explicitly with
@@ -115,7 +160,51 @@ A patch never fills an invariant column. A present value must match it; a differ
 is rejected (`Conflict`), because it would move the row out of the set. Moving a row between sets
 goes through a handle whose set holds both.
 
-```rust
+```rust,no_run
+# use vantage_dataset::prelude::ActiveEntitySet;
+# use vantage_sql::prelude::*;
+# use vantage_table::prelude::GetRefExt;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Launch {
+#     pub name: String,
+# }
+#
+# impl Launch {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, Launch> {
+#         Table::new("launch", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("launch_crew", "launch_id", LaunchCrew::table)
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct LaunchCrew {
+#     pub launch_id: Option<String>,
+#     pub astronaut_id: Option<String>,
+#     pub role: Option<String>,
+# }
+#
+# impl LaunchCrew {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, LaunchCrew> {
+#         Table::new("launch_crew", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("launch_id")
+#             .with_column_of::<String>("astronaut_id")
+#             .with_column_of::<String>("role")
+#     }
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:launches.db").await.context("connect")?;
+# let launches = Launch::table(db);
+# let launch = launches.get_entity("apollo-11").await?.expect("launch");
+# let a = "armstrong".to_string();
 let crew = launch.get_ref::<LaunchCrew>("launch_crew")?;
 
 // launch_id absent → filled from the set:
@@ -123,6 +212,8 @@ crew.insert_return_id(&LaunchCrew { astronaut_id: Some(a), role: Some("Pilot".in
 
 // launch_id set to a *different* launch → Err:
 assert!(crew.insert_return_id(&LaunchCrew { launch_id: Some("other".into()), ..Default::default() }).await.is_err());
+# Ok(())
+# }
 ```
 
 ```admonish info title="Backends and InvariantValue"
@@ -140,10 +231,47 @@ normalization, validation, soft-delete, and after-effects are expressed — gene
 backend.
 
 ```rust
+# use std::future::Future;
+# use std::pin::Pin;
+#
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Launch {
+#     pub name: String,
+# }
+#
+# impl Launch {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, Launch> {
+#         Table::new("launch", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<String>("created")
+#     }
+# }
+#
+# fn stamp_created<'a>(
+#     rec: &'a mut Record<AnySqliteType>,
+#     _t: &'a Table<SqliteDB, EmptyEntity>,
+# ) -> Pin<Box<dyn Future<Output = VantageResult<()>> + Send + 'a>> {
+#     Box::pin(async move {
+#         rec.insert("created".into(), AnySqliteType::new("2026-10-14".to_string()));
+#         Ok(())
+#     })
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
 use std::sync::Arc;
 use vantage_table::prelude::{Hook, Phase};
 
 let launches = Launch::table(db).with_hook(Hook::BeforeInsert(Phase::Populate, Arc::new(stamp_created)));
+# let _ = launches;
+# Ok(())
+# }
 ```
 
 ### The `Hook` variants
@@ -190,6 +318,11 @@ use vantage_core::Result;
 use vantage_types::Record;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
 use vantage_table::table::Table;
+# use vantage_dataset::WritableValueSet;
+#
+# fn now_iso8601() -> String {
+#     "2026-10-14T09:00:00Z".to_string()
+# }
 
 // before-insert: stamp an audit field
 fn stamp_created<'a>(

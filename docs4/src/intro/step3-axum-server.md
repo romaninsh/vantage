@@ -60,6 +60,10 @@ computed-field setup we're walking away from here.)
 
 ```rust
 use serde::{Deserialize, Serialize};
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+use crate::product::Product;
 
 #[entity(SqliteType)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -75,12 +79,46 @@ impl Category {
             .with_many("products", "category_id", Product::table)
     }
 }
+# mod product {
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::Category;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#         #[serde(skip_serializing_if = "Option::is_none", default)]
+#         pub category_id: Option<String>,
+#         #[serde(default)]
+#         pub is_deleted: bool,
+#     }
+#     impl Product {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#             let is_deleted = Column::<bool>::new("is_deleted");
+#             Table::new("product", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_column_of::<i64>("price")
+#                 .with_column_of::<String>("category_id")
+#                 .with_column_of::<bool>("is_deleted")
+#                 .with_condition(is_deleted.eq(false))
+#                 .with_one("category", "category_id", Category::table)
+#         }
+#     }
+# }
+# fn main() {}
 ```
 
 `src/product.rs`:
 
 ```rust
 use serde::{Deserialize, Serialize};
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
+
+use crate::category::Category;
 
 #[entity(SqliteType)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -106,6 +144,26 @@ impl Product {
             .with_one("category", "category_id", Category::table)
     }
 }
+# mod category {
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::Product;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#             Table::new("category", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_many("products", "category_id", Product::table)
+#         }
+#     }
+# }
+# fn main() {}
 ```
 
 Two things to notice:
@@ -118,12 +176,58 @@ Two things to notice:
 The soft-delete condition from chapter 2 stays — `GET /products` will still hide rows with
 `is_deleted = true`.
 
-Now the server. Replace `src/main.rs` with:
+Now the server. Replace `src/main.rs` with the code below, keeping chapter 2's `mod category;` and
+`mod product;` declarations at the top:
 
-```rust
-mod category;
-mod product;
-
+```rust,no_run
+# mod product {
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::category::Category;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#         #[serde(skip_serializing_if = "Option::is_none", default)]
+#         pub category_id: Option<String>,
+#         #[serde(default)]
+#         pub is_deleted: bool,
+#     }
+#     impl Product {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#             let is_deleted = Column::<bool>::new("is_deleted");
+#             Table::new("product", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_column_of::<i64>("price")
+#                 .with_column_of::<String>("category_id")
+#                 .with_column_of::<bool>("is_deleted")
+#                 .with_condition(is_deleted.eq(false))
+#                 .with_one("category", "category_id", Category::table)
+#         }
+#     }
+# }
+# mod category {
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::product::Product;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#             Table::new("category", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_many("products", "category_id", Product::table)
+#         }
+#     }
+# }
 use std::sync::OnceLock;
 
 use axum::{routing::get, Json, Router};
@@ -196,16 +300,54 @@ subsequent call. In `src/category.rs`, add `use std::sync::OnceLock;` at the top
 of `Category::table`:
 
 ```rust
+# use serde::{Deserialize, Serialize};
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+use std::sync::OnceLock;
+
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Category {
+#     pub name: String,
+# }
 impl Category {
     pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Category> {
         static CACHE: OnceLock<Table<SqliteDB, Category>> = OnceLock::new();
         CACHE.get_or_init(|| {
             Table::new("category", db)
-                // ...columns unchanged...
+                .with_id_column("id")
+                .with_column_of::<String>("name")
                 .with_many("products", "category_id", |db| Product::table(db).clone())
         })
     }
 }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Product {
+#     pub name: String,
+#     pub price: i64,
+#     #[serde(skip_serializing_if = "Option::is_none", default)]
+#     pub category_id: Option<String>,
+#     #[serde(default)]
+#     pub is_deleted: bool,
+# }
+# impl Product {
+#     pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Product> {
+#         static CACHE: OnceLock<Table<SqliteDB, Product>> = OnceLock::new();
+#         CACHE.get_or_init(|| {
+#             let is_deleted = Column::<bool>::new("is_deleted");
+#             Table::new("product", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_column_of::<i64>("price")
+#                 .with_column_of::<String>("category_id")
+#                 .with_column_of::<bool>("is_deleted")
+#                 .with_condition(is_deleted.eq(false))
+#                 .with_one("category", "category_id", |db| Category::table(db).clone())
+#         })
+#     }
+# }
+# fn main() {}
 ```
 
 Three changes from chapter 2's version:
@@ -238,9 +380,10 @@ Restart the server and hit `/categories` — the response is identical, but now 
 are built on the first request and reused forever after.
 
 ```admonish info title="When the cached table needs narrowing"
-Most operations work on `&Table<...>`, but the builder methods that add conditions — like
-`with_condition`, `with_search`, `with_pagination`, and `with_order` — consume `self` and
-return a new `Table`. If a handler needs to narrow the cached definition, it clones first:
+Most operations work on `&Table<...>`, but the builder methods that narrow it — like
+`with_condition`, `with_search`, and `with_order` — consume `self` and return a new `Table`,
+and the setters (`add_condition`, `set_pagination`) need `&mut`. If a handler needs to narrow
+the cached definition, it clones first:
 
 ~~~rust
 let narrowed = Category::table(db())
@@ -261,6 +404,18 @@ relationship a proper name with an extension trait on `Table<SqliteDB, Category>
 `src/category.rs`:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Category {
+#     pub name: String,
+# }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Product {
+#     pub name: String,
+# }
 pub trait CategoryTable {
     fn ref_products(&self) -> Table<SqliteDB, Product>;
 }
@@ -270,6 +425,7 @@ impl CategoryTable for Table<SqliteDB, Category> {
         self.get_ref_as("products").unwrap()
     }
 }
+# fn main() {}
 ```
 
 Chapter 2 introduced this pattern — a typed, discoverable name instead of the string-and-turbofish
@@ -280,6 +436,78 @@ Now the handler. Take the cached category table, narrow it to a single id, and t
 relationship:
 
 ```rust
+# mod product {
+#     use std::sync::OnceLock;
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::category::Category;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#         #[serde(skip_serializing_if = "Option::is_none", default)]
+#         pub category_id: Option<String>,
+#         #[serde(default)]
+#         pub is_deleted: bool,
+#     }
+#     impl Product {
+#         pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Product> {
+#             static CACHE: OnceLock<Table<SqliteDB, Product>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 let is_deleted = Column::<bool>::new("is_deleted");
+#                 Table::new("product", db)
+#                     .with_id_column("id")
+#                     .with_column_of::<String>("name")
+#                     .with_column_of::<i64>("price")
+#                     .with_column_of::<String>("category_id")
+#                     .with_column_of::<bool>("is_deleted")
+#                     .with_condition(is_deleted.eq(false))
+#                     .with_one("category", "category_id", |db| Category::table(db).clone())
+#             })
+#         }
+#     }
+# }
+# mod category {
+#     use std::sync::OnceLock;
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::product::Product;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Category> {
+#             static CACHE: OnceLock<Table<SqliteDB, Category>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 Table::new("category", db)
+#                     .with_id_column("id")
+#                     .with_column_of::<String>("name")
+#                     .with_many("products", "category_id", |db| Product::table(db).clone())
+#             })
+#         }
+#     }
+#     pub trait CategoryTable {
+#         fn ref_products(&self) -> Table<SqliteDB, Product>;
+#     }
+#     impl CategoryTable for Table<SqliteDB, Category> {
+#         fn ref_products(&self) -> Table<SqliteDB, Product> {
+#             self.get_ref_as("products").unwrap()
+#         }
+#     }
+# }
+# use std::sync::OnceLock;
+# use axum::Json;
+# use category::Category;
+# use vantage_sql::prelude::*;
+# static DB: OnceLock<SqliteDB> = OnceLock::new();
+# fn db() -> SqliteDB {
+#     DB.get().expect("database not initialised").clone()
+# }
 use axum::extract::Path;
 use category::CategoryTable;
 use product::Product;
@@ -293,6 +521,7 @@ async fn list_category_products(Path(id): Path<i64>) -> Json<Vec<Product>> {
     let rows = products.list().await.unwrap();
     Json(rows.into_values().collect())
 }
+# fn main() {}
 ```
 
 Three things going on:
@@ -310,9 +539,99 @@ Three things going on:
 Register the route in `main.rs`:
 
 ```rust
+# mod product {
+#     use std::sync::OnceLock;
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::category::Category;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#         #[serde(skip_serializing_if = "Option::is_none", default)]
+#         pub category_id: Option<String>,
+#         #[serde(default)]
+#         pub is_deleted: bool,
+#     }
+#     impl Product {
+#         pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Product> {
+#             static CACHE: OnceLock<Table<SqliteDB, Product>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 let is_deleted = Column::<bool>::new("is_deleted");
+#                 Table::new("product", db)
+#                     .with_id_column("id")
+#                     .with_column_of::<String>("name")
+#                     .with_column_of::<i64>("price")
+#                     .with_column_of::<String>("category_id")
+#                     .with_column_of::<bool>("is_deleted")
+#                     .with_condition(is_deleted.eq(false))
+#                     .with_one("category", "category_id", |db| Category::table(db).clone())
+#             })
+#         }
+#     }
+# }
+# mod category {
+#     use std::sync::OnceLock;
+#     use serde::{Deserialize, Serialize};
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::product::Product;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Category> {
+#             static CACHE: OnceLock<Table<SqliteDB, Category>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 Table::new("category", db)
+#                     .with_id_column("id")
+#                     .with_column_of::<String>("name")
+#                     .with_many("products", "category_id", |db| Product::table(db).clone())
+#             })
+#         }
+#     }
+#     pub trait CategoryTable {
+#         fn ref_products(&self) -> Table<SqliteDB, Product>;
+#     }
+#     impl CategoryTable for Table<SqliteDB, Category> {
+#         fn ref_products(&self) -> Table<SqliteDB, Product> {
+#             self.get_ref_as("products").unwrap()
+#         }
+#     }
+# }
+# use std::sync::OnceLock;
+# use axum::extract::Path;
+# use axum::{Json, Router, routing::get};
+# use category::{Category, CategoryTable};
+# use product::Product;
+# use vantage_sql::prelude::*;
+# static DB: OnceLock<SqliteDB> = OnceLock::new();
+# fn db() -> SqliteDB {
+#     DB.get().expect("database not initialised").clone()
+# }
+# async fn list_categories() -> Json<Vec<Category>> {
+#     let rows = Category::table(db()).list().await.unwrap();
+#     Json(rows.into_values().collect())
+# }
+# async fn list_category_products(Path(id): Path<i64>) -> Json<Vec<Product>> {
+#     let id_col = Column::<i64>::new("id");
+#     let products = Category::table(db())
+#         .clone()
+#         .with_condition(id_col.eq(id))
+#         .ref_products();
+#     let rows = products.list().await.unwrap();
+#     Json(rows.into_values().collect())
+# }
+# fn main() {
 let app = Router::new()
     .route("/categories", get(list_categories))
     .route("/categories/{id}/products", get(list_category_products));
+# let _: Router = app;
+# }
 ```
 
 Hit it:
@@ -366,6 +685,17 @@ bodies serve every entity. That closure is `Fn(SqliteDB, &Params) -> Table<Sqlit
 database and whatever path params axum extracted, return the `Table` to act on. Put it in `main.rs`:
 
 ```rust
+# use std::sync::OnceLock;
+# use axum::extract::Path;
+# use axum::http::StatusCode;
+# use axum::{Json, Router, routing::get};
+# use serde::{Serialize, de::DeserializeOwned};
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# static DB: OnceLock<SqliteDB> = OnceLock::new();
+# fn db() -> SqliteDB {
+#     DB.get().expect("database not initialised").clone()
+# }
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -375,6 +705,7 @@ fn crud<E, F>(make_table: F) -> Router
 where
     F: Fn(SqliteDB, &Params) -> Table<SqliteDB, E> + Send + Sync + 'static,
     E: Entity<AnySqliteType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+    <E as vantage_types::TryIntoRecord<AnySqliteType>>::Error: std::fmt::Debug,
 {
     let f = Arc::new(make_table);
     Router::new()
@@ -419,22 +750,60 @@ where
                 let f = f;
                 move |Path(params): Path<Params>| async move {
                     let id = params["id"].clone();
-                    WritableDataSet::<E>::delete(&f(db(), &params), &id).await.unwrap();
+                    f(db(), &params).delete(&id).await.unwrap();
                     StatusCode::NO_CONTENT
                 }
             }),
         )
 }
+# fn main() {}
 ```
 
-Five handler bodies, each tiny, all generic over the entity type. Mount
+Five handler bodies, each tiny, all generic over the entity type. The last bound,
+`TryIntoRecord<AnySqliteType>::Error: Debug`, is what the table's write path asks of an entity: a
+record that fails to serialize has to be reportable. Mount
 `crud(...)` under a prefix with `.nest(...)` and every route below it gets the full CRUD verb set
 for free.
 
 `/categories` becomes a one-liner:
 
 ```rust
+# use std::collections::HashMap;
+# use std::sync::OnceLock;
+# use axum::Router;
+# use serde::{Deserialize, Serialize, de::DeserializeOwned};
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# type Params = HashMap<String, String>;
+# fn crud<E, F>(make_table: F) -> Router
+# where
+#     F: Fn(SqliteDB, &Params) -> Table<SqliteDB, E> + Send + Sync + 'static,
+#     E: Entity<AnySqliteType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#     <E as vantage_types::TryIntoRecord<AnySqliteType>>::Error: std::fmt::Debug,
+# {
+#     let _ = make_table;
+#     Router::new()
+# }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Category {
+#     pub name: String,
+# }
+# impl Category {
+#     pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Category> {
+#         static CACHE: OnceLock<Table<SqliteDB, Category>> = OnceLock::new();
+#         CACHE.get_or_init(|| {
+#             Table::new("category", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#         })
+#     }
+# }
+# fn main() {
+# let _app: Router = Router::new()
 .nest("/categories", crud(|db, _| Category::table(db).clone()))
+# ;
+# }
 ```
 
 That gives us:
@@ -451,6 +820,56 @@ The nested `/categories/{cat_id}/products` route uses the same helper. The closu
 out of the params map to narrow the set:
 
 ```rust
+# use std::collections::HashMap;
+# use std::sync::OnceLock;
+# use axum::Router;
+# use serde::{Deserialize, Serialize, de::DeserializeOwned};
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# type Params = HashMap<String, String>;
+# fn crud<E, F>(make_table: F) -> Router
+# where
+#     F: Fn(SqliteDB, &Params) -> Table<SqliteDB, E> + Send + Sync + 'static,
+#     E: Entity<AnySqliteType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#     <E as vantage_types::TryIntoRecord<AnySqliteType>>::Error: std::fmt::Debug,
+# {
+#     let _ = make_table;
+#     Router::new()
+# }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Product {
+#     pub name: String,
+# }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Category {
+#     pub name: String,
+# }
+# impl Category {
+#     pub fn table(db: SqliteDB) -> &'static Table<SqliteDB, Category> {
+#         static CACHE: OnceLock<Table<SqliteDB, Category>> = OnceLock::new();
+#         CACHE.get_or_init(|| {
+#             Table::new("category", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#         })
+#     }
+# }
+# pub trait CategoryTable {
+#     fn id(&self) -> Column<i64>;
+#     fn ref_products(&self) -> Table<SqliteDB, Product>;
+# }
+# impl CategoryTable for Table<SqliteDB, Category> {
+#     fn id(&self) -> Column<i64> {
+#         self.get_column("id").unwrap()
+#     }
+#     fn ref_products(&self) -> Table<SqliteDB, Product> {
+#         self.get_ref_as("products").unwrap()
+#     }
+# }
+# fn main() {
+# let _app: Router = Router::new()
 .nest(
     "/categories/{cat_id}/products",
     crud(|db, p| {
@@ -460,12 +879,26 @@ out of the params map to narrow the set:
         c.ref_products()
     }),
 )
+# ;
+# }
 ```
 
 `c.id()` comes from extending the `CategoryTable` trait we already set up — add it next to
 `ref_products`:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Category {
+#     pub name: String,
+# }
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Product {
+#     pub name: String,
+# }
 pub trait CategoryTable {
     fn id(&self) -> Column<i64>;
     fn ref_products(&self) -> Table<SqliteDB, Product>;
@@ -479,6 +912,7 @@ impl CategoryTable for Table<SqliteDB, Category> {
         self.get_ref_as("products").unwrap()
     }
 }
+# fn main() {}
 ```
 
 Nesting `crud` under `/categories/{cat_id}/products` gives a full CRUD surface for _products
@@ -553,6 +987,9 @@ The other two come down to converting [`VantageError`](vantage_core::VantageErro
 response. Add an `ApiError` type to `main.rs`:
 
 ```rust
+# use axum::Json;
+# use axum::http::StatusCode;
+# use vantage_sql::prelude::*;
 use axum::response::{IntoResponse, Response};
 
 struct ApiError {
@@ -588,6 +1025,7 @@ fn not_found(id: &str) -> ApiError {
 }
 
 type ApiResult<T> = Result<T, ApiError>;
+# fn main() {}
 ```
 
 Three pieces matter here:
@@ -604,6 +1042,44 @@ With that in place, the `unwrap`s inside `crud` turn into `?`, and each handler 
 `ApiResult<T>`:
 
 ```rust
+# use std::collections::HashMap;
+# use std::sync::{Arc, OnceLock};
+# use axum::extract::Path;
+# use axum::http::StatusCode;
+# use axum::response::{IntoResponse, Response};
+# use axum::{Json, Router, routing::get};
+# use serde::{Serialize, de::DeserializeOwned};
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# static DB: OnceLock<SqliteDB> = OnceLock::new();
+# fn db() -> SqliteDB {
+#     DB.get().expect("database not initialised").clone()
+# }
+# type Params = HashMap<String, String>;
+# struct ApiError {
+#     status: StatusCode,
+#     message: String,
+# }
+# impl IntoResponse for ApiError {
+#     fn into_response(self) -> Response {
+#         (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
+#     }
+# }
+# impl From<VantageError> for ApiError {
+#     fn from(e: VantageError) -> Self {
+#         Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: e.to_string() }
+#     }
+# }
+# type ApiResult<T> = Result<T, ApiError>;
+# fn crud<E, F>(make_table: F) -> Router
+# where
+#     F: Fn(SqliteDB, &Params) -> Table<SqliteDB, E> + Send + Sync + 'static,
+#     E: Entity<AnySqliteType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#     <E as vantage_types::TryIntoRecord<AnySqliteType>>::Error: std::fmt::Debug,
+# {
+#     let f = Arc::new(make_table);
+#     Router::new().route(
+#         "/",
 get({
     let f = f.clone();
     move |p: Option<Path<Params>>| async move {
@@ -612,11 +1088,55 @@ get({
         ApiResult::Ok(Json::<Vec<E>>(rows.into_values().collect()))
     }
 })
+#     )
+# }
+# fn main() {}
 ```
 
 For the `GET /{id}` handler, convert the `Option` into a 404 at the handler:
 
 ```rust
+# use std::collections::HashMap;
+# use std::sync::{Arc, OnceLock};
+# use axum::extract::Path;
+# use axum::http::StatusCode;
+# use axum::response::{IntoResponse, Response};
+# use axum::{Json, Router, routing::get};
+# use serde::{Serialize, de::DeserializeOwned};
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# static DB: OnceLock<SqliteDB> = OnceLock::new();
+# fn db() -> SqliteDB {
+#     DB.get().expect("database not initialised").clone()
+# }
+# type Params = HashMap<String, String>;
+# struct ApiError {
+#     status: StatusCode,
+#     message: String,
+# }
+# impl IntoResponse for ApiError {
+#     fn into_response(self) -> Response {
+#         (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
+#     }
+# }
+# impl From<VantageError> for ApiError {
+#     fn from(e: VantageError) -> Self {
+#         Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: e.to_string() }
+#     }
+# }
+# fn not_found(id: &str) -> ApiError {
+#     ApiError { status: StatusCode::NOT_FOUND, message: format!("not found: {}", id) }
+# }
+# type ApiResult<T> = Result<T, ApiError>;
+# fn crud<E, F>(make_table: F) -> Router
+# where
+#     F: Fn(SqliteDB, &Params) -> Table<SqliteDB, E> + Send + Sync + 'static,
+#     E: Entity<AnySqliteType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#     <E as vantage_types::TryIntoRecord<AnySqliteType>>::Error: std::fmt::Debug,
+# {
+#     let f = Arc::new(make_table);
+#     Router::new().route(
+#         "/{id}",
 get({
     let f = f.clone();
     move |Path(params): Path<Params>| async move {
@@ -628,6 +1148,9 @@ get({
         ApiResult::Ok(Json(entity))
     }
 })
+#     )
+# }
+# fn main() {}
 ```
 
 Do the same shape for `post`, `patch`, `delete` — drop the `.unwrap()`, add `?`, wrap the
@@ -692,6 +1215,7 @@ Axum parses query strings for us via the `Query<T>` extractor. Add a small struc
 parameters, and a second extractor on the list handler:
 
 ```rust
+# use serde::Deserialize;
 use axum::extract::Query;
 use vantage_table::pagination::Pagination;
 
@@ -701,12 +1225,58 @@ struct ListQuery {
     per_page: Option<i64>,
     q: Option<String>,
 }
+# fn main() {}
 ```
 
 Inside `crud`, only the `GET /` handler changes. It takes both extractors, mutates the narrowed
 table with whatever the caller asked for, and lists:
 
 ```rust
+# use std::collections::HashMap;
+# use std::sync::{Arc, OnceLock};
+# use axum::extract::{Path, Query};
+# use axum::http::StatusCode;
+# use axum::response::{IntoResponse, Response};
+# use axum::{Json, Router, routing::get};
+# use serde::{Deserialize, Serialize, de::DeserializeOwned};
+# use vantage_sql::prelude::*;
+# use vantage_table::pagination::Pagination;
+# use vantage_types::prelude::*;
+# static DB: OnceLock<SqliteDB> = OnceLock::new();
+# fn db() -> SqliteDB {
+#     DB.get().expect("database not initialised").clone()
+# }
+# type Params = HashMap<String, String>;
+# struct ApiError {
+#     status: StatusCode,
+#     message: String,
+# }
+# impl IntoResponse for ApiError {
+#     fn into_response(self) -> Response {
+#         (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
+#     }
+# }
+# impl From<VantageError> for ApiError {
+#     fn from(e: VantageError) -> Self {
+#         Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: e.to_string() }
+#     }
+# }
+# type ApiResult<T> = Result<T, ApiError>;
+# #[derive(Deserialize, Default)]
+# struct ListQuery {
+#     page: Option<i64>,
+#     per_page: Option<i64>,
+#     q: Option<String>,
+# }
+# fn crud<E, F>(make_table: F) -> Router
+# where
+#     F: Fn(SqliteDB, &Params) -> Table<SqliteDB, E> + Send + Sync + 'static,
+#     E: Entity<AnySqliteType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#     <E as vantage_types::TryIntoRecord<AnySqliteType>>::Error: std::fmt::Debug,
+# {
+#     let f = Arc::new(make_table);
+#     Router::new().route(
+#         "/",
 get({
     let f = f.clone();
     move |p: Option<Path<Params>>, Query(q): Query<ListQuery>| async move {
@@ -719,12 +1289,15 @@ get({
             )));
         }
         if let Some(term) = q.q.as_deref() {
-            t.add_search(term);
+            t = t.with_search(term);
         }
         let rows = t.list().await?;
         ApiResult::Ok(Json::<Vec<E>>(rows.into_values().collect()))
     }
 })
+#     )
+# }
+# fn main() {}
 ```
 
 Two things happen:
@@ -733,9 +1306,11 @@ Two things happen:
   takes a page number and a page size. Vantage applies these as `LIMIT … OFFSET …` on the SELECT.
   Missing params fall back to the defaults (page 1, 50 per page) — and if neither is supplied we
   don't touch pagination at all, so the unfiltered list still hits the whole set.
-- **[`add_search`](vantage_table::table::Table::add_search)`(term)`** is the `.with_search` we used
-  in chapter 2 to add a LIKE filter across all columns. Both end up as extra `WHERE` clauses on the
-  query that vantage already compiles for us.
+- **[`with_search`](vantage_table::table::Table::with_search)`(term)`** is the same call we used
+  in chapter 2 to add a LIKE filter across the table's search columns (every column, unless some
+  are flagged searchable). It consumes the table and hands back the narrowed one, hence
+  `t = t.with_search(term)`. Both end up as extra clauses on the query that vantage already
+  compiles for us.
 
 Try it:
 
@@ -770,15 +1345,16 @@ in effect, and pagination just counts rows within it.
 
 ```admonish info title="What about ordering?"
 A full `?order_by=price&dir=desc` pairing is the obvious next thing — and the Table API
-supports it via `add_order(column.ascending())` — but the `OrderBy` type is generic over the
+supports it via `with_order(OrderBy::ascending(…))` — but the `OrderBy` type is generic over the
 backend's condition type (`T::Condition`), not the easier-to-hand-you `Expression<T::Value>`
 that `get_column_expr` returns. Wiring it up at the generic `crud` level takes a small extra
 layer of `From` conversions that would balloon this section.
 
-For a single-entity handler, you can simply narrow with `let mut t = Category::table(db())
-.clone(); t.add_order(sqlite_expr!("{}", ident("name")).ascending());`. Adding ordering to
-`crud` is a fine exercise once the rest of the server is in place — and a natural thing to
-push back into the framework so every backend picks it up uniformly.
+For a single-entity handler, order the cloned definition directly:
+`Category::table(db()).clone().with_order(OrderBy::ascending(ident("name").into()))`, with
+`OrderBy` from `vantage_table::sorting`. Adding ordering to `crud` is a fine exercise once the
+rest of the server is in place — and a natural thing to push back into the framework so every
+backend picks it up uniformly.
 ```
 
 ```admonish info title="Validating pagination params"
@@ -816,12 +1392,12 @@ axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-vantage-core = "0.6"
-vantage-dataset = "0.6"
-vantage-expressions = "0.6"
-vantage-mongodb = "0.6"
-vantage-table = "0.6"
-vantage-types = { version = "0.6", features = ["serde"] }
+vantage-core = "1.1"
+vantage-dataset = "1.1"
+vantage-expressions = "1.2"
+vantage-mongodb = "2.0"
+vantage-table = "2.0"
+vantage-types = { version = "1.0", features = ["serde"] }
 ```
 
 ### Entities
@@ -855,6 +1431,38 @@ impl Category {
         })
     }
 }
+# mod product {
+#     use std::sync::OnceLock;
+#     use vantage_mongodb::prelude::*;
+#     use crate::Category;
+#     #[entity(MongoType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#         #[serde(skip_serializing_if = "Option::is_none", default)]
+#         pub category_id: Option<String>,
+#         #[serde(default)]
+#         pub is_deleted: bool,
+#     }
+#     impl Product {
+#         pub fn table(db: MongoDB) -> &'static Table<MongoDB, Product> {
+#             static CACHE: OnceLock<Table<MongoDB, Product>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 let is_deleted = Column::<bool>::new("is_deleted");
+#                 Table::new("product", db)
+#                     .with_id_column("_id")
+#                     .with_column_of::<String>("name")
+#                     .with_column_of::<i64>("price")
+#                     .with_column_of::<String>("category_id")
+#                     .with_column_of::<bool>("is_deleted")
+#                     .with_condition(is_deleted.eq(false))
+#                     .with_one("category", "category_id", |db| Category::table(db).clone())
+#             })
+#         }
+#     }
+# }
+# fn main() {}
 ```
 
 `src/product.rs` gets the symmetric changes:
@@ -893,6 +1501,28 @@ impl Product {
         })
     }
 }
+# mod category {
+#     use std::sync::OnceLock;
+#     use vantage_mongodb::prelude::*;
+#     use crate::Product;
+#     #[entity(MongoType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: MongoDB) -> &'static Table<MongoDB, Category> {
+#             static CACHE: OnceLock<Table<MongoDB, Category>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 Table::new("category", db)
+#                     .with_id_column("_id")
+#                     .with_column_of::<String>("name")
+#                     .with_many("products", "category_id", |db| Product::table(db).clone())
+#             })
+#         }
+#     }
+# }
+# fn main() {}
 ```
 
 Nothing about the struct shape changed — `category_id` and `is_deleted` have been real columns
@@ -902,6 +1532,22 @@ name and the entity's type tag shift.
 The `CategoryTable` trait from § 3 also updates — MongoDB's `_id` is a string, not an integer:
 
 ```rust
+# use vantage_mongodb::prelude::*;
+# #[entity(MongoType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Category {
+#     pub name: String,
+# }
+# #[entity(MongoType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Product {
+#     pub name: String,
+# }
+pub trait CategoryTable {
+    fn id(&self) -> Column<String>;
+    fn ref_products(&self) -> Table<MongoDB, Product>;
+}
+
 impl CategoryTable for Table<MongoDB, Category> {
     fn id(&self) -> Column<String> {
         self.get_column("_id").unwrap()
@@ -910,17 +1556,68 @@ impl CategoryTable for Table<MongoDB, Category> {
         self.get_ref_as("products").unwrap()
     }
 }
+# fn main() {}
 ```
 
 The nested route's closure gets a little simpler as a result — no parse step, just narrow by the
 URL's `cat_id` string directly:
 
 ```rust
+# use std::collections::HashMap;
+# use std::sync::OnceLock;
+# use axum::Router;
+# use vantage_mongodb::prelude::*;
+# type Params = HashMap<String, String>;
+# fn crud<E, F>(make_table: F) -> Router
+# where
+#     F: Fn(MongoDB, &Params) -> Table<MongoDB, E> + Send + Sync + 'static,
+#     E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#     <E as vantage_types::TryIntoRecord<AnyMongoType>>::Error: std::fmt::Debug,
+# {
+#     let _ = make_table;
+#     Router::new()
+# }
+# #[entity(MongoType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Product {
+#     pub name: String,
+# }
+# #[entity(MongoType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Category {
+#     pub name: String,
+# }
+# impl Category {
+#     pub fn table(db: MongoDB) -> &'static Table<MongoDB, Category> {
+#         static CACHE: OnceLock<Table<MongoDB, Category>> = OnceLock::new();
+#         CACHE.get_or_init(|| {
+#             Table::new("category", db)
+#                 .with_id_column("_id")
+#                 .with_column_of::<String>("name")
+#         })
+#     }
+# }
+# pub trait CategoryTable {
+#     fn id(&self) -> Column<String>;
+#     fn ref_products(&self) -> Table<MongoDB, Product>;
+# }
+# impl CategoryTable for Table<MongoDB, Category> {
+#     fn id(&self) -> Column<String> {
+#         self.get_column("_id").unwrap()
+#     }
+#     fn ref_products(&self) -> Table<MongoDB, Product> {
+#         self.get_ref_as("products").unwrap()
+#     }
+# }
+# fn main() {
+# let _router: Router =
 crud(|db, p| {
     let mut c = Category::table(db).clone();
     c.add_condition(c.id().eq(p["cat_id"].as_str()));
     c.ref_products()
 })
+# ;
+# }
 ```
 
 `.eq(&str)` works here because `vantage-mongodb`'s `From<&str>` for
@@ -934,15 +1631,30 @@ The `crud` function's generic bounds shift from `Entity<AnySqliteType>` to `Enti
 and its `Fn(SqliteDB, ...)` becomes `Fn(MongoDB, ...)`. Body unchanged.
 
 ```rust
+# use std::collections::HashMap;
+# use axum::Router;
+# use vantage_mongodb::prelude::*;
+# type Params = HashMap<String, String>;
 fn crud<E, F>(make_table: F) -> Router
 where
     F: Fn(MongoDB, &Params) -> Table<MongoDB, E> + Send + Sync + 'static,
     E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+    <E as vantage_types::TryIntoRecord<AnyMongoType>>::Error: std::fmt::Debug,
+# {
+#     let _ = make_table;
+#     Router::new()
+# }
+# fn main() {}
 ```
 
 Connection and id handling are the only handler-level changes:
 
-```rust
+```rust,no_run
+# use std::collections::HashMap;
+# use vantage_mongodb::prelude::*;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let params = HashMap::from([("id".to_string(), "69e2b9101a552c206f5f8468".to_string())]);
 // db() returns MongoDB; connect with URL + database name.
 let conn = MongoDB::connect("mongodb://localhost:27017", "learn3")
     .await
@@ -952,6 +1664,8 @@ let conn = MongoDB::connect("mongodb://localhost:27017", "learn3")
 // string is a 24-char hex, otherwise stays a plain String, via a `From<String>`
 // smart-parse in vantage-mongodb.
 let id: MongoId = params["id"].clone().into();
+# Ok(())
+# }
 ```
 
 The 404 path needs no change at all. Mongo's `get` returns `Result<Option<E>>` just like
@@ -1024,22 +1738,372 @@ they're generic over any `Table<MongoDB, E>`. Move them into their own module an
 collapses to exactly what it's about: connecting the database and registering routes. Three
 files do the work:
 
-**`src/vantage_axum.rs`** (one file, ~120 lines) — everything HTTP: `ApiError`, `ListQuery`,
-and the `crud<E, F>` helper. Accepts any entity `E` that implements `Entity<AnyMongoType>`
-plus the usual serde bounds.
-
 **`src/db.rs`** (17 lines) — the `static DB: OnceLock<MongoDB>`, an `init(url, db)` helper
 that connects and stores the handle, and a `pub fn db() -> MongoDB` accessor that hands out
-cheap `MongoDB` clones.
-
-**`src/main.rs`** — now down to ~30 lines:
+cheap `MongoDB` clones:
 
 ```rust
-mod category;
-mod db;
-mod product;
-mod vantage_axum;
+# mod db {
+use std::sync::OnceLock;
 
+use vantage_mongodb::prelude::*;
+
+static DB: OnceLock<MongoDB> = OnceLock::new();
+
+pub async fn init(url: &str, database: &str) -> VantageResult<()> {
+    let conn = MongoDB::connect(url, database)
+        .await
+        .context("Failed to connect to MongoDB")?;
+    DB.set(conn).ok();
+    Ok(())
+}
+
+pub fn db() -> MongoDB {
+    DB.get().expect("database not initialised").clone()
+}
+# }
+# fn main() {}
+```
+
+**`src/vantage_axum.rs`** (one file, ~130 lines) — everything HTTP: `ApiError`, `ListQuery`,
+and the `crud<E, F>` helper. Accepts any entity `E` that implements `Entity<AnyMongoType>`
+plus the usual serde bounds. It's the pieces from the sections above, collected:
+
+```rust
+# mod db {
+#     use std::sync::OnceLock;
+#     use vantage_mongodb::prelude::*;
+#     static DB: OnceLock<MongoDB> = OnceLock::new();
+#     pub async fn init(url: &str, database: &str) -> VantageResult<()> {
+#         let conn = MongoDB::connect(url, database)
+#             .await
+#             .context("Failed to connect to MongoDB")?;
+#         DB.set(conn).ok();
+#         Ok(())
+#     }
+#     pub fn db() -> MongoDB {
+#         DB.get().expect("database not initialised").clone()
+#     }
+# }
+# mod vantage_axum {
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use axum::{
+    Json, Router,
+    extract::{Path, Query},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::get,
+};
+use vantage_mongodb::prelude::*;
+
+use crate::db::db;
+
+pub struct ApiError {
+    pub status: StatusCode,
+    pub message: String,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (
+            self.status,
+            Json(serde_json::json!({ "error": self.message })),
+        )
+            .into_response()
+    }
+}
+
+impl From<VantageError> for ApiError {
+    fn from(e: VantageError) -> Self {
+        eprintln!("API error: {:?}", e);
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: e.to_string(),
+        }
+    }
+}
+
+fn not_found(id: &str) -> ApiError {
+    ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: format!("not found: {}", id),
+    }
+}
+
+pub type Params = HashMap<String, String>;
+pub type ApiResult<T> = Result<T, ApiError>;
+
+#[derive(Deserialize, Default)]
+pub struct ListQuery {
+    pub page: Option<i64>,
+    pub per_page: Option<i64>,
+    pub q: Option<String>,
+}
+
+pub fn crud<E, F>(make_table: F) -> Router
+where
+    F: Fn(MongoDB, &Params) -> Table<MongoDB, E> + Send + Sync + 'static,
+    E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+    <E as vantage_types::TryIntoRecord<AnyMongoType>>::Error: std::fmt::Debug,
+{
+    let f = Arc::new(make_table);
+    Router::new()
+        .route(
+            "/",
+            get({
+                let f = f.clone();
+                move |p: Option<Path<Params>>, Query(q): Query<ListQuery>| async move {
+                    let params = p.map(|Path(p)| p).unwrap_or_default();
+                    let mut t = f(db(), &params);
+                    if q.page.is_some() || q.per_page.is_some() {
+                        t.set_pagination(Some(Pagination::new(
+                            q.page.unwrap_or(1),
+                            q.per_page.unwrap_or(50),
+                        )));
+                    }
+                    if let Some(term) = q.q.as_deref() {
+                        t = t.with_search(term);
+                    }
+                    let rows = t.list().await?;
+                    ApiResult::Ok(Json::<Vec<E>>(rows.into_values().collect()))
+                }
+            })
+            .post({
+                let f = f.clone();
+                move |p: Option<Path<Params>>, Json(entity): Json<E>| async move {
+                    let params = p.map(|Path(p)| p).unwrap_or_default();
+                    let id = f(db(), &params).insert_return_id(&entity).await?;
+                    ApiResult::Ok(Json(serde_json::json!({ "id": id })))
+                }
+            }),
+        )
+        .route(
+            "/{id}",
+            get({
+                let f = f.clone();
+                move |Path(params): Path<Params>| async move {
+                    let id = params["id"].clone();
+                    let entity = f(db(), &params)
+                        .get(id.clone())
+                        .await?
+                        .ok_or_else(|| not_found(&id))?;
+                    ApiResult::Ok(Json(entity))
+                }
+            })
+            .patch({
+                let f = f.clone();
+                move |Path(params): Path<Params>, Json(partial): Json<E>| async move {
+                    let id: MongoId = params["id"].clone().into();
+                    let updated = f(db(), &params).patch(id.clone(), &partial).await?;
+                    ApiResult::Ok(Json(updated))
+                }
+            })
+            .delete({
+                let f = f;
+                move |Path(params): Path<Params>| async move {
+                    let id: MongoId = params["id"].clone().into();
+                    f(db(), &params).delete(id.clone()).await?;
+                    ApiResult::Ok(StatusCode::NO_CONTENT)
+                }
+            }),
+        )
+}
+# }
+# fn main() {}
+```
+
+**`src/main.rs`** — now down to ~30 lines. It declares the four modules (`mod category;`,
+`mod db;`, `mod product;`, `mod vantage_axum;`), then:
+
+```rust,no_run
+# mod db {
+#     use std::sync::OnceLock;
+#     use vantage_mongodb::prelude::*;
+#     static DB: OnceLock<MongoDB> = OnceLock::new();
+#     pub async fn init(url: &str, database: &str) -> VantageResult<()> {
+#         let conn = MongoDB::connect(url, database)
+#             .await
+#             .context("Failed to connect to MongoDB")?;
+#         DB.set(conn).ok();
+#         Ok(())
+#     }
+#     pub fn db() -> MongoDB {
+#         DB.get().expect("database not initialised").clone()
+#     }
+# }
+# mod product {
+#     use std::sync::OnceLock;
+#     use vantage_mongodb::prelude::*;
+#     use crate::category::Category;
+#     #[entity(MongoType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#         #[serde(skip_serializing_if = "Option::is_none", default)]
+#         pub category_id: Option<String>,
+#         #[serde(default)]
+#         pub is_deleted: bool,
+#     }
+#     impl Product {
+#         pub fn table(db: MongoDB) -> &'static Table<MongoDB, Product> {
+#             static CACHE: OnceLock<Table<MongoDB, Product>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 let is_deleted = Column::<bool>::new("is_deleted");
+#                 Table::new("product", db)
+#                     .with_id_column("_id")
+#                     .with_column_of::<String>("name")
+#                     .with_column_of::<i64>("price")
+#                     .with_column_of::<String>("category_id")
+#                     .with_column_of::<bool>("is_deleted")
+#                     .with_condition(is_deleted.eq(false))
+#                     .with_one("category", "category_id", |db| Category::table(db).clone())
+#             })
+#         }
+#     }
+# }
+# mod category {
+#     use std::sync::OnceLock;
+#     use vantage_mongodb::prelude::*;
+#     use crate::product::Product;
+#     #[entity(MongoType)]
+#     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: MongoDB) -> &'static Table<MongoDB, Category> {
+#             static CACHE: OnceLock<Table<MongoDB, Category>> = OnceLock::new();
+#             CACHE.get_or_init(|| {
+#                 Table::new("category", db)
+#                     .with_id_column("_id")
+#                     .with_column_of::<String>("name")
+#                     .with_many("products", "category_id", |db| Product::table(db).clone())
+#             })
+#         }
+#     }
+#     pub trait CategoryTable {
+#         fn id(&self) -> Column<String>;
+#         fn ref_products(&self) -> Table<MongoDB, Product>;
+#     }
+#     impl CategoryTable for Table<MongoDB, Category> {
+#         fn id(&self) -> Column<String> {
+#             self.get_column("_id").unwrap()
+#         }
+#         fn ref_products(&self) -> Table<MongoDB, Product> {
+#             self.get_ref_as("products").unwrap()
+#         }
+#     }
+# }
+# mod vantage_axum {
+#     use std::collections::HashMap;
+#     use std::sync::Arc;
+#     use axum::{
+#         Json, Router,
+#         extract::{Path, Query},
+#         http::StatusCode,
+#         response::{IntoResponse, Response},
+#         routing::get,
+#     };
+#     use vantage_mongodb::prelude::*;
+#     use crate::db::db;
+#     pub struct ApiError {
+#         pub status: StatusCode,
+#         pub message: String,
+#     }
+#     impl IntoResponse for ApiError {
+#         fn into_response(self) -> Response {
+#             (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
+#         }
+#     }
+#     impl From<VantageError> for ApiError {
+#         fn from(e: VantageError) -> Self {
+#             eprintln!("API error: {:?}", e);
+#             Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: e.to_string() }
+#         }
+#     }
+#     fn not_found(id: &str) -> ApiError {
+#         ApiError { status: StatusCode::NOT_FOUND, message: format!("not found: {}", id) }
+#     }
+#     pub type Params = HashMap<String, String>;
+#     pub type ApiResult<T> = Result<T, ApiError>;
+#     #[derive(Deserialize, Default)]
+#     pub struct ListQuery {
+#         pub page: Option<i64>,
+#         pub per_page: Option<i64>,
+#         pub q: Option<String>,
+#     }
+#     pub fn crud<E, F>(make_table: F) -> Router
+#     where
+#         F: Fn(MongoDB, &Params) -> Table<MongoDB, E> + Send + Sync + 'static,
+#         E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#         <E as vantage_types::TryIntoRecord<AnyMongoType>>::Error: std::fmt::Debug,
+#     {
+#         let f = Arc::new(make_table);
+#         Router::new()
+#             .route(
+#                 "/",
+#                 get({
+#                     let f = f.clone();
+#                     move |p: Option<Path<Params>>, Query(q): Query<ListQuery>| async move {
+#                         let params = p.map(|Path(p)| p).unwrap_or_default();
+#                         let mut t = f(db(), &params);
+#                         if q.page.is_some() || q.per_page.is_some() {
+#                             t.set_pagination(Some(Pagination::new(
+#                                 q.page.unwrap_or(1),
+#                                 q.per_page.unwrap_or(50),
+#                             )));
+#                         }
+#                         if let Some(term) = q.q.as_deref() {
+#                             t = t.with_search(term);
+#                         }
+#                         let rows = t.list().await?;
+#                         ApiResult::Ok(Json::<Vec<E>>(rows.into_values().collect()))
+#                     }
+#                 })
+#                 .post({
+#                     let f = f.clone();
+#                     move |p: Option<Path<Params>>, Json(entity): Json<E>| async move {
+#                         let params = p.map(|Path(p)| p).unwrap_or_default();
+#                         let id = f(db(), &params).insert_return_id(&entity).await?;
+#                         ApiResult::Ok(Json(serde_json::json!({ "id": id })))
+#                     }
+#                 }),
+#             )
+#             .route(
+#                 "/{id}",
+#                 get({
+#                     let f = f.clone();
+#                     move |Path(params): Path<Params>| async move {
+#                         let id = params["id"].clone();
+#                         let entity = f(db(), &params)
+#                             .get(id.clone())
+#                             .await?
+#                             .ok_or_else(|| not_found(&id))?;
+#                         ApiResult::Ok(Json(entity))
+#                     }
+#                 })
+#                 .patch({
+#                     let f = f.clone();
+#                     move |Path(params): Path<Params>, Json(partial): Json<E>| async move {
+#                         let id: MongoId = params["id"].clone().into();
+#                         let updated = f(db(), &params).patch(id.clone(), &partial).await?;
+#                         ApiResult::Ok(Json(updated))
+#                     }
+#                 })
+#                 .delete({
+#                     let f = f;
+#                     move |Path(params): Path<Params>| async move {
+#                         let id: MongoId = params["id"].clone().into();
+#                         f(db(), &params).delete(id.clone()).await?;
+#                         ApiResult::Ok(StatusCode::NO_CONTENT)
+#                     }
+#                 }),
+#             )
+#     }
+# }
 use axum::Router;
 use category::{Category, CategoryTable};
 use vantage_axum::crud;
@@ -1074,7 +2138,40 @@ Adding a new entity to this server is now *two* things:
 2. Mount it.
 
 ```rust
+# use std::collections::HashMap;
+# use std::sync::OnceLock;
+# use axum::Router;
+# use vantage_mongodb::prelude::*;
+# type Params = HashMap<String, String>;
+# fn crud<E, F>(make_table: F) -> Router
+# where
+#     F: Fn(MongoDB, &Params) -> Table<MongoDB, E> + Send + Sync + 'static,
+#     E: Entity<AnyMongoType> + Serialize + DeserializeOwned + Send + Sync + 'static,
+#     <E as vantage_types::TryIntoRecord<AnyMongoType>>::Error: std::fmt::Debug,
+# {
+#     let _ = make_table;
+#     Router::new()
+# }
+# #[entity(MongoType)]
+# #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+# pub struct Widget {
+#     pub name: String,
+# }
+# impl Widget {
+#     pub fn table(db: MongoDB) -> &'static Table<MongoDB, Widget> {
+#         static CACHE: OnceLock<Table<MongoDB, Widget>> = OnceLock::new();
+#         CACHE.get_or_init(|| {
+#             Table::new("widget", db)
+#                 .with_id_column("_id")
+#                 .with_column_of::<String>("name")
+#         })
+#     }
+# }
+# fn main() {
+# let _app: Router = Router::new()
 .nest("/widgets", crud(|db, _| Widget::table(db).clone()))
+# ;
+# }
 ```
 
 The full surface: `GET` list, `POST` create, `GET /{id}`, `PATCH /{id}`, `DELETE

@@ -100,7 +100,8 @@ In Rust, [`Column::with_expression`](vantage_vista::Column::with_expression) tur
 computed one:
 
 <!-- tested: rhai_guide::computed::declare_in_rust -->
-```rust,ignore
+```rust
+# use vantage_vista::{Column, ColumnFlag};
 let gross = Column::new("gross", "int")
     .with_flag(ColumnFlag::Orderable)
     .with_expression("row.net + row.vat")

@@ -139,8 +139,9 @@ async fn search_reads_only_searchable_columns() {
             ],
         )
         .await;
-    let plain = Table::<MockTableSource, TestUser>::new("users", mock)
-        .with_column(MockColumn::<String>::new("note"));
+    let plain =
+        Table::<MockTableSource, TestUser>::new("users", mock)
+            .with_column(MockColumn::<String>::new("note"));
     assert_eq!(searched(plain.clone(), "bob").await, ["1"]);
 
     let flagged =

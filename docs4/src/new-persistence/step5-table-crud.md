@@ -30,7 +30,7 @@ The `TableSource` implementation also declares several associated types:
   (e.g. SurrealDB's `Thing` which encodes `table:id`). Whatever you pick must be covered by your
   type system.
 
-```rust
+```text
 use async_trait::async_trait;
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::traits::table_source::TableSource;
@@ -49,7 +49,7 @@ Implement the following methods first — they're all straightforward delegation
 
 - **Column management** — `create_column`, `to_any_column`, `convert_any_column`:
 
-```rust
+```text
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }
@@ -71,7 +71,7 @@ Implement the following methods first — they're all straightforward delegation
 
 - **Expression factory** — `expr()`:
 
-```rust
+```text
     fn expr(
         &self,
         template: impl Into<String>,
@@ -118,6 +118,12 @@ impl Product {
             .with_column_of::<i64>("inventory_stock")
     }
 }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let table = Product::sqlite_table(SqliteDB::connect("sqlite::memory:").await?);
+# assert_eq!(table.columns().len(), 7);
+# Ok(())
+# }
 ```
 
 Note that the entity struct does **not** include the `id` field — that's handled separately by
@@ -131,6 +137,31 @@ Your first test should build a table, then call `table.select()`. Just like the 
 can use `preview()` to check the rendered SQL, and later execute it against a real database:
 
 ```rust
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# struct Product {
+#     name: String,
+#     calories: i64,
+#     price: i64,
+#     bakery_id: String,
+#     is_deleted: bool,
+#     inventory_stock: i64,
+# }
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("calories")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<String>("bakery_id")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_column_of::<i64>("inventory_stock")
+#     }
+# }
 #[tokio::test]
 async fn test_product_select() {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
@@ -185,7 +216,7 @@ conditions get their own test file next.
 All `TableSource` methods return `vantage_core::Result<T>` (an alias for `Result<T, VantageError>`).
 Use the `error!` macro from `vantage_core` to create errors with structured context:
 
-```rust
+```text
 use vantage_core::error;
 
 // Simple error message
@@ -204,12 +235,16 @@ structured context, not interpolated into the message string.
 
 To wrap external errors with additional context, use the `Context` trait:
 
-```rust
+```rust,no_run
+# use vantage_core::error;
+# fn main() -> vantage_core::Result<()> {
 use vantage_core::Context;
 
 // Wraps the original error as the "source" of a new VantageError
 let data = std::fs::read("config.json")
     .context(error!("failed to load config"))?;
+# Ok(())
+# }
 ```
 
 This chains errors — the original `io::Error` is preserved as the source, so `Display` renders both
@@ -235,25 +270,117 @@ automatically as WHERE clauses. Test a few patterns:
 - **Custom expression** — pass columns as expression arguments via `table["field"]`:
 
 ```rust
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_sql::sqlite_expr;
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# struct Product {
+#     name: String,
+#     calories: i64,
+#     price: i64,
+#     bakery_id: String,
+#     is_deleted: bool,
+#     inventory_stock: i64,
+# }
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("calories")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<String>("bakery_id")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_column_of::<i64>("inventory_stock")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite::memory:").await?;
 let mut table = Product::sqlite_table(db);
 table.add_condition(sqlite_expr!("{} > {}", (table["price"]), 130));
+# Ok(())
+# }
 ```
 
 - **Multiple conditions** — combined with AND, including field-to-field comparison:
 
 ```rust
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_sql::sqlite_expr;
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# struct Product {
+#     name: String,
+#     calories: i64,
+#     price: i64,
+#     bakery_id: String,
+#     is_deleted: bool,
+#     inventory_stock: i64,
+# }
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("calories")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<String>("bakery_id")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_column_of::<i64>("inventory_stock")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite::memory:").await?;
 let mut table = Product::sqlite_table(db);
 table.add_condition(sqlite_expr!("{} > {}", (table["price"]), 130));
 table.add_condition(sqlite_expr!("{} > {}", (table["price"]), (table["calories"])));
+# Ok(())
+# }
 ```
 
 - **SqliteOperation::eq()** — the idiomatic way:
 
 ```rust
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# struct Product {
+#     name: String,
+#     calories: i64,
+#     price: i64,
+#     bakery_id: String,
+#     is_deleted: bool,
+#     inventory_stock: i64,
+# }
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("calories")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<String>("bakery_id")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_column_of::<i64>("inventory_stock")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite::memory:").await?;
 use vantage_sql::sqlite::operation::SqliteOperation;
 
 let mut table = Product::sqlite_table(db);
 table.add_condition(table["is_deleted"].eq(false));
+# Ok(())
+# }
 ```
 
 ### Implement aggregates
@@ -263,10 +390,40 @@ Implement `get_table_count`, `get_table_sum`, `get_table_max`, and `get_table_mi
 Once implemented, `Table` exposes shorter `get_count`, `get_sum`, `get_max`, `get_min` methods
 directly:
 
-```rust
+```rust,no_run
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# struct Product {
+#     name: String,
+#     calories: i64,
+#     price: i64,
+#     bakery_id: String,
+#     is_deleted: bool,
+#     inventory_stock: i64,
+# }
+# impl Product {
+#     fn sqlite_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("calories")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<String>("bakery_id")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_column_of::<i64>("inventory_stock")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite:../target/bakery.sqlite?mode=ro").await?;
 let table = Product::sqlite_table(db);
 assert_eq!(table.get_count().await.unwrap(), 5);
 assert_eq!(table.get_max(&table["price"]).await.unwrap().try_get::<i64>().unwrap(), 299);
+# Ok(())
+# }
 ```
 
 ### Implement write operations
@@ -287,7 +444,27 @@ assert_eq!(table.get_max(&table["price"]).await.unwrap().try_get::<i64>().unwrap
 Test both `WritableValueSet` (raw records, no entity) and `WritableDataSet` (typed entities) using
 in-memory SQLite:
 
-```rust
+```rust,no_run
+# use vantage_dataset::{InsertableDataSet, ReadableDataSet, WritableDataSet, WritableValueSet};
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_table::table::Table;
+# use vantage_types::{Record, entity};
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone)]
+# struct Item {
+#     name: String,
+#     price: i64,
+# }
+# fn record(pairs: &[(&str, AnySqliteType)]) -> Record<AnySqliteType> {
+#     pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite::memory:").await?;
+# let table = Table::<SqliteDB, Item>::new("item", db)
+#     .with_id_column("id")
+#     .with_column_of::<String>("name")
+#     .with_column_of::<i64>("price");
 // WritableValueSet — no entity needed
 let rec = record(&[("name", "Gamma".into()), ("price", 30i64.into())]);
 table.insert_value(&"c".to_string(), &rec).await.unwrap();
@@ -299,5 +476,7 @@ table.insert(&"c".to_string(), &item).await.unwrap();
 // InsertableDataSet — auto-generated ID
 let id = table.insert_return_id(&item).await.unwrap();
 let fetched = table.get(id).await.unwrap();
+# Ok(())
+# }
 ```
 

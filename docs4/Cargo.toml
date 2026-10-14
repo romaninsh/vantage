@@ -17,3 +17,32 @@ vantage-types = { path = "../vantage-types" }
 # `rhai` so the Rhai chapters' links (Handle, run_script, …) resolve.
 vantage-rhai = { path = "../vantage-rhai" }
 vantage-vista = { path = "../vantage-vista", features = ["rhai", "mocks"] }
+
+# What the chapters' snippets compile against (`cargo test -p vantage-docs --doc`).
+[dev-dependencies]
+async-trait = "0.1"
+axum = "0.8"
+ciborium = "0.2"
+dataset-ui-adapters = { path = "../vantage-ui-adapters", features = ["ratatui"] }
+# `vantage_type_system!` expands to paths in both.
+indexmap = "2"
+paste = "1.0"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+surreal-client = { path = "../surreal-client" }
+tower-http = { version = "0.6", features = ["fs"] }
+vantage-api-client = { path = "../vantage-api-client" }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "postgres"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+vantage-api-adapters = { path = "../vantage-api-adapters", features = ["axum"] }
+vantage-aws = { path = "../vantage-aws" }
+vantage-cli-util = { path = "../vantage-cli-util" }
+vantage-csv = { path = "../vantage-csv", features = ["vista"] }
+vantage-diorama = { path = "../vantage-diorama", features = ["diagnostics", "rhai"] }
+vantage-memory = { path = "../vantage-memory", features = ["rhai"] }
+vantage-mongodb = { path = "../vantage-mongodb", features = ["vista", "rhai"] }
+vantage-sql = { path = "../vantage-sql", features = ["sqlite", "postgres", "mysql", "vista", "rhai"] }
+vantage-surrealdb = { path = "../vantage-surrealdb", features = ["vista", "rhai"] }
+vantage-vista = { path = "../vantage-vista", features = ["rhai", "mocks", "contract"] }

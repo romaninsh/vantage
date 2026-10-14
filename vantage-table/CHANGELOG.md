@@ -2,11 +2,46 @@
 
 ## 2.0.0 — 2026-10-14
 
-- Vista 2.0: breaking API changes; see the migration guide (phase 5).
-- `Cardinality` removed in favour of `Reference::vista_reference`; `Table::traverse_erased`; column-level `references:` lowered in the spec path; `name_spec_targets` removed.
+### Breaking changes
+
+- `ContainedRelation::new(name, host, kind, id_column, build)` is
+  `ContainedRelation::one(name, host, build)` or `ContainedRelation::many(name, host, id_column,
+  build)`. `ContainedRelation::kind()` returns `vantage_vista::ReferenceKind`, `spec()` is
+  `reference()`, and `Table::vista_contained` returns `Vec<vantage_vista::Reference>`.
+- The `Reference` trait's `cardinality()`, `foreign_key()` and `target_type_name()` are replaced
+  by `vista_reference(name, target, source_id)` and `target_table_name(data_source)`. There is no
+  `Cardinality` type. `ref_cardinality`, `ref_foreign_key` and `ref_kinds` keep their signatures.
+- `mocks` and `prelude::MockTableSource` are behind the `mocks` feature; `MockReference` is
+  test-only; the unused `mockall` dependency is gone.
+- `Table::with_spec_references` takes the whole `&VistaSpec` and returns `Result<Self>`. It also
+  registers column-level `references:` sugar (`col: { references: t }` is a has-one named `col`),
+  so the spec path names its own targets.
+- `Table::get_contained_ref` takes `parent: Option<(&Record, Id)>`; `None` gives the bare target.
+- `Table::temp_remove_condition` on a handle with no condition is an `is_not_found()` error.
+- A typed relation's `Reference.target` is its built target's table name, not the Rust type name,
+  so `catalog.vista(&reference.target)` finds it.
+- `vista_metadata` always carries `Hidden`, `Label` and `RequestParam`; with `column_flags`, every
+  typed flag maps through `ColumnFlag::to_vista()` (`IdField` → `Id`, `Indexed` →
+  `Other("indexed")`, …).
+- `Column::from_spec` carries the YAML `mandatory`, `hidden`, `searchable`, `indexed`, `label`
+  and `request_param` flags onto the typed column.
+- `TableSource::search_table_condition` impls read `Table::search_columns()`.
+
+### Other changes
+
+- `ColumnFlag::RequestParam` and `Table::row_fields()`: the declared columns minus request
+  params.
+- `table::retain_matching(rows, wanted, row_fields, eq)`: the in-memory equality filter over
+  fetched rows.
+- `Table::traverse_erased(reference, row, wrap)`: build, wrap and narrow a traversal target.
+- `table::spec::spec_references(spec, source_id)`: every join a spec declares, as vista
+  references.
 - `Table::replace_temp_condition(old, new)`: swap a temporary condition in one call.
 - `Table::search_columns`: the columns flagged `Searchable`, or every column when none is. The
   mock table source searches them.
+- `Table::vista_columns` builds through the same column mapping as `vista_metadata`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 1.3.0 — 2026-10-10
 

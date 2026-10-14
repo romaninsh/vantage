@@ -70,9 +70,10 @@ grep 'asks for' session.log | wc -l
 grep -A3 'session summary' session.log
 ```
 
-In a Rust harness, you read the same numbers directly:
+In a Rust harness, you read the same numbers directly. The counters live in
+[`stats`](vantage_diorama::stats), behind vantage-diorama's `diagnostics` feature:
 
-```rust
+```rust,no_run
 use vantage_diorama::stats;
 
 // Limit the measurement to this interaction, not to the whole process.
@@ -87,6 +88,9 @@ assert_eq!(people.repeats, 0, "the application fetched a window more than one ti
 assert_eq!(people.rows_redundant, 0, "rows arrived that the cache already held");
 ```
 
+The block is compiled but not run: `// ... drive the page ...` stands for your own interaction, and
+without one there is no `people` entry to find.
+
 [`reset_fetch_stats`](vantage_diorama::stats::reset_fetch_stats) makes the measurement local to one
 test. The counters are global to the process and they accumulate. A test that does not reset them
 measures each test before it.
@@ -99,7 +103,10 @@ calculate it from the number of screens.
 
 If you write one assertion only, write this one:
 
-```rust
+```rust,no_run
+# use vantage_diorama::stats;
+# let stats = stats::fetch_stats();
+# let people = stats.iter().find(|s| s.table == "people").expect("the table was read");
 assert_eq!(people.repeats, 0);
 ```
 
@@ -107,6 +114,37 @@ It is cheap, it does not fail intermittently, and it finds every repeated fetch.
 
 It does not find a large payload. Section 4 shows a fault with 19.6MB of traffic, zero repeats, and
 zero redundant rows. Assert on the payload separately, or read the `payload` line.
+
+## Views that stay open
+
+The second line of the session summary counts the views that are still alive. In Rust, ask the Dio
+itself. [`Dio::diagnostics`](vantage_diorama::Dio::diagnostics) is a snapshot of one Dio: its cache
+table, the rows it holds, and one entry for each open table view, with `shared_by` saying how many
+views read the same rows:
+
+```rust
+# use vantage_diorama::{Cache, Lens};
+# use vantage_vista::mocks::MockShell;
+# use vantage_vista::{Column, ColumnFlag, Vista, VistaMetadata};
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let metadata = VistaMetadata::new()
+#     .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
+#     .with_id_column("id");
+# let people = Vista::new("people", MockShell::new().with_metadata(metadata));
+let lens = Lens::builder().cache(Cache::memory()).build()?;
+let dio = lens.dio(people).build().await?;
+let grid = dio.table_scenery().open().await?;
+
+let diagnostics = dio.diagnostics().await?;
+assert_eq!(diagnostics.sceneries.len(), 1, "one grid, one open view");
+# drop(grid);
+# Ok(())
+# }
+```
+
+Take the snapshot after the page closes, too. A view that outlives its page is the leak that the
+summary line reports. Reading the snapshot changes nothing, so a test can take as many as it needs.
 
 ## The result
 
@@ -123,6 +161,7 @@ application that you can **measure**.
 | `--page=<key>` | Opens one page, so you count the requests of that page only |
 | `stats::reset_fetch_stats()` | Limits the counters to one interaction |
 | `stats::fetch_stats()` | Gives the counters in Rust, with no log to parse |
+| `dio.diagnostics().await?` | Lists the open views of one Dio, so a test can find a view that leaked |
 | `repeats == 0` | The one assertion to write, if you write one |
 
 ```admonish tip title="Where to go next"

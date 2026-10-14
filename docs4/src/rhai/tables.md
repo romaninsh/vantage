@@ -164,10 +164,12 @@ let orders = table("order");
 This returns `insert: true`, the columns `id`, `client`, `total`, `status`, and the references
 `["client has_one"]`.
 
-- `capabilities()` is a map with one boolean per capability, keyed by its name: `insert`,
-  `update`, `delete`, `import`, `order`, `search`, `window`, `filter_ops` and the rest. Every
-  capability is listed. A script that may run against different backends can check before it
-  writes.
+- `capabilities()` is a map with one boolean per capability, keyed by its name. The keys come
+  from [`Capability::iter()`](vantage_vista::Capability::iter), so every capability is listed:
+  `insert`, `update`, `delete`, `import`, `subscribe`, `order`, `search`, `filter_ops`,
+  `native_conditions`, `window`, `cursor`, `traverse` and `confine_writes`. There is no `count`
+  key: every Vista can count. A script that may run against different backends can check before
+  it writes.
 - `columns()` is an array of `#{ name, type, flags }`. `type` is `()` for a column declared
   without a type.
 - `references()` is an array of `#{ name, kind, contained }`. `kind` is the YAML name:

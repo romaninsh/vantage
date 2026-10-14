@@ -69,7 +69,9 @@ The source refuses each operation that is not in the list, and the work then mov
 Section 3 removes them one at a time.
 
 [Vista — the Universal Data Handle](../intro/step4-vista.md) describes the full set of capability
-flags and how a driver declares them.
+flags and how a driver declares them. The names here are Vantage UI's. In Rust, `fetch_window` is
+`Capability::Window`, and `count` has no capability at all,
+because every Vista can count.
 ```
 
 Once the datasource exists, declare the tables on it. Each table names its columns and the datasource
@@ -180,54 +182,91 @@ Use one table, one binder, and one variable. Close the pages that you do not mea
 
 ````admonish info title="Using faker in Rust"
 This chapter uses Vantage UI, because Vantage UI supplies the viewport. The faker source does not
-need Vantage UI. `vantage-faker` is a normal crate, and the YAML above is a
+need Vantage UI. `vantage-faker` is a normal crate: a `DatasetGen` fills a vantage-memory store,
+and the `shape:` block above is a
 [`BackendShape`](https://docs.rs/vantage-faker/latest/vantage_faker/shape/struct.BackendShape.html)
-in a file. This code builds the same datasource:
+that a `ShapedShell` enforces over the memory table. This code builds the same datasource:
 
-```rust
+```rust,no_run
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
 use std::time::Duration;
-use vantage_faker::{BackendShape, FakerTable, Latency, LatencyModel, StaticEffect};
-use vantage_vista::VistaCapabilities;
 
-let table = FakerTable::build_shaped(
-    "people",
-    columns,                       // Vec<FakerColumn> — name, type, flags
-    "id",
-    Box::new(StaticEffect { count: 200_000 }),
-    BackendShape {
-        capabilities: VistaCapabilities {
-            can_count: true,
-            can_fetch_window: true,
-            can_order: true,
-            can_search: true,
-            ..VistaCapabilities::default()
-        },
-        latency: LatencyModel {
-            window: Some(Latency::between(
-                Duration::from_millis(10),
-                Duration::from_millis(40),
-            )),
-            get: Some(Latency::between(
-                Duration::from_millis(5),
-                Duration::from_millis(20),
-            )),
-            ..LatencyModel::default()
-        },
-        seed: Some(103),
-        ..BackendShape::default()
+use vantage_dataset::prelude::ReadableValueSet;
+use vantage_diorama::{Cache, Lens, Loader};
+use vantage_faker::{BackendShape, DatasetGen, FakerColumn, Latency, LatencyModel, ShapedShell, TableGen};
+use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
+use vantage_vista::{Capability, Column, ColumnFlag, Vista, VistaMetadata};
+
+// The rows: 200,000 people from seed 103. Faker fills the `id` column itself.
+let store = MemoryStore::new();
+let people = TableGen::new("people")
+    .column(FakerColumn::new("name", "string"))
+    .column(FakerColumn::new("surname", "string"))
+    .column(FakerColumn::new("email", "string"))
+    .column(FakerColumn::new("city", "string"))
+    .column(FakerColumn::new("balance", "decimal"))
+    .count(200_000);
+DatasetGen::new(Some(103)).table(people).generate(&store)?;
+
+// The table file: columns and flags.
+let column = |name: &str, ty: &str| Column::new(name, ty).with_flag(ColumnFlag::Orderable);
+let metadata = VistaMetadata::new()
+    .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
+    .with_column(column("name", "string").with_flag(ColumnFlag::Title).with_flag(ColumnFlag::Searchable))
+    .with_column(column("surname", "string").with_flag(ColumnFlag::Title).with_flag(ColumnFlag::Searchable))
+    .with_column(column("email", "string"))
+    .with_column(column("city", "string"))
+    .with_column(column("balance", "decimal"))
+    .with_id_column("id");
+
+// The `shape:` block. `count` has no capability in Rust: every Vista counts.
+let shape = BackendShape {
+    capabilities: [Capability::Window, Capability::Order, Capability::Search]
+        .into_iter()
+        .collect(),
+    latency: LatencyModel {
+        window: Some(Latency::between(Duration::from_millis(10), Duration::from_millis(40))),
+        get: Some(Latency::between(Duration::from_millis(5), Duration::from_millis(20))),
+        ..LatencyModel::default()
     },
-);
+    seed: Some(103),
+    ..BackendShape::default()
+};
+let shell = MemoryTableShell::new(store.table("people"), metadata, MemoryCatalog::new(store.clone()));
+let vista = Vista::new("people", shell).map_shell(|inner| ShapedShell::new(inner, shape));
 
 // From here, this is the normal reactive stack. Nothing is faker-specific.
-let (vista, _handle) = table.split();
-let dio = lens.make_dio(vista).await?;
+// Page a master that serves windows; copy one that doesn't.
+let loader = Loader::paged(|cx, range, query, sink| async move {
+    let fetched = cx.fetch(range.clone(), &query).await?;
+    if !fetched.refused.is_empty() {
+        // A window can't be sorted or searched after the fact: fail the load.
+        return Err(vantage_core::error!("the source refused part of the view's query"));
+    }
+    let page = fetched.page;
+    if let Some(total) = page.total {
+        sink.set_total(total.max(0) as usize);
+    }
+    for (i, (id, row)) in page.rows.into_iter().enumerate() {
+        sink.push(range.start + i, id, row).await?;
+    }
+    Ok(())
+})
+.or_eager(|cx| async move {
+    let rows = cx.master().list_values().await?;
+    cx.reconcile(rows).await
+});
+let lens = Lens::builder().cache(Cache::memory()).loader(loader).build()?;
+let dio = lens.dio(vista).build().await?;
+# let _ = dio;
+# Ok(())
+# }
 ```
 
 Use this code when your own code is the consumer: an integration test that calls `set_viewport`, a
-CLI, or a scenery in a terminal.
-
-Keep the handle. If you drop the handle, the effect loop stops, and a live effect then stops changing
-the data.
+CLI, or a scenery in a terminal. `ShapedShell` only takes capabilities away: it advertises the
+ones the shape lists and the memory table has, and refuses the rest.
 ````
 
 ## Switch on the debug stream
@@ -297,6 +336,11 @@ them, and the last line is the repaint that followed: 22 rows on screen, no requ
 
 The flag applies to one datasource. It is not a global setting. Your other datasources stay silent,
 so the question is always "what does **this** table do?".
+
+In Rust the same switch is on the Lens:
+[`LensBuilder::debug_datasource(name)`](vantage_diorama::LensBuilder::debug_datasource), behind
+vantage-diorama's `diagnostics` feature. Every Dio that Lens builds writes the stream to the
+`vantage_diorama::debug` tracing target, stamped with `name`.
 
 ```admonish tip title="What is next"
 The next section makes the source slow, so that each of these lines separates in time. It then reads

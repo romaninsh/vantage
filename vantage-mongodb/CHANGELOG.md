@@ -2,10 +2,54 @@
 
 ## 2.0.0 — 2026-10-14
 
-- Vista 2.0: breaking API changes; see the migration guide (phase 5).
-- References lowered through `ReferenceSpec::to_reference`; spec `keys:` honoured.
+### Breaking changes
+
+- The shell implements `TableShell` 2.0: `fetch_page` and `set_page_size` are gone, and
+  `fetch_next` is `fetch_cursor(token, limit)`, a keyset cursor advertised on every vista. A
+  `limit` of 0 is an error, and a token that doesn't match the current sort is refused.
+- `MongoSpecResolver` is removed; `with_resolver` takes `Arc<dyn SpecResolver<MongoVistaSpec>>`.
+  A closure passed there needs an annotated parameter (`|name: &str| ..`).
+- `MongoVistaSpec` is `#[non_exhaustive]`; build it with `MongoVistaSpec::new(name)`.
+- Raw conditions are native conditions: `add_native_condition` takes a `bson::Document` or a
+  `MongoCondition`, keyed by its canonical extended JSON. Any other type is `IncorrectUsage`.
+- A shell with declared columns refuses a condition or order on an unknown column. A column-less
+  shell (a bare collection, a resolver miss) takes `Eq` on any top-level field.
+- Join traversal is strict: the target must declare the join column (a has-many's foreign key).
+- Pipeline and server views advertise no writes, no `Subscribe` and no `Import`; Vista refuses
+  their writes before the shell.
+- `preview()` is `{query, note}`: `query` is the `db.<coll>.find(..)` or `aggregate([..])` text,
+  and `note` says when joins could not be resolved. The driver name is `vista.driver_name()`.
+- A reference's `target` is its spec name (`table:`, not the `collection:` it reads) for a YAML
+  reference and the collection name for a typed relation; it was the Rust type name.
+- `get_ref` on an undeclared relation is "unknown relation (relation: x)", still `is_not_found()`.
+- `get_ref(rel, None)` on a contained relation returns the bare target without write
+  capabilities; it was `IncorrectUsage`.
+- Rhai constructors are namespaced: `mongo::oid(..)`, `mongo::date(..)`, `mongo::doc([..])`.
+  Their error texts and `to_debug` output name the qualified form.
+- A script's `table(name)` that the spec resolver doesn't know is `is_not_found()`.
+- A reference `rhai:` script without the `rhai` feature fails the build; it was ignored.
 - Quicksearch reads the columns flagged `Searchable`, or every column when none is. A spec-built
   vista with no flagged column searches every column (it matched nothing before).
+- A spec reference with `keys:` narrows on every declared key, and the stored-field rule checks
+  each key, column-level references included.
+
+### Other changes
+
+- References lowered through `ReferenceSpec::to_reference`; column-level `references:` reach the
+  vista metadata as has-one references.
+- A condition on `root.leaf` under a declared root is evaluated natively, with dot notation under
+  the root's BSON path.
+- A column-less spec reads documents as stored.
+- `insert(None)` reads the stored row back through the set; `upsert` creates or replaces inside
+  the set.
+- Traversal is advertised on pipeline and server views, so scripted references reach a group
+  view's rows.
+- `watch` and `import` are refused by Vista without `Subscribe` and `Import`.
+- A failed removal of the previous quicksearch condition propagates from `set_search`.
+- YAML `searchable` reaches the vista column through `Column::from_spec`; the driver's own
+  overlay is gone.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 1.1.1 — 2026-10-12
 

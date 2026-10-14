@@ -99,7 +99,8 @@ async fn dotted_path_set_ignores_a_literal_dotted_key() -> Result<()> {
 #[tokio::test]
 async fn dotted_path_set_takes_an_in_set_patch() -> Result<()> {
     let (riga, shell) = riga_people().await?;
-    riga.patch_value("1", &record(&[("name", "Ada L.")])).await?;
+    riga.patch_value("1", &record(&[("name", "Ada L.")]))
+        .await?;
     let stored = shell.get_record("1").expect("row 1");
     assert_eq!(stored.get("name"), Some(&CborValue::Text("Ada L.".into())));
     assert_eq!(stored.get("address"), Some(&address("Riga")));
