@@ -68,6 +68,7 @@ required-features = ["rhai"]
 
 [[test]]
 name = "debug_tap"
+path = "tests/debug_tap/main.rs"
 required-features = ["diagnostics"]
 
 [[test]]

@@ -1,14 +1,17 @@
 //! The cache side of a flash: staging it before the write-through, and
 //! settling it once the write-through answers.
 
+mod seed;
+
 use ciborium::Value as CborValue;
-use vantage_core::{Result, error};
-use vantage_types::{Record, cbor_id_to_string};
+use vantage_core::Result;
+use vantage_types::Record;
 
 use super::confirmed::{confirm, roll_back};
 use crate::dio::pending::PendingFlashGuard;
 use crate::dio::{Dio, DioEvent, DioInner};
 use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
+use seed::{merged, seed_new_row, stored_id};
 
 /// The row `flash` stages in the cache, `None` for one it removes. `Patch`
 /// merges onto `base` (the cached row, or the master's when the cache
@@ -192,62 +195,4 @@ async fn reassert_confirmed(inner: &DioInner, flash: &ChangeFlash) -> Result<()>
                 .await
         }
     }
-}
-
-/// An id-less insert the backend confirmed: the row joins the cache under
-/// the id the write reported. Once the write landed the id is returned even
-/// if seeding the cache fails (logged): the row exists upstream, and a
-/// caller that lost its id would insert it again on retry.
-async fn seed_new_row(
-    dio: &Dio,
-    flash: &ChangeFlash,
-    outcome: FlashOutcome,
-) -> Result<FlashOutcome> {
-    let inner = &dio.inner;
-    let id = outcome
-        .id
-        .clone()
-        .or_else(|| outcome.record.as_ref().and_then(|r| stored_id(dio, r)))
-        .ok_or_else(|| {
-            error!(
-                "the write stored a new row without reporting its id",
-                table = inner.cache_table_name
-            )
-        })?;
-    let mut record = outcome.record.unwrap_or_else(|| flash.patch().clone());
-    record
-        .entry(dio.id_column().to_string())
-        .or_insert_with(|| CborValue::Text(id.clone()));
-    match inner.cache.insert_value(&id, &record).await {
-        Ok(()) => {
-            let _ = inner
-                .event_bus
-                .send(DioEvent::RecordInserted { id: id.clone() });
-        }
-        Err(e) => tracing::warn!(
-            target: "vantage_diorama",
-            id = %id,
-            error = %e,
-            "inserted row not seeded into the cache; it shows after the next refresh",
-        ),
-    }
-    Ok(FlashOutcome {
-        id: Some(id),
-        record: Some(record),
-    })
-}
-
-/// `flash`'s fields merged over `base`.
-fn merged(base: Option<&Record<CborValue>>, flash: &ChangeFlash) -> Record<CborValue> {
-    let mut merged = base.cloned().unwrap_or_default();
-    for (k, v) in flash.patch() {
-        merged.insert(k.clone(), v.clone());
-    }
-    merged
-}
-
-/// The id a stored record carries in the Dio's id column, read in the form
-/// every cache key takes.
-fn stored_id(dio: &Dio, record: &Record<CborValue>) -> Option<String> {
-    record.get(dio.id_column()).and_then(cbor_id_to_string)
 }

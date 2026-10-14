@@ -26,7 +26,7 @@ pub fn cell_get<'a>(
 /// The value at dotted `path` inside nested maps: the first segment is a
 /// key of `row`, each later one a text key of the map before it. A path
 /// without a dot is a plain key.
-pub(crate) fn path_get<'a>(row: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
+pub(super) fn path_get<'a>(row: &'a Record<CborValue>, path: &str) -> Option<&'a CborValue> {
     let mut segments = path.split('.');
     let mut current = row.get(segments.next()?)?;
     for segment in segments {

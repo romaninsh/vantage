@@ -6,6 +6,8 @@
 mod as_rows;
 mod count;
 mod filter;
+#[cfg(test)]
+mod fixtures;
 mod group;
 mod stats;
 

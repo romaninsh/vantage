@@ -40,6 +40,25 @@ pub(crate) fn metadata_options() -> VistaMetadataOptions {
     }
 }
 
+/// The [`SourceBlock`] of a dialect's table block. Each dialect declares its
+/// own block type, every one with the same `table`, `rhai`, `base`, `inherit`
+/// and `args` fields.
+macro_rules! source_block {
+    ($block:expr) => {{
+        let block = $block;
+        let inherit = block.inherit.as_ref();
+        $crate::sql_vista::SourceBlock {
+            table: block.table.as_deref(),
+            rhai: block.rhai.as_deref(),
+            base: block.base.as_deref(),
+            inherit_columns: inherit.map_or(&[], |i| &i.columns),
+            inherit_relations: inherit.map_or(&[], |i| &i.relations),
+            args: &block.args,
+        }
+    }};
+}
+pub(crate) use source_block;
+
 /// What every SQL shell implements. A query-sourced (`rhai:` or `base:`)
 /// vista is `read_only`: it takes no writes, so it confines none.
 pub(crate) fn sql_capabilities(read_only: bool) -> VistaCapabilities {

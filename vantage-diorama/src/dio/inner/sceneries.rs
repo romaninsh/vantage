@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use super::DioInner;
 use crate::dio::augment_scheduler;
@@ -25,10 +26,8 @@ impl DioInner {
             return;
         }
         let table_sceneries = self.live_table_scenery_count();
-        let record_sceneries = self
-            .record_census
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let servos = self.servo_census.load(std::sync::atomic::Ordering::Relaxed);
+        let record_sceneries = self.record_census.load(Ordering::Relaxed);
+        let servos = self.servo_census.load(Ordering::Relaxed);
         let peak_rss = crate::debug::peak_rss_bytes();
         crate::debug::tapline!(
             tap,

@@ -32,7 +32,7 @@ impl SharedRows {
         {
             let dropped = self.rows.write().unwrap().truncate(len);
             if !dropped.is_empty() {
-                self.id_to_idx.write().unwrap().retain(|_, idx| *idx < len);
+                self.write_id_to_idx(|id_to_idx| id_to_idx.retain(|_, idx| *idx < len));
             }
         }
         *self.total_kind.write().unwrap() = kind;

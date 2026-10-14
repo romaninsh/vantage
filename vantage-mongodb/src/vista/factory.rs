@@ -97,11 +97,7 @@ impl MongoVistaFactory {
         let any_table = table.into_entity::<EmptyEntity>();
         table_joins(&any_table)?;
         ref_keys::check_table(&any_table)?;
-        let column_paths = if is_bare(&any_table) {
-            IndexMap::new()
-        } else {
-            paths_from_table_columns(&any_table)
-        };
+        let column_paths = column_paths(&any_table);
         let metadata = assemble::mongo_metadata(&any_table);
         Ok(self.wrap_with_paths(any_table, column_paths, name, metadata))
     }
@@ -153,8 +149,14 @@ pub(crate) fn mongo_capabilities(writable: bool, live: bool) -> VistaCapabilitie
         .collect()
 }
 
-/// Whether the table declares nothing beyond its `_id` key, which the vista
-/// then reads and writes as stored documents.
-fn is_bare<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> bool {
-    table.columns().len() == 1 && table.columns().contains_key("_id")
+/// Each column's BSON path. A table that declares nothing beyond its `_id`
+/// key gets no paths, so the vista reads and writes documents as stored
+/// instead of projecting them down to `_id`.
+fn column_paths(table: &Table<MongoDB, EmptyEntity>) -> IndexMap<String, Vec<String>> {
+    let bare = table.columns().len() == 1 && table.columns().contains_key("_id");
+    if bare {
+        IndexMap::new()
+    } else {
+        paths_from_table_columns(table)
+    }
 }

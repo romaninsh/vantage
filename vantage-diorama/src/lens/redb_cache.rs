@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use redb::{Database, TableDefinition, TableHandle};
+use redb::{Database, TableDefinition, TableHandle, WriteTransaction};
 use vantage_core::{Result, error};
 
 use super::cache_backend::{CacheBackend, CacheTable};
@@ -40,6 +40,17 @@ where
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|e| error!("blocking task panicked", detail = e.to_string()))?
+}
+
+/// Run `work` in one write transaction on `db`, committed when it succeeds.
+fn write_txn(db: &Database, work: impl FnOnce(&WriteTransaction) -> Result<()>) -> Result<()> {
+    let txn = db
+        .begin_write()
+        .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
+    work(&txn)?;
+    txn.commit()
+        .map_err(|e| error!("redb commit failed", detail = e.to_string()))?;
+    Ok(())
 }
 
 /// `RedbCache` opens (or creates) a redb database at the configured
@@ -206,16 +217,13 @@ impl CacheBackend for RedbCache {
 /// failure.
 async fn delete_tables(db: Arc<Database>, names: Vec<String>) -> Result<()> {
     blocking(move || {
-        let txn = db
-            .begin_write()
-            .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
-        for name in &names {
-            txn.delete_table(table_def(name))
-                .map_err(|e| error!("redb delete_table failed", detail = e.to_string()))?;
-        }
-        txn.commit()
-            .map_err(|e| error!("redb commit failed", detail = e.to_string()))?;
-        Ok(())
+        write_txn(&db, |txn| {
+            for name in &names {
+                txn.delete_table(table_def(name))
+                    .map_err(|e| error!("redb delete_table failed", detail = e.to_string()))?;
+            }
+            Ok(())
+        })
     })
     .await
 }

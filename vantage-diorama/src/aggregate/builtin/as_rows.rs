@@ -67,44 +67,8 @@ fn column_type(value: &CborValue) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aggregate::builtin::fixtures::{events, schema, text};
     use crate::aggregate::builtin::{Conditions, Count, Sum, Where};
-
-    fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
-        let mut r = Record::new();
-        for (k, v) in pairs {
-            r.insert((*k).to_string(), v.clone());
-        }
-        r
-    }
-
-    fn text(s: &str) -> CborValue {
-        CborValue::Text(s.to_string())
-    }
-
-    fn schema() -> VistaMetadata {
-        VistaMetadata::new()
-    }
-
-    fn events() -> Rows {
-        vec![
-            record(&[
-                ("Event", text("opened")),
-                ("Size", CborValue::Integer(10.into())),
-            ]),
-            record(&[
-                ("Event", text("failed")),
-                ("Size", CborValue::Integer(20.into())),
-            ]),
-            record(&[
-                ("Event", text("opened")),
-                ("Size", CborValue::Integer(30.into())),
-            ]),
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(i, r)| (i.to_string(), r))
-        .collect()
-    }
 
     /// The contract: one row, one column, named by the alias.
     #[test]

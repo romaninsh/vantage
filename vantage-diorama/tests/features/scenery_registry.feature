@@ -9,19 +9,19 @@ Feature: Shared rows registry — owned views, shared rows, cancellation
   Scenario: opening the same query twice shares its rows
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that records calls and returns the master count
+    And a paged loader that states the master count through set_total and records each count
     And an on_load_chunk callback that pulls the requested range from master
     When the dio is created
     And the table scenery is opened
     And the table scenery is opened again
     Then the two table sceneries are distinct views over the same rows
-    And total_provider has been called 1 time
+    And the master total has been stated 1 time, the harness seed included
     And the dio has 2 live table sceneries
 
   Scenario: releasing every handle evicts the rows — no leak
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     When the dio is created
     And the table scenery is opened
@@ -33,7 +33,7 @@ Feature: Shared rows registry — owned views, shared rows, cancellation
   Scenario: a closing grid cancels its in-flight fetch
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     And the source has a read latency of 500 milliseconds
     When the dio is created

@@ -12,7 +12,7 @@ use vantage_vista::{ReferenceSpec, Vista, VistaFactory, VistaMetadata};
 
 #[cfg(not(feature = "rhai"))]
 use super::build::missing_rhai;
-use super::{MongoVistaFactory, is_bare, mongo_capabilities, paths_from_table_columns};
+use super::{MongoVistaFactory, column_paths, mongo_capabilities};
 use crate::mongodb::MongoDB;
 use crate::vista::source::MongoTableShell;
 use crate::vista::spec::{
@@ -114,13 +114,7 @@ impl VistaFactory for MongoVistaFactory {
         }
         let table = self.table_from_spec(&spec)?;
         let metadata = spec_metadata(&table, &spec)?;
-        // A spec that declares nothing beyond `_id` reads documents as stored,
-        // like a bare `from_table`, instead of projecting them down to `_id`.
-        let column_paths = if is_bare(&table) {
-            IndexMap::new()
-        } else {
-            paths_from_table_columns(&table)
-        };
+        let column_paths = column_paths(&table);
         let vista = self.wrap_with_paths(table, column_paths, spec.name, metadata);
 
         // Last step: a `modify:` script narrows or tweaks the built vista.

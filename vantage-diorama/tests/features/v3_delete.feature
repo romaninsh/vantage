@@ -42,7 +42,7 @@ Feature: Write path — Delete
     When the dio is created
     And I delete id "a" via the facade
     And the write queue drains
-    Then on_flash has been called 1 time
+    Then the writer has been called 1 time
     And the event log matches snapshot "mirror_delete_<backend>"
     And the master has 1 row
     And the master record "a" is absent

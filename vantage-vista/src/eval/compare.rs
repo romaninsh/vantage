@@ -40,7 +40,7 @@ pub fn cbor_cmp(a: &CborValue, b: &CborValue) -> Ordering {
 
 /// The text inside a CBOR standard datetime (`Tag(0, Text)`), or `value`
 /// itself. Twin: `vantage-memory/src/eval/compare.rs`.
-pub(crate) fn datetime_as_text(value: &CborValue) -> &CborValue {
+pub(super) fn datetime_as_text(value: &CborValue) -> &CborValue {
     match value {
         CborValue::Tag(0, inner) if matches!(inner.as_ref(), CborValue::Text(_)) => inner,
         _ => value,
