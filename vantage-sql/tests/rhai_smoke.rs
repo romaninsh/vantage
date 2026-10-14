@@ -146,6 +146,24 @@ mod rhai_smoke {
         );
     }
 
+    /// Postgres has no `round(numeric, bigint)`, so the decimals can't be a
+    /// bound i64.
+    #[test]
+    fn round_writes_decimals_into_the_sql() {
+        fn has_scalar(e: &vantage_expressions::Expression<AnySqliteType>) -> bool {
+            e.parameters.iter().any(|p| match p {
+                vantage_expressions::ExpressiveEnum::Scalar(_) => true,
+                vantage_expressions::ExpressiveEnum::Nested(n) => has_scalar(n),
+                _ => false,
+            })
+        }
+        let ex = eval_rhai(r#"sql::round(sql::sum(sql::ident("spend")), 2)"#)
+            .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
+            .expect("should be RhaiExpr");
+        assert_eq!(ex.0.preview(), r#"ROUND(SUM("spend"), 2)"#);
+        assert!(!has_scalar(&ex.0), "decimals were bound: {:?}", ex.0);
+    }
+
     // ── Checkpoint 3: Select builder tests ────────────────────────
 
     type TestSelect = vantage_sql::rhai_engine::RhaiSelect<

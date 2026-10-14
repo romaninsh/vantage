@@ -244,12 +244,14 @@ where
     )))
 }
 
+/// `decimals` is written into the SQL, not bound: a bound i64 is a `bigint`
+/// on Postgres, which has no `round(numeric, bigint)`.
 pub fn fn_round<V>(
     value: rhai::Dynamic,
     decimals: i64,
 ) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
 where
-    V: Clone + Debug + Display + From<i64> + 'static,
+    V: Clone + Debug + Display + 'static,
     Identifier: Expressive<V>,
 {
     Ok(RhaiExpr(
@@ -257,7 +259,7 @@ where
             "ROUND",
             vec![
                 unwrap_expr::<V>(value)?,
-                Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(decimals))]),
+                Expression::new(decimals.to_string(), vec![]),
             ],
         )
         .expr(),

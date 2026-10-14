@@ -42,13 +42,18 @@ impl Reference {
 
     fn narrow_key(&self, target: &mut Vista, key: &JoinKey, row: &Record<CborValue>) -> Result<()> {
         let relation = self.name.as_str();
-        let value = row.get(&key.from).ok_or_else(|| {
-            error!(
-                "parent row lacks the join column",
-                relation = relation,
-                column = key.from.as_str()
-            )
-        })?;
+        // A flat key first (SQL's imported `author.name`), else a path into
+        // nested maps (a REST row's `pad.id` is `pad: { id }`).
+        let value = row
+            .get(&key.from)
+            .or_else(|| crate::eval::path_get(row, &key.from))
+            .ok_or_else(|| {
+                error!(
+                    "parent row lacks the join column",
+                    relation = relation,
+                    column = key.from.as_str()
+                )
+            })?;
         let column = match key.target_column(target) {
             Ok(column) => column.to_string(),
             Err(e) => return Err(wrap(e, relation, &key.from)),

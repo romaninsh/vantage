@@ -84,6 +84,24 @@ fn a_join_whose_keys_were_emptied_has_nothing_to_narrow_by() {
 }
 
 #[test]
+fn a_dotted_join_column_reads_the_nested_value() {
+    let pad = Reference::has_one("pad", "order", JoinKey::to_target_id("pad.id"));
+    let row: Record<CborValue> = [(
+        "pad".to_string(),
+        CborValue::Map(vec![(
+            CborValue::Text("id".into()),
+            CborValue::Text("80".into()),
+        )]),
+    )]
+    .into_iter()
+    .collect();
+    let narrowed = pad.narrow(target(order_schema()), &row).unwrap();
+    let condition = &narrowed.query().conditions[0];
+    assert_eq!(condition.column, "id");
+    assert_eq!(condition.value, CborValue::Text("80".into()));
+}
+
+#[test]
 fn a_missing_parent_column_names_relation_and_column() {
     let err = orders()
         .narrow(target(order_schema()), &rec(&[]))
