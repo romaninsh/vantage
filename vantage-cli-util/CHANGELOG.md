@@ -2,7 +2,13 @@
 
 ## 0.6.4 — 2026-10-14
 
-- Vista CLI follows the Vista 2.0 API.
+- Vista CLI follows the Vista 2.0 API: `ModelFactory` returns 2.0 Vistas, sort and search go
+  through `set_order` and `set_search`, and conditions through
+  `add_condition(.., FilterOp::Eq, ..)`.
+- A column that declares no type auto-detects the value's type, as a missing column does.
+- A `:relation` step over a contains-one relation renders a single record.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.6.3 — 2026-10-04
 

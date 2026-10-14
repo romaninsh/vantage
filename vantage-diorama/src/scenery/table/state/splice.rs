@@ -119,12 +119,21 @@ fn place(
         return Some(None);
     };
     let old = id_to_idx.get(id).copied();
-    if !idx_to_id.as_deref().is_some_and(|ids| current(ids, n, id, old)) {
+    if !idx_to_id
+        .as_deref()
+        .is_some_and(|ids| current(ids, n, id, old))
+    {
         *idx_to_id = Some(slot_ids(id_to_idx, n)?);
     }
     let ids = idx_to_id.as_deref()?;
     // `partition_point` over the rows other than `old`, read in place.
-    let slot = |i: usize| if old.is_some_and(|old| i >= old) { i + 1 } else { i };
+    let slot = |i: usize| {
+        if old.is_some_and(|old| i >= old) {
+            i + 1
+        } else {
+            i
+        }
+    };
     let (mut lo, mut hi) = (0, n - usize::from(old.is_some()));
     while lo < hi {
         let mid = lo + (hi - lo) / 2;

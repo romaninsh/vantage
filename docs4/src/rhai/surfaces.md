@@ -38,7 +38,40 @@ let due = table("order").where("status", "due");
 #{ count: due.count(), rows: due.sort("total", "desc").list() }
 ```
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use ciborium::Value as CborValue;
+# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_vista::rhai::{Writes, run_script};
+# use vantage_vista::{Column, ColumnFlag, VistaMetadata, VistaResolver};
+# const AGENT_SCRIPT: &str = r#"
+# let due = table("order").where("status", "due");
+# #{ count: due.count(), rows: due.sort("total", "desc").list() }
+# "#;
+# fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
+#     let catalog = MemoryCatalog::new(store.clone());
+#     catalog.register(
+#         "order",
+#         VistaMetadata::new()
+#             .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+#             .with_column(Column::new("total", "int").with_flag(ColumnFlag::Orderable))
+#             .with_column(Column::new("status", "String"))
+#             .with_id_column("id"),
+#     );
+#     Arc::new(catalog)
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let store = MemoryStore::new();
+# for (id, total, status) in [("o1", 120, "paid"), ("o2", 40, "due"), ("o4", 15, "due")] {
+#     let row = [
+#         ("total".to_string(), CborValue::Integer(total.into())),
+#         ("status".to_string(), CborValue::Text(status.into())),
+#     ]
+#     .into_iter()
+#     .collect();
+#     store.table("order").insert_as(id, row)?;
+# }
 let out = run_script(
     AGENT_SCRIPT.to_string(),
     resolver(&store),
@@ -47,6 +80,10 @@ let out = run_script(
 )
 .await
 .unwrap();
+# assert_eq!(out["count"], 2);
+# assert_eq!(out["rows"].as_array().unwrap().len(), 1);
+# Ok(())
+# }
 ```
 
 The limit is clamped to `MIN_LIMIT..=MAX_LIMIT` (1 to 50; `DEFAULT_LIMIT` is 5) and caps every
@@ -92,12 +129,12 @@ scripts finish the same way.
 ### Backend extensions
 
 A backend can add its own verbs to handles through
-[`TableShell::register_rhai_extensions`](vantage_vista::TableShell::register_rhai_extensions), and
-its own variables through `TableShell::rhai_env`. SurrealDB adds its whole expression vocabulary,
+[`TableShell::register_rhai_extensions`](vantage_vista::TableShell::register_rhai_extensions),
+which registers its functions and constants in one call. SurrealDB adds its whole expression vocabulary,
 plus `with_condition(expr)`, which narrows by a native SurrealQL expression that `where` can't
 spell:
 
-<!-- tested: vantage-surrealdb vista::factory::tests::modify_script_tweaks_built_vista_with_vendor_condition -->
+<!-- tested: vantage-surrealdb vista::factory::tests::scripts::modify_script_tweaks_built_vista_with_vendor_condition -->
 ```rhai
 self.with_condition(surreal::ident("is_paying_client") == true)
    .sort("name", "asc")
@@ -122,7 +159,10 @@ a [`NativeCondition`](vantage_vista::NativeCondition) to the shell's `add_native
 stand-in passes an equality as the native condition:
 
 <!-- tested: rhai_guide::surfaces::extension_chains -->
-```rust,ignore
+```rust
+# use vantage_rhai::rhai::{Dynamic, EvalAltResult};
+# use vantage_vista::rhai::{Handle, dynamic_to_cbor};
+# use vantage_vista::{Condition, FilterOp, NativeCondition};
 fn with_condition(h: &mut Handle, col: &str, value: Dynamic) -> Result<Handle, Box<EvalAltResult>> {
     let key = format!("{col} = {value}");
     let condition = Condition::new(col, FilterOp::Eq, dynamic_to_cbor(value)?);

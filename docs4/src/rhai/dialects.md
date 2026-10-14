@@ -30,7 +30,7 @@ A YAML spec for a SQL table can replace its source with a script-built `SELECT`.
 primitives (`count`, `avg`, `coalesce`, `case_when`, `date_format`, …). The free functions among
 them live in the `sql::` namespace, one for every SQL database; the methods don't take it:
 
-<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_rhai_source_is_read_only_and_filters -->
+<!-- tested: vantage-sql tests/common/vista/product.rs vista_yaml_rhai_source_is_read_only_and_filters -->
 ```yaml
 name: expensive_products
 columns:

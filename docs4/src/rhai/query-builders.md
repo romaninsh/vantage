@@ -192,4 +192,5 @@ SurrealDB and MySQL add one verb to the data vocabulary's handles: `self.with_co
 narrows the table by a native expression, such as
 `self.with_condition(surreal::ident("is_paying_client") == true)`. It is a method, so it takes no
 namespace, and it works on `self` only (see
-[Backend extensions](./surfaces.md#backend-extensions)).
+[Backend extensions](./surfaces.md#backend-extensions)). MongoDB has the same verb, but it takes a
+filter written as a Rhai map rather than a query-builder expression.

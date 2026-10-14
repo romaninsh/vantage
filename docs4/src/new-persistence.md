@@ -116,8 +116,10 @@ now-removed `AnyTable`; it moved up to [`Vista`](./new-persistence/step8-vista-i
 ## Step 8: Vista
 
 Wrap your typed `Table<Driver, E>` as a `Vista` — the universal, schema-bearing handle that UI,
-scripting, and agents consume through a CBOR / `String` boundary. Adds YAML schema loading and
-condition delegation so callers don't need a Rust entity struct.
+scripting, and agents consume through a CBOR / `String` boundary. You write a `TableShell` that
+executes reads, narrowing and writes, and a factory that builds it from a typed table or a YAML
+spec. The shell advertises only the capabilities it honours, and the vista contract test checks
+each one.
 
 Skip this step if your driver is only consumed from typed Rust code.
 
@@ -129,7 +131,8 @@ Skip this step if your driver is only consumed from typed Rust code.
 
 Surface an embedded object or array column (a JSON document, a Mongo sub-document) as an editable
 child sub-table. Declare it with `with_contained_one` / `with_contained_many`; reads project the
-embedded collection as records and writes patch it back into the host column. Native document
+embedded collection as records and writes patch it back into the host column. Your shell's
+`get_ref` routes these relations to the shared `Table::get_contained_ref`, so native document
 backends and JSON-blob columns share the same path.
 
 Skip this step if your persistence has no embedded collections.

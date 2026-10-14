@@ -1,661 +1,476 @@
 # Configuring a Lens
 
-A Lens is the long-lived apparatus that holds your caching strategy. You write
-one per application — sometimes more if you have genuinely different policies
-for different domains — and from it you make Dios cheaply.
+A Lens is the policy every Dio built from it shares: where rows are cached,
+how the cache is filled, how often it is re-read, and where writes go. An
+application usually has one, and a second only when two parts of it want
+genuinely different answers to those questions.
 
-This document walks through how to configure a Lens, and then six real-life
-scenarios that exercise different cache strategies. UI is only one of them.
-Vantage runs in API servers, on the edge, on mobile, inside data pipelines —
-each context wants different behavior, and the Lens is where you express it.
+The policy lives in the Lens, not in each Dio, because the same questions
+come up for every table. Answered once, a new table costs one line,
+`lens.dio(vista).build().await?`, and behaves like the others.
 
-> **Implementation status.** Scenarios 1 ("Desktop UI") and 6 ("Realtime UI
-> with push events") use the exact APIs that ship today. Scenarios 2–5
-> reference features that aren't fully wired yet: the `on_query` callback is
-> registered but not invoked until vista stage 5b lands; there is no shipped
-> in-memory `CacheBackend` so "ephemeral" scenarios still need a redb file
-> today; `CacheTable::apply(op)` / `replace_all(rows)` / metadata kv are
-> design sketches. Read them as the eventual shape; the code is plausibly
-> close to final but won't compile verbatim against current `src/`.
+## The four settings
 
-## Anatomy of a Lens
+```rust
+use std::time::Duration;
 
-A Lens owns four kinds of things:
+use vantage_dataset::traits::ReadableValueSet;
+use vantage_diorama::{Cache, FlashOutcome, Lens, Loader, LoaderCx, Refresher};
 
-1. **A cache backend.** Where the cached data lives. Default is redb on disk;
-   you can substitute any `TableSource`-implementing crate.
-2. **Lifecycle callbacks.** Functions you write that describe how data moves.
-   `on_start` runs once when a Dio is made; `on_refresh` runs on a timer or on
-   demand; `on_write` routes mutations; `on_event` handles external change
-   notifications; `on_query` fills the cache lazily. Plus two
-   `TableScenery`-specific hooks — `total_provider` and `on_load_chunk`
-   — that drive scrollbar sizing and paged fetches for virtualised grids.
-3. **Default policies.** TTLs, refresh intervals, write queue capacity,
-   whether `on_start` blocks, whether sceneries auto-fetch their first
-   page at open, viewport-debounce window. These apply to every Dio
-   under the lens.
-4. **A runtime handle.** Tokio handle for spawning the per-Dio worker tasks.
-   Picked up from the current runtime by default.
+let lens = Lens::builder()
+    .cache(Cache::redb("cache.redb"))
+    .loader(Loader::eager(reload))
+    .refresher(Refresher::new(reload).every(Duration::from_secs(300)))
+    .writer(|cx: LoaderCx, flash| async move {
+        send(cx.master(), &flash).await?;
+        Ok(FlashOutcome::applied())
+    })
+    .build()?;
+
+let dio = lens.dio(orders_vista).build().await?;
+
+async fn reload(cx: LoaderCx) -> vantage_core::Result<()> {
+    let rows = cx.master().list_values().await?;
+    cx.reconcile(rows).await
+}
+```
+
+| Setting | Required | Without it |
+|---|---|---|
+| `cache(Cache)` | yes | `build` fails: a Dio has nowhere to keep rows |
+| `loader(Loader)` | no | the cache is all there is; nothing fills it |
+| `refresher(Refresher)` | no | no timer; `dio.refresh()` re-reads the set the way it was loaded |
+| `writer(..)` | no | writes go to the master, gated by its capabilities |
+
+Two more settings tune rather than decide: `tuning(Tuning)` holds the
+per-Dio knobs (see [Tuning](#tuning)), and `runtime(Handle)` names the tokio
+runtime the Lens spawns on. Without one, `build` takes the current runtime
+and fails outside one.
+
+`build` returns `Result<Arc<Lens>>`. Every problem it finds is an error that
+names the setting (`setting = "loader.blocking"`), and it never panics. The
+`Arc` is there because each Dio holds its Lens alive: the loader, refresher
+and writer run on the Dio's tasks long after the line that built them.
+
+Each callback receives a `LoaderCx`, an owned, cheap-to-clone handle on the
+Dio it serves. It has three things on it:
+
+- `cx.master()`: the master Vista, narrowed for this Dio.
+- `cx.cache()`: the Dio's cache table. Writes here raise no events and ignore
+  flashes in flight, so use it for bulk copies whose arrival is announced
+  some other way.
+- `cx.reconcile(rows)`: make the cache hold exactly `rows`, the whole set.
+  Rows with a flash in flight, or whose flash settled since the callback
+  began, are left alone; the refresh time is recorded and one
+  `DatasetChanged` is published.
+
+`cx.fetch(window, &query)` reads one window of the master narrowed by a
+view's query. A paged loader is its main user (see
+[README_datasource.md](README_datasource.md)).
+
+### Why are callbacks handed an owned context?
+
+Each callback returns a `'static` future, so it can't borrow anything from
+the call. The `LoaderCx` is owned and the future holds it across awaits.
+State the callback needs (a queue, a metrics client) is captured by `move`
+and cloned into each call, as the outbox example below shows.
+
+## Cache
+
+`Cache` picks the store every Dio of the Lens keeps its rows in:
+
+- `Cache::redb(path)`: a redb file, created if absent and opened when the
+  Lens is built. It survives restarts, so a cold launch paints from disk.
+- `Cache::memory()`: process-local, nothing survives. Servers, tests,
+  short-lived processes.
+- `Cache::backend(Arc<dyn CacheBackend>)`: any other store, or one store you
+  opened yourself and want to share.
 
 ```rust
 use std::sync::Arc;
-use std::time::Duration;
-use vantage_diorama::Lens;
 
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("./local.redb")
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
-        })
-        .refresh_every(Duration::from_secs(3600))
-        .build()?,
-);
+use vantage_diorama::{Cache, Lens, RedbCache};
+
+let store = Arc::new(RedbCache::open("cache.redb")?);
+let editing = Lens::builder().cache(Cache::backend(store.clone())).build()?;
+let reporting = Lens::builder().cache(Cache::backend(store)).build()?;
 ```
 
-`Lens::new()` returns a `LensBuilder`; `.build()` is synchronous and returns
-`Result<Lens, LensBuildError>`. Wrap the result in `Arc` because
-`make_dio` takes `&Arc<Self>` (per-Dio tasks need to hold the Lens alive).
-Then call `.make_dio(vista).await?` as many times as you like; every Dio
-inherits the same callbacks and policies.
+### Cache identity
 
-The cache backend default is redb on disk via `.cache_at(path)`. For a
-custom backend, implement [`CacheBackend`](src/lens/cache_backend.rs) and
-pass `.cache_source(Arc::new(your_backend))`.
+Each Dio claims one table in the store. The table's name is the Dio's cache
+identity: the vista's name when nothing narrows or orders it, otherwise
+`name?key`, where `key` is the applied query (conditions, search and order).
+A vista narrowed before `lens.dio(..)` gets a table of its own, and so does
+every `dio.derive()` with a different query. Two Dios share a table only when
+their queries are the same.
 
-### Why does `on_start` block by default?
+Control characters, `%`, and a `?` in the vista's name are percent-encoded,
+so the first `?` always separates the name from the key, and no vista can
+pass for another vista's narrowed table.
 
-If you have a UI grid that mounts as the app launches and the user immediately
-sees an empty table because `on_start` hasn't finished filling the cache yet,
-that's a worse experience than a brief startup spinner. Blocking until
-`on_start` returns means the first `dio.vista().list_values()` call sees data.
+The identity holds no Lens, no loader and no augmentation. That has two
+consequences worth knowing:
 
-Turn it off when you'd rather show "loading…" UI than freeze startup:
+- Two Lenses over one backend (the `editing` and `reporting` pair above)
+  read and write the same table for the same vista. That is usually the
+  point of sharing the store. When it isn't, give each Lens its own store.
+- A plain Dio and an augmented Dio over one vista are two Dios on one cache
+  table. Once the augmented one hydrates its rows, the plain one reads the
+  merged columns too. Whether augmentation should join the identity is an
+  open question; until it is settled, keep the two on separate stores if
+  the plain Dio must not see merged columns.
+
+### The Lens registry
+
+A Lens remembers every Dio it built that something still holds. A second
+build with the same cache identity, the same augmentations and the same
+`live` setting returns the live Dio instead of starting another: one eager
+start, one write queue, one set of sceneries. The shared build still checks
+the cache against the refresher's `max_age`.
+
+Augmentations are compared by the `Arc` that `.augment(..)` wraps them in, so
+two separate `.augment(vec![..])` calls build two Dios. Derivations pass
+their parent's `Arc` on, so two derivations of one query share. Once every
+holder drops a Dio, the next build makes a new one with its own eager start;
+a dropped Dio is never revived.
+
+## Loader
+
+The loader fills a Dio's cache from its master. There are three shapes.
+
+**Eager** copies the whole set once, when the Dio is built. Sceneries then
+read the cache, and every clause a view adds is evaluated over it:
 
 ```rust
-.on_start_blocking(false)
+let lens = Lens::builder()
+    .cache(Cache::memory())
+    .loader(Loader::eager(|cx| async move {
+        let rows = cx.master().list_values().await?;
+        cx.reconcile(rows).await
+    }))
+    .build()?;
 ```
 
-### Why are callbacks borrowing, not `'static`?
-
-Borrowing lets a callback read from `&Dio` without cloning the Dio's internal
-state. The closure itself is `'static` (no captured references with lifetimes);
-the returned future borrows `&Dio` to call `.master()`, `.cache()`, etc. This
-is the HRTB pattern and it's why callbacks look natural:
+A large set that the master serves by cursor can be copied page by page,
+resuming from the last cached key:
 
 ```rust
-.on_refresh(|dio| async move {
-    let fresh = dio.master().list_values().await?;
-    dio.cache().replace_all(fresh).await?;
-    Ok(())
-})
+async fn sync(cx: &LoaderCx) -> VantageResult<()> {
+    let mut token: Option<CborValue> = cx
+        .cache()
+        .list_values()
+        .await?
+        .keys()
+        .last()
+        .cloned()
+        .map(Into::into);
+    loop {
+        let (page, next) = cx.master().fetch_cursor(token, PAGE_SIZE).await?;
+        cx.cache().insert_values(page.rows.into_iter().collect()).await?;
+        if next.is_none() {
+            return Ok(());
+        }
+        token = next;
+    }
+}
+
+let lens = Lens::builder()
+    .cache(Cache::redb("cache.redb"))
+    .loader(Loader::eager(|cx: LoaderCx| async move { sync(&cx).await }).blocking(false))
+    .build()?;
 ```
 
-If you need to capture extra state (a write-ahead-log handle, a metrics
-client), use `move` and `Arc`:
+This one writes `cx.cache()` directly, so it raises no event per page. The
+Dio announces the whole set with `DioEvent::Seeded` once the start returns.
+
+**Paged** fetches the windows a table scenery asks for, as it asks for them.
+A million-row table never lands in the cache whole. **Paged with an eager
+fallback** pages a master that advertises `Window` and copies one that
+doesn't, so one Lens serves both kinds of table. Both are covered with the
+data-source side in [README_datasource.md](README_datasource.md).
+
+### Why does the eager start block by default?
+
+A grid that mounts at launch over an empty cache shows an empty table until
+the copy lands. A short wait inside `build` is the better experience on a
+desktop, so `build` waits by default. `.blocking(false)` returns at once and
+lets the copy land in the background: the right call for a server that must
+not stall startup on a slow upstream, and for a copy that takes minutes.
+`blocking` applies only to an eager start; on a paged loader without one,
+`build` fails.
+
+## Refresher
+
+The refresher re-reads a Dio's master into its cache. It runs on
+`dio.refresh()` and, with `every`, on a timer:
 
 ```rust
-let metrics = Arc::new(Metrics::new());
-let metrics_for_cb = metrics.clone();
+let lens = Lens::builder()
+    .cache(Cache::memory())
+    .loader(Loader::eager(reload))
+    .refresher(Refresher::new(reload).every(Duration::from_secs(1)))
+    .build()?;
+```
 
-.on_write(move |dio, op| {
-    let metrics = metrics_for_cb.clone();
-    async move {
-        let start = Instant::now();
-        dio.master().apply(&op).await?;
-        metrics.record_latency(start.elapsed());
-        Ok(())
+`max_age(ttl)` bounds how stale a cache may be when it is opened. A Dio whose
+last refresh is older than `ttl`, or was never recorded, gets a background
+refresh when it is built and whenever a table or record scenery opens on it.
+The refresh time is persisted in the cache, so on a redb store it holds
+across restarts. `max_age` works without `every`: a server that wants
+"never older than a minute when someone looks" and no polling sets only
+`max_age`.
+
+A refresher that calls `cx.reconcile` has already recorded the refresh and
+published `DatasetChanged`. One that writes `cx.cache()` directly gets both
+done for it when it returns. A failed timed refresh is logged and the cache
+keeps serving what it had.
+
+A refresher is also where cross-cutting work fits. This one times every
+re-read:
+
+```rust
+let metrics = Arc::new(Metrics::default());
+
+let refresher = Refresher::new({
+    let metrics = metrics.clone();
+    move |cx: LoaderCx| {
+        let metrics = metrics.clone();
+        async move {
+            let started = Instant::now();
+            let rows = cx.master().list_values().await?;
+            metrics.record(cx.master().name(), started.elapsed(), rows.len());
+            cx.reconcile(rows).await
+        }
     }
 })
+.every(Duration::from_secs(60));
 ```
 
-### `total_provider` and `on_load_chunk` — paged grids
+## Writer
 
-A `TableScenery` over a million-row table doesn't want to copy every
-row into the cache at `on_start`. Two scenery-specific callbacks let
-the scrollbar size itself before any data is paged in and let the
-scenery fetch ranges on demand:
+Without a writer, a flash goes to the master, and the Dio is only as
+writable as the master says it is. A writer takes every write instead and
+makes every Dio of the Lens writable, whatever its master allows. A
+read-only CSV becomes editable, with the changes landing wherever the writer
+sends them.
 
 ```rust
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("./products.redb")
-        // Fires once per TableScenery open. Returns the total row
-        // count; drives row_count() / estimated_total() and lets the
-        // UI render a full-height scrollbar before any rows load.
-        .total_provider(|dio| {
-            let dio = dio.clone();
-            async move {
-                let n = dio.master().get_count().await?;
-                Ok(n as usize)
+let lens = Lens::builder()
+    .cache(Cache::redb("cache.redb"))
+    .writer(|cx: LoaderCx, flash: ChangeFlash| async move {
+        let master = cx.master();
+        match flash.kind() {
+            FlashKind::Insert => {
+                let id = flash.id().expect("insert has id").to_string();
+                master.insert_value(id, flash.patch()).await?;
             }
-        })
-        // Fires when set_viewport / request_load_more hits a range
-        // that isn't fully cached. The callback fetches rows from
-        // wherever (a paged REST API, SQL OFFSET/LIMIT, …) and pushes
-        // them into the scenery via the sink.
-        .on_load_chunk(|dio, range, sink| {
-            let dio = dio.clone();
-            async move {
-                let page = dio
-                    .master()
-                    .fetch_offset(range.start, range.end - range.start)
-                    .await?;
-                for (offset, (id, rec)) in page.into_iter().enumerate() {
-                    sink.push(range.start + offset, id, rec).await?;
-                }
-                Ok(())
+            FlashKind::Patch => {
+                let id = flash.id().expect("patch has id").to_string();
+                master.patch_value(id, flash.patch()).await?;
             }
-        })
-        .build()?,
-);
+            FlashKind::Delete => {
+                let id = flash.id().expect("delete has id").to_string();
+                master.delete(id).await?;
+            }
+            other => {
+                return Err(error!(
+                    "the writer has no route for this flash kind",
+                    kind = format!("{other:?}")
+                ));
+            }
+        }
+        Ok(FlashOutcome::applied())
+    })
+    .build()?;
 ```
 
-`sink.push(idx, id, record).await` writes the row to the cache *and*
-inserts it into the scenery's sparse map. The callback may push fewer
-rows than the requested range (the master ran out before `range.end`),
-or push out of order, or push across `await` points as a slow
-streaming API trickles in. The scenery only bumps its generation once
-the callback's future returns — UIs get a single repaint per chunk
-rather than one per row, which keeps scroll behaviour predictable.
+The Dio has already staged the change in the cache when the writer runs, so
+every scenery shows it at once. `Ok(FlashOutcome)` confirms it:
+`FlashOutcome::applied()` keeps the staged value, and `.with_id(id)` moves
+the row to the id the backend chose, stored as `.with_record(row)` when the
+backend reported one. `Err`, or a panic, rolls the row back and publishes
+`WriteReverted`.
 
-The callback may read `vantage_core::Priority::current()` to learn whether
-someone is waiting on it (`Essential`) or not (`Background`), e.g. to pick a
-retry policy. The loader may also drop the callback's future entirely if
-the viewport moves on before it resolves, so a callback must not detach
-work it expects to finish. Rows it had already pushed are put back the way
-it found them — the record that was in the slot before, or nothing if the
-slot was empty — rather than left on screen looking cached. A callback that
-returns `Err` unwinds the same way, so a failed re-pull leaves the grid
-showing exactly what it showed before.
+A Dio runs its writes one at a time, in order. So the writer must not write
+through the Dio it serves: a flash on that Dio from inside the writer
+returns an error naming the Dio rather than waiting on itself. Write to the
+master, to another Dio, or to `cx.cache()`.
 
-By default a TableScenery opens, paints whatever it finds in the
-cache, then fires `set_viewport(0..page_size, 0..0)` against itself so the
-configured `on_load_chunk` re-fetches the first page in the
-background. Turn that off when the cache is fully populated by an
-upstream pipeline and you don't want the open path to round-trip:
+### Offline edits through an outbox
+
+A field app has to accept edits with no signal. The writer confirms each
+flash locally and queues it; the refresher drains the queue when the master
+is reachable, then reconciles:
 
 ```rust
-.refresh_on_open(false)
-```
+let outbox: Arc<Mutex<Vec<ChangeFlash>>> = Arc::default();
 
-The viewport-debounce window is configurable per lens:
-
-```rust
-.viewport_debounce(Duration::from_millis(100))   // default is 50ms
-```
-
-A larger window absorbs more rapid scroll bursts before issuing the
-fetch; a smaller one makes the grid feel snappier on slower scrolls.
-
-## Scenario 1 — Desktop UI, slow backend, instant reads
-
-A desktop admin app reads from a remote GraphQL API. Every screen mounts a
-grid; users scroll, filter, sort. The API is fine for fetching data but slow
-enough that hitting it on every interaction would be unusable.
-
-**Strategy.** Eager load on Dio creation. Periodic background refresh. Reads
-always served from the local cache. Writes go through both — cache first for
-instant UI update, then API for persistence.
-
-```rust
-use vantage_diorama::{Lens, ops::WriteOp};
-
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("./admin-cache.redb")
-        .on_start(|dio| {
-            let dio = dio.clone();
+let lens = Lens::builder()
+    .cache(Cache::redb("field-app.redb"))
+    .writer({
+        let outbox = outbox.clone();
+        move |_cx: LoaderCx, flash: ChangeFlash| {
+            let outbox = outbox.clone();
             async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
+                outbox.lock().unwrap().push(flash);
+                Ok(FlashOutcome::applied())
             }
-        })
-        .on_refresh(|dio| {
-            let dio = dio.clone();
-            async move {
-                let fresh = dio.master().list_values().await?;
-                dio.cache().clear().await?;
-                dio.cache().insert_values(fresh).await?;
-                Ok(())
-            }
-        })
-        .on_write(|dio, op| {
-            let dio = dio.clone();
-            async move {
-                // Apply to cache first for instant UI feedback, then to master.
-                match &op {
-                    WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
-                        dio.cache().insert_value(id, record).await?;
-                        dio.master().insert_value(id, record).await?;
+        }
+    })
+    .refresher(
+        Refresher::new({
+            let outbox = outbox.clone();
+            move |cx: LoaderCx| {
+                let outbox = outbox.clone();
+                async move {
+                    loop {
+                        let Some(flash) = outbox.lock().unwrap().first().cloned() else {
+                            break;
+                        };
+                        send(cx.master(), &flash).await?;
+                        outbox.lock().unwrap().remove(0);
                     }
-                    WriteOp::Delete { id } => {
-                        dio.cache().delete_value(id).await?;
-                        dio.master().delete_value(id).await?;
-                    }
-                    _ => {}
+                    let rows = cx.master().list_values().await?;
+                    cx.reconcile(rows).await
                 }
-                Ok(())
             }
         })
-        .refresh_every(Duration::from_secs(300))   // every 5 minutes
-        .build()?,
-);
+        .every(Duration::from_secs(30)),
+    )
+    .build()?;
 ```
 
-The cache survives app restarts. If the API is unreachable on the next launch,
-the cached data is still there — `on_start` will fail, but the cache continues
-to serve reads until the next successful refresh.
+The order matters. Reconcile makes the cache match the master, so
+reconciling while an edit is still queued would revert it on screen. Here a
+failed send returns before the reconcile, and the queue keeps the flash for
+the next tick. The queue in this snippet lives in memory to show the shape;
+a real outbox persists, and decides what a conflict means for its domain.
 
-### What if a refresh fails mid-day?
+### Why not send the edit from inside the writer and wait for signal?
 
-The refresh task logs the error and emits `DioEvent::DatasetChanged` (or not,
-depending on configuration). The cache keeps serving the previous data. Your
-UI can subscribe to a Scenery and surface a "last synced N minutes ago"
-indicator from the watch generation.
+Because the writer's return is the confirmation, and the Dio's writes run
+one at a time. A writer that waits for the network holds every later write
+of that Dio behind it: the user's next edit shows, but stays pending until
+the device finds coverage. Confirm locally, return, and let the refresher do the slow
+part, as the outbox does. The flash carries what a later sender needs:
+`flash.before()` is the pre-image and `flash.after()` the merged row.
 
-## Scenario 2 — Mobile app, offline-first
+## Live follow
 
-A field worker uses the app from a van. Network comes and goes. Edits must
-succeed offline and sync when the device returns to coverage. The user must
-never see "save failed" because of bad signal.
-
-**Strategy.** Lazy fetch on access. Local cache is the source of truth for the
-session. Writes always succeed locally; an outbox queue holds them until the
-network is back.
+A master that advertises `Subscribe` can push its changes. `.live()` on the
+Dio builder follows that stream:
 
 ```rust
-let outbox = Arc::new(OutboxQueue::open("./outbox.redb").await?);
-let outbox_for_write = outbox.clone();
-let outbox_for_refresh = outbox.clone();
-
-let lens = Lens::new()
-    .cache_at("./mobile-cache.redb")
-    .on_query(|dio, query| async move {
-        // First time this query is seen, fetch from master if online.
-        if is_online() {
-            let rows = dio.master().clone().with_query(&query)?.0.list_values().await?;
-            dio.cache().insert_values(rows).await?;
-        }
-        Ok(())
-    })
-    .on_write(move |dio, op| {
-        let outbox = outbox_for_write.clone();
-        async move {
-            dio.cache().apply(&op).await?;             // always succeeds
-            outbox.enqueue(dio.name(), op).await?;     // sync later
-            Ok(())
-        }
-    })
-    .on_refresh(move |dio| {
-        let outbox = outbox_for_refresh.clone();
-        async move {
-            if !is_online() { return Ok(()); }
-            outbox.drain_for(dio.name(), |op| dio.master().apply(op)).await?;
-            let fresh = dio.master().list_values().await?;
-            dio.cache().replace_all(fresh).await?;
-            Ok(())
-        }
-    })
-    .refresh_on_network_resume()
-    .build()
-    .await?;
+let dio = lens.dio(master).live().build().await?;
 ```
 
-The `OutboxQueue` is user code — Diorama doesn't ship one because the right
-shape (per-record vs per-op, idempotency keys, conflict resolution) depends on
-your domain.
+The subscription is made before the eager start copies the set, and the
+changes that arrive meanwhile are applied once the copy lands, so none is
+lost or overwritten. A follow that falls behind re-reads the set. Over a
+master without `Subscribe`, `.live()` does nothing and the refresher keeps
+the cache fresh.
 
-### Won't the cache get out of sync if writes succeed locally but later fail upstream?
-
-Yes, and you have to design for it. Two common patterns: (a) tag failed writes
-in the cache (via `dio.notify_record_changed`) so the UI shows them as conflicted
-and the user resolves manually; (b) drop the local change and re-fetch the
-upstream version, accepting "last write loses" for sync conflicts. Pick based
-on your domain.
-
-## Scenario 3 — API server, read-heavy
-
-A REST API serves a high-traffic product catalog. The underlying database is
-correct but slow under load. You want every GET to be served from a shared
-in-memory cache with explicit TTL; writes go through normally and invalidate
-the cache.
-
-**Strategy.** No persistent cache (server is stateless). In-memory cache
-backend. Short TTL. Writes invalidate by id; bulk operations invalidate
-wholesale.
+A source that pushes through something the master doesn't model (a webhook,
+a message queue) feeds the Dio directly:
 
 ```rust
-use vantage_diorama::cache::MemorySource;
-
-let lens = Lens::new()
-    .cache_source(Arc::new(MemorySource::new()))           // ephemeral
-    .with_default(LensDefaults {
-        cache_ttl: Some(Duration::from_secs(60)),
-        on_start_blocking: false,
-        ..Default::default()
-    })
-    .on_query(|dio, query| async move {
-        let rows = dio.master().clone().with_query(&query)?.0.list_values().await?;
-        dio.cache().insert_values(rows).await?;
-        Ok(())
-    })
-    .on_write(|dio, op| async move {
-        dio.master().apply(&op).await?;
-        if let Some(id) = op.target_id() {
-            dio.notify_record_changed(id);
-        } else {
-            dio.notify_dataset_changed();
-        }
-        Ok(())
-    })
-    .build()
-    .await?;
-```
-
-`on_query` fires on the first read for a given query shape; subsequent reads
-hit the cache. `cache_ttl: 60s` ensures stale data ages out automatically.
-
-### Why not skip the cache entirely for an API?
-
-If your database can sustain your traffic, you should. The Lens still helps
-when traffic spikes past sustainable load — a 60-second cache means a million
-identical queries become 17 database hits. Use it when load shedding matters,
-skip it when freshness matters more than throughput.
-
-## Scenario 4 — Edge function, ephemeral, no disk
-
-A serverless edge function handles requests with a few hundred KB of memory
-and no persistent disk. Cold starts wipe state. You want to amortize the cost
-of fetching reference data (product catalogs, feature flags, rate tables)
-across many requests within a single instance's lifetime.
-
-**Strategy.** In-memory cache. Eager `on_start` blocks the first request. No
-refresh task — the instance is short-lived enough that TTL plus restart
-handles staleness.
-
-```rust
-let lens = Lens::new()
-    .cache_source(Arc::new(MemorySource::new()))
-    .with_default(LensDefaults {
-        cache_ttl: Some(Duration::from_secs(300)),
-        on_start_blocking: true,
-        ..Default::default()
-    })
-    .on_start(|dio| async move {
-        let data = dio.master().list_values().await?;
-        dio.cache().insert_values(data).await?;
-        Ok(())
-    })
-    // No refresh — instance dies before staleness matters.
-    .build()
-    .await?;
-```
-
-The first invocation pays the cold-start cost; every subsequent invocation in
-the same instance reads from memory. When the instance dies, the cache dies
-with it; the next instance pays the cost again.
-
-### Should I share a Lens across instances via Redis?
-
-You can. Substitute the cache_source with a Redis-backed `TableSource`. The
-trade-off is the network hop on every cache read — usually faster than the
-backing store but not free. For edge workloads, in-memory often wins because
-the working set is small and instances are short-lived.
-
-## Scenario 5 — Batch pipeline, write-behind
-
-A data pipeline reads from a slow upstream API, transforms records, and writes
-to a target warehouse. The pipeline runs for hours; restarts must resume from
-where the last run left off; writes are batched for throughput.
-
-**Strategy.** Persistent cache as the work log. Reads from master populate the
-cache; writes are buffered and flushed periodically. No reactive surface
-needed.
-
-```rust
-let lens = Lens::new()
-    .cache_at("./pipeline-state.redb")
-    .with_default(LensDefaults {
-        write_queue_capacity: 4096,
-        on_start_blocking: true,
-        ..Default::default()
-    })
-    .on_start(|dio| async move {
-        let cursor = dio.cache().get_metadata("last_cursor").await?.unwrap_or_default();
-        let new_rows = dio.master().fetch_after(cursor).await?;
-        dio.cache().insert_values(new_rows).await?;
-        Ok(())
-    })
-    .on_write(|dio, op| async move {
-        // Buffer until a thousand have accumulated, then flush.
-        let buffer = dio.cache().scope("pending_writes");
-        buffer.apply(&op).await?;
-        if buffer.count().await? > 1000 {
-            let batch = buffer.drain_all().await?;
-            dio.master().bulk_apply(batch).await?;
-        }
-        Ok(())
-    })
-    .build()
-    .await?;
-```
-
-Restarts pick up at `last_cursor` because the cache survives. The pending
-writes scope survives too — if the pipeline crashes mid-batch, the next run
-resumes the flush.
-
-### When is this overkill vs a plain Vista loop?
-
-If your pipeline runs in one shot and never restarts, use Vista directly. The
-Lens earns its keep when you have multi-hour runs, partial failures, or
-genuinely need read-side caching to amortize upstream cost across the run.
-
-## Scenario 6 — Realtime UI with push events
-
-A trading dashboard. Prices update via a websocket. Edits to local positions
-are rare but must reflect server confirmation. The UI must update within
-milliseconds of any price change.
-
-**Strategy.** Combine `on_event` (websocket-driven invalidation) with an
-optional `on_refresh` (periodic fallback in case events are dropped). Writes
-go through with explicit optimistic UI patches.
-
-```rust
-let lens = Lens::new()
-    .cache_at("./trading.redb")
-    .on_start(|dio| async move {
-        let data = dio.master().list_values().await?;
-        dio.cache().insert_values(data).await?;
-        Ok(())
-    })
-    .on_event(|dio, evt| {
-        let dio = dio.clone();
-        async move {
-            match evt {
-                ChangeEvent::Updated { id, new: Some(record) } => {
-                    // Writes to cache + publishes RecordChanged on the bus.
-                    dio.patched(id, record).await?;
-                }
-                ChangeEvent::Updated { id, new: None } => {
-                    // Source didn't ship the new value — refetch from master.
-                    if let Some(rec) = dio.master().get_value(&id).await? {
-                        dio.patched(id, rec).await?;
-                    } else {
-                        dio.notify_record_changed(id);
-                    }
-                }
-                ChangeEvent::Inserted { id, new: Some(record) } => {
-                    dio.patched(id, record).await?;
-                }
-                ChangeEvent::Deleted { id } => {
-                    dio.cache().delete_value(&id).await?;
-                    dio.notify_record_changed(id);
-                }
-                _ => {
-                    dio.refresh().await?;
-                }
-            }
-            Ok(())
-        }
-    })
-    .on_write(|dio, op| {
-        let dio = dio.clone();
-        async move {
-            // Apply optimistically to cache, then push to master.
-            match &op {
-                WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
-                    dio.cache().insert_value(id, record).await?;
-                    if let Err(e) = dio.master().insert_value(id, record).await {
-                        // Roll back via refresh — master is the source of truth.
-                        dio.refresh().await?;
-                        return Err(e);
-                    }
-                }
-                WriteOp::Delete { id } => {
-                    dio.cache().delete_value(id).await?;
-                    dio.master().delete_value(id).await?;
-                }
-                _ => {}
-            }
-            Ok(())
-        }
-    })
-    .refresh_every(Duration::from_secs(60))               // safety net
-    .build()?,
-);
-
-// Wire the websocket into the event_bus.
-let dio = lens.make_dio(prices_vista);
-let dio_for_ws = dio.clone();
+let feed = dio.clone();
 tokio::spawn(async move {
-    let mut ws = price_websocket().await?;
-    while let Some(msg) = ws.next().await {
-        dio_for_ws.handle_event(msg.into()).await?;
+    while let Some(change) = rx.recv().await {
+        if let Err(e) = feed.apply_change(change).await {
+            eprintln!("change failed to apply: {e}");
+        }
     }
 });
 ```
 
-`dio.handle_event(evt)` invokes the registered `on_event` callback. The
-callback decides what to do with the event — patch, refresh, ignore. Sceneries
-subscribing to this Dio see updates within a render frame.
+`apply_change` writes the row and publishes the matching event;
+`ChangeEvent::Invalidated` runs a full refresh.
 
-### Why the periodic refresh if I already have push events?
+### Why keep a refresher if the Dio follows live?
 
-Push channels drop messages — connection blips, server restarts, client
-backgrounding. The periodic refresh is a low-frequency safety net that
-guarantees eventual consistency even if a specific event was missed. For
-critical data it's cheap insurance.
+Push channels drop messages: a connection blips, a server restarts, a laptop
+sleeps. A follow that notices it fell behind recovers by itself, but one that
+never learns about a lost message can't. A slow `every` on the refresher is
+the safety net that makes the cache correct eventually whatever the stream
+did.
 
-## Choosing defaults
+## Events
 
-A few rules of thumb:
-
-- **`refresh_every`**: pick the interval at which staleness becomes
-  user-visible. For an admin grid that's minutes; for a feature flag cache
-  it's seconds; for a static catalog it's hours.
-- **`cache_ttl`**: only matters for memory caches or when you want disk cache
-  entries to age out. Persistent caches usually want no TTL — let your
-  callbacks decide.
-- **`write_queue_capacity`**: default 256 is fine for UI apps. Pipelines that
-  burst writes want a few thousand. If you ever see senders blocking on the
-  queue, that's overload — surface it rather than hide it with a bigger
-  buffer.
-- **`on_start_blocking`**: true for desktop UIs (better than empty grid).
-  False for servers (let the first request take the hit; don't block startup
-  on possibly-slow upstreams).
-- **`refresh_on_open`**: true when `on_load_chunk` is the primary
-  source of rows (the scenery should always re-fetch the first page so
-  the cache stays warm). False when `on_start` already fully populates
-  the cache and an extra round-trip would just churn.
-- **`viewport_debounce`**: 50ms balances scroll responsiveness against
-  fetch churn for typical desktop / mobile inputs. Bump it for slow
-  upstreams where a wider coalesce window is worth the extra latency;
-  drop it for trackpad-driven UIs that need to feel snappier.
-
-## Multiple Lenses
-
-If two domains in your app want genuinely different policies (e.g., a
-write-heavy editor and a read-only reporting view), use two Lenses. They can
-share the same cache backend or use different ones:
+Every Dio has an event bus. Sceneries subscribe to it; so can anything else:
 
 ```rust
-let edit_lens = Arc::new(
-    Lens::new()
-        .cache_source(shared_redb.clone())
-        .on_write(complex_write_routing)
-        .refresh_every(Duration::from_secs(30))
-        .build()?,
-);
-
-let report_lens = Arc::new(
-    Lens::new()
-        .cache_source(shared_redb)
-        .on_start(eager_load)
-        .refresh_every(Duration::from_secs(3600))
-        .build()?,
-);
+let mut bus = dio.subscribe_events();
+tokio::spawn(async move {
+    while let Ok(event) = bus.recv().await {
+        match event {
+            DioEvent::RefreshFailed { error } => eprintln!("live re-read failed: {error}"),
+            DioEvent::WriteReverted { id, error, .. } => eprintln!("{id} reverted: {error}"),
+            DioEvent::LoadFailed { range, error } => eprintln!("{range:?} failed: {error}"),
+            _ => {}
+        }
+    }
+});
 ```
 
-Dios under different Lenses are independent. Cross-Lens invalidation, if you
-need it, is done explicitly in callbacks.
+`DioEvent` is `#[non_exhaustive]`, so every match needs a fallback arm. The
+ones a policy is likely to care about:
 
-## Reloading — when the source itself changes
+- `DatasetChanged`: the set moved; views re-read. `reconcile` and every
+  successful refresh publish it.
+- `Seeded`: an eager start finished writing the whole set to the cache.
+- `RefreshFailed { error }`: a live follow failed to re-read the set after a
+  dropped subscription or a change that wouldn't apply. The follow retries
+  with backoff, and views keep the rows they show.
+- `WritePending`, `WriteReverted`, `WriteFailed`: a flash was staged, failed
+  and rolled back, or failed with no row to stage.
+- `LoadFailed { range, error }`: a paged load failed, and the slots in
+  `range` keep what they had.
 
-A Vista is produced by a VistaFactory, and that factory can reload: someone edits
-the YAML that defines a table, or the script that backs it, and the dataset is now
-*wholly different* — not just a few changed rows. That's not a refresh (same
-shape, new values); it's a **reload** (new master Vista, new data).
+`LoadFailed` has a second sender. A view that can't answer its query (the
+master rejected a clause, or refused one and there is no complete set to
+evaluate it over) withholds its rows and publishes `LoadFailed` with its
+viewport, or `0..0` before it has one. Nothing was fetched: this is a view
+failure, not a failed load. The bus can't tell the two apart, but the view
+can. Its `load_state()` is `LoadState::Failed(failure)`, naming the table and
+the clause, until the query changes.
 
-`dio.reload(new_master)` handles it without tearing the Dio down or blanking the
-UI:
+## Tuning
+
+`Tuning` holds the knobs every Dio of the Lens shares. Start from
+`Tuning::default()` and change fields with the `with_*` setters:
+
+| Field | Default | What it trades |
+|---|---|---|
+| `write_queue` | 256 | Writes past it wait for room before staging. A full queue is overload; surface it rather than hide it behind a bigger buffer. |
+| `viewport_debounce` | 50ms | Rapid viewport moves coalesce into one fetch. Wider absorbs scroll bursts over a slow upstream; narrower feels snappier. |
+| `augment_workers` | 1 | Concurrent per-row detail fetches. One keeps the order deterministic; raise it when the detail source tolerates parallel requests. |
+| `refresh_on_open` | true | A paged view re-fetches its first window on open, over what the cache showed. Turn off for offline or read-only use. |
+| `aggregate_debounce` | 250ms | Cooldown between aggregate recomputes. The first change acts at once; the rest of a burst is flushed at the end. |
 
 ```rust
-// The catalog rebuilt this model's Vista; hand the Dio the new one.
-let fresh = catalog.build_vista("orders")?;
-dio.reload(fresh).await?;
-```
-
-What it does, in order: swaps the master Vista, drops the stale per-query indexes
-(two-pass orders rebuild against the new data), clears and refills the cache from
-the new master via your `on_start` (or `on_refresh`), and only then publishes one
-`DatasetChanged`. Open sceneries keep showing their current rows the whole time and
-swap to the new data in a single atomic step on that `DatasetChanged` — so a grid
-mid-scroll never flashes empty, even though the dataset changed underneath it.
-"Responsive first, eventually precise," applied to a source reload.
-
-## Adaptive polling — let the app pace your refresh
-
-A fixed `refresh_every` is wasteful: it polls just as hard when the window is in
-the background or the user walked away, and it hammers a dead network while
-offline. The app knows all of this; hand it to the Lens through one shared
-`ActivitySignal`:
-
-```rust
-let activity = ActivitySignal::new();          // shared with the UI
-
-let lens = Lens::new()
-    .cache_at("cache.redb")
-    .on_refresh(pull_changes)
-    .refresh_every(Duration::from_secs(1))            // Active: snappy
-    .standby_refresh_every(Duration::from_secs(60))   // Standby: relaxed
-    .activity_signal(activity.clone())
+let lens = Lens::builder()
+    .cache(Cache::memory())
+    .tuning(Tuning::default().with_write_queue(4096).with_refresh_on_open(false))
     .build()?;
-
-// …elsewhere, the desktop app flips it as window focus / idle / network change:
-activity.set(Activity::Active);    // foreground + interacting → 1s cadence
-activity.set(Activity::Standby);   // backgrounded or idle    → 60s cadence
-activity.set(Activity::Offline);   // no network → stop polling; resume on reconnect
 ```
 
-Pass the *same* cloned `activity` to every Lens and one `set` re-paces them all.
-`Offline` skips the refresh body entirely (no doomed requests) and picks back up
-on the next tick once you flip it back. This is the data-layer half of the
-desktop app's visibility-aware refresh; the UI half (window-active / idle
-detection) just drives `activity.set(...)`.
+`write_queue` and `augment_workers` must be non-zero; `build` says so if
+they aren't.
+
+## Lens checklist
+
+A Lens that is ready for production has:
+
+1. **A cache** that matches the process: redb where a cold start should
+   paint from disk, memory where nothing should outlive the process, and a
+   shared backend only where Lenses should see each other's tables.
+2. **A loader** that matches the master: eager for sets that fit, paged for
+   sets that don't, paged with `or_eager` when one Lens serves both.
+3. **A refresher** with `every` at the interval where staleness becomes
+   visible, or `max_age` alone where nobody should poll.
+4. **A writer** only when writes must go somewhere other than the master,
+   and never one that flashes its own Dio.
+5. **Event handling** for `RefreshFailed` and `WriteReverted`, and views that
+   read `load_state()` to tell a view failure from a failed load.

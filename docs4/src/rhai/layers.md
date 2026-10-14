@@ -17,7 +17,7 @@ Vista or registers its own vocabulary next to `DataVocab` on the same host. A ho
 `form` (a Servo) and `table(name)` (Vistas) side by side.
 
 Where an upper layer means the same thing as a data verb, it uses the same word: `where`, `sort`,
-`limit`, `ref`, `save`, `is_dirty`. Where it means something different, it uses its own word, even
+`limit`, `ref`, `flash`, `is_dirty`. Where it means something different, it uses its own word, even
 if a data verb looks close.
 
 ## Dio: no vocabulary of its own

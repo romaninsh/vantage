@@ -1,180 +1,335 @@
 # Wiring Up a UI
 
-This document is for someone connecting Diorama to a UI framework. The
-running example is GPUI (specifically `gpui-component::Table`) because that's
-what `vantage-ui` uses, but the pattern generalizes to anything pull-on-render
-with an external notification primitive — slint, cursive, egui, tauri.
+This is for someone connecting Diorama to a UI framework. The running example
+is GPUI with `gpui-component`'s `Table`, but nothing here is GPUI-specific:
+any framework that pulls rows on render and has some way to schedule a repaint
+(slint, cursive, egui, ratatui, tauri) binds the same way.
 
-The goal: a table widget that shows the rows currently sitting in the local
-cache, re-renders when the cache changes, and lets the user scroll, search,
-and sort that cache as a live viewport. Plus a sheet that auto-updates when
-its record is mutated, and a counter that refreshes when the underlying
-aggregate changes.
+The goal is a grid that shows rows as they arrive and repaints when they
+change, lets the user scroll, search and sort, plus a detail sheet that follows
+its record and a counter that follows an aggregate.
 
 ## What Diorama gives a UI
 
-Diorama is the layer that turns "rows on disk in a redb file" into something a
-GPUI widget can render. The cache is the source of truth on the UI side:
+A UI never talks to the master Vista. It opens views on a Dio and reads them:
 
-- Reads served from cache → fast and synchronous from the render-frame's POV.
-- Writes go through the Dio's write queue → optimistic-by-default if your
-  `on_write` callback applies to the cache first.
-- External changes arrive via the event bus → Sceneries notice and bump a
-  generation; widgets re-render.
+- **Reads are synchronous.** `row(i)`, `row_count()` and `view_stats()` read
+  memory the view already holds. A render frame never awaits.
+- **Writes go through `dio.flash(..)`.** The value is staged in the cache and
+  shown at once; the write-through runs behind it and either confirms or rolls
+  back.
+- **Changes arrive on the Dio's event bus.** Each view reacts to the events
+  that concern it and bumps its `Generation`. The UI watches the generation and
+  repaints.
 
-UIs talking to Diorama answer one question: *what is in our cache right now?*
-Not *what could be fetched from master* — that's the Lens's `on_refresh` /
-`on_event` problem.
+What to fetch, from where and when is the Lens's business (see
+[README_lens.md](README_lens.md)). The UI asks one question: what does this
+view hold right now?
 
-## The three Scenery types
+## The three sceneries
 
-Every UI widget you wire to Diorama binds to one of three Sceneries. They
-are exported from the crate root (`vantage_diorama::TableScenery`, …).
+Every widget binds to one of three views, all exported from the crate root:
 
-- **`TableScenery`** — a grid or list. Spawned via `dio.table_scenery()…
-  .open().await?`, returns `Arc<dyn TableScenery>`.
-- **`RecordScenery`** — a single row by id. Spawned via
-  `dio.record_scenery(id).open().await?`, or `dio.record_scenery(id).seed(record).open().await?`
-  if you already hold the row.
-- **`ValueScenery`** — a single scalar (count, sum, custom aggregate). Spawned
-  via `dio.value_scenery(Count::rows()).open().await?`.
-
-Each handle is `Arc<dyn …>`. Cheap to clone, cheap to drop. The internal
-reload task watches the Dio's event bus and bumps a watch channel; the last
-external handle dropping lets the task wind down (the Dio is held weakly).
+- **`TableScenery`**: an ordered set of rows, for a grid, a list, a picker.
+  Opened with `dio.table_scenery()…open().await?`.
+- **`RecordScenery`**: one row by id, for a detail sheet. Opened with
+  `dio.record_scenery(id)…open().await?`.
+- **`ValueScenery`**: one value computed over the Dio's rows, for a counter or
+  a badge. Opened with `dio.value_scenery(aggregation).open().await?`.
 
 ```rust
-use vantage_diorama::TableScenery;
 use vantage_diorama::aggregate::{Conditions, Count, Where};
 use vantage_vista::SortDirection;
 
-let table = dio.table_scenery()
+let grid = dio
+    .table_scenery()
     .order("price", SortDirection::Ascending)
     .open()
     .await?;
 
 let sheet = dio.record_scenery("sku-1234").open().await?;
 
-let counter = dio
+let unread = dio
     .value_scenery(Where::new(Conditions::new().eq("unread", true), Count::rows()))
     .open()
     .await?;
 ```
 
-## Sharing and lifecycle
+Each handle is an `Arc<dyn …>`, cheap to clone and cheap to drop. A scenery
+holds its Dio weakly, so it doesn't keep the Dio alive: keep the `Dio` in your
+application state for as long as its views are on screen. A view whose Dio has
+gone keeps answering with what it last held and stops updating.
 
-Opening a `TableScenery` is **cheap**. Two widgets that ask for the same
-`(conditions, order, search)` each get their own view, but the views read one
-shared set of rows — one reactor, one cache window, one in-flight fetch — not
-two parallel copies:
+## Owned views over shared rows
+
+Every `open()` returns a view of its own. Two widgets that open the same query
+(the same filters, search, order and `titles_only`) get two views, but the views
+read one set of rows: one reactor on the event bus, one viewport loop, one
+fetch per window and one count, however many views show them.
 
 ```rust
-let grid     = dio.table_scenery().order("price", SortDirection::Ascending).open().await?;
-let elsewhere = dio.table_scenery().order("price", SortDirection::Ascending).open().await?;
-// Two handles, one set of rows: loads are shared, viewports are not.
+let grid = dio.table_scenery().page_size(50).open().await?;
+let sidebar = dio.table_scenery().page_size(50).open().await?;
+grid.set_viewport(0..50, 0..50);
+sidebar.set_viewport(0..50, 0..0);
+// One fetch for 0..50 reaches the master; both views show its rows.
 ```
 
-This is why you don't budget for sceneries: a form with eight dropdowns over the
-same lookup table, or the same record shown in a grid row and a detail sheet,
-costs one set of rows, not eight.
-
-Lifecycle is **refcounted**. Each handle holds its view; when the last view over
-a set of rows drops, the rows' background tasks are aborted. Because the viewport task
-owns every in-flight fetch inline, **a closing grid stops pulling** — outstanding
-chunk loads (and two-pass detail hydration) are cancelled rather than running to
-completion against a view nobody is watching. There is nothing to call: just drop
-the handle (clear the field, close the tab) and the work unwinds.
+A setter (`set_order`, `set_search`, `set_filters`) changes only the view it is
+called on. The view moves to the rows of its new query: it joins them if
+another view of that query is open, and otherwise gets a copy of the rows it
+leaves, which the new query's load then replaces. The rows it leaves are never
+reshaped, so every other view of the old query is untouched.
 
 ```rust
-// One open window onto the live views — useful in tests and the diagnostics panel.
-assert_eq!(dio.diagnostics().await?.sceneries[0].shared_by, 2); // grid + elsewhere share rows
+let first = dio.table_scenery().open().await?;
+let second = dio.table_scenery().open().await?;
+first.set_order(Some(("name".into(), SortDirection::Descending)));
+first.set_filters(vec![Condition::new("name", FilterOp::Ne, "beta")]);
+// `second` still shows every row, in the Dio's order.
+```
+
+### Copy-on-write
+
+The copy is what keeps a re-pointed view on screen. It starts as the old rows,
+with their places, their total and their settled state, so the view doesn't
+blank and doesn't report `Loading` while the new query's rows are on their
+way. The load then overwrites the copy in place, the way a paged refetch
+overwrites slots as they land.
+
+Two consequences are worth knowing:
+
+- A filter change drops the copied total, since it counted the old filter's
+  set. An order or search change keeps it until the reload restates it.
+- On a view that pages windows, the reload refetches the window the view shows.
+  Copied rows outside that block keep the positions they had in the old order
+  until they are fetched again, which happens as the user scrolls to them.
+
+### Why not let a setter reshape the shared rows?
+
+Because a second widget reads those rows. A sort on one grid would reorder a
+sidebar built over the same query, and a search typed into a picker would
+narrow every other picker on the form. Each view owning its clauses is the only
+way two widgets can agree on rows without agreeing on everything else.
+
+The cost is one load per distinct query. A view that re-points to a query no
+other view holds pays for its own fetch, and the copy is what hides that fetch
+from the user.
+
+### Lifecycle
+
+A view holds its rows strongly and the Dio's registry holds them weakly, so the
+rows live exactly as long as some view points at them. When the last view
+drops, the rows' work is aborted on the spot: the reactor, the viewport loop
+with any load it has in flight or in its debounce, and a two-pass list pass. A
+closed grid stops pulling. There is nothing to call; drop the handle.
+
+Opening the same query again after that builds new rows and loads again. With
+the `diagnostics` feature, `dio.diagnostics()` lists one entry per open view,
+with `shared_by` counting the views that read the same rows:
+
+```rust
+let d = dio.diagnostics().await?;
+assert_eq!(d.sceneries.len(), 2);
+assert!(d.sceneries.iter().all(|s| s.shared_by == 2));
 drop(grid);
-drop(elsewhere);
-assert!(dio.diagnostics().await?.sceneries.is_empty()); // released, no leak
+drop(sidebar);
+assert!(dio.diagnostics().await?.sceneries.is_empty());
 ```
 
-## Dropdowns & autocomplete reuse the grid mechanic
+## Opening a table view
 
-A dropdown (FK picker) and an autocomplete are the **same** `TableScenery` a grid
-binds to — just projected to the title columns. Open with `.titles_only()`:
+The builder fixes what the view opens with:
 
-```rust
-// A country picker — id + title columns, lazily loaded, search-as-you-type.
-let countries = countries_dio.table_scenery().titles_only().open().await?;
-// DropdownField renders `countries.row(i)`'s title column and submits its id.
-// AutocompleteField additionally forwards keystrokes:
-//   countries.set_search((!q.is_empty()).then(|| q));
-// and its visible band:
-//   countries.set_viewport(visible.clone(), visible);
-```
+| Builder call | What it does |
+|---|---|
+| `filter(condition)` | Narrows the view for its whole life. Repeatable; ANDed with the runtime filters. |
+| `search(text)` | The initial quicksearch, as a later `set_search` would set it. Blank means none. |
+| `order(column, dir)` | The view's order. Without one the view keeps the Dio's order. |
+| `limit(n)` | Show at most the first `n` rows of the order. |
+| `tail(n)` | Show the last `n` rows of the order, still in that order. |
+| `page_size(n)` | The page `request_load_more` and the on-open fetch use. Default 100. |
+| `titles_only()` | The picker shape: list columns only, no detail pass on an augmented Dio. |
+| `columns([..])` | The columns this view shows; gates the augment detail pass. |
+| `sugar(sugar)` | Read rows with display-only columns merged in. The view never shares rows. |
 
-Everything you already know about grids applies: the visible band drives loading
-via `set_viewport`, typeahead drives `set_search`, and the shared rows mean a
-form with eight pickers over the same lookup table costs **one** set of rows, not
-eight (see *Sharing and lifecycle*).
+`open()` fails for `limit` together with `tail`, and for a `tail` with no order
+to take, its own or the Dio's.
 
-The one difference `.titles_only()` makes is on an **augmented (two-pass)**
-lookup: it suppresses the detail pass. The picker serves the cheap list-pass
-rows (id + title) and never pays for per-row hydration, so a 10,000-row lookup
-opens a picker as cheaply as it lists. A `titles_only` picker and a full grid
-over the same query are deliberately distinct sceneries — the grid hydrates, the
-picker doesn't — so neither drags cost onto the other.
+### Limit and tail
+
+`limit(n)` reads complete at `n`: `has_more()` turns false and the total stops
+there.
+
+`tail(n)` is the log-tail shape. It counts back from the end of the set, so it
+needs to know where the end is:
+
+- Over a complete set (an eager view, or a two-pass view whose list pass has
+  listed to the end) the end is always known, and nulls and ties sit exactly
+  where the declared order puts them.
+- Over windows, the end is known once the source states a total or a short
+  page proves it, and the tail then asks for the last `n` rows.
+- A source that pages windows and never states a total has no end to count
+  from. Its first fetch is the tail's whole cap in the declared order, and when
+  that fetch shows the end is a horizon the tail turns flipped: it reads the
+  first `n` rows of the reversed order, backwards. Where nulls and ties fall is
+  then the master's call.
+
+Until the tail knows which case it is in, it shows no rows and reads
+`LoadState::Loading`, so it never shows rows from the wrong end. A two-pass
+tail reads `Loading` the same way during a re-sort, until the list pass has
+listed the new order to the end.
+
+`set_order(None)` on a tail falls back to the Dio's order. With no Dio order
+either, the view fails (`LoadState::Failed`) and shows nothing until an order
+is set again.
+
+### Runtime setters
+
+- `set_order(Some((column, dir)))` replaces the order; `None` clears it.
+- `set_search(Some(text))` replaces the quicksearch; `None` or blank clears.
+- `set_filters(conditions)` replaces the runtime filters, ANDed with the
+  builder's. An empty vec clears. Restating the same set is not a change.
+
+Whether a clause can be answered depends on where the view's rows come from.
+A paged view sends every clause into each window fetch, and the master takes
+what it can. What it leaves over is evaluated over a whole copy of the set when
+the Lens has an eager start for that (`Loader::paged(..).or_eager(..)`), and
+otherwise fails the view loudly rather than showing a filtered window as the
+filtered set. An eager view evaluates everything over its complete cache. Ask
+before you offer the affordance:
+
+- `search_supported()` says whether `set_search` will do something honest.
+- `filters_supported(&conditions)` says the same for a filter set.
+- `count_where(conditions)` counts the rows a filter set would leave, for a
+  chip that shows its count before it is applied. `Ok(None)` means no honest
+  count (a two-pass view, or a paged view whose master can't take the filter
+  and has no whole copy to count).
 
 ## The pull-on-render contract
 
-GPUI's `TableDelegate` polls the delegate on every render frame. The relevant
-shape (see `gpui-component/crates/ui/src/table/delegate.rs`):
+GPUI's `TableDelegate` is polled on every frame. The parts that matter here
+(see `gpui-component`'s `table/delegate.rs`):
 
 ```rust
 fn rows_count(&self, cx: &App) -> usize;
-fn render_td(
-    &mut self,
-    row_ix: usize,
-    col_ix: usize,
-    window: &mut Window,
-    cx: &mut Context<TableState<Self>>,
-) -> impl IntoElement;
-fn has_more(&self, cx: &App) -> bool;                  // default: false
-fn load_more_threshold(&self) -> usize;                // default: 20
-fn load_more(&mut self, _: &mut Window, _: &mut Context<TableState<Self>>);
-fn visible_rows_changed(&mut self, range: Range<usize>, ...);
+fn render_td(&mut self, row_ix: usize, col_ix: usize, window: &mut Window,
+             cx: &mut Context<TableState<Self>>) -> impl IntoElement;
+fn has_more(&self, cx: &App) -> bool;
+fn load_more(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>);
+fn visible_rows_changed(&mut self, range: Range<usize>, window: &mut Window,
+                        cx: &mut Context<TableState<Self>>);
 ```
 
-Two implications:
+Two rules follow:
 
-1. **Reads are cheap and synchronous.** `scenery.row(idx)` returns from
-   in-memory `Vec<Arc<EnrichedRecord>>` without awaiting. The Scenery loads
-   matching cached rows up front, so the row vector is populated by the time
-   `.open().await` returns.
-2. **Updates push, but UI pulls.** When the cache changes, the Scenery bumps
-   a generation on its watch channel. The UI adapter bridges that to
-   `cx.notify()`, which triggers GPUI to re-render, which re-polls the
-   delegate. The Scenery never directly tells the UI "render this cell now."
+1. **Reads are cheap and synchronous.** `row(i)` clones an
+   `Arc<EnrichedRecord>` out of the view's row map. It returns `None` for a
+   row that hasn't loaded yet; paint a placeholder.
+2. **Updates push, the UI pulls.** A change bumps the view's generation. The
+   adapter turns that into a repaint request, the framework re-renders, and the
+   delegate reads the view again. The view never tells the UI which cell
+   changed.
 
-## The GPUI binding pattern
+### `set_viewport(loaded, shown)`
 
-For each Scenery type, the bridge is the same shape. A `SceneryEntity` wraps
-the handle, owns a task that listens for changes, and calls `cx.notify()`.
+The view needs two ranges, both in its own indices:
+
+- `loaded`: the rows to load, and to hydrate on an augmented Dio.
+- `shown`: the rows on screen. It is the only input to `ViewStats::showing`,
+  the "Showing 41–60 of 1,204" a status bar prints. An empty range means none
+  on screen.
+
+A grid passes the visible band twice. A dashboard counter that only needs rows
+loaded, or a terminal table that hydrates a band around the cursor while
+showing the whole screen, passes different ranges:
 
 ```rust
-use std::sync::Arc;
-use gpui::{Context, Task};
-use vantage_diorama::TableScenery;
+scenery.set_viewport(visible.clone(), visible);
+scenery.set_viewport(0..200, 0..0);
+scenery.set_viewport(band_start..band_end, offset..offset + height);
+```
 
+Calls are cheap. The view records the range and queues a request, and the
+viewport loop coalesces a scroll burst into one fetch per view, after
+`Tuning::viewport_debounce` (50 ms by default) of quiet.
+
+### `row_by_id`
+
+`row_by_id(id)` finds a row wherever the view's order puts it, which is what a
+selection or a "scroll to the row I just edited" needs after a re-sort. It
+returns `None` when the view doesn't hold the row: not loaded, filtered out, or
+outside a `limit` or `tail`.
+
+### `view_stats`
+
+`view_stats()` is one snapshot of what the view shows: `total` and whether it
+is exact, `loaded`, `showing`, `has_more`, the order, search and filters (each
+filter tagged with whether the builder or the runtime set it), and a summary
+`state`. Reading it clones the last published snapshot; it never fetches.
+
+`count()` turns the total into a `ViewCount` a status bar can print honestly,
+and `count_text()` renders it:
+
+| `ViewCount` | `count_text()` | When |
+|---|---|---|
+| `Exact(1204)` | `1,204` | the source stated the total, or the set is complete |
+| `Estimated(500)` | `~500` | a total remembered from an earlier session, not yet restated |
+| `AtLeast(100)` | `100+` | no total, and more rows to fetch: the loaded rows are a lower bound |
+| `Loaded(37)` | `37` | no total, and nothing more to fetch: the loaded rows are all there is |
+
+`subscribe_view_stats()` ticks when the snapshot changes. It is a separate
+channel from `subscribe()`: a viewport move changes the snapshot without
+changing a row, and a row hydrating changes a row without changing the
+snapshot.
+
+### The status enums are open
+
+`LoadState`, `RowStatus`, `RecordStatus`, `ValueStatus`, `ViewState`,
+`ServoStatus` and `DioEvent` are all `#[non_exhaustive]`. A match on one needs a
+`_ =>` arm, and that arm should be your "not my concern" path, not a panic:
+
+```rust
+match scenery.load_state() {
+    LoadState::Loading => skeleton(),
+    LoadState::Complete if scenery.row_count() == 0 => empty_placeholder(),
+    LoadState::Failed(failure) => error_banner(&failure.message),
+    _ => grid(),
+}
+```
+
+`Loading` and an empty `Complete` render the same blank grid and mean opposite
+things; telling a user the table is empty while the first fetch is in flight is
+the bug this distinction exists to prevent.
+
+## The GPUI binding
+
+For each scenery the bridge is the same: an entity that holds the handle and a
+task that watches its generation and calls `cx.notify()`.
+
+```rust
 pub struct TableSceneryEntity {
     scenery: Arc<dyn TableScenery>,
-    _watch_task: Task<()>,
+    _watch: Task<()>,
 }
 
 impl TableSceneryEntity {
     pub fn new(scenery: Arc<dyn TableScenery>, cx: &mut Context<Self>) -> Self {
-        let mut rx = scenery.subscribe();
-        let task = cx.spawn(|this, mut cx| async move {
-            while rx.changed().await.is_ok() {
-                this.update(&mut cx, |_, cx| cx.notify()).ok();
+        let generation = scenery.subscribe();
+        let watch = cx.spawn(async move |this, cx| {
+            let mut seen = *generation.borrow();
+            loop {
+                cx.background_executor().timer(Duration::from_millis(50)).await;
+                let now = *generation.borrow();
+                if now != seen {
+                    seen = now;
+                    if this.update(cx, |_, cx| cx.notify()).is_err() {
+                        return;
+                    }
+                }
             }
         });
-        Self { scenery, _watch_task: task }
+        Self { scenery, _watch: watch }
     }
 
     pub fn scenery(&self) -> &Arc<dyn TableScenery> {
@@ -183,56 +338,37 @@ impl TableSceneryEntity {
 }
 ```
 
-The `_watch_task` is held to keep the listener alive. When the entity is
-dropped, the task is cancelled, the watch receiver drops, the Scenery's
-notification fanout sees one fewer subscriber, and (once nothing else holds
-the `Arc<dyn TableScenery>`) its internal reload task tears down on the next
-event cycle.
+The task probes the generation on a short timer instead of awaiting
+`changed()` on GPUI's executor. The views bump from tokio tasks on other
+threads, and an await on the foreground executor can miss that wake;
+vantage-ui's `WatchLoop` probes the same way and uses `changed()` only to cut
+the sleep short. Dropping the entity drops the task, which drops the receiver.
+`RecordSceneryEntity` and `ValueSceneryEntity` are the same with a different
+trait object. GPUI's `spawn` signature moves between releases; the shape above
+is the part that matters.
 
-`RecordSceneryEntity` and `ValueSceneryEntity` are the same pattern with
-different inner trait types.
-
-## Implementing `TableDelegate` against `TableScenery`
+## A `TableDelegate` over a `TableScenery`
 
 ```rust
-use std::ops::Range;
-use gpui::{App, Context, Window, IntoElement};
-use gpui_component::table::{Column, ColumnSort, TableDelegate, TableState};
-use vantage_vista::SortDirection;
-
-pub struct ProductsTable {
-    entity: gpui::Entity<TableSceneryEntity>,
-    columns: Vec<ColumnSpec>,
-}
+use vantage_vista::{Capability, SortDirection};
 
 impl TableDelegate for ProductsTable {
     fn rows_count(&self, cx: &App) -> usize {
         self.entity.read(cx).scenery().row_count()
     }
 
-    fn columns_count(&self, _cx: &App) -> usize {
-        self.columns.len()
-    }
-
-    fn column(&self, ix: usize, _cx: &App) -> Column {
-        self.columns[ix].to_column()
-    }
-
-    fn render_td(
-        &mut self,
-        row_ix: usize,
-        col_ix: usize,
-        _w: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) -> impl IntoElement {
+    fn render_td(&mut self, row_ix: usize, col_ix: usize, _: &mut Window,
+                 cx: &mut Context<TableState<Self>>) -> impl IntoElement {
         let column = &self.columns[col_ix];
-        // `cx.entity()` here is the TableState; reach the Scenery through the
-        // bridge entity we stashed in `self`.
-        let scenery = self.entity.read(cx.entity().read(cx).app()).scenery().clone();
-        match scenery.row(row_ix) {
-            Some(record) => render_cell(&record, column),
-            None => skeleton_cell(column),       // rare — only between rebuilds
+        match self.entity.read(cx).scenery().row(row_ix) {
+            Some(row) => render_cell(&row, column),
+            None => placeholder_cell(column), // not loaded yet
         }
+    }
+
+    fn visible_rows_changed(&mut self, range: Range<usize>, _: &mut Window,
+                            cx: &mut Context<TableState<Self>>) {
+        self.entity.read(cx).scenery().set_viewport(range.clone(), range);
     }
 
     fn has_more(&self, cx: &App) -> bool {
@@ -240,571 +376,329 @@ impl TableDelegate for ProductsTable {
     }
 
     fn load_more(&mut self, _: &mut Window, cx: &mut Context<TableState<Self>>) {
-        // Random-access masters (SQLite/Postgres/CSV/REST with offset)
-        // are driven entirely by `set_viewport` from
-        // `visible_rows_changed` — jumping the scrollbar already loads
-        // the visible band. Cursor-only masters (DynamoDB, token-paged
-        // REST) can't be queried by index, so `request_load_more`
-        // walks the cache forward one page at a time.
         let scenery = self.entity.read(cx).scenery();
-        if scenery.master_capabilities().can_fetch_page {
-            return;
+        // A windowed master is driven by `set_viewport` alone.
+        if !scenery.master_capabilities().has(Capability::Window) {
+            scenery.request_load_more();
         }
-        scenery.request_load_more();
     }
 
-    fn visible_rows_changed(
-        &mut self,
-        range: Range<usize>,
-        _: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        // Forward the visible band straight to the Scenery; the
-        // viewport pipeline debounces, deduplicates, and dispatches
-        // `on_load_chunk` for any uncached ranges.
-        self.entity.read(cx).scenery().set_viewport(range.clone(), range);
-    }
-
-    fn perform_sort(
-        &mut self,
-        col_ix: usize,
-        sort: ColumnSort,
-        _w: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        let column = &self.columns[col_ix];
+    fn perform_sort(&mut self, col_ix: usize, sort: ColumnSort, _: &mut Window,
+                    cx: &mut Context<TableState<Self>>) {
+        let field = self.columns[col_ix].field.clone();
         let order = match sort {
-            ColumnSort::Ascending => Some((column.field.clone(), SortDirection::Ascending)),
-            ColumnSort::Descending => Some((column.field.clone(), SortDirection::Descending)),
+            ColumnSort::Ascending => Some((field, SortDirection::Ascending)),
+            ColumnSort::Descending => Some((field, SortDirection::Descending)),
             ColumnSort::Default => None,
         };
-        self.entity
-            .read(cx.entity().read(cx).app())
-            .scenery()
-            .set_order(order);
+        self.entity.read(cx).scenery().set_order(order);
     }
 }
 ```
 
-`render_cell` and `skeleton_cell` are your business. `EnrichedRecord` exposes
-`record: Record<CborValue>` plus `status: RowStatus`.
+`render_cell` and `placeholder_cell` are yours. An `EnrichedRecord` carries the
+row (`record`), its `status` and `fetched_at`. Render the status: `Incomplete`
+for an augmented row whose detail hasn't arrived, `PendingWrite` while a save
+is in flight, `WriteFailed` and `LoadFailed` with their errors.
 
-### What `has_more` and `load_more` mean
+`request_load_more()` pages the next `page_size` rows past what is loaded,
+which a source that can only walk forward needs; over a windowed master,
+`set_viewport` already fetches whatever band the user jumped to, and a
+load-more would only march forward from the top. On a two-pass view it lists
+the next list page instead. A `limit` that is full and a `tail` (which asks for
+its whole cap) ignore it.
 
-The Scenery has two modes, controlled by which `Lens` callbacks are
-registered:
+## Where the rows come from
 
-- **Eager mode** — no `total_provider`, no `on_load_chunk`. The
-  scenery's row set comes from whatever the cache has. `row_count`
-  equals the filtered cache size, `has_more` is always false,
-  `set_viewport` / `request_load_more` only emit `ViewportChanged`
-  events. Best for caches that fit comfortably in memory and are
-  fully populated by `on_start`.
-- **Paged mode** — `total_provider` and `on_load_chunk` are both
-  registered. `row_count` and `estimated_total` come from the
-  provider; `row(i)` returns `None` for indices that haven't been
-  fetched yet (your `render_td` paints a skeleton); `set_viewport`
-  debounces scroll updates and fires `on_load_chunk` for any
-  uncached range.
+Which shape a view has is the Lens's choice, made per master when the view
+opens, and the same delegate drives all of them:
 
-Inside paged mode there are two paging primitives, picked per master
-by inspecting `scenery.master_capabilities()`:
+- **Eager.** The Lens copies the whole set into the cache
+  (`Loader::eager`). The view seeds from the cache, `has_more()` is false, and
+  search, sort and filters run in memory over the complete set.
+- **Paged.** The Lens fetches windows as views ask (`Loader::paged`).
+  `row(i)` is `None` until its window lands; the total comes from what the
+  source states, a short page, or a horizon one page past the last full one.
+  `Loader::paged(..).or_eager(..)` pages a master that advertises `Window`
+  and copies one that doesn't, so one Lens serves both.
+- **Two-pass.** On a Dio built with `augment(..)`, a list pass lists cheap
+  rows into a shared ordered index and a detail pass hydrates the rows in
+  `loaded`, one id at a time, through the Dio's augment scheduler. Rows read
+  `Incomplete` until hydrated.
 
-- **Random-access masters** (`can_fetch_page: true`) — SQLite,
-  Postgres, CSV, REST with offset. `set_viewport(loaded, shown)` is the only
-  growth primitive needed; dragging the scrollbar to the bottom
-  fetches the visible band directly. `load_more` should be a no-op
-  here — calling `request_load_more` would march the cache forward
-  from index 0 one page at a time, which is wrong when the user has
-  already jumped past the cached region.
-- **Cursor-only masters** (`can_fetch_next: true`, `can_fetch_page:
-  false`) — DynamoDB, token-paginated REST. The master can't be
-  queried by row index, so `request_load_more` is the only growth
-  primitive: it pages the next `page_size` rows past the cache end.
-  `set_viewport` past the cache end is a no-op.
+With `Tuning::refresh_on_open` (the default), a paged view re-fetches its first
+page from the master when it opens, even over a warm cache: the cache is keyed
+by id, and only the master knows the query's order.
 
-You wire `has_more` / `load_more` / `visible_rows_changed` through to
-the Scenery in both modes — the eager-mode no-ops are harmless, and
-switching a screen from eager to paged is a Lens-config change with
-no UI rewiring. gpui-component virtualizes which rows it *renders* on
-its own — only the visible window's `render_td` fires, even if
-`row_count()` reports 1,000,000.
+## Search and sort
 
-## Virtual / infinite scroll: three patterns
+On an eager view, search and sort run over the complete cache. On a paged view
+they travel with every window fetch. Either way `set_search` and `set_order`
+re-point the view at once and the reload fetches behind the copy, so the grid
+never blanks.
 
-Diorama's design is *cache-as-viewport*: the UI shows what's locally
-cached, not what could be fetched from master on scroll. Three
-patterns, picking the right one for your data size:
-
-### 1. Eager cache + GPUI virtualization — small/medium caches
-
-This is the default and it's the one you almost certainly want. The Lens's
-`on_start` (or a streaming `on_refresh`) populates the cache; the Scenery
-exposes the full filtered set as `row_count`; gpui-component virtualizes
-which rows render.
+`set_search` re-points on every call, and each re-point builds a copy. The
+copies a keystroke leaves behind are dropped with their pending fetch, so only
+the last one reaches the master, but debouncing the text input still saves the
+copies:
 
 ```rust
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("./products.redb")
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
-        })
-        .build()?,
-);
-let dio = lens.make_dio(products_vista).await?;
-let scenery = dio.table_scenery().order("name", SortDirection::Ascending).open().await?;
-```
-
-If the cache has 10k or 100k rows that fit comfortably in memory (most
-desktop caches do), you're done. GPUI's table will scroll smoothly because
-only the visible band hits `render_td`.
-
-**Sizing.** Each loaded row is one `Arc<EnrichedRecord>` clone. A row with a
-few short string columns is on the order of 1 KB allocated; 100k rows ~ 100
-MB, which is fine for desktop. Past that, switch strategy.
-
-### 2. Bypass the Scenery for unbounded local data
-
-If your cache is genuinely huge (tens of millions of rows in redb, log
-streams, an event store), the eager `Vec<Arc<EnrichedRecord>>` is the wrong
-shape. Today, the right escape hatch is to bind GPUI's table to the cache
-directly and let your delegate page through it.
-
-The Dio exposes the cache as `dio.cache(): &Arc<dyn CacheTable>` and the
-event bus as `dio.subscribe_events()`. Hand-roll the delegate:
-
-```rust
-use vantage_diorama::DioEvent;
-
-pub struct LargeCacheTable {
-    dio: Dio,
-    // Page cache: id range → loaded rows. Sized for ~10× your viewport.
-    pages: parking_lot::RwLock<lru::LruCache<usize, Vec<(String, Record<CborValue>)>>>,
-    total: AtomicUsize,
-    _watch_task: Task<()>,
-}
-
-impl LargeCacheTable {
-    pub fn new(dio: Dio, cx: &mut Context<Self>) -> Self {
-        // Subscribe so we know when to invalidate our page cache.
-        let dio_for_task = dio.clone();
-        let mut rx = dio.subscribe_events();
-        let task = cx.spawn(|this, mut cx| async move {
-            while let Ok(evt) = rx.recv().await {
-                match evt {
-                    DioEvent::RecordChanged { .. }
-                    | DioEvent::RecordInserted { .. }
-                    | DioEvent::RecordRemoved { .. }
-                    | DioEvent::DatasetChanged => {
-                        this.update(&mut cx, |this, cx| {
-                            this.pages.write().clear();
-                            this.refresh_total(&dio_for_task, cx);
-                            cx.notify();
-                        }).ok();
-                    }
-                    _ => {}
-                }
-            }
-        });
-        // … kick off initial total fetch …
-        Self { dio, pages: Default::default(), total: 0.into(), _watch_task: task }
-    }
-}
-
-impl TableDelegate for LargeCacheTable {
-    fn rows_count(&self, _cx: &App) -> usize {
-        self.total.load(Ordering::Relaxed)
-    }
-
-    fn render_td(&mut self, row_ix, col_ix, _, cx) -> impl IntoElement {
-        let page_ix = row_ix / PAGE_SIZE;
-        match self.pages.read().peek(&page_ix) {
-            Some(rows) => render_cell(&rows[row_ix % PAGE_SIZE], col_ix),
-            None => {
-                self.kick_off_page_load(page_ix, cx);
-                skeleton_cell(col_ix)
-            }
-        }
-    }
-
-    fn visible_rows_changed(&mut self, range: Range<usize>, _w, cx) {
-        for p in (range.start / PAGE_SIZE)..=(range.end.saturating_sub(1) / PAGE_SIZE) {
-            if !self.pages.read().contains(&p) {
-                self.kick_off_page_load(p, cx);
-            }
-        }
-    }
-}
-```
-
-`CacheTable` doesn't have a native paginated read today — you'd `list_values()`
-once and bucket into pages, or extend the trait. Either way, the contract is
-clear: the cache is the source of truth, your delegate is a viewport onto it,
-and the event bus tells you when to invalidate the viewport.
-
-`gpui-component`'s `has_more` / `load_more` are not the right hooks for this
-shape — they're "load more from a paginated server" hooks. For "I have N
-million local rows, render the visible band," you want `visible_rows_changed`
-plus your own page LRU.
-
-### 3. Paged Scenery — windowed virtualised grids
-
-The Scenery's paged mode covers the middle ground: caches "big enough
-that eager hurts but small enough that a Scenery still makes sense."
-Register both Lens callbacks:
-
-```rust
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("./orders.redb")
-        .total_provider(|dio| {
-            let dio = dio.clone();
-            async move { Ok(dio.master().get_count().await? as usize) }
-        })
-        .on_load_chunk(|dio, range, sink| {
-            let dio = dio.clone();
-            async move {
-                let page = dio
-                    .master()
-                    .fetch_offset(range.start, range.end - range.start)
-                    .await?;
-                for (offset, (id, rec)) in page.into_iter().enumerate() {
-                    sink.push(range.start + offset, id, rec).await?;
-                }
-                Ok(())
-            }
-        })
-        .build()?,
-);
-let dio = lens.make_dio(orders_vista).await?;
-let scenery = dio.table_scenery().page_size(200).open().await?;
-```
-
-The Scenery:
-
-- Holds a sparse `BTreeMap<usize, Arc<EnrichedRecord>>`.
-- Honours `set_viewport(loaded, shown)` via a 50ms-debounced channel that
-  coalesces rapid scroll bursts into a single chunk fetch.
-- Honours `request_load_more` to page the next `page_size` rows past
-  the cache end — the right primitive for cursor-only masters.
-- Surfaces `has_more = true` while the cached map size is below
-  `total_provider`'s reported total.
-- Emits `DioEvent::RangeLoaded { range }` after each chunk arrives;
-  the existing `subscribe()` watch bumps once per chunk.
-- Exposes `master_capabilities()` so the `TableDelegate` can branch
-  `load_more` between the random-access and cursor-only paths.
-
-The same `TableDelegate` from pattern 1 works unchanged — the only
-difference between eager and paged is which Lens callbacks the user
-registers. The bypass pattern (2) remains the right call for the
-largest workloads where even chunked windowing is overkill.
-
-## Search and sort: in-memory today
-
-`scenery.set_search(Some("cake".to_string()))` and
-`scenery.set_order(Some(("price".to_string(), SortDirection::Descending)))` both work end-to-end:
-the Scenery's reload task wakes, re-filters/sorts the cached row set,
-publishes a new generation. The widget re-renders.
-
-**Sort on an augmented (two-pass) grid is soft-refresh.** Changing the sort
-re-points the scenery at the new variant's ordered index and re-seeds the
-visible rows from cache **immediately** — the grid never blanks — then restarts
-the detail pass for the visible window in the background, so augmentation
-resumes without the user having to scroll. A sort you've used before reorders
-straight from cache with no refetch; a brand-new sort lists its first page once.
-(Changing the order or search re-points only this view; other views over the
-original query keep their rows.)
-
-What's **not** happening yet: push-down to master or to the cache backend.
-The filter runs in-memory across the loaded `Vec<Arc<EnrichedRecord>>`.
-For 100k rows × a handful of text columns, that's milliseconds. For
-significantly larger workloads it'll need vista stage 5b's `add_order` /
-`add_search` on the facade Vista.
-
-Wiring a search input:
-
-```rust
-input.on_change(cx, move |_this, ev, _cx| {
+input.on_change(cx, move |_, ev, _| {
     let q = ev.text.clone();
-    scenery_for_input.set_search((!q.is_empty()).then(|| q));
+    scenery_for_input.set_search((!q.is_empty()).then_some(q));
 });
 ```
 
-No debouncing in the Scenery — if you want it (you probably do), debounce on
-the input side.
+On a two-pass view a sort is a soft refresh. The view re-points at the ordered
+index for the new order, keeps the rows it shows, and restarts the detail pass
+for its window without waiting for a scroll. An order used before re-sorts from
+its index with no list call; a new one lists its first page.
 
-## `RecordScenery` — the detail sheet
+Two ordering details of two-pass views:
+
+- A view with no client-side refinement, listed from a whole copy in the
+  cache, takes the cache's id order. A cold open lists the master and takes the
+  master's order, so a cold and a warm open of the same query can differ.
+- A refined view (one whose filters, search or order name augmented values,
+  and so are evaluated over the cache) re-derives its rows in one batch per
+  `Tuning::viewport_debounce` after a row changes. It shows a `RecordChanged`
+  up to one debounce later than a plain view does.
+
+## Dropdowns and autocomplete
+
+A dropdown and an autocomplete are the same table view, projected to the title
+columns with `titles_only()`:
 
 ```rust
-pub struct RecordSheetView {
-    entity: Entity<RecordSceneryEntity>,
-    columns: Vec<ColumnSpec>,
-}
+let countries = countries_dio.table_scenery().titles_only().open().await?;
+// The dropdown renders `countries.row(i)`'s title and submits its id.
+// The autocomplete forwards keystrokes and its visible band:
+countries.set_search((!q.is_empty()).then_some(q));
+countries.set_viewport(visible.clone(), visible);
+```
 
+Everything above applies, including shared rows: eight pickers over the same
+lookup on one form cost one set of rows. On an augmented Dio `titles_only()`
+suppresses the detail pass, so a 10,000-row lookup opens as cheaply as it
+lists. A `titles_only` picker and a full grid over the same query read distinct
+rows: the grid hydrates and the picker doesn't, so neither drags its cost onto
+the other.
+
+## `RecordScenery`: the detail sheet
+
+```rust
 impl Render for RecordSheetView {
-    fn render(&mut self, _w: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let entity = self.entity.read(cx);
-        match entity.scenery().status() {
-            RecordStatus::NotFound => return Self::deleted_view(),
-            RecordStatus::Error(e) => return Self::error_view(e),
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let scenery = self.entity.read(cx).scenery();
+        match scenery.status() {
+            RecordStatus::NotFound => return Self::gone_view(),
             RecordStatus::Loading => return Self::loading_view(),
+            RecordStatus::Error(e) => return Self::error_view(&e),
             _ => {}
         }
-        let Some(record) = entity.scenery().record() else {
+        let Some(row) = scenery.record() else {
             return Self::loading_view();
         };
-        v_flex().children(
-            self.columns.iter().map(|col| field_row(col, &record)),
-        )
+        v_flex().children(self.columns.iter().map(|col| field_row(col, &row)))
     }
 }
 ```
+
+A record scenery opens on the cache once, then follows the id:
+
+| Situation | Status |
+|---|---|
+| the cache holds the row | `Fresh` |
+| the row waits for its detail pass (augmented Dio) | `Incomplete`, then `Fresh` |
+| the cache misses | `NotFound` |
+| the cache misses, opened with `load_on_miss()` | `Loading`, then `Fresh` or `NotFound` |
+| the row changes, by a write or an applied change | reloads, stays `Fresh` |
+| the row is removed | `NotFound` |
+| a reload, a fetch or the detail pass fails | `Error(_)`, the last row still shown |
+
+A row outside the Dio's residual is `NotFound`, as the grid wouldn't show it
+either.
+
+The builder has three options:
+
+- `seed(row)` starts from a row you already hold, `Fresh`, without reading the
+  cache: a grid handing its current row to the sheet it opens. With `sugar`, or
+  on an augmented Dio, the cache's copy then replaces it in the background to
+  bring the sugar columns, or `Incomplete` and the detail pass. When the cache
+  doesn't hold the id, the seeded row stays as seeded until the id changes.
+- `load_on_miss()` fetches a missing row from the master. A row the Dio's
+  residual admits is cached and shown; an absent one, or one outside the
+  residual, reads `NotFound` and caches nothing.
+- `sugar(sugar)` reads the row with display-only columns merged in.
 
 Opening the sheet from a row activation:
 
 ```rust
-fn on_row_double_clicked(&mut self, row: &EnrichedRecord, cx: &mut Context<Self>) {
-    let id = row.record.get("id")
-        .and_then(|v| v.as_text().map(String::from))
-        .unwrap_or_default();
+fn on_row_activated(&mut self, row: &EnrichedRecord, cx: &mut Context<Self>) {
+    let Some(id) = row.record.get("id").and_then(|v| v.as_text()).map(String::from) else {
+        return;
+    };
     let dio = self.dio.clone();
-    cx.spawn(|this, mut cx| async move {
-        let scenery = dio.record_scenery(id).open().await?;
-        cx.update(|cx| {
-            let bridge = cx.new(|cx| RecordSceneryEntity::new(scenery, cx));
-            this.update(cx, |this, cx| this.open_sheet(bridge, cx)).ok();
-        }).ok();
-        Ok::<_, vantage_core::VantageError>(())
-    }).detach();
+    let handed = row.record.clone();
+    cx.spawn(async move |this, cx| {
+        let sheet = dio.record_scenery(id).seed(handed).open().await?;
+        this.update(cx, |this, cx| this.open_sheet(sheet, cx))?;
+        Ok::<_, anyhow::Error>(())
+    })
+    .detach();
 }
 ```
 
-When the same record is mutated elsewhere — a write through `dio.vista()`,
-an `on_event` callback handling a SurrealDB LIVE message, an explicit
-`dio.notify_record_changed(id)` — the bus publishes `RecordChanged { id }`,
-this Scenery's reload task notices, re-reads the cache for that id, bumps
-generation. The sheet re-renders.
+## Editing
 
-### Cache miss on open
-
-`Dio::record_scenery(id).open().await?` reads the cache once. If the row isn't
-there, status is `RecordStatus::NotFound` and `record()` is `None`. There's
-**no master fallback in v1** — the cache is the source of truth on the UI
-side. Two ways to seed:
-
-- From an `on_event` callback: `dio.patched(id, record).await?` writes the
-  record to cache and publishes `RecordChanged`. Sceneries pick it up.
-- From your own code: same call.
-
-If you want the sheet to fetch from master when the cache misses, do it
-explicitly in the open handler — it's a few lines and the policy stays
-visible.
-
-### What if the record is deleted while the sheet is open?
-
-Bus publishes `RecordRemoved { id }`; the Scenery's reload finds nothing in
-cache and flips to `RecordStatus::NotFound`. Your render branch handles it
-(close the sheet, show a banner, whatever).
-
-### Editing — optimistic writes
-
-A form saves through `dio.write_optimistic(op)` (or the `dio.patch_optimistic(id,
-partial)` shorthand). The value is staged in the cache and shown **immediately**
-— the row's `EnrichedRecord.status` flips to `RowStatus::PendingWrite` — while
-the write-through runs in the background. On success it settles to `Fresh`; on
-failure the cache pre-image is restored and the row flips to
-`RowStatus::WriteFailed { error }`, so the form reverts rather than lying about a
-value that didn't save.
+A save is a flash. `ChangeFlash::partial(id, fields)` patches only the fields
+the form changed:
 
 ```rust
-// On the form's save button:
-let edited = self.form.changed_fields();          // Record<CborValue> of edits
 let dio = self.dio.clone();
 let id = self.id.clone();
-cx.spawn(async move {
-    // Returns Err after a successful rollback — surface it if you like, but the
-    // scenery already flipped the row to WriteFailed for the UI to render.
-    let _ = dio.patch_optimistic(id, edited).await;
-});
+let edited = self.form.changed_fields(); // Record<CborValue>
+cx.spawn(async move |_, _| {
+    // Err after a rollback; the row already shows WriteFailed.
+    let _ = dio.flash(ChangeFlash::partial(id, edited)).await;
+})
+.detach();
 ```
 
-Because every view reads the one cache row, the edit reflects across **every**
-bound scenery at once — the grid row, a second detail sheet, a KPI badge — via
-the same `RecordChanged` fan-out, with no extra wiring. Render the row's
-`status` to show a "saving…" affordance and an error badge:
+The value is staged in the cache and shown at once, and the row's status flips
+to `RowStatus::PendingWrite`. On success it settles to `Fresh`. On failure the
+cached row is restored and its status is `RowStatus::WriteFailed { error }`, so
+the form reverts instead of showing a value that didn't save. Every view reads
+the one cached row, so the grid row, a second sheet and a badge all update
+together:
 
 ```rust
-match record.status {
-    RowStatus::PendingWrite      => spinner("saving…"),
-    RowStatus::WriteFailed { .. } => error_badge("couldn't save — reverted"),
-    _                            => normal_cell(record),
+match &row.status {
+    RowStatus::PendingWrite => spinner("saving…"),
+    RowStatus::WriteFailed { error } => error_badge(error),
+    _ => normal_cell(row),
 }
 ```
 
-## `ValueScenery` — counters and badges
+For a form, open a `Servo` instead of patching by hand: `dio.servo(id).await?`
+tracks the record, `servo.set(field, value)` holds the user's edits against
+upstream changes, and `servo.flash().await?` sends only the changed fields.
+`ServoStatus::Failed` keeps the draft and carries per-field errors when the
+write path named them. A servo holds a strong Dio handle, so the write pipeline
+stays up while the form is open.
+
+## `ValueScenery`: counters and badges
 
 ```rust
 let unread = dio
     .value_scenery(Where::new(Conditions::new().eq("read", false), Count::rows()))
     .open()
     .await?;
-```
 
-`value_scenery` takes any `vantage_diorama::aggregate::Aggregation`: `Count::rows()`,
-`Sum::of(col)`, `Max::of(col)`, `Min::of(col)`, `Where::new(conds, inner)`, or your own impl. `Sum`/`Max`/`Min`
-recognise CBOR integers only in v1; floats yield `Error("non-integer field")`
-through the status surface (last good value is preserved). For free-form
-aggregates use `.custom()` and return whatever CBOR you want.
-
-```rust
 impl Render for UnreadBadge {
-    fn render(&mut self, _w: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let count = self.entity.read(cx).scenery().value()
-            .and_then(|v| match v {
-                CborValue::Integer(i) => i128::from(i).try_into().ok(),
-                _ => None,
-            })
-            .unwrap_or(0i64);
-        if count == 0 { return None; }
-        Some(badge(count.to_string()))
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let count = match self.entity.read(cx).scenery().value() {
+            Some(CborValue::Integer(i)) => i64::try_from(i128::from(i)).unwrap_or(0),
+            _ => 0,
+        };
+        (count > 0).then(|| badge(count.to_string()))
     }
 }
 ```
 
-The Scenery re-evaluates the aggregate against the cache on every relevant
-bus event and bumps generation only when the result actually changes
-(equality on the resulting `CborValue`). The badge animates "3" → "4"
-without you writing the diff.
+The scenery opens holding a value computed over the Dio's rows, recomputes as
+they change, and bumps its generation only when the result differs, so the
+badge goes from 3 to 4 without you writing the diff. A burst of changes
+collapses into one recomputation and one trailing flush
+(`Tuning::aggregate_debounce`). `status()` reads `Loading`, `Fresh` or
+`Error(_)`; an error keeps the last good value. `refresh_source()` asks the Dio
+to re-read its master. The aggregations themselves are covered in
+[README_models.md](README_models.md#aggregates).
 
-## Log viewer pattern
+## A log tail
 
-The vantage-ui log viewer is currently push-based (`append`, `extend`,
-`LinesAppended` events) and stands outside the Vista world. Two ways to
-integrate:
+A log viewer is a `tail(n)` over a log Vista ordered by time. The tail keeps
+showing the newest `n` rows as inserts arrive at the end:
 
-- **Keep it as-is.** The widget is fine standing alone. Don't model log
-  lines as Vista records.
-- **Model lines as a TableScenery over an append-only log Vista** (e.g.
-  `vantage-log-writer`). New lines arrive via the Dio's event bus as
-  `RecordInserted`. The Scenery's reload picks them up. Bigger lift — only
-  worth it if you want unified row-status semantics with the rest of the
-  app.
+```rust
+let log = log_dio
+    .table_scenery()
+    .order("at", SortDirection::Ascending)
+    .tail(500)
+    .open()
+    .await?;
+```
 
-Either choice is reasonable. Pattern 1 from "Virtual / infinite scroll"
-above also works directly against a log Vista with no Scenery at all.
+## Unbounded local data
+
+A view holds the rows it has loaded in memory, about one `Arc<EnrichedRecord>`
+each. For a cache with tens of millions of rows that only ever show a screen at
+a time, skip the scenery and page the Dio's facade Vista yourself. The facade
+advertises `Window` and serves windows from the cache, and the event bus tells
+you when to drop your pages:
+
+```rust
+let page = dio.cached().fetch_window(offset, PAGE_SIZE).await?;
+
+let mut events = dio.subscribe_events();
+cx.spawn(async move |this, cx| {
+    while let Ok(event) = events.recv().await {
+        match event {
+            DioEvent::RecordChanged { .. }
+            | DioEvent::RecordInserted { .. }
+            | DioEvent::RecordRemoved { .. }
+            | DioEvent::DatasetChanged => {
+                let _ = this.update(cx, |this, cx| {
+                    this.pages.clear();
+                    cx.notify();
+                });
+            }
+            _ => {}
+        }
+    }
+})
+.detach();
+```
+
+You give up what the view did for you: shared rows, statuses, the copy on
+re-sort. Reach for it when the memory is the problem, not before.
 
 ## Where the adapter code lives
 
-UI-framework-specific glue lives in `vantage-ui-adapters`. The Diorama GPUI
-adapter lands there alongside the existing shared types:
+Framework glue lives in `vantage-ui-adapters`, which other UI crates share.
+`src/ratatui_dio.rs` is the Diorama binding there today: a terminal table over
+a `TableScenery`, with `ValueScenery` counters in its status bar. It forwards
+each generation channel into one repaint tick and hydrates a band around the
+cursor with `set_viewport`. The other adapter modules bind plain grids. A
+binding for another framework is the same three parts: an entity holding the
+handle, a generation watch that schedules a repaint, and a delegate that reads
+the view.
 
-```
-vantage-ui-adapters/src/diorama/
-├── mod.rs
-├── table_entity.rs        // TableSceneryEntity
-├── record_entity.rs       // RecordSceneryEntity
-├── value_entity.rs        // ValueSceneryEntity
-└── delegate.rs            // example delegates
-```
+## Performance
 
-Cursive, slint, egui, tauri adapters slot in as sibling modules. Each is
-20–80 lines: define the framework-native entity, bridge the watch channel,
-delegate to the Scenery.
+- `row(i)` is an `Arc` clone. A virtualized grid calls it for the visible band
+  only, around 50 rows times the column count per frame, whatever
+  `row_count()` says.
+- `set_viewport` runs on every scroll tick. The view coalesces the burst; keep
+  your own call cheap.
+- Heavy cell formatting (numbers, dates, markdown) belongs in a cache of your
+  own keyed by id and generation, not in `render_td`.
 
-This module isn't written yet (see
-[plans/8-gpui-adapter.md](plans/8-gpui-adapter.md)). The patterns above
-describe what it will contain; you can hand-roll them today against the
-Scenery trait directly.
+When a grid feels slow, measure `render_td` first. With the `diagnostics`
+feature, `LensBuilder::debug_datasource(name)` prints what each view fetched,
+coalesced and served from cache; see [ARCHITECTURE.md](ARCHITECTURE.md#debug-stream).
 
-## Pull-on-render performance
+## Checklist
 
-Knobs to be aware of:
-
-- **`row(idx)` allocates an `Arc::clone`.** Cheap, but with N visible cells
-  per render frame it's N clones. GPUI virtualizes rendering so N is small
-  (~50 rows × columns) regardless of `row_count`.
-- **`set_viewport` is called frequently** by gpui-component (every scroll
-  tick). The Scenery debounces internally (50ms by default — tunable via
-  `LensBuilder::viewport_debounce`), so a rapid scroll burst collapses
-  into a single `on_load_chunk` call against the most recent range.
-  Your delegate impl should still keep the call cheap; it's just an
-  mpsc send.
-- **Lazy field formatting.** If your `render_cell` does heavy string work
-  (number formatting, date parsing, markdown), cache it on `EnrichedRecord`
-  load rather than on every render. Profile before optimizing.
-
-If the grid feels janky, the usual culprit is `render_td`, not the Scenery.
-
-## A worked example end-to-end
-
-Products grid with quicksearch, sortable columns, double-click to open a
-detail sheet that auto-refreshes.
-
-```rust
-use std::sync::Arc;
-use gpui::{Context, Entity, Window};
-use vantage_diorama::{Dio, TableScenery};
-use vantage_vista::SortDirection;
-
-pub struct ProductsView {
-    dio: Dio,
-    scenery: Arc<dyn TableScenery>,
-    grid: Entity<ProductsGrid>,
-    search_input: Entity<TextInput>,
-}
-
-impl ProductsView {
-    pub async fn new(dio: Dio, cx: &mut Context<Self>) -> Result<Self> {
-        let scenery = dio.table_scenery()
-            .order("name", SortDirection::Ascending)
-            .open()
-            .await?;
-
-        let bridge = cx.new(|cx| TableSceneryEntity::new(scenery.clone(), cx));
-        let grid = cx.new(|cx| ProductsGrid::new(bridge, product_columns()));
-
-        let dio_for_open = dio.clone();
-        cx.subscribe(&grid, move |_, _, ev: &RowActivated, cx| {
-            let dio = dio_for_open.clone();
-            let id = ev.id.clone();
-            cx.spawn(|this, mut cx| async move {
-                let scenery = dio.record_scenery(id).open().await?;
-                cx.update(|cx| {
-                    let bridge = cx.new(|cx| RecordSceneryEntity::new(scenery, cx));
-                    this.update(cx, |this, cx| this.open_sheet(bridge, cx)).ok();
-                }).ok();
-                Ok::<_, vantage_core::VantageError>(())
-            }).detach();
-        });
-
-        let scenery_for_search = scenery.clone();
-        let search_input = cx.new(|cx| {
-            let mut input = TextInput::new(cx);
-            input.on_change(cx, move |_, ev, _cx| {
-                let q = ev.text.clone();
-                scenery_for_search.set_search((!q.is_empty()).then(|| q));
-            });
-            input
-        });
-
-        Ok(Self { dio, scenery, grid, search_input })
-    }
-}
-```
-
-The grid renders rows currently in the cache. The search input filters live
-across the cached set. Double-click opens an auto-refreshing sheet. When any
-record under `dio` changes — locally via `dio.vista().insert()`, externally
-via `dio.handle_event(...)` → `on_event` → `dio.patched(...)`, or wholesale
-via `dio.refresh().await` — the relevant Sceneries bump generation, the
-bridges call `cx.notify()`, the UI updates.
-
-You wrote zero synchronization code. What you did write is the cache
-strategy (the Lens), the column definitions, and the render functions.
-That's the whole point.
+- Keep the `Dio` alive in app state; views hold it weakly.
+- One `open()` per widget; never share a view between two widgets that sort or
+  search independently.
+- Forward the visible band as `set_viewport(visible.clone(), visible)`.
+- Paint a placeholder for `row(i) == None` and a skeleton for `Loading`; show
+  the empty state only for an empty `Complete`.
+- Give every status match a `_ =>` arm.
+- Ask `search_supported()` and `filters_supported()` before offering the
+  control.
+- Save with `dio.flash(..)` or a `Servo`, and render `PendingWrite` and
+  `WriteFailed`.
+- Drop the handle to close a view; the fetches stop with it.

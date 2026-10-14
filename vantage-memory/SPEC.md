@@ -1,6 +1,6 @@
 # vantage-memory — design spec
 
-Date: 2026-09-29 · Branch: `memory/datasource` · Status: draft for review
+Date: 2026-09-29 · Branch: `memory/datasource` · Status: as built, updated to the Vista 2.0 API
 
 ## Context
 
@@ -30,15 +30,15 @@ Condition evaluation is also written four or five times in different crates.
 - **Pure memory.** Data lives as long as the process. Seeding and dumping are public functions, so a snapshot file can be added later without redesign.
 - **Mocks stay test-only.** `MockShell`, `MockTableSource` and `ImDataSource` are kept as they are, for tests. Non-test code must not use mocks. `ImTable` keeps its one production role as the store behind `ContainedShell`, the Vista for embedded collections.
 - **Our own store, designed for speed.** SQL engines (SQLite in-memory) and SurrealDB were considered and rejected: SQL sits in the write path, and SurrealDB is a very heavy dependency.
-- **Version 0.6.0.** The crate is a workspace member, and the version signals that the design isn't final.
+- **Version 0.6.0.** The crate is a workspace member, and the version signalled that the design wasn't final. It moved to 2.0.0 with the Vista 2.0 API.
 
 ## Crate layout
 
 `vantage-memory/` is added to the root workspace `members`. No file should grow past about 200 LOC. There are no `mod.rs` files.
 
-```
+```text
 vantage-memory/
-  Cargo.toml                 version 0.6.0
+  Cargo.toml
   README.md
   CHANGELOG.md
   SPEC.md                    this file
@@ -63,13 +63,16 @@ vantage-memory/
   src/typed/aggregate.rs     sum / max / min
   src/vista.rs               MemoryTableShell: query state over one store table
   src/vista/shell.rs         TableShell impl
-  src/vista/refs.rs          Catalog; get_ref / get_ref_target
-  src/vista/watch.rs         watch_vista
-  src/vista/writes.rs        insert / replace / patch / delete / import
+  src/vista/narrow.rs        conditions, search and order on the shell's Query
+  src/vista/affinity.rs      a declared column's stored form
+  src/vista/catalog.rs       MemoryCatalog: the store plus registered metadata; a VistaResolver
+  src/vista/refs.rs          get_ref
+  src/vista/watch.rs         watch
+  src/vista/writes.rs        insert / replace / upsert / patch / delete / delete_all / import
   src/vista/factory.rs       MemoryVistaFactory + MemoryVistaSpec
   src/seed.rs                load / load_file / dump
   examples/bench.rs          throughput at 1k / 10k / 100k rows
-  tests/                     typed, vista, watch, dio, seed_joins
+  tests/                     typed, vista, watch, dio, seed_joins, safe_writes, computed, contract
 ```
 
 Dependencies: vantage-core, vantage-types, vantage-expressions, vantage-dataset, vantage-table, vantage-vista (all path + version, like the other workspace crates), `ciborium`, `indexmap`, `parking_lot`, `tokio` (`sync`), `async-trait`, `serde`, `serde_json`. Dev-dependencies: vantage-diorama, `tokio` (`full`), `serde_yaml_ng`.
@@ -78,7 +81,7 @@ Dependencies: vantage-core, vantage-types, vantage-expressions, vantage-dataset,
 
 `MemoryStore` is a cheap-to-clone handle (`Arc`) over a registry of named tables. Each table is:
 
-```
+```text
 MemoryTable {
     rows:    parking_lot::RwLock<Rows>,  // rows and their indexes share one lock
     id:      IdGen,                      // per-table counter + optional prefix
@@ -121,14 +124,15 @@ The typed layer and the Vista layer both compile down to one `Query`:
 pub struct Query {
     pub conditions: Vec<MemoryCondition>,           // AND-ed
     pub search: Option<String>,
-    pub order: Vec<(String, vantage_vista::SortDirection)>,  // multi-key, stable
+    pub search_columns: Vec<String>,                // the cells `search` reads; empty reads every cell
+    pub order: Vec<(String, vantage_vista::SortDirection)>,  // multi-key, stable: ties keep insertion order
     pub offset: usize,
     pub limit: Option<usize>,
 }
 
 pub enum MemoryCondition {
     Cmp { path: String, op: FilterOp, value: CborValue }, // Eq Ne Gt Gte Lt Lte InSet NotInSet Like
-    Search(String),
+    Search { text: String, columns: Vec<String> },        // empty `columns` reads every cell
     And(Vec<MemoryCondition>),
     Or(Vec<MemoryCondition>),
     Not(Box<MemoryCondition>),
@@ -143,16 +147,16 @@ The pipeline runs in this order: resolve `Deferred` → choose the candidate row
 
 **Candidate rows.** If an `Eq` or `InSet` condition on an indexed column is AND-ed at the top level, its index supplies the candidate ids. Otherwise every row is a candidate. The index keys an integer, or a float with no fractional part, within ±2^53 as an exact number, so `1` and `1.0` land in the same bucket; anything else (larger integers, non-integral floats) keys by its `f64` bit pattern. This can put two unequal huge integers in the same bucket — `matches_all` still filters the candidates — but never splits two values that `values_eq` would call equal.
 
-Semantics:
+Semantics (memory's own evaluator, `vantage_memory::eval`, which every read of both layers runs through):
 
 - **Paths.** A path is a column name or a dotted path into nested maps (`address.city`). A missing path reads as null.
 - **Comparison.** Integers and floats compare numerically across the two types. Text compares by code point. Booleans compare false < true. Values of different kinds don't match `Gt`/`Gte`/`Lt`/`Lte`.
 - **Null.** A null cell matches `Eq null`, `Ne <non-null value>`, and `NotInSet` when the set holds no null. It fails every other op.
 - **`Like`.** `%` and `_` wildcards, case-insensitive, over the text form of the cell. `FilterOp`'s existing `operand_text` supplies the pattern text.
-- **Search.** Case-insensitive substring over every text cell, and over the text form of numbers.
-- **Ordering.** `Query.order` carries `vantage_vista::SortDirection`. Nulls sort first ascending and last descending — descending reverses the whole comparison, nulls included, rather than only the non-null values. NaN ranks after every other number, so the order is total. Ties keep insertion order.
+- **Search.** Case-insensitive substring over the text cells, and the text form of the number cells, of `Query.search_columns`. Booleans, bytes, tags, arrays and maps are not searched. Both layers fill `search_columns` from the columns flagged `searchable`, or every declared column when none is flagged (`VistaMetadata::search_columns` for a Vista, `Table::search_columns` for the typed layer); a Vista that declares no columns searches every cell.
+- **Ordering.** `Query.order` carries `vantage_vista::SortDirection`. Nulls sort first ascending and last descending — descending reverses the whole comparison, nulls included, rather than only the non-null values. NaN ranks after every other number, so the order is total. Ties keep insertion order. This holds for both layers: a memory Vista's `set_order` lands in the shell's `Query` and the store sorts.
 
-The evaluator is a public module. Diorama's and MockShell's copies stay as they are; moving them onto this one is later cleanup.
+The evaluator is a public module. It is not the one vantage-vista ships: `vantage_vista::eval` (used by `MockShell`, diorama's cache and client-side refines) puts absent and null cells last in both directions, breaks ties on id rather than insertion order, and searches booleans, tagged values and nested values too. A memory Vista read directly gets this crate's rules; the same rows read back from a diorama cache get vista's. Moving this evaluator onto vista's is out of scope.
 
 ## Typed layer
 
@@ -166,16 +170,13 @@ The evaluator is a public module. Diorama's and MockShell's copies stay as they 
 
 ## Vista layer
 
-`MemoryTableShell` implements `TableShell` directly over the store — a `MemoryTableHandle` plus its own `Query` — not over a typed `Table`. Each handle shares the table and keeps its own query state: op-conditions, orders, search and page size. `clone_shell` gives fresh query state over the same table.
+`MemoryTableShell` implements `TableShell` directly over the store — a `MemoryTableHandle` plus its own `Query` — not over a typed `Table`. Each shell shares the table and keeps its own query state: conditions, order and search. A `Vista` over it is `Clone`, and a clone shares the table but not the query, so `vista.clone().with_condition(..)` leaves the original as it was.
 
-- **Capabilities set:**
-  - count, insert, update, delete, import (`import_vista_values` upserts every given record and returns how many ids were new, not the total processed)
-  - order, search, filter operators
-  - set page size, fetch page, fetch window
-  - traverse to record, traverse to set
-  - subscribe
-- **Not set:** `can_invalidate`, since nothing outside the process changes the data. `aggregate_vista` is not implemented; it keeps its default, like every other driver.
-- **`watch_vista`** subscribes to the table's channel. It checks each change against the Vista's conditions once, on the changed row only:
+- **Capabilities advertised:** `Insert`, `Update`, `Delete`, `Import`, `Subscribe`, `Order`, `Search`, `FilterOps`, `Window`, `Traverse` and `ConfineWrites`. `import` inserts every record whose id is new, never overwriting one, and returns how many were new; nothing is written unless every new record fits the set.
+- **Not advertised:** `Cursor` (`Window` already reaches any offset) and `NativeConditions` (the store has no query language of its own).
+- **Writes stay inside the set.** Every write is checked against the shell's query: a full-record write is filled with the set's equality conditions, a record that would fall outside the set is a conflict, and a patch may not move a row out of it.
+- **`fetch_window`** cuts the window from a copy of the query and always carries the total, since the store counts the set as cheaply as it windows it.
+- **`watch`** subscribes to the table's channel. It checks each change against the Vista's conditions once, on the changed row only:
   - a row that newly matches arrives as `Inserted`
   - a row that still matches arrives as `Updated`
   - a row that stopped matching, or was deleted while matching, arrives as `Deleted`
@@ -185,13 +186,13 @@ The evaluator is a public module. Diorama's and MockShell's copies stay as they 
   - a `Lagged` channel, or a `MemoryChange::Reset`, produces `Invalidated`
 
   Rows never trigger a re-query.
-- **Traversal (`get_ref` / `get_ref_target`).** `HasOne`: the target Vista is narrowed to `target[id] == row[foreign_key]`, the foreign key taken as an id string (an integer `1` becomes `"1"`). `HasMany`: narrowed to `target[foreign_key] == row[id]` — the SQLite backend's convention — matching the id as text or, when it parses as an integer, as an integer too (`InSet`), since seed files often write foreign keys as integers. The typed layer's `related_in_condition` widens its source values the same way. A row missing the join field (its own id column for `HasMany`, or the foreign key for `HasOne`) is an error, not an empty result.
-- **The reference catalog.** The factory keeps a `Catalog`: a shared, `Clone`-cheap map from every vista name it has built to that vista's `VistaMetadata`. `get_ref`/`get_ref_target` build the target shell's metadata from the catalog, so a traversal target gets its declared columns and references. A target table that was never built through this factory (or not yet) gets id-only metadata instead of an error.
+- **Traversal (`get_ref(relation, row)`).** With `None` for the row, the bare target. `HasOne`: the target Vista is narrowed to `target[id] == row[foreign_key]`, the foreign key taken as an id string (an integer `1` becomes `"1"`). `HasMany`: narrowed to `target[foreign_key] == row[id]` — the SQLite backend's convention. Both go through `Reference::narrow`, which adds an `Eq` condition to the target; the target shell conforms the operand to a typed column's stored form, and on an untyped column matches an integer and its canonical text alike (stored as `InSet` of both forms), since seed files often write foreign keys as integers. The typed layer's `related_in_condition` widens its source values the same way. A row missing the join field (its own id column for `HasMany`, or the foreign key for `HasOne`) is an error, not an empty result.
+- **The reference catalog.** The factory keeps a `MemoryCatalog`: the store plus a shared, `Clone`-cheap map from every vista name it has built to that vista's `VistaMetadata`. It implements `VistaResolver`, and `get_ref` resolves its target through `catalog.vista(&reference.target)`, so a traversal target gets its declared columns and references. A store table that was never built through this factory (or not yet) gets id-only metadata; a name that is neither registered nor in the store is not-found. A host can build one directly, `register` metadata under a name (a column declared with `Column::untyped` stores its cells as given) and call `catalog.vista(name)`.
 - **`MemoryVistaFactory`** implements `VistaFactory` and is built from a `MemoryStore` handle. `MemoryVistaSpec` (`VistaSpec<MemoryTableExtras, NoExtras, NoExtras>`) carries the table name, columns, id column, references and the driver extras `MemoryTableExtras { memory: MemoryBlock }`, where `MemoryBlock { indexed: Vec<String>, seed: Option<PathBuf> }` — YAML `memory: { indexed: [..], seed: <file>? }`.
   - `indexed` columns are applied to the table with `add_index`, including a table that already existed under another spec; only the id column has to agree — a mismatch between the spec's `id_column` and an existing table's is an error, since the table can't be given a second id column after rows exist.
   - `seed`, when set, is loaded into the table via `seed::load_file` when the vista is built and the table is empty, so rebuilding a vista neither reverts edits nor duplicates rows. A relative path resolves against the process working directory.
   - `lazy:` columns become Vista computed columns (needs the `rhai` feature).
-  - Rejected: `contained:` relations, multi-key `references:` (non-empty `keys:`), and columns with `expr:` — all return an error naming the offending vista/column/reference.
+  - Rejected: `contained:` relations and columns with `expr:`; both return an error naming the offending vista or column. A multi-key reference (`keys: [{ from, to }, ..]`) narrows the target by every pair.
   - A column's `references:` accepts the shorthand `references: <target_table>` (a `HasOne` keyed on the column itself) alongside the full form `{ table, kind, foreign_key }`; a table-level `references:` entry needs the same `table:`/`kind:`/`foreign_key:` shape. `foreign_key` defaults to the column or reference name when omitted.
   - Every stored column gets the `orderable` flag, whether or not the spec set it, since the store can sort on any field. A `lazy:` column is computed by the Vista and is not orderable.
   - The id column is `spec.id_column` if set, else the column carrying the `id` flag, else `"id"`.
@@ -229,12 +230,12 @@ The evaluator is a public module. Diorama's and MockShell's copies stay as they 
    - `writes` counts only changing writes
    - indexes stay correct across patch and delete
 3. **Typed-layer tests:** conditions built with column operations, list/get/count/sum/min/max under conditions, CRUD, pagination, ordering, references, invariants on write.
-4. **Vista-layer tests:** the advertised capabilities hold, op-conditions/order/search/page/window work, and `clone_shell` isolates query state.
+4. **Vista-layer tests:** the advertised capabilities hold, operator conditions/order/search/window work, and a clone isolates query state.
 5. **Watch tests:**
-   - changes made through the typed layer, the Vista layer and the sync store API all reach `watch_vista`
+   - changes made through the typed layer, the Vista layer and the sync store API all reach `watch`
    - a filtered Vista sees a row leave as `Deleted`
    - lag produces `Invalidated`
-6. **Dio test:** a Dio over a memory Vista, with a sorted TableScenery open, stays correct through inserts, patches and deletes. It updates through `watch()` alone, with no `handle_event` forwarding.
+6. **Dio test:** a Dio over a memory Vista, with a sorted TableScenery open, stays correct through inserts, patches and deletes. It updates through `watch()` alone (the Dio is built `.live()`), with no event forwarding from the test.
 7. **Seed tests:** load and dump round-trip, and YAML and JSON files.
 
 ## Out of scope

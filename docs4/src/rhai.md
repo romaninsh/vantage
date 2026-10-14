@@ -171,7 +171,7 @@ example `rhai_guide::tables::first_script` in `vantage-vista/tests/rhai_guide/`.
 |---|---|
 | Start | `table(name)`; `self` in slot scripts; `table()` in faker sims |
 | Narrow | `where(col, value)`, `where(col, op, value)`, `sort(col)`, `sort(col, dir)`, `search(text)`, `limit(n)`, `ref(relation)` |
-| Read | `list()`, `get(id)`, `first()`, `count()`, `ids()`, `columns()`, `references()`, `capabilities()` |
+| Read | `list()`, `get(id)`, `first()`, `count()`, `ids()`, `columns()`, `references()`, `capabilities()` (keyed by every `Capability`) |
 | Write | `insert(map)`, `upsert(id, map)`, `patch(id, map)`, `delete(id)`, `import_from(source)`, `import_from(source, mapping)` |
 | Record | `record()`, `record(id)`; on a record: `r.col`, `r["col"]`, `set(map)`, `id`, `is_dirty()`, `dirty(col)`, `baseline()`, `revert()`, `revert(col)`, `flash()`, `delete()`, `status()`, `rejection()` |
 | Computed column | `row` (the record as read); the last expression is the value |

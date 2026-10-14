@@ -9,7 +9,7 @@ its own page of the archive, with details streaming in as they land.
 The traditional plumbing for live updates over HTTP is a
 [WebSocket](https://en.wikipedia.org/wiki/WebSocket),
 [server-sent events](https://en.wikipedia.org/wiki/Server-sent_events), or the style the
-Kubernetes API made standard — the **watch**: a plain HTTP response that simply never ends,
+Kubernetes API made standard — the **watch**: a plain HTTP response that never ends,
 delivering one JSON line per change over
 [chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding). We take
 the Kubernetes shape: every endpoint answers a plain `GET` with a snapshot, and the same URL
@@ -27,13 +27,12 @@ responsiveness chapter 7 built for the terminal, now delivered over a wire.
 Before any of that can be safe, the framework needs an answer to a question chapter 7 never had
 to ask: what happens when **several** views drive augmentation at once?
 
-Until now, each scenery ran its own detail fetches, inline, for its own viewport. One terminal,
-one viewport — fine. But two browser tabs watching *overlapping* pages would each download the
-same CSVs; two tabs on *disjoint* pages would race each other with no ordering at all; and a
-tab opened mid-download had no way to say "me next". The fetches were nobody's job to
-coordinate.
+With one terminal and one viewport, it never mattered who ran the detail fetches. If each view
+ran its own, inline, for its own viewport, two browser tabs watching *overlapping* pages would
+each download the same CSVs; two tabs on *disjoint* pages would race each other with no
+ordering at all; and a tab opened mid-download would have no way to say "me next".
 
-They are now the Dio's. Every consumer that wants rows hydrated — a scenery's viewport, a
+So the fetches are the Dio's job, not the view's. Every consumer that wants rows hydrated — a scenery's viewport, a
 facade read blocking on its window — registers a queue with the Dio's **augment scheduler** and
 enqueues row ids into it. A worker pool drains the queues:
 
@@ -42,18 +41,19 @@ enqueues row ids into it. A worker pool drains the queues:
 - **One flight per row.** An id already being fetched is never fetched again; every queue
   waiting on it is notified by the same completion. Overlapping views cost one download, not
   one per view.
-- **Closing a view withdraws its work.** The queue registration is owned by the scenery; when
-  the last handle drops, its queued ids vanish. A fetch already in the air completes and lands
+- **Closing a view withdraws its work.** The queue registration is owned by the view; when
+  its handle drops, its queued ids vanish. A fetch already in the air completes and lands
   in the cache — paid-for work is kept.
 - **Workers are configurable.** The default single worker keeps fetch order deterministic;
-  `Lens::new().augment_workers(4)` hydrates four rows at a time when the detail source can
-  take it.
+  `Lens::builder().tuning(Tuning::default().with_augment_workers(4))` hydrates four rows at a
+  time when the detail source can take it.
 
-Nothing in the example code changes for this — the scheduler sits under the same
-`set_viewport` and `fetch_window` calls the previous chapters used. What changes is what you
-can now safely do: open as many sceneries as you have HTTP connections.
+Nothing in the example code asks for this: the scheduler sits under the same `set_viewport`
+and `fetch_window` calls the previous chapters used. What it buys is what you can safely do
+here: open as many sceneries as you have HTTP connections.
 
-Every open is its own view. Two identical opens share one set of rows, which is right for two
+Every open is its own view (chapter 7, "Why does each open get its own view?"). Two identical
+opens share one set of rows, which is right for two
 widgets showing the same grid, and each still keeps its own viewport, which is right for two
 *clients* watching different pages of the same query. Every view counts in the **demand union** —
 the Dio hydrates the union of the columns every open scenery demands — and is released on drop.
@@ -64,8 +64,10 @@ Everything HTTP lives in a new adapter crate, `vantage-api-adapters` — the ser
 of the `dataset-ui-adapters` crate that provided chapter 7's ratatui binding. Where a UI
 adapter binds a scenery to a widget, an API adapter binds it to a route:
 
-```rust
+```rust,no_run
 use vantage_api_adapters::axum_dio::DioRouter;
+# use vantage_diorama::Dio;
+# fn api(dio: Dio) -> axum::Router {
 
 let api = DioRouter::new(dio.clone())
     .with_column("filename", "Key")
@@ -74,6 +76,8 @@ let api = DioRouter::new(dio.clone())
     .with_column("latest", "latest")
     .with_page_size(50)
     .into_router();
+# api
+# }
 ```
 
 Each `.with_column(name, field)` maps a record field to a JSON key — and doubles as the watch
@@ -116,19 +120,58 @@ same way on the full archive. The data plumbing is otherwise identical —
 `files.rs`, the augmenter, the Lens — with two differences. First, the cache is opened by hand,
 because we want a second table in the same redb file:
 
-```rust
+```rust,no_run
+# use std::sync::Arc;
+# use vantage_aws::prelude::*;
+# use vantage_diorama::{CacheBackend, CacheTable, RedbCache};
+# struct ContentsCache;
+# impl ContentsCache {
+#     fn new(_table: Arc<dyn CacheTable>) -> Arc<Self> {
+#         Arc::new(Self)
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
 let cache = Arc::new(RedbCache::open("cache.redb").context("Failed to open cache")?);
 let contents = ContentsCache::new(cache.open_table("contents").await?);
+# let _ = contents;
+# Ok(())
+# }
 ```
 
-A Lens normally opens `cache.redb` itself (`cache_at`); `cache_source(cache)` hands it ours
-instead. The Dio claims one named table for the listing, and `open_table("contents")` claims
-another for the cache we're about to meet.
+A Lens normally opens `cache.redb` itself (`Cache::redb(path)`); `Cache::backend(cache)` hands
+it ours instead. The Dio claims one named table for the listing, and `open_table("contents")`
+claims another for the cache we're about to meet.
 
-Second, `on_start` stays **blocking** (the default — learn-6 turned it off to open its UI on an
-empty table). A server should answer its first request from a warm cache, so `make_dio` runs
-the chapter-5 sync to completion before `axum::serve` ever binds the port. On a restart the
-sync resumes from redb and confirms with a single request:
+Second, the eager start stays **blocking**. That's `Loader::eager`'s default; learn-6 added
+`.blocking(false)` to open its UI on an empty table. A server should answer its first request
+from a warm cache, so the Dio's `build()` runs the chapter-5 sync to completion before
+`axum::serve` ever binds the port:
+
+```rust,no_run
+# use std::sync::Arc;
+# use std::time::Duration;
+# use vantage_aws::prelude::*;
+# use vantage_diorama::{Cache, Lens, Loader, LoaderCx, RedbCache, Refresher};
+# async fn sync(_cx: &LoaderCx) -> vantage_core::Result<()> {
+#     Ok(())
+# }
+# fn run(cache: Arc<RedbCache>) -> vantage_core::Result<()> {
+let lens = Lens::builder()
+    .cache(Cache::backend(cache))
+    // Pre-fetch: the eager start blocks the Dio's build (the default),
+    // so the server starts answering only once the listing is cached.
+    .loader(Loader::eager(|cx: LoaderCx| async move { sync(&cx).await }))
+    .refresher(Refresher::new(|_cx: LoaderCx| async { Ok(()) }).every(Duration::from_secs(60)))
+    .build()
+    .context("Failed to build lens")?;
+# let _ = lens;
+# Ok(())
+# }
+```
+
+A cold start lists the 1,122 files in two requests before the port opens; a restart resumes
+from redb and confirms with a single request:
 
 ```text
 fetched 1000 files in 831.454208ms
@@ -138,17 +181,25 @@ serving on http://localhost:3007
 
 The rest of `main.rs` is mounting:
 
-```rust
+```rust,no_run
+# use tower_http::services::ServeDir;
+# use vantage_aws::prelude::*;
+# async fn serve(api: axum::Router) -> vantage_core::Result<()> {
 let app = axum::Router::new()
     .nest("/api/files", api)
     .fallback_service(ServeDir::new("frontend/dist"));
 
-axum::serve(TcpListener::bind("0.0.0.0:3007").await?, app).await
+let listener = tokio::net::TcpListener::bind("0.0.0.0:3007")
+    .await
+    .context("Failed to bind :3007")?;
+println!("serving on http://localhost:3007");
+axum::serve(listener, app).await.context("server failed")
+# }
 ```
 
 Concurrency needs no further code. `Dio` is a cheap clone over shared state, redb reads run
 concurrently, and no lock is held across a network await anywhere in the read path — every
-simultaneous request simply proceeds.
+simultaneous request proceeds on its own.
 
 Neither does authentication — because there is none. The endpoints are anonymous, as in
 chapter 3: wrap the router in your tower auth middleware before exposing it; Vantage
@@ -168,6 +219,9 @@ contributes `open_table` (a named key-value table in the Dio's own redb file); t
 policy is entirely ours to write.
 
 ```rust
+# use std::collections::HashSet;
+# use std::sync::{Arc, Mutex};
+# use vantage_diorama::CacheTable;
 pub struct ContentsCache {
     table: Arc<dyn CacheTable>,
     /// Keys downloaded at least once — the admission ledger.
@@ -178,10 +232,41 @@ pub struct ContentsCache {
 Its one operation is cache-first with the admission rule on the miss path:
 
 ```rust
+# use std::collections::HashSet;
+# use std::future::Future;
+# use std::sync::{Arc, Mutex};
+# use vantage_aws::prelude::{CborValueExt, VantageResult};
+# use vantage_diorama::CacheTable;
+# use vantage_vista::prelude::*;
+# pub struct ContentsCache {
+#     table: Arc<dyn CacheTable>,
+#     seen: Mutex<HashSet<String>>,
+# }
+# impl ContentsCache {
 pub async fn get_or_fetch<F, Fut>(&self, key: &str, fetch: F) -> VantageResult<String>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = VantageResult<String>>,
+{
+    if let Some(row) = self.table.get_value(key).await?
+        && let Some(body) = row.get("contents").and_then(|v| v.as_str())
+    {
+        return Ok(body.to_string());
+    }
+    let body = fetch().await?;
+    let repeat = !self.seen.lock().unwrap().insert(key.to_string());
+    if repeat {
+        let record = [("contents".to_string(), CborValue::from(body.clone()))]
+            .into_iter()
+            .collect();
+        self.table.insert_value(key, &record).await?;
+    }
+    Ok(body)
+}
+# }
 ```
 
-A hit is served from redb. A miss runs `fetch` either way — but only a key already in `seen` (a
+A hit is served from redb. A miss runs `fetch` either way, but only a key already in `seen` (a
 repeat request) gets its body written to the `contents` table. One-off requests leave nothing
 behind but their key. (The ledger itself is never trimmed — bare keys, fine at 122,000 files; a
 bigger keyspace would want an eviction rule, and the policy being application code makes that
@@ -189,9 +274,34 @@ your call.) The augmenter's `contents` lazy expression routes its download throu
 it, and everything downstream — `rows`, `latest`, the detail endpoint — is unchanged:
 
 ```rust
+# use std::future::Future;
+# use std::sync::Arc;
+# use vantage_aws::prelude::*;
+# use vantage_types::EmptyEntity;
+# pub struct ContentsCache;
+# impl ContentsCache {
+#     pub async fn get_or_fetch<F, Fut>(&self, _key: &str, fetch: F) -> VantageResult<String>
+#     where
+#         F: FnOnce() -> Fut,
+#         Fut: Future<Output = VantageResult<String>>,
+#     {
+#         fetch().await
+#     }
+# }
+# fn table(aws: AwsAccount, bucket: String, contents: Arc<ContentsCache>) -> Table<AwsAccount, EmptyEntity> {
+# Table::new("restxml/Contents:s3/GET /{Bucket}?list-type=2", aws.clone())
+#     .with_id_column("Key")
 .with_lazy_expression("contents", move |row| {
-    // …
+    let aws = aws.clone();
+    let bucket = bucket.clone();
+    let contents = contents.clone();
+    let key = row
+        .get("Key")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
     async move {
+        let fetch_key = key.clone();
         let body = contents
             .get_or_fetch(&key, || async move {
                 s3::get_object(&aws, &bucket, &fetch_key).await
@@ -200,6 +310,7 @@ it, and everything downstream — `rows`, `latest`, the detail endpoint — is u
         Ok(body.into())
     }
 })
+# }
 ```
 
 ## Watching it work
@@ -287,14 +398,14 @@ explorer: title, file count, Prev/Next, and a table filling itself in.
 | Concept                                  | What it does                                                            |
 | ---------------------------------------- | ----------------------------------------------------------------------- |
 | Augment scheduler                        | Dio-owned detail fetches: round-robin across views, one flight per row  |
-| `augment_workers(n)`                     | Worker pool size — 1 (deterministic order) by default                   |
+| `Tuning::with_augment_workers(n)`        | Worker pool size — 1 (deterministic order) by default                   |
 | One view per open                        | Shared rows, own viewport — one standing view per HTTP connection       |
 | `DioRouter` (vantage-api-adapters)       | `.with_column()` + `.with_page_size()` → an axum router; columns double as demand |
 | `GET` vs `?watch=true`                   | Snapshot of current knowledge vs a Scenery streaming NDJSON events      |
 | `ADDED` / `MODIFIED` lines               | Kubernetes-style watch events, diffed per row per connection            |
 | Connection drop = scenery drop           | Queued fetches withdrawn, demand drained — a closed tab stops pulling   |
-| Blocking `on_start`                      | Pre-fetch: the port opens only once the listing is cached               |
-| `cache_source` + `open_table`            | One redb file, many named tables — the Dio's and our own                |
+| Blocking `Loader::eager`                 | Pre-fetch: the port opens only once the listing is cached               |
+| `Cache::backend` + `open_table`          | One redb file, many named tables — the Dio's and our own                |
 | `ContentsCache`                          | Lazy admission: downloaded once — remembered; twice — cached            |
 
 ```admonish success title="The whole climb"

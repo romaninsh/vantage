@@ -19,7 +19,7 @@ and return `self`.
 
 This means your builder code is just the struct definition and `new()`:
 
-```rust
+```text
 pub struct SqliteSelect {
     pub fields: Vec<Expr>,
     pub from: Vec<Expr>,
@@ -40,12 +40,15 @@ The `Selectable` impl goes in its own file (e.g., `statements/select/impls/selec
 builder methods come from the trait:
 
 ```rust
+# use vantage_expressions::{Order, Selectable};
+# use vantage_sql::sqlite::statements::SqliteSelect;
+# use vantage_sql::sqlite_expr;
 let select = SqliteSelect::new()
     .with_source("product")
     .with_field("name")
     .with_field("price")
     .with_condition(sqlite_expr!("\"is_deleted\" = {}", false))
-    .with_order(sqlite_expr!("\"price\""), false)
+    .with_order(sqlite_expr!("\"price\""), Order::Desc)
     .with_limit(Some(10), None);
 ```
 
@@ -53,6 +56,13 @@ The `as_count()` and `as_sum()` methods should clone the current query, replace 
 `COUNT(*)` or `SUM(column)`, drop the ORDER BY (unnecessary for aggregates), and render:
 
 ```rust
+# use vantage_expressions::{Order, Selectable};
+# use vantage_sql::sqlite::statements::SqliteSelect;
+# use vantage_sql::sqlite_expr;
+# let select = SqliteSelect::new()
+#     .with_source("product")
+#     .with_condition(sqlite_expr!("\"is_deleted\" = {}", false))
+#     .with_order(sqlite_expr!("\"price\""), Order::Desc);
 let count_expr = select.as_count();  // SELECT COUNT(*) FROM product WHERE ...
 let sum_expr = select.as_sum(sqlite_expr!("\"price\""));  // SELECT SUM("price") FROM ...
 ```
@@ -62,7 +72,7 @@ let sum_expr = select.as_sum(sqlite_expr!("\"price\""));  // SELECT SUM("price")
 This trait connects the SELECT builder to execution. It tells vantage "this database can create
 SELECT queries and run them":
 
-```rust
+```text
 impl SelectableDataSource<AnySqliteType> for SqliteDB {
     type Select = SqliteSelect;
 
@@ -85,17 +95,28 @@ mismatches, type affinity surprises, data edge cases.
 Set up a test database with known data (we use a bakery schema translated from SurrealDB's test
 fixture), and write tests that query it through the `Selectable` interface:
 
-```rust
+```rust,no_run
+# use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
+# use vantage_sql::sqlite::statements::SqliteSelect;
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_sql::sqlite_expr;
+# use vantage_types::{Record, TryFromRecord, entity};
+# #[entity(SqliteType)]
+# struct Product { name: String, price: i64 }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 let db = SqliteDB::connect("sqlite:../target/bakery.sqlite?mode=ro").await?;
 
 let select = SqliteSelect::new()
     .with_source("product")
     .with_condition(sqlite_expr!("\"price\" > {}", 200i64))
-    .with_order(sqlite_expr!("\"price\""), false);
+    .with_order(sqlite_expr!("\"price\""), Order::Desc);
 
 let record: Record<AnySqliteType> = db.associate(select.expr()).get().await?;
 let product = Product::from_record(record)?;
 assert_eq!(product.name, "Enchantment Under the Sea Pie");
+# Ok(())
+# }
 ```
 
 ### Implementing complex queries

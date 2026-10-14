@@ -27,6 +27,28 @@ All three implement the full trait stack:
 - `TableSource` — full CRUD, columns, conditions, aggregates
 - `TableQuerySource` — table definition → full query
 
+## The Vista
+
+With the `vista` feature, each backend's factory builds a [Vista](./intro/step4-vista.md) from a
+YAML spec or a typed table. All three advertise the same reads, because SQL can do each of them in
+the query: `Order`, `Search`, `FilterOps`, `Window` (a `LIMIT`/`OFFSET` window, served by
+`fetch_window`) and `Traverse`. A table-sourced Vista adds the writes, `Insert`, `Update`, `Delete`
+and `ConfineWrites`. A query-sourced one (`rhai:` or `base:`) takes no writes, because no single
+table could receive them. Per backend:
+
+- **PostgreSQL** adds `Subscribe` when the factory is built `with_notify(true)`. Postgres can't
+  tell whether a `{table}_changed` trigger exists, so the application has to say so.
+- **MySQL** adds `NativeConditions` (the `with_condition` verb in `modify:` scripts) and, on a
+  table-sourced Vista, `Import`.
+
+A quicksearch is a `LIKE` on each searchable column, joined with `OR`. The searchable columns are
+the ones flagged `searchable`, or every column when none is flagged. Every driver reads that rule
+from `Table::search_columns` (`VistaMetadata::search_columns` states it over a Vista's columns), so
+no backend picks its own. Imported reference columns are
+left out, because they exist only as projection aliases, and a table with nothing to search matches
+no rows. PostgreSQL uses `ILIKE` on the column cast to text. SQLite's `LIKE` already ignores case
+for ASCII text, and MySQL's follows the column's collation.
+
 ## CBOR value representation
 
 All SQL backends use **CBOR** (`ciborium::Value`) as their internal value type — not JSON. This

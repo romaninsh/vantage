@@ -2,7 +2,22 @@
 
 ## 0.7.0 — 2026-10-14
 
+### Breaking changes
+
+- The shell implements `TableShell` 2.0 and advertises `Insert` only.
+- `list`, `get`, `count` and `fetch_window` refuse with `unsupported(Window)` and the reason
+  "write-only sink"; `get_ref` refuses with `unsupported(Traverse)`.
+- An `Eq` condition on a declared column is recorded but never evaluated, so a narrowed handle
+  refuses inserts.
+- A dotted path into a declared column is refused as `Unimplemented`.
+- `preview()` is `{query, note}`; the driver name is `vista.driver_name()`.
+
+### Other changes
+
 - Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0 and vantage-table 2.0.0.
+- `insert(None)` takes the id from the record's id column, or a fresh ULID.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.6.5 — 2026-10-04
 
