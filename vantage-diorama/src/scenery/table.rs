@@ -5,9 +5,10 @@
 //! arrive via two paths:
 //!
 //! - **Cache seed** — `open()` reads whatever is already in the cache
-//!   (e.g. warmed from disk on restart) and assigns indices in
-//!   iteration order. Subsequent `DatasetChanged` / `Refreshing` events
-//!   re-seed the same way.
+//!   (e.g. warmed from disk on restart) and assigns indices in the view's
+//!   order, or the cache's iteration order without one. Subsequent
+//!   `DatasetChanged` / `Refreshing` events re-seed the same way, and a
+//!   single changed row of an ordered set held whole is spliced into place.
 //! - **Chunk load** — `set_viewport` / `request_load_more` queue a
 //!   range request on a debounce channel; on commit, the Lens's paged
 //!   loader fetches the missing indices from the

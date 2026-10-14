@@ -10,7 +10,8 @@ use vantage_diorama::ChangeFlash;
 use vantage_types::Record;
 
 use crate::bdd_support::{
-    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld, world::OnFlashMode,
+    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld,
+    world::config::OnFlashMode,
 };
 
 /// Parse a gherkin data table whose first row is the header (with an `id`
@@ -167,7 +168,7 @@ async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String)
     );
 }
 
-#[then(regex = r"^on_flash has been called (\d+) times?$")]
+#[then(regex = r"^the writer has been called (\d+) times?$")]
 async fn assert_on_flash_count(w: &mut DioramaWorld, n: u64) {
     let got = w.spies.on_flash.load(std::sync::atomic::Ordering::SeqCst);
     assert_eq!(got, n, "expected on_flash={n}, got {got}");

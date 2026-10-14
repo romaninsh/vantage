@@ -85,6 +85,7 @@ impl SharedRows {
             base: init.base,
             rows: RwLock::new(Default::default()),
             id_to_idx: RwLock::new(HashMap::new()),
+            idx_to_id: Mutex::new(None),
             total: RwLock::new(None),
             total_kind: RwLock::new(TotalKind::Exact),
             stats: StatsCell::new(),
@@ -154,7 +155,8 @@ impl SharedRows {
 
     fn copy_rows(&self, old: &SharedRows) {
         *self.rows.write().unwrap() = old.rows.read().unwrap().clone();
-        *self.id_to_idx.write().unwrap() = old.id_to_idx.read().unwrap().clone();
+        let id_to_idx = old.id_to_idx.read().unwrap().clone();
+        self.write_id_to_idx(|ids| *ids = id_to_idx);
         *self.total.write().unwrap() = *old.total.read().unwrap();
         *self.total_kind.write().unwrap() = *old.total_kind.read().unwrap();
         for (to, from) in [

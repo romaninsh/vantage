@@ -80,7 +80,7 @@ async fn count(
     dio: Arc<DioInner>,
     query: VistaQuery,
 ) -> Result<Option<usize>> {
-    let (offered, sugar, planned) = state.plan_query(&dio, query.clone());
+    let (_, sugar, planned) = state.plan_query(&dio, query.clone());
     let plan = match planned {
         Ok(plan) => plan,
         Err(e) => {
@@ -95,7 +95,7 @@ async fn count(
     };
     if state.paged {
         if !plan.has_residual() && sugar.is_empty() {
-            let n = dio.plan(&offered)?.narrowed.count().await?;
+            let n = plan.narrowed().count().await?;
             return Ok(usize::try_from(n).ok());
         }
         if dio.lens.callbacks.loader.eager.is_none() {

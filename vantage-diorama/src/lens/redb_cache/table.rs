@@ -6,14 +6,30 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use redb::{Database, ReadOnlyTable, ReadableTable, ReadableTableMetadata, Table};
+use redb::{
+    Database, ReadOnlyTable, ReadableTable, ReadableTableMetadata, Table, WriteTransaction,
+};
 use vantage_core::{Result, error};
 use vantage_types::Record;
 
-use super::{blocking, meta, status, table_def};
+use super::{blocking, meta, status, table_def, write_txn};
 use crate::lens::cache_backend::{CacheStatus, CacheTable};
 
 type Row = (Record<CborValue>, CacheStatus);
+
+/// Open the redb table `table` in `txn`, creating it if needed.
+fn open_for_write<'t>(
+    txn: &'t WriteTransaction,
+    table: &str,
+) -> Result<Table<'t, &'static str, &'static [u8]>> {
+    txn.open_table(table_def(table)).map_err(|e| {
+        error!(
+            "redb open_table failed",
+            table = table,
+            detail = e.to_string()
+        )
+    })
+}
 
 pub struct RedbCacheTable {
     db: Arc<Database>,
@@ -66,25 +82,7 @@ impl RedbCacheTable {
             + 'static,
     {
         let db = self.db.clone();
-        blocking(move || {
-            let txn = db
-                .begin_write()
-                .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
-            {
-                let mut opened = txn.open_table(table_def(&table)).map_err(|e| {
-                    error!(
-                        "redb open_table failed",
-                        table = table,
-                        detail = e.to_string()
-                    )
-                })?;
-                write(&mut opened)?;
-            }
-            txn.commit()
-                .map_err(|e| error!("redb commit failed", detail = e.to_string()))?;
-            Ok(())
-        })
-        .await
+        blocking(move || write_txn(&db, |txn| write(&mut open_for_write(txn, &table)?))).await
     }
 
     async fn list_rows(&self) -> Result<IndexMap<String, Row>> {
@@ -173,28 +171,19 @@ impl CacheTable for RedbCacheTable {
         let rows = self.name.clone();
         let meta_table = meta::meta_table_name(&self.name);
         blocking(move || {
-            let txn = db
-                .begin_write()
-                .map_err(|e| error!("redb begin_write failed", detail = e.to_string()))?;
-            {
-                let mut opened = txn.open_table(table_def(&meta_table)).map_err(|e| {
-                    error!(
-                        "redb open_table failed",
-                        table = meta_table,
-                        detail = e.to_string()
-                    )
-                })?;
-                for key in [meta::REFRESHED_AT, meta::COPIED_AT] {
-                    opened
-                        .remove(key)
-                        .map_err(|e| error!("redb remove failed", detail = e.to_string()))?;
+            write_txn(&db, |txn| {
+                {
+                    let mut opened = open_for_write(txn, &meta_table)?;
+                    for key in [meta::REFRESHED_AT, meta::COPIED_AT] {
+                        opened
+                            .remove(key)
+                            .map_err(|e| error!("redb remove failed", detail = e.to_string()))?;
+                    }
                 }
-            }
-            txn.delete_table(table_def(&rows))
-                .map_err(|e| error!("redb delete_table failed", detail = e.to_string()))?;
-            txn.commit()
-                .map_err(|e| error!("redb commit failed", detail = e.to_string()))?;
-            Ok(())
+                txn.delete_table(table_def(&rows))
+                    .map_err(|e| error!("redb delete_table failed", detail = e.to_string()))?;
+                Ok(())
+            })
         })
         .await
     }

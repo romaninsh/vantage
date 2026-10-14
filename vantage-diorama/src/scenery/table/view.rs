@@ -6,6 +6,7 @@
 //! a view's setters change only its own query and move it to the rows of
 //! the new one (see `repoint`).
 
+mod reads;
 mod repoint;
 mod setters;
 mod signal;
@@ -20,12 +21,9 @@ use vantage_vista::{Condition, SortDirection, VistaCapabilities, VistaQuery};
 use crate::dio::DioInner;
 use crate::dio::augment_scheduler::AugmentTicket;
 
+use super::LoadFailure;
 use super::cap::Cap;
 use super::state::SharedRows;
-use super::view_stats::{clamp_range, view_filters};
-use super::{
-    LoadFailure, LoadState, ViewState, ViewStats, ViewportRequest, compute_load_state, loader,
-};
 
 pub(crate) use signal::{ViewHook, ViewSignal};
 pub(crate) use tail::{Placing, follow_tail};
@@ -98,142 +96,6 @@ pub(crate) struct TableView {
     /// Held across a re-point, so two setters racing on one view move it
     /// once each, in turn.
     pub(crate) repointing: Mutex<()>,
-}
-
-impl TableView {
-    /// The rows the view reads now.
-    pub(crate) fn shared(&self) -> Arc<SharedRows> {
-        self.shared.read().unwrap().clone()
-    }
-
-    /// A hook for attaching this view to rows.
-    pub(crate) fn hook(&self) -> ViewHook {
-        ViewHook::new(&self.signal, self.ticket.clone())
-    }
-
-    pub(crate) fn cap(&self) -> Option<Cap> {
-        *self.cap.read().unwrap()
-    }
-
-    /// Every clause of this view as one query: the builder's filters, the
-    /// runtime filters, search and the order its rows load in.
-    pub(crate) fn view_query(&self) -> VistaQuery {
-        self.query_with_filters(&self.filters.read().unwrap())
-    }
-
-    /// [`view_query`](Self::view_query) with `filters` standing in for the
-    /// view's runtime filters.
-    pub(crate) fn query_with_filters(&self, filters: &[Condition]) -> VistaQuery {
-        let order = self.order.read().unwrap().clone();
-        compose(
-            &self.base,
-            filters,
-            self.search.read().unwrap().clone(),
-            self.cap()
-                .map_or(order.clone(), |cap| cap.load_order(order)),
-        )
-    }
-
-    /// The columns this view declared it shows (its demand); `None` demands
-    /// everything.
-    pub(crate) fn demanded_columns(&self) -> Option<Vec<String>> {
-        self.demand.clone()
-    }
-
-    /// Ask the rows for `loaded` (in the view's indices, mapped through its
-    /// cap), and record `shown` as the rows on screen; empty means none.
-    /// The load is serialised with re-points, so a viewport is never
-    /// recorded into rows the view has just left.
-    pub(crate) fn set_viewport(&self, loaded: Range<usize>, shown: Range<usize>) {
-        {
-            let _serial = self.repointing.lock().unwrap_or_else(|e| e.into_inner());
-            let shared = self.shared();
-            let range = match self.placing(&shared) {
-                Placing::Whole => loaded,
-                Placing::Capped(cap, len) => cap.shared_range(loaded, len, shared.two_pass),
-                Placing::Unplaced(cap) => cap.shared_range(loaded, 0, shared.two_pass),
-            };
-            self.ask(&shared, range);
-        }
-        let shown = self.cap().map_or(shown.clone(), |cap| cap.clamp(shown));
-        let shown = Some(shown).filter(|r| !r.is_empty());
-        let previous = std::mem::replace(&mut *self.shown.write().unwrap(), shown.clone());
-        if previous != shown {
-            self.signal.bump_stats();
-        }
-    }
-
-    /// Record `range` as the shared rows this view asks for, and ask for
-    /// them. The caller holds `repointing`.
-    fn ask(&self, shared: &SharedRows, range: Range<usize>) {
-        shared.record_viewport(self.id, range.clone());
-        loader::enqueue_viewport(
-            shared,
-            ViewportRequest {
-                range,
-                force_load: false,
-                priority: vantage_core::Priority::Essential,
-                view: Some(self.id),
-            },
-        );
-    }
-
-    /// The view's refusal, when it shows no rows whatever its rows hold.
-    pub(crate) fn refusal(&self) -> Option<LoadFailure> {
-        self.refused.read().unwrap().clone()
-    }
-
-    /// The rows' snapshot with this view's shown range (clamped to the rows
-    /// it has), its declared order, its own filters and its cap laid over it.
-    pub(crate) fn view_stats(&self) -> ViewStats {
-        let shared = self.shared();
-        let mut stats = shared.stats.snapshot();
-        stats.showing = clamp_range(self.shown.read().unwrap().clone(), shared.row_count());
-        stats.order = self.order.read().unwrap().clone();
-        stats.filters = view_filters(&self.query_filters(), &self.filters.read().unwrap());
-        let nothing = ViewStats {
-            loaded: 0,
-            showing: None,
-            has_more: false,
-            ..stats.clone()
-        };
-        if self.refusal().is_some() {
-            return ViewStats {
-                total: Some(0),
-                total_exact: true,
-                state: ViewState::Failed,
-                ..nothing
-            };
-        }
-        match self.placing(&shared) {
-            Placing::Whole => stats,
-            Placing::Capped(cap, _) => stats.capped(cap.n()),
-            // As `load_state`: loading, unless the rows failed their query.
-            Placing::Unplaced(_) => ViewStats {
-                total: None,
-                total_exact: false,
-                state: match compute_load_state(&shared) {
-                    LoadState::Failed(_) => ViewState::Failed,
-                    _ => ViewState::Loading,
-                },
-                ..nothing
-            },
-        }
-    }
-
-    /// The conditions that are part of what the view is: the Dio's residual
-    /// ones, then the builder's.
-    fn query_filters(&self) -> Vec<Condition> {
-        let residual = self
-            .dio_weak
-            .upgrade()
-            .map(|dio| dio.residual.conditions.clone())
-            .unwrap_or_default();
-        residual
-            .into_iter()
-            .chain(self.base.iter().cloned())
-            .collect()
-    }
 }
 
 impl Drop for TableView {

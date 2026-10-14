@@ -3,7 +3,38 @@ use std::sync::Arc;
 
 use crate::dio::DioInner;
 use crate::lens::ChunkSink;
-use crate::scenery::table::state::InFlightMarker;
+use crate::scenery::table::state::{InFlightMarker, SharedRows};
+
+/// Claim `range` as the load in flight, unless it already is. The marker
+/// hands the claim back when it drops.
+pub(super) fn claim_in_flight(
+    state: &Arc<SharedRows>,
+    range: &Range<usize>,
+) -> Option<InFlightMarker> {
+    {
+        let mut guard = state.load_in_flight.lock().unwrap();
+        if guard.as_ref() == Some(range) {
+            tracing::debug!(
+                target: "vantage_diorama::viewport",
+                effective = ?range,
+                "fire_chunk_load: SKIP (same range already in flight)",
+            );
+            return None;
+        }
+        if let Some(prev) = guard.as_ref() {
+            tracing::warn!(
+                target: "vantage_diorama::viewport",
+                prev = ?prev,
+                effective = ?range,
+                "fire_chunk_load: overwriting in-flight marker (viewport_loop is supposed to be serial)",
+            );
+        }
+        *guard = Some(range.clone());
+    }
+    let in_flight = InFlightMarker(state.clone());
+    state.publish_view_stats();
+    Some(in_flight)
+}
 
 /// What [`run_chunk_callback`](super::dispatch::run_chunk_callback) hands to
 /// [`finish_chunk_load`](super::commit::finish_chunk_load) once the callback

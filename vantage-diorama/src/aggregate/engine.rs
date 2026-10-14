@@ -191,13 +191,14 @@ where
 
 /// The number of rows read and the aggregation's output over them. A
 /// [`Reads::Count`](crate::aggregate::Reads::Count) over an unnarrowed Dio is
-/// answered from the cache's row count, without reading a row.
+/// answered from the cache's row count, without reading a row. A row set
+/// (`AsRows<Count>`) has no count shape, so it skips the count and reads rows.
 async fn computed<A: Aggregation>(source: &Dio, aggregation: &A) -> Result<(usize, A::Output)> {
     let reads = aggregation.reads();
-    if let Some(count) = cached_count(source, &reads).await?
-        && let Some(output) = A::Output::from_count(count)
+    if let Some(from_count) = A::Output::from_count()
+        && let Some(count) = cached_count(source, &reads).await?
     {
-        return Ok((count as usize, output));
+        return Ok((count as usize, from_count(count)));
     }
     let rows = admitted_rows(source, &reads).await?;
     let output = aggregation.compute(&rows, &source.inner.metadata);

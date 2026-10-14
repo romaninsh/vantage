@@ -37,7 +37,7 @@ Feature: Write path — Clear
     When the dio is created
     And I delete all via the facade
     And the write queue drains
-    Then on_flash has been called 1 time
+    Then the writer has been called 1 time
     And the event log matches snapshot "mirror_delete_all_<backend>"
     And the master has 0 rows
     And the cache has 0 rows

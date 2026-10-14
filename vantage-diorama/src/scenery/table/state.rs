@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use tokio::sync::{Notify, mpsc};
-use tokio::task::JoinHandle;
 use vantage_vista::{Condition, VistaCapabilities, VistaQuery};
 
 use crate::dio::DioInner;
@@ -16,6 +15,7 @@ use super::view::{ViewHook, ViewId};
 
 mod chunk_target;
 mod copy;
+mod guards;
 mod load_state;
 mod query;
 mod reseed;
@@ -24,6 +24,7 @@ mod splice;
 mod totals;
 
 pub(crate) use copy::Init;
+pub(crate) use guards::{InFlightMarker, TaskGuard};
 
 /// The rows answering one query, shared by every view of that query: the
 /// visible map, the total, the reactor and the viewport loop. The query is
@@ -53,6 +54,10 @@ pub(crate) struct SharedRows {
 
     pub(crate) rows: RwLock<super::row_map::RowMap>,
     pub(crate) id_to_idx: RwLock<HashMap<String, usize>>,
+    /// The id at each slot, the reverse of `id_to_idx`, kept for
+    /// [`splice_one`](Self::splice_one). `None` once anything else writes
+    /// `rows` or `id_to_idx`; the next splice rebuilds it. Taken after both.
+    pub(crate) idx_to_id: Mutex<Option<Vec<String>>>,
     pub(crate) total: RwLock<Option<usize>>,
     /// How far `total` can be trusted — see [`TotalKind`](super::view_stats::TotalKind).
     pub(crate) total_kind: RwLock<super::view_stats::TotalKind>,
@@ -207,44 +212,6 @@ pub(crate) struct SharedRows {
     pub(crate) tasks: TaskGuard,
 }
 
-/// Aborts the tasks it holds on [`abort_all`](Self::abort_all) and on drop.
-/// Once aborted it stays closed: a task handed to it later is aborted at
-/// once, so nothing the rows were doing starts again.
-#[derive(Default)]
-pub(crate) struct TaskGuard(Mutex<Tasks>);
-
-#[derive(Default)]
-pub(crate) struct Tasks {
-    running: Vec<JoinHandle<()>>,
-    closed: bool,
-}
-
-impl TaskGuard {
-    pub(crate) fn hold(&self, task: JoinHandle<()>) {
-        let mut tasks = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if tasks.closed {
-            task.abort();
-            return;
-        }
-        tasks.running.retain(|task| !task.is_finished());
-        tasks.running.push(task);
-    }
-
-    pub(crate) fn abort_all(&self) {
-        let mut tasks = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        tasks.closed = true;
-        for task in tasks.running.drain(..) {
-            task.abort();
-        }
-    }
-}
-
-impl Drop for TaskGuard {
-    fn drop(&mut self) {
-        self.abort_all();
-    }
-}
-
 impl SharedRows {
     /// Attach `view` while some other view still reads these rows. Rows
     /// whose last view left are closed for good — their work was aborted —
@@ -269,20 +236,5 @@ impl SharedRows {
             self.tasks.abort_all();
         }
         hook
-    }
-}
-
-/// Clears `load_in_flight` when dropped, so a load that is cancelled
-/// mid-flight — its future dropped by the viewport loop — cannot leave its
-/// range marked as still loading and make the next request for that range
-/// skip itself. Owns the `Arc` rather than borrowing it so it can travel
-/// inside `PendingChunk` from `run_chunk_callback` to `finish_chunk_load`,
-/// holding the guard for the whole load rather than just its network half.
-pub(crate) struct InFlightMarker(pub(crate) Arc<SharedRows>);
-
-impl Drop for InFlightMarker {
-    fn drop(&mut self) {
-        *self.0.load_in_flight.lock().unwrap() = None;
-        self.0.publish_view_stats();
     }
 }

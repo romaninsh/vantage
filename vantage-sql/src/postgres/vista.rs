@@ -3,7 +3,7 @@
 //! Construct a `Vista` from a typed `Table<PostgresDB, E>` via
 //! `PostgresDB::vista_factory()`, or from a YAML spec via
 //! `PostgresVistaFactory::from_yaml`. The YAML path builds a
-//! `Table<PostgresDB, EmptyEntity>` first and then routes through `from_table` —
+//! `Table<PostgresDB, EmptyEntity>` first and wraps it as `from_table` does —
 //! one construction path, one reading path.
 //!
 //! `AnyPostgresType` already wraps `ciborium::Value`, so the boundary

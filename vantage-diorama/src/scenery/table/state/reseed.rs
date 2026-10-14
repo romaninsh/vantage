@@ -91,7 +91,7 @@ impl SharedRows {
         if self.is_chunk_loaded() && query.order.is_some() && !holds_everything {
             self.placed.store(false, Ordering::SeqCst);
             self.rows.write().unwrap().clear();
-            self.id_to_idx.write().unwrap().clear();
+            self.write_id_to_idx(|ids| ids.clear());
             tracing::debug!(
                 target: "vantage_diorama::sort",
                 "paged view re-orders at the source — dropped cached row positions",
@@ -134,7 +134,7 @@ impl SharedRows {
             return Ok(());
         }
         *self.rows.write().unwrap() = super::super::row_map::RowMap::from_map(rows);
-        *self.id_to_idx.write().unwrap() = id_to_idx;
+        self.write_id_to_idx(|ids| *ids = id_to_idx);
         self.placed.store(true, Ordering::SeqCst);
         Ok(())
     }

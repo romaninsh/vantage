@@ -7,8 +7,9 @@
 //!   [`guards::PendingChunk`].
 //! - [`commit::finish_chunk_load`] is the uncancellable half: it flushes the
 //!   page, infers the total, re-sorts and bumps the generation.
-//! - [`range`], [`guards`] and [`telemetry`] hold the range arithmetic, the
-//!   two RAII guards and the tap/tracing formatting the commit path emits.
+//! - [`range`], [`guards`] and [`telemetry`] hold the choice of what to
+//!   fetch, the in-flight claim with its two RAII guards, and the tap/tracing
+//!   formatting dispatch and commit emit.
 
 mod commit;
 mod dispatch;

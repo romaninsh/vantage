@@ -1,4 +1,5 @@
-//! Column access and scalar views shared by the built-in aggregations.
+//! Column access and scalar views shared by the built-in aggregations and
+//! operand coercion.
 //! Ordering, conditions and search go through vista's evaluator
 //! ([`vantage_vista::eval`]).
 
@@ -24,7 +25,7 @@ pub(crate) fn column<'a>(
 ///
 /// Converts an operand for a text-typed column; deliberately `Option` so a
 /// non-scalar is left as given rather than becoming an empty string.
-pub fn scalar_text(value: &CborValue) -> Option<String> {
+pub(crate) fn scalar_text(value: &CborValue) -> Option<String> {
     match value {
         CborValue::Text(s) => Some(s.clone()),
         CborValue::Integer(i) => Some(i128::from(*i).to_string()),
@@ -37,7 +38,7 @@ pub fn scalar_text(value: &CborValue) -> Option<String> {
 
 /// Numeric view of a CBOR scalar, for the numeric aggregations. `None` for
 /// anything that is not a number.
-pub fn as_f64(value: &CborValue) -> Option<f64> {
+pub(crate) fn as_f64(value: &CborValue) -> Option<f64> {
     match value {
         CborValue::Integer(i) => Some(i128::from(*i) as f64),
         CborValue::Float(f) => Some(*f),

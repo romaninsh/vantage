@@ -3,7 +3,7 @@ Feature: Sequential load strategy — append-only paging (v4)
 
   Phase v4-1 — for masters that can only return "the next page" (cursor
   APIs, append-only logs, anything without a cheap COUNT and without
-  random-access by row index). The Scenery has no `total_provider` and
+  random-access by row index). The Scenery has no stated total and
   cannot honour a `set_viewport` for an uncached range. Instead it
   exposes a monotonic cache that grows page-by-page via
   `request_load_more`, and `row_count` / `estimated_total` grow with
@@ -12,7 +12,7 @@ Feature: Sequential load strategy — append-only paging (v4)
   Background:
     Given a master with 1000 rows
     And a lens with on_load_next_page that returns up to 100 rows after the supplied index
-    And no total_provider is configured
+    And no loader states a total
     When the dio is created
     And the table scenery is opened in sequential mode with page_size 100
 

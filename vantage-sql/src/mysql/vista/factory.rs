@@ -28,7 +28,7 @@ use crate::mysql::vista::spec::{
     MysqlColumnExtras, MysqlReferenceExtras, MysqlTableExtras, MysqlVistaSpec,
 };
 use crate::sql_vista::{
-    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, metadata_options,
+    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, metadata_options, source_block,
 };
 
 #[derive(Clone)]
@@ -74,17 +74,9 @@ impl SqlSpecDialect for MysqlDB {
     type Query = MysqlSelect;
 
     fn source_block(spec: &MysqlVistaSpec) -> SourceBlock<'_> {
-        let Some(block) = &spec.driver.mysql else {
-            return SourceBlock::default();
-        };
-        let inherit = block.inherit.as_ref();
-        SourceBlock {
-            table: block.table.as_deref(),
-            rhai: block.rhai.as_deref(),
-            base: block.base.as_deref(),
-            inherit_columns: inherit.map_or(&[], |i| &i.columns),
-            inherit_relations: inherit.map_or(&[], |i| &i.relations),
-            args: &block.args,
+        match &spec.driver.mysql {
+            Some(block) => source_block!(block),
+            None => SourceBlock::default(),
         }
     }
 
