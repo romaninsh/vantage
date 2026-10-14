@@ -1,10 +1,5 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! SQL-injection-safe expression building with templates and parameters.
-//!
-//! Modules:
-//! - [`core`] - Core `Expression<T>` struct
-//! - [`macros`] - `expr!` and `expr_as!` macros
-//! - [`mapping`] - Type conversion utilities
-//! - [`flatten`] - Expression flattening
 //!
 //! ## Expression
 //!

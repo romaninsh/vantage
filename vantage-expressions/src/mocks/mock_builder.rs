@@ -1,8 +1,5 @@
-//! MockBuilder for pattern-based query testing with flattening support.
-//!
-//! Provides a builder pattern for creating mock data sources that can match
-//! specific query patterns and return configured responses. Useful for testing
-//! complex query scenarios without actual database connections.
+//! MockBuilder: a mock datasource that matches exact query text, optionally
+//! after flattening, and returns configured responses.
 //!
 //! # Examples
 //!
@@ -108,10 +105,7 @@ impl DataSource for MockBuilder {}
 
 impl ExprDataSource<Value> for MockBuilder {
     async fn execute(&self, expr: &Expression<Value>) -> Result<Value> {
-        // First resolve any deferred functions
         let resolved_expr = expr.resolve_deferred().await?;
-
-        // Then process (flatten if enabled)
         let processed_expr = self.process_expression(&resolved_expr);
         let query_str = processed_expr.preview();
 
@@ -170,96 +164,4 @@ impl SelectableDataSource<Value> for MockBuilder {
 /// Create a new mock builder
 pub fn new() -> MockBuilder {
     MockBuilder::new()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::expr;
-    use serde_json::json;
-
-    #[tokio::test]
-    async fn test_exact_pattern_matching() {
-        let mock = new().on_exact_select(
-            "SELECT * FROM users",
-            json!([
-                {"id": 1, "name": "Alice"},
-                {"id": 2, "name": "Bob"}
-            ]),
-        );
-
-        let query = expr!("SELECT * FROM users");
-        let result = mock.execute(&query).await.unwrap();
-        assert_eq!(result.as_array().unwrap().len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_multiple_patterns() {
-        let mock = new()
-            .on_exact_select("SELECT COUNT(*) FROM orders", json!(42))
-            .on_exact_select(
-                "SELECT * FROM products",
-                json!([
-                    {"id": "prod1", "name": "Widget"}
-                ]),
-            );
-
-        let count_query = expr!("SELECT COUNT(*) FROM orders");
-        let count_result = mock.execute(&count_query).await.unwrap();
-        assert_eq!(count_result, json!(42));
-
-        let products_query = expr!("SELECT * FROM products");
-        let products_result = mock.execute(&products_query).await.unwrap();
-        assert_eq!(products_result.as_array().unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_flattening() {
-        let mock = new().with_flattening().on_exact_select(
-            "SELECT * FROM orders WHERE user_id = 123",
-            json!([
-                {"id": 1, "user_id": 123, "amount": 99.99}
-            ]),
-        );
-
-        let nested_query = expr!("SELECT * FROM orders WHERE user_id = {}", 123);
-        let result = mock.execute(&nested_query).await.unwrap();
-        assert_eq!(result.as_array().unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_no_matching_pattern() {
-        let mock = new().on_exact_select("SELECT * FROM users", json!([]));
-
-        let query = expr!("SELECT * FROM products");
-        let result = mock.execute(&query).await;
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_defer() {
-        let mock = new().on_exact_select("SELECT COUNT(*)", json!(5));
-
-        let query = expr!("SELECT COUNT(*)");
-        let _deferred = mock.defer(query);
-    }
-
-    #[tokio::test]
-    async fn test_select_source() {
-        use crate::traits::selectable::Selectable;
-
-        let mock = new().on_exact_select(
-            "SELECT * FROM products",
-            json!([
-                {"id": "prod1", "name": "Widget"}
-            ]),
-        );
-
-        let mut select = mock.select();
-        select.add_source("products", None);
-
-        let results = mock.execute_select(&select).await.unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0]["name"], "Widget");
-    }
 }

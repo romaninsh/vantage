@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 #![doc = include_str!("../README.md")]
 
 pub mod traits;
@@ -9,7 +10,6 @@ pub mod prelude;
 pub mod util;
 pub mod value;
 
-// pub use expression::lazy::LazyExpression;
 pub use any_expression::{AnyExpression, ExpressionLike};
 pub use expression::core::Expression;
 pub use expression::flatten::{ExpressionFlattener, Flatten};

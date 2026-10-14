@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 — 2026-10-14
+
+- The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or
+  behaviour change.
+
 ## 1.2.0 — 2026-10-14
 
 - `AnyExpression` and `ExpressionLike` now live here, no longer re-exported from vantage-vista.

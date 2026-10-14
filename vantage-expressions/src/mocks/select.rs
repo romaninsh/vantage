@@ -1,7 +1,4 @@
-//! Mock Select implementation for testing
-//!
-//! This module provides a minimalistic mock implementation of the Selectable trait
-//! that uses the expr! macro pattern for building queries.
+//! `MockSelect`: a minimal `Selectable` that renders to SQL-like text.
 
 use crate::traits::expressive::{Expressive, ExpressiveEnum};
 use crate::traits::selectable::{Selectable, SourceRef};
@@ -9,10 +6,8 @@ use crate::{Expression, expr};
 
 type Value = serde_json::Value;
 
-/// Minimalistic mock implementation of Selectable trait
-///
-/// This mock tracks basic query components and uses expr! macro to build
-/// SQL-like queries for testing purposes.
+/// Minimal `Selectable` that tracks the basic query parts and renders them as
+/// an SQL-like expression.
 ///
 /// ## Examples
 ///
@@ -67,7 +62,6 @@ impl MockSelect {
             query.push_str(" DISTINCT");
         }
 
-        // Add fields
         if self.fields.is_empty() {
             query.push_str(" *");
         } else {
@@ -75,13 +69,11 @@ impl MockSelect {
             query.push_str(&self.fields.join(", "));
         }
 
-        // Add FROM clause
         if let Some(source) = &self.source {
             query.push_str(" FROM ");
             query.push_str(source);
         }
 
-        // Add WHERE clause
         if !self.where_conditions.is_empty() {
             query.push_str(" WHERE ");
             let conditions: Vec<String> = self
@@ -92,7 +84,6 @@ impl MockSelect {
             query.push_str(&conditions.join(" AND "));
         }
 
-        // Add ORDER BY clause
         if !self.order_by.is_empty() {
             query.push_str(" ORDER BY ");
             let orders: Vec<String> = self
@@ -109,7 +100,6 @@ impl MockSelect {
             query.push_str(&orders.join(", "));
         }
 
-        // Add LIMIT clause
         match (self.limit, self.skip) {
             (Some(limit), Some(skip)) => {
                 query.push_str(&format!(" LIMIT {} OFFSET {}", limit, skip))
@@ -248,42 +238,5 @@ impl From<MockSelect> for Expression<serde_json::Value> {
 impl crate::traits::expressive::Expressive<serde_json::Value> for MockSelect {
     fn expr(&self) -> Expression<serde_json::Value> {
         self.render()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::expr;
-
-    #[test]
-    fn test_mock_select_basic() {
-        let mut select = MockSelect::new();
-        select.add_source("users", None);
-
-        let query: Expression<serde_json::Value> = select.into();
-        assert_eq!(query.preview(), "SELECT * FROM users");
-    }
-
-    #[test]
-    fn test_mock_select_with_fields() {
-        let mut select = MockSelect::new();
-        select.add_source("users", None);
-        select.add_field("name");
-        select.add_field("email");
-
-        let query: Expression<serde_json::Value> = select.into();
-        assert_eq!(query.preview(), "SELECT name, email FROM users");
-    }
-
-    #[test]
-    fn test_mock_select_with_conditions() {
-        let mut select = MockSelect::new();
-        select.add_source("users", None);
-        select.add_field("name");
-        select.add_where_condition(expr!("age > 18"));
-
-        let query: Expression<serde_json::Value> = select.into();
-        assert_eq!(query.preview(), "SELECT name FROM users WHERE age > 18");
     }
 }
