@@ -39,7 +39,7 @@ use compare::datetime_as_text;
 use search::matches_search;
 
 pub use compare::cbor_cmp;
-pub use path::{cell_get, path_get};
+pub use path::cell_get;
 
 type Rec = Record<CborValue>;
 

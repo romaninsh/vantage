@@ -4,6 +4,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
+use vantage_diorama::aggregate::{Conditions, Count, Sum, Where};
 use vantage_diorama::{Dio, RecordStatus};
 use vantage_vista::{Capability, FilterOp};
 
@@ -15,7 +16,9 @@ use crate::support::eager_dio;
 async fn above_one() -> Result<Dio> {
     let parent = eager_dio(items(&[Capability::Order, Capability::Search])).await;
     let dio = parent
+        .derive()
         .with_query(&crate::support::cond("n", FilterOp::Gt, 1))
+        .build()
         .await?;
     assert_eq!(dio.residual().conditions.len(), 1, "the master refused it");
     #[cfg(feature = "diagnostics")]
@@ -45,13 +48,15 @@ async fn a_servo_has_no_baseline_for_a_row_outside_the_residual() -> Result<()> 
 #[tokio::test]
 async fn value_aggregates_count_only_the_admitted_rows() -> Result<()> {
     let dio = above_one().await?;
-    let count = dio.value_scenery().count().open().await?;
+    let count = dio.value_scenery(Count::rows()).open().await?;
     assert_eq!(count.value(), Some(CborValue::Integer(2.into())));
-    let sum = dio.value_scenery().sum("n").open().await?;
+    let sum = dio.value_scenery(Sum::of("n")).open().await?;
     assert_eq!(sum.value(), Some(CborValue::Integer(5.into())));
     let where_red = dio
-        .value_scenery()
-        .count_where(vec![("team".to_string(), CborValue::Text("red".into()))])
+        .value_scenery(Where::new(
+            Conditions::new().eq("team", "red"),
+            Count::rows(),
+        ))
         .open()
         .await?;
     assert_eq!(

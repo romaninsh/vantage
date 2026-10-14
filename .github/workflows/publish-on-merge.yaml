@@ -131,7 +131,6 @@ jobs:
             vantage-diorama
             # Dev-depends on vantage-diorama.
             vantage-memory
-            vantage-diorama-aggregate
             vantage-api-adapters
             vantage-faker
           )

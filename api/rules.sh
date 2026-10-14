@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 HANDLES=(
   Lens LensBuilder Dio DioBuilder WeakDio LoaderCx ChunkSink Loader Refresher Cache Servo
   TableScenery RecordScenery ValueScenery CappedScenery TableSceneryBuilder ValueSceneryBuilder
-  MemoryCache RedbCache MemoryCacheTable RedbCacheTable AggregateLens AggregateLensBuilder DerivedDio
+  MemoryCache RedbCache MemoryCacheTable RedbCacheTable
 )
 
 types="$(IFS='|'; echo "${HANDLES[*]}")"

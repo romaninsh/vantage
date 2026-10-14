@@ -1,22 +1,24 @@
 //! Deriving a narrowed Dio must leave the original alone.
 //!
-//! `with_query` derives a new Dio over a narrowed master, and the
-//! original keeps its own query. Both Dios warm through the Lens's blocking
-//! eager start, which lists each one's own master, so the derived Dio's
-//! cache is seeded independently.
+//! `derive` builds a new Dio over a narrowed master, and the original keeps
+//! its own query. Both Dios warm through the Lens's blocking eager start,
+//! which lists each one's own master, so the derived Dio's cache is seeded
+//! independently.
 
 use vantage_core::Result;
-use vantage_vista::FilterOp;
+use vantage_vista::{Condition, FilterOp};
 
 use super::fixtures::scenery_ids;
-use crate::support::{cond, eager_dio, teams_master, text};
+use crate::support::{eager_dio, teams_master, text};
 
 #[tokio::test]
 async fn dio_with_does_not_mutate_holders() -> Result<()> {
     // Members a (red), b (blue), c (red).
     let a = eager_dio(teams_master()).await;
     let b = a
-        .with_query(&cond("team", FilterOp::Eq, text("red")))
+        .derive()
+        .with_condition(Condition::new("team", FilterOp::Eq, text("red")))
+        .build()
         .await?;
 
     let from_a = a.table_scenery().open().await?;

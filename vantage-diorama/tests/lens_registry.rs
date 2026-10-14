@@ -57,8 +57,8 @@ async fn two_derivations_of_one_query_share_one_dio() {
         .expect("dio builds");
     let q = VistaQuery::new().with_condition(Condition::new("team", FilterOp::Eq, "red"));
 
-    let first = dio.with_query(&q).await.expect("derives");
-    let second = dio.with_query(&q).await.expect("derives");
+    let first = dio.derive().with_query(&q).build().await.expect("derives");
+    let second = dio.derive().with_query(&q).build().await.expect("derives");
     assert_eq!(
         probe.calls().list,
         2,

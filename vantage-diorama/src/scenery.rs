@@ -10,7 +10,4 @@ pub use table::{
     Clause, FilterOrigin, LoadFailure, LoadState, RowStatusSummary, TableScenery,
     TableSceneryBuilder, ViewCount, ViewFilter, ViewState, ViewStats,
 };
-pub use value::{
-    Aggregate, CustomAggregate, ValueScenery, ValueSceneryBuilder, ValueStatus,
-    boxed_custom_aggregate,
-};
+pub use value::{ValueScenery, ValueSceneryBuilder, ValueStatus};

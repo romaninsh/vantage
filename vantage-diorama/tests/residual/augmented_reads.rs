@@ -7,6 +7,7 @@
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
+use vantage_diorama::aggregate::{Count, Sum};
 use vantage_diorama::{ChangeFlash, Dio, RecordStatus};
 use vantage_types::Record;
 use vantage_vista::FilterOp;
@@ -18,7 +19,9 @@ use super::big_bucket::{copied_dio, john_ids};
 async fn narrowed(op: FilterOp) -> Result<Dio> {
     let dio = copied_dio().await?;
     let narrowed = dio
+        .derive()
         .with_query(&crate::support::cond("name", op, "John"))
+        .build()
         .await?;
     assert_eq!(
         narrowed.residual().conditions.len(),
@@ -67,10 +70,10 @@ async fn a_servo_seeds_its_baseline_from_the_hydrated_row() -> Result<()> {
 #[tokio::test]
 async fn aggregates_count_and_sum_every_hydrated_john() -> Result<()> {
     let johns = narrowed(FilterOp::Eq).await?;
-    let count = johns.value_scenery().count().open().await?;
+    let count = johns.value_scenery(Count::rows()).open().await?;
     assert_eq!(count.value(), Some(CborValue::Integer(20.into())));
     // 7 + 17 + ... + 197.
-    let sum = johns.value_scenery().sum("size").open().await?;
+    let sum = johns.value_scenery(Sum::of("size")).open().await?;
     assert_eq!(sum.value(), Some(CborValue::Integer(2040.into())));
     Ok(())
 }

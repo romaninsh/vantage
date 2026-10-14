@@ -21,7 +21,7 @@ use super::handle::Handle;
 use super::import::{import_rows, import_rows_mapped};
 use super::read::{RhaiResult, id_string, rhai_err, run};
 use super::vocab::Writes;
-use crate::{ColumnFlag, VistaResolver, vista::Vista};
+use crate::{ColumnFamily, ColumnFlag, VistaResolver, vista::Vista};
 
 /// Register the write terminals. With [`Writes::Denied`] every verb exists
 /// and throws the denial message.
@@ -155,48 +155,19 @@ pub(crate) fn has_auto_id(vista: &Vista) -> bool {
 /// can't hold one: without the `auto` flag that is an error asking for either.
 /// An id column with no declared type isn't numeric.
 pub(crate) fn new_id(vista: &Vista, id_col: &str) -> RhaiResult<String> {
-    if let Some(ty) = vista
-        .column(id_col)
-        .and_then(|c| c.original_type.as_deref())
-        && is_numeric_type(ty)
+    if let Some(column) = vista.column(id_col)
+        && matches!(
+            column.family(),
+            Some(ColumnFamily::Integer | ColumnFamily::Float | ColumnFamily::Decimal)
+        )
     {
         return Err(rhai_err(error!(
             "id column holds numbers: declare server-made ids (flag `auto`) or pass an id",
             column = id_col,
-            r#type = ty
+            r#type = column.original_type.as_deref().unwrap_or_default()
         )));
     }
     Ok(uuid::Uuid::now_v7().to_string())
-}
-
-fn is_numeric_type(t: &str) -> bool {
-    let t = t.trim().to_ascii_lowercase();
-    let base = t.split('(').next().unwrap_or("");
-    matches!(
-        base,
-        "int"
-            | "integer"
-            | "i8"
-            | "i16"
-            | "i32"
-            | "i64"
-            | "u8"
-            | "u16"
-            | "u32"
-            | "u64"
-            | "bigint"
-            | "smallint"
-            | "serial"
-            | "bigserial"
-            | "number"
-            | "numeric"
-            | "decimal"
-            | "float"
-            | "f32"
-            | "f64"
-            | "double"
-            | "real"
-    )
 }
 
 /// Delete `id` from `vista`'s set: `true` once the row is gone (missing or

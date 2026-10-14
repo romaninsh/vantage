@@ -5908,23 +5908,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vantage-diorama-aggregate"
-version = "0.7.0"
-dependencies = [
- "async-trait",
- "ciborium",
- "indexmap 2.14.0",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "vantage-core",
- "vantage-dataset",
- "vantage-diorama",
- "vantage-types",
- "vantage-vista",
-]
-
-[[package]]
 name = "vantage-docs"
 version = "0.0.0"
 dependencies = [

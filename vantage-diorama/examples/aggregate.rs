@@ -1,0 +1,146 @@
+//! Both surfaces over one live source.
+//!
+//! ```console
+//! cargo run -p vantage-diorama --example aggregate
+//! ```
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use ciborium::Value as CborValue;
+use vantage_core::Result;
+use vantage_dataset::traits::ReadableValueSet;
+use vantage_diorama::aggregate::{Count, GroupBy, Reduce, Sum};
+use vantage_diorama::{Cache, Lens, Loader, TableScenery, Tuning};
+use vantage_types::Record;
+use vantage_vista::{Column, SortDirection, Vista, VistaMetadata, mocks::MockShell};
+
+fn order(status: &str, amount: i64) -> Record<CborValue> {
+    let mut record = Record::new();
+    record.insert("status".to_string(), CborValue::Text(status.to_string()));
+    record.insert("amount".to_string(), CborValue::Integer(amount.into()));
+    record
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // ---- a source Dio over a mutable in-memory master ----------------------
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("status", "String"))
+        .with_column(Column::new("amount", "i64"))
+        .with_id_column("id");
+    let shell = MockShell::new().with_metadata(metadata);
+    shell.set_record("1", order("open", 120));
+    shell.set_record("2", order("open", 80));
+    shell.set_record("3", order("shipped", 45));
+
+    // The eager loader copies the whole master into the cache; a refresh
+    // re-runs it.
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .tuning(Tuning::default().with_aggregate_debounce(Duration::from_millis(50)))
+        .loader(Loader::eager(|cx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()?;
+    let orders = lens
+        .dio(Vista::new("orders", shell.clone()))
+        .build()
+        .await?;
+
+    // ---- the aggregates ----------------------------------------------------
+    let count = orders.value_scenery(Count::rows()).open().await?;
+    let revenue = orders.value_scenery(Sum::of("amount")).open().await?;
+
+    let by_status = orders
+        .aggregate(GroupBy::column(
+            "status",
+            Reduce::new(
+                vec![Column::new("orders", "i64"), Column::new("revenue", "i64")],
+                |_key, rows, _schema| {
+                    let total: i64 = rows
+                        .iter()
+                        .filter_map(|r| r.get("amount"))
+                        .filter_map(|v| match v {
+                            CborValue::Integer(i) => Some(i128::from(*i) as i64),
+                            _ => None,
+                        })
+                        .sum();
+                    let mut out = Record::new();
+                    out.insert(
+                        "orders".to_string(),
+                        CborValue::Integer((rows.len() as i64).into()),
+                    );
+                    out.insert("revenue".to_string(), CborValue::Integer(total.into()));
+                    out
+                },
+            ),
+        ))
+        .await?;
+
+    // The derived Dio is an ordinary Dio: open a scenery, sort it, read rows.
+    let grid = by_status
+        .table_scenery()
+        .order("revenue", SortDirection::Descending)
+        .open()
+        .await?;
+
+    settle().await;
+    report("initial", &count, &revenue, &grid);
+
+    // ---- the source changes ------------------------------------------------
+    shell.set_record("4", order("open", 200));
+    shell.set_field("3", "status", CborValue::Text("open".to_string()));
+    orders.refresh().await?;
+    settle().await;
+    report("after the source changed", &count, &revenue, &grid);
+
+    Ok(())
+}
+
+async fn settle() {
+    tokio::time::sleep(Duration::from_millis(300)).await;
+}
+
+fn report(
+    label: &str,
+    count: &Arc<dyn vantage_diorama::ValueScenery>,
+    revenue: &Arc<dyn vantage_diorama::ValueScenery>,
+    grid: &Arc<dyn TableScenery>,
+) {
+    println!("\n{label}");
+    println!("  orders: {:?}", scalar(count));
+    println!("  revenue: {:?}", scalar(revenue));
+    for index in 0..grid.row_count() {
+        let Some(row) = grid.row(index) else { continue };
+        println!(
+            "  {:<10} {:>3} orders  {:>5}",
+            text(&row.record, "status"),
+            number(&row.record, "orders"),
+            number(&row.record, "revenue"),
+        );
+    }
+}
+
+fn scalar(scenery: &Arc<dyn vantage_diorama::ValueScenery>) -> i64 {
+    match scenery.value() {
+        Some(CborValue::Integer(i)) => i128::from(i) as i64,
+        _ => 0,
+    }
+}
+
+fn text(record: &Record<CborValue>, field: &str) -> String {
+    match record.get(field) {
+        Some(CborValue::Text(s)) => s.clone(),
+        _ => String::new(),
+    }
+}
+
+fn number(record: &Record<CborValue>, field: &str) -> i64 {
+    match record.get(field) {
+        Some(CborValue::Integer(i)) => i128::from(*i) as i64,
+        _ => 0,
+    }
+}

@@ -211,7 +211,9 @@ async fn a_dio_encodes_control_characters_in_its_table_name() -> Result<()> {
         .build()?;
     let dio = lens.dio(support::teams_master()).build().await?;
     let narrowed = dio
+        .derive()
         .with_query(&support::cond("team", FilterOp::Eq, "red\u{1}meta"))
+        .build()
         .await?;
     narrowed
         .apply_change(vantage_diorama::ChangeEvent::Inserted {

@@ -42,7 +42,9 @@ async fn settled_johns(
     )
     .await;
     let johns = dio
+        .derive()
         .with_query(&crate::support::cond("name", FilterOp::Eq, "John"))
+        .build()
         .await?;
     let view = johns.table_scenery().page_size(20).open().await?;
     view.set_viewport(0..20, 0..0);
@@ -102,7 +104,9 @@ async fn cold_johns() -> Result<(Dio, Dio)> {
     )
     .await;
     let johns = dio
+        .derive()
         .with_query(&crate::support::cond("name", FilterOp::Eq, "John"))
+        .build()
         .await?;
     Ok((dio, johns))
 }

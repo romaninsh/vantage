@@ -111,7 +111,9 @@ async fn a_dotted_path_the_master_refuses() -> Result<()> {
 async fn view_stats_list_the_dio_residual_first() -> Result<()> {
     let above_one = eager_dio(items(NO_FILTER_OPS))
         .await
-        .with_query(&crate::support::cond("n", FilterOp::Gt, 1))
+        .derive()
+        .with_condition(Condition::new("n", FilterOp::Gt, 1))
+        .build()
         .await?;
     assert_eq!(above_one.residual().conditions.len(), 1, "the master refused it");
     let view = open(&above_one, |b| {
@@ -145,7 +147,9 @@ async fn view_stats_list_the_dio_residual_first() -> Result<()> {
 async fn an_augmented_column_through_a_derived_dio() -> Result<()> {
     let parent = crate::support::bucket_dio().await;
     let johns = parent
-        .with_query(&crate::support::cond("name", FilterOp::Eq, "John"))
+        .derive()
+        .with_condition(Condition::new("name", FilterOp::Eq, "John"))
+        .build()
         .await?;
     assert_eq!(johns.residual().conditions.len(), 1, "kept by diorama");
 

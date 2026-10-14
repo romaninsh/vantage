@@ -18,7 +18,7 @@ use super::big_bucket::{
 };
 use super::fixtures::ids;
 use crate::support::spy_cache::{SpyCache, SpyTable};
-use crate::support::{augmented_dio, cond, eventually, wait_listed};
+use crate::support::{augmented_dio, eventually, wait_listed};
 
 pub(super) fn name_of(scenery: &Arc<dyn TableScenery>, i: usize) -> Option<CborValue> {
     scenery
@@ -81,7 +81,11 @@ fn only_johns(scenery: &Arc<dyn TableScenery>) {
 #[tokio::test]
 async fn a_view_over_a_dio_narrowed_on_an_augmented_eq_shows_every_john() -> Result<()> {
     let dio = listed_dio(Vista::new("bucket", master_shell())).await;
-    let johns = dio.with_query(&cond("name", FilterOp::Eq, "John")).await?;
+    let johns = dio
+        .derive()
+        .with_condition(Condition::new("name", FilterOp::Eq, "John"))
+        .build()
+        .await?;
     assert_eq!(johns.residual().conditions.len(), 1, "augmented: residual");
     let view = johns.table_scenery().page_size(20).open().await?;
     view.set_viewport(0..20, 0..0);
@@ -106,7 +110,11 @@ async fn a_view_filtered_on_an_augmented_column_shows_every_john() -> Result<()>
 #[tokio::test]
 async fn an_augmented_ne_never_admits_an_unhydrated_row() -> Result<()> {
     let dio = listed_dio(Vista::new("bucket", master_shell())).await;
-    let others = dio.with_query(&cond("name", FilterOp::Ne, "John")).await?;
+    let others = dio
+        .derive()
+        .with_condition(Condition::new("name", FilterOp::Ne, "John"))
+        .build()
+        .await?;
     let view = others.table_scenery().page_size(20).open().await?;
     view.set_viewport(0..20, 0..0);
     let settled = settle(&view, |scenery| {

@@ -22,7 +22,7 @@ use vantage_diorama::{
 };
 use vantage_types::Record;
 use vantage_vista::{
-    Column, Condition, FilterOp, Vista, VistaMetadata, VistaQuery, mocks::MockShell,
+    Column, Condition, FilterOp, Vista, VistaMetadata, mocks::MockShell,
 };
 
 fn text(s: &str) -> CborValue {
@@ -664,7 +664,7 @@ async fn auto_strategy_binds_the_backend_id() -> Result<()> {
 /// baseline, and its flash is refused before anything is written.
 #[tokio::test]
 async fn a_servo_outside_the_set_starts_empty_and_is_confined() -> Result<()> {
-    use vantage_vista::{Capability, Condition, FilterOp, VistaQuery};
+    use vantage_vista::{Capability, Condition, FilterOp};
     let shell = product_shell().with_capabilities(
         [Capability::Insert, Capability::Update, Capability::Delete]
             .into_iter()
@@ -672,11 +672,9 @@ async fn a_servo_outside_the_set_starts_empty_and_is_confined() -> Result<()> {
     );
     let dio = dio_over(&shell).await?;
     let not_coffee = dio
-        .with_query(&VistaQuery::new().with_condition(Condition::new(
-            "name",
-            FilterOp::Ne,
-            "Coffee",
-        )))
+        .derive()
+        .with_condition(Condition::new("name", FilterOp::Ne, "Coffee"))
+        .build()
         .await?;
     assert!(!not_coffee.residual().conditions.is_empty());
 
@@ -770,8 +768,11 @@ async fn servo_new_on_a_derived_dio_fills_and_confines_the_insert() -> Result<()
     let shell = MockShell::new().with_metadata(metadata);
     let lens = Lens::builder().cache(Cache::memory()).build()?;
     let parent = lens.dio(Vista::new("members", shell.clone())).build().await?;
-    let red = VistaQuery::new().with_condition(Condition::new("team", FilterOp::Eq, "red"));
-    let dio = parent.with_query(&red).await?;
+    let dio = parent
+        .derive()
+        .with_condition(Condition::new("team", FilterOp::Eq, "red"))
+        .build()
+        .await?;
 
     let servo = dio.servo_new(IdStrategy::Uuid);
     let id = servo.id().expect("minted at creation");

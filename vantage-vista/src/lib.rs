@@ -32,7 +32,7 @@ mod vista;
 pub use capabilities::{Capability, VistaCapabilities, unknown_relation, unsupported};
 pub use catalog::Catalog;
 pub use change::{VistaChange, VistaChangeStream};
-pub use column::{Column, ColumnFlag};
+pub use column::{Column, ColumnFamily, ColumnFlag};
 pub use contained::{ContainedWriteback, build_contained_vista};
 pub use factory::VistaFactory;
 pub use filter::{FilterOp, operand_text};
