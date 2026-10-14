@@ -6,7 +6,7 @@
 use crate::debug::DebugTap;
 use crate::dio::DioInner;
 use crate::lens::chunk_sink::FlushReport;
-use crate::scenery::table::state::TableSceneryState;
+use crate::scenery::table::state::SharedRows;
 
 /// "cache write": what the flush just committed, split into rows that were
 /// genuinely new vs. rows that already had a cached value and got overwritten,
@@ -19,7 +19,7 @@ use crate::scenery::table::state::TableSceneryState;
 /// write at all.
 pub(super) fn tap_cache_write(
     tap: &DebugTap,
-    state: &TableSceneryState,
+    state: &SharedRows,
     report: Option<&FlushReport>,
 ) {
     let Some(report) = report else {
@@ -57,7 +57,7 @@ pub(super) fn tap_cache_write(
 pub(super) fn tap_payload_columns(
     tap: &DebugTap,
     dio_inner: &DioInner,
-    state: &TableSceneryState,
+    state: &SharedRows,
     flush_report: Option<&FlushReport>,
 ) {
     if !tap.enabled() {

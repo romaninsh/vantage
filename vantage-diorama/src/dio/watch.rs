@@ -70,7 +70,7 @@ impl Follower {
     /// - if the subscription drops (a WebSocket close ends the stream), the
     ///   task backs off, **re-subscribes**, and refreshes to close the gap of
     ///   changes missed while disconnected;
-    /// - a re-read that fails is logged, published as `LoadFailed`, and
+    /// - a re-read that fails is logged, published as `RefreshFailed`, and
     ///   retried with backoff until one succeeds.
     ///
     /// Holds only a `Weak` to the Dio and returns as soon as the last `Dio`
@@ -173,7 +173,7 @@ impl Follower {
     /// Re-read the set, retrying with backoff until a re-read succeeds: the
     /// cache may be out of step with the master until one does, and a
     /// refresh is never a silent no-op. Each failure is logged and
-    /// published as [`DioEvent::LoadFailed`](super::DioEvent::LoadFailed),
+    /// published as [`DioEvent::RefreshFailed`](super::DioEvent::RefreshFailed),
     /// so a view can show it. Changes arriving meanwhile wait in the stream
     /// and apply after. `false` once the Dio is gone.
     async fn reread(&mut self, backoff: &mut Duration) -> bool {
@@ -199,8 +199,7 @@ impl Follower {
                         retry_in = ?*backoff,
                         "watch: re-reading the set failed; the cache may be out of step until a retry succeeds",
                     );
-                    let _ = inner.event_bus.send(super::DioEvent::LoadFailed {
-                        range: 0..0,
+                    let _ = inner.event_bus.send(super::DioEvent::RefreshFailed {
                         error: e.to_string(),
                     });
                 }

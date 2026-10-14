@@ -18,27 +18,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ciborium::Value as CborValue;
-use tokio::sync::{Semaphore, broadcast};
+use tokio::sync::Semaphore;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{
-    Cache, ChangeFlash, Dio, DioEvent, FlashOutcome, Lens, LoaderCx, ServoStatus,
-};
-use vantage_types::Record;
+use vantage_diorama::{Cache, ChangeFlash, Dio, FlashOutcome, Lens, LoaderCx, ServoStatus};
 use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
 
-fn text(s: &str) -> CborValue {
-    CborValue::Text(s.to_string())
-}
+mod support;
 
-fn rec(pairs: &[(&str, &str)]) -> Record<CborValue> {
-    let mut r = Record::new();
-    for (k, v) in pairs {
-        r.insert((*k).to_string(), text(v));
-    }
-    r
-}
+use support::flash::{cached, seeded_dio, staged};
+use support::{record, text};
 
 fn metadata() -> VistaMetadata {
     VistaMetadata::new()
@@ -55,7 +44,7 @@ fn read_only_shell() -> MockShell {
         .with_capabilities(VistaCapabilities::new())
         .with_record(
             "c1",
-            rec(&[("id", "c1"), ("name", "Ada"), ("status", "lead")]),
+            record(&[("id", "c1"), ("name", "Ada"), ("status", "lead")]),
         )
 }
 
@@ -68,32 +57,6 @@ fn memory_lens() -> Arc<Lens> {
         .cache(Cache::memory())
         .build()
         .expect("lens")
-}
-
-/// A Dio over `master` on `lens`, its cache holding the master's rows.
-async fn seeded_dio(lens: &Arc<Lens>, master: Vista) -> Result<Dio> {
-    let dio = lens.dio(master).build().await?;
-    dio.reconcile(dio.master().list_values().await?).await?;
-    Ok(dio)
-}
-
-async fn cached(dio: &Dio, id: &str) -> Result<Option<Record<CborValue>>> {
-    dio.cached().get_value(id).await
-}
-
-/// Wait until the bus has announced a staged flash for each of `ids`.
-async fn staged(bus: &mut broadcast::Receiver<DioEvent>, ids: &[&str]) {
-    let mut waiting: Vec<&str> = ids.to_vec();
-    let wait = async {
-        while !waiting.is_empty() {
-            if let Ok(DioEvent::WritePending { id, .. }) = bus.recv().await {
-                waiting.retain(|w| *w != id);
-            }
-        }
-    };
-    tokio::time::timeout(Duration::from_secs(5), wait)
-        .await
-        .expect("the flash was never staged");
 }
 
 // ---- effective write capabilities ------------------------------------------
@@ -204,9 +167,9 @@ fn items() -> MockShell {
     MockShell::new()
         .with_record(
             "a",
-            rec(&[("id", "a"), ("name", "one"), ("status", "open")]),
+            record(&[("id", "a"), ("name", "one"), ("status", "open")]),
         )
-        .with_record("b", rec(&[("id", "b"), ("name", "two")]))
+        .with_record("b", record(&[("id", "b"), ("name", "two")]))
 }
 
 /// Seed `items()` under `lens` and fire a patch renaming "a" to "edited".
@@ -219,7 +182,7 @@ async fn edit_a_in_flight(
     let flight = tokio::spawn({
         let dio = dio.clone();
         async move {
-            dio.flash(ChangeFlash::partial("a", rec(&[("name", "edited")])))
+            dio.flash(ChangeFlash::partial("a", record(&[("name", "edited")])))
                 .await
         }
     });
@@ -236,10 +199,10 @@ async fn stale_reconcile_skips_rows_with_a_flash_in_flight() -> Result<()> {
     // A reconcile arrives carrying a master snapshot that predates the
     // write: stale for "a", fresh for "b".
     let snapshot = [
-        ("a".to_string(), rec(&[("id", "a"), ("name", "one")])),
+        ("a".to_string(), record(&[("id", "a"), ("name", "one")])),
         (
             "b".to_string(),
-            rec(&[("id", "b"), ("name", "two-updated")]),
+            record(&[("id", "b"), ("name", "two-updated")]),
         ),
     ];
     dio.reconcile(snapshot.into_iter().collect()).await?;
@@ -262,7 +225,7 @@ async fn stale_reconcile_skips_rows_with_a_flash_in_flight() -> Result<()> {
     flight.await.unwrap()?;
     let later = [(
         "a".to_string(),
-        rec(&[("id", "a"), ("name", "reconciled-later")]),
+        record(&[("id", "a"), ("name", "reconciled-later")]),
     )];
     dio.reconcile(later.into_iter().collect()).await?;
     let a = cached(&dio, "a").await?.unwrap();
@@ -284,7 +247,7 @@ async fn confirmed_flash_reasserts_its_fields_over_a_raw_stale_write() -> Result
     // A writer that ignores the pending guard clobbers the row mid-flight
     // with a stale snapshot (and a fresh other-field value).
     let cx = seen.lock().unwrap().clone().expect("the writer ran");
-    let stale = rec(&[("id", "a"), ("name", "one"), ("status", "closed")]);
+    let stale = record(&[("id", "a"), ("name", "one"), ("status", "closed")]);
     cx.cache().insert_value("a", &stale).await?;
 
     gate.add_permits(1);
@@ -341,7 +304,7 @@ async fn concurrent_flashes_never_overlap_their_write_throughs() -> Result<()> {
     let first = tokio::spawn({
         let dio = dio.clone();
         async move {
-            dio.flash(ChangeFlash::partial("a", rec(&[("name", "x")])))
+            dio.flash(ChangeFlash::partial("a", record(&[("name", "x")])))
                 .await
         }
     });
@@ -349,7 +312,7 @@ async fn concurrent_flashes_never_overlap_their_write_throughs() -> Result<()> {
     let second = tokio::spawn({
         let dio = dio.clone();
         async move {
-            dio.flash(ChangeFlash::partial("b", rec(&[("name", "y")])))
+            dio.flash(ChangeFlash::partial("b", record(&[("name", "y")])))
                 .await
         }
     });
@@ -399,7 +362,7 @@ async fn queued_flashes_survive_dropping_every_handle() -> Result<()> {
         .map(|id| {
             let dio = dio.clone();
             tokio::spawn(
-                async move { dio.flash(ChangeFlash::insert(id, rec(&[("id", id)]))).await },
+                async move { dio.flash(ChangeFlash::insert(id, record(&[("id", id)]))).await },
             )
         })
         .collect();

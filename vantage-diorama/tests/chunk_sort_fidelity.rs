@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex};
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{SortDir, TableScenery};
+use vantage_diorama::TableScenery;
 use vantage_types::Record;
-use vantage_vista::Vista;
+use vantage_vista::{SortDirection, Vista};
 
 mod support;
 use support::chunk::{
@@ -61,7 +61,7 @@ async fn client_sort_holds_through_reordering_refreshes() -> Result<()> {
 
     // Grid sets its viewport; cache fills from the master in native order.
     let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
     assert_eq!(
@@ -72,7 +72,7 @@ async fn client_sort_holds_through_reordering_refreshes() -> Result<()> {
 
     // User sorts by v ascending.
     let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
     assert_eq!(order(&scenery), vec!["a", "b", "c"], "sorted by v");
@@ -85,7 +85,7 @@ async fn client_sort_holds_through_reordering_refreshes() -> Result<()> {
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
     // The grid re-issues its viewport after the bump (the watcher does this).
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     settle().await;
     assert_eq!(
         order(&scenery),
@@ -99,7 +99,7 @@ async fn client_sort_holds_through_reordering_refreshes() -> Result<()> {
     dio.refresh().await?;
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     settle().await;
     assert_eq!(
         order(&scenery),
@@ -130,13 +130,13 @@ async fn client_sort_with_partial_then_full_load() -> Result<()> {
 
     // Load only the first viewport.
     let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..5);
+    scenery.set_viewport(0..5, 0..0);
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
 
     // Sort by v asc, with everything loaded → full sort.
     let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
     assert_eq!(order(&scenery), vec!["a", "b", "c", "d", "e"], "full sort");

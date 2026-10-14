@@ -8,12 +8,17 @@ use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use vantage_vista::{Vista, VistaMetadata, VistaQuery};
 
-use super::{DioEvent, WriteCapabilities, augment_scheduler, pending, query_index, worker};
+use super::{
+    DetailState, DioEvent, WriteCapabilities, augment_scheduler, pending, query_index, worker,
+};
 use crate::augment::Augmentation;
 use crate::lens::{CacheTable, Lens};
-use crate::scenery::TableScenery;
+use crate::scenery::table::{SharedRows, TableView};
 
 mod sceneries;
+mod shared_rows;
+
+pub(crate) use shared_rows::shared_key;
 
 pub(crate) struct DioInner {
     /// Live-instance census (see [`crate::stats`]).
@@ -54,15 +59,14 @@ pub(crate) struct DioInner {
     /// The union of every augmentation's merged columns: client-side columns
     /// the master has never heard of.
     pub(crate) augmented_columns: HashSet<String>,
-    /// Deduplicating registry of live table sceneries, keyed by
-    /// `(shape, conditions, sort)`. Holds `Weak` handles so it
-    /// never keeps a scenery alive: opening the same query twice returns
-    /// the one shared `Arc` (one reactor, one cache window, one in-flight
-    /// `JoinSet`), and the entry self-heals once the last widget releases
-    /// it. This is what makes "scenery must be cheap" true and what lets a
-    /// closing grid stop pulling — see `TableSceneryImpl`'s drop guard.
-    pub(crate) table_sceneries:
-        std::sync::Mutex<HashMap<String, std::sync::Weak<dyn TableScenery>>>,
+    /// The rows every live table view reads, keyed by
+    /// [`shared_key`](shared_rows::shared_key): views of one query share one
+    /// set of rows (one reactor, one fetch per window). `Weak`, so the rows
+    /// drop, and their tasks abort, with the last view pointing at them.
+    pub(crate) shared_rows: std::sync::Mutex<HashMap<String, std::sync::Weak<SharedRows>>>,
+    /// Every open table view, for the demand union, the census and the
+    /// diagnostics. `Weak`; closed views are pruned on the next open.
+    pub(crate) table_views: std::sync::Mutex<Vec<std::sync::Weak<TableView>>>,
     /// Central per-row detail-fetch scheduler: every consumer (scenery
     /// viewport, blocking facade read) queues ids here and a small worker
     /// pool drains them — one flight per row, round-robin across consumers.
@@ -72,44 +76,9 @@ pub(crate) struct DioInner {
     /// Dio drops — a parked worker holds only a `Weak` and would otherwise
     /// idle forever.
     pub(crate) augment_worker_handles: std::sync::Mutex<Vec<JoinHandle<()>>>,
-    /// Rows that hydrated and legitimately found NO detail record — their
-    /// augment columns stay unfilled forever (an evidence row with no
-    /// uploaded files). Without this, the gap rule re-enqueues them on
-    /// every viewport pass: hydrate → still gapped → generation bump →
-    /// sweep → hydrate, a busy loop. Cleared by the refresh pass so a
-    /// detail source that GAINS a record is picked up on the next refresh.
-    pub(crate) augment_settled_empty: std::sync::Mutex<HashSet<String>>,
-    /// Rows the detail pass hydrated and FILLED — the other half of the
-    /// settled set, and a pure memo of the sweep's own skip rule (`Complete`
-    /// AND no augment gap).
-    ///
-    /// The sweep can only answer the gap half from the record, which costs a
-    /// cache read per row. On a view whose predicate forces whole-index
-    /// hydration that is O(n) reads to advance a handful of rows, re-run on
-    /// every generation bump — and it makes false the "dedups against
-    /// already-`Complete` rows" assumption a consumer's viewport re-issue
-    /// relies on. Recording the answer here costs one lookup instead.
-    ///
-    /// Because it memoizes the whole rule rather than standing in for it, it
-    /// is exactly as trustworthy as the check — which is why both the sweep
-    /// (when it pays for a read) and `hydrate_one` (when it fills a row) may
-    /// write it. Memoizing `CacheStatus` alone would NOT be sound: a cache
-    /// warmed by plain inserts (an eager start) stores rows
-    /// `Complete` without ever running the detail pass, and the gap half of
-    /// the rule is what catches that.
-    ///
-    /// Cleared on EVERY refresh, unlike
-    /// [`augment_settled_empty`](Self::augment_settled_empty), which survives
-    /// a scheduled tick: the refresh pass demotes changed rows to `Incomplete`
-    /// precisely to drive their refetch, and a memo saying "settled" would
-    /// mask that. The two sets answer different questions and are invalidated
-    /// by different events.
-    pub(crate) augment_settled: std::sync::Mutex<HashSet<String>>,
-    /// Rows whose last detail fetch failed. The sweep still retries them;
-    /// a view refining on an augmented value stops waiting for them (see
-    /// [`awaits_hydration`](Self::awaits_hydration)). A row leaves the set
-    /// when it hydrates, and every refresh clears it.
-    pub(crate) augment_failed: std::sync::Mutex<HashSet<String>>,
+    /// The detail pass's last answer per row, one per id. See
+    /// [`detail_state`](super::detail_state).
+    pub(crate) detail_state: std::sync::Mutex<HashMap<String, DetailState>>,
 
     /// False only while a detached eager start is still copying the set into
     /// the cache. True once it finishes — success or failure alike, since a
@@ -126,6 +95,10 @@ pub(crate) struct DioInner {
     /// [`copy_whole`](Self::copy_whole).
     pub(crate) whole_copy:
         std::sync::Mutex<Option<tokio::sync::watch::Receiver<super::whole_copy::CopyOutcome>>>,
+    /// When this Dio was built. With no `max_age` to bound it, a whole copy
+    /// recorded before this is an earlier session's and isn't trusted (see
+    /// [`holds_whole_copy`](Self::holds_whole_copy)).
+    pub(crate) built_at: std::time::SystemTime,
     /// Set while a `max_age` check (and the refresh it may request) is in
     /// flight, so a burst of scenery opens checks once.
     pub(crate) stale_check_pending: std::sync::atomic::AtomicBool,

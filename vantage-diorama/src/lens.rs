@@ -8,6 +8,7 @@ mod loader_cx;
 pub(crate) mod memory_cache;
 mod redb_cache;
 mod refresher;
+pub(crate) mod registry;
 pub(crate) mod spawn;
 mod tuning;
 
@@ -42,6 +43,9 @@ pub struct Lens {
     /// The debug stream's tap. Off unless the `diagnostics` feature's
     /// `LensBuilder::debug_datasource` enables it.
     pub(crate) debug: crate::debug::DebugTap,
+    /// The live Dios built on this Lens, so a second build of one identity
+    /// shares the first instead of starting another.
+    pub(crate) dios: registry::DioRegistry,
 }
 
 impl Lens {

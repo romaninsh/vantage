@@ -194,7 +194,7 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
     // The whole set in one viewport, so this first load covers rows 0..100
     // and — together with the fetch's own `set_total(100)` — settles the
     // scenery at `Complete`, not merely `Partial`.
-    scenery.set_viewport(0..100);
+    scenery.set_viewport(0..100, 0..0);
     wait_until("first load return", || {
         lines_containing(&log, "got").len() == 1
     })
@@ -238,7 +238,7 @@ async fn load_lifecycle_is_correlated_and_cache_hits_are_logged() {
 
     // Second pass over a viewport already fully covered by the cache: cache
     // hit, no second dispatch.
-    scenery.set_viewport(0..30);
+    scenery.set_viewport(0..30, 0..0);
     wait_until("cache hit on second pass", || {
         lines_containing(&log, "served locally").len() == 1
     })
@@ -262,7 +262,7 @@ async fn column_line_exposes_undemanded_wide_fields() {
         .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
 
-    scenery.set_viewport(0..1);
+    scenery.set_viewport(0..1, 0..0);
     wait_until("first load return", || {
         lines_containing(&log, "got").len() == 1
     })
@@ -304,7 +304,7 @@ async fn column_line_dedups_across_multiple_wide_rows() {
         .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
 
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     wait_until("first load return", || {
         lines_containing(&log, "got").len() == 1
     })
@@ -392,7 +392,7 @@ async fn two_pass_list_and_detail_lifecycle_is_logged() {
     assert!(ret[0].contains("all of them"), "{}", ret[0]);
 
     // Detail pass over the first 10 rows.
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     wait_until("detail pass requested=10", || {
         lines_containing(&log, "hydrate")
             .iter()
@@ -426,7 +426,7 @@ async fn cache_writes_report_new_updated_and_percentage() {
         .unwrap();
     let scenery = dio.table_scenery().open().await.unwrap();
 
-    scenery.set_viewport(0..30);
+    scenery.set_viewport(0..30, 0..0);
     wait_until("first load return", || {
         lines_containing(&log, "got").len() == 1
     })
@@ -463,7 +463,7 @@ async fn a_non_debug_lens_emits_nothing_on_the_load_path() {
 
     // The whole set in one viewport, exactly as the debug-on lifecycle test
     // drives it — settles the scenery at `Complete` once the load lands.
-    scenery.set_viewport(0..100);
+    scenery.set_viewport(0..100, 0..0);
     wait_until("first load reaches Complete", || {
         scenery.load_state() == LoadState::Complete
     })
@@ -474,7 +474,7 @@ async fn a_non_debug_lens_emits_nothing_on_the_load_path() {
     // scenery state (already `Complete`), so there is nothing to poll for;
     // sleeping past the 1ms viewport debounce is enough to let it settle
     // before the final assertion.
-    scenery.set_viewport(0..30);
+    scenery.set_viewport(0..30, 0..0);
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert_eq!(scenery.load_state(), LoadState::Complete);
 

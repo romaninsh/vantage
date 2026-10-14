@@ -107,3 +107,40 @@ impl DioInner {
         (query, kept)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use vantage_vista::mocks::MockShell;
+    use vantage_vista::{Column, Vista, VistaMetadata, VistaQuery};
+
+    use crate::{Cache, Lens};
+
+    /// A master holding the Dio's search is never offered the view's, which it
+    /// would take in place of the Dio's.
+    #[tokio::test]
+    async fn a_view_search_is_not_offered_over_a_pushed_dio_search() {
+        let metadata = VistaMetadata::new()
+            .with_column(Column::new("id", "String").with_flag("id"))
+            .with_column(Column::new("team", "String"))
+            .with_id_column("id");
+        let master = Vista::new("teams", MockShell::new().with_metadata(metadata));
+        let lens = Lens::builder().cache(Cache::memory()).build().expect("lens");
+        let dio = lens.dio(master).build().await.expect("dio builds");
+        let derived = dio
+            .with_query(&VistaQuery::new().with_search("x"))
+            .await
+            .expect("derives");
+        assert_eq!(derived.master().query().search.as_deref(), Some("x"));
+
+        let plan = derived
+            .inner
+            .plan(&VistaQuery::new().with_search("y"))
+            .expect("plans");
+        assert_eq!(plan.refused.search.as_deref(), Some("y"));
+        assert_eq!(
+            plan.narrowed.query().search.as_deref(),
+            Some("x"),
+            "the narrowed master keeps the Dio's search"
+        );
+    }
+}

@@ -20,7 +20,7 @@ use vantage_diorama::{
     Augmentation, Cache, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
 };
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Catalog, Column, Vista, VistaMetadata, VistaResolver};
+use vantage_vista::{Catalog, Column, Condition, FilterOp, Vista, VistaMetadata, VistaResolver};
 
 /// Master: two rows with cheap columns only (id, branch).
 fn master_vista() -> Vista {
@@ -109,7 +109,7 @@ async fn eventually(label: &str, f: impl Fn() -> bool) {
 /// `row` is `Fresh`.
 async fn hydrated(dio: &Dio, row: usize) -> Arc<dyn TableScenery> {
     let scenery = support::open_listed(dio, 2).await;
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("hydrated", || {
         matches!(status_of(&scenery, row), Some(RowStatus::Fresh))
     })
@@ -139,7 +139,7 @@ async fn id_source_augments_from_a_separate_vista() {
         "no detail before viewport"
     );
 
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("rows hydrated", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
             && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
@@ -195,7 +195,7 @@ async fn missing_key_field_marks_row_failed() {
     };
     let dio = open(&tmp, vec![aug("runs-detail", source, &["detail"])]).await;
     let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
 
     eventually("row failed", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::LoadFailed { .. }))
@@ -318,7 +318,7 @@ async fn fixed_detail_vista_hydrates_without_a_catalog() {
     )
     .await;
     let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
 
     eventually("rows hydrated", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
@@ -362,7 +362,7 @@ async fn changed_master_row_refetches_its_augment() {
     )
     .await;
     let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..1);
+    scenery.set_viewport(0..1, 0..0);
     eventually("hydrated with the first size", || {
         col_of(&scenery, 0, "size").as_deref() == Some("100")
     })
@@ -381,7 +381,7 @@ async fn changed_master_row_refetches_its_augment() {
     // Reconcile (demotes r0 — a list field changed), then let the standing
     // viewport re-run the detail pass for the demoted row.
     dio.refresh().await.expect("refresh");
-    scenery.set_viewport(0..1);
+    scenery.set_viewport(0..1, 0..0);
 
     eventually("augment refetched", || {
         col_of(&scenery, 0, "size").as_deref() == Some("200")
@@ -425,7 +425,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         let scenery = scenery.clone();
         move || col_by_id(&scenery, id, c)
     };
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     eventually("folder rows hydrated", || {
         by_id("logs", "size")().as_deref() == Some("4096")
             && by_id("tmp", "size")().as_deref() == Some("512")
@@ -446,7 +446,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
     // survive, no row may demote, and zero detail fetches may fire.
     for _ in 0..2 {
         dio.refresh().await.expect("refresh");
-        scenery.set_viewport(0..3);
+        scenery.set_viewport(0..3, 0..0);
         tokio::time::sleep(Duration::from_millis(80)).await;
         assert_eq!(
             by_id("logs", "size")().as_deref(),
@@ -472,7 +472,7 @@ async fn refresh_with_unchanged_list_rows_keeps_augment_and_fetches_nothing() {
         .await
         .expect("file write");
     dio.refresh().await.expect("refresh");
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     // The view may reflect the reconciled cache (stale size kept) before the
     // async refetch lands — wait on the fetch counter as well, not just the
     // visible values.
@@ -546,7 +546,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         .open()
         .await
         .unwrap();
-    tree.set_viewport(0..2);
+    tree.set_viewport(0..2, 0..0);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         gets(),
@@ -563,7 +563,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         .open()
         .await
         .unwrap();
-    listing.set_viewport(0..2);
+    listing.set_viewport(0..2, 0..0);
     eventually("augment lands once demanded", || {
         col_by_id(&listing, "logs", "size").as_deref() == Some("4096")
             && col_by_id(&listing, "tmp", "size").as_deref() == Some("512")
@@ -580,7 +580,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         .await
         .expect("master write");
     dio.refresh().await.expect("refresh");
-    tree.set_viewport(0..2);
+    tree.set_viewport(0..2, 0..0);
     tokio::time::sleep(Duration::from_millis(120)).await;
     assert_eq!(
         gets(),
@@ -601,7 +601,7 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
         .open()
         .await
         .unwrap();
-    listing.set_viewport(0..2);
+    listing.set_viewport(0..2, 0..0);
     // The stale value already reads "4096", so the wait must be on the FETCH
     // COUNTER — the visible value merely stops being stale when it lands.
     eventually("re-demanded row refetches", || gets() == 3).await;
@@ -623,7 +623,7 @@ async fn ui_filter_narrows_on_an_augmented_column() {
     let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
     let scenery = support::open_listed(&dio, 2).await;
 
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("rows hydrated", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
             && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
@@ -631,7 +631,7 @@ async fn ui_filter_narrows_on_an_augmented_column() {
     .await;
     assert_eq!(scenery.row_count(), 2);
 
-    scenery.set_filters(vec![("detail".to_string(), text("full-r0"))]);
+    scenery.set_filters(vec![Condition::new("detail", FilterOp::Eq, text("full-r0"))]);
     eventually("filter narrowed the visible set", || {
         scenery.row_count() == 1
     })

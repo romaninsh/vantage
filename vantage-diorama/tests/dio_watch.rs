@@ -10,12 +10,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
+use futures::StreamExt;
 use tokio::sync::{Notify, Semaphore, broadcast};
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Cache, ChangeEvent, Dio, DioEvent, Lens, Loader};
 use vantage_types::Record;
-use vantage_vista::{Capability, Column, FilterOp, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Capability, Column, FilterOp, TableShell, Vista, VistaCapabilities, VistaChange,
+    VistaChangeStream, VistaMetadata, forward_table_shell, mocks::MockShell,
+};
 
 fn shipment(status: &str) -> Record<CborValue> {
     let mut record = Record::new();
@@ -205,6 +209,55 @@ async fn a_lagged_narrowed_child_catches_up() -> Result<()> {
         reread.expect("no re-read was announced").expect("listener"),
         "the child recovered through a re-read"
     );
+    Ok(())
+}
+
+/// A watchable master whose stream yields one `Invalidated`, then stays open.
+#[derive(Clone)]
+struct InvalidatingShell {
+    inner: Box<dyn TableShell>,
+    capabilities: VistaCapabilities,
+}
+
+forward_table_shell!(InvalidatingShell, inner, {
+    async fn watch(&self) -> Result<VistaChangeStream> {
+        let invalidated = futures::stream::once(async { Ok(VistaChange::Invalidated) });
+        Ok(Box::pin(invalidated.chain(futures::stream::pending())))
+    }
+    fn capabilities(&self) -> &VistaCapabilities {
+        &self.capabilities
+    }
+});
+
+/// The master invalidates the set and can't be read: the follow's re-read
+/// fails, and the bus says so as a failed refresh, not as a failed range load.
+#[tokio::test]
+async fn a_failed_recovery_reread_publishes_refresh_failed() -> Result<()> {
+    let shell = master();
+    shell.set_fail_reads(true);
+    let capabilities = shell.capabilities().with(Capability::Subscribe);
+    let vista = Vista::new("shipment", shell)
+        .map_shell(|inner| InvalidatingShell { inner, capabilities });
+    let lens = Lens::builder().cache(Cache::memory()).build()?;
+    let dio = lens.dio(vista).live().build().await?;
+    let mut bus = dio.subscribe_events();
+
+    let seen = tokio::time::timeout(Duration::from_secs(3), async {
+        let mut seen = Vec::new();
+        loop {
+            match bus.recv().await {
+                Ok(DioEvent::RefreshFailed { error }) => return (error, seen),
+                Ok(event) => seen.push(event),
+                Err(e) => panic!("bus: {e}"),
+            }
+        }
+    })
+    .await;
+    let (error, before) = seen.expect("the failed re-read is published");
+    assert!(error.contains("injected"), "{error}");
+    let stand_in =
+        |e: &DioEvent| matches!(e, DioEvent::LoadFailed { range, .. } if range.is_empty());
+    assert!(!before.iter().any(stand_in), "{before:?}");
     Ok(())
 }
 

@@ -6,60 +6,47 @@ use vantage_types::Record;
 /// What a Scenery hands to UI code.
 ///
 /// Preserves the underlying [`Record<CborValue>`] and layers display
-/// metadata on top. The `dirty_fields` slot supports form-edit flows
-/// where only some columns carry unsaved changes.
+/// metadata on top.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct EnrichedRecord {
     pub record: Record<CborValue>,
     pub status: RowStatus,
-    pub dirty_fields: Option<Vec<String>>,
     pub fetched_at: Option<SystemTime>,
 }
 
 impl EnrichedRecord {
-    /// Wrap a freshly-loaded cache row. Status is `Fresh`, no dirty
-    /// fields, `fetched_at = now`.
-    pub fn fresh(record: Record<CborValue>) -> Self {
+    /// Wrap a row with `status`, `fetched_at = now`.
+    pub(crate) fn now(record: Record<CborValue>, status: RowStatus) -> Self {
         Self {
             record,
-            status: RowStatus::Fresh,
-            dirty_fields: None,
+            status,
             fetched_at: Some(SystemTime::now()),
         }
+    }
+
+    /// Wrap a freshly-loaded cache row. Status is `Fresh`, `fetched_at = now`.
+    pub fn fresh(record: Record<CborValue>) -> Self {
+        Self::now(record, RowStatus::Fresh)
     }
 
     /// Wrap a row that has only been partially loaded by the list pass —
     /// its id and cheap columns are present, but the expensive detail
     /// columns are still pending hydration.
     pub fn incomplete(record: Record<CborValue>) -> Self {
-        Self {
-            record,
-            status: RowStatus::Incomplete,
-            dirty_fields: None,
-            fetched_at: Some(SystemTime::now()),
-        }
+        Self::now(record, RowStatus::Incomplete)
     }
 
     /// Wrap a row carrying an **optimistically-staged** write — the new value
     /// is shown immediately while the write-through is in flight.
     pub fn pending_write(record: Record<CborValue>) -> Self {
-        Self {
-            record,
-            status: RowStatus::PendingWrite,
-            dirty_fields: None,
-            fetched_at: Some(SystemTime::now()),
-        }
+        Self::now(record, RowStatus::PendingWrite)
     }
 
     /// Wrap a row whose optimistic write failed and was rolled back: `record`
     /// is the restored pre-image, `status` carries the error for the UI.
     pub fn write_failed(record: Record<CborValue>, error: String) -> Self {
-        Self {
-            record,
-            status: RowStatus::WriteFailed { error },
-            dirty_fields: None,
-            fetched_at: Some(SystemTime::now()),
-        }
+        Self::now(record, RowStatus::WriteFailed { error })
     }
 
     /// Mark a row whose detail pass failed. Keeps the partial (list-pass)
@@ -73,20 +60,18 @@ impl EnrichedRecord {
         Self {
             record,
             status: RowStatus::LoadFailed { error },
-            dirty_fields: None,
             fetched_at,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RowStatus {
     Fresh,
     /// Only the list pass has run — cheap columns present, detail columns
     /// awaiting hydration by the detail pass.
     Incomplete,
-    Stale,
-    Loading,
     PendingWrite,
     WriteFailed {
         error: String,
@@ -97,5 +82,4 @@ pub enum RowStatus {
     LoadFailed {
         error: String,
     },
-    NotFound,
 }

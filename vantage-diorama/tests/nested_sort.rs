@@ -8,11 +8,11 @@ use std::sync::{Arc, Mutex};
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Clause, LoadState, SortDir, TableScenery};
+use vantage_diorama::{Clause, LoadState, TableScenery};
 use vantage_types::Record;
 use vantage_vista::{
-    Column, Condition, FilterOp, TableShell, Vista, VistaMetadata, VistaQuery, forward_table_shell,
-    mocks::MockShell,
+    Column, Condition, FilterOp, SortDirection, TableShell, Vista, VistaMetadata, VistaQuery,
+    forward_table_shell, mocks::MockShell,
 };
 
 mod support;
@@ -134,7 +134,7 @@ async fn dotted_chunk_filter_reaches_the_master() -> Result<()> {
 #[tokio::test]
 async fn a_refused_dotted_chunk_filter_fails_a_paged_view() -> Result<()> {
     let filtered = |b: vantage_diorama::TableSceneryBuilder| {
-        b.where_op("provider.name", FilterOp::Ne, "Agency")
+        b.filter(Condition::new("provider.name", FilterOp::Ne, "Agency"))
     };
 
     let dio = paged_dio(master()).await;
@@ -180,7 +180,7 @@ async fn sort_by_dotted_nested_column() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
     let g = u64::from(*gen_rx.borrow_and_update());
 
-    scenery.set_sort(Some("provider.name".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("provider.name".to_string(), SortDirection::Ascending)));
     // Wait for the reseed bump. Bounds a hang, not a speed — see
     // `support/chunk.rs::wait_for_gen`.
     tokio::time::timeout(std::time::Duration::from_secs(10), async {

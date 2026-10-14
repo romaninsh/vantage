@@ -166,8 +166,8 @@ impl CacheTable for RedbCacheTable {
         .await
     }
 
-    /// The rows and the refresh time go in one transaction, so no refresh
-    /// can stamp the table between the two and leave it empty but fresh.
+    /// The rows and the refresh and copy times go in one transaction, so no
+    /// refresh can stamp the table between them and leave it empty but fresh.
     async fn clear(&self) -> Result<()> {
         let db = self.db.clone();
         let rows = self.name.clone();
@@ -184,9 +184,11 @@ impl CacheTable for RedbCacheTable {
                         detail = e.to_string()
                     )
                 })?;
-                opened
-                    .remove(meta::REFRESHED_AT)
-                    .map_err(|e| error!("redb remove failed", detail = e.to_string()))?;
+                for key in [meta::REFRESHED_AT, meta::COPIED_AT] {
+                    opened
+                        .remove(key)
+                        .map_err(|e| error!("redb remove failed", detail = e.to_string()))?;
+                }
             }
             txn.delete_table(table_def(&rows))
                 .map_err(|e| error!("redb delete_table failed", detail = e.to_string()))?;
@@ -216,11 +218,19 @@ impl CacheTable for RedbCacheTable {
     }
 
     async fn meta_refreshed_at(&self) -> Result<Option<SystemTime>> {
-        self.stored_refreshed_at().await
+        self.stored_time(meta::REFRESHED_AT).await
     }
 
     async fn set_meta_refreshed_at(&self, at: SystemTime) -> Result<()> {
-        self.store_refreshed_at(at).await
+        self.store_time(meta::REFRESHED_AT, at).await
+    }
+
+    async fn meta_copied_at(&self) -> Result<Option<SystemTime>> {
+        self.stored_time(meta::COPIED_AT).await
+    }
+
+    async fn set_meta_copied_at(&self, at: SystemTime) -> Result<()> {
+        self.store_time(meta::COPIED_AT, at).await
     }
 
     async fn insert_value_with_status(

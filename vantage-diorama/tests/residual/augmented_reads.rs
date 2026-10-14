@@ -37,20 +37,18 @@ fn kind(value: &str) -> Record<CborValue> {
 #[tokio::test]
 async fn a_record_scenery_judges_the_hydrated_row() -> Result<()> {
     let johns = narrowed(FilterOp::Eq).await?;
-    assert!(matches!(
-        johns.record_scenery("o007").await?.status(),
+    assert_eq!(
+        johns.record_scenery("o007").open().await?.status(),
         RecordStatus::Fresh
-    ));
-    assert!(matches!(
-        johns.record_scenery("o001").await?.status(),
+    );
+    assert_eq!(
+        johns.record_scenery("o001").open().await?.status(),
         RecordStatus::NotFound
-    ));
+    );
     let others = narrowed(FilterOp::Ne).await?;
-    assert!(
-        matches!(
-            others.record_scenery("o017").await?.status(),
-            RecordStatus::NotFound
-        ),
+    assert_eq!(
+        others.record_scenery("o017").open().await?.status(),
+        RecordStatus::NotFound,
         "an unhydrated John isn't admitted by Ne"
     );
     Ok(())

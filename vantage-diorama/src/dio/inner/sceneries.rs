@@ -1,23 +1,18 @@
-//! The live-scenery registry on [`DioInner`]: dedup, census, demand, and the
-//! augment worker pool the open sceneries drive.
+//! What the open table views add up to on [`DioInner`]: the census, the
+//! demand union, and the augment worker pool the views drive.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::DioInner;
 use crate::dio::augment_scheduler;
-use crate::scenery::TableScenery;
 
 impl DioInner {
-    /// How many table sceneries have at least one live handle. Reading never
-    /// changes the registry: dead entries are pruned only when a scenery is
-    /// registered.
+    /// How many table views have a live handle. Reading never changes the
+    /// list: closed views are pruned only when a view is registered.
     pub(crate) fn live_table_scenery_count(&self) -> usize {
-        let guard = self.table_sceneries.lock().unwrap();
-        guard
-            .values()
-            .filter(|weak| weak.strong_count() > 0)
-            .count()
+        let views = self.table_views.lock().unwrap();
+        views.iter().filter(|weak| weak.strong_count() > 0).count()
     }
 
     /// One census line: who is consuming this Dio right now, and what the
@@ -48,23 +43,19 @@ impl DioInner {
         );
     }
 
-    /// The union of every LIVE open scenery's demanded columns — the Dio's
-    /// active demand. `None` = at least one open view demands everything (or
-    /// no view declared a demand): the pre-demand behavior. `Some(union)` =
+    /// The union of every live view's demanded columns — the Dio's active
+    /// demand. `None` = at least one open view demands everything (or no
+    /// view declared a demand): the pre-demand behavior. `Some(union)` =
     /// only these columns are looked at; the augment detail pass runs only
     /// while the union intersects the augment columns. Recomputed on the fly
-    /// from the dedup registry's live entries, so demand follows scenery
-    /// open/close with no extra lifecycle machinery.
+    /// from the live views, so demand follows views opening and closing with
+    /// no extra lifecycle machinery.
     pub(crate) fn demanded_columns(&self) -> Option<HashSet<String>> {
         let mut union = HashSet::new();
         let mut any_live = false;
-        let guard = self.table_sceneries.lock().unwrap();
-        for weak in guard.values() {
-            let Some(scenery) = weak.upgrade() else {
-                continue;
-            };
+        for view in self.live_views() {
             any_live = true;
-            union.extend(scenery.demanded_columns()?);
+            union.extend(view.demanded_columns()?);
         }
         // No live views at all: stay permissive (a detail pass mid-flight on
         // a closing scenery must not stall on an empty union).
@@ -105,34 +96,5 @@ impl DioInner {
                     .spawn(augment_scheduler::augment_worker_loop(weak, scheduler)),
             );
         }
-    }
-
-    /// Return the live shared table scenery for `key`, or `None` if none is
-    /// open (or the last handle was just released — a dead `Weak`).
-    pub(crate) fn lookup_table_scenery(&self, key: &str) -> Option<Arc<dyn TableScenery>> {
-        self.table_sceneries
-            .lock()
-            .unwrap()
-            .get(key)
-            .and_then(std::sync::Weak::upgrade)
-    }
-
-    /// Publish a freshly-built scenery under `key`. If a concurrent open won
-    /// the race for the same key, returns that shared scenery instead and lets
-    /// `built` drop — its guard aborts the now-redundant tasks. Otherwise
-    /// inserts a `Weak` to `built` and hands it back, dropping the entries of
-    /// sceneries every holder has released.
-    pub(crate) fn register_table_scenery(
-        &self,
-        key: String,
-        built: Arc<dyn TableScenery>,
-    ) -> Arc<dyn TableScenery> {
-        let mut guard = self.table_sceneries.lock().unwrap();
-        if let Some(existing) = guard.get(&key).and_then(std::sync::Weak::upgrade) {
-            return existing;
-        }
-        guard.retain(|_, weak| weak.strong_count() > 0);
-        guard.insert(key, Arc::downgrade(&built));
-        built
     }
 }

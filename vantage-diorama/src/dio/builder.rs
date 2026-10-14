@@ -9,6 +9,7 @@ use vantage_vista::{Vista, VistaMetadata, VistaQuery};
 use super::Dio;
 use crate::augment::Augmentation;
 use crate::lens::Lens;
+use crate::lens::registry::DioKey;
 
 /// Builds a [`Dio`] over one master Vista. Made by [`Lens::dio`].
 ///
@@ -90,6 +91,12 @@ impl DioBuilder {
     /// and start the Dio's write worker, refresh timer, eager start and, with
     /// [`live`](Self::live), its live follow.
     ///
+    /// While a Dio with the same cache identity, the same augmentations (the
+    /// same `Arc`, as a derivation passes on) and the same `live` setting is
+    /// held anywhere, this returns that Dio instead, after checking its cache
+    /// against the refresher's `max_age`. Once every holder has dropped it,
+    /// the next build makes a new one.
+    ///
     /// Fails when the master declares no id column, since every cached row
     /// is keyed by it; when the cache table can't be opened; when a blocking
     /// eager start fails; and when the live subscription can't be made.
@@ -112,23 +119,33 @@ impl DioBuilder {
             .to_string();
         let query = full_query(&master, &residual);
         let cache_table_name = cache_identity(master.name(), &query);
+        let key = DioKey::new(&cache_table_name, augmentations.as_ref(), live);
+        if let Some(dio) = lens.dios.live(&key) {
+            // The shared Dio may be serving a cache older than `max_age`; a
+            // build checks that whether or not it spawns.
+            dio.inner.refresh_if_stale();
+            return Ok(dio);
+        }
         let augmented_columns = augmentations
             .iter()
             .flat_map(|augs| augs.iter())
             .flat_map(|aug| aug.merge.columns.iter().cloned())
             .collect();
         let metadata = metadata_of(&master);
-        lens.spawn_dio(DioParts {
-            master,
-            residual,
-            query,
-            metadata,
-            id_column,
-            augmentations,
-            augmented_columns,
-            live,
-            cache_table_name,
-        })
+        lens.spawn_dio(
+            key,
+            DioParts {
+                master,
+                residual,
+                query,
+                metadata,
+                id_column,
+                augmentations,
+                augmented_columns,
+                live,
+                cache_table_name,
+            },
+        )
         .await
     }
 }

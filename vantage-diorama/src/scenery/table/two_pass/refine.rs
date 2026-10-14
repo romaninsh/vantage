@@ -9,7 +9,7 @@ use crate::dio::query_index::QueryIndex;
 use crate::lens::CacheStatus;
 
 use super::super::row_map::RowMap;
-use super::super::state::TableSceneryState;
+use super::super::state::SharedRows;
 use super::{cached, enriched, list, variant_key};
 
 /// Publish the visible map for an **unrefined** view: the index's ids in the
@@ -18,7 +18,7 @@ use super::{cached, enriched, list, variant_key};
 /// write, so the map never passes through a partial state a concurrent
 /// `row`/`row_count` could observe.
 async fn publish_index_order(
-    state: &Arc<TableSceneryState>,
+    state: &Arc<SharedRows>,
     dio_inner: &Arc<DioInner>,
     ids: &[String],
 ) {
@@ -44,7 +44,7 @@ async fn publish_index_order(
 /// A map that answers the whole query (`answers`) settles the view, so one
 /// coming back from a failure stops reading as loading.
 fn install(
-    state: &TableSceneryState,
+    state: &SharedRows,
     rows: BTreeMap<usize, Arc<crate::scenery::enriched_record::EnrichedRecord>>,
     id_to_idx: HashMap<String, usize>,
     answers: bool,
@@ -60,11 +60,11 @@ fn install(
 }
 
 /// Replace the visible map from `index`, in one swap. A refined view — one
-/// carrying a condition, a filter chip or a sort — is rebuilt by
+/// carrying a filter, a search or an order — is rebuilt by
 /// [`reseed_filtered`], the only code that applies those over the cache; an
 /// unrefined view presents the index's own order.
 pub(super) async fn publish(
-    state: &Arc<TableSceneryState>,
+    state: &Arc<SharedRows>,
     dio_inner: &Arc<DioInner>,
     index: &QueryIndex,
 ) {
@@ -93,12 +93,13 @@ pub(super) async fn publish(
 ///
 /// A map that doesn't answer the query takes the answer back: the view reads
 /// as loading.
-pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
+pub(crate) async fn reseed_filtered(state: &Arc<SharedRows>) {
     use super::super::plan::admitted_by_view;
 
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
     };
+    let _serial = state.reseed_lock.lock().await;
     let Some(index) = state.index() else {
         return;
     };
@@ -157,8 +158,8 @@ pub(crate) async fn reseed_filtered(state: &Arc<TableSceneryState>) {
 /// augmented values after the sweep passed it, and the sweep's memo would
 /// skip it for good. The fetch re-checks the row rather than the memo, and a
 /// row it settles empty or fails on stops waiting, so this can't loop.
-fn heal_sweep(state: &TableSceneryState, awaiting: Vec<String>) {
-    let Some(ticket) = state.augment_ticket.as_ref() else {
+fn heal_sweep(state: &SharedRows, awaiting: Vec<String>) {
+    let Some(ticket) = state.sweep_ticket.as_ref() else {
         return;
     };
     if ticket.is_idle() {
@@ -166,7 +167,7 @@ fn heal_sweep(state: &TableSceneryState, awaiting: Vec<String>) {
     }
 }
 
-/// Soft-refresh a two-pass scenery after its `(conditions, sort)` changed.
+/// Soft-refresh a two-pass scenery after its `(conditions, order)` changed.
 ///
 /// Re-points the scenery at the ordered index for the new variant, presents
 /// that order from cache **immediately** (responsive — the grid never blanks),
@@ -174,7 +175,7 @@ fn heal_sweep(state: &TableSceneryState, awaiting: Vec<String>) {
 /// newly-visible rows in the background (eventually precise). Without this, a
 /// sort change left the stale index in place and never restarted hydration —
 /// augmentation appeared to "stop" until the user happened to scroll.
-pub(crate) async fn resort(state: Arc<TableSceneryState>) {
+pub(crate) async fn resort(state: Arc<SharedRows>) {
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
     };
@@ -215,7 +216,7 @@ pub(crate) async fn resort(state: Arc<TableSceneryState>) {
 /// order did not, so touching the index — let alone re-listing — would be
 /// wasted work. Ids the index doesn't hold are ignored; membership changes
 /// arrive as their own events and re-derive the index.
-pub(crate) async fn update_row_from_cache(state: &Arc<TableSceneryState>, id: &str) {
+pub(crate) async fn update_row_from_cache(state: &Arc<SharedRows>, id: &str) {
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
     };
@@ -223,13 +224,12 @@ pub(crate) async fn update_row_from_cache(state: &Arc<TableSceneryState>, id: &s
     // freshly-hydrated row may start (or stop) matching the filter — so the
     // visible-map lookup below can't gate it: a matching row that wasn't
     // visible yet has no slot. Re-derive the whole visible set whenever the
-    // id belongs to this view's candidate index at all.
+    // id belongs to this view's candidate index at all, once per batch of
+    // such rows (see `coalesce`).
     if state.local_refine() {
-        if !state.index().map(|ix| ix.contains(id)).unwrap_or(false) {
-            return;
+        if state.index().is_some_and(|ix| ix.contains(id)) {
+            state.coalescer.mark_dirty();
         }
-        reseed_filtered(state).await;
-        state.bump_generation();
         return;
     }
     let Some(i) = state.id_to_idx.read().unwrap().get(id).copied() else {

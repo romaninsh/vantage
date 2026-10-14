@@ -14,7 +14,11 @@
 //! let by_status = agg
 //!     .derive(&orders, "orders.by_status", GroupBy::column("status", revenue))
 //!     .await?;
-//! let grid = by_status.table_scenery().sort("revenue", SortDir::Desc).open().await?;
+//! let grid = by_status
+//!     .table_scenery()
+//!     .order("revenue", SortDirection::Descending)
+//!     .open()
+//!     .await?;
 //! ```
 //!
 //! # Why a derived Dio, and not a decorator

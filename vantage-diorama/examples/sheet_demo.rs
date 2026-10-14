@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
     let dio = lens.dio(master()).build().await?;
 
     // Open the sheet for a known row.
-    let sheet = dio.record_scenery("c1").await?;
+    let sheet = dio.record_scenery("c1").open().await?;
     print_scenery("initial", &sheet);
 
     // External system renames the row.
@@ -101,8 +101,9 @@ async fn main() -> Result<()> {
     wait_for_bump(&mut gen_rx, last).await;
     print_scenery("after the update", &sheet);
 
-    // Open another sheet for a missing id — NotFound, no master fetch.
-    let missing = dio.record_scenery("nope").await?;
+    // Open another sheet for a missing id — NotFound, no master fetch
+    // (that takes `.load_on_miss()`).
+    let missing = dio.record_scenery("nope").open().await?;
     print_scenery("for missing id", &missing);
 
     // Land that row through the change ingress; the open sheet observes it.

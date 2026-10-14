@@ -57,7 +57,7 @@ async fn warm_cache_reopen_shows_master_order_not_id_order() -> Result<()> {
         let s1 = dio.table_scenery().open().await?;
         let mut rx = s1.subscribe();
         let g = u64::from(*rx.borrow_and_update());
-        s1.set_viewport(0..3);
+        s1.set_viewport(0..3, 0..0);
         wait_for_gen(&mut rx, g).await;
         settle().await;
         assert_eq!(
@@ -70,7 +70,7 @@ async fn warm_cache_reopen_shows_master_order_not_id_order() -> Result<()> {
     // Reopen with the warm cache — same Dio, cache retains the 3 rows.
     let s2 = dio.table_scenery().open().await?;
     let mut rx = s2.subscribe();
-    s2.set_viewport(0..3);
+    s2.set_viewport(0..3, 0..0);
     settle().await;
     let _ = wait_for_gen(&mut rx, 0).await;
     settle().await;
@@ -102,7 +102,7 @@ async fn warm_reopen_drops_cached_rows_past_the_stated_total() -> Result<()> {
         let s1 = dio.table_scenery().open().await?;
         let mut rx = s1.subscribe();
         let g = u64::from(*rx.borrow_and_update());
-        s1.set_viewport(0..3);
+        s1.set_viewport(0..3, 0..0);
         wait_for_gen(&mut rx, g).await;
         settle().await;
     }
@@ -112,7 +112,7 @@ async fn warm_reopen_drops_cached_rows_past_the_stated_total() -> Result<()> {
 
     let s2 = dio.table_scenery().open().await?;
     let mut rx = s2.subscribe();
-    s2.set_viewport(0..3);
+    s2.set_viewport(0..3, 0..0);
     settle().await;
     let _ = wait_for_gen(&mut rx, 0).await;
     settle().await;
@@ -156,7 +156,7 @@ async fn warm_reopen_is_settled_at_once_cold_open_is_loading() -> Result<()> {
         );
         let mut rx = cold.subscribe();
         let g = u64::from(*rx.borrow_and_update());
-        cold.set_viewport(0..3);
+        cold.set_viewport(0..3, 0..0);
         wait_for_gen(&mut rx, g).await;
         settle().await;
     }
@@ -164,8 +164,9 @@ async fn warm_reopen_is_settled_at_once_cold_open_is_loading() -> Result<()> {
     // Warm reopen: the cache holds the rows — the view is settled with rows
     // the instant it opens, before any fetch has run.
     let warm = dio.table_scenery().open().await?;
-    assert!(
-        !warm.is_loading(),
+    assert_ne!(
+        warm.load_state(),
+        LoadState::Loading,
         "a warm paged reopen must not report loading",
     );
     assert_eq!(

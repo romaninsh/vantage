@@ -87,7 +87,7 @@ async fn grid_step_scroll_reaches_the_exact_end() -> Result<()> {
         }
         // One wheel notch down, clamped like a real grid to its content.
         top = (top + 7).min(rows.saturating_sub(VIEW));
-        scenery.set_viewport(top..(top + VIEW).min(rows));
+        scenery.set_viewport(top..(top + VIEW).min(rows), 0..0);
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;
     }
     panic!(
@@ -125,7 +125,7 @@ async fn full_pages_extend_the_horizon_until_a_short_page_ends_it() -> Result<()
             break;
         }
         last = n;
-        scenery.set_viewport(n.saturating_sub(20)..n);
+        scenery.set_viewport(n.saturating_sub(20)..n, 0..0);
         wait_for("horizon rows load or end", &scenery, || {
             scenery.row_count() != n || scenery.row(n.saturating_sub(1)).is_some()
         })
@@ -193,7 +193,7 @@ async fn a_short_page_end_is_not_probed_past() -> Result<()> {
     .await;
     let opened = fetches.lock().unwrap().len();
 
-    scenery.set_viewport(0..6);
+    scenery.set_viewport(0..6, 0..0);
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let past_end: Vec<_> = fetches.lock().unwrap()[opened..]
         .iter()
@@ -212,12 +212,12 @@ async fn a_short_page_end_is_not_probed_past() -> Result<()> {
         .extend((6..9).map(|i| (format!("id{i:04}"), rec(i))));
     // The refresh re-fetches the rows on screen; a full page reopens the
     // horizon, and scrolling into it finds the new end.
-    scenery.request_refresh();
+    scenery.refresh_source();
     wait_for("refresh reopens the horizon", &scenery, || {
         scenery.row_count() > 6
     })
     .await;
-    scenery.set_viewport(6..scenery.row_count());
+    scenery.set_viewport(6..scenery.row_count(), 0..0);
     wait_for("growth loaded to its new end", &scenery, || {
         scenery.row_count() == 9 && scenery.row(8).is_some()
     })

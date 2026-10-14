@@ -7,7 +7,7 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use super::has_augment_gap;
-use crate::dio::{Dio, DioInner};
+use crate::dio::{DetailState, Dio, DioInner};
 use crate::lens::CacheStatus;
 
 /// **Detail pass**: read the cheap list-pass row from the cache, run every
@@ -42,9 +42,9 @@ pub(crate) async fn hydrate_one(inner: &Arc<DioInner>, id: &str) -> Result<()> {
     }
     let augmented = &inner.augmented_columns;
     let gap_aware = !augmented.is_empty();
-    if inner.augment_settled_empty.lock().unwrap().contains(id) {
+    if inner.detail_state(id) == Some(DetailState::Empty) {
         // Hydrated before and found no detail record — a legitimate,
-        // permanent gap until the next refresh clears the set.
+        // permanent gap until a requested refresh forgets it.
         return Ok(());
     }
     if let Some((row, CacheStatus::Complete)) = inner.cache.get_value_with_status(id).await?
@@ -77,23 +77,19 @@ pub(crate) async fn hydrate_one(inner: &Arc<DioInner>, id: &str) -> Result<()> {
         .cache
         .insert_value_with_status(id, &merged, CacheStatus::Complete)
         .await?;
-    inner.augment_failed.lock().unwrap().remove(id);
-    // Record which way this row settled. Gapped AFTER hydration means the
-    // detail source has no record to fill it (legitimate absence); filled
-    // means it is done. Either way the sweep must be able to skip it without
-    // reading it back — otherwise gap → hydrate → still gapped → generation
-    // bump → sweep is a busy loop, and even a filled row costs a cache read
-    // on every sweep to re-establish what we already know here. Both sets are
-    // cleared by the refresh pass.
-    if gap_aware && has_augment_gap(&merged, augmented) {
-        inner
-            .augment_settled_empty
-            .lock()
-            .unwrap()
-            .insert(id.to_string());
+    // Record which way this row settled, over a failure before it. Gapped
+    // AFTER hydration means the detail source has no record to fill it
+    // (legitimate absence); filled means it is done. Either way the sweep
+    // must be able to skip it without reading it back — otherwise gap →
+    // hydrate → still gapped → generation bump → sweep is a busy loop, and
+    // even a filled row costs a cache read on every sweep to re-establish
+    // what we already know here.
+    let settled = if gap_aware && has_augment_gap(&merged, augmented) {
+        DetailState::Empty
     } else {
-        inner.augment_settled.lock().unwrap().insert(id.to_string());
-    }
+        DetailState::Filled
+    };
+    inner.set_detail_state(id, settled);
     let _ = inner
         .event_bus
         .send(crate::DioEvent::RecordChanged { id: id.to_string() });

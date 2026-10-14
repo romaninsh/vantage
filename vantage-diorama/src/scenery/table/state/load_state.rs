@@ -1,12 +1,12 @@
-//! Settled flag, debug state lines, generation counter and per-load trackers.
+//! Settled flag, debug state lines, the generation fan-out and per-load trackers.
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::dio::Generation;
+use super::super::view::ViewSignal;
+use super::SharedRows;
 
-use super::TableSceneryState;
-
-impl TableSceneryState {
+impl SharedRows {
     /// Mark the first load complete — the view now shows an answer, even if
     /// that answer is "no rows".
     ///
@@ -72,10 +72,18 @@ impl TableSceneryState {
         );
     }
 
+    /// The rows moved: every attached view's generation advances.
     pub(crate) fn bump_generation(&self) {
-        let next = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.generation_tx.send_replace(Generation(next));
+        for signal in self.signals() {
+            signal.bump();
+        }
         self.publish_view_stats();
+    }
+
+    /// The live signals of the attached views.
+    pub(crate) fn signals(&self) -> Vec<Arc<ViewSignal>> {
+        let views = self.views.lock().unwrap();
+        views.values().filter_map(|hook| hook.signal.upgrade()).collect()
     }
 
     /// Release the two-pass list single-flight and republish, so the

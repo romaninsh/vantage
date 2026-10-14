@@ -17,7 +17,8 @@ use vantage_diorama::Dio;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Column, ColumnFlag, FilterOp, SortDirection, Vista, VistaMetadata, mocks::MockShell,
+    Capability, Column, ColumnFlag, FilterOp, SortDirection, TableShell, Vista, VistaMetadata,
+    forward_table_shell, mocks::MockShell,
 };
 
 mod support;
@@ -262,6 +263,51 @@ async fn an_order_alone_reads_the_cache() -> Result<()> {
         Some(listed.len() as i64)
     );
     assert!(ordered.get_value("c").await?.is_none(), "not cached");
+    Ok(())
+}
+
+/// A master that lists its rows by name, case-insensitively, as a SQL
+/// collation does.
+#[derive(Clone)]
+struct CaseInsensitive {
+    inner: Box<dyn TableShell>,
+}
+
+forward_table_shell!(CaseInsensitive, inner, {
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        let mut rows = self.inner.list().await?;
+        let key = |row: &Record<CborValue>| match row.get("name") {
+            Some(CborValue::Text(t)) => t.to_lowercase(),
+            _ => String::new(),
+        };
+        rows.sort_by(|_, a, _, b| key(a).cmp(&key(b)));
+        Ok(rows)
+    }
+});
+
+/// A cache read sorts with vista's evaluator, in byte order, whatever the
+/// master's collation; a read the master answers keeps the master's order.
+/// The facade doesn't reconcile the two.
+#[tokio::test]
+async fn a_cache_read_orders_by_the_evaluator_not_the_master() -> Result<()> {
+    let shell = capable_master();
+    shell.set_record("a", row("apple", 1));
+    shell.set_record("b", row("Banana", 1));
+    let master = Vista::new("fruit", shell).map_shell(|inner| CaseInsensitive { inner });
+    let dio = eager_dio(master).await?;
+
+    let at_master = dio.master().clone().with_order("name", SortDirection::Ascending)?;
+    assert_eq!(names(&at_master.list_values().await?), ["apple", "Banana"]);
+
+    let cached = dio.cached().with_order("name", SortDirection::Ascending)?;
+    assert_eq!(names(&cached.list_values().await?), ["Banana", "apple"]);
+
+    // A condition the master takes sends the read there, order and all.
+    let pushed = dio
+        .cached()
+        .with_condition("price", FilterOp::Eq, 1)?
+        .with_order("name", SortDirection::Ascending)?;
+    assert_eq!(names(&pushed.list_values().await?), ["apple", "Banana"]);
     Ok(())
 }
 

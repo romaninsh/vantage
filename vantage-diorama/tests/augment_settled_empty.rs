@@ -2,18 +2,18 @@
 //! once, not forever.
 //!
 //! When a row hydrates and the detail source returns nothing, the Dio records
-//! it in its settled-empty set so the detail sweep stops re-fetching it. That
-//! set is what stops `gap → hydrate → still gapped → sweep again` from becoming
-//! a permanent background loop.
+//! its detail state as `Empty` so the detail sweep stops re-fetching it. That
+//! answer is what stops `gap → hydrate → still gapped → sweep again` from
+//! becoming a permanent background loop.
 //!
-//! The regression these tests pin: the refresh pass used to clear the whole set
-//! unconditionally, so the *scheduled* ticker wiped the answer every few
-//! seconds and the sweep re-asked the same absent rows for the life of the
-//! process. Harmless when every row has a detail record (the set is empty, so
-//! clearing it costs nothing) — which is why same-source augmentation never
-//! showed it. With a cross-source augment whose records are mostly absent, it
-//! is a continuous re-fetch of every missing row, each one rewriting its row
-//! and broadcasting `RecordChanged`, i.e. a permanently repainting UI.
+//! The regression these tests pin: a refresh pass that forgets every answer,
+//! so the *scheduled* ticker wipes `Empty` every few seconds and the sweep
+//! re-asks the same absent rows for the life of the process. Harmless when
+//! every row has a detail record (no row is `Empty`, so forgetting costs
+//! nothing) — which is why same-source augmentation never showed it. With a
+//! cross-source augment whose records are mostly absent, it is a continuous
+//! re-fetch of every missing row, each one rewriting its row and broadcasting
+//! `RecordChanged`, i.e. a permanently repainting UI.
 
 mod support;
 
@@ -105,7 +105,7 @@ async fn eventually(label: &str, f: impl Fn() -> bool) {
 /// Bring both rows through the detail pass once and return the fetch count.
 async fn hydrate_both(dio: &Dio, hits: &AtomicUsize) -> (Arc<dyn TableScenery>, usize) {
     let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("r0 hydrated", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
     })
@@ -158,9 +158,9 @@ async fn a_row_with_no_detail_record_keeps_its_list_columns() {
 /// THE REGRESSION. With the ticker running, a settled-empty row must not be
 /// re-fetched on every tick.
 ///
-/// Before the fix this failed loudly: the scheduled refresh cleared the
-/// settled-empty set, so each tick re-fetched `r1` and the count climbed
-/// without bound for as long as the process ran.
+/// A scheduled refresh that forgot `Empty` fails this loudly: each tick
+/// re-fetches `r1` and the count climbs without bound for as long as the
+/// process runs.
 #[tokio::test]
 async fn the_scheduled_ticker_does_not_re_probe_a_settled_empty_row() {
     let tmp = TempDir::new().unwrap();
@@ -196,7 +196,7 @@ async fn an_explicit_refresh_re_probes_a_settled_empty_row() {
     let (scenery, after_hydration) = hydrate_both(&dio, &hits).await;
 
     dio.refresh().await.expect("refresh");
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
 
     eventually("explicit refresh re-probed", || {
         hits.load(Ordering::SeqCst) > after_hydration

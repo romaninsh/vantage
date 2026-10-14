@@ -216,7 +216,8 @@ fn event_trigger(event: &DioEvent) -> String {
 /// immediately corrects. Waiting for that trailing event is what keeps a
 /// refresh from flickering every derived value through empty. If the refresh
 /// fails there is no `DatasetChanged` and the layer keeps its last good output,
-/// which is the same stale-over-blank choice made everywhere else here.
+/// which is the same stale-over-blank choice made everywhere else here; the
+/// `RefreshFailed` a failed live re-read publishes is skipped for that reason.
 async fn wait(bus: &mut broadcast::Receiver<DioEvent>, nudge: &Notify, tap: &DebugTap) -> Wake {
     loop {
         tokio::select! {
@@ -226,6 +227,7 @@ async fn wait(bus: &mut broadcast::Receiver<DioEvent>, nudge: &Notify, tap: &Deb
             received = bus.recv() => match received {
                 Ok(DioEvent::ViewportChanged { .. })
                 | Ok(DioEvent::LoadFailed { .. })
+                | Ok(DioEvent::RefreshFailed { .. })
                 | Ok(DioEvent::Hydrating { .. })
                 | Ok(DioEvent::Refreshing) => continue,
                 Ok(event) => {

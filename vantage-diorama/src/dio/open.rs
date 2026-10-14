@@ -1,15 +1,10 @@
 //! Opening views onto a Dio: sceneries, servos and the facade Vista.
 
-use std::sync::Arc;
-
-use ciborium::Value as CborValue;
 use vantage_core::Result;
-use vantage_types::Record;
 use vantage_vista::Vista;
 
 use super::{Dio, DioShell};
-use crate::scenery::record::spawn_record_scenery;
-use crate::scenery::{RecordScenery, RecordStatus, TableSceneryBuilder, ValueSceneryBuilder};
+use crate::scenery::{RecordSceneryBuilder, TableSceneryBuilder, ValueSceneryBuilder};
 use crate::servo::{IdStrategy, Servo, spawn_servo};
 
 impl Dio {
@@ -20,56 +15,18 @@ impl Dio {
         TableSceneryBuilder::new(self.inner.clone())
     }
 
-    /// Open a reactive view onto a single record by id. Reads the
-    /// cache once at creation:
+    /// Start a [`RecordScenery`](crate::RecordScenery) builder for the
+    /// record `id`; call `.open().await` to spawn the reactive view.
     ///
-    /// - cache hit → `RecordStatus::Fresh`, record exposed
-    /// - cache miss, or a row outside the Dio's [`residual`](Self::residual)
-    ///   → `RecordStatus::NotFound`, record = `None`
-    ///
-    /// A residual naming an augmented value judges the row hydrated: the
-    /// read blocks on its detail pass. No master fetch on miss (the cache is
-    /// the source of truth). Use [`Dio::apply_change`](Self::apply_change)
-    /// to seed the row.
-    pub async fn record_scenery(&self, id: impl Into<String>) -> Result<Arc<dyn RecordScenery>> {
-        self.inner.refresh_if_stale();
-        let id = id.into();
-        let cached = self.inner.read_admitted(self.inner.cache.as_ref(), &id);
-        let (initial_record, initial_status) = match cached.await? {
-            Some(rec) => (Some(rec), RecordStatus::Fresh),
-            None => (None, RecordStatus::NotFound),
-        };
-        Ok(spawn_record_scenery(
-            &self.inner,
-            id,
-            initial_record,
-            initial_status,
-            None,
-        ))
-    }
-
-    /// [`record_scenery`](Self::record_scenery) with `sugar`'s outputs
-    /// merged into the row it reads; nothing reaches the cache.
-    pub async fn record_scenery_sugared(
-        &self,
-        id: impl Into<String>,
-        sugar: crate::Sugar,
-    ) -> Result<Arc<dyn RecordScenery>> {
-        self.inner.refresh_if_stale();
-        let reader = crate::scenery::sugar::SugaredCache::wrap(self.inner.cache.clone(), sugar);
-        let id = id.into();
-        let (initial_record, initial_status) =
-            match self.inner.read_admitted(reader.as_ref(), &id).await? {
-                Some(rec) => (Some(rec), RecordStatus::Fresh),
-                None => (None, RecordStatus::NotFound),
-            };
-        Ok(spawn_record_scenery(
-            &self.inner,
-            id,
-            initial_record,
-            initial_status,
-            Some(reader),
-        ))
+    /// By default the view opens on the cached row, `Fresh` (or
+    /// `Incomplete` while an augmented row waits for its detail pass), and a
+    /// cache miss, or a row outside the Dio's [`residual`](Self::residual),
+    /// is `NotFound`. Chain [`load_on_miss`](RecordSceneryBuilder::load_on_miss)
+    /// to fetch a missing row from the master,
+    /// [`seed`](RecordSceneryBuilder::seed) to start from a row in hand, or
+    /// [`sugar`](RecordSceneryBuilder::sugar) to read computed columns.
+    pub fn record_scenery(&self, id: impl Into<String>) -> RecordSceneryBuilder {
+        RecordSceneryBuilder::new(self.inner.clone(), id.into())
     }
 
     /// Open a [`Servo`] — the editing companion — for the record at `id`.
@@ -103,24 +60,6 @@ impl Dio {
         spawn_servo(self, None, strategy)
     }
 
-    /// Open a reactive view onto a single record with the row already
-    /// in hand — the parent grid hands its current row off to the
-    /// detail view without a cache round-trip. Status is `Fresh`.
-    pub fn record_scenery_with(
-        &self,
-        id: impl Into<String>,
-        record: Record<CborValue>,
-    ) -> Arc<dyn RecordScenery> {
-        self.inner.refresh_if_stale();
-        spawn_record_scenery(
-            &self.inner,
-            id.into(),
-            Some(record),
-            RecordStatus::Fresh,
-            None,
-        )
-    }
-
     /// Start a [`ValueScenery`](crate::scenery::ValueScenery) builder.
     /// Chain `.count()` / `.sum(col)` / `.custom(closure)` /
     /// `.aggregate(...)`, then `.open().await`.
@@ -138,6 +77,14 @@ impl Dio {
     /// cache otherwise, and the facade evaluates whatever the master didn't
     /// take. Every read keeps only the rows the Dio's residual admits.
     /// Writes route through the Dio's queue.
+    ///
+    /// The order of a read depends on where it went. A cache read sorts with
+    /// vista's evaluator ([`VistaQuery::cmp_rows`](vantage_vista::VistaQuery::cmp_rows)),
+    /// which compares text by bytes; a read the master answers keeps the
+    /// master's order, in the master's collation. The two can disagree: under
+    /// SQL's case-insensitive order `apple` comes before `Banana`, and a
+    /// cache read puts `Banana` first. An order alone reads the cache, so a
+    /// handle that only sorts always gets the evaluator's order.
     pub fn cached(&self) -> Vista {
         let name = self.master().name().to_string();
         Vista::new(name, DioShell::new(self.inner.clone()))

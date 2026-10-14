@@ -16,15 +16,16 @@ mod tests;
 use std::ops::Range;
 
 use ciborium::Value as CborValue;
-use vantage_vista::FilterOp;
+use vantage_vista::{Condition, FilterOp, SortDirection};
 
-use super::{LoadState, RowStatusSummary, SortDir, TableScenery};
+use super::{LoadState, RowStatusSummary};
 
 pub(crate) use publish::{StatsCell, TotalKind};
 
 /// Snapshot of a table view. Cheap to clone; compare with `==` to tell
 /// whether anything a consumer renders has moved.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
 pub struct ViewStats {
     /// Rows the table has, when known. `None` when only a lower bound is
     /// known — see [`has_more`](Self::has_more).
@@ -35,16 +36,15 @@ pub struct ViewStats {
     pub total_exact: bool,
     /// Rows fetched into this view so far.
     pub loaded: usize,
-    /// Rows a displaying consumer declared on screen with
-    /// [`set_shown_range`](super::TableScenery::set_shown_range), clamped to
+    /// Rows a displaying consumer declared on screen, the `shown` argument
+    /// of [`set_viewport`](super::TableScenery::set_viewport), clamped to
     /// the rows the view has. `None` while no grid shows this view: a
-    /// hydration [`set_viewport`](super::TableScenery::set_viewport) alone
-    /// never sets it.
+    /// viewport with an empty `shown` loads rows without setting it.
     pub showing: Option<Range<usize>>,
     /// More rows can be fetched beyond `loaded`.
     pub has_more: bool,
     /// Active sort column and direction.
-    pub order: Option<(String, SortDir)>,
+    pub order: Option<(String, SortDirection)>,
     /// Active quicksearch text.
     pub search: Option<String>,
     /// Every term narrowing the view, query-level first.
@@ -59,6 +59,7 @@ pub struct ViewStats {
 
 /// One term narrowing a view.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct ViewFilter {
     pub column: String,
     pub op: FilterOp,
@@ -68,20 +69,22 @@ pub struct ViewFilter {
 
 /// Where a [`ViewFilter`] came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FilterOrigin {
     /// Part of what the view is: the Dio's residual conditions and the
-    /// builder's `where_eq` / `where_op`. A condition a derived Dio's master
-    /// accepted (see [`Dio::with_query`](crate::Dio::with_query)) is
-    /// applied inside the master and is invisible to the scenery.
+    /// builder's [`filter`](super::TableSceneryBuilder::filter)s. A condition
+    /// a derived Dio's master accepted (see
+    /// [`Dio::with_query`](crate::Dio::with_query)) is applied inside the
+    /// master and is invisible to the scenery.
     Query,
-    /// Set at runtime by the consumer: filter chips
-    /// ([`set_filters`](super::TableScenery::set_filters)) and the filter
-    /// panel ([`set_filter_terms`](super::TableScenery::set_filter_terms)).
+    /// Set at runtime by the consumer through
+    /// [`set_filters`](super::TableScenery::set_filters).
     View,
 }
 
 /// The single live-state marker for a view, most urgent first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum ViewState {
     /// No load has finished; the view has no answer yet.
     #[default]
@@ -119,6 +122,7 @@ impl ViewState {
 /// The default way to state how many rows a view has, which never presents
 /// a partial number as the whole table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ViewCount {
     /// The total is a count: `1,240`.
     Exact(usize),
@@ -182,8 +186,9 @@ impl ViewStats {
         self.showing.as_ref().map(|r| r.len())
     }
 
-    /// The same view seen through a row cap of `cap`: once `cap` rows are
-    /// loaded the view is complete at exactly `cap`.
+    /// The same view seen through a [`limit`](super::TableSceneryBuilder::limit)
+    /// or [`tail`](super::TableSceneryBuilder::tail) of `cap`: once `cap`
+    /// rows are loaded the view is complete at exactly `cap`.
     pub fn capped(mut self, cap: usize) -> Self {
         if self.loaded >= cap {
             self.loaded = cap;
@@ -196,27 +201,6 @@ impl ViewStats {
         self.showing = clamp_range(self.showing, cap);
         self
     }
-
-    /// A snapshot built from the trait's own accessors, for implementations
-    /// that keep no richer state. Knows nothing of order, search, query
-    /// conditions or viewport.
-    pub(crate) fn from_scenery<S: TableScenery + ?Sized>(scenery: &S) -> Self {
-        let rows = scenery.status_summary();
-        let load = scenery.load_state();
-        ViewStats {
-            total: scenery.estimated_total(),
-            total_exact: load == LoadState::Complete,
-            loaded: rows.loaded,
-            showing: None,
-            has_more: scenery.has_more(),
-            order: None,
-            search: None,
-            filters: view_filters(&[], &[], &[], &scenery.filter_terms()),
-            state: ViewState::derive(&load, &rows, false),
-            pending_writes: rows.pending_write,
-            failed: rows.failed,
-        }
-    }
 }
 
 /// `range` clipped to `0..limit`; `None` when nothing of it remains.
@@ -226,30 +210,18 @@ pub(crate) fn clamp_range(range: Option<Range<usize>>, limit: usize) -> Option<R
         .filter(|r| !r.is_empty())
 }
 
-/// Flatten a view's four filter sets into one list, query-level first.
-pub(crate) fn view_filters(
-    conditions: &[(String, CborValue)],
-    op_conditions: &[super::OpCondition],
-    ui_filters: &[(String, CborValue)],
-    ui_terms: &[super::OpCondition],
-) -> Vec<ViewFilter> {
-    let eq = |(column, value): &(String, CborValue), origin| ViewFilter {
-        column: column.clone(),
-        op: FilterOp::Eq,
-        value: value.clone(),
-        origin,
-    };
-    let op = |c: &super::OpCondition, origin| ViewFilter {
+/// Flatten a view's filter sets into one list: the query-level `query`
+/// conditions first, then the runtime `filters`.
+pub(crate) fn view_filters(query: &[Condition], filters: &[Condition]) -> Vec<ViewFilter> {
+    let entry = |c: &Condition, origin| ViewFilter {
         column: c.column.clone(),
         op: c.op,
         value: c.value.clone(),
         origin,
     };
-    conditions
+    query
         .iter()
-        .map(|c| eq(c, FilterOrigin::Query))
-        .chain(op_conditions.iter().map(|c| op(c, FilterOrigin::Query)))
-        .chain(ui_filters.iter().map(|c| eq(c, FilterOrigin::View)))
-        .chain(ui_terms.iter().map(|c| op(c, FilterOrigin::View)))
+        .map(|c| entry(c, FilterOrigin::Query))
+        .chain(filters.iter().map(|c| entry(c, FilterOrigin::View)))
         .collect()
 }

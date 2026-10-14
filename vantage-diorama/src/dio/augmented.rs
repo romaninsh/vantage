@@ -15,7 +15,7 @@ use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::VistaQuery;
 
-use super::{Dio, DioInner};
+use super::{DetailState, Dio, DioInner};
 use crate::lens::CacheStatus;
 
 /// The clause [`DioInner::augmented_clause`] found.
@@ -111,7 +111,7 @@ impl DioInner {
     /// Whether the last detail fetch for `id` failed: the row carries no
     /// augmented values a clause could judge.
     pub(crate) fn detail_failed(&self, id: &str) -> bool {
-        self.augment_failed.lock().unwrap().contains(id)
+        self.detail_state(id) == Some(DetailState::Failed)
     }
 
     /// Whether the cached row `id` still waits for the detail pass before
@@ -130,9 +130,10 @@ impl DioInner {
         row: &Record<CborValue>,
         status: CacheStatus,
     ) -> bool {
-        if self.augment_settled_empty.lock().unwrap().contains(id)
-            || self.augment_failed.lock().unwrap().contains(id)
-        {
+        if matches!(
+            self.detail_state(id),
+            Some(DetailState::Empty | DetailState::Failed)
+        ) {
             return false;
         }
         if self.augmented_columns.is_empty() {

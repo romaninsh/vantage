@@ -54,7 +54,10 @@ async fn sqlite_products() -> Result<(SqliteDB, Vista)> {
 /// path, and `Dio::fetch` hands the condition back.
 async fn assert_dotted_filter_fails(master: Vista) -> Result<()> {
     let dio = paged_dio(master).await;
-    let view = open(&dio, |b| b.where_eq("name.first", "Espresso")).await;
+    let view = open(&dio, |b| {
+        b.filter(Condition::new("name.first", FilterOp::Eq, "Espresso"))
+    })
+    .await;
     match view.load_state() {
         LoadState::Failed(failure) => {
             assert_eq!(failure.table, "products", "{failure}");
