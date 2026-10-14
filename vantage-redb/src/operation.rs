@@ -37,35 +37,3 @@ pub trait RedbOperation<T>: Expressive<T> {
 }
 
 impl<T, S: Expressive<T>> RedbOperation<T> for S {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use vantage_table::column::core::Column;
-
-    #[test]
-    fn test_column_eq() {
-        let c = Column::<String>::new("email");
-        let cond = c.eq("alice@example.com");
-        match cond {
-            RedbCondition::Eq { column, value } => {
-                assert_eq!(column, "email");
-                assert_eq!(value.try_get::<String>(), Some("alice@example.com".into()));
-            }
-            _ => panic!("expected Eq"),
-        }
-    }
-
-    #[test]
-    fn test_column_in() {
-        let c = Column::<String>::new("status");
-        let cond = c.in_(vec!["active", "pending"]);
-        match cond {
-            RedbCondition::In { column, values } => {
-                assert_eq!(column, "status");
-                assert_eq!(values.len(), 2);
-            }
-            _ => panic!("expected In"),
-        }
-    }
-}

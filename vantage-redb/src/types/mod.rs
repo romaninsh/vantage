@@ -94,8 +94,6 @@ impl std::fmt::Display for AnyRedbType {
     }
 }
 
-// TryFrom<AnyRedbType> for common scalar types — used when extracting
-// scalar results from queries.
 macro_rules! impl_try_from_redb {
     ($($ty:ty),*) => {
         $(
@@ -139,47 +137,5 @@ impl TryFrom<AnyRedbType> for Record<AnyRedbType> {
                 .collect()),
             _ => Err(vantage_core::error!("Expected map result")),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_int_round_trip() {
-        let v = AnyRedbType::new(42i64);
-        assert_eq!(v.type_variant(), Some(RedbTypeVariants::Int));
-        assert_eq!(v.try_get::<i64>(), Some(42));
-        assert_eq!(v.try_get::<String>(), None);
-    }
-
-    #[test]
-    fn test_string_round_trip() {
-        let v = AnyRedbType::new("hello".to_string());
-        assert_eq!(v.type_variant(), Some(RedbTypeVariants::String));
-        assert_eq!(v.try_get::<String>(), Some("hello".to_string()));
-        assert_eq!(v.try_get::<i64>(), None);
-    }
-
-    #[test]
-    fn test_bool_round_trip() {
-        let v = AnyRedbType::new(true);
-        assert_eq!(v.type_variant(), Some(RedbTypeVariants::Bool));
-        assert_eq!(v.try_get::<bool>(), Some(true));
-    }
-
-    #[test]
-    fn test_float_round_trip() {
-        let v = AnyRedbType::new(2.71f64);
-        assert_eq!(v.type_variant(), Some(RedbTypeVariants::Float));
-        assert_eq!(v.try_get::<f64>(), Some(2.71));
-    }
-
-    #[test]
-    fn test_untyped_permissive() {
-        let v = AnyRedbType::untyped(ciborium::Value::Integer(42i64.into()));
-        assert_eq!(v.type_variant(), None);
-        assert_eq!(v.try_get::<i64>(), Some(42));
     }
 }

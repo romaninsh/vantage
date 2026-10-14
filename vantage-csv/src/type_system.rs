@@ -1,8 +1,7 @@
+//! `AnyCsvType`: values stored as text with a type-variant tag.
+
 use vantage_types::vantage_type_system;
 
-// CSV type system — values are stored as strings with type variant tags.
-// Mirrors SurrealDB's pattern (`AnySurrealType` / `ciborium::Value`)
-// but uses `String` as the underlying storage since CSV is text-based.
 vantage_type_system! {
     type_trait: CsvType,
     method_name: csv_string,
@@ -10,10 +9,9 @@ vantage_type_system! {
     type_variants: [String, Int, Float, Bool, Json, Animal, List]
 }
 
-// Variant detection from raw CSV string (used when no column type is known)
 impl CsvTypeVariants {
+    /// Without column type info, every raw value is a string.
     pub fn from_csv_string(_value: &String) -> Option<Self> {
-        // Without column type info, everything is a string
         Some(CsvTypeVariants::String)
     }
 }
@@ -110,7 +108,7 @@ impl CsvType for Vec<AnyCsvType> {
     type Target = CsvTypeListMarker;
 
     fn to_csv_string(&self) -> String {
-        // Encode each element as "variant_index\tvalue" separated by newlines
+        // One line per element: "variant_index\tvalue".
         self.iter()
             .map(|v| {
                 let variant_idx = match v.type_variant() {
@@ -155,7 +153,6 @@ impl CsvType for Vec<AnyCsvType> {
     }
 }
 
-// From impls for common types — enables Operation::eq() with native Rust types
 impl From<i64> for AnyCsvType {
     fn from(v: i64) -> Self {
         AnyCsvType::new(v)
@@ -172,7 +169,6 @@ impl From<bool> for AnyCsvType {
     }
 }
 
-// Expressive impls — allows passing scalars directly to Operation methods (eq, gt, etc.)
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 macro_rules! impl_expressive_for_csv_scalar {
@@ -242,7 +238,8 @@ impl From<serde_json::Value> for AnyCsvType {
 
 /// Parse a raw CSV string into an `AnyCsvType` using the column's type variant.
 ///
-/// If `variant` is `None`, the value is stored as a plain string.
+/// An empty string is untyped null. With no variant, or text that doesn't
+/// parse as the variant, the value is stored as a plain string.
 pub fn parse_with_type(raw: &str, variant: Option<CsvTypeVariants>) -> AnyCsvType {
     if raw.is_empty() {
         return AnyCsvType {
@@ -256,7 +253,6 @@ pub fn parse_with_type(raw: &str, variant: Option<CsvTypeVariants>) -> AnyCsvTyp
             if let Some(n) = i64::from_csv_string(raw.to_string()) {
                 AnyCsvType::new(n)
             } else {
-                // Parse failed — store as string
                 AnyCsvType::new(raw.to_string())
             }
         }
@@ -288,7 +284,6 @@ pub fn parse_with_type(raw: &str, variant: Option<CsvTypeVariants>) -> AnyCsvTyp
             type_variant: Some(CsvTypeVariants::Animal),
         },
         Some(CsvTypeVariants::List) => {
-            // Lists are stored in encoded form; parse via CsvType impl
             if let Some(list) = Vec::<AnyCsvType>::from_csv_string(raw.to_string()) {
                 AnyCsvType::new(list)
             } else {
@@ -346,14 +341,9 @@ pub fn record_to_json(
         .collect()
 }
 
-// -- CBOR bridge (for AnyTable interop) --------------------------------------
-//
-// `AnyTable` carries `Record<ciborium::Value>` across the type-erased
-// boundary. CSV is a string-based format with no native CBOR
-// representation; we route through JSON so we get the same lossy
-// behaviour as the JSON bridge above. The shared walker is total —
-// tagged CBOR values render their payload instead of collapsing to
-// Null (the failure mode of the serde round-trip this used to use).
+// CBOR has no CSV representation, so the bridge goes through JSON and is as
+// lossy as the JSON one. The shared walker is total: tagged CBOR values
+// keep their payload instead of collapsing to Null.
 
 impl From<ciborium::Value> for AnyCsvType {
     fn from(v: ciborium::Value) -> Self {
@@ -400,9 +390,9 @@ impl TerminalRender for AnyCsvType {
 
 /// Map a Rust type name (from `ColumnLike::get_type()`) to a `CsvTypeVariants`.
 ///
-/// This is used to look up column types when parsing CSV rows.
+/// Used to look up column types when parsing CSV rows.
 pub fn variant_from_type_name(type_name: &str) -> Option<CsvTypeVariants> {
-    // get_type() returns std::any::type_name which gives full paths
+    // `type_name` is a full path, so match on substrings.
     match type_name {
         s if s.contains("i64") || s.contains("i32") || s.contains("u64") || s.contains("u32") => {
             Some(CsvTypeVariants::Int)
@@ -415,125 +405,5 @@ pub fn variant_from_type_name(type_name: &str) -> Option<CsvTypeVariants> {
         // TODO: Make custom type registration extensible at compile time.
         s if s.contains("Animal") => Some(CsvTypeVariants::Animal),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_roundtrip_string() {
-        let any = AnyCsvType::new("hello".to_string());
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::String));
-        assert_eq!(any.try_get::<String>(), Some("hello".to_string()));
-    }
-
-    #[test]
-    fn test_roundtrip_int() {
-        let any = AnyCsvType::new(42_i64);
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Int));
-        assert_eq!(any.try_get::<i64>(), Some(42));
-        assert_eq!(any.value(), "42");
-    }
-
-    #[test]
-    fn test_roundtrip_float() {
-        let any = AnyCsvType::new(2.72_f64);
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Float));
-        assert!(any.try_get::<f64>().is_some());
-    }
-
-    #[test]
-    fn test_roundtrip_bool() {
-        let any = AnyCsvType::new(true);
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Bool));
-        assert_eq!(any.try_get::<bool>(), Some(true));
-        assert_eq!(any.value(), "true");
-    }
-
-    #[test]
-    fn test_roundtrip_json() {
-        let obj = serde_json::json!({"stock": 50});
-        let any = AnyCsvType::new(obj.clone());
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Json));
-        assert_eq!(any.try_get::<serde_json::Value>(), Some(obj));
-    }
-
-    #[test]
-    fn test_parse_with_type_int() {
-        let any = parse_with_type("300", Some(CsvTypeVariants::Int));
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Int));
-        assert_eq!(any.try_get::<i64>(), Some(300));
-    }
-
-    #[test]
-    fn test_parse_with_type_bool() {
-        let any = parse_with_type("true", Some(CsvTypeVariants::Bool));
-        assert_eq!(any.try_get::<bool>(), Some(true));
-    }
-
-    #[test]
-    fn test_parse_with_type_json() {
-        let any = parse_with_type(r#"{"stock":50}"#, Some(CsvTypeVariants::Json));
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Json));
-        let v = any.try_get::<serde_json::Value>().unwrap();
-        assert_eq!(v["stock"], serde_json::json!(50));
-    }
-
-    #[test]
-    fn test_parse_with_type_none_is_string() {
-        let any = parse_with_type("42", None);
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::String));
-        assert_eq!(any.try_get::<String>(), Some("42".to_string()));
-    }
-
-    #[test]
-    fn test_parse_empty_is_null() {
-        let any = parse_with_type("", Some(CsvTypeVariants::Int));
-        assert_eq!(any.type_variant(), None);
-    }
-
-    #[test]
-    fn test_variant_from_type_name_lookup() {
-        assert_eq!(variant_from_type_name("i64"), Some(CsvTypeVariants::Int));
-        assert_eq!(
-            variant_from_type_name("alloc::string::String"),
-            Some(CsvTypeVariants::String)
-        );
-        assert_eq!(variant_from_type_name("bool"), Some(CsvTypeVariants::Bool));
-        assert_eq!(
-            variant_from_type_name("serde_json::value::Value"),
-            Some(CsvTypeVariants::Json)
-        );
-    }
-
-    #[test]
-    fn test_roundtrip_list() {
-        let list = vec![
-            AnyCsvType::new("hello".to_string()),
-            AnyCsvType::new(42_i64),
-            AnyCsvType::new(true),
-        ];
-        let any = AnyCsvType::new(list);
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::List));
-
-        let recovered = any.try_get::<Vec<AnyCsvType>>().unwrap();
-        assert_eq!(recovered.len(), 3);
-        assert_eq!(recovered[0].try_get::<String>(), Some("hello".to_string()));
-        assert_eq!(recovered[1].try_get::<i64>(), Some(42));
-        assert_eq!(recovered[2].try_get::<bool>(), Some(true));
-    }
-
-    #[test]
-    fn test_option_roundtrip() {
-        let some_val: Option<i64> = Some(42);
-        let any = AnyCsvType::new(some_val);
-        assert_eq!(any.type_variant(), Some(CsvTypeVariants::Int));
-        assert_eq!(any.try_get::<Option<i64>>(), Some(Some(42)));
-
-        let none_val: Option<i64> = None;
-        let any = AnyCsvType::new(none_val);
-        assert_eq!(any.value(), "");
     }
 }

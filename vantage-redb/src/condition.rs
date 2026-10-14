@@ -1,13 +1,11 @@
 //! Condition type for redb tables.
 //!
-//! redb is a key-value store with no query language, so the public condition
-//! type is intentionally minimal — only `Eq` is exposed to callers; `In` is
-//! used internally for relationship traversal and `Deferred` resolves a
-//! `DeferredFn` at execution time (yielding either an `Eq` or `In` document).
+//! redb has no query language, so conditions are minimal: `Eq`, `In`, and
+//! `Deferred`, which resolves a `DeferredFn` at execution time into an `In`
+//! (relationship traversal builds these).
 //!
-//! Conditions can only be added to columns flagged `Indexed`; the table source
-//! panics at execution time if it sees a condition referencing an unflagged,
-//! non-id column.
+//! The first condition of a read must name an `Indexed` column or the id
+//! column; otherwise the read panics.
 
 use vantage_expressions::{DeferredFn, ExpressiveEnum};
 
@@ -23,8 +21,7 @@ pub enum RedbCondition {
         column: String,
         values: Vec<AnyRedbType>,
     },
-    /// Deferred — resolved async at execution time. Must produce an `Eq` or
-    /// `In` after resolution.
+    /// Resolved async at execution time into an `In`; see [`RedbCondition::resolve`].
     Deferred(DeferredFn<AnyRedbType>),
 }
 
@@ -47,8 +44,8 @@ impl RedbCondition {
         }
     }
 
-    /// Resolve a deferred condition into an immediate one. Non-deferred
-    /// conditions return self unchanged.
+    /// Resolve a deferred condition into an `In`; a payload that isn't a
+    /// `[column, values]` tuple is an error. Other conditions return unchanged.
     pub async fn resolve(self) -> vantage_core::Result<Self> {
         match self {
             Self::Deferred(d) => {
@@ -62,8 +59,7 @@ impl RedbCondition {
                         ));
                     }
                 };
-                // The deferred side encodes a (column, [values]) pair as a
-                // CBOR array `[Text(column), Array(values)]`.
+                // Wire shape: CBOR `[Text(column), Array(values)]`.
                 match any.into_value() {
                     ciborium::Value::Array(parts) if parts.len() == 2 => {
                         let mut iter = parts.into_iter();

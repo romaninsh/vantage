@@ -58,12 +58,8 @@ impl Redb {
     }
 }
 
-// Table-definition helpers — keep the name → TableDefinition mapping in one place.
-//
-// The K/V type parameters need an explicit `'static` lifetime because redb's
-// `open_table` requires `K: Key + 'static` and `V: Value + 'static`. Without
-// the annotation Rust infers them as the lifetime of the `name` argument,
-// which is what produced the "borrowed data escapes" errors.
+// The K/V types carry an explicit `'static`: `open_table` requires it, and
+// without it they would inherit the lifetime of `name`.
 
 /// Main row store: `id (utf-8 string) → cbor row body`.
 pub(crate) fn main_table_def(name: &str) -> TableDefinition<'_, &'static str, &'static [u8]> {

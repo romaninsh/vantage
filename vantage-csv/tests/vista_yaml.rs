@@ -12,52 +12,6 @@ fn data_dir() -> String {
     format!("{}/data", env!("CARGO_MANIFEST_DIR"))
 }
 
-fn load_yaml(name: &str) -> String {
-    let path = format!("{}/{}", data_dir(), name);
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"))
-}
-
-#[tokio::test]
-async fn yaml_loads_client_vista_and_lists_rows() -> Result<()> {
-    let csv = Csv::new(data_dir());
-    let yaml = load_yaml("client.vista.yaml");
-
-    let vista = csv.vista_factory().from_yaml(&yaml)?;
-
-    assert_eq!(vista.name(), "client");
-    assert_eq!(vista.id_column(), Some("id"));
-    assert_eq!(vista.title_columns(), vec!["name"]);
-    let hidden = |name: &str| vista.column(name).unwrap().has_flag(ColumnFlag::Hidden);
-    assert!(hidden("contact_details"));
-    assert!(!hidden("name"));
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 3);
-
-    let marty = &rows["marty"];
-    assert_eq!(
-        marty.get("name"),
-        Some(&CborValue::Text("Marty McFly".to_string()))
-    );
-    assert_eq!(marty.get("is_paying_client"), Some(&CborValue::Bool(true)));
-    Ok(())
-}
-
-#[tokio::test]
-async fn yaml_eq_condition_filters_typed_column() -> Result<()> {
-    let csv = Csv::new(data_dir());
-    let yaml = load_yaml("client.vista.yaml");
-
-    let mut vista = csv.vista_factory().from_yaml(&yaml)?;
-    vista.add_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2);
-    assert!(rows.contains_key("marty"));
-    assert!(rows.contains_key("doc"));
-    Ok(())
-}
-
 #[tokio::test]
 async fn yaml_csv_source_renames_record_keys_and_filters() -> Result<()> {
     // The CSV file has a column header `is_paying_client`; the spec exposes
@@ -106,6 +60,161 @@ csv:
     Ok(())
 }
 
+fn load_yaml(name: &str) -> String {
+    let path = format!("{}/{}", data_dir(), name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"))
+}
+
+#[tokio::test]
+async fn yaml_spec_sets_name_id_title_and_hidden_flags() -> Result<()> {
+    let csv = Csv::new(data_dir());
+
+    let vista = csv
+        .vista_factory()
+        .from_yaml(&load_yaml("client.vista.yaml"))?;
+
+    assert_eq!(vista.name(), "client");
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
+    let hidden = |name: &str| vista.column(name).unwrap().has_flag(ColumnFlag::Hidden);
+    assert!(hidden("contact_details"));
+    assert!(!hidden("name"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn yaml_vista_lists_rows_with_declared_types() -> Result<()> {
+    let csv = Csv::new(data_dir());
+    let vista = csv
+        .vista_factory()
+        .from_yaml(&load_yaml("client.vista.yaml"))?;
+
+    let rows = vista.list_values().await?;
+
+    assert_eq!(rows.len(), 3);
+    let marty = &rows["marty"];
+    assert_eq!(
+        marty.get("name"),
+        Some(&CborValue::Text("Marty McFly".to_string()))
+    );
+    assert_eq!(marty.get("is_paying_client"), Some(&CborValue::Bool(true)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn yaml_vista_filters_on_a_typed_column() -> Result<()> {
+    let csv = Csv::new(data_dir());
+    let mut vista = csv
+        .vista_factory()
+        .from_yaml(&load_yaml("client.vista.yaml"))?;
+
+    vista.add_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["marty", "doc"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn yaml_column_type_aliases_lower_to_typed_columns() -> Result<()> {
+    let csv = Csv::new(data_dir());
+    let yaml = r#"
+name: product
+columns:
+  id:
+    type: string
+    flags: [id]
+  calories:
+    type: integer
+  price:
+    type: i64
+  is_deleted:
+    type: boolean
+  inventory:
+    type: json
+csv:
+  path: product.csv
+"#;
+    let vista = csv.vista_factory().from_yaml(yaml)?;
+
+    let rows = vista.list_values().await?;
+
+    let cupcake = &rows["flux_cupcake"];
+    assert_eq!(
+        cupcake.get("calories"),
+        Some(&CborValue::Integer(300.into()))
+    );
+    assert_eq!(cupcake.get("price"), Some(&CborValue::Integer(120.into())));
+    assert_eq!(cupcake.get("is_deleted"), Some(&CborValue::Bool(false)));
+    assert!(
+        cupcake.get("inventory").is_some_and(|v| !v.is_text()),
+        "json column should not stay text"
+    );
+    Ok(())
+}
+
+#[test]
+fn yaml_rejects_unknown_column_type() {
+    let csv = Csv::new(data_dir());
+    let yaml = r#"
+name: client
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: quaternion
+csv:
+  path: client.csv
+"#;
+
+    let err = csv
+        .vista_factory()
+        .from_yaml(yaml)
+        .expect_err("unknown column type should fail");
+
+    assert!(err.to_string().contains("quaternion"), "{err}");
+}
+
+#[test]
+fn yaml_requires_the_csv_block() {
+    let csv = Csv::new(data_dir());
+    let yaml = r#"
+name: client
+columns:
+  id:
+    type: string
+    flags: [id]
+"#;
+
+    assert!(csv.vista_factory().from_yaml(yaml).is_err());
+}
+
+#[tokio::test]
+async fn yaml_absolute_path_ignores_the_base_directory() -> Result<()> {
+    let csv = Csv::new("/nonexistent-base-dir");
+    let yaml = format!(
+        r#"
+name: bakery
+columns:
+  id:
+    type: string
+    flags: [id]
+  name:
+    type: string
+csv:
+  path: {}/bakery.csv
+"#,
+        data_dir()
+    );
+
+    let vista = csv.vista_factory().from_yaml(&yaml)?;
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["hill_valley"]);
+    Ok(())
+}
+
 #[test]
 fn yaml_rejects_unknown_csv_block_field() {
     let csv = Csv::new(data_dir());
@@ -119,13 +228,11 @@ csv:
   path: client.csv
   mystery: true
 "#;
-    let err = match csv.vista_factory().from_yaml(yaml) {
-        Ok(_) => panic!("unknown field should fail"),
-        Err(e) => e,
-    };
-    let msg = err.to_string();
-    assert!(
-        msg.contains("mystery") || msg.contains("unknown"),
-        "expected typo-detecting error, got: {msg}"
-    );
+
+    let err = csv
+        .vista_factory()
+        .from_yaml(yaml)
+        .expect_err("unknown field should fail");
+
+    assert!(err.to_string().contains("mystery"), "{err}");
 }

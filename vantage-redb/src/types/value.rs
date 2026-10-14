@@ -52,7 +52,6 @@ where
     }
 }
 
-// From impls for common types
 macro_rules! impl_from_for_redb {
     ($($ty:ty),*) => {
         $(
@@ -73,7 +72,6 @@ impl From<&str> for AnyRedbType {
     }
 }
 
-// Expressive impls — let scalars flow into condition builders.
 macro_rules! impl_expressive_for_redb_scalar {
     ($($ty:ty),*) => {
         $(

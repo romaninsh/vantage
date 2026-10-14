@@ -23,7 +23,7 @@ impl CsvVistaFactory {
     }
 
     /// Wrap a typed table as a Vista. Column metadata is harvested from the
-    /// table; CRUD goes through `Table`'s reading path.
+    /// table; reads go through `Table`.
     pub fn from_table<E>(&self, table: Table<Csv, E>) -> Result<Vista>
     where
         E: Entity<AnyCsvType> + 'static,

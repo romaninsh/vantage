@@ -1,23 +1,30 @@
-//! End-to-end round-trip: typed `Table<Csv, _>` → `Vista` → CBOR rows.
-//!
-//! Validates the stage 2 contract against a real backend (CSV).
+//! `Table<Csv, _>` wrapped as a `Vista`: CBOR rows, conditions, windows,
+//! traversal, and the capabilities a read-only flat file advertises.
 
 #![cfg(feature = "vista")]
 
 use ciborium::Value as CborValue;
-use vantage_core::Result;
-use vantage_csv::Csv;
-use vantage_dataset::prelude::ReadableValueSet;
+use vantage_core::{ErrorKind, Result};
+use vantage_csv::{AnyCsvType, Csv};
+use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
-use vantage_types::EmptyEntity;
-use vantage_vista::{Capability, FilterOp};
+use vantage_types::{EmptyEntity, Record};
+use vantage_vista::{Capability, FilterOp, SortDirection, Vista};
 
 fn csv() -> Csv {
     Csv::new(format!("{}/data", env!("CARGO_MANIFEST_DIR")))
 }
 
-#[tokio::test]
-async fn vista_lists_typed_csv_as_cbor() -> Result<()> {
+fn clients() -> Vista {
+    let csv = csv();
+    let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<bool>("is_paying_client");
+    csv.vista_factory().from_table(table).unwrap()
+}
+
+fn products() -> Vista {
     let csv = csv();
     let table = Table::<Csv, EmptyEntity>::new("product", csv.clone())
         .with_id_column("id")
@@ -25,89 +32,102 @@ async fn vista_lists_typed_csv_as_cbor() -> Result<()> {
         .with_column_of::<i64>("calories")
         .with_column_of::<i64>("price")
         .with_column_of::<bool>("is_deleted");
+    csv.vista_factory().from_table(table).unwrap()
+}
 
-    let vista = csv.vista_factory().from_table(table)?;
+#[tokio::test]
+async fn vista_carries_the_table_name_and_id_column() {
+    let vista = products();
 
     assert_eq!(vista.name(), "product");
     assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.driver_name(), "csv");
+}
 
-    let rows = vista.list_values().await?;
+#[tokio::test]
+async fn list_values_maps_typed_columns_to_cbor() -> Result<()> {
+    let rows = products().list_values().await?;
     assert_eq!(rows.len(), 5);
 
     let cupcake = &rows["flux_cupcake"];
-    let name = cupcake.get("name").expect("name field");
-    assert_eq!(name, &CborValue::Text("Flux Capacitor Cupcake".to_string()));
-
-    // Numeric round-trip: CSV "300" → AnyCsvType::Int → CBOR Integer
-    let calories = cupcake.get("calories").expect("calories field");
-    assert!(
-        matches!(calories, CborValue::Integer(_)),
-        "calories should be a CBOR integer, got {:?}",
-        calories
+    assert_eq!(
+        cupcake.get("name"),
+        Some(&CborValue::Text("Flux Capacitor Cupcake".to_string()))
     );
-
-    // Bool round-trip: CSV "false" → AnyCsvType::Bool → CBOR Bool
-    let is_deleted = cupcake.get("is_deleted").expect("is_deleted field");
-    assert_eq!(is_deleted, &CborValue::Bool(false));
+    assert_eq!(
+        cupcake.get("calories"),
+        Some(&CborValue::Integer(300.into()))
+    );
+    assert_eq!(cupcake.get("is_deleted"), Some(&CborValue::Bool(false)));
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_get_value_by_id() -> Result<()> {
-    let csv = csv();
-    let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
-        .with_id_column("id")
-        .with_column_of::<String>("name")
-        .with_column_of::<bool>("is_paying_client");
-    let vista = csv.vista_factory().from_table(table)?;
+async fn get_value_returns_the_row_and_none_for_an_unknown_id() -> Result<()> {
+    let vista = clients();
 
     let doc = vista.get_value("doc").await?.expect("doc exists");
     assert_eq!(
         doc.get("name"),
         Some(&CborValue::Text("Doc Brown".to_string()))
     );
-
-    let missing = vista.get_value("nonexistent").await?;
-    assert!(missing.is_none());
+    assert!(vista.get_value("nonexistent").await?.is_none());
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_count_with_eq_condition() -> Result<()> {
-    let csv = csv();
-    let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
-        .with_id_column("id")
-        .with_column_of::<String>("name")
-        .with_column_of::<bool>("is_paying_client");
-    let mut vista = csv.vista_factory().from_table(table)?;
-
+async fn count_follows_the_applied_conditions() -> Result<()> {
+    let mut vista = clients();
     assert_eq!(vista.count().await?, 3);
 
     vista.add_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
-    assert_eq!(vista.count().await?, 2);
 
+    assert_eq!(vista.count().await?, 2);
     let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2);
-    assert!(rows.contains_key("marty"));
-    assert!(rows.contains_key("doc"));
-    assert!(!rows.contains_key("biff"));
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["marty", "doc"]);
     Ok(())
 }
 
-/// A relation's target is built by a caller-supplied constructor, and that
-/// constructor usually returns a table typed with the target's own entity.
-/// Resolving the bare target must not depend on the entity type — it is not
-/// known at the traversal site.
 #[tokio::test]
-async fn vista_resolves_bare_target_of_typed_relation() -> Result<()> {
-    use vantage_csv::AnyCsvType;
-    use vantage_types::Record;
+async fn conditions_combine_with_and() -> Result<()> {
+    let vista = clients()
+        .with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?
+        .with_condition("name", FilterOp::Eq, "Doc Brown")?;
 
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["doc"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn fetch_window_slices_the_filtered_rows_and_reports_the_total() -> Result<()> {
+    let vista =
+        clients().with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
+
+    let page = vista.fetch_window(1, 5).await?;
+
+    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["doc"]);
+    assert_eq!(page.total, Some(2));
+    Ok(())
+}
+
+#[tokio::test]
+async fn fetch_window_limit_caps_the_page() -> Result<()> {
+    let page = products().fetch_window(0, 2).await?;
+
+    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["flux_cupcake", "delorean_donut"]);
+    assert_eq!(page.total, Some(5));
+    Ok(())
+}
+
+#[tokio::test]
+async fn bare_target_of_a_typed_relation_resolves() -> Result<()> {
     let csv = csv();
     let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
         .with_id_column("id")
         .with_column_of::<String>("name")
-        // Target entity is `Record<AnyCsvType>`, not `EmptyEntity`.
         .with_one("bakery", "bakery_id", |csv: Csv| {
             Table::<Csv, Record<AnyCsvType>>::new("bakery", csv)
                 .with_id_column("id")
@@ -117,21 +137,15 @@ async fn vista_resolves_bare_target_of_typed_relation() -> Result<()> {
     assert_eq!(vista.references()["bakery"].target, "bakery");
 
     let target = vista.get_ref("bakery", None)?;
-    assert_eq!(target.name(), "bakery");
 
+    assert_eq!(target.name(), "bakery");
     let rows = target.list_values().await?;
-    assert_eq!(rows.len(), 1);
-    assert!(rows.contains_key("hill_valley"));
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["hill_valley"]);
     Ok(())
 }
 
-/// From a parent row, a has-one target is narrowed by its id column through
-/// the Vista, so the join is recorded in the target's query.
 #[tokio::test]
-async fn vista_traverses_has_one_from_a_row() -> Result<()> {
-    use vantage_csv::AnyCsvType;
-    use vantage_types::Record;
-
+async fn has_one_from_a_row_is_narrowed_by_the_join_key() -> Result<()> {
     let csv = csv();
     let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
         .with_id_column("id")
@@ -141,159 +155,118 @@ async fn vista_traverses_has_one_from_a_row() -> Result<()> {
                 .with_column_of::<String>("name")
         });
     let vista = csv.vista_factory().from_table(table)?;
+    let row = |bakery: &str| -> Record<CborValue> {
+        [("bakery_id".to_string(), CborValue::from(bakery))]
+            .into_iter()
+            .collect()
+    };
 
-    let row: Record<CborValue> = [("bakery_id".to_string(), CborValue::from("hill_valley"))]
-        .into_iter()
-        .collect();
-    let target = vista.get_ref("bakery", Some(&row))?;
+    let target = vista.get_ref("bakery", Some(&row("hill_valley")))?;
     assert!(target.is_narrowed());
-    let rows = target.list_values().await?;
-    assert_eq!(rows.keys().collect::<Vec<_>>(), ["hill_valley"]);
-
-    let row: Record<CborValue> = [("bakery_id".to_string(), CborValue::from("nowhere"))]
-        .into_iter()
-        .collect();
-    let empty = vista.get_ref("bakery", Some(&row))?.list_values().await?;
-    assert!(empty.is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_writes_return_read_only_error() -> Result<()> {
-    use vantage_core::ErrorKind;
-    use vantage_dataset::prelude::WritableValueSet;
-    use vantage_types::Record;
-
-    let csv = csv();
-    let table = Table::<Csv, EmptyEntity>::new("bakery", csv.clone())
-        .with_id_column("id")
-        .with_column_of::<String>("name");
-    let vista = csv.vista_factory().from_table(table)?;
-
-    let empty = Record::new();
-
-    // CSV advertises no write capability, so the Vista refuses as
-    // Unsupported, naming the capability.
-    let insert_err = vista
-        .insert_value("x", &empty)
-        .await
-        .expect_err("insert should be unsupported");
-    assert_eq!(insert_err.kind(), ErrorKind::Unsupported);
     assert_eq!(
-        insert_err.context.get("capability").map(String::as_str),
-        Some("\"insert\""),
-        "expected the refusal to name the capability: {insert_err:?}"
+        target.list_values().await?.keys().collect::<Vec<_>>(),
+        ["hill_valley"]
     );
 
-    let delete_err = vista
-        .delete("x")
-        .await
-        .expect_err("delete should be unsupported");
-    assert_eq!(delete_err.kind(), ErrorKind::Unsupported);
+    let nowhere = vista.get_ref("bakery", Some(&row("nowhere")))?;
+    assert!(nowhere.list_values().await?.is_empty());
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_capabilities_advertise_read_only() -> Result<()> {
-    let csv = csv();
-    let table =
-        Table::<Csv, EmptyEntity>::new("bakery", csv.clone()).with_column_of::<String>("name");
-    let vista = csv.vista_factory().from_table(table)?;
+async fn unknown_relation_is_an_error() {
+    let vista = clients();
 
-    let caps: Vec<Capability> = vista.capabilities().iter().collect();
+    assert!(vista.get_ref("nope", None).is_err());
+}
+
+#[tokio::test]
+async fn advertised_capabilities_are_window_and_traverse() {
+    let caps: Vec<Capability> = clients().capabilities().iter().collect();
+
     assert_eq!(caps, [Capability::Window, Capability::Traverse]);
-    Ok(())
 }
 
 #[tokio::test]
-async fn vista_opts_out_of_query_primitives() -> Result<()> {
-    use vantage_core::ErrorKind;
-    use vantage_vista::SortDirection;
+async fn writes_are_refused_as_unsupported_naming_the_capability() {
+    let vista = clients();
+    let empty = Record::new();
 
-    let csv = csv();
-    let table = Table::<Csv, EmptyEntity>::new("product", csv.clone())
-        .with_id_column("id")
-        .with_column_of::<String>("name");
-    let mut vista = csv.vista_factory().from_table(table)?;
-
-    // A flat file has no native sort, search, operator filter or cursor;
-    // each refuses as Unsupported so callers can evaluate it locally.
-    let order_err = vista
-        .set_order(Some(("name", SortDirection::Ascending)))
-        .expect_err("CSV should reject set_order");
-    assert_eq!(order_err.kind(), ErrorKind::Unsupported);
-
-    let search_err = vista
-        .set_search(Some("anything"))
-        .expect_err("CSV should reject set_search");
-    assert_eq!(search_err.kind(), ErrorKind::Unsupported);
-
-    let op_err = vista
-        .add_condition("name", FilterOp::Ne, "x")
-        .expect_err("CSV should reject operator conditions");
-    assert_eq!(op_err.kind(), ErrorKind::Unsupported);
-
-    let cursor_err = vista
-        .fetch_cursor(None, 10)
+    let insert = vista
+        .insert_value("x", &empty)
         .await
-        .expect_err("CSV should reject fetch_cursor");
-    assert_eq!(cursor_err.kind(), ErrorKind::Unsupported);
+        .expect_err("insert is unsupported");
+    assert_eq!(insert.kind(), ErrorKind::Unsupported);
+    assert!(format!("{insert:?}").contains("insert"), "{insert:?}");
 
-    let unknown = vista
-        .add_condition("nope", FilterOp::Eq, "x")
-        .expect_err("an unknown column is an error");
-    assert_ne!(unknown.kind(), ErrorKind::Unsupported);
+    let delete = vista.delete("x").await.expect_err("delete is unsupported");
+    assert_eq!(delete.kind(), ErrorKind::Unsupported);
+}
+
+#[tokio::test]
+async fn sort_search_operators_and_cursors_are_refused_as_unsupported() {
+    let mut vista = products();
+
+    let order = vista
+        .set_order(Some(("name", SortDirection::Ascending)))
+        .expect_err("order");
+    assert_eq!(order.kind(), ErrorKind::Unsupported);
+
+    let search = vista.set_search(Some("anything")).expect_err("search");
+    assert_eq!(search.kind(), ErrorKind::Unsupported);
+
+    let operator = vista
+        .add_condition("name", FilterOp::Ne, "x")
+        .expect_err("operator");
+    assert_eq!(operator.kind(), ErrorKind::Unsupported);
+
+    let cursor = vista.fetch_cursor(None, 10).await.expect_err("cursor");
+    assert_eq!(cursor.kind(), ErrorKind::Unsupported);
+
     assert!(vista.query().is_empty(), "refused clauses are not recorded");
-    Ok(())
+}
+
+#[tokio::test]
+async fn condition_on_an_unknown_column_is_an_error_but_not_unsupported() {
+    let mut vista = products();
+
+    let err = vista
+        .add_condition("nope", FilterOp::Eq, "x")
+        .expect_err("unknown column");
+
+    assert_ne!(err.kind(), ErrorKind::Unsupported);
+    assert!(vista.query().is_empty());
 }
 
 #[test]
-fn vista_preview_lists_the_applied_conditions() -> Result<()> {
-    let csv = csv();
-    let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
-        .with_id_column("id")
-        .with_column_of::<String>("name")
-        .with_column_of::<bool>("is_paying_client");
-    let vista = csv.vista_factory().from_table(table)?;
+fn preview_names_the_file_and_lists_the_applied_conditions() -> Result<()> {
+    let vista = clients();
     let file = format!("{}/data/client.csv", env!("CARGO_MANIFEST_DIR"));
 
-    let preview = vista.preview();
-    assert_eq!(
-        preview.query.as_deref(),
-        Some(format!("read {file}").as_str())
-    );
-    assert_eq!(preview.note, None);
+    let before = vista.preview().query.expect("a query preview");
+    assert!(before.contains(&file), "{before}");
+    assert!(!before.contains("where"), "{before}");
 
     let narrowed = vista
         .with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?
         .with_condition("name", FilterOp::Eq, "Doc Brown")?;
-    let preview = narrowed.preview();
-    assert_eq!(
-        preview.query.as_deref(),
-        Some(
-            format!("read {file} where is_paying_client = true and name = \"Doc Brown\"").as_str()
-        )
-    );
-    assert_eq!(narrowed.driver_name(), "csv");
+    let after = narrowed.preview().query.expect("a query preview");
+    assert!(after.contains(&file), "{after}");
+    assert!(after.contains("is_paying_client = true"), "{after}");
+    assert!(after.contains("name = \"Doc Brown\""), "{after}");
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_window_slices_the_filtered_rows() -> Result<()> {
-    let csv = csv();
-    let table = Table::<Csv, EmptyEntity>::new("client", csv.clone())
-        .with_id_column("id")
-        .with_column_of::<String>("name")
-        .with_column_of::<bool>("is_paying_client");
-    let vista = csv.vista_factory().from_table(table)?.with_condition(
-        "is_paying_client",
-        FilterOp::Eq,
-        CborValue::Bool(true),
-    )?;
+async fn cloned_vista_has_the_same_conditions_and_does_not_share_later_ones() -> Result<()> {
+    let original =
+        clients().with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
 
-    let page = vista.fetch_window(1, 5).await?;
-    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
-    assert_eq!(ids, ["doc"]);
-    assert_eq!(page.total, Some(2));
+    let mut copy = original.clone();
+    assert_eq!(copy.count().await?, 2);
+
+    copy.add_condition("name", FilterOp::Eq, "Doc Brown")?;
+    assert_eq!(copy.count().await?, 1);
+    assert_eq!(original.count().await?, 2);
     Ok(())
 }

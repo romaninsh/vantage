@@ -64,9 +64,6 @@ impl Csv {
             .map_err(|e| error!("Failed to read CSV headers", detail = e))?
             .clone();
 
-        // For each CSV column index, decide the record key + parsing variant.
-        // Default: pass the header through untyped. If a declared column
-        // matches (by alias-or-name), use the column name + its type.
         let mut key_for: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
         let mut variant_for: Vec<Option<CsvTypeVariants>> = vec![None; headers.len()];
         for (name, col) in columns {

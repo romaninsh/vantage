@@ -31,6 +31,15 @@ fn user(name: &str, email: &str, group: &str) -> Record<AnyRedbType> {
     r
 }
 
+/// Ids of the rows an indexed lookup `column = value` finds.
+async fn ids_where(table: &Table<Redb, EmptyEntity>, column: &str, value: &str) -> Vec<String> {
+    let mut q = table.clone();
+    q.add_condition(q[column].clone().eq(value));
+    let mut ids: Vec<String> = q.list_values().await.unwrap().into_keys().collect();
+    ids.sort();
+    ids
+}
+
 // ── Insert path ───────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -41,11 +50,7 @@ async fn test_insert_creates_index_entries() {
         .await
         .unwrap();
 
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("alice@x.com"));
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(rows.len(), 1);
-    assert!(rows.contains_key("a"));
+    assert_eq!(ids_where(&table, "email", "alice@x.com").await, ["a"]);
 }
 
 #[tokio::test]
@@ -56,12 +61,9 @@ async fn test_insert_indexes_on_each_indexed_column() {
         .await
         .unwrap();
 
-    // Lookup by `group` should also work — both flagged columns get indexes.
-    let mut q = table.clone();
-    q.add_condition(q["group"].clone().eq("admin"));
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(rows.len(), 1);
-    assert!(rows.contains_key("a"));
+    // Both flagged columns get an index.
+    assert_eq!(ids_where(&table, "group", "admin").await, ["a"]);
+    assert_eq!(ids_where(&table, "email", "alice@x.com").await, ["a"]);
 }
 
 // ── Non-unique columns ────────────────────────────────────────────────────
@@ -82,12 +84,8 @@ async fn test_non_unique_column_returns_all_matches() {
         .await
         .unwrap();
 
-    let mut q = table.clone();
-    q.add_condition(q["group"].clone().eq("admin"));
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(rows.len(), 2);
-    assert!(rows.contains_key("a"));
-    assert!(rows.contains_key("b"));
+    assert_eq!(ids_where(&table, "group", "admin").await, ["a", "b"]);
+    assert_eq!(ids_where(&table, "group", "user").await, ["c"]);
 }
 
 // ── Delete path ───────────────────────────────────────────────────────────
@@ -106,15 +104,10 @@ async fn test_delete_removes_index_entries() {
 
     WritableValueSet::delete(&table, "a").await.unwrap();
 
-    // Alice's email no longer indexed.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("alice@x.com"));
-    assert!(q.list_values().await.unwrap().is_empty());
-
-    // Bob still indexed.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("bob@x.com"));
-    assert_eq!(q.list_values().await.unwrap().len(), 1);
+    assert!(ids_where(&table, "email", "alice@x.com").await.is_empty());
+    assert_eq!(ids_where(&table, "email", "bob@x.com").await, ["b"]);
+    // The shared group value keeps pointing at the surviving row only.
+    assert_eq!(ids_where(&table, "group", "admin").await, ["b"]);
 }
 
 // ── Replace path ──────────────────────────────────────────────────────────
@@ -127,26 +120,15 @@ async fn test_replace_swaps_index_entries() {
         .await
         .unwrap();
 
-    // Replace with new email and group.
     table
         .replace_value("a", &user("Alice Updated", "alice2@x.com", "user"))
         .await
         .unwrap();
 
-    // Old email no longer indexed.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("alice@x.com"));
-    assert!(q.list_values().await.unwrap().is_empty());
-
-    // New email is indexed.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("alice2@x.com"));
-    assert_eq!(q.list_values().await.unwrap().len(), 1);
-
-    // Old group no longer indexed for this row.
-    let mut q = table.clone();
-    q.add_condition(q["group"].clone().eq("admin"));
-    assert!(q.list_values().await.unwrap().is_empty());
+    assert!(ids_where(&table, "email", "alice@x.com").await.is_empty());
+    assert_eq!(ids_where(&table, "email", "alice2@x.com").await, ["a"]);
+    assert!(ids_where(&table, "group", "admin").await.is_empty());
+    assert_eq!(ids_where(&table, "group", "user").await, ["a"]);
 }
 
 // ── Patch path ────────────────────────────────────────────────────────────
@@ -159,25 +141,14 @@ async fn test_patch_updates_only_changed_index() {
         .await
         .unwrap();
 
-    // Patch only the email — group should stay indexed under "admin".
     let mut partial: Record<AnyRedbType> = Record::new();
     partial.insert("email".into(), AnyRedbType::new("new@x.com".to_string()));
     table.patch_value("a", &partial).await.unwrap();
 
-    // Old email gone.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("alice@x.com"));
-    assert!(q.list_values().await.unwrap().is_empty());
-
-    // New email present.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("new@x.com"));
-    assert_eq!(q.list_values().await.unwrap().len(), 1);
-
-    // Group lookup still works.
-    let mut q = table.clone();
-    q.add_condition(q["group"].clone().eq("admin"));
-    assert_eq!(q.list_values().await.unwrap().len(), 1);
+    assert!(ids_where(&table, "email", "alice@x.com").await.is_empty());
+    assert_eq!(ids_where(&table, "email", "new@x.com").await, ["a"]);
+    // The untouched column still finds the row.
+    assert_eq!(ids_where(&table, "group", "admin").await, ["a"]);
 }
 
 // ── Delete-all path ───────────────────────────────────────────────────────
@@ -197,13 +168,25 @@ async fn test_delete_all_drops_indexes() {
 
     WritableValueSet::delete_all(&table).await.unwrap();
 
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("alice@x.com"));
-    assert!(q.list_values().await.unwrap().is_empty());
+    assert!(ids_where(&table, "email", "alice@x.com").await.is_empty());
+    assert!(ids_where(&table, "group", "admin").await.is_empty());
+}
 
-    let mut q = table.clone();
-    q.add_condition(q["group"].clone().eq("admin"));
-    assert!(q.list_values().await.unwrap().is_empty());
+#[tokio::test]
+async fn test_indexes_work_for_rows_written_after_delete_all() {
+    let (_tmp, table) = user_table();
+    table
+        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
+        .await
+        .unwrap();
+    WritableValueSet::delete_all(&table).await.unwrap();
+
+    table
+        .insert_value("b", &user("Bob", "bob@x.com", "admin"))
+        .await
+        .unwrap();
+
+    assert_eq!(ids_where(&table, "group", "admin").await, ["b"]);
 }
 
 #[tokio::test]
@@ -218,35 +201,33 @@ async fn test_conditional_delete_only_drops_matching_indexes() {
         .await
         .unwrap();
 
-    // Conditional delete: only group=admin rows.
     let mut conditional = table.clone();
     conditional.add_condition(conditional["group"].clone().eq("admin"));
     WritableValueSet::delete_all(&conditional).await.unwrap();
 
-    // Bob still present.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("bob@x.com"));
-    assert_eq!(q.list_values().await.unwrap().len(), 1);
-
-    // Alice's index entries cleared.
-    let mut q = table.clone();
-    q.add_condition(q["email"].clone().eq("alice@x.com"));
-    assert!(q.list_values().await.unwrap().is_empty());
+    assert_eq!(ids_where(&table, "email", "bob@x.com").await, ["b"]);
+    assert!(ids_where(&table, "email", "alice@x.com").await.is_empty());
+    assert!(ids_where(&table, "group", "admin").await.is_empty());
+    assert_eq!(table.list_values().await.unwrap().len(), 1);
 }
 
 // ── Unflagged columns are not indexed ─────────────────────────────────────
 
 #[tokio::test]
-async fn test_unflagged_column_has_no_index_table() {
+async fn test_unflagged_column_does_not_get_in_the_way_of_writes_and_lists() {
     let (_tmp, table) = user_table();
     table
         .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
+    table
+        .replace_value("a", &user("Alicia", "alice@x.com", "admin"))
+        .await
+        .unwrap();
 
-    // `name` was not flagged. The fact that conditioning on it panics is
-    // covered in 4_conditions.rs; here we just verify that listing works
-    // (i.e. the missing index doesn't trip up insert/list paths).
+    // `name` is not flagged: conditioning on it first panics (see
+    // 4_conditions.rs), but writing and listing never need an index for it.
     let rows = table.list_values().await.unwrap();
     assert_eq!(rows.len(), 1);
+    assert_eq!(rows["a"]["name"].try_get::<String>(), Some("Alicia".into()));
 }
