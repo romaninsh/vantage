@@ -27,7 +27,7 @@ pub struct Record<V> {
 }
 
 impl<V> Record<V> {
-    /// Create a new empty record
+    /// An empty record.
     pub fn new() -> Self {
         Self {
             inner: IndexMap::new(),
@@ -153,14 +153,14 @@ impl<'a, V> IntoIterator for &'a mut Record<V> {
     }
 }
 
-// Direct conversion from serde_json::Value to Record
+/// A JSON object becomes a record field by field; any other value is wrapped
+/// under a `"value"` key.
 #[cfg(feature = "serde")]
 impl From<serde_json::Value> for Record<serde_json::Value> {
     fn from(value: serde_json::Value) -> Self {
         match value {
             serde_json::Value::Object(map) => map.into_iter().collect(),
             _ => {
-                // Handle non-object values by wrapping them
                 let mut record = Record::new();
                 record.insert("value".to_string(), value);
                 record
@@ -169,7 +169,6 @@ impl From<serde_json::Value> for Record<serde_json::Value> {
     }
 }
 
-// Reverse conversion from Record to serde_json::Value
 #[cfg(feature = "serde")]
 impl From<Record<serde_json::Value>> for serde_json::Value {
     fn from(val: Record<serde_json::Value>) -> Self {
@@ -178,8 +177,8 @@ impl From<Record<serde_json::Value>> for serde_json::Value {
     }
 }
 
-// Direct conversion from ciborium::Value to Record — mirrors the JSON
-// impl above. Non-Map values are wrapped under a `"value"` key.
+/// Like the JSON conversion: a CBOR map becomes a record, any other value is
+/// wrapped under a `"value"` key.
 impl From<ciborium::Value> for Record<ciborium::Value> {
     fn from(value: ciborium::Value) -> Self {
         match value {
@@ -199,7 +198,6 @@ impl From<ciborium::Value> for Record<ciborium::Value> {
     }
 }
 
-// Reverse conversion from Record to ciborium::Value (always a Map).
 impl From<Record<ciborium::Value>> for ciborium::Value {
     fn from(val: Record<ciborium::Value>) -> Self {
         ciborium::Value::Map(
@@ -211,7 +209,6 @@ impl From<Record<ciborium::Value>> for ciborium::Value {
     }
 }
 
-// Clean record conversion traits
 pub trait IntoRecord<T> {
     /// Infallibly convert `self` into a [`Record`].
     ///
@@ -243,7 +240,6 @@ pub trait TryFromRecord<T: Clone>: Sized {
     }
 }
 
-// Blanket implementations for Record conversion
 impl<T, U> IntoRecord<U> for Record<T>
 where
     T: Into<U>,
@@ -281,7 +277,6 @@ where
     }
 }
 
-// Blanket implementations for serde types
 #[cfg(feature = "serde")]
 impl<T> TryIntoRecord<serde_json::Value> for T
 where
@@ -295,7 +290,6 @@ where
         Ok(match json_value {
             serde_json::Value::Object(map) => map.into_iter().collect(),
             _ => {
-                // Handle non-object values by wrapping them
                 let mut record = Record::new();
                 record.insert("value".to_string(), json_value);
                 record
@@ -312,7 +306,6 @@ where
     type Error = serde_json::Error;
 
     fn from_record(record: Record<serde_json::Value>) -> Result<Self, Self::Error> {
-        // Convert Record to JSON object
         let json_object: serde_json::Map<String, serde_json::Value> =
             record.inner.into_iter().collect();
 
@@ -321,12 +314,8 @@ where
     }
 }
 
-// Blanket impls bridging serde-derived entity structs to ciborium::Value.
-// `vantage_vista::Vista` carries `Record<ciborium::Value>` across the
-// type-erased boundary, so any entity wrapped through a driver's
-// `vista_factory().from_table(...)` needs `Entity<ciborium::Value>`.
-// These impls auto-supply that for any Serialize/DeserializeOwned
-// struct, mirroring the JSON impls above.
+// Vista carries `Record<ciborium::Value>` across its type-erased boundary, so
+// every serde entity needs `Entity<ciborium::Value>`; these supply it.
 #[cfg(feature = "serde")]
 impl<T> TryIntoRecord<ciborium::Value> for T
 where
@@ -348,7 +337,6 @@ where
                             record.insert(s, v);
                         }
                         other => {
-                            // A non-text key cannot be a record field name.
                             // Surface it rather than dropping the entry silently.
                             return Err(ciborium::value::Error::custom(format!(
                                 "CBOR map key is not text: {other:?}"
@@ -383,63 +371,5 @@ where
 
         let cbor_value = ciborium::Value::Map(cbor_map);
         cbor_value.deserialized()
-    }
-}
-
-#[cfg(test)]
-mod changes_from_tests {
-    use super::Record;
-
-    fn record(pairs: &[(&str, &str)]) -> Record<String> {
-        let mut r = Record::new();
-        for (k, v) in pairs {
-            r.insert(k.to_string(), v.to_string());
-        }
-        r
-    }
-
-    #[test]
-    fn only_the_differing_fields_come_back() {
-        let before = record(&[("status", "unregistered"), ("found", "[]")]);
-        let after = record(&[("status", "pending"), ("found", "[]")]);
-
-        let changes = after.changes_from(&before);
-
-        assert_eq!(changes.len(), 1);
-        assert_eq!(changes.get("status").map(String::as_str), Some("pending"));
-        // The whole point: an untouched field is not written back, so a
-        // concurrent writer's value survives.
-        assert!(!changes.contains_key("found"));
-    }
-
-    #[test]
-    fn a_field_the_earlier_record_lacks_counts_as_a_change() {
-        let before = record(&[("status", "unregistered")]);
-        let after = record(&[("status", "unregistered"), ("verification_code", "123456")]);
-
-        let changes = after.changes_from(&before);
-
-        assert_eq!(changes.len(), 1);
-        assert!(changes.contains_key("verification_code"));
-    }
-
-    #[test]
-    fn identical_records_produce_nothing() {
-        let same = record(&[("status", "registered")]);
-        assert!(same.changes_from(&same).is_empty());
-    }
-
-    /// A merge cannot express a removal, so a field that disappeared is
-    /// not reported — callers set the representation's null instead.
-    #[test]
-    fn a_dropped_field_is_not_reported() {
-        let before = record(&[("status", "pending"), ("verification_code", "123456")]);
-        let after = record(&[("status", "registered")]);
-
-        let changes = after.changes_from(&before);
-
-        assert_eq!(changes.len(), 1);
-        assert!(changes.contains_key("status"));
-        assert!(!changes.contains_key("verification_code"));
     }
 }

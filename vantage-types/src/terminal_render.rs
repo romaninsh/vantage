@@ -1,11 +1,6 @@
-//! UI-agnostic value rendering.
-//!
-//! [`TerminalRender`] returns a [`RichText`] — an ordered list of
-//! [`Span`]s, each carrying text plus a semantic [`Style`]. UI layers
-//! (CLI, GPUI, web) translate styles into their native presentation:
-//! `vantage-cli-util` emits ANSI; a GPUI adapter would emit styled
-//! `div`s; a web layer could emit CSS classes. The trait itself never
-//! references any specific output medium.
+//! UI-agnostic value rendering: [`TerminalRender`] returns a [`RichText`], an
+//! ordered list of [`Span`]s carrying text plus a semantic [`Style`]. Each UI
+//! layer translates styles into its own presentation.
 
 /// One styled run of text inside a [`RichText`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,8 +113,6 @@ impl From<String> for RichText {
 pub trait TerminalRender {
     fn render(&self) -> RichText;
 }
-
-// Standard type implementations
 
 impl TerminalRender for String {
     fn render(&self) -> RichText {
