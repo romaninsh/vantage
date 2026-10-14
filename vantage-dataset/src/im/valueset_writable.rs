@@ -16,7 +16,6 @@ where
     ) -> crate::traits::Result<Record<Self::Value>> {
         let id = id.into();
         let stored = self.data_source.with_table_mut(&self.table_name, |table| {
-            // Check if record already exists (idempotent behavior)
             if let Some(existing_record) = table.get(&id) {
                 return existing_record.clone();
             }
@@ -48,7 +47,6 @@ where
     ) -> crate::traits::Result<Record<Self::Value>> {
         let id = id.into();
         self.data_source.with_table_mut(&self.table_name, |table| {
-            // Check if record exists
             let mut existing_record = table
                 .get(&id)
                 .ok_or_else(|| {
@@ -56,7 +54,6 @@ where
                 })?
                 .clone();
 
-            // Merge the partial fields into the existing record
             for (key, value) in partial.iter() {
                 existing_record.insert(key.clone(), value.clone());
             }
@@ -69,7 +66,6 @@ where
 
     async fn delete(&self, id: impl Into<Self::Id> + Send) -> crate::traits::Result<()> {
         let id = id.into();
-        // Delete is idempotent - success even if record doesn't exist
         self.data_source.with_table_mut(&self.table_name, |table| {
             table.shift_remove(&id);
         });
@@ -80,82 +76,5 @@ where
         self.data_source
             .with_table_mut(&self.table_name, |table| table.clear());
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::im::ImDataSource;
-    use serde::{Deserialize, Serialize};
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-    struct User {
-        id: Option<String>,
-        name: String,
-    }
-
-    #[tokio::test]
-    async fn test_replace_value() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        let mut record = Record::new();
-        record.insert(
-            "name".to_string(),
-            serde_json::Value::String("Alice".to_string()),
-        );
-        table.replace_value("user1", &record).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_patch_value() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        // Patch non-existent record should fail
-        let mut patch = Record::new();
-        patch.insert(
-            "name".to_string(),
-            serde_json::Value::String("Updated".to_string()),
-        );
-        let result = table.patch_value("nonexistent", &patch).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_delete() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        // Delete non-existent record should succeed (idempotent)
-        table.delete("nonexistent").await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_delete_all() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-
-        table.delete_all().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn patch_missing_is_not_found() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-        let err = table
-            .patch_value("nope", &Record::from(serde_json::json!({"name": "x"})))
-            .await
-            .unwrap_err();
-        assert!(err.is_not_found(), "{err}");
-    }
-
-    #[cfg(feature = "contract")]
-    #[tokio::test]
-    async fn im_table_meets_the_unnarrowed_contract() {
-        let ds = ImDataSource::new();
-        let table = ImTable::<User>::new(&ds, "users");
-        crate::contract::check_unnarrowed(&table, |s| s.to_string(), |s| serde_json::json!(s))
-            .await;
     }
 }

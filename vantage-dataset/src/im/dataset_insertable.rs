@@ -10,13 +10,11 @@ where
     <E as TryIntoRecord<serde_json::Value>>::Error: std::fmt::Debug,
 {
     async fn insert_return_id(&self, entity: &E) -> crate::traits::Result<Self::Id> {
-        // Convert entity to record
         let mut record: Record<serde_json::Value> = entity
             .clone()
             .try_into_record()
             .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
-        // Extract ID from record if present, otherwise generate random ID
         let id = if let Some(record_id) = record.get("id") {
             if record_id.is_null() {
                 self.generate_id()
@@ -35,7 +33,7 @@ where
             self.generate_id()
         };
 
-        // Remove id from the stored record since it's in the key
+        // The id lives in the key, not in the stored record.
         record.shift_remove("id");
 
         self.data_source
@@ -44,5 +42,3 @@ where
         Ok(id)
     }
 }
-
-// Tests are in tests/im_dataset.rs integration tests

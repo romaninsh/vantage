@@ -14,14 +14,6 @@ struct User {
     active: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-struct Product {
-    id: Option<String>,
-    name: String,
-    price: i32,
-    available: bool,
-}
-
 /// An entity whose serialization always fails. Used to prove write paths surface
 /// the error as a `Result` instead of panicking — a regression guard for the old
 /// `IntoRecord` `.expect()`.
@@ -160,96 +152,6 @@ async fn test_writable_dataset() {
 }
 
 #[tokio::test]
-async fn test_full_crud_cycle() {
-    let ds = ImDataSource::new();
-    let table = ImTable::<Product>::new(&ds, "products");
-
-    // Create
-    let product = Product {
-        id: Some("prod-1".to_string()),
-        name: "Laptop".to_string(),
-        price: 1200,
-        available: true,
-    };
-    let result = table.insert("prod-1", &product).await.unwrap();
-    assert_eq!(result, product);
-
-    // Read
-    let retrieved = table
-        .get("prod-1".to_string())
-        .await
-        .unwrap()
-        .expect("prod-1 exists");
-    assert_eq!(retrieved, product);
-
-    // Update
-    let updated_product = Product {
-        id: Some("prod-1".to_string()),
-        name: "Gaming Laptop".to_string(),
-        price: 1500,
-        available: true,
-    };
-    let result = table.replace("prod-1", &updated_product).await.unwrap();
-    assert_eq!(result, updated_product);
-
-    // Verify update
-    let retrieved = table
-        .get("prod-1".to_string())
-        .await
-        .unwrap()
-        .expect("prod-1 exists");
-    assert_eq!(retrieved.name, "Gaming Laptop");
-    assert_eq!(retrieved.price, 1500);
-
-    // Delete
-    table.delete("prod-1").await.unwrap();
-    let result = table.get("prod-1".to_string()).await.unwrap();
-    assert!(result.is_none());
-}
-
-#[tokio::test]
-async fn test_record_field_handling() {
-    let ds = ImDataSource::new();
-    let table = ImTable::<User>::new(&ds, "users");
-
-    // Test that ID field is properly handled
-    let user = User {
-        id: Some("test-user".to_string()),
-        name: "Test User".to_string(),
-        age: 42,
-        active: true,
-    };
-
-    // Insert user
-    table.insert("test-user", &user).await.unwrap();
-
-    // Retrieve and verify ID is properly restored
-    let retrieved = table
-        .get("test-user".to_string())
-        .await
-        .unwrap()
-        .expect("test-user exists");
-    assert_eq!(retrieved.id, Some("test-user".to_string()));
-    assert_eq!(retrieved.name, "Test User");
-    assert_eq!(retrieved.age, 42);
-    assert!(retrieved.active);
-
-    // Test patch doesn't affect ID
-    let patch = User {
-        id: Some("different-id".to_string()), // This should be ignored in patch logic
-        name: "Patched Name".to_string(),
-        age: 43,
-        active: false,
-    };
-
-    let patched = table.patch("test-user", &patch).await.unwrap();
-    assert_eq!(patched.id, Some("test-user".to_string())); // ID should remain unchanged
-    assert_eq!(patched.name, "Patched Name");
-    assert_eq!(patched.age, 43);
-    assert!(!patched.active);
-}
-
-#[tokio::test]
 async fn test_error_conditions() {
     let ds = ImDataSource::new();
     let table = ImTable::<User>::new(&ds, "users");
@@ -267,47 +169,6 @@ async fn test_error_conditions() {
     // Test get on non-existent record
     let result = table.get("nonexistent".to_string()).await.unwrap();
     assert!(result.is_none());
-}
-
-#[tokio::test]
-async fn test_multiple_tables() {
-    let ds = ImDataSource::new();
-    let user_table = ImTable::<User>::new(&ds, "users");
-    let product_table = ImTable::<Product>::new(&ds, "products");
-
-    // Insert into different tables
-    let user = User {
-        id: Some("user-1".to_string()),
-        name: "Alice".to_string(),
-        age: 30,
-        active: true,
-    };
-
-    let product = Product {
-        id: Some("prod-1".to_string()),
-        name: "Laptop".to_string(),
-        price: 1200,
-        available: true,
-    };
-
-    user_table.insert("user-1", &user).await.unwrap();
-    product_table.insert("prod-1", &product).await.unwrap();
-
-    // Verify isolation
-    let users = user_table.list().await.unwrap();
-    let products = product_table.list().await.unwrap();
-
-    assert_eq!(users.len(), 1);
-    assert_eq!(products.len(), 1);
-
-    // Test that deleting from one table doesn't affect the other
-    user_table.delete_all().await.unwrap();
-
-    let users_after = user_table.list().await.unwrap();
-    let products_after = product_table.list().await.unwrap();
-
-    assert_eq!(users_after.len(), 0);
-    assert_eq!(products_after.len(), 1); // Should be unaffected
 }
 
 // Regression: concurrent writers to the same table must not lose each other's

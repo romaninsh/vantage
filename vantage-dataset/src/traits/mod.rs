@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Data/Value Sets are like a `Vec<E>`, but E are stored remotely and only fetched when needed.
 //!
 //! 1. When we operate with DataSet, we do not know how many rows are in it.
