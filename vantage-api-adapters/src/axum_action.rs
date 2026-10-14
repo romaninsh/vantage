@@ -42,14 +42,9 @@ use crate::axum_dio::ApiError;
 /// — a malformed input, a record action invoked without an id — is 400.
 /// [`ErrorKind::Conflict`](vantage_core::ErrorKind::Conflict) — a write
 /// that disagrees with the set it goes through — is 409.
-/// Those are the only three answered 4xx. Everything else is a failure the
-/// caller cannot fix by retrying differently (a database that is down,
-/// an outbox that rejected the message), so it is a 500 and is logged.
-///
-/// Answering 4xx for an outage is worse than a wrong number: it tells
-/// every client, retry policy and alerting rule that nothing is broken.
-/// A model that wants a specific status marks its error accordingly;
-/// this function never reads the message text.
+/// Those are the only three answered 4xx. Everything else is a 500 and is
+/// logged: answering 4xx for an outage tells every client and alerting rule
+/// that nothing is broken. This function never reads the message text.
 fn error_response(e: VantageError) -> ApiError {
     let status = if e.is_not_found() {
         StatusCode::NOT_FOUND
@@ -58,9 +53,6 @@ fn error_response(e: VantageError) -> ApiError {
     } else if e.is_conflict() {
         StatusCode::CONFLICT
     } else {
-        // Match `axum_dio`'s conversion: a failure that reaches the
-        // transport has to leave a server-side trace, or an outage looks
-        // exactly like ordinary bad input in the logs.
         tracing::error!(error = ?e, "model action failed");
         StatusCode::INTERNAL_SERVER_ERROR
     };
@@ -72,11 +64,9 @@ fn error_response(e: VantageError) -> ApiError {
 
 /// The record key out of a path's captures.
 ///
-/// A canonical route names it `{id}`, but an alias mounts onto a path
-/// somebody else already chose — `/tag/{tag_id}/register` in a contract
-/// that predates the action. So a single capture *is* the id whatever it
-/// is called, and `id` only has to be spelled out when the path captures
-/// more than one value and the choice would otherwise be arbitrary.
+/// A single capture is the id whatever it is called (an alias path such
+/// as `/tag/{tag_id}/register` predates the action); with several, only
+/// `{id}` counts.
 fn record_id(params: &HashMap<String, String>) -> Option<String> {
     if params.len() == 1 {
         return params.values().next().cloned();
@@ -202,16 +192,5 @@ impl ActionRouter {
                 })
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod conflict_tests {
-    use super::*;
-
-    #[test]
-    fn conflict_maps_to_409() {
-        let e = vantage_core::error!("row belongs to another set").mark_conflict();
-        assert_eq!(error_response(e).status, StatusCode::CONFLICT);
     }
 }

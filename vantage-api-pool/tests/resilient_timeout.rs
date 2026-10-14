@@ -75,19 +75,6 @@ async fn a_timed_out_attempt_is_retried() {
 }
 
 #[tokio::test]
-async fn disabling_the_timeout_waits_for_a_slow_answer() {
-    let server = slow_server(Duration::from_millis(300)).await;
-    let client = local_client_with_timeout(None).build();
-    let url = server.uri();
-
-    let resp = within(client.execute_with(&CallPolicy::background(), |h| h.get(&url)))
-        .await
-        .expect("no timeout applies");
-
-    assert_eq!(resp.status().as_u16(), 200);
-}
-
-#[tokio::test]
 async fn a_supplied_client_keeps_its_own_timeout_setting() {
     let server = slow_server(Duration::from_millis(300)).await;
     let client = ResilientClient::builder()

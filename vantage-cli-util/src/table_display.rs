@@ -1,3 +1,6 @@
+//! Styled terminal tables for records. Colours follow `NO_COLOR` and TTY
+//! detection via `owo-colors`.
+
 use comfy_table::{
     Attribute, Cell, CellAlignment, ContentArrangement, Table as ComfyTable, TableComponent,
     presets,
@@ -10,10 +13,6 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record, RichText, Span, Style, TerminalRender};
 
-/// Convert a [`RichText`] to an ANSI-styled string.
-///
-/// `owo-colors` honors `NO_COLOR` and auto-detects whether stdout is
-/// a TTY, so this is safe to embed in cells regardless of context.
 fn rich_to_ansi(rich: &RichText) -> String {
     let mut out = String::with_capacity(rich.spans.iter().map(|s| s.text.len()).sum::<usize>() + 8);
     for span in &rich.spans {
@@ -36,7 +35,6 @@ fn span_to_ansi(span: &Span) -> String {
     }
 }
 
-/// Pick alignment from the column's declared Rust type name.
 fn alignment_for(type_name: &str) -> CellAlignment {
     let last = type_name.rsplit("::").next().unwrap_or(type_name);
     if matches!(
@@ -87,9 +85,6 @@ where
 }
 
 /// Render records as a styled table without per-column type metadata.
-///
-/// Convenience wrapper around [`render_records_typed`] for ad-hoc maps
-/// where column types aren't available.
 pub fn render_records<Id, V>(records: &IndexMap<Id, Record<V>>, id_field: Option<&str>)
 where
     Id: std::fmt::Display,
@@ -101,10 +96,6 @@ where
 /// Render records with an explicit column list — no auto-prepended
 /// id column. `column_types` is consulted for per-column alignment but
 /// doesn't drive which columns appear; `columns` does.
-///
-/// Used by the model-driven CLI when the caller passes `=col1,col2`:
-/// the user spelled out exactly what they want to see, and an extra
-/// id column would just be noise.
 pub fn render_records_columns<Id, V>(
     records: &IndexMap<Id, Record<V>>,
     columns: &[String],
@@ -196,14 +187,12 @@ pub fn render_records_typed<Id, V>(
     let mut table = ComfyTable::new();
     table
         .load_preset(presets::UTF8_HORIZONTAL_ONLY)
-        // Drop inter-row separators — keep only top, header, and bottom rules.
         .remove_style(TableComponent::HorizontalLines)
         .remove_style(TableComponent::MiddleIntersections)
         .remove_style(TableComponent::LeftBorderIntersections)
         .remove_style(TableComponent::RightBorderIntersections)
-        // Size columns to their content. `Dynamic` stretches to fill
-        // terminal width, which looks bad when piped or when the
-        // terminal can't be detected.
+        // `Dynamic` stretches to the terminal width, which looks bad when
+        // piped or when the terminal can't be detected.
         .set_content_arrangement(ContentArrangement::Disabled);
 
     let mut header = vec![header_cell("id")];

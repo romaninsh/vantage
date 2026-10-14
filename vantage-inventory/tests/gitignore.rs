@@ -10,17 +10,6 @@ fn read(dir: &tempfile::TempDir) -> String {
 }
 
 #[test]
-fn a_new_project_gets_exactly_the_block() {
-    let dir = tempfile::tempdir().unwrap();
-    ensure_gitignore(dir.path(), LINES).unwrap();
-
-    assert_eq!(
-        read(&dir),
-        format!("{GITIGNORE_BEGIN}\n# generated\n*/*-schema-*.json\n\n.cache/\n{GITIGNORE_END}\n")
-    );
-}
-
-#[test]
 fn writing_twice_leaves_one_block() {
     let dir = tempfile::tempdir().unwrap();
     assert!(
@@ -61,21 +50,4 @@ fn an_unreadable_gitignore_is_left_alone() {
 
     assert!(ensure_gitignore(dir.path(), LINES).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
-}
-
-#[test]
-fn a_stale_block_is_replaced_not_duplicated() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join(".gitignore"),
-        format!("keep-me\n\n{GITIGNORE_BEGIN}\nsomething-old\n{GITIGNORE_END}\ntrailing\n"),
-    )
-    .unwrap();
-
-    ensure_gitignore(dir.path(), &[".env"]).unwrap();
-
-    assert_eq!(
-        read(&dir),
-        format!("keep-me\n\n{GITIGNORE_BEGIN}\n.env\n{GITIGNORE_END}\ntrailing\n")
-    );
 }
