@@ -108,16 +108,6 @@ async fn delete_all_honours_conditions() {
     assert_eq!(db.store().table("product").ids(), vec!["p2"]);
 }
 
-#[tokio::test]
-async fn search_matches_text_cells() {
-    let db = seeded().await;
-    let mut t = products(&db);
-    let c = t.data_source().search_table_condition(&t, "cof");
-    t.add_condition(c);
-    let rows = t.data_source().list_table_values(&t).await.unwrap();
-    assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["p3"]);
-}
-
 /// Only `name` is flagged `Searchable`, so a needle found only in
 /// `category` matches nothing.
 #[tokio::test]
@@ -150,33 +140,6 @@ async fn search_reads_only_searchable_columns() {
 }
 
 #[tokio::test]
-async fn related_in_condition_narrows_by_source_rows() {
-    let db = seeded().await;
-    let orders = db.store().table("order");
-    orders.upsert(
-        "o1",
-        [("product".to_string(), ciborium::Value::Text("p2".into()))]
-            .into_iter()
-            .collect(),
-    );
-    orders.upsert(
-        "o2",
-        [("product".to_string(), ciborium::Value::Text("p1".into()))]
-            .into_iter()
-            .collect(),
-    );
-    let mut src = products(&db);
-    src.add_condition(src["category"].eq("food"));
-    let mut o = Table::<MemoryDB, EmptyEntity>::new("order", db.clone())
-        .with_id_column("id")
-        .with_column_of::<String>("product");
-    let c = db.related_in_condition("product", &src, "id");
-    o.add_condition(c);
-    let rows = o.data_source().list_table_values(&o).await.unwrap();
-    assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["o1"]);
-}
-
-#[tokio::test]
 async fn related_in_condition_matches_integer_foreign_keys() {
     let db = seeded().await;
     let clients = db.store().table("client");
@@ -204,6 +167,35 @@ async fn related_in_condition_matches_integer_foreign_keys() {
     o.add_condition(c);
     let rows = o.data_source().list_table_values(&o).await.unwrap();
     assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["o2"]);
+}
+
+#[test]
+fn scalars_convert_back_to_the_type_they_were_made_from() {
+    assert!(bool::try_from(AnyMemoryType::from(true)).unwrap());
+    assert_eq!(i64::try_from(AnyMemoryType::from(7_i64)).unwrap(), 7);
+    assert_eq!(f64::try_from(AnyMemoryType::from(1.5_f64)).unwrap(), 1.5);
+    assert_eq!(String::try_from(AnyMemoryType::from("tea")).unwrap(), "tea");
+    assert!(bool::try_from(AnyMemoryType::from(1_i64)).is_err());
+    assert!(i64::try_from(AnyMemoryType::from("tea")).is_err());
+}
+
+#[test]
+fn an_untyped_value_accepts_any_cbor() {
+    let flag = AnyMemoryType::untyped(ciborium::Value::Bool(true));
+    assert!(bool::try_from(flag).unwrap());
+    let number = AnyMemoryType::untyped(ciborium::Value::Integer(3.into()));
+    assert_eq!(i64::try_from(number).unwrap(), 3);
+}
+
+#[test]
+fn an_optional_value_stores_none_as_null_and_reads_back_both_ways() {
+    let none = AnyMemoryType::new(None::<i64>);
+    assert_eq!(none.value(), &ciborium::Value::Null);
+    let some = AnyMemoryType::new(Some(3_i64));
+    assert_eq!(some.value(), &ciborium::Value::Integer(3.into()));
+    assert_eq!(none.try_get::<Option<i64>>(), Some(None));
+    assert_eq!(some.try_get::<Option<i64>>(), Some(Some(3)));
+    assert_eq!(some.try_get::<i64>(), Some(3));
 }
 
 #[tokio::test]

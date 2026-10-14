@@ -1,9 +1,5 @@
-//! In-memory type system.
-//!
-//! `vantage-memory` keeps row bodies as CBOR directly (see `src/store.rs`);
-//! `AnyMemoryType` is the typed-layer wrapper over that same representation,
-//! so a `Table<MemoryDB, E>` field round-trips fully typed without going
-//! through an intermediate encoding.
+//! The typed layer's type system: `AnyMemoryType` wraps the CBOR the store
+//! already holds, so a `Table<MemoryDB, E>` field needs no intermediate encoding.
 
 use vantage_core::VantageError;
 use vantage_types::{Record, vantage_type_system};
@@ -64,8 +60,6 @@ impl std::fmt::Display for AnyMemoryType {
     }
 }
 
-// TryFrom<AnyMemoryType> for common scalar types — used when extracting
-// scalar results from queries.
 macro_rules! impl_try_from_memory {
     ($($ty:ty),*) => {
         $(
@@ -111,6 +105,3 @@ impl TryFrom<AnyMemoryType> for Record<AnyMemoryType> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

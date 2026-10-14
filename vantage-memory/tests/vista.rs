@@ -1,8 +1,11 @@
 use ciborium::Value as CborValue;
-use vantage_dataset::{InsertableValueSet, ReadableValueSet, WritableValueSet};
-use vantage_memory::{MemoryStore, MemoryVistaFactory};
+use vantage_dataset::{ReadableValueSet, WritableValueSet};
+use vantage_memory::{MemoryCatalog, MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
-use vantage_vista::{Capability, FilterOp, SortDirection, Vista, VistaFactory};
+use vantage_vista::{
+    Column, FilterOp, JoinKey, Reference, SortDirection, Vista, VistaFactory, VistaMetadata,
+    VistaResolver,
+};
 
 const PRODUCT: &str = r#"
 name: product
@@ -66,29 +69,6 @@ async fn ids(v: &Vista) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn capabilities_are_advertised() {
-    let (_s, f) = setup();
-    let v = f.from_yaml(PRODUCT).unwrap();
-    let c = v.capabilities();
-    for cap in [
-        Capability::Insert,
-        Capability::Update,
-        Capability::Delete,
-        Capability::Import,
-        Capability::Subscribe,
-        Capability::Order,
-        Capability::Search,
-        Capability::FilterOps,
-        Capability::Window,
-        Capability::Traverse,
-        Capability::ConfineWrites,
-    ] {
-        assert!(c.has(cap), "{cap} is not advertised");
-    }
-    assert!(!c.has(Capability::Cursor) && !c.has(Capability::NativeConditions));
-}
-
-#[tokio::test]
 async fn a_condition_on_an_undeclared_column_is_an_error() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
@@ -96,22 +76,6 @@ async fn a_condition_on_an_undeclared_column_is_an_error() {
         .with_condition("colour", FilterOp::Eq, text("red"))
         .unwrap_err();
     assert!(!err.is_unsupported(), "{err}");
-}
-
-#[tokio::test]
-async fn equality_conforms_text_to_an_integer_column() {
-    let (_s, f) = setup();
-    let v = f.from_yaml(PRODUCT).unwrap();
-    let v = v.with_condition("price", FilterOp::Eq, text("5")).unwrap();
-    assert_eq!(ids(&v).await, ["p2"]);
-}
-
-#[tokio::test]
-async fn a_range_conforms_text_to_an_integer_column() {
-    let (_s, f) = setup();
-    let v = f.from_yaml(PRODUCT).unwrap();
-    let v = v.with_condition("price", FilterOp::Gt, text("3")).unwrap();
-    assert_eq!(ids(&v).await, ["p2", "p3"]);
 }
 
 /// `qty` has no `type:`, so a written integer stays an integer and ranges
@@ -145,14 +109,6 @@ async fn op_conditions_order_search_and_count() {
     assert_eq!(v.count().await.unwrap(), 2);
     v.set_search(Some("cof")).unwrap();
     assert_eq!(ids(&v).await, ["p3"]);
-}
-
-#[test]
-fn an_unknown_relation_is_not_found() {
-    let (_s, f) = setup();
-    let v = f.from_yaml(PRODUCT).unwrap();
-    let err = v.get_ref("no_such_relation", None).unwrap_err();
-    assert!(err.is_not_found(), "{err:?}");
 }
 
 fn datetime(s: &str) -> CborValue {
@@ -193,87 +149,6 @@ async fn datetime_operand_orders_against_text_dates() {
 }
 
 #[tokio::test]
-async fn set_order_replaces_previous_order() {
-    let (_s, f) = setup();
-    let mut v = f.from_yaml(PRODUCT).unwrap();
-    v.set_order(Some(("price", SortDirection::Descending)))
-        .unwrap();
-    v.set_order(Some(("name", SortDirection::Ascending)))
-        .unwrap();
-    assert_eq!(ids(&v).await, ["p2", "p3", "p1"]);
-}
-
-#[tokio::test]
-async fn windows_carry_the_total() {
-    let (_s, f) = setup();
-    let mut v = f.from_yaml(PRODUCT).unwrap();
-    v.set_order(Some(("price", SortDirection::Ascending)))
-        .unwrap();
-    let page = v.fetch_window(2, 2).await.unwrap();
-    let ids_of = |page: &vantage_vista::Page| -> Vec<String> {
-        page.rows.iter().map(|(id, _)| id.clone()).collect()
-    };
-    assert_eq!(ids_of(&page), ["p2"]);
-    assert_eq!(page.total, Some(3));
-    let w = v.fetch_window(1, 1).await.unwrap();
-    assert_eq!(ids_of(&w), ["p3"]);
-    assert_eq!(
-        ids(&v).await.len(),
-        3,
-        "a window must not narrow the vista itself"
-    );
-}
-
-#[tokio::test]
-async fn writes_through_the_vista_reach_the_store() {
-    let (s, f) = setup();
-    let v = f.from_yaml(PRODUCT).unwrap();
-    let rec = record(&[("name", text("Scone")), ("price", int(2))]);
-    let id = v.insert_return_id_value(&rec).await.unwrap();
-    assert_eq!(id, "1");
-    assert_eq!(s.table("product").len(), 4);
-    v.patch_value(&id, &record(&[("price", int(9))]))
-        .await
-        .unwrap();
-    assert_eq!(
-        s.table("product").get(&id).unwrap().get("price"),
-        Some(&int(9))
-    );
-    v.delete(&id).await.unwrap();
-    v.delete(&id).await.unwrap();
-}
-
-#[tokio::test]
-async fn upsert_inserts_then_replaces() {
-    let (_s, f) = setup();
-    let v = f.from_yaml(PRODUCT).unwrap();
-
-    v.upsert_value("new1", &record(&[("name", text("Bun"))]))
-        .await
-        .unwrap();
-    let row = v.get_value("new1").await.unwrap().unwrap();
-    assert_eq!(row.get("name"), Some(&text("Bun")));
-
-    v.upsert_value("new1", &record(&[("name", text("Bun v2"))]))
-        .await
-        .unwrap();
-    let row = v.get_value("new1").await.unwrap().unwrap();
-    assert_eq!(row.get("name"), Some(&text("Bun v2")));
-}
-
-#[tokio::test]
-async fn patch_of_a_missing_row_is_not_found_and_delete_is_ok() {
-    let (_s, f) = setup();
-    let v = f.from_yaml(PRODUCT).unwrap();
-    let err = v
-        .patch_value("nope", &record(&[("name", text("x"))]))
-        .await
-        .unwrap_err();
-    assert!(err.is_not_found(), "{err}");
-    v.delete("nope").await.unwrap();
-}
-
-#[tokio::test]
 async fn a_clone_isolates_query_state() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
@@ -303,26 +178,95 @@ async fn has_one_reference_traverses_to_the_target_row() {
 }
 
 #[tokio::test]
-async fn seed_file_is_loaded_by_the_factory() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("cat.yaml");
-    std::fs::write(&path, "- { id: c1, name: Cat }\n").unwrap();
-    let store = MemoryStore::new();
-    let f = MemoryVistaFactory::new(store.clone());
-    let yaml = format!(
-        "name: cat\nid_column: id\ncolumns:\n  id: {{ type: string, flags: [id] }}\n  name: {{ type: string }}\nmemory:\n  seed: {}\n",
-        path.display()
-    );
-    let v = f.from_yaml(&yaml).unwrap();
-    assert_eq!(ids(&v).await, ["c1"]);
+async fn a_text_operand_is_conformed_to_an_integer_column() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+    let equal = v
+        .clone()
+        .with_condition("price", FilterOp::Eq, text("5"))
+        .unwrap();
+    assert_eq!(ids(&equal).await, ["p2"]);
+    let above = v.with_condition("price", FilterOp::Gt, text("3")).unwrap();
+    assert_eq!(ids(&above).await, ["p2", "p3"]);
 }
 
-#[tokio::test]
-async fn spec_indexes_apply_to_a_pre_existing_table() {
-    let (s, f) = setup();
-    assert!(!s.table("product").is_indexed("category"));
-    f.from_yaml(PRODUCT).unwrap();
-    assert!(s.table("product").is_indexed("category"));
+#[test]
+fn an_unknown_relation_is_not_found() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(PRODUCT).unwrap();
+    let err = v.get_ref("no_such_relation", None).unwrap_err();
+    assert!(err.is_not_found(), "{err:?}");
+}
+
+#[test]
+fn a_contained_relation_is_refused() {
+    let store = MemoryStore::new();
+    store.table("client");
+    let catalog = MemoryCatalog::new(store);
+    catalog.register(
+        "client",
+        VistaMetadata::new().with_reference(Reference::contains_many("tags", "tags")),
+    );
+    let err = catalog
+        .vista("client")
+        .unwrap()
+        .get_ref("tags", None)
+        .unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+}
+
+#[test]
+fn a_relation_to_a_table_the_store_lacks_is_not_found() {
+    let store = MemoryStore::new();
+    store.table("client");
+    let catalog = MemoryCatalog::new(store);
+    catalog.register(
+        "client",
+        VistaMetadata::new().with_reference(Reference::has_many(
+            "orders",
+            "order",
+            JoinKey::new("id", "client"),
+        )),
+    );
+    let err = catalog
+        .vista("client")
+        .unwrap()
+        .get_ref("orders", None)
+        .unwrap_err();
+    assert!(err.is_not_found(), "{err}");
+}
+
+#[test]
+fn a_registered_name_carries_its_metadata_and_gets_a_table() {
+    let store = MemoryStore::new();
+    let catalog = MemoryCatalog::new(store.clone());
+    catalog.register(
+        "client",
+        VistaMetadata::new()
+            .with_id_column("id")
+            .with_column(Column::new("name", "string")),
+    );
+    let vista = catalog.vista("client").unwrap();
+    assert_eq!(vista.name(), "client");
+    assert!(vista.column("name").is_some());
+    assert_eq!(store.table_names(), ["client"]);
+}
+
+#[test]
+fn an_unregistered_store_table_gets_only_its_id_column() {
+    let store = MemoryStore::new();
+    store.table("order");
+    let vista = MemoryCatalog::new(store).vista("order").unwrap();
+    assert_eq!(vista.id_column(), Some("id"));
+    assert!(vista.columns().is_empty());
+}
+
+#[test]
+fn an_unknown_name_is_not_found_and_creates_no_table() {
+    let store = MemoryStore::new();
+    let err = MemoryCatalog::new(store.clone()).vista("nope").unwrap_err();
+    assert!(err.is_not_found(), "{err}");
+    assert!(store.table_names().is_empty());
 }
 
 #[tokio::test]

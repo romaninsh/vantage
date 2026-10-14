@@ -46,45 +46,64 @@ async fn store_writes_reach_an_unfiltered_watch() {
 }
 
 #[tokio::test]
-async fn vista_writes_reach_the_watch() {
-    let store = MemoryStore::new();
-    let v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    let mut w = v.watch().await.unwrap();
-    v.insert_return_id_value(&status("Open")).await.unwrap();
-    assert!(matches!(next(&mut w).await, VistaChange::Inserted { .. }));
-}
-
-#[tokio::test]
-async fn row_entering_filter_is_inserted() {
+async fn a_filtered_watch_sees_rows_enter_stay_and_leave() {
     let store = MemoryStore::new();
     let mut v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
     v.add_condition("status", FilterOp::Eq, text("Open"))
         .unwrap();
     let mut w = v.watch().await.unwrap();
     let t = store.table("t");
+
     t.upsert("a", status("Closed"));
     nothing(&mut w).await;
     t.patch("a", &status("Open"));
     assert!(matches!(next(&mut w).await, VistaChange::Inserted { id, .. } if id == "a"));
-}
 
-#[tokio::test]
-async fn row_leaving_filter_is_deleted() {
-    let store = MemoryStore::new();
-    let t = store.table("t");
-    t.upsert("a", status("Open"));
-    let mut v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    v.add_condition("status", FilterOp::Eq, text("Open"))
-        .unwrap();
-    let mut w = v.watch().await.unwrap();
+    t.patch(
+        "a",
+        &[("note".to_string(), text("n"))].into_iter().collect(),
+    );
+    assert!(matches!(next(&mut w).await, VistaChange::Updated { id, .. } if id == "a"));
+
     t.patch("a", &status("Closed"));
     assert!(matches!(next(&mut w).await, VistaChange::Deleted { id } if id == "a"));
+    t.patch("a", &status("Held"));
     t.delete("a");
     nothing(&mut w).await;
 }
 
 #[tokio::test]
-async fn lag_becomes_invalidated() {
+async fn a_filtered_watch_sees_a_matching_row_deleted() {
+    let store = MemoryStore::new();
+    let t = store.table("t");
+    t.upsert("a", status("Open"));
+    t.upsert("b", status("Closed"));
+    let mut v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
+    v.add_condition("status", FilterOp::Eq, text("Open"))
+        .unwrap();
+    let mut w = v.watch().await.unwrap();
+    t.delete("b");
+    nothing(&mut w).await;
+    t.delete("a");
+    assert!(matches!(next(&mut w).await, VistaChange::Deleted { id } if id == "a"));
+}
+
+#[tokio::test]
+async fn leaving_quiet_after_quiet_writes_invalidates() {
+    let store = MemoryStore::new();
+    let v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
+    let mut w = v.watch().await.unwrap();
+    let t = store.table("t");
+    t.set_quiet(true);
+    t.upsert("a", status("Open"));
+    nothing(&mut w).await;
+    t.set_quiet(false);
+    assert!(matches!(next(&mut w).await, VistaChange::Invalidated));
+    nothing(&mut w).await;
+}
+
+#[tokio::test]
+async fn a_lagging_watch_is_invalidated() {
     let store = MemoryStore::new();
     let v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
     let mut w = v.watch().await.unwrap();
@@ -103,16 +122,12 @@ async fn lag_becomes_invalidated() {
 }
 
 #[tokio::test]
-async fn unquiet_after_quiet_writes_invalidates() {
+async fn vista_writes_reach_the_watch() {
     let store = MemoryStore::new();
     let v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
     let mut w = v.watch().await.unwrap();
-    let t = store.table("t");
-    t.set_quiet(true);
-    t.upsert("a", status("Open"));
-    t.set_quiet(false);
-    assert!(matches!(next(&mut w).await, VistaChange::Invalidated));
-    nothing(&mut w).await;
+    v.insert_return_id_value(&status("Open")).await.unwrap();
+    assert!(matches!(next(&mut w).await, VistaChange::Inserted { .. }));
 }
 
 #[tokio::test]

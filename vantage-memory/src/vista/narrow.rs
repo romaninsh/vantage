@@ -31,13 +31,12 @@ impl MemoryTableShell {
     }
 
     /// `condition` as the store evaluates it. Operands are conformed to the
-    /// column's [`Affinity`](super::affinity::Affinity), items of a set one by one; a `Like` pattern is
-    /// text and stays as given.
+    /// column's [`Affinity`](super::affinity::Affinity), set items one by one;
+    /// a `Like` pattern stays as given.
     ///
-    /// A column with no declared type gives no stored form to conform to,
-    /// so (in)equality with an id-like value (an integer, or its canonical
-    /// text) matches both forms, the way a foreign key written by hand
-    /// meets a text id.
+    /// A column with no declared type has no stored form, so (in)equality
+    /// with an id-like value (an integer, or its canonical text) matches both
+    /// forms.
     fn store_condition(&self, condition: &Condition) -> MemoryCondition {
         let column = condition.column.as_str();
         let value = &condition.value;

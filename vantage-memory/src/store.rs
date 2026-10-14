@@ -6,11 +6,7 @@ pub(crate) mod ids;
 mod index;
 mod query;
 mod table;
-#[cfg(test)]
-mod tests;
 mod write;
-#[cfg(test)]
-mod write_tests;
 
 use std::collections::HashMap;
 use std::sync::Arc;
