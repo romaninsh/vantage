@@ -40,11 +40,13 @@ Expressions are just one part of Vantage framework. I recommend also looking int
   `Expressive` constructs, `Selectable` implementation, Precise type system.
 - vantage-dataset - Although not directly related to Expressions - DataSet crate provides similar
   abstraction for abstractign CRUD operatons on remote data sources.
-- vantage-table - Provides abstract implementation with schema-compliant data-sources. Although
-  `Table` does not rely on expressions directly - it makes sense to implement those through
-  `Selectable` query building.
-- vantage-core - Implements `VantageError`, `Return` and some other useful things shared across
-  Vantage crates.
+- vantage-table - Provides abstract implementation with schema-compliant data-sources. `Table`
+  builds on expressions: its `TableExprSource` / `TableQuerySource` traits return expressions and
+  `Selectable` queries.
+- vantage-vista - Type-erased data handle. `AnyExpression` and `ExpressionLike` live there and are
+  re-exported from this crate.
+- vantage-core - Implements `VantageError`, the `Result` alias and some other useful things shared
+  across Vantage crates.
 
 ## Rust Type Support
 
@@ -54,15 +56,16 @@ suits your database. Use CBOR values for binary protocols, SurrealDB's native ty
 or design custom enum-style types optimized for your specific database's type system.
 
 ```rust,ignore
-use vantage_expressions::expr_any;
+use vantage_expressions::expr_as;
 use surrealdb::sql::Value as SurrealValue;
 use std::time::Duration;
 
 // Using SurrealDB native types with Duration
-let surreal_query = expr_any!(
+let ttl = Duration::from_secs(3600);
+let surreal_query = expr_as!(
     SurrealValue,
     "SELECT * FROM session WHERE created_at > time::now() - {}",
-    Duration::from_secs(3600)
+    ttl
 );
 ```
 
@@ -132,15 +135,15 @@ Type mapping becomes particularly powerful when combined with deferred queries a
 incompatible value types:
 
 ```rust,ignore
-use vantage_expressions::{expr, protocol::datasource::QuerySource, expression::mapping::ExpressionMap};
+use vantage_expressions::{expr_as, ExprDataSource, expression::mapping::ExpressionMap};
 
 // Database 1 uses String values, Database 2 uses JSON Values
 let db1 = StringDatabase::new("connection1");
 let db2 = JsonDatabase::new("connection2");
 
 // Create query for db1 and defer its execution
-let string_query = expr!("SELECT user_ids FROM active_users WHERE department = {}", "engineering");
-let deferred_query = db1.defer(string_query);
+let string_query = expr_as!(String, "SELECT user_ids FROM active_users WHERE department = {}", "engineering");
+let deferred_query = expr_as!(String, "{}", { db1.defer(string_query) });
 
 // Map the deferred String query to JSON Value and execute on db2
 let result = db2.execute(&deferred_query.map()).await;
@@ -150,11 +153,11 @@ The deferred query from `db1` is automatically converted from `Expression<String
 `Expression<Value>` when mapped, enabling cross-database operations even when the databases use
 incompatible value types.
 
-## Type Mapping
+### Mapping custom type systems
 
 If your database engine uses a custom type system (e.g. SurrealType) but under the hood it would use
-CBOR it is sufficient for you to implement `Into<cborium::Value>`. Now any expression defined for
-your custom type can be mapped into cborium::Value automatically.
+CBOR it is sufficient for you to implement `Into<ciborium::Value>`. Now any expression defined for
+your custom type can be mapped into ciborium::Value automatically.
 
 Here is example of mapping [`Expression<String>`] into [`Expression<Value>`]:
 
@@ -300,8 +303,9 @@ The query building remains synchronous even though `get_user_ids()` is an async 
 only invoked when the query is executed, maintaining clean separation between query construction and
 execution phases.
 
-The deferred SurrealDB query executes automatically when the PostgreSQL query needs the user IDs,
-enabling seamless cross-database operations. Result is passed into db.execute() as a bind.
+The same works when the deferred value is a query against another database (from `db.defer()`
+above): it runs when the outer query is executed, and its result is passed into `db.execute()` as a
+bind.
 
 ## Extensibility
 
@@ -354,7 +358,7 @@ different database backends. It defines common operations like filtering, sortin
 and pagination that are universal to most query languages.
 
 ```rust,ignore
-use vantage_expressions::{expr, protocol::selectable::Selectable};
+use vantage_expressions::{expr, Order, Selectable};
 use vantage_surrealdb::select::SurrealSelect;
 
 // Create a new select query builder
@@ -364,10 +368,10 @@ let mut select = SurrealSelect::new();
 select.add_source(expr!("users"), None);
 select.add_field("name".to_string());
 select.add_field("email".to_string());
-select.add_expression(expr!("age * 2"), Some("double_age".to_string()));
+select.add_expression(expr!("age * 2"));
 select.add_where_condition(expr!("age > {}", 18));
 select.add_where_condition(expr!("active = {}", true));
-select.add_order_by(expr!("name"), true);
+select.add_order_by(expr!("name"), Order::Asc);
 select.add_group_by(expr!("department"));
 select.set_distinct(true);
 select.set_limit(Some(10), Some(5));
@@ -385,7 +389,7 @@ let query = SurrealSelect::new()
     .with_field("name")
     .with_field("price")
     .with_condition(expr!("price > {}", 100))
-    .with_order(expr!("price"), false)
+    .with_order(expr!("price"), Order::Desc)
     .with_limit(Some(5), None);
 
 let results = db.execute(&query.expr()).await?;

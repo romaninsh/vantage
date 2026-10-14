@@ -2,6 +2,8 @@
 
 Universal table data adapters for major Rust UI frameworks. This crate bridges between data sources and UI framework table components, with intelligent caching and async data loading.
 
+The package is named `dataset-ui-adapters` (import it as `dataset_ui_adapters`). It is not published; the `example_*` apps and `learn-6` use it through a path dependency.
+
 ## Screenshots
 
 | Framework                                                                                               | Screenshot                          |
@@ -19,7 +21,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vantage-ui-adapters = { path = ".", features = ["egui"] }
+dataset-ui-adapters = { path = "../vantage-ui-adapters", features = ["egui"] }
 bakery_model3 = { path = "../bakery_model3" }
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 ```
@@ -27,17 +29,20 @@ tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 Example usage:
 
 ```rust
-use vantage_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
-use bakery_model3::*;
+use bakery_model3::{Client, connect_surrealdb, surrealdb};
+use dataset_ui_adapters::{egui_adapter::EguiTable, TableStore, VantageTableAdapter};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Connect to SurrealDB and get client table
-    bakery_model3::connect_surrealdb().await?;
-    let client_table = Client::table();
+    // Connect to SurrealDB and build a Vista over the client table
+    connect_surrealdb().await?;
+    let db = surrealdb();
+    let vista = db
+        .vista_factory()
+        .from_table(Client::surreal_table(db.clone()))?;
 
     // Create adapter and table
-    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let client_table_adapter = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(client_table_adapter);
     let table = EguiTable::new(store).await;
 
@@ -48,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Architecture
 
-- **Vantage Table**: Database tables (e.g. Clients from SurrealDB)
+- **Vista**: A data source (e.g. Clients from SurrealDB), wrapped by `VantageTableAdapter`
 - **UI Adapter**: Bridge layer with caching and async loading
 - **UI Framework**: Any supported framework (egui, GPUI, Slint, etc.)
 
@@ -65,13 +70,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Framework Usage
 
+In each snippet, `vista` is built as in the Quick Start above.
+
 ### egui
 
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client_table = Client::table();
-    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let client_table_adapter = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(client_table_adapter);
     let table = EguiTable::new(store).await;
 
@@ -83,19 +89,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### GPUI
 
-```rust
-#[tokio::main]
-async fn main() {
-    let client_table = Client::table();
-    let client_table_adapter = VantageTableAdapter::new(client_table).await;
-    let store = TableStore::new(client_table_adapter);
-    let table = GpuiTable::new(store).await;
+`GpuiTableDelegate` implements gpui-component's `TableDelegate`, so it goes into a `TableState` and renders with `DataTable`. The app itself depends on `gpui_platform` and `gpui-component`, as `example_gpui` does:
 
-    gpui::App::new().run(move |cx: &mut AppContext| {
-        let app = TableApp { table };
-        cx.open_window(WindowOptions::default(), |cx| app.into());
+```rust
+fn main() {
+    gpui_platform::application().run(move |cx| {
+        gpui_component::init(cx);
+
+        cx.spawn(async move |cx| {
+            let client_table_adapter = VantageTableAdapter::new(vista).await;
+            let store = TableStore::new(client_table_adapter);
+            let delegate = GpuiTableDelegate::new(store);
+
+            cx.open_window(WindowOptions::default(), |window, cx| {
+                let state = cx.new(|cx| TableState::new(delegate, window, cx));
+                let view = cx.new(|cx| TableApp::new(state, window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            })?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .detach();
     });
 }
+
+// in TableApp::render:
+// .child(DataTable::new(&self.state).stripe(true).bordered(true))
 ```
 
 ### Slint
@@ -103,13 +121,14 @@ async fn main() {
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client_table = Client::table();
-    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let client_table_adapter = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(client_table_adapter);
     let table = SlintTable::new(store).await;
 
     let app = MainWindow::new()?;
-    app.set_table_model(table.as_model_rc());
+    // example_slint copies the rows of `table.as_model_rc()` into
+    // StandardListViewItem models for its `table-rows` property
+    app.set_table_rows(rows);
     app.run()?;
     Ok(())
 }
@@ -120,8 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 #[tokio::main]
 async fn main() {
-    let client_table = Client::table();
-    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let client_table_adapter = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(client_table_adapter);
     let table = TauriTable::new(store).await;
 
@@ -138,8 +156,7 @@ async fn main() {
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client_table = Client::table();
-    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let client_table_adapter = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(client_table_adapter);
     let mut adapter = RatatuiTableAdapter::new(store);
     adapter.refresh_data().await;
@@ -151,10 +168,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })?;
 
         if let Event::Key(key) = event::read()? {
-            adapter.handle_key_event(key);
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                KeyCode::Down => adapter.next_row(),
+                KeyCode::Up => adapter.previous_row(),
+                _ => {}
+            }
         }
     }
 }
+```
+
+### Ratatui over a Scenery
+
+The `ratatui` feature also enables `ratatui_dio::SceneryTable`, which takes a `vantage-diorama` `TableScenery` instead of a `TableStore`. It owns the terminal loop, renders only the visible rows, repaints when the scenery changes, and can pin `ValueScenery` readouts to the status bar. `learn-6` uses it:
+
+```rust
+use dataset_ui_adapters::ratatui_dio;
+
+ratatui_dio::SceneryTable::new(scenery)
+    .with_column("FILENAME", "Key", 0) // width 0 = flexible fill
+    .with_column("SIZE", "Size", 10)
+    .with_status_value("total rows", totals)
+    .run()
+    .await?;
 ```
 
 ### Cursive
@@ -162,8 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client_table = Client::table();
-    let client_table_adapter = VantageTableAdapter::new(client_table).await;
+    let client_table_adapter = VantageTableAdapter::new(vista).await;
     let store = TableStore::new(client_table_adapter);
     let app = CursiveTableApp::new(store).await?;
     app.run()?;
@@ -173,12 +209,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Data Integration
 
-The adapters work with any data source that implements the `DataSet` trait. The included `VantageTableAdapter` connects to SurrealDB via the vantage-table ecosystem:
+The adapters work with any data source that implements the `DataSet` trait. The included `VantageTableAdapter` wraps any `Vista`, so it works with every persistence that has a vista factory. It loads all rows when constructed and serves them from memory:
 
 ```rust
-// Automatic integration with bakery_model3
-let client_table = Client::table();  // From bakery_model3
-let client_table_adapter = VantageTableAdapter::new(client_table).await;
+// Client table from bakery_model3, as a Vista
+let db = surrealdb();
+let vista = db
+    .vista_factory()
+    .from_table(Client::surreal_table(db.clone()))?;
+let client_table_adapter = VantageTableAdapter::new(vista).await;
 let store = TableStore::new(client_table_adapter);
 ```
 
@@ -186,7 +225,7 @@ let store = TableStore::new(client_table_adapter);
 
 - **Async Data Loading**: Non-blocking data fetching
 - **Smart Caching**: Automatic caching with configurable page sizes
-- **Real Database Integration**: Works with SurrealDB via vantage-table
+- **Real Database Integration**: Works with any Vista (the examples use SurrealDB)
 - **Cross-Framework**: Same data layer works across all UI frameworks
 - **Type Safety**: Full Rust type safety throughout the stack
 
@@ -209,7 +248,7 @@ cd example_cursive && cargo run
 ## Requirements
 
 - SurrealDB server running on `ws://localhost:8000`
-- Rust 1.70+ with async/await support
+- Rust 1.88+ (edition 2024; the Vantage crates use let chains)
 - UI framework dependencies (installed automatically with features)
 
 ### Setting up SurrealDB
@@ -217,12 +256,12 @@ cd example_cursive && cargo run
 The `vantage-surrealdb` crate provides setup scripts to get you started quickly:
 
 ```bash
-cd vantage-surrealdb
+cd vantage-surrealdb/scripts
 
-# Start SurrealDB server
-./run.sh
+# Start SurrealDB server (Docker)
+./start.sh
 
-# In another terminal, populate with sample data
+# Populate with sample data
 ./ingress.sh
 ```
 

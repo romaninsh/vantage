@@ -1,6 +1,6 @@
 # vantage-kubernetes
 
-A native Kubernetes API backend for the [Vantage](https://romaninsh.github.io/vantage)
+A native Kubernetes API backend for the [Vantage](https://vantage-ui.com/book/)
 framework — **incubating**.
 
 It treats the Kubernetes API as a Vantage `TableSource`: nodes, pods,

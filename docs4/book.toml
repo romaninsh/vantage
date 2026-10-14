@@ -21,5 +21,8 @@ command = "mdbook-admonish"
 [preprocessor.mermaid]
 
 [output.html]
+# Published at vantage-ui.com/book/ (see .github/workflows/book.yaml); the 404
+# page needs the prefix to find its assets.
+site-url = "/book/"
 additional-css = ["./mdbook-admonish.css"]
 additional-js = ["mermaid.min.js", "mermaid-init.js"]

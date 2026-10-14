@@ -10,7 +10,7 @@ nothing.
 
 ```toml
 [dependencies]
-vantage-rhai = "0.6"
+vantage-rhai = "1.0"
 ```
 
 Do not add `rhai` beside it. This crate re-exports the exact version and
@@ -313,6 +313,26 @@ cache with every other such caller. Build your own the moment you need a verb;
 these have none deliberately, so nothing comes to depend on a vocabulary
 someone else registered.
 
+## Row pipes
+
+`RowPipe` runs one long-lived `Block` on a thread of its own, for scripts that keep state across
+rows. The script sets up once, then loops on `next_row()` and answers each row with `emit(map)`:
+
+```rhai
+let zones = [120, 140, 155];          // setup: runs once per (re)start
+loop {
+    let row = next_row();             // blocks until a row arrives; () on shutdown
+    if row == () { break; }
+    emit(#{ zone: zones.filter(|z| row.hr >= z).len() });
+}
+```
+
+`RowPipe::spawn(Host::builder(limits), script)` starts it, and `process(rows)` sends a batch and
+blocks until every row has a `RowAnswer`, in order. A row the script skips without `emit` answers
+with an empty map. A throw fails the current row and restarts the script from the top. The
+operation limit applies per row, not over the thread's lifetime. Dropping the handle makes
+`next_row()` return `()`.
+
 ## Trust model
 
 Scripts here are written by the same people who write the project's YAML, and
@@ -348,7 +368,7 @@ choosing its own binary.
 
 ## Examples
 
-Both load their slots from a YAML file beside them, the way a project does.
+Each loads its slots from a YAML file beside it, the way a project does.
 
 | Example | Shows |
 |---|---|
@@ -369,3 +389,4 @@ Both load their slots from a YAML file beside them, the way a project does.
 | `template.rs` | the `${…}` scanner |
 | `error.rs` | `RhaiError` and located display |
 | `json.rs` | `Dynamic` ⇄ `serde_json::Value` |
+| `row_pipe.rs` | `RowPipe`, `RowAnswer`: one long-lived script that rows stream through |

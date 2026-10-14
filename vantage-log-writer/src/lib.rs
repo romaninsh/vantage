@@ -1,8 +1,9 @@
 //! Append-only persistence that writes JSONL records to files.
 //!
 //! See `docs4/src/new-persistence/` for the full guide; this crate is the
-//! POC implementation of step5 (insert-only TableSource) without the
-//! type system, expressions, or vista layers.
+//! POC implementation of step5 (insert-only TableSource). It has a type
+//! system (`type_system`) and, behind the `vista` feature, a vista layer;
+//! expressions are not executed.
 
 mod log_writer;
 mod table_source;

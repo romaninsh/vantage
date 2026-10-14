@@ -26,7 +26,7 @@ Lets imagine a persistence, which can only store 2 types: String and Email. Both
 binary CBOR format. A database SDK would need to add this:
 
 ```rust
-use vantage_types::{vantage_type_system, persistence};
+use vantage_types::vantage_type_system;
 
 vantage_type_system! {
     type_trait: Type3,
@@ -236,9 +236,9 @@ serialization.
 
 ## Entity macro
 
-The `#[entity]` macro generates implementations of the Entity trait for your structure, which otherwise would require
-you to convert all fields into/from Record<AnyType3>. Record relies on IndexMap and preserves field
-order.
+The `#[entity]` macro generates `IntoRecord`, `TryIntoRecord` and `TryFromRecord` implementations
+for your structure (and with them the blanket `Entity` impl), which otherwise would require you to
+convert all fields into/from Record<AnyType3>. Record relies on IndexMap and preserves field order.
 
 ```rust
 #[derive(Debug, PartialEq)]
@@ -286,6 +286,9 @@ assert_eq!(doc, restored);
 If you enable `serde` feature, vantage-types will automatically implement
 `Entity<serde_json::Value>` if your structure implements `Serialize` and `Deserialize`. This means
 no extra boiler plate for any persistence that uses JSON as underlying format.
+
+The same feature adds helpers for moving between CBOR and JSON values, such as `cbor_to_json`,
+`json_to_cbor` and `record_to_json`.
 
 ## Cross-Database Type Systems
 
@@ -336,12 +339,14 @@ let from_surreal = User::from_record(surreal_storage).unwrap();
 let from_postgres = User::from_record(postgres_storage).unwrap();
 ```
 
+The type systems can also be listed in a single attribute: `#[entity(SurrealType, PostgresType)]`.
+
 ## Integration with Vantage Framework
 
 Vantage Types provides the foundation for type handling across the framework:
 
 - **vantage-table**: Uses type systems for column definitions and value storage
-- **vantage-expressions**: Leverages type abstraction for cross-database queries
+- **vantage-dataset** and **vantage-vista**: Use `Record<V>` for values passed through their traits
 - **vantage-surrealdb**: Implements SurrealDB-specific type variants and conversions
 - **vantage-mongodb**: Uses BSON-compatible type systems for document storage
 

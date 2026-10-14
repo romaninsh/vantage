@@ -1,8 +1,8 @@
 # Vantage SurrealDB
 
 SurrealDB integration for the Vantage framework. Provides expression execution, query building
-(`SurrealSelect`), type-safe CBOR protocol, and the foundation for full `Table<SurrealDB, E>`
-support.
+(`SurrealSelect`), type-safe CBOR protocol, full read and write support for `Table<SurrealDB, E>`,
+and (with the `vista` feature) a `Vista` driver with live updates.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ support.
 │  SurrealDB     ──── ExprDataSource<AnySurrealType>  │
 │                 ──── DataSource                     │
 │  AnySurrealType ─── vantage_type_system! (CBOR)     │
-│  RefOperation  ──── eq/sub/contains/in_/rref/lref   │
+│  RefOperation  ──── rref/lref/sub/contains_/...     │
 │                                                     │
 │  surreal_expr! ──── Expression<AnySurrealType>      │
 │  Identifier    ──── auto-escaping field names       │
@@ -74,8 +74,8 @@ let result = db.execute(&query).await?;
 phantom types (`Rows` → `List` → `Single`, `Rows` → `SingleRow`).
 
 ```rust
-use vantage_surrealdb::{select::SurrealSelect, select::field::Field, surreal_expr};
-use vantage_expressions::Selectable;
+use vantage_surrealdb::{select::SurrealSelect, field::Field, surreal_expr};
+use vantage_expressions::{Order, Selectable};
 
 // Basic query
 let select = SurrealSelect::new()
@@ -96,18 +96,19 @@ let single_name = SurrealSelect::new()
     .with_source("users")
     .with_condition(Field::new("id").eq("user:1"))
     .only_first_row()    // Rows → SingleRow (FROM ONLY)
-    .only_column("name") // SingleRow → Single (SELECT VALUE)
+    .only("name")        // SingleRow → Single (SELECT VALUE)
     .get(&db).await?;    // returns AnySurrealType
 ```
 
 ## RefOperation — Comparison & Traversal
 
-Any type implementing `Expressive<AnySurrealType>` gets `eq`, `sub`, `contains`, `in_`, `rref`,
-`lref` methods. Scalars (`i64`, `bool`, `String`, `&str`) also implement
+Any type implementing `Expressive<AnySurrealType>` gets `eq`, `ne`, `gt`, `in_` and the other
+comparisons from `SurrealOperation`, plus `rref`, `lref`, `sub`, `contains_` and `surreal_in` from
+`RefOperation`. Scalars (`i64`, `bool`, `String`, `&str`) also implement
 `Expressive<AnySurrealType>` and can be passed directly.
 
 ```rust
-use vantage_surrealdb::{operation::RefOperation, thing::Thing, surreal_expr};
+use vantage_surrealdb::{field::Field, operation::{RefOperation, SurrealOperation}, thing::Thing};
 
 // Comparisons accept scalars or expressions
 Field::new("age").eq(25i64);              // age = 25
@@ -163,38 +164,61 @@ cargo test -p vantage-surrealdb --lib
 
 ### Test coverage
 
-| Test file              | Tests | Notes                                            |
-| ---------------------- | ----- | ------------------------------------------------ |
-| lib (inline)           | 18    | select, operation, thing, types                  |
-| `select.rs`            | 15    | query building, mock execution, type transitions |
-| `return.rs`            | 3     | RETURN statements, error handling (live DB)      |
-| `types.rs`             | 6     | CBOR round-trip for all scalar types (live DB)   |
-| `table_source_read.rs` | 8     | build_select query gen + get_count (live DB)     |
-| doc-tests              | 7     | all doc examples compile and pass                |
+The main test files (others cover references, contained relations, lazy columns, safe writes and
+search):
+
+| Test file               | Tests | Notes                                            |
+| ----------------------- | ----- | ------------------------------------------------ |
+| lib (inline)            | 114   | select, operation, thing, types                  |
+| `select.rs`             | 16    | query building, mock execution, type transitions |
+| `statements.rs`         | 76    | SELECT / INSERT / UPDATE / DELETE builders       |
+| `return.rs`             | 3     | RETURN statements, error handling (live DB)      |
+| `types.rs`              | 8     | CBOR round-trip for all scalar types (live DB)   |
+| `table_source_read.rs`  | 23    | Table reads, counts and aggregates (live DB)     |
+| `table_source_write.rs` | 8     | Table inserts, replace, patch, delete (live DB)  |
+| `5_references.rs`       | 3     | `with_one`, `with_many`, `get_ref_as` (live DB)  |
+| `graph_traversal.rs`    | 13    | graph traversal on the bakery data (live DB)     |
+| `6_vista.rs`            | 18    | typed table and YAML to `Vista` (`vista`)        |
+| `8_vista_watch.rs`      | 1     | `Vista::watch()` over LIVE SELECT (`vista`)      |
+
+The vista tests need `--features vista`.
 
 ## Current Status — TableSource Implementation
 
-### Phase A: Columns & Expression Factory ✅
+`surrealdb/impls/table_source.rs` implements the full `TableSource` for `Table<SurrealDB, E>`.
 
-Implemented in `surrealdb/impls/table_source.rs`. Column creation, type conversion, expression
-factory, and search expression placeholder.
+| Method                          | Notes                                         |
+| ------------------------------- | --------------------------------------------- |
+| `get_table_count`               | `as_count()` on the table's select            |
+| `get_table_sum` / `max` / `min` | `as_sum()` / `as_max()` / `as_min()`          |
+| `list_table_values`             | all rows matching the table's conditions      |
+| `get_table_value`               | one record by `Thing` id                      |
+| `get_table_some_value`          | first matching row                            |
+| `insert_table_value`            | idempotent insert by id                       |
+| `replace_table_value`           | full replace by id, creates a missing row     |
+| `patch_table_value`             | partial update by id                          |
+| `delete_table_value`            | delete by id                                  |
+| `delete_table_all_values`       | delete every row matching the conditions      |
+| `insert_table_return_id_value`  | insert and return the generated id            |
 
-### Phase B: Read Operations (in progress)
+## Vista and Live Queries
 
-`build_select` helper constructs `SurrealSelect` from `Table` state (source, columns, conditions,
-ordering). Pagination is TODO.
+With the `vista` feature, `db.vista_factory().from_table(table)?` (or
+`SurrealVistaFactory::new(db).from_table(table)?`) wraps a typed table as a `Vista`. YAML specs
+build through the same factory. The `rhai` feature turns on `vista` and adds the Rhai query DSL.
 
-| Method                 | Status | Notes                                  |
-| ---------------------- | ------ | -------------------------------------- |
-| `get_count`            | ✅     | via `build_select` + `as_count()`      |
-| `get_sum`              | todo   | signature ready, returns `Self::Value` |
-| `get_max`              | todo   | signature ready, returns `Self::Value` |
-| `get_min`              | todo   | signature ready, returns `Self::Value` |
-| `list_table_values`    | todo   | needs CBOR → Record conversion         |
-| `get_table_value`      | todo   | `SELECT * FROM ONLY table:id`          |
-| `get_table_some_value` | todo   | `SELECT * FROM table LIMIT 1`          |
+A vista built from a table can be watched. `vista.watch()` opens a `LIVE SELECT` over the
+WebSocket connection and yields `VistaChange::Inserted`, `Updated` and `Deleted`. Each created or
+updated row is re-read so it has the same shape as a listed row. The subscription follows the whole
+table, so a narrowed vista's conditions are applied by the consumer, not by the LIVE query.
 
-### Phase C: Write Operations (not started)
+```rust
+use futures::StreamExt;
 
-All write methods (`insert_table_value`, `replace_table_value`, `patch_table_value`,
-`delete_table_value`, etc.) are `todo!` stubs.
+// `products` is a `Table<SurrealDB, _>`
+let vista = db.vista_factory().from_table(products)?;
+let mut stream = vista.watch().await?;
+while let Some(change) = stream.next().await {
+    let change = change?; // VistaChange::{Inserted, Updated, Deleted, ..}
+}
+```
