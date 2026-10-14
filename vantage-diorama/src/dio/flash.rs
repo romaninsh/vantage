@@ -13,6 +13,7 @@
 //! what views observe.
 
 pub(crate) mod confine;
+mod confirmed;
 mod stage;
 mod unstage;
 
@@ -27,6 +28,7 @@ use super::worker::QueuedFlash;
 use super::{Dio, DioEvent, DioInner, DioShell};
 use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
 use confine::SetRule;
+pub(crate) use confirmed::Flight;
 pub(crate) use stage::settle;
 use unstage::Unstage;
 
@@ -53,7 +55,9 @@ impl Dio {
     ///    row the cache didn't hold [`RecordInserted`](DioEvent::RecordInserted),
     ///    and any other confirmed write [`RecordChanged`](DioEvent::RecordChanged).
     ///    A failed one is restored and publishes
-    ///    [`WriteReverted`](DioEvent::WriteReverted).
+    ///    [`WriteReverted`](DioEvent::WriteReverted). With several flashes on
+    ///    one id in flight, a rollback restores the last confirmed row, never
+    ///    an earlier flash's unconfirmed value.
     ///
     /// Returns once the write settled: the [`FlashOutcome`] carries the id the
     /// row settled under (the backend's, for
@@ -117,6 +121,9 @@ impl Dio {
             // cancelled, or a stage that fails, in between restores the row.
             let base = queued.pre.as_ref().or(held.as_ref());
             let staged = stage::staged_value(&queued.flash, base);
+            if let Some(guard) = queued.pending.as_mut() {
+                guard.stage(queued.pre.as_ref());
+            }
             let unstage = Unstage::new(
                 inner,
                 id.clone(),

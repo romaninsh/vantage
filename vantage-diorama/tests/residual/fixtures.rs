@@ -117,7 +117,7 @@ pub async fn open(
         .open()
         .await
         .expect("scenery opens");
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     wait_listed(&scenery).await;
     scenery
 }

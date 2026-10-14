@@ -1,18 +1,21 @@
 //! Stage 5: TableScenery — reactive ordered-rows view.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Cache, CacheBackend, ChangeEvent, Lens, RedbCache, SortDir, TableScenery};
+use vantage_diorama::{Cache, CacheBackend, ChangeEvent, Lens, Loader, RedbCache, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Capability, Column, ColumnFlag, Condition, FilterOp, SortDirection, Vista, VistaMetadata,
+    VistaQuery, mocks::MockShell,
+};
 
 mod support;
 use support::chunk::redb_lens;
-use support::copy_master;
+use support::{copy_master, eventually, memory_lens, paged_dio, paged_or_eager_dio};
 
 fn cbor_text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -25,19 +28,41 @@ fn record(name: &str, price: i64) -> Record<CborValue> {
     r
 }
 
+/// A seeded row: `record` plus its `id`, a `status` and an integer `n`.
+fn seeded(id: &str, name: &str, price: i64, status: &str, n: i64) -> Record<CborValue> {
+    let mut r = record(name, price);
+    r.insert("id".to_string(), cbor_text(id));
+    r.insert("status".to_string(), cbor_text(status));
+    r.insert("n".to_string(), CborValue::Integer(n.into()));
+    r
+}
+
 /// Build a MockShell-backed master pre-seeded with three rows.
 fn seeded_master() -> Vista {
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
-        .with_column(Column::new("name", "String"))
+        .with_column(Column::new("name", "String").with_flag(ColumnFlag::Orderable))
         .with_column(Column::new("price", "i64"))
+        .with_column(Column::new("status", "String"))
+        .with_column(Column::new("n", "i64"))
         .with_id_column("id");
     let shell = MockShell::new()
         .with_metadata(metadata)
-        .with_record("a", record("alpha", 30))
-        .with_record("b", record("beta", 10))
-        .with_record("c", record("gamma", 20));
+        .with_record("a", seeded("a", "alpha", 30, "open", 1))
+        .with_record("b", seeded("b", "beta", 10, "closed", 5))
+        .with_record("c", seeded("c", "gamma", 20, "open", 9));
     Vista::new("items", shell)
+}
+
+/// Ids of the rows `scenery` shows, in row order.
+fn shown_ids(scenery: &Arc<dyn TableScenery>) -> Vec<String> {
+    (0..scenery.row_count())
+        .filter_map(|i| scenery.row(i))
+        .filter_map(|row| match row.record.get("id") {
+            Some(CborValue::Text(id)) => Some(id.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Build a Lens whose eager start copies the master into the cache so
@@ -79,7 +104,7 @@ async fn scenery_loads_rows_from_cache() -> Result<()> {
 }
 
 #[tokio::test]
-async fn set_sort_reorders_and_bumps_generation() -> Result<()> {
+async fn set_order_reorders_and_bumps_generation() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
     let dio = lens.dio(seeded_master()).build().await?;
@@ -88,31 +113,95 @@ async fn set_sort_reorders_and_bumps_generation() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
 
-    scenery.set_sort(Some("price".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("name".into(), SortDirection::Descending)));
     wait_for_gen(&mut gen_rx, initial).await;
 
     let r0 = scenery.row(0).unwrap();
     let r2 = scenery.row(2).unwrap();
-    assert_eq!(r0.record.get("name"), Some(&cbor_text("beta"))); // price 10
-    assert_eq!(r2.record.get("name"), Some(&cbor_text("alpha"))); // price 30
+    assert_eq!(r0.record.get("name"), Some(&cbor_text("gamma")));
+    assert_eq!(r2.record.get("name"), Some(&cbor_text("alpha")));
     Ok(())
 }
 
 #[tokio::test]
-async fn where_eq_at_builder_time_filters_rows() -> Result<()> {
+async fn a_builder_filter_narrows_the_view() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
     let dio = lens.dio(seeded_master()).build().await?;
 
     let scenery = dio
         .table_scenery()
-        .where_eq("name", cbor_text("gamma"))
+        .filter(Condition::new("status", FilterOp::Eq, "open"))
         .open()
         .await?;
-    assert_eq!(scenery.row_count(), 1);
-    assert_eq!(
-        scenery.row(0).unwrap().record.get("price"),
-        Some(&CborValue::Integer(20.into()))
+    let mut ids = shown_ids(&scenery);
+    ids.sort();
+    assert_eq!(ids, ["a", "c"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_filters_takes_any_operator() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let lens = build_lens(tmp.path().join("cache.redb")).await?;
+    let dio = lens.dio(seeded_master()).build().await?;
+    let scenery = dio.table_scenery().open().await?;
+    let sorted_ids = || {
+        let mut ids = shown_ids(&scenery);
+        ids.sort();
+        ids
+    };
+
+    scenery.set_filters(vec![Condition::new("n", FilterOp::Gt, 4)]);
+    assert!(
+        eventually(Duration::from_secs(5), || sorted_ids() == ["b", "c"]).await,
+        "n > 4 never narrowed to b, c; shows {:?}",
+        sorted_ids()
+    );
+
+    scenery.set_filters(vec![]);
+    assert!(
+        eventually(Duration::from_secs(5), || sorted_ids() == ["a", "b", "c"]).await,
+        "clearing the filters never restored every row; shows {:?}",
+        sorted_ids()
+    );
+    Ok(())
+}
+
+/// Every clause a view holds reaches the paged loader as one VistaQuery:
+/// the builder filter, the runtime filters, the search and the order.
+#[tokio::test]
+async fn every_clause_reaches_the_paged_loader_in_one_query() -> Result<()> {
+    let seen = Arc::new(Mutex::new(Vec::<VistaQuery>::new()));
+    let log = seen.clone();
+    let loader = Loader::paged(move |cx, range, query, sink| {
+        let log = log.clone();
+        async move {
+            log.lock().unwrap().push(query.clone());
+            let fetched = cx.fetch(range.clone(), &query).await?;
+            for (i, (id, row)) in fetched.page.rows.into_iter().enumerate() {
+                sink.push(range.start + i, id, row).await?;
+            }
+            Ok(())
+        }
+    });
+    let dio = memory_lens(loader).dio(seeded_master()).build().await?;
+    let view = dio
+        .table_scenery()
+        .filter(Condition::new("status", FilterOp::Eq, "open"))
+        .order("name", SortDirection::Ascending)
+        .open()
+        .await?;
+    view.set_filters(vec![Condition::new("n", FilterOp::Gt, 1)]);
+    view.set_search(Some("a".into()));
+    view.set_viewport(0..10, 0..0);
+    let wanted = |q: &VistaQuery| {
+        q.conditions.len() == 2 && q.search.as_deref() == Some("a") && q.order.is_some()
+    };
+    assert!(
+        eventually(Duration::from_secs(5), || seen.lock().unwrap().iter().any(wanted)).await,
+        "the loader never received the whole query; saw {:?}",
+        seen.lock().unwrap()
     );
     Ok(())
 }
@@ -246,32 +335,61 @@ async fn scenery_outlives_dio_handle_drop() -> Result<()> {
     Ok(())
 }
 
-/// A `CappedScenery` bounds every read to the cap while delegating
-/// behaviour (refresh, sort, subscribe) to the wrapped scenery.
+/// A limit bounds every read to the cap, and the viewport with it.
 #[tokio::test]
-async fn capped_scenery_bounds_the_view() -> Result<()> {
+async fn a_limit_bounds_the_view_and_its_viewport() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;
     let dio = lens.dio(seeded_master()).build().await?;
 
-    let scenery = dio.table_scenery().open().await?;
-    let capped = vantage_diorama::CappedScenery::wrap(scenery.clone(), 2);
+    let capped = dio.table_scenery().limit(2).open().await?;
     assert_eq!(capped.row_count(), 2);
     assert!(capped.row(1).is_some());
     assert!(capped.row(2).is_none()); // exists beneath, hidden by the cap
     assert!(!capped.has_more()); // the capped view is complete at the cap
 
-    // Sorting still reaches the wrapped scenery, and the cap then shows
-    // the top of the NEW order.
+    capped.set_viewport(0..10, 1..10);
+    assert_eq!(capped.view_stats().showing, Some(1..2));
+
+    // An order still applies, and the cap then shows the top of the new one.
     let mut gen_rx = capped.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
-    capped.set_sort(Some("price".to_string()), SortDir::Asc);
+    capped.set_order(Some(("price".to_string(), SortDirection::Ascending)));
     wait_for_gen(&mut gen_rx, initial).await;
     let r0 = capped.row(0).unwrap();
     assert_eq!(r0.record.get("name"), Some(&cbor_text("beta"))); // price 10
 
     // A cap wider than the data doesn't invent rows.
-    let wide = vantage_diorama::CappedScenery::wrap(scenery, 10);
+    let wide = dio.table_scenery().limit(10).open().await?;
     assert_eq!(wide.row_count(), 3);
+    Ok(())
+}
+
+/// A searchable master without `Search`.
+fn unsearchable_master() -> Vista {
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("name", "String").with_flag(ColumnFlag::Searchable))
+        .with_id_column("id");
+    let shell = MockShell::new()
+        .with_metadata(metadata)
+        .with_capabilities([Capability::Window].into_iter().collect())
+        .with_record("a", seeded("a", "alpha", 30, "open", 1));
+    Vista::new("items", shell)
+}
+
+#[tokio::test]
+async fn search_supported_follows_the_plan() -> Result<()> {
+    let paged = paged_dio(unsearchable_master()).await;
+    let view = paged.table_scenery().open().await?;
+    assert!(!view.search_supported(), "a window can't be searched locally");
+
+    let copied = paged_or_eager_dio(unsearchable_master()).await;
+    let view = copied.table_scenery().open().await?;
+    assert!(view.search_supported(), "the whole copy can be searched");
+
+    let eager = support::eager_dio(unsearchable_master()).await;
+    let view = eager.table_scenery().open().await?;
+    assert!(view.search_supported());
     Ok(())
 }

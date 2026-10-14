@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use vantage_core::Result;
-use vantage_diorama::{Clause, Loader, SortDir};
+use vantage_diorama::{Clause, Loader};
 use vantage_vista::{Capability, SortDirection, Vista, VistaQuery};
 
 use super::fixtures::{assert_fails, ids, items, metadata, open, shell, wait_for_ids};
@@ -88,11 +88,11 @@ async fn a_view_search_beside_the_dio_search() -> Result<()> {
 async fn a_residual_order() -> Result<()> {
     let all = &[Capability::Order, Capability::Search, Capability::FilterOps];
     let eager = eager_dio(items(all)).await;
-    let view = open(&eager, |b| b.sort("n", SortDir::Desc)).await;
+    let view = open(&eager, |b| b.order("n", SortDirection::Descending)).await;
     wait_for_ids(&view, &["c", "b", "a"]).await;
 
     let paged = paged_dio(items(all)).await;
-    let view = open(&paged, |b| b.sort("n", SortDir::Desc)).await;
+    let view = open(&paged, |b| b.order("n", SortDirection::Descending)).await;
     assert_fails(&view, Clause::Order("n".into()));
 
     let by_n = VistaQuery::new().with_order("n", SortDirection::Descending);
@@ -130,7 +130,7 @@ async fn a_pushed_order_is_never_re_sorted() -> Result<()> {
     let master = Vista::new("items", shell(metadata(true), all));
     let dio = memory_lens(loader).dio(master).build().await?;
 
-    let view = open(&dio, |b| b.sort("n", SortDir::Desc)).await;
+    let view = open(&dio, |b| b.order("n", SortDirection::Descending)).await;
     // The master orders c, b, a; the loader reverses it.
     wait_for_ids(&view, &["a", "b", "c"]).await;
     assert!(

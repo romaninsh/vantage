@@ -14,8 +14,9 @@ use std::sync::{Arc, Mutex};
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{SortDir, TableScenery};
+use vantage_diorama::TableScenery;
 use vantage_types::Record;
+use vantage_vista::SortDirection;
 
 mod support;
 use support::chunk::{Backend, col_at, master as master_cols, paged_lens, wait_for_gen};
@@ -51,13 +52,13 @@ async fn client_sort_survives_refresh() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
 
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     wait_for_gen(&mut gen_rx, g0).await;
     assert_eq!(value(&scenery, 0).as_deref(), Some("v3"), "native order");
 
     // User sorts by `v` ascending → v1, v2, v3.
     let g1 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     wait_for_gen(&mut gen_rx, g1).await;
     assert_eq!(value(&scenery, 0).as_deref(), Some("v1"), "sorted top");
     assert_eq!(value(&scenery, 2).as_deref(), Some("v3"), "sorted bottom");
@@ -101,7 +102,7 @@ async fn refresh_recounts_appended_rows() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
 
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     wait_for_gen(&mut gen_rx, g0).await;
     assert_eq!(scenery.row_count(), 2);
 

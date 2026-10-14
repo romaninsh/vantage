@@ -75,7 +75,7 @@ async fn cold_open_and_uncached_viewport_are_essential_refresh_is_background() -
     assert_eq!(seen.lock().unwrap().last(), Some(&Priority::Essential));
 
     // A refresh over rows already on screen: background.
-    view.scenery().request_refresh();
+    view.scenery().refresh_source();
     let before = seen.lock().unwrap().len();
     wait_until("refresh ran", || seen.lock().unwrap().len() > before).await;
     assert_eq!(seen.lock().unwrap().last(), Some(&Priority::Background));
@@ -186,7 +186,7 @@ async fn coalescing_a_refresh_into_a_viewport_keeps_essential() -> Result<()> {
     // background refresh of the same block, which supplies the `force_load`.
     // One fetch comes out of the two, and it is the one someone is waiting on.
     view.viewport(0..10);
-    view.scenery().request_refresh();
+    view.scenery().refresh_source();
     wait_until("the coalesced fetch ran", || {
         seen.lock().unwrap().len() > before
     })

@@ -1,245 +1,227 @@
 //! The live handle [`TableSceneryBuilder::open`](super::TableSceneryBuilder::open)
-//! returns: the [`TableScenery`] implementation over the shared state.
+//! returns: the [`TableScenery`] implementation over one owned view.
+
+mod reads;
 
 use std::ops::Range;
 use std::sync::Arc;
 
+use futures::future::BoxFuture;
 use tokio::sync::watch;
-use vantage_vista::{Capability, VistaCapabilities};
+use vantage_core::Result;
+use vantage_vista::{Condition, SortDirection, VistaCapabilities};
 
-use crate::dio::{DioInner, Generation};
+use crate::dio::Generation;
 use crate::scenery::enriched_record::EnrichedRecord;
 
-use super::plan::Serving;
-use super::state::TableSceneryState;
+use super::state::SharedRows;
+use super::view::{Placing, TableView};
 use super::{
-    LoadState, OpCondition, RowStatusSummary, SortDir, TableScenery, ViewStats, ViewportRequest,
-    count, loader, two_pass,
+    LoadState, RowStatusSummary, TableScenery, ViewStats, ViewportRequest, count, loader, two_pass,
 };
 
+pub(crate) use reads::compute_load_state;
+use reads::{cap_loaded, shared_estimate, shared_row};
+
+/// Holds the caller's view. Dropping the last handle drops the view, which
+/// detaches it from its rows. When it was their last view, their work — the
+/// reactor, the viewport loop with any load in flight, a detached list pass —
+/// is aborted at once, so a closing grid stops pulling.
 pub(crate) struct TableSceneryImpl {
-    pub(crate) inner: Arc<TableSceneryState>,
-    /// Aborts the reactor + viewport tasks when the last handle to this
-    /// scenery is released. The viewport task owns every in-flight fetch
-    /// inline (single-pass chunk loads *and* two-pass detail hydration both
-    /// run inside it), so aborting it cancels outstanding requests — a
-    /// closing grid stops pulling. Dropping `inner` alone wouldn't suffice:
-    /// the tasks hold their own `Arc<TableSceneryState>`, so without this
-    /// guard a released scenery would linger for the Dio's whole lifetime.
-    pub(super) _guard: SceneryGuard,
+    pub(crate) view: Arc<TableView>,
 }
 
-/// Owns the scenery's background tasks and aborts them on drop. Deliberately
-/// holds nothing else: registry eviction is lazy (`Weak::upgrade` + prune),
-/// so a scenery that loses a concurrent-open race can drop safely without
-/// touching the winner's registry entry.
-pub(super) struct SceneryGuard {
-    pub(super) tasks: Vec<tokio::task::JoinHandle<()>>,
-    /// Weak — the guard must not keep the Dio alive; it only reaches back
-    /// in to emit the closing census line, and only if the Dio is still
-    /// there to receive it.
-    pub(super) dio_weak: std::sync::Weak<DioInner>,
-}
-
-impl Drop for SceneryGuard {
-    fn drop(&mut self) {
-        for task in &self.tasks {
-            task.abort();
+impl TableSceneryImpl {
+    /// How the view reads its rows now: `None` while refused, when it shows
+    /// nothing whatever its rows hold.
+    fn placing(&self) -> Option<(Arc<SharedRows>, Placing)> {
+        if self.view.refusal().is_some() {
+            return None;
         }
-        if let Some(dio) = self.dio_weak.upgrade() {
-            dio.emit_census("table scenery", "closed");
-        }
-    }
-}
-
-/// The [`LoadState`] computation, shared by [`TableScenery::load_state`] and
-/// [`TableSceneryState::note_state`] so the trait method and the debug stream
-/// can never disagree about what state a scenery is in.
-pub(crate) fn compute_load_state(state: &TableSceneryState) -> LoadState {
-    if let super::plan::Serving::Failed(failure) = state.serving() {
-        return LoadState::Failed(failure);
-    }
-    if !state.settled.load(std::sync::atomic::Ordering::SeqCst) {
-        return LoadState::Loading;
-    }
-    if state
-        .omits_failed_rows
-        .load(std::sync::atomic::Ordering::SeqCst)
-    {
-        return LoadState::Partial;
-    }
-    // A known total the visible map has not reached means rows are still
-    // coming — the ordinary state of a paged grid before it is scrolled.
-    // With no total there is nothing to be short of, so what is loaded is
-    // all there is.
-    let loaded = state.rows.read().unwrap().len();
-    match *state.total.read().unwrap() {
-        Some(total) if loaded < total => LoadState::Partial,
-        _ => LoadState::Complete,
+        let shared = self.view.shared();
+        let placing = self.view.placing(&shared);
+        Some((shared, placing))
     }
 }
 
 impl TableScenery for TableSceneryImpl {
+    /// A capped view whose shown rows have all loaded is complete, even
+    /// while its rows hold a larger set only partly.
     fn load_state(&self) -> LoadState {
-        compute_load_state(&self.inner)
+        if let Some(failure) = self.view.refusal() {
+            return LoadState::Failed(failure);
+        }
+        let shared = self.view.shared();
+        let state = compute_load_state(&shared);
+        match self.view.placing(&shared) {
+            Placing::Unplaced(_) if !matches!(state, LoadState::Failed(_)) => LoadState::Loading,
+            Placing::Capped(cap, len)
+                if state == LoadState::Partial && cap_loaded(&shared, cap, len) =>
+            {
+                LoadState::Complete
+            }
+            _ => state,
+        }
     }
 
     fn row_count(&self) -> usize {
-        self.inner.row_count()
+        match self.placing() {
+            None | Some((_, Placing::Unplaced(_))) => 0,
+            Some((shared, Placing::Whole)) => shared.row_count(),
+            Some((_, Placing::Capped(cap, len))) => cap.view_len(len),
+        }
     }
 
     fn status_summary(&self) -> RowStatusSummary {
-        self.inner.status_summary()
+        match self.placing() {
+            None | Some((_, Placing::Unplaced(_))) => RowStatusSummary::default(),
+            Some((shared, _)) => shared.status_summary(),
+        }
     }
 
+    /// A capped view is complete once its cap is reached.
     fn has_more(&self) -> bool {
-        self.inner.has_more()
+        match self.placing() {
+            None | Some((_, Placing::Unplaced(_))) => false,
+            Some((shared, Placing::Whole)) => shared.has_more(),
+            Some((shared, Placing::Capped(cap, len))) => !cap.reached(len) && shared.has_more(),
+        }
     }
 
+    /// Agrees with [`view_stats`](Self::view_stats): `Some(0)` while
+    /// refused, `None` while a tail waits for the end of its set.
     fn estimated_total(&self) -> Option<usize> {
-        if self.inner.local_refine() {
-            return Some(self.inner.rows.read().unwrap().len());
+        match self.placing() {
+            None => Some(0),
+            Some((_, Placing::Unplaced(_))) => None,
+            Some((shared, Placing::Whole)) => shared_estimate(&shared),
+            Some((shared, Placing::Capped(cap, _))) => {
+                shared_estimate(&shared).map(|t| cap.view_len(t))
+            }
         }
-        // Two-pass: the running index length is the best estimate; it grows as
-        // pages load and freezes once the list pass completes.
-        if let Some(index) = self.inner.index() {
-            return Some(index.len());
-        }
-        let stored = *self.inner.total.read().unwrap();
-        stored.or_else(|| Some(self.inner.rows.read().unwrap().len()))
     }
 
     fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>> {
-        if let Some(t) = *self.inner.total.read().unwrap()
-            && idx >= t
-        {
-            return None;
+        let (shared, idx) = match self.placing()? {
+            (shared, Placing::Whole) => (shared, idx),
+            (shared, Placing::Capped(cap, len)) => {
+                let idx = cap.map(idx, len)?;
+                (shared, idx)
+            }
+            (_, Placing::Unplaced(_)) => return None,
+        };
+        shared_row(&shared, idx)
+    }
+
+    fn row_by_id(&self, id: &str) -> Option<Arc<EnrichedRecord>> {
+        let (shared, placing) = self.placing()?;
+        let idx = *shared.id_to_idx.read().unwrap().get(id)?;
+        match placing {
+            Placing::Whole => {}
+            Placing::Capped(cap, len) => {
+                cap.view_index(idx, len)?;
+            }
+            Placing::Unplaced(_) => return None,
         }
-        self.inner.rows.read().unwrap().get(&idx).cloned()
+        shared_row(&shared, idx)
     }
 
-    fn set_shown_range(&self, range: Option<Range<usize>>) {
-        self.inner.set_shown_range(range);
+    fn set_viewport(&self, loaded: Range<usize>, shown: Range<usize>) {
+        self.view.set_viewport(loaded, shown);
     }
 
-    fn set_viewport(&self, range: Range<usize>) {
-        loader::enqueue_viewport(
-            &self.inner,
-            ViewportRequest {
-                range,
-                force_load: false,
-                priority: vantage_core::Priority::Essential,
-            },
-        );
-    }
-
+    /// A tail already asks for its whole cap; a limit stops at the cap.
     fn request_load_more(&self) {
+        match self.placing() {
+            None => return,
+            Some((_, Placing::Unplaced(_))) => return,
+            Some((_, Placing::Capped(cap, len))) if cap.is_tail() || cap.reached(len) => return,
+            Some(_) => {}
+        }
+        let shared = self.view.shared();
         // Two-pass: load the next *list* page (append cheap rows to the index).
         // Detail hydration is driven separately by `set_viewport`.
-        if self.inner.two_pass {
-            let Some(dio_inner) = self.inner.dio_weak.upgrade() else {
+        if shared.two_pass {
+            let Some(dio_inner) = shared.dio_weak.upgrade() else {
                 return;
             };
-            let state = self.inner.clone();
-            dio_inner.lens.runtime.spawn(async move {
-                two_pass::run_list_page(state).await;
-            });
+            let list = dio_inner
+                .lens
+                .runtime
+                .spawn(two_pass::run_list_page(shared.clone()));
+            shared.tasks.hold(list);
             return;
         }
 
-        let start = self.inner.next_load_more_start();
-        let mut end = start + self.inner.page_size;
-        if let Some(t) = *self.inner.total.read().unwrap() {
+        let start = shared.next_load_more_start();
+        let mut end = start + self.view.page_size;
+        if let Some(t) = *shared.total.read().unwrap() {
             end = end.min(t);
         }
         if end <= start {
             return;
         }
         loader::enqueue_viewport(
-            &self.inner,
+            &shared,
             ViewportRequest {
                 range: start..end,
                 force_load: true,
                 priority: vantage_core::Priority::Essential,
+                view: Some(self.view.id),
             },
         );
     }
 
-    fn request_refresh(&self) {
-        let Some(dio_inner) = self.inner.dio_weak.upgrade() else {
+    fn refresh_source(&self) {
+        let Some(dio_inner) = self.view.dio_weak.upgrade() else {
             return;
         };
         let runtime = dio_inner.lens.runtime.clone();
         runtime.spawn(async move {
             let dio = crate::Dio { inner: dio_inner };
             if let Err(e) = dio.refresh().await {
-                tracing::error!(error = %e, "Scenery request_refresh failed");
+                tracing::error!(error = %e, "Scenery refresh_source failed");
             }
         });
     }
 
-    fn set_sort(&self, column: Option<String>, dir: SortDir) {
-        self.inner.set_sort(column, dir);
+    fn set_order(&self, order: Option<(String, SortDirection)>) {
+        self.view.set_order(order);
     }
 
-    fn set_filters(&self, filters: Vec<(String, ciborium::Value)>) {
-        self.inner.set_filters(filters);
+    fn set_filters(&self, filters: Vec<Condition>) {
+        self.view.set_filters(filters);
     }
 
-    fn set_filter_terms(&self, terms: Vec<OpCondition>) {
-        self.inner.set_filter_terms(terms);
+    fn count_where(&self, filters: Vec<Condition>) -> BoxFuture<'static, Result<Option<usize>>> {
+        count::count_where(&self.view, filters)
     }
 
-    fn filter_terms(&self) -> Vec<OpCondition> {
-        self.inner.ui_terms.read().unwrap().clone()
-    }
-
-    fn count_where(
-        &self,
-        terms: Vec<OpCondition>,
-    ) -> futures::future::BoxFuture<'static, vantage_core::Result<Option<usize>>> {
-        count::count_where(&self.inner, terms)
-    }
-
-    fn terms_supported(&self, terms: &[OpCondition]) -> bool {
-        let Some(dio) = self.inner.dio_weak.upgrade() else {
-            return false;
-        };
-        let query = self.inner.query_with_terms(terms);
-        let (offered, sugar, planned) = self.inner.plan_query(&dio, query);
-        let serving = Serving::decide(&self.inner, &dio, &offered, &sugar, planned.as_ref());
-        !matches!(serving, Serving::Failed(_))
+    fn filters_supported(&self, filters: &[Condition]) -> bool {
+        count::filters_supported(&self.view, filters)
     }
 
     fn set_search(&self, query: Option<String>) {
-        self.inner.set_search(query);
+        self.view.set_search(query);
     }
 
     fn search_supported(&self) -> bool {
-        if self.inner.paged {
-            self.inner.master_capabilities.has(Capability::Search)
-        } else {
-            true
-        }
+        count::search_supported(&self.view)
     }
 
     fn subscribe(&self) -> watch::Receiver<Generation> {
-        self.inner.generation_tx.subscribe()
+        self.view.signal.subscribe()
     }
 
     fn view_stats(&self) -> ViewStats {
-        self.inner.stats.snapshot()
+        self.view.view_stats()
     }
 
     fn subscribe_view_stats(&self) -> watch::Receiver<Generation> {
-        self.inner.stats.subscribe()
+        self.view.signal.subscribe_stats()
     }
 
     fn master_capabilities(&self) -> &VistaCapabilities {
-        &self.inner.master_capabilities
-    }
-
-    fn demanded_columns(&self) -> Option<Vec<String>> {
-        self.inner.demand.clone()
+        &self.view.master_capabilities
     }
 }

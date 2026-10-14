@@ -1,12 +1,14 @@
 //! `TableScenery::count_where`: how many rows the view would hold with a
-//! replacement set of UI filter terms.
+//! replacement set of runtime filters.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use vantage_diorama::{CappedScenery, Dio, LoadState, OpCondition, TableScenery};
-use vantage_vista::{Capability, Column, FilterOp, Vista, VistaMetadata, mocks::MockShell};
+use vantage_diorama::{Dio, LoadState, TableScenery};
+use vantage_vista::{
+    Capability, Column, Condition, FilterOp, Vista, VistaMetadata, mocks::MockShell,
+};
 
 mod support;
 use support::{bucket_dio, eager_dio, open_listed, paged_dio, paged_or_eager_dio, record, text};
@@ -86,8 +88,8 @@ async fn wait_complete(scenery: &Arc<dyn TableScenery>) {
         .expect("eager scenery never completed");
 }
 
-fn eq(column: &str, value: &str) -> OpCondition {
-    OpCondition::new(column, FilterOp::Eq, text(value))
+fn eq(column: &str, value: &str) -> Condition {
+    Condition::new(column, FilterOp::Eq, text(value))
 }
 
 #[tokio::test]
@@ -107,7 +109,7 @@ async fn paged_counts_push_down_with_terms() {
 async fn eager_counts_the_complete_cache() {
     let (_dio, scenery) = eager_tasks().await;
     wait_complete(&scenery).await;
-    let terms = vec![OpCondition::new(
+    let terms = vec![Condition::new(
         "priority",
         FilterOp::InSet,
         cbor_array(["high"]),
@@ -123,9 +125,9 @@ async fn the_current_search_still_applies() {
 }
 
 #[tokio::test]
-async fn current_ui_terms_are_replaced_not_added() {
+async fn current_filters_are_replaced_not_added() {
     let (_dio, scenery) = paged_tasks().await;
-    scenery.set_filter_terms(vec![eq("status", "done")]);
+    scenery.set_filters(vec![eq("status", "done")]);
     let open = vec![eq("status", "open")];
     assert_eq!(scenery.count_where(open).await.unwrap(), Some(4));
 }
@@ -147,8 +149,8 @@ async fn a_term_the_master_cannot_push_counts_the_whole_copy() {
 
 #[tokio::test]
 async fn a_cap_does_not_change_the_count() {
-    let (_dio, scenery) = paged_tasks().await;
-    let capped = CappedScenery::wrap(scenery, 2);
+    let dio = paged_dio(tasks_master()).await;
+    let capped = dio.table_scenery().limit(2).open().await.unwrap();
     assert_eq!(
         capped
             .count_where(vec![eq("status", "open")])
@@ -172,8 +174,8 @@ async fn a_closed_dio_gives_no_count() {
     assert_eq!(scenery.count_where(vec![]).await.unwrap(), None);
 }
 
-fn not_done() -> Vec<OpCondition> {
-    vec![OpCondition::new(
+fn not_done() -> Vec<Condition> {
+    vec![Condition::new(
         "status",
         FilterOp::NotInSet,
         cbor_array(["done"]),
@@ -181,39 +183,39 @@ fn not_done() -> Vec<OpCondition> {
 }
 
 #[tokio::test]
-async fn a_paged_view_supports_only_terms_its_master_can_push() {
-    let (_dio, scenery) = paged_tasks().await;
-    assert!(scenery.terms_supported(&[eq("status", "open")]));
-    assert!(!scenery.terms_supported(&not_done()));
-    let capped = CappedScenery::wrap(scenery, 2);
-    assert!(!capped.terms_supported(&not_done()));
+async fn a_paged_view_supports_only_filters_its_master_can_push() {
+    let (dio, scenery) = paged_tasks().await;
+    assert!(scenery.filters_supported(&[eq("status", "open")]));
+    assert!(!scenery.filters_supported(&not_done()));
+    let capped = dio.table_scenery().limit(2).open().await.unwrap();
+    assert!(!capped.filters_supported(&not_done()));
 }
 
 #[tokio::test]
-async fn a_paged_view_with_a_whole_copy_supports_every_term() {
+async fn a_paged_view_with_a_whole_copy_supports_every_filter() {
     let dio = paged_or_eager_dio(tasks_master()).await;
     let scenery = dio.table_scenery().open().await.expect("scenery opens");
-    assert!(scenery.terms_supported(&not_done()));
+    assert!(scenery.filters_supported(&not_done()));
 }
 
 #[tokio::test]
-async fn an_eager_view_supports_every_term() {
-    let (_dio, scenery) = eager_tasks().await;
-    assert!(scenery.terms_supported(&not_done()));
-    let capped = CappedScenery::wrap(scenery, 2);
-    assert!(capped.terms_supported(&not_done()));
+async fn an_eager_view_supports_every_filter() {
+    let (dio, scenery) = eager_tasks().await;
+    assert!(scenery.filters_supported(&not_done()));
+    let capped = dio.table_scenery().limit(2).open().await.unwrap();
+    assert!(capped.filters_supported(&not_done()));
 }
 
-/// A two-pass view evaluates its terms over its hydrated rows, so a term on
-/// an augmented column (`name`) is supported as well as one on a native
+/// A two-pass view evaluates its filters over its hydrated rows, so a filter
+/// on an augmented column (`name`) is supported as well as one on a native
 /// column (`kind`).
 #[tokio::test]
-async fn a_two_pass_view_supports_every_term() {
+async fn a_two_pass_view_supports_every_filter() {
     let dio = bucket_dio().await;
     let scenery = open_listed(&dio, 10).await;
-    let not_john = OpCondition::new("name", FilterOp::NotInSet, cbor_array(["John"]));
-    let red = OpCondition::new("kind", FilterOp::Ne, text("red"));
-    assert!(scenery.terms_supported(&[not_john, red]));
+    let not_john = Condition::new("name", FilterOp::NotInSet, cbor_array(["John"]));
+    let red = Condition::new("kind", FilterOp::Ne, text("red"));
+    assert!(scenery.filters_supported(&[not_john, red]));
 }
 
 #[test]

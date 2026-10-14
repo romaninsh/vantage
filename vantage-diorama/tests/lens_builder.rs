@@ -239,7 +239,7 @@ async fn max_age_is_checked_again_when_a_scenery_opens() -> Result<()> {
     // Let that refresh record itself before ageing the stamp again.
     settle().await;
     stamp(&backend, TTL * 2).await?;
-    let _record = dio.record_scenery("a").await?;
+    let _record = dio.record_scenery("a").open().await?;
     assert!(
         refreshed(&mut rx, Duration::from_secs(1)).await,
         "record scenery open"

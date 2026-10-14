@@ -1,7 +1,7 @@
 //! A memory cache that reports what is done to it: how many refresh times
-//! were recorded and rows written, and, once armed, a single-row write that
-//! lands and then stalls, catching a flash mid-stage. Single-row inserts can
-//! also be made to fail outright.
+//! were recorded, rows written, rows read and whole-table lists, and, once
+//! armed, a single-row write that lands and then stalls, catching a flash
+//! mid-stage. Single-row inserts can also be made to fail outright.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -25,6 +25,10 @@ pub struct SpyTable {
     pub stamps: AtomicUsize,
     /// Rows written so far, by any insert.
     pub rows_written: AtomicUsize,
+    /// Rows read with their status so far, one by one.
+    pub status_reads: AtomicUsize,
+    /// Whole-table `list_values` reads so far.
+    pub lists: AtomicUsize,
     /// When set, the next `insert_value` lands, signals `stalled` and never
     /// returns.
     pub stall_next_insert: AtomicBool,
@@ -46,6 +50,7 @@ impl SpyTable {
 #[async_trait]
 impl CacheTable for SpyTable {
     async fn list_values(&self) -> Result<IndexMap<String, Rec>> {
+        self.lists.fetch_add(1, Ordering::SeqCst);
         self.inner.list_values().await
     }
     async fn get_value(&self, id: &str) -> Result<Option<Rec>> {
@@ -87,7 +92,14 @@ impl CacheTable for SpyTable {
         self.stamps.fetch_add(1, Ordering::SeqCst);
         self.inner.set_meta_refreshed_at(at).await
     }
+    async fn meta_copied_at(&self) -> Result<Option<SystemTime>> {
+        self.inner.meta_copied_at().await
+    }
+    async fn set_meta_copied_at(&self, at: SystemTime) -> Result<()> {
+        self.inner.set_meta_copied_at(at).await
+    }
     async fn get_value_with_status(&self, id: &str) -> Result<Option<(Rec, CacheStatus)>> {
+        self.status_reads.fetch_add(1, Ordering::SeqCst);
         self.inner.get_value_with_status(id).await
     }
     async fn insert_value_with_status(

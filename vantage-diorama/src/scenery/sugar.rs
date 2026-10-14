@@ -239,6 +239,14 @@ impl CacheTable for SugaredCache {
     async fn set_meta_refreshed_at(&self, at: std::time::SystemTime) -> Result<()> {
         self.inner.set_meta_refreshed_at(at).await
     }
+
+    async fn meta_copied_at(&self) -> Result<Option<std::time::SystemTime>> {
+        self.inner.meta_copied_at().await
+    }
+
+    async fn set_meta_copied_at(&self, at: std::time::SystemTime) -> Result<()> {
+        self.inner.set_meta_copied_at(at).await
+    }
 }
 
 #[cfg(test)]

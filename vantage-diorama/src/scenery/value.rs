@@ -43,11 +43,11 @@ use vantage_vista::VistaQuery;
 
 use crate::dio::{Dio, DioEvent, DioInner, Generation, admitted_by_dio};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ValueStatus {
-    Fresh,
-    Stale,
     Loading,
+    Fresh,
     Error(String),
 }
 
@@ -57,7 +57,9 @@ pub trait ValueScenery: Send + Sync {
     fn value(&self) -> Option<CborValue>;
     fn status(&self) -> ValueStatus;
 
-    fn request_refresh(&self);
+    /// Re-read the Dio's set from its source; the value recomputes when it
+    /// lands.
+    fn refresh_source(&self);
     fn subscribe(&self) -> watch::Receiver<Generation>;
 }
 
@@ -352,7 +354,7 @@ async fn recompute_loop(state: Arc<ValueSceneryState>, mut bus: broadcast::Recei
             return;
         }
         match bus.recv().await {
-            Ok(DioEvent::WriteFailed { .. }) => {}
+            Ok(DioEvent::WriteFailed { .. } | DioEvent::RefreshFailed { .. }) => {}
             Ok(_) => state.recompute().await,
             Err(broadcast::error::RecvError::Lagged(_)) => state.recompute().await,
             Err(broadcast::error::RecvError::Closed) => return,
@@ -373,7 +375,7 @@ impl ValueScenery for ValueSceneryImpl {
         self.inner.status.read().unwrap().clone()
     }
 
-    fn request_refresh(&self) {
+    fn refresh_source(&self) {
         let Some(dio_inner) = self.inner.dio_weak.upgrade() else {
             return;
         };
@@ -382,7 +384,7 @@ impl ValueScenery for ValueSceneryImpl {
         runtime.spawn(async move {
             let dio = Dio { inner: dio_inner };
             if let Err(e) = dio.refresh().await {
-                tracing::error!(error = %e, "ValueScenery request_refresh failed");
+                tracing::error!(error = %e, "ValueScenery refresh_source failed");
             }
             // refresh() emits `DatasetChanged`; the recompute loop picks it up
             // and the value reloads. Trigger an immediate recompute too so

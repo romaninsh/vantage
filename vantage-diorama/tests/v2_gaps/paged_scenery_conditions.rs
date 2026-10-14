@@ -1,6 +1,6 @@
 //! A paged scenery's conditions must reach its chunk loader, and rows
 //! outside them must not appear: the loader receives one `VistaQuery`
-//! holding the builder's `where_eq` conditions and the `set_filters` pairs.
+//! holding the builder's `filter` conditions and the `set_filters` ones.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -8,11 +8,11 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_diorama::{Cache, Lens, Loader, TableScenery, Tuning};
-use vantage_vista::{FilterOp, VistaQuery};
+use vantage_vista::{Condition, FilterOp, VistaQuery};
 
-use super::fixtures::{assert_no_failures, eventually};
+use super::fixtures::assert_no_failures;
 use crate::support::chunk::{Backend, master};
-use crate::support::{record, text};
+use crate::support::{eventually, record, text};
 
 /// Bounds each wait on the view; not a speed assertion.
 const WAIT: Duration = Duration::from_secs(10);
@@ -119,27 +119,27 @@ async fn paged_scenery_conditions() -> Result<()> {
 
     let scenery = dio
         .table_scenery()
-        .where_eq("team", text("red"))
+        .filter(Condition::new("team", FilterOp::Eq, "red"))
         .page_size(10)
         .open()
         .await?;
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     eventually(WAIT, || {
         last_query_has(&seen, "team", "red") && ids(&shown(&scenery)) == ["1", "3", "5"]
     })
     .await;
     if !last_query_has(&seen, "team", "red") {
-        failures.push("the chunk loader never received where_eq(team = red)".to_string());
+        failures.push("the chunk loader never received filter(team = red)".to_string());
     }
     let rows = shown(&scenery);
     if ids(&rows) != ["1", "3", "5"] {
         failures.push(format!(
-            "where_eq(team = red) view must show rows 1, 3, 5; shows {rows:?}"
+            "filter(team = red) view must show rows 1, 3, 5; shows {rows:?}"
         ));
     }
 
-    scenery.set_filters(vec![("size".to_string(), text("big"))]);
-    scenery.set_viewport(0..10);
+    scenery.set_filters(vec![Condition::new("size", FilterOp::Eq, "big")]);
+    scenery.set_viewport(0..10, 0..0);
     eventually(WAIT, || {
         last_query_has(&seen, "size", "big") && ids(&shown(&scenery)) == ["1", "5"]
     })
@@ -148,12 +148,12 @@ async fn paged_scenery_conditions() -> Result<()> {
         failures.push("the chunk loader never received set_filters(size = big)".to_string());
     }
     if !last_query_has(&seen, "team", "red") {
-        failures.push("the chunk loader lost where_eq(team = red) after set_filters".to_string());
+        failures.push("the chunk loader lost filter(team = red) after set_filters".to_string());
     }
     let rows = shown(&scenery);
     if ids(&rows) != ["1", "5"] {
         failures.push(format!(
-            "where_eq(team = red) + set_filters(size = big) view must show rows 1, 5; shows {rows:?}"
+            "filter(team = red) + set_filters(size = big) view must show rows 1, 5; shows {rows:?}"
         ));
     }
 

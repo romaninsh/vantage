@@ -21,7 +21,9 @@ use vantage_diorama::{
     Generation, IdStrategy, Lens, LoaderCx, ServoStatus,
 };
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Column, Condition, FilterOp, Vista, VistaMetadata, VistaQuery, mocks::MockShell,
+};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -753,5 +755,40 @@ async fn foreign_delete_failure_leaves_servo_tracking() -> Result<()> {
         Some(&text("Coffee")),
         "cache pre-image restored"
     );
+    Ok(())
+}
+
+/// A new record through a narrowed Dio takes the narrowing's equality as a
+/// filled value, and one that contradicts it is refused, never stored.
+#[tokio::test]
+async fn servo_new_on_a_derived_dio_fills_and_confines_the_insert() -> Result<()> {
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("name", "String").with_flag("title"))
+        .with_column(Column::new("team", "String"))
+        .with_id_column("id");
+    let shell = MockShell::new().with_metadata(metadata);
+    let lens = Lens::builder().cache(Cache::memory()).build()?;
+    let parent = lens.dio(Vista::new("members", shell.clone())).build().await?;
+    let red = VistaQuery::new().with_condition(Condition::new("team", FilterOp::Eq, "red"));
+    let dio = parent.with_query(&red).await?;
+
+    let servo = dio.servo_new(IdStrategy::Uuid);
+    let id = servo.id().expect("minted at creation");
+    servo.set("name", text("Ann"));
+    servo.flash().await?.expect("insert fires");
+    let stored = parent
+        .master()
+        .get_value(&id)
+        .await?
+        .expect("the master holds the row");
+    assert_eq!(stored.get("team"), Some(&text("red")), "filled from the narrowing");
+
+    let blue = dio.servo_new(IdStrategy::Uuid);
+    blue.set("name", text("Bob"));
+    blue.set("team", text("blue"));
+    let err = blue.flash().await.expect_err("outside the narrowing");
+    assert!(err.is_conflict(), "{err}");
+    assert_eq!(shell.len(), 1, "the master holds one row");
     Ok(())
 }

@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Bring the rows on screen → the detail pass hydrates each from the second
     // Vista and merges its columns in place.
-    scenery.set_viewport(0..n);
+    scenery.set_viewport(0..n, 0..n);
     for _ in 0..100 {
         let all_fresh = (0..n).all(|i| {
             matches!(

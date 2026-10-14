@@ -54,7 +54,8 @@ impl Dio {
     /// - every cached row absent from it is deleted, except one with a flash
     ///   in flight;
     /// - the refresh time is recorded (see
-    ///   [`Refresher::max_age`](crate::Refresher::max_age));
+    ///   [`Refresher::max_age`](crate::Refresher::max_age)), and the cache is
+    ///   recorded as a whole copy;
     /// - one [`DatasetChanged`](DioEvent::DatasetChanged) is published.
     ///
     /// A row with a flash in flight is left to the flash, because the
@@ -78,27 +79,21 @@ impl Dio {
         snapshot: IndexMap<String, Record<CborValue>>,
     ) -> Result<()> {
         let pending = &self.inner.pending_flashes;
-        let guarded = |id: &str| pending.guarded_since(mark, id);
         let cache = &self.inner.cache;
         let keep: HashSet<String> = snapshot.keys().cloned().collect();
         let cached = cache.list_values().await?;
-        let stale: Vec<String> = cached
-            .keys()
-            .filter(|id| !keep.contains(*id) && !guarded(id))
-            .cloned()
-            .collect();
         // A row the cache already holds unchanged is not rewritten.
         let rows: IndexMap<_, _> = snapshot
             .into_iter()
-            .filter(|(id, row)| !guarded(id) && cached.get(id) != Some(row))
+            .filter(|(id, row)| !pending.guarded_since(mark, id) && cached.get(id) != Some(row))
             .collect();
         if !rows.is_empty() {
             cache.insert_values(rows).await?;
         }
-        for id in stale {
-            cache.delete_value(&id).await?;
-        }
-        self.inner.stamp_refreshed().await;
+        self.inner
+            .drop_vanished(cached.keys(), &keep, mark)
+            .await?;
+        self.inner.stamp_whole().await;
         self.notify_dataset_changed();
         Ok(())
     }

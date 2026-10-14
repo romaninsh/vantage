@@ -83,13 +83,13 @@ async fn aggregates_follow_a_paged_load() -> Result<()> {
 
     // First page lands.
     let scenery = src.table_scenery().open().await?;
-    scenery.set_viewport(0..4);
+    scenery.set_viewport(0..4, 0..0);
     wait_for(&all, 4).await;
     assert_eq!(as_i64(all.value()), Some(4), "the first page is counted");
     assert_eq!(as_i64(open.value()), Some(2), "and so is a filtered count");
 
     // Scrolling brings more; the figures grow with them.
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     wait_for(&all, 10).await;
     assert_eq!(as_i64(all.value()), Some(10));
     assert_eq!(as_i64(open.value()), Some(5));

@@ -17,9 +17,8 @@ use vantage_vista::{
     Capability, Page, TableShell, Vista, VistaCapabilities, forward_table_shell, mocks::MockShell,
 };
 
-use super::fixtures::eventually;
 use crate::support::chunk::order;
-use crate::support::{meta, paged_dio, record};
+use crate::support::{eventually, meta, paged_dio, record};
 
 /// Bounds each wait on the view; not a speed assertion.
 const WAIT: Duration = Duration::from_secs(10);
@@ -77,14 +76,14 @@ async fn paged_search_on_uncloneable_master() -> Result<()> {
     let scenery = dio.table_scenery().page_size(10).open().await?;
     assert!(scenery.search_supported(), "the master advertises Search");
 
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     assert!(
         eventually(WAIT, || scenery.row_count() == 5).await,
         "the unsearched window never loaded"
     );
 
     scenery.set_search(Some("x".into()));
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     let expected = (vec!["axe".to_string(), "box".to_string()], Some(2));
     eventually(WAIT, || shown(&scenery) == expected).await;
     assert_eq!(

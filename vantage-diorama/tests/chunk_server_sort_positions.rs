@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Lens, Loader, SortDir};
+use vantage_diorama::{Lens, Loader};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{Capability, Column, SortDirection, Vista, VistaCapabilities, VistaMetadata};
@@ -104,14 +104,14 @@ async fn a_server_side_sort_does_not_leave_stale_row_positions() -> Result<()> {
 
     // Visit a window in the MIDDLE, so the cache holds rows that are not a
     // prefix of either order — the situation that made the bug visible.
-    scenery.set_viewport(20..40);
+    scenery.set_viewport(20..40, 0..0);
     settle().await;
     settle().await;
 
     // Now sort descending at the source.
-    scenery.set_sort(Some("name".to_string()), SortDir::Desc);
+    scenery.set_order(Some(("name".to_string(), SortDirection::Descending)));
     settle().await;
-    scenery.set_viewport(0..20);
+    scenery.set_viewport(0..20, 0..0);
     settle().await;
     settle().await;
 
@@ -162,16 +162,16 @@ async fn a_narrowed_query_sorts_from_the_source_not_the_cached_sample() -> Resul
     let scenery = dio.table_scenery().page_size(20).open().await?;
 
     // Fill the cache with 40 rows, only ten of which will match.
-    scenery.set_viewport(0..40);
+    scenery.set_viewport(0..40, 0..0);
     settle().await;
     settle().await;
 
     // Narrow to the twenty "a" rows, then order them at the source.
     scenery.set_search(Some("a".to_string()));
     settle().await;
-    scenery.set_sort(Some("name".to_string()), SortDir::Desc);
+    scenery.set_order(Some(("name".to_string(), SortDirection::Descending)));
     settle().await;
-    scenery.set_viewport(0..20);
+    scenery.set_viewport(0..20, 0..0);
     settle().await;
     settle().await;
 

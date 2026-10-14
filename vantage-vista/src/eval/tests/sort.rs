@@ -42,6 +42,49 @@ fn absent_and_null_cells_sort_last_both_ways_and_ties_break_on_id() {
     assert_eq!(ids(&desc), ["a", "b", "d", "e", "c", "f"]);
 }
 
+/// Twenty rows in a scrambled order: every third lacks the price, every
+/// seventh holds a null, and the rest share five prices, ints and floats.
+fn scrambled() -> Rows {
+    (0..20)
+        .map(|n| (n * 7) % 20)
+        .map(|n| {
+            let id = format!("r{n:02}");
+            let cells = match n {
+                n if n % 3 == 0 => vec![],
+                n if n % 7 == 0 => vec![("price", CborValue::Null)],
+                n if n % 2 == 0 => vec![("price", int(n % 5))],
+                n => vec![("price", CborValue::Float((n % 5) as f64))],
+            };
+            (id, row(&cells))
+        })
+        .collect()
+}
+
+#[test]
+fn cmp_rows_agrees_with_sort_rows() {
+    let m = schemaless();
+    for dir in [SortDirection::Ascending, SortDirection::Descending] {
+        let query = VistaQuery::new().with_order("price", dir);
+        let mut rows = scrambled();
+        query.sort_rows(&mut rows, &m);
+        for pair in rows.windows(2) {
+            let (a, b) = (&pair[0], &pair[1]);
+            let ordering = query.cmp_rows((&a.0, &a.1), (&b.0, &b.1), &m);
+            assert_eq!(ordering, Ordering::Less, "{dir:?}: {} before {}", a.0, b.0);
+        }
+    }
+    let unordered = VistaQuery::new();
+    let (a, b) = (&scrambled()[0], &scrambled()[1]);
+    assert_eq!(
+        unordered.cmp_rows((&a.0, &a.1), (&b.0, &b.1), &m),
+        a.0.cmp(&b.0)
+    );
+    assert_eq!(
+        unordered.cmp_rows((&a.0, &a.1), (&a.0, &a.1), &m),
+        Ordering::Equal
+    );
+}
+
 #[test]
 fn without_an_order_the_rows_keep_their_order() {
     let mut rows = priced();

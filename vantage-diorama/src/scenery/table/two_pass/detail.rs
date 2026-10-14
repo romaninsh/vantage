@@ -4,11 +4,12 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::dio::DioInner;
+use crate::dio::augment_scheduler::AugmentTicket;
+use crate::dio::{DetailState, DioInner};
 use crate::lens::CacheStatus;
 use crate::scenery::enriched_record::EnrichedRecord;
 
-use super::super::state::TableSceneryState;
+use super::super::state::SharedRows;
 use super::{cached, enriched};
 
 /// Whether this view hydrates its whole listed index rather than the rows on
@@ -16,7 +17,7 @@ use super::{cached, enriched};
 /// augmented value (see [`DioInner::names_augmented`]). Such a view can't
 /// tell which rows belong on screen until every listed row is hydrated.
 /// A titles-only picker never sweeps: it never hydrates.
-pub(crate) fn sweeps_whole_index(state: &TableSceneryState, dio_inner: &DioInner) -> bool {
+pub(crate) fn sweeps_whole_index(state: &SharedRows, dio_inner: &DioInner) -> bool {
     !state.titles_only && state.local_refine() && dio_inner.names_augmented(&state.view_query())
 }
 
@@ -35,7 +36,14 @@ pub(crate) fn sweeps_whole_index(state: &TableSceneryState, dio_inner: &DioInner
 /// - for another refined view, the ids its displayed map shows in `range`
 ///   (it shows its own order, not the index's);
 /// - for an unrefined view, the index's ids in `range`.
-pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: Range<usize>) {
+///
+/// The batch is queued under `ticket`: the asking view's, or the rows' sweep
+/// ticket.
+pub(crate) async fn run_detail_for_range(
+    state: Arc<SharedRows>,
+    range: Range<usize>,
+    ticket: Option<Arc<AugmentTicket>>,
+) {
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         return;
     };
@@ -107,24 +115,19 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
         // read, and this loop runs over the WHOLE index on a view whose
         // predicate touches an augmented column — re-derived on every
         // generation bump, so every batch of hydrations pays for the entire
-        // table again. Both settled sets are decided answers; consult them
+        // table again. `Filled` and `Empty` are decided answers; consult them
         // before reading.
         //
         // Gated on the slot already existing for an unrefined view: that view
         // still has to materialize slots a SIBLING scenery's list pass seeded
         // into its own map only, and that genuinely needs the record. A
         // refined view owns its map wholesale and never seeds here.
-        if local_refine || state.rows.read().unwrap().contains_key(&idx) {
-            let settled = dio_inner.augment_settled.lock().unwrap().contains(&id)
-                || dio_inner
-                    .augment_settled_empty
-                    .lock()
-                    .unwrap()
-                    .contains(&id);
-            if settled {
-                memo_skips += 1;
-                continue;
-            }
+        let memo = dio_inner.detail_state(&id);
+        if (local_refine || state.rows.read().unwrap().contains_key(&idx))
+            && matches!(memo, Some(DetailState::Filled | DetailState::Empty))
+        {
+            memo_skips += 1;
+            continue;
         }
         let entry = cached(&state, &dio_inner, &id).await;
         // Materialize the slot if this scenery never seeded it: the index is
@@ -153,19 +156,13 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
                 // process started — `hydrate_one` only ever runs for rows the
                 // sweep enqueues, so it alone would leave a fully-hydrated
                 // persisted cache re-reading every row on every sweep.
-                dio_inner.augment_settled.lock().unwrap().insert(id.clone());
+                dio_inner.set_detail_state(&id, DetailState::Filled);
                 continue;
             }
             // Hydrated but legitimately empty (no detail record exists) — don't
-            // re-fetch until an EXPLICIT refresh clears the settled set (the
-            // scheduled timer deliberately leaves it alone; see
-            // `augment_passes::RefreshKind`).
-            if dio_inner
-                .augment_settled_empty
-                .lock()
-                .unwrap()
-                .contains(&id)
-            {
+            // re-fetch until an EXPLICIT refresh forgets it (the scheduled
+            // timer deliberately keeps it; see `augment_passes::RefreshKind`).
+            if memo == Some(DetailState::Empty) {
                 settled_empty_skips += 1;
                 continue;
             }
@@ -222,18 +219,18 @@ pub(crate) async fn run_detail_for_range(state: Arc<TableSceneryState>, range: R
     if pending.is_empty() {
         return;
     }
-    if let Some(ticket) = state.augment_ticket.as_ref() {
+    if let Some(ticket) = ticket {
         ticket.enqueue(pending);
     }
 }
 
-/// Restart hydration after the view's index or order changed: re-issue the
-/// last viewport, or, for a view that [sweeps](sweeps_whole_index) and has
-/// no viewport yet, start the sweep at once. Such a view reads as loading
-/// until its sweep is done, so it can't wait for a scroll; its predicate is
+/// Restart hydration after the rows' index or order changed: re-issue each
+/// view's viewport, or, for rows that [sweep](sweeps_whole_index) with no
+/// viewport yet, start the sweep at once. Such rows read as loading until
+/// their sweep is done, so they can't wait for a scroll; their predicate is
 /// the demand.
-pub(crate) fn resume_hydration(state: &Arc<TableSceneryState>) {
-    if state.last_viewport.read().unwrap().is_some() {
+pub(crate) fn resume_hydration(state: &Arc<SharedRows>) {
+    if state.has_viewport() {
         state.refresh_loaded_viewport(vantage_core::Priority::Background);
         return;
     }
@@ -244,10 +241,8 @@ pub(crate) fn resume_hydration(state: &Arc<TableSceneryState>) {
         return;
     }
     let range = 0..state.page_size;
-    dio_inner
-        .lens
-        .runtime
-        .spawn(run_detail_for_range(state.clone(), range));
+    let sweep = run_detail_for_range(state.clone(), range, state.sweep_ticket.clone());
+    state.tasks.hold(dio_inner.lens.runtime.spawn(sweep));
 }
 
 /// React to `DioEvent::RecordLoadFailed { id }`: a scheduled detail fetch for
@@ -255,7 +250,7 @@ pub(crate) fn resume_hydration(state: &Arc<TableSceneryState>) {
 /// partial (list-pass) columns stay on screen. Locally-refined views skip the
 /// stamp — their visible set is re-derived wholesale, which the reactor does
 /// instead.
-pub(crate) fn mark_detail_failed(state: &Arc<TableSceneryState>, id: &str, error: &str) {
+pub(crate) fn mark_detail_failed(state: &Arc<SharedRows>, id: &str, error: &str) {
     if state.local_refine() {
         return;
     }

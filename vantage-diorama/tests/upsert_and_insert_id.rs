@@ -184,16 +184,6 @@ async fn a_writer_reporting_only_an_id_rekeys_the_staged_row() -> Result<()> {
     Ok(())
 }
 
-/// `default_write` wraps the driver's error in a "write failed" context
-/// (vantage-diorama/src/dio/worker.rs), so the classification only
-/// survives on the wrapped source, not on the top-level error.
-fn caused_by_not_found(err: &vantage_core::VantageError) -> bool {
-    err.is_not_found()
-        || std::error::Error::source(err)
-            .and_then(|s| s.downcast_ref::<vantage_core::VantageError>())
-            .is_some_and(caused_by_not_found)
-}
-
 /// A `Replace` flash stays strict even for a Dio-routed write: on a shell
 /// whose native replace requires the row (memory's shape), a replace of a
 /// missing row fails rather than silently creating it. `Dio::flash` waits
@@ -206,7 +196,7 @@ async fn replace_flash_of_a_missing_row_still_fails() -> Result<()> {
         .flash(ChangeFlash::replace("missing", rec(&[("name", "a")])))
         .await
         .unwrap_err();
-    assert!(caused_by_not_found(&err), "{err}");
+    assert!(err.is_not_found(), "{err}");
     Ok(())
 }
 

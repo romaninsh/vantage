@@ -14,9 +14,9 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Cache, ChangeEvent, Lens, Loader, LoaderCx, SortDir, TableScenery};
+use vantage_diorama::{Cache, ChangeEvent, Lens, Loader, LoaderCx, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Column, SortDirection, Vista, VistaMetadata, mocks::MockShell};
 
 fn cbor_text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
     let dio = lens.dio(master()).build().await?;
     let scenery: Arc<dyn TableScenery> = dio
         .table_scenery()
-        .sort("price", SortDir::Asc)
+        .order("price", SortDirection::Ascending)
         .open()
         .await?;
 
@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
     // Switch to descending sort.
     let mut gen_rx = scenery.subscribe();
     let last = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("price".to_string()), SortDir::Desc);
+    scenery.set_order(Some(("price".to_string(), SortDirection::Descending)));
     let _ = tokio::time::timeout(Duration::from_millis(200), async {
         loop {
             if u64::from(*gen_rx.borrow_and_update()) > last {
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
         }
     })
     .await;
-    print_scenery("after set_sort(price, desc)", &scenery);
+    print_scenery("after set_order(price, desc)", &scenery);
 
     // External system tells us about a new row.
     let last = u64::from(*gen_rx.borrow_and_update());

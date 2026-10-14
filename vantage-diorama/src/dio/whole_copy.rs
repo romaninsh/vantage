@@ -1,11 +1,17 @@
-//! Copying the whole set into the cache on demand, for a paged view whose
-//! query leaves a clause the master can't apply.
+//! The cache as a whole copy of the Dio's set: copying it on demand, for a
+//! paged view whose query leaves a clause the master can't apply, and
+//! knowing when the cache already holds one.
 
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::SystemTime;
 
 use tokio::sync::watch;
 use vantage_core::{Result, error};
 
+use super::pending::SettleMark;
+use super::refresh::outlived;
 use super::{Dio, DioInner};
 use crate::lens::LoaderCx;
 
@@ -14,6 +20,82 @@ use crate::lens::LoaderCx;
 pub(crate) type CopyOutcome = Option<std::result::Result<(), String>>;
 
 impl DioInner {
+    /// Whether the cache holds the Dio's whole set, so a list pass may read
+    /// it instead of the master: a whole copy was recorded
+    /// ([`meta_copied_at`](crate::lens::CacheTable::meta_copied_at)) within
+    /// the refresher's `max_age`, or, with no `max_age` to bound an earlier
+    /// session's copy, since this Dio was built. Never while a detached
+    /// eager start is still rewriting the cache. A stamp that can't be read
+    /// counts as none.
+    pub(crate) async fn holds_whole_copy(&self) -> bool {
+        if !self.seed_complete.load(Ordering::SeqCst) {
+            return false;
+        }
+        let Ok(Some(at)) = self.cache.meta_copied_at().await else {
+            return false;
+        };
+        match self.max_age() {
+            Some(max_age) => !outlived(at, max_age),
+            None => at >= self.built_at,
+        }
+    }
+
+    /// Record that the cache now holds the master's whole set, and so is
+    /// refreshed too: every row of the set was written and every row outside
+    /// it dropped. Logged on failure, as for
+    /// [`stamp_refreshed`](Self::stamp_refreshed).
+    pub(crate) async fn stamp_whole(&self) {
+        self.stamp_refreshed().await;
+        if let Err(e) = self.cache.set_meta_copied_at(SystemTime::now()).await {
+            tracing::warn!(
+                target: "vantage_diorama::cache",
+                table = %self.cache_table_name,
+                error = %e,
+                "recording the whole copy failed",
+            );
+        }
+    }
+
+    /// Delete the cached rows among `cached` that `keep` doesn't hold: they
+    /// vanished upstream. A row with a flash in flight, or one settled since
+    /// `mark` (taken before the set was read), is left alone.
+    pub(crate) async fn drop_vanished<'a>(
+        &self,
+        cached: impl IntoIterator<Item = &'a String>,
+        keep: &HashSet<String>,
+        mark: &SettleMark,
+    ) -> Result<()> {
+        let pending = &self.pending_flashes;
+        for id in cached {
+            if !keep.contains(id) && !pending.guarded_since(mark, id) {
+                self.cache.delete_value(id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Record that the cache is a whole copy, after a list pass read the
+    /// master's whole set into `listed`, every page of it after `mark`. Rows
+    /// the cache holds outside it are dropped first, so the copy is honest.
+    /// When that fails nothing is stamped, and the next open lists the master
+    /// again.
+    pub(crate) async fn stamp_whole_copy(&self, listed: &HashSet<String>, mark: &SettleMark) {
+        let dropped = match self.cache.list_values().await {
+            Ok(cached) => self.drop_vanished(cached.keys(), listed, mark).await,
+            Err(e) => Err(e),
+        };
+        if let Err(e) = dropped {
+            tracing::warn!(
+                target: "vantage_diorama::cache",
+                table = %self.cache_table_name,
+                error = %e,
+                "dropping vanished rows failed; the copy stays unstamped",
+            );
+            return;
+        }
+        self.stamp_whole().await;
+    }
+
     /// Copy the whole set into the cache through the loader's eager start,
     /// once per Dio: every caller waits on the same copy. A copy that fails
     /// is forgotten once its waiters have the error, so a later call tries
@@ -76,7 +158,7 @@ impl DioInner {
         self.lens.runtime.spawn(async move {
             let outcome = copy.await;
             if outcome.is_ok() {
-                dio.inner.stamp_refreshed().await;
+                dio.inner.stamp_whole().await;
             }
             let _ = tx.send(Some(outcome.map_err(|e| e.to_string())));
         });

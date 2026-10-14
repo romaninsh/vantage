@@ -123,8 +123,8 @@ async fn eventually(label: &str, f: impl Fn() -> bool) {
 async fn overlapping_viewports_share_one_fetch_and_both_update() {
     let fx = fixture(2, 1).await;
 
-    // Distinct demands (both include the augment column) → two REAL
-    // sceneries, not one deduplicated handle.
+    // Two views (both demanding the augment column) over one set of rows,
+    // each with its own viewport.
     let a = fx
         .dio
         .table_scenery()
@@ -132,7 +132,7 @@ async fn overlapping_viewports_share_one_fetch_and_both_update() {
         .open()
         .await
         .unwrap();
-    a.set_viewport(0..2);
+    a.set_viewport(0..2, 0..0);
     eventually("worker holds r0", || fx.log().len() == 1).await;
 
     let b = fx
@@ -142,7 +142,7 @@ async fn overlapping_viewports_share_one_fetch_and_both_update() {
         .open()
         .await
         .unwrap();
-    b.set_viewport(0..2);
+    b.set_viewport(0..2, 0..0);
     #[cfg(feature = "diagnostics")]
     assert_eq!(
         fx.dio
@@ -152,7 +152,7 @@ async fn overlapping_viewports_share_one_fetch_and_both_update() {
             .sceneries
             .len(),
         2,
-        "distinct sceneries"
+        "two views"
     );
     tokio::time::sleep(Duration::from_millis(50)).await; // b's viewport enqueued
 
@@ -187,7 +187,7 @@ async fn disjoint_viewports_interleave_round_robin() {
         .open()
         .await
         .unwrap();
-    a.set_viewport(0..4);
+    a.set_viewport(0..4, 0..0);
     eventually("worker holds a's first row", || fx.log().len() == 1).await;
 
     let b = fx
@@ -197,7 +197,7 @@ async fn disjoint_viewports_interleave_round_robin() {
         .open()
         .await
         .unwrap();
-    b.set_viewport(4..8);
+    b.set_viewport(4..8, 0..0);
     tokio::time::sleep(Duration::from_millis(50)).await; // b's viewport enqueued
 
     fx.gate.add_permits(64);
@@ -229,7 +229,7 @@ async fn two_workers_fetch_in_parallel() {
         .open()
         .await
         .unwrap();
-    scenery.set_viewport(0..4);
+    scenery.set_viewport(0..4, 0..0);
 
     // Both workers should dispatch a fetch and block on the closed gate.
     eventually("two fetches in flight", || {
@@ -258,7 +258,7 @@ async fn dropping_a_scenery_withdraws_its_queued_ids() {
         .open()
         .await
         .unwrap();
-    scenery.set_viewport(0..4);
+    scenery.set_viewport(0..4, 0..0);
     eventually("worker holds r0", || fx.log().len() == 1).await;
 
     drop(scenery);
@@ -291,19 +291,17 @@ async fn dropping_a_scenery_withdraws_its_queued_ids() {
     assert!(r1.get("size").is_none(), "withdrawn row was never fetched");
 }
 
-/// Two `.exclusive()` views over the SAME query and demand stay separate
-/// sceneries: each keeps its own viewport, so disjoint windows both hydrate
-/// (a shared scenery would only serve the last-set window).
+/// Two plain opens over the SAME query share their rows but stay two views:
+/// each keeps its own viewport, so disjoint windows both hydrate, and their
+/// fetches alternate between the two views' queues.
 #[tokio::test]
-async fn exclusive_sceneries_keep_their_own_viewports() {
+async fn owned_sceneries_keep_their_own_viewports() {
     let fx = fixture(8, 1).await;
-    fx.gate.add_permits(64);
 
     let a = fx
         .dio
         .table_scenery()
         .columns(["id", "size"])
-        .exclusive()
         .open()
         .await
         .unwrap();
@@ -311,31 +309,41 @@ async fn exclusive_sceneries_keep_their_own_viewports() {
         .dio
         .table_scenery()
         .columns(["id", "size"])
-        .exclusive()
         .open()
         .await
         .unwrap();
     #[cfg(feature = "diagnostics")]
-    assert_eq!(
-        fx.dio
-            .diagnostics()
-            .await
-            .expect("diagnostics")
-            .sceneries
-            .len(),
-        2,
-        "identical queries, but exclusive views never share"
-    );
+    {
+        let sceneries = fx.dio.diagnostics().await.expect("diagnostics").sceneries;
+        assert_eq!(sceneries.len(), 2, "two views");
+        assert!(
+            sceneries.iter().all(|s| s.shared_by == 2),
+            "one query, one set of rows: {sceneries:?}"
+        );
+    }
 
-    a.set_viewport(0..2);
-    b.set_viewport(4..6);
+    a.set_viewport(0..4, 0..0);
+    eventually("worker holds a's first row", || fx.log().len() == 1).await;
+    b.set_viewport(4..8, 0..0);
+    tokio::time::sleep(Duration::from_millis(50)).await; // b's viewport enqueued
+
+    fx.gate.add_permits(64);
     eventually("both windows hydrate", || {
-        col_of(&a, 0, "size").is_some()
-            && col_of(&a, 1, "size").is_some()
-            && col_of(&b, 4, "size").is_some()
-            && col_of(&b, 5, "size").is_some()
+        (0..4).all(|i| col_of(&a, i, "size").is_some())
+            && (4..8).all(|i| col_of(&b, i, "size").is_some())
     })
     .await;
+
+    let log = fx.log();
+    assert_eq!(log.len(), 8, "each row fetched once: {log:?}");
+    let requester = |id: &str| id[1..].parse::<usize>().unwrap() / 4;
+    for pair in log.windows(2) {
+        assert_ne!(
+            requester(&pair[0]),
+            requester(&pair[1]),
+            "fetches must alternate between the two views: {log:?}"
+        );
+    }
 }
 
 /// A facade read blocking on a row another view is already fetching does not
@@ -351,7 +359,7 @@ async fn facade_hydrate_shares_in_flight_fetch_with_scenery() {
         .open()
         .await
         .unwrap();
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("worker holds r0", || fx.log().len() == 1).await;
 
     let vista = fx.dio.cached();

@@ -15,7 +15,7 @@ use vantage_vista::VistaQuery;
 use crate::dio::{DioEvent, DioInner};
 use crate::scenery::table::{LoadFailure, ViewportRequest};
 
-use super::super::state::TableSceneryState;
+use super::super::state::SharedRows;
 use super::ViewPlan;
 use super::failures::{rejection, unevaluated, unhydrated};
 
@@ -43,7 +43,7 @@ impl Serving {
     /// never hydrates, so a clause on an augmented column, in its query or
     /// in the Dio's residual, fails it too.
     pub(crate) fn decide(
-        state: &TableSceneryState,
+        state: &SharedRows,
         dio: &DioInner,
         offered: &VistaQuery,
         sugar: &VistaQuery,
@@ -79,18 +79,20 @@ impl Serving {
     }
 }
 
-impl TableSceneryState {
-    /// The view's current serving.
+impl SharedRows {
+    /// The rows' current serving.
     pub(crate) fn serving(&self) -> Serving {
         self.serving.read().unwrap().clone()
     }
 
-    /// Act on the serving moving from `previous` to `next`. Returns whether
-    /// the view was reloaded here, so the setter skips its own reload.
+    /// Act on the serving moving from `previous` (the one the rows started
+    /// with: the old rows' serving, for a copy) to `next`. Returns whether
+    /// the rows were reloaded here, so the caller skips its own reload.
     ///
     /// - Failed: the rows are withheld and `LoadFailed` is emitted.
-    /// - Back to windows: the rows, placed by the cache, are dropped, and the
-    ///   last viewport is fetched from the master.
+    /// - Back to windows: the rows, placed by the cache, are dropped, and
+    ///   each view's viewport is fetched from the master (the first page
+    ///   when no view has one).
     /// - A paged view moving to the cache from windows or a failure: the rows
     ///   are dropped and the view reads as loading; the caller's reload
     ///   copies the whole set and refines it.
@@ -104,20 +106,27 @@ impl TableSceneryState {
             }
             Serving::Windows if !previous.is_windows() => {
                 self.drop_rows();
-                let range = self
-                    .last_viewport
-                    .read()
-                    .unwrap()
-                    .clone()
-                    .unwrap_or(0..self.page_size);
-                super::super::loader::enqueue_viewport(
-                    self,
-                    ViewportRequest {
+                let mut requests: Vec<ViewportRequest> = self
+                    .viewports()
+                    .into_iter()
+                    .map(|(view, range)| ViewportRequest {
                         range,
                         force_load: true,
                         priority: Priority::Essential,
-                    },
-                );
+                        view: Some(view),
+                    })
+                    .collect();
+                if requests.is_empty() {
+                    requests.push(ViewportRequest {
+                        range: 0..self.page_size,
+                        force_load: true,
+                        priority: Priority::Essential,
+                        view: None,
+                    });
+                }
+                for request in requests {
+                    super::super::loader::enqueue_viewport(self, request);
+                }
                 true
             }
             Serving::Cache
@@ -154,7 +163,11 @@ impl TableSceneryState {
             "the view can't answer its query; it shows no rows",
         );
         crate::debug::tapline!(self.debug_tap, "scenery", "failed — {}", failure);
-        let range = self.last_viewport.read().unwrap().clone().unwrap_or(0..0);
+        let range = self
+            .viewports()
+            .into_iter()
+            .next()
+            .map_or(0..0, |(_, range)| range);
         let _ = dio.event_bus.send(DioEvent::LoadFailed {
             range,
             error: failure.to_string(),
@@ -163,16 +176,19 @@ impl TableSceneryState {
         self.bump_generation();
     }
 
-    /// Forget the rows and the total of the previous serving: their places
-    /// mean nothing under the new one. The view loads again from scratch and
-    /// reads as loading; the load that refills it bumps the generation.
-    fn drop_rows(&self) {
+    /// Forget the rows and the total of the previous serving (or of the
+    /// order a flipped tail left): their places mean nothing now. The view
+    /// loads again from scratch and reads as loading; the load that refills
+    /// it bumps the generation.
+    pub(crate) fn drop_rows(&self) {
         self.settled
             .store(false, std::sync::atomic::Ordering::SeqCst);
         self.clear_rows();
     }
 
     fn clear_rows(&self) {
+        self.placed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         self.rows.write().unwrap().clear();
         self.id_to_idx.write().unwrap().clear();
         self.set_total(None);

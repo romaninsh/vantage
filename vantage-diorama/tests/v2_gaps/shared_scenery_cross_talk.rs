@@ -1,20 +1,15 @@
-//! Two opens of the same query must not let one reshape the other.
-//!
-//! Today the dedup registry hands the second open the same live scenery as
-//! the first, and the setters take `&self`, so `set_search` on one holder
-//! changes the rows of every holder. `.exclusive()` is the opt-out. In 2.0
-//! every `open()` returns a scenery its caller owns; only the fetched rows
-//! are shared underneath, and only between identical queries.
+//! Two opens of the same query must not let one reshape the other: every
+//! `open()` returns a view its caller owns, and only the fetched rows are
+//! shared underneath, between identical queries.
 
 use std::time::Duration;
 
 use vantage_core::Result;
 
-use super::fixtures::{eventually, scenery_ids};
-use crate::support::{eager_dio, teams_master};
+use super::fixtures::scenery_ids;
+use crate::support::{eager_dio, eventually, teams_master};
 
 #[tokio::test]
-#[ignore = "v2 phase 4: shared sceneries let one holder reshape another"]
 async fn shared_scenery_cross_talk() -> Result<()> {
     // Members a (red), b (blue), c (red).
     let dio = eager_dio(teams_master()).await;

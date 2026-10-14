@@ -43,7 +43,7 @@ async fn refresh_updates_visible_rows_in_place() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
 
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     wait_for_gen(&mut gen_rx, g0).await;
     assert_eq!(value(&scenery, 0).as_deref(), Some("v1"));
 
@@ -77,7 +77,7 @@ async fn failed_refresh_keeps_rows_instead_of_blanking() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
 
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..1);
+    scenery.set_viewport(0..1, 0..0);
     wait_for_gen(&mut gen_rx, g0).await;
     assert_eq!(value(&scenery, 0).as_deref(), Some("v1"));
 

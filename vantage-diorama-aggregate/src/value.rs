@@ -23,7 +23,7 @@ pub(crate) struct ValueState {
     status: RwLock<ValueStatus>,
     generation: AtomicU64,
     generation_tx: watch::Sender<Generation>,
-    /// Held so `request_refresh` can push the ask *down* to the datasource.
+    /// Held so `refresh_source` can push the ask *down* to the datasource.
     source: Dio,
     /// Last published value, so a restart paints before the first
     /// recomputation lands.
@@ -130,7 +130,7 @@ impl ValueScenery for AggregateValue {
     /// back up the bus and drive the recomputation. The local nudge alongside
     /// it covers a source with no refresh route configured, which would
     /// otherwise leave the button doing nothing at all.
-    fn request_refresh(&self) {
+    fn refresh_source(&self) {
         let source = self.state.source.clone();
         let nudge = self.state.nudge.clone();
         tokio::spawn(async move {

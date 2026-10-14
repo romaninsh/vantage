@@ -94,11 +94,38 @@ impl VistaQuery {
     /// it. An absent or null cell sorts last in both directions, and ties
     /// break on id, so the same rows always come back in the same order.
     pub fn sort_rows(&self, rows: &mut [(String, Rec)], metadata: &VistaMetadata) {
-        if let Some((column, dir)) = &self.order {
-            rows.sort_by(|(a_id, a), (b_id, b)| {
-                compare_rows(column, *dir, metadata, (a_id, a), (b_id, b))
-            });
+        if self.order.is_some() {
+            rows.sort_by(|(a_id, a), (b_id, b)| self.cmp_rows((a_id, a), (b_id, b), metadata));
         }
+    }
+
+    /// The order [`sort_rows`](Self::sort_rows) sorts by: the order column,
+    /// absent and null cells last in either direction, then ascending id.
+    /// Without an order only the id decides, so `Equal` means the same id.
+    /// Placing one row by a binary search over rows `sort_rows` sorted puts
+    /// it where a fresh sort would.
+    pub fn cmp_rows(
+        &self,
+        (a_id, a): (&str, &Rec),
+        (b_id, b): (&str, &Rec),
+        metadata: &VistaMetadata,
+    ) -> Ordering {
+        fn cell<'a>(row: &'a Rec, column: &str, metadata: &VistaMetadata) -> Option<&'a CborValue> {
+            cell_get(row, column, metadata).filter(|v| !v.is_null())
+        }
+        let ordering = match &self.order {
+            None => Ordering::Equal,
+            Some((column, dir)) => match (cell(a, column, metadata), cell(b, column, metadata)) {
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+                (Some(l), Some(r)) => match dir {
+                    SortDirection::Ascending => cbor_cmp(l, r),
+                    SortDirection::Descending => cbor_cmp(r, l),
+                },
+            },
+        };
+        ordering.then_with(|| a_id.cmp(b_id))
     }
 
     /// Whether [`matches`](Self::matches) can evaluate this query: it holds
@@ -106,30 +133,6 @@ impl VistaQuery {
     pub fn is_locally_evaluable(&self) -> bool {
         self.native.is_empty()
     }
-}
-
-/// The order of two `(id, row)` pairs by `column` in direction `dir`, as
-/// [`VistaQuery::sort_rows`] sorts them. A null cell counts as absent.
-pub(crate) fn compare_rows(
-    column: &str,
-    dir: SortDirection,
-    metadata: &VistaMetadata,
-    (a_id, a): (&str, &Rec),
-    (b_id, b): (&str, &Rec),
-) -> Ordering {
-    fn cell<'a>(row: &'a Rec, column: &str, metadata: &VistaMetadata) -> Option<&'a CborValue> {
-        cell_get(row, column, metadata).filter(|v| !v.is_null())
-    }
-    let ordering = match (cell(a, column, metadata), cell(b, column, metadata)) {
-        (None, None) => Ordering::Equal,
-        (None, Some(_)) => Ordering::Greater,
-        (Some(_), None) => Ordering::Less,
-        (Some(l), Some(r)) => match dir {
-            SortDirection::Ascending => cbor_cmp(l, r),
-            SortDirection::Descending => cbor_cmp(r, l),
-        },
-    };
-    ordering.then_with(|| a_id.cmp(b_id))
 }
 
 /// Equal values, an integer and a float of the same number, or a datetime

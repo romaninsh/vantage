@@ -10,10 +10,10 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Cache, Lens, Loader, SortDir, TableScenery};
+use vantage_diorama::{Cache, Lens, Loader, TableScenery};
 use vantage_diorama_aggregate::{AggregateLens, Count, GroupBy, Reduce, Sum};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Column, SortDirection, Vista, VistaMetadata, mocks::MockShell};
 
 fn order(status: &str, amount: i64) -> Record<CborValue> {
     let mut record = Record::new();
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
     // The derived Dio is an ordinary Dio: open a scenery, sort it, read rows.
     let grid = by_status
         .table_scenery()
-        .sort("revenue", SortDir::Desc)
+        .order("revenue", SortDirection::Descending)
         .open()
         .await?;
 

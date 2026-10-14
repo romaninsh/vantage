@@ -1,4 +1,5 @@
-//! Per-table meta: the stated grand total and the last refresh time.
+//! Per-table meta: the stated grand total, the last refresh time and the
+//! last whole copy's time.
 //!
 //! Meta lives in a SIBLING table (`{name}\u{1}meta`) so it can never collide
 //! with a row id in the record table. Each value is eight little-endian bytes.
@@ -11,6 +12,7 @@ use super::table::RedbCacheTable;
 
 const TOTAL: &str = "total";
 pub(super) const REFRESHED_AT: &str = "refreshed_at";
+pub(super) const COPIED_AT: &str = "copied_at";
 
 /// Marks a redb table as meta rather than a cache table of its own.
 pub(super) const META_MARKER: char = '\u{1}';
@@ -62,24 +64,25 @@ impl RedbCacheTable {
 
     /// Stored as nanoseconds since the Unix epoch, so a time round-trips
     /// exactly. A time before the epoch is refused with an error.
-    pub(super) async fn stored_refreshed_at(&self) -> Result<Option<SystemTime>> {
+    pub(super) async fn stored_time(&self, key: &'static str) -> Result<Option<SystemTime>> {
         Ok(self
-            .read_meta(REFRESHED_AT)
+            .read_meta(key)
             .await?
             .map(|nanos| UNIX_EPOCH + Duration::from_nanos(nanos)))
     }
 
-    pub(super) async fn store_refreshed_at(&self, at: SystemTime) -> Result<()> {
+    pub(super) async fn store_time(&self, key: &'static str, at: SystemTime) -> Result<()> {
         let nanos = at
             .duration_since(UNIX_EPOCH)
             .ok()
             .and_then(|since| u64::try_from(since.as_nanos()).ok())
             .ok_or_else(|| {
                 error!(
-                    "refresh time outside the storable range",
-                    table = self.name()
+                    "meta time outside the storable range",
+                    table = self.name(),
+                    key = key
                 )
             })?;
-        self.write_meta(REFRESHED_AT, nanos).await
+        self.write_meta(key, nanos).await
     }
 }

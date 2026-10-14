@@ -59,8 +59,11 @@ async fn status_persists_across_reopen() {
 async fn assert_meta_round_trips(table: &dyn CacheTable, at: SystemTime) {
     table.set_meta_total(42).await.unwrap();
     table.set_meta_refreshed_at(at).await.unwrap();
+    let copied = at - Duration::from_secs(5);
+    table.set_meta_copied_at(copied).await.unwrap();
     assert_eq!(table.meta_total().await.unwrap(), Some(42));
     assert_eq!(table.meta_refreshed_at().await.unwrap(), Some(at));
+    assert_eq!(table.meta_copied_at().await.unwrap(), Some(copied));
 }
 
 #[tokio::test]
@@ -81,6 +84,8 @@ async fn meta_persists_across_reopen() {
     let table = cache.open_table("items").await.unwrap();
     assert_eq!(table.meta_total().await.unwrap(), Some(42));
     assert_eq!(table.meta_refreshed_at().await.unwrap(), Some(at));
+    let copied = Some(at - Duration::from_secs(5));
+    assert_eq!(table.meta_copied_at().await.unwrap(), copied);
     // Meta lives beside the rows, never among them.
     assert_eq!(table.count().await.unwrap(), 0);
 

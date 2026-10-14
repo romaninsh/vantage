@@ -90,17 +90,20 @@ async fn memory_drop_forgets_meta() -> Result<()> {
     drop_forgets_meta(&MemoryCache::new()).await
 }
 
-/// Clearing a table forgets when it was last refreshed, so an emptied cache
-/// never looks fresh to a refresher's `max_age`; the stated total stays.
+/// Clearing a table forgets when it was last refreshed and copied whole, so
+/// an emptied cache never looks fresh to a refresher's `max_age` nor serves
+/// a list pass; the stated total stays.
 async fn clear_forgets_refresh_time(backend: &dyn CacheBackend) -> Result<()> {
     let orders = backend.open_table("orders").await?;
     orders.insert_value("a", &record(1)).await?;
     orders.set_meta_total(7).await?;
     orders.set_meta_refreshed_at(SystemTime::now()).await?;
+    orders.set_meta_copied_at(SystemTime::now()).await?;
 
     orders.clear().await?;
     assert_eq!(orders.count().await?, 0);
     assert_eq!(orders.meta_refreshed_at().await?, None);
+    assert_eq!(orders.meta_copied_at().await?, None);
     assert_eq!(orders.meta_total().await?, Some(7));
     Ok(())
 }

@@ -33,10 +33,10 @@ pub use lens::{
 pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashOutcome, FlashRejection};
 pub use scenery::sugar::{Sugar, SugarFn, SugarFuture};
 pub use scenery::{
-    Aggregate, CappedScenery, Clause, CustomAggregate, EnrichedRecord, FilterOrigin, LoadFailure,
-    LoadState, OpCondition, RecordScenery, RecordStatus, RowStatus, RowStatusSummary, SortDir,
-    TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount,
-    ViewFilter, ViewState, ViewStats, boxed_custom_aggregate,
+    Aggregate, Clause, CustomAggregate, EnrichedRecord, FilterOrigin, LoadFailure, LoadState,
+    RecordScenery, RecordSceneryBuilder, RecordStatus, RowStatus, RowStatusSummary, TableScenery,
+    TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount, ViewFilter,
+    ViewState, ViewStats, boxed_custom_aggregate,
 };
 pub use servo::{IdStrategy, Servo, ServoStatus};
 
@@ -54,7 +54,7 @@ pub mod prelude {
     };
     pub use crate::ops::{ChangeEvent, ChangeFlash, FlashKind, FlashOutcome};
     pub use crate::scenery::{
-        EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
+        EnrichedRecord, RecordScenery, RecordStatus, RowStatus, TableScenery, ValueScenery,
     };
     pub use crate::servo::{IdStrategy, Servo, ServoStatus};
 }

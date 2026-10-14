@@ -186,7 +186,7 @@ impl GatedScenery {
 /// Cancel the in-flight load by scrolling to 20..30, then let that load
 /// through and wait for its rows.
 pub async fn supersede_with_20_30(gated: &Gated, scenery: &Arc<dyn TableScenery>) {
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     wait_until("the superseding load to start", || gated.calls_len() >= 3).await;
     gated.release.notify_one();
     wait_until("row 25", || scenery.row(25).is_some()).await;

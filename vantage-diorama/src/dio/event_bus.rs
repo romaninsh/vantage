@@ -97,12 +97,16 @@ pub enum DioEvent {
     /// Emitted by `TableScenery` when the paged loader returns `Err`. The
     /// sparse map is left untouched; the slots in `range` stay whatever
     /// they were before the attempt.
-    ///
-    /// Also emitted, with an empty `range`, when a live follow fails to
-    /// re-read the set after a dropped subscription or a change that failed
-    /// to apply; the follow retries until a re-read succeeds.
     LoadFailed {
         range: Range<usize>,
+        error: String,
+    },
+
+    /// A live follow failed to re-read the set after a dropped subscription
+    /// or a change that failed to apply. The cache may be out of step with
+    /// the master until a retry succeeds; the follow retries with backoff.
+    /// Sceneries keep the rows they show, as after any failed refresh.
+    RefreshFailed {
         error: String,
     },
 

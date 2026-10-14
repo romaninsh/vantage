@@ -2,49 +2,49 @@
 //!
 //! Two-pass loading separates *ordering* from *detail*. The detail table
 //! (id→record, shared by Vista name) holds the records; a `QueryIndex` holds
-//! the ordered list of ids for **one** query variant — a specific combination
-//! of conditions + sort, identified by [`index_key`].
+//! the ordered list of ids for **one** query variant — a view's builder
+//! conditions + order, identified by [`index_key`].
 //!
 //! The Dio caches one `QueryIndex` per key (see
 //! [`DioInner::query_index`](crate::dio::DioInner::query_index)) and shares it
-//! across every scenery that opens with the same conditions/sort. Switching a
-//! filter on and off therefore reuses the already-built index — zero list
-//! calls — while the shared detail table means already-hydrated records are
-//! never re-fetched.
+//! across every scenery that opens with the same conditions/order. Runtime
+//! filters never key it: a view refines them over its index, so switching
+//! them on and off reuses the already-built index — zero list calls — while
+//! the shared detail table means already-hydrated records are never
+//! re-fetched.
 
-use std::sync::RwLock;
+mod listing;
+
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, RwLock};
 
-use ciborium::Value as CborValue;
-use vantage_vista::{Condition, FilterOp, Vista, VistaQuery};
+use vantage_vista::{Vista, VistaQuery};
 
-use crate::scenery::SortDir;
+use listing::Source;
 
 /// The identity of one query variant over `vista`: its name plus the
-/// [`VistaQuery::key`] of the equality `conditions` and `sort`. Only
+/// [`VistaQuery::key`] of `query` (its conditions and order). Only
 /// identical queries share a key; condition order doesn't matter.
-pub(crate) fn index_key(
-    vista: &Vista,
-    conditions: &[(String, CborValue)],
-    sort: Option<&(String, SortDir)>,
-) -> String {
-    let mut query = VistaQuery::new();
-    for (column, value) in conditions {
-        query = query.with_condition(Condition::new(column, FilterOp::Eq, value.clone()));
-    }
-    if let Some((column, dir)) = sort {
-        query = query.with_order(column, dir.to_vista());
-    }
+pub(crate) fn index_key(vista: &Vista, query: &VistaQuery) -> String {
     format!("{}|{}", vista.name(), query.key())
 }
 
 /// Ordered ids for one query variant, plus the bookkeeping the sequential
-/// (no-total) list pass needs: whether paging is exhausted.
-#[derive(Debug, Default)]
+/// (no-total) list pass needs: whether paging is exhausted, and where the
+/// listing reads from.
+#[derive(Default)]
 pub(crate) struct QueryIndex {
     ids: RwLock<Vec<String>>,
     /// Set once the list pass sees a short/empty page — no more pages exist.
     complete: AtomicBool,
+    /// Set when a page completed the index honestly: a short page, or the
+    /// stated total reached. Not by [`mark_complete`](Self::mark_complete),
+    /// which only guesses the source repeats itself.
+    listed_to_end: AtomicBool,
+    /// See [`listing`].
+    source: Mutex<Option<Source>>,
+    /// Inserts confirmed while the index was still being listed.
+    deferred: Mutex<Vec<String>>,
 }
 
 impl QueryIndex {
@@ -110,9 +110,38 @@ impl QueryIndex {
         let len = guard.len();
         drop(guard);
         if fetched < requested_limit || total.is_some_and(|t| len >= t) {
+            self.listed_to_end.store(true, Ordering::SeqCst);
             self.complete.store(true, Ordering::SeqCst);
         }
         (base, appended)
+    }
+
+    /// Whether a page completed the index (see `listed_to_end`), so the
+    /// index holds every id its source has.
+    pub(crate) fn listed_to_end(&self) -> bool {
+        self.listed_to_end.load(Ordering::SeqCst)
+    }
+
+    /// Append `id` at the end, where the master puts a new row. `false` when
+    /// the index already holds it. Completeness is unchanged.
+    pub(crate) fn push(&self, id: String) -> bool {
+        let mut ids = self.ids.write().unwrap();
+        if ids.contains(&id) {
+            return false;
+        }
+        ids.push(id);
+        true
+    }
+
+    /// Take `id` out of the index, returning the position it held. A
+    /// deferred insert of `id` goes too, so the listing's end can't bring a
+    /// deleted row back.
+    pub(crate) fn remove(&self, id: &str) -> Option<usize> {
+        self.deferred.lock().unwrap().retain(|d| d != id);
+        let mut ids = self.ids.write().unwrap();
+        let at = ids.iter().position(|i| i == id)?;
+        ids.remove(at);
+        Some(at)
     }
 
     /// True once a short/empty page has been seen — the list pass is done.
@@ -173,6 +202,20 @@ mod tests {
         assert!(!idx.is_complete(), "two of four");
         idx.append_page(vec!["c".into(), "d".into()], 2, Some(4));
         assert!(idx.is_complete(), "four of four needs no empty page");
+    }
+
+    #[test]
+    fn push_appends_a_new_id_once_and_remove_reports_its_position() {
+        let idx = QueryIndex::new();
+        idx.append_page(vec!["a".into(), "b".into()], 3, None);
+        assert!(idx.is_complete());
+        assert!(idx.push("c".into()));
+        assert!(!idx.push("a".into()), "an indexed id isn't pushed again");
+        assert_eq!(idx.ids(), vec!["a", "b", "c"]);
+        assert!(idx.is_complete(), "a push keeps the index complete");
+        assert_eq!(idx.remove("b"), Some(1));
+        assert_eq!(idx.remove("b"), None);
+        assert_eq!(idx.ids(), vec!["a", "c"]);
     }
 
     /// An id repeated WITHIN one incoming page is accepted once.
