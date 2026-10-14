@@ -90,7 +90,7 @@ impl TableShell for MockShell {
 
     /// Conditions evaluate against a row's own cells. A dotted path into a
     /// declared column is refused with
-    /// [`condition_column_error`](crate::condition_column_error), so a caller can
+    /// [`condition_column_error`], so a caller can
     /// evaluate it over the rows it reads; any other undeclared column is a
     /// plain error. A mock that declares no columns takes any flat column,
     /// as a schemaless store would, and refuses every dotted one.

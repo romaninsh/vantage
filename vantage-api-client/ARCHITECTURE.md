@@ -186,7 +186,7 @@ whose `driver()` is `"rest-api"` or `"graphql"`. Both factories keep a
 
 REST traverses YAML references in its shell, resolving the target to a
 built `Vista` through a `VistaResolver`. GraphQL registers them on the
-typed table with `Table::with_spec_references` and a `SpecResolver<GraphqlApiVistaSpec>`
+typed table with `Table::with_spec_references` and an `Arc<dyn SpecResolver<GraphqlApiVistaSpec>>`
 (`with_resolver`), which returns the target's *spec*; `vista/lowering.rs`
 lowers the target onto the factory's API so the parent table's `graphql:`
 overrides never leak into it, and `vista/traversal.rs` checks the target

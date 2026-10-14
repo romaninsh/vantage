@@ -22,6 +22,8 @@ mod scripted;
 mod tests;
 mod watch;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -56,7 +58,7 @@ where
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
     /// Spec resolver handed to the factories that build traversal targets.
-    pub(crate) resolver: Option<SpecResolver<SurrealVistaSpec>>,
+    pub(crate) resolver: Option<Arc<dyn SpecResolver<SurrealVistaSpec>>>,
 }
 
 impl<E> SurrealTableShell<E>
@@ -67,7 +69,7 @@ where
         table: Table<SurrealDB, E>,
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
-        resolver: Option<SpecResolver<SurrealVistaSpec>>,
+        resolver: Option<Arc<dyn SpecResolver<SurrealVistaSpec>>>,
     ) -> Self {
         Self {
             table,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 — 2026-10-14
+
+- Test clients skip system proxies; no library changes.
+
 ## 1.0.0 — 2026-10-11
 
 - **Breaking:** the legacy `AwwPool` / `PoolApi` stack is removed (modules `aww_pool`, `pool_api`,

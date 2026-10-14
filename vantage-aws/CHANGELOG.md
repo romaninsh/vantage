@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0 — 2026-10-14
+
+- Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0 and vantage-table 2.0.0.
+
 ## 0.7.1 — 2026-10-07
 
 - Fixed: DynamoDB `delete_all` deleted rows that left the set between its scan and the delete; each delete is now conditional on the set.

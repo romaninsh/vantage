@@ -165,7 +165,7 @@ mysql:
         ))
     }
 
-    fn resolver(&self) -> SpecResolver<MysqlVistaSpec> {
+    fn resolver(&self) -> Arc<dyn SpecResolver<MysqlVistaSpec>> {
         let map: IndexMap<String, MysqlVistaSpec> = [
             ("orders".to_string(), self.orders_spec()),
             ("client_base".to_string(), self.client_base_spec()),
@@ -206,6 +206,25 @@ async fn build_script_reference_resolves_target() -> TestResult {
     assert_eq!(orders.name(), "orders");
     let rows = orders.list_values().await?;
     assert_eq!(sorted_ids(&rows), vec!["o2"]);
+
+    f.drop_tables().await;
+    Ok(())
+}
+
+/// The metadata names a scripted reference's target by its spec (`orders`),
+/// not by the physical table that spec reads, and carries the script.
+#[tokio::test]
+async fn build_script_reference_targets_the_spec_name() -> TestResult {
+    let f = Fixture::new("target").await;
+    let factory = f.db.vista_factory().with_resolver(f.resolver());
+    let clients = factory.build_from_spec(f.client_spec(ORDERS_SCRIPT))?;
+    let reference = clients.reference("orders").expect("orders ref");
+    assert_eq!(reference.target, "orders");
+    assert_ne!(reference.target, f.orders_t);
+    assert_eq!(
+        reference.build_script.as_deref().map(str::trim),
+        Some(ORDERS_SCRIPT)
+    );
 
     f.drop_tables().await;
     Ok(())

@@ -96,21 +96,6 @@ pub struct MysqlRefBlock {
 
 pub type MysqlVistaSpec = VistaSpec<MysqlTableExtras, MysqlColumnExtras, MysqlReferenceExtras>;
 
-/// Observation args carried on the driver block ("" = unset by convention).
-pub trait DriverBlockArgs {
-    fn driver_block_args(&self) -> Vec<(String, String)>;
-}
-
-impl<C, R> DriverBlockArgs for vantage_vista::VistaSpec<MysqlTableExtras, C, R> {
-    fn driver_block_args(&self) -> Vec<(String, String)> {
-        self.driver
-            .mysql
-            .as_ref()
-            .map(|b| b.args.clone())
-            .unwrap_or_default()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -83,7 +83,7 @@ impl Vocab for DataVocab {
             Terminals::ReadWrite { limit, writes } => {
                 register_reads(engine, self.resolver.clone(), *limit);
                 register_writes(engine, self.resolver.clone(), writes.clone());
-                register_record(engine, self.resolver.clone(), writes.clone());
+                register_record(engine, writes.clone());
             }
         }
     }

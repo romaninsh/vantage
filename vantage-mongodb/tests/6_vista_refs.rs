@@ -36,7 +36,7 @@ async fn teardown(db: &MongoDB, db_name: &str) {
         .unwrap_or_else(|e| eprintln!("drop {db_name}: {e}"));
 }
 
-fn resolver(specs: Vec<MongoVistaSpec>) -> SpecResolver<MongoVistaSpec> {
+fn resolver(specs: Vec<MongoVistaSpec>) -> Arc<dyn SpecResolver<MongoVistaSpec>> {
     let map: IndexMap<String, MongoVistaSpec> =
         specs.into_iter().map(|s| (s.name.clone(), s)).collect();
     Arc::new(move |name: &str| map.get(name).cloned())

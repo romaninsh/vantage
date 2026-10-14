@@ -11,8 +11,6 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 use vantage_core::Result;
-#[cfg(feature = "rhai")]
-use vantage_core::error;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{Capability, SpecResolver, Vista, VistaCapabilities};
@@ -37,7 +35,7 @@ pub struct MongoVistaFactory {
     pub(crate) mongo: MongoDB,
     /// Resolves a YAML spec by table name, so references can rebuild their
     /// target tables from the live spec.
-    resolver: Option<SpecResolver<MongoVistaSpec>>,
+    pub(crate) resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
     /// Explicit live-update choice; `None` follows the detected topology.
     pub(crate) change_streams: Option<bool>,
 }
@@ -72,33 +70,20 @@ impl MongoVistaFactory {
     /// (or every target, without a resolver) is a column-less table over the
     /// collection named by the reference, keyed by `_id`: it reads documents
     /// as stored, without spec columns or nested paths.
-    pub fn with_resolver(mut self, resolver: SpecResolver<MongoVistaSpec>) -> Self {
+    pub fn with_resolver(mut self, resolver: Arc<dyn SpecResolver<MongoVistaSpec>>) -> Self {
         self.resolver = Some(resolver);
         self
     }
 
     /// The user resolver first, then a spec with no columns named after the
     /// target.
-    fn resolver_with_fallback(&self) -> SpecResolver<MongoVistaSpec> {
+    fn resolver_with_fallback(&self) -> Arc<dyn SpecResolver<MongoVistaSpec>> {
         let user = self.resolver.clone();
         Arc::new(move |name: &str| {
             user.as_ref()
-                .and_then(|resolve| resolve(name))
+                .and_then(|user| user.resolve(name))
                 .or_else(|| Some(MongoVistaSpec::new(name)))
         })
-    }
-
-    /// The spec a script's `table(name)` builds. With a resolver attached a
-    /// name it does not know is not-found, so a typo fails loudly; without
-    /// one, every name is a bare collection.
-    #[cfg(feature = "rhai")]
-    pub(crate) fn script_spec(&self, name: &str) -> Result<MongoVistaSpec> {
-        match &self.resolver {
-            Some(resolve) => resolve(name).ok_or_else(|| {
-                error!("script table(): unknown table", table = name).mark_not_found()
-            }),
-            None => Ok(MongoVistaSpec::new(name)),
-        }
     }
 
     /// Wrap a typed table as a Vista. Column metadata is harvested from the

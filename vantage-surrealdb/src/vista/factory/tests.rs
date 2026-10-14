@@ -20,7 +20,9 @@ fn parse(yaml: &str) -> SurrealVistaSpec {
     serde_yaml_ng::from_str(yaml).expect("yaml parse")
 }
 
-fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SpecResolver<SurrealVistaSpec> {
+fn registry_resolver(
+    specs: Vec<(String, SurrealVistaSpec)>,
+) -> Arc<dyn SpecResolver<SurrealVistaSpec>> {
     let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
     let map = Arc::new(map);
     Arc::new(move |name: &str| map.get(name).cloned())
@@ -428,6 +430,105 @@ columns:
     cols.sort();
     assert_eq!(cols, vec!["bakery", "id", "name", "price"]);
     assert_eq!(child.name(), "product");
+}
+
+/// The metadata names a reference's target by the spec it resolves
+/// (`product`), not the SurrealDB table that spec reads (`products`), and
+/// carries the reference's script.
+#[cfg(feature = "rhai")]
+#[test]
+fn scripted_reference_targets_the_spec_name() {
+    let script = r#"table("product").where("bakery", row.id)"#;
+    let bakery_spec = parse(&format!(
+        r#"
+name: bakery
+columns:
+  id: {{ type: thing, flags: [id] }}
+references:
+  products:
+    table: product
+    kind: has_many
+    foreign_key: bakery
+    surreal:
+      rhai: '{script}'
+"#
+    ));
+    let product_spec = parse(
+        r#"
+name: product
+columns:
+  id: { type: thing, flags: [id] }
+  bakery: { type: thing }
+surreal:
+  table: products
+"#,
+    );
+    let resolver = registry_resolver(vec![("product".into(), product_spec)]);
+    let factory = SurrealVistaFactory::new(test_db()).with_resolver(resolver);
+    let bakery = factory.build_from_spec(bakery_spec).expect("build bakery");
+
+    let reference = bakery.reference("products").expect("products ref");
+    assert_eq!(reference.target, "product");
+    assert_eq!(reference.build_script.as_deref(), Some(script));
+}
+
+/// A `base:` vista registers only the relations it inherits, so a reference
+/// it declares itself has no traversal target: a plain build error, not a
+/// not-found.
+#[test]
+fn a_spec_reference_the_built_table_lacks_is_a_plain_error() {
+    let bakery_spec = parse(
+        r#"
+name: bakery
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+"#,
+    );
+    let view_spec = parse(
+        r#"
+name: bakery_view
+columns: {}
+surreal:
+  base: bakery
+  inherit:
+    columns: [id, name]
+references:
+  products:
+    table: product
+    kind: has_many
+    foreign_key: bakery
+"#,
+    );
+    let resolver = registry_resolver(vec![("bakery".into(), bakery_spec)]);
+    let err = SurrealVistaFactory::new(test_db())
+        .with_resolver(resolver)
+        .build_from_spec(view_spec)
+        .map(drop)
+        .expect_err("an unregistered spec reference must fail");
+    assert!(!err.is_not_found(), "{err:?}");
+    assert!(err.to_string().contains("absent"), "{err}");
+}
+
+/// A column-level `references:` reaches the metadata as a has-one keyed by
+/// its column, its target named by the spec.
+#[test]
+fn column_reference_reaches_the_metadata() {
+    let tag_spec = parse(
+        r#"
+name: tag
+columns:
+  id: { type: string, flags: [id] }
+  batch: { type: string, references: batch }
+"#,
+    );
+    let tag = SurrealVistaFactory::new(test_db())
+        .build_from_spec(tag_spec)
+        .expect("build tag");
+    let batch = tag.reference("batch").expect("batch ref");
+    assert_eq!(batch.kind, ReferenceKind::HasOne);
+    assert_eq!(batch.target, "batch");
+    assert_eq!(batch.keys, vec![JoinKey::to_target_id("batch")]);
 }
 
 #[cfg(feature = "rhai")]

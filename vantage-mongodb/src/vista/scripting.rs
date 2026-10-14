@@ -2,18 +2,19 @@
 //! `modify:` script, and the host shared by `modify:` and scripted
 //! references.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use bson::{Bson, Document};
 use vantage_core::{Context, Result, error};
 use vantage_rhai::rhai::{Array, Dynamic, Map};
 use vantage_rhai::{Block, Env, Host, Limits};
-use vantage_vista::rhai::{DataVocab, Terminals, eval_modify_script};
-use vantage_vista::{Vista, VistaFactory, VistaResolver};
+use vantage_vista::Vista;
+use vantage_vista::rhai::{DataVocab, Terminals, eval_modify_script, script_tables};
 
 use crate::rhai_engine::{MongoVocab, dynamic_to_bson};
 use crate::vista::factory::MongoVistaFactory;
 use crate::vista::source::register_extensions;
+use crate::vista::spec::MongoVistaSpec;
 use crate::vista::spec::pipeline::{check_stages, not_a_stage};
 
 /// Constructors only: a pipeline script builds data, it reaches no tables.
@@ -70,19 +71,16 @@ pub(crate) fn apply_modify(factory: &MongoVistaFactory, vista: Vista, code: &str
 
 /// The shell's MongoDB vocabulary first, then vantage-vista's describe-only
 /// data verbs, with `table(name)` building the named vista through
-/// `factory`.
+/// `factory`. With a spec resolver attached a name it doesn't know is
+/// not-found; without one, every name is a bare collection.
 pub(crate) fn script_host(factory: MongoVistaFactory) -> Host {
-    let data = DataVocab::new(Terminals::Describe).with_resolver(target_resolver(factory));
+    let specs = factory.resolver.clone();
+    let tables = script_tables(factory, specs, Some(|name| MongoVistaSpec::new(name)));
+    let data = DataVocab::new(Terminals::Describe).with_resolver(tables);
     Host::builder(Limits::background())
         .vocab_fn(register_extensions)
         .vocab(data)
         .build()
-}
-
-/// `table(name)` → the vista the factory builds from
-/// [`MongoVistaFactory::script_spec`].
-fn target_resolver(factory: MongoVistaFactory) -> Arc<dyn VistaResolver> {
-    Arc::new(move |name: &str| factory.build_from_spec(factory.script_spec(name)?))
 }
 
 #[cfg(test)]

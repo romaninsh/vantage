@@ -146,6 +146,5 @@ fn describes_presentation(flag: &TableColumnFlag) -> bool {
     )
 }
 
-mod targets;
 #[cfg(test)]
 mod tests;

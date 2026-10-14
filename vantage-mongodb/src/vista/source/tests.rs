@@ -207,6 +207,75 @@ async fn bare_target_and_has_many_narrowing() {
     assert!(vista.get_ref("nope", None).is_err());
 }
 
+/// A spec reference is named by the spec it targets, not the collection that
+/// spec reads, and carries its `mongo: { rhai: }` build script.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn spec_reference_targets_the_spec_name_with_its_script() {
+    let order: MongoVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: order
+columns:
+  _id: { type: string, flags: [id] }
+  client_id: { type: string }
+mongo:
+  collection: orders
+"#,
+    )
+    .unwrap();
+    let client = serde_yaml_ng::from_str(
+        r#"
+name: client
+columns:
+  _id: { type: string, flags: [id] }
+mongo:
+  collection: clients
+references:
+  orders:
+    table: order
+    kind: has_many
+    foreign_key: client_id
+    mongo: { rhai: 'table("order")' }
+"#,
+    )
+    .unwrap();
+    let vista = factory()
+        .await
+        .with_resolver(Arc::new(move |name: &str| {
+            (name == "order").then(|| order.clone())
+        }))
+        .build_from_spec(client)
+        .unwrap();
+    let orders = vista.reference("orders").unwrap();
+    assert_eq!(orders.target, "order");
+    assert_eq!(orders.build_script.as_deref(), Some(r#"table("order")"#));
+}
+
+/// A column-level `references:` reaches the metadata as a has-one keyed by
+/// its column.
+#[tokio::test]
+async fn column_reference_reaches_the_metadata() {
+    let spec = serde_yaml_ng::from_str(
+        r#"
+name: order
+columns:
+  _id: { type: string, flags: [id] }
+  client_id: { type: string, references: client }
+mongo:
+  collection: orders
+"#,
+    )
+    .unwrap();
+    let vista = factory().await.build_from_spec(spec).unwrap();
+    let client = vista.reference("client_id").unwrap();
+    assert_eq!(client.kind, ReferenceKind::HasOne);
+    assert_eq!(client.target, "client");
+    assert_eq!(
+        client.keys,
+        [vantage_vista::JoinKey::to_target_id("client_id")]
+    );
+}
+
 #[tokio::test]
 async fn watch_is_refused_without_subscribe() {
     let vista = client_vista().await;

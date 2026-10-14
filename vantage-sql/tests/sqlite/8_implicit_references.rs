@@ -124,6 +124,7 @@ async fn one_hop_projects_correlated_subquery() {
 
 /// An imported column exists only as a projection alias, so a vista
 /// condition on it is refused, never sent as a column name.
+#[cfg(feature = "vista")]
 #[tokio::test]
 async fn vista_condition_on_an_imported_column_is_refused() {
     use vantage_vista::FilterOp;

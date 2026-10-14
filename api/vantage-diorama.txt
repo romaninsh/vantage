@@ -675,6 +675,7 @@ pub fn vantage_diorama::prelude::RecordScenery::request_refresh(&self)
 pub fn vantage_diorama::prelude::RecordScenery::status(&self) -> vantage_diorama::scenery::record::RecordStatus
 pub fn vantage_diorama::prelude::RecordScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub trait vantage_diorama::prelude::TableScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::prelude::TableScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::prelude::TableScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::prelude::TableScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::prelude::TableScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -696,8 +697,10 @@ pub fn vantage_diorama::prelude::TableScenery::set_viewport(&self, core::ops::ra
 pub fn vantage_diorama::prelude::TableScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::prelude::TableScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::prelude::TableScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::prelude::TableScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::prelude::TableScenery::view_stats(&self) -> vantage_diorama::ViewStats
 impl vantage_diorama::scenery::table::TableScenery for vantage_diorama::CappedScenery
+pub fn vantage_diorama::CappedScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::CappedScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::CappedScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -719,6 +722,7 @@ pub fn vantage_diorama::CappedScenery::set_viewport(&self, core::ops::range::Ran
 pub fn vantage_diorama::CappedScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::CappedScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::CappedScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::CappedScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::CappedScenery::view_stats(&self) -> vantage_diorama::ViewStats
 pub trait vantage_diorama::prelude::ValueScenery: core::marker::Send + core::marker::Sync
 pub fn vantage_diorama::prelude::ValueScenery::request_refresh(&self)
@@ -960,6 +964,7 @@ pub struct vantage_diorama::scenery::table::CappedScenery
 impl vantage_diorama::CappedScenery
 pub fn vantage_diorama::CappedScenery::wrap(alloc::rcs::arc::Arc<dyn vantage_diorama::scenery::table::TableScenery>, usize) -> alloc::rcs::arc::Arc<Self>
 impl vantage_diorama::scenery::table::TableScenery for vantage_diorama::CappedScenery
+pub fn vantage_diorama::CappedScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::CappedScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::CappedScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -981,6 +986,7 @@ pub fn vantage_diorama::CappedScenery::set_viewport(&self, core::ops::range::Ran
 pub fn vantage_diorama::CappedScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::CappedScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::CappedScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::CappedScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::CappedScenery::view_stats(&self) -> vantage_diorama::ViewStats
 impl core::marker::Freeze for vantage_diorama::CappedScenery
 impl core::marker::Send for vantage_diorama::CappedScenery
@@ -1124,6 +1130,7 @@ impl core::marker::UnsafeUnpin for vantage_diorama::ViewStats
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ViewStats
 impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ViewStats
 pub trait vantage_diorama::scenery::table::TableScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::scenery::table::TableScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::scenery::table::TableScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::scenery::table::TableScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::scenery::table::TableScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -1145,8 +1152,10 @@ pub fn vantage_diorama::scenery::table::TableScenery::set_viewport(&self, core::
 pub fn vantage_diorama::scenery::table::TableScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::scenery::table::TableScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::scenery::table::TableScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::scenery::table::TableScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::scenery::table::TableScenery::view_stats(&self) -> vantage_diorama::ViewStats
 impl vantage_diorama::scenery::table::TableScenery for vantage_diorama::CappedScenery
+pub fn vantage_diorama::CappedScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::CappedScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::CappedScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -1168,6 +1177,7 @@ pub fn vantage_diorama::CappedScenery::set_viewport(&self, core::ops::range::Ran
 pub fn vantage_diorama::CappedScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::CappedScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::CappedScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::CappedScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::CappedScenery::view_stats(&self) -> vantage_diorama::ViewStats
 pub mod vantage_diorama::scenery::value
 pub enum vantage_diorama::scenery::value::Aggregate
@@ -1436,6 +1446,7 @@ pub struct vantage_diorama::scenery::CappedScenery
 impl vantage_diorama::CappedScenery
 pub fn vantage_diorama::CappedScenery::wrap(alloc::rcs::arc::Arc<dyn vantage_diorama::scenery::table::TableScenery>, usize) -> alloc::rcs::arc::Arc<Self>
 impl vantage_diorama::scenery::table::TableScenery for vantage_diorama::CappedScenery
+pub fn vantage_diorama::CappedScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::CappedScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::CappedScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -1457,6 +1468,7 @@ pub fn vantage_diorama::CappedScenery::set_viewport(&self, core::ops::range::Ran
 pub fn vantage_diorama::CappedScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::CappedScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::CappedScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::CappedScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::CappedScenery::view_stats(&self) -> vantage_diorama::ViewStats
 impl core::marker::Freeze for vantage_diorama::CappedScenery
 impl core::marker::Send for vantage_diorama::CappedScenery
@@ -1644,6 +1656,7 @@ pub fn vantage_diorama::scenery::RecordScenery::request_refresh(&self)
 pub fn vantage_diorama::scenery::RecordScenery::status(&self) -> vantage_diorama::scenery::record::RecordStatus
 pub fn vantage_diorama::scenery::RecordScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub trait vantage_diorama::scenery::TableScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::scenery::TableScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::scenery::TableScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::scenery::TableScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::scenery::TableScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -1665,8 +1678,10 @@ pub fn vantage_diorama::scenery::TableScenery::set_viewport(&self, core::ops::ra
 pub fn vantage_diorama::scenery::TableScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::scenery::TableScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::scenery::TableScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::scenery::TableScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::scenery::TableScenery::view_stats(&self) -> vantage_diorama::ViewStats
 impl vantage_diorama::scenery::table::TableScenery for vantage_diorama::CappedScenery
+pub fn vantage_diorama::CappedScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::CappedScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::CappedScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -1688,6 +1703,7 @@ pub fn vantage_diorama::CappedScenery::set_viewport(&self, core::ops::range::Ran
 pub fn vantage_diorama::CappedScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::CappedScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::CappedScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::CappedScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::CappedScenery::view_stats(&self) -> vantage_diorama::ViewStats
 pub trait vantage_diorama::scenery::ValueScenery: core::marker::Send + core::marker::Sync
 pub fn vantage_diorama::scenery::ValueScenery::request_refresh(&self)
@@ -2167,6 +2183,7 @@ pub struct vantage_diorama::CappedScenery
 impl vantage_diorama::CappedScenery
 pub fn vantage_diorama::CappedScenery::wrap(alloc::rcs::arc::Arc<dyn vantage_diorama::scenery::table::TableScenery>, usize) -> alloc::rcs::arc::Arc<Self>
 impl vantage_diorama::scenery::table::TableScenery for vantage_diorama::CappedScenery
+pub fn vantage_diorama::CappedScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::CappedScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::CappedScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -2188,6 +2205,7 @@ pub fn vantage_diorama::CappedScenery::set_viewport(&self, core::ops::range::Ran
 pub fn vantage_diorama::CappedScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::CappedScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::CappedScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::CappedScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::CappedScenery::view_stats(&self) -> vantage_diorama::ViewStats
 impl core::marker::Freeze for vantage_diorama::CappedScenery
 impl core::marker::Send for vantage_diorama::CappedScenery
@@ -2939,6 +2957,7 @@ pub fn vantage_diorama::RecordScenery::request_refresh(&self)
 pub fn vantage_diorama::RecordScenery::status(&self) -> vantage_diorama::scenery::record::RecordStatus
 pub fn vantage_diorama::RecordScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub trait vantage_diorama::TableScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::TableScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::TableScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::TableScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::TableScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -2960,8 +2979,10 @@ pub fn vantage_diorama::TableScenery::set_viewport(&self, core::ops::range::Rang
 pub fn vantage_diorama::TableScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::TableScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::TableScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::TableScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::TableScenery::view_stats(&self) -> vantage_diorama::ViewStats
 impl vantage_diorama::scenery::table::TableScenery for vantage_diorama::CappedScenery
+pub fn vantage_diorama::CappedScenery::count_where(&self, alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
 pub fn vantage_diorama::CappedScenery::demanded_columns(&self) -> core::option::Option<alloc::vec::Vec<alloc::string::String>>
 pub fn vantage_diorama::CappedScenery::estimated_total(&self) -> core::option::Option<usize>
 pub fn vantage_diorama::CappedScenery::filter_terms(&self) -> alloc::vec::Vec<vantage_diorama::scenery::table::OpCondition>
@@ -2983,6 +3004,7 @@ pub fn vantage_diorama::CappedScenery::set_viewport(&self, core::ops::range::Ran
 pub fn vantage_diorama::CappedScenery::status_summary(&self) -> vantage_diorama::scenery::table::RowStatusSummary
 pub fn vantage_diorama::CappedScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
 pub fn vantage_diorama::CappedScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::CappedScenery::terms_supported(&self, &[vantage_diorama::scenery::table::OpCondition]) -> bool
 pub fn vantage_diorama::CappedScenery::view_stats(&self) -> vantage_diorama::ViewStats
 pub trait vantage_diorama::ValueScenery: core::marker::Send + core::marker::Sync
 pub fn vantage_diorama::ValueScenery::request_refresh(&self)

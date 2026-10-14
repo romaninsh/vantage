@@ -579,30 +579,48 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         Ok((reference.as_ref(), relation_str))
     }
 
+    /// A registered relation as Vista metadata. Kind and key questions are
+    /// read off this, so they can't disagree with what `vista_references`
+    /// publishes. The target name stays empty: nothing here reads it, and
+    /// naming it would build the target.
+    fn ref_shape(&self, relation: &str) -> Result<vantage_vista::Reference> {
+        let (reference, _) = self.lookup_ref(relation)?;
+        Ok(reference.vista_reference(relation, String::new(), &self.id_field_name()))
+    }
+
     /// Look up cardinality for a registered relation.
     pub fn ref_cardinality(&self, relation: &str) -> Result<vantage_vista::ReferenceKind> {
-        let (reference, _) = self.lookup_ref(relation)?;
-        Ok(reference.cardinality().into())
+        Ok(self.ref_shape(relation)?.kind)
     }
 
     /// Look up the foreign-key/link field for a registered relation. For a
     /// `has_one` this is the source-side column carrying the link — the field
     /// a backend-native traversal (e.g. a SurrealDB idiom path) descends
-    /// through, which need not match the relation's registry name.
+    /// through, which need not match the relation's registry name. For a
+    /// `has_many` it is the target-side column carrying the parent's id.
     pub fn ref_foreign_key(&self, relation: &str) -> Result<String> {
-        let (reference, _) = self.lookup_ref(relation)?;
-        Ok(reference.foreign_key().to_string())
+        let shape = self.ref_shape(relation)?;
+        let key = shape
+            .keys
+            .first()
+            .ok_or_else(|| error!("Reference has no join key", relation = relation))?;
+        Ok(match shape.kind {
+            vantage_vista::ReferenceKind::HasMany => key.to.clone().unwrap_or_default(),
+            _ => key.from.clone(),
+        })
     }
 
     /// List all registered relations with their cardinality.
     pub fn ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
-        self.refs
-            .as_ref()
-            .map(|refs| {
-                refs.iter()
-                    .map(|(name, r)| (name.clone(), r.cardinality().into()))
-                    .collect()
+        let Some(refs) = &self.refs else {
+            return Vec::new();
+        };
+        let source_id = self.id_field_name();
+        refs.iter()
+            .map(|(name, r)| {
+                let kind = r.vista_reference(name, String::new(), &source_id).kind;
+                (name.clone(), kind)
             })
-            .unwrap_or_default()
+            .collect()
     }
 }

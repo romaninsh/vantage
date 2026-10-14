@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Condition, NativeCondition, Page, Preview, SortDirection, Vista, VistaCapabilities,
+    Capability, Condition, NativeCondition, Page, SortDirection, Vista, VistaCapabilities,
     VistaChangeStream, forward_table_shell, unsupported,
 };
 
@@ -22,8 +22,10 @@ mod reads;
 
 type Rec = Record<CborValue>;
 
-// The schema and the Rhai hooks forward to the wrapped shell; every read,
-// write and narrowing call is shaped below.
+// The schema, the Rhai hooks and the preview forward to the wrapped shell:
+// shaping adds latency and faults but never changes the query, and a
+// narrowing the shape refuses errors when set, so it never reaches the
+// preview. Every read, write and narrowing call is shaped below.
 forward_table_shell!(ShapedShell, inner, {
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
@@ -31,27 +33,6 @@ forward_table_shell!(ShapedShell, inner, {
 
     fn driver_name(&self) -> &'static str {
         "faker-shaped"
-    }
-
-    /// Shaping adds latency and injected faults around another shell; it
-    /// does not change the query. So the wrapped shell's preview is the
-    /// answer, noting the shaping around it.
-    fn preview(&self) -> Preview {
-        let inner = self.inner.preview();
-        let shaped = format!(
-            "simulated backend over {}: latency and faults are layered over the wrapped \
-             shell without altering its query",
-            self.inner.driver_name()
-        );
-        let note = match &inner.note {
-            Some(note) => format!("{shaped}; {note}"),
-            None => shaped,
-        };
-        let preview = Preview::new().with_note(note);
-        match inner.query {
-            Some(query) => preview.with_query(query),
-            None => preview,
-        }
     }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {

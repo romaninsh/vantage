@@ -28,7 +28,6 @@ use super::bridge::block_on;
 use super::handle::Handle;
 use super::vocab::Writes;
 use super::write::Gate;
-use crate::VistaResolver;
 
 pub(crate) use verbs::register_record;
 
@@ -72,29 +71,19 @@ pub struct RecordDraft {
 
 impl RecordDraft {
     /// A draft of a row not written yet; its first `flash()` inserts it.
-    /// `resolver` resolves a named `handle`, as in [`Handle::resolve`].
-    pub fn new_row(
-        handle: Handle,
-        resolver: Option<Arc<dyn VistaResolver>>,
-        writes: Writes,
-    ) -> Self {
-        Self::build(handle, Gate::new(resolver, writes), None, None)
+    /// A named `handle` resolves through [`Handle::with_resolver`].
+    pub fn new_row(handle: Handle, writes: Writes) -> Self {
+        Self::build(handle, writes, None, None)
     }
 
     /// A draft of an existing row, fetched through `handle`. Errors (marked
     /// not-found) when no row has `id`.
-    pub fn load(
-        handle: Handle,
-        resolver: Option<Arc<dyn VistaResolver>>,
-        writes: Writes,
-        id: &str,
-    ) -> CoreResult<Self> {
-        let vista = handle.resolve(resolver.as_deref())?;
+    pub fn load(handle: Handle, writes: Writes, id: &str) -> CoreResult<Self> {
+        let vista = handle.resolve(None)?;
         let record = block_on(vista.get_value(id.to_string()))??
             .ok_or_else(|| error!("record not found", id = id).mark_not_found())?;
         Ok(Self::from_row(
             handle,
-            resolver,
             writes,
             id.to_string(),
             record.into_inner(),
@@ -104,24 +93,24 @@ impl RecordDraft {
     /// A draft of a row already in hand, without a fetch.
     pub fn from_row(
         handle: Handle,
-        resolver: Option<Arc<dyn VistaResolver>>,
         writes: Writes,
         id: String,
         row: IndexMap<String, CborValue>,
     ) -> Self {
-        Self::build(handle, Gate::new(resolver, writes), Some(id), Some(row))
+        Self::build(handle, writes, Some(id), Some(row))
     }
 
     fn build(
         handle: Handle,
-        gate: Gate,
+        writes: Writes,
         id: Option<String>,
         baseline: Option<IndexMap<String, CborValue>>,
     ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(DraftState {
                 handle,
-                gate,
+                // The handle carries its own resolver; the gate needs none.
+                gate: Gate::new(None, writes),
                 id,
                 baseline,
                 changes: IndexMap::new(),

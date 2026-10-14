@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.0 — 2026-10-14
+
+- Vista 2.0: breaking API changes; see the migration guide (phase 5).
+
 ## 1.0.0 — 2026-10-11
 
 - **Breaking:** `#[non_exhaustive]` on `FilterDialect`, `GraphqlOp`, `GraphqlCondition`,

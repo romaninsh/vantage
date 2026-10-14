@@ -249,23 +249,12 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// passes its relation's id column, which may differ from the table's id
     /// field.
     pub(crate) fn vista_references_keyed(&self, source_id: &str) -> Vec<vantage_vista::Reference> {
-        use crate::references::Cardinality;
-        use vantage_vista::{JoinKey, Reference};
-
         let Some(refs) = &self.refs else {
             return Vec::new();
         };
         refs.iter()
             .map(|(name, r)| {
-                let target = r.target_table_name(&self.data_source);
-                match r.cardinality() {
-                    Cardinality::HasOne => {
-                        Reference::has_one(name, target, JoinKey::to_target_id(r.foreign_key()))
-                    }
-                    Cardinality::HasMany => {
-                        Reference::has_many(name, target, JoinKey::new(source_id, r.foreign_key()))
-                    }
-                }
+                r.vista_reference(name, r.target_table_name(&self.data_source), source_id)
             })
             .collect()
     }

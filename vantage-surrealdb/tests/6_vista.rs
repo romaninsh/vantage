@@ -646,7 +646,7 @@ surreal:
     let map: indexmap::IndexMap<String, SurrealVistaSpec> =
         [("client".to_string(), client_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: SpecResolver<SurrealVistaSpec> =
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
         Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db
@@ -712,7 +712,7 @@ surreal:
     let map: indexmap::IndexMap<String, SurrealVistaSpec> =
         [("orders".to_string(), orders_spec)].into_iter().collect();
     let map = Arc::new(map);
-    let resolver: SpecResolver<SurrealVistaSpec> =
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
         Arc::new(move |name: &str| map.get(name).cloned());
 
     let vista = db

@@ -43,7 +43,7 @@ fn spec(yaml: &str) -> MongoVistaSpec {
     serde_yaml_ng::from_str(yaml).expect("spec yaml")
 }
 
-fn resolver(specs: Vec<MongoVistaSpec>) -> SpecResolver<MongoVistaSpec> {
+fn resolver(specs: Vec<MongoVistaSpec>) -> Arc<dyn SpecResolver<MongoVistaSpec>> {
     let map: IndexMap<String, MongoVistaSpec> =
         specs.into_iter().map(|s| (s.name.clone(), s)).collect();
     Arc::new(move |name: &str| map.get(name).cloned())

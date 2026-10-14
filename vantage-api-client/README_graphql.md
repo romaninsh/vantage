@@ -220,7 +220,7 @@ use std::sync::Arc;
 use vantage_api_client::GraphqlApiVistaSpec;
 use vantage_vista::SpecResolver;
 
-let resolver: SpecResolver<GraphqlApiVistaSpec> =
+let resolver: Arc<dyn SpecResolver<GraphqlApiVistaSpec>> =
     Arc::new(move |name: &str| specs.get(name).cloned());
 let factory = api.vista_factory().with_resolver(resolver);
 ```

@@ -2,6 +2,10 @@
 
 All notable changes to `vantage-spacetimedb` are documented here.
 
+## 0.7.0 — unreleased
+
+- Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0.
+
 ## 0.6.0 — unreleased
 
 Initial incubating crate: SpacetimeDB as a Vantage datasource. Excluded from the

@@ -84,7 +84,7 @@ references:
     foreign_key: client_id
 "#;
 
-fn resolver() -> SpecResolver<MongoVistaSpec> {
+fn resolver() -> Arc<dyn SpecResolver<MongoVistaSpec>> {
     let map: IndexMap<String, MongoVistaSpec> = [COUNTRY, CLIENT, ORDER]
         .into_iter()
         .map(|y| {
