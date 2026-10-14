@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! One Rhai host for every Vantage YAML script slot.
 //!
 //! A YAML struct holds an [`Expr`], [`Template`] or [`Block`] (source only).

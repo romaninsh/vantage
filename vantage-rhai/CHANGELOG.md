@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 — 2026-10-14
+
+- The in-crate unit tests move to a blackbox suite under `tests/`, written from the README and the
+  book. No API or behaviour change.
+- The README now says whitespace around a lone `${ … }` hole keeps the hole's value; only visible
+  text turns the template into a `String`.
+
 ## 1.1.0 — 2026-10-14
 
 - `Namespace`, a builder for registering a named module of functions and variables on an engine.
