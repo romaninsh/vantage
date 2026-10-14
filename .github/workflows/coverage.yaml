@@ -77,9 +77,13 @@ jobs:
           docker logs surrealdb
           exit 1
 
+      # The image ships the CLI; a shim runs it there rather than installing one.
       - name: Populate SurrealDB
         run: |
-          curl -sSf https://install.surrealdb.com | sh
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec docker exec -i surrealdb /surreal "$@"\n' > "$RUNNER_TEMP/bin/surreal"
+          chmod +x "$RUNNER_TEMP/bin/surreal"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
           cd vantage-surrealdb/scripts
           printf 'DB_ENDPOINT=ws://localhost:8000\nDB_USER=root\nDB_PASS=root\nDB_AUTH_LEVEL=root\nDB_NS=bakery\n' > .env
           bash ingress.sh
