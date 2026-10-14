@@ -22,10 +22,38 @@ graphql:
   count: aggregate
 ```
 
-```rust
+```rust,no_run
+# use vantage_api_client::{GraphqlApi, GraphqlApiVistaSpec};
+# use vantage_vista::VistaFactory;
+# const LAUNCHES_YAML: &str = r#"
+# name: launches
+# id_column: id
+# columns:
+#   id: { type: string, flags: [id] }
+#   mission: { type: string, flags: [title, searchable], graphql: { field: mission_name } }
+#   launch_year: { type: int }
+#   rocket_id: { type: string }
+#   rocket.rocket_name: { type: string }
+# references:
+#   rocket: { table: rockets, kind: has_one, foreign_key: rocket_id }
+# graphql:
+#   root_field: launches
+#   dialect: hasura
+#   paginate: true
+#   count: aggregate
+# "#;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let api = GraphqlApi::new("https://hasura.example.com/v1/graphql");
 let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(LAUNCHES_YAML)?;
 let launches = api.vista_factory().build_from_spec(spec)?;
+# let _ = launches;
+# Ok(())
+# }
 ```
+
+`build_from_spec` comes from the [`VistaFactory`](vantage_vista::VistaFactory) trait, so it needs
+`use vantage_vista::VistaFactory;`. The block is compiled but not run: building the API makes a
+`reqwest` client, which reads the system's proxy settings.
 
 ## Table keys
 
@@ -69,9 +97,10 @@ and counts list.
 
 ### Paging
 
-With `paginate: true` and `filter` on, the Vista offers `fetch_page`, `fetch_window` and
-`fetch_next`, sent as `$limit` / `$offset` variables. With `filter: false` a server page would
-be cut short by the local filter, so paging is not offered. On Hasura, a paged read with no order
+With `paginate: true` and `filter` on, the Vista advertises `Window` and serves `fetch_window`,
+sent as `$limit` / `$offset` variables. It pages by offset only, so it never advertises `Cursor`.
+With `filter: false` a server page would be cut short by the local filter, so paging is not
+offered. On Hasura, a paged read with no order
 of its own is ordered by the id column so that pages stay stable. A Generic schema can't sort,
 so its pages are only as stable as the server's natural order.
 
@@ -84,10 +113,12 @@ that suggests `count: list`; it never falls back silently. Generic tables always
 
 ### Search and ordering
 
-A quicksearch ORs `_ilike` over the columns flagged `searchable`. If none are flagged, it uses
-the string-typed columns other than the id. Dotted columns are skipped, and with no column left
-the search matches nothing. `%`, `_` and `\` in the text are escaped. Ordering a dotted column is
-refused.
+A quicksearch ORs `_ilike` over the columns every driver searches: those flagged `searchable`, or
+every column when none is flagged (`Table::search_columns`). `_ilike` takes text, so when nothing
+is flagged GraphQL keeps only the string-typed columns other than the id. Dotted columns are then
+skipped. The rule is settled before they are, so a table whose only searchable columns are dotted
+matches nothing rather than widening to every string column. With no column left the search
+matches nothing. `%`, `_` and `\` in the text are escaped. Ordering a dotted column is refused.
 
 ## Column keys
 
@@ -120,20 +151,40 @@ response are an error.
 
 ## References
 
-`references:` takes `table`, `kind` (`has_one` / `has_many`) and `foreign_key`. Multi-column
-`keys:` are refused at build. Traversal gives the target an eq-condition: `has_one` narrows the
-target's id by the parent's `foreign_key`, and `has_many` narrows the target's `foreign_key` by
-the parent's id. A text key is sent as an integer when the target column is an int.
+A relation is declared in one of two places:
+
+- a `references:` entry: `table`, `kind` (`has_one` / `has_many`) and `foreign_key`;
+- a column-level `references:`, for a has-one keyed by the column itself.
+  `rocket_id: { type: string, references: rockets }` is a has-one named `rocket_id`, joining
+  `rocket_id` to the id of `rockets`. An entry of the same name in the `references:` map wins.
+
+Multi-column `keys:` on a `references:` entry are refused when the Vista is built, with an
+unsupported error naming the relation. A GraphQL filter argument narrows by one field per relation
+here, so the driver refuses a join it would only half apply.
+
+Traversal gives the target an eq-condition: `has_one` narrows the target's id by the parent's
+`foreign_key`, and `has_many` narrows the target's `foreign_key` by the parent's id. A text key is
+sent as an integer when the target column is an int.
 
 A target is built from its own spec on the factory's API, without the parent table's
 `graphql:` overrides. Targets come from the factory's registry (`register_yaml`, then
 `build(name)`), or from a spec resolver:
 
-```rust
+```rust,no_run
+# use std::collections::HashMap;
+# use std::sync::Arc;
+# use vantage_api_client::{GraphqlApi, GraphqlApiVistaSpec};
+# use vantage_vista::SpecResolver;
+# let api = GraphqlApi::new("https://hasura.example.com/v1/graphql");
+# let specs: HashMap<String, GraphqlApiVistaSpec> = HashMap::new();
 let resolver: Arc<dyn SpecResolver<GraphqlApiVistaSpec>> =
     Arc::new(move |name: &str| specs.get(name).cloned());
 let factory = api.vista_factory().with_resolver(resolver);
 ```
+
+Any `Fn(&str) -> Option<GraphqlApiVistaSpec>` closure is a
+[`SpecResolver`](vantage_vista::SpecResolver); a spec is looked up each time a traversal builds its
+target, so the target always reflects the current spec.
 
 A reference to a model with no spec is an error naming the relation and the target, and no
 request is sent.

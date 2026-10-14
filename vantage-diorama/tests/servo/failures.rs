@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{ChangeFlash, DioEvent, FlashKind, FlashOutcome, FlashRejection, ServoStatus};
+use vantage_diorama::{
+    ChangeFlash, DioEvent, FlashKind, FlashOutcome, FlashRejection, ServoStatus,
+};
 use vantage_vista::{Capability, Condition, FilterOp};
 
 use crate::support::chunk::wait_for_gen;

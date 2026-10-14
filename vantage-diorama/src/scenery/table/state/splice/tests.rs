@@ -92,7 +92,10 @@ async fn a_splice_after_a_reseed_places_by_the_new_order() -> Result<()> {
     write(&dio, &[("c", 4)]).await?;
     assert!(rows.splice_one("c").await?);
     assert_eq!(slots(&rows), sorted(&dio).await?);
-    assert!(rows.idx_to_id.lock().unwrap().is_some(), "the splice kept its slot index");
+    assert!(
+        rows.idx_to_id.lock().unwrap().is_some(),
+        "the splice kept its slot index"
+    );
 
     // The same three rows in another order: `b` keeps slot 1, `a` and `c`
     // trade places.

@@ -2,7 +2,10 @@
 
 ## 0.6.2 — 2026-10-14
 
-- Requires vantage-vista 2.0.0.
+- Requires vantage-vista 2.0.0: `ModelBundle::build_vista` returns a 2.0 `Vista`, so a bundle
+  builds its tables through the 2.0 driver factories.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.6.1 — 2026-10-03
 

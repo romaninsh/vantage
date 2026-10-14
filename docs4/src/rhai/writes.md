@@ -187,9 +187,10 @@ skipped).
 
 ## Writes through a Dio
 
-A host may hand scripts Vistas whose writes go through a Dio: `Dio::vista()` is a Vista over the
-Dio's cache whose inserts, patches and deletes are queued as flashes and written through to the
-master. To the script it is just a Vista. It is how action bodies in Vantage UI write: the page
+A host may hand scripts Vistas whose writes go through a Dio:
+[`Dio::cached()`](vantage_diorama::Dio::cached) is a Vista over the Dio's cache whose inserts,
+patches and deletes are queued as flashes and written through to the master. To the script it is
+just a Vista. It is how action bodies in Vantage UI write: the page
 sees the change at once, and the master write follows.
 
 An `insert` without an id is queued like any other, with its minted UUIDv7. When the id column is

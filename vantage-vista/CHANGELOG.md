@@ -2,16 +2,172 @@
 
 ## 2.0.0 — 2026-10-14
 
-- Vista 2.0: breaking API changes; see the migration guide (phase 5).
-- `SpecResolver` is a trait; `rhai::script_tables`; `Handle::with_resolver` is public, and `RecordDraft` constructors take the resolver from the handle.
-- `VistaQuery::cmp_rows`: the one row comparator, shared by `sort_rows` and diorama's sorted splice.
+### Breaking changes
+
+- `TableShell::clone_shell` is gone: `Clone` is a supertrait (`CloneTableShell`), so every shell
+  clones with its narrowing.
+- Shell methods no longer take a `&Vista` parameter.
+- `fetch_page`, `fetch_next`, `set_page_size` and `fetch_window_counted` are replaced by
+  `fetch_window(offset, limit) -> Page { rows, total }` and `fetch_cursor(token, limit)`.
+- `stream_vista_values`, `Vista::stream_values`, `VistaRowStream` and `stream_from_list` are
+  removed; use `list`.
+- `get_vista_value_with_row` and `Vista::get_value_with_row` are removed; use `get` (diorama's
+  `Fetch::Custom` receives the row).
+- `get_vista_some_value` is removed; `Vista::get_some_value` is `fetch_window(0, 1)`, with no
+  fallback to `list`.
+- `aggregate_vista`, `Vista::aggregate` and `AggregateSpec` are removed.
+- `add_eq_condition`, `add_op_condition` and `Vista::add_condition_eq` become
+  `add_condition(&Condition)` / `with_condition`.
+- `add_raw_condition` becomes `add_native_condition(NativeCondition)` / `with_native_condition`.
+- Shell `add_search`/`clear_search` and `add_order`/`clear_orders` become `set_search(Option)` and
+  `set_order(Option)`.
+- `with_id(&mut self)` is `with_id(self)`; `set_name` is `with_name`.
+- The shell's reads and writes are renamed: `list_vista_values` → `list`, `get_vista_value` →
+  `get`, `get_vista_count` → `count` (required), `replace_vista_value` → `replace`,
+  `patch_vista_value` → `patch`, `upsert_vista_value` → `upsert` (no replace-then-insert default),
+  `delete_vista_value` → `delete`, `delete_vista_all_values` → `delete_all`, `import_vista_values`
+  → `import`, `watch_vista` → `watch`. `Vista::get_count` is `Vista::count`. `rhai_env` is
+  folded into `register_rhai_extensions`.
+- `insert_vista_value` and `insert_vista_return_id_value` become one `insert(Option<&str>, ..)`;
+  a `None` id means the backend makes one.
+- `get_ref_target`, `get_contained_ref`, `contained()`, `get_ref_kinds`, `list_contained` and
+  `VistaMetadata::{contained, with_contained}` are replaced by `get_ref(relation, Option<&Record>)`
+  and `references()`; `get_ref(rel, None)` gives the bare target.
+- `ContainedSpec` and `ContainedKind` are gone: a contained relation is a `Reference` with a
+  `ContainsOne` or `ContainsMany` kind.
+- `capability_flag` and `default_error` are replaced by the `Capability` enum and
+  `unsupported(Capability)`.
+- The `VistaCapabilities` `can_*` fields are a set: `has(Capability)`, `with`, `without`, `iter`.
+  `can_count`, `can_fetch_page`, `can_set_page_size`, `can_invalidate`, `can_traverse_to_set`,
+  `can_traverse_in_columns` and `can_build_ref_via_script` are dropped; `can_fetch_next` is
+  `Cursor` and `can_traverse_to_record` is `Traverse`.
+- `Vista.source` is private; wrap a shell with `map_shell`, which keeps the name and the applied
+  query. Read the narrowing from `query()` / `is_narrowed()`.
+- `index_key` is replaced by `VistaQuery::key()`.
+- `preview_query` (JSON) is `preview() -> Preview { query, note }`; `Preview::new()` takes no
+  driver and a serialised `Preview` has no `driver` field. Read the driver from `driver_name()`.
+- The metadata vocabulary is `columns`, `column`, `id_column`, `title_columns`, `references`,
+  `reference`, `driver_name`. Removed: `get_column_names`, `get_column`, `get_id_column`,
+  `get_title_columns`, `get_references`, `list_references`, `get_reference`, `has_auto_id`,
+  `driver()`, `can_watch` (use `capabilities().has(Capability::Subscribe)`).
+- `EmptyShell` and `Vista::empty` are removed; tests use `MockShell`.
+- `ContainedShell` is crate-private, and so are `ForwardShell`'s internals; write wrappers with
+  `forward_table_shell!`.
+- `Vista::add_search`, `add_order`, `clear_search` and `clear_orders` become
+  `Vista::set_search(Option)` and `set_order(Option)`.
+- `mocks` (`MockShell`) is behind the `mocks` feature; `mocks::mock_shell` is private.
+- `AnyExpression` and `ExpressionLike` moved to vantage-expressions.
+- `rhai::TargetResolver`, the driver `*SpecResolver` aliases and vantage-vista-factory's
+  `ModelLoader` are replaced by `VistaResolver`, held as `Arc<dyn VistaResolver>`.
+  `SpecResolver<S>` is a trait (any `Fn(&str) -> Option<S>` is one), held as
+  `Arc<dyn SpecResolver<S>>`.
+- The rhai `capabilities()` map takes its keys from `Capability::iter()` (`insert`, `order`,
+  `window`, `filter_ops`, …); the old `can_*` keys read as `()`.
+- Rhai `count()` no longer checks `can_count`.
+- A join traversal needs the target to declare the join's `to` column; traversal errors name the
+  relation and the column.
+- Rhai `Handle::over`, `Handle::steps`, `Step`, `lazy_value_closure` and `LazyValueFn` are
+  crate-private.
+- Rhai `Handle::with_base_vista(verb, FnOnce(&mut Vista))` is
+  `Handle::with_native_condition(verb, NativeCondition) -> Result<Handle>`.
+- Rhai `eval_augment_source`, `AugmentSourceFn`, `eval_lazy_expression` and
+  `augment_source_closure` are removed; a computed column is `Column::with_expression`.
+- `Reference::new` and `Reference::contained` become `Reference::has_one`, `has_many`,
+  `contains_one` and `contains_many`. `with_build_script` returns `Result` (joins only), and
+  `with_key` is crate-private.
+- `Reference::foreign_key()` is crate-private (read `keys`); `ReferenceKind::default()` is gone.
+- `Reference::narrow(target, row, coerce)` is `narrow(target, row)`; a driver that re-tags ids
+  does it in its own `add_condition`.
+- `ContainedRefResolver` is gone: `build_contained_vista` takes
+  `Option<Arc<dyn VistaResolver>>`, keyed by `reference.target`, and an
+  `Option<ContainedWriteback>` (`None` builds the bare, read-only target).
+- `TableShell::{columns, references, id_column}` become one `TableShell::metadata()`;
+  `Vista::columns`/`references`/`id_column` are unchanged.
+- `VistaSpec::resolve_id_column()` and `resolve_id_column_or(fallback)` become
+  `resolve_id_column(default)`.
+- `ReferenceSpec::foreign_key_or(relation)` is `foreign_key(relation)`.
+- `VistaMetadata::with_column_at` is crate-private; `with_columns_at` stays.
+- `VistaSpec`, `ColumnSpec`, `ReferenceSpec`, `ContainedYaml` and `NoExtras` are
+  `#[non_exhaustive]`: use `VistaSpec::new(name)`, `ColumnSpec::new()`, `NoExtras::default()`.
+- `Column.original_type` is `Option<String>`; `Column::untyped(name)` declares no type, and a YAML
+  column without `type:` is untyped.
+- `DataVocab::{describe, read, read_write, read_write_with}` and its public fields are replaced by
+  `DataVocab::new(terminals).with_resolver(..)`. `Terminals` is `Describe | ReadWrite`
+  (`Terminals::Read` is gone: use `ReadWrite { limit, writes: Writes::Denied(msg) }`), and
+  `Terminals` and `Writes` are `#[non_exhaustive]`.
+- The rhai items left the crate root: `vantage_vista::rhai::{DataVocab, Handle, RecordDraft,
+  run_script, …}`.
+- Rhai `Record.save()` is `flash()`.
+- vantage-vista-factory is deleted. `VistaCatalog` is `vantage_vista::Catalog::new().with(name,
+  loader)` and `catalog.vista(name)`; `Relation` is a `Reference`, traversed with
+  `reference.narrow(catalog.vista(&reference.target)?, &row)`.
+- Column flags are a `ColumnFlag` enum (`Id`, `Title`, `Searchable`, `Orderable`, `Mandatory`,
+  `Hidden`, `RequestParam`, `Calculated`, `Auto`, `Other(String)`) behind `with_flag`, `has_flag`
+  and `flags()`. The `flags::*` constants, the public `Column.flags` field and
+  `Column::{hidden, is_hidden, is_id, is_title}` are removed.
+- Every item is at the crate root only; the `column`, `filter`, `sort`, `spec`, `factory`,
+  `impls`, `reference`, `metadata`, `capabilities`, `contained`, `source` and `vista` modules are
+  private. Public modules: `contract`, `eval`, `mocks`, `prelude`, `rhai`.
+- The prelude is `Capability`, `CborValue`, `Condition`, `FilterOp`, `SortDirection`, `Vista`,
+  `VistaQuery`, `VistaResolver` and the vantage-dataset value-set traits. `TableShell`,
+  `VistaCapabilities` and `VistaFactory` left it.
+- `RecordDraft::{new_row, load, from_row}` drop the resolver parameter and resolve through the
+  handle's (`Handle::with_resolver` is public). `Handle::resolve`, `run_script` and
+  `preview_script` take a `VistaResolver`.
+- A dotted path a shell can't evaluate, a declared dotted column included, is refused as
+  `Unimplemented` through `condition_column_error`, so `Vista::with_query` hands it back.
+- `Vista` refuses `fetch_window` past offset 0 without `Window`, `fetch_cursor` without `Cursor`
+  and `watch` without `Subscribe`, before the shell is called. Every shell that lists answers the
+  leading window `fetch_window(0, n)`.
+- `MockShell` refuses a dotted path ("nested paths are not evaluated") and an undeclared column;
+  `MockShell::with_replace_requires_existing` is removed.
 - `eval::path_get` is crate-private; read cells with `eval::cell_get(row, path, &metadata)`.
+- `ReferenceSugar` is `#[non_exhaustive]`.
+- Rhai `modify:`, augment and reference scripts end on a table handle; a statement that narrows a
+  handle and drops it is an error when the script compiles.
+- Rhai `limit(n)` reads only through `fetch_window(0, n)`; a refused leading window throws.
+- Rhai writes are gated by the Vista's capabilities and throw `unsupported(..)`; a denied
+  `delete` throws instead of returning `false`; `upsert` needs only `Update`; `import_from` needs
+  `Import`.
+- Rhai `references()` reports YAML kind names (`has_one`, …); `Record.rejection()` is
+  `#{ message }`; a `ref` over an undeclared relation is `unknown_relation` (not found).
+- Rhai `new_id` reads the id column's `ColumnFamily`: `i128`, `u128`, `isize`, `usize`,
+  `Option<i64>` and Rust `type_name` paths are numeric and need `auto` or an explicit id.
+
+### Other changes
+
+- `Capability`, `unsupported(Capability)` and `unknown_relation(relation)` (a not-found error).
+- `VistaQuery { conditions, search, order, native }` with `key()`, `is_empty()` and builders;
+  `Condition` and `NativeCondition`.
+- `Vista::with_query(&VistaQuery) -> (Vista, VistaQuery)` applies a query and returns the clauses
+  the shell refused.
+- `Page::from_listing(rows, offset, limit)` cuts any window from a full listing.
+- `VistaResolver` and `Catalog`; any `Fn(&str) -> Result<Vista>` is a resolver.
+- `ReferenceSpec::to_reference(relation, source_id)` lowers a YAML reference, multi-key `keys:`
+  included. `ReferenceKind::as_str()` gives the YAML name.
+- `eval` module: `Condition::matches`, `VistaQuery::matches`, `VistaQuery::sort_rows`,
+  `VistaQuery::is_locally_evaluable`, `cell_get` and `cbor_cmp`.
+- `VistaQuery::cmp_rows`: the one row comparator, shared by `sort_rows` and diorama's sorted splice.
+- In-memory search matches numbers, bools, tagged values and nested cells; a blank needle matches
+  every row.
+- In-memory sorting puts null and absent cells last in both directions and breaks ties on id;
+  `3 == 3.0`.
+- `condition_column_error(metadata, column)`: the one refusal a shell returns for a column it
+  doesn't take.
 - Quicksearch reads the columns flagged `Searchable`, or every column when none is
   (`VistaMetadata::search_columns`).
 - `ColumnFamily` and `Column::family()` classify a column's declared type (spec, SQL or Rust type
-  names). The rhai `new_id` uses it.
+  names).
+- `ColumnFlag::RequestParam` (YAML `request_param`): the value goes to the backend and rows
+  needn't carry it.
+- `MockShell::get_only()`, `gated(..)`, `get_log()` and `max_concurrent_gets()`.
 - `MockShell::calls()` (`MockCalls`): call counters shared by clones.
-- `ReferenceSugar` is `#[non_exhaustive]`.
+- Rhai `Handle::query()` folds a handle's steps into one `VistaQuery`.
+- `rhai::script_tables` builds a driver's `table(name)` resolver over its factory.
+- `rhai::reject_dropped_narrowing(ast, what, has_value)`: the dropped-handle check for statement
+  scripts.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 1.2.1 — 2026-10-07
 

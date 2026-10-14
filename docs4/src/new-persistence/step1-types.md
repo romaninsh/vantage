@@ -23,12 +23,26 @@ Use the `vantage_type_system!` macro. It generates a trait, an enum of variants,
 `AnyType` wrapper:
 
 ```rust
+# use vantage_types::vantage_type_system;
 vantage_type_system! {
     type_trait: SqliteType,
     method_name: json,
     value_type: serde_json::Value,
     type_variants: [Null, Integer, Text, Real, Numeric, Blob]
 }
+# impl SqliteTypeVariants {
+#     fn from_json(value: &serde_json::Value) -> Option<Self> {
+#         use serde_json::Value;
+#         match value {
+#             Value::Null => Some(Self::Null),
+#             Value::Bool(_) => Some(Self::Integer),
+#             Value::Number(n) if n.is_f64() => Some(Self::Real),
+#             Value::Number(_) => Some(Self::Integer),
+#             Value::String(_) => Some(Self::Text),
+#             Value::Array(_) | Value::Object(_) => None,
+#         }
+#     }
+# }
 ```
 
 This gives you `SqliteType` (trait), `SqliteTypeVariants` (enum), and `AnySqliteType` (the
@@ -41,6 +55,26 @@ if your storage is that simple.
 Then implement the trait for each Rust type. Here's bool — SQLite stores it as 0/1:
 
 ```rust
+# use serde_json::Value;
+# use vantage_types::vantage_type_system;
+# vantage_type_system! {
+#     type_trait: SqliteType,
+#     method_name: json,
+#     value_type: serde_json::Value,
+#     type_variants: [Null, Integer, Text, Real, Numeric, Blob]
+# }
+# impl SqliteTypeVariants {
+#     fn from_json(value: &Value) -> Option<Self> {
+#         match value {
+#             Value::Null => Some(Self::Null),
+#             Value::Bool(_) => Some(Self::Integer),
+#             Value::Number(n) if n.is_f64() => Some(Self::Real),
+#             Value::Number(_) => Some(Self::Integer),
+#             Value::String(_) => Some(Self::Text),
+#             Value::Array(_) | Value::Object(_) => None,
+#         }
+#     }
+# }
 impl SqliteType for bool {
     type Target = SqliteTypeIntegerMarker;  // bool lives in the Integer family
 
@@ -56,11 +90,42 @@ impl SqliteType for bool {
         }
     }
 }
+# assert_eq!(AnySqliteType::new(true).try_get::<bool>(), Some(true));
 ```
 
 And here's how the type safety works in practice:
 
 ```rust
+# use serde_json::Value;
+# use vantage_types::vantage_type_system;
+# vantage_type_system! {
+#     type_trait: SqliteType,
+#     method_name: json,
+#     value_type: serde_json::Value,
+#     type_variants: [Null, Integer, Text, Real, Numeric, Blob]
+# }
+# impl SqliteTypeVariants {
+#     fn from_json(value: &Value) -> Option<Self> {
+#         match value {
+#             Value::Null => Some(Self::Null),
+#             Value::Bool(_) => Some(Self::Integer),
+#             Value::Number(n) if n.is_f64() => Some(Self::Real),
+#             Value::Number(_) => Some(Self::Integer),
+#             Value::String(_) => Some(Self::Text),
+#             Value::Array(_) | Value::Object(_) => None,
+#         }
+#     }
+# }
+# impl SqliteType for i64 {
+#     type Target = SqliteTypeIntegerMarker;
+#     fn to_json(&self) -> Value { Value::from(*self) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_i64() }
+# }
+# impl SqliteType for String {
+#     type Target = SqliteTypeTextMarker;
+#     fn to_json(&self) -> Value { Value::String(self.clone()) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_str().map(str::to_string) }
+# }
 let val = AnySqliteType::new(42i64);
 assert_eq!(val.try_get::<i64>(), Some(42));    // same variant → works
 assert_eq!(val.try_get::<String>(), None);      // Integer ≠ Text → rejected
@@ -73,9 +138,54 @@ assert_eq!(val.try_get::<i64>(), None);          // Text ≠ Integer → rejecte
 You also need `From` conversions so values can be created conveniently:
 
 ```rust
+# use serde_json::Value;
+# use vantage_types::vantage_type_system;
+# vantage_type_system! {
+#     type_trait: SqliteType,
+#     method_name: json,
+#     value_type: serde_json::Value,
+#     type_variants: [Null, Integer, Text, Real, Numeric, Blob]
+# }
+# impl SqliteTypeVariants {
+#     fn from_json(value: &Value) -> Option<Self> {
+#         match value {
+#             Value::Null => Some(Self::Null),
+#             Value::Bool(_) => Some(Self::Integer),
+#             Value::Number(n) if n.is_f64() => Some(Self::Real),
+#             Value::Number(_) => Some(Self::Integer),
+#             Value::String(_) => Some(Self::Text),
+#             Value::Array(_) | Value::Object(_) => None,
+#         }
+#     }
+# }
+# impl SqliteType for i64 {
+#     type Target = SqliteTypeIntegerMarker;
+#     fn to_json(&self) -> Value { Value::from(*self) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_i64() }
+# }
+# impl SqliteType for String {
+#     type Target = SqliteTypeTextMarker;
+#     fn to_json(&self) -> Value { Value::String(self.clone()) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_str().map(str::to_string) }
+# }
+# impl SqliteType for bool {
+#     type Target = SqliteTypeIntegerMarker;
+#     fn to_json(&self) -> Value { Value::from(i64::from(*self)) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_i64().map(|i| i != 0) }
+# }
+# impl From<i64> for AnySqliteType {
+#     fn from(value: i64) -> Self { AnySqliteType::new(value) }
+# }
+# impl From<&str> for AnySqliteType {
+#     fn from(value: &str) -> Self { AnySqliteType::new(value.to_string()) }
+# }
+# impl From<bool> for AnySqliteType {
+#     fn from(value: bool) -> Self { AnySqliteType::new(value) }
+# }
 let val: AnySqliteType = 42i64.into();
 let val: AnySqliteType = "hello".into();
 let val: AnySqliteType = true.into();
+# assert_eq!(val.try_get::<bool>(), Some(true));
 ```
 
 ### Records and struct conversion
@@ -93,6 +203,8 @@ conversion for free. Vantage has blanket implementations of `IntoRecord` and `Tr
 type that implements serde's `Serialize`/`Deserialize`:
 
 ```rust
+# use serde::{Deserialize, Serialize};
+# use vantage_types::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 #[derive(Serialize, Deserialize)]
 struct Product {
     name: String,
@@ -103,7 +215,7 @@ struct Product {
 let product = Product { name: "Cupcake".into(), price: 120, is_deleted: false };
 
 // Struct → Record<serde_json::Value> — automatic via serde
-let record: Record<serde_json::Value> = product.into_record();
+let record: Record<serde_json::Value> = product.try_into_record().unwrap();
 
 // Record<serde_json::Value> → Struct — automatic via serde
 let restored: Product = Product::from_record(record).unwrap();
@@ -119,6 +231,8 @@ If your type system uses something other than `serde_json::Value` — like Surre
 generate the conversion code:
 
 ```rust
+# use vantage_surrealdb::AnySurrealType;
+# use vantage_types::entity;
 #[entity(SurrealType)]
 #[derive(Debug, Clone)]
 struct Product {
@@ -141,6 +255,9 @@ should be a string, you get an error instead of garbage.
 You can even target multiple type systems at once:
 
 ```rust
+# use vantage_csv::AnyCsvType;
+# use vantage_surrealdb::AnySurrealType;
+# use vantage_types::entity;
 #[entity(SurrealType, CsvType)]
 struct Product {
     name: String,
@@ -159,6 +276,36 @@ Test `Record<AnySqliteType>` in both modes — typed (write path) and untyped (r
 `try_get` enforces them:
 
 ```rust
+# use serde_json::Value;
+# use vantage_types::{Record, vantage_type_system};
+# vantage_type_system! {
+#     type_trait: SqliteType,
+#     method_name: json,
+#     value_type: serde_json::Value,
+#     type_variants: [Null, Integer, Text, Real, Numeric, Blob]
+# }
+# impl SqliteTypeVariants {
+#     fn from_json(value: &Value) -> Option<Self> {
+#         match value {
+#             Value::Null => Some(Self::Null),
+#             Value::Bool(_) => Some(Self::Integer),
+#             Value::Number(n) if n.is_f64() => Some(Self::Real),
+#             Value::Number(_) => Some(Self::Integer),
+#             Value::String(_) => Some(Self::Text),
+#             Value::Array(_) | Value::Object(_) => None,
+#         }
+#     }
+# }
+# impl SqliteType for i64 {
+#     type Target = SqliteTypeIntegerMarker;
+#     fn to_json(&self) -> Value { Value::from(*self) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_i64() }
+# }
+# impl SqliteType for String {
+#     type Target = SqliteTypeTextMarker;
+#     fn to_json(&self) -> Value { Value::String(self.clone()) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_str().map(str::to_string) }
+# }
 #[test]
 fn test_typed_record() {
     let mut record: Record<AnySqliteType> = Record::new();
@@ -176,6 +323,46 @@ fn test_typed_record() {
 `try_get` is permissive — it just attempts the conversion:
 
 ```rust
+# use serde_json::{Value, json};
+# use vantage_types::{Record, vantage_type_system};
+# vantage_type_system! {
+#     type_trait: SqliteType,
+#     method_name: json,
+#     value_type: serde_json::Value,
+#     type_variants: [Null, Integer, Text, Real, Numeric, Blob]
+# }
+# impl SqliteTypeVariants {
+#     fn from_json(value: &Value) -> Option<Self> {
+#         match value {
+#             Value::Null => Some(Self::Null),
+#             Value::Bool(_) => Some(Self::Integer),
+#             Value::Number(n) if n.is_f64() => Some(Self::Real),
+#             Value::Number(_) => Some(Self::Integer),
+#             Value::String(_) => Some(Self::Text),
+#             Value::Array(_) | Value::Object(_) => None,
+#         }
+#     }
+# }
+# impl SqliteType for i64 {
+#     type Target = SqliteTypeIntegerMarker;
+#     fn to_json(&self) -> Value { Value::from(*self) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_i64() }
+# }
+# impl SqliteType for f64 {
+#     type Target = SqliteTypeRealMarker;
+#     fn to_json(&self) -> Value { Value::from(*self) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_f64() }
+# }
+# impl SqliteType for String {
+#     type Target = SqliteTypeTextMarker;
+#     fn to_json(&self) -> Value { Value::String(self.clone()) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_str().map(str::to_string) }
+# }
+# impl AnySqliteType {
+#     fn untyped(value: Value) -> Self {
+#         Self { value, type_variant: None }
+#     }
+# }
 #[test]
 fn test_untyped_record() {
     let mut record: Record<AnySqliteType> = Record::new();
@@ -201,7 +388,7 @@ You also need `TryFrom&lt;AnyType&gt;` implementations for scalar types and Reco
 by `AssociatedExpression::get()` in Step 2, but they belong here because they're part of the type
 system:
 
-```rust
+```text
 // Scalars — extract single value from single-row results
 impl TryFrom<AnySqliteType> for i64 { ... }
 impl TryFrom<AnySqliteType> for String { ... }
@@ -245,11 +432,62 @@ won't be blocked by a variant mismatch — it just attempts the conversion. The 
 later when you deserialize into a struct.
 
 ```rust
+# use serde_json::{Value, json};
+# use vantage_types::vantage_type_system;
+# vantage_type_system! {
+#     type_trait: SqliteType,
+#     method_name: json,
+#     value_type: serde_json::Value,
+#     type_variants: [Null, Integer, Text, Real, Numeric, Blob]
+# }
+# impl SqliteTypeVariants {
+#     fn from_json(value: &Value) -> Option<Self> {
+#         match value {
+#             Value::Null => Some(Self::Null),
+#             Value::Bool(_) => Some(Self::Integer),
+#             Value::Number(n) if n.is_f64() => Some(Self::Real),
+#             Value::Number(_) => Some(Self::Integer),
+#             Value::String(_) => Some(Self::Text),
+#             Value::Array(_) | Value::Object(_) => None,
+#         }
+#     }
+# }
+# impl SqliteType for i64 {
+#     type Target = SqliteTypeIntegerMarker;
+#     fn to_json(&self) -> Value { Value::from(*self) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_i64() }
+# }
+# impl SqliteType for f64 {
+#     type Target = SqliteTypeRealMarker;
+#     fn to_json(&self) -> Value { Value::from(*self) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_f64() }
+# }
+# impl SqliteType for String {
+#     type Target = SqliteTypeTextMarker;
+#     fn to_json(&self) -> Value { Value::String(self.clone()) }
+#     fn from_json(value: Value) -> Option<Self> { value.as_str().map(str::to_string) }
+# }
+# impl SqliteType for bool {
+#     type Target = SqliteTypeIntegerMarker;
+#     fn to_json(&self) -> Value { Value::from(i64::from(*self)) }
+#     fn from_json(value: Value) -> Option<Self> {
+#         match value {
+#             Value::Number(n) => n.as_i64().map(|i| i != 0),
+#             Value::Bool(b) => Some(b),
+#             _ => None,
+#         }
+#     }
+# }
+# impl AnySqliteType {
+#     fn untyped(value: Value) -> Self {
+#         Self { value, type_variant: None }
+#     }
+# }
 // Writing — typed, variant enforced
-let val = AnySqliteType::new(true);            // type_variant: Some(Bool)
+let val = AnySqliteType::new(true);            // type_variant: Some(Integer)
 val.try_get::<bool>();   // Some(true) — variant matches
-val.try_get::<i64>();    // None — Bool ≠ Integer, blocked by type boundary
-val.try_get::<String>(); // None — Bool ≠ Text, blocked
+val.try_get::<i64>();    // Some(1) — bool lives in the Integer family
+val.try_get::<String>(); // None — Integer ≠ Text, blocked
 
 // Reading — untyped, permissive
 let val = AnySqliteType::untyped(json!(1));    // type_variant: None
@@ -261,7 +499,7 @@ val.try_get::<String>(); // None — json 1 can't parse as String
 
 Both directions use `Record<AnySqliteType>`, but the values behave differently:
 
-```
+```text
 Writing:  Struct → Record<AnySqliteType> (typed) → bind_sqlite_value() → sqlx
 Reading:  sqlx → Record<AnySqliteType> (untyped) → try_get / serde → Struct
 ```

@@ -58,7 +58,11 @@ Diorama has two load methods, and the `source` line names the one in use.
 | **paged** | `pages lazily` | The source can serve `[offset, limit)` windows |
 | **eager** | `copied whole into the cache` | The source cannot serve windows |
 
-You do not select the method. It follows from what the source can do.
+In Vantage UI you do not select the method. It follows from what the source can do. In Rust the
+choice is the Lens's loader: [`Loader::paged`](vantage_diorama::Loader::paged) fetches windows,
+[`Loader::eager`](vantage_diorama::Loader::eager) copies the set, and
+`Loader::paged(..).or_eager(..)` decides per Dio, paging a master that advertises `Window` and
+copying one that doesn't. That is the rule this section measures.
 
 | | **paged** | **eager** |
 | --- | --- | --- |

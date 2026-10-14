@@ -2,7 +2,32 @@
 
 ## 0.8.0 — 2026-10-14
 
+### Breaking changes
+
+- The shell implements `TableShell` 2.0: `fetch_next` is `fetch_cursor`, advertised only for S3
+  `ListObjectsV2` tables (the last key as `start-after`, the limit as `max-keys`). `ListBuckets`
+  no longer advertises `Cursor`, and a `limit` of 0 is an error.
+- `Window` is not advertised: `fetch_window(0, n)` is answered from one listing, and any other
+  offset is refused by Vista before a request.
+- A condition takes `Eq` on a declared column or a `{placeholder}` in the request path. Any other
+  column is an error.
+- Request parameters (`logGroupNamePrefix`, `logGroupName`, `PathPrefix`, `UserName`,
+  `GroupName`, `RoleName`, `prefix`, `delimiter`, `cluster`) are declared as hidden
+  `request_param` columns, so a Vista condition can carry them.
+- Join traversal is strict: relation targets declare their join columns as hidden columns.
+- A client-side filter keeps a row lacking the field only for a `request_param` column, a path
+  placeholder or an undeclared field.
+- A dotted path into a declared column is refused as `Unimplemented`.
+- `preview()` is `{query, note}`: `query` ends `(every page)` or `(first page)`, and `note` says
+  row-field conditions are also applied to the rows.
+
+### Other changes
+
 - Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0 and vantage-table 2.0.0.
+- The cursor applies the table's own conditions to each page and takes the next token first, so
+  a page no longer widens the set.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.7.1 — 2026-10-07
 

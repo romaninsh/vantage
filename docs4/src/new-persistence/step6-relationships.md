@@ -16,16 +16,42 @@ conditions. For SQL backends this is a `SELECT "col" FROM "table" WHERE ...` exp
 Define relationships when constructing tables — `with_one` for foreign-key-to-parent, `with_many`
 for parent-to-children. Then traverse:
 
-```rust
+```rust,no_run
+# use vantage_dataset::ReadableDataSet;
+# use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+# use vantage_sql::sqlite_expr;
+# use vantage_table::table::Table;
+# use vantage_types::{EmptyEntity, entity};
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone)]
+# struct ClientOrder {
+#     client_id: String,
+# }
+# fn client_order_table(db: SqliteDB) -> Table<SqliteDB, ClientOrder> {
+#     Table::new("client_order", db)
+#         .with_id_column("id")
+#         .with_column_of::<String>("client_id")
+# }
+# fn client_table(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {
+#     Table::new("client", db)
+#         .with_id_column("id")
+#         .with_column_of::<bool>("is_paying_client")
+#         .with_many("orders", "client_id", client_order_table)
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let db = SqliteDB::connect("sqlite:../target/bakery.sqlite?mode=ro").await?;
 let mut clients = client_table(db);
 clients.add_condition(sqlite_expr!("{} = {}", (clients["is_paying_client"]), true));
 
-let orders = clients.get_ref_as::<SqliteDB, ClientOrder>("orders").unwrap();
+let orders = clients.get_ref_as::<ClientOrder>("orders").unwrap();
 
 // The generated query includes the subquery:
 // SELECT ... FROM "client_order"
 //   WHERE client_id IN (SELECT "id" FROM "client" WHERE is_paying_client = 1)
 assert_eq!(orders.list().await.unwrap().len(), 3);
+# Ok(())
+# }
 ```
 
 
@@ -33,7 +59,7 @@ assert_eq!(orders.list().await.unwrap().len(), 3);
 `get_subquery_as` which produces `target.fk = source.id` conditions (vs `get_ref_as` which uses
 `IN (subquery)`).
 
-```rust
+```text
 .with_many("orders", "client_id", Order::sqlite_table)
 .with_expression("order_count", |t| {
     t.get_subquery_as::<Order>("orders").unwrap().get_count_query()
@@ -46,7 +72,7 @@ assert_eq!(orders.list().await.unwrap().len(), 3);
 table-qualified equality. Default panics — backends without correlated subquery support (CSV) simply
 can't use this feature.
 
-```rust
+```text
 fn related_correlated_condition(&self, target_table: &str, target_field: &str,
     source_table: &str, source_column: &str) -> Self::Condition {
     sqlite_expr!("{} = {}", (ident(target_field).dot_of(target_table)),

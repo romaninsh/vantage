@@ -1,8 +1,10 @@
 # vantage-memory Implementation Plan
 
+This is the as-built plan, kept for its task history; `README.md` and `SPEC.md` describe the current API. Its Vista snippets are updated to the 2.0 names; the prose around them still uses some 0.6 method names.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A fast in-memory vantage datasource with a typed `TableSource` layer and a Vista `TableShell` layer over one store, including native change events (`watch_vista`).
+**Goal:** A fast in-memory vantage datasource with a typed `TableSource` layer and a Vista `TableShell` layer over one store, including native change events (`watch`).
 
 **Architecture:**
 - **Store:** a synchronous core `MemoryStore` holds named tables. Each table has its own lock, `Arc`-shared rows, optional hash indexes and a broadcast channel of changes.
@@ -38,7 +40,7 @@
 3. **Order keys.** The typed layer's `Table::orders()` yields `(Condition, SortDirection)`, so `MemoryCondition` gains a `Column(String)` variant. It is a bare column reference, valid only as an order key; evaluating it as a filter is an error. `MemoryOperation` adds `.ascending()` / `.descending()` returning `OrderBy<MemoryCondition>`.
 4. **Sort direction.** `Query.order` uses `vantage_vista::SortDirection`, and the typed layer maps `vantage_table::sorting::SortDirection` onto it. Nulls sort first ascending and last descending, because descending reverses the whole ordering.
 5. **The Vista shell sits directly on the store** (`MemoryTableHandle` + `Query`), not on a typed `Table`.
-6. **Reference targets.** The factory keeps a shared catalog of built tables' `VistaMetadata`. `get_ref`/`get_ref_target` use it to give the target Vista its columns. An unregistered target gets id-only metadata.
+6. **Reference targets.** The factory keeps a shared catalog of built tables' `VistaMetadata`. `get_ref` (with a row, or `None` for the bare target) uses it to give the target Vista its columns. An unregistered store table gets id-only metadata; a name that is neither registered nor in the store is not-found.
 
 ## Review Focus
 
@@ -1817,19 +1819,19 @@ git commit -m "vantage-memory: typed TableSource layer"
 **Files:**
 - Create: `vantage-memory/src/vista.rs` (`MemoryTableShell` state, constructor, capabilities)
 - Create: `vantage-memory/src/vista/shell.rs` (the `impl TableShell`, without watch)
-- Create: `vantage-memory/src/vista/refs.rs` (`get_ref`, `get_ref_target`, `Catalog`)
+- Create: `vantage-memory/src/vista/refs.rs` (`get_ref`) and `vantage-memory/src/vista/catalog.rs` (`MemoryCatalog`)
 - Create: `vantage-memory/src/vista/factory.rs` (`MemoryVistaFactory`, `MemoryTableExtras`, `MemoryBlock`, `MemoryVistaSpec`)
 - Test: `vantage-memory/tests/vista.rs`
-- Modify: `vantage-memory/src/lib.rs` (`pub mod vista; pub use vista::{MemoryTableShell, factory::{MemoryVistaFactory, MemoryVistaSpec}};`)
+- Modify: `vantage-memory/src/lib.rs` (a private `mod vista;` and `pub use vista::{MemoryBlock, MemoryCatalog, MemoryTableExtras, MemoryTableShell, MemoryVistaFactory, MemoryVistaSpec};`, so every type is reached from the crate root)
 
 **Interfaces:**
 - Consumes: the store, `Query`, `MemoryCondition`, `sort_rows`, seed (Tasks 1–5).
 - Produces:
-  - `MemoryTableShell::new(table: MemoryTableHandle, metadata: VistaMetadata, catalog: Catalog) -> Self`
+  - `MemoryTableShell::new(table: MemoryTableHandle, metadata: VistaMetadata, catalog: MemoryCatalog) -> Self`
   - `MemoryTableShell::capabilities_for_memory() -> VistaCapabilities`
   - `pub(crate) fn MemoryTableShell::query(&self) -> &Query` (Task 8 uses it)
-  - `pub(crate) fn MemoryTableShell::table(&self) -> &MemoryTableHandle`
-  - `Catalog` (`Clone`): holds the `MemoryStore` plus a shared `Arc<RwLock<HashMap<String, VistaMetadata>>>`, with `Catalog::new(store: MemoryStore)`, `store(&self) -> &MemoryStore`, `register(name, VistaMetadata)` and `get(name) -> Option<VistaMetadata>`
+  - `pub fn MemoryTableShell::table(&self) -> &MemoryTableHandle`
+  - `MemoryCatalog` (`Clone`): holds the `MemoryStore` plus a shared `Arc<RwLock<HashMap<String, VistaMetadata>>>`, with `MemoryCatalog::new(store: MemoryStore)`, `store(&self) -> &MemoryStore` and `register(name, VistaMetadata)`. It implements `VistaResolver`, so `catalog.vista(name)` gives a bare Vista over the store table
   - `MemoryVistaFactory::new(store: MemoryStore) -> Self` and `store(&self) -> &MemoryStore`
   - `impl VistaFactory` with `TableExtras = MemoryTableExtras { memory: MemoryBlock { indexed: Vec<String>, seed: Option<PathBuf> } }` (both `Default`, `deny_unknown_fields`, `#[serde(default)]` on the `memory` field so it can be omitted), `ColumnExtras = NoExtras`, `ReferenceExtras = NoExtras`
   - `pub type MemoryVistaSpec = VistaSpec<MemoryTableExtras, NoExtras, NoExtras>`
@@ -1838,52 +1840,48 @@ Behaviour:
 
 | Method | Behaviour |
 |---|---|
-| `columns` / `references` / `id_column` | from `metadata`; the id column falls back to the store table's `id_column()` |
-| `list_vista_values` | `table.query(&self.query)` → `IndexMap<String, Record<CborValue>>`, cloning each `Row` |
-| `get_vista_value` | `table.get(id)`, filtered by `eval::matches_all(&self.query, row)` |
-| `get_vista_some_value` | the first row of the query with the limit set to 1 |
-| `get_vista_count` | `table.count(&self.query)` |
-| `insert_vista_value(id, rec)` | error if the id exists; else `upsert`; return the stored row |
-| `replace_vista_value` | error if missing; else `upsert` |
-| `patch_vista_value` | `patch`; `false` → `"Row not found"`; return the merged row |
-| `delete_vista_value` | `delete`; `false` → `"Row not found"` |
-| `delete_vista_all_values` | delete every row matching the query (window ignored) |
-| `insert_vista_return_id_value` | `table.insert(rec)` |
-| `import_vista_values(records)` | `upsert` each record; return the count |
-| `add_eq_condition(f, v)` | push `Cmp Eq` |
-| `add_op_condition(f, op, v)` | push `Cmp op` |
-| `add_order(f, dir)` | **replace** the order with the single key `(f, dir)`; the trait's doc calls this replace semantics (see vantage-table's `clear_orders` doc). `clear_orders` empties it |
-| `add_search` / `clear_search` | set / unset `query.search` |
-| `set_page_size(n)` | store `n` |
-| `fetch_page(p)` | 1-based; `p == 0` or no page size is an error. The window is `offset = (p-1)*size`, `limit = size`, applied to a clone of the query |
-| `fetch_window(offset, limit)` | on a clone of the query |
-| `fetch_window_counted` | the window plus `Some(count)` |
-| `clone_shell` | same table and catalog; the query, metadata and page size are cloned |
-| `get_ref(relation, row)` | see below |
-| `get_ref_target(relation)` | a Vista over the target table, with no narrowing |
+| `metadata` | as given; the id column falls back to the store table's `id_column()` |
+| `list` | `table.query(&self.query)` → `IndexMap<String, Record<CborValue>>`, cloning each `Row` |
+| `get` | `table.get(id)`, filtered by `eval::matches_all(&self.query, row)` |
+| `count` | `table.count(&self.query)` |
+| `fetch_window(offset, limit)` | on a clone of the query; the `Page` always carries the total |
+| `insert(id, rec)` | under `id` when given (a row already there is returned unchanged), else under the record's id cell or a generated id; returns the id and the stored row. A row that would fall outside the set is a conflict |
+| `replace` / `upsert` | replace the row, creating it when missing |
+| `patch` | merge; a missing row is not-found; return the merged row |
+| `delete` | delete the row when it is in the set; success either way |
+| `delete_all` | delete every row matching the query (window ignored) |
+| `import(records)` | insert every record whose id is new, never overwriting; return how many were new |
+| `add_condition(condition)` | push `Cmp op`, checked against the declared columns |
+| `set_order(Some((f, dir)))` | **replace** the order with the single key `(f, dir)`; `None` clears it |
+| `set_search(text)` | set (`Some`) or clear (`None`) `query.search` |
+| `get_ref(relation, row)` | see below; `None` gives the bare target |
 | `driver_name` | `"memory"` |
-| `preview_query` | JSON `{ "driver": "memory", "table": .., "conditions": [<human-readable>], "search": .., "order": [..] }`. Write a small `describe(&MemoryCondition) -> String` for the conditions; `Deferred` shows as `"<deferred>"` |
-| `capabilities` | count, insert, update, delete, import, order, search, filter_operators, set_page_size, fetch_page, fetch_window, traverse_to_record, traverse_to_set, subscribe, all `true`; everything else `false` |
+| `preview` | `Preview::new().with_query(..)`, rendering `scan <table> WHERE .. ORDER BY ..`. Write a small `describe(&MemoryCondition) -> String` for the conditions; `Deferred` shows as `"<deferred>"` |
+| `capabilities` | `Insert`, `Update`, `Delete`, `Import`, `Subscribe`, `Order`, `Search`, `FilterOps`, `Window`, `Traverse`, `ConfineWrites`; not `Cursor` or `NativeConditions` |
+
+A `Vista` over the shell is `Clone`: a clone shares the table and catalog, and its query state is its own.
 
 Notes:
-- **`can_subscribe` is set now,** but Task 8 implements `watch_vista`. Until then the trait default errors; Task 8's tests cover it.
+- **`Subscribe` is advertised now,** but Task 8 implements `watch`. Until then the trait default refuses; Task 8's tests cover it.
 - **`get_ref`:**
-  - Look up `metadata.references[relation]`. The target shell is `MemoryTableShell::new(store.table(&reference.target), catalog.get(target).unwrap_or(id-only metadata), catalog)`, so the shell must also hold its `MemoryStore`: pass it in `new` or keep it inside `Catalog`. Choose `Catalog { store, metadata }` so `new` stays three arguments.
-  - Narrowing: for `ReferenceKind::HasMany`, `target[foreign_key] == row[this id column]`. For `HasOne`, `target[target id column] == row[foreign_key]`.
+  - Look up `metadata.references[relation]`. The target is `catalog.vista(&reference.target)`: the catalog holds the `MemoryStore` and the registered metadata, so `new` stays three arguments.
+  - Narrowing goes through `Reference::narrow(target, row)`: for `ReferenceKind::HasMany`, `target[foreign_key] == row[this id column]`. For `HasOne`, `target[target id column] == row[foreign_key]`.
   - Confirm this against how `vantage-sql/src/sqlite/vista/source.rs` implements `get_ref` for each kind. If SQLite reads it the other way round, follow SQLite and note it.
 - **`build_from_spec`:**
   - Build `VistaMetadata` from the spec's columns (with flags), references and id column. Read `vantage-vista/src/spec.rs` for `VistaSpec`'s field names.
   - `store.define(name, TableDef { id_column, indexed: extras.memory.indexed, id_prefix: None })`.
   - `seed::load_file` if `seed` is set.
   - `catalog.register(name, metadata.clone())`.
-  - Return `Vista::new(name, Box::new(shell))`.
+  - Return `Vista::new(name, shell)`.
 
 - [ ] **Step 1: Write the failing tests** in `vantage-memory/tests/vista.rs`:
 
 ```rust
 use ciborium::Value as CborValue;
+use vantage_dataset::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
-use vantage_vista::{FilterOp, SortDirection, VistaFactory};
+use vantage_types::Record;
+use vantage_vista::{Capability, FilterOp, SortDirection, Vista, VistaFactory};
 
 const PRODUCT: &str = r#"
 name: product
@@ -1905,7 +1903,7 @@ columns:
   product: { type: string }
   qty: { type: int }
 references:
-  product: { target: product, kind: has_one, foreign_key: product }
+  product: { table: product, kind: has_one, foreign_key: product }
 "#;
 
 fn text(s: &str) -> CborValue {
@@ -1913,6 +1911,9 @@ fn text(s: &str) -> CborValue {
 }
 fn int(i: i64) -> CborValue {
     CborValue::Integer(i.into())
+}
+fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
+    pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
 }
 
 fn setup() -> (MemoryStore, MemoryVistaFactory) {
@@ -1925,7 +1926,7 @@ fn setup() -> (MemoryStore, MemoryVistaFactory) {
     (store, f)
 }
 
-async fn ids(v: &vantage_vista::Vista) -> Vec<String> {
+async fn ids(v: &Vista) -> Vec<String> {
     v.list_values().await.unwrap().keys().cloned().collect()
 }
 
@@ -1934,45 +1935,58 @@ async fn capabilities_are_advertised() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
     let c = v.capabilities();
-    assert!(c.can_count && c.can_insert && c.can_update && c.can_delete && c.can_import);
-    assert!(c.can_order && c.can_search && c.can_filter_operators && c.can_subscribe);
-    assert!(c.can_set_page_size && c.can_fetch_page && c.can_fetch_window);
-    assert!(c.can_traverse_to_record && c.can_traverse_to_set);
-    assert!(!c.can_invalidate && !c.can_fetch_next);
+    for cap in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::Import,
+        Capability::Subscribe,
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::Window,
+        Capability::Traverse,
+        Capability::ConfineWrites,
+    ] {
+        assert!(c.has(cap), "{cap} is not advertised");
+    }
+    assert!(!c.has(Capability::Cursor) && !c.has(Capability::NativeConditions));
 }
 
 #[tokio::test]
 async fn op_conditions_order_search_and_count() {
     let (_s, f) = setup();
     let mut v = f.from_yaml(PRODUCT).unwrap();
-    v.add_condition_op("price", FilterOp::Gte, int(4)).unwrap();
-    v.add_order("price", SortDirection::Descending).unwrap();
+    v.add_condition("price", FilterOp::Gte, int(4)).unwrap();
+    v.set_order(Some(("price", SortDirection::Descending))).unwrap();
     assert_eq!(ids(&v).await, ["p2", "p3"]);
-    assert_eq!(v.get_count().await.unwrap(), 2);
-    v.add_search("cof").unwrap();
+    assert_eq!(v.count().await.unwrap(), 2);
+    v.set_search(Some("cof")).unwrap();
     assert_eq!(ids(&v).await, ["p3"]);
 }
 
 #[tokio::test]
-async fn add_order_replaces_previous_order() {
+async fn set_order_replaces_previous_order() {
     let (_s, f) = setup();
     let mut v = f.from_yaml(PRODUCT).unwrap();
-    v.add_order("price", SortDirection::Descending).unwrap();
-    v.add_order("name", SortDirection::Ascending).unwrap();
+    v.set_order(Some(("price", SortDirection::Descending))).unwrap();
+    v.set_order(Some(("name", SortDirection::Ascending))).unwrap();
     assert_eq!(ids(&v).await, ["p2", "p3", "p1"]);
 }
 
 #[tokio::test]
-async fn pages_and_windows() {
+async fn windows_carry_the_total() {
     let (_s, f) = setup();
     let mut v = f.from_yaml(PRODUCT).unwrap();
-    v.add_order("price", SortDirection::Ascending).unwrap();
-    v.set_page_size(2).unwrap();
-    let p2: Vec<String> = v.fetch_page(2).await.unwrap().into_iter().map(|(id, _)| id).collect();
-    assert_eq!(p2, ["p2"]);
-    assert!(v.fetch_page(0).await.is_err());
-    let w: Vec<String> = v.fetch_window(1, 1).await.unwrap().into_iter().map(|(id, _)| id).collect();
-    assert_eq!(w, ["p3"]);
+    v.set_order(Some(("price", SortDirection::Ascending))).unwrap();
+    let page = v.fetch_window(2, 2).await.unwrap();
+    let ids_of = |page: &vantage_vista::Page| -> Vec<String> {
+        page.rows.iter().map(|(id, _)| id.clone()).collect()
+    };
+    assert_eq!(ids_of(&page), ["p2"]);
+    assert_eq!(page.total, Some(3));
+    let w = v.fetch_window(1, 1).await.unwrap();
+    assert_eq!(ids_of(&w), ["p3"]);
     assert_eq!(ids(&v).await.len(), 3, "a window must not narrow the vista itself");
 }
 
@@ -1980,23 +1994,24 @@ async fn pages_and_windows() {
 async fn writes_through_the_vista_reach_the_store() {
     let (s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
-    let rec = [("name".to_string(), text("Scone")), ("price".to_string(), int(2))].into_iter().collect();
-    let id = v.insert_return_id(&rec).await.unwrap();
+    let rec = record(&[("name", text("Scone")), ("price", int(2))]);
+    let id = v.insert_return_id_value(&rec).await.unwrap();
     assert_eq!(id, "1");
     assert_eq!(s.table("product").len(), 4);
-    let patch = [("price".to_string(), int(9))].into_iter().collect();
-    v.patch_value(&id, &patch).await.unwrap();
+    v.patch_value(&id, &record(&[("price", int(9))])).await.unwrap();
     assert_eq!(s.table("product").get(&id).unwrap().get("price"), Some(&int(9)));
     v.delete(&id).await.unwrap();
-    assert!(v.delete(&id).await.is_err());
+    v.delete(&id).await.unwrap();
 }
 
 #[tokio::test]
-async fn clone_shell_isolates_query_state() {
+async fn a_clone_isolates_query_state() {
     let (_s, f) = setup();
     let v = f.from_yaml(PRODUCT).unwrap();
-    let mut narrowed = v.clone_vista().unwrap();
-    narrowed.add_condition_eq("category", text("food")).unwrap();
+    let narrowed = v
+        .clone()
+        .with_condition("category", FilterOp::Eq, text("food"))
+        .unwrap();
     assert_eq!(ids(&narrowed).await, ["p2"]);
     assert_eq!(ids(&v).await.len(), 3);
 }
@@ -2006,11 +2021,13 @@ async fn has_one_reference_traverses_to_the_target_row() {
     let (s, f) = setup();
     let _products = f.from_yaml(PRODUCT).unwrap();
     let orders = f.from_yaml(ORDER).unwrap();
-    s.table("order").upsert("o1", [("product".to_string(), text("p3")), ("qty".to_string(), int(2))].into_iter().collect());
+    s.table("order")
+        .upsert("o1", record(&[("product", text("p3")), ("qty", int(2))]));
     let row = s.table("order").get("o1").unwrap();
-    let target = orders.get_ref("product", &row).unwrap();
+    let target = orders.get_ref("product", Some(&row)).unwrap();
     assert_eq!(ids(&target).await, ["p3"]);
-    assert!(target.columns().contains_key("price"), "target uses the catalog's metadata");
+    assert!(target.is_narrowed(), "the join is recorded on the target");
+    assert!(target.column("price").is_some(), "target uses the catalog's metadata");
 }
 
 #[tokio::test]
@@ -2026,7 +2043,7 @@ async fn seed_file_is_loaded_by_the_factory() {
 }
 ```
 
-These tests use `Vista` convenience methods: `list_values`, `get_count`, `add_condition_op`, `add_condition_eq`, `add_order`, `add_search`, `set_page_size`, `fetch_page`, `fetch_window`, `insert_return_id`, `patch_value`, `delete`, `clone_vista`, `get_ref`, `columns`, `capabilities`. Check each name in `vantage-vista/src/vista.rs` (and the dataset trait impls it provides) and use the real names. The YAML shape follows `VistaSpec` (read `vantage-vista/src/spec.rs`; columns may be a list, or `id_column` may be derived from flags). Adjust the test YAML to the real schema, keeping the same content, and note any change.
+These tests use `Vista`'s own methods (`add_condition`, `with_condition`, `set_order`, `set_search`, `count`, `fetch_window`, `get_ref`, `column`, `is_narrowed`, `capabilities`) and the dataset traits it implements (`list_values`, `insert_return_id_value`, `patch_value`, `delete`). Check each name in `vantage-vista/src/vista.rs` and `vantage-vista/src/vista/` and use the real names. The YAML shape follows `VistaSpec` (read `vantage-vista/src/spec.rs`; columns may be a list, or `id_column` may be derived from flags). Adjust the test YAML to the real schema, keeping the same content, and note any change.
 
 - [ ] **Step 2: Run the tests and check they fail**
 
@@ -2050,18 +2067,18 @@ git commit -m "vantage-memory: Vista shell, references and factory"
 
 ---
 
-### Task 8: Native `watch_vista`, and a live Dio
+### Task 8: Native `watch`, and a live Dio
 
 **Files:**
 - Create: `vantage-memory/src/vista/watch.rs`
-- Modify: `vantage-memory/src/vista/shell.rs` (`watch_vista` delegates to `watch::stream`)
+- Modify: `vantage-memory/src/vista/shell.rs` (`watch` delegates to `watch::stream`)
 - Test: `vantage-memory/tests/watch.rs` and `vantage-memory/tests/dio.rs`
 
 **Interfaces:**
 - Consumes: `MemoryTable::subscribe`, `MemoryChange`, `MemoryTableShell::{query, table}`, `eval::matches_all`.
 - Produces: `watch::stream(table: MemoryTableHandle, query: Query) -> VistaChangeStream`.
 
-Behaviour, per change and per subscriber, checking only the conditions and search of a snapshot of the shell's query taken when `watch_vista` is called:
+Behaviour, per change and per subscriber, checking only the conditions and search of a snapshot of the shell's query taken when `watch` is called:
 
 | Change | old matched? | new matched? | Emits |
 |---|---|---|---|
@@ -2087,8 +2104,9 @@ use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use futures_util::StreamExt;
+use vantage_dataset::InsertableValueSet;
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
-use vantage_vista::{VistaChange, VistaFactory};
+use vantage_vista::{FilterOp, VistaChange, VistaFactory};
 
 const T: &str = "name: t\nid_column: id\ncolumns:\n  id: { type: string, flags: [id] }\n  status: { type: string }\n";
 
@@ -2126,7 +2144,7 @@ async fn vista_writes_reach_the_watch() {
     let store = MemoryStore::new();
     let v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
     let mut w = v.watch().await.unwrap();
-    v.insert_return_id(&status("Open")).await.unwrap();
+    v.insert_return_id_value(&status("Open")).await.unwrap();
     assert!(matches!(next(&mut w).await, VistaChange::Inserted { .. }));
 }
 
@@ -2134,7 +2152,7 @@ async fn vista_writes_reach_the_watch() {
 async fn row_entering_filter_is_inserted() {
     let store = MemoryStore::new();
     let mut v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    v.add_condition_eq("status", text("Open")).unwrap();
+    v.add_condition("status", FilterOp::Eq, text("Open")).unwrap();
     let mut w = v.watch().await.unwrap();
     let t = store.table("t");
     t.upsert("a", status("Closed"));
@@ -2149,7 +2167,7 @@ async fn row_leaving_filter_is_deleted() {
     let t = store.table("t");
     t.upsert("a", status("Open"));
     let mut v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    v.add_condition_eq("status", text("Open")).unwrap();
+    v.add_condition("status", FilterOp::Eq, text("Open")).unwrap();
     let mut w = v.watch().await.unwrap();
     t.patch("a", &status("Closed"));
     assert!(matches!(next(&mut w).await, VistaChange::Deleted { id } if id == "a"));
@@ -2177,22 +2195,22 @@ async fn lag_becomes_invalidated() {
 }
 ```
 
-`vantage-memory/tests/dio.rs`. Before writing it, read traits.md §10 and `vantage-diorama/tests/dio_watch.rs` for the exact `Lens`/`Dio` API:
+`vantage-memory/tests/dio.rs`. Before writing it, read `vantage-diorama/tests/dio_watch.rs` for the exact `Lens`/`Dio` API:
 
 ```rust
-use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use vantage_diorama::Lens;
+use vantage_dataset::prelude::ReadableValueSet;
+use vantage_diorama::{Cache, Lens, Loader, LoaderCx};
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, VistaFactory};
 
 const T: &str = "name: t\nid_column: id\ncolumns:\n  id: { type: string, flags: [id] }\n  n: { type: int }\n";
 
 async fn wait_for(dio: &vantage_diorama::Dio, id: &str, expect: Option<i64>) {
     for _ in 0..40 {
-        let got = dio.cache().get_value(&id.to_string()).await.unwrap();
+        let got = dio.cached().get_value(id).await.unwrap();
         let n = got.and_then(|r| match r.get("n") {
             Some(CborValue::Integer(i)) => Some(i128::from(*i) as i64),
             _ => None,
@@ -2211,23 +2229,16 @@ async fn dio_over_memory_stays_live_through_watch_alone() {
     let t = store.table("t");
     t.upsert("a", [("n".to_string(), CborValue::Integer(1.into()))].into_iter().collect());
     let master = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("lens"),
-    );
-    let dio = lens.make_dio(master).await.unwrap();
-    assert!(dio.master().can_watch());
-    dio.watch().await.unwrap();
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()
+        .expect("lens");
+    assert!(master.capabilities().has(Capability::Subscribe));
+    let dio = lens.dio(master).live().build().await.unwrap();
 
     t.patch("a", &[("n".to_string(), CborValue::Integer(2.into()))].into_iter().collect());
     wait_for(&dio, "a", Some(2)).await;
@@ -2238,14 +2249,14 @@ async fn dio_over_memory_stays_live_through_watch_alone() {
 }
 ```
 
-If the real `Dio::watch` returns a stream instead of spawning a task (traits.md §10 says `derived.watch().await?` is "the whole go-live call"), follow `dio_watch.rs` exactly. The test's intent is fixed: no `handle_event`, and the cache follows store writes.
+`.live()` on the Dio builder is the whole go-live call: the Dio subscribes to the master's `watch()` itself. The test's intent is fixed: no event forwarding from the test, and the cache follows store writes.
 
 - [ ] **Step 2: Run the tests and check they fail**
 
 Run: `cargo test -p vantage-memory --test watch 2>&1 | tail -15`
-Expected: failures, because `watch_vista` still returns the trait's default error.
+Expected: failures, because `watch` still returns the trait's default refusal.
 
-- [ ] **Step 3: Implement** `watch.rs`, following the table above, and override `watch_vista` in `shell.rs` to call `watch::stream(self.table.clone(), self.query.clone())`.
+- [ ] **Step 3: Implement** `watch.rs`, following the table above, and override `watch` in `shell.rs` to call `watch::stream(self.table.clone(), self.query.clone())`.
 
 - [ ] **Step 4: Run the tests and check they pass**
 

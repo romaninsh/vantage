@@ -15,14 +15,8 @@ impl MemoryDB {
         id: &str,
         partial: &Record<AnyMemoryType>,
     ) -> Result<Record<AnyMemoryType>> {
-        let not_found = || {
-            error!(
-                "Row not found",
-                table = table.table_name(),
-                id = id
-            )
-            .mark_not_found()
-        };
+        let not_found =
+            || error!("Row not found", table = table.table_name(), id = id).mark_not_found();
         let store = self.store_table(table)?;
         let existing = store.get(id).ok_or_else(not_found)?;
         if !self.in_set(table, &existing).await? {

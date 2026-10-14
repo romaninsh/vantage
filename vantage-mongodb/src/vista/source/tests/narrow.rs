@@ -1,7 +1,9 @@
 //! Conditions, search and order on the shell.
 
 use bson::doc;
-use vantage_vista::{Condition, FilterOp, NativeCondition, SortDirection, TableShell, VistaFactory};
+use vantage_vista::{
+    Condition, FilterOp, NativeCondition, SortDirection, TableShell, VistaFactory,
+};
 
 use super::super::keyset;
 use super::{CLIENT, client_vista, factory, shell_of};

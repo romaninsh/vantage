@@ -2,9 +2,51 @@
 
 ## 2.0.0 — 2026-10-14
 
-- Vista 2.0: breaking API changes; see the migration guide (phase 5).
+### Breaking changes
+
+- `ModelResolver` is removed; `RestApiVistaFactory::with_model_resolver` takes
+  `Arc<dyn VistaResolver>`. A closure or a `Catalog` fits.
+- `GraphqlSpecResolver` is removed; `GraphqlApiVistaFactory::with_resolver` takes
+  `Arc<dyn SpecResolver<GraphqlApiVistaSpec>>`. A closure passed there needs an annotated
+  parameter (`|name: &str| ..`).
+- Both shells implement `TableShell` 2.0: `fetch_page` and GraphQL's page-number `fetch_next` are
+  gone, neither driver advertises `Cursor`, and `fetch_window` returns a `Page`. A REST
+  `total_key` becomes `Page.total` from the same response.
+- Neither driver advertises writes, so Vista refuses them before the shell.
+- `set_order`, `set_search` and `fetch_window` refuse with `unsupported(..)` when their capability
+  is off.
+- REST conditions accept declared columns and endpoint `{placeholder}` names only; any other
+  column is an error. A non-`Eq` operator, or an `Eq` with a non-scalar value, is refused so it is
+  evaluated locally.
+- GraphQL `Like` on the generic dialect is `unsupported(FilterOps)`; it was `Unimplemented`.
+- A dotted path into a declared column is refused as `Unimplemented` on REST and on GraphQL with
+  filter push-down. An unknown root is "Unknown column for condition" with a `field` key.
+- GraphQL types each text operand by its column for every caller: an integer column takes an
+  integer, and a non-integer text there is an error before any request.
+- A has-one target without an id column is an error at traversal; REST fell back to `"id"`.
+- A REST client-side filter keeps a row lacking the field only for a `request_param` column, an
+  endpoint placeholder or an undeclared field. A `hidden` column is a row field.
+- `preview()` is `{query, note}`. REST: `query` is `GET <url>`, plus `Authorization: <set>` when
+  an auth header is configured, and `note` lists client filters and unresolved conditions.
+  GraphQL: `query` is `POST <endpoint>` and the document, with no `note`.
+- A name the REST registry or GraphQL spec resolver doesn't know is `is_not_found()`; the REST
+  traversal message is "No registered spec for model name".
 - GraphQL quicksearch reads the columns flagged `Searchable`, or, when none is, every text column
   other than the id.
+
+### Other changes
+
+- A REST API that doesn't page and a GraphQL root without paging answer `fetch_window(0, n)` from
+  one unpaged listing, with the listing's length as `total`.
+- REST `list()` applies `set_order`; it ignored it.
+- REST and GraphQL lower YAML references through `ReferenceSpec::to_reference`, so `keys:` gives
+  a multi-key join.
+- A reference's `target` is its spec name for YAML and its table name for a typed relation, so
+  `catalog.vista(&reference.target)` resolves.
+- A REST spec's `label` flag reaches the vista column.
+- A failed removal of the previous GraphQL quicksearch condition propagates from `set_search`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 1.0.0 — 2026-10-11
 

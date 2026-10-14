@@ -16,14 +16,45 @@ The recipe has three parts:
 3. **`select_column("field")`** — projects a single column from that subquery, so it can sit where
    a scalar value is expected.
 
-Here's the shape, straight from the `select_column` rustdoc:
+Here's the shape, from the `select_column` rustdoc, on a product table that declares a
+`category` relation:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Category {
+#     pub name: String,
+# }
+#
+# impl Category {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#         Table::new("category", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# pub struct Product {
+#     pub name: String,
+# }
+#
+# pub fn product_table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#     Table::new("product", db)
+#         .with_id_column("id")
+#         .with_column_of::<String>("name")
+#         .with_column_of::<String>("category_id")
+#         .with_one("category", "category_id", Category::table)
 .with_expression("category", |t| {
     t.get_subquery_as::<Category>("category").unwrap()
         .select_column("name")
         .expect("Category has a 'name' column")
 })
+# }
 ```
 
 The key difference from the previous chapter: `get_ref_as` narrows with `IN (subquery)` to *fetch*
@@ -59,6 +90,48 @@ Here's the real thing — verbatim from `bakery_model3/src/client.rs`, a client 
 `order_count` is computed by the database:
 
 ```rust
+# use vantage_surrealdb::surrealdb::SurrealDB;
+# use vantage_surrealdb::thing::Thing;
+# use vantage_surrealdb::types::AnySurrealType;
+# use vantage_table::table::Table;
+# use vantage_types::entity;
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Bakery {
+#     pub name: String,
+# }
+#
+# impl Bakery {
+#     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Bakery> {
+#         Table::new("bakery", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Order {
+#     pub is_deleted: bool,
+# }
+#
+# impl Order {
+#     pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Order> {
+#         Table::new("order", db)
+#             .with_id_column("id")
+#             .with_column_of::<Thing>("client")
+#             .with_column_of::<bool>("is_deleted")
+#     }
+# }
+#
+# #[entity(SurrealType)]
+# #[derive(Debug, Clone, PartialEq, Default)]
+# pub struct Client {
+#     pub name: String,
+# }
+#
+# impl Client {
 pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Client> {
     Table::new("client", db)
         .with_id_column("id")
@@ -73,6 +146,7 @@ pub fn surreal_table(db: SurrealDB) -> Table<SurrealDB, Client> {
             orders.get_count_query()
         })
 }
+# }
 ```
 
 The generated query has this shape (illustrative):

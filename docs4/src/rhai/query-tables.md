@@ -15,7 +15,7 @@ vocabulary, and it runs when the table is built, never when a data script runs.
 The script's last expression must be a `select()`, built with the backend's namespaced functions
 (`sql::` for the SQL databases, `surreal::` for SurrealDB):
 
-<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_rhai_source_is_read_only_and_filters -->
+<!-- tested: vantage-sql tests/common/vista/product.rs vista_yaml_rhai_source_is_read_only_and_filters -->
 ```yaml
 name: expensive_products
 columns:
@@ -45,7 +45,7 @@ sqlite:
 script's scope as `base`, and `inherit:` copies the columns and relations to keep. The script
 transforms the base query instead of building one:
 
-<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_base_aggregates_into_declared_column -->
+<!-- tested: vantage-sql tests/common/vista/client_orders.rs vista_yaml_base_aggregates_into_declared_column -->
 ```yaml
 name: client_totals
 id_column: client_id

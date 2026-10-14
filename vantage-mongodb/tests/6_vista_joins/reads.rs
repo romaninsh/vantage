@@ -8,9 +8,7 @@ use vantage_dataset::prelude::*;
 use vantage_mongodb::AnyMongoType;
 use vantage_vista::{Capability, FilterOp, SortDirection};
 
-use super::{
-    ORDER, TestResult, column, orders, pair, resolver, seed, setup, spec, teardown, text,
-};
+use super::{ORDER, TestResult, column, orders, pair, resolver, seed, setup, spec, teardown, text};
 
 #[tokio::test]
 async fn dotted_column_reads_joined_value() -> TestResult {

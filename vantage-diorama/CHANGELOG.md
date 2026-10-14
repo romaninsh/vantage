@@ -2,44 +2,178 @@
 
 ## 0.15.0 — 2026-10-14
 
-- Vista 2.0: breaking API changes; see the migration guide (phase 5).
-- Absorbs `vantage-diorama-aggregate`: the aggregation vocabulary is `vantage_diorama::aggregate`,
-  and the separate crate is gone.
+### Breaking changes
+
+- `Dio::with_condition_eq` and the mutating `Dio::with_order` are removed. A Dio is immutable;
+  `dio.derive()` builds a narrowed one (`with_condition`, `with_order`, `with_search`,
+  `with_query`, then `build().await`).
+- `Dio::with_query` is removed; use `dio.derive().with_query(&q).build().await`.
+- `Dio::augment(resolver, ..)` is `DioBuilder::augment(augmentations)`. `Detail::Catalog(name)` is
+  `Detail::Resolved { resolver, name }`, so the resolver travels with the detail, and
+  `Augmentation::augment_row` takes no resolver.
+- `Dio::reload` is removed; build a new Dio.
+- Cache tables are named by the Dio's query: `name`, or `name?key`, with `%`, `?` and control
+  characters percent-encoded. `make_dio_as` names and `get_ref`'s `-via-` tables are gone.
+- `Dio::watch` is crate-private; `DioBuilder::live()` starts the follow at build.
+- `Dio::vista()` is `Dio::cached()`.
+- `Dio::cache()` is gone: callbacks write through `LoaderCx::cache()` / `LoaderCx::reconcile`,
+  and reads go through `dio.cached()`.
+- `Dio::cache_table_name()` is `dio.diagnostics().await?.cache_table` (`diagnostics` feature).
+- An id-less insert is `flash(ChangeFlash::insert_new(record))` and runs through the Lens writer;
+  the new id is `FlashOutcome::id`.
+- Facade (`cached()`) writes await `Dio::flash`: they return once confirmed, or with the error
+  once rolled back. Writes on one Dio run one at a time, in order.
+- `fetch_window_ordered` and `fetch_window_ordered_counted` are
+  `Dio::fetch(window, &query) -> Fetched { page, refused }`.
+- `flash_insert`, `flash_patch`, `flash_replace`, `flash_delete` and `flash_returning_id` are one
+  `Dio::flash(ChangeFlash) -> FlashOutcome`; build a patch with `ChangeFlash::partial(id, fields)`.
+- `handle_event`, `patched`, `removed`, `notify_record_changed`, `notify_dataset_changed`,
+  `notify_seeded`, `reconcile_value` and `reconcile_values` are replaced by `apply_change` and
+  `reconcile(snapshot)`.
+- `dio.record_scenery(id)` returns a builder: `.sugar(s)`, `.seed(row)`, `.load_on_miss()`, then
+  `.open().await`. `record_scenery_sugared` and `record_scenery_with` are removed.
+- `RecordStatus::Stale`, `RowStatus::{Stale, Loading, NotFound}`, `ValueStatus::Stale` and
+  `EnrichedRecord.dirty_fields` are removed; the status enums and `EnrichedRecord` are
+  `#[non_exhaustive]`. `RecordStatus::Loading` and `Incomplete` are now produced.
+- `request_refresh` on table, record and value sceneries is `refresh_source`.
+- `live_table_scenery_count` is removed (read `diagnostics().await?.sceneries`);
+  `take_write_worker_handle` is behind the `test-util` feature.
+- `Dio::master_aggregate`, `Diorama`, `composition`, `HotTier`, `dio::refresh` and `DioError`
+  are removed.
+- `Lens::make_dio` and `make_dio_as` are `lens.dio(vista).build().await`; `build()` fails on a
+  vista without an id column.
+- The Lens hooks `on_start`, `on_start_blocking`, `on_load_chunk`, `on_refresh`, `refresh_every`
+  and `on_flash` become `Loader::eager`/`Loader::paged`, `Refresher` and `writer`. Each callback
+  takes an owned `LoaderCx`.
+- `on_event`, `on_list_page`, `on_load_detail`, `total_provider`, `cache_ttl`, `LensDefaults` and
+  `Lens::defaults()` are removed: a paged loader reports its total with `ChunkSink::set_total`, `cache_ttl` is
+  `Refresher::max_age`, and two-pass is declared through augmentation.
+- `cache_source`, `cache_at` and `cache_in_memory` are `cache(Cache::backend(..))`,
+  `cache(Cache::redb(path))` and `cache(Cache::memory())`.
+- `Lens::new()` and `LensBuilder::new()` are `Lens::builder()`.
+- `LensBuildError` is gone: `build()` returns `vantage_core::Result<Arc<Lens>>`, and each refusal
+  names its `setting`.
+- `refresh_on_open`, `viewport_debounce`, `augment_workers` and `write_queue_capacity` move to
+  `Tuning::default().with_*(..)`, set through `tuning(..)`.
+- `LensBuilder::debug_datasource` is behind the `diagnostics` feature.
+- `ChunkQuery` and `QueryDescriptor` are `vantage_vista::VistaQuery`.
+- `SortDir` is `vantage_vista::SortDirection`.
+- `OpCondition` is `vantage_vista::Condition`.
+- Builder `where_eq` and `where_op` are one `filter(Condition)`; `exclusive()` is gone (every open
+  is its own view); `initial_range` is gone (the first viewport is `0..page_size`).
+- `SceneryDiagnostic::refcount` is `shared_by`.
+- Builder `sort(col, SortDir)` is `order(col, SortDirection)`.
+- `terms_supported(&[OpCondition])` is `filters_supported(&[Condition])`.
+- `count_where` takes `Vec<Condition>`.
+- `CappedScenery` (and ui-diorama's `open_tail`) is the builder's `limit(n)` and `tail(n)`.
+- `set_sort` is `set_order(Option<(col, dir)>)`; `set_filters(pairs)` and `set_filter_terms` are
+  one `set_filters(Vec<Condition>)`; `filter_terms()` is `view_stats().filters`.
+- `set_viewport(range)` plus `set_shown_range(Option<range>)` is `set_viewport(loaded, shown)`;
+  an empty `shown` means nothing is on screen.
+- `TableScenery::is_loading()` is `load_state() == LoadState::Loading`.
+- `TableScenery::demanded_columns` left the trait.
+- Every `TableScenery` method is required (no default bodies); `row_by_id` is new.
+- Value scenery builder methods (`aggregate`, `count`, `count_where`, `sum`, `max`, `min`,
+  `custom`), the core `Aggregate`, `CustomAggregate`, `CustomAggregateFuture` and
+  `boxed_custom_aggregate` are replaced by `dio.value_scenery(impl Aggregation)`.
+- `LensCallbacks`, `SceneryChunkTarget`, `ChunkWrite`, `ChunkRow`, `FlushReport`, the
+  `Dio*Callback` aliases, the `boxed_*` helpers and `DioShell` are crate-private.
+- `debug`, `stats`, `DebugTap`, `ProcessStats`, `process_stats`, `Dio::debug_tap`,
+  `Dio::diagnostics`, `DioDiagnostics` and `SceneryDiagnostic` are behind the `diagnostics`
+  feature. `debug::{dur, bytes, pct}` are crate-private.
+- Rhai record and servo `save()` are `flash()`; a rejected servo write throws "flash failed: …".
+- `rhai::{cbor_to_dynamic, dynamic_to_cbor, record_to_map}` are `vantage_vista::rhai::…`.
+- `Activity`, `ActivitySignal`, `LensBuilder::activity_signal` and `standby_refresh_every` are
+  removed.
+- The master row hint `get_vista_value_with_row` is gone; `Fetch::Custom` closures take
+  `(Vista, Record)`, the narrowed detail and the listed row.
+- The prelude is `Aggregation`, `ChangeEvent`, `ChangeFlash`, `Dio`, `Lens`, `RecordScenery`,
+  `Servo`, `TableScenery` and `ValueScenery`. Import `Cache`, `Loader`, `LoaderCx`,
+  `Augmentation` and the rest from the crate root; the prelude's `VistaCatalog` is gone (use
+  `vantage_vista::Catalog`).
+- The `augment`, `dio`, `lens`, `ops`, `scenery` and `servo` modules are private; their items are
+  at the crate root. The root `VistaCapabilities` re-export is gone (use `vantage_vista::`).
+- vantage-diorama-aggregate is folded in: its vocabulary is `vantage_diorama::aggregate`, and the
+  crate and its prelude are gone.
+- `AggregateLens`, `AggregateLensBuilder` and `AggregateLens::{at, in_memory, with_backend, value,
+  retain, close, derive}` are replaced by `dio.aggregate(agg)` and `dio.value_scenery(agg)`.
+- `derive_value` is `dio.aggregate(AsRows::new(alias, agg))`; `CountWhere` is
+  `Where::new(conditions, Count::rows())`.
+- `Sum::new`, `Avg::new`, `Min::new`, `Max::new` and `Distinct::new` are `::of`.
+- `Aggregation::compute(rows)` is `compute(rows, schema)` with a required `reads()`;
+  `GroupReducer` gains `reads()` and the schema on `reduce`, and the `Reduce` closure takes
+  `&VistaMetadata`.
+- `AggregateValue` and its cache persistence are removed: a reopen recomputes from the source's
+  cache.
+- `AggregateLensBuilder::debounce` is `Tuning::with_aggregate_debounce` on the source's Lens.
+- `AggregationCatalog::group_by` returns `GroupBy<GroupReduction>`.
+- `DerivedDio` is gone: the returned `Dio` is the handle.
+- `AggregateOutput` is sealed. Aggregate logs use the `vantage_diorama::aggregate` target.
+- Aggregates of one source are named `<source>#aggregate` in the debug tap and diagnostics.
+- `Where` converts an operand by its column's declared type and compares an untyped column as
+  given; a tagged cell no longer matches a text operand. `Conditions::{matches, narrow}` take the
+  schema.
+- A derived `GroupBy` key column takes the source key column's type.
+- `LoadState::Failed(LoadFailure)` names the failed `Clause` (`Filter(column)`, `Order(column)`,
+  `Search`); `LoadState` is not `Copy`, and `ViewState::derive` takes `&LoadState`.
+- `LoadState`, `ImportOutcome`, `DioDiagnostics`, `SceneryDiagnostic`, `Fetched`, `Tuning` and
+  the view-stats types are `#[non_exhaustive]`. Matches on `CacheStatus`, `ChangeEvent`, `Clause`,
+  `Detail`, `DioEvent`, `Fetch`, `FlashKind`, `IdStrategy`, `ServoStatus` and `Source` need a `_`
+  arm.
+- `Augmentation`, `MergeRule` and `AggregationSpec` are built through `Augmentation::new`,
+  `MergeRule::lift` / `lift_all` and `AggregationSpec::new`.
+- `ChangeFlash::new` is private; use the kind constructors.
+- `LoaderCx::id_column()` is removed; use `cx.master().id_column()`.
+- `Dio::master()` returns `&Vista`.
+- Custom `CacheBackend` and `CacheTable` implement every method, including the new
+  `meta_refreshed_at` and `meta_copied_at` pairs; `clear` forgets both.
+- `diagnostics()` returns a `Result`.
+- The Lens writer returns `Result<FlashOutcome>`, and reports the id of an id-less insert
+  (`FlashOutcome::applied().with_id(id)`).
+- A paged loader receives the view's whole `VistaQuery`. An `or_eager` start runs only for a
+  master without `Window`. A paged view whose query leaves a clause the master refuses is served
+  from a whole copy made through `or_eager`, or fails.
+- Writes are confined to the Dio's query: a record outside the set is `Conflict`, a patch of a row
+  the set doesn't hold is `NotFound`. Under a writer, a `Clear` becomes one `Delete` per row.
+- A confirmed write publishes `RecordInserted`, `RecordRemoved` or `RecordChanged` by
+  membership.
+- `DioEvent::RefreshFailed { error }` reports a failed live re-read.
+- Identical table opens no longer return the same `Arc`: each open is its own view.
+
+### Other changes
+
 - Table sceneries are owned views over a shared row index: identical opens share one set of rows,
   and each view keeps its own query, viewport and cap. Changing one view's query re-points only
   that view (copy-on-write); the other views keep their rows.
 - Table scenery builder options `filter(Condition)`, `search`, `order`, `limit(n)` and `tail(n)`.
   On the handle: `set_filters(Vec<Condition>)`, `set_order(Option<(col, dir)>)`,
-  `set_viewport(loaded, shown)`, `row_by_id` and `refresh_source`. Every `TableScenery` method is
-  required.
-- Removed: `CappedScenery` (use `limit`/`tail`), `exclusive()` (every open is its own view),
-  `SortDir` (use `vantage_vista::SortDirection`), `OpCondition` (use `vantage_vista::Condition`),
-  `where_eq`/`where_op`, `set_sort`, `set_filter_terms`, `set_shown_range`, `request_refresh`.
-- Record scenery builder: `dio.record_scenery(id)` with `sugar`, `seed` and `load_on_miss`, then
-  `open()`. `record_scenery_sugared` and `record_scenery_with` are removed.
-- Status variants: `RecordStatus::Loading` and `Incomplete` are produced; the `Stale` variants,
-  `RowStatus::{Loading, NotFound}` and `EnrichedRecord.dirty_fields` are removed. The status enums
-  are `#[non_exhaustive]`.
+  `set_viewport(loaded, shown)`, `row_by_id` and `refresh_source`.
+- `load_on_miss()` on the record builder reads the master on a cache miss, and caches the row
+  only when the Dio admits it.
 - The Lens hands back the live Dio when one with the same cache identity, augmentations and
   `live` setting is held.
-- `dio.derive()` builds a narrowed Dio (`with_condition`, `with_order`, `with_search`,
-  `with_query`, then `build()`). `Dio::with_query` is removed.
-- `dio.value_scenery(aggregation)` and `dio.aggregate(aggregation)` replace the value scenery
-  builder methods and `AggregateLens`. `Aggregation::compute` takes the source schema, and
-  `Aggregation::reads` reports what it reads. `Where` converts operands by the column's declared
-  type and compares untyped columns as given.
-- `Refresher::max_age` works without `every`: it checks staleness at build and at open and starts
-  no timer.
-- `DioEvent::RefreshFailed { error }` for a failed live re-read. A rollback of stacked flashes
-  restores the last confirmed row.
+- `Lens::builder()` takes `Cache`, `Loader`, `Refresher`, `writer` and `Tuning`.
+- `Dio::residual()` and `Dio::id_column()`.
+- Every residual clause is evaluated over a complete set or fails loudly.
+- A condition or order on a dotted path under an augmented column stays local instead of reaching
+  the master.
+- The facade advertises `Search` and `FilterOps`, and reads keep only rows the Dio's residual
+  admits.
+- `Dio::reconcile` and `LoaderCx::reconcile` take a full set and skip rows with a write in flight.
+- A rollback of stacked flashes restores the last confirmed row.
+- `Refresher::max_age` stamps each refresh and schedules a background refresh of a stale cache.
+  It works without `every`: it then checks staleness at build and at open and starts no timer.
+- A lagged or invalidated live follow re-reads its set, retrying a failed re-read with backoff.
+- `Dio::refresh()` without a refresher re-reads the way the set was loaded.
 - Sorted single-pass rows held whole update in place on a live insert, patch or delete, with no
   reseed. A two-pass listing reads a whole cached copy, and a confirmed insert or delete splices
   the index.
+- Eager and two-pass views evaluate their query with vista's evaluator.
 - `search_supported` is true for a paged view with an eager fallback.
-- New `CacheTable::{meta_copied_at, set_meta_copied_at}` (required).
-- The prelude is `Aggregation`, `ChangeEvent`, `ChangeFlash`, `Dio`, `Lens`, `RecordScenery`,
-  `Servo`, `TableScenery` and `ValueScenery`. `scenery` is a private module; its items are at the
-  crate root.
+- `DioDiagnostics` gains `cache_table` and `live`.
+- New `diagnostics` and `test-util` features.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
 
 ## 0.14.3 — 2026-10-11
 
