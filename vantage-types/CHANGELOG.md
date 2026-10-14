@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 — 2026-10-14
+
+- The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or
+  behaviour change.
+
 ## 1.0.0 — 2026-10-03
 
 - Stable release. The API hasn't changed since 2026-08-09 (8 weeks); no code changes.
