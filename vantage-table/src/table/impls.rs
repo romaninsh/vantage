@@ -6,6 +6,7 @@ pub mod refereces;
 pub mod selectable;
 pub mod sorting;
 pub mod spec;
+pub mod traverse;
 pub mod vista_metadata;
 // pub mod valueset;
 

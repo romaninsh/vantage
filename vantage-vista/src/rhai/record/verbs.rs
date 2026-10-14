@@ -1,14 +1,11 @@
 //! The `Record` type's Rhai registration: `record()`/`record(id)` on
 //! `Table`, field access, staging and inspection verbs.
 
-use std::sync::Arc;
-
 use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 
 use super::RecordDraft;
 use super::dotted::set_dotted;
 use super::flash::{tracked, try_delete, try_flash};
-use crate::VistaResolver;
 use crate::rhai::convert::{cbor_to_dynamic, dynamic_to_cbor};
 use crate::rhai::handle::Handle;
 use crate::rhai::read::{RhaiResult, id_string, rhai_err};
@@ -17,26 +14,20 @@ use crate::rhai::vocab::Writes;
 /// Register the `Record` type and its verbs, plus `record()`/`record(id)` on
 /// `Table`. `writes` governs `flash()`/`delete()`: under [`Writes::Denied`]
 /// the record exists but every write throws.
-pub(crate) fn register_record(
-    engine: &mut Engine,
-    resolver: Option<Arc<dyn VistaResolver>>,
-    writes: Writes,
-) {
+pub(crate) fn register_record(engine: &mut Engine, writes: Writes) {
     engine.register_type_with_name::<RecordDraft>("Record");
 
-    let r = resolver.clone();
     let w = writes.clone();
     engine.register_fn("record", move |h: &mut Handle| -> RecordDraft {
-        RecordDraft::new_row(h.clone(), r.clone(), w.clone())
+        RecordDraft::new_row(h.clone(), w.clone())
     });
 
-    let r = resolver;
     let w = writes;
     engine.register_fn(
         "record",
         move |h: &mut Handle, id: Dynamic| -> RhaiResult<RecordDraft> {
             let id = id_string(id)?;
-            RecordDraft::load(h.clone(), r.clone(), w.clone(), &id).map_err(rhai_err)
+            RecordDraft::load(h.clone(), w.clone(), &id).map_err(rhai_err)
         },
     );
 
@@ -98,15 +89,15 @@ fn get_field(r: &RecordDraft, col: &str) -> Dynamic {
 }
 
 fn id_column(r: &RecordDraft) -> RhaiResult<String> {
-    let (handle, gate) = {
+    let handle = {
         let guard = r.inner.lock().unwrap();
         if let Some(col) = &guard.id_column {
             return Ok(col.clone());
         }
-        (guard.handle.clone(), guard.gate.clone())
+        guard.handle.clone()
     };
     // Resolved without the lock: the resolver may block on I/O.
-    let vista = handle.write_target(gate.resolver()).map_err(rhai_err)?;
+    let vista = handle.write_target(None).map_err(rhai_err)?;
     let col = vista.id_column().unwrap_or("id").to_string();
     r.inner.lock().unwrap().id_column = Some(col.clone());
     Ok(col)

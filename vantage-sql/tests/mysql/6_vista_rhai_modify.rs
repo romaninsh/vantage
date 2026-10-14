@@ -74,7 +74,7 @@ mysql:
         self.orders_spec(&format!("  table: {}", self.orders_t))
     }
 
-    fn resolver(&self) -> SpecResolver<MysqlVistaSpec> {
+    fn resolver(&self) -> Arc<dyn SpecResolver<MysqlVistaSpec>> {
         let map: IndexMap<String, MysqlVistaSpec> =
             [("orders".to_string(), self.plain_orders_spec())]
                 .into_iter()

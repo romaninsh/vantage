@@ -178,7 +178,7 @@ A reference names its target *by spec name* — so the factory needs a way to fi
 current spec at traversal time. That's the **spec resolver**, attached once:
 
 ```rust
-let resolver: SpecResolver<SqliteVistaSpec> =
+let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
     Arc::new(move |name: &str| specs.get(name).cloned());
 let factory = db.vista_factory().with_resolver(resolver);
 let category = factory.from_yaml(category_yaml)?;
@@ -188,9 +188,10 @@ let row = /* a category row */;
 let products = category.get_ref("products", Some(&row))?;
 ```
 
-[`SpecResolver<S>`](vantage_vista::SpecResolver) is the same type for every driver, with the
-driver's spec type as `S`. The resolver is a plain closure — back it with an in-memory map, a folder of `.yaml` files, or a
-hot-reloading inventory. Because targets are re-resolved on every traversal, editing a spec changes
+[`SpecResolver<S>`](vantage_vista::SpecResolver) is the same trait for every driver, with the
+driver's spec type as `S`. Any `Fn(&str) -> Option<S>` closure implements it (annotate its
+argument as `&str`), and a type of your own can implement `resolve` directly — back it with an
+in-memory map, a folder of `.yaml` files, or a hot-reloading inventory. Because targets are re-resolved on every traversal, editing a spec changes
 what the *next* traversal builds. Without a resolver, a traversal falls back to a column-less
 target and the next query fails loudly.
 

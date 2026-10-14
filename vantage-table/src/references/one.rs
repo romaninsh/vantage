@@ -7,12 +7,9 @@ use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use vantage_core::{Result, error};
 use vantage_types::{EmptyEntity, Entity, Record};
+use vantage_vista::{JoinKey, Reference as VistaReference};
 
-use crate::{
-    references::{Cardinality, Reference},
-    table::Table,
-    traits::table_source::TableSource,
-};
+use crate::{references::Reference, table::Table, traits::table_source::TableSource};
 
 pub struct HasOne<T: TableSource, SourceE: Entity<T::Value>, TargetE: Entity<T::Value>> {
     /// Foreign key column on the source table (e.g. "bakery_id")
@@ -72,8 +69,8 @@ where
         (self.foreign_key.clone(), target_id.to_string())
     }
 
-    fn foreign_key(&self) -> &str {
-        &self.foreign_key
+    fn vista_reference(&self, name: &str, target: String, _source_id: &str) -> VistaReference {
+        VistaReference::has_one(name, target, JoinKey::to_target_id(&self.foreign_key))
     }
 
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any> {
@@ -88,10 +85,6 @@ where
             .downcast_ref::<T>()
             .expect("data source type mismatch in HasOne::build_target_erased");
         Box::new((self.build_target)(ds.clone()).into_entity::<EmptyEntity>())
-    }
-
-    fn cardinality(&self) -> Cardinality {
-        Cardinality::HasOne
     }
 
     fn resolve_from_row(

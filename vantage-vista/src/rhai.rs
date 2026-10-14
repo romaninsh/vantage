@@ -12,7 +12,8 @@
 //!
 //! [`Terminals`] picks which terminals a host gets, and a
 //! [`VistaResolver`](crate::VistaResolver) given through
-//! [`DataVocab::with_resolver`] backs `table(name)`. Backends add their own
+//! [`DataVocab::with_resolver`] backs `table(name)`; a driver builds one over
+//! its factory with [`script_tables`]. Backends add their own
 //! verbs through [`TableShell::register_rhai_extensions`](crate::TableShell::register_rhai_extensions).
 //! Terminal futures run through [`block_on`].
 //!
@@ -34,6 +35,7 @@ mod no_rows;
 mod read;
 mod record;
 mod runtime;
+mod tables;
 mod traverse;
 mod vocab;
 mod write;
@@ -48,6 +50,7 @@ pub use import::{IMPORT_CANCELLED, IMPORT_CANCELLED_SKIPPED};
 pub(crate) use lazy::lazy_value_closure;
 pub use record::RecordDraft;
 pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, preview_script, run_script};
+pub use tables::script_tables;
 pub use vocab::{DataVocab, Terminals, Writes};
 
 #[cfg(test)]

@@ -83,7 +83,7 @@ async fn setup() -> SurrealVistaFactory {
     ]
     .into_iter()
     .collect();
-    let resolver: SpecResolver<SurrealVistaSpec> =
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
         Arc::new(move |name: &str| specs.get(name).cloned());
     SurrealVistaFactory::new(db).with_resolver(resolver)
 }

@@ -4,10 +4,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use vantage_core::{Result, error};
-use vantage_vista::{
-    Column, ColumnFlag, JoinKey, NoExtras, Reference, ReferenceSugar, Vista, VistaFactory,
-    VistaMetadata, VistaSpec,
-};
+use vantage_table::table::spec::spec_references;
+use vantage_vista::{Column, ColumnFlag, NoExtras, Vista, VistaFactory, VistaMetadata, VistaSpec};
 
 use super::affinity::conform_record;
 use super::{MemoryCatalog, MemoryTableShell};
@@ -132,23 +130,9 @@ fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
             }
         };
         metadata = metadata.with_column(column);
-        // `references: <table>` on a column is a has_one keyed by the column.
-        match &col.references {
-            Some(ReferenceSugar::Sugar(target)) => {
-                metadata = metadata.with_reference(Reference::has_one(
-                    name,
-                    target,
-                    JoinKey::to_target_id(name),
-                ));
-            }
-            Some(ReferenceSugar::Full(r)) => {
-                metadata = metadata.with_reference(r.to_reference(name, &id)?);
-            }
-            None => {}
-        }
     }
-    for (name, r) in &spec.references {
-        metadata = metadata.with_reference(r.to_reference(name, &id)?);
+    for reference in spec_references(spec, &id)? {
+        metadata = metadata.with_reference(reference);
     }
     Ok(metadata)
 }

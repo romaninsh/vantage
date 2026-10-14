@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-10-14
+
+- Vista 2.0 driver cleanup: builds against vantage-diorama 0.15.0 and vantage-vista 2.0.0.
+
 ## 0.6.10 — 2026-10-05
 
 - Builds against vantage-diorama 0.14.0.

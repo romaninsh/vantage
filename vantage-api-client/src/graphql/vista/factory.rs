@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use vantage_core::{Result, error};
+use vantage_table::table::spec::spec_references;
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
@@ -34,7 +35,7 @@ type SpecRegistry = Arc<RwLock<HashMap<String, GraphqlApiVistaSpec>>>;
 pub struct GraphqlApiVistaFactory {
     api: GraphqlApi,
     specs: SpecRegistry,
-    resolver: Option<SpecResolver<GraphqlApiVistaSpec>>,
+    resolver: Option<Arc<dyn SpecResolver<GraphqlApiVistaSpec>>>,
 }
 
 impl GraphqlApiVistaFactory {
@@ -58,7 +59,7 @@ impl GraphqlApiVistaFactory {
     /// `GraphqlApi`, so every target is queried on the same endpoint; it
     /// cannot point a reference at another driver. A target it does not know
     /// fails the traversal.
-    pub fn with_resolver(mut self, resolver: SpecResolver<GraphqlApiVistaSpec>) -> Self {
+    pub fn with_resolver(mut self, resolver: Arc<dyn SpecResolver<GraphqlApiVistaSpec>>) -> Self {
         self.resolver = Some(resolver);
         self
     }
@@ -93,7 +94,7 @@ impl GraphqlApiVistaFactory {
     /// The installed resolver, else one over the internal registry; either
     /// way paired with this factory's API (see `lowering`).
     fn target_resolver(&self) -> TargetSpecResolver {
-        let specs: SpecResolver<GraphqlApiVistaSpec> = match &self.resolver {
+        let specs: Arc<dyn SpecResolver<GraphqlApiVistaSpec>> = match &self.resolver {
             Some(resolver) => resolver.clone(),
             None => {
                 let registry = self.specs.clone();
@@ -166,11 +167,12 @@ pub(crate) fn wrap_spec_table(
     spec: &GraphqlApiVistaSpec,
     resolver: TargetSpecResolver,
 ) -> Result<Vista> {
-    let mut metadata = metadata_from_table(&table, false);
-    let source_id = spec.resolve_id_column("id");
-    for (relation, reference) in &spec.references {
-        metadata = metadata.with_reference(reference.to_reference(relation, &source_id)?);
-    }
+    let metadata = spec_references(spec, &spec.resolve_id_column("id"))?
+        .into_iter()
+        .fold(
+            metadata_from_table(&table, false),
+            VistaMetadata::with_reference,
+        );
     Ok(wrap(table, spec.name.clone(), metadata, Some(resolver)))
 }
 

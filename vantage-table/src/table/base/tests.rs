@@ -1,6 +1,5 @@
 use super::*;
 use crate::mocks::{MockReference, mock_table_source::MockTableSource};
-use crate::references::Cardinality;
 
 #[test]
 fn computed_column_replacing_a_stored_one_keeps_positions() {
@@ -36,8 +35,8 @@ fn vista_references_build_each_join_by_its_kind() {
 
     let mut table = Table::<MockTableSource, EmptyEntity>::new("t", MockTableSource::new())
         .with_id_column("code");
-    let owner = MockReference::new(Cardinality::HasOne, "owner_id");
-    let lines = MockReference::new(Cardinality::HasMany, "t_code");
+    let owner = MockReference::has_one("owner_id");
+    let lines = MockReference::has_many("t_code");
     table.add_ref("owner", Box::new(owner));
     table.add_ref("lines", Box::new(lines));
 
@@ -47,18 +46,5 @@ fn vista_references_build_each_join_by_its_kind() {
             VistaReference::has_one("owner", "target_table", JoinKey::to_target_id("owner_id")),
             VistaReference::has_many("lines", "target_table", JoinKey::new("code", "t_code")),
         ]
-    );
-}
-
-#[test]
-fn a_cardinality_is_its_join_kind() {
-    use vantage_vista::ReferenceKind;
-    assert_eq!(
-        ReferenceKind::from(Cardinality::HasOne),
-        ReferenceKind::HasOne
-    );
-    assert_eq!(
-        ReferenceKind::from(Cardinality::HasMany),
-        ReferenceKind::HasMany
     );
 }

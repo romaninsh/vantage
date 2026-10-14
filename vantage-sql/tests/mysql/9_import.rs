@@ -222,7 +222,8 @@ mysql:
         .into_iter()
         .collect();
     let map = Arc::new(map);
-    let resolver: SpecResolver<MysqlVistaSpec> = Arc::new(move |n: &str| map.get(n).cloned());
+    let resolver: Arc<dyn SpecResolver<MysqlVistaSpec>> =
+        Arc::new(move |n: &str| map.get(n).cloned());
     let factory = db.vista_factory().with_resolver(resolver);
 
     assert!(

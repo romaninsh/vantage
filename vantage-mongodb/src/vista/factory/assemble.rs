@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 #[cfg(not(feature = "rhai"))]
 use vantage_core::error;
+use vantage_table::table::spec::spec_references;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::EmptyEntity;
 use vantage_vista::{ReferenceSpec, Vista, VistaFactory, VistaMetadata};
@@ -18,17 +19,49 @@ use crate::vista::spec::{
     MongoColumnExtras, MongoReferenceExtras, MongoTableExtras, MongoVistaSpec,
 };
 
-/// The table's Vista metadata. Join targets carry their built table's name;
-/// a spec entry point renames them to spec names (`name_spec_targets`).
-pub(super) fn mongo_metadata(table: &Table<MongoDB, EmptyEntity>) -> VistaMetadata {
-    // MongoDB sorts on any field.
-    table.vista_metadata(VistaMetadataOptions {
+/// MongoDB sorts on any field and carries every column flag.
+fn metadata_options() -> VistaMetadataOptions {
+    VistaMetadataOptions {
         orderable: Orderable::All,
-        references: true,
-        contained: true,
         column_flags: true,
         ..VistaMetadataOptions::default()
+    }
+}
+
+/// A typed table's Vista metadata. Join targets carry their built table's
+/// name.
+pub(super) fn mongo_metadata(table: &Table<MongoDB, EmptyEntity>) -> VistaMetadata {
+    table.vista_metadata(VistaMetadataOptions {
+        references: true,
+        contained: true,
+        ..metadata_options()
     })
+}
+
+/// A spec-built table's Vista metadata. Each reference, a `references:`
+/// entry or a column-level `references:`, is lowered from the spec, so its
+/// target is the spec name a resolver knows (not the collection the target
+/// reads) and a `mongo: { rhai: }` script rides along as its build script.
+/// Contained relations come from the table.
+fn spec_metadata(
+    table: &Table<MongoDB, EmptyEntity>,
+    spec: &MongoVistaSpec,
+) -> Result<VistaMetadata> {
+    let mut metadata = table.vista_metadata(metadata_options());
+    for mut lowered in spec_references(spec, &table.id_field_name())? {
+        if let Some(code) = spec.references.get(&lowered.name).and_then(build_script) {
+            lowered = lowered.with_build_script(code)?;
+        }
+        metadata = metadata.with_reference(lowered);
+    }
+    Ok(table
+        .vista_contained()
+        .into_iter()
+        .fold(metadata, VistaMetadata::with_reference))
+}
+
+fn build_script(reference: &ReferenceSpec<MongoReferenceExtras>) -> Option<String> {
+    reference.driver.mongo.as_ref()?.rhai.clone()
 }
 
 impl MongoVistaFactory {
@@ -69,10 +102,12 @@ impl VistaFactory for MongoVistaFactory {
         if modify.is_some() {
             return Err(missing_rhai("modify"));
         }
-        let script =
-            |r: &ReferenceSpec<MongoReferenceExtras>| r.driver.mongo.as_ref()?.rhai.clone();
         #[cfg(not(feature = "rhai"))]
-        if let Some((relation, _)) = spec.references.iter().find(|(_, r)| script(r).is_some()) {
+        if let Some((relation, _)) = spec
+            .references
+            .iter()
+            .find(|(_, r)| build_script(r).is_some())
+        {
             return Err(error!(
                 "reference declares a `rhai:` build script but vantage-mongodb was built without the `rhai` feature",
                 vista = spec.name.as_str(),
@@ -80,8 +115,7 @@ impl VistaFactory for MongoVistaFactory {
             ));
         }
         let table = self.table_from_spec(&spec)?;
-        let mut metadata = mongo_metadata(&table);
-        table.name_spec_targets(&mut metadata, &spec.references, script)?;
+        let metadata = spec_metadata(&table, &spec)?;
         // A spec that declares nothing beyond `_id` reads documents as stored,
         // like a bare `from_table`, instead of projecting them down to `_id`.
         let column_paths = if is_bare(&table) {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0 — 2026-10-14
+
+- Vista 2.0 driver cleanup: one generic spec builder for the three dialects; spec `keys:` honoured.
+
 ## 0.8.0 — 2026-10-10
 
 - MySQL Vistas: ordering, quicksearch, page size, `fetch_page`, `fetch_window` and `fetch_next`
