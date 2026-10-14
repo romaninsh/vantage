@@ -1,19 +1,9 @@
-//! Table is our generic implementation of remote record collection, that may have columns and supports
-//! column operations (like sorting or filtering).
-//!
-//! Table<E, S> is defined over E=Entity and S=TableSource
-//!
-//! In practice, it's benificial to use a single struct that implements:
-//!  - TableSource (defined in this crate)
-//!  - QuerySource (defined in vantage-expressions)
-//!  - SelectSource (defined in vantage-expessions)
-//!
-//! Table<_, S: QuerySource> and Table<_, S: SelectSource> will define
-//! additional properties.
-//!
-//! Type erasure for cross-driver work lives at the Vista layer in
-//! `vantage-vista`.
-//! A table abstraction defined over a datasource and entity
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
+//! `Table<T, E>`: a record collection with columns, conditions, ordering and
+//! pagination, over a [`TableSource`](crate::traits::table_source::TableSource)
+//! `T` and an entity `E`. A source that also implements query or select
+//! sources unlocks the extra methods under `impls`. Type erasure for
+//! cross-driver work lives in `vantage-vista`.
 
 pub mod base;
 pub use base::*;

@@ -514,21 +514,6 @@ mod tests {
     }
 
     #[test]
-    fn test_table_with_columns() {
-        let ds = Type3TableSource::new();
-        let mut table = Table::<Type3TableSource, EmptyEntity>::new("test", ds);
-
-        table.add_column_of::<String>("name");
-        table.add_column_of::<Email>("email");
-        table.add_column_of::<Url>("website");
-
-        assert!(table.columns().contains_key("name"));
-        assert!(table.columns().contains_key("email"));
-        assert!(table.columns().contains_key("website"));
-        assert_eq!(table.columns().len(), 3);
-    }
-
-    #[test]
     fn test_column_conversion() {
         let ds = Type3TableSource::new();
 

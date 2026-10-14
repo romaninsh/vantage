@@ -1,36 +1,22 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! # Vantage Table
 //!
-//! Table = DataSet with Columns
+//! A `Table` is a dataset with columns. This crate defines `Table`, `Column` and
+//! the `TableSource` trait that database drivers implement.
 //!
-//! This crate provides definition for Columns, TableSource - necessary trait for Database SDKs to implement.
-//!
-//! Type erasure for cross-driver work lives one layer up in [`vantage-vista`](https://docs.rs/vantage-vista):
-//! wrap any typed `Table<T, E>` with `db.vista_factory().from_table(table)?` to get a `Vista`
-//! that talks `Record<ciborium::Value>` regardless of the underlying driver.
-//!
-//! ## Example
+//! Type erasure for cross-driver work lives in
+//! [`vantage-vista`](https://docs.rs/vantage-vista): wrap a typed table with
+//! `db.vista_factory().from_table(table)?` to get a `Vista` that talks
+//! `Record<ciborium::Value>` whatever the driver.
 //!
 //! ```rust,ignore
-//! use vantage_table::prelude::{Column, Table};
+//! use vantage_table::prelude::Table;
 //! use vantage_expressions::expr;
 //!
-//! // Create a new table with a datasource
-//! let mut table = Table::new("users", my_datasource);
-//!
-//! // Add columns
-//! table.add_column(Column::new("name"));
-//! table.add_column(Column::new("email").with_alias("user_email"));
-//!
-//! // Add conditions
-//! table.add_condition(expr!("age > {}", 18));
-//! table.add_condition(expr!("status = {}", "active"));
-//!
-//! // Or use the builder pattern
 //! let table = Table::new("users", my_datasource)
-//!     .with(|t| {
-//!         t.add_column(Column::new("name"));
-//!         t.add_condition(expr!("active = {}", true));
-//!     });
+//!     .with_id_column("id")
+//!     .with_column_of::<String>("name")
+//!     .with_condition(expr!("age > {}", 18));
 //! ```
 
 pub mod traits;

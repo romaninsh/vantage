@@ -5,7 +5,13 @@
 # tolerance: how many lost regions count as run-to-run noise. A run that loses no more than this
 #            has nothing to restore.
 
+vantage-api-client:
+  tolerance: 10
+
 vantage-core:
+  tolerance: 10
+
+vantage-csv:
   tolerance: 10
 
 vantage-dataset:
@@ -24,6 +30,25 @@ vantage-expressions:
 
 vantage-memory:
   tolerance: 10
+
+vantage-mongodb:
+  tolerance: 10
+
+vantage-redb:
+  tolerance: 10
+
+vantage-rhai:
+  tolerance: 10
+
+vantage-sql:
+  tolerance: 10
+
+vantage-table:
+  tolerance: 10
+  exclude:
+    # Test fixture: exercised wherever it stands in for a backend.
+    - src/mocks.rs
+    - src/mocks/**
 
 vantage-types:
   tolerance: 10

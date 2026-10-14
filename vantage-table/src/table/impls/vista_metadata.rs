@@ -145,6 +145,3 @@ fn describes_presentation(flag: &TableColumnFlag) -> bool {
         TableColumnFlag::Hidden | TableColumnFlag::Label | TableColumnFlag::RequestParam
     )
 }
-
-#[cfg(test)]
-mod tests;

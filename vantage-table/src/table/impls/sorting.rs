@@ -62,7 +62,6 @@ pub trait OrderByExt<C> {
     fn descending(&self) -> OrderBy<C>;
 }
 
-// Implementation for Expression<T> — the standard condition type for SQL/SurrealDB backends.
 impl<T: Clone + Send + Sync + 'static> OrderByExt<Expression<T>> for Expression<T> {
     fn ascending(&self) -> OrderBy<Expression<T>> {
         OrderBy::ascending(self.clone())

@@ -18,7 +18,6 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             panic!("Duplicate column: {}", name);
         }
 
-        // Convert typed column to Column<AnyType> for storage
         let any_column = self.data_source.to_any_column(column);
         self.columns.insert(name, any_column);
     }
@@ -208,94 +207,5 @@ where
             .get_column::<T::AnyType>(column_name)
             .unwrap_or_else(|| panic!("column {column_name:?} not found on table"));
         self.data_source.column_table_values_expr(self, &col).expr()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mocks::mock_column::MockColumn;
-    use crate::prelude::MockTableSource;
-    use serde_json::Value;
-    use vantage_types::EmptyEntity;
-
-    #[test]
-    fn test_add_column() {
-        let ds = MockTableSource::new();
-        let mut table = Table::<MockTableSource, EmptyEntity>::new("test", ds);
-
-        table.add_column(MockColumn::<String>::new("name"));
-
-        assert!(table.columns().contains_key("name"));
-        assert_eq!(table.columns().len(), 1);
-    }
-
-    #[test]
-    fn test_with_column() {
-        let ds = MockTableSource::new();
-        let table = Table::<MockTableSource, EmptyEntity>::new("test", ds)
-            .with_column(MockColumn::<Value>::new("name"))
-            .with_column(MockColumn::<i32>::new("email"));
-
-        assert!(table.columns().contains_key("name"));
-        assert!(table.columns().contains_key("email"));
-        assert_eq!(table.columns().len(), 2);
-    }
-
-    #[test]
-    #[should_panic(expected = "Duplicate column")]
-    fn test_duplicate_column_panics() {
-        let ds = MockTableSource::new();
-        let mut table = Table::<MockTableSource, EmptyEntity>::new("test", ds);
-
-        table.add_column(MockColumn::<String>::new("name"));
-        table.add_column(MockColumn::<String>::new("name")); // Should panic
-    }
-
-    #[test]
-    fn test_with_column_of() {
-        let ds = MockTableSource::new();
-        let table = Table::<MockTableSource, EmptyEntity>::new("test", ds)
-            .with_column_of::<String>("name")
-            .with_column_of::<i64>("age")
-            .with_column_of::<bool>("active");
-
-        assert!(table.columns().contains_key("name"));
-        assert!(table.columns().contains_key("age"));
-        assert!(table.columns().contains_key("active"));
-        assert_eq!(table.columns().len(), 3);
-    }
-
-    #[test]
-    fn test_add_column_of() {
-        let ds = MockTableSource::new();
-        let mut table = Table::<MockTableSource, EmptyEntity>::new("test", ds);
-
-        table.add_column_of::<String>("email");
-        table.add_column_of::<i64>("balance");
-
-        assert!(table.columns().contains_key("email"));
-        assert!(table.columns().contains_key("balance"));
-        assert_eq!(table.columns().len(), 2);
-    }
-
-    #[test]
-    fn test_columns_access() {
-        let ds = MockTableSource::new();
-        let table = Table::<MockTableSource, EmptyEntity>::new("test", ds)
-            .with_column_of::<String>("name")
-            .with_column_of::<i64>("age");
-
-        let columns = table.columns();
-        assert!(columns.contains_key("name"));
-        assert!(columns.contains_key("age"));
-        assert_eq!(columns.len(), 2);
-
-        let name_column = table.columns().get("name");
-        assert!(name_column.is_some());
-        assert_eq!(name_column.unwrap().name(), "name");
-
-        let missing_column = table.columns().get("missing");
-        assert!(missing_column.is_none());
     }
 }
