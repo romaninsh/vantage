@@ -81,15 +81,6 @@ pub fn read_write_terminals() -> Terminals {
     }
 }
 
-/// Read and write terminals whose writes throw "writes aren't available
-/// here", with `list()` capped at `limit`.
-pub fn read_only_terminals(limit: Option<usize>) -> Terminals {
-    Terminals::ReadWrite {
-        limit,
-        writes: Writes::Denied("writes aren't available here".into()),
-    }
-}
-
 pub fn read_write(store: &MemoryStore) -> Host {
     host(store, read_write_terminals())
 }

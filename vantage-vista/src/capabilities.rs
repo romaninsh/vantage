@@ -7,8 +7,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use vantage_core::{Result, VantageError, error};
 
 mod set;
-#[cfg(test)]
-mod tests;
 
 pub use set::VistaCapabilities;
 

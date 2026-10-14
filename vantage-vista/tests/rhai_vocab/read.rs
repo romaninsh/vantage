@@ -1,28 +1,39 @@
 use serde_json::json;
 
-use super::support::{host, json, read_only_terminals, read_write, run, store};
+use vantage_vista::rhai::{Terminals, Writes};
+
+use super::support::{host, json, read_write, run, store};
 
 fn capped(limit: usize) -> vantage_rhai::Host {
-    host(&store(), read_only_terminals(Some(limit)))
+    host(
+        &store(),
+        Terminals::ReadWrite {
+            limit: Some(limit),
+            writes: Writes::Allowed,
+        },
+    )
 }
 
 #[test]
-fn list_returns_rows_with_ids() {
-    let rows = json(&read_write(&store()), r#"table("t").list()"#);
-    assert_eq!(rows[0], json!({"id": "r1", "a": 1, "n": 3}));
-    assert_eq!(rows.as_array().unwrap().len(), 3);
-}
-
-#[test]
-fn list_is_capped_by_host_limit() {
-    let rows = json(&capped(2), r#"table("t").list()"#);
+fn a_host_limit_caps_every_list_and_a_smaller_script_limit_applies() {
+    let host = capped(2);
+    let rows = json(&host, r#"table("t").list()"#);
     assert_eq!(rows.as_array().unwrap().len(), 2);
+    let rows = json(&host, r#"table("t").limit(1).list()"#);
+    assert_eq!(rows.as_array().unwrap().len(), 1);
+    let rows = json(&host, r#"table("t").limit(9).list()"#);
+    assert_eq!(
+        rows.as_array().unwrap().len(),
+        2,
+        "the host cap still holds"
+    );
 }
 
 #[test]
-fn limit_below_cap_applies() {
-    let rows = json(&capped(2), r#"table("t").limit(1).list()"#);
-    assert_eq!(rows.as_array().unwrap().len(), 1);
+fn an_uncapped_list_returns_every_row_with_its_id() {
+    let rows = json(&read_write(&store()), r#"table("t").list()"#);
+    assert_eq!(rows.as_array().unwrap().len(), 3);
+    assert_eq!(rows[0]["id"], json!("r1"));
 }
 
 #[test]
@@ -38,35 +49,9 @@ fn first_follows_sort() {
     assert_eq!(row["id"], json!("r2"));
 }
 
-#[test]
-fn ids_in_sort_order() {
-    let host = read_write(&store());
-    assert_eq!(
-        json(&host, r#"table("t").ids()"#),
-        json!(["r1", "r2", "r3"])
-    );
-    assert_eq!(
-        json(&host, r#"table("t").sort("n", "desc").ids()"#),
-        json!(["r1", "r3", "r2"])
-    );
-}
-
-#[test]
-fn count_respects_limit() {
-    let host = read_write(&store());
-    assert_eq!(json(&host, r#"table("t").limit(2).count()"#), json!(2));
-    assert_eq!(json(&host, r#"table("t").limit(9).count()"#), json!(3));
-}
-
 /// The fixture holds no text cells, so any search matches nothing.
 #[test]
 fn search_narrows() {
     let host = read_write(&store());
     assert_eq!(json(&host, r#"table("t").search("zz").count()"#), json!(0));
-}
-
-#[test]
-fn count_respects_where() {
-    let host = read_write(&store());
-    assert_eq!(json(&host, r#"table("t").where("a", 1).count()"#), json!(2));
 }

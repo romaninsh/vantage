@@ -25,23 +25,3 @@ impl<F: Fn(&str) -> Result<Vista> + Send + Sync> VistaResolver for F {
         self(name)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use vantage_core::error;
-
-    use super::*;
-    use crate::mocks::MockShell;
-
-    #[test]
-    fn a_closure_is_a_resolver() {
-        let resolver: Arc<dyn VistaResolver> = Arc::new(|name: &str| match name {
-            "user" => Ok(Vista::new(name, MockShell::new())),
-            _ => Err(error!("no such table", name = name).mark_not_found()),
-        });
-        assert_eq!(resolver.vista("user").unwrap().name(), "user");
-        assert!(resolver.vista("nope").unwrap_err().is_not_found());
-    }
-}

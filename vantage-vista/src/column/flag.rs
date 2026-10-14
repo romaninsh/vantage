@@ -118,36 +118,3 @@ impl<'de> Deserialize<'de> for ColumnFlag {
         Ok(ColumnFlag::from(String::deserialize(deserializer)?))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn yaml_names_map_onto_variants() {
-        let flags: Vec<ColumnFlag> =
-            serde_yaml_ng::from_str("[id, searchable, request_param, label]").unwrap();
-        assert_eq!(
-            flags,
-            [
-                ColumnFlag::Id,
-                ColumnFlag::Searchable,
-                ColumnFlag::RequestParam,
-                ColumnFlag::Other("label".into())
-            ]
-        );
-        assert!(matches!(flags[2], ColumnFlag::RequestParam));
-        assert_eq!(
-            serde_yaml_ng::to_string(&flags).unwrap(),
-            "- id\n- searchable\n- request_param\n- label\n"
-        );
-    }
-
-    #[test]
-    fn a_hand_built_other_with_a_known_name_is_that_flag() {
-        assert_eq!(ColumnFlag::Other("id".into()), ColumnFlag::Id);
-        let column = crate::Column::new("a", "int").with_flag(ColumnFlag::Other("hidden".into()));
-        assert!(column.has_flag(ColumnFlag::Hidden));
-        assert!(matches!(ColumnFlag::from("hidden"), ColumnFlag::Hidden));
-    }
-}

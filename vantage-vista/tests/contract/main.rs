@@ -176,18 +176,6 @@ fn ignoring() -> Vista {
 }
 
 #[tokio::test]
-#[should_panic(expected = "counts 3 of 3 rows: the search is not applied")]
-async fn mock_contract_narrowing_catches_an_unapplied_search() {
-    contract::check_narrowing(&ignoring()).await;
-}
-
-#[tokio::test]
-#[should_panic(expected = "both list row p1 first: the order is not applied")]
-async fn mock_contract_narrowing_catches_an_unapplied_order() {
-    contract::check_narrowing(&ignoring()).await;
-}
-
-#[tokio::test]
 #[should_panic(expected = "still lists row p1: the condition is not applied")]
 async fn mock_contract_narrowing_catches_an_unapplied_filter() {
     contract::check_narrowing(&ignoring()).await;

@@ -6,6 +6,10 @@ aws = { version = "latest", symlink_bins = "true" }
 description = "Regenerate the public-API snapshots in api/"
 run = "api/snapshot.sh"
 
+[tasks.test-matrix]
+description = "Per-test coverage matrix and overlap report for one package: mise run test-matrix <package>"
+run = "coverage/matrix.sh"
+
 # Debug builds with debuginfo leave each relink's object files in target/debug/deps
 # (macOS split-debuginfo = "unpacked"); thousands of them slow every rustc's startup.
 # [profile.dev] debug = false stops that; this clears leftovers. Run by hand, not per build.

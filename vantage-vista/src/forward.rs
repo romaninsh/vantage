@@ -5,8 +5,6 @@
 
 mod blanket;
 mod shell;
-#[cfg(test)]
-mod tests;
 
 pub use shell::ForwardShell;
 

@@ -1,9 +1,8 @@
 //! Every reader of a capability set sees every `Capability`.
 //!
-//! The 1.x lookup was a hand-kept string match that drifted (it had no arm
-//! for `can_filter_operators`). In 2.0 serde and the rhai `capabilities()` map
-//! are both generated from `Capability::iter()`: each lists every capability
-//! by name, and reads its own bit.
+//! Serde and the rhai `capabilities()` map are both generated from
+//! `Capability::iter()`: each lists every capability by name, and reads its
+//! own bit.
 
 use vantage_vista::{Capability, VistaCapabilities};
 

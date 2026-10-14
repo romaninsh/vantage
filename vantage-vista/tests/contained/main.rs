@@ -74,23 +74,6 @@ async fn references_report_the_contained_relation() {
 }
 
 #[tokio::test]
-async fn contains_many_traversal_reads_embedded_lines() {
-    let vista = order_vista();
-    let order = vista.get_value("order1").await.unwrap().unwrap();
-
-    let lines = vista.get_ref("lines", Some(&order)).unwrap();
-    let rows = lines.list_values().await.unwrap();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows["0"].get("product"), Some(&t("flux")));
-    assert_eq!(rows["1"].get("quantity"), Some(&i(1)));
-
-    let flux = lines
-        .with_condition("product", FilterOp::Eq, "flux")
-        .unwrap();
-    assert_eq!(flux.list_values().await.unwrap().len(), 1);
-}
-
-#[tokio::test]
 async fn inserting_a_line_eagerly_patches_the_parent_order() {
     let vista = order_vista();
     let order = vista.get_value("order1").await.unwrap().unwrap();

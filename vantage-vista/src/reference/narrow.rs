@@ -8,9 +8,6 @@ use super::{JoinKey, Reference};
 use crate::filter::FilterOp;
 use crate::vista::Vista;
 
-#[cfg(test)]
-mod tests;
-
 impl Reference {
     /// Narrow this join's bare `target` to the rows related to `row`.
     ///

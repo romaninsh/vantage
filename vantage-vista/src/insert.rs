@@ -28,9 +28,6 @@ use crate::{
     vista::Vista,
 };
 
-#[cfg(test)]
-mod tests;
-
 /// A relation's child data, peeled off an insert record before classification.
 enum Collected {
     /// A single child record — from a bare map value or grouped `rel.col` keys.

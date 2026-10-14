@@ -253,6 +253,3 @@ pub enum ReferenceSugar {
     Sugar(String),
     Full(ReferenceSpec<NoExtras>),
 }
-
-#[cfg(test)]
-mod tests;

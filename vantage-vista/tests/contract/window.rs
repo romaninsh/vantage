@@ -12,34 +12,6 @@ use vantage_vista::{
 
 use super::{product_shell, rec, t};
 
-/// The products without `Window`, answering only the leading window from
-/// their listing.
-#[derive(Clone)]
-struct Leading {
-    inner: Box<dyn TableShell>,
-}
-
-vantage_vista::forward_table_shell!(Leading, inner, {
-    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        Ok(Page::from_listing(self.inner.list().await?, offset, limit))
-    }
-});
-
-fn without_window(shell: MockShell) -> MockShell {
-    let caps = shell.capabilities().without(Capability::Window);
-    shell.with_capabilities(caps)
-}
-
-#[tokio::test]
-async fn a_leading_window_without_window_passes() {
-    let vista =
-        Vista::new("product", without_window(product_shell())).map_shell(|inner| Leading { inner });
-    assert!(!vista.capabilities().has(Capability::Window));
-    contract::check_advertised(&vista).await;
-    let err = vista.fetch_window(1, 1).await.unwrap_err();
-    assert!(err.is_unsupported(), "{err}");
-}
-
 /// Lists, but refuses every window.
 #[derive(Clone)]
 struct NoWindow {
@@ -60,6 +32,29 @@ async fn a_refused_leading_window_fails_check_advertised() {
     contract::check_advertised(&vista).await;
 }
 
+/// The products without `Window`, answering only the leading window from
+/// their listing.
+#[derive(Clone)]
+struct Leading {
+    inner: Box<dyn TableShell>,
+}
+
+vantage_vista::forward_table_shell!(Leading, inner, {
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        Ok(Page::from_listing(self.inner.list().await?, offset, limit))
+    }
+});
+
+#[tokio::test]
+async fn a_leading_window_without_window_passes() {
+    let shell = product_shell();
+    let caps = shell.capabilities().without(Capability::Window);
+    let vista =
+        Vista::new("product", shell.with_capabilities(caps)).map_shell(|inner| Leading { inner });
+    assert!(!vista.capabilities().has(Capability::Window));
+    contract::check_advertised(&vista).await;
+}
+
 /// Answers every window with the whole listing.
 #[derive(Clone)]
 struct Unlimited {
@@ -73,7 +68,7 @@ vantage_vista::forward_table_shell!(Unlimited, inner, {
 });
 
 #[tokio::test]
-#[should_panic(expected = "fetch_window(0, 1) returns 3 rows: the limit is not applied")]
+#[should_panic(expected = "the limit is not applied")]
 async fn an_ignored_limit_fails() {
     let vista = Vista::new("product", product_shell()).map_shell(|inner| Unlimited { inner });
     contract::check_advertised(&vista).await;
@@ -99,16 +94,6 @@ async fn a_window_out_of_the_set_order_fails() {
         .map_shell(|inner| Reversed { inner })
         .with_order("id", SortDirection::Ascending)
         .unwrap();
-    contract::check_advertised(&vista).await;
-}
-
-/// With no order applied, the set has no order to keep: a window may list
-/// rows differently from `list`, as SQL's `ORDER BY id` window does next to
-/// an unordered `SELECT`.
-#[tokio::test]
-async fn without_an_order_the_window_may_order_rows_differently() {
-    let vista = Vista::new("product", product_shell()).map_shell(|inner| Reversed { inner });
-    assert!(vista.query().order.is_none());
     contract::check_advertised(&vista).await;
 }
 

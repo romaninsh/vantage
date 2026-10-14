@@ -24,3 +24,6 @@ PR-REWRITE-LIST.md
 
 # The `surreal` CLI writes its command history into the working directory.
 /history.txt
+
+# Per-test coverage matrix runs (coverage/matrix.sh).
+/coverage/report/

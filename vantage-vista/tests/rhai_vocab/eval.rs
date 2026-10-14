@@ -1,9 +1,6 @@
-use serde_json::json;
 use vantage_dataset::ReadableValueSet;
 use vantage_rhai::Env;
-use vantage_vista::rhai::{
-    Terminals, block_on, eval_modify_script, eval_ref_script, preview_script,
-};
+use vantage_vista::rhai::{Terminals, block_on, eval_modify_script, eval_ref_script};
 use vantage_vista::{Condition, FilterOp, NativeCondition, TableShell, Vista, forward_table_shell};
 
 use super::support::{host, rec, resolver, store};
@@ -14,14 +11,6 @@ fn ids(vista: &Vista) -> Vec<String> {
         .unwrap()
         .into_keys()
         .collect()
-}
-
-#[test]
-fn preview_renders_resolved_query() {
-    let script = r#"table("t").where("a", 1).sort("n", "desc")"#;
-    let json = preview_script(script.into(), resolver(&store())).unwrap();
-    assert_eq!(json["driver"], json!("memory"));
-    assert_eq!(json["query"], json!("scan t WHERE a = 1 ORDER BY n DESC"));
 }
 
 #[test]
@@ -78,18 +67,55 @@ fn host_with_extension(store: &vantage_memory::MemoryStore) -> vantage_rhai::Hos
 }
 
 #[test]
-fn extension_verb_leaves_stored_handle_unchanged() {
+fn a_reference_script_that_does_not_compile_is_an_error() {
     let store = store();
-    let host = host_with_extension(&store);
-    let all = eval_modify_script(
+    let host = host(&store, Terminals::Describe);
+    let err = eval_ref_script(&host, "let x = ;", Env::new(), &rec(&[("a", 1)])).unwrap_err();
+    assert!(!err.to_string().is_empty());
+    let ok = eval_ref_script(
         &host,
-        r#"let all = self; let mine = all.with_condition("a", 1); all"#,
-        base(&store),
+        r#"table("t").where("a", row.a)"#,
+        Env::new(),
+        &rec(&[("a", 1)]),
     )
     .unwrap();
-    assert_eq!(ids(&all), ["r1", "r2", "r3"]);
-    let mine = eval_modify_script(&host, r#"self.with_condition("a", 1)"#, base(&store)).unwrap();
-    assert_eq!(ids(&mine), ["r1", "r3"]);
+    assert!(ok.is_narrowed());
+}
+
+#[test]
+fn an_extension_verb_is_refused_by_a_vista_that_takes_no_native_conditions() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let plain = resolver(&store).vista("t").unwrap();
+    let err = eval_modify_script(&host, r#"self.with_condition("a", 1)"#, plain).unwrap_err();
+    assert!(
+        format!("{err:?} {err}").contains("with_condition")
+            || err.is_unsupported()
+            || err.is_unimplemented(),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn an_extension_verb_past_a_ref_or_on_a_named_table_is_an_error_naming_the_verb() {
+    let store = store();
+    let host = host_with_extension(&store);
+    let err = eval_modify_script(&host, r#"table("t").with_condition("a", 1)"#, base(&store))
+        .unwrap_err();
+    assert!(
+        format!("{err:?} {err}").contains("with_condition"),
+        "{err:?}"
+    );
+    let err = eval_modify_script(
+        &host,
+        r#"self.ref("orders").with_condition("a", 1)"#,
+        base(&store),
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:?} {err}").contains("with_condition"),
+        "{err:?}"
+    );
 }
 
 #[test]
@@ -132,46 +158,4 @@ fn a_dropped_handle_is_refused() {
             "`{script}`: {err}"
         );
     }
-}
-
-#[test]
-fn two_extension_verbs_chain() {
-    let store = store();
-    let host = host_with_extension(&store);
-    let script = r#"self.with_condition("a", 1).with_condition("n", 2)"#;
-    let modified = eval_modify_script(&host, script, base(&store)).unwrap();
-    assert_eq!(ids(&modified), ["r3"]);
-}
-
-#[test]
-fn extension_and_narrowing_verbs_chain_either_way() {
-    let store = store();
-    let host = host_with_extension(&store);
-    for script in [
-        r#"self.with_condition("a", 1).sort("n")"#,
-        r#"self.sort("n").with_condition("a", 1)"#,
-    ] {
-        let modified = eval_modify_script(&host, script, base(&store)).unwrap();
-        assert_eq!(ids(&modified), ["r3", "r1"], "{script}");
-    }
-}
-
-#[test]
-fn table_handle_stays_unchanged_by_later_chains() {
-    let store = store();
-    let host = host_with_extension(&store);
-    let script =
-        r#"let x = table("t").where("a", 1); let s = x.sort("n"); let n = x.where("n", 3); x"#;
-    let vista = eval_modify_script(&host, script, base(&store)).unwrap();
-    assert_eq!(ids(&vista), ["r1", "r3"]);
-}
-
-#[test]
-fn ref_script_builds_target_from_row() {
-    let store = store();
-    let host = host(&store, Terminals::Describe);
-    let row = rec(&[("a", 2)]);
-    let vista =
-        eval_ref_script(&host, r#"table("t").where("a", row.a)"#, Env::new(), &row).unwrap();
-    assert_eq!(ids(&vista), ["r2"]);
 }

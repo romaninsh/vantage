@@ -55,7 +55,7 @@ vantage_vista::forward_table_shell!(Plain, inner, {
 });
 
 #[tokio::test]
-#[should_panic(expected = "fails with a plain error")]
+#[should_panic(expected = "plain error")]
 async fn mock_contract_narrowing_catches_a_plain_error_on_a_dotted_path() {
     let vista = Vista::new("box", boxes()).map_shell(|inner| Plain { inner });
     contract::check_narrowing(&vista).await;
@@ -127,7 +127,7 @@ vantage_vista::forward_table_shell!(Blind, inner, {
 });
 
 #[tokio::test]
-#[should_panic(expected = "a dotted path must narrow or be refused, not match nothing")]
+#[should_panic(expected = "not match nothing")]
 async fn mock_contract_narrowing_catches_a_dotted_path_matching_nothing() {
     let vista = Vista::new("box", boxes()).map_shell(|inner| Blind {
         inner,

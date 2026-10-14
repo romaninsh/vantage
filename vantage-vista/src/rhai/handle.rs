@@ -76,11 +76,6 @@ impl Handle {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn steps(&self) -> &[Step] {
-        &self.steps
-    }
-
     /// A new handle with `step` appended; `self` is left as it was.
     pub(crate) fn push(&self, step: Step) -> Handle {
         let mut steps = Vec::with_capacity(self.steps.len() + 1);

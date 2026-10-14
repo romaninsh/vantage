@@ -1,0 +1,13 @@
+# @llm-protected: per-package coverage settings. Only the user changes this file.
+#
+# exclude:   globs relative to the crate. Regions under them count neither as covered nor as
+#            lost, so no test is written or kept for them.
+# tolerance: how many lost regions count as run-to-run noise. A run that loses no more than this
+#            has nothing to restore.
+
+vantage-vista:
+  tolerance: 10
+  exclude:
+    # Test fixture: exercised wherever it stands in for a backend.
+    - src/mocks.rs
+    - src/mocks/**

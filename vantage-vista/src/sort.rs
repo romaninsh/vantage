@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Sort direction at the `Vista` boundary.
 //!
 //! Vista mirrors `vantage-table`'s [`SortDirection`] but defines its own copy

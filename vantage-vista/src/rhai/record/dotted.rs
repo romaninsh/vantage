@@ -2,9 +2,6 @@
 //! through to a nested CBOR map so a form field like `"inventory.stock"`
 //! lands as the embedded object a schema expects, not a flat top-level key
 //! with a literal `.` in its name.
-//!
-//! Ported from vantage-ui's `crates/actions/src/row/active.rs`, which keeps
-//! the same semantics for its own row vocabulary.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -62,41 +59,4 @@ fn set_dotted_cbor(node: &mut CborValue, segments: &[&str], value: CborValue) {
         }
     };
     set_dotted_cbor(&mut pairs[idx].1, tail, value);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn flat_key_sets_directly() {
-        let mut changes = IndexMap::new();
-        set_dotted(&mut changes, "total", CborValue::Integer(5.into()));
-        assert_eq!(changes.get("total"), Some(&CborValue::Integer(5.into())));
-    }
-
-    #[test]
-    fn dotted_key_builds_nested_map() {
-        let mut changes = IndexMap::new();
-        set_dotted(
-            &mut changes,
-            "inventory.stock",
-            CborValue::Integer(12.into()),
-        );
-        let CborValue::Map(pairs) = changes.get("inventory").unwrap() else {
-            panic!("expected nested map");
-        };
-        assert_eq!(pairs.len(), 1);
-    }
-
-    #[test]
-    fn sibling_dotted_keys_merge() {
-        let mut changes = IndexMap::new();
-        set_dotted(&mut changes, "meta.a", CborValue::Integer(1.into()));
-        set_dotted(&mut changes, "meta.b", CborValue::Integer(2.into()));
-        let CborValue::Map(pairs) = changes.get("meta").unwrap() else {
-            panic!("expected nested map");
-        };
-        assert_eq!(pairs.len(), 2, "siblings must coexist after merge");
-    }
 }

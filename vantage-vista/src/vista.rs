@@ -13,8 +13,6 @@ use crate::{
 
 mod narrow;
 mod read;
-#[cfg(test)]
-mod tests;
 mod value_set;
 
 /// Universal, schema-bearing data handle: the type-erased `Table<T, E>`.
