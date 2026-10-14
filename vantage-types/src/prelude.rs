@@ -1,25 +1,15 @@
-//! Prelude module for vantage-types
-//!
-//! This module re-exports commonly used traits and types for convenient importing.
-//!
-//! # Example
-//! ```rust
-//! use vantage_types::prelude::*;
-//! ```
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
+//! Commonly used traits, types and macros, for `use vantage_types::prelude::*;`.
 
-// Re-export core types
 pub use crate::null::InvariantValue;
 pub use crate::record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 pub use crate::terminal_render::{RichText, Span, Style, TerminalRender};
 
-// Re-export macros
 pub use crate::vantage_type_system;
 
-// Re-export proc-macros
 pub use vantage_types_entity::entity;
 
 #[cfg(feature = "serde")]
 pub use crate::Entity;
 
-// Re-export EmptyEntity
 pub use crate::EmptyEntity;
