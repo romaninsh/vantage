@@ -1,8 +1,7 @@
 //! Stage 7 demo: ValueScenery as a "menu-bar badge" surface.
 //!
-//! A polling loop watches three scenery types (Count, Sum,
-//! Custom-as-average) and prints them on every generation bump. We
-//! apply an external insert and watch the values follow.
+//! Three value sceneries (count, sum, average) print on every generation
+//! bump. We apply an external insert and watch the values follow.
 //!
 //! Run with:
 //!   cargo run -p vantage-diorama --example badge_demo
@@ -14,6 +13,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
+use vantage_diorama::aggregate::{Avg, Count, Sum};
 use vantage_diorama::{Cache, ChangeEvent, Lens, Loader, LoaderCx, ValueScenery};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
@@ -90,28 +90,9 @@ async fn main() -> Result<()> {
         .build()?;
 
     let dio = lens.dio(master()).build().await?;
-    let count = dio.value_scenery().count().open().await?;
-    let sum = dio.value_scenery().sum("price").open().await?;
-    let avg = dio
-        .value_scenery()
-        .custom(|dio| {
-            let cached = dio.cached();
-            async move {
-                let rows = cached.list_values().await?;
-                let mut s: i64 = 0;
-                let mut n: i64 = 0;
-                for (_, r) in rows {
-                    if let Some(CborValue::Integer(i)) = r.get("price") {
-                        s += i64::try_from(*i).unwrap_or(0);
-                        n += 1;
-                    }
-                }
-                let v = if n == 0 { 0 } else { s / n };
-                Ok(CborValue::Integer(v.into()))
-            }
-        })
-        .open()
-        .await?;
+    let count = dio.value_scenery(Count::rows()).open().await?;
+    let sum = dio.value_scenery(Sum::of("price")).open().await?;
+    let avg = dio.value_scenery(Avg::of("price")).open().await?;
 
     show("initial", &count, &sum, &avg);
 

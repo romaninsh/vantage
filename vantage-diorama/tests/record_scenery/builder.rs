@@ -72,7 +72,11 @@ async fn load_on_miss_never_caches_a_row_outside_the_dio() -> Result<()> {
     // Dio's residual holds it and the master's `get` still returns `b`.
     let shell = team_shell().with_capabilities(VistaCapabilities::new());
     let parent = cold_dio(&shell).await?;
-    let dio = parent.with_query(&cond("team", FilterOp::Ne, "blue")).await?;
+    let dio = parent
+        .derive()
+        .with_query(&cond("team", FilterOp::Ne, "blue"))
+        .build()
+        .await?;
     assert_eq!(dio.residual().conditions.len(), 1, "the master refused it");
 
     let scenery = dio.record_scenery("b").load_on_miss().open().await?;

@@ -214,7 +214,9 @@ async fn native_import_is_confined_to_the_residual() -> Result<()> {
         MockShell::new().with_capabilities(VistaCapabilities::new().with(Capability::Import));
     let not_lost = dio_over(&shell)
         .await?
+        .derive()
         .with_query(&support::cond("status", FilterOp::Ne, "lost"))
+        .build()
         .await?;
     assert!(
         !not_lost.residual().conditions.is_empty(),

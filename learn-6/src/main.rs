@@ -8,6 +8,7 @@ use dataset_ui_adapters::ratatui_dio;
 use files::File;
 use readings::Readings;
 use vantage_aws::prelude::*;
+use vantage_diorama::aggregate::Sum;
 use vantage_diorama::prelude::*;
 use vantage_vista::prelude::*;
 
@@ -65,9 +66,10 @@ async fn run() -> VantageResult<()> {
     // the viewport's detail pass hydrates whatever is on screen first.
     let scenery = dio.table_scenery().page_size(200_000).open().await?;
 
-    // Grand total of the ROWS column — recomputes reactively as files
-    // hydrate, so the status bar counts up while data arrives.
-    let totals = dio.value_scenery().sum("rows").open().await?;
+    // Grand total of the ROWS column. `rows` is augmented, so each
+    // computation first hydrates every cached file: the total appears once
+    // they have all landed, then follows the bucket's changes.
+    let totals = dio.value_scenery(Sum::of("rows")).open().await?;
 
     ratatui_dio::SceneryTable::new(scenery)
         .with_column("FILENAME", "Key", 0)

@@ -75,6 +75,7 @@ impl Lens {
             servo_census: std::sync::atomic::AtomicUsize::new(0),
             record_census: std::sync::atomic::AtomicUsize::new(0),
             watch_cancel: tokio::sync::watch::Sender::new(()),
+            owned_task: std::sync::OnceLock::new(),
         });
         let dio = Dio { inner };
         announce(&dio).await;

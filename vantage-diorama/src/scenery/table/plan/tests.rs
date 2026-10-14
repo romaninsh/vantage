@@ -66,7 +66,9 @@ async fn a_refused_order_is_a_residual_and_not_pushed() {
 async fn the_dio_residual_search_alone_is_a_residual() {
     let derived = dio(teams(false))
         .await
-        .with_query(&VistaQuery::new().with_search("x"))
+        .derive()
+        .with_search("x")
+        .build()
         .await
         .expect("derives");
     let plan = plan(&derived, VistaQuery::new());
@@ -78,7 +80,9 @@ async fn the_dio_residual_search_alone_is_a_residual() {
 async fn with_both_searches_left_the_residual_names_the_view_search() {
     let derived = dio(teams(false))
         .await
-        .with_query(&VistaQuery::new().with_search("x"))
+        .derive()
+        .with_search("x")
+        .build()
         .await
         .expect("derives");
     let plan = plan(&derived, VistaQuery::new().with_search("y"));

@@ -25,6 +25,10 @@ pub struct Tuning {
     /// master when it opens, replacing whatever the cache showed. Turn off
     /// for read-only or offline use.
     pub refresh_on_open: bool,
+    /// Cooldown after an aggregation over a Dio recomputes. The first change
+    /// in a burst is acted on at once; whatever arrives during the cooldown
+    /// is flushed once at its end, never dropped.
+    pub aggregate_debounce: Duration,
 }
 
 impl Default for Tuning {
@@ -34,6 +38,7 @@ impl Default for Tuning {
             viewport_debounce: Duration::from_millis(50),
             augment_workers: 1,
             refresh_on_open: true,
+            aggregate_debounce: Duration::from_millis(250),
         }
     }
 }
@@ -56,6 +61,11 @@ impl Tuning {
 
     pub fn with_refresh_on_open(mut self, enabled: bool) -> Self {
         self.refresh_on_open = enabled;
+        self
+    }
+
+    pub fn with_aggregate_debounce(mut self, window: Duration) -> Self {
+        self.aggregate_debounce = window;
         self
     }
 

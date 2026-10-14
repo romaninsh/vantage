@@ -6,7 +6,7 @@
 
 mod support;
 
-use support::{MockView, bucket_dio, cond, order};
+use support::{MockView, bucket_dio, cond};
 use vantage_vista::{FilterOp, SortDirection};
 
 #[tokio::test]
@@ -14,7 +14,9 @@ async fn condition_on_augmented_column_filters_locally() {
     // `name` is augmented from the `names` source; 1st and 3rd objects are John.
     let dio = bucket_dio()
         .await
+        .derive()
         .with_query(&cond("name", FilterOp::Eq, "John"))
+        .build()
         .await
         .expect("derives");
     assert_eq!(
@@ -42,7 +44,9 @@ async fn native_column_condition_filters_cheap_rows_without_forcing_hydration() 
     // (gray) rows immediately and does NOT force full hydration. No viewport set.
     let dio = bucket_dio()
         .await
+        .derive()
         .with_query(&cond("kind", FilterOp::Eq, "red"))
+        .build()
         .await
         .expect("derives");
 
@@ -71,7 +75,9 @@ async fn sort_on_augmented_column_orders_locally() {
     // the hydrated cache. Names: o1=John, o2=Jane, o3=John → asc: Jane, John, John.
     let dio = bucket_dio()
         .await
-        .with_query(&order("name", SortDirection::Ascending))
+        .derive()
+        .with_order("name", SortDirection::Ascending)
+        .build()
         .await
         .expect("derives");
 

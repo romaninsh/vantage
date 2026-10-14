@@ -1,5 +1,7 @@
 //! Deriving a narrowed Dio from a built one, and following references.
 
+mod builder;
+
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_types::Record;
@@ -7,47 +9,24 @@ use vantage_vista::{Vista, VistaQuery};
 
 use super::Dio;
 
+pub use builder::DeriveBuilder;
+
 impl Dio {
-    /// A new Dio narrowed by every clause of `query`, on the same Lens. This
-    /// Dio is left as it was.
+    /// Start a new Dio narrowed from this one. Its clauses are gathered on
+    /// the [`DeriveBuilder`] and applied together by
+    /// [`build`](DeriveBuilder::build); a search or order given there
+    /// replaces this Dio's, whether its master or its residual held it.
     ///
-    /// The master takes what it can through [`Vista::with_query`]. What it
-    /// refuses, and every clause on an augmented column, joins the derived
-    /// Dio's [`residual`](Self::residual), which diorama evaluates over the
-    /// rows it holds. A search or order in `query` replaces this Dio's,
-    /// whether the master or the residual held it.
-    ///
-    /// The derived Dio has a cache table of its own, keyed by everything it
-    /// is narrowed by, and shares this Dio's augmentations and live setting.
-    /// Opening that table, and running its eager start, is why this is async.
-    ///
-    /// Fails when the master rejects a clause outright (an unknown column),
-    /// and when `query` holds native conditions, which can't be re-applied
-    /// from a `VistaQuery` nor evaluated in memory.
-    pub async fn with_query(&self, query: &VistaQuery) -> Result<Dio> {
-        // A search in `query` replaces this Dio's, so the master is offered
-        // it with its own search cleared.
-        let mut master = self.master().clone();
-        if query.search.is_some() {
-            master.set_search(None)?;
-        }
-        let super::Plan { narrowed, refused } = self.inner.plan_on(master, query)?;
-
-        let mut residual = self.inner.residual.clone();
-        residual.conditions.extend(refused.conditions);
-        if query.search.is_some() {
-            residual.search = refused.search;
-        }
-        if query.order.is_some() {
-            residual.order = refused.order;
-        }
-
-        self.inner
-            .lens
-            .dio(narrowed)
-            .derived(self.inner.augmentations.clone(), self.inner.live, residual)
-            .build()
-            .await
+    /// ```ignore
+    /// let johns = dio
+    ///     .derive()
+    ///     .with_condition(owner_is_john)
+    ///     .with_order("name", SortDirection::Ascending)
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn derive(&self) -> DeriveBuilder {
+        DeriveBuilder::new(self.clone())
     }
 
     /// Follow `relation` from `row` to a new Dio over the related rows, on

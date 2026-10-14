@@ -18,7 +18,7 @@ use vantage_diorama::{Augmentation, Cache, Detail, Dio, Fetch, Lens, MergeRule, 
 use vantage_types::Record;
 use vantage_vista::{
     Capability, Column, Condition, FilterOp, TableShell, Vista, VistaCapabilities, VistaChange,
-    VistaChangeStream, VistaMetadata, VistaQuery, forward_table_shell, mocks::MockShell,
+    VistaChangeStream, VistaMetadata, forward_table_shell, mocks::MockShell,
 };
 
 const BURST: usize = 200;
@@ -139,11 +139,9 @@ async fn a_narrowed_child_follows_a_parent_burst_larger_than_the_bus() -> Result
 async fn a_derived_live_dio_filters_an_unfiltered_stream() -> Result<()> {
     let dio = live_dio(master(None)).await?;
     let in_transit = dio
-        .with_query(&VistaQuery::new().with_condition(Condition::new(
-            "status",
-            FilterOp::Eq,
-            "In transit",
-        )))
+        .derive()
+        .with_condition(Condition::new("status", FilterOp::Eq, "In transit"))
+        .build()
         .await?;
     assert!(
         in_transit.master().query().conditions.len() == 1,
@@ -195,7 +193,9 @@ async fn an_augmented_live_dio_filters_by_an_accepted_search() -> Result<()> {
         .build()
         .await?;
     let in_transit = dio
-        .with_query(&VistaQuery::new().with_search("transit"))
+        .derive()
+        .with_search("transit")
+        .build()
         .await?;
     assert!(
         in_transit.master().capabilities().has(Capability::Search)

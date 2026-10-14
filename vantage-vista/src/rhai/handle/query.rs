@@ -1,6 +1,6 @@
 //! A handle's narrowing as one [`VistaQuery`], for a consumer that re-applies
 //! it elsewhere, such as a quick filter deriving a Dio with
-//! `dio.with_query(&q)`.
+//! `dio.derive().with_query(&q).build()`.
 
 use vantage_core::{Result, error};
 

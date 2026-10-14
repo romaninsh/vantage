@@ -4,7 +4,7 @@ use vantage_core::Result;
 use vantage_vista::Vista;
 
 use super::{Dio, DioShell};
-use crate::scenery::{RecordSceneryBuilder, TableSceneryBuilder, ValueSceneryBuilder};
+use crate::scenery::{RecordSceneryBuilder, TableSceneryBuilder};
 use crate::servo::{IdStrategy, Servo, spawn_servo};
 
 impl Dio {
@@ -58,13 +58,6 @@ impl Dio {
     /// on first save, or commanded through the record's id column.
     pub fn servo_new(&self, strategy: IdStrategy) -> Servo {
         spawn_servo(self, None, strategy)
-    }
-
-    /// Start a [`ValueScenery`](crate::scenery::ValueScenery) builder.
-    /// Chain `.count()` / `.sum(col)` / `.custom(closure)` /
-    /// `.aggregate(...)`, then `.open().await`.
-    pub fn value_scenery(&self) -> ValueSceneryBuilder {
-        ValueSceneryBuilder::new(self.inner.clone())
     }
 
     /// The read-through facade: a fresh [`Vista`] over this Dio's cache.

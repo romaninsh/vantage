@@ -69,3 +69,7 @@ required-features = ["rhai"]
 [[test]]
 name = "debug_tap"
 required-features = ["diagnostics"]
+
+[[test]]
+name = "aggregate_debug_tap"
+required-features = ["diagnostics"]

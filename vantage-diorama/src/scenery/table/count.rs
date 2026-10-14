@@ -1,17 +1,13 @@
 //! Counting the rows a view would hold under a replacement set of runtime filters.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
-use tokio::task::JoinHandle;
 use vantage_core::{Context as _, Result, error};
 use vantage_vista::{Condition, VistaQuery};
 
-use crate::dio::DioInner;
+use crate::dio::{AbortOnDrop, DioInner};
 
 use super::plan::{Serving, admitted_by_view};
 use super::state::SharedRows;
@@ -71,24 +67,6 @@ fn answerable(view: &TableView, query: VistaQuery) -> bool {
     let (offered, sugar, planned) = shared.plan_query(&dio, query);
     let serving = Serving::decide(&shared, &dio, &offered, &sugar, planned.as_ref());
     !matches!(serving, Serving::Failed(_))
-}
-
-/// A join handle that aborts its task when dropped, so a caller that stops
-/// waiting for a count stops the query behind it.
-struct AbortOnDrop<T>(JoinHandle<T>);
-
-impl<T> Future for AbortOnDrop<T> {
-    type Output = std::result::Result<T, tokio::task::JoinError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx)
-    }
-}
-
-impl<T> Drop for AbortOnDrop<T> {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
 }
 
 /// `query` (the view query with the replacement filters, unordered), planned
@@ -152,26 +130,4 @@ async fn count_in_cache(
         .values()
         .filter(|row| admitted_by_view(dio, query, row))
         .count())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::AbortOnDrop;
-
-    #[tokio::test]
-    async fn dropping_the_guard_aborts_the_task() {
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        let guard = AbortOnDrop(tokio::spawn(async move {
-            let _tx = tx;
-            std::future::pending::<()>().await;
-        }));
-        drop(guard);
-        // The never-finishing task only releases its sender when it is aborted.
-        let closed = tokio::time::timeout(Duration::from_secs(5), rx)
-            .await
-            .expect("task was not aborted");
-        assert!(closed.is_err());
-    }
 }

@@ -680,7 +680,7 @@ log-message rewording.
 | `"list page dispatch"` | `req, dio, offset, limit, conditions, sort` | a two-pass list page is about to be fetched |
 | `"list page return"` | `req, rows, ms, index_len, complete` | that list page returned |
 | `"detail pass"` | `dio, requested, pending, already_complete` | a two-pass detail (augment) sweep queued its pending ids |
-| `"aggregate recompute"` | `aggregate, trigger, rows_in, rows_out, ms, unchanged` | a `vantage-diorama-aggregate` layer recomputed |
+| `"aggregate recompute"` | `aggregate, trigger, rows_in, rows_out, ms, unchanged` | an `aggregate` layer recomputed |
 
 `aggregate recompute`'s `trigger` is `initial`, `debounce-trailing`, `nudge`,
 `lagged`, or a `DioEvent` variant name (`RecordChanged`, `DatasetChanged`,

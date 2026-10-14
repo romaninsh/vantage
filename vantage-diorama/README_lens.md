@@ -280,7 +280,7 @@ let lens = Lens::new()
     .on_query(|dio, query| async move {
         // First time this query is seen, fetch from master if online.
         if is_online() {
-            let rows = dio.master().with_query(query.clone()).list_values().await?;
+            let rows = dio.master().clone().with_query(&query)?.0.list_values().await?;
             dio.cache().insert_values(rows).await?;
         }
         Ok(())
@@ -342,7 +342,7 @@ let lens = Lens::new()
         ..Default::default()
     })
     .on_query(|dio, query| async move {
-        let rows = dio.master().with_query(query).list_values().await?;
+        let rows = dio.master().clone().with_query(&query)?.0.list_values().await?;
         dio.cache().insert_values(rows).await?;
         Ok(())
     })

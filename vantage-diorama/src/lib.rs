@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(test), deny(clippy::unimplemented, clippy::todo))]
 
+pub mod aggregate;
 mod augment;
 // The debug tap and the live-instance tallies run in every build, because the
 // crate calls them throughout; the `diagnostics` feature publishes them.
@@ -22,7 +23,8 @@ mod stats;
 
 pub use augment::{Augmentation, BuildFn, Detail, Fetch, FetchFn, MergeRule, Source};
 pub use dio::{
-    Dio, DioBuilder, DioEvent, Fetched, Generation, ImportOutcome, WeakDio, WriteCapabilities,
+    DeriveBuilder, Dio, DioBuilder, DioEvent, Fetched, Generation, ImportOutcome, WeakDio,
+    WriteCapabilities,
 };
 #[cfg(feature = "diagnostics")]
 pub use dio::{DioDiagnostics, SceneryDiagnostic};
@@ -33,10 +35,10 @@ pub use lens::{
 pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashOutcome, FlashRejection};
 pub use scenery::sugar::{Sugar, SugarFn, SugarFuture};
 pub use scenery::{
-    Aggregate, Clause, CustomAggregate, EnrichedRecord, FilterOrigin, LoadFailure, LoadState,
-    RecordScenery, RecordSceneryBuilder, RecordStatus, RowStatus, RowStatusSummary, TableScenery,
+    Clause, EnrichedRecord, FilterOrigin, LoadFailure, LoadState, RecordScenery,
+    RecordSceneryBuilder, RecordStatus, RowStatus, RowStatusSummary, TableScenery,
     TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount, ViewFilter,
-    ViewState, ViewStats, boxed_custom_aggregate,
+    ViewState, ViewStats,
 };
 pub use servo::{IdStrategy, Servo, ServoStatus};
 

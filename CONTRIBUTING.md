@@ -6,7 +6,6 @@ The public API of these crates is recorded in `api/<crate>.txt`:
 
 - vantage-vista
 - vantage-diorama
-- vantage-diorama-aggregate
 
 Any change to that surface updates the snapshot in the same PR. CI regenerates the snapshots and
 fails on any difference, so the diff in `api/` is what reviewers read to see the API change.

@@ -2,14 +2,15 @@
 //! rest of the crate reaches it through.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use vantage_vista::{Vista, VistaMetadata, VistaQuery};
 
 use super::{
-    DetailState, DioEvent, WriteCapabilities, augment_scheduler, pending, query_index, worker,
+    AbortOnDrop, DetailState, DioEvent, WriteCapabilities, augment_scheduler, pending, query_index,
+    worker,
 };
 use crate::augment::Augmentation;
 use crate::lens::{CacheTable, Lens};
@@ -114,6 +115,9 @@ pub(crate) struct DioInner {
     /// task holds a receiver and returns as soon as it closes, so a quiet
     /// stream doesn't outlive its Dio.
     pub(crate) watch_cancel: tokio::sync::watch::Sender<()>,
+    /// A task that exists only to serve this Dio, such as the recomputation
+    /// feeding a derived aggregate. It ends when the last holder drops.
+    pub(crate) owned_task: OnceLock<AbortOnDrop>,
 }
 
 impl Drop for DioInner {
