@@ -21,9 +21,10 @@ pub fn shell() -> MockShell {
         .with_id_column("id");
     [("a", "alpha"), ("b", "beta"), ("c", "gamma")]
         .into_iter()
-        .fold(MockShell::new().with_metadata(metadata), |shell, (id, name)| {
-            shell.with_record(id, record(&[("id", id), ("name", name)]))
-        })
+        .fold(
+            MockShell::new().with_metadata(metadata),
+            |shell, (id, name)| shell.with_record(id, record(&[("id", id), ("name", name)])),
+        )
 }
 
 /// Shaped like a throttled REST API: one count request and one window request per load.
@@ -69,7 +70,10 @@ pub async fn serve_window(
 pub fn numbered(id: &str, n: Option<i64>) -> Record<CborValue> {
     let mut r = Record::new();
     r.insert("id".into(), CborValue::Text(id.into()));
-    r.insert("n".into(), n.map_or(CborValue::Null, |n| CborValue::Integer(n.into())));
+    r.insert(
+        "n".into(),
+        n.map_or(CborValue::Null, |n| CborValue::Integer(n.into())),
+    );
     r
 }
 
@@ -79,10 +83,10 @@ pub fn numbers_of(rows: &[(&str, Option<i64>)]) -> MockShell {
         .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
         .with_column(Column::new("n", "i64").with_flag(ColumnFlag::Orderable))
         .with_id_column("id");
-    rows.iter()
-        .fold(MockShell::new().with_metadata(metadata), |shell, (id, n)| {
-            shell.with_record(*id, numbered(id, *n))
-        })
+    rows.iter().fold(
+        MockShell::new().with_metadata(metadata),
+        |shell, (id, n)| shell.with_record(*id, numbered(id, *n)),
+    )
 }
 
 /// The `n` of every row the view shows, in row order.

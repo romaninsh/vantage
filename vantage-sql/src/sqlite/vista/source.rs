@@ -1,4 +1,4 @@
-//! `SqliteTableShell` — the generic [`SqlTableShell`] over
+//! `SqliteTableShell` — the generic `SqlTableShell` over
 //! `Table<SqliteDB, E>`.
 //!
 //! `AnySqliteType` already wraps `ciborium::Value`, so the boundary is a

@@ -21,8 +21,14 @@ const WITHIN: Duration = Duration::from_secs(10);
 fn team_shell() -> MockShell {
     MockShell::new()
         .with_metadata(meta(&["id", "name", "team"]))
-        .with_record("a", record(&[("id", "a"), ("name", "alpha"), ("team", "red")]))
-        .with_record("b", record(&[("id", "b"), ("name", "beta"), ("team", "blue")]))
+        .with_record(
+            "a",
+            record(&[("id", "a"), ("name", "alpha"), ("team", "red")]),
+        )
+        .with_record(
+            "b",
+            record(&[("id", "b"), ("name", "beta"), ("team", "blue")]),
+        )
 }
 
 /// A Dio over `shell` with an empty cache and no loader: nothing reaches the
@@ -113,7 +119,11 @@ async fn load_on_miss_on_a_lift_all_dio_caches_the_augmented_row() -> Result<()>
     assert!(eventually(WITHIN, || scenery.status() == RecordStatus::Fresh).await);
     let row = scenery.record().expect("the fetched row");
     assert_eq!(row.record.get("kind"), Some(&text("doc")));
-    assert_eq!(row.record.get("size"), Some(&text("big")), "the detail is in");
+    assert_eq!(
+        row.record.get("size"),
+        Some(&text("big")),
+        "the detail is in"
+    );
     Ok(())
 }
 

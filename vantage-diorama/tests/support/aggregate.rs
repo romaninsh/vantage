@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::aggregate::Reduce;
 #[cfg(feature = "diagnostics")]
 use vantage_diorama::Refresher;
+use vantage_diorama::aggregate::Reduce;
 use vantage_diorama::{Cache, Dio, Generation, Lens, LensBuilder, Loader, Tuning};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
@@ -51,26 +51,28 @@ pub fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
 }
 
+type GroupFn = fn(&CborValue, &[&Record<CborValue>], &VistaMetadata) -> Record<CborValue>;
+
 /// Orders and revenue per group: the "custom Rust callback" reducer a
 /// consumer writes.
-pub fn revenue()
--> Reduce<impl Fn(&CborValue, &[&Record<CborValue>], &VistaMetadata) -> Record<CborValue>> {
+pub fn revenue() -> Reduce<GroupFn> {
+    let reduce: GroupFn = |_key, rows, _schema| {
+        let total: i64 = rows
+            .iter()
+            .filter_map(|r| r.get("amount"))
+            .filter_map(|v| match v {
+                CborValue::Integer(i) => Some(i128::from(*i) as i64),
+                _ => None,
+            })
+            .sum();
+        let mut out = Record::new();
+        out.insert("orders".to_string(), int(rows.len() as i64));
+        out.insert("revenue".to_string(), int(total));
+        out
+    };
     Reduce::new(
         vec![Column::new("orders", "i64"), Column::new("revenue", "i64")],
-        |_key, rows, _schema| {
-            let total: i64 = rows
-                .iter()
-                .filter_map(|r| r.get("amount"))
-                .filter_map(|v| match v {
-                    CborValue::Integer(i) => Some(i128::from(*i) as i64),
-                    _ => None,
-                })
-                .sum();
-            let mut out = Record::new();
-            out.insert("orders".to_string(), int(rows.len() as i64));
-            out.insert("revenue".to_string(), int(total));
-            out
-        },
+        reduce,
     )
 }
 

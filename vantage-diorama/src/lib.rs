@@ -14,7 +14,7 @@ mod lens;
 mod ops;
 #[cfg(feature = "rhai")]
 pub mod rhai;
-pub mod scenery;
+mod scenery;
 mod servo;
 #[cfg(feature = "diagnostics")]
 pub mod stats;
@@ -33,12 +33,11 @@ pub use lens::{
     MemoryCache, MemoryCacheTable, RedbCache, RedbCacheTable, Refresher, Tuning,
 };
 pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashOutcome, FlashRejection};
-pub use scenery::sugar::{Sugar, SugarFn, SugarFuture};
 pub use scenery::{
     Clause, EnrichedRecord, FilterOrigin, LoadFailure, LoadState, RecordScenery,
-    RecordSceneryBuilder, RecordStatus, RowStatus, RowStatusSummary, TableScenery,
-    TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount, ViewFilter,
-    ViewState, ViewStats,
+    RecordSceneryBuilder, RecordStatus, RowStatus, RowStatusSummary, Sugar, SugarFn, SugarFuture,
+    TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount,
+    ViewFilter, ViewState, ViewStats,
 };
 pub use servo::{IdStrategy, Servo, ServoStatus};
 
@@ -48,15 +47,8 @@ pub use servo::{IdStrategy, Servo, ServoStatus};
 /// use vantage_diorama::prelude::*;
 /// ```
 pub mod prelude {
-    pub use crate::augment::{Augmentation, Detail, Fetch, MergeRule, Source};
-    pub use crate::dio::{Dio, DioEvent, Generation, WriteCapabilities};
-    pub use crate::lens::{
-        Cache, CacheBackend, CacheStatus, CacheTable, Lens, Loader, LoaderCx, RedbCache, Refresher,
-        Tuning,
+    pub use crate::aggregate::Aggregation;
+    pub use crate::{
+        ChangeEvent, ChangeFlash, Dio, Lens, RecordScenery, Servo, TableScenery, ValueScenery,
     };
-    pub use crate::ops::{ChangeEvent, ChangeFlash, FlashKind, FlashOutcome};
-    pub use crate::scenery::{
-        EnrichedRecord, RecordScenery, RecordStatus, RowStatus, TableScenery, ValueScenery,
-    };
-    pub use crate::servo::{IdStrategy, Servo, ServoStatus};
 }

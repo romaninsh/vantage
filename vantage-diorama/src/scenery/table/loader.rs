@@ -100,18 +100,20 @@ pub(crate) async fn viewport_loop(
         //
         // Requests from different views never absorb each other: each view
         // keeps its own viewport, and both are served.
-        while debounce_next {
-            match tokio::time::timeout(debounce, rx.recv()).await {
-                Ok(Some(next)) => {
-                    state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
-                    absorbed += 1;
-                    merge(&mut pending, next);
+        if debounce_next {
+            loop {
+                match tokio::time::timeout(debounce, rx.recv()).await {
+                    Ok(Some(next)) => {
+                        state.viewport_queue_depth.fetch_sub(1, Ordering::SeqCst);
+                        absorbed += 1;
+                        merge(&mut pending, next);
+                    }
+                    Ok(None) => {
+                        tracing::debug!(target: "vantage_diorama::viewport", "viewport_loop: channel closed mid-debounce, exiting");
+                        return;
+                    }
+                    Err(_) => break,
                 }
-                Ok(None) => {
-                    tracing::debug!(target: "vantage_diorama::viewport", "viewport_loop: channel closed mid-debounce, exiting");
-                    return;
-                }
-                Err(_) => break,
             }
         }
         let Some((_, latest)) = pending.shift_remove_index(0) else {

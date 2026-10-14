@@ -15,6 +15,7 @@ use vantage_api_adapters::axum_dio::DioRouter;
 use vantage_core::{Context, Result};
 use vantage_dataset::prelude::*;
 use vantage_diorama::prelude::*;
+use vantage_diorama::{Cache, Loader, LoaderCx};
 use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_vista::SortDirection;
 

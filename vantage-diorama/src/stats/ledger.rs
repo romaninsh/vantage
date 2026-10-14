@@ -16,6 +16,7 @@ use std::sync::{LazyLock, Mutex};
 /// second says rows arrived that the cache already held. Both should be near
 /// zero on a healthy table.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct FetchStats {
     pub table: String,
     /// Windows requested from the master.

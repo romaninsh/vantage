@@ -68,12 +68,12 @@ Each augmentation answers four questions — which detail Vista, how a master ro
 how it is fetched, and which columns to lift:
 
 ```rust
-Augmentation {
-    table:  "tfstate_detail".into(),  // catalog name of the detail Vista
-    source: Source::Column { from: "key".into(), to: None },
-    fetch:  Fetch::PerRow,
-    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
-}
+Augmentation::new(
+    Detail::Resolved { resolver, name: "tfstate_detail".into() }, // catalog name of the detail Vista
+    Source::Column { from: "key".into(), to: None },
+    Fetch::PerRow,
+    MergeRule::lift(["resources", "serial"]),
+)
 ```
 
 - `source` picks how a master row selects its detail: `Source::Id` matches master.id → detail.id;

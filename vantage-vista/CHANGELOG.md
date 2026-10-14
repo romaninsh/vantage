@@ -4,6 +4,14 @@
 
 - Vista 2.0: breaking API changes; see the migration guide (phase 5).
 - `SpecResolver` is a trait; `rhai::script_tables`; `Handle::with_resolver` is public, and `RecordDraft` constructors take the resolver from the handle.
+- `VistaQuery::cmp_rows`: the one row comparator, shared by `sort_rows` and diorama's sorted splice.
+- `eval::path_get` is crate-private; read cells with `eval::cell_get(row, path, &metadata)`.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is
+  (`VistaMetadata::search_columns`).
+- `ColumnFamily` and `Column::family()` classify a column's declared type (spec, SQL or Rust type
+  names). The rhai `new_id` uses it.
+- `MockShell::calls()` (`MockCalls`): call counters shared by clones.
+- `ReferenceSugar` is `#[non_exhaustive]`.
 
 ## 1.2.1 — 2026-10-07
 

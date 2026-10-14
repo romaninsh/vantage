@@ -90,9 +90,7 @@ impl Dio {
         if !rows.is_empty() {
             cache.insert_values(rows).await?;
         }
-        self.inner
-            .drop_vanished(cached.keys(), &keep, mark)
-            .await?;
+        self.inner.drop_vanished(cached.keys(), &keep, mark).await?;
         self.inner.stamp_whole().await;
         self.notify_dataset_changed();
         Ok(())

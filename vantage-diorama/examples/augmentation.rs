@@ -105,20 +105,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the Dio is built.
     let dio = lens
         .dio(master())
-        .augment(vec![Augmentation {
+        .augment(vec![Augmentation::new(
             // the detail Vista, resolved by name through the catalog
             // (`Detail::Fixed` takes a direct handle for get-only sources no
             // resolver knows)
-            detail: Detail::Resolved {
+            Detail::Resolved {
                 resolver: Arc::new(catalog),
                 name: "tfstate-detail".into(),
             },
-            source: Source::Id,   // master.id -> detail.id
-            fetch: Fetch::PerRow, // one detail record per master row
-            merge: MergeRule {
-                columns: vec!["resources".into(), "serial".into()],
-            },
-        }])
+            Source::Id,    // master.id -> detail.id
+            Fetch::PerRow, // one detail record per master row
+            MergeRule::lift(["resources", "serial"]),
+        )])
         .build()
         .await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;

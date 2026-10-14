@@ -53,7 +53,10 @@ fn schema() -> VistaMetadata {
 #[test]
 fn where_narrows_a_count() {
     let agg = Where::new(Conditions::new().eq("Event", text("opened")), Count::rows());
-    assert_eq!(agg.compute(&events(), &schema()), CborValue::Integer(2.into()));
+    assert_eq!(
+        agg.compute(&events(), &schema()),
+        CborValue::Integer(2.into())
+    );
 }
 
 /// The reason this is a combinator and not a counting twin: the same
@@ -65,7 +68,10 @@ fn where_narrows_a_sum() {
         Sum::of("Size"),
     );
     // 10 + 30, not 60.
-    assert_eq!(agg.compute(&events(), &schema()), CborValue::Integer(40.into()));
+    assert_eq!(
+        agg.compute(&events(), &schema()),
+        CborValue::Integer(40.into())
+    );
 }
 
 /// An augmented Dio hydrates what a `Where` judges as well as what it reduces.
@@ -86,7 +92,10 @@ fn where_reads_its_terms_and_the_inner_columns() {
 #[test]
 fn no_conditions_passes_every_row_through() {
     let agg = Where::new(Conditions::new(), Count::rows());
-    assert_eq!(agg.compute(&events(), &schema()), CborValue::Integer(3.into()));
+    assert_eq!(
+        agg.compute(&events(), &schema()),
+        CborValue::Integer(3.into())
+    );
 }
 
 #[test]
@@ -94,7 +103,10 @@ fn a_term_on_an_absent_column_matches_nothing() {
     let conditions = Conditions::new().eq("Nope", text("opened"));
     assert!(narrowed_ids(&conditions, &events(), &schema()).is_empty());
     let agg = Where::new(conditions, Count::rows());
-    assert_eq!(agg.compute(&events(), &schema()), CborValue::Integer(0.into()));
+    assert_eq!(
+        agg.compute(&events(), &schema()),
+        CborValue::Integer(0.into())
+    );
 }
 
 fn int(i: i64) -> CborValue {
@@ -207,14 +219,20 @@ fn terms_reach_into_nested_records_by_dotted_path() {
 fn a_declared_dotted_column_is_read_flat() {
     let declared = VistaMetadata::new().with_column(Column::untyped("Message.Transport"));
     let conditions = Conditions::new().eq("Message.Transport", text("smtp"));
-    assert_eq!(narrowed_ids(&conditions, &flat_and_nested(), &declared), ["0"]);
+    assert_eq!(
+        narrowed_ids(&conditions, &flat_and_nested(), &declared),
+        ["0"]
+    );
     assert_eq!(count_smtp(&flat_and_nested(), &declared), int(1));
 }
 
 #[test]
 fn an_undeclared_dotted_column_is_read_as_a_path() {
     let conditions = Conditions::new().eq("Message.Transport", text("smtp"));
-    assert_eq!(narrowed_ids(&conditions, &flat_and_nested(), &schema()), ["1"]);
+    assert_eq!(
+        narrowed_ids(&conditions, &flat_and_nested(), &schema()),
+        ["1"]
+    );
     assert_eq!(count_smtp(&flat_and_nested(), &schema()), int(1));
 }
 
@@ -226,5 +244,8 @@ fn terms_are_anded() {
             .eq("Size", CborValue::Integer(30.into())),
         Count::rows(),
     );
-    assert_eq!(agg.compute(&events(), &schema()), CborValue::Integer(1.into()));
+    assert_eq!(
+        agg.compute(&events(), &schema()),
+        CborValue::Integer(1.into())
+    );
 }

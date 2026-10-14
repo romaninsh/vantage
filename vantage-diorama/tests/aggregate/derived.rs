@@ -18,9 +18,7 @@ async fn group_by_produces_a_queryable_derived_dio() -> Result<()> {
     shell.set_record("c", record(&[("status", text("open")), ("amount", int(7))]));
 
     let src = source(shell.clone()).await;
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
 
     let rows = derived.cached().list_values().await?;
     assert_eq!(rows.len(), 2, "two groups");
@@ -63,9 +61,7 @@ async fn the_derived_vista_honours_the_capabilities_it_advertises() -> Result<()
     );
 
     let src = source(shell.clone()).await;
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
 
     let caps = *derived.master().capabilities();
     assert!(caps.has(Capability::Order) && caps.has(Capability::Search));
@@ -103,9 +99,7 @@ async fn a_scenery_opens_over_the_derived_dio() -> Result<()> {
     shell.set_record("b", record(&[("status", text("done")), ("amount", int(5))]));
 
     let src = source(shell.clone()).await;
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
 
     let scenery = derived
         .table_scenery()
@@ -124,9 +118,7 @@ async fn the_derived_schema_is_the_key_plus_the_reducers_columns() -> Result<()>
     shell.set_record("a", record(&[("status", text("open")), ("amount", int(1))]));
 
     let src = source(shell).await;
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
 
     let vista = derived.master();
     assert_eq!(
@@ -146,9 +138,7 @@ async fn the_derived_schema_is_the_key_plus_the_reducers_columns() -> Result<()>
 async fn an_empty_source_aggregates_to_empty() -> Result<()> {
     let src = source(master(&[("amount", "i64")])).await;
     let total = src.value_scenery(Sum::of("amount")).open().await?;
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
     settle().await;
 
     assert_eq!(as_i64(total.value()), Some(0), "an empty sum is zero");
@@ -185,9 +175,7 @@ async fn two_aggregates_of_one_source_are_separate_dios() -> Result<()> {
     shell.set_record("b", record(&[("status", text("done")), ("amount", int(2))]));
     let src = source(shell.clone()).await;
 
-    let groups = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let groups = src.aggregate(GroupBy::column("status", revenue())).await?;
     let count = src.aggregate(AsRows::new("n", Count::rows())).await?;
     assert_eq!(groups.master().name(), count.master().name());
 
@@ -195,14 +183,20 @@ async fn two_aggregates_of_one_source_are_separate_dios() -> Result<()> {
     assert_eq!(group_ids.len(), 2, "{group_ids:?}");
     let counted = count.cached().list_values().await?;
     assert_eq!(counted.len(), 1, "{counted:?}");
-    assert_eq!(counted.values().next().and_then(|r| r.get("n")), Some(&int(2)));
+    assert_eq!(
+        counted.values().next().and_then(|r| r.get("n")),
+        Some(&int(2))
+    );
 
     drop(groups);
     shell.set_record("c", record(&[("status", text("held")), ("amount", int(3))]));
     src.refresh().await?;
     settle().await;
     let counted = count.cached().list_values().await?;
-    assert_eq!(counted.values().next().and_then(|r| r.get("n")), Some(&int(3)));
+    assert_eq!(
+        counted.values().next().and_then(|r| r.get("n")),
+        Some(&int(3))
+    );
     Ok(())
 }
 
@@ -214,9 +208,7 @@ async fn dropping_the_aggregate_stops_it_following_the_source() -> Result<()> {
     shell.set_record("a", record(&[("status", text("open")), ("amount", int(1))]));
     let src = source(shell.clone()).await;
 
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
     settle().await;
     let derived_weak = derived.downgrade();
     let source_weak = src.downgrade();
@@ -230,7 +222,10 @@ async fn dropping_the_aggregate_stops_it_following_the_source() -> Result<()> {
     shell.set_field("a", "amount", int(999));
     src.refresh().await?;
     settle().await;
-    assert_eq!(src.cached().list_values().await?.len(), 1);
+    assert!(
+        derived_weak.upgrade().is_none(),
+        "a source refresh doesn't bring the dropped aggregate back"
+    );
 
     drop(src);
     settle().await;

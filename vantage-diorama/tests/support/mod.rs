@@ -134,14 +134,12 @@ pub async fn augmented_dio(
 /// An augmentation reading `columns` from `detail`, a fixed Vista no
 /// resolver knows, keyed by the master id.
 pub fn fixed_augmentation(detail: Vista, columns: &[&str]) -> Augmentation {
-    Augmentation {
-        detail: Detail::Fixed(Arc::new(detail)),
-        source: Source::Id,
-        fetch: Fetch::PerRow,
-        merge: MergeRule {
-            columns: columns.iter().map(|c| c.to_string()).collect(),
-        },
-    }
+    Augmentation::new(
+        Detail::Fixed(Arc::new(detail)),
+        Source::Id,
+        Fetch::PerRow,
+        MergeRule::lift(columns.iter().copied()),
+    )
 }
 
 /// A detail source keyed by id with columns `id` and `size`: `get` answers
@@ -239,17 +237,15 @@ pub fn bucket_catalog() -> Arc<dyn VistaResolver> {
 }
 
 pub fn augment_name() -> Augmentation {
-    Augmentation {
-        detail: Detail::Resolved {
+    Augmentation::new(
+        Detail::Resolved {
             resolver: bucket_catalog(),
             name: "names".into(),
         },
-        source: Source::Id,
-        fetch: Fetch::PerRow,
-        merge: MergeRule {
-            columns: vec!["name".into()],
-        },
-    }
+        Source::Id,
+        Fetch::PerRow,
+        MergeRule::lift(["name"]),
+    )
 }
 
 /// A Dio over the bucket master, augmenting each row's `name` from the `names`

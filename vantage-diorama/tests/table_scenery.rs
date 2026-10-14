@@ -199,7 +199,12 @@ async fn every_clause_reaches_the_paged_loader_in_one_query() -> Result<()> {
         q.conditions.len() == 2 && q.search.as_deref() == Some("a") && q.order.is_some()
     };
     assert!(
-        eventually(Duration::from_secs(5), || seen.lock().unwrap().iter().any(wanted)).await,
+        eventually(Duration::from_secs(5), || seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(wanted))
+        .await,
         "the loader never received the whole query; saw {:?}",
         seen.lock().unwrap()
     );
@@ -382,7 +387,10 @@ fn unsearchable_master() -> Vista {
 async fn search_supported_follows_the_plan() -> Result<()> {
     let paged = paged_dio(unsearchable_master()).await;
     let view = paged.table_scenery().open().await?;
-    assert!(!view.search_supported(), "a window can't be searched locally");
+    assert!(
+        !view.search_supported(),
+        "a window can't be searched locally"
+    );
 
     let copied = paged_or_eager_dio(unsearchable_master()).await;
     let view = copied.table_scenery().open().await?;

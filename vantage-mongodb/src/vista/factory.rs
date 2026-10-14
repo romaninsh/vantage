@@ -103,7 +103,7 @@ impl MongoVistaFactory {
             paths_from_table_columns(&any_table)
         };
         let metadata = assemble::mongo_metadata(&any_table);
-        Ok(self.wrap_with_paths(any_table, column_paths, name, true, metadata))
+        Ok(self.wrap_with_paths(any_table, column_paths, name, metadata))
     }
 
     /// Build a `Table<MongoDB, EmptyEntity>` from a spec. Refuses a reference

@@ -15,10 +15,7 @@ fn rows() -> Rows {
 }
 
 fn spec(column: Option<&str>, conditions: Conditions) -> AggregationSpec {
-    AggregationSpec {
-        column: column.map(str::to_string),
-        conditions,
-    }
+    AggregationSpec::new(column.map(str::to_string), conditions)
 }
 
 fn schema() -> VistaMetadata {
@@ -31,7 +28,10 @@ fn builds_a_named_reduction() {
     let agg = catalog
         .build("sum", spec(Some("Size"), Conditions::new()))
         .unwrap();
-    assert_eq!(agg.compute(&rows(), &schema()), CborValue::Integer(30.into()));
+    assert_eq!(
+        agg.compute(&rows(), &schema()),
+        CborValue::Integer(30.into())
+    );
 }
 
 /// Conditions are applied by the catalog, so they work for every name
@@ -48,7 +48,10 @@ fn applies_conditions_to_any_named_reduction() {
             ),
         )
         .unwrap();
-    assert_eq!(agg.compute(&rows(), &schema()), CborValue::Integer(10.into()));
+    assert_eq!(
+        agg.compute(&rows(), &schema()),
+        CborValue::Integer(10.into())
+    );
 }
 
 #[test]
@@ -85,7 +88,10 @@ fn a_registered_aggregation_becomes_declarable() {
     let agg = catalog
         .build("always_seven", spec(None, Conditions::new()))
         .unwrap();
-    assert_eq!(agg.compute(&rows(), &schema()), CborValue::Integer(7.into()));
+    assert_eq!(
+        agg.compute(&rows(), &schema()),
+        CborValue::Integer(7.into())
+    );
 }
 
 /// Grouping routes through the same catalog as a top-level reduction, so
@@ -146,7 +152,10 @@ fn a_grouped_where_coerces_by_the_source_schema() {
             "Event",
             "count",
             "n",
-            spec(None, Conditions::new().eq("Size", CborValue::Text("10".into()))),
+            spec(
+                None,
+                Conditions::new().eq("Size", CborValue::Text("10".into())),
+            ),
         )
         .unwrap()
         .compute(&rows(), &typed);

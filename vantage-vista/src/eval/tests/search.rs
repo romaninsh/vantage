@@ -1,4 +1,4 @@
-//! The search rule: a case-insensitive substring of any cell's text.
+//! The search rule: a case-insensitive substring of a searched cell's text.
 
 use super::*;
 
@@ -65,4 +65,44 @@ fn null_and_bytes_hold_no_text() {
 fn an_empty_needle_matches_every_row() {
     assert!(search(&Record::new(), ""));
     assert!(search(&row(&[("n", int(1))]), ""));
+}
+
+fn search_in(row: &Record<CborValue>, metadata: &VistaMetadata, needle: &str) -> bool {
+    VistaQuery::new()
+        .with_search(needle)
+        .matches(row, metadata)
+        .unwrap()
+}
+
+fn note_row() -> Record<CborValue> {
+    row(&[("name", text("Marty")), ("note", text("hoverboard"))])
+}
+
+#[test]
+fn search_reads_only_searchable_columns() {
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("name", "String").with_flag(ColumnFlag::Searchable))
+        .with_column(Column::new("note", "String"));
+    assert!(search_in(&note_row(), &metadata, "mar"));
+    assert!(!search_in(&note_row(), &metadata, "hover"));
+}
+
+#[test]
+fn search_reads_every_column_when_none_is_searchable() {
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("name", "String"))
+        .with_column(Column::new("note", "String"));
+    assert!(search_in(&note_row(), &metadata, "mar"));
+    assert!(search_in(&note_row(), &metadata, "hover"));
+}
+
+#[test]
+fn search_columns_are_the_flagged_ones_or_every_column() {
+    let plain = VistaMetadata::new()
+        .with_column(Column::new("name", "String"))
+        .with_column(Column::new("note", "String"));
+    assert_eq!(plain.search_columns(), ["name", "note"]);
+    let flagged =
+        plain.with_column(Column::new("title", "String").with_flag(ColumnFlag::Searchable));
+    assert_eq!(flagged.search_columns(), ["title"]);
 }

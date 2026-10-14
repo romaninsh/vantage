@@ -43,7 +43,9 @@ impl DeriveBuilder {
     /// Every clause of `query`: its conditions join those gathered so far,
     /// and its search and order, when it has them, replace theirs.
     pub fn with_query(mut self, query: &VistaQuery) -> Self {
-        self.query.conditions.extend(query.conditions.iter().cloned());
+        self.query
+            .conditions
+            .extend(query.conditions.iter().cloned());
         if query.search.is_some() {
             self.query.search = query.search.clone();
         }

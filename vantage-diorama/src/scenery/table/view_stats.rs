@@ -6,8 +6,9 @@
 //! one trait method at a time races the loader between calls; a snapshot is
 //! taken in one place and published only when it differs from the last one.
 //!
-//! Read it with [`TableScenery::view_stats`]; wait for the next change on
-//! [`TableScenery::subscribe_view_stats`].
+//! Read it with [`TableScenery::view_stats`](crate::TableScenery::view_stats);
+//! wait for the next change on
+//! [`TableScenery::subscribe_view_stats`](crate::TableScenery::subscribe_view_stats).
 
 mod publish;
 #[cfg(test)]

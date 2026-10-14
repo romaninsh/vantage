@@ -61,17 +61,15 @@ fn counting_catalog(hits: Arc<AtomicUsize>) -> Arc<dyn VistaResolver> {
 }
 
 fn aug(hits: Arc<AtomicUsize>) -> Augmentation {
-    Augmentation {
-        detail: Detail::Resolved {
+    Augmentation::new(
+        Detail::Resolved {
             resolver: counting_catalog(hits),
             name: "runs-detail".into(),
         },
-        source: Source::Id,
-        fetch: Fetch::PerRow,
-        merge: MergeRule {
-            columns: vec!["detail".to_string()],
-        },
-    }
+        Source::Id,
+        Fetch::PerRow,
+        MergeRule::lift(["detail"]),
+    )
 }
 
 /// The ticker is the refresher's `every`, so give the Lens a no-op refresher

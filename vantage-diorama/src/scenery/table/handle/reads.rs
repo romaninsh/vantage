@@ -63,6 +63,9 @@ pub(super) fn shared_estimate(shared: &SharedRows) -> Option<usize> {
 /// capped view is complete while its rows hold a larger set only partly.
 pub(super) fn cap_loaded(shared: &SharedRows, cap: Cap, len: usize) -> bool {
     !shared.omits_failed_rows.load(Ordering::SeqCst)
-        && (0..cap.view_len(len))
-            .all(|i| cap.map(i, len).and_then(|s| shared_row(shared, s)).is_some())
+        && (0..cap.view_len(len)).all(|i| {
+            cap.map(i, len)
+                .and_then(|s| shared_row(shared, s))
+                .is_some()
+        })
 }

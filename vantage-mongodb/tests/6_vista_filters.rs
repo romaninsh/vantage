@@ -204,12 +204,16 @@ async fn vista_search_uses_searchable_paths() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_search_without_searchable_columns_matches_nothing() -> TestResult {
+async fn vista_search_without_searchable_columns_reads_every_column() -> TestResult {
     let (db, name) = setup().await;
     seed_clients(&db).await?;
 
     let mut v = clients(&db, CLIENT_NO_SEARCH);
     v.set_search(Some("marty"))?;
+    assert_eq!(names(&v.list_values().await?), vec!["Marty"]);
+
+    // `address` is not a column, so its city is not searched.
+    v.set_search(Some("hill"))?;
     assert_eq!(v.list_values().await?.len(), 0);
 
     teardown(&db, &name).await;

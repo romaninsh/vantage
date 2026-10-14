@@ -105,9 +105,8 @@ fn place(
         .map(|(other, row)| Some((other?, &row.record)))
         .filter(|pair| pair.is_none_or(|(other, _)| other != id))
         .collect::<Option<Vec<_>>>()?;
-    let at = others.partition_point(|&other| {
-        query.cmp_rows(other, (id, rec), metadata) == Ordering::Less
-    });
+    let at = others
+        .partition_point(|&other| query.cmp_rows(other, (id, rec), metadata) == Ordering::Less);
     Some(Some(at))
 }
 

@@ -33,12 +33,10 @@ pub(crate) fn lens_on(backend: &Arc<MemoryCache>, refreshed: bool) -> Arc<Lens> 
     builder.build().expect("lens builds")
 }
 
-/// A refresher that writes nothing, never ticks inside a test, and holds a
-/// cache for an hour.
+/// A refresher that writes nothing, has no timer, and holds a cache for an
+/// hour.
 pub(crate) fn hourly() -> Refresher {
-    Refresher::new(|_cx| async { Ok(()) })
-        .every(HOUR)
-        .max_age(HOUR)
+    Refresher::new(|_cx| async { Ok(()) }).max_age(HOUR)
 }
 
 /// A two-pass Dio over `master` as `files`, augmenting `size` per row. No
@@ -48,7 +46,10 @@ pub(crate) async fn two_pass(lens: &Arc<Lens>, master: &MockShell) -> Dio {
     support::augmented_dio(
         lens,
         Vista::new("files", master.clone()),
-        vec![support::fixed_augmentation(Vista::new("sizes", sizes), &["size"])],
+        vec![support::fixed_augmentation(
+            Vista::new("sizes", sizes),
+            &["size"],
+        )],
     )
     .await
 }
@@ -74,7 +75,10 @@ pub(crate) fn listings(master: &MockShell) -> usize {
 /// nothing and the test counts only its own listings.
 async fn stamped_fresh(backend: &MemoryCache) {
     let table = backend.open_table("files").await.unwrap();
-    table.set_meta_refreshed_at(SystemTime::now()).await.unwrap();
+    table
+        .set_meta_refreshed_at(SystemTime::now())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -114,7 +118,10 @@ async fn an_earlier_sessions_copy_without_a_max_age_lists_the_master() {
     let view = listed(&dio).await;
 
     assert_eq!(views::ids(&view), ["a", "b", "c"]);
-    assert!(listings(&master) > before, "an untimed old copy served the list");
+    assert!(
+        listings(&master) > before,
+        "an untimed old copy served the list"
+    );
 }
 
 #[tokio::test]

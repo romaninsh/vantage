@@ -12,12 +12,18 @@ use vantage_diorama::{ChangeEvent, Dio, LoadState, TableScenery};
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{SortDirection, Vista};
 
-use support::views::{ids, numbered, numbers_of, ns, shell};
+use support::views::{ids, ns, numbered, numbers_of, shell};
 use support::{eager_dio, eventually};
 
 /// Rows `a`..`e` with `n = 1..=5`.
 fn numbers() -> MockShell {
-    numbers_of(&[("a", Some(1)), ("b", Some(2)), ("c", Some(3)), ("d", Some(4)), ("e", Some(5))])
+    numbers_of(&[
+        ("a", Some(1)),
+        ("b", Some(2)),
+        ("c", Some(3)),
+        ("d", Some(4)),
+        ("e", Some(5)),
+    ])
 }
 
 /// An eager tail of `n` by ascending `n`. The Dio comes back with it: a
@@ -64,7 +70,13 @@ async fn a_tail_shows_the_last_rows_in_order() -> Result<()> {
 /// flipped order read backwards is not the declared order's end.
 #[tokio::test]
 async fn a_tail_places_nulls_and_ties_as_the_declared_order_does() -> Result<()> {
-    let rows = [("a", Some(1)), ("b", Some(2)), ("c", Some(3)), ("d", None), ("e", Some(3))];
+    let rows = [
+        ("a", Some(1)),
+        ("b", Some(2)),
+        ("c", Some(3)),
+        ("d", None),
+        ("e", Some(3)),
+    ];
     let (_dio, view) = ascending_tail(numbers_of(&rows), 3).await?;
     // Ascending: a 1, b 2, c 3, e 3 (the tie on id), d null last.
     assert!(
@@ -97,7 +109,10 @@ async fn a_tail_view_follows_an_insert_at_the_end() -> Result<()> {
 async fn a_tail_without_an_order_is_refused_at_open() -> Result<()> {
     let dio = eager_dio(Vista::new("t", numbers())).await;
     let unordered = dio.table_scenery().tail(2).open().await;
-    let message = unordered.err().expect("an unordered tail opens").to_string();
+    let message = unordered
+        .err()
+        .expect("an unordered tail opens")
+        .to_string();
     assert!(message.contains("tail needs an order"), "{message}");
 
     let both = dio
@@ -108,7 +123,10 @@ async fn a_tail_without_an_order_is_refused_at_open() -> Result<()> {
         .open()
         .await;
     let message = both.err().expect("limit with tail opens").to_string();
-    assert!(message.contains("limit and tail are exclusive"), "{message}");
+    assert!(
+        message.contains("limit and tail are exclusive"),
+        "{message}"
+    );
     Ok(())
 }
 
