@@ -152,8 +152,6 @@ pub trait Selectable<T, C = Expression<T>>: Send + Sync + Debug + Clone {
     /// Creates a MIN(column) expression from this query configuration.
     fn as_min(&self, column: impl Expressive<T>) -> Expression<T>;
 
-    // Default implementations for builder-style methods
-
     /// Builder pattern method identical to [`Self::add_source`] without alias.
     fn with_source(mut self, source: impl Into<SourceRef<T>>) -> Self
     where

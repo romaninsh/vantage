@@ -367,14 +367,12 @@ impl<T: std::fmt::Debug + std::fmt::Display> ExpressiveEnum<T> {
     }
 }
 
-// Enable conversion from DeferredFn to ExpressiveEnum
 impl<T> From<DeferredFn<T>> for ExpressiveEnum<T> {
     fn from(deferred: DeferredFn<T>) -> Self {
         ExpressiveEnum::Deferred(deferred)
     }
 }
 
-// Enable conversion from closures to ExpressiveEnum::Deferred
 impl<T, F> From<F> for ExpressiveEnum<T>
 where
     F: Fn() -> DeferredFuture<T> + Send + Sync + 'static,
@@ -384,16 +382,14 @@ where
     }
 }
 
-// Enable conversion from serde_json::Value to ExpressiveEnum<serde_json::Value>
 impl From<serde_json::Value> for ExpressiveEnum<serde_json::Value> {
     fn from(value: serde_json::Value) -> Self {
         ExpressiveEnum::Scalar(value)
     }
 }
 
-// -- Self-referential Expressive impls for type-safe Column<T> operations ------
-// These allow scalars to satisfy `Expressive<T>` where T is the scalar's own type.
-// For example, `150i64: Expressive<i64>` enables `Column::<i64>::new("price").gt(150)`.
+// A scalar is `Expressive<T>` for its own type T, so `Column::<i64>::new("price").gt(150)`
+// accepts a bare `150i64`.
 
 macro_rules! impl_expressive_self {
     ($($ty:ty),*) => {
@@ -408,6 +404,3 @@ macro_rules! impl_expressive_self {
 }
 
 impl_expressive_self!(i8, i16, i32, i64, u8, u16, u32, f32, f64, bool);
-
-#[cfg(test)]
-mod tests {}

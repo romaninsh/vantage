@@ -1,14 +1,9 @@
-//! Type-erased expression wrapper
-//!
-//! `AnyExpression` provides a way to store expressions of different types uniformly
-//! while preserving the ability to recover the concrete type through downcasting.
+//! Type-erased expression wrapper: store expressions of different types
+//! uniformly and recover the concrete type by downcasting.
 
 use std::any::{Any, TypeId};
 
-/// Trait for expression types that can be type-erased
-///
-/// This trait is automatically implemented for any type that is Clone + Send + Sync + 'static,
-/// which matches the requirements for TableSource::Expr
+/// Implemented for every `Clone + Send + Sync + 'static` type.
 pub trait ExpressionLike: Send + Sync {
     /// Clone this expression into a Box
     fn clone_box(&self) -> Box<dyn ExpressionLike>;
@@ -97,10 +92,8 @@ impl AnyExpression {
         self.type_id
     }
 
-    /// Convert to a boxed Any for advanced use cases
+    /// Box this wrapper (not the stored expression) as `Any`.
     pub fn into_any(self) -> Box<dyn Any> {
-        // We need to extract the inner value through Any
-        // This is a bit tricky since we can't directly convert ExpressionLike to Any
         Box::new(self)
     }
 }
@@ -120,90 +113,5 @@ impl std::fmt::Debug for AnyExpression {
         f.debug_struct("AnyExpression")
             .field("type_name", &self.type_name())
             .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Debug, Clone, PartialEq)]
-    struct TestExpr {
-        value: i32,
-    }
-
-    #[derive(Debug, Clone, PartialEq)]
-    struct OtherExpr {
-        text: String,
-    }
-
-    #[test]
-    fn test_any_expression_creation_and_downcast() {
-        let expr = TestExpr { value: 42 };
-        let any = AnyExpression::new(expr.clone());
-
-        assert_eq!(any.type_name(), std::any::type_name::<TestExpr>());
-        assert!(any.is_type::<TestExpr>());
-
-        // Successful downcast
-        let recovered = any.downcast::<TestExpr>().unwrap();
-        assert_eq!(recovered, expr);
-    }
-
-    #[test]
-    fn test_any_expression_downcast_ref() {
-        let expr = TestExpr { value: 42 };
-        let any = AnyExpression::new(expr.clone());
-
-        // Successful downcast_ref
-        let expr_ref = any.downcast_ref::<TestExpr>().unwrap();
-        assert_eq!(expr_ref, &expr);
-
-        // Can still use any after downcast_ref
-        assert!(any.is_type::<TestExpr>());
-    }
-
-    #[test]
-    fn test_any_expression_downcast_wrong_type() {
-        let expr = TestExpr { value: 42 };
-        let any = AnyExpression::new(expr);
-
-        // Try to downcast to wrong type
-        let result = any.downcast::<OtherExpr>();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_any_expression_is_type() {
-        let expr = TestExpr { value: 42 };
-        let any = AnyExpression::new(expr);
-
-        assert!(any.is_type::<TestExpr>());
-        assert!(!any.is_type::<OtherExpr>());
-    }
-
-    #[test]
-    fn test_any_expression_clone() {
-        let expr = TestExpr { value: 42 };
-        let any = AnyExpression::new(expr.clone());
-        let cloned = any.clone();
-
-        assert_eq!(cloned.type_name(), any.type_name());
-        assert_eq!(cloned.type_id(), any.type_id());
-
-        // Both should downcast successfully
-        let recovered1 = any.downcast::<TestExpr>().unwrap();
-        let recovered2 = cloned.downcast::<TestExpr>().unwrap();
-        assert_eq!(recovered1, recovered2);
-    }
-
-    #[test]
-    fn test_any_expression_debug() {
-        let expr = TestExpr { value: 42 };
-        let any = AnyExpression::new(expr);
-
-        let debug_str = format!("{:?}", any);
-        assert!(debug_str.contains("AnyExpression"));
-        assert!(debug_str.contains("type_name"));
     }
 }

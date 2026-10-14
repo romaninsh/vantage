@@ -7,10 +7,8 @@ use crate::traits::associated_expressions::AssociatedExpression;
 use crate::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_core::Result;
 
-/// DataSource can be referenced by other objects, and will help associate them
-/// with physical persistence. While DataSource might not be directly used,
-/// It is extended by varietty of other traits that provide
-/// real interface (like `QuerySource` and `SelectSource`)
+/// Marker for a physical persistence. Other traits extend it with the real
+/// interface, like [`ExprDataSource`] and [`SelectableDataSource`].
 pub trait DataSource: Send + Sync {}
 
 /// DataSource that can also execute expressions.
@@ -58,10 +56,10 @@ where
 pub trait SelectableDataSource<T = Value, C = Expression<T>>: DataSource {
     type Select: Selectable<T, C>;
 
-    // Return SelectQuery
+    /// A new, empty select query for this datasource.
     fn select(&self) -> Self::Select;
 
-    // Execute select query directly
+    /// Run a select query and return its rows.
     fn execute_select(&self, select: &Self::Select) -> impl Future<Output = Result<Vec<T>>> + Send;
 
     /// Add a column expression to a select query with optional alias.
