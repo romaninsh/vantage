@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Append-only persistence that writes JSONL records to files.
 //!
 //! Insert-only: reads and expression execution return `Unsupported`. See

@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! The YAML inventory: a project folder of YAML files, loaded into typed
 //! values and kept current as the files change.
 //!

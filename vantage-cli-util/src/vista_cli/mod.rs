@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Vista-backed model-driven CLI runner.
 //!
 //! Drives a [`Vista`](vantage_vista::Vista) from positional argv tokens.
