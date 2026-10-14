@@ -27,7 +27,7 @@ Vantage Faker will also provide data that can be modified in run-time, relying o
 `vantage-memory` backend. You can read, edit and watch it for changes.
 
 The optional `sim` feature can mutate data in real-time. Define rhai scripts to run
-in the background as small data mutators, constantly changing the shape of yoour data.
+in the background as small data mutators, constantly changing the shape of your data.
 This makes vantage-faker ideal for testing real-time data modification and how UI and
 API will adapt to those changes.
 
@@ -93,8 +93,8 @@ for (id, client) in clients.list().await? {
 ```
 
 The same `Table` filters, sorts, edits and follows relations. From here on it is plain Vantage:
-the [Vantage Book](https://romaninsh.github.io/vantage/) walks through it, starting with
-[Tables and Typed Data Access](https://romaninsh.github.io/vantage/intro/step2-tables.html).
+the [Vantage Book](https://vantage-ui.com/book/) walks through it, starting with
+[Tables and Typed Data Access](https://vantage-ui.com/book/intro/step2-tables.html).
 
 ## Column rules
 
@@ -203,7 +203,7 @@ The verbs a script can call:
   count from `SimEngineBuilder::fake_rows`. Ids are strings. `patch` returns `false` for a
   missing row and `delete` is `true` either way; `insert` with an existing id leaves the stored
   row as it was, so use `upsert` to replace it. The vocabulary is described in
-  [Scripting with Rhai](https://romaninsh.github.io/vantage/rhai.html).
+  [Scripting with Rhai](https://vantage-ui.com/book/rhai.html).
 - **Random:** `pick`, `pick_weighted`, `rand_int`, `rand_float`, `chance(p)`, `pattern`,
   `sentence`, `fake(kind)` (a value as a column named `kind` would get), `date_between`.
 - **Time:** `seconds`, `minutes`, `hours`, `days`, `sleep`, `wait_until`, `now`, `now_secs`,

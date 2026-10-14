@@ -11,7 +11,8 @@ A SurrealDB client library for Rust speaking native CBOR over WebSocket.
 - **Immutable Client Design**: Thread-safe, cloneable client with unique sessions.
 - **Builder Pattern Connection**: Intuitive connection configuration.
 - **Debug mode support**: Outputs requests/responses for debugging.
-- **Multiple Authentication Methods**: Root, namespace, database, scope, and JWT token auth.
+- **Multiple Authentication Methods**: Root, namespace, database, and JWT token auth.
+- **Live Queries**: `live()` streams `CREATE` / `UPDATE` / `DELETE` notifications for a table or record.
 - **Query Interface**: Execute raw SurrealQL with parameter binding.
 - **Session Management**: Variables and state management per client.
 - **Relation Support**: Create and query record relationships.
@@ -60,6 +61,9 @@ let client = SurrealConnection::dsn("ws://root:root@localhost:8000/my_ns/my_db")
     .await?;
 ```
 
+DSN credentials sign in as root. Add `?auth=namespace` or `?auth=database` to sign in as a
+namespace or database user instead.
+
 ### Multiple Authentication Methods
 
 ```rust
@@ -84,7 +88,8 @@ let client = SurrealConnection::new()
     .auth_database("db_user", "db_pass")
     .connect().await?;
 
-// Scope authentication
+// Scope authentication (the builder accepts it, but connect() currently
+// returns "Unsupported authentication method")
 let client = SurrealConnection::new()
     .url("ws://localhost:8000")
     .auth_scope("my_ns", "my_db", "user_scope", json!({
@@ -194,48 +199,71 @@ client2.let_var("role", json!("user")).await?;
 // Both clients share the same connection but have separate sessions
 ```
 
+## Live Queries
+
+`live()` starts a `LIVE SELECT` on a table or record and returns a `LiveStream` of
+`Notification`s. Each one carries the `Action` (`Create`, `Update` or `Delete`), the record id and
+the record data as raw CBOR. It needs the WebSocket connection, which is the only network engine
+this crate ships.
+
+```rust
+use surreal_client::Action;
+
+let mut stream = client.live("users").await?;
+while let Some(note) = stream.recv().await {
+    match note.action {
+        Action::Create | Action::Update => println!("changed: {:?}", note.record_id),
+        Action::Delete => println!("deleted: {:?}", note.record_id),
+    }
+}
+```
+
+`LiveStream` also implements `futures::Stream`. Dropping it kills the server-side query in the
+background; `stream.close().await?` kills it and waits for the reply.
+
 ## Pooling
 
 Normally you have one client and one engine. You can clone your client,
 but the engine remains the same. As a result, some queries may block
 other queries.
 
-To avoid this, you can use `SurrealPool`:
+There is no pool type yet. The `pool` feature only defines `PoolConfig`. To run queries in
+parallel, call `connect()` once per connection; each call opens its own engine:
 
 ```rust
-// DSN="ws://root:secret@localhost:8000/bakery/v1?param=X"
-let pool = SurrealConnection::dsn(dsn).pool(10);
+// DSN="ws://root:secret@localhost:8000/bakery/v1"
+let conn = SurrealConnection::dsn(dsn)?;
 
-let db1 = pool.connect().await?;
-let db2 = pool.connect().await?;
+let db1 = conn.clone().connect().await?;
+let db2 = conn.connect().await?;
 
 // Execute both queries simultaniously
 tokio::try_join!(
     db1.query("sleep 1s", None),
-    db2.create("user", json!({"name": "John", "age": 25}))
-)?
+    db2.create("user", Some(json!({"name": "John", "age": 25})))
+)?;
 ```
 
 ## Vantage integration
 
-This crate is designed to work with the Vantage query builders:
+This crate is the transport for `vantage-surrealdb`, which wraps the client as a `SurrealDB` data
+source for its query builders:
 
 ```rust
-let db = SurrealConnection::dsn(dsn).connect().await?;
+let client = SurrealConnection::dsn(dsn)?.connect().await?;
+let db = SurrealDB::new(client);
+
 let select = SurrealSelect::new()
     .with_source("client")
-    .with_condition(expr!("bakery = {}", Thing::new("bakery", "hill_valley")))
-    .with_order_by("name", true);
-// Second query: SELECT * FROM client WHERE bakery = bakery:hill_valley order by name
+    .with_condition(surreal_expr!("bakery = {}", (Thing::new("bakery", "hill_valley"))))
+    .with_order(surreal_expr!("name"), Order::Asc);
+// SELECT * FROM client WHERE bakery = bakery:hill_valley ORDER BY name
 
 // Create delayed query - can be used inside another query
-let associated_query = db.defer(&select).await?;
+let deferred = db.defer(select.expr());
 
 // Execute and get data right away
-let data = db.get(&select).await?;
-
-// Also - can be executed directly
-let same_data = associated_query.get().await?;
+let data = select.get(&db).await?;
 ```
 
 ## Error Handling
@@ -254,4 +282,4 @@ match client.query("INVALID SQL", None).await {
 }
 ```
 
-TODO: Integration with Vantage models and DataSets.
+For Vantage tables, datasets and `Vista`, use `vantage-surrealdb`, which builds on this client.

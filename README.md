@@ -1,723 +1,283 @@
 # Vantage
 
-[![Book](https://github.com/romaninsh/vantage/actions/workflows/book.yaml/badge.svg)](https://romaninsh.github.io/vantage/)
+[![Book](https://github.com/romaninsh/vantage/actions/workflows/book.yaml/badge.svg)](https://vantage-ui.com/book/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/romaninsh/vantage)
 
-Vantage is an **Entity Framework** for Rust. With Vantage you can represent your business entities
-(Client, Order, Invoice, Lead) with native Rust types. Business logic implementation in Vantage and
-Rust is type-safe and very ergonomic for large code-bases. Ideal for creating facade services,
-middlewares and microservices or low-code backend UI.
+Vantage is a data framework for Rust. You describe your business entities (Client, Order, Invoice)
+once, as Rust types, and use them against SQL databases, SurrealDB, MongoDB, REST and GraphQL APIs,
+AWS, Kubernetes, CSV files or memory through one API.
+
+Vantage works with **sets of records**, not single rows. A table with a condition is a smaller set.
+Traversing a relation turns one set into another. Counting, filtering and deleting run in the
+database whenever the database can do it, so the records never pass through your process.
+
+There are three layers, and you can stop at any of them:
+
+- **Table**: typed entities, conditions, relations, expressions and CRUD, checked at compile time.
+- **Vista**: the same table with the types erased. It carries its own schema, can be loaded from
+  YAML, and is what generic code (a CLI, an admin UI, an HTTP API) works with.
+- **Diorama**: a cache and live view over a Vista, for user interfaces. It loads the rows on screen,
+  keeps them current and applies edits optimistically.
 
 ## Looking for the app? Meet Vantage UI
 
 If you want a finished product rather than a library, start with
-**[Vantage UI](https://romaninsh.github.io/vantage-web/)** — a native, local-first admin console you
-configure by talking to an AI coding agent. Point it at your databases, APIs, cloud infrastructure or
-CLI tools; describe the tool you need; the agent writes the config — declarative YAML for structure
-and Rhai scripts for logic — in a folder you own, and the app renders tables, forms, dashboards and
-dialogs on top of your data.
+**[Vantage UI](https://vantage-ui.com/)**: a native, local-first admin console that you configure by
+talking to an AI coding agent. Point it at your databases, APIs, cloud accounts or CLI tools and
+describe the tool you need. The agent writes the configuration (YAML for structure, Rhai scripts for
+logic) into a folder you own, and the app draws tables, forms, dashboards and dialogs on top of your
+data.
 
-Vantage UI is built directly on the crates in this repository — it is one expression of this
-framework, not a separate codebase. The framework gives the app its persistence abstraction, query
-builders, references and type system; the app adds the GPU-accelerated UI, the agent/MCP layer and
-hot-reload. It's a **free download for macOS** today. If you'd rather build your own service, CLI or
-UI on the same foundation, the rest of this README is for you.
-
-Given your client record:
-
-```rust
-// Implemented in shared Business Model Library
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-struct Client {
-    name: String,
-    surname: Option<String>,
-    gender: GenderEnum,
-    email: Email(String),
-    is_paying_client: bool,
-    balance: Decimal,
-}
-```
-
-Vantage offers the following features out of the box:
-
-- [`DataSet<E>`](vantage-dataset/README.md) - Interface for a low-level persistence for an entity.
-  There are some internal implementation like `CsvFile<E>` or `Queue<E>` which implement DataSet,
-  but more importantly - you can use 3rd party implementations or build your own.
-
-- [`ValueSet<V>`](vantage-dataset/README.md) - Interface for a uniform persistence without an
-  entity. While this is very similar to strong-typed variant, ValueSet can use `serde_json::Value`
-  or `ciborium::Value` to work with schema-less persistences. Example like `CsvFile` would implement
-  `ReadableValueSet<String>` while `Queue` would implement `InsertableValueSet<Value>`.
-
-- [`Table<E, D>`](vantage-table/README.md) - Struct for storing structured data with some columns.
-  Can be used with NoSQL/SQL database engines, which implement interfaces for `TableSource`,
-  `QuerySource` and `SelectSource`. Table auto-implements `DataSet<E>` and `ValueSet<D::Value>`.
-- [`Expression<V>`](vantage-expressions/README.md) - Universal mechanism for constructing query
-  builders. Expressions implement cross-database integration as well as define `Selectable`
-  interface for minimalistic implementation of a query-builder (SQL-compatible).
-- `ActiveEntity<E>` and `ActiveRecord<V>` - Implementation of ActiveRecord pattern, load the record,
-  pass it around, modify and call `record.save()` when you are done.
-- **Persistence-specific type systems** - Define vendor-specific type sets with
-  [`vantage-types`](vantage-types/README.md) and create type-boundary systems preventing accidental
-  casting (e.g., Duration to Int) while enabling precise database-native type mapping.
-
-With all of the fundamental blocks and interfaces in place, Vantage can be extended in several ways.
-First - persistence implementation:
-
-- [`vantage-surrealdb`](vantage-surrealdb/README.md) - Full implementation for SurrealDB with custom
-  types, graph-based queries, CRUD, relationships, and aggregations. Built on
-  [`surreal-client`](surreal-client/README.md).
-- [`vantage-sql`](vantage-sql/README.md) - SQLite implementation (via sqlx) with full CRUD,
-  relationships, aggregations, and query builder with JOINs, window functions, and CTEs.
-- `vantage-csv` - CSV file persistence with read support, conditions, relationships, and custom type
-  system. No query builder (conditions are evaluated in-memory).
-- [`vantage-api-pool`](vantage-api-pool/README.md) - Resilient async HTTP client used by the API
-  backends: bounded parallelism, retry, circuit breaker, rate limiting and auth refresh.
-- `vantage-api-client` - REST and GraphQL API clients implementing read-only `TableSource`.
-
-On the other end, Vantage offers some adapters. Those would work with `Table` / `AnyTable` and
-implement generic UI or API component:
-
-- [`vantage-ui-adapters`](vantage-ui-adapters/README.md) - Implement DataGrid for Tauri, EGui,
-  Cursive, GPUI, RatatUI and Slint frameworks.
-- vantage-axum`*` - Implements builder for Axum supporting use of typed or generic tables.
-- vantage-config - Reads Entity definitions from `yaml` file, creating type-erased `AnyTable`s.
-- **[Vantage UI](https://romaninsh.github.io/vantage-web/)** - Native, local-first desktop admin
-  console built on these crates and configured by an AI agent over MCP. Free for macOS today.
-
-(`*` indicate commercial component)
-
-Vantage `0.4` is the current version — a global rewrite starting with the type system. Key
-additions:
-
-- **Custom type systems** - Per-datasource types (`SurrealType`, `SqliteType`, `CsvType`,
-  `AnyMongoType`) via `vantage_type_system!` macro
-- **CBOR binary protocol** - Replacing JSON for SurrealDB communication
-- **New backends** - MongoDB, CSV persistence, API client/pool, SQLite (via sqlx)
-- **Strict type conversions** - No silent casting between incompatible types
-- **vantage-core** - Unified error handling with `VantageError`
-- **Cross-database integration** - `AnyTable::from_table()` wraps any datasource for generic code
-- **References** - Traverse between `Table<Client>` into `Table<Order>`, even across databases
-- **Backend-specific Operation traits** - Each backend provides `eq`/`ne`/`gt`/`lt`/`in_` for all `Expressive` types
-- **Multi-source CLI** - Same `handle_commands` function works with CSV, SQLite, and SurrealDB
-
-Features planned for next release:
-
-- **Hooks** - Attach 3rd party code plugins into Tables.
-- **Validation** - Use standard and advanced validation through a hook mechanism.
-- **Audit** - Capture modifications automatically and store in same or a different persistence.
-- Aggregators. Use database-vendor specific extensions to build reports declaratively.
-- Live Tables. Connect CDC or Live events provided by databases with UI adapters or WS APIs.
+Vantage UI is built on the crates in this repository. It is a free download for macOS. If you'd
+rather build your own service, CLI or UI, the rest of this README is for you.
 
 ## Example
 
-Vantage is an opinionated framework, which means it will provide guidance on how to describe your
-business objects in Rust code. Here is a slightly expanded example, which describes how a Client
-entity can be used with various persistences.
+An entity and its table, from the [book's second chapter](https://vantage-ui.com/book/intro/step2-tables.html):
 
 ```rust
-// Implemented in shared Business Model Library
+use vantage_sql::prelude::*;
+use vantage_types::prelude::*;
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-struct Client {
-    name: String,
-    email: String,
-    is_paying_client: bool,
-    balance: Decimal,
+#[entity(SqliteType)]
+#[derive(Clone, Default)]
+pub struct Product {
+    pub name: String,
+    pub price: i64,
 }
 
-impl Client {
-    fn new(){ /* ... */};
-
-    fn registration_queue() -> impl InsertableDataSet<Client> {}
-    fn admin_api() -> impl DataSet<Client> {}
-    fn read_csv(filename: String) -> impl ReadableDataSet<Client> {}
-    fn mock() -> MockDataSet<Client> {}
-
-    fn table() -> Table<SurrealDB, Client> {
-        Table::new("client", surrealdb())
-            .with_column_of::<bool>("is_paying_client")
-            .with_many("orders", "client", move || Order::table(surrealdb()))
-    }
-}
-
-// This is our way to implement Client Table specific features:
-pub trait ClientTable {
-    fn ref_orders(&self) -> Table<SurrealDB, crate::Order>;
-}
-impl ClientTable for Table<SurrealDB, Client> {
-    fn ref_orders(&self) -> Table<SurrealDB, crate::Order> {
-        self.get_ref_as("orders").unwrap()
+impl Product {
+    pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+        let is_deleted = Column::<bool>::new("is_deleted");
+        Table::new("product", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<i64>("price")
+            .with_column_of::<bool>("is_deleted")
+            .with_condition(is_deleted.eq(false))
     }
 }
 ```
 
-Definitions of your entities can be stored in your own crate, versioned and shared by many other
-services within your organization. Here is how a typical service might make use of the Client
-entity:
+The table definition lives in your model crate. Business code uses it without knowing where the data
+is stored:
 
 ```rust
-use model::Client;
+let table = Product::table(db);
 
-async fn register_new_client(client: Client) -> Result<()> {
-    let queue = Client::registration_queue(); // Probably KafkaTopic<Client>
-    queue.insert(client).await?;
-    Ok(())
-}
+let all = table.list().await?;             // IndexMap<String, Product>
+let pie = table.get("4").await?;           // Option<Product>
 
-async fn remove_stale_client_orders() -> Result<()> {
-    let clients = Client::table()
-        .with_condition(clients.is_paying_client().eq(false));
-
-    // Delete orders of affected clients first (stored in MongoDB)
-    clients.ref_orders().delete_all();
-
-    // next delete clients (stored in SurrealDB)
-    clients.delete_all();
-
-    Ok(())
-}
+let muffin = Product { name: "Muffin".into(), price: 175 };
+table.insert(&"8".to_string(), &muffin).await?;
+table.delete(&"8".to_string()).await?;
 ```
 
-Enterprise software employs hundreds of developers, and anyone can make use of type safety without
-knowing implementation details. Behind a simple interface of `clients` and `orders`, extensions of
-Vantage allow embedding additional features:
-
-- record any operations automatically into audit tables
-- handle CDC for change tracking or perform necessary validations
-- use multi-record operations efficiently, like in the case above - MongoDB will perform deletion
-  with a single request.
-- developer does not need to be mindful, where client table is stored.
-
-Finally, thanks to the amazing Rust type system, the `client` type will not only implement
-Client-specific extensions (like `ref_order()`) but will also implement SurrealDB extensions like
-`search_query(q)`.
-
-## Vantage features
-
-A more comprehensive feature list:
-
-- Standard CRUD operations with persistence-abstraction
-- Implementation of DataSource-specific extensions
-- Implementation of Entity-specific extensions
-- Support for Expressions and Query Builder pattern (SQL, SurrealDB)
-- MultiModal and Json database support (Mongo, GraphQL, SurrealDB)
-- Data Source abstractions (CSV, Excel, PubSub, APIs)
-- DataSet building - conditions, query-based expressions and delayed condition lookup
-- Sync Relationship/References traversal - one-many and many-many - including cross-persistence.
-- Generic types for DataSet, Table and ActiveRecord over Entity
-- Support for standard and extended types on table columns
-- Column flags
-- Column flags and type-aware columns
-- Typed queries (known result type) and associated queries (can self-execute)
-- Type-erased structs for all major traits (AnyTable, AnyExpression)
-- Adaptors for UI frameworks, APIs (like axum)
-- Pagination support wired into query builders
-- Yaml-based Entity configurator
-- Powerful Error handling
-
-## Type erasure support
-
-Rust type system is amazing and it is at the core of all Vantage features. In some cases, we want to
-erase types, for example if we require a generic type interface.
-
-Vantage provides a full set of "Any\*" types, which can be used like this:
+Relations work on sets too. A category table declares
+`.with_many("products", "category_id", Product::table)`, and then:
 
 ```rust
-let clients = Client::admin_api(); // impl DataSet<Client>
-let clients = AnyDataSet::new(clients); // AnyDataSet - types erased.
-
-let entities: = vec![clients, orders, ..];
+let products = Category::table(db)
+    .with_search("t")
+    .get_ref_as::<Product>("products")?;
 ```
 
-Once type is erased - you can store different entities in same data-structure, implement
-cross-language SDKs. If you are interested in "Any\*" types, see Documentation. The rest of the
-README will focus on fully typed primitives.
-
-## DataSet operations
-
-Crate `vantage-dataset` introduces ImTableSource, implementing in-memory DataSet implementation.
-
-```rust
-let in_memory_cache = ImDataSource::new();
-
-let client_cache = ImTable::<User>::new(&in_memory_cache, "clients");
-let clients.import(Client::read_csv("clients.csv")).await?;
-
-// Basic loading operation - load one client record
-let (id, client) = clients.load_some().await?;
-// Next - delete it from memory
-clients.delete_id(&id).await?;
-// Insert it back
-clients.insert_id(id, client).await?;
-```
-
-The above operation will work consistently with ANY data-set implementation. If you switch to
-`let clients = Client::admin_api()`, the rest of your code remains unchanged, because both `ImTable`
-and `admin_api()` implement `DataSet<>`.
-
-## Type casting and Value Sets
-
-Some record types can be incredibly complex. Vantage assumes that any entity can be represented
-through various types. Next example may fetch only the "name" field from admin_api (if API supports
-this):
-
-```rust
-struct MiniClient {
-    name: String,
-}
-let just_name = Client::admin_api()
-    .get_id_as::<MiniClient>(client_id)
-    .await?
-    .name;
-```
-
-DataSet has no mandatory fields. Sometimes you don't want to use types at all. For this situation,
-Vantage has full support for `serde_json::Value`:
-
-```rust
-let just_name = Client::admin_api()
-    .get_id_value(client_id)
-    .await?
-    .get("name")?;
-```
-
-If you want to learn more about `ValueSet` - you can find more info in the documentation.
-
-## Table
-
-`Table<>` type implemented in `vantage-table` crate brings a crucial type into Vantage:
-
-```rust
-impl Client {
-    fn table() -> Table<Client, Oracle>;
-}
-impl Order {
-    fn table() -> Table<Order, MongoDB>;
-}
-```
-
-Lets start by looking at the core features of Table:
-
-- Table has Columns
-- Table can be filtered
-- Table can be ordered
-- Table can paginate
-
-To maximize performance, Table will always try to use database capabilities to implement the above
-features, and retrieve data once it's filtered, ordered and paginated.
-
-```rust
-let mut order = Order::table();
-order.add_condition(order.is_deleted().eq(false));
-order.set_order_by(order.created_at().desc());
-order.set_pagination(Pagination::ipp(25));
-
-// filters, sorts and paginates on-the-server
-for (id, order) in order.get().await? {
-    dbg!(order);
-}
-```
-
-Table can be cloned and all the above methods support builder-pattern:
-
-```rust
-let orders = Order::table();
-for (id, order) in Order::table()
-  .with_condition(order.is_deleted().eq(false))
-  .with_order_by(order.created_at().desc())
-  .with_pagination(Pagination::ipp(25))
-  .get().await?
-{
-    dbg!(order);
-}
-```
-
-## TableSource
-
-Previous example created `order` table like this:
-
-```rust
-let order: Table<Order, MongoDB>
-```
-
-If MongoDB implements `TableSource`, then Vantage will implement `DataSet<E>` for
-`Table<E, _: TableSource>` automatically. In other words, any table is also a DataSet. The
-`import()` method accepts `ReadableDataSet`, so we can conveniently pass a MongoDB Table as an
-argument.
-
-Let's populate our in-memory cache from MongoDB:
-
-```rust
-let mongo_orders = Order::table(); // Table<Order, MongoDB>
-let mongo_orders = mongo_orders
-    .with_condition(mongo_orders.is_deleted().eq(false));
-let im_orders = ImTable::<Order>::new(&in_memory_cache, "orders");
-
-im_orders.import(&mongo_orders).await?;
-```
-
-## SelectSource and Queries
-
-Relational databases like SQL or SurrealDB use powerful query languages to perform even more
-operations inside the database. `vantage-expressions` implements building blocks for Query Builders.
-Crates `vantage-surrealdb` and `vantage-sql` provide implementations for Query Builders as well as
-the ability to execute those queries:
-
-```rust
-impl SelectableDataSource<AnySurrealType> for SurrealDB {
-    type Select = SurrealSelect;
-
-    fn select(&self) -> Self::Select;
-    async fn execute_select(&self, select: &Self::Select) -> Result<Vec<AnySurrealType>>;
-}
-
-impl Selectable<AnySurrealType> for SurrealSelect { .. }
-```
-
-Vantage understands that databases have different SQL dialects or even entirely different query
-languages. As with other things, Vantage expects all Query Builders to implement a bare minimum:
-`impl Selectable`.
-
-In our example, the organization stores `Client` in SurrealDB, but that is not a database that most
-developers are familiar with.
-
-Vantage query builder interface breaches this gap. Here is how we can calculate
-`SELECT SUM(balance) from client where is_paying_client = true` in SurrealQL:
-
-```rust
-let clients = Client::table();
-let clients = clients.with_condition(clients.is_paying_client().eq(true));
-
-// SurrealSelect<result::Rows>
-let query = clients.select();
-
-// SurrealReturn
-let sum_query = query.as_sum(clients.balance());
-
-// Preview query
-println!("Sum query: {}", sum_query.preview());
-
-// Execute query and Convert Value into Decimal
-let sum: Decimal = sum_query.get().await?.into();
-```
-
-The code listed here will work just as well if the Client table were stored in Oracle. Vantage makes
-it very easy for organizations to move entities between persistences without changing code and
-without sacrificing performance.
-
-## Expressions
-
-While we look into queries, I should also explain Expressions. Implementing Query builder dialects
-with Vantage is easy because you rely on the Expression engine. In Vantage, the expression engine is
-composable and supports parameters:
-
-```rust
-let now = if Some(date) = cutoff_date {
-    expr!("{}", date)
-} else {
-    expr!("now()")
-}
-let condition = expr!("expires_at < {}", now);
-let delete = expr!("DELETE FROM clients WHERE {}", condition);
-
-// Prints: DELETE FROM clients WHERE expires_at < now() -- 0 parameters
-// or DELETE FROM clients WHERE expires_at < $1  ($1 = '2024-06-01T00:00:00Z' )
-println!("Delete query: {}", delete.preview());
-```
-
-Other query languages will struggle with a variable number of parameters and will outright make it
-impossible to compose expressions from chunks.
-
-Vantage additionally supports **deferred expressions** - a way to create queries across multiple
-databases without async code.
-
-## Deferred Expressions
-
-Suppose you have 2 databases. Both support queries, but otherwise incompatible. How do you construct
-a query like this:
+That is one query, with a subquery inside it:
 
 ```sql
-select sum(vat) from MYSQL.orders where order.country_code in (
-    select country_code from POSTGRES.countries where is_eu = true
-)
+SELECT ... FROM "product"
+WHERE "category_id" IN (SELECT "id" FROM "category" WHERE "name" LIKE '%t%')
+AND "is_deleted" = 0
 ```
 
-Without Vantage you would query PostgreSQL first, await, fetch, insert result into MySQL query,
-fetch await etc.
+Writes are safe to retry. Inserting an id that already exists returns the stored row, replacing a
+row with the same values changes nothing, and deleting a row that is already gone succeeds. A write
+through a narrowed table can't touch rows outside its conditions.
 
-Vantage allows you to build query `sync` then query/fetch `async`:
+## Vista
+
+Every driver ships a factory that turns a typed table into a `Vista`:
 
 ```rust
-let eu_countires = expr!("SELECT country_code FROM countries WHERE is_eu = true");
-let eu_countries = postgres.defer(&eu_countires);
+let table = Product::table(db.clone());
+let vista = SqliteVistaFactory::new(db).from_table(table)?;
 
-let vat_sum = expr!("SELECT SUM(vat) FROM orders WHERE country_code IN {}", eu_countries);
-let vat_sum = mysql.query(&vat_sum).await?; // <-- single await!
+let mut v = vista.clone();
+v.add_search("tart")?;
+v.add_order("price", SortDirection::Descending)?;
+let rows = v.list_values().await?;
 ```
 
-But why would you operate with expressions, when you have query builders?
+A Vista has no generic parameters. Values are CBOR (`ciborium::Value`), so integers, decimals,
+datetimes and record ids keep their type. The Vista knows its columns, id column, title columns and
+references, and it declares what its driver can do (`can_order`, `can_search`, `can_fetch_page`,
+`can_subscribe` and so on). Asking for something the driver can't do returns an `Unsupported` error
+instead of a silently unfiltered result.
+
+A Vista doesn't have to come from Rust code. Each factory also loads one from YAML:
+
+```yaml
+name: category
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [title] }
+references:
+  products:
+    table: product
+    kind: has_many
+    foreign_key: category_id
+```
+
+When YAML isn't enough, a [Rhai](https://rhai.rs) script fills the gap. Here a Vista is defined by a
+query:
+
+```yaml
+name: expensive_products
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string }
+sqlite:
+  rhai: |
+    select().from("product").field("id").field("name").where(expr("price > 150"))
+```
+
+`vantage-rhai` runs every script in a YAML file, with the same data vocabulary on every database.
+`VistaCatalog` in `vantage-vista-factory` follows references that cross databases, for example from a
+Postgres table into a MongoDB collection.
+
+## Diorama
+
+`vantage-diorama` puts a cache and live updates between a Vista and a user interface:
 
 ```rust
-let eu_countries = postgres
-    .select()
-    .with_source(expr!("countries"))
-    .with_field("country_code".to_string());
+let products = lens.make_dio(products_vista).await?;
 
-let vat_sum = mysql
-    .select()
-    .with_source(expr!("orders"))
-    .with_expression(expr!("SUM(vat)", Some("total_vat".to_string()))
-    .with_condition(expr!("country_code in {}', postgrs.defer(&eu_countries)))
-    .get().await?; // <-- single await!
+// Use it like any other Vista, but reads are served from the cache:
+let mut facade = products.vista();
+facade.add_condition_eq("category", "books".into())?;
+let books = facade.list_values().await?;
+
+// Or open a view that updates when the data changes:
+let scenery = products
+    .table_scenery()
+    .sort("price", SortDir::Asc)
+    .open()
+    .await?;
 ```
 
-Why is this important? Because `Table<>` can encapsulate the above logic, hiding it's implementation
-away inside the data model, exposing the interface like this:
+A scenery loads only the rows in its viewport and refreshes without clearing what's on screen. It
+polls less when nobody is looking and applies edits optimistically, rolling them back when the
+backend refuses. Views over the same query share one fetch. Diorama can also enrich rows with
+details from another source (augmentation), and `vantage-diorama-aggregate` keeps counts, sums and
+group-bys current as the data changes.
 
-```rust
-let eu_orders = Orders::table().only_eu_orders(); // add_condition(expr)
-let vat_sum = eu_orders.select().as_sum(eu_orders.vat()).get().await?;
-```
+## Datasources
 
-## Expressionable
+| Crate                 | Backend                                         | Version | Writes     | Stays current by                                  |
+| --------------------- | ----------------------------------------------- | ------- | ---------- | ------------------------------------------------- |
+| `vantage-sql`         | PostgreSQL, MySQL/MariaDB, SQLite               | 0.8     | yes        | Postgres: `LISTEN/NOTIFY` (opt-in); others: poll  |
+| `vantage-surrealdb`   | SurrealDB (over `surreal-client`)               | 1.0     | yes        | `LIVE SELECT`                                     |
+| `vantage-mongodb`     | MongoDB                                         | 1.1     | yes        | change streams on a replica set, else poll        |
+| `vantage-memory`      | in-process tables                               | 1.2     | yes        | in-process events                                 |
+| `vantage-redb`        | redb embedded key-value store                   | 0.7     | yes        | typed tables only (no Vista yet)                  |
+| `vantage-api-client`  | REST and GraphQL APIs                           | 1.0     | no         | poll                                              |
+| `vantage-csv`         | CSV files                                       | 0.6     | no         | poll                                              |
+| `vantage-aws`         | AWS APIs (Logs, ECS, IAM, S3, Lambda, DynamoDB) | 0.7     | no         | poll                                              |
+| `vantage-kubernetes`  | Kubernetes API                                  | 0.6     | no         | poll                                              |
+| `vantage-cmd`         | local CLI tools (`aws`, `kubectl`, `gh`)        | 0.6     | no         | poll                                              |
+| `vantage-spacetimedb` | SpacetimeDB (not yet on crates.io)              | 0.6     | owner only | subscription                                      |
 
-In Vantage, many different things can be part of an Expression. You already have seen dates and
-whatever `defer()` returns as part of expressions. Any struct that implements Expressionable can be,
-and this includes:
+The [Live Data chapter](https://vantage-ui.com/book/live-data.html) explains what each backend does
+to stay current and what setup it needs.
 
-- Table columns: `eu_orders.vat()`
-- Operations: `clients.is_paying_client().eq(true)`
-- Sort order: `clients.name().desc()`
-- Queries: `other_table.select()`
-- Query builder components: `Identifier`, `Field`, `JoinQuery`, `SurrealReturn` or `Thing`
-- Closure - that's what `defer()` returns after all.
-- Scalar values - int, string, etc - those become parameters
+The SQL crate also has query builders for each dialect (`SqliteSelect`, `PostgresSelect`,
+`MysqlSelect`) with joins, CTEs, window functions and vendor-specific functions. The SurrealDB crate
+has graph traversal. REST and GraphQL requests go through `vantage-api-pool`'s `ResilientClient`, which
+handles parallelism limits, rate limits, retries, a circuit breaker and auth refresh.
 
-Of course, you can implement more types and even your own unique Expression engines, making them
-compatible. For example, MongoDB has an expression engine that results in JSON strings.
+`vantage-faker` generates seeded, related test data into `vantage-memory`, and can keep changing it
+with Rhai "sims" or make a source slow and unreliable on purpose, for testing UIs.
 
-## Advanced Query Building
+## The crates
 
-> WARNING: Vantage 0.2 code may be incompatible with 0.3
+Foundation, all at 1.0 or later:
 
-In Vantage, query builders implement the `Selectable` trait to make it familiar to developers.
-However, SQL query builders are much more powerful and allow building any query using Rust:
+- [`vantage-core`](vantage-core): `VantageError` with context, error kinds and request priority.
+- [`vantage-types`](vantage-types/README.md): per-database type systems (`vantage_type_system!`),
+  `Record`, and the `#[entity]` macro.
+- [`vantage-expressions`](vantage-expressions/README.md): query templates with parameters, deferred
+  values that resolve at execution time, and the `Selectable` query builder trait.
+- [`vantage-dataset`](vantage-dataset/README.md): read, write and insert traits for values and
+  entities, active records, and an in-memory implementation.
+- [`vantage-table`](vantage-table/README.md): `Table<T, E>` with columns, conditions, relations,
+  expressions, aggregates and lifecycle hooks.
+- [`vantage-vista`](vantage-vista/README.md): the type-erased `Vista` and the `TableShell` trait
+  drivers implement.
+- [`vantage-rhai`](vantage-rhai/README.md): one Rhai host for every YAML script slot.
 
-```rust
+Live data and tooling:
 
-let github_authors_and_teams = Query::new()
-    .with_table("dx_teams", Some("t".to_string()))
-    .with_field("team_source_id".to_string(), expr!("t.source_id"));
-
-// Team is an anchestor
-let github_authors_and_teams = github_authors_and_teams.with_join(query::JoinQuery::new(
-    query::JoinType::Inner,
-    query::QuerySource::Table("dx_team_hierarchies".to_string(), Some("h".to_string())),
-    query::QueryConditions::on().with_condition(expr!("t.id = h.ancestor_id")),
-));
-
-// to a user with `user_name`
-let github_authors_and_teams = github_authors_and_teams
-    .with_join(query::JoinQuery::new(
-        query::JoinType::Inner,
-        query::QuerySource::Table("dx_users".to_string(), Some("dxu".to_string())),
-        query::QueryConditions::on().with_condition(expr!("h.descendant_id = dxu.team_id")),
-    ))
-    .with_field("user_name".to_string(), expr!("dxu.name"))
-    .with_field("github_username".to_string(), expr!("dxu.source_id"));
-```
-
-(Full example:
-<https://github.com/romaninsh/vantage/blob/main/bakery_model/examples/3-query-builder.rs>)
-
-## Table References
-
-Vantage does not use term "relations" and instead uses "references". Defined like this:
-
-```rust
-let client = Client::table();
-let client = client.with_many("orders", "client_id", || Box::new(Order::table()));
-
-pub trait ClientTable {
-    fn ref_orders(&self) -> Table<Order, SurrealDB> {
-        self.get_ref_as("orders").unwrap()
-    }
-}
-impl ClientTable for Table<Client, SurrealDB> {}
-```
-
-relationships can be traversed, transforming one table into another. In Vantage, traversal is also
-`sync` and will just modify conditions:
-
-```rust
-let client_john = client.clone().with_condition(client.name().eq("John Doe"));
-let johns_orders = client_john.ref_orders();
-// Table<Order, SurrealDB>
-```
-
-As you can probably guess, Vantage allows you to traverse references across persistences as well,
-and that happens transparently without changes to the model API.
-
-Reference methods do not necessarily have to return Table; they can also respond with DataSet or
-even something more specific like ReadableDataSet.
-
-(Idea: create ReadableDataSet on top of arbitrary Select query - just need to add type)
-
-## Associated Records
-
-Up to this point, we have mostly looked at DataSets and Tables. They represent multiple records, but
-sometimes you want to operate on a single record.
-
-For this purpose, Vantage has yet another type: ActiveEntity<> and the ActiveEntitySet trait. The
-standard table implementation already implements this trait:
-
-```rust
-let john_table = client.clone().with_condition(client.name().eq("John Doe"));
-
-// ActiveEntity<Client, Table<Client, SurrealDB>>
-let mut john = john_table.get_some_entity();
-john.email = "john@example.com";
-john.save().await?;
-```
-
-With ActiveEntity, you don't need to store ID. ActiveEntity has all the methods you implement for
-Client, and in addition offers `id()` and `save()`.
-
-ActiveEntity must not outlive a `WritableDataSet` where it must save itself, but you have some
-amazing flexibility with this. For instance you can load entity from cache, but save it into
-persistent table.
-
-## Mock Testing
-
-Testing business logic is inherently difficult. As a result - business logic test is done in the
-**integration tests**, relies on database snapshots and is very slow.
-
-Vantage introduces mocks at the SDK level and therefore business logic can be tested at **unit
-test** level, without any external dependencies. This is much faster and will speed up your CI
-pipelines, making engineers more productive.
-
-## UI and API Adaptors
-
-Vantage has a crate `vantage-ui-adapters` which has a reference integration with 6 different Rust UI
-frameworks:
-
-- Cursive
-- EGui
-- GPUI
-- RatatUI
-- Slint
-- Tauri
-
-The goal of adapters is to create a UI Table around a Vantage Table. Similarly, there is integration
-with Axum (see `bakery_api` crate), which can be a great example of building generic REST APIs for
-your `DataSets`. It should also be possible to implement a more sophisticated API such as GraphQL
-API for Tables (but that would be a 3rd party crate).
-
-## Table Columns
-
-Table Columns type is defined by TableSource, so for SurrealDB Vantage uses SurrealColumn. This
-technically allows to have Vendor-specific Column extensions.
-
-Additionally Columns support flags, which is a feature aimed at generic UI builders. For further
-information on this - check Any\* documentation.
-
-## Using Vantage with Axum
-
-Vantage fits well into Axum helping you build API handlers:
-
-```rust
-async fn list_orders(
-    client: axum::extract::Query<OrderRequest>,
-    pager: axum::extract::Query<Pagination>,
-) -> impl IntoResponse {
-    let orders = Client::table()
-        .with_id(client.client_id.into())
-        .ref_orders();
-
-    let mut query = orders.query();
-
-    // Tweak the query to include pagination
-    query.add_limit(Some(pager.per_page));
-    if pager.page > 0 {
-        query.add_skip(Some(pager.per_page * pager.page));
-    }
-
-    // Actual query happens here!
-    Json(query.get().await.unwrap())
-}
-```
-
-API response for `GET /orders?client_id=2&page=1`
-
-```json
-[
-  { "client_id": 2, "client_name": "Doc Brown", "id": 2, "total": 220 },
-  { "client_id": 2, "client_name": "Doc Brown", "id": 3, "total": 995 }
-]
-```
-
-## What's Coming Next
-
-Work-in-progress features for the next release:
-
-- **Condition propagation** - WHERE clauses flowing through references automatically.
-- **PostgreSQL / MySQL** - Extend `vantage-sql` beyond SQLite using sqlx's multi-database support.
-- **Live Tables** - Mutexed tables with real-time updates and CDC integration.
-- **get_linked_table** - JOIN scenarios across table references.
-
-## Roadmap
-
-Vantage needs a bit more work. Large number of features is already implemented, but some notable
-features are still missing:
-
-- Condition propagation in references (WHERE clauses for related queries)
-- Column hooks - allowing field mappings and custom calculation is still TODO
-- Graph relations - implement hasMany support for SurrealDB graph edges
-- Implement some RestAPI adaptors (e.g. GitLab)
-- Aggregators (grouping queries) for SQL and SurrealDB
+- [`vantage-diorama`](vantage-diorama/README.md) (0.14) and `vantage-diorama-aggregate`: cached,
+  live views for UIs.
+- `vantage-vista-factory`: `VistaCatalog`, for references across databases.
+- [`vantage-inventory`](vantage-inventory/README.md): loads a folder of YAML files into typed
+  values, with `!include`, JSON-schema validation and file watching.
+- `vantage-api-adapters`: axum routers that serve a Dio over HTTP, with watch streams, and mount
+  actions as POST routes.
+- `vantage-action` and `vantage-bundle`: business operations defined once on a model, and the
+  contract a compiled-in model crate implements.
+- `vantage-cli-util`: terminal tables, JSON/NDJSON/CBOR output and a generic Vista CLI.
+- `vantage-log-writer`: append-only JSONL tables.
 
 ## Installation
 
-Vantage 0.4 crates are published on [crates.io](https://crates.io). Add the crates you need:
-
 ```toml
-# Core crates
-vantage-core = "0.4"
-vantage-types = "0.4"
-vantage-expressions = "0.4"
-vantage-dataset = "0.4"
-vantage-table = "0.4"
-
-# Backend crates — pick the ones you need
-vantage-sql = { version = "0.4", features = ["sqlite"] }  # also: "postgres", "mysql"
-vantage-surrealdb = "0.4"
-vantage-mongodb = "0.4"
-vantage-csv = "0.4"
+[dependencies]
+vantage-core = "1"
+vantage-types = "1"
+vantage-dataset = "1"
+vantage-table = "1"
+vantage-sql = { version = "0.8", features = ["sqlite"] }  # also "postgres", "mysql", "vista", "rhai"
+tokio = { version = "1", features = ["full"] }
 ```
 
-For the tutorial, see the [Vantage Book](https://romaninsh.github.io/vantage/).
+Add the other drivers you need (`vantage-surrealdb`, `vantage-mongodb`, `vantage-api-client`, ...)
+and turn on their `vista` feature to use them through a Vista. The crates use edition 2024.
 
-If you like what you see so far - reach out to me on BlueSky:
-[nearly.guru](https://bsky.app/profile/nearly.guru)
+## Learning
 
-## Current status
+- [The book](https://vantage-ui.com/book/) starts with the SQLite query builder and builds up to
+  typed tables, an axum server and Vista. It then splits into two paths: a cached facade over a
+  custom API (S3), or a live API over SQL that moves from SQLite to Postgres with `LISTEN/NOTIFY`
+  and then to SurrealDB. Reference chapters cover expressions, relations, Rhai, live data and
+  adding a new datasource.
+- `learn-1` to `learn-11` are the runnable projects behind those chapters.
+- `bakery_model3` is a shared sample model with constructors for several backends, and
+  `bakery_model4` defines the same model as YAML Vistas.
+- The `example_*` crates show the model in egui, GPUI, Slint, Tauri, ratatui and Cursive.
 
-Vantage `0.4` is under active development. The table below shows implementation progress for each
-backend, measured against the steps in the [Persistence Guide](docs4/src/new-persistence.md):
+## For AI agents
 
-| Step | Feature                                                 | SurrealDB | SQLite                        | CSV            | MongoDB | REST API       |
-| ---- | ------------------------------------------------------- | --------- | ----------------------------- | -------------- | ------- | -------------- |
-| 1    | Type system (`vantage_type_system!`, type markers)      | Full      | Full                          | Full           | Full    | serde (Path A) |
-| 2    | Expressions (`ExprDataSource`, `defer()`, vendor macro) | Full      | Full                          | In-memory eval | Stub    | Minimal        |
-| 3    | Query builder (`Selectable`, `SelectableDataSource`)    | Full      | Full (JOINs, CTEs, window fn) | --             | --      | --             |
-| 4    | Table abstraction (`TableSource`, CRUD, aggregates)     | Full      | Full                          | Read-only      | Full    | Read-only      |
-| 5    | Relationships (`with_one`, `with_many`, `get_ref_as`)   | Full      | Full                          | Full           | --      | --             |
-| 6    | Multi-backend (`AnyTable`, CLI)                         | Full      | Full                          | Full           | Full    | Full           |
+- The book as markdown: [llms.txt](https://vantage-ui.com/book/llms.txt), or the whole book in
+  [llms-full.txt](https://vantage-ui.com/book/llms-full.txt)
+- This repo as an MCP server, via [GitMCP](https://gitmcp.io):
+
+  ```sh
+  claude mcp add --transport http vantage-docs https://gitmcp.io/romaninsh/vantage
+  ```
+
+- Questions about the code: [DeepWiki](https://deepwiki.com/romaninsh/vantage)
+
+## Status
+
+Each crate has its own version and changelog. The crates at 1.0 or later follow semver. The pre-1.0
+crates (`vantage-sql`, `vantage-diorama` and the tooling crates) may still change between minor
+versions. `vantage-aws`, `vantage-kubernetes`, `vantage-cmd` and `vantage-spacetimedb` are
+incubating: read-only or partial, and their APIs are still moving.
 
 ## Author
 
-Vantage is implemented by **Romans Malinovskis**. To get in touch:
+Vantage is written by **Romans Malinovskis**. To get in touch:
 
 - <https://www.linkedin.com/in/romansmalinovskis>
 - <https://bsky.app/profile/nearly.guru>

@@ -79,6 +79,13 @@ table.with_column_of::<serde_json::Value>("inventory")
 CSV is a read-only data source. Write operations (`insert`, `replace`,
 `patch`, `delete`) return errors at runtime.
 
+## Vista
+
+With the `vista` feature, `csv.vista_factory().from_table(table)?` wraps a
+table as a read-only `Vista`. `CsvVistaFactory` also builds vistas from YAML
+specs through `VistaFactory::build_from_spec`. A CSV vista doesn't push
+changes; consumers poll.
+
 ## License
 
 MIT OR Apache-2.0

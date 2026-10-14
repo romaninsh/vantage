@@ -6,7 +6,7 @@ against the target type's JSON schema, deserialize.
 
 ```toml
 [dependencies]
-vantage-inventory = "0.1.0"
+vantage-inventory = "0.1.1"
 ```
 
 ```rust
