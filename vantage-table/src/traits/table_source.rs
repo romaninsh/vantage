@@ -15,8 +15,8 @@ use vantage_types::{Entity, Record};
 
 use crate::{column::core::ColumnType, table::Table, traits::column_like::ColumnLike};
 
-/// Trait for table data sources that defines column type separate from execution
-/// TableSource represents a data source that can create and manage tables
+/// A data source that holds tables: it names their column, value, id,
+/// source and condition types, and runs `Table`'s reads and writes.
 #[async_trait]
 pub trait TableSource: DataSource + Clone + 'static {
     type Column<Type>: ColumnLike<Type> + Clone

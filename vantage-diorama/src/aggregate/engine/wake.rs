@@ -43,18 +43,18 @@ fn event_trigger(event: &DioEvent) -> String {
 /// missed by ignoring them.
 ///
 /// `RangeLoaded` is NOT among them, though it reads like one. A single-pass
-/// chunk load writes its rows through [`crate::ChunkSink::push`],
-/// straight into the
-/// cache — it emits no per-row event, and `RangeLoaded` is the only thing it
-/// announces. Ignoring it meant a paged source could load its whole first page
-/// and every aggregate over it would still be reporting the empty set it was
-/// derived over: a dashboard opening on a cold cache showed three zeros and
-/// kept showing them. It is also what makes an aggregate *progressive* — each
+/// chunk load writes its rows through [`crate::ChunkSink::push`], straight
+/// into the cache — it emits no per-row event, and `RangeLoaded` is the only
+/// thing it announces. Ignoring it, a paged source could load its whole first
+/// page and every aggregate over it would still report the empty set it was
+/// derived over: a dashboard opening on a cold cache would show zeros and
+/// keep showing them. It is also what makes an aggregate *progressive* — each
 /// page that lands recomputes over everything held so far.
 ///
 /// **`Refreshing`** announces that a refresh has *started*. It is emitted
-/// before the source's `on_refresh` runs, and the common shape of that callback
-/// is "clear the cache, then refill it" — so reacting here would read the
+/// before the source Lens's [`Refresher`](crate::Refresher) runs, and the
+/// common shape of a refresher is "clear the cache, then refill it" — so
+/// reacting here would read the
 /// source mid-clear and publish a zero that the trailing `DatasetChanged`
 /// immediately corrects. Waiting for that trailing event is what keeps a
 /// refresh from flickering every derived value through empty. If the refresh

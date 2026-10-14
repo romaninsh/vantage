@@ -133,8 +133,7 @@ impl TableScenery for TableSceneryImpl {
     /// A tail already asks for its whole cap; a limit stops at the cap.
     fn request_load_more(&self) {
         match self.placing() {
-            None => return,
-            Some((_, Placing::Unplaced(_))) => return,
+            None | Some((_, Placing::Unplaced(_))) => return,
             Some((_, Placing::Capped(cap, len))) if cap.is_tail() || cap.reached(len) => return,
             Some(_) => {}
         }

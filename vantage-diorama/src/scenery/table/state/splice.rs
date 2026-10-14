@@ -51,9 +51,12 @@ impl SharedRows {
         {
             let mut rows = self.rows.write().unwrap();
             let mut id_to_idx = self.id_to_idx.write().unwrap();
+            let mut idx_to_id = self.idx_to_id.lock().unwrap();
+            let n = rows.len();
             let Some(placed) = place(
                 &rows,
                 &id_to_idx,
+                &mut idx_to_id,
                 &query,
                 &dio_inner.metadata,
                 id,
@@ -72,17 +75,37 @@ impl SharedRows {
             if let Some(at) = placed {
                 id_to_idx.insert(id.to_string(), at);
             }
+            move_slot(&mut idx_to_id, n, id, old, placed);
         }
         self.bump_generation();
         Ok(true)
     }
+
+    /// Change `id_to_idx` and forget [`idx_to_id`](Self::idx_to_id) under the
+    /// same write lock, so no splice reads the old slots against the new map.
+    pub(crate) fn write_id_to_idx<R>(
+        &self,
+        change: impl FnOnce(&mut HashMap<String, usize>) -> R,
+    ) -> R {
+        let mut id_to_idx = self.id_to_idx.write().unwrap();
+        let out = change(&mut id_to_idx);
+        self.forget_idx_to_id();
+        out
+    }
+
+    /// Drop the slot index; the next splice rebuilds it from `id_to_idx`.
+    pub(crate) fn forget_idx_to_id(&self) {
+        *self.idx_to_id.lock().unwrap() = None;
+    }
 }
 
 /// The slot `rec` takes once row `id` has left its old one: `Some(None)`
-/// when it doesn't stay, `None` when the rows aren't dense.
+/// when it doesn't stay, `None` when the rows aren't dense. When `rec`
+/// stays, `idx_to_id` is left current for the rows as they are now.
 fn place(
     rows: &RowMap,
     id_to_idx: &HashMap<String, usize>,
+    idx_to_id: &mut Option<Vec<String>>,
     query: &VistaQuery,
     metadata: &VistaMetadata,
     id: &str,
@@ -95,19 +118,41 @@ fn place(
     let Some(rec) = rec else {
         return Some(None);
     };
-    let mut ids: Vec<Option<&str>> = vec![None; n];
-    for (other, &idx) in id_to_idx {
-        *ids.get_mut(idx)? = Some(other.as_str());
+    let old = id_to_idx.get(id).copied();
+    if !idx_to_id.as_deref().is_some_and(|ids| current(ids, n, id, old)) {
+        *idx_to_id = Some(slot_ids(id_to_idx, n)?);
     }
-    let others = ids
-        .into_iter()
-        .zip(rows.values())
-        .map(|(other, row)| Some((other?, &row.record)))
-        .filter(|pair| pair.is_none_or(|(other, _)| other != id))
-        .collect::<Option<Vec<_>>>()?;
-    let at = others
-        .partition_point(|&other| query.cmp_rows(other, (id, rec), metadata) == Ordering::Less);
-    Some(Some(at))
+    let ids = idx_to_id.as_deref()?;
+    // `partition_point` over the rows other than `old`, read in place.
+    let slot = |i: usize| if old.is_some_and(|old| i >= old) { i + 1 } else { i };
+    let (mut lo, mut hi) = (0, n - usize::from(old.is_some()));
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let at = slot(mid);
+        let other = (ids[at].as_str(), &rows.get(&at)?.record);
+        if query.cmp_rows(other, (id, rec), metadata) == Ordering::Less {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    Some(Some(lo))
+}
+
+/// Whether `ids` still names the slots of `n` rows, as far as row `id` at
+/// `old` can tell.
+fn current(ids: &[String], n: usize, id: &str, old: Option<usize>) -> bool {
+    ids.len() == n && old.is_none_or(|old| ids.get(old).is_some_and(|at| at == id))
+}
+
+/// The id at each of `n` slots, or `None` when `id_to_idx` leaves a slot
+/// empty or points past the end.
+fn slot_ids(id_to_idx: &HashMap<String, usize>, n: usize) -> Option<Vec<String>> {
+    let mut ids: Vec<Option<&str>> = vec![None; n];
+    for (id, &idx) in id_to_idx {
+        *ids.get_mut(idx)? = Some(id.as_str());
+    }
+    ids.into_iter().map(|id| id.map(str::to_string)).collect()
 }
 
 /// Shift the slots past `removed` down and those at or past `inserted` up,
@@ -127,3 +172,31 @@ fn reindex(
         }
     }
 }
+
+/// Move `id` in the slot index from `removed` to `inserted`, as the rows
+/// moved. An index that wasn't current for the `n` rows before the move is
+/// dropped instead.
+fn move_slot(
+    idx_to_id: &mut Option<Vec<String>>,
+    n: usize,
+    id: &str,
+    removed: Option<usize>,
+    inserted: Option<usize>,
+) {
+    let Some(ids) = idx_to_id.as_mut() else {
+        return;
+    };
+    if !current(ids, n, id, removed) {
+        *idx_to_id = None;
+        return;
+    }
+    if let Some(old) = removed {
+        ids.remove(old);
+    }
+    if let Some(at) = inserted {
+        ids.insert(at, id.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests;

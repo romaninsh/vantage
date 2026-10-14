@@ -9,7 +9,7 @@ Feature: Scriptable source — latency, counted faults, live mutation
   Scenario: a slow source still loads the viewport under virtual time
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     And the source has a read latency of 200 milliseconds
     When the dio is created
@@ -23,7 +23,7 @@ Feature: Scriptable source — latency, counted faults, live mutation
   Scenario: a counted source fault fails one load then recovers on refresh
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     And the source fails the next 1 read
     When the dio is created
@@ -39,7 +39,7 @@ Feature: Scriptable source — latency, counted faults, live mutation
   Scenario: a mid-scenario source edit appears after refresh
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     When the dio is created
     And the table scenery is opened

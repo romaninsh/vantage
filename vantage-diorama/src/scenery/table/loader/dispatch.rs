@@ -3,16 +3,16 @@ use std::sync::Arc;
 use crate::dio::{Dio, DioEvent};
 use crate::lens::{ChunkSink, LoaderCx};
 use crate::scenery::table::ViewportRequest;
-use crate::scenery::table::state::{InFlightMarker, SharedRows};
-use crate::scenery::table::view_stats::TotalKind;
+use crate::scenery::table::state::SharedRows;
 
-use super::guards::{CancelOnDrop, PendingChunk};
-use super::range::compute_fetch_range;
+use super::guards::{CancelOnDrop, PendingChunk, claim_in_flight};
+use super::range::{Window, choose_window};
+use super::telemetry::{Dispatch, trace_dispatch};
 
 /// Always emits `ViewportChanged`. If the range is fully cached or the view
 /// doesn't serve its query from windows, returns `None` without touching
 /// the cache. Otherwise dispatches the callback against an edge-anchored
-/// "effective" range (see [`compute_fetch_range`]) and, once it resolves,
+/// "effective" range (see [`choose_window`]) and, once it resolves,
 /// returns `Some(PendingChunk)` for
 /// [`finish_chunk_load`](super::commit::finish_chunk_load) to commit — a
 /// `select!` racing this function against the viewport channel can cancel
@@ -70,87 +70,19 @@ pub(super) async fn run_chunk_callback(
         return None;
     }
 
-    let total = *state.total.read().unwrap();
-    let visible_len = visible.end.saturating_sub(visible.start);
-    let visible_cached = {
-        let rows = state.rows.read().unwrap();
-        visible.clone().filter(|i| rows.contains_key(i)).count()
-    };
-
-    // Unknown-total horizon probe. When the source has never stated a total,
-    // the advertised end is only our inference — and a viewport pressed
-    // against it must ASK past it, even when every visible row is cached.
-    // Without this, a warm cache walls the set at its seeded size forever:
-    // the visible range is fully cached, no fetch fires, and the fetch is
-    // the only thing that can extend the horizon.
-    // What the view believes the set's end is: the inferred total, or — on a
-    // cache-seeded reopen, where no total survived — the seeded row count.
-    let advertised_end =
-        total.unwrap_or_else(|| state.rows.read().unwrap().keys().max().map_or(0, |i| i + 1));
-    // Only a guessed end is worth asking past. A short page proves the end
-    // (`Exact`), and probing it again on every viewport costs a wasted fetch;
-    // a refresh re-fetches anyway, so growth is still picked up.
-    let end_is_guess = total.is_none() || *state.total_kind.read().unwrap() == TotalKind::Horizon;
-    let horizon_probe = state.is_chunk_loaded()
-        && !force_load
-        && !state.total_ever_stated()
-        && end_is_guess
-        && advertised_end > 0
-        && visible.end >= advertised_end;
-
-    // Decide what to actually fetch. `force_load` callers
-    // (`request_load_more`) have already pre-computed a range; respect
-    // it. For viewport-driven loads, shift toward the uncached side.
-    let effective_range = if force_load {
-        visible.clone()
-    } else if horizon_probe {
-        // Unclamped (`total: None`): the fetch may run past the inferred end.
-        // Fully-cached viewport → probe one page starting AT the end; rows
-        // coming back mean the set grew (or was always bigger), nothing back
-        // means the inference was right and the hole clamp keeps it.
-        match compute_fetch_range(&state, &visible, None) {
-            Some(r) => r,
-            None => advertised_end..advertised_end + state.page_size,
-        }
-    } else {
-        match compute_fetch_range(&state, &visible, total) {
-            Some(r) => r,
-            None => {
-                tracing::debug!(
-                    target: "vantage_diorama::source",
-                    table = %dio_inner.master.name(),
-                    range = ?visible,
-                    rows = visible_cached,
-                    "CACHE — served locally, no master fetch",
-                );
-                let repeat = {
-                    let mut last = state.last_served.lock().unwrap();
-                    let same = last.as_ref() == Some(&visible);
-                    *last = Some(visible.clone());
-                    same
-                };
-                if !repeat {
-                    crate::debug::tapline!(
-                        tap,
-                        "cache",
-                        "all {} rows of {}..{} served locally — no fetch",
-                        visible_cached,
-                        visible.start,
-                        visible.end,
-                    );
-                }
-                return None;
-            }
-        }
-    };
+    let Window {
+        range: effective_range,
+        horizon_probe,
+        visible_cached,
+    } = choose_window(&state, &dio_inner, &visible, force_load)?;
 
     // Only a view serving windows fetches them: one whose query the master
     // takes whole, so it has a plan with no residual. An eager view holds
     // every row already, so its viewport moving is its steady state, not a
     // fault; a paged view whose query leaves a residual is answered from the
     // cache or has failed, and a window would answer neither. Logged at
-    // DEBUG like the fully-cached skip above: anything that re-drives the
-    // viewport on a timer (a relation list's periodic re-pull,
+    // DEBUG like the fully-cached skip in `choose_window`: anything that
+    // re-drives the viewport on a timer (a relation list's periodic re-pull,
     // `refresh_loaded_viewport`) would otherwise emit a line per tick,
     // forever.
     let (Some(cb), Some(plan)) = (
@@ -166,28 +98,7 @@ pub(super) async fn run_chunk_callback(
         return None;
     };
 
-    {
-        let mut guard = state.load_in_flight.lock().unwrap();
-        if guard.as_ref() == Some(&effective_range) {
-            tracing::debug!(
-                target: "vantage_diorama::viewport",
-                effective = ?effective_range,
-                "fire_chunk_load: SKIP (same range already in flight)",
-            );
-            return None;
-        }
-        if let Some(prev) = guard.as_ref() {
-            tracing::warn!(
-                target: "vantage_diorama::viewport",
-                prev = ?prev,
-                effective = ?effective_range,
-                "fire_chunk_load: overwriting in-flight marker (viewport_loop is supposed to be serial)",
-            );
-        }
-        *guard = Some(effective_range.clone());
-    }
-    let in_flight = InFlightMarker(state.clone());
-    state.publish_view_stats();
+    let in_flight = claim_in_flight(&state, &effective_range)?;
 
     // Only allocate a request id when the tap is enabled — it's the one
     // correlator that ties this fetch's "load dispatch" to its "load return"
@@ -197,7 +108,6 @@ pub(super) async fn run_chunk_callback(
 
     // Recompute overlap on the effective range so the log shows the
     // shift working.
-    let effective_len = effective_range.len();
     let (effective_cached, first_hole) = {
         let rows = state.rows.read().unwrap();
         let present = effective_range
@@ -207,7 +117,6 @@ pub(super) async fn run_chunk_callback(
         let first_hole = effective_range.clone().find(|i| !rows.contains_key(i));
         (present, first_hole)
     };
-    let effective_to_fetch = effective_len - effective_cached;
 
     let sink = ChunkSink {
         target: Arc::downgrade(&state) as std::sync::Weak<dyn crate::lens::SceneryChunkTarget>,
@@ -227,59 +136,18 @@ pub(super) async fn run_chunk_callback(
     // A view serving windows has a plan with no residual: the master takes
     // this whole query.
     let query = plan.query().clone();
-    tracing::debug!(
-        target: "vantage_diorama::viewport",
-        visible = ?visible,
-        visible_len,
-        visible_cached,
-        effective = ?effective_range,
-        effective_len,
-        effective_cached,
-        effective_to_fetch,
-        effective_overfetch_pct = if effective_len > 0 {
-            (effective_cached as f64 / effective_len as f64) * 100.0
-        } else {
-            0.0
-        },
-        force_load,
-        priority = ?priority,
-        "fire_chunk_load: dispatching the paged loader",
-    );
-    // The counterpart of the CACHE line above: this is the moment a range
-    // costs a round trip. `already_cached` says how much of what we are about
-    // to fetch the cache ALREADY holds — non-zero means the fetch is
-    // re-reading rows we have, which on a `force_load` is by design and
-    // otherwise is worth explaining.
-    tracing::debug!(
-        target: "vantage_diorama::source",
-        table = %dio_inner.master.name(),
-        range = ?effective_range,
-        rows = effective_to_fetch,
-        already_cached = effective_cached,
-        force_load,
-        "MASTER — fetching from the datasource",
-    );
-    crate::debug::tapline!(
+    trace_dispatch(
         tap,
-        "dio",
-        "fetch #{} asks for rows {}..{}{} — {} missing, {} already held{}{}",
-        req.unwrap_or_default(),
-        effective_range.start,
-        effective_range.end,
-        if effective_range == visible {
-            String::new()
-        } else {
-            format!(" (viewport {}..{})", visible.start, visible.end)
-        },
-        effective_to_fetch,
-        effective_cached,
-        match &query.order {
-            Some((col, dir)) => format!(" · sorted by {col} {dir:?}"),
-            None => String::new(),
-        },
-        match &query.search {
-            Some(q) => format!(" · searching \"{q}\""),
-            None => String::new(),
+        &dio_inner,
+        Dispatch {
+            req,
+            visible: &visible,
+            visible_cached,
+            effective: &effective_range,
+            effective_cached,
+            force_load,
+            priority,
+            query: &query,
         },
     );
     // Clear the dirty flag so it reflects only the rows this load writes;

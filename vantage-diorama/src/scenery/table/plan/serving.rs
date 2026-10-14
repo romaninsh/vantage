@@ -190,7 +190,7 @@ impl SharedRows {
         self.placed
             .store(false, std::sync::atomic::Ordering::SeqCst);
         self.rows.write().unwrap().clear();
-        self.id_to_idx.write().unwrap().clear();
+        self.write_id_to_idx(|ids| ids.clear());
         self.set_total(None);
     }
 

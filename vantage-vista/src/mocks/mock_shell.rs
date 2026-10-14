@@ -35,8 +35,9 @@ type Rec = Record<CborValue>;
 /// carries it and narrows on its own.
 ///
 /// Conditions take every [`FilterOp`] on a flat column and refuse a dotted
-/// path ([`condition_column_error`](crate::condition_column_error)); the rows are evaluated by
-/// [`VistaQuery::matches`] and sorted as [`VistaQuery::sort_rows`] sorts.
+/// path ([`condition_column_error`](crate::condition_column_error)); the
+/// rows are evaluated by [`VistaQuery::matches`] and sorted as
+/// [`VistaQuery::sort_rows`] sorts.
 #[derive(Clone)]
 pub struct MockShell {
     data: Arc<Mutex<IndexMap<String, Rec>>>,

@@ -1,53 +1,12 @@
 use vantage_vista::Column;
 
 use super::*;
+use crate::aggregate::builtin::fixtures::{events, record, rows, schema, text};
 use crate::aggregate::builtin::{Count, Sum};
-
-fn record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
-    let mut r = Record::new();
-    for (k, v) in pairs {
-        r.insert((*k).to_string(), v.clone());
-    }
-    r
-}
-
-fn rows(records: Vec<Record<CborValue>>) -> Rows {
-    records
-        .into_iter()
-        .enumerate()
-        .map(|(i, r)| (i.to_string(), r))
-        .collect()
-}
-
-fn text(s: &str) -> CborValue {
-    CborValue::Text(s.to_string())
-}
 
 /// The ids of the rows `conditions` keep, in row order.
 fn narrowed_ids(conditions: &Conditions, rows: &Rows, schema: &VistaMetadata) -> Vec<String> {
     conditions.narrow(rows, schema).keys().cloned().collect()
-}
-
-fn events() -> Rows {
-    rows(vec![
-        record(&[
-            ("Event", text("opened")),
-            ("Size", CborValue::Integer(10.into())),
-        ]),
-        record(&[
-            ("Event", text("failed")),
-            ("Size", CborValue::Integer(20.into())),
-        ]),
-        record(&[
-            ("Event", text("opened")),
-            ("Size", CborValue::Integer(30.into())),
-        ]),
-    ])
-}
-
-/// The schema the tests' aggregations are handed: these rows have none.
-fn schema() -> VistaMetadata {
-    VistaMetadata::new()
 }
 
 #[test]

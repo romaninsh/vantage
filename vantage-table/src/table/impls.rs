@@ -2,7 +2,7 @@ pub mod columns;
 pub mod conditions;
 pub mod expr;
 pub mod pagination;
-pub mod refereces;
+pub mod references;
 mod search_columns;
 pub mod selectable;
 pub mod sorting;

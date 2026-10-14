@@ -11,7 +11,7 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_types::Record;
-use vantage_vista::VistaQuery;
+use vantage_vista::{Vista, VistaQuery};
 
 use crate::dio::{DioInner, Plan, admitted_by_dio};
 
@@ -31,23 +31,32 @@ pub(crate) struct ViewPlan {
     /// What the master refused of `query`, with the Dio's own residual laid
     /// over it.
     residual: VistaQuery,
+    /// The master with the clauses it took of `query` applied.
+    narrowed: Vista,
 }
 
 impl ViewPlan {
     /// Plan `query` against `dio`'s master. Fails when the master rejects a
     /// clause outright.
     pub(crate) fn new(dio: &DioInner, query: VistaQuery) -> Result<Self> {
-        let Plan { refused, .. } = dio.plan(&query)?;
+        let Plan { narrowed, refused } = dio.plan(&query)?;
         Ok(Self {
             has_residual: !refused.is_empty() || dio.residual_narrows(),
             residual: dio.with_own_residual(&query, refused),
             query,
+            narrowed,
         })
     }
 
     /// The view query this plan routes: what the next load sends.
     pub(crate) fn query(&self) -> &VistaQuery {
         &self.query
+    }
+
+    /// The master narrowed by the clauses it took, which a count pushed
+    /// down to the master reads.
+    pub(crate) fn narrowed(&self) -> &Vista {
+        &self.narrowed
     }
 
     /// Whether a window read from the master leaves anything out: a clause

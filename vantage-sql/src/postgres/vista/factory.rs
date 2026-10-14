@@ -18,7 +18,7 @@ use crate::postgres::vista::source::PostgresTableShell;
 use crate::postgres::vista::spec::{PostgresColumnExtras, PostgresTableExtras, PostgresVistaSpec};
 use crate::sql_vista::{
     SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, lower_spec, metadata_options,
-    sql_capabilities,
+    source_block, sql_capabilities,
 };
 
 pub struct PostgresVistaFactory {
@@ -134,17 +134,9 @@ impl SqlSpecDialect for PostgresDB {
     type Query = PostgresSelect;
 
     fn source_block(spec: &PostgresVistaSpec) -> SourceBlock<'_> {
-        let Some(block) = &spec.driver.postgres else {
-            return SourceBlock::default();
-        };
-        let inherit = block.inherit.as_ref();
-        SourceBlock {
-            table: block.table.as_deref(),
-            rhai: block.rhai.as_deref(),
-            base: block.base.as_deref(),
-            inherit_columns: inherit.map_or(&[], |i| &i.columns),
-            inherit_relations: inherit.map_or(&[], |i| &i.relations),
-            args: &block.args,
+        match &spec.driver.postgres {
+            Some(block) => source_block!(block),
+            None => SourceBlock::default(),
         }
     }
 

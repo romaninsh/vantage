@@ -93,9 +93,10 @@ pub trait AggregateOutput: sealed::Sealed + PartialEq + Clone + Send + Sync + 's
 
 pub(crate) mod sealed {
     pub trait Sealed: Sized {
-        /// The output for a row count, when this shape can hold one: the
-        /// engine's [`Reads::Count`](super::Reads::Count) route.
-        fn from_count(count: u64) -> Option<Self>;
+        /// How to build the output from a row count, when this shape can hold
+        /// one: the engine's [`Reads::Count`](super::Reads::Count) route.
+        /// `None` means the engine reads no count at all.
+        fn from_count() -> Option<fn(u64) -> Self>;
     }
 }
 
@@ -106,8 +107,8 @@ pub(crate) trait DebugRowCount {
 }
 
 impl sealed::Sealed for CborValue {
-    fn from_count(count: u64) -> Option<Self> {
-        Some(CborValue::Integer(count.into()))
+    fn from_count() -> Option<fn(u64) -> Self> {
+        Some(|count| CborValue::Integer(count.into()))
     }
 }
 impl AggregateOutput for CborValue {}
@@ -163,7 +164,7 @@ impl PartialEq for DerivedRows {
 
 /// A row set has no count-only shape: it is always computed from the rows.
 impl sealed::Sealed for DerivedRows {
-    fn from_count(_count: u64) -> Option<Self> {
+    fn from_count() -> Option<fn(u64) -> Self> {
         None
     }
 }

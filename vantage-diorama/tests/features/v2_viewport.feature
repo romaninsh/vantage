@@ -12,7 +12,7 @@ Feature: Viewport-driven chunk loading (v2)
   Scenario: set_viewport into an uncached range triggers a chunk load
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     When the dio is created
     And the table scenery is opened
@@ -26,7 +26,7 @@ Feature: Viewport-driven chunk loading (v2)
   Scenario: set_viewport inside the cached range does not refetch
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that records calls
     When the dio is created
     And the table scenery is opened
@@ -37,7 +37,7 @@ Feature: Viewport-driven chunk loading (v2)
   Scenario: rapid viewport changes coalesce into a single load
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     When the dio is created
     And the table scenery is opened
@@ -51,7 +51,7 @@ Feature: Viewport-driven chunk loading (v2)
   Scenario: request_load_more pages the next chunk past the current cache end
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     When the dio is created
     And the table scenery is opened
@@ -64,7 +64,7 @@ Feature: Viewport-driven chunk loading (v2)
   Scenario: RangeLoaded carries the loaded range and does not invalidate the whole scenery
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that pulls the requested range from master
     When the dio is created
     And the table scenery is opened
@@ -75,7 +75,7 @@ Feature: Viewport-driven chunk loading (v2)
   Scenario: failed on_load_chunk leaves the cache untouched and emits LoadFailed
     Given a master with 1000 rows
     And a lens with on_start that copies the first 100 rows to cache
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     And an on_load_chunk callback that always errors
     When the dio is created
     And the table scenery is opened

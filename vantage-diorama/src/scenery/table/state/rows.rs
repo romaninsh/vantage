@@ -39,7 +39,11 @@ impl SharedRows {
             return;
         };
         let enriched = EnrichedRecord::now(rec, status);
-        self.rows.write().unwrap().insert(idx, Arc::new(enriched));
+        {
+            let mut rows = self.rows.write().unwrap();
+            rows.insert(idx, Arc::new(enriched));
+            self.forget_idx_to_id();
+        }
         self.bump_generation();
     }
 

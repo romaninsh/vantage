@@ -1,6 +1,7 @@
 //! The `Record` type's Rhai registration: `record()`/`record(id)` on
 //! `Table`, field access, staging and inspection verbs.
 
+use ciborium::Value as CborValue;
 use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Map as RhaiMap};
 
 use super::RecordDraft;
@@ -103,12 +104,16 @@ fn id_column(r: &RecordDraft) -> RhaiResult<String> {
     Ok(col)
 }
 
-fn set_field(r: &RecordDraft, col: &str, value: Dynamic) -> RhaiResult<()> {
-    if col == id_column(r)? {
+/// `value` as the CBOR staged under `col`; the id column can't be staged.
+fn staged(col: &str, value: Dynamic, id_col: &str) -> RhaiResult<CborValue> {
+    if col == id_col {
         return Err(format!("`{col}` is the id column and can't be set").into());
     }
-    let cbor = dynamic_to_cbor(value)
-        .map_err(|e| -> Box<EvalAltResult> { format!("`{col}`: {e}").into() })?;
+    dynamic_to_cbor(value).map_err(|e| -> Box<EvalAltResult> { format!("`{col}`: {e}").into() })
+}
+
+fn set_field(r: &RecordDraft, col: &str, value: Dynamic) -> RhaiResult<()> {
+    let cbor = staged(col, value, &id_column(r)?)?;
     r.inner
         .lock()
         .unwrap()
@@ -119,17 +124,13 @@ fn set_field(r: &RecordDraft, col: &str, value: Dynamic) -> RhaiResult<()> {
 
 fn set_map(r: &RecordDraft, map: RhaiMap) -> RhaiResult<()> {
     let id_col = id_column(r)?;
-    let mut staged = Vec::with_capacity(map.len());
+    let mut entries = Vec::with_capacity(map.len());
     for (k, v) in map {
-        if k.as_str() == id_col {
-            return Err(format!("`{id_col}` is the id column and can't be set").into());
-        }
-        let cbor = dynamic_to_cbor(v)
-            .map_err(|e| -> Box<EvalAltResult> { format!("`{k}`: {e}").into() })?;
-        staged.push((k.to_string(), cbor));
+        let cbor = staged(k.as_str(), v, &id_col)?;
+        entries.push((k.to_string(), cbor));
     }
     let mut guard = r.inner.lock().unwrap();
-    for (k, cbor) in staged {
+    for (k, cbor) in entries {
         set_dotted(&mut guard.changes, &k, cbor);
     }
     Ok(())
