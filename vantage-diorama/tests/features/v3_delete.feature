@@ -1,8 +1,9 @@
 Feature: Write path — Delete
 
-  v3 — facade `delete` enqueues a `Delete` `ChangeFlash`. Default-write
-  routes to master, the Mirror helper applies to both master and cache,
-  and an erroring `on_flash` publishes `WriteFailed`.
+  v3 — facade `delete` enqueues a `Delete` `ChangeFlash`, staged in the
+  cache first. Default-write routes to master, the Mirror helper writes
+  the master, a confirmed delete keeps the staged removal, and an erroring
+  `on_flash` reverts it (`WriteReverted`).
 
   Scenario: default_write routes Delete to master when on_flash is missing
     Given a master with rows
@@ -14,9 +15,10 @@ Feature: Write path — Delete
     And I delete id "a" via the facade
     Then the master has 1 row
     And the master record "a" is absent
-    And the cache still has 2 rows
+    And the cache has 1 row
+    And the cache record "a" is absent
 
-  Scenario: WriteFailed lands on the bus when on_flash errors for Delete
+  Scenario: the delete is reverted on the bus when on_flash errors for Delete
     Given a master with rows
       | id | title |
       | a  | one   |
@@ -25,6 +27,9 @@ Feature: Write path — Delete
     When the dio is created
     And I delete id "a" via the facade
     Then the event log matches snapshot "write_failed_delete"
+    And the facade write failed with "on_flash rejected"
+    And the cache has 1 row
+    And the cache record "a" has title "one"
 
   Scenario Outline: Delete path works against real backends
     Given the backend is <backend>
@@ -37,7 +42,7 @@ Feature: Write path — Delete
     When the dio is created
     And I delete id "a" via the facade
     And the write queue drains
-    Then on_flash has been called 1 time
+    Then the writer has been called 1 time
     And the event log matches snapshot "mirror_delete_<backend>"
     And the master has 1 row
     And the master record "a" is absent

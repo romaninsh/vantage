@@ -1,10 +1,9 @@
 Feature: Write path — Patch
 
-  v3 — facade `patch_value` enqueues a `Patch` `ChangeFlash`, which the
-  default-write path forwards to master and `on_flash` can intercept.
-  Patch merges: columns absent from the partial must survive on the
-  authoritative record, both for the default-route master path and for
-  the Mirror helper's cache write.
+  v3 — facade `patch_value` enqueues a `Patch` `ChangeFlash`, staged in the
+  cache, which the default-write path forwards to master and `on_flash` can
+  intercept. Patch merges: columns absent from the partial must survive on
+  the authoritative record and on the staged cache row.
 
   Scenario: default_write routes Patch to master when on_flash is missing
     Given a master with rows
@@ -17,10 +16,10 @@ Feature: Write path — Patch
       | a  | alpha |
     Then the master record "a" has title "alpha"
     And the master record "a" has price "10"
-    And the cache record "a" has title "one"
+    And the cache record "a" has title "alpha"
     And the cache record "a" has price "10"
 
-  Scenario: WriteFailed lands on the bus when on_flash errors for Patch
+  Scenario: the patch is reverted on the bus when on_flash errors for Patch
     Given a master with rows
       | id | title |
       | a  | one   |
@@ -31,6 +30,8 @@ Feature: Write path — Patch
       | id | title |
       | a  | alpha |
     Then the event log matches snapshot "write_failed_patch"
+    And the facade write failed with "on_flash rejected"
+    And the cache record "a" has title "one"
 
   Scenario Outline: Patch path works against real backends
     Given the backend is <backend>
@@ -44,7 +45,7 @@ Feature: Write path — Patch
       | id | title |
       | a  | alpha |
     And the write queue drains
-    Then on_flash has been called 1 time
+    Then the writer has been called 1 time
     And the event log matches snapshot "mirror_patch_<backend>"
     And the master record "a" has title "alpha"
     And the master record "a" has price "10"

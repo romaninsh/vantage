@@ -20,11 +20,7 @@ async fn named_master(w: &mut DioramaWorld, name: String, step: &Step) {
 async fn create_named_dio(w: &mut DioramaWorld, name: String) {
     // Reuse the Lens across all named dios under this scenario.
     if w.lens.is_none() {
-        let cache = w.cache_source();
-        let lens = w
-            .lens_builder
-            .build(cache, &w.spies, w.backend)
-            .expect("build lens");
+        let lens = w.build_lens();
         w.lens = Some(lens);
     }
     let lens = w.lens.as_ref().expect("lens not built").clone();
@@ -32,8 +28,7 @@ async fn create_named_dio(w: &mut DioramaWorld, name: String) {
         .named_masters
         .remove(&name)
         .unwrap_or_else(|| panic!("no master named {name}"));
-    let dio = lens.make_dio(master).await.expect("make_dio");
-    w.start_recorder(dio.subscribe_events());
+    let dio = w.build_dio(&lens, master).await;
     w.named_dios.insert(name, dio);
 }
 
@@ -43,7 +38,7 @@ async fn named_cache_contains(w: &mut DioramaWorld, name: String, expected: u64)
         .named_dios
         .get(&name)
         .unwrap_or_else(|| panic!("no dio named {name}"));
-    let got = dio.cache().count().await.expect("cache count") as u64;
+    let got = w.cache_of(dio).await.count().await.expect("cache count") as u64;
     assert_eq!(
         got, expected,
         "expected {expected} rows in {name} cache, got {got}"
@@ -52,11 +47,10 @@ async fn named_cache_contains(w: &mut DioramaWorld, name: String, expected: u64)
 
 #[then("the two cache tables are distinct")]
 async fn cache_tables_distinct(w: &mut DioramaWorld) {
-    let names: Vec<&str> = w
-        .named_dios
-        .values()
-        .map(|d| d.cache_table_name())
-        .collect();
+    let mut names = Vec::new();
+    for dio in w.named_dios.values() {
+        names.push(dio.diagnostics().await.expect("diagnostics").cache_table);
+    }
     assert!(names.len() >= 2, "need at least two dios to compare");
     let mut sorted = names.clone();
     sorted.sort();

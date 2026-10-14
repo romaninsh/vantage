@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0 — 2026-10-14
+
+### Breaking changes
+
+- The shell implements `TableShell` 2.0 and advertises `Order`, `Search`, `Window` and
+  `Traverse`: the page-number `fetch_next`, `fetch_page` and `set_page_size` are gone.
+- A condition takes `Eq` on a declared column; any other operator is `unsupported(FilterOps)`, and
+  an unknown column is an error.
+- `set_order` on an unknown column is an error.
+- Join traversal is strict. Pods declare `ownerName` and `ownerDeployment`, and replicasets
+  declare `ownerName`, as hidden columns, so the deployment and replicaset drills narrow.
+- A dotted path into a declared column is refused as `Unimplemented`.
+- Quicksearch no longer matches the row id. It is a case-insensitive substring of any cell's
+  text, numbers, bools and nested values included.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is (every field
+  when the table declares no columns). No column is flagged by default, and a table that declares
+  columns no longer searches undeclared fields.
+- Ordering ties break on id, and null cells sort last in both directions.
+
+### Other changes
+
+- Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0 and vantage-table 2.0.0.
+- `get` and `count` honour the search.
+- `fetch_window` slices the listing and sets `total`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
+
 ## 0.6.5 — 2026-10-07
 
 - `ExprDataSource` builds on `vantage_expressions::execute_by_resolving` and `defer_execute`.

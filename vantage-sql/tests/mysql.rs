@@ -3,6 +3,15 @@
 #[path = "common/safe_writes.rs"]
 mod safe_writes_contract;
 
+#[cfg(all(feature = "mysql", feature = "vista"))]
+#[path = "common/dotted.rs"]
+mod dotted;
+
+#[cfg(all(feature = "mysql", feature = "vista"))]
+#[macro_use]
+#[path = "common/vista.rs"]
+mod vista_suite;
+
 #[cfg(feature = "mysql")]
 mod mysql {
     /// True when the server under test is MariaDB rather than MySQL — for
@@ -69,6 +78,9 @@ mod mysql {
     #[cfg(feature = "vista")]
     #[path = "6_vista.rs"]
     mod vista;
+    #[cfg(feature = "vista")]
+    #[path = "6_vista_contract.rs"]
+    mod vista_contract;
     #[cfg(feature = "vista")]
     #[path = "6_vista_paging.rs"]
     mod vista_paging;

@@ -1,13 +1,13 @@
 //! `KubeVistaFactory` — typed-table entry point plus the `VistaFactory`
-//! trait impl. Kubernetes is read-only in v1, so the shell advertises only
-//! `can_count`. YAML construction (`build_from_spec`) is stubbed until the
+//! trait impl. Kubernetes is read-only, so the shell advertises no write
+//! capability. YAML construction (`build_from_spec`) is stubbed until the
 //! inventory app needs it.
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata};
+use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata};
 
 use crate::cluster::KubernetesCluster;
 use crate::vista::source::KubeTableShell;
@@ -34,23 +34,17 @@ impl KubeVistaFactory {
 
     fn wrap(&self, table: Table<KubernetesCluster, EmptyEntity>, name: String) -> Vista {
         let metadata = metadata_from_table(&table);
-        let source = KubeTableShell::new(
-            table,
-            // All read capabilities are honoured client-side over the
-            // materialised listing (see `KubeTableShell`). Writes stay off.
-            VistaCapabilities {
-                can_count: true,
-                can_order: true,
-                can_search: true,
-                can_set_page_size: true,
-                can_fetch_page: true,
-                can_fetch_next: true,
-                can_fetch_window: true,
-                ..VistaCapabilities::default()
-            },
-            metadata,
-        );
-        Vista::new(name, Box::new(source))
+        // The read capabilities are honoured client-side over the listed
+        // collection (see `KubeTableShell`). Writes stay off.
+        let capabilities: VistaCapabilities = [
+            Capability::Order,
+            Capability::Search,
+            Capability::Window,
+            Capability::Traverse,
+        ]
+        .into_iter()
+        .collect();
+        Vista::new(name, KubeTableShell::new(table, capabilities, metadata))
     }
 
     /// Borrow the underlying cluster — useful to build sibling tables.
@@ -82,9 +76,9 @@ where
         // every column is sortable.
         orderable: Orderable::All,
         id_flag: true,
-        // The quicksearch scans all text fields; flagging the title tells
-        // UIs which one is primary.
-        searchable_titles: true,
+        // No column is flagged `Searchable`, so the quicksearch reads every
+        // column (every field when the table declares none).
+        references: true,
         ..VistaMetadataOptions::default()
     })
 }

@@ -1,18 +1,19 @@
-use std::ops::Range;
+mod totals;
 
-use crate::dio::{DioEvent, DioInner};
-use crate::scenery::table::state::TableSceneryState;
+use crate::dio::DioEvent;
+use crate::scenery::table::state::SharedRows;
 
 use super::guards::{PendingChunk, restore_bound_rows};
 use super::telemetry::{tap_cache_write, tap_payload_columns};
+use totals::{clamp_to_reachable, settle_total};
 
 /// Commits the rows a resolved chunk callback buffered, then runs the
 /// bookkeeping that depends on the commit having happened — total
-/// inference, the client-side resort, the "rows nobody can deliver" clamp,
-/// and the generation bump. `viewport_loop` only calls this once
-/// `run_chunk_callback`'s future has resolved on its own — never raced
-/// against the viewport channel — so none of it can be cancelled.
-pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: PendingChunk) {
+/// inference, the "rows nobody can deliver" clamp and the generation bump.
+/// `viewport_loop` only calls this once `run_chunk_callback`'s future has
+/// resolved on its own — never raced against the viewport channel — so none
+/// of it can be cancelled.
+pub(super) async fn finish_chunk_load(state: &SharedRows, pending: PendingChunk) {
     let PendingChunk {
         dio_inner,
         req,
@@ -51,6 +52,16 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
 
     let cached_after = state.rows.read().unwrap().len();
     match result {
+        Ok(()) if !state.is_chunk_loaded() => {
+            // The view's query moved off windows while this load ran (to the
+            // cache, or to a failure). Its rows reached the cache only, and
+            // nothing of the old query's answer settles the view.
+            tracing::debug!(
+                target: "vantage_diorama::viewport",
+                effective = ?effective_range,
+                "fire_chunk_load: the view no longer serves windows; rows cached only",
+            );
+        }
         Ok(()) => {
             tap_cache_write(tap, state, flush_report.as_ref());
             // The window came back — whatever it contained, this view now has
@@ -61,8 +72,9 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             // One line per fetch is for reading a session; the ledger is for
             // counting one. `already_cached` rows are the waste signal — rows
             // paid for that the cache already held.
+            #[cfg(feature = "diagnostics")]
             crate::stats::record_fetch(
-                dio_inner.master.read().unwrap().name(),
+                dio_inner.master.name(),
                 &effective_range,
                 pushed,
                 effective_cached,
@@ -70,7 +82,7 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             );
             tracing::debug!(
                 target: "vantage_diorama::source",
-                table = %dio_inner.master.read().unwrap().name(),
+                table = %dio_inner.master.name(),
                 range = ?effective_range,
                 received = pushed,
                 ms,
@@ -89,31 +101,8 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             let mut total_changed =
                 settle_total(state, &dio_inner, &effective_range, pushed, total_before).await;
 
-            // A client-side sort can't push down to a paged, non-orderable
-            // master, so this load (a viewport fetch, a scroll, or a refresh's
-            // in-place refetch) lands rows in the master's native order. Re-impose
-            // the active sort over the freshly-cached rows so the order survives
-            // the refetch instead of snapping back to native order. It orders only
-            // the loaded rows — the documented cost of sorting a lazily-paged
-            // source that can't order server-side.
-            // Only re-sort client-side when the master couldn't order it for us.
-            // A `can_order` master fetched this window server-ordered (via
-            // `Dio::fetch_window_ordered`), so `write_chunk_row` already stamped
-            // the rows in the right order — reseeding would be redundant.
-            let resorted =
-                if state.sort.read().unwrap().is_some() && !state.master_capabilities.can_order {
-                    if let Err(e) = state.reseed_from_cache().await {
-                        tracing::error!(error = %e, "post-load resort failed");
-                        false
-                    } else {
-                        true
-                    }
-                } else {
-                    false
-                };
-
-            // Measured after the resort because a client-side sort rebuilds the
-            // visible map from the cache once the load lands.
+            // A view serving windows has its order pushed: the window arrived
+            // in the view's order, and `write_chunk_row` already placed it.
             total_changed |= clamp_to_reachable(
                 state,
                 &dio_inner,
@@ -126,12 +115,12 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             // Drain the dirty flag regardless (so it doesn't leak into the next
             // load). Bump when this was a forced refetch (a refresh or load-more —
             // it carries the single repaint for the whole refresh, including a
-            // `refresh_total` that updated the count without bumping), when the
-            // order was re-imposed, when a row changed (a refresh of byte-identical
-            // rows leaves the flag clear), or when the total moved (so `row_count`
-            // consumers — scrollbars, `ListDio` — repaint).
+            // `refresh_total` that updated the count without bumping), when a
+            // row changed (a refresh of byte-identical rows leaves the flag
+            // clear), or when the total moved (so `row_count` consumers —
+            // scrollbars, `ListDio` — repaint).
             let dirty = state.take_load_dirty();
-            if force_load || resorted || dirty || total_changed {
+            if force_load || dirty || total_changed {
                 state.bump_generation();
             }
             state.note_state("chunk load");
@@ -189,171 +178,4 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
             });
         }
     }
-}
-
-/// Where the grand total came from, given a page that just landed. Returns
-/// whether the total moved.
-///
-/// A total the source stated in the same response as the rows
-/// (`ChunkSink::set_total`) outranks anything inferred here: a short page can
-/// equally mean "the source capped the window", and reading that as the end of
-/// the set would cut the grid off at its first screen. With nothing stated, a
-/// short page IS the end of the set, which keeps `total` self-correcting from a
-/// fetch already made — including for a list opened before its rows existed,
-/// counted once at 0.
-async fn settle_total(
-    state: &TableSceneryState,
-    dio_inner: &DioInner,
-    range: &Range<usize>,
-    pushed: usize,
-    total_before: Option<usize>,
-) -> bool {
-    let tap = dio_inner.tap();
-    let effective_len = range.len();
-    if state.take_load_total_reported() {
-        let stated = *state.total.read().unwrap();
-        tracing::debug!(
-            target: "vantage_diorama::source",
-            table = %dio_inner.master.read().unwrap().name(),
-            total = ?stated,
-            "total stated by the fetch itself — no count request needed",
-        );
-        let changed = stated != total_before;
-        // Only when it MOVES. A source that restates the same total on
-        // every window would otherwise repeat this line per fetch,
-        // burying the times it actually changed.
-        if changed {
-            crate::debug::tapline!(
-                tap,
-                "total",
-                "{} rows — stated by the source in the same response",
-                crate::debug::num(stated.unwrap_or_default()),
-            );
-        }
-        // Remember a stated, un-narrowed total in the cache meta, so
-        // the NEXT open of this view can size its geometry before any
-        // fetch — the difference between a warm reopen appearing
-        // whole and its row count visibly jumping when the first
-        // counted response lands. A total under an active search or
-        // filter describes the narrowed set and must not be
-        // remembered — the next open would restore it as the whole.
-        if changed
-            && state.search.read().unwrap().is_none()
-            && state.ui_terms.read().unwrap().is_empty()
-            && let Some(total) = stated
-            && let Err(e) = dio_inner.cache.set_meta_total(total as u64).await
-        {
-            tracing::debug!(
-                target: "vantage_diorama::cache",
-                error = %e,
-                "persisting the stated total failed — the next open loses its head start",
-            );
-        }
-        return changed;
-    }
-
-    if pushed < effective_len {
-        let total = range.start + pushed;
-        // Same rule as the stated branch above: only when it MOVES. A
-        // reload that keeps landing on the same short page would
-        // otherwise repeat this line for a total that never changed.
-        let changed = state.set_total(Some(total));
-        if changed {
-            crate::debug::tapline!(
-                tap,
-                "total",
-                "{} rows — inferred: the page came back short",
-                crate::debug::num(total),
-            );
-        }
-        return changed;
-    }
-
-    // A FULL page from a source that has never stated a total. If it reached
-    // the advertised end, that end was only ever our own inference — a
-    // horizon, not a wall. Extend it by one page so the view can keep
-    // scrolling and asking (the grows-as-you-scroll mode); the set's real end
-    // arrives as a short page (exact) or an empty fetch (the hole clamp in
-    // `clamp_to_reachable`). Without this, a total-less windowed source pinned
-    // its row count at the first page and no scroll could ever request more.
-    let horizon_reached = total_before.is_none_or(|t| range.end >= t);
-    // Single-pass paged mode only: a two-pass view's list pass enumerated the
-    // whole set — its size is knowledge, not an inference to extend.
-    if state.two_pass || effective_len == 0 || !horizon_reached || state.total_ever_stated() {
-        return false;
-    }
-    let extended = range.end + effective_len;
-    tracing::debug!(
-        target: "vantage_diorama::source",
-        table = %dio_inner.master.read().unwrap().name(),
-        extended,
-        "full page reached the inferred horizon — extending it",
-    );
-    crate::debug::tapline!(
-        tap,
-        "total",
-        "{} rows — a full page reached the end we assumed; extending it",
-        crate::debug::num(extended),
-    );
-    state.set_total_as(
-        Some(extended),
-        crate::scenery::table::view_stats::TotalKind::Horizon,
-    )
-}
-
-/// Rows nobody can deliver. Returns whether the total moved.
-///
-/// A source may claim more rows than it will actually serve — a stated total
-/// counting records its own paging never returns, or an offset it quietly
-/// ignores so every page past a point repeats ids already held. The grid then
-/// advertises slots that no fetch can fill, and since a hole is exactly what
-/// triggers a fetch, it asks again, and again, for as long as the page is
-/// open: one request per few seconds, forever, against the slowest thing in
-/// reach.
-///
-/// The proof is right here and needs no cooperation from the source: this load
-/// was asked for a range with holes in it and filled NONE of them. Whatever the
-/// total claims, the addressable set ends at the first of those holes — so say
-/// so, and the range stops being requested.
-fn clamp_to_reachable(
-    state: &TableSceneryState,
-    dio_inner: &DioInner,
-    range: &Range<usize>,
-    first_hole: Option<usize>,
-    effective_cached: usize,
-    pushed: usize,
-) -> bool {
-    let Some(hole) = first_hole else {
-        return false;
-    };
-    let tap = dio_inner.tap();
-    let present_after = {
-        let rows = state.rows.read().unwrap();
-        range.clone().filter(|i| rows.contains_key(i)).count()
-    };
-    if present_after != effective_cached {
-        return false;
-    }
-    let stated = *state.total.read().unwrap();
-    if stated.is_some_and(|t| t <= hole) {
-        return false;
-    }
-    tracing::warn!(
-        target: "vantage_diorama::source",
-        table = %dio_inner.master.read().unwrap().name(),
-        range = ?range,
-        received = pushed,
-        stated_total = ?stated,
-        reachable = hole,
-        "source served none of the requested rows — its total \
-         promises more than it delivers; capping the set at what \
-         is reachable so the fetch is not repeated forever",
-    );
-    crate::debug::tapline!(
-        tap,
-        "total",
-        "{} rows — capped: the source promises more than it serves",
-        crate::debug::num(hole),
-    );
-    state.set_total(Some(hole))
 }

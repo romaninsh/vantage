@@ -77,6 +77,47 @@ fn on_sim_error_reports_every_failure_uncapped() {
     }
 }
 
+/// The total is the store's write counters since `start`: a seed written
+/// before it is left out; a narrowed handle's write, and a write another
+/// caller makes through the store's Rust API, count.
+#[test]
+fn writes_count_the_store_from_engine_start() {
+    let store = store_with(&["log"]);
+    let row = |k: &str, v: &str| -> Record<CborValue> {
+        [(k.to_string(), CborValue::Text(v.into()))]
+            .into_iter()
+            .collect()
+    };
+    store
+        .table("log")
+        .insert_as("seeded", row("who", "seed"))
+        .unwrap();
+    let script = r#"
+        table().insert(#{ id: "sim", who: "a" });            // 1
+        table().where("who", "a").patch("sim", #{ n: 1 });  // 1
+    "#;
+    let engine = SimEngine::builder()
+        .store(&store)
+        .manual_clock(start())
+        .seed(1)
+        .sim(SimDef::new("a", "log", script))
+        .start()
+        .unwrap();
+    run_for(&engine, 1, 1);
+    assert_eq!(engine.stats().writes, 2, "the seed is not counted");
+
+    assert!(store.table("log").patch("seeded", &row("who", "host")));
+    store
+        .table("other")
+        .insert_as("x", row("who", "host"))
+        .unwrap();
+    assert_eq!(
+        engine.stats().writes,
+        4,
+        "Rust-API writes share the counter"
+    );
+}
+
 #[test]
 fn stale_writes_are_not_counted() {
     let script = r#"

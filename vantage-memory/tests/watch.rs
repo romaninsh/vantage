@@ -4,7 +4,7 @@ use ciborium::Value as CborValue;
 use futures_util::StreamExt;
 use vantage_dataset::InsertableValueSet;
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
-use vantage_vista::{VistaChange, VistaFactory};
+use vantage_vista::{FilterOp, VistaChange, VistaFactory};
 
 const T: &str = "name: t\nid_column: id\ncolumns:\n  id: { type: string, flags: [id] }\n  status: { type: string }\n";
 
@@ -58,7 +58,8 @@ async fn vista_writes_reach_the_watch() {
 async fn row_entering_filter_is_inserted() {
     let store = MemoryStore::new();
     let mut v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    v.add_condition_eq("status", text("Open")).unwrap();
+    v.add_condition("status", FilterOp::Eq, text("Open"))
+        .unwrap();
     let mut w = v.watch().await.unwrap();
     let t = store.table("t");
     t.upsert("a", status("Closed"));
@@ -73,7 +74,8 @@ async fn row_leaving_filter_is_deleted() {
     let t = store.table("t");
     t.upsert("a", status("Open"));
     let mut v = MemoryVistaFactory::new(store.clone()).from_yaml(T).unwrap();
-    v.add_condition_eq("status", text("Open")).unwrap();
+    v.add_condition("status", FilterOp::Eq, text("Open"))
+        .unwrap();
     let mut w = v.watch().await.unwrap();
     t.patch("a", &status("Closed"));
     assert!(matches!(next(&mut w).await, VistaChange::Deleted { id } if id == "a"));

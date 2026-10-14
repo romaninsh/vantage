@@ -1,45 +1,61 @@
 //! `RecordScenery` — reactive single-row view.
 //!
-//! Opens for one record id, exposes its current cached row + status,
-//! and bumps a watch channel when the underlying row changes. Status
-//! transitions in v1:
+//! Opens for one record id through [`Dio::record_scenery`](crate::Dio::record_scenery),
+//! exposes its current cached row + status, and bumps a watch channel when
+//! the underlying row changes. A row outside the Dio's residual is not
+//! found; when the residual names an augmented value, the row is hydrated
+//! before it is judged. Status transitions:
 //!
-//! | Trigger                              | Status     |
-//! |--------------------------------------|------------|
-//! | Open, cache has the row              | `Fresh`    |
-//! | Open, cache miss                     | `NotFound` |
-//! | Reload finds the row                 | `Fresh`    |
-//! | Reload finds nothing                 | `NotFound` |
-//! | Reload errored (backend failure)     | `Error(_)` |
+//! | Trigger                                           | Status       |
+//! |---------------------------------------------------|--------------|
+//! | Open, cache has the row                           | `Fresh`      |
+//! | Open, the row still waits for its detail pass     | `Incomplete` |
+//! | Open, cache miss                                  | `NotFound`   |
+//! | Open, cache miss with `load_on_miss`              | `Loading`    |
+//! | The master's row lands, inside the residual       | `Fresh`      |
+//! | The master has no row, or one outside the residual| `NotFound`   |
+//! | Reload finds the row                              | `Fresh`      |
+//! | Reload finds nothing                              | `NotFound`   |
+//! | Reload or fetch errored, or the detail pass failed| `Error(_)`   |
 //!
-//! Deliberately *not* in v1:
+//! An `Incomplete` row is queued for its detail pass; the `RecordChanged`
+//! that follows the hydration makes it `Fresh`.
 //!
-//! - **Master fetch on cache miss** — the cache is the source of
-//!   truth. Use [`Dio::patched`](crate::Dio::patched) to seed the row.
-//! - **`PendingWrite` status + `mark_pending_write`** — optimistic
-//!   write tracking lands when the UI adapter (stage 8) exercises it.
-//! - **`Stale` status** — no producer until refresh/TTL tracking
-//!   gains a real signal.
-//! - **`dirty_fields`** — the form view manages its own draft state;
-//!   `EnrichedRecord` carries the slot for the future binding.
+//! Not supported:
+//!
+//! - **A `PendingWrite` status** — an in-flight write shows as the row's
+//!   [`EnrichedRecord`] state, not as a status.
+//! - **Dirty fields** — the form view ([`Servo`](crate::servo::Servo))
+//!   manages its own draft state.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{RwLock, Weak};
+pub(crate) mod builder;
+mod handle;
 
-use tokio::sync::{broadcast, watch};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock, RwLock, Weak};
+
+use ciborium::Value as CborValue;
+use tokio::sync::watch;
 use vantage_core::Result;
 use vantage_types::Record;
 
-use crate::dio::{DioEvent, DioInner, Generation};
-
 use super::enriched_record::EnrichedRecord;
+use crate::dio::augment_scheduler::AugmentTicket;
+use crate::dio::{DetailState, DioInner, Generation};
+use crate::lens::CacheStatus;
+use crate::lens::cache_backend::CacheTable;
 
-#[derive(Debug, Clone)]
+pub use builder::RecordSceneryBuilder;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RecordStatus {
-    Fresh,
-    Stale,
+    /// A [`load_on_miss`](RecordSceneryBuilder::load_on_miss) fetch is in
+    /// flight.
     Loading,
+    /// The row is shown, but its augmented values haven't been fetched yet.
+    Incomplete,
+    Fresh,
     NotFound,
     Error(String),
 }
@@ -49,7 +65,8 @@ pub trait RecordScenery: Send + Sync {
     fn record(&self) -> Option<Arc<EnrichedRecord>>;
     fn status(&self) -> RecordStatus;
 
-    fn request_refresh(&self);
+    /// Re-read the Dio's set from its source; the row reloads when it lands.
+    fn refresh_source(&self);
     fn subscribe(&self) -> watch::Receiver<Generation>;
 }
 
@@ -59,11 +76,17 @@ pub(crate) struct RecordSceneryState {
     pub(crate) dio_weak: Weak<DioInner>,
     pub(crate) id: String,
     /// A sugared wrapper this view reads its row through, when opened with
-    /// [`Dio::record_scenery_sugared`](crate::Dio::record_scenery_sugared).
-    pub(crate) read_cache: Option<Arc<dyn crate::lens::cache_backend::CacheTable>>,
+    /// [`RecordSceneryBuilder::sugar`].
+    pub(crate) read_cache: Option<Arc<dyn CacheTable>>,
 
     pub(crate) record: RwLock<Option<Arc<EnrichedRecord>>>,
     pub(crate) status: RwLock<RecordStatus>,
+    /// Set while a `load_on_miss` fetch is in flight: a reload that finds
+    /// nothing meanwhile keeps `Loading`.
+    pub(crate) fetching: AtomicBool,
+    /// This view's queue into the augment scheduler, made on the first
+    /// `Incomplete` read.
+    pub(crate) hydration: OnceLock<AugmentTicket>,
 
     pub(crate) generation: AtomicU64,
     pub(crate) generation_tx: watch::Sender<Generation>,
@@ -71,68 +94,133 @@ pub(crate) struct RecordSceneryState {
 
 impl RecordSceneryState {
     /// The cache this view reads from: the Dio's own, or the sugared wrapper.
-    fn reader(&self, dio_inner: &DioInner) -> Arc<dyn crate::lens::cache_backend::CacheTable> {
+    fn reader(&self, dio_inner: &DioInner) -> Arc<dyn CacheTable> {
         self.read_cache
             .clone()
             .unwrap_or_else(|| dio_inner.cache.clone())
     }
 
-    /// Re-read the row from cache, update record + status, bump generation.
-    async fn reload(&self) -> Result<()> {
-        let Some(dio_inner) = self.dio_weak.upgrade() else {
-            return Ok(());
+    /// The row the Dio admits, and whether it still waits for its detail
+    /// pass (it is queued for one when it does). `None` when the cache
+    /// doesn't hold it, or holds it outside the residual.
+    pub(crate) async fn read(
+        &self,
+        dio: &Arc<DioInner>,
+    ) -> Result<Option<(Record<CborValue>, bool)>> {
+        let reader = self.reader(dio);
+        let Some(row) = dio.read_admitted(reader.as_ref(), &self.id).await? else {
+            return Ok(None);
         };
-        match self.reader(&dio_inner).get_value(&self.id).await {
-            Ok(Some(rec)) => self.set_loaded(rec),
-            Ok(None) => self.set_not_found(),
-            Err(e) => self.set_error(e.to_string()),
+        let incomplete = self.awaits_detail(dio).await?;
+        Ok(Some((row, incomplete)))
+    }
+
+    /// Whether the cached row waits for the detail pass; queues it, one
+    /// flight per row through the scheduler, when it does. A row the pass
+    /// settled empty, or failed on, waits no longer.
+    async fn awaits_detail(&self, dio: &Arc<DioInner>) -> Result<bool> {
+        let id = self.id.as_str();
+        if !dio.has_dio_augment()
+            || matches!(
+                dio.detail_state(id),
+                Some(DetailState::Empty | DetailState::Failed)
+            )
+        {
+            return Ok(false);
         }
-        Ok(())
-    }
-
-    fn set_loaded(&self, rec: Record<ciborium::Value>) {
-        *self.record.write().unwrap() = Some(Arc::new(EnrichedRecord::fresh(rec)));
-        *self.status.write().unwrap() = RecordStatus::Fresh;
-        self.bump_generation();
-    }
-
-    fn set_not_found(&self) {
-        *self.record.write().unwrap() = None;
-        *self.status.write().unwrap() = RecordStatus::NotFound;
-        self.bump_generation();
-    }
-
-    fn set_error(&self, msg: String) {
-        *self.status.write().unwrap() = RecordStatus::Error(msg);
-        self.bump_generation();
-    }
-
-    /// Show the optimistically-staged value while the write is in flight.
-    async fn set_pending_write(&self) {
-        let Some(dio_inner) = self.dio_weak.upgrade() else {
-            return;
+        let Some((row, status)) = dio.cache.get_value_with_status(id).await? else {
+            return Ok(false);
         };
-        if let Ok(Some(rec)) = self.reader(&dio_inner).get_value(&self.id).await {
-            *self.record.write().unwrap() = Some(Arc::new(EnrichedRecord::pending_write(rec)));
+        if status != CacheStatus::Incomplete && !dio.awaits_hydration(id, &row, status) {
+            return Ok(false);
+        }
+        dio.ensure_augment_workers();
+        self.hydration
+            .get_or_init(|| dio.augment_scheduler.ticket())
+            .enqueue([self.id.clone()]);
+        Ok(true)
+    }
+
+    /// What `open` starts on, written without a bump. A reload that already
+    /// published read the cache later, so it wins; except a `Loading` it
+    /// held for a fetch `open` then decided against.
+    pub(crate) fn open_on(&self, record: Option<Arc<EnrichedRecord>>, status: RecordStatus) {
+        let mut shown = self.record.write().unwrap();
+        let mut current = self.status.write().unwrap();
+        if self.generation.load(Ordering::SeqCst) == 0 {
+            (*shown, *current) = (record, status);
+        } else if *current == RecordStatus::Loading && !self.fetching.load(Ordering::SeqCst) {
+            (*shown, *current) = (record, status);
             self.bump_generation();
         }
     }
 
-    /// The optimistic write was rolled back: re-read the restored pre-image and
-    /// flag the failure so the form can surface it.
-    async fn set_write_failed(&self, error: String) {
+    /// Change what is shown and bump, all under the record lock, so
+    /// [`open_on`](Self::open_on) can tell a reload got there first.
+    fn publish(&self, change: impl FnOnce(&mut Option<Arc<EnrichedRecord>>, &mut RecordStatus)) {
+        let mut shown = self.record.write().unwrap();
+        let mut current = self.status.write().unwrap();
+        change(&mut shown, &mut current);
+        self.bump_generation();
+    }
+
+    /// [`publish`](Self::publish) a change computed from a read that began
+    /// at generation `seen`, unless a newer write landed since. With
+    /// `over_loading`, a `Loading` (a reload's placeholder for the fetch this
+    /// change settles) is replaced anyway.
+    fn publish_since(
+        &self,
+        seen: u64,
+        over_loading: bool,
+        change: impl FnOnce(&mut Option<Arc<EnrichedRecord>>, &mut RecordStatus),
+    ) {
+        let mut shown = self.record.write().unwrap();
+        let mut current = self.status.write().unwrap();
+        let unchanged = self.generation.load(Ordering::SeqCst) == seen;
+        if unchanged || (over_loading && *current == RecordStatus::Loading) {
+            change(&mut shown, &mut current);
+            self.bump_generation();
+        }
+    }
+
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    /// Re-read the row from cache, update record + status, bump generation.
+    /// A row outside the Dio's residual is not found.
+    async fn reload(&self) {
         let Some(dio_inner) = self.dio_weak.upgrade() else {
             return;
         };
-        match self.reader(&dio_inner).get_value(&self.id).await {
-            Ok(Some(rec)) => {
-                *self.record.write().unwrap() =
-                    Some(Arc::new(EnrichedRecord::write_failed(rec, error)));
+        let (record, status) = match self.read(&dio_inner).await {
+            Ok(Some((row, incomplete))) => shown(row, incomplete),
+            Ok(None) if self.fetching.load(Ordering::SeqCst) => (None, RecordStatus::Loading),
+            Ok(None) => (None, RecordStatus::NotFound),
+            Err(e) => return self.set_error(e.to_string()),
+        };
+        self.publish(|shown, current| (*shown, *current) = (record, status));
+    }
+
+    /// Keeps the row shown, if any, and reports why it isn't current.
+    pub(crate) fn set_error(&self, msg: String) {
+        self.publish(|_, current| *current = RecordStatus::Error(msg));
+    }
+
+    /// The detail pass for this row failed: the partial row stays shown,
+    /// flagged with the failure.
+    fn set_detail_failed(&self, error: String) {
+        self.publish(|shown, current| {
+            if let Some(row) = shown.as_ref() {
+                let failed = EnrichedRecord::detail_failed(
+                    row.record.clone(),
+                    error.clone(),
+                    row.fetched_at,
+                );
+                *shown = Some(Arc::new(failed));
             }
-            // Pre-image was absent (a failed insert): drop the row.
-            _ => *self.record.write().unwrap() = None,
-        }
-        self.bump_generation();
+            *current = RecordStatus::Error(error);
+        });
     }
 
     fn bump_generation(&self) {
@@ -144,137 +232,15 @@ impl RecordSceneryState {
     }
 }
 
-async fn reload_loop(state: Arc<RecordSceneryState>, mut bus: broadcast::Receiver<DioEvent>) {
-    loop {
-        if state.dio_weak.upgrade().is_none() {
-            return;
-        }
-        match bus.recv().await {
-            Ok(DioEvent::RecordChanged { id })
-            | Ok(DioEvent::RecordInserted { id })
-            | Ok(DioEvent::RecordRemoved { id })
-                if id == state.id =>
-            {
-                if let Err(e) = state.reload().await {
-                    tracing::error!(error = %e, "RecordScenery reload failed");
-                }
-            }
-            // `Seeded` alongside `DatasetChanged`: a record scenery opened over
-            // a cold cache found nothing, and the eager seed landing is the one
-            // notice it gets that its record now exists.
-            Ok(DioEvent::DatasetChanged) | Ok(DioEvent::Seeded) => {
-                if let Err(e) = state.reload().await {
-                    tracing::error!(error = %e, "RecordScenery reload failed");
-                }
-            }
-            Ok(DioEvent::WritePending { id, .. }) if id == state.id => {
-                state.set_pending_write().await;
-            }
-            Ok(DioEvent::WriteReverted { id, error, .. }) if id == state.id => {
-                state.set_write_failed(error).await;
-            }
-            Ok(_) => {}
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                // Defensive: missed events, full reload.
-                if let Err(e) = state.reload().await {
-                    tracing::error!(error = %e, "RecordScenery reload failed");
-                }
-            }
-            Err(broadcast::error::RecvError::Closed) => return,
-        }
-    }
-}
-
-pub(crate) struct RecordSceneryImpl {
-    pub(crate) inner: Arc<RecordSceneryState>,
-    /// Aborts the bus task when the last handle drops — a released record
-    /// view stops reacting instead of living for the Dio's whole lifetime
-    /// (one leaked task per view would add up fast for per-request views,
-    /// e.g. an HTTP watch endpoint opening one per connection).
-    _guard: RecordSceneryGuard,
-}
-
-struct RecordSceneryGuard {
-    task: tokio::task::JoinHandle<()>,
-    /// Weak — the guard must not keep the Dio alive; it only reaches back
-    /// in to decrement the census and emit the closing line.
-    dio_weak: Weak<DioInner>,
-}
-
-impl Drop for RecordSceneryGuard {
-    fn drop(&mut self) {
-        self.task.abort();
-        if let Some(dio) = self.dio_weak.upgrade() {
-            dio.record_census.fetch_sub(1, Ordering::Relaxed);
-            dio.emit_census("record scenery", "closed");
-        }
-    }
-}
-
-impl RecordScenery for RecordSceneryImpl {
-    fn record(&self) -> Option<Arc<EnrichedRecord>> {
-        self.inner.record.read().unwrap().clone()
-    }
-
-    fn status(&self) -> RecordStatus {
-        self.inner.status.read().unwrap().clone()
-    }
-
-    fn request_refresh(&self) {
-        let Some(dio_inner) = self.inner.dio_weak.upgrade() else {
-            return;
-        };
-        let runtime = dio_inner.lens.runtime.clone();
-        runtime.spawn(async move {
-            let dio = crate::Dio { inner: dio_inner };
-            if let Err(e) = dio.refresh().await {
-                tracing::error!(error = %e, "RecordScenery request_refresh failed");
-            }
-            // refresh() publishes `DatasetChanged`; the bus task reloads.
-        });
-    }
-
-    fn subscribe(&self) -> watch::Receiver<Generation> {
-        self.inner.generation_tx.subscribe()
-    }
-}
-
-/// Internal constructor — wires the bus task and returns the impl.
-/// Used by [`Dio::record_scenery`](crate::Dio::record_scenery) and
-/// [`Dio::record_scenery_with`](crate::Dio::record_scenery_with).
-pub(crate) fn spawn_record_scenery(
-    dio: &Arc<DioInner>,
-    id: String,
-    initial_record: Option<Record<ciborium::Value>>,
-    initial_status: RecordStatus,
-    read_cache: Option<Arc<dyn crate::lens::cache_backend::CacheTable>>,
-) -> Arc<dyn RecordScenery> {
-    let (gen_tx, _gen_rx) = watch::channel(Generation::default());
-    let state = Arc::new(RecordSceneryState {
-        _tally: crate::stats::Tally::record_scenery(),
-        dio_weak: Arc::downgrade(dio),
-        id,
-        read_cache,
-        record: RwLock::new(initial_record.map(|r| Arc::new(EnrichedRecord::fresh(r)))),
-        status: RwLock::new(initial_status),
-        generation: AtomicU64::new(0),
-        generation_tx: gen_tx,
-    });
-
-    let bus_rx = dio.event_bus.subscribe();
-    let task_state = state.clone();
-    let task = dio.lens.runtime.spawn(async move {
-        reload_loop(task_state, bus_rx).await;
-    });
-
-    dio.record_census.fetch_add(1, Ordering::Relaxed);
-    dio.emit_census("record scenery", "opened");
-
-    Arc::new(RecordSceneryImpl {
-        inner: state,
-        _guard: RecordSceneryGuard {
-            task,
-            dio_weak: Arc::downgrade(dio),
-        },
-    }) as Arc<dyn RecordScenery>
+/// `row` as shown, `Incomplete` when it waits for its detail pass.
+pub(crate) fn shown(
+    row: Record<CborValue>,
+    incomplete: bool,
+) -> (Option<Arc<EnrichedRecord>>, RecordStatus) {
+    let (record, status) = if incomplete {
+        (EnrichedRecord::incomplete(row), RecordStatus::Incomplete)
+    } else {
+        (EnrichedRecord::fresh(row), RecordStatus::Fresh)
+    };
+    (Some(Arc::new(record)), status)
 }

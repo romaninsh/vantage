@@ -1,12 +1,104 @@
-//! The debug-stream lines the commit path emits, and the formatting behind
-//! them. Kept out of [`finish_chunk_load`](super::commit::finish_chunk_load)
-//! so the commit reads as bookkeeping rather than as string building; each
-//! helper re-checks the tap, so an off tap costs a comparison.
+//! The lines a chunk load emits as it dispatches and commits, and the
+//! formatting behind them. Kept out of
+//! [`run_chunk_callback`](super::dispatch::run_chunk_callback) and
+//! [`finish_chunk_load`](super::commit::finish_chunk_load) so both read as
+//! bookkeeping rather than as string building; each tap helper re-checks the
+//! tap, so an off tap costs a comparison.
+
+use std::ops::Range;
+
+use vantage_core::Priority;
+use vantage_vista::VistaQuery;
 
 use crate::debug::DebugTap;
 use crate::dio::DioInner;
 use crate::lens::chunk_sink::FlushReport;
-use crate::scenery::table::state::TableSceneryState;
+use crate::scenery::table::state::SharedRows;
+
+/// A fetch about to be dispatched, as its lines report it.
+pub(super) struct Dispatch<'a> {
+    pub(super) req: Option<u64>,
+    pub(super) visible: &'a Range<usize>,
+    pub(super) visible_cached: usize,
+    pub(super) effective: &'a Range<usize>,
+    pub(super) effective_cached: usize,
+    pub(super) force_load: bool,
+    pub(super) priority: Priority,
+    pub(super) query: &'a VistaQuery,
+}
+
+/// The tracing lines and the "fetch asks for" tap line of a dispatched
+/// fetch: the moment a range costs a round trip.
+pub(super) fn trace_dispatch(tap: &DebugTap, dio_inner: &DioInner, dispatch: Dispatch) {
+    let Dispatch {
+        req,
+        visible,
+        visible_cached,
+        effective,
+        effective_cached,
+        force_load,
+        priority,
+        query,
+    } = dispatch;
+    let visible_len = visible.end.saturating_sub(visible.start);
+    let effective_len = effective.len();
+    let effective_to_fetch = effective_len - effective_cached;
+    tracing::debug!(
+        target: "vantage_diorama::viewport",
+        visible = ?visible,
+        visible_len,
+        visible_cached,
+        effective = ?effective,
+        effective_len,
+        effective_cached,
+        effective_to_fetch,
+        effective_overfetch_pct = if effective_len > 0 {
+            (effective_cached as f64 / effective_len as f64) * 100.0
+        } else {
+            0.0
+        },
+        force_load,
+        priority = ?priority,
+        "fire_chunk_load: dispatching the paged loader",
+    );
+    // The counterpart of the CACHE line `choose_window` emits: this is the
+    // moment a range costs a round trip. `already_cached` says how much of
+    // what we are about to fetch the cache ALREADY holds — non-zero means the
+    // fetch is re-reading rows we have, which on a `force_load` is by design
+    // and otherwise is worth explaining.
+    tracing::debug!(
+        target: "vantage_diorama::source",
+        table = %dio_inner.master.name(),
+        range = ?effective,
+        rows = effective_to_fetch,
+        already_cached = effective_cached,
+        force_load,
+        "MASTER — fetching from the datasource",
+    );
+    crate::debug::tapline!(
+        tap,
+        "dio",
+        "fetch #{} asks for rows {}..{}{} — {} missing, {} already held{}{}",
+        req.unwrap_or_default(),
+        effective.start,
+        effective.end,
+        if effective == visible {
+            String::new()
+        } else {
+            format!(" (viewport {}..{})", visible.start, visible.end)
+        },
+        effective_to_fetch,
+        effective_cached,
+        match &query.order {
+            Some((col, dir)) => format!(" · sorted by {col} {dir:?}"),
+            None => String::new(),
+        },
+        match &query.search {
+            Some(q) => format!(" · searching \"{q}\""),
+            None => String::new(),
+        },
+    );
+}
 
 /// "cache write": what the flush just committed, split into rows that were
 /// genuinely new vs. rows that already had a cached value and got overwritten,
@@ -17,11 +109,7 @@ use crate::scenery::table::state::TableSceneryState;
 /// before counting, so `cache_rows_after` would read `0` — not the cache's
 /// real size, just "not measured" — and a line for zero rows written is not a
 /// write at all.
-pub(super) fn tap_cache_write(
-    tap: &DebugTap,
-    state: &TableSceneryState,
-    report: Option<&FlushReport>,
-) {
+pub(super) fn tap_cache_write(tap: &DebugTap, state: &SharedRows, report: Option<&FlushReport>) {
     let Some(report) = report else {
         return;
     };
@@ -57,7 +145,7 @@ pub(super) fn tap_cache_write(
 pub(super) fn tap_payload_columns(
     tap: &DebugTap,
     dio_inner: &DioInner,
-    state: &TableSceneryState,
+    state: &SharedRows,
     flush_report: Option<&FlushReport>,
 ) {
     if !tap.enabled() {

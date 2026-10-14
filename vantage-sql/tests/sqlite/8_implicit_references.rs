@@ -122,6 +122,34 @@ async fn one_hop_projects_correlated_subquery() {
     }
 }
 
+/// An imported column exists only as a projection alias, so a vista
+/// condition on it is refused, never sent as a column name.
+#[cfg(feature = "vista")]
+#[tokio::test]
+async fn vista_condition_on_an_imported_column_is_refused() {
+    use vantage_vista::FilterOp;
+
+    let db = setup().await;
+    let orders = order_table(db.clone())
+        .with_active_columns(&["id", "client_id", "client.name"])
+        .unwrap();
+    let vista = db.vista_factory().from_table(orders).unwrap();
+    assert!(vista.column("client.name").is_some(), "imported column");
+
+    // The column is only a projection alias, so SQL refuses it and a caller
+    // evaluates it over the rows it reads.
+    let err = vista
+        .clone()
+        .with_condition("client.name", FilterOp::Eq, "Marty")
+        .unwrap_err();
+    assert!(err.is_unimplemented(), "{err:?}");
+    let condition = vantage_vista::Condition::new("client.name", FilterOp::Eq, "Marty");
+    let query = vantage_vista::VistaQuery::new().with_condition(condition.clone());
+    let (narrowed, residual) = vista.with_query(&query).unwrap();
+    assert_eq!(residual.conditions, vec![condition]);
+    assert!(narrowed.query().conditions.is_empty());
+}
+
 /// Two hops: `client_order -> client -> bakery.name` nests one correlated
 /// subquery inside another.
 #[tokio::test]

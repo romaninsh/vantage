@@ -1,12 +1,13 @@
+mod deferred;
+mod writes;
+
 use std::cmp::Ordering;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
-use vantage_expressions::{
-    AssociatedExpression, DeferredFn, ExprDataSource, Expression, ExpressiveEnum, expr_any,
-};
+use vantage_core::Result;
+use vantage_expressions::{AssociatedExpression, ExprDataSource, Expression, ExpressiveEnum};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
@@ -15,7 +16,7 @@ use vantage_types::{Entity, Record};
 use vantage_vista::FilterOp;
 
 use super::MemoryDB;
-use super::convert::{column_values, from_cbor_record, table_query, to_cbor_record, with_id_forms};
+use super::convert::{from_cbor_record, table_query};
 use crate::eval::{MemoryCondition, matches_all};
 use crate::types::AnyMemoryType;
 
@@ -59,13 +60,20 @@ impl TableSource for MemoryDB {
 
     fn search_table_condition<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
         search_value: &str,
     ) -> Self::Condition
     where
         E: Entity<Self::Value>,
     {
-        MemoryCondition::Search(search_value.to_string())
+        MemoryCondition::Search {
+            text: search_value.to_string(),
+            columns: table
+                .search_columns()
+                .into_iter()
+                .map(|column| column.name().to_string())
+                .collect(),
+        }
     }
 
     fn eq_condition(field: &str, value: &str) -> Result<Self::Condition> {
@@ -219,63 +227,21 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let not_found = || {
-            error!(
-                "Row not found",
-                table = table.table_name(),
-                id = id.as_str()
-            )
-            .mark_not_found()
-        };
-        let store = self.store_table(table)?;
-        let existing = store.get(id).ok_or_else(not_found)?;
-        if !self.in_set(table, &existing).await? {
-            return Err(not_found());
-        }
-        let id_column = self.id_column(table);
-        let mut merged = (*existing).clone();
-        for (k, v) in to_cbor_record(partial) {
-            if k != id_column {
-                merged.insert(k, v);
-            }
-        }
-        if !self.in_set(table, &merged).await? {
-            return Err(error!(
-                "patch would move the row out of this set",
-                table = table.table_name(),
-                id = id.as_str()
-            )
-            .mark_conflict());
-        }
-        if !store.patch(id, &to_cbor_record(partial)) {
-            return Err(not_found());
-        }
-        let row = store.get(id).ok_or_else(not_found)?;
-        Ok(from_cbor_record(&row))
+        self.patch_in_set(table, id, partial).await
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        let store = self.store_table(table)?;
-        if let Some(row) = store.get(id)
-            && self.in_set(table, &row).await?
-        {
-            store.delete(id);
-        }
-        Ok(())
+        self.delete_in_set(table, id).await
     }
 
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        let store = self.store_table(table)?;
-        for (id, _) in self.rows(table, false).await? {
-            store.delete(&id);
-        }
-        Ok(())
+        self.delete_all_in_set(table).await
     }
 
     async fn insert_table_return_id_value<E>(
@@ -286,16 +252,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let row = to_cbor_record(record);
-        if !self.in_set(table, &row).await? {
-            // The id is assigned by the store after this check, so none is known yet.
-            return Err(error!(
-                "record does not belong to this set",
-                table = table.table_name()
-            )
-            .mark_conflict());
-        }
-        self.store_table(table)?.insert(row)
+        self.insert_new_in_set(table, record).await
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(
@@ -307,22 +264,7 @@ impl TableSource for MemoryDB {
     where
         Self: Sized,
     {
-        let db = self.clone();
-        let source = source_table.clone();
-        let col = source_column.to_string();
-        let target = target_field.to_string();
-        MemoryCondition::Deferred(DeferredFn::from_fn(move || {
-            let (db, source, col, target) =
-                (db.clone(), source.clone(), col.clone(), target.clone());
-            async move {
-                let rows = db.rows(&source, true).await?;
-                let id_column = db.id_column(&source);
-                let values = with_id_forms(column_values(&rows, &col, &id_column));
-                let payload =
-                    CborValue::Array(vec![CborValue::Text(target), CborValue::Array(values)]);
-                Ok(AnyMemoryType::untyped(payload))
-            }
-        }))
+        self.related_values(target_field, source_table, source_column)
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(
@@ -334,23 +276,7 @@ impl TableSource for MemoryDB {
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        let db = self.clone();
-        let table = table.clone();
-        let col = ColumnLike::name(column).to_string();
-        let inner = expr_any!("{}", {
-            DeferredFn::new(move || {
-                let (db, table, col) = (db.clone(), table.clone(), col.clone());
-                Box::pin(async move {
-                    let rows = db.rows(&table, true).await?;
-                    let id_column = db.id_column(&table);
-                    let values = column_values(&rows, &col, &id_column);
-                    Ok(ExpressiveEnum::Scalar(AnyMemoryType::untyped(
-                        CborValue::Array(values),
-                    )))
-                })
-            })
-        });
-        let expr = expr_any!("{}", { self.defer(inner) });
+        let expr = self.column_values_expr(table, ColumnLike::name(column).to_string());
         AssociatedExpression::new(expr, self)
     }
 }

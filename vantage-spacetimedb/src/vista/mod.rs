@@ -11,9 +11,10 @@
 //!   then builds. The convenient one from Rust.
 //! - `factory.load().await?` then `from_yaml` / `build_from_spec` — the
 //!   `VistaFactory` path, which is **synchronous** and so the only one a
-//!   `VistaCatalog`, the CLI or a UI inventory can call. `load` does the
+//!   `Catalog` loader, the CLI or a UI inventory can call. `load` does the
 //!   fetching up front precisely so construction needs no `await`.
 
+mod capabilities;
 pub mod factory;
 pub mod source;
 pub mod spec;

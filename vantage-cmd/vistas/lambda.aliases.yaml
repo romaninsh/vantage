@@ -5,7 +5,7 @@ columns:
     flags: [id, title, searchable]
   FunctionName:
     type: string
-    flags: [hidden]
+    flags: [hidden, request_param]
   FunctionVersion:
     type: string
   Description:

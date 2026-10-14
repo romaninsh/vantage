@@ -1,555 +1,179 @@
-use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use vantage_core::{Result, error};
-use vantage_types::Record;
 
 use crate::{
-    aggregate::AggregateSpec,
-    capabilities::VistaCapabilities,
-    column::Column,
-    flags,
-    reference::{Reference, ReferenceKind},
-    sort::SortDirection,
-    source::{TableShell, VistaChange},
+    capabilities::{Capability, VistaCapabilities, unsupported},
+    column::{Column, ColumnFlag},
+    metadata::VistaMetadata,
+    page::Preview,
+    query::VistaQuery,
+    reference::Reference,
+    shell::TableShell,
 };
 
-/// Universal, schema-bearing data handle.
+mod narrow;
+mod read;
+#[cfg(test)]
+mod tests;
+mod value_set;
+
+/// Universal, schema-bearing data handle: the type-erased `Table<T, E>`.
 ///
-/// A `Vista` is produced by a driver factory from a typed `Table<T, E>` or
-/// from a YAML schema. The schema (columns, references, id column) lives
-/// on the wrapped [`TableShell`] — `Vista` is the user-facing surface that
-/// forwards both data and metadata queries to the shell.
+/// A `Vista` is a value. It owns its query state, so narrowing a clone never
+/// changes the original: `vista.clone().with_condition(..)` gives a new set.
+/// The schema (columns, references, id column) lives on the wrapped
+/// [`TableShell`]; every clause applied through the `Vista` is recorded in
+/// [`query`](Self::query).
 ///
-/// A `Vista` is strictly **single-persistence**: every reference it exposes
-/// targets the same backend. Cross-persistence traversal is the job of
-/// `vantage-vista-factory`'s `VistaCatalog`, one layer up.
+/// A `Vista` is single-persistence: every reference its shell exposes
+/// resolves within the same backend. Joining across backends is the job of
+/// the layer that holds the catalog.
+#[derive(Clone)]
 pub struct Vista {
-    pub(crate) name: String,
-    pub(crate) capabilities: VistaCapabilities,
-    pub(crate) narrowed: bool,
-    pub source: Box<dyn TableShell>,
+    name: String,
+    shell: Box<dyn TableShell>,
+    applied: VistaQuery,
 }
 
 impl Vista {
-    pub fn new(name: impl Into<String>, source: Box<dyn TableShell>) -> Self {
-        let capabilities = source.capabilities().clone();
+    pub fn new(name: impl Into<String>, shell: impl TableShell) -> Self {
+        Self::from_box(name.into(), Box::new(shell))
+    }
+
+    pub(crate) fn from_box(name: String, shell: Box<dyn TableShell>) -> Self {
         Self {
-            name: name.into(),
-            capabilities,
-            narrowed: false,
-            source,
+            name,
+            shell,
+            applied: VistaQuery::default(),
         }
     }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    /// Wrap the shell, keeping the name and the applied query. Wrappers built
+    /// with [`forward_table_shell!`](crate::forward_table_shell) take the
+    /// inner shell this way.
+    pub fn map_shell<S: TableShell>(self, wrap: impl FnOnce(Box<dyn TableShell>) -> S) -> Self {
+        Self {
+            shell: Box::new(wrap(self.shell)),
+            ..self
+        }
+    }
+
+    pub(crate) fn shell(&self) -> &dyn TableShell {
+        &*self.shell
+    }
+
+    pub(crate) fn shell_mut(&mut self) -> &mut dyn TableShell {
+        &mut *self.shell
+    }
+
+    // ---- introspection -----------------------------------------------------
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Override the vista's display name. Used by spec-driven construction
-    /// to expose `spec.name` rather than the underlying file/table name.
-    pub fn set_name(&mut self, name: impl Into<String>) {
-        self.name = name.into();
+    /// Every clause applied through this Vista's `with_*` and `add_*`
+    /// methods. A refused clause is not recorded.
+    pub fn query(&self) -> &VistaQuery {
+        &self.applied
     }
 
-    pub fn capabilities(&self) -> &VistaCapabilities {
-        &self.capabilities
-    }
-
-    /// Whether a condition or search narrowed this Vista through its own API.
+    /// Whether a condition, search or native condition limits this set.
+    /// Order alone doesn't: it changes no membership.
     pub fn is_narrowed(&self) -> bool {
-        self.narrowed
+        self.applied.narrows()
     }
 
-    /// Whether the backend makes this table's ids: the id column carries
-    /// [`flags::AUTO`]. An insert without an id then asks the backend for one
-    /// (`insert_return_id`, not retry-safe) instead of minting a UUIDv7.
-    pub fn has_auto_id(&self) -> bool {
-        self.get_id_column()
-            .and_then(|c| self.get_column(c))
-            .is_some_and(|c| c.has_flag(flags::AUTO))
+    /// The shell's capabilities, read live.
+    pub fn capabilities(&self) -> &VistaCapabilities {
+        self.shell.capabilities()
     }
 
-    pub(crate) fn require_confined(&self, verb: &'static str) -> Result<()> {
-        if !self.narrowed || self.capabilities.can_confine_writes {
+    pub fn driver_name(&self) -> &'static str {
+        self.shell.driver_name()
+    }
+
+    /// The query the next read would send, without sending it; see
+    /// [`TableShell::preview`].
+    pub fn preview(&self) -> Preview {
+        self.shell.preview()
+    }
+
+    // ---- metadata ----------------------------------------------------------
+
+    fn metadata(&self) -> &VistaMetadata {
+        self.shell.metadata()
+    }
+
+    pub fn columns(&self) -> &IndexMap<String, Column> {
+        &self.metadata().columns
+    }
+
+    pub fn column(&self, name: &str) -> Option<&Column> {
+        self.columns().get(name)
+    }
+
+    pub fn id_column(&self) -> Option<&str> {
+        self.metadata().id_column.as_deref()
+    }
+
+    /// Columns flagged [`Title`](ColumnFlag::Title), in declaration order.
+    pub fn title_columns(&self) -> Vec<&str> {
+        self.columns()
+            .values()
+            .filter(|c| c.has_flag(ColumnFlag::Title))
+            .map(|c| c.name.as_str())
+            .collect()
+    }
+
+    pub fn references(&self) -> &IndexMap<String, Reference> {
+        &self.metadata().references
+    }
+
+    pub fn reference(&self, name: &str) -> Option<&Reference> {
+        self.references().get(name)
+    }
+
+    /// `unsupported(capability)` unless the shell advertises it: how `Vista`
+    /// gates a read or write before the shell is called.
+    pub(crate) fn require(&self, capability: Capability) -> Result<()> {
+        if self.capabilities().has(capability) {
+            Ok(())
+        } else {
+            unsupported(capability)
+        }
+    }
+
+    /// A write is refused unless the shell advertises `capability`, whatever
+    /// the shell itself would do: a read-only vista over a writable table
+    /// takes no writes. Writes through a narrowed Vista also need a shell
+    /// that keeps them inside the set.
+    pub(crate) fn require_write(&self, capability: Capability, verb: &'static str) -> Result<()> {
+        self.require(capability)?;
+        if !self.is_narrowed() || self.capabilities().has(Capability::ConfineWrites) {
             return Ok(());
         }
         Err(error!(
             "this backend can't keep writes inside a narrowed set",
             verb = verb,
-            table = self.name.as_str()
+            table = self.name.as_str(),
+            capability = Capability::ConfineWrites.as_str()
         )
         .mark_unsupported())
     }
-
-    /// Short human label for the underlying driver (e.g. `"csv"`, `"sqlite"`,
-    /// `"postgres"`, `"mongodb"`).
-    pub fn driver(&self) -> &'static str {
-        self.source.driver_name()
-    }
-
-    /// Render the query this vista would send, without sending it — see
-    /// [`TableShell::preview_query`] for the shape and the no-I/O contract.
-    ///
-    /// A debugging surface: it reports what the *next* read would ask the
-    /// backend for, given every condition, order and page size applied so far.
-    pub fn preview_query(&self) -> serde_json::Value {
-        self.source.preview_query(self)
-    }
-
-    /// Driver-native bulk load, returning how many records were newly
-    /// inserted — see [`TableShell::import_vista_values`] for that
-    /// count's definition and the all-or-nothing contract. Gated by
-    /// [`can_import`](crate::VistaCapabilities::can_import); callers that
-    /// see `false` fall back to per-record inserts.
-    pub async fn import_values(
-        &self,
-        records: &indexmap::IndexMap<String, Record<CborValue>>,
-    ) -> Result<usize> {
-        self.require_confined("import")?;
-        let records = self.without_computed_all(records);
-        self.source.import_vista_values(self, &records).await
-    }
-
-    // ---- metadata accessors -----------------------------------------------
-    //
-    // All schema accessors forward to the shell. Vista holds none of the
-    // schema state itself; the shell is the source of truth.
-
-    pub fn get_id_column(&self) -> Option<&str> {
-        self.source.id_column()
-    }
-
-    /// Columns flagged `title` (in declaration order).
-    pub fn get_title_columns(&self) -> Vec<&str> {
-        self.source
-            .columns()
-            .values()
-            .filter(|c| c.is_title())
-            .map(|c| c.name.as_str())
-            .collect()
-    }
-
-    pub fn get_column_names(&self) -> Vec<&str> {
-        self.source.columns().keys().map(String::as_str).collect()
-    }
-
-    pub fn get_column(&self, name: &str) -> Option<&Column> {
-        self.source.columns().get(name)
-    }
-
-    /// Names of references the Vista exposes (shell-declared, same-persistence).
-    /// For the *complete* picture with cardinality, use
-    /// [`list_references`](Self::list_references) instead.
-    pub fn get_references(&self) -> Vec<String> {
-        self.list_references().into_iter().map(|(n, _)| n).collect()
-    }
-
-    /// All references the Vista exposes, with their cardinality.
-    ///
-    /// These are the same-persistence references declared by the wrapped shell
-    /// (typically derived from the typed `Table`'s `with_many` / `with_one`
-    /// registrations via [`TableShell::get_ref_kinds`]).
-    pub fn list_references(&self) -> Vec<(String, ReferenceKind)> {
-        self.source.get_ref_kinds()
-    }
-
-    pub fn get_reference(&self, name: &str) -> Option<&Reference> {
-        self.source.references().get(name)
-    }
-
-    // ---- conditions --------------------------------------------------------
-
-    /// Narrow the vista to records matching `field == value`. Delegates to the
-    /// underlying driver, which translates the value into its native condition
-    /// type (BSON document for Mongo, `Expression` for CSV/SQL, …) and applies
-    /// it to the wrapped table.
-    ///
-    /// Returns `Err` if the field is unknown to the driver, is a computed
-    /// column, or the value cannot be translated into the driver's condition
-    /// vocabulary.
-    pub fn add_condition_eq(&mut self, field: impl Into<String>, value: CborValue) -> Result<()> {
-        let field = field.into();
-        self.refuse_computed(&field, "condition")?;
-        self.source.add_eq_condition(&field, &value)?;
-        self.narrowed = true;
-        Ok(())
-    }
-
-    /// Narrow the vista to records matching `field <op> value`. Equality is
-    /// always supported; richer operators (`!=`, `<`, `>=`, …) require the
-    /// driver to advertise
-    /// [`can_filter_operators`](crate::VistaCapabilities::can_filter_operators)
-    /// — otherwise this returns an `Unimplemented` error and the caller should
-    /// filter locally.
-    pub fn add_condition(
-        &mut self,
-        field: impl Into<String>,
-        op: crate::FilterOp,
-        value: CborValue,
-    ) -> Result<()> {
-        let field = field.into();
-        self.refuse_computed(&field, "condition")?;
-        self.source.add_op_condition(&field, op, &value)?;
-        self.narrowed = true;
-        Ok(())
-    }
-
-    /// Narrow to a single row by id.
-    ///
-    /// Convenience for the "I only know an id" workflow: pair with
-    /// [`ReadableValueSet::get_some_value`](vantage_dataset::traits::ReadableValueSet::get_some_value)
-    /// to fetch the row, then traverse via [`get_ref`](Self::get_ref).
-    pub fn with_id(&mut self, id: impl Into<CborValue>) -> Result<&mut Self> {
-        let id_column = self
-            .get_id_column()
-            .ok_or_else(|| error!("vista has no id column"))?
-            .to_string();
-        self.add_condition_eq(id_column, id.into())?;
-        Ok(self)
-    }
-
-    // ---- index key ---------------------------------------------------------
-
-    /// Stable string identifying one query variant — the vista's name plus the
-    /// given conditions and sort. Two variants with the same name, the same set
-    /// of conditions (order-insensitive), and the same sort produce the same
-    /// key; any difference produces a different key.
-    ///
-    /// Diorama uses this to cache one ordered index per variant: switching
-    /// filters/sort selects (or builds) the matching index, while the
-    /// id→record detail table is shared across all variants by vista name.
-    /// Deliberately simple — a readable, deterministic rendering rather than a
-    /// hash; collision-resistance is not a goal at this layer.
-    pub fn index_key(
-        &self,
-        conditions: &[(String, CborValue)],
-        sort: Option<(&str, SortDirection)>,
-    ) -> String {
-        let mut conds: Vec<String> = conditions
-            .iter()
-            .map(|(field, value)| format!("{}={}", field, cbor_repr(value)))
-            .collect();
-        // Normalize away condition order so the key is set-stable.
-        conds.sort();
-
-        let sort_repr = match sort {
-            Some((col, SortDirection::Ascending)) => format!("{}:asc", col),
-            Some((col, SortDirection::Descending)) => format!("{}:desc", col),
-            None => String::new(),
-        };
-
-        format!("{}|c:{}|s:{}", self.name, conds.join(";"), sort_repr)
-    }
-
-    // ---- aggregates (not part of ValueSet) ---------------------------------
-
-    pub async fn get_count(&self) -> Result<i64> {
-        self.source.get_vista_count(self).await
-    }
-
-    /// Derive a new vista that reduces this one, or `None` when the driver
-    /// can't answer the request.
-    ///
-    /// `None` is the signal to reduce locally instead — see
-    /// [`crate::TableShell::aggregate_vista`] for why a partial answer is
-    /// never returned.
-    ///
-    /// Reducing or grouping by a computed column is an error: the backend
-    /// holds no values for it.
-    pub fn aggregate(&self, spec: &AggregateSpec) -> Result<Option<Vista>> {
-        for column in spec.column.iter().chain(&spec.group_by) {
-            self.refuse_computed(column, "aggregate")?;
-        }
-        self.source.aggregate_vista(self, spec)
-    }
-
-    /// Fetch one record by id, passing the caller's existing record down to the
-    /// driver. Pairs with the two-pass detail pass, which holds the cheap
-    /// list-pass row and lets the detail script read its columns. Drivers that
-    /// don't use it fall back to plain id lookup (see
-    /// [`TableShell::get_vista_value_with_row`]).
-    pub async fn get_value_with_row(
-        &self,
-        id: &str,
-        row: &Record<CborValue>,
-    ) -> Result<Option<Record<CborValue>>> {
-        let mut found = self
-            .source
-            .get_vista_value_with_row(self, &id.to_string(), row)
-            .await?;
-        self.fill_computed_rows(found.as_mut())?;
-        Ok(found)
-    }
-
-    /// Push a driver-native condition into the wrapped table. The
-    /// boxed value must match the driver's `T::Condition`. Used by
-    /// YAML-driven relation factories that need to inject deferred
-    /// FK eq-conditions (i.e. conditions whose value is resolved at
-    /// fetch time by reading a parent record).
-    pub fn add_raw_condition<C: Send + Sync + 'static>(&mut self, condition: C) -> Result<()> {
-        self.source.add_raw_condition(Box::new(condition))?;
-        self.narrowed = true;
-        Ok(())
-    }
-
-    // ---- pagination -------------------------------------------------------
-
-    /// Declare how many records constitute one page. Some backends (notably
-    /// REST APIs with server-fixed page sizes) refuse this — check
-    /// `capabilities().can_set_page_size` before calling.
-    pub fn set_page_size(&mut self, size: usize) -> Result<()> {
-        self.source.set_page_size(size)
-    }
-
-    /// Fetch a specific page (1-based) using offset-style pagination. The
-    /// per-page count comes from the most recent
-    /// [`set_page_size`](Self::set_page_size). Returns `Unsupported` when the
-    /// driver does not advertise `can_fetch_page`; cursor-only drivers
-    /// (DynamoDB, most token-paginated REST APIs) only support
-    /// [`fetch_next`](Self::fetch_next) instead.
-    pub async fn fetch_page(&self, page: usize) -> Result<Vec<(String, Record<CborValue>)>> {
-        let mut rows = self.source.fetch_page(self, page).await?;
-        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
-        Ok(rows)
-    }
-
-    /// Cursor-style chain fetch. Pass `None` on the first call; pass the
-    /// previous call's returned token on subsequent calls. Returned token is
-    /// `None` when the result set is exhausted.
-    ///
-    /// The token is **driver-private** — its shape is whatever the backend
-    /// uses (DynamoDB `LastEvaluatedKey`, REST `nextToken`, offset count,
-    /// …). Consumers treat it as opaque and round-trip it back unchanged.
-    /// Returns `Unsupported` when the driver does not advertise
-    /// `can_fetch_next`.
-    pub async fn fetch_next(
-        &self,
-        token: Option<CborValue>,
-    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<CborValue>)> {
-        let (mut rows, next) = self.source.fetch_next(self, token).await?;
-        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
-        Ok((rows, next))
-    }
-
-    /// Fetch the half-open row window `[offset, offset + limit)` in the
-    /// source's natural order. Addressed by absolute row index (unlike the
-    /// page-indexed [`fetch_page`](Self::fetch_page)), so it maps directly
-    /// onto a lazily-loaded grid's scroll range. Returns `Unsupported` when
-    /// the driver does not advertise `can_fetch_window`.
-    pub async fn fetch_window(
-        &self,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<(String, Record<CborValue>)>> {
-        let mut rows = self.source.fetch_window(self, offset, limit).await?;
-        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
-        Ok(rows)
-    }
-
-    /// [`fetch_window`](Self::fetch_window), plus the grand total when the
-    /// driver learned it from the same response. `None` means this fetch
-    /// carried no total — ask [`get_count`](Self::get_count) when one is
-    /// required.
-    pub async fn fetch_window_counted(
-        &self,
-        offset: usize,
-        limit: usize,
-    ) -> Result<(Vec<(String, Record<CborValue>)>, Option<i64>)> {
-        let (mut rows, total) = self
-            .source
-            .fetch_window_counted(self, offset, limit)
-            .await?;
-        self.fill_computed_rows(rows.iter_mut().map(|(_, r)| r))?;
-        Ok((rows, total))
-    }
-
-    // ---- quicksearch -------------------------------------------------------
-
-    /// Apply a quicksearch filter. The driver decides which columns participate;
-    /// typically those carrying the [`SEARCHABLE`](crate::flags::SEARCHABLE)
-    /// flag.
-    ///
-    /// **Replace semantics**: calling `add_search` again drops the previous
-    /// search filter. Returns `Unsupported` when the driver does not advertise
-    /// `can_search`.
-    pub fn add_search(&mut self, text: impl Into<String>) -> Result<()> {
-        self.source.add_search(&text.into())?;
-        self.narrowed = true;
-        Ok(())
-    }
-
-    /// Drop any quicksearch filter previously applied. Returns `Unsupported`
-    /// from the driver shell when search is unsupported.
-    pub fn clear_search(&mut self) -> Result<()> {
-        self.source.clear_search()
-    }
-
-    // ---- ordering ---------------------------------------------------------
-
-    /// Sort results by `column` in the given direction.
-    ///
-    /// **Replace semantics**: calling `add_order` again wipes the previous
-    /// order and pushes the new one. V1 supports a single sort column only;
-    /// multi-column sort can be added later without renaming.
-    ///
-    /// Returns `Unsupported` when the column is not flagged
-    /// [`ORDERABLE`](crate::flags::ORDERABLE) — drivers like DynamoDB only
-    /// flag their declared sort-key columns. Returns `Unsupported` from the
-    /// driver shell when the driver itself does not support ordering at all
-    /// (`capabilities().can_order == false`).
-    pub fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
-        let col = self
-            .source
-            .columns()
-            .get(column)
-            .ok_or_else(|| error!("Unknown column for add_order", column = column))?;
-        if col.is_computed() {
-            return self.refuse_computed(column, "order");
-        }
-        if !col.has_flag(flags::ORDERABLE) {
-            return Err(error!("Column is not orderable", column = column)
-                .mark_unsupported()
-                .traced());
-        }
-        self.source.add_order(column, dir)
-    }
-
-    /// Wipe every sort previously applied through `add_order`. Returns
-    /// `Unsupported` from the driver shell when ordering is unsupported.
-    pub fn clear_orders(&mut self) -> Result<()> {
-        self.source.clear_orders()
-    }
-
-    // ---- references --------------------------------------------------------
-
-    /// Traverse a named reference using a known source row, returning the
-    /// narrowed target `Vista`.
-    ///
-    /// Routes in this order:
-    /// 1. Contained (embedded-in-row) relations via
-    ///    [`TableShell::get_contained_ref`].
-    /// 2. Foreign-key refs forwarded through [`TableShell::get_ref`], which
-    ///    consults the wrapped typed `Table`'s `with_one` / `with_many`
-    ///    registrations.
-    ///
-    /// Whether the target lives in the same backend as this Vista or in a
-    /// different persistence is entirely the **shell's** concern — it resolves
-    /// the target and applies the join. Callers (including diorama's
-    /// `Dio::get_ref`) stay persistence-agnostic and just consume the returned
-    /// `Vista`.
-    ///
-    /// The `row` must come from this Vista (typically via
-    /// [`get_value`](vantage_dataset::traits::ReadableValueSet::get_value)
-    /// or [`get_some_value`](vantage_dataset::traits::ReadableValueSet::get_some_value)).
-    /// The join value is read out of the record and pushed as a plain
-    /// eq-condition on the target — no subqueries, no deferred fetch.
-    ///
-    /// A has-one key may be a computed column of this Vista (the row carries
-    /// its value); a has-many key that is a computed column of the target is
-    /// an error, since the backend can't narrow by it.
-    pub fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        if self.source.contained().contains_key(relation) {
-            return self.source.get_contained_ref(relation, row);
-        }
-        let target = self.source.get_ref(relation, row)?;
-        self.check_has_many_key(relation, &target)?;
-        Ok(target)
-    }
-
-    /// Contained (embedded-in-row) relations the Vista exposes, with their
-    /// cardinality. Distinct from [`list_references`](Self::list_references),
-    /// which covers foreign-key relations.
-    pub fn list_contained(&self) -> Vec<(String, crate::reference::ContainedKind)> {
-        self.source
-            .contained()
-            .values()
-            .map(|s| (s.name.clone(), s.kind))
-            .collect()
-    }
-
-    /// Build the bare target of a same-persistence relation — the unconditioned
-    /// table a new related row is inserted into. Forwards to
-    /// [`TableShell::get_ref_target`].
-    pub fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        self.source.get_ref_target(relation)
-    }
-
-    // ---- live subscription -------------------------------------------------
-
-    /// Whether the driver can push changes as they happen (SurrealDB LIVE,
-    /// Postgres `LISTEN/NOTIFY`). When `false`, consumers reconcile by
-    /// re-reading (`list_values`) on a timer instead.
-    pub fn can_watch(&self) -> bool {
-        self.capabilities.can_subscribe
-    }
-
-    /// Subscribe to changes and stream them as [`VistaChange`]s.
-    ///
-    /// Each change carries the record in the same projected shape as
-    /// `list_values`, so it can be applied to a cache without a re-read.
-    /// Returns `Unsupported` when the driver does not advertise
-    /// [`can_subscribe`](VistaCapabilities::can_subscribe) — check
-    /// [`can_watch`](Self::can_watch) first.
-    pub async fn watch(&self) -> Result<crate::source::VistaChangeStream> {
-        let mut changes = self.source.watch_vista(self).await?;
-        let columns = self.computed_columns();
-        if columns.is_empty() {
-            return Ok(changes);
-        }
-        Ok(Box::pin(async_stream::stream! {
-            while let Some(change) =
-                std::future::poll_fn(|cx| changes.as_mut().poll_next(cx)).await
-            {
-                yield change.and_then(|change| match change {
-                    VistaChange::Inserted { id, mut value } => {
-                        crate::computed::fill(&columns, &mut value)?;
-                        Ok(VistaChange::Inserted { id, value })
-                    }
-                    VistaChange::Updated { id, mut value } => {
-                        crate::computed::fill(&columns, &mut value)?;
-                        Ok(VistaChange::Updated { id, value })
-                    }
-                    other => Ok(other),
-                });
-            }
-        }))
-    }
 }
 
-/// Deterministic, type-tagged rendering of a [`CborValue`] for
-/// [`Vista::index_key`]. The type tag prevents collisions between values that
-/// stringify alike (e.g. the text `"1"` vs the integer `1`). Containers recurse
-/// so nested condition values stay distinguishable.
-fn cbor_repr(value: &CborValue) -> String {
-    match value {
-        CborValue::Null => "nul".to_string(),
-        CborValue::Bool(b) => format!("b:{b}"),
-        CborValue::Integer(n) => {
-            let n: i128 = (*n).into();
-            format!("i:{n}")
-        }
-        CborValue::Float(f) => format!("f:{f}"),
-        CborValue::Text(s) => format!("t:{s}"),
-        CborValue::Bytes(bytes) => {
-            use std::fmt::Write;
-            let mut s = String::from("x:");
-            for byte in bytes {
-                let _ = write!(s, "{byte:02x}");
-            }
-            s
-        }
-        CborValue::Array(items) => {
-            let inner: Vec<String> = items.iter().map(cbor_repr).collect();
-            format!("a:[{}]", inner.join(","))
-        }
-        CborValue::Map(pairs) => {
-            // Sort by rendered key so map ordering never affects the result.
-            let mut inner: Vec<String> = pairs
-                .iter()
-                .map(|(k, v)| format!("{}={}", cbor_repr(k), cbor_repr(v)))
-                .collect();
-            inner.sort();
-            format!("m:{{{}}}", inner.join(","))
-        }
-        other => format!("?:{other:?}"),
+impl std::fmt::Debug for Vista {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Vista")
+            .field("name", &self.name)
+            .field("driver", &self.driver_name())
+            .field("query", &self.applied)
+            .finish()
     }
 }

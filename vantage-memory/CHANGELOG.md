@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.0.0 — 2026-10-14
+
+### Breaking changes
+
+- The `vantage_memory::vista` module is private; `MemoryCatalog`, `MemoryTableShell`,
+  `MemoryVistaFactory`, `MemoryVistaSpec`, `MemoryTableExtras` and `MemoryBlock` are at the crate
+  root.
+- `vista::Catalog` is `MemoryCatalog`; `new`, `store` and `register` are unchanged.
+- `Catalog::get` is removed: `MemoryCatalog` implements `VistaResolver`, so `catalog.vista(name)`
+  gives a Vista over the store table. A name neither registered nor in the store is not-found and
+  creates no table.
+- `MemoryTableShell::capabilities_for_memory` is crate-private; read `vista.capabilities()`.
+- The shell implements `TableShell` 2.0: windows carry the total, and `fetch_page` and
+  `set_page_size` are removed.
+- A condition on a column the vista doesn't declare is an error.
+- `MemoryCondition::Search(text)` is `Search { text, columns }`; `MemoryCondition::search(text)`
+  builds one that reads every cell.
+- A YAML column without `type:` is untyped (`original_type == None`).
+- A join to a table that is neither built nor in the store is `is_not_found()` and creates no
+  table; an undeclared relation is `unknown_relation`.
+- A contained relation in hand-built metadata is `unsupported(Capability::Traverse)`.
+- A serialised `Preview` has no `driver` field; `vista.driver_name()` is still `"memory"`.
+- A write to a set narrowed by a dotted path (`root.leaf == v`) must hold `v` at `root.leaf`,
+  otherwise it is `Conflict`.
+
+### Other changes
+
+- Seeded and written cells take their declared type's form (integer or text), and condition
+  operands are conformed the same way, so an integer foreign key in a seed file joins a text id.
+  A column without `type:` stores cells as given.
+- On a column with no declared type, `=`/`!=` with an integer or its text matches either form.
+- Multi-key `references:` (`keys:`) are accepted; traversal narrows by every key.
+- Column-level `references:` are lowered through vantage-table's `spec_references`; they follow
+  the top-level references in `metadata.references`, and a top-level entry of the same name wins.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is, in the vista
+  and the typed table alike.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
+
 ## 1.2.2 — 2026-10-11
 
 - Comparisons (conditions, order, min/max) read a datetime (`Tag(0, rfc3339)`) as its text.

@@ -45,14 +45,16 @@ pub fn parse_value(s: &str) -> Result<CborValue> {
 /// kinder than silently shipping an unmatched filter to the driver.
 ///
 /// Falls back to [`auto_detect`] (never errors) when the column is
-/// missing from the metadata or has a type the cli runner doesn't
-/// recognise — preserving the old behaviour for callers that haven't
-/// taught their drivers to surface a column type yet.
+/// missing from the metadata, declares no type, or has a type the cli
+/// runner doesn't recognise.
 pub fn coerce_for_column(vista: &Vista, field: &str, raw: &str) -> Result<CborValue> {
-    let Some(column) = vista.get_column(field) else {
+    let Some(original_type) = vista
+        .column(field)
+        .and_then(|column| column.original_type.as_deref())
+    else {
         return Ok(auto_detect(raw));
     };
-    match column_kind(&column.original_type) {
+    match column_kind(original_type) {
         ColumnKind::Bool => match raw {
             "true" => Ok(CborValue::Bool(true)),
             "false" => Ok(CborValue::Bool(false)),
@@ -260,7 +262,7 @@ mod tests {
             .with_column(Column::new("name", "String"))
             .with_column(Column::new("vip_flag", "bool"))
             .with_column(Column::new("salary", "i64"));
-        let vista = Vista::new("users", Box::new(MockShell::new().with_metadata(metadata)));
+        let vista = Vista::new("users", MockShell::new().with_metadata(metadata));
 
         // `name=true` against a string column stays a string.
         assert_eq!(
@@ -296,7 +298,7 @@ mod tests {
             .with_column(Column::new("vip_flag", "bool"))
             .with_column(Column::new("salary", "i64"))
             .with_column(Column::new("ratio", "f64"));
-        let vista = Vista::new("users", Box::new(MockShell::new().with_metadata(metadata)));
+        let vista = Vista::new("users", MockShell::new().with_metadata(metadata));
 
         let bool_err = coerce_for_column(&vista, "vip_flag", "yes").unwrap_err();
         assert!(format!("{bool_err}").contains("bool column"));

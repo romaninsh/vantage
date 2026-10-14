@@ -16,11 +16,11 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Lens, TableScenery};
+use vantage_diorama::{Lens, Loader, TableScenery};
 use vantage_types::Record;
 
 mod support;
-use support::chunk::master as master_cols;
+use support::chunk::{master as master_cols, redb_lens};
 
 /// What the backend actually holds. Deliberately NOT a multiple of any page
 /// size in play, so the exact end arrives as a short page.
@@ -32,28 +32,24 @@ fn rec(v: usize) -> Record<CborValue> {
     r
 }
 
-/// Paged lens with no `total_provider` and no `set_total` — the source
-/// serves windows and states nothing, ever.
+/// Paged lens that never calls `set_total` — the source serves windows and
+/// states nothing, ever.
 fn total_less_lens(cache: std::path::PathBuf) -> Arc<Lens> {
     let rows: Vec<(String, Record<CborValue>)> = (0..REAL_TOTAL)
         .map(|i| (format!("id{i:04}"), rec(i)))
         .collect();
-    Lens::new()
-        .cache_at(cache)
-        .on_load_chunk(move |_dio, range, _sort, sink| {
-            let rows = rows.clone();
-            async move {
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
+    let loader = Loader::paged(move |_cx, range, _query, sink| {
+        let rows = rows.clone();
+        async move {
+            for idx in range {
+                if let Some((id, r)) = rows.get(idx) {
+                    sink.push(idx, id.clone(), r.clone()).await?;
                 }
-                Ok(())
             }
-        })
-        .build()
-        .map(Arc::new)
-        .expect("build lens")
+            Ok(())
+        }
+    });
+    redb_lens(cache, loader)
 }
 
 async fn wait_for(what: &str, scenery: &Arc<dyn TableScenery>, mut ok: impl FnMut() -> bool) {
@@ -77,7 +73,7 @@ async fn grid_step_scroll_reaches_the_exact_end() -> Result<()> {
     const VIEW: usize = 21;
     let tmp = TempDir::new().unwrap();
     let lens = total_less_lens(tmp.path().join("c.redb"));
-    let dio = lens.make_dio(master_cols(&[("v", "String")])).await?;
+    let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
 
     wait_for("first rows", &scenery, || scenery.row_count() > 0).await;
@@ -91,7 +87,7 @@ async fn grid_step_scroll_reaches_the_exact_end() -> Result<()> {
         }
         // One wheel notch down, clamped like a real grid to its content.
         top = (top + 7).min(rows.saturating_sub(VIEW));
-        scenery.set_viewport(top..(top + VIEW).min(rows));
+        scenery.set_viewport(top..(top + VIEW).min(rows), 0..0);
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;
     }
     panic!(
@@ -105,7 +101,7 @@ async fn grid_step_scroll_reaches_the_exact_end() -> Result<()> {
 async fn full_pages_extend_the_horizon_until_a_short_page_ends_it() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = total_less_lens(tmp.path().join("c.redb"));
-    let dio = lens.make_dio(master_cols(&[("v", "String")])).await?;
+    let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
 
     // The opening fetch returns a full page; the advertised set must reach
@@ -129,7 +125,7 @@ async fn full_pages_extend_the_horizon_until_a_short_page_ends_it() -> Result<()
             break;
         }
         last = n;
-        scenery.set_viewport(n.saturating_sub(20)..n);
+        scenery.set_viewport(n.saturating_sub(20)..n, 0..0);
         wait_for("horizon rows load or end", &scenery, || {
             scenery.row_count() != n || scenery.row(n.saturating_sub(1)).is_some()
         })
@@ -162,23 +158,19 @@ type Fetches = Arc<std::sync::Mutex<Vec<std::ops::Range<usize>>>>;
 
 /// A total-less lens over `backend` that records every range it is asked for.
 fn recording_lens(cache: std::path::PathBuf, backend: Backend, fetches: Fetches) -> Arc<Lens> {
-    Lens::new()
-        .cache_at(cache)
-        .on_load_chunk(move |_dio, range, _sort, sink| {
-            let rows = backend.lock().unwrap().clone();
-            fetches.lock().unwrap().push(range.clone());
-            async move {
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
+    let loader = Loader::paged(move |_cx, range, _query, sink| {
+        let rows = backend.lock().unwrap().clone();
+        fetches.lock().unwrap().push(range.clone());
+        async move {
+            for idx in range {
+                if let Some((id, r)) = rows.get(idx) {
+                    sink.push(idx, id.clone(), r.clone()).await?;
                 }
-                Ok(())
             }
-        })
-        .build()
-        .map(Arc::new)
-        .expect("build lens")
+            Ok(())
+        }
+    });
+    redb_lens(cache, loader)
 }
 
 /// A short page proves where the set ends. A viewport reaching that end must
@@ -192,7 +184,7 @@ async fn a_short_page_end_is_not_probed_past() -> Result<()> {
     ));
     let fetches: Fetches = Arc::default();
     let lens = recording_lens(tmp.path().join("c.redb"), backend.clone(), fetches.clone());
-    let dio = lens.make_dio(master_cols(&[("v", "String")])).await?;
+    let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;
 
     wait_for("short first page", &scenery, || {
@@ -201,7 +193,7 @@ async fn a_short_page_end_is_not_probed_past() -> Result<()> {
     .await;
     let opened = fetches.lock().unwrap().len();
 
-    scenery.set_viewport(0..6);
+    scenery.set_viewport(0..6, 0..0);
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let past_end: Vec<_> = fetches.lock().unwrap()[opened..]
         .iter()
@@ -220,12 +212,12 @@ async fn a_short_page_end_is_not_probed_past() -> Result<()> {
         .extend((6..9).map(|i| (format!("id{i:04}"), rec(i))));
     // The refresh re-fetches the rows on screen; a full page reopens the
     // horizon, and scrolling into it finds the new end.
-    scenery.request_refresh();
+    scenery.refresh_source();
     wait_for("refresh reopens the horizon", &scenery, || {
         scenery.row_count() > 6
     })
     .await;
-    scenery.set_viewport(6..scenery.row_count());
+    scenery.set_viewport(6..scenery.row_count(), 0..0);
     wait_for("growth loaded to its new end", &scenery, || {
         scenery.row_count() == 9 && scenery.row(8).is_some()
     })

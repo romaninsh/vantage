@@ -1,34 +1,34 @@
-//! `record()`/`record(id)` on the `Table` handle: staged edits, save as an
-//! insert or a patch of only the changed fields, delete, revert, and the
+//! `record()`/`record(id)` on the `Table` handle: staged edits, `flash()` as
+//! an insert or a patch of only the changed fields, delete, revert, and the
 //! read-only id column.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use ciborium::Value as CborValue;
-use indexmap::IndexMap;
 use serde_json::json;
 use vantage_core::Result;
-use vantage_rhai::{Host, Limits};
+use vantage_rhai::Host;
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{
-    Column, DataVocab, Reference, TableShell, TargetResolver, Terminals, Vista, VistaCapabilities,
-    VistaMetadata,
+    Capability, Column, ColumnFlag, TableShell, Vista, VistaCapabilities, VistaMetadata,
+    VistaResolver, forward_table_shell,
 };
 
-use super::support::{eval, host, json, read_write, run, store};
+use super::support::{
+    eval, host, host_with, json, read_only_terminals, read_write, read_write_terminals, run, store,
+};
 
 #[test]
-fn new_record_save_inserts_and_returns_id() {
+fn new_record_flash_inserts_and_returns_id() {
     let host = read_write(&store());
     let id: String = eval(
         &host,
         r#"
         let r = table("t").record();
         r.a = 9;
-        r.save()
+        r.flash()
     "#,
     );
     assert_eq!(
@@ -38,11 +38,8 @@ fn new_record_save_inserts_and_returns_id() {
 }
 
 #[test]
-fn retried_new_record_save_reuses_its_id() {
-    let caps = VistaCapabilities {
-        can_insert: true,
-        ..VistaCapabilities::default()
-    };
+fn retried_new_record_flash_reuses_its_id() {
+    let caps = VistaCapabilities::new().with(Capability::Insert);
     let shell = SpyShell::new(mock_with("r1", &[], caps));
     shell.lose_next_insert.store(true, Ordering::SeqCst);
     let host = host_over(shell);
@@ -51,13 +48,13 @@ fn retried_new_record_save_reuses_its_id() {
         r#"
         let r = table("t").record();
         r.a = 5;
-        let first = "saved";
+        let first = "flashed";
         try {
-            r.save();
+            r.flash();
         } catch(err) {
             first = r.status();
         }
-        let id = r.save();
+        let id = r.flash();
         #{ first: first, id: id, ids: table("t").ids() }
     "#,
     );
@@ -66,40 +63,40 @@ fn retried_new_record_save_reuses_its_id() {
 }
 
 #[test]
-fn unchanged_save_writes_nothing() {
-    // can_update is false; if save() attempted a patch despite no staged
-    // changes, the capability check inside `target()` would throw.
-    let caps = VistaCapabilities {
-        can_update: false,
-        ..VistaCapabilities::default()
-    };
+fn unchanged_flash_writes_nothing() {
+    // Update is not advertised; if flash() attempted a patch despite no
+    // staged changes, the Vista would refuse it and the script would throw.
     let host = host_over(mock_with(
         "r1",
         &[("n", CborValue::Integer(3.into()))],
-        caps,
+        VistaCapabilities::new(),
     ));
     let id: String = eval(
         &host,
         r#"
         let r = table("t").record("r1");
-        r.save()
+        r.flash()
     "#,
     );
     assert_eq!(id, "r1");
 }
 
 #[test]
-fn loaded_record_saves_only_changed_fields() {
+fn save_is_not_a_record_verb() {
+    let host = read_write(&store());
+    let err = run(&host, r#"table("t").record("r1").save()"#).unwrap_err();
+    assert!(err.contains("Function not found"), "{err}");
+}
+
+#[test]
+fn loaded_record_flashes_only_changed_fields() {
     let shell = SpyShell::new(mock_with(
         "r1",
         &[
             ("a", CborValue::Integer(1.into())),
             ("b", CborValue::Integer(2.into())),
         ],
-        VistaCapabilities {
-            can_update: true,
-            ..VistaCapabilities::default()
-        },
+        VistaCapabilities::new().with(Capability::Update),
     ));
     let patches = shell.patches.clone();
     let host = host_over(shell);
@@ -108,7 +105,7 @@ fn loaded_record_saves_only_changed_fields() {
         r#"
         let r = table("t").record("r1");
         r.a = 99;
-        r.save();
+        r.flash();
     "#,
     )
     .unwrap();
@@ -127,7 +124,7 @@ fn dotted_set_builds_nested_map() {
         r#"
         let r = table("t").record();
         r.set(#{ "inventory.stock": 12, name: "Widget" });
-        let id = r.save();
+        let id = r.flash();
         table("t").get(id)
     "#,
     );
@@ -182,7 +179,7 @@ fn revert_field_and_all() {
 }
 
 #[test]
-fn failed_save_sets_status_and_rejection_and_throws() {
+fn failed_flash_sets_status_and_rejection_and_throws() {
     let host = read_write(&store());
     let out = json(
         &host,
@@ -192,7 +189,7 @@ fn failed_save_sets_status_and_rejection_and_throws() {
         table("t").delete("r1");
         let threw = false;
         try {
-            r.save();
+            r.flash();
         } catch(err) {
             threw = true;
         }
@@ -201,10 +198,12 @@ fn failed_save_sets_status_and_rejection_and_throws() {
     );
     assert_eq!(out["threw"], json!(true));
     assert_eq!(out["status"], json!("failed"));
+    let rejection = out["rejection"].as_object().unwrap();
     assert!(
-        out["rejection"]["message"].as_str().unwrap().contains("r1"),
+        rejection["message"].as_str().unwrap().contains("r1"),
         "{out}"
     );
+    assert_eq!(rejection.len(), 1, "a draft's rejection is only `message`");
 }
 
 #[test]
@@ -242,60 +241,50 @@ fn record_on_missing_id_errors() {
 }
 
 #[test]
-fn denied_writes_block_save() {
-    let host = host(&store(), Terminals::Read { limit: None });
-    let err = run(
-        &host,
+fn denied_writes_block_flash_and_delete() {
+    let host = host(&store(), read_only_terminals(None));
+    for script in [
         r#"
         let r = table("t").record("r1");
         r.a = 1;
-        r.save()
+        r.flash()
     "#,
-    )
-    .unwrap_err();
-    assert!(err.contains("writes aren't available here"), "{err}");
-
-    let deleted = run(
-        &host,
-        r#"
-        let r = table("t").record("r1");
-        r.delete()
-    "#,
-    )
-    .unwrap();
-    assert!(!deleted.as_bool().unwrap(), "a denied delete is `false`");
+        r#"table("t").record("r1").delete()"#,
+    ] {
+        let err = run(&host, script).unwrap_err();
+        assert!(err.contains("writes aren't available here"), "{err}");
+    }
 }
 
 #[test]
-fn denied_delete_leaves_status_unchanged() {
-    let host = host(&store(), Terminals::Read { limit: None });
+fn denied_delete_fails_the_draft() {
+    let host = host(&store(), read_only_terminals(None));
     let out = json(
         &host,
         r#"
         let r = table("t").record("r1");
-        r.a = 1;
-        try { r.save(); } catch(err) {}
-        let before = r.status();
-        let deleted = r.delete();
-        #{ before: before, after: r.status(), deleted: deleted }
+        let threw = false;
+        try { r.delete(); } catch(err) { threw = true; }
+        #{ threw: threw, status: r.status(), rejection: r.rejection().message }
     "#,
     );
-    assert_eq!(out["deleted"], json!(false), "{out}");
-    assert_eq!(out["after"], out["before"], "{out}");
+    assert_eq!(out["threw"], json!(true), "{out}");
+    assert_eq!(out["status"], json!("failed"), "{out}");
+    let rejection = out["rejection"].as_str().unwrap();
+    assert!(rejection.contains("writes aren't available here"), "{out}");
+    assert_eq!(json(&host, r#"table("t").count()"#), json!(3));
 }
 
 #[test]
 fn field_sets_resolve_the_id_column_once() {
-    let shell = mock_with("r1", &[], VistaCapabilities::default());
+    let shell = mock_with("r1", &[], VistaCapabilities::new());
     let calls = Arc::new(Mutex::new(0usize));
     let seen = calls.clone();
-    let resolver: TargetResolver = Arc::new(move |name: &str| {
+    let resolver: Arc<dyn VistaResolver> = Arc::new(move |name: &str| {
         *seen.lock().unwrap() += 1;
-        Ok(Vista::new(name, Box::new(shell.clone())))
+        Ok(Vista::new(name, shell.clone()))
     });
-    let host = Host::builder(Limits::background())
-        .vocab(DataVocab::read_write(Some(resolver)))
-        .build();
+    let host = host_with(resolver, read_write_terminals());
     let _ = run(&host, r#"let r = table("t").record("r1");"#).unwrap();
     let after_load = *calls.lock().unwrap();
     let _ = run(
@@ -327,7 +316,7 @@ fn mock_with(id: &str, fields: &[(&str, CborValue)], caps: VistaCapabilities) ->
         record.insert(k.to_string(), v.clone());
     }
     let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
         .with_id_column("id");
     MockShell::new()
         .with_metadata(metadata)
@@ -338,22 +327,20 @@ fn mock_with(id: &str, fields: &[(&str, CborValue)], caps: VistaCapabilities) ->
 /// A `ReadWrite`, unlimited host over a single fixed shell — every
 /// `table(name)` call resolves to the same shell regardless of `name`.
 fn host_over(shell: impl TableShell + Clone + 'static) -> Host {
-    let resolver: TargetResolver =
-        Arc::new(move |name: &str| Ok(Vista::new(name, Box::new(shell.clone()))));
-    Host::builder(Limits::background())
-        .vocab(DataVocab::read_write(Some(resolver)))
-        .build()
+    let resolver: Arc<dyn VistaResolver> =
+        Arc::new(move |name: &str| Ok(Vista::new(name, shell.clone())));
+    host_with(resolver, read_write_terminals())
 }
 
-/// Wraps a `MockShell` and records every `partial` a `patch_vista_value`
-/// call carries, so a test can assert on exactly what a record's `save()`
-/// sent — not just the final stored state, which a full-record patch would
-/// produce identically (`MockShell::patch_vista_value` merges either way).
-/// With `lose_next_insert` set, the next insert lands but reports an error,
-/// the way a write whose response is lost does.
+/// Wraps a `MockShell` and records every `partial` a `patch` call carries,
+/// so a test can assert on exactly what a record's `flash()` sent — not just
+/// the final stored state, which a full-record patch would produce
+/// identically (`MockShell::patch` merges either way). With
+/// `lose_next_insert` set, the next insert lands but reports an error, the
+/// way a write whose response is lost does.
 #[derive(Clone)]
 struct SpyShell {
-    inner: MockShell,
+    inner: Box<dyn TableShell>,
     patches: Arc<Mutex<Vec<Record<CborValue>>>>,
     lose_next_insert: Arc<AtomicBool>,
 }
@@ -361,77 +348,28 @@ struct SpyShell {
 impl SpyShell {
     fn new(inner: MockShell) -> Self {
         Self {
-            inner,
+            inner: Box::new(inner),
             patches: Arc::default(),
             lose_next_insert: Arc::default(),
         }
     }
 }
 
-#[async_trait]
-impl TableShell for SpyShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        self.inner.columns()
-    }
-
-    fn references(&self) -> &IndexMap<String, Reference> {
-        self.inner.references()
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.inner.id_column()
-    }
-
-    async fn list_vista_values(
-        &self,
-        vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.inner.list_vista_values(vista).await
-    }
-
-    async fn get_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        self.inner.get_vista_value(vista, id).await
-    }
-
-    async fn get_vista_some_value(
-        &self,
-        vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        self.inner.get_vista_some_value(vista).await
-    }
-
-    async fn patch_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-        partial: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
+forward_table_shell!(SpyShell, inner, {
+    async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {
         self.patches.lock().unwrap().push(partial.clone());
-        self.inner.patch_vista_value(vista, id, partial).await
+        self.inner.patch(id, partial).await
     }
 
-    async fn insert_vista_value(
+    async fn insert(
         &self,
-        vista: &Vista,
-        id: &String,
+        id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let stored = self.inner.insert_vista_value(vista, id, record).await?;
+    ) -> Result<(String, Record<CborValue>)> {
+        let stored = self.inner.insert(id, record).await?;
         if self.lose_next_insert.swap(false, Ordering::SeqCst) {
             return Err(vantage_core::error!("connection reset"));
         }
         Ok(stored)
     }
-
-    fn capabilities(&self) -> &VistaCapabilities {
-        self.inner.capabilities()
-    }
-
-    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
-        self.inner.preview_query(vista)
-    }
-}
+});

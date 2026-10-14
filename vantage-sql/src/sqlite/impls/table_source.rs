@@ -141,8 +141,8 @@ impl TableSource for SqliteDB {
     {
         let pattern = crate::like_pattern_str(search_value);
         let conditions: Vec<Expression<AnySqliteType>> = table
-            .columns()
-            .values()
+            .search_columns()
+            .into_iter()
             // Imported implicit-reference columns exist only as projection
             // aliases; in a WHERE clause the dotted identifier degrades to a
             // string literal and silently matches wrong rows.

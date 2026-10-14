@@ -1,26 +1,30 @@
 //! `CsvTableShell` — owns the typed `Table<Csv, EmptyEntity>` and exposes it
 //! through the `TableShell` boundary.
 //!
-//! `add_eq_condition` translates `(field, CborValue)` into an
-//! `Expression<AnyCsvType>` and pushes it onto the wrapped table; the table's
-//! existing condition machinery does the actual filtering on the next read.
+//! A CSV table is one file, read whole on every fetch. Equality conditions
+//! become `Expression<AnyCsvType>`s on the wrapped table, which filters the
+//! parsed rows; windows are cut from the filtered rows in memory. A clone
+//! copies the table's conditions and shares nothing mutable. The backend is
+//! read-only.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
-    VistaMetadata,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, condition_column_error, unknown_relation, unsupported,
 };
 
 use crate::csv::Csv;
 use crate::operation::CsvOperation;
 use crate::type_system::AnyCsvType;
+use crate::vista::factory::CsvVistaFactory;
 
+#[derive(Clone)]
 pub struct CsvTableShell {
     pub(crate) table: Table<Csv, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
@@ -55,79 +59,8 @@ fn csv_record_to_cbor(record: Record<AnyCsvType>) -> Record<CborValue> {
 
 #[async_trait]
 impl TableShell for CsvTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
-    }
-
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.read_all().await
-    }
-
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        let mut data = self.read_all().await?;
-        Ok(data.shift_remove(id))
-    }
-
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        let data = self.read_all().await?;
-        Ok(data.into_iter().next())
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        Ok(self.read_all().await?.len() as i64)
-    }
-
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        let column = self
-            .table
-            .columns()
-            .get(field)
-            .ok_or_else(|| error!("Unknown column for eq condition", field = field))?
-            .clone();
-        let csv_value: AnyCsvType = value.clone().into();
-        let condition = column.eq(csv_value);
-        self.table.add_condition(condition);
-        Ok(())
-    }
-
-    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        let native_row: Record<AnyCsvType> = row
-            .iter()
-            .map(|(k, v)| (k.clone(), AnyCsvType::from(v.clone())))
-            .collect();
-        let target = self
-            .table
-            .get_ref_from_row::<EmptyEntity>(relation, &native_row)?;
-        let factory = crate::vista::factory::CsvVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
-    }
-
-    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        let target = self.table.get_ref_target_erased(relation)?;
-        let factory = crate::vista::factory::CsvVistaFactory::new(self.table.data_source().clone());
-        factory.from_table(target)
-    }
-
-    fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
-        self.table.ref_kinds()
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -138,23 +71,70 @@ impl TableShell for CsvTableShell {
         "csv"
     }
 
-    /// A CSV table is one file, read whole. Conditions never reach a server —
-    /// they filter the parsed rows — so the only thing a preview can name is
-    /// which file gets opened, and that filtering happens after it is read.
-    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-        let table_name = self.table.table_name();
-        serde_json::json!({
-            "driver": "csv",
-            "file": self
-                .table
-                .data_source()
-                .base_dir()
-                .join(format!("{table_name}.csv"))
-                .display()
-                .to_string(),
-            "note": "the whole file is read; conditions and ordering are applied \
-                     in memory afterwards, so they change nothing about what is \
-                     read from disk",
+    /// The file a read opens and the conditions that filter its parsed rows.
+    fn preview(&self) -> Preview {
+        let file = self
+            .table
+            .data_source()
+            .base_dir()
+            .join(format!("{}.csv", self.table.table_name()));
+        let mut query = format!("read {}", file.display());
+        let conditions: Vec<String> = self.table.conditions().map(|c| c.preview()).collect();
+        if !conditions.is_empty() {
+            query.push_str(" where ");
+            query.push_str(&conditions.join(" and "));
+        }
+        Preview::new().with_query(query)
+    }
+
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.read_all().await
+    }
+
+    /// The file has no index, so the set is read and the row picked out.
+    async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        Ok(self.read_all().await?.shift_remove(id))
+    }
+
+    async fn count(&self) -> Result<i64> {
+        Ok(self.read_all().await?.len() as i64)
+    }
+
+    /// The window is cut from the filtered rows, which are all read anyway,
+    /// so the page carries the set's total for free.
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        Ok(Page::from_listing(self.read_all().await?, offset, limit))
+    }
+
+    /// Equality on a declared column. CSV evaluates no other operator, and
+    /// refuses a dotted path into a declared column for the caller to
+    /// evaluate.
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        let field = condition.column.as_str();
+        let column = self
+            .table
+            .columns()
+            .get(field)
+            .ok_or_else(|| condition_column_error(&self.metadata, field))?
+            .clone();
+        if condition.op != FilterOp::Eq {
+            return unsupported(Capability::FilterOps);
+        }
+        let value: AnyCsvType = condition.value.clone().into();
+        self.table.add_condition(column.eq(value));
+        Ok(())
+    }
+
+    /// The target comes from the typed table's `with_one`/`with_many`; from a
+    /// row it is narrowed by the reference's join keys.
+    fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
+        let reference = self
+            .metadata
+            .references
+            .get(relation)
+            .ok_or_else(|| unknown_relation(relation))?;
+        self.table.traverse_erased(reference, row, |target| {
+            CsvVistaFactory::new(self.table.data_source().clone()).from_table(target)
         })
     }
 }

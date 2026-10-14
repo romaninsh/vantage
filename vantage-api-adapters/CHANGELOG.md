@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0 — 2026-10-14
+
+### Breaking changes
+
+- Built on vantage-diorama 0.15: `DioRouter::new` takes a `Dio` built with
+  `lens.dio(vista).build().await?`.
+
+### Other changes
+
+- Vista 2.0: the axum diorama adapter reads rows through `cached()`, so a derived Dio's routes
+  return only the rows its narrowing admits.
+- Watch views no longer need `.exclusive()`: every open is its own view, so each connection keeps
+  its own viewport.
+- A watched record opens through `record_scenery(id).open()`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
+
 ## 0.6.4 — 2026-10-05
 
 - `Conflict` errors answer 409.

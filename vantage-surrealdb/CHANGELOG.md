@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.0.0 — 2026-10-14
+
+### Breaking changes
+
+- The shell implements `TableShell` 2.0: `fetch_page`, `set_page_size` and the page-number
+  `fetch_next` are gone, `fetch_window` returns a `Page`, and `Cursor` is not advertised.
+- `SurrealSpecResolver` is removed; `with_resolver` takes
+  `Arc<dyn SpecResolver<SurrealVistaSpec>>`. A closure passed there needs an annotated parameter
+  (`|name: &str| ..`).
+- `rhai_engine::surreal_env` is removed; `register_surreal_onto` registers the current-record
+  anchor itself.
+- Rhai free functions are namespaced: `surreal::select()`, `surreal::ident("x")`,
+  `surreal::graph(..)`, `surreal::me`, and so on, in `surreal: { rhai, modify }`, reference
+  scripts, column `expr:` and `register_surreal_engine!` hosts. A bare call is "Function not
+  found"; methods, indexers, operators and `with_condition` are unchanged.
+- The `table("x")` alias for `ident` is removed; write `surreal::ident("x")`.
+- `surreal::graph` errors name `surreal::me` where they said `me`.
+- A `surreal: { modify }` script or a reference `rhai:` script without the `rhai` feature fails
+  the build; a `modify:` script was ignored.
+- Join traversal is strict: the target must declare the join column (a has-many's foreign key).
+- A record id held as text is re-tagged on the id column and on record-link columns for every
+  caller. A link column declared `string` with no has-one reference on its table no longer
+  matches a record held as text.
+- `NotInSet` is refused as `unsupported(FilterOps)`, so `Vista::with_query` evaluates it locally.
+- `preview()` is `{query}`; the old JSON's `table` and `page_size` keys are gone. The driver name
+  is `vista.driver_name()`.
+- `get_ref` on an undeclared relation is "unknown relation (relation: x)", still `is_not_found()`.
+- `get_ref(rel, None)` on a contained relation returns the bare target without write
+  capabilities; it was `IncorrectUsage`.
+- A script's `table(name)` that the spec resolver doesn't know is `is_not_found()`.
+- `from_table` names each target by its built table and fails when a target can't be built; it
+  dropped such a relation. `build_from_spec` fails on an inherited relation it can't build.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is.
+- A spec reference with `keys:` narrows on every declared key; only `foreign_key` was used before.
+
+### Other changes
+
+- References lowered through `ReferenceSpec::to_reference`; column-level `references:` reach the
+  vista metadata, and a `base:` vista declaring a reference its built table lacks is an error.
+- A condition on `root.leaf` under a declared stored root is evaluated natively: SurrealQL walks
+  into a nested object or follows a record link (`bakery.name`).
+- `insert(None)` reads the stored row back through the set; `upsert` is one `UPSERT … CONTENT`.
+- Native conditions take `Expression<AnySurrealType>`, keyed by the rendered SurrealQL.
+- `watch` is refused by Vista without `Subscribe`.
+- A failed removal of the previous quicksearch condition propagates from `set_search`.
+- `SurrealVistaFactory` is `Clone`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
+
 ## 1.0.1 — 2026-10-10
 
 - Fixed: filtering a Vista by an `expr:` column matches on the expression, not its alias (VAN-254).

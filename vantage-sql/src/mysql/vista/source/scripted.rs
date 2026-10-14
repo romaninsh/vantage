@@ -9,7 +9,8 @@ use vantage_core::Result;
 use vantage_rhai::Env;
 use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_types::{Entity, Record};
-use vantage_vista::{Handle, TableShell, Vista};
+use vantage_vista::rhai::{Handle, eval_ref_script, record_to_dynamic};
+use vantage_vista::{NativeCondition, Vista};
 
 use super::MysqlTableShell;
 use crate::mysql::types::AnyMysqlType;
@@ -17,15 +18,18 @@ use crate::mysql::vista::rhai_source::register_mysql_onto;
 use crate::rhai_engine::RhaiExpr;
 
 /// The MySQL vocabulary plus `self.with_condition(<expr>)` on the vista
-/// handle, which routes the expression through `add_raw_condition`.
-pub(super) fn register_extensions(engine: &mut Engine) {
+/// handle, which routes the expression through `add_native_condition`. The
+/// condition's key is its rendered SQL, so equal expressions narrow to equal
+/// cache identities.
+pub(crate) fn register_extensions(engine: &mut Engine) {
     register_mysql_onto(engine);
     engine.register_fn(
         "with_condition",
         |h: &mut Handle,
          cond: RhaiExpr<AnyMysqlType>|
          -> std::result::Result<Handle, Box<EvalAltResult>> {
-            h.with_base_vista("with_condition", |vista| vista.add_raw_condition(cond.0))
+            let key = cond.0.preview();
+            h.with_native_condition("with_condition", NativeCondition::new(cond.0, key))
                 .map_err(|e| e.to_string().into())
         },
     );
@@ -42,10 +46,8 @@ where
         script: &str,
         row: &Record<CborValue>,
     ) -> Result<Vista> {
-        let host = self.factory().script_host(self);
-        let env = self
-            .rhai_env(Env::new())
-            .var("me", vantage_vista::record_to_dynamic(row));
-        vantage_vista::eval_ref_script(&host, script, env, row)
+        let host = self.factory().script_host();
+        let env = Env::new().var("me", record_to_dynamic(row));
+        eval_ref_script(&host, script, env, row)
     }
 }

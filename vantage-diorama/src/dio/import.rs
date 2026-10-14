@@ -1,7 +1,7 @@
 //! Bulk import — one entry point that picks the master's native path or
 //! the per-record optimistic fallback.
 //!
-//! The split of responsibilities: [`VistaCapabilities::can_import`]
+//! The split of responsibilities: [`Capability::Import`]
 //! answers *whether the master can take the whole set in one operation*
 //! (SQL COPY, Surreal batch insert — all-or-nothing by contract);
 //! [`Dio::import_values`] answers *how these records get in regardless* —
@@ -9,7 +9,7 @@
 //! optimistic flash path a form save uses, where partial progress is
 //! honest and reportable.
 //!
-//! [`VistaCapabilities::can_import`]: vantage_vista::VistaCapabilities::can_import
+//! [`Capability::Import`]: vantage_vista::Capability::Import
 
 use std::ops::ControlFlow;
 
@@ -19,7 +19,9 @@ use vantage_core::{Context, Result, error};
 use vantage_dataset::traits::ReadableValueSet as _;
 use vantage_types::Record;
 
+use crate::dio::flash::confine::SetRule;
 use crate::dio::{Dio, DioEvent};
+use crate::ops::ChangeFlash;
 
 /// What an import did — the numbers a caller reports to a person.
 ///
@@ -29,6 +31,7 @@ use crate::dio::{Dio, DioEvent};
 /// the same file twice, and a caller cannot derive the second from the
 /// first (a retry after a partial import would get it wrong).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct ImportOutcome {
     /// Records this import created.
     pub inserted: usize,
@@ -50,11 +53,11 @@ impl ImportOutcome {
 impl Dio {
     /// Store `records` (id → record) in the master.
     ///
-    /// When the master advertises `can_import`, the whole set goes down
+    /// When the master advertises `Import`, the whole set goes down
     /// in one driver-native operation, the cache absorbs the records,
     /// and sceneries hear a single
     /// [`DatasetChanged`](DioEvent::DatasetChanged). Otherwise each
-    /// record runs through [`flash_insert`](Dio::flash_insert) — views
+    /// record runs through [`flash`](Dio::flash) as an insert — views
     /// see rows land one by one, exactly as if a user had entered them.
     ///
     /// `progress(done, total)` fires after every **completed row** —
@@ -92,12 +95,13 @@ impl Dio {
         let total = records.len();
         let master = self.master();
 
-        if master.capabilities().can_import {
+        if master.capabilities().has(vantage_vista::Capability::Import) {
+            let records = self.confined_to_residual(records)?;
             let inserted = master.import_values(&records).await?;
             // The master holds the set now; make the cache agree and
             // announce membership moved — once, not per row.
             for (id, record) in &records {
-                self.cache().insert_value(id, record).await?;
+                self.inner.cache.insert_value(id, record).await?;
             }
             let _ = self.inner.event_bus.send(DioEvent::DatasetChanged);
             let _ = progress(total, total);
@@ -130,7 +134,7 @@ impl Dio {
             if exists {
                 outcome.skipped += 1;
             } else {
-                self.flash_insert(id.clone(), record.clone())
+                self.flash(ChangeFlash::insert(id.clone(), record.clone()))
                     .await
                     .with_context(|| stopped_at(index, id))?;
                 outcome.inserted += 1;
@@ -141,5 +145,25 @@ impl Dio {
             }
         }
         Ok(outcome)
+    }
+
+    /// `records` held to the Dio's residual, which the narrowed master's own
+    /// confinement doesn't cover: each gets the residual's equality values
+    /// filled in, and one outside it refuses the whole import, as `Conflict`,
+    /// before anything is written. The native path is all-or-nothing, so it
+    /// refuses rather than skips.
+    fn confined_to_residual(
+        &self,
+        records: IndexMap<String, Record<CborValue>>,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
+        let inner = &self.inner;
+        let rule = SetRule::new(&inner.residual, inner);
+        if !rule.narrows() {
+            return Ok(records);
+        }
+        records
+            .into_iter()
+            .map(|(id, record)| Ok((id, rule.conform(&record)?)))
+            .collect()
     }
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 — 2026-10-14
+
+- `AnyExpression` and `ExpressionLike` now live here, no longer re-exported from vantage-vista.
+  Code that imported them from `vantage_vista` imports them from `vantage_expressions`.
+- No longer depends on vantage-vista.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
+
 ## 1.1.0 — 2026-10-07
 
 - `execute_by_resolving()`, `execute_strict()` and `defer_execute()`: shared `ExprDataSource` bodies for backends without an expression engine.

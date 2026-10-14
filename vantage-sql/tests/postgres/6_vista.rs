@@ -1,7 +1,9 @@
 //! Vista integration: typed `Table<PostgresDB, _>` → `Vista` and YAML → `Vista`.
 //!
 //! Requires a running PostgreSQL on `postgres://vantage:vantage@localhost:5433/vantage`.
-//! Each test uses a uniquely-suffixed table to avoid collisions.
+//! Each test uses a uniquely-suffixed table to avoid collisions. The cases
+//! every SQL backend shares come from `vista_tests!` (`tests/common/vista.rs`);
+//! the Postgres-only cases live in the child modules, by topic.
 
 #![cfg(feature = "vista")]
 
@@ -10,9 +12,17 @@ use std::error::Error;
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
 use vantage_sql::postgres::PostgresDB;
+use vantage_sql::postgres::vista::PostgresVistaSpec;
 use vantage_table::table::Table;
-use vantage_types::{EmptyEntity, Record};
-use vantage_vista::VistaFactory;
+use vantage_types::EmptyEntity;
+use vantage_vista::{Capability, VistaFactory};
+
+#[path = "6_vista/contained.rs"]
+mod contained;
+#[path = "6_vista/notify.rs"]
+mod notify;
+#[path = "6_vista/paging.rs"]
+mod paging;
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -62,270 +72,13 @@ fn product_table(db: PostgresDB, name: &str) -> Table<PostgresDB, EmptyEntity> {
         .with_column_of::<bool>("is_deleted")
 }
 
-#[tokio::test]
-async fn vista_lists_typed_postgres_as_cbor() -> TestResult {
-    let (db, name) = setup("list").await;
-    let table = product_table(db.clone(), &name);
-    let vista = db.vista_factory().from_table(table)?;
-
-    assert_eq!(vista.name(), name);
-    assert_eq!(vista.get_id_column(), Some("id"));
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 3);
-
-    let alpha = rows.get("a").expect("row a");
-    assert_eq!(
-        alpha.get("name"),
-        Some(&CborValue::Text("Alpha".to_string()))
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_get_value_by_id() -> TestResult {
-    let (db, name) = setup("get").await;
-    let table = product_table(db.clone(), &name);
-    let vista = db.vista_factory().from_table(table)?;
-
-    let row = vista.get_value("b").await?.expect("row b exists");
-    assert_eq!(row.get("name"), Some(&CborValue::Text("Beta".to_string())));
-
-    let missing = vista.get_value("nope").await?;
-    assert!(missing.is_none());
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_count_with_eq_condition() -> TestResult {
-    let (db, name) = setup("count").await;
-    let table = product_table(db.clone(), &name);
-    let mut vista = db.vista_factory().from_table(table)?;
-
-    assert_eq!(vista.get_count().await?, 3);
-
-    vista.add_condition_eq("is_deleted", CborValue::Bool(false))?;
-    assert_eq!(vista.get_count().await?, 2);
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2);
-    assert!(rows.contains_key("a"));
-    assert!(rows.contains_key("c"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_yaml_loads_table_and_columns() -> TestResult {
-    let (db, name) = setup("yaml").await;
-
-    let yaml = format!(
-        r#"
-name: product_view
-columns:
-  id:
-    type: string
-    flags: [id]
-  name:
-    type: string
-    flags: [title, searchable]
-  price:
-    type: int
-postgres:
-  table: {name}
-"#
-    );
-
-    let vista = db.vista_factory().from_yaml(&yaml)?;
-
-    assert_eq!(vista.name(), "product_view");
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 3);
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_writes_round_trip_via_cbor() -> TestResult {
-    let (db, name) = setup("write").await;
-    let table = product_table(db.clone(), &name);
-    let vista = db.vista_factory().from_table(table)?;
-
-    let record: Record<CborValue> = vec![
-        ("name".to_string(), CborValue::Text("Delta".into())),
-        ("price".to_string(), CborValue::Integer(99i64.into())),
-        ("is_deleted".to_string(), CborValue::Bool(false)),
-    ]
-    .into_iter()
-    .collect();
-
-    vista.insert_value("d", &record).await?;
-
-    let fetched = vista.get_value("d").await?.expect("inserted");
-    assert_eq!(fetched.get("name"), Some(&CborValue::Text("Delta".into())));
-
-    vista.delete("d").await?;
-    assert!(vista.get_value("d").await?.is_none());
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_capabilities_advertise_read_write() -> TestResult {
-    let (db, name) = setup("caps").await;
-    let table = product_table(db.clone(), &name);
-    let vista = db.vista_factory().from_table(table)?;
-
-    let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(caps.can_insert);
-    assert!(caps.can_update);
-    assert!(caps.can_delete);
-    assert!(caps.can_confine_writes);
-    // Being writable says nothing about whether anyone installed the
-    // `{table}_changed` trigger, so watchability is NOT inferred from it.
-    assert!(!caps.can_subscribe);
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_is_watchable_only_when_notify_is_declared() -> TestResult {
-    let (db, name) = setup("caps_notify").await;
-
-    // Opting in is what makes the LISTEN/NOTIFY feed advertisable — the
-    // application is the only party that knows the trigger exists.
-    for notify in [true, false] {
-        let vista = db
-            .vista_factory()
-            .with_notify(notify)
-            .from_table(product_table(db.clone(), &name))?;
-        assert_eq!(vista.capabilities().can_subscribe, notify);
-    }
-    Ok(())
-}
-
-fn field(name: &str, value: CborValue) -> Record<CborValue> {
-    let mut r = Record::new();
-    r.insert(name.to_string(), value);
-    r
-}
-
-/// A `cart` whose `items` column is a JSON array (TEXT), surfaced as a
-/// contains-many relation — same JSON-blob round-trip as SQLite.
-fn cart_table(db: PostgresDB, table: &str) -> Table<PostgresDB, EmptyEntity> {
-    Table::<PostgresDB, EmptyEntity>::new(table, db)
-        .with_id_column("id")
-        .with_column_of::<String>("items")
-        .with_contained_many(
-            "items",
-            "items",
-            |db| {
-                Table::new("items", db)
-                    .with_column_of::<String>("sku")
-                    .with_column_of::<i64>("qty")
-            },
-            None,
-        )
-}
-
-#[tokio::test]
-async fn contained_json_column_round_trips_on_postgres() -> TestResult {
-    let db = PostgresDB::connect(PG_URL).await.unwrap();
-    let t = "vista_cart_contained";
-    sqlx::query(&format!("DROP TABLE IF EXISTS \"{t}\""))
-        .execute(db.pool())
-        .await
-        .unwrap();
-    sqlx::query(&format!(
-        "CREATE TABLE \"{t}\" (id TEXT PRIMARY KEY, items TEXT NOT NULL)"
-    ))
-    .execute(db.pool())
-    .await
-    .unwrap();
-    sqlx::query(&format!(
-        r#"INSERT INTO "{t}" VALUES ('c1', '[{{"sku":"a","qty":1}},{{"sku":"b","qty":2}}]')"#
-    ))
-    .execute(db.pool())
-    .await
-    .unwrap();
-
-    let vista = db.vista_factory().from_table(cart_table(db.clone(), t))?;
-    assert_eq!(vista.list_contained().len(), 1);
-
-    let cart = vista.get_value("c1").await?.unwrap();
-    assert!(matches!(cart.get("items"), Some(CborValue::Text(_))));
-    let items = vista.get_ref("items", &cart)?;
-    assert_eq!(items.list_values().await?.len(), 2);
-
-    let mut line = Record::new();
-    line.insert("sku".to_string(), CborValue::Text("c".into()));
-    line.insert("qty".to_string(), CborValue::Integer(3i64.into()));
-    let new_id = items.insert_return_id_value(&line).await?;
-    assert_eq!(new_id, "2");
-
-    let cart2 = vista.get_value("c1").await?.unwrap();
-    let items2 = vista.get_ref("items", &cart2)?;
-    assert_eq!(items2.list_values().await?.len(), 3);
-
-    items2
-        .patch_value("0", &field("qty", CborValue::Integer(99i64.into())))
-        .await?;
-    let cart3 = vista.get_value("c1").await?.unwrap();
-    let items3 = vista.get_ref("items", &cart3)?;
-    assert_eq!(
-        items3.get_value("0").await?.unwrap().get("qty"),
-        Some(&CborValue::Integer(99i64.into()))
-    );
-
-    sqlx::query(&format!("DROP TABLE \"{t}\""))
-        .execute(db.pool())
-        .await
-        .ok();
-    Ok(())
-}
-
-/// A vista whose source is a Rhai-built SELECT (not a physical table). The
-/// script filters `price > 15`, so only two products surface, and the vista is
-/// read-only.
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn vista_yaml_rhai_source_is_read_only_and_filters() -> TestResult {
-    let (db, name) = setup("rhai").await;
-
-    let yaml = format!(
-        r#"
-name: expensive_products
-columns:
-  id:
-    type: string
-    flags: [id]
-  name:
-    type: string
-postgres:
-  rhai: |
-    select().from("{name}").field("id").field("name").where(expr("price > 15"))
-"#
-    );
-
-    let vista = db.vista_factory().from_yaml(&yaml)?;
-    assert_eq!(vista.name(), "expensive_products");
-
-    let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(!caps.can_insert, "rhai-sourced vista is read-only");
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2, "only products with price > 15");
-    assert!(rows.contains_key("b"));
-    assert!(rows.contains_key("c"));
-    assert!(!rows.contains_key("a"));
-    Ok(())
+async fn product(suffix: &str) -> (PostgresDB, Table<PostgresDB, EmptyEntity>) {
+    let (db, name) = setup(suffix).await;
+    (db.clone(), product_table(db, &name))
 }
 
 /// Create suffixed `client` and `orders` tables and return their names.
-async fn setup_clients_orders(suffix: &str) -> (PostgresDB, String, String) {
+async fn clients_orders(suffix: &str) -> (PostgresDB, String, String) {
     let db = PostgresDB::connect(PG_URL).await.unwrap();
     let client_t = format!("vista_client_{suffix}");
     let orders_t = format!("vista_orders_{suffix}");
@@ -363,366 +116,51 @@ async fn setup_clients_orders(suffix: &str) -> (PostgresDB, String, String) {
     (db, client_t, orders_t)
 }
 
-/// The `client` spec (with a `has_many` to `orders`) plus a resolver that can
-/// find the `orders` target by name. Shared by the traversal tests below.
-#[allow(clippy::type_complexity)]
-fn clients_orders_specs(
-    client_t: &str,
-    orders_t: &str,
-) -> std::result::Result<
-    (
-        vantage_sql::postgres::vista::PostgresVistaSpec,
-        vantage_sql::postgres::vista::PostgresSpecResolver,
-    ),
-    Box<dyn Error>,
-> {
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
+vista_tests!(PostgresVistaSpec, "postgres");
 
-    let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&format!(
-        r#"
-name: client
-columns:
-  id: {{ type: string, flags: [id] }}
-  name: {{ type: string, flags: [title] }}
-postgres:
-  table: {client_t}
-references:
-  orders:
-    table: orders
-    kind: has_many
-    foreign_key: client_id
-"#
-    ))?;
-    let orders_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&format!(
-        r#"
-name: orders
-columns:
-  id: {{ type: string, flags: [id] }}
-  client_id: {{ type: string }}
-  total: {{ type: int }}
-postgres:
-  table: {orders_t}
-"#
-    ))?;
-
-    let map: IndexMap<String, PostgresVistaSpec> =
-        [("orders".to_string(), orders_spec)].into_iter().collect();
-    let map = Arc::new(map);
-    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
-    Ok((client_spec, resolver))
-}
-
-/// Read `alice` out of a built `client` vista, for traversing her orders.
-async fn alice_row(
-    clients: &mut vantage_vista::Vista,
-) -> std::result::Result<Record<CborValue>, Box<dyn Error>> {
-    let (_id, alice) = clients
-        .with_id(CborValue::Text("alice".into()))?
-        .get_some_value()
-        .await?
-        .expect("alice exists");
-    Ok(alice)
-}
-
-/// YAML-declared `references:` lower to `with_one`/`with_many`, with the target
-/// table resolved by name through a spec resolver attached to the factory.
 #[tokio::test]
-async fn vista_yaml_references_resolve_via_resolver() -> TestResult {
-    let (db, client_t, orders_t) = setup_clients_orders("refs").await;
-    let (client_spec, resolver) = clients_orders_specs(&client_t, &orders_t)?;
+async fn vista_lists_typed_postgres_as_cbor() -> TestResult {
+    let (db, name) = setup("list").await;
+    let table = product_table(db.clone(), &name);
+    let vista = db.vista_factory().from_table(table)?;
 
-    let factory = db.vista_factory().with_resolver(resolver);
-    let mut clients = factory.build_from_spec(client_spec)?;
+    assert_eq!(vista.name(), name);
+    assert_eq!(vista.id_column(), Some("id"));
 
-    let refs = clients.list_references();
-    assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].0, "orders");
-    assert_eq!(refs[0].1, vantage_vista::ReferenceKind::HasMany);
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 3);
 
-    let alice = alice_row(&mut clients).await?;
-    let alice_orders = clients.get_ref("orders", &alice)?;
-    let rows = alice_orders.list_values().await?;
-    assert_eq!(rows.len(), 2, "alice has 2 orders");
-    assert!(rows.contains_key("o1"));
-    assert!(rows.contains_key("o2"));
-    assert!(!rows.contains_key("o3"));
-    Ok(())
-}
-
-/// Traversing a reference builds a fresh factory internally, which must carry
-/// the parent's `with_notify` declaration across — otherwise every relation
-/// target on a triggered database comes back silently unwatchable.
-#[tokio::test]
-async fn notify_opt_in_survives_reference_traversal() -> TestResult {
-    let (db, client_t, orders_t) = setup_clients_orders("refs_notify").await;
-    let (client_spec, resolver) = clients_orders_specs(&client_t, &orders_t)?;
-
-    for notify in [true, false] {
-        let mut clients = db
-            .vista_factory()
-            .with_resolver(resolver.clone())
-            .with_notify(notify)
-            .build_from_spec(client_spec.clone())?;
-        assert_eq!(clients.capabilities().can_subscribe, notify);
-
-        let alice = alice_row(&mut clients).await?;
-        let orders = clients.get_ref("orders", &alice)?;
-        assert_eq!(
-            orders.capabilities().can_subscribe,
-            notify,
-            "get_ref target should inherit the parent's notify opt-in"
-        );
-
-        let target = clients.get_ref_target("orders")?;
-        assert_eq!(
-            target.capabilities().can_subscribe,
-            notify,
-            "get_ref_target should inherit the parent's notify opt-in"
-        );
-    }
-    Ok(())
-}
-
-/// A derived vista: `base: client` resolves eagerly through the resolver, the
-/// base table's `select()` is seeded into the Rhai engine as `base` (transform
-/// mode), and the listed columns are inherited. Query source → read-only.
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn vista_yaml_base_inherits_columns_and_transforms() -> TestResult {
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
-
-    let (db, client_t, _orders_t) = setup_clients_orders("base").await;
-
-    let client_yaml = format!(
-        r#"
-name: client
-columns:
-  id: {{ type: string, flags: [id] }}
-  name: {{ type: string, flags: [title] }}
-postgres:
-  table: {client_t}
-"#
+    let alpha = rows.get("a").expect("row a");
+    assert_eq!(
+        alpha.get("name"),
+        Some(&CborValue::Text("Alpha".to_string()))
     );
-    let vip_yaml = r#"
-name: vip_clients
-columns: {}
-postgres:
-  base: client
-  inherit:
-    columns: [id, name]
-  rhai: |
-    base.where(expr("name = 'Alice'"))
-"#;
+    Ok(())
+}
 
-    let client_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
-    let vip_spec: PostgresVistaSpec = serde_yaml_ng::from_str(vip_yaml)?;
-
-    let map: IndexMap<String, PostgresVistaSpec> =
-        [("client".to_string(), client_spec)].into_iter().collect();
-    let map = Arc::new(map);
-    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
-
-    let vista = db
-        .vista_factory()
-        .with_resolver(resolver)
-        .build_from_spec(vip_spec)?;
+#[tokio::test]
+async fn vista_capabilities_advertise_read_write() -> TestResult {
+    let (db, name) = setup("caps").await;
+    let table = product_table(db.clone(), &name);
+    let vista = db.vista_factory().from_table(table)?;
 
     let caps = vista.capabilities();
-    assert!(
-        !caps.can_insert,
-        "derived (query-sourced) vista is read-only"
-    );
-    assert!(!caps.can_update);
-    assert!(!caps.can_delete);
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 1, "rhai transform filtered to Alice");
-    let alice = rows.get("alice").expect("alice present");
-    assert_eq!(alice.get("name"), Some(&CborValue::Text("Alice".into())));
-    Ok(())
-}
-
-/// The headline "derived aggregate" case: a `debtors`-style vista derived from
-/// `orders`, grouping by client and summing totals into a declared `total_due`
-/// column, with the grouping key inherited and re-keyed via `id_column`.
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn vista_yaml_base_aggregates_into_declared_column() -> TestResult {
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-    use vantage_sql::postgres::vista::{PostgresSpecResolver, PostgresVistaSpec};
-
-    let (db, _client_t, orders_t) = setup_clients_orders("agg").await;
-
-    let orders_yaml = format!(
-        r#"
-name: orders
-columns:
-  id: {{ type: string, flags: [id] }}
-  client_id: {{ type: string }}
-  total: {{ type: int }}
-postgres:
-  table: {orders_t}
-"#
-    );
-    let totals_yaml = r#"
-name: client_totals
-id_column: client_id
-columns:
-  total_due: { type: int }
-postgres:
-  base: orders
-  inherit:
-    columns: [client_id]
-  rhai: |
-    base.clear_fields().field("client_id").expression(expr("SUM(total) AS total_due")).group_by(expr("client_id"))
-"#;
-
-    let orders_spec: PostgresVistaSpec = serde_yaml_ng::from_str(&orders_yaml)?;
-    let totals_spec: PostgresVistaSpec = serde_yaml_ng::from_str(totals_yaml)?;
-
-    let map: IndexMap<String, PostgresVistaSpec> =
-        [("orders".to_string(), orders_spec)].into_iter().collect();
-    let map = Arc::new(map);
-    let resolver: PostgresSpecResolver = Arc::new(move |name: &str| map.get(name).cloned());
-
-    let vista = db
-        .vista_factory()
-        .with_resolver(resolver)
-        .build_from_spec(totals_spec)?;
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 2, "one row per client");
-    // Postgres `SUM(bigint)` returns `numeric`, which surfaces as a CBOR decimal
-    // rather than the integer SQLite produces — normalise before comparing.
-    assert_eq!(
-        numeric(rows.get("alice").unwrap().get("total_due")),
-        Some(30)
-    );
-    assert_eq!(numeric(rows.get("bob").unwrap().get("total_due")), Some(30));
-    Ok(())
-}
-
-/// Extract an integer from a CBOR scalar regardless of whether the backend
-/// returned an integer or a decimal (numeric → `Tag(_, Text("30"))`).
-#[cfg(feature = "rhai")]
-fn numeric(v: Option<&CborValue>) -> Option<i64> {
-    match v? {
-        CborValue::Integer(i) => i64::try_from(*i).ok(),
-        CborValue::Text(s) => s.parse().ok(),
-        CborValue::Tag(_, inner) => match inner.as_ref() {
-            CborValue::Text(s) => s.parse().ok(),
-            _ => None,
-        },
-        _ => None,
+    for capability in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::Window,
+        Capability::Traverse,
+    ] {
+        assert!(caps.has(capability), "postgres advertises {capability}");
     }
-}
-
-#[tokio::test]
-async fn vista_add_order_ascending_descending_and_clear() -> TestResult {
-    use vantage_vista::SortDirection;
-
-    let (db, name) = setup("order").await;
-    let table = product_table(db.clone(), &name);
-    let mut vista = db.vista_factory().from_table(table)?;
-
-    // A table-sourced Postgres Vista advertises ordering and flags every column
-    // ORDERABLE, so `add_order` works without going through YAML.
-    assert!(vista.capabilities().can_order);
-
-    // sort ascending by price → a (10), b (20), c (30)
-    vista.add_order("price", SortDirection::Ascending)?;
-    let rows = vista.list_values().await?;
-    let ids: Vec<&String> = rows.keys().collect();
-    assert_eq!(ids, ["a", "b", "c"]);
-
-    // replace-semantics: switch to descending name → c (Gamma), b (Beta), a (Alpha)
-    vista.add_order("name", SortDirection::Descending)?;
-    let rows = vista.list_values().await?;
-    let ids: Vec<&String> = rows.keys().collect();
-    assert_eq!(ids, ["c", "b", "a"]);
-
-    // clear → every row still present (order unconstrained)
-    vista.clear_orders()?;
-    let rows = vista.list_values().await?;
-    let mut ids: Vec<String> = rows.keys().cloned().collect();
-    ids.sort();
-    assert_eq!(ids, ["a", "b", "c"]);
-    Ok(())
-}
-
-/// A cursor scan must visit every row even when the id column is not unique.
-///
-/// `list_values` keys rows by id, so duplicates collapse and a FULL SQL page
-/// can arrive under-length. Treating a short page as the end of the set — the
-/// obvious reading — silently drops every page after the first duplicate.
-#[tokio::test]
-async fn vista_fetch_next_survives_a_non_unique_id_column() -> TestResult {
-    use vantage_vista::SortDirection;
-
-    let (db, name) = setup("dup_ids").await;
-    // Page by `name`, which repeats: 'dup' twice, then a distinct third row.
-    sqlx::query(&format!("DELETE FROM \"{}\"", name))
-        .execute(db.pool())
-        .await?;
-    sqlx::query(&format!(
-        "INSERT INTO \"{}\" VALUES \
-         ('a', 'dup', 10, false), \
-         ('b', 'dup', 20, false), \
-         ('c', 'tail', 30, false)",
-        name
-    ))
-    .execute(db.pool())
-    .await?;
-
-    let table = Table::<PostgresDB, EmptyEntity>::new(&name, db.clone())
-        .with_id_column("name")
-        .with_column_of::<String>("id")
-        .with_column_of::<i64>("price");
-    let mut vista = db.vista_factory().from_table(table)?;
-    vista.set_page_size(2)?;
-    vista.add_order("id", SortDirection::Ascending)?;
-
-    let mut seen: Vec<String> = Vec::new();
-    let mut token = None;
-    for _ in 0..10 {
-        let (rows, next) = vista.fetch_next(token).await?;
-        seen.extend(rows.into_iter().map(|(id, _)| id));
-        token = next;
-        if token.is_none() {
-            break;
-        }
-    }
-    // 'dup' collapses (page one returns a single record), but the scan must
-    // still reach 'tail' rather than stopping on the short page.
-    assert!(
-        seen.contains(&"tail".to_string()),
-        "cursor ended early on a deduped page; saw {seen:?}"
-    );
-    Ok(())
-}
-
-/// Paging with no caller-supplied order must still be a stable window:
-/// `LIMIT`/`OFFSET` without `ORDER BY` lets Postgres return rows in any
-/// order, so pages could repeat one row and skip another.
-#[tokio::test]
-async fn vista_paging_without_an_order_still_visits_every_row_once() -> TestResult {
-    let (db, name) = setup("unordered_pages").await;
-    let table = product_table(db.clone(), &name);
-    let mut vista = db.vista_factory().from_table(table)?;
-    vista.set_page_size(2)?;
-    vista.clear_orders()?;
-
-    let mut seen: Vec<String> = Vec::new();
-    for page in 1..=2 {
-        let rows = vista.fetch_page(page).await?;
-        seen.extend(rows.into_iter().map(|(id, _)| id));
-    }
-    seen.sort();
-    assert_eq!(seen, ["a", "b", "c"], "each id must appear exactly once");
+    assert!(!caps.has(Capability::Cursor));
+    // Being writable says nothing about whether anyone installed the
+    // `{table}_changed` trigger, so watchability is NOT inferred from it.
+    assert!(!caps.has(Capability::Subscribe));
     Ok(())
 }

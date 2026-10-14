@@ -1,9 +1,9 @@
 // Q4: SurrealDB ONLY + record ID + VALUE
 // Tests: only, thing, value
 
-let id = thing("user", "tobie");
+let id = surreal::thing("user", "tobie");
 
-select()
+surreal::select()
     .only()
     .value()
     .from(id)

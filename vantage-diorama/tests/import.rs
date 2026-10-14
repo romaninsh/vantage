@@ -1,6 +1,6 @@
 //! `Dio::import_values` — the bulk path behind `tables.<t>.import(…)`.
 //!
-//! The capability split under test: `can_import` advertises a
+//! The capability split under test: `Import` advertises a
 //! driver-native all-or-nothing batch; without it the Dio falls back to
 //! per-record optimistic inserts, where partial progress is honest —
 //! an import that stops at row 3 says so, names the row, and leaves
@@ -13,9 +13,13 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{Dio, Lens};
+use vantage_diorama::{Cache, Dio, FlashOutcome, Lens};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Capability, Column, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell,
+};
+
+mod support;
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -40,12 +44,14 @@ fn tag_vista(shell: &MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("status", "String"))
         .with_id_column("id");
-    Vista::new("tags", Box::new(shell.clone().with_metadata(metadata)))
+    Vista::new("tags", shell.clone().with_metadata(metadata))
 }
 
 async fn dio_over(shell: &MockShell) -> Result<Dio> {
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    lens.make_dio(tag_vista(shell)).await
+    support::quick_lens(Cache::memory())
+        .dio(tag_vista(shell))
+        .build()
+        .await
 }
 
 #[tokio::test]
@@ -77,7 +83,7 @@ async fn fallback_imports_every_record_and_reports_progress() -> Result<()> {
         Some(&text("unregistered"))
     );
     assert!(
-        dio.cache().get_value("t3").await?.is_some(),
+        dio.cached().get_value("t3").await?.is_some(),
         "records are visible through the cache"
     );
     Ok(())
@@ -124,19 +130,17 @@ async fn fallback_skips_existing_ids_and_counts_only_inserts() -> Result<()> {
 #[tokio::test]
 async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
     let shell = MockShell::new();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(|_dio, flash| async move {
-                if flash.id() == Some("t3") {
-                    return Err(vantage_core::error!("route rejected the flash"));
-                }
-                Ok(())
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(tag_vista(&shell)).await?;
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .writer(|_cx, flash| async move {
+            if flash.id() == Some("t3") {
+                return Err(vantage_core::error!("route rejected the flash"));
+            }
+            Ok(FlashOutcome::applied())
+        })
+        .build()
+        .expect("build lens");
+    let dio = lens.dio(tag_vista(&shell)).build().await?;
 
     let progress: Arc<Mutex<Vec<(usize, usize)>>> = Arc::default();
     let seen = progress.clone();
@@ -162,11 +166,11 @@ async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
         "progress reported exactly what landed before the stop"
     );
     assert!(
-        dio.cache().get_value("t3").await?.is_none(),
+        dio.cached().get_value("t3").await?.is_none(),
         "the failed row's optimistic stage was rolled back"
     );
     assert!(
-        dio.cache().get_value("t4").await?.is_none(),
+        dio.cached().get_value("t4").await?.is_none(),
         "nothing after the failure was attempted"
     );
     Ok(())
@@ -200,25 +204,61 @@ async fn breaking_from_progress_stops_the_walk() -> Result<()> {
     Ok(())
 }
 
+/// The native path is held to a derived Dio's residual too: a record outside
+/// it refuses the whole import before the master sees it, and one inside it
+/// reaches the master (whose refusal here proves it got that far).
+#[tokio::test]
+async fn native_import_is_confined_to_the_residual() -> Result<()> {
+    use vantage_vista::FilterOp;
+    let shell =
+        MockShell::new().with_capabilities(VistaCapabilities::new().with(Capability::Import));
+    let not_lost = dio_over(&shell)
+        .await?
+        .derive()
+        .with_query(&support::cond("status", FilterOp::Ne, "lost"))
+        .build()
+        .await?;
+    assert!(
+        !not_lost.residual().conditions.is_empty(),
+        "the master refused it"
+    );
+
+    let mut lost = tag_records(&["t1"]);
+    lost["t1"].insert("status".to_string(), text("lost"));
+    let err = not_lost
+        .import_values(lost, |_, _| ControlFlow::Continue(()))
+        .await
+        .expect_err("outside the residual");
+    assert!(err.is_conflict(), "refused before the master: {err}");
+
+    let err = not_lost
+        .import_values(tag_records(&["t2"]), |_, _| ControlFlow::Continue(()))
+        .await
+        .expect_err("the mock refuses a native import");
+    assert!(
+        err.is_unsupported(),
+        "an in-set record reaches the master: {err}"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn advertised_native_import_is_taken_at_its_word() -> Result<()> {
-    // A shell that *claims* can_import but doesn't implement the op:
+    // A shell that *claims* Import but doesn't implement the op:
     // the Dio must route to the native path and surface the driver's
-    // Unimplemented placeholder — never silently fall back, which would
-    // hide a driver bug behind 5,000 working inserts.
-    let shell = MockShell::new().with_capabilities(VistaCapabilities {
-        can_import: true,
-        ..VistaCapabilities::default()
-    });
+    // refusal — never silently fall back, which would hide a driver bug
+    // behind 5,000 working inserts.
+    let shell =
+        MockShell::new().with_capabilities(VistaCapabilities::new().with(Capability::Import));
     let dio = dio_over(&shell).await?;
 
     let err = dio
         .import_values(tag_records(&["t1"]), |_, _| ControlFlow::Continue(()))
         .await
-        .expect_err("placeholder surfaces");
+        .expect_err("the refusal surfaces");
     assert!(
-        err.to_string().contains("import_vista_values"),
-        "the native path was attempted: {err}"
+        err.is_unsupported(),
+        "the native path was attempted and refused: {err}"
     );
     Ok(())
 }

@@ -14,7 +14,7 @@ use vantage_dataset::prelude::*;
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoId};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::VistaFactory;
+use vantage_vista::{Capability, FilterOp, SortDirection, VistaFactory};
 
 /// Tests share `Box<dyn Error>` so `?` accepts both `mongodb::error::Error`
 /// (raw driver setup) and `vantage_core::Error` (vista calls) uniformly.
@@ -132,10 +132,10 @@ async fn vista_count_with_eq_condition() -> TestResult {
     }
 
     let mut vista = db.vista_factory().from_table(table)?;
-    assert_eq!(vista.get_count().await?, 3);
+    assert_eq!(vista.count().await?, 3);
 
-    vista.add_condition_eq("is_deleted", CborValue::Bool(false))?;
-    assert_eq!(vista.get_count().await?, 2);
+    vista.add_condition("is_deleted", FilterOp::Eq, CborValue::Bool(false))?;
+    assert_eq!(vista.count().await?, 2);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 2);
@@ -173,8 +173,8 @@ mongo:
     let vista = db.vista_factory().from_yaml(yaml)?;
 
     assert_eq!(vista.name(), "client");
-    assert_eq!(vista.get_id_column(), Some("_id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
+    assert_eq!(vista.id_column(), Some("_id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
 
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1);
@@ -224,13 +224,93 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     let caps = vista.capabilities();
-    assert!(caps.can_count);
-    assert!(caps.can_insert);
-    assert!(caps.can_update);
-    assert!(caps.can_delete);
-    assert!(caps.can_confine_writes);
-    assert_eq!(caps.can_subscribe, db.supports_change_streams());
-    assert_eq!(caps.can_import, db.supports_change_streams());
+    for capability in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::NativeConditions,
+        Capability::Window,
+        Capability::Cursor,
+        Capability::Traverse,
+    ] {
+        assert!(caps.has(capability), "{capability}");
+    }
+    let live = db.supports_change_streams();
+    assert_eq!(caps.has(Capability::Subscribe), live);
+    assert_eq!(caps.has(Capability::Import), live);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_insert_without_id_reads_back_the_stored_row() -> TestResult {
+    let (db, name) = setup().await;
+    let mut vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let record: Record<CborValue> = [("name".to_string(), CborValue::Text("Scone".into()))]
+        .into_iter()
+        .collect();
+    let id = vista.insert_return_id_value(&record).await?;
+    assert_eq!(id.len(), 24, "a generated ObjectId in hex: {id}");
+    let stored = vista.get_value(id.clone()).await?.expect("stored");
+    assert_eq!(stored.get("name"), Some(&CborValue::Text("Scone".into())));
+
+    // The quicksearch is part of the set: a row that misses it is refused
+    // before it is stored.
+    vista.set_search(Some("nothing like it"))?;
+    let err = vista.insert_return_id_value(&record).await.unwrap_err();
+    assert!(err.is_conflict(), "{err:?}");
+    assert_eq!(vista.count().await?, 0);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_upsert_creates_then_replaces() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = db.vista_factory().from_table(product_table(db.clone()))?;
+    let id = ObjectId::new().to_hex();
+    let named = |n: &str| -> Record<CborValue> {
+        [("name".to_string(), CborValue::Text(n.into()))]
+            .into_iter()
+            .collect()
+    };
+
+    let created = vista.upsert_value(&id, &named("Bun")).await?;
+    assert_eq!(created.get("name"), Some(&CborValue::Text("Bun".into())));
+    let replaced = vista.upsert_value(&id, &named("Roll")).await?;
+    assert_eq!(replaced.get("name"), Some(&CborValue::Text("Roll".into())));
+    assert_eq!(vista.count().await?, 1);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_clone_owns_its_narrowing() -> TestResult {
+    let (db, name) = setup().await;
+    let table = product_table(db.clone());
+    for n in ["A", "B"] {
+        table
+            .insert_value(
+                MongoId::from(ObjectId::new()),
+                &rec(&[("name", AnyMongoType::new(n.to_string()))]),
+            )
+            .await?;
+    }
+    let vista = db.vista_factory().from_table(table)?;
+    let narrowed =
+        vista
+            .clone()
+            .with_condition("name", FilterOp::Eq, CborValue::Text("A".into()))?;
+    assert_eq!(narrowed.count().await?, 1);
+    assert_eq!(vista.count().await?, 2);
+    assert!(narrowed.is_narrowed() && !vista.is_narrowed());
 
     teardown(&db, &name).await;
     Ok(())
@@ -296,8 +376,8 @@ mongo:
     assert!(marty.get("fullName").is_none());
 
     // Filter: nested_path translates to dot-notation server-side.
-    vista.add_condition_eq("zip", CborValue::Text("1985".into()))?;
-    assert_eq!(vista.get_count().await?, 1);
+    vista.add_condition("zip", FilterOp::Eq, CborValue::Text("1985".into()))?;
+    assert_eq!(vista.count().await?, 1);
     let only = vista.list_values().await?;
     assert_eq!(only.len(), 1);
 
@@ -342,9 +422,7 @@ mongo:
 }
 
 #[tokio::test]
-async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult {
-    use vantage_vista::SortDirection;
-
+async fn vista_set_order_filters_results_with_replace_semantics() -> TestResult {
     let (db, name) = setup().await;
     let table = product_table(db.clone());
 
@@ -361,9 +439,9 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
     }
 
     let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_order);
+    assert!(vista.capabilities().has(Capability::Order));
 
-    vista.add_order("price", SortDirection::Ascending)?;
+    vista.set_order(Some(("price", SortDirection::Ascending)))?;
     let rows = vista.list_values().await?;
     let names: Vec<String> = rows
         .values()
@@ -377,7 +455,7 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
         vec!["Alpha".to_string(), "Beta".into(), "Gamma".into()]
     );
 
-    vista.add_order("name", SortDirection::Descending)?;
+    vista.set_order(Some(("name", SortDirection::Descending)))?;
     let rows = vista.list_values().await?;
     let names: Vec<String> = rows
         .values()
@@ -391,7 +469,7 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
         vec!["Gamma".to_string(), "Beta".into(), "Alpha".into()]
     );
 
-    vista.clear_orders()?;
+    vista.set_order(None)?;
     let _rows = vista.list_values().await?;
 
     teardown(&db, &name).await;
@@ -399,7 +477,7 @@ async fn vista_add_order_filters_results_with_replace_semantics() -> TestResult 
 }
 
 #[tokio::test]
-async fn vista_add_search_uses_regex() -> TestResult {
+async fn vista_set_search_uses_regex() -> TestResult {
     let (db, name) = setup().await;
     let table = product_table(db.clone());
 
@@ -413,17 +491,17 @@ async fn vista_add_search_uses_regex() -> TestResult {
     }
 
     let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_search);
+    assert!(vista.capabilities().has(Capability::Search));
 
-    vista.add_search("amma")?;
+    vista.set_search(Some("amma"))?;
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1, "only Gamma matches 'amma'");
 
-    vista.add_search("alpha")?;
+    vista.set_search(Some("alpha"))?;
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 1, "only Alpha matches");
 
-    vista.clear_search()?;
+    vista.set_search(None)?;
     let rows = vista.list_values().await?;
     assert_eq!(rows.len(), 3);
 
@@ -431,10 +509,17 @@ async fn vista_add_search_uses_regex() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
-async fn vista_fetch_page_offset_pagination() -> TestResult {
-    use vantage_vista::SortDirection;
+fn names(rows: &[(String, Record<CborValue>)]) -> Vec<String> {
+    rows.iter()
+        .map(|(_, r)| match r.get("name") {
+            Some(CborValue::Text(s)) => s.clone(),
+            _ => String::new(),
+        })
+        .collect()
+}
 
+#[tokio::test]
+async fn vista_fetch_window_pages_through_the_set() -> TestResult {
     let (db, name) = setup().await;
     let table = product_table(db.clone());
 
@@ -448,42 +533,21 @@ async fn vista_fetch_page_offset_pagination() -> TestResult {
     }
 
     let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_fetch_page);
+    assert!(vista.capabilities().has(Capability::Window));
+    vista.set_order(Some(("name", SortDirection::Ascending)))?;
 
-    vista.set_page_size(2)?;
-    vista.add_order("name", SortDirection::Ascending)?;
-
-    let p1 = vista.fetch_page(1).await?;
-    let names_p1: Vec<String> = p1
-        .iter()
-        .map(|(_, r)| match r.get("name") {
-            Some(CborValue::Text(s)) => s.clone(),
-            _ => String::new(),
-        })
-        .collect();
-    assert_eq!(names_p1, vec!["A".to_string(), "B".into()]);
-
-    let p2 = vista.fetch_page(2).await?;
-    let names_p2: Vec<String> = p2
-        .iter()
-        .map(|(_, r)| match r.get("name") {
-            Some(CborValue::Text(s)) => s.clone(),
-            _ => String::new(),
-        })
-        .collect();
-    assert_eq!(names_p2, vec!["C".to_string(), "D".into()]);
-
-    let p3 = vista.fetch_page(3).await?;
-    assert_eq!(p3.len(), 1, "partial last page");
+    assert_eq!(names(&vista.fetch_window(0, 2).await?.rows), vec!["A", "B"]);
+    assert_eq!(names(&vista.fetch_window(2, 2).await?.rows), vec!["C", "D"]);
+    let last = vista.fetch_window(4, 2).await?;
+    assert_eq!(last.rows.len(), 1, "partial last window");
+    assert_eq!(last.total, None);
 
     teardown(&db, &name).await;
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
-    use vantage_vista::SortDirection;
-
+async fn vista_fetch_cursor_chains_pages_until_exhausted() -> TestResult {
     let (db, name) = setup().await;
     let table = product_table(db.clone());
 
@@ -497,18 +561,25 @@ async fn vista_fetch_next_chains_pages_until_exhausted() -> TestResult {
     }
 
     let mut vista = db.vista_factory().from_table(table)?;
-    assert!(vista.capabilities().can_fetch_next);
+    assert!(vista.capabilities().has(Capability::Cursor));
+    vista.set_order(Some(("name", SortDirection::Ascending)))?;
 
-    vista.set_page_size(2)?;
-    vista.add_order("name", SortDirection::Ascending)?;
-
-    let (r1, tok1) = vista.fetch_next(None).await?;
-    assert_eq!(r1.len(), 2);
+    let (p1, tok1) = vista.fetch_cursor(None, 2).await?;
+    assert_eq!(names(&p1.rows), vec!["A", "B"]);
     assert!(tok1.is_some());
 
-    let (r2, tok2) = vista.fetch_next(tok1).await?;
-    assert_eq!(r2.len(), 1, "partial last page exhausts");
+    let (p2, tok2) = vista.fetch_cursor(tok1, 2).await?;
+    assert_eq!(names(&p2.rows), vec!["C"], "partial last page exhausts");
     assert!(tok2.is_none());
+
+    let err = vista
+        .fetch_cursor(Some(CborValue::Integer(2.into())), 2)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("invalid fetch_cursor token"),
+        "{err}"
+    );
 
     teardown(&db, &name).await;
     Ok(())
@@ -548,7 +619,7 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     let vista = db
         .vista_factory()
         .from_table(orders_contained_table(db.clone()))?;
-    assert_eq!(vista.list_contained().len(), 1);
+    assert!(vista.reference("lines").unwrap().kind.is_contained());
 
     // Insert a document with a native embedded array.
     let mut order = Record::new();
@@ -561,8 +632,12 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     // The embedded array reads back natively (not a string).
     let doc = vista.get_value("o1").await?.unwrap();
     assert!(matches!(doc.get("lines"), Some(CborValue::Array(_))));
-    let lines = vista.get_ref("lines", &doc)?;
+    let lines = vista.get_ref("lines", Some(&doc))?;
     assert_eq!(lines.list_values().await?.len(), 2);
+    // Without a parent document, the bare target: no records, no writes.
+    let bare = vista.get_ref("lines", None)?;
+    assert!(bare.list_values().await?.is_empty());
+    assert!(!bare.capabilities().has(vantage_vista::Capability::Insert));
 
     // Add a line — eager writeback $sets the whole array.
     let mut new = Record::new();
@@ -582,7 +657,7 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
     patch.insert("qty".to_string(), CborValue::Integer(99i64.into()));
     lines.patch_value("0", &patch).await?;
     let doc3 = vista.get_value("o1").await?.unwrap();
-    let lines3 = vista.get_ref("lines", &doc3)?;
+    let lines3 = vista.get_ref("lines", Some(&doc3))?;
     assert_eq!(
         lines3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
@@ -615,10 +690,10 @@ contained:
       qty: { type: int }
 "#;
     let vista = db.vista_factory().from_yaml(yaml)?;
-    assert_eq!(vista.list_contained().len(), 1);
+    assert!(vista.reference("lines").unwrap().kind.is_contained());
 
     let doc = vista.get_value("o1").await?.unwrap();
-    let lines = vista.get_ref("lines", &doc)?;
+    let lines = vista.get_ref("lines", Some(&doc))?;
     assert_eq!(lines.list_values().await?.len(), 1);
 
     let mut line = Record::new();
@@ -627,7 +702,7 @@ contained:
     lines.insert_return_id_value(&line).await?;
 
     let doc2 = vista.get_value("o1").await?.unwrap();
-    let lines2 = vista.get_ref("lines", &doc2)?;
+    let lines2 = vista.get_ref("lines", Some(&doc2))?;
     assert_eq!(lines2.list_values().await?.len(), 2);
 
     teardown(&db, &name).await;

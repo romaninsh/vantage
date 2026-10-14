@@ -12,6 +12,8 @@ use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::SortDirection;
 
+use condition::search_matches;
+
 pub use condition::MemoryCondition;
 pub use order::sort_rows;
 
@@ -20,6 +22,8 @@ pub struct Query {
     /// AND-ed together.
     pub conditions: Vec<MemoryCondition>,
     pub search: Option<String>,
+    /// The cells `search` reads; empty reads every cell.
+    pub search_columns: Vec<String>,
     pub order: Vec<(String, SortDirection)>,
     pub offset: usize,
     pub limit: Option<usize>,
@@ -65,8 +69,7 @@ pub fn matches_all(q: &Query, record: &Record<CborValue>) -> Result<bool> {
             return Ok(false);
         }
     }
-    Ok(match &q.search {
-        Some(s) => MemoryCondition::Search(s.clone()).matches(record)?,
-        None => true,
-    })
+    Ok(q.search
+        .as_deref()
+        .is_none_or(|text| search_matches(record, text, &q.search_columns)))
 }

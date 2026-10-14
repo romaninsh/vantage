@@ -1,42 +1,45 @@
 #![doc = include_str!("../README.md")]
-// Stage 1 is shape-only — fields/methods land their first callers in stages 2+.
-#![allow(dead_code)]
+#![cfg_attr(not(test), deny(clippy::unimplemented, clippy::todo))]
 
-pub mod augment;
-pub mod composition;
+pub mod aggregate;
+mod augment;
+// The debug tap and the live-instance tallies run in every build, because the
+// crate calls them throughout; the `diagnostics` feature publishes them.
+#[cfg(feature = "diagnostics")]
 pub mod debug;
-pub mod dio;
-pub mod error;
-pub mod lens;
-pub mod ops;
+#[cfg(not(feature = "diagnostics"))]
+mod debug;
+mod dio;
+mod lens;
+mod ops;
 #[cfg(feature = "rhai")]
 pub mod rhai;
-pub mod scenery;
-pub mod servo;
+mod scenery;
+mod servo;
+#[cfg(feature = "diagnostics")]
 pub mod stats;
+#[cfg(not(feature = "diagnostics"))]
+mod stats;
 
 pub use augment::{Augmentation, BuildFn, Detail, Fetch, FetchFn, MergeRule, Source};
-pub use composition::Diorama;
-pub use debug::{DebugTap, ProcessStats, process_stats};
-pub use dio::diagnostics::{DioDiagnostics, SceneryDiagnostic};
-pub use dio::{Dio, DioEvent, DioShell, Generation, ImportOutcome, WeakDio, WriteCapabilities};
-pub use error::{DioError, LensBuildError};
-pub use lens::{
-    Activity, ActivitySignal, CacheBackend, CacheStatus, CacheTable, ChunkQuery, ChunkRow,
-    ChunkSink, ChunkWrite, DioCallback, DioEventCallback, DioFlashCallback, DioLoadChunkCallback,
-    DioTotalProviderCallback, Lens, LensBuilder, LensCallbacks, LensDefaults, MemoryCache,
-    MemoryCacheTable, RedbCache, RedbCacheTable,
+pub use dio::{
+    DeriveBuilder, Dio, DioBuilder, DioEvent, Fetched, Generation, ImportOutcome, WeakDio,
+    WriteCapabilities,
 };
-pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashRejection, QueryDescriptor};
-pub use scenery::sugar::{Sugar, SugarFn, SugarFuture};
+#[cfg(feature = "diagnostics")]
+pub use dio::{DioDiagnostics, SceneryDiagnostic};
+pub use lens::{
+    Cache, CacheBackend, CacheStatus, CacheTable, ChunkSink, Lens, LensBuilder, Loader, LoaderCx,
+    MemoryCache, MemoryCacheTable, RedbCache, RedbCacheTable, Refresher, Tuning,
+};
+pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashOutcome, FlashRejection};
 pub use scenery::{
-    Aggregate, CappedScenery, CustomAggregate, EnrichedRecord, FilterOrigin, LoadState,
-    OpCondition, RecordScenery, RecordStatus, RowStatus, RowStatusSummary, SortDir, TableScenery,
-    TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount, ViewFilter,
-    ViewState, ViewStats, boxed_custom_aggregate,
+    Clause, EnrichedRecord, FilterOrigin, LoadFailure, LoadState, RecordScenery,
+    RecordSceneryBuilder, RecordStatus, RowStatus, RowStatusSummary, Sugar, SugarFn, SugarFuture,
+    TableScenery, TableSceneryBuilder, ValueScenery, ValueSceneryBuilder, ValueStatus, ViewCount,
+    ViewFilter, ViewState, ViewStats,
 };
 pub use servo::{IdStrategy, Servo, ServoStatus};
-pub use vantage_vista::VistaCapabilities;
 
 /// Common imports for working with vantage-diorama.
 ///
@@ -44,13 +47,8 @@ pub use vantage_vista::VistaCapabilities;
 /// use vantage_diorama::prelude::*;
 /// ```
 pub mod prelude {
-    pub use crate::augment::{Augmentation, Detail, Fetch, MergeRule, Source};
-    pub use crate::dio::{Dio, DioEvent, Generation, WriteCapabilities};
-    pub use crate::lens::{CacheBackend, CacheStatus, CacheTable, Lens, RedbCache};
-    pub use crate::ops::{ChangeEvent, ChangeFlash, FlashKind};
-    pub use crate::scenery::{
-        EnrichedRecord, RecordScenery, RecordStatus, RowStatus, SortDir, TableScenery, ValueScenery,
+    pub use crate::aggregate::Aggregation;
+    pub use crate::{
+        ChangeEvent, ChangeFlash, Dio, Lens, RecordScenery, Servo, TableScenery, ValueScenery,
     };
-    pub use crate::servo::{IdStrategy, Servo, ServoStatus};
-    pub use vantage_vista_factory::VistaCatalog;
 }

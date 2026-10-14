@@ -9,12 +9,15 @@ use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 use vantage_vista::{
-    Column as VistaColumn, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell,
+    Capability, Column as VistaColumn, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell,
 };
 
 fn empty_vista(name: &str) -> Vista {
-    let shell = MockShell::new();
-    Vista::new(name.to_string(), Box::new(shell))
+    Vista::new(name.to_string(), MockShell::new())
+}
+
+fn column_names(vista: &Vista) -> Vec<&str> {
+    vista.columns().keys().map(String::as_str).collect()
 }
 
 fn vista_with_columns(name: &str, columns: &[&str]) -> Vista {
@@ -29,15 +32,14 @@ fn vista_with_columns(name: &str, columns: &[&str]) -> Vista {
             .insert(col.to_string(), VistaColumn::new(col.to_string(), "string"));
     }
     let shell = MockShell::new()
-        .with_capabilities(VistaCapabilities {
-            can_count: true,
-            can_insert: true,
-            can_update: true,
-            can_delete: true,
-            ..VistaCapabilities::default()
-        })
+        .with_capabilities(
+            VistaCapabilities::new()
+                .with(Capability::Insert)
+                .with(Capability::Update)
+                .with(Capability::Delete),
+        )
         .with_metadata(metadata);
-    Vista::new(name.to_string(), Box::new(shell))
+    Vista::new(name.to_string(), shell)
 }
 
 #[tokio::test]
@@ -45,12 +47,12 @@ async fn vista_carries_table_name_and_columns() {
     let vista = vista_with_columns("users", &["name", "email"]);
 
     assert_eq!(vista.name(), "users");
-    let cols = vista.get_column_names();
+    let cols = column_names(&vista);
     assert!(cols.contains(&"id"));
     assert!(cols.contains(&"name"));
     assert!(cols.contains(&"email"));
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.driver(), "mock");
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.driver_name(), "mock");
 }
 
 #[tokio::test]
@@ -61,7 +63,7 @@ async fn multiple_vistas_live_in_same_collection() {
     let vistas: Vec<Vista> = vec![users, orders];
     for v in &vistas {
         assert!(!v.name().is_empty());
-        assert_eq!(v.driver(), "mock");
+        assert_eq!(v.driver_name(), "mock");
     }
 }
 
@@ -103,7 +105,7 @@ async fn vista_count_and_some_value() {
     b.insert("name".to_string(), CborValue::Text("Bravo".into()));
     vista.insert_value("b", &b).await.expect("insert b");
 
-    assert_eq!(vista.get_count().await.expect("count"), 2);
+    assert_eq!(vista.count().await.expect("count"), 2);
     let some = vista
         .get_some_value()
         .await
@@ -140,6 +142,6 @@ async fn vista_insert_return_id_value() {
 fn empty_vista_advertises_name_and_no_columns() {
     let vista = empty_vista("empty");
     assert_eq!(vista.name(), "empty");
-    assert!(vista.get_column_names().is_empty());
-    assert_eq!(vista.get_id_column(), None);
+    assert!(vista.columns().is_empty());
+    assert_eq!(vista.id_column(), None);
 }

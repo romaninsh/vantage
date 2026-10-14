@@ -1,8 +1,7 @@
 //! Stage 7 demo: ValueScenery as a "menu-bar badge" surface.
 //!
-//! A polling loop watches three scenery types (Count, Sum,
-//! Custom-as-average) and prints them on every generation bump. We
-//! mutate the cache from outside and watch the values follow.
+//! Three value sceneries (count, sum, average) print on every generation
+//! bump. We apply an external insert and watch the values follow.
 //!
 //! Run with:
 //!   cargo run -p vantage-diorama --example badge_demo
@@ -14,7 +13,8 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Lens, ValueScenery};
+use vantage_diorama::aggregate::{Avg, Count, Sum};
+use vantage_diorama::{Cache, ChangeEvent, Lens, Loader, LoaderCx, ValueScenery};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
@@ -39,7 +39,7 @@ fn master() -> Vista {
         .with_metadata(metadata)
         .with_record("a", record("alpha", 10))
         .with_record("b", record("beta", 20));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 fn show(
@@ -81,43 +81,18 @@ async fn wait_for_bump(
 async fn main() -> Result<()> {
     let tmp = TempDir::new().expect("tempdir");
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("cache.redb"))
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.cache().insert_values(rows).await
+        }))
+        .build()?;
 
-    let dio = lens.make_dio(master()).await?;
-    let count = dio.value_scenery().count().open().await?;
-    let sum = dio.value_scenery().sum("price").open().await?;
-    let avg = dio
-        .value_scenery()
-        .custom(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.cache().list_values().await?;
-                let mut s: i64 = 0;
-                let mut n: i64 = 0;
-                for (_, r) in rows {
-                    if let Some(CborValue::Integer(i)) = r.get("price") {
-                        s += i64::try_from(*i).unwrap_or(0);
-                        n += 1;
-                    }
-                }
-                let v = if n == 0 { 0 } else { s / n };
-                Ok(CborValue::Integer(v.into()))
-            }
-        })
-        .open()
-        .await?;
+    let dio = lens.dio(master()).build().await?;
+    let count = dio.value_scenery(Count::rows()).open().await?;
+    let sum = dio.value_scenery(Sum::of("price")).open().await?;
+    let avg = dio.value_scenery(Avg::of("price")).open().await?;
 
     show("initial", &count, &sum, &avg);
 
@@ -128,8 +103,11 @@ async fn main() -> Result<()> {
     let last_count = u64::from(*count_rx.borrow_and_update());
     let last_sum = u64::from(*sum_rx.borrow_and_update());
     let last_avg = u64::from(*avg_rx.borrow_and_update());
-    dio.cache().insert_value("c", &record("gamma", 30)).await?;
-    dio.notify_record_changed("c");
+    dio.apply_change(ChangeEvent::Inserted {
+        id: "c".to_string(),
+        new: Some(record("gamma", 30)),
+    })
+    .await?;
     let _ = wait_for_bump(&mut count_rx, last_count).await;
     let _ = wait_for_bump(&mut sum_rx, last_sum).await;
     let _ = wait_for_bump(&mut avg_rx, last_avg).await;

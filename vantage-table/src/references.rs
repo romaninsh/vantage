@@ -9,7 +9,7 @@
 //! - `HasOne` — foreign key on source table (e.g. Client.bakery_id → Bakery)
 //! - `HasMany` — foreign key on target table (e.g. Bakery → Client.bakery_id)
 //!
-//! Cross-persistence references live in `vantage-vista-factory`'s `VistaCatalog`,
+//! Cross-persistence references go through a `vantage_vista::Catalog`,
 //! not here. Typed `Table<T, E>` is single-backend by construction.
 
 use std::any::Any;
@@ -29,12 +29,17 @@ pub trait Reference: Send + Sync {
     /// Given source and target id field names, return (source_column, target_column).
     fn columns(&self, source_id: &str, target_id: &str) -> (String, String);
 
-    /// The foreign-key column carried by this relation. For `HasOne` it names a
-    /// column on the *source* table (set to the related row's id after the
-    /// related row is inserted); for `HasMany` it names a column on the *target*
-    /// table (set to the parent's id when inserting each child). Drives nested
-    /// insert at the Vista layer.
-    fn foreign_key(&self) -> &str;
+    /// This relation as Vista metadata: a join named `name` onto `target`.
+    /// `source_id` is the source column a `has_many` reads its join value
+    /// from; a `has_one` ignores it and constrains the target's id column,
+    /// resolved at traversal. Only joins implement this trait, so the result
+    /// is never a contained kind.
+    fn vista_reference(
+        &self,
+        name: &str,
+        target: String,
+        source_id: &str,
+    ) -> vantage_vista::Reference;
 
     /// Produce a fresh target table (no conditions applied), wrapped in
     /// `Box<dyn Any>` so callers can downcast back to the concrete
@@ -49,13 +54,6 @@ pub trait Reference: Send + Sync {
     /// the caller need not know the concrete target entity type — used by
     /// implicit-reference traversal, which walks relations by name.
     fn build_target_erased(&self, data_source: &dyn Any) -> Box<dyn Any>;
-
-    /// Cardinality of this relation. `HasOne` if traversing yields at most
-    /// one record (the FK lives on the source); `HasMany` if it can yield
-    /// any number (the FK lives on the target). Surfaced by
-    /// `Vista::list_references` so CLIs / UIs can pick a record-card vs
-    /// list-grid renderer.
-    fn cardinality(&self) -> vantage_vista::ReferenceKind;
 
     /// Resolve traversal using a known source row. Returns the target table
     /// (entity type erased to `EmptyEntity`) wrapped in `Box<dyn Any>`, with
@@ -75,6 +73,8 @@ pub trait Reference: Send + Sync {
         source_row: &dyn Any,
     ) -> Result<Box<dyn Any>>;
 
-    /// Type name of the target table (for error messages).
-    fn target_type_name(&self) -> &'static str;
+    /// The table name of the target built over `data_source` (`&T`). It
+    /// names the relation's target in Vista metadata, which a catalog
+    /// resolves by name.
+    fn target_table_name(&self, data_source: &dyn Any) -> String;
 }

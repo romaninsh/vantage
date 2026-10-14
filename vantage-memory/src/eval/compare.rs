@@ -50,7 +50,7 @@ pub fn cmp_values(a: &CborValue, b: &CborValue) -> Option<Ordering> {
 /// The text of a plain text value or of a CBOR standard datetime
 /// (`Tag(0, Text)`), so a datetime operand orders against, and equals,
 /// dates a source stores as text. RFC 3339 strings with the same offset
-/// sort lexically. Twin: `vantage-diorama/src/scenery/table/helpers.rs`.
+/// sort lexically. Twin: `vantage-vista/src/eval/compare.rs`.
 fn text_or_datetime(v: &CborValue) -> Option<&str> {
     match v {
         CborValue::Text(s) => Some(s),

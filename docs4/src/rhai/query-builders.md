@@ -2,8 +2,8 @@
 
 This page lists every function the SQL and SurrealDB query builders register for Rhai. They are
 available where a script builds a native query: a [query-sourced table](./query-tables.md)'s
-`rhai:` and `base:` scripts, and on SurrealDB also `modify:` scripts, `expr:` columns and
-reference build scripts. Data scripts don't get them (see
+`rhai:` and `base:` scripts, and on SurrealDB and MySQL also `modify:` scripts and reference build
+scripts (SurrealDB `expr:` columns too). Data scripts don't get them (see
 [Why scripts can't run their own queries](./query-tables.md#why-scripts-cant-run-their-own-queries)).
 The data vocabulary is listed in [Words at a glance](../rhai.md#words-at-a-glance).
 
@@ -12,6 +12,14 @@ SQLite, PostgreSQL and MySQL share one registration (`vantage_sql::register_engi
 SurrealDB registers its own copy (`vantage_surrealdb::rhai_engine::register_surreal_onto`) with
 the same names where the concept exists in both. The Rust side of each primitive is in
 [SQL Primitives](../sql/primitives.md) and [SurrealDB Primitives](../surrealdb/primitives.md).
+
+**Free functions are namespaced.** Every function in the tables below that isn't called on a
+receiver lives in its backend's namespace: `sql::` for all three SQL databases, `surreal::` for
+SurrealDB. A script writes `sql::select().from(sql::ident("users"))` or
+`surreal::count(surreal::graph(surreal::me, "placed", "order"))`; the tables leave the prefix out.
+Methods (`.from`, `.where`, `.alias`, `.when`, `.map`, …), indexers and operators are called on
+their receiver as written. The namespace keeps the builders from shadowing the data vocabulary's
+`table`, `where` and `first` on a host that has both.
 
 In the signatures, `x` is an expression or an identifier, `sel` a `select()`, and `"…"` a string.
 Where a function takes a plain value as well, it says so.
@@ -36,7 +44,6 @@ Two rules hold in both builders:
 |---|---|---|---|
 | `select()` | yes | yes | an empty `SELECT` |
 | `ident("name")` | yes | yes | a quoted identifier |
-| `table("name")` | yes | yes | the same as `ident`; on a host that also has the data vocabulary, `table(name)` is the data verb |
 | `expr("text")` | yes | yes | raw query text |
 | `expr("a = {}", [args])` | yes | yes | text with `{}` holes; each argument is an expression, an identifier, or a value bound as a parameter |
 | `fx("name", [x, …])` | yes | yes | a function call `name(x, …)`; arguments must be expressions or identifiers |
@@ -46,13 +53,13 @@ Two rules hold in both builders:
 | `param("name")` | — | yes | a parameter, `$name` |
 | `parent()`, `parent("field")` | — | yes | `$parent`, `$parent.field` |
 | `time_now()` | — | yes | `time::now()` |
-| `me` (a variable) | — | yes | the current record, the anchor of a graph path |
+| `me` (a variable: `surreal::me`) | — | yes | the current record, the anchor of a graph path |
 
 ## Identifiers and expressions
 
 | Function | SQL | SurrealDB | Builds |
 |---|---|---|---|
-| `id.dot_of("s")` | yes | yes | **differs**: SQL puts `s` in front (`ident("name").dot_of("u")` is `"u"."name"`); SurrealDB puts it after (`ident("t").dot_of("f")` is `t.f`) |
+| `id.dot_of("s")` | yes | yes | **differs**: SQL puts `s` in front (`sql::ident("name").dot_of("u")` is `"u"."name"`); SurrealDB puts it after (`surreal::ident("t").dot_of("f")` is `t.f`) |
 | `id["col"]` | yes | yes | SQL: the column `col` qualified by the identifier's alias or name; SurrealDB: the path `id.col` |
 | `x["field"]`, `x[n]` | — | yes | a field of an expression, or element `n` of an array |
 | `id.alias("a")` | yes | yes | SQL: the identifier with an alias, rendered `"users" AS "a"`; SurrealDB: the expression `id AS a` |
@@ -149,7 +156,7 @@ SQL only. `window()` starts a window spec; each method returns it.
 | `.order_by(x, "asc"\|"desc")` | an `ORDER BY` term |
 | `.rows("from", "to")` | `ROWS BETWEEN from AND to`, such as `"UNBOUNDED PRECEDING"`, `"CURRENT ROW"` |
 | `.range("from", "to")` | `RANGE BETWEEN from AND to` |
-| `.apply(x)` | the expression `x OVER (…)`, such as `window().partition_by(…).apply(sum(…))` |
+| `.apply(x)` | the expression `x OVER (…)`, such as `sql::window().partition_by(…).apply(sql::sum(…))` |
 
 ## Graph paths
 
@@ -161,11 +168,12 @@ SurrealDB only.
 | `graph("table", "edge", …, me)` | an inward path `table<-edge<-…`; the anchor's position sets the direction |
 | `graph(…, graph(…), …)` | a nested path; the anchor may be a sub-path, which changes direction per hop |
 | `recurse(path, min, max)` | `@.{min..max}(path)` |
-| `arrow(id, "edge")` | `id->edge` |
-| `back(id, "edge")` | `id<-edge` |
-| `arrow_field(id, "edge", "field")` | `id->edge.field` |
+| `id.arrow("edge")` | `id->edge` |
+| `id.back("edge")` | `id<-edge` |
+| `id.arrow_field("edge", "field")` | `id->edge.field` |
 
-Exactly one argument of `graph` is the anchor (`me` or a sub-path); it must be first or last.
+Exactly one argument of `graph` is the anchor (`surreal::me` or a sub-path); it must be first or
+last.
 
 ## Array closures
 
@@ -180,6 +188,9 @@ parameters become engine-named placeholders (`$value`, `$acc`).
 
 ## On a table handle
 
-SurrealDB adds one verb to the data vocabulary's handles: `self.with_condition(x)` narrows the
-table by a native expression. It works on `self` only (see
-[Backend extensions](./surfaces.md#backend-extensions)).
+SurrealDB and MySQL add one verb to the data vocabulary's handles: `self.with_condition(x)`
+narrows the table by a native expression, such as
+`self.with_condition(surreal::ident("is_paying_client") == true)`. It is a method, so it takes no
+namespace, and it works on `self` only (see
+[Backend extensions](./surfaces.md#backend-extensions)). MongoDB has the same verb, but it takes a
+filter written as a Rhai map rather than a query-builder expression.

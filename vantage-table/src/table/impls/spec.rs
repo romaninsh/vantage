@@ -2,16 +2,21 @@
 //! the steps every driver factory shares. Type mapping and driver blocks stay
 //! with the driver, passed in as `build` functions.
 
+use std::sync::Arc;
+
 use indexmap::IndexMap;
-use vantage_core::{Result, error};
+use vantage_core::{Result, VantageError, error};
 use vantage_expressions::{Expressive, SelectableDataSource};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{ColumnSpec, ReferenceKind, ReferenceSpec, SpecResolver, VistaSpec, flags};
+use vantage_vista::{
+    ColumnFlag, ColumnSpec, JoinKey, ReferenceKind, ReferenceSugar, SpecResolver, VistaSpec,
+};
 
 use crate::{source::SelectSource, table::Table, traits::table_source::TableSource};
 
 /// Rebuilds a referenced table from its spec, a data source and the resolver.
-type SpecTableBuilder<S, T> = fn(&S, T, Option<SpecResolver<S>>) -> Result<Table<T, EmptyEntity>>;
+type SpecTableBuilder<S, T> =
+    fn(&S, T, Option<Arc<dyn SpecResolver<S>>>) -> Result<Table<T, EmptyEntity>>;
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add one spec column. A `lazy:` column becomes a computed column;
@@ -30,7 +35,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         if !self.columns.contains_key(name) {
             self.add_column(build(name, spec)?);
         }
-        if spec.has_flag(flags::TITLE) {
+        if spec.has_flag(ColumnFlag::Title) {
             self.add_title_field(name);
         }
         Ok(true)
@@ -64,38 +69,116 @@ where
     T::Value: Into<ciborium::Value> + From<ciborium::Value>,
     T::Id: std::fmt::Display + From<String>,
 {
-    /// Register each spec `references:` entry as `with_one` / `with_many`.
+    /// Register every join `spec` declares as `with_one` / `with_many`: its
+    /// `references:` entries, then the column-level `references:` sugar
+    /// (see [`spec_references`]).
     ///
     /// At traversal time the reference asks `resolver` for the target's
     /// current spec and rebuilds it with `build`. Without a resolver, or on a
     /// miss or a build error, the target is a column-less `Table::new(target)`
-    /// and the next query against it fails.
-    pub fn with_spec_references<R, S: 'static>(
+    /// and the next query against it fails. A contained kind is an error:
+    /// contained relations are declared under `contained:`.
+    pub fn with_spec_references<X, C, R, S: 'static>(
         mut self,
-        references: &IndexMap<String, ReferenceSpec<R>>,
-        resolver: Option<SpecResolver<S>>,
+        spec: &VistaSpec<X, C, R>,
+        resolver: Option<Arc<dyn SpecResolver<S>>>,
         build: SpecTableBuilder<S, T>,
-    ) -> Self {
-        for (relation, reference) in references {
-            let target = reference.table.clone();
-            let foreign_key = reference.foreign_key_or(relation);
-            let resolver = resolver.clone();
-            let build_target = move |source: T| -> Table<T, EmptyEntity> {
-                if let Some(r) = &resolver
-                    && let Some(spec) = r(&target)
-                    && let Ok(table) = build(&spec, source.clone(), Some(r.clone()))
-                {
-                    return table;
-                }
-                Table::new(target.clone(), source)
-            };
-            self = match reference.kind {
-                ReferenceKind::HasOne => self.with_one(relation, &foreign_key, build_target),
-                ReferenceKind::HasMany => self.with_many(relation, &foreign_key, build_target),
-            };
+    ) -> Result<Self> {
+        for (relation, reference) in &spec.references {
+            let foreign_key = reference.foreign_key(relation);
+            self = self.with_spec_join(
+                relation,
+                &reference.table,
+                reference.kind,
+                &foreign_key,
+                resolver.clone(),
+                build,
+            )?;
         }
-        self
+        for (column, sugar) in column_references(spec) {
+            let (target, kind, foreign_key) = match sugar {
+                ReferenceSugar::Sugar(target) => (target, ReferenceKind::HasOne, column.clone()),
+                ReferenceSugar::Full(r) => (&r.table, r.kind, r.foreign_key(column)),
+                _ => return Err(unknown_sugar(column)),
+            };
+            self =
+                self.with_spec_join(column, target, kind, &foreign_key, resolver.clone(), build)?;
+        }
+        Ok(self)
     }
+
+    fn with_spec_join<S: 'static>(
+        self,
+        relation: &str,
+        target: &str,
+        kind: ReferenceKind,
+        foreign_key: &str,
+        resolver: Option<Arc<dyn SpecResolver<S>>>,
+        build: SpecTableBuilder<S, T>,
+    ) -> Result<Self> {
+        let target = target.to_string();
+        let build_target = move |source: T| -> Table<T, EmptyEntity> {
+            if let Some(r) = &resolver
+                && let Some(spec) = r.resolve(&target)
+                && let Ok(table) = build(&spec, source.clone(), Some(r.clone()))
+            {
+                return table;
+            }
+            Table::new(target.clone(), source)
+        };
+        match kind {
+            ReferenceKind::HasOne => Ok(self.with_one(relation, foreign_key, build_target)),
+            ReferenceKind::HasMany => Ok(self.with_many(relation, foreign_key, build_target)),
+            _ => Err(error!(
+                "references: entries must be has_one or has_many",
+                relation = relation
+            )),
+        }
+    }
+}
+
+/// Every join `spec` declares, as Vista references: each `references:`
+/// entry, then each column-level `references:` not shadowed by an entry of
+/// the same name. The sugar names its relation after the column, which is
+/// also its foreign key: `bakery: { references: bakery }` is a has-one
+/// keyed by `bakery`. `source_id` is the column a `has_many` reads from
+/// this table's rows.
+pub fn spec_references<X, C, R>(
+    spec: &VistaSpec<X, C, R>,
+    source_id: &str,
+) -> Result<Vec<vantage_vista::Reference>> {
+    let mut out = Vec::with_capacity(spec.references.len());
+    for (relation, reference) in &spec.references {
+        out.push(reference.to_reference(relation, source_id)?);
+    }
+    for (column, sugar) in column_references(spec) {
+        out.push(match sugar {
+            ReferenceSugar::Sugar(target) => {
+                vantage_vista::Reference::has_one(column, target, JoinKey::to_target_id(column))
+            }
+            ReferenceSugar::Full(r) => r.to_reference(column, source_id)?,
+            _ => return Err(unknown_sugar(column)),
+        });
+    }
+    Ok(out)
+}
+
+fn unknown_sugar(column: &str) -> VantageError {
+    error!(
+        "column references: takes a table name or a full reference",
+        column = column
+    )
+}
+
+/// The column-level `references:` of `spec` that no `references:` entry
+/// shadows, keyed by column.
+fn column_references<X, C, R>(
+    spec: &VistaSpec<X, C, R>,
+) -> impl Iterator<Item = (&String, &ReferenceSugar)> {
+    spec.columns.iter().filter_map(|(column, col)| {
+        let sugar = col.references.as_ref()?;
+        (!spec.references.contains_key(column)).then_some((column, sugar))
+    })
 }
 
 // Same bounds as `Table::derive_from`, which this builds on.

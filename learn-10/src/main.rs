@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
 use learn_10::db;
 use learn_10::product::Product;
 use tower_http::services::ServeDir;
 use vantage_api_adapters::axum_dio::DioRouter;
 use vantage_diorama::prelude::*;
+use vantage_diorama::{Cache, Loader, LoaderCx};
 use vantage_sql::prelude::*;
 use vantage_vista::SortDirection;
 
@@ -31,43 +30,28 @@ async fn run() -> VantageResult<()> {
         .vista_factory()
         .with_notify(true)
         .from_table(Product::table(db.clone()))?;
-    master.add_order("created", SortDirection::Ascending)?;
+    master.set_order(Some(("created", SortDirection::Ascending)))?;
 
     // Eager cache, and no refresh timer at all: the NOTIFY listener refreshes
-    // the instant a write lands, never on a poll.
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().clear().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .build()
-            .context("build lens")?,
-    );
-    let dio = lens.make_dio(master).await?;
+    // the instant a write lands, never on a poll. Without a refresher, a
+    // refresh re-runs the eager start.
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.reconcile(rows).await
+        }))
+        .build()
+        .context("build lens")?;
 
-    // Refresh the moment Postgres says the table changed. `dio.watch()` sees the
+    // Refresh the moment Postgres says the table changed. `live()` sees the
     // master Vista advertises `can_watch` and subscribes over `LISTEN/NOTIFY`
     // (on the `product_changed` channel our trigger feeds) — no hand-written
     // listener. Nothing in *this* process ever writes to `product`; the separate
     // `mutator` binary does, so whatever you see arrived over the database. This
     // is the exact same call the SurrealDB chapter makes — the backend-agnostic
     // payoff of the watch capability.
-    dio.watch().await?;
+    let dio = lens.dio(master).live().build().await?;
 
     let api = DioRouter::new(dio.clone())
         .with_column("id", "id")

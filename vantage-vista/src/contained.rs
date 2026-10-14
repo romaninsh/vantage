@@ -3,32 +3,28 @@
 //! A `contains_one` relation surfaces a single embedded object (e.g. a
 //! product's `inventory`); `contains_many` surfaces an embedded array (e.g. an
 //! order's `lines`). Both are presented as a full sub-[`Vista`] — listable,
-//! gettable, insertable — backed by an in-memory [`ImTable`]. Writes are
-//! **eager**: every mutation re-serializes the whole collection and patches the
-//! parent row's host column through a `writeback` closure supplied by whoever
-//! built the sub-Vista.
-//!
-//! See [`build_contained_vista`] for construction and [`ContainedShell`] for the
-//! `TableShell` behaviour.
+//! narrowable, writable — over the embedded records held in memory. Writes
+//! are **eager**: every mutation re-serializes the whole collection and
+//! patches the parent row's host column through a writeback closure supplied
+//! by the shell that serves the relation from its `get_ref`.
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_dataset::im::{ImDataSource, ImTable};
-use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_types::{EmptyEntity, Record};
 
 use crate::{
-    capabilities::VistaCapabilities,
-    column::Column,
+    capabilities::{Capability, VistaCapabilities},
     metadata::VistaMetadata,
-    reference::{ContainedKind, ContainedSpec, Reference},
-    source::TableShell,
+    reference::{Reference, ReferenceKind},
+    resolver::VistaResolver,
     vista::Vista,
 };
+
+mod shell;
 
 /// Persists a contained relation's collection back into the parent row.
 ///
@@ -39,261 +35,117 @@ use crate::{
 pub type ContainedWriteback =
     Arc<dyn Fn(CborValue) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
 
-/// Resolves a relation *of* a contained record (e.g. a line's `product`) back
-/// into the real table as a `Vista`. Supplied by the host at traversal time,
-/// capturing the contained table's own `with_one`/`with_many` registrations.
-pub type ContainedRefResolver =
-    Arc<dyn Fn(&str, &Record<CborValue>) -> Result<Vista> + Send + Sync>;
-
-/// `TableShell` over a contained relation's in-memory records.
+/// [`TableShell`](crate::TableShell) over a contained relation's records.
 ///
-/// Reads delegate to the seeded [`ImTable`]; writes apply to it and then flush
-/// the whole collection through [`ContainedWriteback`]. Holds no parent handle
-/// itself — the writeback closure captures whatever the host needs to patch the
-/// parent row.
-pub struct ContainedShell {
+/// Reads and narrowing run over the seeded rows; writes apply to them and
+/// then flush the whole collection through [`ContainedWriteback`]. Without
+/// a writeback (no parent row) writes are refused. A clone shares the rows
+/// and the writeback and owns its conditions.
+#[derive(Clone)]
+pub(crate) struct ContainedShell {
     im: ImTable<EmptyEntity, CborValue>,
-    metadata: VistaMetadata,
-    kind: ContainedKind,
-    id_column: Option<String>,
+    schema: VistaMetadata,
+    kind: ReferenceKind,
     capabilities: VistaCapabilities,
-    writeback: ContainedWriteback,
-    ref_resolver: Option<ContainedRefResolver>,
+    writeback: Option<ContainedWriteback>,
+    /// The bare targets of the contained records' own relations, by
+    /// target name.
+    resolver: Option<Arc<dyn VistaResolver>>,
+    conditions: Vec<crate::query::Condition>,
 }
 
-/// Build a sub-[`Vista`] over the records embedded in `host_value`.
+/// Build a sub-[`Vista`] over the records `reference` embeds in `host_value`.
 ///
-/// `host_value` is the parent row's host column: a `CborValue::Map` for
-/// `contains_one`, a `CborValue::Array` of maps for `contains_many`, or `None`
-/// when the column is absent (an empty contained set). `writeback` is invoked
-/// after every mutation with the re-serialized collection.
+/// `reference` is a [`ContainsOne`](ReferenceKind::ContainsOne) or
+/// [`ContainsMany`](ReferenceKind::ContainsMany) relation; `schema` gives the
+/// contained records' columns and id column (no id column: `contains_many`
+/// records are addressed by position, a `contains_one` record by `"0"`).
+/// `host_value` is the parent row's host column: a map for `contains_one`, an
+/// array of maps for `contains_many`, or `None` for an empty set.
+/// `writeback` runs after every mutation with the re-serialized collection.
+/// Without one the sub-Vista is the relation's bare target: no parent row,
+/// no records, and no write capabilities.
+///
+/// The contained records' own relations (a line's `product`) are declared
+/// in `schema`'s references. `resolver`, when given, maps each relation's
+/// `target` name to its bare target, the same names a
+/// [`Catalog`](crate::Catalog) holds; the sub-Vista then advertises
+/// [`Traverse`](Capability::Traverse) and narrows that target to a record
+/// by the relation's keys, through [`Reference::narrow`]. A relation's
+/// `build_script` is not evaluated here.
 pub fn build_contained_vista(
-    spec: &ContainedSpec,
+    reference: &Reference,
+    schema: VistaMetadata,
     host_value: Option<&CborValue>,
-    writeback: ContainedWriteback,
-    ref_resolver: Option<ContainedRefResolver>,
+    writeback: Option<ContainedWriteback>,
+    resolver: Option<Arc<dyn VistaResolver>>,
 ) -> Result<Vista> {
+    if !reference.kind.is_contained() {
+        return Err(error!(
+            "relation is not a contained relation",
+            relation = reference.name.as_str()
+        )
+        .mark_incorrect_usage());
+    }
     let ds = ImDataSource::<CborValue>::new();
-    let im = ImTable::<EmptyEntity, CborValue>::new(&ds, &spec.name);
-    im.seed(seed_records(spec, host_value));
+    let im = ImTable::<EmptyEntity, CborValue>::new(&ds, &reference.name);
+    im.seed(seed_records(reference.kind, &schema, host_value));
 
-    let mut metadata = VistaMetadata::new();
-    for column in &spec.columns {
-        metadata = metadata.with_column(column.clone());
+    let mut capabilities: VistaCapabilities = [Capability::FilterOps, Capability::Window]
+        .into_iter()
+        .collect();
+    if writeback.is_some() {
+        for write in [Capability::Insert, Capability::Update, Capability::Delete] {
+            capabilities = capabilities.with(write);
+        }
     }
-    if let Some(id) = &spec.id_column {
-        metadata = metadata.with_id_column(id.clone());
+    if resolver.is_some() {
+        capabilities = capabilities.with(Capability::Traverse);
     }
-
     let shell = ContainedShell {
         im,
-        metadata,
-        kind: spec.kind,
-        id_column: spec.id_column.clone(),
-        capabilities: VistaCapabilities {
-            can_count: true,
-            can_insert: true,
-            can_update: true,
-            can_delete: true,
-            ..VistaCapabilities::default()
-        },
+        schema,
+        kind: reference.kind,
+        capabilities,
         writeback,
-        ref_resolver,
+        resolver,
+        conditions: Vec::new(),
     };
-    Ok(Vista::new(spec.name.clone(), Box::new(shell)))
-}
-
-/// Materialize the parent column into ordered `(id, record)` rows.
-fn seed_records(
-    spec: &ContainedSpec,
-    host_value: Option<&CborValue>,
-) -> IndexMap<String, Record<CborValue>> {
-    let mut rows = IndexMap::new();
-    match spec.kind {
-        ContainedKind::ContainsOne => {
-            if let Some(record) = host_value.and_then(map_to_record) {
-                rows.insert(ONE_ID.to_string(), record);
-            }
-        }
-        ContainedKind::ContainsMany => {
-            if let Some(CborValue::Array(items)) = host_value {
-                for (idx, item) in items.iter().enumerate() {
-                    if let Some(record) = map_to_record(item) {
-                        rows.insert(row_id(spec, &record, idx), record);
-                    }
-                }
-            }
-        }
-    }
-    rows
-}
-
-impl ContainedShell {
-    /// Re-serialize the in-memory collection and persist it to the parent
-    /// column. Runs after every mutation.
-    async fn flush(&self) -> Result<()> {
-        let rows = self.im.list_values().await?;
-        let value = match self.kind {
-            ContainedKind::ContainsOne => rows
-                .into_values()
-                .next()
-                .map(CborValue::from)
-                .unwrap_or_else(|| CborValue::Map(Vec::new())),
-            ContainedKind::ContainsMany => {
-                CborValue::Array(rows.into_values().map(CborValue::from).collect())
-            }
-        };
-        (self.writeback)(value).await
-    }
-
-    /// The id a record should take on insert: its declared id-column value if
-    /// present, the fixed relation id for `contains_one`, otherwise the next
-    /// positional index.
-    async fn next_id(&self, record: &Record<CborValue>) -> Result<String> {
-        if let Some(id) = self.id_column.as_deref().and_then(|c| record.get(c)) {
-            return Ok(cbor_scalar_string(id));
-        }
-        match self.kind {
-            ContainedKind::ContainsOne => Ok(ONE_ID.to_string()),
-            ContainedKind::ContainsMany => Ok(self.im.list_values().await?.len().to_string()),
-        }
-    }
-}
-
-#[async_trait]
-impl TableShell for ContainedShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, Reference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
-    }
-
-    /// Resolve a relation of the contained record (e.g. a line's `product`)
-    /// through the host-supplied resolver, back into the real table.
-    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        match &self.ref_resolver {
-            Some(resolve) => resolve(relation, row),
-            None => Err(vantage_core::error!(
-                "contained record has no relation",
-                relation = relation
-            )),
-        }
-    }
-
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.im.list_values().await
-    }
-
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        self.im.get_value(id).await
-    }
-
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        self.im.get_some_value().await
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        Ok(self.im.list_values().await?.len() as i64)
-    }
-
-    async fn insert_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let stored = self.im.insert_value(id, record).await?;
-        self.flush().await?;
-        Ok(stored)
-    }
-
-    async fn insert_vista_return_id_value(
-        &self,
-        _vista: &Vista,
-        record: &Record<CborValue>,
-    ) -> Result<String> {
-        let id = self.next_id(record).await?;
-        self.im.insert_value(&id, record).await?;
-        self.flush().await?;
-        Ok(id)
-    }
-
-    async fn replace_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let stored = self.im.replace_value(id, record).await?;
-        self.flush().await?;
-        Ok(stored)
-    }
-
-    async fn patch_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        partial: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        let stored = self.im.patch_value(id, partial).await?;
-        self.flush().await?;
-        Ok(stored)
-    }
-
-    async fn delete_vista_value(&self, _vista: &Vista, id: &String) -> Result<()> {
-        self.im.delete(id).await?;
-        self.flush().await
-    }
-
-    async fn delete_vista_all_values(&self, _vista: &Vista) -> Result<()> {
-        self.im.delete_all().await?;
-        self.flush().await
-    }
-
-    fn capabilities(&self) -> &VistaCapabilities {
-        &self.capabilities
-    }
-
-    fn driver_name(&self) -> &'static str {
-        "contained"
-    }
-
-    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
-        serde_json::json!({
-            "driver": "contained",
-            "relation": vista.name(),
-            "note": "embedded in the parent row — these records arrived with the \
-                     parent and cost no query of their own. Preview the parent \
-                     table to see what fetches them.",
-        })
-    }
+    Ok(Vista::new(reference.name.clone(), shell))
 }
 
 /// Fixed id for the single record of a `contains_one` relation.
 const ONE_ID: &str = "0";
 
-fn row_id(spec: &ContainedSpec, record: &Record<CborValue>, idx: usize) -> String {
-    spec.id_column
-        .as_deref()
-        .and_then(|c| record.get(c))
-        .map(cbor_scalar_string)
-        .unwrap_or_else(|| idx.to_string())
+/// Materialize the parent column into ordered `(id, record)` rows.
+fn seed_records(
+    kind: ReferenceKind,
+    schema: &VistaMetadata,
+    host_value: Option<&CborValue>,
+) -> IndexMap<String, Record<CborValue>> {
+    let mut rows = IndexMap::new();
+    match (kind, host_value) {
+        (ReferenceKind::ContainsOne, Some(value)) => {
+            if let Some(record) = map_to_record(value) {
+                rows.insert(ONE_ID.to_string(), record);
+            }
+        }
+        (ReferenceKind::ContainsMany, Some(CborValue::Array(items))) => {
+            for (idx, item) in items.iter().enumerate() {
+                if let Some(record) = map_to_record(item) {
+                    let id = schema
+                        .id_column
+                        .as_deref()
+                        .and_then(|c| record.get(c))
+                        .map(cbor_scalar_string)
+                        .unwrap_or_else(|| idx.to_string());
+                    rows.insert(id, record);
+                }
+            }
+        }
+        _ => {}
+    }
+    rows
 }
 
 /// Convert a CBOR map value into a `Record`, or `None` if it isn't a map.

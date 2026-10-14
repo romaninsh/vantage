@@ -10,9 +10,9 @@ to show lives in a *second* source, keyed off the first.
 a *detail* source that is loaded one row at a time and merged on top. The two can
 be the same Vista (a backend whose list and detail are separate operations) or
 entirely different backends — a REST master enriched by a `cmd` detail, or the
-reverse. The detail source is resolved by name through the
-[`VistaCatalog`](./new-persistence/step8-vista-integration.md), so it is
-persistence-agnostic.
+reverse. The detail source is resolved by name through a
+[`VistaResolver`](vantage_vista::VistaResolver), usually a
+[`Catalog`](vantage_vista::Catalog), so it is persistence-agnostic.
 
 ## Why this lives in the Dio, not the Vista
 
@@ -42,7 +42,7 @@ Augmentation engages the two-pass machinery:
 
 1. **List pass** — the master is listed cheaply (a page at a time). Each row is
    written to the cache as `Incomplete`, carrying only the columns the list
-   returns. When the master can serve windows (`can_fetch_window`) the page is
+   returns. When the master can serve windows (`Capability::Window`) the page is
    pushed down; otherwise the set is listed and windowed locally.
 2. **Detail pass** — viewport-driven. For each visible `Incomplete` row, every
    augmentation resolves its detail Vista, fetches the matching record, and
@@ -54,26 +54,76 @@ rest of the page hydrates normally.
 
 ## Declaring it
 
-On the `Lens`, supply the catalog and one or more augmentations:
+Augmentation is a property of the `Dio`, not the `Lens`: it is fixed when the Dio
+is built. Hand the [`DioBuilder`](vantage_diorama::DioBuilder) one or more
+augmentations between `lens.dio(master)` and `build()`:
 
 ```rust
-let lens = Lens::new()
-    .cache_at(cache_path)
-    .catalog(catalog)                       // resolves `table:` names
-    .augment(vec![augmentation])            // ≥1 engages two-pass
-    .build()?;
+# use std::sync::Arc;
+#
+# use vantage_diorama::{Augmentation, Cache, Detail, Fetch, Lens, MergeRule, Source};
+# use vantage_vista::mocks::MockShell;
+# use vantage_vista::{Column, Vista, VistaMetadata};
+#
+# fn meta(columns: &[&str]) -> VistaMetadata {
+#     columns
+#         .iter()
+#         .fold(VistaMetadata::new(), |m, c| m.with_column(Column::new(*c, "String")))
+#         .with_id_column("id")
+# }
+#
+# fn detail() -> Vista {
+#     Vista::new("tfstate_detail", MockShell::new().with_metadata(meta(&["id", "resources", "serial"])))
+# }
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let master = Vista::new("buckets", MockShell::new().with_metadata(meta(&["id", "key", "size"])));
+# let lens = Lens::builder().cache(Cache::memory()).build()?;
+# let augmentation = Augmentation::new(
+#     Detail::Fixed(Arc::new(detail())),
+#     Source::Column { from: "key".into(), to: None },
+#     Fetch::PerRow,
+#     MergeRule::lift(["resources", "serial"]),
+# );
+let dio = lens
+    .dio(master)
+    .augment(vec![augmentation]) // ≥1 engages two-pass
+    .build()
+    .await?;
+# let _ = dio;
+# Ok(())
+# }
 ```
 
-Each `Augmentation` has four parts:
+Each `Augmentation` has four parts. Here the detail is resolved by name through a
+[`Catalog`](vantage_vista::Catalog):
 
 ```rust
-Augmentation {
-    table:  "tfstate_detail".into(),  // catalog name of the detail Vista
-    source: Source::Column { from: "key".into(), to: None },
-    fetch:  Fetch::PerRow,
-    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
-}
+# use std::sync::Arc;
+#
+# use vantage_diorama::{Augmentation, Detail, Fetch, MergeRule, Source};
+# use vantage_vista::mocks::MockShell;
+# use vantage_vista::{Catalog, Vista, VistaResolver};
+#
+# fn detail() -> Vista {
+#     Vista::new("tfstate_detail", MockShell::new())
+# }
+#
+let resolver: Arc<dyn VistaResolver> =
+    Arc::new(Catalog::new().with("tfstate_detail", |_: &str| Ok(detail())));
+
+let augmentation = Augmentation::new(
+    Detail::Resolved { resolver, name: "tfstate_detail".into() }, // resolved by name
+    Source::Column { from: "key".into(), to: None },
+    Fetch::PerRow,
+    MergeRule::lift(["resources", "serial"]),
+);
+# let _ = augmentation;
 ```
+
+`Detail::Fixed(Arc<Vista>)` takes a detail Vista directly instead, for a side
+table no resolver knows.
 
 `source` and `fetch` are two orthogonal axes:
 
@@ -105,17 +155,9 @@ more spelling of the same idea for each consumer to ignore.
 The runtime types carry **closures**, not script strings — `Source::Build` is a
 `Fn(&row, base) -> Vista`. Rhai is one factory that produces such a closure;
 hand-written Rust is another. A consumer that wants a scripted narrowing builds
-the closure with `vantage_vista::augment_source_closure` (vista's `rhai`
-feature) and hands the result to `Source::Build`:
-
-```rhai
-self.where("key", row.key)
-```
-
-This is the same machinery a reference build-script uses, pointed at a possibly
-different persistence. The diorama core never sees a script string; all engine
-assembly stays in `vantage-vista`. The script's vocabulary is the table handle's,
-covered in [Scripting with Rhai](./rhai/surfaces.md#augmentation-sources).
+the closure itself and hands it to `Source::Build`. The diorama core never sees
+a script string. The vocabulary such a script would use is the table handle's,
+covered in [Scripting with Rhai](./rhai/surfaces.md).
 
 ## Merging
 
@@ -130,14 +172,18 @@ partial; above it, the view is whole.
 
 ## Anticipated objections
 
-**Why not model the detail as a foreign-key relation?** A relation resolves
-*within* one persistence and can be pushed down as a join. The detail here may be
-a different backend entirely; there is nothing to join on and no engine that could
-honour it. Augmentation is the cross-Vista form, stitched by the Dio.
+### Why not model the detail as a foreign-key relation?
 
-**Why one row at a time?** Because the expensive work should follow the user's
-attention. The list pass is cheap and immediate; only rows that reach the viewport
-pay for their detail, and they pay once.
+A relation resolves *within* one persistence and can be pushed down as a join. The
+detail here may be a different backend entirely; there is nothing to join on and no
+engine that could honour it. Augmentation is the cross-Vista form, stitched by the
+Dio.
+
+### Why one row at a time?
+
+Because the expensive work should follow the user's attention. The list pass is
+cheap and immediate; only rows that reach the viewport pay for their detail, and
+they pay once.
 
 ## What's next
 
@@ -154,11 +200,13 @@ than degrading silently:
 
 To augment a master with a second source:
 
-1. **Register the detail model** in the `VistaCatalog` by name.
-2. **Build the `Augmentation`** — pick a `Source` (id, column, or a closure) and a
-   `Fetch` (`PerRow` for now), and list the `merge` columns.
-3. **Wire the Lens** — `.catalog(...)` then `.augment(vec![...])`; building it
-   engages the two-pass passes automatically.
+1. **Register the detail model** in a `Catalog` by name (`Catalog::new().with(..)`),
+   or hold it directly for `Detail::Fixed`.
+2. **Build the `Augmentation`** — `Detail::Resolved { resolver, name }`, a `Source`
+   (id, column, or a closure), a `Fetch` (`PerRow`, or `Custom`), and the `MergeRule`
+   columns.
+3. **Wire the Dio** — `lens.dio(master).augment(vec![..]).build().await?`; the
+   two-pass machinery engages for every table scenery opened on it.
 4. **Show the columns** — the lifted detail columns appear on hydrated rows
    alongside the master's.
 

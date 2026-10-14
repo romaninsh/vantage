@@ -2,12 +2,12 @@ mod db;
 mod product;
 mod sim;
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use product::Product;
 use vantage_api_adapters::axum_dio::DioRouter;
 use vantage_diorama::prelude::*;
+use vantage_diorama::{Cache, Loader, LoaderCx, Refresher};
 use vantage_sql::prelude::*;
 
 #[tokio::main]
@@ -28,31 +28,13 @@ async fn run() -> VantageResult<()> {
     // An eager, reactive lens: load the whole table on start, reconcile it on a
     // timer. Reads come from the in-memory cache; only the reconcile touches the
     // database.
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .on_refresh(|dio| {
-                let dio = dio.clone();
-                async move {
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().clear().await?;
-                    dio.cache().insert_values(rows).await?;
-                    Ok(())
-                }
-            })
-            .refresh_every(Duration::from_secs(1))
-            .build()
-            .context("build lens")?,
-    );
-    let dio = lens.make_dio(master).await?;
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .loader(Loader::eager(reload))
+        .refresher(Refresher::new(reload).every(Duration::from_secs(1)))
+        .build()
+        .context("build lens")?;
+    let dio = lens.dio(master).build().await?;
 
     // The bar's till, writing to whichever backend is compiled in.
     sim::spawn(db.clone());
@@ -74,4 +56,10 @@ async fn run() -> VantageResult<()> {
          try: curl -N 'localhost:3009/api/products?watch=true'"
     );
     axum::serve(listener, app).await.context("server failed")
+}
+
+/// Make the cache hold exactly the master's rows.
+async fn reload(cx: LoaderCx) -> VantageResult<()> {
+    let rows = cx.master().list_values().await?;
+    cx.reconcile(rows).await
 }

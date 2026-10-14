@@ -1,22 +1,39 @@
+//! `LogWriterTableShell` — an append-only JSONL sink behind the `TableShell`
+//! boundary.
+//!
+//! The shell only inserts. Nothing it writes can be read back, so every read
+//! refuses with `unsupported(Capability::Window)`: the window is the read
+//! family's one capability, and the shell advertises none of it. Equality
+//! conditions on declared columns are recorded so a narrowed handle is
+//! honest about its query, but no read ever runs, and `Vista` refuses writes
+//! through a narrowed handle since the shell doesn't advertise
+//! `ConfineWrites`.
+
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use serde_json::Value;
-use vantage_core::{Result, error};
-use vantage_dataset::traits::InsertableValueSet;
+use vantage_core::Result;
+use vantage_dataset::traits::WritableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
-    VistaMetadata,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, VistaCapabilities, VistaMetadata,
+    condition_column_error, unsupported,
 };
 
 use crate::log_writer::LogWriter;
+use crate::table_source::extract_or_generate_id;
 
+#[derive(Clone)]
 pub struct LogWriterTableShell {
     pub(crate) table: Table<LogWriter, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
+    /// Equality conditions applied to this handle. Reads refuse and narrowed
+    /// writes are refused by `Vista`, so they never filter anything; they are
+    /// kept so the preview reports them.
+    pub(crate) conditions: Vec<Condition>,
 }
 
 impl LogWriterTableShell {
@@ -29,6 +46,7 @@ impl LogWriterTableShell {
             table,
             capabilities,
             metadata,
+            conditions: Vec::new(),
         }
     }
 }
@@ -43,76 +61,20 @@ fn cbor_record_to_json(record: &Record<CborValue>) -> Record<Value> {
         .collect()
 }
 
+/// The refusal every read answers with: `Window` is the read family's
+/// capability, and the context says why the shell lacks it.
+fn refuse_read<T>() -> Result<T> {
+    unsupported(Capability::Window).map_err(|mut e| {
+        e.context
+            .insert("reason".to_string(), format!("{:?}", "write-only sink"));
+        e
+    })
+}
+
 #[async_trait]
 impl TableShell for LogWriterTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
-    }
-
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        Err(self.default_error("list_vista_values", "can_count"))
-    }
-
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        _id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        Err(self.default_error("get_vista_value", "can_count"))
-    }
-
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        Err(self.default_error("get_vista_some_value", "can_count"))
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        Err(self.default_error("get_vista_count", "can_count"))
-    }
-
-    async fn insert_vista_return_id_value(
-        &self,
-        _vista: &Vista,
-        record: &Record<CborValue>,
-    ) -> Result<String> {
-        let json_record = cbor_record_to_json(record);
-        self.table.insert_return_id_value(&json_record).await
-    }
-
-    async fn insert_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
-        use vantage_dataset::traits::WritableValueSet;
-        let json_record = cbor_record_to_json(record);
-        let stored = self.table.insert_value(id, &json_record).await?;
-        Ok(stored
-            .into_iter()
-            .map(|(k, v)| (k, vantage_types::json_to_cbor(v)))
-            .collect())
-    }
-
-    fn add_eq_condition(&mut self, _field: &str, _value: &CborValue) -> Result<()> {
-        Err(
-            error!("log-writer is insert-only; conditions are not supported")
-                .mark_unsupported()
-                .traced(),
-        )
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
     }
 
     fn capabilities(&self) -> &VistaCapabilities {
@@ -123,14 +85,64 @@ impl TableShell for LogWriterTableShell {
         "log-writer"
     }
 
-    /// Write-only: every read on this shell errors, so there is no read query
-    /// to preview. Said plainly rather than left to be inferred from an empty
-    /// object.
-    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
-        serde_json::json!({
-            "driver": "log-writer",
-            "note": "write-only sink — it accepts inserts and refuses every read, \
-                     so there is no read query to preview",
-        })
+    /// Write-only: there is no read query to preview.
+    fn preview(&self) -> Preview {
+        let mut note = String::from(
+            "write-only sink: it accepts inserts and refuses every read, so no query is sent",
+        );
+        if !self.conditions.is_empty() {
+            note.push_str("; conditions are recorded but never evaluated");
+        }
+        Preview::new().with_note(note)
+    }
+
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        refuse_read()
+    }
+
+    async fn get(&self, _id: &str) -> Result<Option<Record<CborValue>>> {
+        refuse_read()
+    }
+
+    async fn count(&self) -> Result<i64> {
+        refuse_read()
+    }
+
+    async fn fetch_window(&self, _offset: usize, _limit: usize) -> Result<Page> {
+        refuse_read()
+    }
+
+    /// Equality on a declared column, recorded on this handle only. A dotted
+    /// path into a declared column is refused, for the caller to evaluate.
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        let field = condition.column.as_str();
+        if !self.metadata.columns.contains_key(field) {
+            return Err(condition_column_error(&self.metadata, field));
+        }
+        if condition.op != FilterOp::Eq {
+            return unsupported(Capability::FilterOps);
+        }
+        self.conditions.push(condition.clone());
+        Ok(())
+    }
+
+    /// Append one line. With no `id`, the record's own id column is used,
+    /// or a fresh ULID. The returned row is the projected line as queued.
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Record<CborValue>,
+    ) -> Result<(String, Record<CborValue>)> {
+        let json_record = cbor_record_to_json(record);
+        let id = match id {
+            Some(id) => id.to_string(),
+            None => extract_or_generate_id(&json_record, self.table.data_source().id_column()),
+        };
+        let stored = self.table.insert_value(&id, &json_record).await?;
+        let stored = stored
+            .into_iter()
+            .map(|(k, v)| (k, vantage_types::json_to_cbor(v)))
+            .collect();
+        Ok((id, stored))
     }
 }

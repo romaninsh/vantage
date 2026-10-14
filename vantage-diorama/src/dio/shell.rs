@@ -1,218 +1,154 @@
 use std::sync::Arc;
 
-use ciborium::Value as CborValue;
-use indexmap::IndexMap;
-use vantage_vista::{Column, Reference, SortDirection, Vista, VistaCapabilities, flags};
+use vantage_core::Result;
+use vantage_vista::{Capability, ColumnFlag, Vista, VistaCapabilities, VistaMetadata, VistaQuery};
 
 use super::DioInner;
-use super::impls::table_shell::record_get;
-use vantage_types::Record;
 
+mod preview;
+mod reads;
 mod watch;
+mod writes;
 
-/// Narrowing applied to a facade handle.
-///
-/// Held whole rather than pre-split, because whether a clause can be pushed
-/// into the master is decided at read time by *trying* it — capability flags
-/// describe a driver in general, not whether it accepts one particular column.
-#[derive(Default, Clone)]
-pub(crate) struct FacadeQuery {
-    pub(crate) conditions: Vec<(String, CborValue)>,
-    pub(crate) order: Option<(String, SortDirection)>,
+/// Where a facade read takes its rows from, and what it evaluates over them.
+pub(crate) struct ReadPlan {
+    /// The master narrowed by the clauses it took, or `None` to read the
+    /// cache.
+    pub(crate) source: Option<Vista>,
+    /// The handle's clauses `source` doesn't reflect. The Dio's own residual
+    /// is applied on top of these by every read.
+    pub(crate) local: VistaQuery,
 }
 
-impl FacadeQuery {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.conditions.is_empty() && self.order.is_none()
-    }
-
-    /// The facade's equality conditions, as set invariants.
-    pub(crate) fn invariants(&self) -> IndexMap<String, CborValue> {
-        self.conditions.iter().cloned().collect()
-    }
-
-    /// Whether `row` satisfies every condition, evaluated locally.
-    pub(crate) fn matches(&self, row: &Record<CborValue>) -> bool {
-        self.conditions
-            .iter()
-            .all(|(field, expected)| record_get(row, field) == Some(expected))
-    }
-}
-
-/// `TableShell` impl that backs the Vista returned by `Dio::vista()`.
+/// `TableShell` impl that backs the Vista returned by `Dio::cached()`.
 ///
-/// Holds the shared inner Dio state so reads/writes route through the
-/// Dio's machinery. Schema (columns, refs, id) is **snapshotted** from the
-/// master at construction so the facade doesn't borrow the now-swappable
-/// master across reads; a fresh `dio.vista()` after a [`reload`](crate::Dio::reload)
-/// captures the new schema. Capability advertisement is the union of the
-/// master's capabilities and what the Lens's callbacks unlock.
-pub struct DioShell {
+/// Holds the shared inner Dio state so reads and writes route through the
+/// Dio's machinery. Schema (columns, refs, id) is copied from the master at
+/// construction, every column marked orderable. The facade advertises only
+/// what it implements itself; see `DioShell::new`.
+#[derive(Clone)]
+pub(crate) struct DioShell {
     pub(crate) dio: Arc<DioInner>,
     pub(crate) capabilities: VistaCapabilities,
-    pub(crate) columns: IndexMap<String, Column>,
-    pub(crate) references: IndexMap<String, Reference>,
-    pub(crate) id_column: Option<String>,
+    pub(crate) metadata: VistaMetadata,
     /// This handle's narrowing. Per-handle, and cloned rather than shared, so
     /// narrowing one facade never reorders another's view of the same Dio.
-    pub(crate) query: FacadeQuery,
+    pub(crate) query: VistaQuery,
 }
 
 impl DioShell {
     pub(crate) fn new(dio: Arc<DioInner>) -> Self {
-        let master = dio.master.read().unwrap();
-        let master_caps = master.capabilities().clone();
+        let master = &dio.master;
         // Every column becomes orderable, whatever the master says.
-        // `Vista::add_order` refuses a column without the `ORDERABLE` flag, and
-        // most drivers only set it for columns their *engine* can sort — CSV
-        // sets it for none. But the facade can always fall back to ordering the
-        // cache, so refusing here would deny a sort the Dio is perfectly able
-        // to perform. `SEARCHABLE` gets no such treatment: the facade has no
-        // search of its own to fall back on.
-        let columns = master
-            .source
+        // `Vista::set_order` refuses a column without the `Orderable` flag, and
+        // most drivers only set it for columns their engine can sort (CSV sets
+        // it for none). The facade sorts over the rows it reads when the
+        // master can't, so refusing here would deny a sort it can perform.
+        let mut metadata = VistaMetadata::new();
+        metadata.columns = master
             .columns()
             .iter()
             .map(|(name, column)| {
-                let mut column = column.clone();
-                if !column.has_flag(flags::ORDERABLE) {
-                    column = column.with_flag(flags::ORDERABLE);
-                }
-                (name.clone(), column)
+                (
+                    name.clone(),
+                    column.clone().with_flag(ColumnFlag::Orderable),
+                )
             })
             .collect();
-        let references = master.source.references().clone();
-        let id_column = master.source.id_column().map(str::to_string);
-        drop(master);
-        let has_on_event = dio.lens.callbacks.on_event.is_some();
+        metadata.references = master.references().clone();
+        metadata.id_column = Some(dio.id_column.clone());
         let write_caps = dio.write_capabilities();
 
-        // Capability lifting rules (architecture doc):
-        //   can_insert/update/delete = Dio::write_capabilities (master OR route)
-        //   can_subscribe            = always true (the event bus backs `watch_vista`)
-        //   can_invalidate           = master.can_invalidate OR on_event registered
-        //   can_count                = always true (cache answers locally)
-        let capabilities = VistaCapabilities {
-            can_count: true,
-            can_insert: write_caps.can_insert,
-            can_update: write_caps.can_update,
-            can_delete: write_caps.can_delete,
-            // Bulk import goes through `Dio::import_values`, which picks
-            // the master's native path or the per-record fallback itself —
-            // the facade never takes an import.
-            can_import: false,
-            can_subscribe: true,
-            can_invalidate: master_caps.can_invalidate || has_on_event,
-            // Ordering is always available: the facade pushes it into the
-            // master when it can answer it, and orders the cache itself when it
-            // cannot. Advertising the master's flag here used to promise what
-            // `DioShell` then refused — the flag was true and the method
-            // `Unimplemented`.
-            can_order: true,
-            // Search is NOT lifted. The facade has no search of its own, so it
-            // can only honour one the master answers — and it has nowhere to
-            // forward the term to, since narrowing is replayed at read time.
-            // Advertising `true` here would promise a filter that never ran and
-            // hand back the unfiltered set. Narrow the master vista directly
-            // for a server-side search.
-            can_search: false,
-            // Whether operator filters (`!=`, `<`, `in`, …) can be pushed into
-            // the master's query. When false the Dio still filters locally over
-            // the cache — the caller just can't bake the condition into a
-            // distinct cached query variant.
-            can_filter_operators: master_caps.can_filter_operators,
-            can_set_page_size: master_caps.can_set_page_size,
-            can_fetch_page: master_caps.can_fetch_page,
-            can_fetch_next: master_caps.can_fetch_next,
-            // The facade windows over the cache locally (and hydrates the
-            // window's augment gaps), regardless of what the master can do.
-            can_fetch_window: true,
-            // Traversal capabilities pass through from the master vista; the
-            // Dio cache does not add or remove traversal modes.
-            can_traverse_to_record: master_caps.can_traverse_to_record,
-            can_traverse_to_set: master_caps.can_traverse_to_set,
-            can_build_ref_via_script: master_caps.can_build_ref_via_script,
-            // Column traversal is lowered into the master's query; the cache
-            // passes it through unchanged.
-            can_traverse_in_columns: master_caps.can_traverse_in_columns,
-            can_confine_writes: true,
-        };
+        // The facade advertises what `DioShell` itself answers, and nothing
+        // it would refuse:
+        // - writes follow `Dio::write_capabilities` (master OR Lens writer),
+        //   and every write keeps to the handle's narrowing;
+        // - `Subscribe`: the event bus backs `watch`;
+        // - `Search`, `FilterOps`, `Order`: pushed into the master when it
+        //   takes them, evaluated over the rows read when it doesn't;
+        // - `Window`: windowed over the rows read (hydrating augment gaps).
+        //
+        // Not advertised: `Import` (bulk import goes through
+        // `Dio::import_values`), `Traverse` (traverse through `Dio::get_ref`),
+        // `Cursor` and `NativeConditions`.
+        let capabilities = [
+            (write_caps.can_insert, Capability::Insert),
+            (write_caps.can_update, Capability::Update),
+            (write_caps.can_delete, Capability::Delete),
+            (true, Capability::Subscribe),
+            (true, Capability::Search),
+            (true, Capability::FilterOps),
+            (true, Capability::Order),
+            (true, Capability::Window),
+            (true, Capability::ConfineWrites),
+        ]
+        .into_iter()
+        .filter_map(|(on, capability)| on.then_some(capability))
+        .collect();
         Self {
             dio,
             capabilities,
-            columns,
-            references,
-            id_column,
-            query: FacadeQuery::default(),
+            metadata,
+            query: VistaQuery::new(),
         }
     }
 
-    /// A handle over `dio` narrowed by `query`, with no schema or
-    /// capabilities — enough to read the narrowed set and nothing else.
-    fn reader(dio: Arc<DioInner>, query: FacadeQuery) -> Self {
+    /// A handle over `dio` narrowed by `query`, with `metadata` and no
+    /// capabilities: enough to read the narrowed set and nothing else.
+    fn reader(dio: Arc<DioInner>, query: VistaQuery, metadata: VistaMetadata) -> Self {
         Self {
             dio,
             capabilities: VistaCapabilities::default(),
-            columns: IndexMap::new(),
-            references: IndexMap::new(),
-            id_column: None,
+            metadata,
             query,
         }
     }
 
-    /// Split this handle's narrowing into "the master will do it" and "we do it
-    /// over the cache", and build the narrowed master if anything pushed down.
-    ///
-    /// The rule, in order:
-    ///
-    /// 1. **An augmented Dio always reads its cache.** Augment columns exist
-    ///    only there — the master has never heard of them — so both a filter on
-    ///    one and the *values* of one would be lost by reading the master. Every
-    ///    clause stays local.
-    /// 2. Otherwise each clause is offered to a private clone of the master.
-    ///    Whatever it accepts is answered at the source, authoritatively over
-    ///    the whole set rather than over whatever the cache happens to hold.
-    /// 3. Whatever it refuses is applied here.
-    ///
-    /// Clauses are *tried* rather than predicted from capability flags: a flag
-    /// describes a driver, not whether it accepts one particular column.
-    pub(crate) fn plan(&self) -> (Option<Vista>, FacadeQuery) {
-        if self.query.is_empty() {
-            return (None, FacadeQuery::default());
-        }
-        if self.dio.is_two_pass() {
-            return (None, self.query.clone());
-        }
+    /// Whether this handle's own clauses limit its rows. Order doesn't.
+    pub(crate) fn narrows(&self) -> bool {
+        !self.query.conditions.is_empty() || self.query.search.is_some()
+    }
 
-        let master = self.dio.master.read().unwrap();
-        let Some(shell) = master.source.clone_shell() else {
-            // A master that cannot be cloned cannot be narrowed privately, and
-            // narrowing the shared one would leak into every other reader.
-            return (None, self.query.clone());
+    /// Route this handle's query through the Dio's one routing step,
+    /// [`DioInner::plan`]. Every read method takes its source from here.
+    ///
+    /// 1. **A handle that doesn't narrow reads the cache.** An order on its
+    ///    own never moves a read off the cache, so sorting never changes
+    ///    which rows a handle shows; the order is applied over the cache.
+    /// 2. **An augmented Dio always reads its cache.** Augment columns exist
+    ///    only there (the master has never heard of them), so both a filter
+    ///    on one and the values of one would be lost by reading the master.
+    /// 3. Otherwise the master takes what it can. When it took a condition
+    ///    or the search, the read goes to the narrowed master, whose answer
+    ///    covers the whole set rather than whatever the cache holds, and the
+    ///    refused clauses are evaluated over it. When it took neither, the
+    ///    cache is read.
+    ///
+    /// A cache read evaluates the handle's whole query. A clause the master
+    /// rejects outright (an unknown column) is returned as the error.
+    pub(crate) fn plan(&self) -> Result<ReadPlan> {
+        let from_cache = || ReadPlan {
+            source: None,
+            local: self.query.clone(),
         };
-        let mut narrowed = Vista::new(master.name(), shell);
-        drop(master);
-
-        let mut local = FacadeQuery::default();
-        let mut pushed = false;
-
-        for (field, value) in &self.query.conditions {
-            if narrowed
-                .add_condition_eq(field.clone(), value.clone())
-                .is_ok()
-            {
-                pushed = true;
-            } else {
-                local.conditions.push((field.clone(), value.clone()));
-            }
+        if !self.narrows() || self.dio.has_dio_augment() {
+            return Ok(from_cache());
         }
-        if let Some((column, direction)) = &self.query.order {
-            if narrowed.add_order(column, *direction).is_ok() {
-                pushed = true;
-            } else {
-                local.order = Some((column.clone(), *direction));
-            }
+        let super::Plan { narrowed, refused } = self.dio.plan(&self.query)?;
+        let pushed = refused.conditions.len() < self.query.conditions.len()
+            || (self.query.search.is_some() && refused.search.is_none());
+        if !pushed {
+            return Ok(from_cache());
         }
-        (pushed.then_some(narrowed), local)
+        Ok(ReadPlan {
+            source: Some(narrowed),
+            local: refused,
+        })
+    }
+
+    /// Whether evaluating `local` and the Dio's residual over cached rows
+    /// needs their augmented values; see [`DioInner::names_augmented`].
+    pub(crate) fn needs_hydration(&self, local: &VistaQuery) -> bool {
+        self.dio.names_augmented(local)
     }
 }

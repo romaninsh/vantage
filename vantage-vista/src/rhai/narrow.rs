@@ -1,18 +1,18 @@
 //! Narrowing verbs on the `Table` handle: `table`, `where`, `sort`, `search`,
 //! `limit`, `ref`. Each returns a new handle and never touches a backend.
 
-use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult};
+use std::sync::Arc;
+
+use vantage_rhai::rhai::{Dynamic, Engine};
 
 use super::convert::dynamic_to_cbor;
 use super::handle::{Handle, Step};
-use super::vocab::TargetResolver;
-use crate::{FilterOp, sort::SortDirection};
-
-type RhaiResult<T> = std::result::Result<T, Box<EvalAltResult>>;
+use super::read::RhaiResult;
+use crate::{FilterOp, VistaResolver, sort::SortDirection};
 
 /// Register the `Table` type and its narrowing verbs. `table(name)` exists only
 /// when `resolver` is `Some`; the handle it returns carries that resolver.
-pub(crate) fn register_narrowing(engine: &mut Engine, resolver: Option<TargetResolver>) {
+pub(crate) fn register_narrowing(engine: &mut Engine, resolver: Option<Arc<dyn VistaResolver>>) {
     engine.register_type_with_name::<Handle>("Table");
 
     if let Some(resolver) = resolver {

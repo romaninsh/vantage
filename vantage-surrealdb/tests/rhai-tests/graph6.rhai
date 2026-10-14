@@ -1,4 +1,4 @@
-// graph() arity 6 (anchor + 5 segments) → fn_graph6. Same-direction sugar.
-select()
+// surreal::graph() arity 6 (anchor + 5 segments) → fn_graph6. Same-direction sugar.
+surreal::select()
     .from("employee")
-    .expression(graph(me, "a", "b", "c", "d", "e").alias("path"))
+    .expression(surreal::graph(surreal::me, "a", "b", "c", "d", "e").alias("path"))

@@ -15,9 +15,7 @@ members = [
     "learn-11",
     "vantage-vista",
     "vantage-rhai",
-    "vantage-vista-factory",
     "vantage-diorama",
-    "vantage-diorama-aggregate",
     "vantage-action",
     "vantage-bundle",
     "vantage-api-adapters",
@@ -48,3 +46,10 @@ exclude = [
     "vantage-spacetimedb",
 ]
 resolver = "3"
+
+# Dev builds are for compiling fast, not for debuggers: no debuginfo means
+# no per-relink object files left in target/debug/deps, and about half the
+# cold-build time. Set CARGO_PROFILE_DEV_DEBUG=true for a session that
+# needs a debugger.
+[profile.dev]
+debug = false

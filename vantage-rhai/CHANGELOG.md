@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-10-14
+
+- `Namespace`, a builder for registering a named module of functions and variables on an engine.
+  Its functions answer only qualified calls (`ns::name(..)`), and its variables read as
+  `ns::name`.
+- Requires rhai `>=1.25, <1.27` with the `internals` feature: vantage-vista walks rhai's AST to
+  refuse dropped table handles, and that AST may change in a rhai minor release.
+
 ## 1.0.1 — 2026-10-05
 
 - The `invalidation` example uses `AtomicU64::try_update` (Rust 1.99 deprecates `fetch_update`).

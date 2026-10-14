@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use vantage_spacetimedb::SpacetimeDb;
-use vantage_vista::VistaChange;
+use vantage_vista::{Capability, FilterOp, VistaChange};
 
 fn db() -> SpacetimeDb {
     SpacetimeDb::new(
@@ -22,7 +22,10 @@ fn db() -> SpacetimeDb {
 async fn the_initial_subscription_delivers_the_current_set() {
     let mut factory = db().vista_factory();
     let vista = factory.from_relation("account").await.expect("build vista");
-    assert!(vista.can_watch(), "spacetimedb advertises push");
+    assert!(
+        vista.capabilities().has(Capability::Subscribe),
+        "spacetimedb advertises push"
+    );
 
     let mut stream = vista.watch().await.expect("subscribe");
 
@@ -94,9 +97,11 @@ async fn a_filtered_subscription_delivers_only_matching_rows() {
     // the set arrives as a delete — needs a write to force it, and so lives in
     // `write_live::a_row_leaving_a_filtered_set_arrives_as_a_delete`.
     let mut factory = db().vista_factory();
-    let mut vista = factory.from_relation("game").await.expect("build vista");
-    vista
-        .add_condition_eq("status", ciborium::Value::Text("playing".into()))
+    let vista = factory
+        .from_relation("game")
+        .await
+        .expect("build vista")
+        .with_condition("status", FilterOp::Eq, "playing")
         .expect("status is a real column");
 
     let mut stream = vista.watch().await.expect("subscribe");

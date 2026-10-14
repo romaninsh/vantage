@@ -33,22 +33,24 @@
 //! let app = axum::Router::new().nest("/api/files", api);
 //! ```
 
-use std::collections::{BTreeMap, BTreeSet};
+mod detail;
+mod listing;
+mod state;
+mod wire;
+
 use std::sync::Arc;
 
-use axum::body::Body;
-use axum::extract::{Path, Query, State};
-use axum::http::{StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use ciborium::Value as CborValue;
-use futures_util::StreamExt;
 use serde_json::json;
 use vantage_core::VantageError;
-use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::Dio;
 use vantage_types::Record;
+
+use state::ApiState;
 
 // ---- Errors — the learn-3 vantage_axum shape -------------------------------
 
@@ -187,282 +189,8 @@ impl DioRouter {
             not_found_message: self.not_found_message.map(Arc::from),
         };
         Router::new()
-            .route("/", get(listing))
-            .route("/{id}", get(detail))
+            .route("/", get(listing::listing))
+            .route("/{id}", get(detail::detail))
             .with_state(state)
     }
-}
-
-#[derive(Clone)]
-struct ApiState {
-    dio: Dio,
-    columns: Arc<[(String, String)]>,
-    page_size: usize,
-    key_field: Option<Arc<str>>,
-    id_map: Option<Arc<IdMap>>,
-    record_projection: Option<Arc<RecordProjection>>,
-    not_found_message: Option<Arc<str>>,
-}
-
-impl ApiState {
-    fn cache_key(&self, path_id: &str) -> String {
-        match &self.id_map {
-            Some(map) => map(path_id),
-            None => path_id.to_string(),
-        }
-    }
-
-    fn record_object(&self, record: &Record<CborValue>) -> serde_json::Value {
-        match &self.record_projection {
-            Some(projection) => projection(record),
-            None => record_json(record),
-        }
-    }
-
-    fn not_found(&self, cache_key: &str) -> ApiError {
-        match &self.not_found_message {
-            Some(message) => ApiError {
-                status: StatusCode::NOT_FOUND,
-                message: message.to_string(),
-            },
-            None => not_found(cache_key),
-        }
-    }
-}
-
-#[derive(serde::Deserialize, Default)]
-struct ListParams {
-    offset: Option<usize>,
-    limit: Option<usize>,
-    watch: Option<bool>,
-}
-
-#[derive(serde::Deserialize, Default)]
-struct WatchParam {
-    watch: Option<bool>,
-}
-
-// ---- Handlers ---------------------------------------------------------------
-
-async fn listing(State(st): State<ApiState>, Query(q): Query<ListParams>) -> ApiResult<Response> {
-    let offset = q.offset.unwrap_or(0);
-    let limit = q.limit.unwrap_or(st.page_size);
-    if q.watch.unwrap_or(false) {
-        return watch_listing(st, offset, limit).await;
-    }
-
-    // Plain GET: a window over the cache, no hydration. Instant regardless
-    // of how many augment columns are still unfilled.
-    let all = st.dio.cache().list_values().await?;
-    let total = all.len();
-    let items: Vec<serde_json::Value> = all
-        .iter()
-        .skip(offset)
-        .take(limit)
-        .enumerate()
-        .map(|(i, (_, rec))| project(offset + i, rec, &st.columns))
-        .collect();
-    Ok(Json(json!({
-        "total": total,
-        "offset": offset,
-        "limit": limit,
-        "items": items,
-    }))
-    .into_response())
-}
-
-/// The watch mode: open a scenery for the requested page and stream row
-/// events for as long as the client stays connected. The scenery is owned by
-/// the response stream — when the client disconnects the stream drops, the
-/// scenery's guard aborts its tasks, and its queued augment work is
-/// withdrawn.
-/// A stable string key for an identity-watch diff.
-///
-/// Strings key by their raw value (the common case: a text id). Other JSON —
-/// numeric ids, Mongo `ObjectId` objects, SurrealDB `Thing` tags — keys by its
-/// canonical serialization, so `key_by` works for any backend whose id isn't a
-/// bare string. `null`/absent yields no key (the row is skipped from the diff).
-fn stable_key(v: &serde_json::Value) -> Option<String> {
-    match v {
-        serde_json::Value::Null => None,
-        serde_json::Value::String(s) => Some(s.clone()),
-        other => serde_json::to_string(other).ok(),
-    }
-}
-
-async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<Response> {
-    let demand: Vec<String> = st.columns.iter().map(|(_, field)| field.clone()).collect();
-    let scenery = st
-        .dio
-        .table_scenery()
-        .columns(demand)
-        // Every connection is its own standing view: two watchers of
-        // different pages must each keep their own viewport (and their own
-        // place in the augment scheduler's round-robin) — a shared scenery
-        // would hydrate only the last-set window.
-        .exclusive()
-        // Size list pages so a fresh scenery's first page already covers the
-        // watched window. Saturating: an absurd offset must not panic.
-        .page_size(offset.saturating_add(limit).max(1))
-        .open()
-        .await?;
-    scenery.set_viewport(offset..offset.saturating_add(limit));
-    let mut generations = scenery.subscribe();
-    let columns = st.columns.clone();
-    let key_field = st.key_field.clone();
-
-    let stream = async_stream::stream! {
-        // Diff base. Positional watches key it by row index; identity watches
-        // (a `key_by` field is set) key it by that field's value, so a removed
-        // row can be reported as `DELETED` and a shifted row isn't re-sent.
-        let mut last: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-        loop {
-            // The index pages lazily and is shared per-query across
-            // sceneries — an earlier watch may have built it shallower than
-            // this window. Keep asking for list pages until it reaches us;
-            // each landed page bumps the generation, which re-runs this
-            // check.
-            if scenery.has_more() && scenery.row_count() < offset.saturating_add(limit) {
-                scenery.request_load_more();
-            }
-            let end = offset.saturating_add(limit).min(scenery.row_count());
-            let mut seen: BTreeSet<String> = BTreeSet::new();
-            for idx in offset..end {
-                let Some(row) = scenery.row(idx) else { continue };
-                let object = project(idx, &row.record, &columns);
-                // Diff key: the identity field's value, or the row index.
-                let key = match &key_field {
-                    Some(field) => match object.get(field.as_ref()).and_then(stable_key) {
-                        Some(id) => id,
-                        None => continue,
-                    },
-                    None => idx.to_string(),
-                };
-                seen.insert(key.clone());
-                let kind = match last.get(&key) {
-                    Some(previous) if *previous == object => None,
-                    Some(_) => Some("MODIFIED"),
-                    None => Some("ADDED"),
-                };
-                if let Some(kind) = kind {
-                    last.insert(key, object.clone());
-                    yield event_line(kind, object);
-                }
-            }
-            // Identity watches report rows that left the set; positional
-            // watches never do — a shrunk list simply stops emitting the tail.
-            if key_field.is_some() {
-                let gone: Vec<String> =
-                    last.keys().filter(|k| !seen.contains(*k)).cloned().collect();
-                for key in gone {
-                    if let Some(object) = last.remove(&key) {
-                        yield event_line("DELETED", object);
-                    }
-                }
-            }
-            // Wait for the next generation; the sender lives as long as the
-            // scenery, which this stream owns — an error means the Dio died.
-            if generations.changed().await.is_err() {
-                break;
-            }
-        }
-    };
-    Ok(ndjson_response(stream))
-}
-
-async fn detail(
-    State(st): State<ApiState>,
-    Path(id): Path<String>,
-    Query(q): Query<WatchParam>,
-) -> ApiResult<Response> {
-    if q.watch.unwrap_or(false) {
-        return watch_detail(st, id).await;
-    }
-    // Bounded facade read: hydrates this row (through the shared scheduler)
-    // before returning, so the response always carries the augment columns.
-    let key = st.cache_key(&id);
-    let row = st
-        .dio
-        .vista()
-        .get_value(key.clone())
-        .await?
-        .ok_or_else(|| st.not_found(&key))?;
-    Ok(Json(st.record_object(&row)).into_response())
-}
-
-async fn watch_detail(st: ApiState, id: String) -> ApiResult<Response> {
-    // Hydrate first so the watch opens on a complete record instead of
-    // sitting on an unfilled one.
-    let key = st.cache_key(&id);
-    let row = st
-        .dio
-        .vista()
-        .get_value(key.clone())
-        .await?
-        .ok_or_else(|| st.not_found(&key))?;
-    let scenery = st.dio.record_scenery(key).await?;
-    let mut generations = scenery.subscribe();
-    // Open on the subscribed scenery's snapshot, not the pre-subscription
-    // read: a change landing between the two would otherwise never produce
-    // a MODIFIED line.
-    let initial = scenery
-        .record()
-        .map(|current| st.record_object(&current.record))
-        .unwrap_or_else(|| st.record_object(&row));
-
-    let stream = async_stream::stream! {
-        let mut last = initial;
-        yield event_line("ADDED", last.clone());
-        loop {
-            if generations.changed().await.is_err() {
-                break;
-            }
-            let Some(current) = scenery.record() else { continue };
-            let object = st.record_object(&current.record);
-            if object != last {
-                last = object.clone();
-                yield event_line("MODIFIED", object);
-            }
-        }
-    };
-    Ok(ndjson_response(stream))
-}
-
-// ---- Wire helpers -----------------------------------------------------------
-
-/// Project a record onto the configured columns: `{"index": …, "<name>": …}`.
-fn project(
-    index: usize,
-    record: &Record<CborValue>,
-    columns: &[(String, String)],
-) -> serde_json::Value {
-    let mut object = serde_json::Map::new();
-    object.insert("index".into(), json!(index));
-    for (name, field) in columns {
-        let value = record
-            .get(field)
-            .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
-            .unwrap_or(serde_json::Value::Null);
-        object.insert(name.clone(), value);
-    }
-    serde_json::Value::Object(object)
-}
-
-/// The whole record as a JSON object — the detail endpoint's shape.
-fn record_json(record: &Record<CborValue>) -> serde_json::Value {
-    serde_json::to_value(record.as_inner()).unwrap_or(serde_json::Value::Null)
-}
-
-/// One kubernetes-style watch line: `{"type":"…","object":{…}}\n`.
-fn event_line(kind: &str, object: serde_json::Value) -> String {
-    format!("{}\n", json!({ "type": kind, "object": object }))
-}
-
-fn ndjson_response(stream: impl futures_util::Stream<Item = String> + Send + 'static) -> Response {
-    Response::builder()
-        .header(header::CONTENT_TYPE, "application/x-ndjson")
-        .body(Body::from_stream(
-            stream.map(Ok::<_, std::convert::Infallible>),
-        ))
-        .expect("static parts are valid")
 }

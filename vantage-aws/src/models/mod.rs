@@ -57,9 +57,21 @@ pub mod lambda;
 pub mod logs;
 pub mod s3;
 
+use vantage_table::column::core::Column;
+use vantage_table::column::flags::ColumnFlag;
 use vantage_vista::Vista;
 
 use crate::AwsAccount;
+
+/// A request parameter a condition or relation narrows the table by,
+/// declared as a column so a Vista takes the condition. It is `Hidden` (not
+/// shown) and `RequestParam` (not carried by rows: the API applies it
+/// server-side).
+pub(crate) fn request_param(name: &str) -> Column<String> {
+    Column::new(name)
+        .with_flag(ColumnFlag::Hidden)
+        .with_flag(ColumnFlag::RequestParam)
+}
 
 /// Whether a [`Factory`] lookup should drop into list mode (returning
 /// every matching record) or single-record mode (returning just the

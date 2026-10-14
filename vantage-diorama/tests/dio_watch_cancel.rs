@@ -1,4 +1,4 @@
-//! A `watch()` task ends when its Dio drops, and drops the master's change
+//! A live follow ends when its Dio drops, and drops the master's change
 //! stream with it — even when the stream never yields, and even while the
 //! task is backing off before a resubscribe. A stream left alive would keep
 //! the backend's subscription (a server cursor, a pooled connection) busy
@@ -10,18 +10,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use futures::Stream;
-use indexmap::IndexMap;
 use vantage_core::Result;
-use vantage_diorama::{Dio, Lens};
+use vantage_dataset::traits::ReadableValueSet;
+use vantage_diorama::{Cache, Dio, DioEvent, Lens};
 use vantage_types::Record;
-use vantage_vista::reference::Reference;
-use vantage_vista::source::TableShell;
 use vantage_vista::{
-    Column, Vista, VistaCapabilities, VistaChange, VistaChangeStream, VistaMetadata,
-    mocks::MockShell,
+    Capability, Column, TableShell, Vista, VistaCapabilities, VistaChange, VistaChangeStream,
+    VistaMetadata, forward_table_shell, mocks::MockShell,
 };
 
 /// What the test can observe about the streams a shell handed out.
@@ -37,6 +34,25 @@ struct Probe {
 struct QuietStream {
     probe: Arc<Probe>,
     end: bool,
+}
+
+/// How many of the streams a [`QuietShell`] hands out end at once; the rest
+/// stay pending.
+#[derive(Clone)]
+enum Ends {
+    All,
+    First(Arc<AtomicUsize>),
+}
+
+impl Ends {
+    fn next(&self) -> bool {
+        match self {
+            Ends::All => true,
+            Ends::First(left) => left
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .is_ok(),
+        }
+    }
 }
 
 impl Stream for QuietStream {
@@ -58,79 +74,56 @@ impl Drop for QuietStream {
 }
 
 /// A watchable master whose every `watch()` returns a [`QuietStream`].
+#[derive(Clone)]
 struct QuietShell {
-    inner: MockShell,
+    inner: Box<dyn TableShell>,
     capabilities: VistaCapabilities,
     probe: Arc<Probe>,
-    end: bool,
+    ends: Ends,
 }
 
-#[async_trait]
-#[allow(clippy::ptr_arg)]
-impl TableShell for QuietShell {
-    fn columns(&self) -> &IndexMap<String, Column> {
-        self.inner.columns()
-    }
-    fn references(&self) -> &IndexMap<String, Reference> {
-        self.inner.references()
-    }
-    fn id_column(&self) -> Option<&str> {
-        self.inner.id_column()
-    }
-    async fn list_vista_values(
-        &self,
-        vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.inner.list_vista_values(vista).await
-    }
-    async fn get_vista_value(
-        &self,
-        vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        self.inner.get_vista_value(vista, id).await
-    }
-    async fn get_vista_some_value(
-        &self,
-        vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        self.inner.get_vista_some_value(vista).await
-    }
-    async fn watch_vista(&self, _vista: &Vista) -> Result<VistaChangeStream> {
+forward_table_shell!(QuietShell, inner, {
+    async fn watch(&self) -> Result<VistaChangeStream> {
         self.probe.opened.fetch_add(1, Ordering::SeqCst);
         Ok(Box::pin(QuietStream {
             probe: self.probe.clone(),
-            end: self.end,
+            end: self.ends.next(),
         }))
     }
     fn capabilities(&self) -> &VistaCapabilities {
         &self.capabilities
     }
-    fn preview_query(&self, vista: &Vista) -> serde_json::Value {
-        self.inner.preview_query(vista)
-    }
-}
+});
 
-async fn quiet_dio(end: bool) -> Result<(Dio, Arc<Probe>)> {
-    let inner = MockShell::new().with_metadata(
+fn quiet_shell() -> MockShell {
+    MockShell::new().with_metadata(
         VistaMetadata::new()
             .with_column(Column::new("id", "String").with_flag("id"))
             .with_id_column("id"),
-    );
-    let capabilities = VistaCapabilities {
-        can_subscribe: true,
-        ..inner.capabilities().clone()
-    };
+    )
+}
+
+async fn quiet_dio_over(inner: MockShell, ends: Ends) -> Result<(Dio, Arc<Probe>)> {
+    let capabilities = inner.capabilities().with(Capability::Subscribe);
     let probe = Arc::new(Probe::default());
-    let shell = QuietShell {
+    let master = Vista::new("quiet", inner).map_shell(|inner| QuietShell {
         inner,
         capabilities,
         probe: probe.clone(),
-        end,
-    };
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("lens"));
-    let dio = lens.make_dio(Vista::new("quiet", Box::new(shell))).await?;
+        ends,
+    });
+    let lens = Lens::builder().cache(Cache::memory()).build()?;
+    let dio = lens.dio(master).live().build().await?;
     Ok((dio, probe))
+}
+
+async fn quiet_dio(end: bool) -> Result<(Dio, Arc<Probe>)> {
+    let ends = if end {
+        Ends::All
+    } else {
+        Ends::First(Arc::new(AtomicUsize::new(0)))
+    };
+    quiet_dio_over(quiet_shell(), ends).await
 }
 
 /// Poll `holds` until it is true, or give up after `within`.
@@ -147,18 +140,16 @@ async fn eventually(within: Duration, holds: impl Fn() -> bool) -> bool {
 #[tokio::test]
 async fn a_quiet_stream_is_dropped_with_its_dio() -> Result<()> {
     let (dio, probe) = quiet_dio(false).await?;
-    dio.watch().await?;
-    dio.watch().await?;
-    assert_eq!(probe.opened.load(Ordering::SeqCst), 2);
+    assert_eq!(probe.opened.load(Ordering::SeqCst), 1);
 
-    // Both tasks are parked on streams that will never yield.
+    // The follow is parked on a stream that will never yield.
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(probe.dropped.load(Ordering::SeqCst), 0);
 
     drop(dio);
     assert!(
         eventually(Duration::from_millis(500), || {
-            probe.dropped.load(Ordering::SeqCst) == 2
+            probe.dropped.load(Ordering::SeqCst) == 1
         })
         .await,
         "a change stream outlived its Dio"
@@ -169,7 +160,6 @@ async fn a_quiet_stream_is_dropped_with_its_dio() -> Result<()> {
 #[tokio::test]
 async fn a_dio_dropped_during_back_off_ends_without_waiting_it_out() -> Result<()> {
     let (dio, probe) = quiet_dio(true).await?;
-    dio.watch().await?;
 
     // The stream ends at once, so the task is now in its 200ms back-off.
     assert!(
@@ -194,6 +184,49 @@ async fn a_dio_dropped_during_back_off_ends_without_waiting_it_out() -> Result<(
         probe.opened.load(Ordering::SeqCst),
         1,
         "resubscribed after the Dio dropped"
+    );
+    Ok(())
+}
+
+/// The subscription drops and the master can't be listed when the follow
+/// re-reads the set after resubscribing. The failure is published, and the
+/// follow keeps retrying: once the master answers, a row written during the
+/// gap reaches the cache.
+#[tokio::test]
+async fn a_failed_reread_after_a_resubscribe_is_published_and_retried() -> Result<()> {
+    let shell = quiet_shell();
+    shell.set_fail_reads(true);
+    let (dio, probe) =
+        quiet_dio_over(shell.clone(), Ends::First(Arc::new(AtomicUsize::new(1)))).await?;
+    let mut bus = dio.subscribe_events();
+
+    let failed = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Ok(DioEvent::RefreshFailed { error }) = bus.recv().await {
+                return error;
+            }
+        }
+    })
+    .await
+    .expect("the failed re-read is published");
+    assert!(failed.contains("injected"), "{failed}");
+    assert_eq!(probe.opened.load(Ordering::SeqCst), 2, "resubscribed once");
+
+    let mut row = Record::new();
+    row.insert("id".to_string(), CborValue::Text("gap".into()));
+    shell.set_record("gap", row);
+    shell.set_fail_reads(false);
+    let facade = dio.cached();
+    let recovered = tokio::time::timeout(Duration::from_secs(5), async {
+        while facade.get_value("gap").await?.is_none() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        Ok::<_, vantage_core::VantageError>(())
+    })
+    .await;
+    assert!(
+        matches!(recovered, Ok(Ok(()))),
+        "the follow retried the re-read"
     );
     Ok(())
 }

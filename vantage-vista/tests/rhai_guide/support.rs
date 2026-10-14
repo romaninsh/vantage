@@ -1,18 +1,16 @@
 //! The shop every guide example runs against: `client` and `order` memory
-//! tables joined both ways, behind a [`TargetResolver`].
+//! tables joined both ways, behind a [`VistaResolver`].
 
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
-use vantage_memory::vista::Catalog;
-use vantage_memory::{MemoryStore, MemoryTableShell};
+use vantage_dataset::ReadableValueSet;
+use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
-use vantage_vista::{
-    Column, DataVocab, Reference, ReferenceKind, TargetResolver, Terminals, Vista, VistaMetadata,
-    Writes,
-};
+use vantage_vista::rhai::{DataVocab, Terminals, Writes, block_on};
+use vantage_vista::{Column, ColumnFlag, JoinKey, Reference, Vista, VistaMetadata, VistaResolver};
 
 fn row(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
     pairs
@@ -59,59 +57,51 @@ pub fn shop() -> MemoryStore {
     store
 }
 
-fn catalog(store: &MemoryStore) -> Catalog {
-    let catalog = Catalog::new(store.clone());
+fn catalog(store: &MemoryStore) -> MemoryCatalog {
+    let catalog = MemoryCatalog::new(store.clone());
     catalog.register(
         "client",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
-            .with_column(Column::new("name", "String").with_flag("orderable"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+            .with_column(Column::new("name", "String").with_flag(ColumnFlag::Orderable))
             .with_column(Column::new("vip", "bool"))
             .with_id_column("id")
-            .with_reference(Reference::new(
+            .with_reference(Reference::has_many(
                 "orders",
                 "order",
-                ReferenceKind::HasMany,
-                "client",
+                JoinKey::new("id", "client"),
             )),
     );
     catalog.register(
         "order",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
             .with_column(Column::new("client", "String"))
-            .with_column(Column::new("total", "int").with_flag("orderable"))
+            .with_column(Column::new("total", "int").with_flag(ColumnFlag::Orderable))
             .with_column(Column::new("status", "String"))
             .with_id_column("id")
-            .with_reference(Reference::new(
+            .with_reference(Reference::has_one(
                 "client",
                 "client",
-                ReferenceKind::HasOne,
-                "client",
+                JoinKey::to_target_id("client"),
             )),
     );
     catalog
 }
 
-/// `table(name)` over the shop: a fresh memory Vista per call.
-pub fn resolver(store: &MemoryStore) -> TargetResolver {
+/// `table(name)` over the shop: a fresh memory Vista per call. A name the
+/// shop doesn't hold gets a new, empty table.
+pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
     let catalog = catalog(store);
     Arc::new(move |name: &str| {
-        let metadata = catalog
-            .get(name)
-            .unwrap_or_else(|| VistaMetadata::new().with_id_column("id"));
-        let table = catalog.store().table(name);
-        let shell = MemoryTableShell::new(table, metadata, catalog.clone());
-        Ok(Vista::new(name, Box::new(shell)))
+        catalog.store().table(name);
+        catalog.vista(name)
     })
 }
 
 pub fn host(store: &MemoryStore, terminals: Terminals) -> Host {
     Host::builder(Limits::background())
-        .vocab(DataVocab {
-            resolver: Some(resolver(store)),
-            terminals,
-        })
+        .vocab(DataVocab::new(terminals).with_resolver(resolver(store)))
         .build()
 }
 
@@ -123,6 +113,33 @@ pub fn read_write(store: &MemoryStore) -> Host {
             writes: Writes::Allowed,
         },
     )
+}
+
+/// A memory Vista named `name` over `metadata` (id column `id`), in a store
+/// of its own holding `rows`.
+pub fn memory_vista(
+    name: &str,
+    metadata: VistaMetadata,
+    rows: Vec<(&str, Record<CborValue>)>,
+) -> Vista {
+    let store = MemoryStore::new();
+    for (id, row) in rows {
+        store.table(name).insert_as(id, row).unwrap();
+    }
+    let shell = MemoryTableShell::new(
+        store.table(name),
+        metadata.with_id_column("id"),
+        MemoryCatalog::new(store.clone()),
+    );
+    Vista::new(name, shell)
+}
+
+/// Row `id` of `vista`, which must exist.
+pub fn read_one(vista: &Vista, id: &str) -> Record<CborValue> {
+    block_on(vista.get_value(id.to_string()))
+        .unwrap()
+        .unwrap()
+        .unwrap()
 }
 
 pub fn run(host: &Host, script: &str) -> Result<Dynamic, String> {

@@ -72,21 +72,6 @@ pub struct PostgresColumnBlock {
 
 pub type PostgresVistaSpec = VistaSpec<PostgresTableExtras, PostgresColumnExtras, NoExtras>;
 
-/// Observation args carried on the driver block ("" = unset by convention).
-pub trait DriverBlockArgs {
-    fn driver_block_args(&self) -> Vec<(String, String)>;
-}
-
-impl<C, R> DriverBlockArgs for vantage_vista::VistaSpec<PostgresTableExtras, C, R> {
-    fn driver_block_args(&self) -> Vec<(String, String)> {
-        self.driver
-            .postgres
-            .as_ref()
-            .map(|b| b.args.clone())
-            .unwrap_or_default()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,7 +126,7 @@ postgres:
     columns: [id, name]
     relations: [orders]
   rhai: |
-    base.where(expr("vip = true"))
+    base.where(sql::expr("vip = true"))
 "#;
         let spec: PostgresVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let block = spec.driver.postgres.as_ref().unwrap();

@@ -1,7 +1,7 @@
 Feature: Random-access load strategy — viewport-driven sparse paging (v4)
 
-  Phase v4-2 — locks in the random-access path. With `total_provider`
-  + `on_load_chunk`, the Scenery is in random mode: the scrollbar
+  Phase v4-2 — locks in the random-access path. With a paged loader
+  that states a total through `set_total`, the Scenery is in random mode: the scrollbar
   sizes to the master total before any rows are loaded, and
   `set_viewport` drives all fetching. The master Vista advertises
   `can_fetch_page: true`, and UI delegates branch on that flag —
@@ -12,7 +12,7 @@ Feature: Random-access load strategy — viewport-driven sparse paging (v4)
   Background:
     Given a master with 1000 rows
     And a lens with on_load_chunk that pulls the requested range from master
-    And a total_provider that returns the master count
+    And a paged loader that states the master count through set_total
     When the dio is created
     And the table scenery is opened in random mode with page_size 100
 

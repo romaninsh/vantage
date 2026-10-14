@@ -35,12 +35,11 @@ pub use graphql::{
     AnyGraphqlType, CountMode, FieldCondition, FilterDialect, GraphqlApi, GraphqlApiBuilder,
     GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec, GraphqlBlock,
     GraphqlColumnBlock, GraphqlColumnExtras, GraphqlCondition, GraphqlOp, GraphqlOperation,
-    GraphqlSelect, GraphqlSpecResolver, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants,
-    RenderedQuery, Supports,
+    GraphqlSelect, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants, RenderedQuery, Supports,
 };
 pub use rest::{
     ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, FilterStrategy,
-    ModelResolver, OrderingParams, PaginationMode, PaginationParams, ResponseShape, RestApi,
-    RestApiBuilder, RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
+    OrderingParams, PaginationMode, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
+    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };
 pub(crate) use rest::{cbor_to_query_string, condition_to_query_param};

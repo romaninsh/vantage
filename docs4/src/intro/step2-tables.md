@@ -2,12 +2,35 @@
 
 A table is a structure representing a collection of records in a database:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Product {
+#     name: String,
+#     price: i64,
+# }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db")
+#     .await
+#     .context("Failed to connect to products.db")?;
 let products = Product::table(db);
 
 for (id, product) in products.list().await? {
-    println!("{} — {} cents", product.name, product.price);
+    println!("{id}: {} — {} cents", product.name, product.price);
 }
+# Ok(())
+# }
 ```
 
 Think of `Table<SqliteDB, Product>` as a `Vec<Product>` — except the records aren't in memory. They
@@ -37,28 +60,118 @@ condition of another ("orders *of paid customers*"). Acting on a set is a single
 customers, archive those orders, apply that discount. Put together, even complex operations are
 easy to express in code:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_sql::primitives;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Customer {
+#     name: String,
+# }
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Invoice {
+#     status: String,
+# }
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Order {
+#     total: i64,
+# }
+# impl Customer {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Customer> {
+#         Table::new("customer", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("orders", "customer_id", Order::table)
+#     }
+# }
+# impl Invoice {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Invoice> {
+#         Table::new("invoice", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("status")
+#             .with_column_of::<String>("issued_at")
+#             .with_one("customer", "customer_id", Customer::table)
+#     }
+# }
+# impl Order {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Order> {
+#         Table::new("order", db)
+#             .with_id_column("id")
+#             .with_column_of::<i64>("total")
+#             .with_column_of::<String>("placed_at")
+#     }
+# }
+# fn days_ago(days: i64) -> Expression<AnySqliteType> {
+#     let offset = format!("-{days} days");
+#     sqlite_expr!("date('now', {})", offset)
+# }
+# trait InvoiceTable {
+#     fn ref_customer(&self) -> Table<SqliteDB, Customer>;
+# }
+# impl InvoiceTable for Table<SqliteDB, Invoice> {
+#     fn ref_customer(&self) -> Table<SqliteDB, Customer> {
+#         self.get_ref_as("customer").unwrap()
+#     }
+# }
+# trait CustomerTable {
+#     fn subquery_orders(&self) -> Table<SqliteDB, Order>;
+#     async fn send_reminder(&self) -> VantageResult<()>;
+# }
+# impl CustomerTable for Table<SqliteDB, Customer> {
+#     fn subquery_orders(&self) -> Table<SqliteDB, Order> {
+#         self.get_subquery_as("orders").unwrap()
+#     }
+#     async fn send_reminder(&self) -> VantageResult<()> {
+#         for (_, customer) in self.list().await? {
+#             println!("reminder sent to {}", customer.name);
+#         }
+#         Ok(())
+#     }
+# }
+# trait OrderTable {
+#     fn only_this_month(self) -> Self;
+#     fn field_sum(&self, column: &str) -> Expression<AnySqliteType>;
+# }
+# impl OrderTable for Table<SqliteDB, Order> {
+#     fn only_this_month(self) -> Self {
+#         let placed_at = self["placed_at"].clone();
+#         self.with_condition(placed_at.gt(sqlite_expr!("date('now', 'start of month')")))
+#     }
+#     fn field_sum(&self, column: &str) -> Expression<AnySqliteType> {
+#         self.get_sum_query(&self[column])
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:shop.db").await.context("Failed to connect")?;
 // "notify customers who have an unpaid invoice older than 30 days"
-let mut overdue = Invoice::table(db);
+let mut overdue = Invoice::table(db.clone());
 overdue.add_condition(overdue["status"].eq("unpaid"));
 overdue.add_condition(overdue["issued_at"].lt(days_ago(30)));
 
-overdue.ref_customer().send_reminder().await;
-```
+overdue.ref_customer().send_reminder().await?;
 
-```rust
 // "apply a discount to customers who spent more than $500 this month"
-let mut customers = Customer::table(db);
-customers.add_expression("spent_this_month", |c| {
-    c.subquery_orders().only_this_month().field_sum("total")
-});
-customers.add_expression("discount", |c| {
-    primitives::ternary(c["spent_this_month"].gt(500), 10, 0)
-});
+let customers = Customer::table(db)
+    .with_expression("spent_this_month", |c| {
+        c.subquery_orders().only_this_month().field_sum("total")
+    })
+    .with_expression("discount", |c| {
+        let spent = c.get_column_expr("spent_this_month").unwrap();
+        primitives::ternary(spent.gt(500), 10, 0).expr()
+    });
+# Ok(())
+# }
 ```
 
-Don't worry about the exact syntax — we'll get to all of it. The point is that sets compose
-naturally: define one, use it to narrow another, then act on the result.
+Don't worry about the exact syntax — we'll get to all of it. `ref_customer`, `send_reminder`,
+`subquery_orders`, `only_this_month` and `field_sum` aren't framework calls: they're methods the
+model defines on its own tables, and [Extension traits](#extension-traits) below shows how. The
+point is that sets compose naturally: define one, use it to narrow another, then act on the
+result.
 
 ## Defining a Table
 
@@ -100,6 +213,7 @@ impl Product {
             .with_condition(is_deleted.eq(false))
     }
 }
+# fn main() {}
 ```
 
 ```admonish tip title="Hiding the db argument"
@@ -122,24 +236,62 @@ typically use this pattern.
 This defines the `product` table once. You can now generate queries from it:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Product {
+#     name: String,
+#     price: i64,
+# }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         let is_deleted = Column::<bool>::new("is_deleted");
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_condition(is_deleted.eq(false))
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("Failed to connect")?;
 let table = Product::table(db);
 
 // Full SELECT with all columns and conditions applied
 let select = table.select();
 println!("{}", select.preview());
-// SELECT "id", "name", "price", "is_deleted" FROM "product"
+// SELECT "id", "name", "price", "is_deleted" FROM "product" WHERE is_deleted = 0
 
 // Count query (does not execute — just builds the expression)
 let count_query = table.get_count_query();
-// SELECT COUNT(*) FROM "product"
+// (SELECT COUNT(*) FROM "product" WHERE is_deleted = 0)
 
 // Sum query for a specific column
 let sum_query = table.get_sum_query(&table["price"]);
-// SELECT SUM("price") FROM "product"
+// (SELECT SUM(price) FROM "product" WHERE is_deleted = 0)
+# assert_eq!(
+#     select.preview(),
+#     r#"SELECT "id", "name", "price", "is_deleted" FROM "product" WHERE is_deleted = 0"#
+# );
+# assert_eq!(
+#     count_query.preview(),
+#     r#"(SELECT COUNT(*) FROM "product" WHERE is_deleted = 0)"#
+# );
+# assert_eq!(
+#     sum_query.preview(),
+#     r#"(SELECT SUM(price) FROM "product" WHERE is_deleted = 0)"#
+# );
+# Ok(())
+# }
 ```
 
 These return the same `SqliteSelect` and `Expression` types from chapter 1 — the table just
-assembles them for you. But most of the time you won't need the raw query at all.
+assembles them for you, with its conditions already applied. The count and sum queries come
+wrapped in parentheses so they can nest inside another query as a subquery. But most of the time
+you won't need the raw query at all.
 
 ---
 
@@ -148,7 +300,31 @@ assembles them for you. But most of the time you won't need the raw query at all
 With the table defined, all four operations — create, read, update, delete — are one-liners. Each
 comes from a trait in the prelude:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Product {
+#     name: String,
+#     price: i64,
+# }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         let is_deleted = Column::<bool>::new("is_deleted");
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_condition(is_deleted.eq(false))
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db")
+#     .await
+#     .context("Failed to connect to products.db")?;
 let table = Product::table(db);
 
 // Read — list all, get one by ID
@@ -157,14 +333,16 @@ let pie = table.get("4").await?;           // Option<Product> — id 4 is Pie
 
 // Create — insert with a known ID
 let muffin = Product { name: "Muffin".into(), price: 175 };
-table.insert(&"8".to_string(), &muffin).await?;
+table.insert("8", &muffin).await?;
 
 // Update — replace the entire record
 let updated = Product { name: "Blueberry Muffin".into(), price: 195 };
-table.replace(&"8".to_string(), &updated).await?;
+table.replace("8", &updated).await?;
 
 // Delete
-table.delete(&"8".to_string()).await?;
+table.delete("8").await?;
+# Ok(())
+# }
 ```
 
 That's it. `list()` returns an `IndexMap<Id, Product>` — ordered and keyed by ID. `get()` returns
@@ -199,15 +377,24 @@ function that lists _any_ table — products, orders, customers — without nami
 With **generics** you keep full type safety, limited to Rust callers:
 
 ```rust
-async fn list_table<E: Entity + std::fmt::Debug>(
-    table: &impl ReadableDataSet<E>,
-) -> VantageResult<()> {
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+async fn list_table<D, E>(table: &D) -> VantageResult<()>
+where
+    D: ReadableDataSet<E>,
+    D::Id: std::fmt::Display,
+    E: Entity<D::Value> + std::fmt::Debug,
+{
     for (id, entity) in table.list().await? {
         println!("  {}: {:?}", id, entity);
     }
     Ok(())
 }
+# fn main() {}
 ```
+
+The entity bound names the dataset's own value type (`Entity<D::Value>`): an entity is only
+an entity *of* a particular type system, and that's what lets `list()` decode rows losslessly.
 
 To go fully **type-erased** — iterate columns by name, get runtime values, and expose tables
 outside Rust (a web admin UI, FFI, scripting) — wrap the table in a **Vista**, the universal
@@ -228,6 +415,8 @@ Create `src/category.rs`:
 use vantage_sql::prelude::*;
 use vantage_types::prelude::*;
 
+use crate::product::Product;
+
 #[entity(SqliteType)]
 #[derive(Debug, Clone, Default)]
 pub struct Category {
@@ -242,6 +431,28 @@ impl Category {
             .with_many("products", "category_id", Product::table)
     }
 }
+# mod product {
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     #[entity(SqliteType)]
+#     #[derive(Clone, Default)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#     }
+#     impl Product {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#             let is_deleted = Column::<bool>::new("is_deleted");
+#             Table::new("product", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_column_of::<i64>("price")
+#                 .with_column_of::<bool>("is_deleted")
+#                 .with_condition(is_deleted.eq(false))
+#         }
+#     }
+# }
+# fn main() {}
 ```
 
 The important line is `.with_many("products", "category_id", Product::table)`. This declares:
@@ -256,8 +467,45 @@ Category has many products; the foreign key lives on product.
 Given a set of categories, `get_ref_as` traverses the relationship and returns matching products:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Product {
+#     name: String,
+#     price: i64,
+# }
+# impl Product {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         let is_deleted = Column::<bool>::new("is_deleted");
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_condition(is_deleted.eq(false))
+#     }
+# }
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Category {
+#     name: String,
+# }
+# impl Category {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#         Table::new("category", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("products", "category_id", Product::table)
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("Failed to connect")?;
 let categories = Category::table(db.clone());
 let products = categories.get_ref_as::<Product>("products")?;
+# Ok(())
+# }
 ```
 
 The result is a `Table<SqliteDB, Product>` with an extra condition — only products whose
@@ -265,12 +513,49 @@ The result is a `Table<SqliteDB, Product>` with an extra condition — only prod
 too. Let's use this in a CLI that accepts an optional search filter. The `.with_search()` method
 adds a LIKE condition across all columns of the table — handy for quick filtering.
 
-Update `src/main.rs`:
+Update `src/main.rs`. Declare the two modules at the top with `mod category;` and `mod product;`,
+then:
 
-```rust
-mod category;
-mod product;
-
+```rust,no_run
+# mod product {
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     #[entity(SqliteType)]
+#     #[derive(Clone, Default)]
+#     pub struct Product {
+#         pub name: String,
+#         pub price: i64,
+#     }
+#     impl Product {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#             let is_deleted = Column::<bool>::new("is_deleted");
+#             Table::new("product", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_column_of::<i64>("price")
+#                 .with_column_of::<bool>("is_deleted")
+#                 .with_condition(is_deleted.eq(false))
+#         }
+#     }
+# }
+# mod category {
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::product::Product;
+#     #[entity(SqliteType)]
+#     #[derive(Clone, Default)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#             Table::new("category", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_many("products", "category_id", Product::table)
+#         }
+#     }
+# }
 use category::Category;
 use product::Product;
 use vantage_sql::prelude::*;
@@ -352,23 +637,85 @@ query. You define them on the table, and they appear alongside regular columns.
 First, add a `with_one` relationship on Product (the reverse of `with_many` on Category):
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Product {
+#     name: String,
+#     price: i64,
+# }
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Category {
+#     name: String,
+# }
+# impl Category {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#         Table::new("category", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("Failed to connect")?;
+# let products: Table<SqliteDB, Product> = Table::new("product", db)
+#     .with_id_column("id")
+#     .with_column_of::<i64>("category_id")
 .with_one("category", "category_id", Category::table)
+# ;
+# Ok(())
+# }
 ```
 
 This says: each product has one category, linked through `category_id`. Now you can use
 `get_subquery_as` inside `with_expression` to build a correlated subquery:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Product {
+#     name: String,
+#     price: i64,
+# }
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# struct Category {
+#     name: String,
+# }
+# impl Category {
+#     fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#         Table::new("category", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("Failed to connect")?;
+# let products: Table<SqliteDB, Product> = Table::new("product", db)
+#     .with_id_column("id")
+#     .with_column_of::<i64>("category_id")
+#     .with_one("category", "category_id", Category::table)
 .with_expression("category", |t| {
     t.get_subquery_as::<Category>("category")
         .unwrap()
         .select_column("name")
+        .expect("Category has a 'name' column")
 })
+# ;
+# Ok(())
+# }
 ```
 
 `select_column("name")` builds a subquery like
 `SELECT "name" FROM "category" WHERE "id" = "product"."category_id"` — a correlated subquery that
-fetches the category name for each product row.
+fetches the category name for each product row. It returns an `Option`, `None` when the target
+table has no such column; the name here is hard-coded and known to exist, so `.expect()` is the
+honest unwrap.
 
 Here's the updated `src/product.rs`:
 
@@ -400,9 +747,29 @@ impl Product {
                 t.get_subquery_as::<Category>("category")
                     .unwrap()
                     .select_column("name")
+                    .expect("Category has a 'name' column")
             })
     }
 }
+# mod category {
+#     use vantage_sql::prelude::*;
+#     use vantage_types::prelude::*;
+#     use crate::Product;
+#     #[entity(SqliteType)]
+#     #[derive(Debug, Clone, Default)]
+#     pub struct Category {
+#         pub name: String,
+#     }
+#     impl Category {
+#         pub fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#             Table::new("category", db)
+#                 .with_id_column("id")
+#                 .with_column_of::<String>("name")
+#                 .with_many("products", "category_id", Product::table)
+#         }
+#     }
+# }
+# fn main() {}
 ```
 
 A few things to note:
@@ -417,6 +784,15 @@ A few things to note:
 Update `list_products` to show the category:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Debug, Clone, Default)]
+# struct Product {
+#     name: String,
+#     price: i64,
+#     category: Option<String>,
+# }
 async fn list_products(table: &Table<SqliteDB, Product>) -> VantageResult<()> {
     for (id, p) in table.list().await? {
         let cat = p.category.as_deref().unwrap_or("-");
@@ -424,6 +800,7 @@ async fn list_products(table: &Table<SqliteDB, Product>) -> VantageResult<()> {
     }
     Ok(())
 }
+# fn main() {}
 ```
 
 Run it:
@@ -486,6 +863,7 @@ Now change Product's `category` expression to fetch `title` instead of `name`:
     t.get_subquery_as::<Category>("category")
         .unwrap()
         .select_column("title")
+        .expect("Category has a 'title' column")
 })
 ~~~
 
@@ -518,6 +896,19 @@ Rust's extension traits solve this. Define a trait on `Table<SqliteDB, Category>
 traversal:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# pub struct Product {
+#     name: String,
+#     price: i64,
+# }
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# pub struct Category {
+#     name: String,
+# }
 pub trait CategoryTable {
     fn ref_products(&self) -> Table<SqliteDB, Product>;
 }
@@ -527,6 +918,7 @@ impl CategoryTable for Table<SqliteDB, Category> {
         self.get_ref_as("products").unwrap()
     }
 }
+# fn main() {}
 ```
 
 The trait declares the vocabulary; the `impl` block supplies the bodies. Nothing is
@@ -544,6 +936,14 @@ catches typos.
 The same pattern works for typed column access:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# pub struct Product {
+#     name: String,
+#     price: i64,
+# }
 pub trait ProductTable {
     fn price(&self) -> Column<i64>;
 }
@@ -553,14 +953,74 @@ impl ProductTable for Table<SqliteDB, Product> {
         self.get_column("price").unwrap()
     }
 }
+# fn main() {}
 ```
 
 With both traits in place, code reads naturally:
 
 ```rust
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# pub struct Product {
+#     name: String,
+#     price: i64,
+# }
+# impl Product {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, Product> {
+#         let is_deleted = Column::<bool>::new("is_deleted");
+#         Table::new("product", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_column_of::<i64>("price")
+#             .with_column_of::<bool>("is_deleted")
+#             .with_condition(is_deleted.eq(false))
+#     }
+# }
+# #[entity(SqliteType)]
+# #[derive(Clone, Default)]
+# pub struct Category {
+#     name: String,
+# }
+# impl Category {
+#     pub fn table(db: SqliteDB) -> Table<SqliteDB, Category> {
+#         Table::new("category", db)
+#             .with_id_column("id")
+#             .with_column_of::<String>("name")
+#             .with_many("products", "category_id", Product::table)
+#     }
+# }
+# pub trait CategoryTable {
+#     fn ref_products(&self) -> Table<SqliteDB, Product>;
+# }
+# impl CategoryTable for Table<SqliteDB, Category> {
+#     fn ref_products(&self) -> Table<SqliteDB, Product> {
+#         self.get_ref_as("products").unwrap()
+#     }
+# }
+# pub trait ProductTable {
+#     fn price(&self) -> Column<i64>;
+# }
+# impl ProductTable for Table<SqliteDB, Product> {
+#     fn price(&self) -> Column<i64> {
+#         self.get_column("price").unwrap()
+#     }
+# }
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("Failed to connect")?;
+# let categories = Category::table(db);
 let products = categories.ref_products();
-let expensive = products.with_condition(products.price().gt(200));
+let price = products.price();
+let expensive = products.with_condition(price.gt(200));
+# assert!(expensive.select().preview().contains("price > 200"));
+# Ok(())
+# }
 ```
+
+`price()` is read before `with_condition` because `with_condition` consumes the table it's
+called on; taking the column first keeps the borrow and the move apart.
 
 ```admonish tip title="Where to put extension traits"
 Define extension traits in the same file as the entity — `product.rs` gets `ProductTable`,

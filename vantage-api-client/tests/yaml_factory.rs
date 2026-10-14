@@ -6,7 +6,8 @@
 mod support;
 
 use vantage_api_client::{ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec};
-use vantage_vista::{ReferenceKind, VistaFactory};
+use vantage_dataset::traits::WritableValueSet;
+use vantage_vista::{Capability, JoinKey, ReferenceKind, VistaFactory};
 
 fn factory() -> RestApiVistaFactory {
     let api = RestApi::builder("https://example.com")
@@ -103,13 +104,80 @@ references:
     let vista = factory.build_from_spec(spec).expect("build");
 
     assert_eq!(vista.name(), "users");
-    assert_eq!(vista.get_id_column(), Some("id"));
-    assert_eq!(vista.get_title_columns(), vec!["name"]);
-    assert_eq!(vista.get_column_names(), vec!["id", "name", "email"]);
-    assert_eq!(vista.get_references(), vec!["albums".to_string()]);
-    let albums = vista.get_reference("albums").unwrap();
+    assert_eq!(vista.id_column(), Some("id"));
+    assert_eq!(vista.title_columns(), vec!["name"]);
+    let columns: Vec<&str> = vista.columns().keys().map(String::as_str).collect();
+    assert_eq!(columns, vec!["id", "name", "email"]);
+    let references: Vec<&str> = vista.references().keys().map(String::as_str).collect();
+    assert_eq!(references, vec!["albums"]);
+    let albums = vista.reference("albums").unwrap();
     assert_eq!(albums.target, "albums");
-    assert_eq!(albums.foreign_key, "userId");
+    assert_eq!(albums.keys, vec![JoinKey::new("id", "userId")]);
+}
+
+/// A has-one reads its foreign key off the parent row and matches it to the
+/// target's id; multi-column `keys:` carry over as given.
+#[test]
+fn build_from_spec_lowers_join_keys() {
+    let factory = factory();
+    let yaml = r#"
+name: deployments
+columns:
+  id: { type: int, flags: [id] }
+  product_id: { type: int }
+  version_id: { type: int }
+references:
+  product:
+    table: products
+    kind: has_one
+    foreign_key: product_id
+  release:
+    table: releases
+    kind: has_many
+    keys:
+      - { from: product_id, to: product_id }
+      - { from: version_id, to: version_id }
+"#;
+    let spec: RestApiVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+    let vista = factory.build_from_spec(spec).expect("build");
+    assert_eq!(
+        vista.reference("product").unwrap().keys,
+        vec![JoinKey::to_target_id("product_id")]
+    );
+    assert_eq!(
+        vista.reference("release").unwrap().keys,
+        vec![
+            JoinKey::new("product_id", "product_id"),
+            JoinKey::new("version_id", "version_id")
+        ]
+    );
+}
+
+/// The REST shell only reads: no write capability is advertised, so the
+/// Vista refuses writes before any request.
+#[tokio::test]
+async fn writes_are_refused_by_the_vista() {
+    let factory = factory();
+    let spec: RestApiVistaSpec =
+        serde_yaml_ng::from_str("name: users\ncolumns:\n  id: { type: int, flags: [id] }\n")
+            .unwrap();
+    let vista = factory.build_from_spec(spec).expect("build");
+    for write in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::Import,
+        Capability::ConfineWrites,
+    ] {
+        assert!(!vista.capabilities().has(write), "{write}");
+    }
+    assert!(!vista.capabilities().has(Capability::Cursor));
+    let err = vista
+        .insert_value("1", &Default::default())
+        .await
+        .unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+    assert!(vista.delete("1").await.unwrap_err().is_unsupported());
 }
 
 #[test]
@@ -190,4 +258,26 @@ fn build_unknown_name_errors() {
         Err(e) => e,
     };
     assert!(err.to_string().contains("No registered spec"), "got: {err}");
+    assert!(err.is_not_found(), "got: {err}");
+}
+
+/// A reference to a model the registry doesn't hold fails the traversal as
+/// not-found, the resolver contract.
+#[test]
+fn a_reference_to_an_unregistered_model_is_not_found() {
+    let spec: RestApiVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: users
+columns:
+  id: { type: int, flags: [id] }
+references:
+  posts: { table: posts, kind: has_many, foreign_key: userId }
+"#,
+    )
+    .unwrap();
+    let vista = factory().build_from_spec(spec).expect("build");
+    let err = vista.get_ref("posts", None).unwrap_err();
+    assert!(err.is_not_found(), "got: {err}");
+    let err = vista.get_ref("comments", None).unwrap_err();
+    assert!(err.is_not_found(), "got: {err}");
 }

@@ -5,24 +5,27 @@ use serde::{Deserialize, Serialize};
 use vantage_core::Result;
 use vantage_types::Record;
 
-use crate::flags;
+mod family;
+mod flag;
+pub use family::ColumnFamily;
+pub use flag::ColumnFlag;
 
 /// Computes one column value from a record: the record as read so far goes
 /// in, the column's value comes out.
-pub type LazyValueFn = Arc<dyn Fn(&Record<CborValue>) -> Result<CborValue> + Send + Sync>;
+pub(crate) type LazyValueFn = Arc<dyn Fn(&Record<CborValue>) -> Result<CborValue> + Send + Sync>;
 
 /// Display-relevant column metadata held by a `Vista`.
-///
-/// `flags` is an open vocabulary; the constants in [`crate::flags`] name the
-/// values vista's own accessors understand. Drivers and consumers may add
-/// their own.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Column {
     pub name: String,
-    pub original_type: String,
+    /// The backend's or the spec's name for the column's type; `None` when
+    /// nothing declares one (a YAML column without `type:`, a schemaless
+    /// store).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_type: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub flags: Vec<String>,
+    flags: Vec<ColumnFlag>,
     /// Set on a computed column; see `Column::with_expression` (`rhai` feature).
     #[serde(skip)]
     computed: Option<Computed>,
@@ -42,10 +45,20 @@ impl std::fmt::Debug for Computed {
 }
 
 impl Column {
+    /// A column whose type is `original_type`.
     pub fn new(name: impl Into<String>, original_type: impl Into<String>) -> Self {
+        Self::with_type(name.into(), Some(original_type.into()))
+    }
+
+    /// A column with no declared type.
+    pub fn untyped(name: impl Into<String>) -> Self {
+        Self::with_type(name.into(), None)
+    }
+
+    fn with_type(name: String, original_type: Option<String>) -> Self {
         Self {
-            name: name.into(),
-            original_type: original_type.into(),
+            name,
+            original_type,
             flags: Vec::new(),
             computed: None,
         }
@@ -61,9 +74,9 @@ impl Column {
     /// The `Vista` fills computed columns on every read, in declaration
     /// order, so one sees the values of those declared before it. The backend
     /// never sees them: writes drop them, and filtering or ordering on one is
-    /// an error. The column is flagged [`CALCULATED`](flags::CALCULATED) and
-    /// loses [`ORDERABLE`](flags::ORDERABLE) and
-    /// [`SEARCHABLE`](flags::SEARCHABLE).
+    /// an error. The column is flagged [`Calculated`](ColumnFlag::Calculated)
+    /// and loses [`Orderable`](ColumnFlag::Orderable) and
+    /// [`Searchable`](ColumnFlag::Searchable).
     ///
     /// The script compiles here, so one that doesn't parse fails the build
     /// rather than the first read.
@@ -79,43 +92,34 @@ impl Column {
             )
         })?;
         self.flags
-            .retain(|f| f != flags::ORDERABLE && f != flags::SEARCHABLE);
-        if !self.has_flag(flags::CALCULATED) {
-            self.flags.push(flags::CALCULATED.to_string());
-        }
+            .retain(|f| *f != ColumnFlag::Orderable && *f != ColumnFlag::Searchable);
+        self = self.with_flag(ColumnFlag::Calculated);
         self.computed = Some(Computed { code, eval });
         Ok(self)
     }
 
-    pub fn with_flag(mut self, flag: impl Into<String>) -> Self {
-        self.flags.push(flag.into());
+    /// This column with `flag` added; a flag it already has is kept once.
+    /// A flag is stored in its canonical form (`Other("id")` as `Id`).
+    pub fn with_flag(mut self, flag: impl Into<ColumnFlag>) -> Self {
+        let flag = ColumnFlag::from(flag.into().as_str());
+        if !self.flags.contains(&flag) {
+            self.flags.push(flag);
+        }
         self
     }
 
-    pub fn hidden(self) -> Self {
-        self.with_flag(flags::HIDDEN)
+    pub fn has_flag(&self, flag: impl Into<ColumnFlag>) -> bool {
+        self.flags.contains(&flag.into())
     }
 
-    pub fn has_flag(&self, flag: &str) -> bool {
-        self.flags.iter().any(|f| f == flag)
-    }
-
-    pub fn is_hidden(&self) -> bool {
-        self.has_flag(flags::HIDDEN)
-    }
-
-    pub fn is_id(&self) -> bool {
-        self.has_flag(flags::ID)
-    }
-
-    pub fn is_title(&self) -> bool {
-        self.has_flag(flags::TITLE)
+    pub fn flags(&self) -> &[ColumnFlag] {
+        &self.flags
     }
 
     /// Whether the `Vista` computes this column rather than reading it.
     ///
     /// The expression isn't serialized: a column that goes through serde
-    /// comes back stored, keeping only its [`CALCULATED`](flags::CALCULATED)
+    /// comes back stored, keeping only its [`Calculated`](ColumnFlag::Calculated)
     /// flag.
     pub fn is_computed(&self) -> bool {
         self.computed.is_some()
@@ -129,5 +133,21 @@ impl Column {
     /// This computed column's value for `row`; `None` for a stored column.
     pub(crate) fn compute(&self, row: &Record<CborValue>) -> Option<Result<CborValue>> {
         self.computed.as_ref().map(|c| (c.eval)(row))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Column;
+
+    #[test]
+    fn an_untyped_column_serializes_without_a_type() {
+        let json = serde_json::to_value(Column::untyped("note")).unwrap();
+        assert_eq!(json, serde_json::json!({ "name": "note" }));
+        let back: Column = serde_json::from_value(json).unwrap();
+        assert_eq!(back.original_type, None);
+
+        let typed = serde_json::to_value(Column::new("n", "int")).unwrap();
+        assert_eq!(typed["original_type"], "int");
     }
 }

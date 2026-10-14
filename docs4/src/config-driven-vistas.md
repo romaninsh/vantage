@@ -18,9 +18,18 @@ compiles to native queries.
 ## One page of YAML, one working Vista
 
 Every driver's factory implements [`VistaFactory`](vantage_vista::VistaFactory), whose `from_yaml`
-parses a spec and lowers it:
+parses a spec and lowers it. `from_yaml` is a trait method, so the trait has to be in scope; it is
+imported by name from `vantage_vista`, not through a prelude. The block reads a populated `product`
+table, so it is compiled but not run:
 
-```rust
+```rust,no_run
+# use vantage_dataset::ReadableValueSet;
+# use vantage_sql::prelude::*;
+use vantage_vista::VistaFactory;
+
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db").await.context("connect")?;
 let yaml = r#"
 name: product_view
 columns:
@@ -39,8 +48,11 @@ sqlite:
 let vista = db.vista_factory().from_yaml(yaml)?;
 
 assert_eq!(vista.name(), "product_view");
-assert_eq!(vista.get_id_column(), Some("id"));
+assert_eq!(vista.id_column(), Some("id"));
 let rows = vista.list_values().await?;   // reads the `product` table
+# let _ = rows;
+# Ok(())
+# }
 ```
 
 The factory builds a typed `Table` under the hood — each `type:` becomes a real `Column<T>` — and
@@ -127,8 +139,8 @@ A MongoDB table block can replace the collection read with an aggregation pipeli
 | `mongo: { modify: "..." }`   | Rhai run last against the built vista as `self`              |
 | `mongo: { view: true }`      | The collection is a server-side view: read-only, not watched, not imported |
 
-Change streams (`watch_vista`) and `import_vista_values` need a replica set; see
-[Live data](./live-data.md). Streams run on a dedicated client sized by
+Change streams (`Capability::Subscribe`) and atomic imports (`Capability::Import`) need a replica
+set; see [Live data](./live-data.md). Streams run on a dedicated client sized by
 `MongoDB::with_stream_pool_size` (default 100).
 
 CSV is also the one driver whose *table* block is mandatory — `csv: { path: data/products.csv }` —
@@ -152,20 +164,36 @@ references:
     foreign_key: category_id
 ```
 
-Three shapes are available:
+Each entry lowers to one [`Reference`](vantage_vista::Reference) in the vista's metadata. Three
+shapes are available:
 
-- **Full form** (above): `table`, `kind` (`has_one` / `has_many`), `foreign_key`.
-- **Column sugar** — when the foreign key *is* the column, declare it inline:
+- **Full form** (above): `table`, `kind` (`has_one` / `has_many`), `foreign_key`. A `has_one`
+  matches its `foreign_key` on this row to the target's id; a `has_many` matches this row's id to
+  the target's `foreign_key`. Without `foreign_key:`, the entry's name is the key.
+- **Column sugar** — when the foreign key *is* the column, declare it inline. The relation takes
+  the column's name, and a `references:` entry of the same name takes precedence:
 
   ```yaml
   columns:
     category_id:
       type: string
-      references: category      # has_one, foreign_key = the column itself
+      references: category      # has_one named `category_id`, foreign_key = the column itself
   ```
 
-- **Multi-key joins** — `keys:` lists `{ to, from }` pairs when the child is narrowed by more than
-  one parent field (a deployment matched on both `product_id` and `version_id`).
+- **Multi-key joins** — `keys:` lists `{ from, to }` pairs when the child is narrowed by more than
+  one parent field (a deployment matched on both `product_id` and `version_id`). Each pair reads
+  the parent row's `from` column and constrains the target's `to` column, and traversal applies
+  every pair. When `keys:` is present it is the whole join, and `foreign_key:` is not read:
+
+  ```yaml
+  references:
+    deployments:
+      table: deployment
+      kind: has_many
+      keys:
+        - { from: product_id, to: product }
+        - { from: version_id, to: version }
+  ```
 
 On MongoDB a reference key must be stored under its own field name. The vista fails to build when a
 reference's foreign key, or the id column it matches on the other side, is renamed with `field:` or
@@ -178,19 +206,54 @@ A reference names its target *by spec name* — so the factory needs a way to fi
 current spec at traversal time. That's the **spec resolver**, attached once:
 
 ```rust
-let resolver: SqliteSpecResolver = Arc::new(move |name| specs.get(name).cloned());
+# use std::collections::HashMap;
+# use std::sync::Arc;
+#
+# use ciborium::Value as CborValue;
+# use vantage_sql::prelude::*;
+# use vantage_sql::sqlite::vista::SqliteVistaSpec;
+# use vantage_types::Record;
+# use vantage_vista::{ColumnSpec, SpecResolver, VistaFactory};
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
+# let category_yaml = r#"
+# name: category
+# columns:
+#   id: { type: string, flags: [id] }
+#   name: { type: string, flags: [title] }
+# references:
+#   products:
+#     table: product
+#     kind: has_many
+#     foreign_key: category_id
+# "#;
+# let mut product = SqliteVistaSpec::new("product");
+# product.columns.insert("id".to_string(), ColumnSpec::new().with_type("string").with_flag("id"));
+# product.columns.insert("category_id".to_string(), ColumnSpec::new().with_type("string"));
+# let specs: HashMap<String, SqliteVistaSpec> = HashMap::from([("product".to_string(), product)]);
+let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
+    Arc::new(move |name: &str| specs.get(name).cloned());
 let factory = db.vista_factory().with_resolver(resolver);
 let category = factory.from_yaml(category_yaml)?;
 
 // Traversal rebuilds `product` from its live spec:
-let row = /* a category row */;
-let products = category.get_ref("products", &row)?;
+let row: Record<CborValue> = [("id".to_string(), CborValue::Text("pastry".into()))].into_iter().collect();
+let products = category.get_ref("products", Some(&row))?;
+# assert!(products.is_narrowed());
+# Ok(())
+# }
 ```
 
-The resolver is a plain closure — back it with an in-memory map, a folder of `.yaml` files, or a
-hot-reloading inventory. Because targets are re-resolved on every traversal, editing a spec changes
-what the *next* traversal builds. Without a resolver, a traversal falls back to a column-less
-target and the next query fails loudly.
+[`SpecResolver<S>`](vantage_vista::SpecResolver) is the same trait for every driver, with the
+driver's spec type as `S`, and a factory holds it as `Arc<dyn SpecResolver<S>>`. Any
+`Fn(&str) -> Option<S>` closure implements it (annotate its argument as `&str`, as above, or the
+closure won't take every lifetime), and a type of your own can implement `resolve` directly — back
+it with an in-memory map, a folder of `.yaml` files, or a hot-reloading inventory. Because targets
+are re-resolved on every traversal, editing a spec changes what the *next* traversal builds.
+Without a resolver, a traversal falls back to a column-less target and the next query fails
+loudly.
 
 ---
 
@@ -200,7 +263,9 @@ YAML declares structure. For anything with an expression in it, specs escalate t
 small, embeddable scripting language whose Vantage vocabulary compiles to native queries. The
 expression primitives are shared across backends where the concept overlaps (`count`, `avg`,
 `coalesce`, `case_when`, `date_format` …) — see [SQL Primitives](./sql/primitives.md) and
-[SurrealDB Primitives](./surrealdb/primitives.md) for the full vocabularies. Rhai appears in a spec
+[SurrealDB Primitives](./surrealdb/primitives.md) for the full vocabularies. A script calls them
+through its backend's namespace (`sql::count(..)`, `surreal::count(..)`, `mongo::oid(..)`), so they
+never shadow the data vocabulary's `table(name)`. Rhai appears in a spec
 in five places, each with a distinct job. The first two build native queries; the next two use the
 data vocabulary taught in [Scripting with Rhai](./rhai.md); the last computes a column from one
 row.
@@ -216,12 +281,12 @@ columns:
   name: { type: string }
 sqlite:
   rhai: |
-    select().from("product").field("id").field("name").where(expr("price > 150"))
+    sql::select().from("product").field("id").field("name").where(sql::expr("price > 150"))
 ```
 
 The script runs once at build time and its SELECT becomes the vista's source. A query-sourced
-vista is **read-only** — the factory clears `can_insert` / `can_update` / `can_delete`, because
-there's no single table a write could honestly land in. Capability honesty is preserved
+vista is **read-only** — the factory leaves `Insert`, `Update`, `Delete` and `ConfineWrites` out
+of its capabilities, because there's no single table a write could honestly land in. Capability honesty is preserved
 automatically; consumers find out by checking, same as ever.
 
 ### 2. Derived vistas — `base:` + `inherit` + transform
@@ -240,8 +305,8 @@ sqlite:
     columns: [category_id]
   rhai: |
     base.clear_fields().field("category_id")
-        .expression(expr("SUM(price) AS total_price"))
-        .group_by(expr("category_id"))
+        .expression(sql::expr("SUM(price) AS total_price"))
+        .group_by(sql::expr("category_id"))
 ```
 
 This is the aggregate pattern: group the base by a key, declare the aggregate outputs as the
@@ -262,7 +327,7 @@ columns:
 surreal:
   table: product
   modify: |
-    self.with_condition(ident("is_deleted") == false)
+    self.with_condition(surreal::ident("is_deleted") == false)
         .sort("name", "asc")
 ```
 
@@ -270,7 +335,8 @@ Unlike a query source, `modify:` narrows a real table — so the vista **stays w
 last, composing with `table:`, `rhai:`, or `base:`. Writability follows the underlying source: a
 `modify:` on a `rhai:` or `base:` vista stays read-only, while on a plain table it stays writable.
 MySQL takes the same script in a `mysql:` block (`mysql: { modify: "..." }`), with the
-`with_condition(expr)` verb (from Rust: `Vista::add_raw_condition`).
+`with_condition(expr)` verb, which hands its expression to the shell as a native condition (from
+Rust: `Vista::add_native_condition`).
 
 ### 4. Scripted reference traversal — reference-level `rhai:` (SurrealDB, MongoDB, MySQL)
 
@@ -358,31 +424,51 @@ mechanics — and the sharp edges — are covered in
 
 ---
 
-## Cross-persistence: the VistaCatalog
+## Cross-persistence: the Catalog
 
 A single Vista is strictly single-backend. When a system spans several — categories in Postgres,
-products behind a REST API — [`VistaCatalog`](vantage_vista_factory) sits one layer up: it holds a
-loader per model name and traverses relations whose target lives in a *different* persistence:
+products behind a REST API — a [`Catalog`](vantage_vista::Catalog) sits one layer up: it holds a
+loader per model name, and a relation whose target lives in a *different* persistence is a
+[`Reference`](vantage_vista::Reference) narrowed over the target the catalog builds. Here two
+in-memory SQLite databases stand in for the two backends:
 
 ```rust
-let mut catalog = VistaCatalog::new();
-catalog.register("category", Arc::new(move || pg_factory.from_yaml(&category_yaml)));
-catalog.register("product",  Arc::new(move || api_factory.from_yaml(&product_yaml)));
-catalog.register_relation("category", Relation::single_key(
-    "products", "product", ReferenceKind::HasMany,
-    "category_id",   // target column to constrain
-    "id",            // parent-row field whose value narrows it
-));
+# use ciborium::Value as CborValue;
+# use vantage_sql::prelude::*;
+# use vantage_types::Record;
+# use vantage_vista::{Catalog, JoinKey, Reference, VistaFactory, VistaResolver};
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let pg = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
+# let api = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
+# let category_yaml = "name: category\ncolumns:\n  id: { type: string, flags: [id] }\n".to_string();
+# let product_yaml =
+#     "name: product\ncolumns:\n  id: { type: string, flags: [id] }\n  category_id: { type: string }\n"
+#         .to_string();
+let (pg_factory, api_factory) = (pg.vista_factory(), api.vista_factory());
+let catalog = Catalog::new()
+    .with("category", move |_: &str| pg_factory.from_yaml(&category_yaml))
+    .with("product", move |_: &str| api_factory.from_yaml(&product_yaml));
+let relation = Reference::has_many(
+    "products",
+    "product",
+    JoinKey::new("id", "category_id"), // parent `id` constrains the target's `category_id`
+);
 
-let category = catalog.build_vista("category")?;
-let row = /* a category row */;
-let products = catalog.traverse_from("category", "products", &row)?;  // Postgres → REST
+let row: Record<CborValue> = [("id".to_string(), CborValue::Text("pastry".into()))].into_iter().collect();
+let products = relation.narrow(catalog.vista(&relation.target)?, &row)?;  // one backend → the other
+# assert!(products.is_narrowed());
+# Ok(())
+# }
 ```
 
 Loaders return a *fresh, unconditioned* Vista on every call, so the catalog composes with
-hot-reloading inventories the same way spec resolvers do. The catalog is also what
-[Augmentation](./augmentation.md) uses to resolve its detail sources — the `augment:` block in a
-table's configuration is this same machinery pointed at row enrichment.
+hot-reloading inventories the same way spec resolvers do. A name the catalog doesn't hold is a
+not-found error; a loader that fails keeps its own error. The catalog is a
+[`VistaResolver`](vantage_vista::VistaResolver), so it goes wherever a resolver is expected: it is
+also what [Augmentation](./augmentation.md) uses to resolve its detail sources — the `augment:`
+block in a table's configuration is this same machinery pointed at row enrichment.
 
 ---
 

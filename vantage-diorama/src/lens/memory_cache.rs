@@ -7,6 +7,7 @@
 //! round-tripping.
 
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -56,6 +57,9 @@ impl CacheBackend for MemoryCache {
         Ok(())
     }
 
+    /// Nothing to persist, so nothing to mark closed.
+    async fn close(&self) {}
+
     fn name(&self) -> &'static str {
         "memory"
     }
@@ -64,8 +68,16 @@ impl CacheBackend for MemoryCache {
 #[derive(Default)]
 pub struct MemoryCacheTable {
     rows: Mutex<IndexMap<String, (Record<CborValue>, CacheStatus)>>,
-    /// See [`CacheTable::meta_total`].
-    meta_total: Mutex<Option<u64>>,
+    meta: Mutex<Meta>,
+}
+
+/// See [`CacheTable::meta_total`], [`CacheTable::meta_refreshed_at`] and
+/// [`CacheTable::meta_copied_at`].
+#[derive(Default)]
+struct Meta {
+    total: Option<u64>,
+    refreshed_at: Option<SystemTime>,
+    copied_at: Option<SystemTime>,
 }
 
 impl MemoryCacheTable {
@@ -73,6 +85,12 @@ impl MemoryCacheTable {
         &self,
     ) -> std::sync::MutexGuard<'_, IndexMap<String, (Record<CborValue>, CacheStatus)>> {
         self.rows.lock().expect("MemoryCacheTable mutex poisoned")
+    }
+
+    fn meta(&self) -> std::sync::MutexGuard<'_, Meta> {
+        self.meta
+            .lock()
+            .expect("MemoryCacheTable meta mutex poisoned")
     }
 
     /// Yield once per operation so this backend is a well-behaved async citizen.
@@ -124,6 +142,11 @@ impl CacheTable for MemoryCacheTable {
 
     async fn clear(&self) -> Result<()> {
         Self::yield_point().await;
+        {
+            let mut meta = self.meta();
+            meta.refreshed_at = None;
+            meta.copied_at = None;
+        }
         self.lock().clear();
         Ok(())
     }
@@ -135,12 +158,34 @@ impl CacheTable for MemoryCacheTable {
 
     async fn meta_total(&self) -> Result<Option<u64>> {
         Self::yield_point().await;
-        Ok(*self.meta_total.lock().expect("meta_total mutex poisoned"))
+        Ok(self.meta().total)
     }
 
     async fn set_meta_total(&self, total: u64) -> Result<()> {
         Self::yield_point().await;
-        *self.meta_total.lock().expect("meta_total mutex poisoned") = Some(total);
+        self.meta().total = Some(total);
+        Ok(())
+    }
+
+    async fn meta_refreshed_at(&self) -> Result<Option<SystemTime>> {
+        Self::yield_point().await;
+        Ok(self.meta().refreshed_at)
+    }
+
+    async fn set_meta_refreshed_at(&self, at: SystemTime) -> Result<()> {
+        Self::yield_point().await;
+        self.meta().refreshed_at = Some(at);
+        Ok(())
+    }
+
+    async fn meta_copied_at(&self) -> Result<Option<SystemTime>> {
+        Self::yield_point().await;
+        Ok(self.meta().copied_at)
+    }
+
+    async fn set_meta_copied_at(&self, at: SystemTime) -> Result<()> {
+        Self::yield_point().await;
+        self.meta().copied_at = Some(at);
         Ok(())
     }
 

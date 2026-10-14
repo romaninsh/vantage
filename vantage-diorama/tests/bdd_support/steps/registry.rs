@@ -1,9 +1,9 @@
-//! Step 2 — scenery dedup registry, refcount, and structural cancellation.
+//! Step 2 — the shared-rows registry and structural cancellation.
 //!
-//! Opening the same `(conditions, sort, search)` twice hands back one shared
-//! scenery (one reactor, one in-flight fetch). Releasing every handle aborts
-//! the background tasks — a closing grid stops pulling — and the registry
-//! entry self-heals.
+//! Opening the same query twice hands back two views over one set of rows
+//! (one reactor, one in-flight fetch). Releasing every handle aborts the
+//! background tasks — a closing grid stops pulling — and the registry entry
+//! self-heals.
 
 use std::sync::Arc;
 
@@ -24,20 +24,28 @@ async fn open_again(w: &mut DioramaWorld) {
     w.settle().await;
 }
 
-#[then("the two table sceneries are the same object")]
-async fn same_object(w: &mut DioramaWorld) {
+#[then("the two table sceneries are distinct views over the same rows")]
+async fn shared_rows(w: &mut DioramaWorld) {
     let a = w.scenery.as_ref().expect("first scenery not opened");
     let b = w.scenery2.as_ref().expect("second scenery not opened");
+    assert!(!Arc::ptr_eq(a, b), "every open returns a view of its own");
+    let dio = w.dio.as_ref().expect("dio not created");
+    let sceneries = dio.diagnostics().await.expect("diagnostics").sceneries;
     assert!(
-        Arc::ptr_eq(a, b),
-        "expected the two opens to share one scenery (dedup), got distinct objects"
+        sceneries.len() == 2 && sceneries.iter().all(|s| s.shared_by == 2),
+        "expected two views sharing one set of rows, got {sceneries:?}"
     );
 }
 
 #[then(regex = r"^the dio has (\d+) live table scener(?:y|ies)$")]
 async fn live_count(w: &mut DioramaWorld, expected: usize) {
     let dio = w.dio.as_ref().expect("dio not created");
-    let got = dio.live_table_scenery_count();
+    let got = dio
+        .diagnostics()
+        .await
+        .expect("diagnostics")
+        .sceneries
+        .len();
     assert_eq!(
         got, expected,
         "live table scenery count: want {expected}, got {got}"

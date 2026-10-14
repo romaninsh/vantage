@@ -14,6 +14,7 @@
 //! and a fixture catches a wrong assumption about any of them.
 
 use vantage_spacetimedb::schema::{ModuleSchema, RowIdentity, SchemaVersion, TableKind};
+use vantage_vista::ColumnFlag;
 
 const V9: &str = include_str!("fixtures/schema-v9-smoke.json");
 const V10: &str = include_str!("fixtures/schema-v10-smoke.json");
@@ -135,19 +136,19 @@ fn metadata_flags_id_and_nominates_a_title() {
     let metadata = schema.metadata_for("person").expect("person is public");
 
     assert_eq!(metadata.id_column.as_deref(), Some("id"));
-    assert!(metadata.columns["id"].is_id());
+    assert!(metadata.columns["id"].has_flag(ColumnFlag::Id));
 
     // The first non-id string column becomes the display label, so a grid has
     // something to show without the inventory author having to say so.
     assert!(
-        metadata.columns["handle"].is_title(),
+        metadata.columns["handle"].has_flag(ColumnFlag::Title),
         "handle should be nominated as the title column"
     );
 }
 
 #[test]
 fn no_column_claims_to_be_orderable() {
-    // The flag has to agree with `can_order`, which is false: the dialect has no
+    // The flag has to agree with `Order`, which is not advertised: the dialect has no
     // `ORDER BY`, and this driver refuses to sort rather than materialising the
     // set and sorting it here. A column flagged ORDERABLE would offer a sort
     // control that then refuses — the exact "capability that lies" this crate is
@@ -157,7 +158,7 @@ fn no_column_claims_to_be_orderable() {
 
     for (name, column) in &metadata.columns {
         assert!(
-            !column.has_flag(vantage_vista::flags::ORDERABLE),
+            !column.has_flag(ColumnFlag::Orderable),
             "{name} claims to be orderable, but ordering is refused"
         );
     }
@@ -168,14 +169,17 @@ fn wide_integers_map_to_string_rather_than_silently_truncating() {
     let schema = ModuleSchema::from_v10_json(V10).unwrap();
     let metadata = schema.metadata_for("person").unwrap();
 
+    let type_of = |metadata: &vantage_vista::VistaMetadata, column: &str| {
+        metadata.columns[column].original_type.clone()
+    };
     // u64 still fits Vista's integer carrier, so `big` is an int...
-    assert_eq!(metadata.columns["big"].original_type, "int");
-    assert_eq!(metadata.columns["score"].original_type, "int");
-    assert_eq!(metadata.columns["active"].original_type, "bool");
-    assert_eq!(metadata.columns["handle"].original_type, "string");
+    assert_eq!(type_of(&metadata, "big").as_deref(), Some("int"));
+    assert_eq!(type_of(&metadata, "score").as_deref(), Some("int"));
+    assert_eq!(type_of(&metadata, "active").as_deref(), Some("bool"));
+    assert_eq!(type_of(&metadata, "handle").as_deref(), Some("string"));
 
     let reading = schema.metadata_for("reading").unwrap();
-    assert_eq!(reading.columns["value"].original_type, "float");
+    assert_eq!(type_of(&reading, "value").as_deref(), Some("float"));
 }
 
 #[test]

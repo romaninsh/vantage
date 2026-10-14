@@ -1,7 +1,7 @@
 //! Window functions and CASE expressions for Rhai.
 //!
-//! Window: `window()`, `.partition_by()`, `.order_by()`, `.rows()`, `.range()`, `.apply()`
-//! Case: `case_when()`, `.when()`, `.else_()`, `.expr()`
+//! Window: `sql::window()`, `.partition_by()`, `.order_by()`, `.rows()`, `.range()`, `.apply()`
+//! Case: `sql::case_when()`, `.when()`, `.else_()`, `.expr()`
 
 use crate::primitives::case::Case;
 use crate::primitives::identifier::Identifier;
@@ -144,9 +144,9 @@ where
 
 #[macro_export]
 macro_rules! register_window_case {
-    ($engine:expr, value: $V:ty) => {{
+    ($engine:expr, $ns:expr, value: $V:ty) => {{
         // Window constructors and methods
-        $engine.register_fn("window", $crate::rhai_engine::window_case::window_new::<$V>);
+        $ns.func("window", $crate::rhai_engine::window_case::window_new::<$V>);
 
         $engine.register_fn(
             "partition_by",
@@ -182,7 +182,7 @@ macro_rules! register_window_case {
         );
 
         // Case constructors and methods
-        $engine.register_fn(
+        $ns.func(
             "case_when",
             $crate::rhai_engine::window_case::case_new::<$V>,
         );

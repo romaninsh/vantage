@@ -1,13 +1,16 @@
 # vantage-memory
 
 An in-memory [Vantage](https://github.com/romaninsh/vantage) datasource: a typed `TableSource`
-(`MemoryDB`) and a Vista `TableShell` (`MemoryTableShell` / `MemoryVistaFactory`), both reading and
-writing through one store, with native change events.
+(`MemoryDB`) and a Vista `TableShell` (`MemoryTableShell`, built by `MemoryVistaFactory` or
+`MemoryCatalog`), both reading and writing through one store, with native change events.
 
 It is not a mock. `MockShell`, `MockTableSource` and `ImDataSource` keep their existing role in
 tests elsewhere in the workspace; this crate is real storage that happens to live in the process —
 data lives as long as the process runs, and it is meant as a production backend for things like
 faker's simulated data and browsable dev/demo tables.
+
+Every type is reached from the crate root (`vantage_memory::MemoryCatalog`, not a `vista::` path).
+`vantage_memory::prelude` holds only what the typed layer needs.
 
 ## Quick use
 
@@ -18,7 +21,8 @@ async runtime:
 
 ```rust
 use ciborium::Value as CborValue;
-use vantage_memory::{MemoryStore, TableDef, Query, MemoryCondition};
+use vantage_memory::{MemoryCondition, MemoryStore, Query, TableDef};
+use vantage_types::Record;
 use vantage_vista::FilterOp;
 
 let store = MemoryStore::new();
@@ -28,15 +32,18 @@ let table = store.define("product", TableDef {
     id_prefix: None,
 });
 
-let record: vantage_types::Record<CborValue> = [
+let record: Record<CborValue> = [
     ("name".to_string(), CborValue::Text("Tea".into())),
     ("category".to_string(), CborValue::Text("drink".into())),
 ]
 .into_iter()
 .collect();
+let price: Record<CborValue> = [("price".to_string(), CborValue::Integer(3.into()))]
+    .into_iter()
+    .collect();
 
 let id = table.insert(record)?;      // generates an id, or errors if the supplied one exists
-table.patch(&id, &partial_record);   // merges fields; false if the id is missing
+table.patch(&id, &price);            // merges fields; false if the id is missing
 table.get(&id);
 table.delete(&id);                   // false if the id is missing
 
@@ -91,18 +98,76 @@ memory:
 let vista = MemoryVistaFactory::new(MemoryStore::new()).from_yaml(yaml)?;
 ```
 
+`VistaFactory` is imported from `vantage_vista` itself; it is not in the vista prelude, since only
+code that builds vistas from specs needs it.
+
 `memory.indexed` adds a hash index to each named column (applied even to a table that already
 exists, as long as its id column agrees with the spec's). `memory.seed` points at a `.json`,
 `.yaml` or `.yml` file of rows, loaded when the vista is built and the table is still empty, so
 rebuilding a vista keeps edits made since. A relative seed path is resolved against the process
 working directory, not the spec file's location.
 
+A column without `type:` is untyped: its cells are stored as written, so an integer stays an
+integer. A typed column (`int`, `string`) stores and compares its cells in that form, so a
+condition `price = "5"` finds the row holding `5`.
+
 With the `rhai` feature, a spec can also declare `lazy:` columns, which the Vista computes from
 each row.
+
+### Narrowing
+
+A `Vista` is a value. `with_*` consumes it and returns the narrowed one; `add_condition`,
+`set_order` and `set_search` change one you own:
+
+```rust
+use vantage_vista::prelude::*;
+
+let drinks = vista
+    .clone()
+    .with_condition("category", FilterOp::Eq, "drink")?
+    .with_order("price", SortDirection::Descending)?;
+
+let mut cheap = vista.clone();
+cheap.add_condition("price", FilterOp::Lt, 4)?;
+cheap.set_search(Some("tea"))?;
+
+let rows = drinks.list_values().await?;
+let page = cheap.fetch_window(0, 20).await?;   // page.total is always set
+```
+
+`vista` itself is unchanged by either. Every stored column is orderable; a `lazy:` column is not.
+
+### A catalog, without YAML
+
+`MemoryCatalog` is the store plus the metadata registered for each table. It implements
+`VistaResolver`, so `catalog.vista(name)` gives a fresh Vista over the store table:
+
+```rust
+use vantage_memory::{MemoryCatalog, MemoryStore};
+use vantage_vista::{Column, ColumnFlag, VistaMetadata, VistaResolver};
+
+let catalog = MemoryCatalog::new(MemoryStore::new());
+catalog.register(
+    "item",
+    VistaMetadata::new()
+        .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
+        .with_column(Column::new("name", "string"))
+        .with_column(Column::untyped("origin"))
+        .with_id_column("id"),
+);
+let items = catalog.vista("item")?;
+```
+
+A registered name whose table isn't in the store yet gets a new, empty one. A store table with no
+registration gets only its id column. Any other name is not-found, and creates no table.
+`MemoryVistaFactory` registers every vista it builds in its own catalog, which is how a reference
+traversal (`vista.get_ref("product", Some(&row))`) gets the target's declared columns.
 
 ### Live changes
 
 ```rust
+use futures_util::StreamExt;
+
 let mut stream = vista.watch().await?;
 while let Some(change) = stream.next().await {
     let change = change?; // VistaChange::{Inserted, Updated, Deleted, Invalidated}
@@ -114,12 +179,20 @@ edit or delete) as `Deleted`, never a bare update outside the filter. A lagging 
 `Invalidated` and is expected to re-list, as does every subscriber when a table leaves quiet mode
 after writes were made while quiet.
 
-The same stream is what a `Dio` (vantage-diorama) rides on: attach one over a memory vista and it
-stays correct through `watch()` alone, with no separate event-forwarding wired up. A write that
-lands between the Dio's initial load and its `watch()` call is not seen; start watching before the
-load, or refresh once after it.
+The same stream is what a `Dio` (vantage-diorama) rides on. Build it with `.live()` and it stays
+correct through `watch()` alone, with no separate event-forwarding wired up:
+
+```rust
+let dio = lens.dio(vista).live().build().await?;
+```
+
+The subscription is made before the Dio's initial copy, so a write that lands during the copy is
+not lost.
 
 ## Semantics
+
+These are memory's own rules, and they hold for both layers: a memory Vista hands its conditions,
+search and order to the store, which evaluates them.
 
 - **Comparison.** Integers and floats compare numerically across the two types (`1` and `1.0` are
   equal); text compares by code point; booleans compare `false < true`. Values of different kinds
@@ -128,7 +201,10 @@ load, or refresh once after it.
   holding no null. It fails every other op.
 - **`Like`.** `%` (any run) and `_` (one character), case-insensitive, over the text form of the
   cell — numbers compare by their decimal form.
-- **Search.** Case-insensitive substring over every text cell and the text form of every number.
+- **Search.** Case-insensitive substring over the text cells, and the text form of the number
+  cells, of the searchable columns: those flagged `searchable`, or every declared column when
+  none is. A vista that declares no columns searches every cell. Booleans, tags, arrays and maps
+  are never searched.
 - **Ordering.** Nulls sort first ascending and NaN after every other number; descending reverses
   the whole comparison, so nulls sort last there. Ties keep insertion order.
 - **Joins.** Ids are stored as text, but a reference also matches an integer foreign key
@@ -138,6 +214,10 @@ load, or refresh once after it.
 - **Ids.** A caller-supplied id (present in the record's id column) is used as given. Otherwise a
   per-table counter generates `"1"`, `"2"`, … or `"<prefix>1"`, skipping any id already taken by a
   supplied one.
+- **Writes through a narrowed vista.** A write stays inside the set: an inserted or replaced
+  record is filled with the set's equality conditions, one that would still fall outside the set
+  is a conflict, and a patch may not move a row out. A has-many child inserted through
+  `get_ref(.., Some(&parent))` gets its foreign key this way.
 - **No-op writes.** A `patch` that changes nothing, or an `upsert` that replaces a row with an
   identical one, sends no event and does not count toward `writes()`. A `patch`/`delete` on a
   missing id returns `false` and likewise sends nothing. A `patch` never changes the id column.
@@ -147,15 +227,24 @@ load, or refresh once after it.
   or what `writes()` counts. `set_quiet(false)` sends one `MemoryChange::Reset` if anything was
   written meanwhile.
 
+### Why not vista's evaluator?
+
+vantage-vista ships its own in-memory evaluator (`vantage_vista::eval`), which `MockShell` and
+diorama's cache use. It sorts absent and null cells last in both directions and breaks ties on
+id. The store keeps insertion order instead, because that is what the typed layer and the sync API
+promise, and an indexed query already puts its candidates back in insertion order. The cost: the same memory rows read straight from the
+vista and read back from a diorama cache can come out in different orders when the sort key has
+nulls or ties. Sort on a unique column when the order has to match.
+
 ## Performance
 
 `examples/bench.rs` times insert, patch, get, an indexed `Eq` query on a column with 5 distinct
 values (`indexed_eq`, ~size/5 matches) and on one with ~size/10 distinct values
 (`indexed_eq_selective`, ~10 matches), an unindexed range query (`n > size/2`), an ordered page
 (order by `n` descending, window `(size/2, 50)`), and deleting rows from the front of the table,
-at 1,000, 10,000 and 100,000 rows. It prints numbers and asserts nothing. Run it with:
+at 1,000, 10,000 and 100,000 rows. It prints numbers and asserts nothing.
 
-```
+```sh
 cargo run -p vantage-memory --example bench --release
 ```
 
@@ -202,9 +291,11 @@ insertion order.
 - No persistence. Everything lives only as long as the process; `seed::load`/`seed::dump` are
   public so a snapshot format could be layered on later without a redesign.
 - No transactions spanning more than one write.
-- No `aggregate_vista`; the Vista layer keeps the trait's default (unimplemented) behavior.
-- A `HasMany` child inserted through the reference's Vista does not have its foreign key stamped
-  automatically, unlike the SQLite backend — set it on the record before inserting.
+- Sum, min and max are typed-layer only (`get_table_sum` and friends). Over a Vista, aggregate in
+  diorama.
+- No cursors and no native conditions: the shell advertises neither `Cursor` nor
+  `NativeConditions`.
+- No contained relations and no server-side `expr:` columns; a spec with either is an error.
 - Deleting a row is O(n) in the table size, to keep insertion order.
 
 ## License

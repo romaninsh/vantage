@@ -8,7 +8,7 @@ use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 
 use crate::cluster::KubernetesCluster;
-use crate::models::core;
+use crate::models::{core, join_column};
 use crate::project::{self, Row};
 
 pub const PATH: &str = "apis/apps/v1/replicasets";
@@ -22,6 +22,7 @@ pub fn replicasets_table(cluster: KubernetesCluster) -> Table<KubernetesCluster,
         .with_column_of::<i64>("ready")
         .with_column_of::<i64>("available")
         .with_column_of::<String>("age")
+        .with_column(join_column("ownerName"))
         .with_many("pods", "ownerName", core::pods::pods_table)
 }
 

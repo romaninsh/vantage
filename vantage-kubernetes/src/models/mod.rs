@@ -14,10 +14,19 @@ pub mod metrics;
 
 use ciborium::Value as CborValue;
 use serde_json::Value as JsonValue;
+use vantage_table::column::core::Column;
+use vantage_table::column::flags::ColumnFlag;
 use vantage_types::Record;
 use vantage_vista::Vista;
 
 use crate::cluster::KubernetesCluster;
+
+/// A hidden text column a relation joins on. Joins only narrow by declared
+/// columns, so a projected join key the listing doesn't show is declared
+/// with this.
+pub(crate) fn join_column(name: &str) -> Column<String> {
+    Column::new(name).with_flag(ColumnFlag::Hidden)
+}
 
 /// Project a fetched object using the projector registered for `api_path`.
 /// Returns `None` for an unknown path (the table source then yields no rows

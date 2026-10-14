@@ -1,6 +1,6 @@
 [package]
 name = "vantage-rhai"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "One Rhai host for every Vantage YAML script slot: slot types, limits, vocab/resolver traits, discovery, template scanner"
@@ -15,7 +15,11 @@ default = []
 schema = ["dep:schemars"]
 
 [dependencies]
-rhai = { version = "1.25", default-features = false, features = ["std", "sync", "serde"] }
+# `internals` exposes rhai's AST (`Stmt`, `Expr`), which vantage-vista walks to
+# refuse dropped handles; its shape may change in any rhai minor release, so the
+# range is bounded. Raise the upper bound only after vantage-vista's discard
+# tests (`rhai/eval/discard/tests.rs`) pass against the new release.
+rhai = { version = ">=1.25, <1.27", default-features = false, features = ["std", "sync", "serde", "internals"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 thiserror = "2.0"

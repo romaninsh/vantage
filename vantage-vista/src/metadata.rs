@@ -1,26 +1,21 @@
 use indexmap::IndexMap;
 
 use crate::{
-    column::Column,
-    reference::{ContainedSpec, Reference},
+    column::{Column, ColumnFlag},
+    reference::Reference,
 };
 
 /// Schema a `Vista` is built around.
 ///
 /// Driver factories produce one of these by inspecting a typed
 /// `Table<DriverSource, E>`; the universal YAML loader produces one by
-/// parsing config. End-user code typically doesn't construct this directly.
-///
-/// Title columns are derived from column flags at runtime — see
-/// `Vista::get_title_columns`.
+/// parsing config. Contained relations are references of a contained kind;
+/// the schema of their records belongs to the shell that serves them.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct VistaMetadata {
     pub columns: IndexMap<String, Column>,
     pub references: IndexMap<String, Reference>,
-    /// Contained (embedded-in-row) relations, keyed by relation name. Kept
-    /// apart from `references` because their data lives in a column of the
-    /// parent row, not in a joined table.
-    pub contained: IndexMap<String, ContainedSpec>,
     pub id_column: Option<String>,
 }
 
@@ -36,15 +31,16 @@ impl VistaMetadata {
 
     /// [`with_column`](Self::with_column) at position `index` (clamped to the
     /// end), shifting later columns along.
-    pub fn with_column_at(mut self, index: usize, column: Column) -> Self {
+    pub(crate) fn with_column_at(mut self, index: usize, column: Column) -> Self {
         let index = index.min(self.columns.len());
         self.columns
             .shift_insert(index, column.name.clone(), column);
         self
     }
 
-    /// [`with_column_at`](Self::with_column_at) for each `(position, column)`,
-    /// in order — the shape of `Table::computed_columns`.
+    /// Insert each `(position, column)` in order, a column at `position`
+    /// (clamped to the end) shifting later columns along. This is the shape
+    /// of `Table::computed_columns`.
     pub fn with_columns_at<'a>(
         self,
         columns: impl IntoIterator<Item = (usize, &'a Column)>,
@@ -59,13 +55,25 @@ impl VistaMetadata {
         self
     }
 
-    pub fn with_contained(mut self, spec: ContainedSpec) -> Self {
-        self.contained.insert(spec.name.clone(), spec);
-        self
-    }
-
     pub fn with_id_column(mut self, name: impl Into<String>) -> Self {
         self.id_column = Some(name.into());
         self
+    }
+
+    /// The columns a quicksearch reads: those flagged `Searchable`, or, when
+    /// none is, every column. Dotted paths and imported columns are the
+    /// driver's to exclude.
+    pub fn search_columns(&self) -> Vec<&str> {
+        let flagged: Vec<&str> = self
+            .columns
+            .values()
+            .filter(|column| column.has_flag(ColumnFlag::Searchable))
+            .map(|column| column.name.as_str())
+            .collect();
+        if flagged.is_empty() {
+            self.columns.keys().map(String::as_str).collect()
+        } else {
+            flagged
+        }
     }
 }

@@ -5,7 +5,7 @@ columns:
     flags: [id, title, searchable]
   Bucket:
     type: string
-    flags: [hidden]
+    flags: [hidden, request_param]
   Size:
     type: int
   LastModified:

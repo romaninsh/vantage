@@ -1,16 +1,16 @@
 //! One lens serving both shapes: the eager seed must still reach open sceneries.
 //!
 //! vantage-ui builds one Lens per datasource, so that lens carries every
-//! callback any table under it might need — `on_start` to copy a whole set,
-//! `on_load_chunk` to window a pageable one. Which applies is a property of the
-//! master, decided per scenery at open (`builder::pages_lazily`) and recorded
-//! as `TableSceneryState::paged`.
+//! loader any table under it might need — `Loader::paged(..).or_eager(..)`:
+//! an eager start to copy a whole set, a paged loader to window a pageable
+//! one. Which applies is a property of the master, decided per scenery at open
+//! (`builder::open::pages_lazily`) and recorded as `SharedRows::paged`.
 //!
 //! The shape that broke: an eager scenery opens over a cold cache, shows
-//! nothing (correctly — there is nothing yet), and the detached `on_start`
+//! nothing (correctly — there is nothing yet), and the detached eager start
 //! lands its rows a moment later and announces `DatasetChanged`. The reactor
 //! answers a whole-set event one of two ways, and it was choosing between them
-//! by asking the *lens* whether an `on_load_chunk` existed. Under a shared lens
+//! by asking the *lens* whether a paged loader existed. Under a shared lens
 //! one always does, so an eager scenery took the paged branch: re-count, then
 //! re-fetch the current viewport — through a callback the loader will not
 //! dispatch for it. Nothing reseeded the visible map from the cache, so the
@@ -25,9 +25,9 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Lens, TableScenery};
+use vantage_diorama::{Cache, Lens, Loader, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Capability, Column, TableShell, Vista, VistaMetadata, mocks::MockShell};
 
 /// Bounds a hang; not an assertion about speed.
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
@@ -39,17 +39,21 @@ fn named(name: &str) -> Record<CborValue> {
 }
 
 /// An eager master: it holds rows and, crucially, does **not** advertise
-/// `can_fetch_window` — so a lens offering both shapes is warmed whole.
+/// `Window` — so a lens offering both shapes is warmed whole.
 fn master(rows: &[(&str, &str)]) -> Vista {
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id");
-    let mut shell = MockShell::new().with_metadata(metadata);
+    let shell = MockShell::new();
+    let capabilities = shell.capabilities().without(Capability::Window);
+    let mut shell = shell
+        .with_metadata(metadata)
+        .with_capabilities(capabilities);
     for (id, name) in rows {
         shell = shell.with_record(*id, named(name));
     }
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
 /// Block until the scenery reports `want` rows, driven by the generation watch.
@@ -85,36 +89,35 @@ async fn eager_seed_reaches_a_scenery_opened_over_a_cold_cache() -> Result<()> {
 
     let opener = gate.clone();
     let counted = chunk_calls.clone();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(tmp.path().join("c.redb"))
-            .on_start_blocking(false)
-            .on_start(move |dio| {
-                let dio = dio.clone();
-                let opener = opener.clone();
-                async move {
-                    opener.notified().await;
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            // The other shape the shared lens carries. An eager scenery must
-            // never route through it: this master was never asked whether it
-            // can serve a window, and in the app that mis-dispatch surfaced as
-            // a "get_windowed not supported" toast.
-            .on_load_chunk(move |_dio, _range, _sort, _sink| {
-                let counted = counted.clone();
-                async move {
-                    counted.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
+    // The pager is the other shape the shared lens carries. An eager scenery
+    // must never route through it: this master was never asked whether it can
+    // serve a window, and in the app that mis-dispatch surfaced as a
+    // "get_windowed not supported" toast.
+    let loader = Loader::paged(move |_cx, _range, _query, _sink| {
+        let counted = counted.clone();
+        async move {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    })
+    .or_eager(move |cx| {
+        let opener = opener.clone();
+        async move {
+            opener.notified().await;
+            let rows = cx.master().list_values().await?;
+            cx.cache().insert_values(rows).await
+        }
+    })
+    .blocking(false);
+    let lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("c.redb")))
+        .loader(loader)
+        .build()
+        .expect("build lens");
 
     let dio = lens
-        .make_dio(master(&[("a", "Ann"), ("b", "Bob"), ("c", "Cid")]))
+        .dio(master(&[("a", "Ann"), ("b", "Bob"), ("c", "Cid")]))
+        .build()
         .await?;
     let scenery = dio.table_scenery().open().await?;
     assert_eq!(

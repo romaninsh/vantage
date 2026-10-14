@@ -1,14 +1,16 @@
 //! Phase-3 steps: write-queue routing through `on_flash` (vs the default
-//! to-master path), capability lifting on the facade, and the
-//! `WriteFailed` event published when a route errors.
+//! to-master path), capability lifting on the facade, and the rollback
+//! (`WriteReverted`, or `WriteFailed` for a write that staged no row) when a
+//! route errors.
 
 use ciborium::Value as CborValue;
 use cucumber::{gherkin::Step, given, then, when};
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
+use vantage_diorama::ChangeFlash;
 use vantage_types::Record;
 
 use crate::bdd_support::{
-    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld, world::OnFlashMode,
+    backend::BackendKind, sqlite_runtime::dispatch, world::DioramaWorld, world::config::OnFlashMode,
 };
 
 /// Parse a gherkin data table whose first row is the header (with an `id`
@@ -66,43 +68,52 @@ async fn drain_write_queue(_w: &mut DioramaWorld) {
     }
 }
 
+/// Keep a facade write's error for [`facade_write_failed`]: a facade write
+/// returns once confirmed, or with the writer's error once rolled back.
+fn note_write<T>(w: &mut DioramaWorld, result: vantage_core::Result<T>) {
+    if let Err(e) = result {
+        w.last_error = Some(e.to_string());
+    }
+}
+
+#[then(regex = r#"^the facade write failed with "([^"]+)"$"#)]
+async fn facade_write_failed(w: &mut DioramaWorld, expected: String) {
+    let error = w
+        .last_error
+        .as_deref()
+        .expect("the facade write succeeded; expected it to fail");
+    assert!(
+        error.contains(&expected),
+        "facade write error: want {expected:?}, got {error:?}"
+    );
+}
+
 #[when("I insert via the facade")]
 async fn insert_via_facade(w: &mut DioramaWorld, step: &Step) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let facade = dio.vista();
+    let facade = w.dio.as_ref().expect("dio not created").cached();
     for (id, rec) in parse_record_table(step, "I insert via the facade") {
-        facade
-            .insert_value(&id, &rec)
-            .await
-            .expect("facade insert enqueue");
+        let result = facade.insert_value(&id, &rec).await;
+        note_write(w, result);
     }
-    // Give the write worker a chance to drain the queue and (on error)
-    // publish WriteFailed before the next step asserts on the event log.
     w.settle().await;
 }
 
 #[when("I replace via the facade")]
 async fn replace_via_facade(w: &mut DioramaWorld, step: &Step) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let facade = dio.vista();
+    let facade = w.dio.as_ref().expect("dio not created").cached();
     for (id, rec) in parse_record_table(step, "I replace via the facade") {
-        facade
-            .replace_value(&id, &rec)
-            .await
-            .expect("facade replace enqueue");
+        let result = facade.replace_value(&id, &rec).await;
+        note_write(w, result);
     }
     w.settle().await;
 }
 
 #[when("I patch via the facade")]
 async fn patch_via_facade(w: &mut DioramaWorld, step: &Step) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let facade = dio.vista();
+    let facade = w.dio.as_ref().expect("dio not created").cached();
     for (id, partial) in parse_record_table(step, "I patch via the facade") {
-        facade
-            .patch_value(&id, &partial)
-            .await
-            .expect("facade patch enqueue");
+        let result = facade.patch_value(&id, &partial).await;
+        note_write(w, result);
     }
     w.settle().await;
 }
@@ -114,45 +125,41 @@ async fn optimistic_patch(w: &mut DioramaWorld, id: String, field: String, value
     partial.insert(field, CborValue::Text(value));
     // Drives the whole optimistic flow (stage → write-through → commit/rollback).
     // A rollback returns Err; the scenario asserts the reverted state, so swallow it.
-    let _ = dio.flash_patch(id, partial).await;
+    let _ = dio.flash(ChangeFlash::partial(id, partial)).await;
     w.settle().await;
 }
 
 #[when(regex = r#"^I delete id "([^"]+)" via the facade$"#)]
 async fn delete_via_facade(w: &mut DioramaWorld, id: String) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let facade = dio.vista();
-    facade.delete(&id).await.expect("facade delete enqueue");
+    let facade = w.dio.as_ref().expect("dio not created").cached();
+    let result = facade.delete(&id).await;
+    note_write(w, result);
     w.settle().await;
 }
 
 #[when("I delete all via the facade")]
 async fn delete_all_via_facade(w: &mut DioramaWorld) {
-    let dio = w.dio.as_ref().expect("dio not created");
-    let facade = dio.vista();
-    facade
-        .delete_all()
-        .await
-        .expect("facade delete_all enqueue");
+    let facade = w.dio.as_ref().expect("dio not created").cached();
+    let result = facade.delete_all().await;
+    note_write(w, result);
     w.settle().await;
 }
 
 #[then(
-    regex = r"^the facade capability (can_insert|can_update|can_delete|can_subscribe|can_invalidate|can_count) is (true|false)$"
+    regex = r"^the facade capability (can_insert|can_update|can_delete|can_subscribe) is (true|false)$"
 )]
 async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String) {
+    use vantage_vista::Capability;
     let dio = w.dio.as_ref().expect("dio not created");
-    let facade = dio.vista();
-    let caps = facade.capabilities();
-    let actual = match flag.as_str() {
-        "can_insert" => caps.can_insert,
-        "can_update" => caps.can_update,
-        "can_delete" => caps.can_delete,
-        "can_subscribe" => caps.can_subscribe,
-        "can_invalidate" => caps.can_invalidate,
-        "can_count" => caps.can_count,
+    let facade = dio.cached();
+    let capability = match flag.as_str() {
+        "can_insert" => Capability::Insert,
+        "can_update" => Capability::Update,
+        "can_delete" => Capability::Delete,
+        "can_subscribe" => Capability::Subscribe,
         other => panic!("unknown capability flag: {other}"),
     };
+    let actual = facade.capabilities().has(capability);
     let want = expected == "true";
     assert_eq!(
         actual, want,
@@ -160,7 +167,7 @@ async fn facade_capability(w: &mut DioramaWorld, flag: String, expected: String)
     );
 }
 
-#[then(regex = r"^on_flash has been called (\d+) times?$")]
+#[then(regex = r"^the writer has been called (\d+) times?$")]
 async fn assert_on_flash_count(w: &mut DioramaWorld, n: u64) {
     let got = w.spies.on_flash.load(std::sync::atomic::Ordering::SeqCst);
     assert_eq!(got, n, "expected on_flash={n}, got {got}");
@@ -187,14 +194,15 @@ async fn master_row_count(w: &mut DioramaWorld, n: u64) {
 async fn cache_row_count(w: &mut DioramaWorld, n: u64) {
     // Poll for expected count — same reasoning as cache_record_field.
     let dio = w.dio.as_ref().expect("dio not created");
+    let cache = w.cache_of(dio).await;
     for _ in 0..200 {
-        let got = dio.cache().count().await.expect("cache count") as u64;
+        let got = cache.count().await.expect("cache count") as u64;
         if got == n {
             return;
         }
         tokio::time::advance(std::time::Duration::from_micros(1)).await;
     }
-    let got = dio.cache().count().await.expect("cache count") as u64;
+    let got = cache.count().await.expect("cache count") as u64;
     assert_eq!(got, n, "expected {n} cache rows, got {got}");
 }
 

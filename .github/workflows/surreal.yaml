@@ -2,10 +2,11 @@ name: SurrealDB Tests
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "v2"]
     paths:
       - "vantage-surrealdb/**"
       - "surreal-client/**"
+      - "vantage-vista/**"
       - "bakery_model3/**"
       - ".github/workflows/surreal.yaml"
 
@@ -103,13 +104,17 @@ jobs:
         run: cargo build -p vantage-surrealdb -p surreal-client
 
       - name: Run vantage-surrealdb and surreal-client tests
-        run: cargo test -p vantage-surrealdb -p surreal-client -- --test-threads=1
+        run: cargo test -p vantage-surrealdb -p surreal-client --features vantage-surrealdb/rhai -- --test-threads=1
         env:
           DB_ENDPOINT: cbor://localhost:8000/rpc
           DB_USER: root
           DB_PASS: root
           DB_AUTH_LEVEL: root
           DB_NS: bakery
+
+      # The `rhai` run above leaves out the builds without the script engine.
+      - name: Run vantage-surrealdb lib tests without rhai
+        run: cargo test -p vantage-surrealdb --features vista --lib
 
       - name: Build bakery_model3
         run: cargo build -p bakery_model3

@@ -26,15 +26,11 @@ fn rec(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
 
 #[test]
 fn patch_flash_derives_after_from_before_plus_patch() {
-    let flash = ChangeFlash::new(
-        FlashKind::Patch,
-        Some("c1".to_string()),
-        rec(&[("email", text("new@example.com"))]),
-    )
-    .with_before(rec(&[
-        ("email", text("old@example.com")),
-        ("plan", text("pro")),
-    ]));
+    let flash =
+        ChangeFlash::partial("c1", rec(&[("email", text("new@example.com"))])).with_before(rec(&[
+            ("email", text("old@example.com")),
+            ("plan", text("pro")),
+        ]));
 
     assert_eq!(flash.kind(), &FlashKind::Patch);
     assert_eq!(flash.id(), Some("c1"));
@@ -56,6 +52,24 @@ fn insert_flash_has_no_before_and_after_is_the_record() {
     assert_eq!(flash.kind(), &FlashKind::Insert);
     assert!(flash.before().is_none());
     assert_eq!(flash.after().unwrap().get("name"), Some(&text("Ada")));
+}
+
+#[test]
+fn insert_new_carries_no_id() {
+    let flash = ChangeFlash::insert_new(rec(&[("name", text("Ada"))]));
+    assert_eq!(flash.kind(), &FlashKind::Insert);
+    assert!(flash.id().is_none(), "the backend makes the id");
+    assert_eq!(flash.after().unwrap().get("name"), Some(&text("Ada")));
+}
+
+#[test]
+fn partial_is_a_patch() {
+    let flash = ChangeFlash::partial("c1", rec(&[("plan", text("pro"))]))
+        .with_before(rec(&[("name", text("Ada"))]));
+    assert_eq!(flash.kind(), &FlashKind::Patch);
+    let after = flash.after().unwrap();
+    assert_eq!(after.get("name"), Some(&text("Ada")));
+    assert_eq!(after.get("plan"), Some(&text("pro")));
 }
 
 #[test]
@@ -99,7 +113,7 @@ fn shadow_vista(shell: &MockShell) -> Vista {
     let metadata = VistaMetadata::new()
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_id_column("id");
-    Vista::new("shadow", Box::new(shell.clone().with_metadata(metadata)))
+    Vista::new("shadow", shell.clone().with_metadata(metadata))
 }
 
 #[tokio::test]
@@ -107,12 +121,8 @@ async fn active_record_routes_the_merged_record_into_another_dataset() -> Result
     let shadow_shell = MockShell::new();
     let shadow = shadow_vista(&shadow_shell);
 
-    let flash = ChangeFlash::new(
-        FlashKind::Patch,
-        Some("c1".to_string()),
-        rec(&[("status", text("won"))]),
-    )
-    .with_before(rec(&[("status", text("lead")), ("name", text("Ada"))]));
+    let flash = ChangeFlash::partial("c1", rec(&[("status", text("won"))]))
+        .with_before(rec(&[("status", text("lead")), ("name", text("Ada"))]));
 
     // The routing ergonomic: same record concept, different datasource.
     let record = flash.active_record(&shadow)?;

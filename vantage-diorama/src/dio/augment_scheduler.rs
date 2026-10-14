@@ -4,7 +4,7 @@
 //! read blocking on its window — registers a requester queue via
 //! [`AugmentScheduler::ticket`] and enqueues row ids into it. A small pool of
 //! worker tasks (default one, see
-//! [`LensBuilder::augment_workers`](crate::lens::LensBuilder::augment_workers))
+//! [`Tuning::augment_workers`](crate::Tuning::augment_workers))
 //! drains the queues **round-robin across requesters**, so two views with
 //! disjoint viewports interleave instead of one starving the other, and the
 //! fetch order under a single worker is deterministic.
@@ -16,14 +16,18 @@
 //! pulling — while a fetch already in flight runs to completion and lands in
 //! the cache: paid-for work is kept.
 
+mod ticket;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, Weak};
 
 use indexmap::IndexMap;
 use tokio::sync::{Notify, oneshot};
 
-use super::DioInner;
+use super::{DetailState, DioInner};
 use crate::DioEvent;
+
+pub(crate) use ticket::AugmentTicket;
 
 pub(crate) struct AugmentScheduler {
     state: Mutex<SchedState>,
@@ -131,101 +135,6 @@ impl AugmentScheduler {
     }
 }
 
-/// A requester's handle into the scheduler. Dropping it withdraws every id
-/// still sitting in its queue (and any waiter that no longer has a path to
-/// completion) — this is how a closing scenery stops pulling.
-pub(crate) struct AugmentTicket {
-    sched: Arc<AugmentScheduler>,
-    id: u64,
-}
-
-impl AugmentTicket {
-    /// Fire-and-forget: queue `ids` for hydration. Ids this requester already
-    /// queued, and ids currently in flight, are skipped — the recheck before
-    /// each fetch makes re-enqueueing safe but pointless.
-    pub(crate) fn enqueue(&self, ids: impl IntoIterator<Item = String>) {
-        let mut queued = false;
-        {
-            let mut s = self.sched.state.lock().unwrap();
-            for id in ids {
-                if s.in_flight.contains(&id) {
-                    continue;
-                }
-                let Some(queue) = s.queues.get_mut(&self.id) else {
-                    return;
-                };
-                if queue.contains(&id) {
-                    continue;
-                }
-                queue.push_back(id);
-                queued = true;
-            }
-        }
-        if queued {
-            self.sched.notify_work();
-        }
-    }
-
-    /// Queue `ids` and block until every one has settled — the facade path.
-    /// Ids already in flight are not re-queued; their waiter fires when the
-    /// running fetch completes. Returns the first failure.
-    pub(crate) async fn enqueue_and_wait(&self, ids: Vec<String>) -> Result<(), String> {
-        let mut receivers = Vec::with_capacity(ids.len());
-        {
-            let mut s = self.sched.state.lock().unwrap();
-            for id in ids {
-                let (tx, rx) = oneshot::channel();
-                s.waiters.entry(id.clone()).or_default().push(tx);
-                receivers.push(rx);
-                if s.in_flight.contains(&id) {
-                    continue;
-                }
-                let Some(queue) = s.queues.get_mut(&self.id) else {
-                    return Err("augment scheduler ticket withdrawn".to_string());
-                };
-                if !queue.contains(&id) {
-                    queue.push_back(id);
-                }
-            }
-        }
-        self.sched.notify_work();
-        let mut first_err = None;
-        for rx in receivers {
-            match rx.await {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    first_err.get_or_insert(e);
-                }
-                Err(_) => {
-                    first_err.get_or_insert("augment scheduler shut down".to_string());
-                }
-            }
-        }
-        match first_err {
-            None => Ok(()),
-            Some(e) => Err(e),
-        }
-    }
-}
-
-impl Drop for AugmentTicket {
-    fn drop(&mut self) {
-        let mut s = self.sched.state.lock().unwrap();
-        let Some(withdrawn) = s.queues.shift_remove(&self.id) else {
-            return;
-        };
-        // An id whose only path to completion was this queue will never be
-        // popped — drop its waiters so nothing awaits forever. Ids still
-        // queued elsewhere or in flight keep theirs.
-        for id in withdrawn {
-            if s.in_flight.contains(&id) || s.queues.values().any(|q| q.contains(&id)) {
-                continue;
-            }
-            s.waiters.remove(&id);
-        }
-    }
-}
-
 /// One worker: pop → hydrate → complete, parking on the notify while idle.
 /// Holds only a `Weak` to the Dio so it never keeps it alive; the Dio aborts
 /// these tasks on drop (a parked worker would otherwise idle forever).
@@ -251,6 +160,7 @@ pub(crate) async fn augment_worker_loop(dio: Weak<DioInner>, sched: Arc<AugmentS
             Ok(()) => Ok(()),
             Err(e) => {
                 let error = e.to_string();
+                inner.set_detail_state(&id, DetailState::Failed);
                 let _ = inner.event_bus.send(DioEvent::RecordLoadFailed {
                     id: id.clone(),
                     error: error.clone(),

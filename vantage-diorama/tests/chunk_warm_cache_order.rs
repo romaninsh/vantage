@@ -33,7 +33,7 @@ fn master() -> Vista {
     master_cols(&[("name", "String"), ("pos", "i64")])
 }
 
-/// `on_load_chunk` serves rows by `pos` DESC — the master's native order, which
+/// The paged loader serves rows by `pos` DESC — the master's native order, which
 /// is deliberately different from id order.
 fn paged_lens(cache: std::path::PathBuf, backend: Backend) -> Arc<vantage_diorama::Lens> {
     paged_lens_native_desc(cache, backend, "pos")
@@ -50,14 +50,14 @@ async fn warm_cache_reopen_shows_master_order_not_id_order() -> Result<()> {
         ("3".into(), rec("three", 20)),
     ]));
     let lens = paged_lens(cache, backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
 
     // First open warms the cache via a viewport load.
     {
         let s1 = dio.table_scenery().open().await?;
         let mut rx = s1.subscribe();
         let g = u64::from(*rx.borrow_and_update());
-        s1.set_viewport(0..3);
+        s1.set_viewport(0..3, 0..0);
         wait_for_gen(&mut rx, g).await;
         settle().await;
         assert_eq!(
@@ -70,7 +70,7 @@ async fn warm_cache_reopen_shows_master_order_not_id_order() -> Result<()> {
     // Reopen with the warm cache — same Dio, cache retains the 3 rows.
     let s2 = dio.table_scenery().open().await?;
     let mut rx = s2.subscribe();
-    s2.set_viewport(0..3);
+    s2.set_viewport(0..3, 0..0);
     settle().await;
     let _ = wait_for_gen(&mut rx, 0).await;
     settle().await;
@@ -96,13 +96,13 @@ async fn warm_reopen_drops_cached_rows_past_the_stated_total() -> Result<()> {
         ("3".into(), rec("three", 20)),
     ]));
     let lens = paged_lens(cache, backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
 
     {
         let s1 = dio.table_scenery().open().await?;
         let mut rx = s1.subscribe();
         let g = u64::from(*rx.borrow_and_update());
-        s1.set_viewport(0..3);
+        s1.set_viewport(0..3, 0..0);
         wait_for_gen(&mut rx, g).await;
         settle().await;
     }
@@ -112,7 +112,7 @@ async fn warm_reopen_drops_cached_rows_past_the_stated_total() -> Result<()> {
 
     let s2 = dio.table_scenery().open().await?;
     let mut rx = s2.subscribe();
-    s2.set_viewport(0..3);
+    s2.set_viewport(0..3, 0..0);
     settle().await;
     let _ = wait_for_gen(&mut rx, 0).await;
     settle().await;
@@ -144,7 +144,7 @@ async fn warm_reopen_is_settled_at_once_cold_open_is_loading() -> Result<()> {
         ("3".into(), rec("three", 20)),
     ]));
     let lens = paged_lens(cache, backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
 
     // Cold open: nothing cached yet, so the view reports loading.
     {
@@ -156,7 +156,7 @@ async fn warm_reopen_is_settled_at_once_cold_open_is_loading() -> Result<()> {
         );
         let mut rx = cold.subscribe();
         let g = u64::from(*rx.borrow_and_update());
-        cold.set_viewport(0..3);
+        cold.set_viewport(0..3, 0..0);
         wait_for_gen(&mut rx, g).await;
         settle().await;
     }
@@ -164,8 +164,9 @@ async fn warm_reopen_is_settled_at_once_cold_open_is_loading() -> Result<()> {
     // Warm reopen: the cache holds the rows — the view is settled with rows
     // the instant it opens, before any fetch has run.
     let warm = dio.table_scenery().open().await?;
-    assert!(
-        !warm.is_loading(),
+    assert_ne!(
+        warm.load_state(),
+        LoadState::Loading,
         "a warm paged reopen must not report loading",
     );
     assert_eq!(

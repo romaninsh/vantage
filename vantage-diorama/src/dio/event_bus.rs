@@ -26,7 +26,7 @@ pub enum DioEvent {
     },
     DatasetChanged,
 
-    /// The lens's own eager loader (`on_start`) has finished writing the whole
+    /// The lens's own eager start has finished writing the whole
     /// set to the cache.
     ///
     /// Distinct from [`DatasetChanged`](Self::DatasetChanged), which says only
@@ -37,13 +37,17 @@ pub enum DioEvent {
     ///
     /// That uniformity is the point. Announced as `DatasetChanged`, the seed's
     /// arrival became a question about shape, and a scenery under a lens that
-    /// also offers `on_load_chunk` answered it wrongly: re-fetch the viewport
+    /// also offers a paged loader answered it wrongly: re-fetch the viewport
     /// through a pager it never pages through. The rows sat in the cache and
     /// the grid stayed empty. A scenery cannot get this one wrong by
     /// misjudging its own shape, because it does not consult it.
     Seeded,
 
     Refreshing,
+
+    /// A write with no row to stage (an id-less insert, a `Clear`) failed.
+    /// The cache is untouched; the caller of
+    /// [`Dio::flash`](crate::Dio::flash) also receives the error.
     WriteFailed {
         id: Option<String>,
         error: String,
@@ -63,8 +67,7 @@ pub enum DioEvent {
     /// An optimistic write failed and its cache pre-image was restored. The
     /// value has reverted; sceneries surface the error by flipping the row for
     /// `id` to [`WriteFailed`](crate::RowStatus::WriteFailed). Distinct from
-    /// [`WriteFailed`](Self::WriteFailed), the fire-and-forget facade-queue
-    /// failure that does not touch the cache.
+    /// [`WriteFailed`](Self::WriteFailed), a failed write that staged no row.
     WriteReverted {
         id: String,
         error: String,
@@ -84,18 +87,26 @@ pub enum DioEvent {
         range: Range<usize>,
     },
 
-    /// Emitted by `TableScenery` after `on_load_chunk` returns `Ok`. The
+    /// Emitted by `TableScenery` after the paged loader returns `Ok`. The
     /// `range` carries the indices the callback actually requested — the
     /// callback may have pushed fewer rows.
     RangeLoaded {
         range: Range<usize>,
     },
 
-    /// Emitted by `TableScenery` when `on_load_chunk` returns `Err`. The
+    /// Emitted by `TableScenery` when the paged loader returns `Err`. The
     /// sparse map is left untouched; the slots in `range` stay whatever
     /// they were before the attempt.
     LoadFailed {
         range: Range<usize>,
+        error: String,
+    },
+
+    /// A live follow failed to re-read the set after a dropped subscription
+    /// or a change that failed to apply. The cache may be out of step with
+    /// the master until a retry succeeds; the follow retries with backoff.
+    /// Sceneries keep the rows they show, as after any failed refresh.
+    RefreshFailed {
         error: String,
     },
 

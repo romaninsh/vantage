@@ -8,9 +8,9 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::Lens;
+use vantage_diorama::{Cache, Lens, Loader};
 use vantage_types::Record;
-use vantage_vista::{Column, Reference, ReferenceKind, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Column, JoinKey, Reference, Vista, VistaMetadata, mocks::MockShell};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -50,47 +50,41 @@ fn launch_master(crew: MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_many(
             "crew",
             "launch_crew",
-            ReferenceKind::HasMany,
-            "launch_id",
+            JoinKey::new("id", "launch_id"),
         ));
     let shell = MockShell::new()
         .with_metadata(meta)
         .with_record("L1", rec(&[("id", "L1"), ("name", "Apollo 11")]))
         .with_record("L2", rec(&[("id", "L2"), ("name", "Apollo 12")]))
         .with_ref_target("crew", crew);
-    Vista::new("launches", Box::new(shell))
+    Vista::new("launches", shell)
 }
 
 /// Warm-cache-aware eager lens (mirrors the UI's `build_eager_lens`): copy the
 /// master into the cache on first open, but TRUST a warm cache — so a target
 /// whose source is down still opens from previously-cached rows.
 fn eager_lens(cache: std::path::PathBuf) -> Arc<Lens> {
-    Arc::new(
-        Lens::new()
-            .cache_at(cache)
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    if dio.cache().count().await? > 0 {
-                        return Ok(());
-                    }
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("build lens"),
-    )
+    Lens::builder()
+        .cache(Cache::redb(cache))
+        .loader(Loader::eager(|cx| async move {
+            if cx.cache().count().await? > 0 {
+                return Ok(());
+            }
+            let rows = cx.master().list_values().await?;
+            cx.cache().insert_values(rows).await
+        }))
+        .build()
+        .expect("build lens")
 }
 
 #[tokio::test]
 async fn get_ref_resolves_and_lists_the_related_rows() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = eager_lens(tmp.path().join("cache.redb"));
-    let launches = lens.make_dio(launch_master(crew_shell())).await?;
+    let launches = lens.dio(launch_master(crew_shell())).build().await?;
 
     let l1 = rec(&[("id", "L1"), ("name", "Apollo 11")]);
     let crew = launches.get_ref("crew", &l1).await?;
@@ -104,12 +98,59 @@ async fn get_ref_resolves_and_lists_the_related_rows() -> Result<()> {
 async fn get_ref_undefined_relation_errors_synchronously() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = eager_lens(tmp.path().join("cache.redb"));
-    let launches = lens.make_dio(launch_master(crew_shell())).await?;
+    let launches = lens.dio(launch_master(crew_shell())).build().await?;
     let l1 = rec(&[("id", "L1")]);
     assert!(
         launches.get_ref("nope", &l1).await.is_err(),
-        "an undefined relation is the only legitimate get_ref failure"
+        "an undefined relation is a get_ref failure"
     );
+    Ok(())
+}
+
+/// A row without its id can't select related rows, so it is an error rather
+/// than one cache table shared by every id-less row.
+#[tokio::test]
+async fn get_ref_from_a_row_without_an_id_errors() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let lens = eager_lens(tmp.path().join("cache.redb"));
+    let launches = lens.dio(launch_master(crew_shell())).build().await?;
+    let nameless = rec(&[("name", "Apollo 11")]);
+    let err = launches
+        .get_ref("crew", &nameless)
+        .await
+        .err()
+        .expect("a row without an id has no related rows to select");
+    assert!(err.to_string().contains("join column"), "{err}");
+    Ok(())
+}
+
+/// The bare target keeps the target's own name as its cache table, so a page
+/// already showing that table keeps it warm; a narrowed target is keyed by
+/// its query.
+#[tokio::test]
+async fn get_ref_target_is_the_bare_table() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let lens = eager_lens(tmp.path().join("cache.redb"));
+    let launches = lens.dio(launch_master(crew_shell())).build().await?;
+    let target = launches.get_ref_target("crew").await?;
+
+    #[cfg(feature = "diagnostics")]
+    {
+        let narrowed = launches.get_ref("crew", &rec(&[("id", "L1")])).await?;
+        assert_eq!(
+            target.diagnostics().await?.cache_table,
+            target.master().name()
+        );
+        assert_eq!(
+            narrowed.diagnostics().await?.cache_table,
+            format!(
+                "{}?{}",
+                narrowed.master().name(),
+                narrowed.master().query().key()
+            )
+        );
+    }
+    assert_eq!(target.table_scenery().open().await?.row_count(), 2);
     Ok(())
 }
 
@@ -119,7 +160,7 @@ async fn warm_retraversal_survives_a_dead_target_source() -> Result<()> {
     let lens = eager_lens(tmp.path().join("cache.redb"));
     let crew = crew_shell();
     let crew_handle = crew.clone(); // shares the fail toggle + data via Arc
-    let launches = lens.make_dio(launch_master(crew)).await?;
+    let launches = lens.dio(launch_master(crew)).build().await?;
     let l1 = rec(&[("id", "L1")]);
 
     // First traversal warms the per-parent crew cache.
@@ -141,16 +182,17 @@ async fn warm_retraversal_survives_a_dead_target_source() -> Result<()> {
 async fn each_parent_gets_an_isolated_cache() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = eager_lens(tmp.path().join("cache.redb"));
-    let launches = lens.make_dio(launch_master(crew_shell())).await?;
+    let launches = lens.dio(launch_master(crew_shell())).build().await?;
 
     let l1 = rec(&[("id", "L1")]);
     let l2 = rec(&[("id", "L2")]);
     let crew1 = launches.get_ref("crew", &l1).await?;
     let crew2 = launches.get_ref("crew", &l2).await?;
 
+    #[cfg(feature = "diagnostics")]
     assert_ne!(
-        crew1.cache_table_name(),
-        crew2.cache_table_name(),
+        crew1.diagnostics().await?.cache_table,
+        crew2.diagnostics().await?.cache_table,
         "each parent's crew lives in its own cache table"
     );
     assert_eq!(crew1.table_scenery().open().await?.row_count(), 1);

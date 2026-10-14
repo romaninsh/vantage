@@ -1,34 +1,38 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
-use tokio::sync::broadcast;
+use tokio::sync::{Notify, broadcast};
 
 use crate::dio::DioEvent;
 
-use super::state::TableSceneryState;
+use super::state::SharedRows;
 
-/// Background task that reacts to Dio-level events for the scenery.
+/// Background task that reacts to Dio-level events for the rows.
 ///
-/// Single-row events (`RecordChanged`) update the matching slot in
-/// place if known. Whole-set events (`DatasetChanged`, `Refreshing`)
-/// drop the sparse map and re-seed from cache. Our own viewport
-/// events (`ViewportChanged`, `RangeLoaded`, `LoadFailed`) are
-/// emitted *by* the loader pipeline — the reactor ignores them so
-/// it doesn't loop on its own output.
+/// Single-row events (`RecordChanged`, `RecordInserted`, `RecordRemoved`)
+/// splice the one row: into a two-pass index, or into single-pass rows that
+/// hold their ordered set whole. Other single-pass rows refresh. Whole-set
+/// events (`DatasetChanged`, `Refreshing`) drop the sparse map and re-seed
+/// from cache. Our own viewport events
+/// (`ViewportChanged`, `RangeLoaded`, `LoadFailed`) are emitted *by* the
+/// loader pipeline — the reactor ignores them so it doesn't loop on its own
+/// output.
+///
+/// Holds the rows weakly while it waits, so it never keeps them alive.
 pub(crate) async fn reload_loop(
-    state: Arc<TableSceneryState>,
+    rows: Weak<SharedRows>,
+    reload: Arc<Notify>,
     mut bus: broadcast::Receiver<DioEvent>,
 ) {
     loop {
-        if state.dio_weak.upgrade().is_none() {
-            return;
-        }
-
         tokio::select! {
-            // `set_sort` pings `reload_notify`. A two-pass
-            // scenery must rebuild its ordered index and restart hydration
-            // (single-pass `reseed_from_cache` re-sorts in memory and is
-            // enough on its own).
-            _ = state.reload_notify.notified() => {
+            // A re-pointed view pings `reload_notify` on its fresh copy. Two-
+            // pass rows must re-point their ordered index and restart
+            // hydration (single-pass `reseed_from_cache` re-sorts in memory
+            // and is enough on its own).
+            _ = reload.notified() => {
+                let Some(state) = live(&rows) else {
+                    return;
+                };
                 if state.two_pass {
                     super::two_pass::resort(state.clone()).await;
                 } else {
@@ -36,6 +40,9 @@ pub(crate) async fn reload_loop(
                 }
             }
             recv = bus.recv() => {
+                let Some(state) = live(&rows) else {
+                    return;
+                };
                 match recv {
                     // `Refreshing` is the leading edge of `dio.refresh()`; the
                     // refetch happens on the trailing `DatasetChanged`. Reseeding
@@ -49,17 +56,33 @@ pub(crate) async fn reload_loop(
                     }
                     // A changed record moves values, not membership — a
                     // two-pass scenery updates that one slot in place instead
-                    // of re-deriving its whole index.
+                    // of re-deriving its whole index. An ordered set held
+                    // whole moves the one row to its new place.
                     Ok(DioEvent::RecordChanged { id }) => {
                         if state.two_pass {
                             super::two_pass::update_row_from_cache(&state, &id).await;
                         } else {
-                            refresh(&state).await;
+                            splice_or_refresh(&state, &id).await;
                         }
                     }
-                    Ok(DioEvent::RecordInserted { .. }
-                    | DioEvent::RecordRemoved { .. }
-                    | DioEvent::DatasetChanged) => {
+                    // One row joined or left: a two-pass scenery splices its
+                    // index in place rather than re-listing it, and an
+                    // ordered set held whole splices its rows.
+                    Ok(DioEvent::RecordInserted { id }) => {
+                        if state.two_pass {
+                            super::two_pass::splice_inserted(&state, &id).await;
+                        } else {
+                            splice_or_refresh(&state, &id).await;
+                        }
+                    }
+                    Ok(DioEvent::RecordRemoved { id }) => {
+                        if state.two_pass {
+                            super::two_pass::splice_removed(&state, &id).await;
+                        } else {
+                            splice_or_refresh(&state, &id).await;
+                        }
+                    }
+                    Ok(DioEvent::DatasetChanged) => {
                         refresh(&state).await;
                     }
                     // The eager seed landed in the cache — which matters only
@@ -78,7 +101,7 @@ pub(crate) async fn reload_loop(
                     Ok(DioEvent::Seeded) => {
                         if state.two_pass {
                             super::two_pass::refresh_index(&state).await;
-                        } else if !state.paged {
+                        } else if !state.is_chunk_loaded() {
                             reseed(&state).await;
                         }
                     }
@@ -86,8 +109,12 @@ pub(crate) async fn reload_loop(
                     // stamp the slot so the grid shows the failure (single-pass
                     // rows load through their own chunk pipeline, not the
                     // scheduler, so only two-pass reacts).
+                    // A refined view re-derives its set instead: it no longer
+                    // waits for that row before it settles.
                     Ok(DioEvent::RecordLoadFailed { id, error }) => {
-                        if state.two_pass {
+                        if state.two_pass && state.local_refine() {
+                            super::two_pass::update_row_from_cache(&state, &id).await;
+                        } else if state.two_pass {
                             super::two_pass::mark_detail_failed(&state, &id, &error);
                         }
                     }
@@ -104,11 +131,14 @@ pub(crate) async fn reload_loop(
                     }
                     // A facade read announcing its hydration sweep; each
                     // hydrated row follows as `RecordChanged`, which is
-                    // what actually updates the view.
+                    // what actually updates the view. A failed follow
+                    // re-read keeps the rows on screen, as any failed
+                    // refresh does.
                     Ok(DioEvent::WriteFailed { .. })
                     | Ok(DioEvent::ViewportChanged { .. })
                     | Ok(DioEvent::RangeLoaded { .. })
                     | Ok(DioEvent::LoadFailed { .. })
+                    | Ok(DioEvent::RefreshFailed { .. })
                     | Ok(DioEvent::Hydrating { .. }) => {}
                     // Dropped events: the reactor fell behind the bus, so it
                     // cannot know what it missed and re-derives the whole set.
@@ -130,21 +160,25 @@ pub(crate) async fn reload_loop(
     }
 }
 
+/// The rows, while they and their Dio are alive.
+fn live(rows: &Weak<SharedRows>) -> Option<Arc<SharedRows>> {
+    let state = rows.upgrade()?;
+    state.dio_weak.upgrade()?;
+    Some(state)
+}
+
 /// Whole-set refresh. A two-pass scenery's row spine is its per-query index,
 /// and the cache may have gained or lost rows behind it — re-derive the index
 /// from a fresh list pass. A chunk-loaded (paged/lazy) scenery re-fetches its
 /// last viewport in place — `force_load` overwrites each slot as fresh rows
 /// land and a failed refetch keeps the existing rows, so the grid never
-/// blanks. Other sceneries reseed the sparse map from the cache (which their
-/// `on_refresh` has already restaged).
-async fn refresh(state: &Arc<TableSceneryState>) {
+/// blanks, and the refetch restates the total when the loader reports one.
+/// Other sceneries reseed the sparse map from the cache (which the refresh has
+/// already restaged).
+async fn refresh(state: &Arc<SharedRows>) {
     if state.two_pass {
         crate::scenery::table::two_pass::refresh_index(state).await;
     } else if state.is_chunk_loaded() {
-        // Re-count first: a chunk-loaded scenery caches its total at open and
-        // would otherwise never notice a row that appeared (or vanished)
-        // server-side. Then re-fetch the current viewport in place.
-        state.refresh_total().await;
         // The poll: nobody typed anything and the rows are already on screen,
         // so this re-pull is background work behind them.
         state.refresh_loaded_viewport(vantage_core::Priority::Background);
@@ -153,9 +187,22 @@ async fn refresh(state: &Arc<TableSceneryState>) {
     }
 }
 
+/// Splice row `id` into single-pass rows that hold their ordered set whole;
+/// [`refresh`] the rest, and any rows the splice can't place.
+async fn splice_or_refresh(state: &Arc<SharedRows>, id: &str) {
+    if state.splices_in_place() {
+        match state.splice_one(id).await {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(e) => tracing::warn!(error = %e, id, "TableScenery splice failed; reseeding"),
+        }
+    }
+    refresh(state).await;
+}
+
 /// Rebuild the sparse map from a fresh cache snapshot, bumping generation on
 /// success. Preserves the cache as the source of truth for index assignments.
-async fn reseed(state: &Arc<TableSceneryState>) {
+async fn reseed(state: &Arc<SharedRows>) {
     if let Err(e) = state.reseed_from_cache().await {
         tracing::error!(error = %e, "TableScenery reseed failed");
     } else {
@@ -166,13 +213,13 @@ async fn reseed(state: &Arc<TableSceneryState>) {
         // answer if nothing further is coming, and both shapes have a way to
         // still be waiting:
         //
-        // - **paged** — the cache is not the row source at all; rows arrive
-        //   from the master a window at a time. A grid applying its default
+        // - **serving windows** — the cache is not the row source at all;
+        //   rows arrive from the master a window at a time. A grid applying its default
         //   sort at mount pings this loop, and that reseed landed milliseconds
         //   before the first fetch even dispatched. The loader settles it when
         //   the window arrives.
-        // - **eager** — the cache IS the row source, but a detached `on_start`
-        //   may still be filling it. An empty cache and an empty table are
+        // - **eager** — the cache IS the row source, but a detached eager
+        //   start may still be filling it. An empty cache and an empty table are
         //   indistinguishable from here; `seed_complete` is what tells them
         //   apart. Without it a grid flashed "no rows" and then filled in.
         //
@@ -183,7 +230,7 @@ async fn reseed(state: &Arc<TableSceneryState>) {
             .upgrade()
             .map(|d| d.seed_complete.load(std::sync::atomic::Ordering::SeqCst))
             .unwrap_or(true);
-        if has_rows || (!state.paged && seeded) {
+        if has_rows || (!state.is_chunk_loaded() && seeded) {
             state.mark_settled("reactor reseed");
         }
         state.bump_generation();

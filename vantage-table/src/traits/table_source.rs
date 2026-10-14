@@ -15,8 +15,8 @@ use vantage_types::{Entity, Record};
 
 use crate::{column::core::ColumnType, table::Table, traits::column_like::ColumnLike};
 
-/// Trait for table data sources that defines column type separate from execution
-/// TableSource represents a data source that can create and manage tables
+/// A data source that holds tables: it names their column, value, id,
+/// source and condition types, and runs `Table`'s reads and writes.
 #[async_trait]
 pub trait TableSource: DataSource + Clone + 'static {
     type Column<Type>: ColumnLike<Type> + Clone
@@ -126,9 +126,11 @@ pub trait TableSource: DataSource + Clone + 'static {
         parameters: Vec<ExpressiveEnum<Self::Value>>,
     ) -> Expression<Self::Value>;
 
-    /// Create a search condition matching `search_value` across the table's
-    /// searchable fields. This is a *server-side* capability — it pushes the
-    /// match down to the backend's query engine.
+    /// Create a search condition matching `search_value` across the columns
+    /// of [`Table::search_columns`]: those flagged `Searchable`, or every
+    /// column when none is. A backend may leave out columns it can't filter
+    /// on (dotted paths, imported columns). This is a *server-side*
+    /// capability — it pushes the match down to the backend's query engine.
     ///
     /// Different vendors implement search differently:
     /// - SQL: `field LIKE '%value%'` (returns Expression)

@@ -46,10 +46,11 @@ pub fn round_to(expr: impl Expressive<AnySurrealType>, places: i64) -> Expr {
     )
 }
 
-/// `coalesce(a, b)` → `a ?? b` (SurrealDB null-coalescing operator).
+/// `coalesce(a, b)` → `(a ?? b)`. Parenthesised: `??` binds looser than
+/// `=`, so a bare `a ?? b = 0` would read as `a ?? (b = 0)`.
 pub fn coalesce(a: impl Expressive<AnySurrealType>, b: impl Expressive<AnySurrealType>) -> Expr {
     Expression::new(
-        "{} ?? {}",
+        "({} ?? {})",
         vec![
             ExpressiveEnum::Nested(a.expr()),
             ExpressiveEnum::Nested(b.expr()),
@@ -434,8 +435,13 @@ mod tests {
     fn coalesce_and_nullif() {
         assert_eq!(
             coalesce(surreal_expr!("array::first(x)"), "n/a".to_string()).preview(),
-            r#"array::first(x) ?? "n/a""#
+            r#"(array::first(x) ?? "n/a")"#
         );
+        let compared = Expression::new(
+            "{} = 0",
+            vec![ExpressiveEnum::Nested(coalesce(surreal_expr!("x"), 0i64))],
+        );
+        assert_eq!(compared.preview(), "(x ?? 0) = 0");
         assert_eq!(
             nullif(Identifier::new("qty"), 0i64).preview(),
             "IF qty = 0 THEN NONE ELSE qty END"

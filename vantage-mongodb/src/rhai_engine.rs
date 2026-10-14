@@ -3,13 +3,15 @@
 //! MongoDB's query language is data, so there is no expression builder: a
 //! script writes filters and pipeline stages as Rhai maps, which convert
 //! straight to BSON (see [`convert`]). The vocabulary only adds constructors
-//! for the BSON types a map literal cannot spell:
+//! for the BSON types a map literal cannot spell, in the `mongo::` namespace:
 //!
-//! - `oid("<24 hex chars>")` → `ObjectId` (`oid(<ObjectId>)` returns it as is)
-//! - `date("<RFC 3339>")` → BSON `DateTime` (`date(<DateTime>)` likewise)
-//! - `doc([[key, value], …])` → a document keeping the given key order
+//! - `mongo::oid("<24 hex chars>")` → `ObjectId` (`mongo::oid(<ObjectId>)`
+//!   returns it as is)
+//! - `mongo::date("<RFC 3339>")` → BSON `DateTime` (`mongo::date(<DateTime>)`
+//!   likewise)
+//! - `mongo::doc([[key, value], …])` → a document keeping the given key order
 //!
-//! `MongoTableShell::register_rhai_extensions` layers this under the vista
+//! `MongoTableShell::register_rhai_extensions` layers this beside the vista
 //! verbs and adds `self.with_condition(#{…})`.
 
 pub mod convert;
@@ -17,8 +19,8 @@ pub mod convert;
 use bson::oid::ObjectId;
 use bson::{DateTime, Document};
 use vantage_core::error;
-use vantage_rhai::Vocab;
 use vantage_rhai::rhai::{Array, Engine, EvalAltResult, ImmutableString};
+use vantage_rhai::{Namespace, Vocab};
 
 pub use convert::{bson_to_dynamic, dynamic_to_bson, dynamic_to_document, map_to_document};
 
@@ -33,35 +35,41 @@ impl Vocab for MongoVocab {
     }
 }
 
-/// Register the BSON constructors and their types onto `engine`.
+/// Register the BSON types onto `engine`, and their constructors as
+/// `mongo::oid`, `mongo::date` and `mongo::doc`.
 pub fn register_mongo_onto(engine: &mut Engine) {
     engine
         .register_type_with_name::<ObjectId>("ObjectId")
         .register_fn("to_string", |oid: &mut ObjectId| oid.to_hex())
-        .register_fn("to_debug", |oid: &mut ObjectId| format!("oid(\"{oid}\")"))
-        .register_fn("oid", parse_oid)
-        .register_fn("oid", |oid: ObjectId| oid);
+        .register_fn("to_debug", |oid: &mut ObjectId| {
+            format!("mongo::oid(\"{oid}\")")
+        });
 
     engine
         .register_type_with_name::<DateTime>("DateTime")
         .register_fn("to_string", |dt: &mut DateTime| rfc3339(dt))
         .register_fn("to_debug", |dt: &mut DateTime| {
-            format!("date(\"{}\")", rfc3339(dt))
-        })
-        .register_fn("date", parse_date)
-        .register_fn("date", |dt: DateTime| dt);
+            format!("mongo::date(\"{}\")", rfc3339(dt))
+        });
 
     engine
         .register_type_with_name::<Document>("Document")
         .register_fn("to_string", |doc: &mut Document| doc.to_string())
-        .register_fn("to_debug", |doc: &mut Document| doc.to_string())
-        .register_fn("doc", ordered_doc);
+        .register_fn("to_debug", |doc: &mut Document| doc.to_string());
+
+    let mut ns = Namespace::new("mongo");
+    ns.func("oid", parse_oid)
+        .func("oid", |oid: ObjectId| oid)
+        .func("date", parse_date)
+        .func("date", |dt: DateTime| dt)
+        .func("doc", ordered_doc);
+    ns.register(engine);
 }
 
 fn parse_oid(hex: ImmutableString) -> FnResult<ObjectId> {
     ObjectId::parse_str(hex.as_str()).map_err(|e| {
         error!(
-            "oid() needs a 24-character hex string",
+            "mongo::oid() needs a 24-character hex string",
             value = hex.to_string(),
             details = e.to_string()
         )
@@ -73,7 +81,7 @@ fn parse_oid(hex: ImmutableString) -> FnResult<ObjectId> {
 fn parse_date(text: ImmutableString) -> FnResult<DateTime> {
     DateTime::parse_rfc3339_str(text.as_str()).map_err(|e| {
         error!(
-            "date() needs an RFC 3339 timestamp",
+            "mongo::date() needs an RFC 3339 timestamp",
             value = text.to_string(),
             details = e.to_string()
         )
@@ -87,25 +95,27 @@ fn rfc3339(dt: &DateTime) -> String {
         .unwrap_or_else(|_| dt.to_string())
 }
 
-/// `doc([["b", 1], ["a", 2]])`: each element a `[key, value]` pair.
+/// `mongo::doc([["b", 1], ["a", 2]])`: each element a `[key, value]` pair.
 fn ordered_doc(pairs: Array) -> FnResult<Document> {
     let mut doc = Document::new();
     for (index, pair) in pairs.into_iter().enumerate() {
         let pair = pair.try_cast::<Array>().filter(|p| p.len() == 2);
         let Some(mut pair) = pair else {
-            return Err(error!("doc() needs [key, value] pairs", pair = index)
-                .to_string()
-                .into());
+            return Err(
+                error!("mongo::doc() needs [key, value] pairs", pair = index)
+                    .to_string()
+                    .into(),
+            );
         };
         let value = pair.pop().expect("pair has two elements");
         let key = pair.pop().expect("pair has two elements");
         let Some(key) = key.into_immutable_string().ok() else {
-            return Err(error!("doc() keys must be strings", pair = index)
+            return Err(error!("mongo::doc() keys must be strings", pair = index)
                 .to_string()
                 .into());
         };
         if doc.contains_key(key.as_str()) {
-            return Err(error!("doc() repeats a key", key = key.to_string())
+            return Err(error!("mongo::doc() repeats a key", key = key.to_string())
                 .to_string()
                 .into());
         }
@@ -138,32 +148,60 @@ mod tests {
     #[test]
     fn oid_builds_an_object_id() {
         let oid = ObjectId::new();
-        assert_eq!(bson(&format!(r#"oid("{oid}")"#)), Bson::ObjectId(oid));
-        assert_eq!(bson(&format!(r#"oid(oid("{oid}"))"#)), Bson::ObjectId(oid));
-        let shown = eval(&format!(r#"`${{oid("{oid}")}}`"#)).unwrap();
+        assert_eq!(
+            bson(&format!(r#"mongo::oid("{oid}")"#)),
+            Bson::ObjectId(oid)
+        );
+        assert_eq!(
+            bson(&format!(r#"mongo::oid(mongo::oid("{oid}"))"#)),
+            Bson::ObjectId(oid)
+        );
+        let shown = eval(&format!(r#"`${{mongo::oid("{oid}")}}`"#)).unwrap();
         assert_eq!(shown.into_string().unwrap(), oid.to_hex());
     }
 
     #[test]
     fn bad_oid_errors() {
-        let err = eval(r#"oid("nope")"#).unwrap_err();
-        assert!(err.contains("oid()") && err.contains("nope"), "{err}");
+        let err = eval(r#"mongo::oid("nope")"#).unwrap_err();
+        assert!(
+            err.contains("mongo::oid()") && err.contains("nope"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn constructors_need_the_namespace() {
+        for (code, name) in [
+            (r#"oid("000000000000000000000001")"#, "oid"),
+            (r#"date("2026-01-02T03:04:05Z")"#, "date"),
+            ("doc([])", "doc"),
+        ] {
+            let err = eval(code).unwrap_err();
+            assert!(
+                err.contains("Function not found") && err.contains(name),
+                "{code}: {err}"
+            );
+        }
     }
 
     #[test]
     fn date_builds_a_bson_datetime() {
         let expected = DateTime::parse_rfc3339_str("2026-01-02T03:04:05Z").unwrap();
         assert_eq!(
-            bson(r#"date("2026-01-02T03:04:05Z")"#),
+            bson(r#"mongo::date("2026-01-02T03:04:05Z")"#),
             Bson::DateTime(expected)
         );
-        let err = eval(r#"date("yesterday")"#).unwrap_err();
-        assert!(err.contains("date()") && err.contains("yesterday"), "{err}");
+        let err = eval(r#"mongo::date("yesterday")"#).unwrap_err();
+        assert!(
+            err.contains("mongo::date()") && err.contains("yesterday"),
+            "{err}"
+        );
     }
 
     #[test]
     fn doc_keeps_key_order() {
-        let built = bson(r#"doc([["b", 1], ["a", #{x: oid("000000000000000000000001")}]])"#);
+        let built =
+            bson(r#"mongo::doc([["b", 1], ["a", #{x: mongo::oid("000000000000000000000001")}]])"#);
         let Bson::Document(built) = built else {
             panic!("expected a document")
         };
@@ -172,13 +210,13 @@ mod tests {
             built,
             doc! { "b": 1_i64, "a": { "x": ObjectId::parse_str("000000000000000000000001").unwrap() } }
         );
-        let err = eval(r#"doc([["a"]])"#).unwrap_err();
+        let err = eval(r#"mongo::doc([["a"]])"#).unwrap_err();
         assert!(err.contains("pair"), "{err}");
     }
 
     #[test]
     fn doc_rejects_duplicate_keys() {
-        let err = eval(r#"doc([["n", 1], ["dup", 2], ["dup", 3]])"#).unwrap_err();
+        let err = eval(r#"mongo::doc([["n", 1], ["dup", 2], ["dup", 3]])"#).unwrap_err();
         assert!(
             err.contains("repeats a key") && err.contains("dup"),
             "{err}"

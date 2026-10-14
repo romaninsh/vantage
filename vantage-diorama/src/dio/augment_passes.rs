@@ -1,21 +1,23 @@
 //! The two-pass augmentation passes, owned by the Dio.
 //!
-//! A Dio configured with [`Dio::augment`](crate::Dio::augment) drives its own
-//! list / detail / refresh passes from the augmentation config it holds. These
-//! free functions are the shared bodies, read off `DioInner` — distinct from a
-//! Lens that registers explicit `on_list_page`/`on_load_detail` callbacks for
-//! hand-rolled two-pass.
+//! A Dio built with [`DioBuilder::augment`](crate::DioBuilder::augment) drives
+//! its own list / detail / refresh passes from the augmentations it holds.
+//! These free functions are the shared bodies, read off `DioInner`.
+//! Augmentation is the only way to declare two-pass loading.
+
+mod hydrate;
+mod page;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
-use vantage_vista_factory::VistaCatalog;
 
-use crate::augment::Augmentation;
 use crate::dio::Dio;
 use crate::lens::CacheStatus;
-use crate::ops::QueryDescriptor;
+
+pub(crate) use hydrate::{hydrate_gaps, hydrate_one};
+pub(crate) use page::{ListedPage, list_page};
 
 /// What prompted a refresh — the two differ in how much they are entitled to
 /// assume about the DETAIL source.
@@ -26,170 +28,11 @@ use crate::ops::QueryDescriptor;
 /// saying "re-check everything", and pays for a full re-probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefreshKind {
-    /// The periodic ticker (`refresh_interval`).
+    /// The periodic timer (`Refresher::every`).
     Scheduled,
-    /// Someone asked — a Refresh button, `Dio::refresh`, a scenery's
-    /// `request_refresh`.
+    /// Someone asked — a Refresh button, `Dio::refresh`, or a scenery's
+    /// `refresh_source`.
     Requested,
-}
-
-/// Capability-aware **list pass**: push the `[offset, offset+limit)` window down
-/// to the master when it advertises `can_fetch_window`, otherwise list the whole
-/// set and window it locally so sequential paging still terminates.
-pub(crate) async fn list_page(
-    dio: &Dio,
-    desc: QueryDescriptor,
-) -> Result<Vec<(String, Record<CborValue>)>> {
-    let master = dio.master();
-    if master.capabilities().can_fetch_window {
-        master.fetch_window(desc.offset, desc.limit).await
-    } else {
-        let rows = master.list_values().await?;
-        Ok(rows
-            .into_iter()
-            .skip(desc.offset)
-            .take(desc.limit)
-            .collect())
-    }
-}
-
-/// **Detail pass**: read the cheap list-pass row from the cache, run every
-/// [`Augmentation`] against it (resolve a detail Vista, fetch, merge), return the
-/// enriched row.
-pub(crate) async fn load_detail_with(
-    dio: &Dio,
-    id: String,
-    catalog: &VistaCatalog,
-    augmentations: &[Augmentation],
-) -> Result<Record<CborValue>> {
-    let mut row = dio.cache().get_value(&id).await?.unwrap_or_default();
-    let master_id_column = dio.master().get_id_column().unwrap_or("id").to_string();
-    let dio_name = dio.master().name().to_string();
-    for aug in augmentations {
-        aug.augment_row(&dio_name, &master_id_column, &mut row, catalog)
-            .await?;
-    }
-    Ok(row)
-}
-
-/// The canonical per-row hydration body, run by the augment scheduler's
-/// workers: re-check the cache (an id another requester already settled
-/// costs one read and zero fetches — this is what makes cross-view dedup
-/// total), fetch the detail, merge it onto the cheap list-pass row, persist
-/// as `Complete`, and broadcast `RecordChanged` so every open view updates
-/// its slot.
-pub(crate) async fn hydrate_one(inner: &std::sync::Arc<super::DioInner>, id: &str) -> Result<()> {
-    let augmented = inner.augmented_columns.read().unwrap().clone();
-    let gap_aware = inner.has_dio_augment() && !augmented.is_empty();
-    if inner.augment_settled_empty.lock().unwrap().contains(id) {
-        // Hydrated before and found no detail record — a legitimate,
-        // permanent gap until the next refresh clears the set.
-        return Ok(());
-    }
-    if let Some((row, CacheStatus::Complete)) =
-        inner.cache.get_value_with_status(id).await.ok().flatten()
-        && (!gap_aware || !has_augment_gap(&row, &augmented))
-    {
-        return Ok(());
-    }
-
-    let dio = Dio {
-        inner: inner.clone(),
-    };
-    let detail = if inner.has_dio_augment() {
-        let catalog = inner.augment_catalog.read().unwrap().clone();
-        let augmentations = inner.augmentations.read().unwrap().clone();
-        match (catalog, augmentations) {
-            (Some(catalog), Some(augmentations)) => {
-                load_detail_with(&dio, id.to_string(), &catalog, &augmentations).await?
-            }
-            _ => Default::default(),
-        }
-    } else if let Some(cb) = inner.lens.callbacks.on_load_detail.as_ref() {
-        cb(&dio, id.to_string()).await?
-    } else {
-        return Ok(());
-    };
-
-    // Merge the detail columns onto the cheap list-pass row so the list
-    // columns survive hydration, then mark the row Complete.
-    let mut merged = inner
-        .cache
-        .get_value(id)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    for (k, v) in detail {
-        merged.insert(k, v);
-    }
-    inner
-        .cache
-        .insert_value_with_status(id, &merged, CacheStatus::Complete)
-        .await?;
-    // Record which way this row settled. Gapped AFTER hydration means the
-    // detail source has no record to fill it (legitimate absence); filled
-    // means it is done. Either way the sweep must be able to skip it without
-    // reading it back — otherwise gap → hydrate → still gapped → generation
-    // bump → sweep is a busy loop, and even a filled row costs a cache read
-    // on every sweep to re-establish what we already know here. Both sets are
-    // cleared by the refresh pass.
-    if gap_aware && has_augment_gap(&merged, &augmented) {
-        inner
-            .augment_settled_empty
-            .lock()
-            .unwrap()
-            .insert(id.to_string());
-    } else {
-        inner.augment_settled.lock().unwrap().insert(id.to_string());
-    }
-    let _ = inner
-        .event_bus
-        .send(crate::DioEvent::RecordChanged { id: id.to_string() });
-    Ok(())
-}
-
-/// Hydrate every row in `rows` that still has an augment gap, blocking until
-/// the scheduler has settled them all, then swap the enriched rows into
-/// `rows` from the cache. Before the sweep a single
-/// [`DioEvent::Hydrating`](crate::DioEvent::Hydrating) carries the pending
-/// count — a consumer blocking on a facade read can tell the user what's
-/// coming — and every hydrated row emits `RecordChanged` for progress. Going
-/// through the scheduler means a facade read racing a scenery's viewport
-/// shares its fetches instead of duplicating them.
-pub(crate) async fn hydrate_gaps(
-    dio: &Dio,
-    rows: &mut indexmap::IndexMap<String, Record<CborValue>>,
-) -> Result<()> {
-    // Two-pass covers both declarative augmentation and a hand-rolled
-    // `on_load_detail` lens callback — facade reads hydrate through either.
-    if !dio.inner.is_two_pass() {
-        return Ok(());
-    }
-    let augmented = dio.inner.augmented_columns.read().unwrap().clone();
-    let pending: Vec<String> = rows
-        .iter()
-        .filter(|(_, row)| has_augment_gap(row, &augmented))
-        .map(|(id, _)| id.clone())
-        .collect();
-    if pending.is_empty() {
-        return Ok(());
-    }
-    let _ = dio.inner.event_bus.send(crate::DioEvent::Hydrating {
-        pending: pending.len(),
-    });
-    dio.inner.ensure_augment_workers();
-    let ticket = dio.inner.augment_scheduler.ticket();
-    ticket
-        .enqueue_and_wait(pending.clone())
-        .await
-        .map_err(|e| vantage_core::error!("augment hydration failed", detail = e))?;
-    for id in pending {
-        if let Some(full) = dio.inner.cache.get_value(&id).await? {
-            rows.insert(id, full);
-        }
-    }
-    Ok(())
 }
 
 /// **Refresh pass**: re-run the cheap list pass and reconcile against the cache
@@ -208,48 +51,21 @@ pub(crate) async fn hydrate_gaps(
 /// reserved for rows that were never filled.
 pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
     let fresh = dio.master().list_values().await?;
-    let cache = dio.cache();
+    let cache = &dio.inner.cache;
     let existing = cache.list_values_with_status().await?;
-    let augmented = dio.inner.augmented_columns.read().unwrap().clone();
-    // A refreshed detail source may have gained records for rows that
-    // previously settled empty — let them fetch again. Only on an explicit
-    // request, though.
-    //
-    // Doing it on the scheduled tick makes the sweep unable to converge
-    // whenever absences are common: every settled-empty row is un-settled,
-    // re-fetched, found empty again, and re-settled — then the next tick wipes
-    // the answer and asks again. With a 2s cadence and a detail source that
-    // legitimately has no record for most rows, that is a permanent background
-    // sweep (measured: ~33 detail fetches/sec that never finish), and every
-    // hydration writes the row back and broadcasts `RecordChanged`, so the UI
-    // repaints continuously. The set exists precisely to stop that, and
-    // clearing it on a timer defeated it.
-    //
-    // Cost of the narrower rule: a detail record that appears *after* a row
-    // settled empty is not picked up by the ticker alone. That is the right
-    // trade — a scheduled re-pull of the MASTER is no evidence the DETAIL
-    // source changed, and an explicit refresh (which is what a user reaches
-    // for when data looks stale) still re-probes everything.
-    // The FILLED memo goes on every refresh, scheduled or not: the reconcile
-    // below demotes changed rows to `Incomplete` precisely to make the detail
-    // pass refetch them, and a memo saying "settled" would have the sweep skip
-    // them forever. Costs one re-read per row on the next sweep, no fetches.
-    dio.inner.augment_settled.lock().unwrap().clear();
-
-    if matches!(kind, RefreshKind::Requested) {
-        let cleared = {
-            let mut settled = dio.inner.augment_settled_empty.lock().unwrap();
-            let n = settled.len();
-            settled.clear();
-            n
-        };
-        if cleared > 0 {
-            tracing::debug!(
-                target: "vantage_diorama::augment",
-                cleared,
-                "explicit refresh — re-probing rows that previously had no detail record",
-            );
-        }
+    let augmented = &dio.inner.augmented_columns;
+    // A detail record that appears after a row settled empty is picked up by
+    // a requested refresh only (see `detail_state`). With a 2s ticker and a
+    // detail source that has no record for most rows, re-probing them on
+    // each tick measured ~33 detail fetches/sec that never finished, each
+    // one a `RecordChanged` and a repaint.
+    let scheduled = matches!(kind, RefreshKind::Scheduled);
+    dio.inner.clear_detail_states(scheduled);
+    if !scheduled {
+        tracing::debug!(
+            target: "vantage_diorama::augment",
+            "explicit refresh — re-probing rows that previously had no detail record",
+        );
     }
 
     for (id, list_row) in &fresh {
@@ -258,7 +74,7 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
         if dio.inner.pending_flashes.contains(id) {
             continue;
         }
-        let gap = has_augment_gap(list_row, &augmented);
+        let gap = has_augment_gap(list_row, augmented);
         let status = if gap {
             CacheStatus::Incomplete
         } else {
@@ -266,7 +82,7 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
         };
         match existing.get(id) {
             Some((old, _)) => {
-                if !list_fields_changed(list_row, old, &augmented) {
+                if !list_fields_changed(list_row, old, augmented) {
                     continue;
                 }
                 tracing::debug!(

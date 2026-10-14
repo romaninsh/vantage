@@ -39,31 +39,27 @@ pub(crate) fn match_nothing() -> GraphqlCondition {
     GraphqlCondition::Not(Box::new(GraphqlCondition::And(Vec::new())))
 }
 
-/// Columns a quicksearch looks in: those flagged searchable, or — when no
-/// column is — every string-typed column other than the id. Dotted paths
-/// are left out either way: Hasura filters a nested field with a nested
-/// object, which the renderer doesn't produce.
+/// Columns a quicksearch looks in: [`Table::search_columns`], those flagged
+/// searchable or every column. When none is flagged, only string-typed
+/// columns other than the id are kept, since `_ilike` takes text. Dotted
+/// paths are left out either way: Hasura filters a nested field with a
+/// nested object, which the renderer doesn't produce.
 ///
 /// Which rule applies is settled before dotted paths are dropped, so a table
 /// whose only searchable columns are dotted searches nothing rather than
 /// widening to every string column.
 fn search_columns<E: Entity<AnyGraphqlType>>(table: &Table<GraphqlApi, E>) -> Vec<String> {
-    let searchable = |col: &Column<AnyGraphqlType>| col.flags().contains(&ColumnFlag::Searchable);
-    let any_flagged = table.columns().values().any(searchable);
-    let id = table.id_field().map(|c| c.name().to_string());
-    table
-        .columns()
+    let columns = table.search_columns();
+    let flagged = columns
         .iter()
-        .filter(|(_, col)| {
-            if any_flagged {
-                searchable(col)
-            } else {
-                col.get_type() == std::any::type_name::<String>()
-            }
-        })
-        .filter(|(name, _)| !name.contains('.'))
-        .filter(|(name, _)| any_flagged || Some(name.as_str()) != id.as_deref())
-        .map(|(name, _)| name.clone())
+        .any(|col| col.flags().contains(&ColumnFlag::Searchable));
+    let id = table.id_field().map(|c| c.name().to_string());
+    columns
+        .into_iter()
+        .filter(|col| flagged || col.get_type() == std::any::type_name::<String>())
+        .filter(|col| flagged || Some(col.name()) != id.as_deref())
+        .filter(|col| !col.name().contains('.'))
+        .map(|col| col.name().to_string())
         .collect()
 }
 

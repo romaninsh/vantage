@@ -1,5 +1,9 @@
 # What's New in Vantage 0.4
 
+```admonish note title="Historical snippets"
+The snippets show the 0.4 API. They aren't compiled against the current crates.
+```
+
 Version 0.4 is a **ground-up rewrite of the type system** and a massive expansion of persistence
 support. If 0.3 proved the architecture, 0.4 makes it production-ready.
 
@@ -15,7 +19,7 @@ There are two parallel trait hierarchies — one for typed entities, one for sch
 
 **DataSet** works with your Rust structs:
 
-```rust
+```rust,ignore
 // A CSV file is read-only — and that's fine
 impl ReadableDataSet<Product> for CsvFile { /* ... */ }
 
@@ -32,7 +36,7 @@ impl WritableDataSet<Client> for SurrealDB { /* ... */ }
 instead of entities. Useful for dynamic tables, config-driven schemas, or when you don't have (or
 want) a struct:
 
-```rust
+```rust,ignore
 // Read raw records — no struct needed
 impl ReadableValueSet for CsvFile { /* returns Record<CsvType> */ }
 
@@ -105,7 +109,7 @@ each trait step by step — from type system to full CRUD to multi-backend CLI.
 The `vantage-types` crate is the foundation of 0.4. Each persistence defines its own type universe
 via the `vantage_type_system!` macro — no more funnelling everything through JSON:
 
-```rust
+```rust,ignore
 vantage_type_system!(AnySurrealType, SurrealDB);   // CBOR-native types
 vantage_type_system!(AnyMongoType, MongoDB);        // BSON-native types
 vantage_type_system!(AnySqliteType, SqliteDB);      // CBOR with integer/real/text markers
@@ -126,7 +130,7 @@ type and Rust type.
 
 Strict conversions replace silent casting — `try_into()` is explicit and fallible:
 
-```rust
+```rust,ignore
 let val: i64 = surreal_value.try_into()?;   // fails if it's actually a string
 let val: String = mongo_value.try_into()?;   // fails if it's actually a number
 ```
@@ -138,7 +142,7 @@ parameterised by the value type `T`, so a count query on SurrealDB returns `AnyS
 the same query on Postgres returns `AnyPostgresType`. **`AssociatedQueryable<R>`** then converts
 that into your expected Rust type — all type-checked at compile time.
 
-```rust
+```rust,ignore
 // Column preserves type through erasure
 let price = Column::<i64>::new("price").with_flag(ColumnFlag::Indexed);
 let erased = Column::<AnyType>::from_column(price);
@@ -166,7 +170,7 @@ relationships, and aggregates. You don't build any of this yourself; it comes fr
 `ReadableValueSet`, `WritableValueSet`, `InsertableValueSet`, and `ActiveRecordSet`. All of these
 come for free once your persistence implements `TableSource`.
 
-```rust
+```rust,ignore
 let products = Product::table(db)
     .with_condition(products["is_deleted"].eq(false))
     .with_order(products["price"].desc())
@@ -214,7 +218,7 @@ The `vantage-dataset` crate introduces two flavours of the active record pattern
 **`ActiveEntity<D, E>`** — wraps a typed entity. Derefs straight to your struct, tracks the ID, and
 saves back to any `WritableDataSet`:
 
-```rust
+```rust,ignore
 let mut user = users.get_entity(&id).await?.unwrap();
 user.email = "new@example.com".to_string();  // modify via DerefMut
 user.save().await?;                           // persists the change
@@ -223,7 +227,7 @@ user.save().await?;                           // persists the change
 **`ActiveRecord<D>`** — same idea, but schema-less. Works with `Record<Value>` instead of a concrete
 struct, perfect for dynamic tables or config-driven entities:
 
-```rust
+```rust,ignore
 let mut rec = table.get_value_record(&id).await?;
 rec["status"] = json!("active");
 rec.save().await?;
@@ -234,7 +238,7 @@ Both auto-unlock via blanket impls — if your datasource implements `ReadableDa
 
 ```admonish example title="Get-or-create pattern"
 The API is designed for real-world patterns like get-or-create:
-~~~rust
+~~~rust,ignore
 let mut user = users.get_entity(&id).await?
     .unwrap_or_else(|| users.new_entity(id, User::default()));
 user.name = "Alice".into();
@@ -251,7 +255,7 @@ persistence's own type. A SurrealDB table returns `Record<AnySurrealType>`, Post
 `Record<AnyPostgresType>`, MongoDB returns `Record<AnyMongoType>`. This ensures the full range of
 your persistence's native types is preserved — not narrowed down to what JSON can represent.
 
-```rust
+```rust,ignore
 // Each persistence speaks its native types
 let record: Record<AnySurrealType> = surreal_table.get_value(&id).await?;
 let record: Record<AnyPostgresType> = pg_table.get_value(&id).await?;
@@ -279,7 +283,7 @@ type fidelity. All backends followed — Postgres, MySQL, SQLite.
 MongoDB, CSV, and REST API persistences joined SurrealDB and SQLite. CSV evaluates conditions
 in-memory. MongoDB uses native BSON filters — no expression translation needed:
 
-```rust
+```rust,ignore
 // Same handle_commands function — different persistences
 handle_commands(SurrealDB::table("product")).await?;
 handle_commands(CsvFile::table("products.csv")).await?;
@@ -293,7 +297,7 @@ handle_commands(MongoDB::table("product")).await?;
 `vantage-core` introduced `VantageError` with structured context — replacing the patchwork of
 `Box<dyn Error>` and `.unwrap()` calls:
 
-```rust
+```rust,ignore
 use vantage_core::{error, util::error::Context, Result};
 
 connection.connect()
@@ -308,7 +312,7 @@ connection.connect()
 internal `JsonAdapter` for on-the-fly conversion. This means your generic code works with
 persistences that don't even share a value type:
 
-```rust
+```rust,ignore
 // Wrap a MongoDB table for use in generic code
 let any: AnyTable = AnyTable::from_table(mongo_products);
 let any: AnyTable = AnyTable::from_table(csv_products);

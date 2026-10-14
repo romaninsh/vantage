@@ -9,10 +9,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::broadcast::{Receiver, error::RecvError};
 use tokio::task::JoinHandle;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Dio, Lens, SortDir, TableScenery};
-use vantage_memory::vista::Catalog;
-use vantage_memory::{MemoryChange, MemoryStore, MemoryTableHandle, MemoryTableShell};
-use vantage_vista::{Vista, VistaMetadata};
+use vantage_diorama::{Cache, Dio, Lens, Loader, LoaderCx, TableScenery};
+use vantage_memory::{
+    MemoryCatalog, MemoryChange, MemoryStore, MemoryTableHandle, MemoryTableShell,
+};
+use vantage_vista::{SortDirection, Vista, VistaMetadata};
 
 use crate::sampler::EventTotals;
 
@@ -75,22 +76,17 @@ pub fn sum(loads: &[TableLoad]) -> EventTotals {
         })
 }
 
-/// A lens whose Dios warm their cache from the master at start; `watch`
-/// keeps them live from there.
+/// A lens whose Dios warm their cache from the master at start; the live
+/// follow keeps them current from there.
 pub fn lens(cache_dir: &Path) -> Result<Arc<Lens>, String> {
-    let lens = Lens::new()
-        .cache_at(cache_dir.join("cache.redb"))
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
-        })
+    Lens::builder()
+        .cache(Cache::redb(cache_dir.join("cache.redb")))
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            let rows = cx.master().list_values().await?;
+            cx.cache().insert_values(rows).await
+        }))
         .build()
-        .map_err(|e| format!("lens: {e}"))?;
-    Ok(Arc::new(lens))
+        .map_err(|e| format!("lens: {e}"))
 }
 
 /// Count `table`'s changes. With a `lens`, the table also backs a Dio that
@@ -109,20 +105,21 @@ pub async fn attach(
         Some(lens) => {
             let name = table.name().to_string();
             let id = table.id_column().to_string();
-            let shell = MemoryTableShell::new(table, metadata, Catalog::new(store.clone()));
-            let vista = Vista::new(name, Box::new(shell));
+            let shell = MemoryTableShell::new(table, metadata, MemoryCatalog::new(store.clone()));
+            let vista = Vista::new(name, shell);
             let dio = lens
-                .make_dio(vista)
+                .dio(vista)
+                .live()
+                .build()
                 .await
                 .map_err(|e| format!("dio: {e}"))?;
-            dio.watch().await.map_err(|e| format!("watch: {e}"))?;
             let scenery: Arc<dyn TableScenery> = dio
                 .table_scenery()
-                .sort(&id, SortDir::Asc)
+                .order(&id, SortDirection::Ascending)
                 .open()
                 .await
                 .map_err(|e| format!("scenery: {e}"))?;
-            scenery.set_viewport(0..VIEWPORT);
+            scenery.set_viewport(0..VIEWPORT, 0..0);
             (Some(dio), Some(scenery))
         }
         None => (None, None),

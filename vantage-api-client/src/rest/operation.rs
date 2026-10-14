@@ -74,6 +74,20 @@ pub(crate) fn cbor_to_query_string(v: &CborValue) -> Option<String> {
     }
 }
 
+/// The `{placeholder}` names in an endpoint template, in order:
+/// `teams/{team_id}/users` yields `team_id`. Scanning stops at a `{`
+/// with no closing `}`.
+pub(crate) fn placeholders(template: &str) -> impl Iterator<Item = &str> {
+    let mut rest = template;
+    std::iter::from_fn(move || {
+        let open = rest.find('{')?;
+        let after = &rest[open + 1..];
+        let close = after.find('}')?;
+        rest = &after[close + 1..];
+        Some(&after[..close])
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +117,14 @@ mod tests {
     fn raw_expression_with_unknown_template_returns_none() {
         let cond = Expression::<CborValue>::new("CUSTOM SQL", vec![]);
         assert!(condition_to_query_param(&cond).is_none());
+    }
+
+    #[test]
+    fn placeholders_are_named_in_order() {
+        let names: Vec<&str> = placeholders("teams/{team_id}/users/{user_id}").collect();
+        assert_eq!(names, vec!["team_id", "user_id"]);
+        assert_eq!(placeholders("users").count(), 0);
+        assert_eq!(placeholders("a/{b}/{c").collect::<Vec<_>>(), vec!["b"]);
     }
 
     #[test]

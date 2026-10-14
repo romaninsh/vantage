@@ -1,114 +1,226 @@
-//! Live push from the master Vista into the cache, for as long as the Dio
-//! lives.
+//! Live follow: push from the master Vista into the cache, for as long as the
+//! Dio lives.
 
-use std::sync::Arc;
+mod admit;
+mod batch;
 
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+
+use futures::StreamExt;
 use vantage_core::Result;
+use vantage_vista::VistaChangeStream;
 
-use super::Dio;
+use super::{Dio, DioInner};
+use admit::Admit;
+use batch::Tail;
+
+/// A subscription to the master's change stream, made but not yet followed.
+///
+/// Subscribing and following are separate so a Dio can subscribe before its
+/// eager start copies the set and follow once the copy has landed: the stream
+/// holds every change made during the copy, and applying them after it means
+/// a snapshot taken before a change can't overwrite it.
+pub(crate) struct Follower {
+    stream: VistaChangeStream,
+    admit: Admit,
+    dio: Weak<DioInner>,
+    cancel: tokio::sync::watch::Receiver<()>,
+}
 
 impl Dio {
-    /// Start watching the master Vista and apply every change it pushes.
+    /// Subscribe to the master Vista's change stream, for a Dio built with
+    /// [`DioBuilder::live`](crate::DioBuilder::live). `None` when the master
+    /// doesn't advertise [`Subscribe`](vantage_vista::Capability::Subscribe):
+    /// the Lens's `Refresher::every` timer keeps the cache fresh instead.
     ///
-    /// Transparent by design: if the master advertises
-    /// [`can_watch`](vantage_vista::Vista::can_watch) (SurrealDB LIVE, Postgres
-    /// `LISTEN/NOTIFY`), this subscribes and pipes each
-    /// [`VistaChange`](vantage_vista::VistaChange) through
-    /// [`apply_change`](Self::apply_change) on a background task — no polling. If
-    /// it doesn't, this is a no-op and the caller's `refresh_every` timer keeps
-    /// the cache fresh instead. Either way the reactive stack behaves the same;
-    /// only the freshness mechanism differs.
-    ///
-    /// Failure is self-correcting rather than silent — critical, since the task
-    /// is detached and can't return an error:
-    /// - a change that fails to apply triggers a full [`refresh`](Self::refresh)
-    ///   so the cache can't drift out of step with the backend;
-    /// - if the subscription drops (a WebSocket close ends the stream), the task
-    ///   backs off, **re-subscribes**, and refreshes to close the gap of changes
-    ///   missed while disconnected — it does not silently stop pushing.
-    ///
-    /// The initial subscription is established synchronously so a
-    /// misconfiguration surfaces to the caller here. The background task holds
-    /// only a `Weak` to the Dio and returns as soon as the last `Dio` handle
-    /// drops — even mid-wait on a stream that never yields, or mid back-off —
-    /// dropping the stream with it, which releases the backend's subscription.
-    pub async fn watch(&self) -> Result<()> {
+    /// The subscription is made before this returns, so a misconfiguration
+    /// fails the build.
+    pub(crate) async fn subscribe(&self) -> Result<Option<Follower>> {
         let master = self.master();
-        if !master.can_watch() {
-            return Ok(());
+        if !master
+            .capabilities()
+            .has(vantage_vista::Capability::Subscribe)
+        {
+            return Ok(None);
         }
-        let mut stream = master.watch().await?;
-        let weak = Arc::downgrade(&self.inner);
-        let mut cancel = self.inner.watch_cancel.subscribe();
+        Ok(Some(Follower {
+            stream: master.watch().await?,
+            admit: Admit::for_dio(&self.inner),
+            dio: Arc::downgrade(&self.inner),
+            cancel: self.inner.watch_cancel.subscribe(),
+        }))
+    }
+}
 
-        tokio::spawn(async move {
-            use futures::StreamExt;
-            let base = std::time::Duration::from_millis(200);
-            let mut backoff = base;
+impl Follower {
+    /// Apply every change the master pushes (SurrealDB LIVE, Postgres
+    /// `LISTEN/NOTIFY`), with no polling; changes that arrive together share
+    /// one cache transaction.
+    ///
+    /// Each change is held against the Dio's query first (see [`Admit`]): a
+    /// row that falls outside it applies as a delete, and over a query with
+    /// native conditions every change re-reads the set.
+    ///
+    /// Failure is self-correcting rather than silent, which matters because
+    /// the task is detached and can't return an error:
+    /// - a change that fails to apply triggers a full
+    ///   [`refresh`](Dio::refresh), which re-reads the set, so the cache
+    ///   can't drift out of step with the backend;
+    /// - if the subscription drops (a WebSocket close ends the stream), the
+    ///   task backs off, **re-subscribes**, and refreshes to close the gap of
+    ///   changes missed while disconnected;
+    /// - a re-read that fails is logged, published as `RefreshFailed`, and
+    ///   retried with backoff until one succeeds.
+    ///
+    /// Holds only a `Weak` to the Dio and returns as soon as the last `Dio`
+    /// handle drops, even mid-wait on a stream that never yields or mid
+    /// back-off, dropping the stream with it, which releases the backend's
+    /// subscription.
+    pub(crate) async fn run(mut self) {
+        let base = Duration::from_millis(200);
+        let mut backoff = base;
+        loop {
+            if !self.drain(&mut backoff, base).await {
+                return;
+            }
+            if !self.resubscribe(&mut backoff).await {
+                return;
+            }
+        }
+    }
 
-            'session: loop {
-                // Drain the current subscription.
-                loop {
-                    let Some(next) = until_dio_drops(&mut cancel, stream.next()).await else {
-                        return;
-                    };
-                    let Some(item) = next else { break };
-                    let Some(inner) = weak.upgrade() else { return };
-                    let dio = Dio { inner };
-                    match item {
-                        Ok(change) => match dio.apply_change(change.into()).await {
-                            Ok(()) => backoff = base,
-                            Err(e) => {
-                                // One row failed to apply — the cache may be out
-                                // of step for that id. Reconcile the whole set so
-                                // the view can't drift silently.
-                                tracing::error!(error = %e, "watch: apply failed; reconciling");
-                                let _ = dio.refresh().await;
-                            }
-                        },
-                        Err(e) => {
-                            tracing::warn!(error = %e, "watch: stream error; resubscribing");
-                            break;
-                        }
-                    }
+    /// Apply the current subscription until it ends. `false` once the Dio
+    /// is gone.
+    async fn drain(&mut self, backoff: &mut Duration, base: Duration) -> bool {
+        loop {
+            let Some(next) = until_dio_drops(&mut self.cancel, self.stream.next()).await else {
+                return false;
+            };
+            let Some(item) = next else { return true };
+            let first = match item {
+                Ok(change) => change,
+                Err(e) => {
+                    tracing::warn!(error = %e, "watch: stream error; resubscribing");
+                    return true;
                 }
-
-                // The subscription ended (a dropped connection yields `None`).
-                // Push is gone; reconnect with backoff instead of exiting, then
-                // reconcile to recover anything missed during the gap.
-                loop {
-                    if until_dio_drops(&mut cancel, tokio::time::sleep(backoff))
-                        .await
-                        .is_none()
-                    {
-                        return;
-                    }
-                    backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                    // Subscribe without holding the Dio, so it can still drop
-                    // while the backend is slow to answer.
-                    let Some(master) = weak.upgrade().map(|inner| Dio { inner }.master()) else {
-                        return;
-                    };
-                    let Some(subscribed) = until_dio_drops(&mut cancel, master.watch()).await
-                    else {
-                        return;
-                    };
-                    match subscribed {
-                        Ok(fresh) => {
-                            stream = fresh;
-                            let Some(inner) = weak.upgrade() else { return };
-                            let _ = Dio { inner }.refresh().await;
-                            tracing::info!("watch: resubscribed and reconciled");
-                            continue 'session;
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "watch: resubscribe failed; retrying");
-                        }
+            };
+            let (applied, tail) =
+                batch::apply_ready(&self.dio, first, &mut self.stream, &self.admit).await;
+            match applied {
+                Ok(()) => *backoff = base,
+                // A change failed to apply, so the cache may be out of step
+                // for its rows. Re-read the whole set so the view can't drift
+                // silently; when the stream also ended, the resubscribe
+                // re-reads.
+                Err(e) => {
+                    tracing::error!(
+                        table = %self.table(),
+                        error = %e,
+                        "watch: apply failed; re-reading the set",
+                    );
+                    if tail.is_none() && !self.reread(backoff).await {
+                        return false;
                     }
                 }
             }
-        });
-        Ok(())
+            match tail {
+                None => {}
+                Some(Tail::Dropped) => return false,
+                Some(Tail::Ended) => return true,
+                Some(Tail::Failed(e)) => {
+                    tracing::warn!(error = %e, "watch: stream error; resubscribing");
+                    return true;
+                }
+            }
+        }
+    }
+
+    /// The subscription ended (a dropped connection yields `None`). Reconnect
+    /// with backoff, then re-read the set to recover anything missed during
+    /// the gap. `false` once the Dio is gone.
+    async fn resubscribe(&mut self, backoff: &mut Duration) -> bool {
+        loop {
+            if until_dio_drops(&mut self.cancel, tokio::time::sleep(*backoff))
+                .await
+                .is_none()
+            {
+                return false;
+            }
+            *backoff = (*backoff * 2).min(Duration::from_secs(30));
+            // Subscribe without holding the Dio, so it can still drop while
+            // the backend is slow to answer.
+            let Some(master) = self.dio.upgrade().map(|inner| inner.master.clone()) else {
+                return false;
+            };
+            let Some(subscribed) = until_dio_drops(&mut self.cancel, master.watch()).await else {
+                return false;
+            };
+            match subscribed {
+                Ok(fresh) => {
+                    self.stream = fresh;
+                    return self.reread(backoff).await;
+                }
+                Err(e) => tracing::warn!(
+                    table = %self.table(),
+                    error = %e,
+                    "watch: resubscribe failed; retrying",
+                ),
+            }
+        }
+    }
+
+    /// Re-read the set, retrying with backoff until a re-read succeeds: the
+    /// cache may be out of step with the master until one does, and a
+    /// refresh is never a silent no-op. Each failure is logged and
+    /// published as [`DioEvent::RefreshFailed`](super::DioEvent::RefreshFailed),
+    /// so a view can show it. Changes arriving meanwhile wait in the stream
+    /// and apply after. `false` once the Dio is gone.
+    async fn reread(&mut self, backoff: &mut Duration) -> bool {
+        loop {
+            let Some(inner) = self.dio.upgrade() else {
+                return false;
+            };
+            let table = inner.master.name().to_string();
+            let reread = Dio {
+                inner: inner.clone(),
+            }
+            .refresh()
+            .await;
+            match reread {
+                Ok(()) => {
+                    tracing::info!(table = %table, "watch: re-read the set");
+                    return true;
+                }
+                Err(e) => {
+                    tracing::error!(
+                        table = %table,
+                        error = %e,
+                        retry_in = ?*backoff,
+                        "watch: re-reading the set failed; the cache may be out of step until a retry succeeds",
+                    );
+                    let _ = inner.event_bus.send(super::DioEvent::RefreshFailed {
+                        error: e.to_string(),
+                    });
+                }
+            }
+            drop(inner);
+            if until_dio_drops(&mut self.cancel, tokio::time::sleep(*backoff))
+                .await
+                .is_none()
+            {
+                return false;
+            }
+            *backoff = (*backoff * 2).min(Duration::from_secs(30));
+        }
+    }
+
+    /// The master's name, for the log, or an empty one once the Dio is gone.
+    fn table(&self) -> String {
+        self.dio
+            .upgrade()
+            .map(|inner| inner.master.name().to_string())
+            .unwrap_or_default()
     }
 }
 

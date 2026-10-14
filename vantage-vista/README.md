@@ -1,132 +1,153 @@
 # Vantage Vista
 
-`Vista` takes a typed table — the kind you define in your model layer like
-`bakery_model3::Product::sqlite_table()` or `vantage_aws::models::ecs::clusters_table()` — and wraps
-it behind a uniform handle that generic code can drive.
+`Vista` is the type-erased `Table<T, E>`. It takes a typed table, the kind a model layer defines
+(`bakery_model3::Product::sqlite_table()`, `vantage_aws::models::ecs::clusters_table()`), and seals
+its types behind a `TableShell`, so generic code (a CLI, a desktop UI, a config-driven dashboard)
+can drive any backend through one handle. Rows travel as CBOR (`ciborium::Value`) and ids as
+`String`, whatever the backend stores natively.
 
-Vantage's `Table<T, E>` is typed end-to-end, which is what business logic wants. Anything generic —
-CLI, desktop UI, config-driven dashboard — can't consume that without giving up the erasure it
-needs. Vista is the bridge.
+The shape is the same as `Table`'s: `Vista` is `Clone`, owns its query state, narrows with
+`with_*` and changes in place with `add_*`/`set_*`.
 
-## Build a Vista
+## Three kinds of object
 
-Define the table once, in the model layer. Then wrap it with the matching driver factory:
+Every public type in Vantage above `Table` is one of three kinds, and its API follows from the
+kind. A **value** (`Table`, `Vista`, `VistaQuery`, `Reference`) is narrowed by
+`clone().with_*()`, which returns a new value and leaves the original alone, and changes through
+`add_*`/`set_*` only when you own it (`&mut self`). A **shared handle** (diorama's `Lens` and
+`Dio`) never changes after construction: `with_*` derives a new handle. **View state** (diorama's
+sceneries and `Servo`) is opened by a builder and changed with `set_*` by its single owner. This
+crate holds only values; the other two kinds live in vantage-diorama.
 
-```rust,ignore
-use bakery_model3::Product;
+## Examples
+
+### Build a Vista
+
+A driver factory turns a typed table into a Vista:
+
+```rust
 use vantage_sql::sqlite::vista::SqliteVistaFactory;
 
-let factory = SqliteVistaFactory::new(db.clone());
-let products: Vista = factory.from_table(Product::sqlite_table(db))?;
+let products = SqliteVistaFactory::new(db.clone()).from_table(Product::sqlite_table(db))?;
 ```
 
-Each driver also hands out its factory directly, so `db.vista_factory()` gives the same
-`SqliteVistaFactory`. `from_table` returns `Result<Vista>`.
+`from_table` consumes the typed table and gives a `Vista` that knows its columns, references, id
+column and the backend's capabilities. The schema is fixed from there; `Vista` has no
+`add_column`.
 
-`from_table` consumes the typed table and produces a `Vista` that knows its columns, references, id
-field, and the backend's capabilities. The schema is locked from there — `Vista` has no
-`add_column`. Conditions can still be added; that's narrowing the data set, not the schema.
+With no Rust entity for the table, the same factory builds one from a YAML spec:
 
-## Or skip the model crate
+```rust
+use vantage_vista::VistaFactory;
 
-No Rust entity for the table? Hand the factory a YAML schema instead:
-
-```rust,ignore
-let products: Vista = factory.from_yaml(include_str!("products.yaml"))?;
+let products = factory.from_yaml(include_str!("products.yaml"))?;
 ```
 
-Same `Vista`. Useful for CLIs that talk to arbitrary databases at runtime, or admin tools that load
-schemas from configuration.
+A driver author wraps a shell directly:
 
-## Drive it
+```rust
+use vantage_vista::{TableShell, Vista};
 
-Anything taking `&Vista` works against any backend:
-
-```rust,ignore
-use vantage_dataset::ReadableValueSet;
-
-async fn render(vista: &Vista) -> VantageResult<()> {
-    for col in vista.get_column_names() {
-        if vista.get_column(col).unwrap().is_hidden() { continue; }
-        print!("{}\t", col);
-    }
-    println!();
-
-    for (_id, row) in vista.list_values().await? {
-        for col in vista.get_column_names() {
-            if vista.get_column(col).unwrap().is_hidden() { continue; }
-            print!("{:?}\t", row.get(col));
-        }
-        println!();
-    }
-    Ok(())
-}
-
-render(&products).await?;
+let vista = Vista::new("product", MyShell::new(conn));
 ```
 
-Swap SQLite for Mongo, AWS, or CSV — `render` doesn't change.
+`VistaFactory` and `TableShell` are imported from the crate root, not the prelude: only driver
+code and spec loaders name them.
 
-## Obey what the backend can do
+### Narrow
 
-Drivers advertise capabilities so generic UIs render the right controls instead of guessing and
-erroring at runtime:
+```rust
+use vantage_vista::prelude::*;
 
-```rust,ignore
-let caps = vista.capabilities();
-if caps.can_insert       { /* show "+ New" */ }
-if caps.can_subscribe    { /* wire live updates */ }
-if caps.can_order        { /* render column sort headers */ }
-if caps.can_search       { /* render the quicksearch box */ }
-if caps.can_set_page_size { /* expose page-size picker */ }
-if caps.can_fetch_page   { /* show random-access page selector */ }
-else if caps.can_fetch_next { /* show forward-only "Next" button */ }
-else                      { /* no pagination — fetch everything */ }
+let pastries = products
+    .clone()
+    .with_condition("category", FilterOp::Eq, "pastries")?
+    .with_order("price", SortDirection::Descending)?;
+
+let mut cheap = products.clone();
+cheap.add_condition("price", FilterOp::Lt, 5)?;
+cheap.set_search(Some("tart"))?;
 ```
 
-A read-only AWS API and a writable SQLite table look the same shape from outside; the capability
-flags tell the UI which buttons to draw.
+`products` is untouched by both. Each clause is offered to the shell first and recorded only once
+the shell accepts it, so `pastries.query()` is a `VistaQuery` holding exactly what was applied. A
+clause the backend can't take is refused with an `Unsupported` error naming the `Capability` it
+lacks. An unknown column is a plain error, so a typo is never mistaken for a missing feature.
 
-## Narrow with conditions
+### A query as a value
 
-Equality works on every backend:
+`VistaQuery` is plain data: `Condition`s (`column <op> value`), a search text, an order
+(`(column, SortDirection)`) and the keys of any driver-native conditions. Build one and apply it:
 
-```rust,ignore
-products.add_condition_eq("category", CborValue::Text("pastries".into()))?;
+```rust
+let query = VistaQuery::new()
+    .with_condition(Condition::new("category", FilterOp::Eq, "pastries"))
+    .with_order("price", SortDirection::Ascending);
 
-let pastries = products.list_values().await?;   // honours the filter
-let count    = products.get_count().await?;     // also honours it
+let (pastries, residual) = products.clone().with_query(&query)?;
 ```
 
-A conditioned Vista is a narrowed view of the data set, not a query result — same mental model as
-`Table::with_condition`.
+`residual` holds the clauses the shell refused. A caller that needs every clause applied checks
+it is empty; a cache or a client-side refine evaluates it over the rows itself, with
+`residual.matches(&row, &metadata)` and `residual.sort_rows(&mut rows, &metadata)` (the evaluator
+documented in `vantage_vista::eval`).
+`query.key()` is a stable string for cache identity.
 
-Other operators go through `add_condition(field, FilterOp, value)` (`Ne`, `Gt`, `Gte`, `Lt`, `Lte`,
-`InSet`, `NotInSet`, ...). They need the driver to set `can_filter_operators`; otherwise the call
-returns an `Unimplemented` error and the caller filters locally:
+### Read and write
 
-```rust,ignore
-if products.capabilities().can_filter_operators {
-    products.add_condition("price", FilterOp::Gte, CborValue::Integer(100.into()))?;
-}
+`Vista` implements `ValueSet`, `ReadableValueSet`, `WritableValueSet` and `InsertableValueSet`,
+the same trait family `Table<T, E>` does:
+
+```rust
+let rows = pastries.list_values().await?;
+let total = pastries.count().await?;
+let page = pastries.fetch_window(40, 20).await?;   // page.rows, page.total
 ```
 
-`with_id`, `add_search` and `add_order(column, SortDirection)` narrow and sort the same way.
+The leading window (`fetch_window(0, n)`) works on every shell. Any other offset needs
+`Capability::Window`; a forward-only backend offers `fetch_cursor` under `Capability::Cursor`.
+A write through a narrowed Vista needs `Capability::ConfineWrites`, so it can't land outside the
+set.
 
-## CRUD over CBOR
+### Capabilities
 
-Vista's wire type is `ciborium::Value`, regardless of what the backend stores natively. CSV strings,
-MongoDB BSON, SurrealDB CBOR records, AWS JSON-1.1 blobs — drivers translate to and from CBOR at the
-boundary. That's what lets one `render` work over all of them. Ids are `String` for the same reason:
-Mongo `ObjectId`, Surreal `Thing`, composite keys all stringify in the driver.
+```rust
+let caps = products.capabilities();
+if caps.has(Capability::Insert) { /* show "+ New" */ }
+if caps.has(Capability::Order) { /* render sortable headers */ }
+if caps.has(Capability::Search) { /* render the quicksearch box */ }
+if caps.has(Capability::Subscribe) { /* follow products.watch() */ }
+```
 
-Vista implements `ValueSet`, `ReadableValueSet`, `WritableValueSet`, and `InsertableValueSet` — the
-same trait family `Table<T, E>` does, so code written against those traits works against a `Vista`
-unchanged.
+Each `Capability` names exactly one method family, and a shell that advertises one must answer it
+without refusing; the `contract` feature checks that. A read-only AWS API and a writable SQLite
+table look the same from outside; the set tells the UI which controls to draw.
 
-## Scripting with Rhai
+### Catalog and resolvers
 
-The `rhai` feature adds `DataVocab`, the one data vocabulary every Vantage script uses:
+`VistaResolver` is the one way to turn a name into a `Vista`: a model in a catalog, a relation's
+target, a table a script names. Any `Fn(&str) -> Result<Vista>` is one. `Catalog` maps model names
+to loaders, which may sit on different backends, and is itself a resolver:
+
+```rust
+use vantage_vista::Catalog;
+
+let catalog = Catalog::new()
+    .with("client", |name: &str| clients_vista(name))
+    .with("order", |name: &str| orders_vista(name));
+
+let orders = catalog.vista("order")?;
+```
+
+A name the resolver doesn't know is `not_found`; a loader that fails for another reason keeps its
+own error kind, so a caller can tell a missing model from an unreachable one. Within one backend,
+`vista.get_ref("orders", Some(&row))` traverses a declared reference; across backends, narrow the
+catalog's target with `reference.narrow(catalog.vista(&reference.target)?, &row)`.
+
+### Scripting with Rhai
+
+The `rhai` feature adds the `rhai` module and its `DataVocab`, the one data vocabulary every
+Vantage script uses:
 
 ```rhai
 let due = table("order").where("status", "due");
@@ -136,29 +157,49 @@ due.ref("client").list()
 `table(name)` returns a handle that narrows (`where`, `sort`, `search`, `limit`, `ref`) and then
 reads (`list`, `get`, `first`, `count`, `ids`), writes (`insert`, `upsert`, `patch`, `delete`,
 `import_from`) or opens a `record` draft. A host picks the tables behind `table(name)` and which
-verbs exist. The full guide is
-[Scripting with Rhai](https://vantage-ui.com/book/rhai.html) in the Vantage book.
+verbs exist. The full guide is [Scripting with Rhai](https://vantage-ui.com/book/rhai.html) in the
+Vantage book.
 
-## Status
+### Why not a stateless shell?
 
-Ships `Vista`, `TableShell`, `VistaFactory` (with a default `from_yaml`), `VistaMetadata`,
-`VistaCapabilities`, `Column`, `Reference` and `ContainedSpec`, plus `MockShell`, `EmptyShell` and
-`ForwardShell`. On top of reads and writes, a Vista does paging (`set_page_size`, `fetch_page`,
-`fetch_next`, `fetch_window`), aggregates (`aggregate(&AggregateSpec)` returns
-`Result<Option<Vista>>`, `None` when the driver can't answer it), reference traversal
-(`get_ref(relation, row)`, `get_ref_target`) and live changes (`can_watch`,
-`watch()` returning a `VistaChangeStream`). Drivers that can't do one of these say so through
-`capabilities()` or return `None` / an error. Driver factories
-(`SqliteVistaFactory`, `MongoVistaFactory`, `CsvVistaFactory`, `AwsVistaFactory`, ...) live in the
-driver crates.
+A shell that held no query, with every read taking a `VistaQuery`, would make `Vista` a thin
+wrapper and drivers simpler. It was considered and rejected: `Vista` would stop matching
+`Table<T, E>`, which owns its conditions, and code written against the dataset traits would need a
+query threaded through every call. The cost of the path taken is that a driver's shell is `Clone`
+and carries its narrowing, and a clone must not share it.
+
+## Prelude
+
+`use vantage_vista::prelude::*;` brings in `Vista`, `VistaQuery`, `Condition`, `FilterOp`,
+`SortDirection`, `Capability`, `VistaResolver`, `CborValue`, and the vantage-dataset traits that
+`Vista` implements (`ValueSet`, `ReadableValueSet`, `WritableValueSet`, `InsertableValueSet`).
+
+Everything else is reached from the crate root: `VistaFactory` and `TableShell` for driver
+authors, `Catalog`, `Column`, `Reference`, `Page`, `VistaMetadata`. `VistaCapabilities` is what
+`vista.capabilities()` returns.
+
+## Features
+
+- `mocks`: `vantage_vista::mocks::MockShell`, an in-memory `TableShell` for tests and examples.
+  Enable it from `[dev-dependencies]`.
+- `rhai`: the `rhai` module (`DataVocab`, the table handle, script-slot evaluators,
+  `run_script`). Backends add their vendor expression vocabulary through
+  `TableShell::register_rhai_extensions`.
+- `contract`: `vantage_vista::contract`, the driver-facing checks every backend's test suite runs
+  against its own fixture. Enable it from `[dev-dependencies]`.
+
+A test Vista over `MockShell`:
+
+```rust
+use vantage_vista::mocks::MockShell;
+
+let users = Vista::new("user", MockShell::new().with_record("u1", record));
+```
 
 ## Integration
 
-- vantage-dataset — `ValueSet` traits Vista implements
-- vantage-types — `Record<V>` carrier
-- vantage-core — `Result` / `VantageError`
-- vantage-rhai — script host behind the optional `rhai` feature
-- vantage-expressions and vantage-table depend on this crate (`AnyExpression` and `ExpressionLike`
-  live here), so drivers can build a Vista straight from a typed `Table`
-- vantage-vista-factory — `VistaCatalog`, a name-to-Vista registry that also follows references
-  across datasources
+- vantage-dataset: the `ValueSet` traits `Vista` implements
+- vantage-types: the `Record<V>` carrier
+- vantage-core: `Result` / `VantageError`
+- vantage-rhai: the script host behind the `rhai` feature
+- vantage-diorama: the `Lens`/`Dio` cache and the sceneries that sit on a `Vista`

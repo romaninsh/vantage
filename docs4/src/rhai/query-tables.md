@@ -12,9 +12,10 @@ vocabulary, and it runs when the table is built, never when a data script runs.
 ## A query as the source
 
 `rhai:` in the driver block (`sqlite:`, `postgres:`, `mysql:` or `surreal:`) replaces `table:`.
-The script's last expression must be a `select()`:
+The script's last expression must be a `select()`, built with the backend's namespaced functions
+(`sql::` for the SQL databases, `surreal::` for SurrealDB):
 
-<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_rhai_source_is_read_only_and_filters -->
+<!-- tested: vantage-sql tests/common/vista/product.rs vista_yaml_rhai_source_is_read_only_and_filters -->
 ```yaml
 name: expensive_products
 columns:
@@ -25,7 +26,7 @@ columns:
     type: string
 sqlite:
   rhai: |
-    select().from("product").field("id").field("name").where(expr("price > 15"))
+    sql::select().from("product").field("id").field("name").where(sql::expr("price > 15"))
 ```
 
 - The script runs once, when the Vista is built. A script that fails or doesn't end on a `select()`
@@ -35,7 +36,7 @@ sqlite:
 - `columns:` declares which of the query's output columns the table has, as for any table.
 - Reads, conditions, sort, search and paging apply on top, as on any table. A data script can
   narrow `table("expensive_products")` with `where` and `sort` like any other table.
-- Scalars the script passes to the builder (`expr("price > {}", [15])`, a comparison with a
+- Scalars the script passes to the builder (`sql::expr("price > {}", [15])`, a comparison with a
   number) are bound as parameters.
 
 ## Deriving from another table
@@ -44,7 +45,7 @@ sqlite:
 script's scope as `base`, and `inherit:` copies the columns and relations to keep. The script
 transforms the base query instead of building one:
 
-<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_base_aggregates_into_declared_column -->
+<!-- tested: vantage-sql tests/common/vista/client_orders.rs vista_yaml_base_aggregates_into_declared_column -->
 ```yaml
 name: client_totals
 id_column: client_id
@@ -55,7 +56,7 @@ sqlite:
   inherit:
     columns: [client_id]
   rhai: |
-    base.clear_fields().field("client_id").expression(expr("SUM(total) AS total_due")).group_by(expr("client_id"))
+    base.clear_fields().field("client_id").expression(sql::expr("SUM(total) AS total_due")).group_by(sql::expr("client_id"))
 ```
 
 This is the aggregate pattern: drop the base's fields, group by a key, declare the aggregate as the
@@ -68,11 +69,10 @@ derived query, as in `client_id IN (SELECT "id" FROM (…) AS "debtors")`.
 
 ## Read-only
 
-A table with `rhai:` or `base:` in its driver block is read-only: the factory turns off
-`can_insert`, `can_update` and `can_delete`, because there is no single table a write could land
+A table with `rhai:` or `base:` in its driver block is read-only: the factory turns off the
+`insert`, `update` and `delete` capabilities, because there is no single table a write could land
 in. Callers find out the usual way, by checking capabilities. In Rhai, `insert`, `upsert`,
-`patch` and a record's `save()` throw, and `delete` returns `false` (see
-[Capabilities](./writes.md#capabilities)).
+`patch`, `delete` and a record's `flash()` throw (see [Capabilities](./writes.md#capabilities)).
 
 To keep a table writable while narrowing it with a native expression, use SurrealDB's `modify:`
 instead, which changes a real table (see [`modify:` scripts](./surfaces.md#modify-scripts)).
@@ -85,9 +85,9 @@ the table; YAML can't set them. The script sees them as `args`, a map of strings
 
 <!-- tested: vantage-surrealdb vista::rhai_source::tests::args_map_is_in_scope -->
 ```rhai
-let q = select().from("order");
+let q = surreal::select().from("order");
 if "bakery" in args && args.bakery != "" {
-    q = q.where(expr("bakery.name = {}", [args.bakery]));
+    q = q.where(surreal::expr("bakery.name = {}", [args.bakery]));
 }
 q
 ```

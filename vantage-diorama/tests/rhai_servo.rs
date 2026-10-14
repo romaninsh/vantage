@@ -1,7 +1,7 @@
 //! Servo driven from Rhai — the `rhai` feature's contract.
 //!
 //! Scripts evaluate under `spawn_blocking` (runtime context, no async
-//! frame), exactly the posture `save()` documents: it `block_on`s the
+//! frame), exactly the posture `flash()` documents: it `block_on`s the
 //! servo's flash from inside the synchronous script.
 
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_diorama::rhai::ServoVocab;
-use vantage_diorama::{Dio, IdStrategy, Lens, Servo};
+use vantage_diorama::{Cache, Dio, FlashOutcome, IdStrategy, Lens, Servo};
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
@@ -32,12 +32,12 @@ fn tag_vista(shell: &MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("status", "String"))
         .with_id_column("id");
-    Vista::new("tags", Box::new(shell.clone().with_metadata(metadata)))
+    Vista::new("tags", shell.clone().with_metadata(metadata))
 }
 
 async fn dio_over(shell: &MockShell) -> Result<Dio> {
-    let lens = Arc::new(Lens::new().cache_in_memory().build().expect("build lens"));
-    lens.make_dio(tag_vista(shell)).await
+    let lens = Lens::builder().cache(Cache::memory()).build()?;
+    lens.dio(tag_vista(shell)).build().await
 }
 
 /// Evaluate `script` with `servo` in scope, on a blocking thread.
@@ -53,7 +53,7 @@ async fn eval(servo: Arc<Servo>, script: &'static str) -> std::result::Result<Dy
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn set_save_settles_a_new_record() -> Result<()> {
+async fn set_flash_settles_a_new_record() -> Result<()> {
     let shell = MockShell::new();
     let dio = dio_over(&shell).await?;
     let servo = Arc::new(dio.servo_new(IdStrategy::FromRecord));
@@ -65,7 +65,7 @@ async fn set_save_settles_a_new_record() -> Result<()> {
             servo.set("status", "unregistered");
             if !servo.is_dirty() { throw "draft should be dirty"; }
             if !servo.dirty("status") { throw "field should be dirty"; }
-            servo.save()
+            servo.flash()
         "#,
     )
     .await
@@ -88,7 +88,8 @@ async fn get_error_status_read_the_draft() -> Result<()> {
     seeded.insert("status".to_string(), text("registered"));
     let shell = MockShell::new().with_record("t1", seeded.clone());
     let dio = dio_over(&shell).await?;
-    dio.cache().insert_value("t1", &seeded).await?;
+    dio.reconcile([("t1".to_string(), seeded)].into_iter().collect())
+        .await?;
     let servo = Arc::new(dio.servo("t1").await?);
 
     let result = eval(
@@ -115,30 +116,27 @@ async fn get_error_status_read_the_draft() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn rejected_save_is_a_script_error_and_the_draft_survives() -> Result<()> {
+async fn rejected_flash_is_a_script_error_and_the_draft_survives() -> Result<()> {
     let shell = MockShell::new();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_in_memory()
-            .on_flash(|_dio, _flash| async move {
-                Err(vantage_core::error!("route rejected the flash"))
-            })
-            .build()
-            .expect("build lens"),
-    );
-    let dio = lens.make_dio(tag_vista(&shell)).await?;
+    let lens = Lens::builder()
+        .cache(Cache::memory())
+        .writer(|_cx, _flash| async move {
+            Err::<FlashOutcome, _>(vantage_core::error!("route rejected the flash"))
+        })
+        .build()?;
+    let dio = lens.dio(tag_vista(&shell)).build().await?;
     let servo = Arc::new(dio.servo_new(IdStrategy::FromRecord));
 
     let err = eval(
         servo.clone(),
         r#"
             servo.set("id", "tag:XX99-YY88");
-            servo.save()
+            servo.flash()
         "#,
     )
     .await
     .expect_err("the rejection surfaces as a script error");
-    assert!(err.contains("save failed"), "{err}");
+    assert!(err.contains("flash failed"), "{err}");
 
     let status = eval(
         servo.clone(),

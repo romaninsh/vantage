@@ -12,7 +12,7 @@ use futures_util::TryStreamExt;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
 use vantage_mongodb::vista::MongoVistaSpec;
-use vantage_vista::{FilterOp, SortDirection, VistaFactory};
+use vantage_vista::{Capability, FilterOp, SortDirection, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -59,7 +59,7 @@ fn ordered_products(db: &MongoDB) -> vantage_vista::Vista {
     let spec: MongoVistaSpec = serde_yaml_ng::from_str(PRODUCT).expect("spec yaml");
     let mut vista = db.vista_factory().build_from_spec(spec).expect("vista");
     vista
-        .add_order("price", SortDirection::Ascending)
+        .set_order(Some(("price", SortDirection::Ascending)))
         .expect("order");
     vista
 }
@@ -78,16 +78,19 @@ async fn vista_fetch_window_reads_offset_slice() -> TestResult {
     seed(&db).await?;
 
     let vista = ordered_products(&db);
-    assert!(vista.capabilities().can_fetch_window);
+    assert!(vista.capabilities().has(Capability::Window));
 
-    let rows = vista.fetch_window(2, 3).await?;
+    let page = vista.fetch_window(2, 3).await?;
     assert_eq!(
-        names(rows.iter().map(|(_, r)| r)),
+        names(page.rows.iter().map(|(_, r)| r)),
         vec!["item-2", "item-3", "item-4"]
     );
 
     let tail = vista.fetch_window(4, 10).await?;
-    assert_eq!(names(tail.iter().map(|(_, r)| r)), vec!["item-4", "item-5"]);
+    assert_eq!(
+        names(tail.rows.iter().map(|(_, r)| r)),
+        vec!["item-4", "item-5"]
+    );
 
     teardown(&db, &name).await;
     Ok(())
@@ -96,7 +99,7 @@ async fn vista_fetch_window_reads_offset_slice() -> TestResult {
 /// Windows over a sort with many ties read the same total order as one
 /// query: `price` then `_id`. Without the `_id` tiebreak, MongoDB orders tied
 /// rows arbitrarily per query, so consecutive windows repeat some rows and
-/// skip others at their boundaries.
+/// skip others at their boundaries. An ordered `list` reads that order too.
 #[tokio::test]
 async fn vista_fetch_window_ties_follow_id_order() -> TestResult {
     let (db, name) = setup().await;
@@ -112,8 +115,12 @@ async fn vista_fetch_window_ties_follow_id_order() -> TestResult {
     let vista = ordered_products(&db);
     let mut windows = Vec::new();
     for offset in (0..300).step_by(37) {
-        for (id, row) in vista.fetch_window(offset, 37).await? {
-            windows.extend(names(std::iter::once(&row)).into_iter().map(|n| (id.clone(), n)));
+        for (id, row) in &vista.fetch_window(offset, 37).await?.rows {
+            windows.extend(
+                names(std::iter::once(row))
+                    .into_iter()
+                    .map(|n| (id.clone(), n)),
+            );
         }
     }
 
@@ -125,16 +132,33 @@ async fn vista_fetch_window_ties_follow_id_order() -> TestResult {
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
-        .map(|d| (d.get_object_id("_id").unwrap().to_hex(), d.get_str("name").unwrap().to_string()))
+        .map(|d| {
+            (
+                d.get_object_id("_id").unwrap().to_hex(),
+                d.get_str("name").unwrap().to_string(),
+            )
+        })
         .collect();
     assert_eq!(windows, expected);
+
+    let listed: Vec<(String, String)> = vista
+        .list_values()
+        .await?
+        .into_iter()
+        .flat_map(|(id, row)| {
+            names(std::iter::once(&row))
+                .into_iter()
+                .map(move |n| (id.clone(), n))
+        })
+        .collect();
+    assert_eq!(listed, expected);
 
     teardown(&db, &name).await;
     Ok(())
 }
 
-/// Every page of `vista` in order, as (id, name) pairs. Fails when the chain
-/// outlasts `max_pages`.
+/// Every cursor page of two rows of `vista` in order, as (id, name) pairs.
+/// Fails when the chain outlasts `max_pages`.
 async fn drain(
     vista: &vantage_vista::Vista,
     max_pages: usize,
@@ -142,8 +166,8 @@ async fn drain(
     let mut out = Vec::new();
     let mut token = None;
     for _ in 0..max_pages {
-        let (rows, next) = vista.fetch_next(token).await?;
-        for (id, row) in &rows {
+        let (page, next) = vista.fetch_cursor(token, 2).await?;
+        for (id, row) in &page.rows {
             out.extend(
                 names(std::iter::once(row))
                     .into_iter()
@@ -155,7 +179,7 @@ async fn drain(
             None => return Ok(out),
         }
     }
-    Err(format!("fetch_next chain exceeded {max_pages} pages").into())
+    Err(format!("fetch_cursor chain exceeded {max_pages} pages").into())
 }
 
 fn name_list(rows: &[(String, String)]) -> Vec<&str> {
@@ -163,7 +187,7 @@ fn name_list(rows: &[(String, String)]) -> Vec<&str> {
 }
 
 #[tokio::test]
-async fn vista_fetch_next_non_unique_sort_has_no_gaps() -> TestResult {
+async fn vista_fetch_cursor_non_unique_sort_has_no_gaps() -> TestResult {
     let (db, name) = setup().await;
     // Three rows share price 2, one more shares price 1.
     let docs = [(0, 1), (1, 1), (2, 2), (3, 2), (4, 2), (5, 3), (6, 4)]
@@ -175,8 +199,7 @@ async fn vista_fetch_next_non_unique_sort_has_no_gaps() -> TestResult {
         .collect::<Vec<_>>();
     db.doc_collection("products").insert_many(docs).await?;
 
-    let mut vista = ordered_products(&db);
-    vista.set_page_size(2)?;
+    let vista = ordered_products(&db);
     let rows = drain(&vista, 8).await?;
 
     // The full list in one query under the same total order.
@@ -202,7 +225,7 @@ async fn vista_fetch_next_non_unique_sort_has_no_gaps() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_fetch_next_pages_over_missing_sort_field() -> TestResult {
+async fn vista_fetch_cursor_pages_over_missing_sort_field() -> TestResult {
     let (db, name) = setup().await;
     let docs = vec![
         bson::doc! { "_id": ObjectId::new(), "name": "a", "price": 2 },
@@ -222,8 +245,7 @@ async fn vista_fetch_next_pages_over_missing_sort_field() -> TestResult {
     ];
     for (direction, expected) in cases {
         let mut vista = ordered_products(&db);
-        vista.add_order("price", direction)?;
-        vista.set_page_size(2)?;
+        vista.set_order(Some(("price", direction)))?;
         let rows = drain(&vista, 6).await?;
         assert_eq!(name_list(&rows), expected, "{direction:?}");
     }
@@ -233,7 +255,7 @@ async fn vista_fetch_next_pages_over_missing_sort_field() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_fetch_next_pages_over_mixed_id_types() -> TestResult {
+async fn vista_fetch_cursor_pages_over_mixed_id_types() -> TestResult {
     let (db, name) = setup().await;
     // Strings sort before ObjectIds; a page ending on a string id must still
     // reach every ObjectId document.
@@ -248,8 +270,7 @@ async fn vista_fetch_next_pages_over_mixed_id_types() -> TestResult {
     db.doc_collection("products").insert_many(docs).await?;
 
     let spec: MongoVistaSpec = serde_yaml_ng::from_str(PRODUCT).expect("spec yaml");
-    let mut vista = db.vista_factory().build_from_spec(spec).expect("vista");
-    vista.set_page_size(2)?;
+    let vista = db.vista_factory().build_from_spec(spec).expect("vista");
     let rows = drain(&vista, 6).await?;
     assert_eq!(name_list(&rows), ["s1", "s2", "s3", "o1", "o2", "o3"]);
 
@@ -258,7 +279,7 @@ async fn vista_fetch_next_pages_over_mixed_id_types() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_fetch_next_pages_over_mixed_number_and_string_sort_field() -> TestResult {
+async fn vista_fetch_cursor_pages_over_mixed_number_and_string_sort_field() -> TestResult {
     let (db, name) = setup().await;
     let docs = vec![
         bson::doc! { "_id": ObjectId::new(), "name": "n1", "price": 1 },
@@ -270,13 +291,12 @@ async fn vista_fetch_next_pages_over_mixed_number_and_string_sort_field() -> Tes
     db.doc_collection("products").insert_many(docs).await?;
 
     let mut vista = ordered_products(&db);
-    vista.set_page_size(2)?;
     assert_eq!(
         name_list(&drain(&vista, 5).await?),
         ["n1", "n2", "n3", "sa", "sb"]
     );
 
-    vista.add_order("price", SortDirection::Descending)?;
+    vista.set_order(Some(("price", SortDirection::Descending)))?;
     assert_eq!(
         name_list(&drain(&vista, 5).await?),
         ["sb", "sa", "n3", "n2", "n1"]
@@ -287,7 +307,7 @@ async fn vista_fetch_next_pages_over_mixed_number_and_string_sort_field() -> Tes
 }
 
 #[tokio::test]
-async fn vista_fetch_next_seek_combines_with_search() -> TestResult {
+async fn vista_fetch_cursor_seek_combines_with_search() -> TestResult {
     const SEARCHABLE: &str = r#"
 name: product
 columns:
@@ -313,9 +333,8 @@ mongo:
 
     let spec: MongoVistaSpec = serde_yaml_ng::from_str(SEARCHABLE).expect("spec yaml");
     let mut vista = db.vista_factory().build_from_spec(spec).expect("vista");
-    vista.add_order("price", SortDirection::Ascending)?;
-    vista.add_search("red")?;
-    vista.set_page_size(2)?;
+    vista.set_order(Some(("price", SortDirection::Ascending)))?;
+    vista.set_search(Some("red"))?;
     let rows = drain(&vista, 4).await?;
     assert_eq!(name_list(&rows), ["red-a", "red-c", "red-d", "red-f"]);
 
@@ -334,7 +353,7 @@ async fn vista_some_value_reads_one_document() -> TestResult {
     assert!(!id.is_empty());
 
     let mut descending = ordered_products(&db);
-    descending.add_order("price", SortDirection::Descending)?;
+    descending.set_order(Some(("price", SortDirection::Descending)))?;
     let (_, record) = descending.get_some_value().await?.expect("a document");
     assert_eq!(names(std::iter::once(&record)), vec!["item-5"]);
 

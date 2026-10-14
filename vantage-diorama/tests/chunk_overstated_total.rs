@@ -19,11 +19,12 @@ use std::sync::{Arc, Mutex};
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Lens, SortDir};
+use vantage_diorama::{Lens, Loader};
 use vantage_types::Record;
+use vantage_vista::SortDirection;
 
 mod support;
-use support::chunk::{master as master_cols, settle};
+use support::chunk::{master as master_cols, redb_lens, settle};
 
 /// Comfortably past the 50ms viewport debounce — long enough that a fetch this
 /// test claims does not happen would have been dispatched by now.
@@ -52,51 +53,114 @@ fn backend() -> Vec<(String, Record<CborValue>)> {
 /// replies with rows it has already given out — under their original ids, which
 /// is what makes them invisible: they overwrite cache entries that exist rather
 /// than filling the slots that were asked for. Every response states `STATED`.
+/// Its eager start copies the rows it serves, for a view whose order the
+/// master can't take.
 fn lying_lens(
     cache: std::path::PathBuf,
     calls: Arc<Mutex<Vec<std::ops::Range<usize>>>>,
 ) -> Arc<Lens> {
     let rows = backend();
-    Lens::new()
-        .cache_at(cache)
-        .on_load_chunk(move |_dio, range, _sort, sink| {
-            let rows = rows.clone();
-            let calls = calls.clone();
-            async move {
-                calls.lock().unwrap().push(range.clone());
-                sink.set_total(STATED);
-                for idx in range {
-                    // Past what it serves, the offset is ignored: the source
-                    // repeats a row it already sent, id and all.
-                    let (id, record) = &rows[idx.min(SERVED - 1)];
-                    sink.push(idx, id.clone(), record.clone()).await?;
-                }
-                Ok(())
+    let paged = Loader::paged(move |_cx, range, _query, sink| {
+        let rows = rows.clone();
+        let calls = calls.clone();
+        async move {
+            calls.lock().unwrap().push(range.clone());
+            sink.set_total(STATED);
+            for idx in range {
+                // Past what it serves, the offset is ignored: the source
+                // repeats a row it already sent, id and all.
+                let (id, record) = &rows[idx.min(SERVED - 1)];
+                sink.push(idx, id.clone(), record.clone()).await?;
             }
-        })
-        .build()
-        .map(Arc::new)
-        .expect("build lens")
+            Ok(())
+        }
+    });
+    let loader = paged.or_eager(|cx| async move {
+        cx.cache()
+            .insert_values(backend().into_iter().collect())
+            .await
+    });
+    redb_lens(cache, loader)
 }
 
-/// The set is capped at what the source will actually deliver, and the
-/// unreachable tail is asked for a bounded number of times — not forever.
+/// A lens over a source that states `STATED` rows and serves `SERVED`: past
+/// them it pushes nothing, so the tail of every window it is asked for stays
+/// a hole.
+fn short_tail_lens(
+    cache: std::path::PathBuf,
+    calls: Arc<Mutex<Vec<std::ops::Range<usize>>>>,
+) -> Arc<Lens> {
+    let rows = backend();
+    let loader = Loader::paged(move |_cx, range, _query, sink| {
+        let rows = rows.clone();
+        let calls = calls.clone();
+        async move {
+            calls.lock().unwrap().push(range.clone());
+            sink.set_total(STATED);
+            for idx in range.filter(|idx| *idx < SERVED) {
+                let (id, record) = &rows[idx];
+                sink.push(idx, id.clone(), record.clone()).await?;
+            }
+            Ok(())
+        }
+    });
+    redb_lens(cache, loader)
+}
+
+/// A view serving windows (no clause, nothing left over) caps the set at the
+/// first hole no fetch fills, and stops asking for the unreachable tail.
+///
+/// The first fetch fills rows, so it proves nothing about the tail; the
+/// grid's re-ask after that load (as it re-declares its viewport on every
+/// generation bump) fills none of the holes, and that caps the set.
 #[tokio::test(flavor = "multi_thread")]
 async fn overstated_total_does_not_loop() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let calls: Arc<Mutex<Vec<std::ops::Range<usize>>>> = Arc::new(Mutex::new(Vec::new()));
+    let lens = short_tail_lens(tmp.path().join("c.redb"), calls.clone());
+    let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
+    let scenery = dio.table_scenery().open().await?;
+
+    scenery.set_viewport(0..STATED, 0..0);
+    wait_for_row(&scenery, SERVED - 1).await;
+    scenery.set_viewport(0..STATED, 0..0);
+    wait_for_row_count(&scenery, SERVED).await;
+    let settled = calls.lock().unwrap().len();
+
+    for _ in 0..4 {
+        scenery.set_viewport(0..STATED, 0..0);
+        tokio::time::sleep(DEBOUNCE_MARGIN).await;
+    }
+    let after = calls.lock().unwrap().clone();
+    assert_eq!(
+        after.len(),
+        settled,
+        "the unreachable tail is being re-fetched: {after:?}",
+    );
+    assert_eq!(scenery.row_count(), SERVED);
+    Ok(())
+}
+
+/// A view sorted by a column the master can't order is served from the
+/// whole set the eager start copies, so it shows what the source serves and
+/// re-asking its viewport fetches nothing: the duplicate ids the lying tail
+/// returns never reach a slot.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sorted_view_over_a_lying_source_does_not_re_fetch_the_tail() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let calls: Arc<Mutex<Vec<std::ops::Range<usize>>>> = Arc::new(Mutex::new(Vec::new()));
     let lens = lying_lens(tmp.path().join("c.redb"), calls.clone());
-    let dio = lens.make_dio(master_cols(&[("v", "String")])).await?;
+    let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
 
     // A client-side sort makes the visible map a projection of the cache — the
     // shape this bites in, because duplicate ids collapse there and the slots
-    // stay empty however many rows come back.
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    // would stay empty however many rows came back.
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     settle().await;
 
     // Look at the whole set the source claims exists.
-    scenery.set_viewport(0..STATED);
+    scenery.set_viewport(0..STATED, 0..0);
 
     // Wait for the outcome, not for a duration. A fixed sleep here is a speed
     // assertion — and the opening fetch writes a row per redb transaction, so
@@ -110,7 +174,7 @@ async fn overstated_total_does_not_loop() -> Result<()> {
     // debounce plus a fetch — not the quarter-second `settle` uses to be safe
     // about arrivals, which is the wrong budget for observing nothing.
     for _ in 0..4 {
-        scenery.set_viewport(0..STATED);
+        scenery.set_viewport(0..STATED, 0..0);
         tokio::time::sleep(DEBOUNCE_MARGIN).await;
     }
     let after = calls.lock().unwrap().clone();
@@ -184,32 +248,28 @@ async fn page_capped_source_still_pages() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let hits = Arc::new(AtomicUsize::new(0));
     let seen = hits.clone();
-    let lens = Lens::new()
-        .cache_at(tmp.path().join("c.redb"))
-        .on_load_chunk(move |_dio, range, _sort, sink| {
-            let seen = seen.clone();
-            async move {
-                seen.fetch_add(1, Ordering::SeqCst);
-                sink.set_total(TOTAL);
-                // Honest paging, capped window: never more than CAP rows back,
-                // however wide the request.
-                for idx in range.clone().take(CAP) {
-                    if idx < TOTAL {
-                        sink.push(idx, format!("id{idx}"), rec(&format!("v{idx}")))
-                            .await?;
-                    }
+    let loader = Loader::paged(move |_cx, range, _query, sink| {
+        let seen = seen.clone();
+        async move {
+            seen.fetch_add(1, Ordering::SeqCst);
+            sink.set_total(TOTAL);
+            // Honest paging, capped window: never more than CAP rows back,
+            // however wide the request.
+            for idx in range.clone().take(CAP) {
+                if idx < TOTAL {
+                    sink.push(idx, format!("id{idx}"), rec(&format!("v{idx}")))
+                        .await?;
                 }
-                Ok(())
             }
-        })
-        .build()
-        .map(Arc::new)
-        .expect("build lens");
+            Ok(())
+        }
+    });
+    let lens = redb_lens(tmp.path().join("c.redb"), loader);
 
-    let dio = lens.make_dio(master_cols(&[("v", "String")])).await?;
+    let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
 
-    scenery.set_viewport(0..CAP);
+    scenery.set_viewport(0..CAP, 0..0);
     settle().await;
     assert_eq!(
         scenery.row_count(),
@@ -222,7 +282,7 @@ async fn page_capped_source_still_pages() -> Result<()> {
     // the thing being asserted, and they announce themselves.
     for start in (0..TOTAL).step_by(CAP) {
         let end = (start + CAP).min(TOTAL);
-        scenery.set_viewport(start..end);
+        scenery.set_viewport(start..end, 0..0);
         wait_for_row(&scenery, end - 1).await;
     }
     assert_eq!(scenery.row_count(), TOTAL, "the set did not shrink");

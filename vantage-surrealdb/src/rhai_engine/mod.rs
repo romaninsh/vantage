@@ -11,6 +11,8 @@ pub mod constructors;
 #[cfg(feature = "rhai")]
 pub mod convert;
 #[cfg(feature = "rhai")]
+mod namespace;
+#[cfg(feature = "rhai")]
 pub mod operators;
 #[cfg(feature = "rhai")]
 pub mod select_methods;
@@ -21,9 +23,6 @@ pub mod types;
 pub use types::{RhaiCase, RhaiExpr, RhaiIdent, RhaiSelect};
 
 /// The SurrealDB query-building vocabulary as a [`vantage_rhai::Vocab`].
-/// Register it *before* vantage-vista's `DataVocab` so its
-/// `table(name)` handle wins over this vocabulary's `table` alias for
-/// `ident` (which stays reachable as `ident(...)`).
 #[cfg(feature = "rhai")]
 pub struct SurrealVocab;
 
@@ -34,16 +33,15 @@ impl vantage_rhai::Vocab for SurrealVocab {
     }
 }
 
-/// The per-evaluation half of the vocabulary: `me`, the current-record
-/// anchor, as a scope variable. It used to be an `on_var` hook on the engine,
-/// which collided with the host's own resolver hook (rhai keeps only the last
-/// one installed); a variable composes.
-#[cfg(feature = "rhai")]
-pub fn surreal_env(env: vantage_rhai::Env) -> vantage_rhai::Env {
-    env.var("me", rhai::Dynamic::from(RhaiExpr(crate::primitives::me())))
-}
-
 /// Register the full SurrealDB query-building vocabulary onto `engine`.
+///
+/// The free functions (constructors such as `ident`, `expr`, `select`,
+/// `thing` and `graph`, the aggregates, the scalar functions) live in the
+/// `surreal::` namespace, and so does `surreal::me`, the current-record
+/// anchor: `surreal::graph(surreal::me, "placed", "order")`. Methods and
+/// operators on the vocabulary's own types (`.from`, `.where`, `.alias`,
+/// `["col"]`, `==`, `*`, ..) stay global, since they dispatch on their
+/// receiver and can't shadow the data vocabulary's verbs.
 ///
 /// Shared by two entry points:
 /// - [`SurrealVocab`], the form a [`vantage_rhai::Host`] takes (the `rhai:`
@@ -53,12 +51,14 @@ pub fn surreal_env(env: vantage_rhai::Env) -> vantage_rhai::Env {
 ///   vantage-vista's conventional `Vista` verbs so a reference build-script can
 ///   use `ident`/`==`/`fx`/graph syntax and `with_condition`.
 ///
-/// Prefer [`SurrealVocab`] on a host — this is the registration behind it. Limits and
-/// `me` are the host's and [`surreal_env`]'s business, not this function's.
+/// Prefer [`SurrealVocab`] on a host — this is the registration behind it.
+/// Limits are the host's business, not this function's.
 #[cfg(feature = "rhai")]
 pub fn register_surreal_onto(engine: &mut rhai::Engine) {
     use crate::AnySurrealType as AST;
     use crate::rhai_engine::types::{RhaiExpr as Ex, RhaiIdent as Id};
+
+    namespace::register_namespace(engine);
 
     {
         // ── Register types ────────────────────────────────────
@@ -67,62 +67,7 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
         engine.register_type::<Ex>();
         engine.register_type::<crate::rhai_engine::types::RhaiCase>();
 
-        // ── Constructors ──────────────────────────────────────
-        engine.register_fn("ident", crate::rhai_engine::constructors::make_rhai_ident);
-        engine.register_fn("table", crate::rhai_engine::constructors::make_rhai_ident);
-        engine.register_fn("expr", crate::rhai_engine::constructors::make_expr0);
-        engine.register_fn("expr", crate::rhai_engine::constructors::make_expr);
-        engine.register_fn("fx", crate::rhai_engine::constructors::make_fx);
-
-        // ── Aggregates ────────────────────────────────────────
-        engine.register_fn("count", crate::rhai_engine::constructors::fn_count_expr);
-        engine.register_fn("count", crate::rhai_engine::constructors::fn_count_of);
-        engine.register_fn(
-            "count_distinct",
-            crate::rhai_engine::constructors::fn_count_distinct,
-        );
-        engine.register_fn("sum", crate::rhai_engine::constructors::fn_sum);
-        engine.register_fn("avg", crate::rhai_engine::constructors::fn_avg);
-        engine.register_fn("min", crate::rhai_engine::constructors::fn_min);
-        engine.register_fn("max", crate::rhai_engine::constructors::fn_max);
-
-        // ── Tier 1 shared scalar/conditional primitives ───────
-        engine.register_fn("round", crate::rhai_engine::constructors::fn_round);
-        engine.register_fn("round", crate::rhai_engine::constructors::fn_round_to);
-        engine.register_fn("coalesce", crate::rhai_engine::constructors::fn_coalesce);
-        engine.register_fn("nullif", crate::rhai_engine::constructors::fn_nullif);
-        engine.register_fn("cast", crate::rhai_engine::constructors::fn_cast);
-        engine.register_fn(
-            "date_format",
-            crate::rhai_engine::constructors::fn_date_format,
-        );
-
-        // ── Tier 2 surreal-specific scalar/collection functions ───
-        engine.register_fn("first", crate::rhai_engine::constructors::fn_first);
-        engine.register_fn("len", crate::rhai_engine::constructors::fn_len);
-        engine.register_fn("stddev", crate::rhai_engine::constructors::fn_stddev);
-        engine.register_fn("median", crate::rhai_engine::constructors::fn_median);
-        engine.register_fn("lower", crate::rhai_engine::constructors::fn_lower);
-        engine.register_fn("words", crate::rhai_engine::constructors::fn_words);
-        engine.register_fn(
-            "object_entries",
-            crate::rhai_engine::constructors::fn_object_entries,
-        );
-        engine.register_fn(
-            "object_values",
-            crate::rhai_engine::constructors::fn_object_values,
-        );
-        engine.register_fn(
-            "time_group",
-            crate::rhai_engine::constructors::fn_time_group,
-        );
-        engine.register_fn(
-            "similarity",
-            crate::rhai_engine::constructors::fn_similarity,
-        );
-
-        // ── case_when().when().else_().expr() → IF … END ──────
-        engine.register_fn("case_when", crate::rhai_engine::constructors::fn_case_new);
+        // ── surreal::case_when().when().else_().expr() → IF … END ──
         engine.register_fn("when", crate::rhai_engine::constructors::fn_case_when);
         engine.register_fn("else_", crate::rhai_engine::constructors::fn_case_else);
         engine.register_fn("expr", crate::rhai_engine::constructors::fn_case_expr);
@@ -130,32 +75,6 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
             "clone",
             |c: crate::rhai_engine::types::RhaiCase| -> crate::rhai_engine::types::RhaiCase { c },
         );
-
-        // ── Arithmetic ────────────────────────────────────────
-        engine.register_fn("mul", crate::rhai_engine::constructors::fn_mul);
-        engine.register_fn("add", crate::rhai_engine::constructors::fn_add);
-        engine.register_fn("sub", crate::rhai_engine::constructors::fn_sub);
-        engine.register_fn("div", crate::rhai_engine::constructors::fn_div);
-
-        // ── SurrealDB-specific constructors ───────────────────
-        engine.register_fn("thing", crate::rhai_engine::constructors::fn_thing);
-        engine.register_fn("param", crate::rhai_engine::constructors::fn_param);
-        engine.register_fn("parent", crate::rhai_engine::constructors::fn_parent);
-        engine.register_fn("parent", crate::rhai_engine::constructors::fn_parent_bare);
-        engine.register_fn(
-            "array_group",
-            crate::rhai_engine::constructors::fn_array_group,
-        );
-        engine.register_fn("time_now", crate::rhai_engine::constructors::fn_time_now);
-        engine.register_fn(
-            "string_len",
-            crate::rhai_engine::constructors::fn_string_len,
-        );
-        engine.register_fn(
-            "type_float",
-            crate::rhai_engine::constructors::fn_type_float,
-        );
-        engine.register_fn("type_int", crate::rhai_engine::constructors::fn_type_int);
 
         // ── Ident methods ─────────────────────────────────────
         engine.register_fn("dot_of", |id: &mut Id, field: &str| -> Id {
@@ -263,9 +182,6 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
         reg_arith!("-");
         reg_arith!("/");
 
-        // ── Select constructor ────────────────────────────────
-        engine.register_fn("select", crate::rhai_engine::select_methods::select_new);
-
         // ── Select methods ────────────────────────────────────
         engine.register_fn("from", crate::rhai_engine::select_methods::select_from);
         engine.register_fn("from", crate::rhai_engine::select_methods::select_from_id);
@@ -328,15 +244,6 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
             crate::rhai_engine::select_methods::graph_arrow_field,
         );
 
-        // graph(me, "edge", "table", …) — direction set by `me`'s position
-        engine.register_fn("graph", crate::rhai_engine::constructors::fn_graph2);
-        engine.register_fn("graph", crate::rhai_engine::constructors::fn_graph3);
-        engine.register_fn("graph", crate::rhai_engine::constructors::fn_graph4);
-        engine.register_fn("graph", crate::rhai_engine::constructors::fn_graph5);
-        engine.register_fn("graph", crate::rhai_engine::constructors::fn_graph6);
-        engine.register_fn("graph", crate::rhai_engine::constructors::fn_graph7);
-        engine.register_fn("recurse", crate::rhai_engine::constructors::fn_recurse);
-
         // ── Embedded-array closures: .map / .fold / .filter ───────────
         engine.register_fn("map", crate::rhai_engine::constructors::fn_map);
         engine.register_fn("fold", crate::rhai_engine::constructors::fn_fold);
@@ -351,7 +258,7 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
 /// Bring the SurrealDB Rhai toolkit into scope: the `AST`/`Ex`/`Id`/`Sel`
 /// aliases and `__host()`, one shared [`vantage_rhai::Host`] carrying
 /// [`SurrealVocab`] under the background limit profile. Evaluate with
-/// `__host().compile(..)` and an `Env` from [`surreal_env`] so `me` resolves.
+/// `__host().compile(..)`; `surreal::me` needs no `Env` setup.
 #[cfg(feature = "rhai")]
 #[macro_export]
 macro_rules! register_surreal_engine {

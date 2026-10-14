@@ -4,7 +4,7 @@
 //! turn a write into a change event. SurrealDB streams changes natively over
 //! the WebSocket via `LIVE SELECT`, so there is nothing to wire: setup is just
 //! making sure the table exists. The live subscription is started later, in the
-//! server, with a single `dio.watch()`.
+//! server, with a single `live()` on the Dio builder.
 
 use surreal_client::SurrealConnection;
 use vantage_core::{Result, error};

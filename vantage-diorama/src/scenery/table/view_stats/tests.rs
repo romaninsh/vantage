@@ -84,23 +84,23 @@ fn state_marker_precedence() {
     };
     use LoadState::*;
     assert_eq!(
-        ViewState::derive(Loading, &rows(1, 1), true),
+        ViewState::derive(&Loading, &rows(1, 1), true),
         ViewState::Loading
     );
     assert_eq!(
-        ViewState::derive(Partial, &rows(1, 1), true),
+        ViewState::derive(&Partial, &rows(1, 1), true),
         ViewState::Failed
     );
     assert_eq!(
-        ViewState::derive(Partial, &rows(1, 0), true),
+        ViewState::derive(&Partial, &rows(1, 0), true),
         ViewState::PendingWrites
     );
     assert_eq!(
-        ViewState::derive(Complete, &rows(0, 0), true),
+        ViewState::derive(&Complete, &rows(0, 0), true),
         ViewState::Stale
     );
     assert_eq!(
-        ViewState::derive(Complete, &rows(0, 0), false),
+        ViewState::derive(&Complete, &rows(0, 0), false),
         ViewState::Ready
     );
 }

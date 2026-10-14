@@ -253,8 +253,8 @@ where
 
 #[macro_export]
 macro_rules! register_select {
-    ($engine:expr, value: $V:ty, select: $Select:ty, join: $Join:ty, cond: $Cond:ty) => {{
-        $engine.register_fn(
+    ($engine:expr, $ns:expr, value: $V:ty, select: $Select:ty, join: $Join:ty, cond: $Cond:ty) => {{
+        $ns.func(
             "select",
             $crate::rhai_engine::select_methods::select_new::<$V, $Select, $Join, $Cond>,
         );

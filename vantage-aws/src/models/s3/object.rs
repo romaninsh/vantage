@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use vantage_core::Result;
 use vantage_table::table::Table;
 
+use crate::models::request_param;
 use crate::types::AwsDateTime;
 use crate::{AwsAccount, eq};
 
@@ -26,7 +27,9 @@ pub struct Object {
 /// `ListObjectsV2` table. Requires `eq("Bucket", "...")` — without it
 /// the path placeholder errors out at request-build time. Optional
 /// `prefix` / `delimiter` / `max-keys` filters become query params if
-/// supplied.
+/// supplied. `prefix` and `delimiter` are declared as `RequestParam`
+/// columns, so a Vista can set them too; `max-keys` is the typed table's
+/// and the cursor's.
 ///
 /// Auto-paginates: the `@continuation-token=NextContinuationToken`
 /// cursor makes a listing walk every page (S3 returns at most 1000
@@ -45,6 +48,8 @@ pub fn objects_table(aws: AwsAccount) -> Table<AwsAccount, Object> {
     .with_title_column_of::<AwsDateTime>("LastModified")
     .with_column_of::<String>("ETag")
     .with_column_of::<String>("StorageClass")
+    .with_column(request_param("prefix"))
+    .with_column(request_param("delimiter"))
 }
 
 /// Fetch one object's content (`GetObject`) as text. Goes through the

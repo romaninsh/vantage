@@ -1,110 +1,130 @@
 # Vantage Diorama
 
-A Vista is a window into a single data source — a CSV file, a DynamoDB table, a
-GraphQL endpoint, a SurrealDB collection. Each source has its quirks: some can't
-sort, some are slow, some go offline. Diorama turns one or many such Vistas into
-something your application can actually use: a cached, composable, reactive
-surface that hides the rough edges.
+A Vista is a window onto one data source: a CSV file, a SQL table, an S3
+bucket, a REST endpoint. Each source has its quirks. Some can't sort, some
+are slow, some go offline, some page and some don't. An application that
+talks to the Vista directly inherits every one of those quirks, in every
+screen and every handler.
 
-Three things happen in this crate:
-
-1. **Caching.** Diorama keeps a local copy of data behind a Vista. The copy can
-   live in memory, on disk, or anywhere else you point it. Reads come from the
-   cache; writes go through it; refreshes are scheduled.
-2. **Composition.** When one Vista can't do everything you need — read-only CSV,
-   write-only audit log, no sort, no filter — you stack Vistas together. The
-   result advertises the union of their capabilities.
-3. **Reactivity.** When data changes, anything watching the Diorama hears about
-   it. A grid widget re-renders. A form sheet updates. A counter in your menu
-   bar refreshes. You write the data flow once; the UI follows.
+Diorama sits between the Vista and the application. It keeps a local copy of
+the data, answers reads from it, sends writes through it, and tells anything
+watching when the data moves. The application sees one shape for every
+source; the differences live in one place, the Lens.
 
 ## The four words
 
-You'll see these throughout the docs. Worth pinning down up front.
+- **Vista**: one backend source, from `vantage-vista`. It advertises exactly
+  what the backend can do natively.
+- **Lens**: the policy. Where rows are cached, how the cache is filled, how
+  often it is re-read, where writes go. Built once and shared.
+- **Dio**: one Vista run through a Lens. It owns the cache table, the write
+  queue and the event bus for that one set of rows.
+- **Scenery**: a reactive view onto a Dio. A table, a single record, or a
+  single value. A UI binds to it and repaints when its generation moves.
 
-- **Vista** — a single backend data source. Defined by `vantage-vista`. Speaks
-  whatever capabilities the backend natively supports.
-- **Lens** — the long-lived apparatus that holds your caching strategy, cache
-  backend, and lifecycle callbacks. Configured once per application.
-- **Dio** (short for *Diorama*) — the result of running a Vista through a Lens.
-  Produced cheaply by `lens.make_dio(vista)`. Owns the wrapped data + the
-  per-entity machinery.
-- **Scenery** — a reactive view onto a Dio. Tables, single records, and single
-  values all have their own Scenery type. The UI binds to it.
+The flow is `Vista → lens.dio(vista).build() → Dio → table_scenery() /
+record_scenery(id) / value_scenery(aggregate)`.
 
-The picture: `Vista → Lens.make_dio(vista) → Dio → Vista | Scenery`.
-
-## A small example
+## Example
 
 ```rust
-use std::sync::Arc;
-use std::time::Duration;
-use vantage_diorama::{Lens, scenery::SortDir};
+use ciborium::Value as CborValue;
+use vantage_dataset::traits::ReadableValueSet;
+use vantage_diorama::aggregate::Count;
+use vantage_diorama::{Cache, ChangeFlash, Lens, Loader};
+use vantage_types::Record;
+use vantage_vista::{Column, SortDirection, Vista, VistaMetadata, mocks::MockShell};
 
-let lens = Arc::new(
-    Lens::new()
-        .cache_at("./local.redb")
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
-        })
-        .refresh_every(Duration::from_secs(3600))
-        .build()?,
+let metadata = VistaMetadata::new()
+    .with_column(Column::new("id", "String").with_flag("id"))
+    .with_column(Column::new("name", "String"))
+    .with_column(Column::new("price", "i64"))
+    .with_id_column("id");
+let mut espresso = Record::new();
+espresso.insert("name".to_string(), CborValue::Text("Espresso".into()));
+espresso.insert("price".to_string(), CborValue::Integer(3.into()));
+let master = Vista::new(
+    "products",
+    MockShell::new().with_metadata(metadata).with_record("p1", espresso),
 );
 
-let products = lens.make_dio(products_vista).await?;
+let lens = Lens::builder()
+    .cache(Cache::memory())
+    .loader(Loader::eager(|cx| async move {
+        let rows = cx.master().list_values().await?;
+        cx.reconcile(rows).await
+    }))
+    .build()?;
 
-// Use it like any other Vista — but reads are instant, served from cache:
-let mut facade = products.vista();
-facade.add_condition_eq("category", "books".into())?;
-let books = facade.list_values().await?;
+let products = lens.dio(master).build().await?;
 
-// Or open a reactive view that re-renders when data changes:
-let scenery = products
+let grid = products
     .table_scenery()
-    .sort("price", SortDir::Asc)
+    .order("price", SortDirection::Ascending)
     .open()
     .await?;
+let count = products.value_scenery(Count::rows()).open().await?;
+
+let mut rename = Record::new();
+rename.insert("name".to_string(), CborValue::Text("Ristretto".into()));
+products.flash(ChangeFlash::partial("p1", rename)).await?;
 ```
 
-The Lens is the hard part: it decides what to cache, when to refresh, how to
-route writes. You write it once. After that, every Dio you make from it inherits
-the same policy, and the surfaces you spawn from each Dio (Vistas, Sceneries)
-are cheap to produce and cheap to drop.
+The Lens is the part worth thinking about. It decides what is cached, when it
+is refreshed and where writes land. Every Dio built from it inherits that
+policy, and the sceneries opened on each Dio are cheap to open and cheap to
+drop. The flash stages the change in the cache at once, so `grid` shows it
+before the master confirms, and rolls it back if the master refuses.
+
+`products.cached()` gives the same Dio back as an ordinary `Vista` for code
+that doesn't care about reactivity: a handler, a CLI, a test. Reads come
+from the cache and writes go through the same queue as a flash.
+
+## Prelude
+
+`use vantage_diorama::prelude::*;` brings in `Aggregation`, `ChangeEvent`,
+`ChangeFlash`, `Dio`, `Lens`, `RecordScenery`, `Servo`, `TableScenery` and
+`ValueScenery`. The Lens settings (`Cache`, `Loader`, `LoaderCx`,
+`Refresher`, `Tuning`) and the aggregates under `vantage_diorama::aggregate`
+are imported by name: a file that builds a Lens says so in its imports.
+
+## Features
+
+- `diagnostics`: the debug stream (`LensBuilder::debug_datasource` and the
+  `vantage_diorama::debug` tracing target), live-instance counts in
+  `vantage_diorama::stats`, and `Dio::diagnostics`. The tap runs in every
+  build; the feature publishes it.
+- `test-util`: hooks for harnesses that watch a Dio's internals, such as
+  `Dio::take_write_worker_handle`.
+- `rhai`: `Servo` as a Rhai type, registered with
+  `vantage_diorama::rhai::register_servo_onto`.
 
 ## Where to go next
 
-Pick the role that matches what you're trying to do.
+The book walks through Diorama with running code:
 
-- [Writing business logic](README_rust_dev.md) — using Diorama from API
-  handlers, internal libraries, CLIs. No UI involved.
-- [Configuring a Lens](README_lens.md) — cache strategies, callback patterns,
-  real-life scenarios beyond UI (mobile, edge, server-side).
-- [Wiring up a UI](README_ui.md) — binding Scenery to GPUI widgets and writing
-  adapters for other frameworks.
-- [Defining models](README_models.md) — what column metadata helps Diorama and
-  what to copy from `bakery_model3`.
-- [Implementing a data source](README_datasource.md) — what your Vista driver
-  has to do to be a good Diorama citizen.
-- [Architecture](ARCHITECTURE.md) — protocols, trait surfaces, concurrency
-  model. For maintainers and adapter authors.
+- [A facade over a custom API](https://vantage-ui.com/book/intro/step5-dio-lens.html):
+  the first Lens and Dio.
+- [Augmentation](https://vantage-ui.com/book/augmentation.html): enriching
+  each row from a second source.
+- [Live data](https://vantage-ui.com/book/live-data.html): push, poll and
+  freshness.
+- [Optimising Diorama](https://vantage-ui.com/book/optimising-diorama.html):
+  the debug stream, capabilities and latency.
+- [Migrating to 2.0](https://vantage-ui.com/book/migration-2.0.html): every
+  removed name and what replaced it.
 
-## Status
+The guides in this crate go deeper on one role each:
 
-`Lens`, `Dio`, the event bus, and v1 of all three Scenery types ship
-today, along with augmentation (`augment`), servos (`servo`) and the debug
-tap (`debug`). The composition primitives (`Diorama::overlay`,
-`Diorama::merge`) are still stubs. The reactive surface works against the
-real driver crates (`vantage-csv`, `vantage-sql`, `vantage-surrealdb`,
-`vantage-mongodb`, `vantage-api-client`, `vantage-log-writer`).
-
-GPUI widgets bound to Scenery live in the separate `vantage-ui` project, not
-in this repository; [`README_ui.md`](README_ui.md) describes the pattern.
-In this repository, `vantage-ui-adapters` has a ratatui table over a
-`TableScenery`, `vantage-api-adapters` serves a Dio over HTTP, and
-`vantage-diorama-aggregate` keeps counts, sums and group-bys live on top of
-a Dio.
+- [Configuring a Lens](https://github.com/romaninsh/vantage/blob/main/vantage-diorama/README_lens.md):
+  the four settings, cache identity, events.
+- [Implementing a data source](https://github.com/romaninsh/vantage/blob/main/vantage-diorama/README_datasource.md):
+  what a driver and a loader each owe Diorama.
+- [Working on Diorama in Rust](https://github.com/romaninsh/vantage/blob/main/vantage-diorama/README_rust_dev.md):
+  using a Dio from business code, the module map, features, tests and the API snapshot.
+- [Wiring up a UI](https://github.com/romaninsh/vantage/blob/main/vantage-diorama/README_ui.md):
+  binding sceneries to widgets.
+- [Defining models](https://github.com/romaninsh/vantage/blob/main/vantage-diorama/README_models.md):
+  the column metadata that helps Diorama, and aggregates.
+- [Architecture](https://github.com/romaninsh/vantage/blob/main/vantage-diorama/ARCHITECTURE.md):
+  protocols and concurrency, for maintainers.

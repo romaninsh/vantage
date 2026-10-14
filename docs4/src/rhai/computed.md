@@ -84,9 +84,9 @@ For order `INV-c1-0001` with `net: 100` this returns `o1: ["c1", 20, 120]`, the 
 - There is no `table(name)` in scope. A computed column sees one row. To bring in data from another
   table, use [augmentation](../augmentation.md).
 
-Every read path fills computed columns: `list_values`, `get_value`, `get_some_value`, streams,
-`fetch_page`, `fetch_next`, `fetch_window`, and watched changes. Anything built on a Vista sees them
-without knowing they exist: data scripts, Dio caches, grids.
+Every read path fills computed columns: `list_values`, `get_value`, `fetch_window`,
+`fetch_cursor`, and watched changes. Anything built on a Vista sees them without knowing they
+exist: data scripts, Dio caches, grids.
 
 ## Declaring one
 
@@ -100,16 +100,17 @@ In Rust, [`Column::with_expression`](vantage_vista::Column::with_expression) tur
 computed one:
 
 <!-- tested: rhai_guide::computed::declare_in_rust -->
-```rust,ignore
+```rust
+# use vantage_vista::{Column, ColumnFlag};
 let gross = Column::new("gross", "int")
-    .with_flag("orderable")
+    .with_flag(ColumnFlag::Orderable)
     .with_expression("row.net + row.vat")
     .unwrap();
 
 assert!(gross.is_computed());
 assert_eq!(gross.expression(), Some("row.net + row.vat"));
-assert!(gross.has_flag(flags::CALCULATED));
-assert!(!gross.has_flag(flags::ORDERABLE));
+assert!(gross.has_flag(ColumnFlag::Calculated));
+assert!(!gross.has_flag(ColumnFlag::Orderable));
 ```
 
 `with_expression` needs the `rhai` feature and returns an error, naming the column, when the
@@ -121,8 +122,10 @@ the SQL, SurrealDB, MongoDB, CSV, REST and GraphQL factories fold `lazy:` into a
 The expression isn't serialized. A `Column` that goes through serde comes back as a stored column
 that keeps only its `calculated` flag.
 
-If you only need the closure, [`lazy_value_closure`](vantage_vista::rhai::lazy_value_closure)
-compiles a script into an `Fn(&Record) -> Result<CborValue>`:
+A Vista you build by hand takes a computed column the same way: put the
+[`Column::with_expression`](vantage_vista::Column::with_expression) column in the
+`VistaMetadata` the shell reports, and every read fills it. A `lines` column over a note's
+`contents`:
 
 <!-- tested: rhai_guide::computed::closure -->
 ```rhai
@@ -164,16 +167,7 @@ table("order").sort("gross", "desc").list()   // throws
 The first fails with `Step can't be applied (step: Where { col: "gross", … }): Computed column
 can't be used to filter, order or aggregate; the backend doesn't hold its values (column: "gross",
 operation: "condition")`. The error is marked unsupported, like any other narrowing a backend can't
-do. In Rust, `Vista::add_condition`, `add_condition_eq` and `add_order` refuse the same way, and so
-does `aggregate` for a computed column or group key:
-
-<!-- tested: rhai_guide::computed::aggregate_refused -->
-```rust,ignore
-let sum = orders.aggregate(&AggregateSpec::new("sum", "total").column("gross"));
-assert!(sum.is_err());
-let by_client = orders.aggregate(&AggregateSpec::new("count", "n").group_by("client"));
-assert!(by_client.is_err());
-```
+do. In Rust, `Vista::add_condition` and `set_order` refuse the same way.
 
 To filter on a derived value, filter on the stored columns it comes from (`net` rather than
 `gross`), or compute it in the backend's query: a [query-sourced table](./query-tables.md) or
@@ -205,8 +199,10 @@ throws:
 table("client").where("id", "c1").ref("orders").ids()   // throws
 ```
 
-with `Has-many relation can't join on a computed column of its target (relation: "orders", column:
-"client")`. `Vista::get_ref` makes the same check. A nested insert that would have to write a
+with `can't narrow the relation's target to the parent row`, naming the relation `orders` and the
+column `client`, caused by the computed-column refusal above. `Vista::get_ref` narrows through the
+same [`Reference::narrow`](vantage_vista::Reference::narrow), so it refuses the same way. A nested
+insert that would have to write a
 computed foreign key (into the parent for has-one, into each child for has-many) is refused before
 anything is written.
 

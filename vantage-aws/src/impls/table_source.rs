@@ -24,12 +24,35 @@ use vantage_expressions::{
     traits::expressive::{DeferredFn, ExpressiveEnum},
 };
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::table::Table;
+use vantage_table::table::{Table, retain_matching};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
 use crate::account::AwsAccount;
 use crate::condition::AwsCondition;
+
+/// Apply `Eq` conditions naming record fields to fetched rows.
+///
+/// AWS APIs only push down their own request parameters (`PathPrefix`,
+/// `logGroupNamePrefix`, `cluster`). Conditions naming actual record fields
+/// (`UserName`, `Path`, `clusterArn`) are applied here, so narrowing works
+/// whatever the API filters server-side. A row without the field fails when
+/// the field is one of `row_fields` ([`Table::row_fields`]); any other
+/// field is a request parameter, already applied.
+pub(crate) fn retain_eq_conditions(
+    records: &mut IndexMap<String, Record<CborValue>>,
+    conditions: &[AwsCondition],
+    row_fields: &[String],
+) {
+    let eqs: Vec<(&str, &CborValue)> = conditions
+        .iter()
+        .filter_map(|c| match c {
+            AwsCondition::Eq { field, value } => Some((field.as_str(), value)),
+            _ => None,
+        })
+        .collect();
+    retain_matching(records, &eqs, row_fields, |held, wanted| held == wanted);
+}
 
 #[async_trait]
 impl TableSource for AwsAccount {
@@ -112,24 +135,7 @@ impl TableSource for AwsAccount {
         let conditions: Vec<AwsCondition> = table.conditions().cloned().collect();
         let resp = self.execute_rpc(table.table_name(), &conditions).await?;
         let mut records = self.parse_records(table.table_name(), resp, id_field.as_deref())?;
-
-        // AWS APIs only push down their own request-param filters
-        // (e.g. `PathPrefix`, `logGroupNamePrefix`, `cluster`). Eq
-        // conditions naming actual record fields (`UserName`, `Path`,
-        // `clusterArn`) are still useful — apply them post-hoc so
-        // narrowing works regardless of what the API filters
-        // server-side. Field names that don't appear on any record are
-        // assumed to be request params and skipped.
-        records.retain(|_id, record| {
-            conditions.iter().all(|c| match c {
-                AwsCondition::Eq { field, value } => match record.get(field) {
-                    Some(rec_val) => rec_val == value,
-                    None => true,
-                },
-                _ => true,
-            })
-        });
-
+        retain_eq_conditions(&mut records, &conditions, &table.row_fields());
         Ok(records)
     }
 

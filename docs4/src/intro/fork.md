@@ -68,10 +68,11 @@ sorts, searches, and joins. What you want is a *live, cached, watchable facade* 
 instant reads, changes streaming to every viewer, writes routed on your terms.
 
 The example builds a bar's product inventory whose stock ticks down in real time as items sell.
-The same caching, reactive, watch-streaming stack — and the path ends by moving the app from
-**SQLite to PostgreSQL** with a single switch, proving the backend was never load-bearing.
+The same caching, reactive, watch-streaming stack — and the path moves the app from **SQLite to
+PostgreSQL** with a single switch, then on to SurrealDB, proving the backend was never
+load-bearing.
 
-**[Take Path B →](./step5-sql-dio.md)** — steps 5–7.
+**[Take Path B →](./step5-sql-dio.md)** — steps 5–9.
 ```
 
 ## Why the guide leads with S3

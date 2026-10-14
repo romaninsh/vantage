@@ -49,20 +49,20 @@ async fn refresh_after_reorder_does_not_duplicate_rows() -> Result<()> {
         ("d".into(), rec("d", 10)),
     ]));
     let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
-    let dio = lens.make_dio(master()).await?;
+    let dio = lens.dio(master()).build().await?;
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
 
     // Load the whole set, then narrow the live viewport to the top rows (the
     // grid's visible window is smaller than what it has loaded).
     let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..4);
+    scenery.set_viewport(0..4, 0..0);
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
     assert_eq!(name_at(&scenery, 0).as_deref(), Some("a"));
     assert_eq!(name_at(&scenery, 3).as_deref(), Some("d"));
 
-    scenery.set_viewport(0..2); // visible window shrinks; last_viewport = 0..2
+    scenery.set_viewport(0..2, 0..0); // visible window shrinks; the view's viewport = 0..2
     settle().await;
 
     // Simulator bumps d to the top: native order becomes d,a,b,c.

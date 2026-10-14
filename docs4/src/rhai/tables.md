@@ -36,7 +36,7 @@ keep a base handle in a variable and branch from it as often as you like.
 | `ref(relation)` | the related rows of every row in the set |
 
 Conditions add up: every `where` narrows further. Sorting keeps one column. A later `sort`
-replaces an earlier one, as `Vista::add_order` does. Several `limit` steps keep the smallest.
+replaces an earlier one, as `Vista::set_order` does. Several `limit` steps keep the smallest.
 
 `limit(n)` limits the set itself, not just one read: `list()`, `ids()` and `count()` all see at
 most `n` rows, a `ref` after it follows only those `n` rows, and `import_from` copies only those
@@ -56,8 +56,8 @@ let invoices = table("client").ref("invoices");   // nothing resolves yet
 invoices.count()                                  // throws here
 ```
 
-The error names the step: `Step can't be applied (step: Ref("invoices")): No reference with this
-name (relation: "invoices")`.
+The error names the step, `Step can't be applied (step: Ref("invoices"))`, and its cause, an
+`unknown relation` naming `invoices`. An unknown relation is a not-found error.
 
 ## Reads
 
@@ -79,7 +79,7 @@ let ghost = clients.get("c9");
 | `list()` | an array of row maps, capped by the host's limit and any `limit(n)` |
 | `get(id)` | the row map, or `()` when no row has that id |
 | `first()` | the first row map in sort order, or `()` for an empty set |
-| `count()` | the number of rows, as an integer, at most `n` after `limit(n)`; needs `can_count` |
+| `count()` | the number of rows, as an integer, at most `n` after `limit(n)` |
 | `ids()` | an array of id strings, in sort order (insertion order when unsorted) |
 
 Row maps always include the id column, filled from the row's key when the backend doesn't return
@@ -89,8 +89,10 @@ and uses its decimal form.
 A missing row is not an error for reads: `get` returns `()`. Compare with `()` as above, or use
 Rhai's `??`.
 
-`list()` reads through `fetch_window` when the backend has it, so a capped read fetches only the
-rows it returns. Otherwise it reads the whole set and truncates.
+A capped read (the host's limit or a `limit(n)`) reads the set's leading window,
+`fetch_window(0, n)`, which every backend that lists answers, so it fetches only the rows it
+returns. A backend that refuses the leading window makes the read throw; it never falls back to
+listing the whole set.
 
 ## Following relations
 
@@ -153,18 +155,26 @@ Three reads describe the table instead of its rows:
 let orders = table("order");
 
 #{
-    can_insert: orders.capabilities().can_insert,
+    insert: orders.capabilities().insert,
     columns: orders.columns().map(|c| c.name),
     references: orders.references().map(|r| r.name + " " + r.kind),
 }
 ```
 
-- `capabilities()` is a map of every `VistaCapabilities` flag: `can_count`, `can_insert`,
-  `can_update`, `can_delete`, `can_import`, `can_order`, `can_search`, `can_fetch_window` and
-  the rest. A script that may run against different backends can check before it writes.
-- `columns()` is an array of `#{ name, type, flags }`.
-- `references()` is an array of `#{ name, kind, contained }`. `kind` is `"HasOne"` or `"HasMany"`;
-  `contained` marks relations stored inside the row (see
+This returns `insert: true`, the columns `id`, `client`, `total`, `status`, and the references
+`["client has_one"]`.
+
+- `capabilities()` is a map with one boolean per capability, keyed by its name. The keys come
+  from [`Capability::iter()`](vantage_vista::Capability::iter), so every capability is listed:
+  `insert`, `update`, `delete`, `import`, `subscribe`, `order`, `search`, `filter_ops`,
+  `native_conditions`, `window`, `cursor`, `traverse` and `confine_writes`. There is no `count`
+  key: every Vista can count. A script that may run against different backends can check before
+  it writes.
+- `columns()` is an array of `#{ name, type, flags }`. `type` is `()` for a column declared
+  without a type.
+- `references()` is an array of `#{ name, kind, contained }`. `kind` is the YAML name:
+  `"has_one"`, `"has_many"`, `"contains_one"` or `"contains_many"`; `contained` marks relations
+  stored inside the row (see
   [Contained Relations](../new-persistence/step9-contained-relations.md)).
 
 These resolve the handle, so they describe the table as narrowed. Capabilities rarely change with
@@ -173,13 +183,10 @@ narrowing, but a query-sourced table reports no write capabilities at all.
 ## Handles in Rust
 
 A host that gets a handle back from a script reads it through
-[`Handle`](vantage_vista::Handle): `table_name()` is the starting table (`None` for a handle over a
-Vista), `steps()` is the list of [`Step`](vantage_vista::rhai::Step)s, and `resolve(resolver)` builds the
-Vista. Query preview works this way: the script returns a handle, and the host renders the resolved
-Vista's query.
+[`Handle`](vantage_vista::rhai::Handle): `table_name()` is the starting table (`None` for a handle
+over a Vista), and `resolve(resolver)` builds the Vista with every step applied. Query preview works
+this way: the script returns a handle, and the host renders the resolved Vista's query.
 
-A handle can also start from a Vista instead of a name (`Handle::over(vista)`), which is how `self`
-reaches `modify:` scripts. Since a Vista isn't `Clone`, each resolve copies it with
-`TableShell::clone_shell()`. A backend that can't copy its shell hands the Vista over once, and a
-second resolve of the same handle fails with "this handle's backend can't be copied; build it
-again from `table(...)`".
+A handle can also start from a Vista instead of a name, which is how `self` reaches `modify:`
+scripts. The handle holds that Vista as its base and clones it on each resolve, so the same handle
+resolves as often as you like. Verbs on `self` return new handles, like any other narrowing.

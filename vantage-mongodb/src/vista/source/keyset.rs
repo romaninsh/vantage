@@ -1,4 +1,4 @@
-//! Keyset (seek) pagination for `fetch_next`.
+//! Keyset (seek) pagination for `fetch_cursor`.
 //!
 //! A page is the next `size` documents strictly after the last row of the
 //! previous page in the sort order: the table's orders followed by `_id`
@@ -200,7 +200,7 @@ pub(crate) fn encode_token(values: &[Bson]) -> Result<CborValue> {
             let mut bytes = Vec::new();
             doc! { "v": v.clone() }
                 .to_writer(&mut bytes)
-                .map_err(|_| error!("could not encode fetch_next token for mongodb driver"))?;
+                .map_err(|_| error!("could not encode fetch_cursor token for mongodb driver"))?;
             Ok(CborValue::Bytes(bytes))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -208,7 +208,7 @@ pub(crate) fn encode_token(values: &[Bson]) -> Result<CborValue> {
 }
 
 pub(crate) fn decode_token(token: &CborValue) -> Result<Vec<Bson>> {
-    let invalid = || error!("invalid fetch_next token for mongodb driver");
+    let invalid = || error!("invalid fetch_cursor token for mongodb driver");
     let CborValue::Array(items) = token else {
         return Err(invalid());
     };

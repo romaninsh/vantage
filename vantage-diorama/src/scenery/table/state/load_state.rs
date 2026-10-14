@@ -1,12 +1,12 @@
-//! Settled flag, debug state lines, generation counter and per-load trackers.
+//! Settled flag, debug state lines, the generation fan-out and per-load trackers.
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::dio::Generation;
+use super::super::view::ViewSignal;
+use super::SharedRows;
 
-use super::TableSceneryState;
-
-impl TableSceneryState {
+impl SharedRows {
     /// Mark the first load complete — the view now shows an answer, even if
     /// that answer is "no rows".
     ///
@@ -39,6 +39,14 @@ impl TableSceneryState {
         }
     }
 
+    /// Take back the answer: the rows on screen no longer answer the view's
+    /// query, so it reads as loading until the load that does settles it.
+    pub(crate) fn unsettle(&self) {
+        if self.settled.swap(false, Ordering::SeqCst) {
+            self.publish_view_stats();
+        }
+    }
+
     /// Emit a `"state"` debug line when this scenery's [`LoadState`](super::super::LoadState)
     /// has changed since the last call. Checks the tap BEFORE computing the
     /// state — the computation takes the `rows`/`total` locks, a cost the
@@ -49,26 +57,36 @@ impl TableSceneryState {
         }
         let to = super::super::compute_load_state(self);
         let mut last = self.last_debug_state.lock().unwrap();
-        if *last == Some(to) {
+        if last.as_ref() == Some(&to) {
             return;
         }
-        let from = *last;
-        *last = Some(to);
+        let from = last.replace(to.clone());
         drop(last);
         crate::debug::tapline!(
             self.debug_tap,
             "scenery",
             "{} → {} ({})",
-            from.map(|s| s.as_str()).unwrap_or("opening"),
+            from.as_ref().map(|s| s.as_str()).unwrap_or("opening"),
             to.as_str(),
             reason,
         );
     }
 
+    /// The rows moved: every attached view's generation advances.
     pub(crate) fn bump_generation(&self) {
-        let next = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.generation_tx.send_replace(Generation(next));
+        for signal in self.signals() {
+            signal.bump();
+        }
         self.publish_view_stats();
+    }
+
+    /// The live signals of the attached views.
+    pub(crate) fn signals(&self) -> Vec<Arc<ViewSignal>> {
+        let views = self.views.lock().unwrap();
+        views
+            .values()
+            .filter_map(|hook| hook.signal.upgrade())
+            .collect()
     }
 
     /// Release the two-pass list single-flight and republish, so the
@@ -76,10 +94,6 @@ impl TableSceneryState {
     pub(crate) fn clear_list_in_flight(&self) {
         *self.list_in_flight.lock().unwrap() = false;
         self.publish_view_stats();
-    }
-
-    pub(crate) fn current_generation(&self) -> u64 {
-        self.generation.load(Ordering::SeqCst)
     }
 
     /// Clear the per-load trackers (dirty flag + push count) before dispatching

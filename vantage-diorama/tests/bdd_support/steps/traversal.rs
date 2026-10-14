@@ -3,14 +3,12 @@
 //! is temporarily unreachable — a dead relation source must never read as "no
 //! such reference".
 
-use std::sync::Arc;
-
 use ciborium::Value as CborValue;
 use cucumber::{given, then, when};
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::Lens;
+use vantage_diorama::{Cache, Lens, Loader, LoaderCx};
 use vantage_types::Record;
-use vantage_vista::{Column, Reference, ReferenceKind, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Column, JoinKey, Reference, Vista, VistaMetadata, mocks::MockShell};
 
 use crate::bdd_support::world::DioramaWorld;
 
@@ -51,18 +49,17 @@ fn launch_master(crew: MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_column(Column::new("name", "String"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_many(
             "crew",
             "launch_crew",
-            ReferenceKind::HasMany,
-            "launch_id",
+            JoinKey::new("id", "launch_id"),
         ));
     let shell = MockShell::new()
         .with_metadata(meta)
         .with_record("L1", rec(&[("id", "L1"), ("name", "Apollo 11")]))
         .with_record("L2", rec(&[("id", "L2"), ("name", "Apollo 12")]))
         .with_ref_target("crew", crew);
-    Vista::new("launches", Box::new(shell))
+    Vista::new("launches", shell)
 }
 
 #[given("a launch master with a crew reference behind a warm-cache lens")]
@@ -70,23 +67,17 @@ async fn launch_with_crew(w: &mut DioramaWorld) {
     // Warm-cache-aware eager lens (mirrors the UI's `build_eager_lens`): copy
     // the master into the cache on first open, but TRUST a warm cache — so a
     // target whose source has gone down still opens from previously-cached rows.
-    let cache = w.cache_source();
-    let lens = Arc::new(
-        Lens::new()
-            .cache_source(cache)
-            .on_start(|dio| {
-                let dio = dio.clone();
-                async move {
-                    if dio.cache().count().await? > 0 {
-                        return Ok(());
-                    }
-                    let rows = dio.master().list_values().await?;
-                    dio.cache().insert_values(rows).await
-                }
-            })
-            .build()
-            .expect("build lens"),
-    );
+    let lens = Lens::builder()
+        .cache(Cache::backend(w.cache_source()))
+        .loader(Loader::eager(|cx: LoaderCx| async move {
+            if cx.cache().count().await? > 0 {
+                return Ok(());
+            }
+            let rows = cx.master().list_values().await?;
+            cx.cache().insert_values(rows).await
+        }))
+        .build()
+        .expect("build lens");
 
     let crew = crew_shell();
     // Keep a handle that shares the fail toggle + store, so a later step can
@@ -94,9 +85,10 @@ async fn launch_with_crew(w: &mut DioramaWorld) {
     w.ref_source = Some(crew.clone());
 
     let dio = lens
-        .make_dio(launch_master(crew))
+        .dio(launch_master(crew))
+        .build()
         .await
-        .expect("make launch dio");
+        .expect("build launch dio");
     w.lens = Some(lens);
     w.dio = Some(dio);
 }
@@ -159,8 +151,8 @@ async fn caches_distinct(w: &mut DioramaWorld, a: String, b: String) {
         .await
         .expect("traverse b");
     assert_ne!(
-        crew_a.cache_table_name(),
-        crew_b.cache_table_name(),
+        crew_a.diagnostics().await.expect("diagnostics").cache_table,
+        crew_b.diagnostics().await.expect("diagnostics").cache_table,
         "each launch's crew must live in its own cache table"
     );
 }

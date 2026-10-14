@@ -3,6 +3,15 @@
 #[path = "common/safe_writes.rs"]
 mod safe_writes_contract;
 
+#[cfg(all(feature = "postgres", feature = "vista"))]
+#[path = "common/dotted.rs"]
+mod dotted;
+
+#[cfg(all(feature = "postgres", feature = "vista"))]
+#[macro_use]
+#[path = "common/vista.rs"]
+mod vista_suite;
+
 #[cfg(feature = "postgres")]
 mod postgres {
     #[path = "4_aggregates.rs"]
@@ -50,4 +59,7 @@ mod postgres {
     #[cfg(feature = "vista")]
     #[path = "6_vista.rs"]
     mod vista;
+    #[cfg(feature = "vista")]
+    #[path = "6_vista_contract.rs"]
+    mod vista_contract;
 }

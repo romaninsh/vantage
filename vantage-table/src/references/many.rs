@@ -7,6 +7,7 @@ use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use vantage_core::{Result, error};
 use vantage_types::{EmptyEntity, Entity, Record};
+use vantage_vista::{JoinKey, Reference as VistaReference};
 
 use crate::{references::Reference, table::Table, traits::table_source::TableSource};
 
@@ -68,8 +69,12 @@ where
         (source_id.to_string(), self.target_foreign_key.clone())
     }
 
-    fn foreign_key(&self) -> &str {
-        &self.target_foreign_key
+    fn vista_reference(&self, name: &str, target: String, source_id: &str) -> VistaReference {
+        VistaReference::has_many(
+            name,
+            target,
+            JoinKey::new(source_id, &self.target_foreign_key),
+        )
     }
 
     fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any> {
@@ -84,10 +89,6 @@ where
             .downcast_ref::<T>()
             .expect("data source type mismatch in HasMany::build_target_erased");
         Box::new((self.build_target)(ds.clone()).into_entity::<EmptyEntity>())
-    }
-
-    fn cardinality(&self) -> vantage_vista::ReferenceKind {
-        vantage_vista::ReferenceKind::HasMany
     }
 
     fn resolve_from_row(
@@ -120,7 +121,10 @@ where
         Ok(Box::new(target.into_entity::<EmptyEntity>()))
     }
 
-    fn target_type_name(&self) -> &'static str {
-        std::any::type_name::<Table<T, TargetE>>()
+    fn target_table_name(&self, data_source: &dyn Any) -> String {
+        let ds = data_source
+            .downcast_ref::<T>()
+            .expect("data source type mismatch in HasMany::target_table_name");
+        (self.build_target)(ds.clone()).table_name().to_string()
     }
 }

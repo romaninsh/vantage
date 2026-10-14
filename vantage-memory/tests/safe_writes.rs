@@ -4,11 +4,10 @@ use ciborium::Value as CborValue;
 use vantage_dataset::contract::{self, Fixture, OpFixture};
 use vantage_dataset::prelude::*;
 use vantage_memory::typed::operation::MemoryOperation;
-use vantage_memory::vista::Catalog;
-use vantage_memory::{AnyMemoryType, MemoryDB, MemoryStore, MemoryTableShell};
+use vantage_memory::{AnyMemoryType, MemoryCatalog, MemoryDB, MemoryStore};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Column, FilterOp, Vista, VistaMetadata};
+use vantage_vista::{Column, ColumnFlag, FilterOp, Vista, VistaMetadata, VistaResolver};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -32,16 +31,14 @@ fn seeded() -> MemoryStore {
 
 fn vista(store: &MemoryStore) -> Vista {
     let md = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+        .with_column(Column::new("name", "String"))
+        .with_column(Column::new("parent", "String"))
+        .with_column(Column::new("price", "int"))
         .with_id_column("id");
-    Vista::new(
-        "item",
-        Box::new(MemoryTableShell::new(
-            store.table("item"),
-            md,
-            Catalog::new(store.clone()),
-        )),
-    )
+    let catalog = MemoryCatalog::new(store.clone());
+    catalog.register("item", md);
+    catalog.vista("item").unwrap()
 }
 
 macro_rules! vista_check {
@@ -51,7 +48,8 @@ macro_rules! vista_check {
             let store = seeded();
             let all = vista(&store);
             let mut set = vista(&store);
-            set.add_condition_eq("parent", text("p1")).unwrap();
+            set.add_condition("parent", FilterOp::Eq, text("p1"))
+                .unwrap();
             $check(&Fixture {
                 all: &all,
                 set: &set,
@@ -142,6 +140,40 @@ async fn typed_insert_return_id_misfit_is_conflict_without_empty_id() {
         .unwrap_err();
     assert!(err.is_conflict(), "{err}");
     assert!(!err.to_string().contains("id: \"\""), "{err}");
+}
+
+/// A set narrowed on a path into a map takes only rows that hold the value
+/// there, and stores no flat `"origin.country"` cell.
+#[tokio::test]
+async fn vista_dotted_set_confines_inserts() {
+    let catalog = MemoryCatalog::new(MemoryStore::new());
+    catalog.register(
+        "item",
+        VistaMetadata::new()
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+            .with_column(Column::untyped("origin"))
+            .with_id_column("id"),
+    );
+    let set = catalog
+        .vista("item")
+        .unwrap()
+        .with_condition("origin.country", FilterOp::Eq, text("India"))
+        .unwrap();
+    let origin = |country: &str| -> Record<CborValue> {
+        let map = CborValue::Map(vec![(text("country"), text(country))]);
+        [("origin".to_string(), map)].into_iter().collect()
+    };
+
+    let err = set.insert_value("k", &origin("Kenya")).await.unwrap_err();
+    assert!(err.is_conflict(), "{err}");
+    let err = set.insert_value("e", &Record::new()).await.unwrap_err();
+    assert!(err.is_conflict(), "{err}");
+
+    let stored = set.insert_value("i", &origin("India")).await.unwrap();
+    assert_eq!(stored["origin"], origin("India")["origin"]);
+    assert!(!stored.contains_key("origin.country"), "{stored:?}");
+    let row = catalog.store().table("item").get("i").unwrap();
+    assert!(!row.contains_key("origin.country"), "{row:?}");
 }
 
 #[tokio::test]

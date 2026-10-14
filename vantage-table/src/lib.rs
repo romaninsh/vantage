@@ -35,6 +35,7 @@
 
 pub mod traits;
 
+#[cfg(any(test, feature = "mocks"))]
 pub mod mocks;
 
 pub mod active_entity_ext;

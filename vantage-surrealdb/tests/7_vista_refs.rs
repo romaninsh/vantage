@@ -17,8 +17,8 @@ use vantage_dataset::prelude::*;
 use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
-use vantage_surrealdb::vista::{SurrealSpecResolver, SurrealVistaFactory, SurrealVistaSpec};
-use vantage_vista::VistaFactory;
+use vantage_surrealdb::vista::{SurrealVistaFactory, SurrealVistaSpec};
+use vantage_vista::{SpecResolver, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -70,7 +70,9 @@ async fn seed_v2_like(
     Ok(())
 }
 
-fn registry_resolver(specs: Vec<(String, SurrealVistaSpec)>) -> SurrealSpecResolver {
+fn registry_resolver(
+    specs: Vec<(String, SurrealVistaSpec)>,
+) -> Arc<dyn SpecResolver<SurrealVistaSpec>> {
     let map: IndexMap<String, SurrealVistaSpec> = specs.into_iter().collect();
     let map = Arc::new(map);
     Arc::new(move |name: &str| map.get(name).cloned())
@@ -131,7 +133,8 @@ async fn has_many_traversal_lists_related_rows() -> TestResult {
     let bakery = factory.build_from_spec(bakery_spec)?;
     let bakery_row = bakery.get_value("hill_valley").await?.expect("bakery row");
 
-    let clients = bakery.get_ref("clients", &bakery_row)?;
+    let clients = bakery.get_ref("clients", Some(&bakery_row))?;
+    assert!(clients.is_narrowed(), "the join is recorded on the target");
     let rows = clients.list_values().await?;
     assert_eq!(rows.len(), 3, "hill_valley has 3 clients");
 
@@ -163,7 +166,7 @@ async fn has_one_traversal_returns_parent_row() -> TestResult {
     let client = factory.build_from_spec(client_spec)?;
     let client_row = client.get_value("marty").await?.expect("client row");
 
-    let bakery = client.get_ref("bakery", &client_row)?;
+    let bakery = client.get_ref("bakery", Some(&client_row))?;
     let rows = bakery.list_values().await?;
     assert_eq!(rows.len(), 1, "marty belongs to one bakery");
     let row = rows.values().next().expect("bakery row");
@@ -193,12 +196,12 @@ async fn many_to_many_via_chained_has_many_through_has_one() -> TestResult {
     let client = factory.build_from_spec(client_spec)?;
     let marty = client.get_value("marty").await?.expect("marty");
 
-    let bakery_for_marty = client.get_ref("bakery", &marty)?;
+    let bakery_for_marty = client.get_ref("bakery", Some(&marty))?;
     let bakery_rows = bakery_for_marty.list_values().await?;
     assert_eq!(bakery_rows.len(), 1);
     let (_, bakery_row) = bakery_rows.into_iter().next().unwrap();
 
-    let sibling_clients = bakery_for_marty.get_ref("clients", &bakery_row)?;
+    let sibling_clients = bakery_for_marty.get_ref("clients", Some(&bakery_row))?;
     let sibling_rows = sibling_clients.list_values().await?;
     assert_eq!(sibling_rows.len(), 3, "all 3 clients of marty's bakery");
 

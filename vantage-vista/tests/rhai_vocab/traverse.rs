@@ -5,17 +5,13 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use serde_json::json;
-use vantage_memory::MemoryStore;
-use vantage_memory::MemoryTableShell;
-use vantage_memory::vista::Catalog;
-use vantage_rhai::{Host, Limits};
+use vantage_memory::{MemoryCatalog, MemoryStore};
+use vantage_rhai::Host;
 use vantage_types::Record;
-use vantage_vista::{
-    Column, DataVocab, Reference, ReferenceKind, TargetResolver, Terminals, Vista, VistaMetadata,
-    Writes, preview_script,
-};
+use vantage_vista::rhai::preview_script;
+use vantage_vista::{Column, ColumnFlag, JoinKey, Reference, VistaMetadata, VistaResolver};
 
-use super::support::{json, read_write, run, store};
+use super::support::{host_with, json, read_write, read_write_terminals, run, store};
 
 fn text_row(pairs: &[(&str, &str)]) -> Record<CborValue> {
     pairs
@@ -25,7 +21,7 @@ fn text_row(pairs: &[(&str, &str)]) -> Record<CborValue> {
 }
 
 /// Clients c1 Ada, c2 Ben, c3 Cy; orders o1, o2 (c1), o3 (c2), o4 (c3).
-fn shop() -> TargetResolver {
+fn shop() -> Arc<dyn VistaResolver> {
     let store = MemoryStore::new();
     for (id, name) in [("c1", "Ada"), ("c2", "Ben"), ("c3", "Cy")] {
         store
@@ -39,51 +35,36 @@ fn shop() -> TargetResolver {
             .insert_as(id, text_row(&[("client", client)]))
             .unwrap();
     }
-    let catalog = Catalog::new(store);
+    let catalog = MemoryCatalog::new(store);
     catalog.register(
         "client",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
-            .with_column(Column::new("name", "String").with_flag("orderable"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+            .with_column(Column::new("name", "String").with_flag(ColumnFlag::Orderable))
             .with_id_column("id")
-            .with_reference(Reference::new(
+            .with_reference(Reference::has_many(
                 "orders",
                 "order",
-                ReferenceKind::HasMany,
-                "client",
+                JoinKey::new("id", "client"),
             )),
     );
     catalog.register(
         "order",
         VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag("id"))
+            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
             .with_column(Column::new("client", "String"))
             .with_id_column("id")
-            .with_reference(Reference::new(
+            .with_reference(Reference::has_one(
                 "client",
                 "client",
-                ReferenceKind::HasOne,
-                "client",
+                JoinKey::to_target_id("client"),
             )),
     );
-    Arc::new(move |name: &str| {
-        let metadata = catalog.get(name).expect("shop table");
-        let table = catalog.store().table(name);
-        let shell = MemoryTableShell::new(table, metadata, catalog.clone());
-        Ok(Vista::new(name, Box::new(shell)))
-    })
+    Arc::new(catalog)
 }
 
-fn shop_host(resolver: TargetResolver) -> Host {
-    Host::builder(Limits::background())
-        .vocab(DataVocab {
-            resolver: Some(resolver),
-            terminals: Terminals::ReadWrite {
-                limit: None,
-                writes: Writes::Allowed,
-            },
-        })
-        .build()
+fn shop_host(resolver: Arc<dyn VistaResolver>) -> Host {
+    host_with(resolver, read_write_terminals())
 }
 
 #[test]

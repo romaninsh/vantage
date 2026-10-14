@@ -17,12 +17,12 @@ Vista or registers its own vocabulary next to `DataVocab` on the same host. A ho
 `form` (a Servo) and `table(name)` (Vistas) side by side.
 
 Where an upper layer means the same thing as a data verb, it uses the same word: `where`, `sort`,
-`limit`, `ref`, `save`, `is_dirty`. Where it means something different, it uses its own word, even
+`limit`, `ref`, `flash`, `is_dirty`. Where it means something different, it uses its own word, even
 if a data verb looks close.
 
 ## Dio: no vocabulary of its own
 
-A Dio doesn't add script words. [`Dio::vista()`](vantage_diorama::Dio::vista) returns a Vista whose
+A Dio doesn't add script words. [`Dio::cached()`](vantage_diorama::Dio::cached) returns a Vista whose
 reads come from the Dio's cache and whose writes are queued as flashes and written through to the
 master. A host that resolves `table(name)` to Dio Vistas gives scripts cached reads and optimistic
 writes, and the scripts are the same ones that would run against the bare backend. Vantage UI's
@@ -35,13 +35,13 @@ staged edits, a status and per-field rejections from the Dio's flash route. Form
 Vantage UI hand one to their scripts as `form`. `ServoVocab` (`vantage_diorama::rhai`) registers
 its words:
 
-<!-- tested: vantage-diorama rhai_servo::set_save_settles_a_new_record -->
+<!-- tested: vantage-diorama rhai_servo::set_flash_settles_a_new_record -->
 ```rhai
 servo.set("id", "tag:AB12-CD34");
 servo.set("status", "unregistered");
 if !servo.is_dirty() { throw "draft should be dirty"; }
 if !servo.dirty("status") { throw "field should be dirty"; }
-servo.save()
+servo.flash()
 ```
 
 A Servo and a data-vocabulary [record](./records.md) look alike, and some words match:
@@ -51,14 +51,14 @@ A Servo and a data-vocabulary [record](./records.md) look alike, and some words 
 | read a field | `r.col`, `r["col"]` | `servo.get("col")` |
 | stage a field | `r.col = v`, `r.set(map)` | `servo.set("col", v)` |
 | id | `r.id` | `servo.id()` |
-| id of a new row | a UUIDv7 minted on the first save | [`IdStrategy`](vantage_diorama::IdStrategy): `Uuid` (the default) mints one when the Servo opens |
+| id of a new row | a UUIDv7 minted on the first flash | [`IdStrategy`](vantage_diorama::IdStrategy): `Uuid` (the default) mints one when the Servo opens |
 | the whole draft | (field reads) | `servo.record()` |
 | baseline | `r.baseline()` | `servo.baseline()` |
 | dirty | `r.is_dirty()`, `r.dirty(col)` | `servo.is_dirty()`, `servo.dirty(col)` |
 | revert | `r.revert(col)`, `r.revert()` | `servo.revert(col)`, `servo.revert_all()` |
 | fields that differ from the baseline | | `servo.error()` |
-| save | `r.save()`: a patch or insert, now | `servo.save()`: a flash, waits for it to settle |
-| status | `r.status()`, `r.rejection()` | `servo.status()`, `servo.rejection()` with per-field errors |
+| write | `r.flash()`: a patch or insert, now | `servo.flash()`: a flash through the Dio, waits for it to settle |
+| status | `r.status()`, `r.rejection()` (`#{ message }`) | `servo.status()`, `servo.rejection()` (`#{ message, fields }`, per-field errors) |
 
 They stay separate because they are different objects. A record is a script's own short-lived
 draft over any Vista, and is gone when the script ends. A Servo lives in the Dio and outlasts the
@@ -66,17 +66,17 @@ script. The form's widgets are bound to it, its flash goes through the Dio's wri
 and a route can reject single fields. Folding the two into one type would make the record depend
 on the Dio, or hide the Servo's lifecycle behind data-vocabulary words.
 
-`servo.save()` needs a tokio runtime context and blocks on the flash, so Servo scripts run under
+`servo.flash()` needs a tokio runtime context and blocks on the flash, so Servo scripts run under
 `spawn_blocking`, like any data script with a network backend.
 
 ### Which one to use
 
-Use a record for a script's own one-off edit over any Vista; it saves when the script says so and
+Use a record for a script's own one-off edit over any Vista; it writes when the script says so and
 is gone after. Use a [Servo](vantage_diorama::Servo) when a person edits: it lives in the Dio,
-outlasts the script, takes per-field rejections, and its save goes through the flash route.
+outlasts the script, takes per-field rejections, and its flash goes through the flash route.
 
 Unless the id is left to the backend (an `auto` id column, `IdStrategy::Auto`), both reuse their id
-when a save is retried, so neither can create a row twice (see
+when a flash is retried, so neither can create a row twice (see
 [Safe writes](../record-lifecycle.md#safe-writes)).
 
 ## Scenery: the shape of a view

@@ -170,11 +170,11 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        // OR across all columns using SurrealDB's case-insensitive
+        // OR across the search columns using SurrealDB's case-insensitive
         // `string::contains` after lower-casing both sides.
         let parts: Vec<Expression<AnySurrealType>> = table
-            .columns()
-            .values()
+            .search_columns()
+            .into_iter()
             // Imported implicit-reference columns exist only as projection
             // aliases; the escaped dotted identifier addresses a nonexistent
             // field and would silently never match.

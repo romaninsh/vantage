@@ -4,6 +4,8 @@
 //! Self-contained and re-runnable — operates on a throwaway schemaless
 //! `contained_test` record it creates and deletes.
 
+#![cfg(feature = "vista")]
+
 use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_surrealdb::surrealdb::SurrealDB;
@@ -11,6 +13,10 @@ use vantage_surrealdb::types::AnySurrealType;
 use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
+
+/// Both tests write `contained_test` rows. SurrealDB answers concurrent
+/// writes to one table with a transaction conflict, so they take turns.
+static TABLE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn v2_db() -> SurrealDB {
     let dsn = "cbor://root:root@localhost:8000/bakery/v2";
@@ -60,6 +66,7 @@ fn test_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
 
 #[tokio::test]
 async fn contains_many_eager_writeback_on_real_surreal() {
+    let _turn = TABLE_LOCK.lock().await;
     let db = v2_db().await;
     let vista = SurrealVistaFactory::new(db.clone())
         .from_table(test_table(db.clone()))
@@ -83,7 +90,7 @@ async fn contains_many_eager_writeback_on_real_surreal() {
 
     // Traverse the embedded array as a sub-Vista.
     let row = vista.get_value(&id).await.unwrap().unwrap();
-    let lines = vista.get_ref("lines", &row).unwrap();
+    let lines = vista.get_ref("lines", Some(&row)).unwrap();
     assert_eq!(lines.list_values().await.unwrap().len(), 2);
 
     // Insert a third line — eager writeback patches the parent row.
@@ -141,6 +148,7 @@ fn linked_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
 
 #[tokio::test]
 async fn contained_record_traverses_out_to_product() {
+    let _turn = TABLE_LOCK.lock().await;
     let db = v2_db().await;
     let vista = SurrealVistaFactory::new(db.clone())
         .from_table(linked_table(db.clone()))
@@ -166,9 +174,9 @@ async fn contained_record_traverses_out_to_product() {
 
     // line -> product traversal resolves to the real product row.
     let row = vista.get_value(&id).await.unwrap().unwrap();
-    let lines = vista.get_ref("lines", &row).unwrap();
+    let lines = vista.get_ref("lines", Some(&row)).unwrap();
     let line0 = lines.get_value("0").await.unwrap().unwrap();
-    let product = lines.get_ref("product", &line0).unwrap();
+    let product = lines.get_ref("product", Some(&line0)).unwrap();
     let (_pid, prod) = product.get_some_value().await.unwrap().unwrap();
     assert_eq!(prod.get("name"), Some(&text("Flux Capacitor Cupcake")));
 

@@ -118,9 +118,9 @@ fn render_list_table(
     records: &IndexMap<String, Record<CborValue>>,
     column_override: Option<&[String]>,
 ) {
-    let id_field = vista.get_id_column().map(str::to_string);
+    let id_field = vista.id_column().map(str::to_string);
     let title_fields: Vec<String> = vista
-        .get_title_columns()
+        .title_columns()
         .into_iter()
         .map(str::to_string)
         .collect();
@@ -162,9 +162,9 @@ fn render_list_table(
 }
 
 fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
-    let id_field = vista.get_id_column().map(str::to_string);
+    let id_field = vista.id_column().map(str::to_string);
     let title_fields: Vec<String> = vista
-        .get_title_columns()
+        .title_columns()
         .into_iter()
         .map(str::to_string)
         .collect();
@@ -173,8 +173,8 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
         .iter()
         .map(|(k, v)| {
             let declared = vista
-                .get_column(k)
-                .map(|c| c.original_type.as_str())
+                .column(k)
+                .and_then(|c| c.original_type.as_deref())
                 .unwrap_or("");
             (k.clone(), AnyAwsType::from_cbor_typed(v.clone(), declared))
         })
@@ -200,7 +200,7 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
 
     println!("--------");
 
-    for name in vista.get_column_names() {
+    for name in vista.columns().keys().map(String::as_str) {
         if Some(name) == id_field.as_deref() || title_fields.iter().any(|t| t == name) {
             continue;
         }
@@ -209,14 +209,17 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
         }
     }
 
-    let refs = vista.list_references();
+    let refs = vista.references();
     if !refs.is_empty() {
         println!();
         println!("Relations:");
-        for (name, kind) in refs {
-            let marker = match kind {
+        for (name, reference) in refs {
+            let marker = match reference.kind {
                 ReferenceKind::HasOne => "→ one",
                 ReferenceKind::HasMany => "↠ many",
+                ReferenceKind::ContainsOne => "⊃ one",
+                ReferenceKind::ContainsMany => "⊃ many",
+                _ => "?",
             };
             println!("  :{name}  {marker}");
         }
@@ -231,10 +234,10 @@ fn render_record_table(vista: &Vista, id: &str, record: &Record<CborValue>) {
 /// CLI exits shortly after rendering.
 fn column_types_static(vista: &Vista) -> IndexMap<String, &'static str> {
     let mut out = IndexMap::new();
-    for name in vista.get_column_names() {
+    for name in vista.columns().keys() {
         let original = vista
-            .get_column(name)
-            .map(|c| c.original_type.as_str())
+            .column(name)
+            .and_then(|c| c.original_type.as_deref())
             .unwrap_or("");
         let leaked: &'static str = Box::leak(original.to_owned().into_boxed_str());
         out.insert(name.to_string(), leaked);
@@ -253,8 +256,8 @@ fn typed_records_borrowed(
                 .iter()
                 .map(|(k, v)| {
                     let declared = vista
-                        .get_column(k)
-                        .map(|c| c.original_type.as_str())
+                        .column(k)
+                        .and_then(|c| c.original_type.as_deref())
                         .unwrap_or("");
                     (k.clone(), AnyAwsType::from_cbor_typed(v.clone(), declared))
                 })

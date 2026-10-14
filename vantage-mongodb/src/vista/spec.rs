@@ -44,7 +44,7 @@ pub struct MongoBlock {
     /// Unlike YAML `pipeline:`, Rhai map literals sort their keys. That is
     /// harmless where MongoDB ignores key order (`$match`, `$group`,
     /// `$project` fields), but a multi-key `$sort` (or `$setWindowFields`'
-    /// `sortBy`) must be built with `doc([["b", 1], ["a", -1]])`, and an
+    /// `sortBy`) must be built with `mongo::doc([["b", 1], ["a", -1]])`, and an
     /// exact match on an embedded document should use dotted paths
     /// (`#{"address.city": "Riga"}`) instead of a nested map. A missing
     /// `args.x` reads as `()`, which becomes BSON `null`; guard optional
@@ -187,7 +187,7 @@ mongo:
             Some("clients")
         );
         assert_eq!(spec.columns["_id"].col_type.as_deref(), Some("object_id"));
-        assert!(spec.columns["name"].flags.contains(&"title".to_string()));
+        assert!(spec.columns["name"].has_flag(vantage_vista::ColumnFlag::Title));
     }
 
     #[test]

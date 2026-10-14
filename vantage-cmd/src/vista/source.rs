@@ -1,11 +1,12 @@
 //! `CmdTableShell` — owns the typed `Table<Cmd, EmptyEntity>` and exposes
 //! it across the `TableShell` boundary.
 //!
-//! `Value = CborValue` end-to-end, so `list_vista_values` forwards the
-//! table's records unchanged. Relations are followed the built-in way:
-//! `get_ref` forwards to the wrapped table's [`Table::get_ref_from_row`],
-//! which reads the join value out of the parent row and pins the target
-//! table with a plain eq-condition — the same path csv / sqlite use.
+//! `Value = CborValue` end-to-end, so `list` forwards the table's records
+//! unchanged. A clone copies the table's conditions and shares the `Cmd`.
+//! Equality conditions reach the script as its `conditions` scope and are
+//! re-applied to rows that carry the field. Windows are cut from the listed
+//! rows in memory, since a script may ignore the `limit`/`offset` it is
+//! handed. Joins narrow the target through `Reference::narrow`.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -15,14 +16,15 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Column as VistaColumn, Reference as VistaReference, TableShell, Vista, VistaCapabilities,
-    VistaMetadata,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, condition_column_error, unknown_relation, unsupported,
 };
 
 use crate::cmd::Cmd;
 use crate::condition::CmdCondition;
 use crate::vista::factory::CmdVistaFactory;
 
+#[derive(Clone)]
 pub struct CmdTableShell {
     table: Table<Cmd, EmptyEntity>,
     capabilities: VistaCapabilities,
@@ -41,110 +43,12 @@ impl CmdTableShell {
             metadata,
         }
     }
-}
 
-#[async_trait]
-impl TableShell for CmdTableShell {
-    fn columns(&self) -> &IndexMap<String, VistaColumn> {
-        &self.metadata.columns
-    }
-
-    fn references(&self) -> &IndexMap<String, VistaReference> {
-        &self.metadata.references
-    }
-
-    fn id_column(&self) -> Option<&str> {
-        self.metadata.id_column.as_deref()
-    }
-
-    async fn list_vista_values(
-        &self,
-        _vista: &Vista,
-    ) -> Result<IndexMap<String, Record<CborValue>>> {
-        self.table.list_values().await
-    }
-
-    async fn get_vista_value(
-        &self,
-        _vista: &Vista,
-        id: &String,
-    ) -> Result<Option<Record<CborValue>>> {
-        // Route through the typed table so detail-script tables hydrate via
-        // the DETAIL script (Cmd::get_table_value), not the list script.
-        self.table.get_value(id).await
-    }
-
-    async fn get_vista_value_with_row(
-        &self,
-        _vista: &Vista,
-        id: &String,
-        row: &Record<CborValue>,
-    ) -> Result<Option<Record<CborValue>>> {
-        // The detail pass hands us the cheap list-pass row so the detail script
-        // can read columns it carries (e.g. step numbers painted from the
-        // reference conditions).
-        self.table
-            .data_source()
-            .get_table_value_with_row(&self.table, id, row)
-            .await
-    }
-
-    async fn get_vista_some_value(
-        &self,
-        _vista: &Vista,
-    ) -> Result<Option<(String, Record<CborValue>)>> {
-        let data = self.table.list_values().await?;
-        Ok(data.into_iter().next())
-    }
-
-    async fn get_vista_count(&self, _vista: &Vista) -> Result<i64> {
-        Ok(self.table.list_values().await?.len() as i64)
-    }
-
-    fn add_eq_condition(&mut self, field: &str, value: &CborValue) -> Result<()> {
-        self.table
-            .add_condition(CmdCondition::eq(field, value.clone()));
-        Ok(())
-    }
-
-    fn get_ref(&self, relation: &str, row: &Record<CborValue>) -> Result<Vista> {
-        // `Cmd::Value` is `CborValue`, so the row passes through unchanged.
-        // The table's reference machinery reads the join value out of the
-        // parent row and pins the target with a plain eq-condition.
-        let target = self.table.get_ref_from_row::<EmptyEntity>(relation, row)?;
-        CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)
-    }
-
-    fn get_ref_target(&self, relation: &str) -> Result<Vista> {
-        let target = self.table.get_ref_target_erased(relation)?;
-        CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)
-    }
-
-    fn get_ref_kinds(&self) -> Vec<(String, vantage_vista::ReferenceKind)> {
-        self.table.ref_kinds()
-    }
-
-    fn capabilities(&self) -> &VistaCapabilities {
-        &self.capabilities
-    }
-
-    fn driver_name(&self) -> &'static str {
-        "cmd"
-    }
-
-    /// A cmd table's argv is built *by* its Rhai script, and that script builds
-    /// it by calling `run(...)` — so there is no argv to render without running
-    /// the command. What this reports instead is everything that decides the
-    /// argv: the locked program, the script itself, and the values seeded into
-    /// its scope. Read the script against these and you can see the command it
-    /// will assemble.
-    fn preview_query(&self, _vista: &Vista) -> serde_json::Value {
+    /// Everything that decides the argv: the locked program, the script, and
+    /// the values seeded into its scope.
+    fn preview_scope(&self) -> serde_json::Value {
         let script_name = self.table.table_name();
         let source = self.table.data_source();
-        let (limit, offset) = match self.table.pagination() {
-            Some(p) => (Some(p.limit()), Some(p.skip())),
-            None => (None, None),
-        };
         let conditions: Vec<serde_json::Value> = self
             .table
             .conditions()
@@ -156,9 +60,7 @@ impl TableShell for CmdTableShell {
                 })
             })
             .collect();
-
         serde_json::json!({
-            "driver": "cmd",
             "command": source.command(),
             "script_name": script_name,
             "script": source
@@ -168,11 +70,95 @@ impl TableShell for CmdTableShell {
             "scope": {
                 "columns": self.table.columns().keys().collect::<Vec<_>>(),
                 "conditions": conditions,
-                "limit": limit,
-                "offset": offset,
             },
-            "note": "the script builds its own argv and runs it; these are the \
-                     scope values it would be evaluated with",
+        })
+    }
+}
+
+#[async_trait]
+impl TableShell for CmdTableShell {
+    fn metadata(&self) -> &VistaMetadata {
+        &self.metadata
+    }
+
+    fn capabilities(&self) -> &VistaCapabilities {
+        &self.capabilities
+    }
+
+    fn driver_name(&self) -> &'static str {
+        "cmd"
+    }
+
+    /// A cmd table's argv is built *by* its Rhai script, which calls `run(...)`
+    /// itself, so there is no argv to render without running the command. The
+    /// query is what decides it instead: the command, the script, and the
+    /// scope it is evaluated with, every condition included.
+    fn preview(&self) -> Preview {
+        Preview::new().with_query(self.preview_scope().to_string())
+    }
+
+    async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.table.list_values().await
+    }
+
+    /// The command's DETAIL script when the table declares one (a direct
+    /// lookup by id); otherwise the set is listed and the row picked out.
+    /// The detail script doesn't see the conditions, so on a narrowed set
+    /// the id must first be listed in the set.
+    async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
+        let has_detail = self
+            .table
+            .data_source()
+            .has_detail_script(self.table.table_name());
+        if self.table.conditions().next().is_none() || !has_detail {
+            return self.table.get_value(id).await;
+        }
+        if !self.table.list_values().await?.contains_key(id) {
+            return Ok(None);
+        }
+        self.table.get_value(id).await
+    }
+
+    async fn count(&self) -> Result<i64> {
+        Ok(self.table.list_values().await?.len() as i64)
+    }
+
+    /// The window is cut from the listed rows, which are all read anyway, so
+    /// the page carries the set's total for free.
+    async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        Ok(Page::from_listing(
+            self.table.list_values().await?,
+            offset,
+            limit,
+        ))
+    }
+
+    /// Equality on a declared column. The script receives it in its
+    /// `conditions` scope; no other operator is passed on. A dotted path
+    /// into a declared column is refused, for the caller to evaluate.
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        let field = condition.column.as_str();
+        if !self.metadata.columns.contains_key(field) {
+            return Err(condition_column_error(&self.metadata, field));
+        }
+        if condition.op != FilterOp::Eq {
+            return unsupported(Capability::FilterOps);
+        }
+        self.table
+            .add_condition(CmdCondition::eq(field, condition.value.clone()));
+        Ok(())
+    }
+
+    /// The target comes from the table's `with_one`/`with_many`; from a row
+    /// it is narrowed by the reference's join keys.
+    fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
+        let reference = self
+            .metadata
+            .references
+            .get(relation)
+            .ok_or_else(|| unknown_relation(relation))?;
+        self.table.traverse_erased(reference, row, |target| {
+            CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)
         })
     }
 }

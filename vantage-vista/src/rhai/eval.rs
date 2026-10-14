@@ -1,22 +1,27 @@
 //! Entry points that evaluate a script slot into a [`Vista`]: reference
-//! build-scripts, `modify:` scripts, and augmentation sources.
+//! build-scripts and `modify:` scripts.
 //!
-//! Each host carries [`DataVocab`] with [`Terminals::Describe`](super::Terminals::Describe) plus any
-//! backend extensions. The script narrows a handle; the handle it ends on is
-//! resolved and returned.
+//! Each host carries [`DataVocab`](super::DataVocab) with
+//! [`Terminals::Describe`](super::Terminals::Describe) plus any backend
+//! extensions. The script narrows a handle and must end on one; that handle
+//! is resolved and returned. A statement that builds a handle and drops it
+//! is refused when the script compiles (see [`reject_dropped_narrowing`]).
 
-use std::sync::{Arc, OnceLock};
+mod discard;
+
+pub use discard::reject_dropped_narrowing;
 
 use ciborium::Value as CborValue;
-use vantage_core::{Context, Result, VantageError, error};
+use vantage_core::{Context, Result, error};
 use vantage_rhai::rhai::Dynamic;
-use vantage_rhai::{Block, Compiled, Env, Host, Limits};
+use vantage_rhai::{Block, Compiled, Env, Host};
 use vantage_types::Record;
 
 use super::convert::record_to_dynamic;
 use super::handle::Handle;
-use super::vocab::{DataVocab, TargetResolver};
 use crate::vista::Vista;
+
+const MODIFY: &str = "rhai modify script";
 
 /// Compile a script slot through the host's cache, naming the slot on error.
 pub(crate) fn compile(host: &Host, what: &str, code: &str) -> Result<Compiled<Block>> {
@@ -24,11 +29,26 @@ pub(crate) fn compile(host: &Host, what: &str, code: &str) -> Result<Compiled<Bl
         .context(error!("rhai script failed to compile", script = what))
 }
 
+/// Compile a script whose value is a table handle, refusing one that drops
+/// a handle it built.
+fn compile_handle_script(host: &Host, what: &'static str, code: &str) -> Result<Compiled<Block>> {
+    let script = compile(host, what, code)?;
+    // A `Block` compiles to one AST; a script without one can't be checked,
+    // so it is refused rather than run unchecked.
+    let ast = script.ast().ok_or_else(|| {
+        error!(
+            "rhai script compiled to no single AST to check for dropped handles",
+            script = what
+        )
+    })?;
+    reject_dropped_narrowing(ast, what, true)?;
+    Ok(script)
+}
+
 /// Evaluate a reference build-script and return the Vista it describes.
 ///
-/// `env` is the backend's base environment
-/// ([`TableShell::rhai_env`](crate::TableShell::rhai_env)); the parent `row`
-/// is pushed onto it. The script must end on a table handle, e.g.
+/// `env` is the caller's base environment; the parent `row` is pushed onto
+/// it. The script must end on a table handle, e.g.
 /// `table("order").where("client", row.id)`.
 pub fn eval_ref_script(
     host: &Host,
@@ -37,108 +57,45 @@ pub fn eval_ref_script(
     row: &Record<CborValue>,
 ) -> Result<Vista> {
     const WHAT: &str = "rhai reference build-script";
-    let script = compile(host, WHAT, code)?;
+    let script = compile_handle_script(host, WHAT, code)?;
     let result = script
         .eval(&env.var("row", record_to_dynamic(row)))
         .context(error!("rhai script failed", script = WHAT))?;
-    result
-        .try_cast::<Handle>()
-        .ok_or_else(|| error!("Script did not return a table handle", script = WHAT))?
-        .resolve(None)
+    finish(WHAT, result)
 }
 
 /// Evaluate a `modify:` script against a built Vista, exposed as `self`.
 ///
-/// Statements on `self` accumulate, whichever verb they use. When the script
-/// ends on a table handle, that handle is resolved and returned; otherwise the
-/// latest handle made from `self`, else `self` as given:
+/// Each verb returns a new handle and leaves `self` as it was, so the script
+/// chains its changes and ends on the handle it built; `self` alone keeps the
+/// Vista as given:
 ///
 /// ```rhai
-/// self.with_condition(ident("is_paying_client") == true);
-/// self.sort("name", "desc");
+/// self.with_condition(surreal::ident("is_paying_client") == true).sort("name", "desc")
 /// ```
+///
+/// The script's value is its last statement, and both of these are
+/// incorrect-usage errors:
+///
+/// - an earlier statement that builds a handle and drops it, such as
+///   `self.sort("name");` followed by more statements, refused when the
+///   script compiles: chain the calls (`self.a().b()`) or assign the handle;
+/// - a last value that is not a table handle, such as a `let`, or an `if`
+///   with no `else` whose condition is false (end it with `else { self }`).
 pub fn eval_modify_script(host: &Host, code: &str, vista: Vista) -> Result<Vista> {
-    const WHAT: &str = "rhai modify script";
-    let script = compile(host, WHAT, code)?;
-    let env = vista.source.rhai_env(Env::new());
-    let base = Handle::over(vista);
+    let script = compile_handle_script(host, MODIFY, code)?;
     let result = script
-        .eval(&env.var("self", Dynamic::from(base.clone())))
-        .context(error!("rhai script failed", script = WHAT))?;
-    finish(base, result)
+        .eval(&Env::new().var("self", Dynamic::from(Handle::over(vista))))
+        .context(error!("rhai script failed", script = MODIFY))?;
+    finish(MODIFY, result)
 }
 
-/// A diorama augmentation source: given a master `row` and a fresh `base`
-/// detail Vista, return `base` narrowed for that row.
-pub type AugmentSourceFn = Arc<dyn Fn(&Record<CborValue>, Vista) -> Result<Vista> + Send + Sync>;
-
-/// Evaluate an augmentation source script: `self` is the `base` Vista, `row`
-/// the master row, as in `self.where("key", row.key)`. The result follows
-/// [`eval_modify_script`].
-pub fn eval_augment_source(
-    host: &Host,
-    code: &str,
-    base: Vista,
-    row: &Record<CborValue>,
-) -> Result<Vista> {
-    let script = compile(host, "rhai augment source script", code)?;
-    eval_augment_compiled(&script, base, row)
-}
-
-fn eval_augment_compiled(
-    script: &Compiled<Block>,
-    base: Vista,
-    row: &Record<CborValue>,
-) -> Result<Vista> {
-    let env = base.source.rhai_env(Env::new());
-    let base = Handle::over(base);
-    let result = script
-        .eval(
-            &env.var("self", Dynamic::from(base.clone()))
-                .var("row", record_to_dynamic(row)),
-        )
-        .context(error!(
-            "rhai script failed",
-            script = "rhai augment source script"
-        ))?;
-    finish(base, result)
-}
-
-/// The script's handle resolved; else the latest handle a verb made from
-/// `self`; else the base it was given.
-fn finish(base: Handle, result: Dynamic) -> Result<Vista> {
-    match result.try_cast::<Handle>() {
-        Some(handle) => handle.resolve(None),
-        None => match base.latest_extended() {
-            Some(handle) => handle.resolve(None),
-            None => base.take_base(),
-        },
-    }
-}
-
-/// Build a reusable [`AugmentSourceFn`] from a script and a `resolver` for
-/// `table(name)`. Backend extensions come from the `base` Vista's shell, so the
-/// host is built on the first call and reused: one augmentation always narrows
-/// the same detail table.
-pub fn augment_source_closure(resolver: TargetResolver, code: String) -> AugmentSourceFn {
-    // The compile error is shared by every later call, so it is kept in an
-    // `Arc` and attached as each call's source.
-    let compiled: OnceLock<std::result::Result<Compiled<Block>, Arc<VantageError>>> =
-        OnceLock::new();
-    Arc::new(
-        move |row: &Record<CborValue>, base: Vista| -> Result<Vista> {
-            let script = compiled.get_or_init(|| {
-                let host = Host::builder(Limits::background())
-                    .vocab_fn(|engine| base.source.register_rhai_extensions(engine))
-                    .vocab(DataVocab::describe(Some(resolver.clone())))
-                    .build();
-                compile(&host, "rhai augment source script", &code).map_err(Arc::new)
-            });
-            match script {
-                Ok(script) => eval_augment_compiled(script, base, row),
-                Err(e) => Err::<Vista, _>(e.clone())
-                    .context(error!("Augment source script can't be used")),
-            }
-        },
-    )
+/// The handle the script ended on, resolved.
+fn finish(what: &'static str, result: Dynamic) -> Result<Vista> {
+    result
+        .try_cast::<Handle>()
+        .ok_or_else(|| {
+            error!("The script must end on a table handle", script = what).mark_incorrect_usage()
+        })?
+        .resolve(None)
 }

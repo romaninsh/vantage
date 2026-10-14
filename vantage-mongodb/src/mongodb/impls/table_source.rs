@@ -376,11 +376,11 @@ impl TableSource for MongoDB {
         // Escape regex metacharacters so the search is a literal substring match
         let escaped = regex_escape(search_value);
 
-        // Build $or across all columns with a case-insensitive regex, each at
-        // its stored BSON path (the alias) or its join alias.
+        // Build $or across the search columns with a case-insensitive regex,
+        // each at its stored BSON path (the alias) or its join alias.
         let conditions: Vec<bson::Bson> = table
-            .columns()
-            .values()
+            .search_columns()
+            .into_iter()
             .map(|col| {
                 let field = join_alias_of(table, col.name())
                     .unwrap_or_else(|| col.alias().unwrap_or(col.name()).to_string());

@@ -7,16 +7,18 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use tokio::sync::Semaphore;
 use vantage_core::Result;
-use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{
-    CappedScenery, FilterOrigin, Lens, OpCondition, SortDir, TableScenery, ViewCount, ViewState,
-    ViewStats,
+    Cache, CacheBackend, Dio, FilterOrigin, Lens, Loader, RedbCache, TableScenery, ViewCount,
+    ViewState, ViewStats,
 };
 use vantage_types::Record;
-use vantage_vista::{Column, FilterOp, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Column, Condition, FilterOp, SortDirection, Vista, VistaMetadata, mocks::MockShell,
+};
 
 mod support;
-use support::chunk::master as paged_master;
+use support::chunk::{master as paged_master, redb_lens};
+use support::copy_master;
 
 fn record(name: &str, price: i64) -> Record<CborValue> {
     let mut r = Record::new();
@@ -36,23 +38,41 @@ fn seeded_master() -> Vista {
         .with_record("a", record("alpha", 30))
         .with_record("b", record("beta", 10))
         .with_record("c", record("gamma", 20));
-    Vista::new("items", Box::new(shell))
+    Vista::new("items", shell)
 }
 
-/// Eager lens: `on_start` copies the master into the cache.
-fn eager_lens(cache: std::path::PathBuf) -> Arc<Lens> {
-    let lens = Lens::new()
-        .cache_at(cache)
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await
-            }
-        })
+/// An eager Dio over the seeded master: the start copies it into the cache.
+async fn eager_dio(cache: std::path::PathBuf) -> Result<Dio> {
+    redb_lens(cache, copy_master())
+        .dio(seeded_master())
         .build()
-        .expect("build lens");
-    Arc::new(lens)
+        .await
+}
+
+/// A paged loader serving `rows` at their indices, stating `total` when
+/// given, each load waiting for a permit of `gate` when given.
+fn row_loader(
+    rows: Vec<(String, Record<CborValue>)>,
+    total: Option<usize>,
+    gate: Option<Arc<Semaphore>>,
+) -> Loader {
+    Loader::paged(move |_cx, range, _query, sink| {
+        let (rows, gate) = (rows.clone(), gate.clone());
+        async move {
+            if let Some(gate) = gate {
+                gate.acquire().await.expect("gate").forget();
+            }
+            if let Some(total) = total {
+                sink.set_total(total);
+            }
+            for idx in range {
+                if let Some((id, r)) = rows.get(idx) {
+                    sink.push(idx, id.clone(), r.clone()).await?;
+                }
+            }
+            Ok(())
+        }
+    })
 }
 
 fn text_rows(n: usize) -> Vec<(String, Record<CborValue>)> {
@@ -90,9 +110,7 @@ async fn wait_stats(
 #[tokio::test]
 async fn loaded_rows_make_an_exact_total() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let dio = eager_lens(tmp.path().join("c.redb"))
-        .make_dio(seeded_master())
-        .await?;
+    let dio = eager_dio(tmp.path().join("c.redb")).await?;
     let scenery = dio.table_scenery().open().await?;
 
     let stats = wait_stats("rows", &scenery, |s| s.loaded == 3).await;
@@ -104,62 +122,54 @@ async fn loaded_rows_make_an_exact_total() -> Result<()> {
 }
 
 #[tokio::test]
-async fn showing_follows_the_shown_range() -> Result<()> {
+async fn the_shown_range_is_the_second_viewport_argument() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let dio = eager_lens(tmp.path().join("c.redb"))
-        .make_dio(seeded_master())
-        .await?;
+    let dio = eager_dio(tmp.path().join("c.redb")).await?;
     let scenery = dio.table_scenery().open().await?;
     wait_stats("rows", &scenery, |s| s.loaded == 3).await;
 
     let mut rx = scenery.subscribe_view_stats();
     rx.borrow_and_update();
-    scenery.set_shown_range(Some(0..2));
+    scenery.set_viewport(0..10, 1..3);
     assert!(rx.has_changed().unwrap(), "a shown-range move signals");
-    assert_eq!(scenery.view_stats().showing, Some(0..2));
+    assert_eq!(scenery.view_stats().showing, Some(1..3));
 
     // Clamped to the rows the view has.
-    scenery.set_shown_range(Some(1..50));
+    scenery.set_viewport(0..10, 1..50);
     assert_eq!(scenery.view_stats().showing, Some(1..3));
     assert_eq!(scenery.view_stats().showing_count(), 2);
 
-    scenery.set_shown_range(None);
-    assert_eq!(scenery.view_stats().showing, None);
+    scenery.set_viewport(0..10, 0..0);
+    assert_eq!(
+        scenery.view_stats().showing,
+        None,
+        "an empty range shows none"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn a_hydration_viewport_is_not_showing() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let dio = eager_lens(tmp.path().join("c.redb"))
-        .make_dio(seeded_master())
-        .await?;
-    // A dashboard counter and a grid share one scenery.
+    let dio = eager_dio(tmp.path().join("c.redb")).await?;
     let scenery = dio.table_scenery().open().await?;
     wait_stats("rows", &scenery, |s| s.loaded == 3).await;
 
-    scenery.set_viewport(0..200);
-    assert_eq!(scenery.view_stats().showing, None, "no grid shows the view");
+    scenery.set_viewport(0..200, 0..0);
+    assert_eq!(scenery.view_stats().showing, None, "nothing is on screen");
 
-    scenery.set_shown_range(Some(0..2));
-    scenery.set_viewport(1..3);
-    assert_eq!(
-        scenery.view_stats().showing,
-        Some(0..2),
-        "another consumer's viewport leaves the grid's range alone",
-    );
+    scenery.set_viewport(0..2, 0..2);
+    assert_eq!(scenery.view_stats().showing, Some(0..2));
     Ok(())
 }
 
 #[tokio::test]
 async fn order_search_and_filters_are_reported() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let dio = eager_lens(tmp.path().join("c.redb"))
-        .make_dio(seeded_master())
-        .await?;
+    let dio = eager_dio(tmp.path().join("c.redb")).await?;
     let scenery = dio
         .table_scenery()
-        .where_op("price", FilterOp::Gt, 5)
+        .filter(Condition::new("price", FilterOp::Gt, 5))
         .open()
         .await?;
     wait_stats("rows", &scenery, |s| s.loaded == 3).await;
@@ -168,16 +178,16 @@ async fn order_search_and_filters_are_reported() -> Result<()> {
     assert_eq!(filters[0].origin, FilterOrigin::Query);
     assert_eq!(filters[0].op, FilterOp::Gt);
 
-    scenery.set_sort(Some("price".into()), SortDir::Desc);
+    scenery.set_order(Some(("price".into(), SortDirection::Descending)));
     assert_eq!(
         scenery.view_stats().order,
-        Some(("price".to_string(), SortDir::Desc))
+        Some(("price".to_string(), SortDirection::Descending))
     );
 
     scenery.set_search(Some("al".into()));
     assert_eq!(scenery.view_stats().search.as_deref(), Some("al"));
 
-    scenery.set_filter_terms(vec![OpCondition::new("name", FilterOp::Ne, "beta")]);
+    scenery.set_filters(vec![Condition::new("name", FilterOp::Ne, "beta")]);
     let stats = scenery.view_stats();
     assert_eq!(stats.filters.len(), 2);
     assert_eq!(stats.filters[1].origin, FilterOrigin::View);
@@ -195,32 +205,18 @@ async fn remembered_total_is_an_estimate_until_restated() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let gate = Arc::new(Semaphore::new(0));
     let rows = text_rows(REAL_TOTAL);
-    let chunk_gate = gate.clone();
-    let lens = Lens::new()
-        .cache_at(tmp.path().join("c.redb"))
-        .on_load_chunk(move |_dio, range, _query, sink| {
-            let rows = rows.clone();
-            let gate = chunk_gate.clone();
-            async move {
-                gate.acquire().await.expect("gate").forget();
-                sink.set_total(REAL_TOTAL);
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
-                Ok(())
-            }
-        })
-        .build()
-        .map(Arc::new)
-        .expect("build lens");
-    let dio = lens.make_dio(paged_master(&[("v", "String")])).await?;
+    let backend = Arc::new(RedbCache::open(tmp.path().join("c.redb"))?);
+    let lens = Lens::builder()
+        .cache(Cache::backend(backend.clone()))
+        .loader(row_loader(rows, Some(REAL_TOTAL), Some(gate.clone())))
+        .build()?;
+    let dio = lens.dio(paged_master(&[("v", "String")])).build().await?;
 
     // A warm cache from an earlier session that stated 500 rows.
+    let table = backend.open_table("items").await?;
     let (id, rec) = &text_rows(1)[0];
-    dio.cache().insert_value(id, rec).await?;
-    dio.cache().set_meta_total(500).await?;
+    table.insert_value(id, rec).await?;
+    table.set_meta_total(500).await?;
 
     let scenery = dio.table_scenery().open().await?;
     let stats = scenery.view_stats();
@@ -239,23 +235,8 @@ async fn horizon_is_a_lower_bound_until_the_end_is_found() -> Result<()> {
     const REAL_TOTAL: usize = 133;
     let tmp = TempDir::new().unwrap();
     let rows = text_rows(REAL_TOTAL);
-    let lens = Lens::new()
-        .cache_at(tmp.path().join("c.redb"))
-        .on_load_chunk(move |_dio, range, _query, sink| {
-            let rows = rows.clone();
-            async move {
-                for idx in range {
-                    if let Some((id, r)) = rows.get(idx) {
-                        sink.push(idx, id.clone(), r.clone()).await?;
-                    }
-                }
-                Ok(())
-            }
-        })
-        .build()
-        .map(Arc::new)
-        .expect("build lens");
-    let dio = lens.make_dio(paged_master(&[("v", "String")])).await?;
+    let lens = redb_lens(tmp.path().join("c.redb"), row_loader(rows, None, None));
+    let dio = lens.dio(paged_master(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
 
     // A full first page from a source that states no total: more exist, but
@@ -265,8 +246,7 @@ async fn horizon_is_a_lower_bound_until_the_end_is_found() -> Result<()> {
     assert_eq!(stats.count_text(), "100+");
 
     // The short page past it is the end of the set.
-    scenery.set_viewport(100..200);
-    scenery.set_shown_range(Some(100..200));
+    scenery.set_viewport(100..200, 100..200);
     let stats = wait_stats("end of set", &scenery, |s| s.total_exact).await;
     assert_eq!(stats.count(), ViewCount::Exact(REAL_TOTAL));
     assert_eq!(stats.loaded, REAL_TOTAL);
@@ -276,17 +256,13 @@ async fn horizon_is_a_lower_bound_until_the_end_is_found() -> Result<()> {
 }
 
 #[tokio::test]
-async fn capped_scenery_reports_the_cap() -> Result<()> {
+async fn a_limit_reports_the_cap() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let dio = eager_lens(tmp.path().join("c.redb"))
-        .make_dio(seeded_master())
-        .await?;
-    let inner = dio.table_scenery().open().await?;
-    wait_stats("rows", &inner, |s| s.loaded == 3).await;
+    let dio = eager_dio(tmp.path().join("c.redb")).await?;
+    let capped = dio.table_scenery().limit(2).open().await?;
+    wait_stats("rows", &capped, |s| s.loaded == 2).await;
 
-    let capped: Arc<dyn TableScenery> = CappedScenery::wrap(inner, 2);
-    capped.set_viewport(0..10);
-    capped.set_shown_range(Some(0..10));
+    capped.set_viewport(0..10, 0..10);
     let stats = wait_stats("capped viewport", &capped, |s| s.showing.is_some()).await;
     assert_eq!(stats.count(), ViewCount::Exact(2));
     assert_eq!(stats.loaded, 2);

@@ -1,419 +1,190 @@
-# Using Diorama from Business Logic
+# Working on Diorama in Rust
 
-This document is for someone writing Rust code that isn't a UI — an API
-handler, a CLI tool, a batch job, an internal library. You have a Vista
-(or a few of them) and you want to do useful work with the data behind
-them. Reactivity isn't on the table; you want straightforward fetches and
-mutations that happen to be fast and resilient.
+Two readers land here. The first writes Rust that uses a Dio without a UI: an
+API handler, a CLI, a batch job. That part is short, because a Dio's facade is
+an ordinary Vista. The second works on the crate itself, and needs to know
+where things live, which features exist, how the tests are laid out and what
+guards the public API. Most of this document is for them.
 
-Short version: keep using Vista the way you already do. Diorama wraps your
-Vista in a Lens when you need caching or offline tolerance, and you get back
-a Vista that behaves the same way, just better.
+## Using a Dio from business code
 
-> **Implementation status.** The "minimum useful Diorama", the "Patterns by
-> shape of work" → "Internal library" / "Batch job" / "CLI tool" sections,
-> and the worked axum example use APIs that are mostly real but mention
-> a few v1 caveats: `on_query` is registered but not invoked until vista
-> stage 5b lands, and there is no shipped in-memory `CacheBackend` (everything
-> persists to redb today). Build a redb cache in a `tempdir` if you need an
-> ephemeral one.
-
-## The minimum useful Diorama
-
-You have a slow API. Your handler hits it on every request. You want to
-cache reads for sixty seconds and have writes invalidate the cache.
+Business code doesn't need sceneries. It wants reads that are fast and writes
+that confirm, and `dio.cached()` gives it both: a plain `vantage_vista::Vista`
+whose reads are served from the Dio's cache and whose writes go through the
+Dio's write queue.
 
 ```rust
-use std::sync::Arc;
-use std::time::Duration;
-use tempfile::TempDir;
-use vantage_diorama::{Lens, ops::WriteOp};
+use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
 
-// Pre-stage-5b: persistent in-memory caches aren't shipped yet — point
-// `cache_at` at a tempdir if you want a per-process cache.
-let cache_dir = TempDir::new()?;
-let lens = Arc::new(
-    Lens::new()
-        .cache_at(cache_dir.path().join("api.redb"))
-        .on_start_blocking(false)
-        .on_start(|dio| {
-            let dio = dio.clone();
-            async move {
-                let rows = dio.master().list_values().await?;
-                dio.cache().insert_values(rows).await?;
-                Ok(())
-            }
-        })
-        .on_write(|dio, op| {
-            let dio = dio.clone();
-            async move {
-                match &op {
-                    WriteOp::Insert { id, record } | WriteOp::Replace { id, record } => {
-                        dio.master().insert_value(id, record).await?;
-                        dio.notify_record_changed(id.clone());
-                    }
-                    WriteOp::Delete { id } => {
-                        dio.master().delete_value(id).await?;
-                        dio.notify_record_changed(id.clone());
-                    }
-                    WriteOp::DeleteAll => {
-                        dio.master().delete_all_values().await?;
-                        dio.notify_dataset_changed();
-                    }
-                    _ => {}
-                }
-                Ok(())
-            }
-        })
-        .refresh_every(Duration::from_secs(60))
-        .build()?,
-);
+let products = dio.cached();
+let all = products.list_values().await?;
+let one = products.get_value("sku-1234").await?;
+let page = products.fetch_window(0, 50).await?;
 
-let products = lens.make_dio(remote_products).await?;
+products.insert_value("sku-9", &record).await?;
+products.delete("sku-9").await?;
 ```
 
-From here, `products.vista()` is a Vista. You use it the way you'd use any
-other Vista:
+A facade write returns once it is confirmed, or with its error once it is
+rolled back. It goes through the same path as `dio.flash(..)`: staged in the
+cache, written through the Lens's writer or the master, settled. A write that
+would land a row outside the Dio's set is refused before anything is staged.
 
-```rust
-// Read.
-let all = products.vista().list_values().await?;
-let one = products.vista().get_value(&"sku-1234".to_string()).await?;
+A narrowed facade (`with_condition`, `with_search`) reads from the master when
+the master took the clause, so the answer covers the whole set and not only
+what the cache holds; an order alone never moves a read off the cache. On an
+augmented Dio every read is from the cache, because the augmented columns exist
+nowhere else; a read that reaches rows not yet hydrated blocks until they are,
+after publishing `DioEvent::Hydrating { pending }` for a progress line.
 
-// Narrow with eq conditions.
-let mut filtered = products.vista();
-filtered.add_condition_eq("category", "books".into())?;
-let books = filtered.list_values().await?;
+The calls that move data in and out of a Dio:
 
-// Write.
-products.vista().insert_value(&"sku-1234".to_string(), &new_product_record).await?;
-products.vista().delete_value(&"sku-1234".to_string()).await?;
+| Call | What it does |
+|---|---|
+| `dio.refresh().await?` | Re-read the master: the Lens's refresher, or the loader's way of filling the cache. |
+| `dio.flash(ChangeFlash::..).await?` | One write, staged, written through and settled. |
+| `dio.apply_change(ChangeEvent::..).await?` | Apply one upstream change (a webhook, a LIVE message) to the cache and announce it. |
+| `dio.reconcile(snapshot).await?` | Make the cache hold exactly `snapshot`, leaving rows with a flash in flight alone. |
+| `dio.import_values(rows, progress).await?` | Bulk insert: the master's native import when it has one, else one flash per row. |
 
-// Count.
-let total = products.vista().get_count().await?;
+Skip Diorama for a one-shot tool or a store that is already local and fast. A
+Lens pays off in a long-lived process with read amplification, a slow or
+flaky source, or several views that should agree on one row.
+
+## The module map
+
+`src/lib.rs` keeps every implementation module private and re-exports the
+public types at the root. A type has one path, `vantage_diorama::Dio` and not
+a module path, because the module that defines it is private; rustdoc links
+in this repository use that root path too. Moving a type between private
+modules is therefore never a breaking change.
+
+| Module | Visibility | What it holds |
+|---|---|---|
+| `lens` | private | `Lens`, `LensBuilder`, `Loader`, `Refresher`, `Tuning`, `Cache`, the cache backends (`RedbCache`, `MemoryCache`), `LoaderCx`, `ChunkSink`, and the Lens's registry of live Dios |
+| `dio` | private | `Dio`, `DioBuilder`, `DeriveBuilder`, `DioEvent`; the shared `DioInner` with its registry of shared rows; the facade `DioShell`; `flash` and the write worker; refresh, live follow, import, augmentation passes and the augment scheduler |
+| `scenery` | private | the three view traits and their builders; `scenery/table/` holds `TableView` (one owner's view), `SharedRows` (the rows views of one query share), the loader pipeline, the reactor, two-pass loading and `ViewStats` |
+| `servo` | private | `Servo`, the editing companion |
+| `ops` | private | `ChangeEvent`, `ChangeFlash`, `FlashKind`, `FlashOutcome`, `FlashRejection` |
+| `augment` | private | `Augmentation` and its parts (`Detail`, `Source`, `Fetch`, `MergeRule`) |
+| `aggregate` | public | aggregations, `Dio::value_scenery` and `Dio::aggregate` |
+| `debug` | public with `diagnostics` | the debug tap and process stats |
+| `stats` | public with `diagnostics` | live-instance counts, the fetch ledger, the session summary |
+| `rhai` | public with `rhai` | `Servo` as a Rhai type |
+| `prelude` | public | `Aggregation`, `ChangeEvent`, `ChangeFlash`, `Dio`, `Lens`, the three view traits, `Servo` |
+
+`debug` and `stats` are compiled into every build, because the crate calls the
+tap and the counters everywhere; without `diagnostics` they are private
+modules and the tap stays off. [ARCHITECTURE.md](ARCHITECTURE.md) walks the
+same modules from the inside.
+
+## Features
+
+| Feature | Turns on |
+|---|---|
+| `diagnostics` | `LensBuilder::debug_datasource`, `Dio::diagnostics`, `Dio::debug_tap`, the public `debug` and `stats` modules |
+| `rhai` | `vantage_diorama::rhai` (`register_servo_onto`, `ServoVocab`); pulls `vantage-vista/rhai` |
+| `test-util` | hooks for harnesses that watch a Dio's internals, such as `Dio::take_write_worker_handle` |
+
+None is on by default. Build and test with `--all-features`; a test that needs
+a feature carries `#[cfg(feature = "..")]`, or its binary lists the feature in
+`required-features`.
+
+## Tests
+
+### Layout
+
+- **Unit tests** sit beside the code as `src/**/tests.rs` (or a `mod tests`
+  at the bottom of a small file) and reach private items.
+- **Integration binaries** are `tests/<name>.rs` for one file, or
+  `tests/<name>/main.rs` with topic modules beside it once a binary outgrows a
+  file (`tests/record_scenery/{main,builder,reads,writes}.rs`). Cargo finds both
+  shapes; only a binary with `required-features` or a custom path needs a
+  `[[test]]` entry in `Cargo.toml`.
+- **Shared fixtures** live in `tests/support/`. Its root stays
+  `support/mod.rs`, because a `tests/support.rs` would be built as a binary of
+  its own; its groups are children (`lenses.rs`, `views.rs`, `masters.rs`,
+  `aggregate.rs`, and so on). A flat binary declares `mod support;`; a nested
+  one declares `#[path = "../support/mod.rs"] mod support;`.
+- **BDD scenarios** are `tests/features/*.feature`, driven by `tests/bdd.rs`
+  (a `harness = false` binary needing `diagnostics` and `test-util`) with its
+  steps and world in `tests/bdd_support/`.
+- **Snapshots** for the event-log tests are `insta` files in
+  `tests/snapshots/`.
+
+Fixtures belong in `tests/support`; a test binary that grows its own copy of a
+master or a Lens is a duplicate waiting to drift.
+
+### Running tests by name
+
+Run the tests that cover a change by name rather than the whole suite. A test
+in a nested binary is named by its module path inside that binary; a unit test
+by its full path in the crate:
+
+```sh
+cargo nextest run -p vantage-diorama --all-features --test owned_views -E 'test(=a_set_on_one_view_never_reshapes_another)'
+cargo nextest run -p vantage-diorama --all-features --test record_scenery -E 'test(=builder::load_on_miss_fetches_the_row_and_caches_it)'
+cargo nextest run -p vantage-diorama --all-features --lib -E 'test(=scenery::table::cap::tests::a_tail_reads_the_end_of_the_set)'
+cargo nextest list -p vantage-diorama --all-features --test two_pass
 ```
 
-If you're writing CLI code, this is functionally identical to what the
-`bakery_model3/examples/cli-vista.rs` does today, except every read is
-served from cache and every write invalidates the relevant rows.
+`nextest list` is how to check a split lost nothing: list the binary before
+and after moving tests, under `--all-features` and under the default features
+when the file has feature-gated tests, and compare the counts.
 
-## When you don't need Diorama
+## The public API snapshot
 
-Plenty of Rust code shouldn't bother. Skip Diorama if:
+`api/vantage-diorama.txt` is the crate's public surface as `cargo-public-api`
+prints it: every public item, its path, its signature and its auto traits.
+`.github/workflows/public-api.yaml` regenerates it and fails on any difference,
+so a change to the public API shows in review as a diff of that file.
 
-- Your backing store is already fast (local sqlite, in-memory store) and
-  you don't need offline tolerance.
-- You're writing a one-shot tool — a migration script, a data export, a
-  load test. The Lens's startup cost isn't justified.
-- You only need a single operation per process invocation. A bare Vista is
-  simpler.
-
-The line is roughly: long-lived processes with read amplification or
-write resilience requirements benefit; short-lived processes don't.
-
-## Patterns by shape of work
-
-### API endpoint backed by a slow remote
-
-The example above. Cache reads, invalidate on write, short TTL. Lens lives
-for the process lifetime; one Dio per resource type.
-
-```rust
-async fn list_products(state: State<AppState>) -> impl IntoResponse {
-    let rows = state.products.vista().list_values().await?;
-    Json(rows)
-}
-
-async fn update_product(state: State<AppState>, Path(id): Path<String>, Json(patch): Json<Patch>)
-    -> impl IntoResponse
-{
-    state.products.vista().update(id, patch).await?;
-    StatusCode::NO_CONTENT
-}
+```sh
+mise run api-snapshot
+bash api/rules.sh
 ```
 
-The cache absorbs request bursts; the underlying remote sees a few requests
-per minute instead of a few per second.
+`mise run api-snapshot` runs `api/snapshot.sh`, which pins the nightly and the
+`cargo-public-api` version it needs (rustdoc JSON changes between nightlies).
+Commit the regenerated file with the change that caused it.
 
-### Internal library that talks to multiple backends
+`api/rules.sh` checks the rules the snapshot has to keep:
 
-You're building a library that other services call. It needs to read from
-DynamoDB, write to Postgres, audit-log to S3. The user of your library
-shouldn't have to think about the storage shape.
+- A handle or view type (`Dio`, `Lens`, the builders, the sceneries, the
+  caches) has no public field, so its state can change without breaking a
+  caller.
+- No crate with a snapshot allows dead code in `src/lib.rs`.
+- A public enum, or a struct with a public field, is `#[non_exhaustive]`
+  unless `CLOSED` lists it (`Generation` and `SortDirection` are).
+- Every item has one path, inside this crate, and only the prelude
+  re-exports.
 
-```rust
-pub struct OrderService {
-    orders: Dio,
-}
+### Why snapshot the API instead of reviewing it?
 
-impl OrderService {
-    pub async fn new(lens: &Lens, db: DynamoClient, audit: S3Client) -> Result<Self> {
-        let dynamo_vista = orders_dynamo_vista(db);
-        let lens_with_audit = lens.clone().with_audit_target(audit);   // not real API, illustrative
-        let orders = lens_with_audit.make_dio(dynamo_vista);
-        Ok(Self { orders })
-    }
+Because a re-export lost while splitting a module, or a field made public in
+passing, looks like nothing in a source diff. In the snapshot it is a removed
+or added line. The rules script then catches the mistakes a reviewer would only
+catch by knowing the rule, such as an enum gaining a variant without
+`#[non_exhaustive]`.
 
-    pub async fn create(&self, order: Order) -> Result<OrderId> {
-        let id = self.orders.vista().insert(order.into_record()).await?;
-        Ok(id)
-    }
+## House rules
 
-    pub async fn list_for_customer(&self, customer_id: &str) -> Result<Vec<Order>> {
-        self.orders.vista()
-            .add_condition_eq("customer_id", customer_id)
-            .list_values_typed::<Order>()
-            .await
-    }
-}
-```
+- No `mod.rs` except where a directory has to be its own root
+  (`tests/support/mod.rs`, `tests/bdd_support/mod.rs`); a module `x.rs` keeps
+  its children in `x/`.
+- Files stay around 250 lines. Split by concern, and name the child after what
+  it holds (`loader/commit/totals.rs`, not `commit2.rs`).
+- `use` imports at the top of the file.
+- Doc comments where they carry weight, written for a reader who sees the code
+  cold: no notes about what the code used to do.
+- `src/lib.rs` denies `clippy::todo` and `clippy::unimplemented` outside
+  tests.
 
-The Lens carries the strategy (cache to disk, write to Postgres + S3,
-refresh on a timer). The service exposes typed business methods that don't
-leak the storage shape. Consumers of `OrderService` don't see the Lens.
+## Checklist
 
-### Batch job with resumable state
-
-A nightly job processes millions of records. It must survive restarts; it
-must batch writes for throughput; it must avoid re-processing records seen
-on a previous run.
-
-```rust
-let lens = Lens::new()
-    .cache_at("./job-state.redb")
-    .on_start(|dio| async move {
-        let last_cursor: Option<String> = dio.cache().get_metadata("cursor").await?;
-        let mut cursor = last_cursor.unwrap_or_default();
-        loop {
-            let page = dio.master().fetch_after(&cursor).await?;
-            if page.is_empty() { break; }
-            dio.cache().insert_values(page.rows.clone()).await?;
-            cursor = page.next_cursor;
-            dio.cache().set_metadata("cursor", &cursor).await?;
-        }
-        Ok(())
-    })
-    .build()
-    .await?;
-
-let job = lens.make_dio(source_vista);
-
-// Process every record we have, then mark each as processed:
-let pending = job.vista().add_condition_eq("processed", false).list_values().await?;
-for row in pending {
-    transform_and_emit(&row).await?;
-    job.vista().update(row.id(), patch! { "processed": true }).await?;
-}
-```
-
-On a clean run, `on_start` walks the cursor from zero and fills the cache.
-On a restart, it picks up at `last_cursor`. The cache survives both. Writes
-go through the local cache instantly and the background worker batches them
-to the master.
-
-### CLI tool with persistent local state
-
-The same `bakery_model3/examples/cli-vista.rs` pattern, but with a local
-cache that survives between command invocations:
-
-```rust
-let lens = Lens::new()
-    .cache_at(dirs::cache_dir().unwrap().join("mytool.redb"))
-    .on_start(|dio| async move {
-        // Only fetch if cache is empty.
-        if dio.cache().count().await? == 0 {
-            let data = dio.master().list_values().await?;
-            dio.cache().insert_values(data).await?;
-        }
-        Ok(())
-    })
-    .build()
-    .await?;
-
-let products = lens.make_dio(api_vista);
-println!("{:?}", products.vista().list_values().await?);
-```
-
-Second invocation: instant output. Add an explicit `--refresh` flag that
-calls `products.refresh().await?` to force a re-fetch when staleness matters.
-
-## Don't reach for Sceneries
-
-If you're writing business logic, you don't need them. Sceneries are for UI
-adapters and other consumers that pull-on-render. CLI code, API handlers,
-job runners, internal libraries — all of them want the snapshot API
-(`vista().list_values().await`, `vista().get_value(id).await`).
-
-If you find yourself thinking "I want to know when this data changes" in
-business code, you usually want either:
-
-- An `on_event` callback in the Lens (the change comes from an external
-  source you can subscribe to).
-- A polling loop with an explicit interval.
-- A websocket or queue subscription unrelated to Diorama.
-
-Sceneries exist because UI frameworks have specific pull-on-render
-contracts. Business code doesn't share that constraint.
-
-## Error handling
-
-`dio.vista().list_values()` returns `Result<Vec<Record<CborValue>>, Error>`.
-The error surface is the same as plain Vista:
-
-- The cache failed (disk full, redb corrupted, in-memory backend gone).
-- A write was rejected by the cache.
-- An `on_query` callback failed and the cache is cold.
-
-What you don't see in the synchronous return:
-
-- Asynchronous write failures. Writes through `dio.vista()` enqueue and
-  return `Ok(())` immediately. If the queued write later fails (master
-  rejected it, network died), the failure is published as a `DioEvent` on
-  the event bus. Business code that cares about write durability needs to
-  subscribe to the event bus or use a `Lens::on_write` callback that calls
-  master synchronously and propagates the error.
-- Refresh failures. Background refreshes fail silently from the caller's
-  perspective; the cache keeps serving its last good data. Wire a
-  `tracing` subscriber to see the errors during development.
-
-For workloads that need strict write-then-confirm semantics — financial
-transactions, regulatory data — write a synchronous `on_write` that awaits
-the master and returns the result. The framework gets out of your way.
-
-## Composition with other Vistas
-
-You don't have to wrap a single Vista. `lens.make_dio` takes anything that
-implements the Vista interface, including composed Vistas. The composition
-primitives live in this same crate:
-
-```rust
-use vantage_diorama::Diorama;
-
-// Overlay: read from CSV, write to memory, capabilities are the union.
-let overlay = Diorama::overlay(read_only_csv_vista, in_memory_write_vista);
-let dio = lens.make_dio(overlay);
-
-// Merge: read from two sources, prefer the first.
-let merged = Diorama::merge(local_cache_vista, remote_api_vista);
-let dio = lens.make_dio(merged);
-```
-
-Composition produces something that satisfies the Vista interface; the Lens
-treats it indistinguishably from a leaf Vista. The composed Vista's
-capabilities are the union of its parts, which the Lens then re-derives one
-more time before producing `dio.vista()`.
-
-For most business code, you don't need composition. It's primarily for
-scenarios where the data shape genuinely lives across two sources — a
-read-only seed file plus user-edited overlay, a primary database plus a
-fallback cache, a federated query across two systems. Reach for it when the
-shape demands it, not preemptively.
-
-## A complete worked example
-
-A REST API service that surfaces a slow remote product catalog with a
-read cache and write-through.
-
-```rust
-use std::sync::Arc;
-use std::time::Duration;
-use axum::{routing::{get, post}, Router, extract::State, Json};
-use vantage_diorama::{Dio, Lens};
-
-#[derive(Clone)]
-struct AppState {
-    products: Dio,
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let remote = RemoteCatalogVista::new(std::env::var("CATALOG_URL")?).into_vista()?;
-
-    let lens = Lens::new()
-        .cache_at("./catalog.redb")
-        .on_start(|dio| async move {
-            let data = dio.master().list_values().await?;
-            dio.cache().insert_values(data).await?;
-            Ok(())
-        })
-        .on_refresh(|dio| async move {
-            let fresh = dio.master().list_values().await?;
-            dio.cache().replace_all(fresh).await?;
-            Ok(())
-        })
-        .on_write(|dio, op| async move {
-            dio.master().apply(&op).await?;
-            if let Some(id) = op.target_id() {
-                dio.notify_record_changed(id);
-            }
-            Ok(())
-        })
-        .refresh_every(Duration::from_secs(300))
-        .build()
-        .await?;
-
-    let products = lens.make_dio(remote);
-    let state = AppState { products };
-
-    let app = Router::new()
-        .route("/products", get(list_products))
-        .route("/products/:id", get(get_product).put(update_product))
-        .with_state(state);
-
-    axum::Server::bind(&"0.0.0.0:3000".parse()?).serve(app.into_make_service()).await?;
-    Ok(())
-}
-
-async fn list_products(State(state): State<AppState>) -> Result<Json<Vec<Product>>, AppError> {
-    let rows = state.products.vista().list_values_typed::<Product>().await?;
-    Ok(Json(rows))
-}
-
-async fn get_product(State(state): State<AppState>, axum::extract::Path(id): axum::extract::Path<String>)
-    -> Result<Json<Product>, AppError>
-{
-    let row = state.products.vista().get_value_typed::<Product>(&id).await?;
-    row.map(Json).ok_or(AppError::NotFound)
-}
-
-async fn update_product(
-    State(state): State<AppState>,
-    axum::extract::Path(id): axum::extract::Path<String>,
-    Json(patch): Json<ProductPatch>,
-) -> Result<axum::http::StatusCode, AppError> {
-    state.products.vista().update(id, patch.into_record()).await?;
-    Ok(axum::http::StatusCode::NO_CONTENT)
-}
-```
-
-The service starts up by loading the catalog once. Reads hit the disk cache.
-Writes go to the cache and the master synchronously, so the client knows the
-write succeeded before the response returns. Background refresh keeps the
-cache fresh against upstream changes.
-
-No reactive code. No Sceneries. No UI concerns. Diorama just made the slow
-backend usable.
-
-## Inspecting a live Dio
-
-`dio.diagnostics().await` snapshots what a Dio is doing right now — handy for a
-debug panel, a `/healthz`-style endpoint, or a test assertion:
-
-```rust
-let d = dio.diagnostics().await;
-println!("cache: {} rows, {} query indexes", d.cache_rows, d.query_indexes);
-for s in &d.sceneries {
-    // key = (shape, conditions, sort, search, titles_only); refcount = widgets holding it
-    println!(
-        "{}  x{}  rows={}  fresh={}/{} pending={} failed={}",
-        s.key, s.refcount, s.row_count,
-        s.status.fresh, s.status.loaded, s.status.pending_write, s.status.failed,
-    );
-}
-println!("augmented rows on screen: {}", d.augmented_rows());
-```
-
-It reads straight off the dedup registry, so it's nearly free and prunes dead
-entries as it goes — a released scenery disappears from the report, which is
-exactly how you confirm nothing leaked. `dio.live_table_scenery_count()` is the
-one-number version.
+- Re-export a new public type at the root, and nowhere else but the prelude.
+- Mark a new public enum, or a struct with public fields, `#[non_exhaustive]`.
+- Regenerate `api/vantage-diorama.txt` and run `bash api/rules.sh`.
+- Put new fixtures in `tests/support/`.
+- Run the covering tests by name, with `--all-features`.
+- Compare `nextest list` counts before and after moving tests.

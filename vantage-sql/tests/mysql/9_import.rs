@@ -12,7 +12,7 @@ use vantage_dataset::prelude::*;
 use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
 use vantage_table::table::{AfterFn, BeforeFn, Hook, Phase, Table};
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Vista, VistaFactory};
+use vantage_vista::{Capability, FilterOp, Vista, VistaFactory};
 
 pub(super) type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -56,7 +56,7 @@ pub(super) fn vista(db: &MysqlDB, name: &str) -> Vista {
 
 pub(super) fn open_vista(db: &MysqlDB, name: &str) -> Vista {
     let mut v = vista(db, name);
-    v.add_condition_eq("status", CborValue::Text("open".into()))
+    v.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))
         .unwrap();
     v
 }
@@ -192,10 +192,11 @@ async fn import_empty_is_zero() -> TestResult {
 
 #[tokio::test]
 async fn import_capability_on_writable_vistas_only() -> TestResult {
-    use vantage_sql::mysql::vista::{MysqlSpecResolver, MysqlVistaSpec};
+    use vantage_sql::mysql::vista::MysqlVistaSpec;
+    use vantage_vista::SpecResolver;
 
     let (db, name) = setup("caps").await;
-    assert!(vista(&db, &name).capabilities().can_import);
+    assert!(vista(&db, &name).capabilities().has(Capability::Import));
 
     let base_yaml = format!(
         r#"
@@ -221,17 +222,18 @@ mysql:
         .into_iter()
         .collect();
     let map = Arc::new(map);
-    let resolver: MysqlSpecResolver = Arc::new(move |n: &str| map.get(n).cloned());
+    let resolver: Arc<dyn SpecResolver<MysqlVistaSpec>> =
+        Arc::new(move |n: &str| map.get(n).cloned());
     let factory = db.vista_factory().with_resolver(resolver);
 
     assert!(
         factory
             .build_from_spec(base_spec)?
             .capabilities()
-            .can_import
+            .has(Capability::Import)
     );
     let derived = factory.build_from_spec(derived_spec)?;
-    assert!(!derived.capabilities().can_import);
+    assert!(!derived.capabilities().has(Capability::Import));
     let rows = batch(vec![("a", row("a", "open"))]);
     assert!(derived.import_values(&rows).await.is_err());
     assert!(stored(&db, &name).await.is_empty());

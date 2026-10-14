@@ -1,9 +1,9 @@
 // Q1: Basic SELECT with WHERE, ORDER BY, LIMIT
 // Tests: select, from, field, where, order_by, limit, comparison operators
 
-let users = table("users");
+let users = surreal::ident("users");
 
-select()
+surreal::select()
     .from(users)
     .field("name")
     .field("age")

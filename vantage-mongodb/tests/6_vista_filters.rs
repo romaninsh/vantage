@@ -11,7 +11,7 @@ use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{MongoCondition, MongoDB};
-use vantage_vista::{FilterOp, VistaFactory};
+use vantage_vista::{Capability, FilterOp, NativeCondition, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -88,7 +88,7 @@ async fn vista_op_conditions_push_down() -> TestResult {
 
     let mut v = products(&db);
     v.add_condition("price", FilterOp::Gte, int(100))?;
-    assert_eq!(v.get_count().await?, 2);
+    assert_eq!(v.count().await?, 2);
 
     let mut v = products(&db);
     v.add_condition("name", FilterOp::Like, text("CHOC"))?;
@@ -108,7 +108,7 @@ async fn vista_op_conditions_push_down() -> TestResult {
 
     let mut v = products(&db);
     v.add_condition("price", FilterOp::Ne, int(100))?;
-    assert_eq!(v.get_count().await?, 2);
+    assert_eq!(v.count().await?, 2);
 
     // Hex strings find documents whose `_id` is an ObjectId.
     let mut v = products(&db);
@@ -128,7 +128,7 @@ async fn vista_op_conditions_push_down() -> TestResult {
 
     let mut v = products(&db);
     v.add_condition("_id", FilterOp::Ne, text(&ids[1].to_hex()))?;
-    assert_eq!(v.get_count().await?, 2);
+    assert_eq!(v.count().await?, 2);
 
     let mut v = products(&db);
     assert!(v.add_condition("nope", FilterOp::Eq, int(1)).is_err());
@@ -186,17 +186,17 @@ async fn vista_search_uses_searchable_paths() -> TestResult {
     seed_clients(&db).await?;
 
     let mut v = clients(&db, CLIENT);
-    v.add_search("hill")?;
+    v.set_search(Some("hill"))?;
     assert_eq!(names(&v.list_values().await?), vec!["Marty"]);
 
     // `price` is not searchable, so its digits never match.
-    v.add_search("12")?;
+    v.set_search(Some("12"))?;
     assert_eq!(v.list_values().await?.len(), 0);
 
-    v.add_search("biff")?;
+    v.set_search(Some("biff"))?;
     assert_eq!(names(&v.list_values().await?), vec!["Biff"]);
 
-    v.clear_search()?;
+    v.set_search(None)?;
     assert_eq!(v.list_values().await?.len(), 2);
 
     teardown(&db, &name).await;
@@ -204,12 +204,16 @@ async fn vista_search_uses_searchable_paths() -> TestResult {
 }
 
 #[tokio::test]
-async fn vista_search_without_searchable_columns_matches_nothing() -> TestResult {
+async fn vista_search_without_searchable_columns_reads_every_column() -> TestResult {
     let (db, name) = setup().await;
     seed_clients(&db).await?;
 
     let mut v = clients(&db, CLIENT_NO_SEARCH);
-    v.add_search("marty")?;
+    v.set_search(Some("marty"))?;
+    assert_eq!(names(&v.list_values().await?), vec!["Marty"]);
+
+    // `address` is not a column, so its city is not searched.
+    v.set_search(Some("hill"))?;
     assert_eq!(v.list_values().await?.len(), 0);
 
     teardown(&db, &name).await;
@@ -217,60 +221,70 @@ async fn vista_search_without_searchable_columns_matches_nothing() -> TestResult
 }
 
 #[tokio::test]
-async fn raw_condition_document_narrows_list() -> TestResult {
+async fn native_condition_document_narrows_list() -> TestResult {
     let (db, name) = setup().await;
     seed(&db).await?;
 
     let mut v = products(&db);
-    v.add_raw_condition(bson::doc! { "price": { "$gt": 50 }, "name": { "$regex": "^Dark" } })?;
+    v.add_native_condition(NativeCondition::new(
+        bson::doc! { "price": { "$gt": 50 }, "name": { "$regex": "^Dark" } },
+        "dark over 50",
+    ))?;
     assert_eq!(names(&v.list_values().await?), vec!["Dark Chocolate"]);
+    assert_eq!(v.query().native, vec!["dark over 50".to_string()]);
 
     teardown(&db, &name).await;
     Ok(())
 }
 
 #[tokio::test]
-async fn raw_condition_mongo_condition_narrows_list() -> TestResult {
+async fn native_condition_mongo_condition_narrows_list() -> TestResult {
     let (db, name) = setup().await;
     seed(&db).await?;
 
     let mut v = products(&db);
-    v.add_raw_condition(MongoCondition::And(vec![
-        bson::doc! { "price": { "$gte": 100 } }.into(),
-        bson::doc! { "name": { "$ne": "Dark Chocolate" } }.into(),
-    ]))?;
+    v.add_native_condition(NativeCondition::new(
+        MongoCondition::And(vec![
+            bson::doc! { "price": { "$gte": 100 } }.into(),
+            bson::doc! { "name": { "$ne": "Dark Chocolate" } }.into(),
+        ]),
+        "pricey, not dark",
+    ))?;
     assert_eq!(names(&v.list_values().await?), vec!["Vanilla Cupcake"]);
-    assert_eq!(v.get_count().await?, 1);
+    assert_eq!(v.count().await?, 1);
 
     teardown(&db, &name).await;
     Ok(())
 }
 
 #[tokio::test]
-async fn raw_condition_wrong_type_errors() -> TestResult {
+async fn native_condition_wrong_type_errors() -> TestResult {
     let (db, name) = setup().await;
     seed(&db).await?;
 
     let mut v = products(&db);
     let err = v
-        .add_raw_condition("price > 50".to_string())
+        .add_native_condition(NativeCondition::new("price > 50".to_string(), "text"))
         .expect_err("a string is not a Mongo condition");
+    assert!(err.is_incorrect_usage(), "error: {err:?}");
     assert!(
         err.to_string().contains("bson::Document or MongoCondition"),
         "error: {err}"
     );
-    assert_eq!(v.get_count().await?, 3);
+    assert_eq!(v.count().await?, 3);
+    assert!(v.query().native.is_empty());
 
     teardown(&db, &name).await;
     Ok(())
 }
 
 #[tokio::test]
-async fn vista_capabilities_advertise_operators_and_set_traversal() -> TestResult {
+async fn vista_capabilities_advertise_operators_and_traversal() -> TestResult {
     let (db, name) = setup().await;
-    let caps = products(&db).capabilities().clone();
-    assert!(caps.can_filter_operators);
-    assert!(caps.can_traverse_to_set);
+    let caps = *products(&db).capabilities();
+    assert!(caps.has(Capability::FilterOps));
+    assert!(caps.has(Capability::NativeConditions));
+    assert!(caps.has(Capability::Traverse));
     teardown(&db, &name).await;
     Ok(())
 }

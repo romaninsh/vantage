@@ -9,11 +9,10 @@ pub use crate::graphql::{
     AnyGraphqlType, CountMode, FieldCondition, FilterDialect, GraphqlApi, GraphqlApiBuilder,
     GraphqlApiTableShell, GraphqlApiVistaFactory, GraphqlApiVistaSpec, GraphqlBlock,
     GraphqlColumnBlock, GraphqlColumnExtras, GraphqlCondition, GraphqlOp, GraphqlOperation,
-    GraphqlSelect, GraphqlSpecResolver, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants,
-    RenderedQuery, Supports,
+    GraphqlSelect, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants, RenderedQuery, Supports,
 };
 pub use crate::rest::{
-    ApiTableBlock, ApiTableExtras, FilterStrategy, ModelResolver, OrderingParams, PaginationMode,
+    ApiTableBlock, ApiTableExtras, FilterStrategy, OrderingParams, PaginationMode,
     PaginationParams, ResponseShape, RestApi, RestApiBuilder, RestApiTableShell,
     RestApiVistaFactory, RestApiVistaSpec, eq_condition,
 };

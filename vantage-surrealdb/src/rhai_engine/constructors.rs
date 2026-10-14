@@ -1,4 +1,8 @@
 //! Constructor functions for the SurrealDB Rhai DSL.
+//!
+//! The free functions here are registered in the `surreal::` namespace, so a
+//! script writes `surreal::avg(..)` where a doc below says `avg(..)`. The
+//! methods (`.map`, `.when`, ..) are called on their receiver as written.
 
 use crate::AnySurrealType;
 use crate::Expr;
@@ -341,7 +345,7 @@ pub fn fn_similarity(arg: rhai::Dynamic, term: &str) -> Result<RhaiExpr, Box<rha
     Ok(RhaiExpr(primitives::similarity(unwrap_expr(arg)?, term)))
 }
 
-/// `coalesce(a, b)` → `a ?? b`.
+/// `coalesce(a, b)` → `(a ?? b)`.
 pub fn fn_coalesce(
     a: rhai::Dynamic,
     b: rhai::Dynamic,
@@ -364,7 +368,7 @@ pub fn fn_date_format(e: rhai::Dynamic, fmt: &str) -> Result<RhaiExpr, Box<rhai:
     Ok(RhaiExpr(primitives::date_format(to_expr(e)?, fmt)))
 }
 
-// ── Graph traversal: graph(me, "edge", "table", …) / recurse ────────────
+// ── Graph traversal: surreal::graph(surreal::me, "edge", …) / recurse ───
 
 /// Field access on an expression (the string `[...]` indexer): `{expr}.{col}`.
 pub fn expr_index(e: Expr, col: &str) -> Expr {
@@ -388,13 +392,14 @@ fn dyn_is_anchor(d: &rhai::Dynamic) -> bool {
     d.is::<RhaiExpr>() || d.is::<RhaiIdent>()
 }
 
-/// `graph(me, "edge", "table", …)` builds a graph-traversal path. Exactly one
-/// argument is the *anchor* — `me` (the current record) or a nested `graph(…)`;
-/// every other argument is an edge/table name. The anchor's position sets the
-/// direction: anchor on the **left** walks outward (`->edge->table`), anchor on
-/// the **right** walks inward (`table<-edge<-…`). Nesting changes direction
-/// per hop, so `graph("client", "placed", graph(me, "placed", "order"))`
-/// renders `->placed->order<-placed<-client`.
+/// `surreal::graph(surreal::me, "edge", "table", …)` builds a graph-traversal
+/// path. Exactly one argument is the *anchor* — `surreal::me` (the current
+/// record) or a nested `surreal::graph(…)`; every other argument is an
+/// edge/table name. The anchor's position sets the direction: anchor on the
+/// **left** walks outward (`->edge->table`), anchor on the **right** walks
+/// inward (`table<-edge<-…`). Nesting changes direction per hop, so
+/// `graph("client", "placed", graph(me, "placed", "order"))` (each call and
+/// `me` qualified with `surreal::`) renders `->placed->order<-placed<-client`.
 pub fn graph_impl(args: Vec<rhai::Dynamic>) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     let n = args.len();
     let mut anchor_idx = None;
@@ -402,14 +407,16 @@ pub fn graph_impl(args: Vec<rhai::Dynamic>) -> Result<RhaiExpr, Box<rhai::EvalAl
         if dyn_is_anchor(a) {
             if anchor_idx.is_some() {
                 return Err(super::convert::rhai_err(
-                    "graph: expected exactly one anchor (`me` or a sub-graph)".to_string(),
+                    "graph: expected exactly one anchor (`surreal::me` or a sub-graph)".to_string(),
                 ));
             }
             anchor_idx = Some(i);
         }
     }
     let ai = anchor_idx.ok_or_else(|| {
-        super::convert::rhai_err("graph: missing anchor — pass `me` or a sub-graph".to_string())
+        super::convert::rhai_err(
+            "graph: missing anchor — pass `surreal::me` or a sub-graph".to_string(),
+        )
     })?;
 
     let collect = |slice: &[rhai::Dynamic]| -> Result<Vec<String>, Box<rhai::EvalAltResult>> {
@@ -441,7 +448,7 @@ pub fn graph_impl(args: Vec<rhai::Dynamic>) -> Result<RhaiExpr, Box<rhai::EvalAl
         )))
     } else {
         Err(super::convert::rhai_err(
-            "graph: `me` (the anchor) must be the first or last argument".to_string(),
+            "graph: `surreal::me` (the anchor) must be the first or last argument".to_string(),
         ))
     }
 }

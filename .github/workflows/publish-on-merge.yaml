@@ -113,7 +113,6 @@ jobs:
             vantage-types
             vantage-dataset
             vantage-vista
-            vantage-vista-factory
             surreal-client
             vantage-expressions
             vantage-table
@@ -132,7 +131,6 @@ jobs:
             vantage-diorama
             # Dev-depends on vantage-diorama.
             vantage-memory
-            vantage-diorama-aggregate
             vantage-api-adapters
             vantage-faker
           )

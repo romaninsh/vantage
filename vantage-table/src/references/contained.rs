@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use vantage_types::EmptyEntity;
-use vantage_vista::{ContainedKind, ContainedSpec};
+use vantage_vista::{Reference, ReferenceKind};
 
 use crate::{table::Table, traits::table_source::TableSource};
 
@@ -22,7 +22,9 @@ use crate::{table::Table, traits::table_source::TableSource};
 pub struct ContainedRelation<T: TableSource> {
     name: String,
     host_column: String,
-    kind: ContainedKind,
+    /// `ContainsOne` or `ContainsMany`: only [`one`](ContainedRelation::one)
+    /// and [`many`](ContainedRelation::many) set it.
+    kind: ReferenceKind,
     id_column: Option<String>,
     build_target: Arc<dyn Fn(T) -> Table<T, EmptyEntity> + Send + Sync>,
 }
@@ -40,17 +42,33 @@ impl<T: TableSource> Clone for ContainedRelation<T> {
 }
 
 impl<T: TableSource + 'static> ContainedRelation<T> {
-    pub fn new(
+    /// One record embedded as an object in `host_column`; its id is `"0"`.
+    pub fn one(
         name: impl Into<String>,
         host_column: impl Into<String>,
-        kind: ContainedKind,
+        build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            host_column: host_column.into(),
+            kind: ReferenceKind::ContainsOne,
+            id_column: None,
+            build_target: Arc::new(build_target),
+        }
+    }
+
+    /// Records embedded as an array in `host_column`, each addressed by its
+    /// `id_column` field (`None`: by position).
+    pub fn many(
+        name: impl Into<String>,
+        host_column: impl Into<String>,
         id_column: Option<String>,
         build_target: impl Fn(T) -> Table<T, EmptyEntity> + Send + Sync + 'static,
     ) -> Self {
         Self {
             name: name.into(),
             host_column: host_column.into(),
-            kind,
+            kind: ReferenceKind::ContainsMany,
             id_column,
             build_target: Arc::new(build_target),
         }
@@ -64,7 +82,7 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
         &self.host_column
     }
 
-    pub fn kind(&self) -> ContainedKind {
+    pub fn kind(&self) -> ReferenceKind {
         self.kind
     }
 
@@ -78,13 +96,14 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
         (self.build_target)(db)
     }
 
-    /// Shape-only vista spec (name, host, kind, id — no columns) for metadata
-    /// surfacing. Columns are materialized at traversal from `build_target`.
-    pub fn spec(&self) -> ContainedSpec {
-        let mut spec = ContainedSpec::new(&self.name, &self.host_column, self.kind);
-        if let Some(id) = &self.id_column {
-            spec = spec.with_id_column(id);
+    /// The relation as a Vista reference of a contained kind, for metadata.
+    /// The records' columns and id column are materialized at traversal from
+    /// `build_target`.
+    pub fn reference(&self) -> Reference {
+        if self.kind == ReferenceKind::ContainsMany {
+            Reference::contains_many(&self.name, &self.host_column)
+        } else {
+            Reference::contains_one(&self.name, &self.host_column)
         }
-        spec
     }
 }

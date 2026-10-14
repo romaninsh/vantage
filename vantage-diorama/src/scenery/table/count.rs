@@ -1,20 +1,17 @@
-//! Counting the rows a view would hold under a replacement set of UI filter terms.
+//! Counting the rows a view would hold under a replacement set of runtime filters.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
-use tokio::task::JoinHandle;
 use vantage_core::{Context as _, Result, error};
-use vantage_vista::Vista;
+use vantage_vista::{Condition, VistaQuery};
 
-use crate::dio::DioInner;
+use crate::dio::{AbortOnDrop, DioInner};
 
-use super::helpers::{matches_conditions, matches_op_conditions, matches_search};
-use super::{OpCondition, TableSceneryState};
+use super::plan::{Serving, admitted_by_view};
+use super::state::SharedRows;
+use super::view::TableView;
 
 /// See [`TableScenery::count_where`](super::TableScenery::count_where).
 ///
@@ -26,138 +23,111 @@ use super::{OpCondition, TableSceneryState};
 /// cache does not mirror (the cache also holds rows other queries listed), and
 /// the index is still growing while list pages arrive.
 pub(super) fn count_where(
-    state: &Arc<TableSceneryState>,
-    terms: Vec<OpCondition>,
+    view: &TableView,
+    filters: Vec<Condition>,
 ) -> BoxFuture<'static, Result<Option<usize>>> {
-    if state.two_pass {
+    let shared = view.shared();
+    if shared.two_pass {
         return Box::pin(async { Ok(None) });
     }
-    let Some(dio) = state.dio_weak.upgrade() else {
+    let Some(dio) = view.dio_weak.upgrade() else {
         return Box::pin(async { Ok(None) });
     };
+    let mut query = view.query_with_filters(&filters);
+    query.order = None;
     let runtime = dio.lens.runtime.clone();
-    let task = AbortOnDrop(runtime.spawn(count(state.clone(), dio, terms)));
+    let task = AbortOnDrop(runtime.spawn(count(shared, dio, query)));
     Box::pin(async move { task.await.context(error!("count_where task failed"))? })
 }
 
-/// A join handle that aborts its task when dropped, so a caller that stops
-/// waiting for a count stops the query behind it.
-struct AbortOnDrop<T>(JoinHandle<T>);
-
-impl<T> Future for AbortOnDrop<T> {
-    type Output = std::result::Result<T, tokio::task::JoinError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx)
-    }
+/// See [`TableScenery::filters_supported`](super::TableScenery::filters_supported):
+/// the view's query with `filters` in place of its own, planned against the
+/// Dio and decided as its rows decide their serving.
+pub(super) fn filters_supported(view: &TableView, filters: &[Condition]) -> bool {
+    answerable(view, view.query_with_filters(filters))
 }
 
-impl<T> Drop for AbortOnDrop<T> {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
+/// See [`TableScenery::search_supported`](super::TableScenery::search_supported):
+/// the view's query with a probe search in place of its own, decided as
+/// [`filters_supported`] decides. A paged view whose master can't search
+/// answers yes when its Lens copies the whole set to search over.
+pub(super) fn search_supported(view: &TableView) -> bool {
+    let mut query = view.view_query();
+    query.search = Some("x".into());
+    answerable(view, query)
 }
 
-async fn count(
-    state: Arc<TableSceneryState>,
-    dio: Arc<DioInner>,
-    terms: Vec<OpCondition>,
-) -> Result<Option<usize>> {
-    if state.paged {
-        count_at_master(&state, &dio, terms).await
-    } else {
-        count_in_cache(&state, &dio, &terms).await
-    }
-}
-
-/// An eager view counts the rows its cache holds, through the reseed filter
-/// chain with `terms` standing in for the UI terms. Before the view has
-/// settled the cache may still be filling, so there is no count yet.
-async fn count_in_cache(
-    state: &TableSceneryState,
-    dio: &DioInner,
-    terms: &[OpCondition],
-) -> Result<Option<usize>> {
-    if !state.settled.load(Ordering::SeqCst) {
-        return Ok(None);
-    }
-    let all = state.reader(dio).list_values().await?;
-    let conditions = state.conditions.read().unwrap().clone();
-    let op_conditions = state.op_conditions.read().unwrap().clone();
-    let ui_filters = state.ui_filters.read().unwrap().clone();
-    let search = state.search.read().unwrap().clone();
-    let n = all
-        .values()
-        .filter(|rec| matches_conditions(rec, &conditions))
-        .filter(|rec| matches_conditions(rec, &ui_filters))
-        .filter(|rec| matches_op_conditions(rec, &op_conditions))
-        .filter(|rec| matches_op_conditions(rec, terms))
-        .filter(|rec| matches_search(rec, search.as_deref()))
-        .count();
-    Ok(Some(n))
-}
-
-/// A paged view counts what its chunk fetches would read: a narrowed clone of
-/// the master carrying the current search and `terms`. Any term the master
-/// cannot take means no count — one that silently ignored a term would be
-/// wider than the view it claims to describe.
-async fn count_at_master(
-    state: &TableSceneryState,
-    dio: &DioInner,
-    terms: Vec<OpCondition>,
-) -> Result<Option<usize>> {
-    let master = dio.master.read().unwrap().clone();
-    let caps = master.capabilities();
-    if !caps.can_count {
-        return Ok(None);
-    }
-    let Some(shell) = master.source.clone_shell() else {
-        return Ok(None);
+/// Whether `query`, planned as the view's rows plan their own, is served
+/// rather than failed.
+fn answerable(view: &TableView, query: VistaQuery) -> bool {
+    let Some(dio) = view.dio_weak.upgrade() else {
+        return false;
     };
-    let mut narrowed = Vista::new(master.name(), shell);
+    let shared = view.shared();
+    let (offered, sugar, planned) = shared.plan_query(&dio, query);
+    let serving = Serving::decide(&shared, &dio, &offered, &sugar, planned.as_ref());
+    !matches!(serving, Serving::Failed(_))
+}
 
-    let search = state.search.read().unwrap().clone();
-    if let Some(text) = search.filter(|_| caps.can_search) {
-        narrowed.add_search(text)?;
-    }
-    for term in terms {
-        if !term.pushable_to(caps) {
-            return Ok(None);
-        }
-        if let Err(e) = narrowed.add_condition(term.column.clone(), term.op, term.value) {
+/// `query` (the view query with the replacement filters, unordered), planned
+/// as the view's rows plan their own. A query the master rejects has no
+/// count. A paged view whose master takes all of it counts at the master;
+/// one that leaves a clause over counts the whole copy its Lens's eager start
+/// makes, and has no count without one. An eager view counts its cache once
+/// it has settled.
+async fn count(
+    state: Arc<SharedRows>,
+    dio: Arc<DioInner>,
+    query: VistaQuery,
+) -> Result<Option<usize>> {
+    let (_, sugar, planned) = state.plan_query(&dio, query.clone());
+    let plan = match planned {
+        Ok(plan) => plan,
+        Err(e) => {
             tracing::debug!(
                 target: "vantage_diorama::filter",
-                table = %master.name(),
-                column = %term.column,
-                op = ?term.op,
+                table = %dio.master.name(),
                 error = %e,
-                "count_where: the master declined a filter term — no count",
+                "count_where: the master rejected the query — no count",
             );
             return Ok(None);
         }
+    };
+    if state.paged {
+        if !plan.has_residual() && sugar.is_empty() {
+            let n = plan.narrowed().count().await?;
+            return Ok(usize::try_from(n).ok());
+        }
+        if dio.lens.callbacks.loader.eager.is_none() {
+            return Ok(None);
+        }
+        dio.copy_whole().await?;
+    } else if !state.settled.load(Ordering::SeqCst) {
+        return Ok(None);
     }
-    let n = narrowed.get_count().await?;
-    Ok(usize::try_from(n).ok())
+    count_in_cache(&state, &dio, &query).await.map(Some)
 }
 
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::AbortOnDrop;
-
-    #[tokio::test]
-    async fn dropping_the_guard_aborts_the_task() {
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        let guard = AbortOnDrop(tokio::spawn(async move {
-            let _tx = tx;
-            std::future::pending::<()>().await;
-        }));
-        drop(guard);
-        // The never-finishing task only releases its sender when it is aborted.
-        let closed = tokio::time::timeout(Duration::from_secs(5), rx)
-            .await
-            .expect("task was not aborted");
-        assert!(closed.is_err());
+/// The cached rows `query` and the Dio's residual admit, read as the view
+/// reads them. Rows still missing augmented values a clause names are
+/// hydrated first, so no gap is counted or dropped.
+async fn count_in_cache(
+    state: &SharedRows,
+    dio: &Arc<DioInner>,
+    query: &VistaQuery,
+) -> Result<usize> {
+    let reader = state.reader(dio);
+    let mut rows = reader.list_values().await?;
+    if dio.names_augmented(query) {
+        dio.hydrate(&mut rows).await?;
+        if state.read_cache.is_some() {
+            // The hydrated rows are in the cache; the sugared reader adds
+            // its outputs over them.
+            rows = reader.list_values().await?;
+        }
     }
+    Ok(rows
+        .values()
+        .filter(|row| admitted_by_view(dio, query, row))
+        .count())
 }

@@ -5,4 +5,4 @@
 
 mod data_source;
 mod expr_data_source;
-mod table_source;
+pub(crate) mod table_source;

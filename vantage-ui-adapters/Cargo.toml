@@ -35,6 +35,7 @@ cursive_table_view = { version = "0.15", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
+vantage-vista = { path = "../vantage-vista", features = ["mocks"] }
 
 [features]
 default = []

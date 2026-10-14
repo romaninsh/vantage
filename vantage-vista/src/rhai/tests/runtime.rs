@@ -5,9 +5,10 @@ use serde_json::json;
 use vantage_types::Record;
 
 use crate::mocks::MockShell;
-use crate::rhai::{TargetResolver, Writes, preview_script, run_script};
+use crate::rhai::write::new_id;
+use crate::rhai::{Writes, preview_script, run_script};
 use crate::vista::Vista;
-use crate::{Column, Reference, ReferenceKind, VistaMetadata};
+use crate::{Column, ColumnFlag, JoinKey, Reference, VistaMetadata, VistaResolver};
 
 fn user(id: &str, name: &str) -> Record<CborValue> {
     [("id", id), ("name", name)]
@@ -19,18 +20,18 @@ fn user(id: &str, name: &str) -> Record<CborValue> {
 /// Three users, with a `posts` has-many joined on `author`.
 fn users_vista() -> Vista {
     let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
         .with_column(
             Column::new("name", "String")
-                .with_flag("title")
-                .with_flag("orderable"),
+                .with_flag(ColumnFlag::Title)
+                .with_flag(ColumnFlag::Orderable),
         )
+        .with_column(Column::untyped("nick"))
         .with_id_column("id")
-        .with_reference(Reference::new(
+        .with_reference(Reference::has_many(
             "posts",
             "posts",
-            ReferenceKind::HasMany,
-            "author",
+            JoinKey::new("id", "author"),
         ));
     let source = MockShell::new()
         .with_record("1", user("1", "Alice"))
@@ -38,10 +39,10 @@ fn users_vista() -> Vista {
         .with_record("3", user("3", "Carol"))
         .with_metadata(metadata)
         .with_ref_target("posts", MockShell::new());
-    Vista::new("users", Box::new(source))
+    Vista::new("users", source)
 }
 
-fn resolver() -> TargetResolver {
+fn resolver() -> Arc<dyn VistaResolver> {
     Arc::new(|name: &str| {
         if name == "users" {
             Ok(users_vista())
@@ -80,8 +81,8 @@ async fn where_then_first_narrows() {
 #[tokio::test(flavor = "multi_thread")]
 async fn capabilities_is_a_flag_map() {
     let json = run(r#"table("users").capabilities()"#, 5).await.unwrap();
-    assert!(json.get("can_fetch_window").is_some());
-    assert!(json["can_count"].is_boolean());
+    assert_eq!(json["window"], json!(true));
+    assert_eq!(json["cursor"], json!(false));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -89,6 +90,46 @@ async fn columns_lists_schema() {
     let json = run(r#"table("users").columns()"#, 5).await.unwrap();
     let cols = json.as_array().unwrap();
     assert!(cols.iter().any(|c| c["name"] == json!("name")));
+    assert_eq!(cols[1]["type"], json!("String"));
+    assert_eq!(cols[2]["name"], json!("nick"));
+    assert_eq!(
+        cols[2]["type"],
+        json!(null),
+        "an untyped column's type is ()"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn references_name_their_kind_as_yaml_does() {
+    let json = run(r#"table("users").references()"#, 5).await.unwrap();
+    assert_eq!(
+        json,
+        json!([{"name": "posts", "kind": "has_many", "contained": false}])
+    );
+}
+
+#[test]
+fn an_untyped_id_column_takes_a_client_made_id() {
+    let untyped = Vista::new(
+        "notes",
+        MockShell::new().with_metadata(
+            VistaMetadata::new()
+                .with_column(Column::untyped("id"))
+                .with_id_column("id"),
+        ),
+    );
+    assert!(new_id(&untyped, "id").is_ok());
+
+    let numeric = Vista::new(
+        "notes",
+        MockShell::new().with_metadata(
+            VistaMetadata::new()
+                .with_column(Column::new("id", "int"))
+                .with_id_column("id"),
+        ),
+    );
+    let err = new_id(&numeric, "id").unwrap_err();
+    assert!(err.to_string().contains("id column holds numbers"), "{err}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -107,12 +148,9 @@ fn preview_renders_the_built_query() {
     let script = r#"table("users").where("id", "3").sort("name", "desc")"#;
     let json = preview_script(script.into(), resolver()).unwrap();
     assert_eq!(json["driver"], json!("mock"));
-    assert_eq!(json["table"], json!("users"));
-    assert!(
-        json["filters"][0].as_str().unwrap().starts_with("id ="),
-        "{json}"
-    );
-    assert_eq!(json["order"], json!("name desc"));
+    let query = json["query"].as_str().unwrap();
+    assert!(query.starts_with("where id = "), "{json}");
+    assert!(query.ends_with("order by name desc"), "{json}");
 }
 
 #[test]
@@ -138,9 +176,11 @@ fn preview_of_a_non_query_explains_itself() {
 fn preview_traverses_a_reference_from_one_row() {
     let script = r#"table("users").where("id", "1").ref("posts")"#;
     let json = preview_script(script.into(), resolver()).unwrap();
-    assert_eq!(json["table"], json!("posts"));
     assert!(
-        json["filters"][0].as_str().unwrap().starts_with("author ="),
+        json["query"]
+            .as_str()
+            .unwrap()
+            .starts_with("where author = "),
         "{json}"
     );
 }

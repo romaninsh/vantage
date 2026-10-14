@@ -27,9 +27,10 @@ The two meet in one place: a backend's extension verbs on a data handle, such as
 
 A YAML spec for a SQL table can replace its source with a script-built `SELECT`. The script uses
 `vantage-sql`'s builder (`select`, `from`, `field`, `where`, `group_by`, `expr`) and the shared
-primitives (`count`, `avg`, `coalesce`, `case_when`, `date_format`, …):
+primitives (`count`, `avg`, `coalesce`, `case_when`, `date_format`, …). The free functions among
+them live in the `sql::` namespace, one for every SQL database; the methods don't take it:
 
-<!-- tested: vantage-sql tests/sqlite/6_vista.rs vista_yaml_rhai_source_is_read_only_and_filters -->
+<!-- tested: vantage-sql tests/common/vista/product.rs vista_yaml_rhai_source_is_read_only_and_filters -->
 ```yaml
 name: expensive_products
 columns:
@@ -40,7 +41,7 @@ columns:
     type: string
 sqlite:
   rhai: |
-    select().from("product").field("id").field("name").where(expr("price > 15"))
+    sql::select().from("product").field("id").field("name").where(sql::expr("price > 15"))
 ```
 
 A query-sourced Vista is read-only. A derived Vista (`base:` plus `rhai:`) gets the base's
@@ -49,15 +50,18 @@ both, and [Query Builder Functions](./query-builders.md) lists every function th
 register. The Rust primitives are in [SQL Primitives](../sql/primitives.md).
 
 `where` here is the SQL builder's method and takes an expression. On a data handle, `where` takes a
-column and a value. The name is the same because both narrow, but the two vocabularies never share
-a host.
+column and a value. The name is the same because both narrow. A `modify:` script has both
+vocabularies on one host, and each `where` dispatches on its receiver: a select or a table handle.
+The builder's free functions are namespaced so that none of them can shadow a data verb such as
+`table(name)`.
 
 ## SurrealDB expressions
 
 `vantage-surrealdb` registers the same builder shape for SurrealQL, the same primitive names where
 the concept exists in both, and SurrealDB's own terms where it doesn't (graph paths, `SPLIT`,
-`me`). It backs `rhai:` sources, `base:` transforms, and the expressions handed to
-`with_condition`. See [SurrealDB Primitives](../surrealdb/primitives.md).
+`me`), in the `surreal::` namespace: `surreal::graph(surreal::me, "placed", "order")`. It backs
+`rhai:` sources, `base:` transforms, and the expressions handed to `with_condition`. See
+[SurrealDB Primitives](../surrealdb/primitives.md).
 
 The SQL and SurrealDB builders are two copies of a similar grammar. Merging them is a known
 follow-up and not part of the data vocabulary.

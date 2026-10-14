@@ -2,7 +2,7 @@
 //! trait impl, plus the YAML factory pipeline (`build_from_spec`,
 //! `register_yaml`, `with_model_resolver`).
 //!
-//! The factory advertises reads only: count always, absolute-offset
+//! The factory advertises reads only: traversal always, absolute-offset
 //! windows when the API pages, and ordering when it has a sort param.
 
 use std::collections::HashMap;
@@ -14,19 +14,12 @@ use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Reference as VistaReference, ReferenceKind, Vista, VistaCapabilities, VistaFactory,
-    VistaMetadata,
+    Capability, Vista, VistaCapabilities, VistaFactory, VistaMetadata, VistaResolver,
 };
 
-use super::source::{RestApiTableShell, YamlReference, YamlReferenceKind};
+use super::source::RestApiTableShell;
 use super::spec::{ApiColumnExtras, ApiReferenceExtras, ApiTableExtras, RestApiVistaSpec};
 use crate::RestApi;
-
-/// Callback that maps a model name to its `Vista`. The factory uses
-/// it at relation-traversal time so cross-driver lookups (an application
-/// catalogue spanning several data sources) and same-driver lookups (the
-/// internal `register_yaml` registry) flow through one channel.
-pub type ModelResolver = Arc<dyn Fn(&str) -> Result<Vista> + Send + Sync>;
 
 type SpecRegistry = Arc<RwLock<HashMap<String, RestApiVistaSpec>>>;
 
@@ -38,17 +31,19 @@ type SpecRegistry = Arc<RwLock<HashMap<String, RestApiVistaSpec>>>;
 pub struct RestApiVistaFactory {
     api: RestApi,
     specs: SpecRegistry,
-    resolver: Option<ModelResolver>,
+    resolver: Option<Arc<dyn VistaResolver>>,
 }
 
-/// A registered spec by name. A writer that panicked can't leave a map
-/// insert half-done, so a poisoned lock is read through.
-fn registry_get(specs: &SpecRegistry, name: &str) -> Option<RestApiVistaSpec> {
+/// A registered spec by name; a name never registered is not-found. A writer
+/// that panicked can't leave a map insert half-done, so a poisoned lock is
+/// read through.
+fn registry_get(specs: &SpecRegistry, name: &str) -> Result<RestApiVistaSpec> {
     specs
         .read()
         .unwrap_or_else(PoisonError::into_inner)
         .get(name)
         .cloned()
+        .ok_or_else(|| error!("No registered spec for model name", name = name).mark_not_found())
 }
 
 impl RestApiVistaFactory {
@@ -66,10 +61,10 @@ impl RestApiVistaFactory {
         &self.api
     }
 
-    /// Install a model-resolver callback. Use this when models live
-    /// across multiple drivers and the caller decides which factory
-    /// builds each model.
-    pub fn with_model_resolver(mut self, resolver: ModelResolver) -> Self {
+    /// Build reference targets by name through `resolver` (a
+    /// [`Catalog`](vantage_vista::Catalog) spanning several data sources,
+    /// say) in place of the factory's own registry.
+    pub fn with_model_resolver(mut self, resolver: Arc<dyn VistaResolver>) -> Self {
         self.resolver = Some(resolver);
         self
     }
@@ -96,59 +91,36 @@ impl RestApiVistaFactory {
     /// the internal registry; the installed resolver (if any) takes
     /// over at relation traversal time.
     pub fn build(&self, name: &str) -> Result<Vista> {
-        let spec = registry_get(&self.specs, name)
-            .ok_or_else(|| error!("No registered spec for model name", name = name.to_string()))?;
-        self.build_from_spec(spec)
+        self.build_from_spec(registry_get(&self.specs, name)?)
     }
 
     /// Wrap a typed `Table<RestApi, E>` as a `Vista`. Column metadata,
     /// id field, title fields, and references are harvested up front;
     /// the table is erased to `Table<RestApi, EmptyEntity>` so the
-    /// shell carries a uniform entity type while still routing
-    /// reference traversal through `Reference::resolve_from_row`.
+    /// shell carries a uniform entity type while still traversing the
+    /// table's own `with_one` / `with_many` relations.
     pub fn from_table<E>(&self, table: Table<RestApi, E>) -> Result<Vista>
     where
         E: Entity<CborValue> + 'static,
     {
-        let metadata = metadata_from_table(&table);
+        let metadata = metadata_from_table(&table, true);
         let name = table.table_name().to_string();
-        // A paging API serves absolute-offset windows (a `total_key` adds an
-        // exact count) — advertise it before erasing the table.
-        let can_fetch_window = table.data_source().serves_windows();
-        let can_order = table.data_source().ordering().is_some();
-        let any_table = table.into_entity::<EmptyEntity>();
-
-        let source = RestApiTableShell::new(
-            any_table,
-            VistaCapabilities {
-                can_count: true,
-                can_traverse_to_record: true,
-                can_fetch_window,
-                can_order,
-                ..VistaCapabilities::default()
-            },
-            metadata,
-        );
-        Ok(Vista::new(name, Box::new(source)))
+        let capabilities = rest_capabilities(table.data_source());
+        let shell =
+            RestApiTableShell::new(table.into_entity::<EmptyEntity>(), capabilities, metadata);
+        Ok(Vista::new(name, shell))
     }
 
-    /// Resolve a model name to a Vista — either via the installed
-    /// resolver or through the internal registry.
-    fn resolver_for_specs(&self) -> ModelResolver {
+    /// The installed resolver, else one that builds registered specs by name
+    /// and reports any other name as not found.
+    fn resolver_for_specs(&self) -> Arc<dyn VistaResolver> {
         if let Some(r) = &self.resolver {
             return r.clone();
         }
-        // Default resolver: recursively build_from_spec against the
-        // shared registry. Cloning the Arc keeps the closure cheap.
         let specs = self.specs.clone();
         let api = self.api.clone();
         Arc::new(move |name: &str| -> Result<Vista> {
-            let spec = registry_get(&specs, name).ok_or_else(|| {
-                error!(
-                    "Model resolver: no spec registered for name",
-                    name = name.to_string()
-                )
-            })?;
+            let spec = registry_get(&specs, name)?;
             // Reuse the same factory pipeline as the top-level build.
             let mut factory = RestApiVistaFactory::new(api.clone());
             factory.specs = specs.clone();
@@ -164,62 +136,37 @@ impl VistaFactory for RestApiVistaFactory {
 
     fn build_from_spec(&self, spec: RestApiVistaSpec) -> Result<Vista> {
         let table = self.table_from_spec(&spec)?;
-        let vista_name = spec.name.clone();
 
-        // Harvest column / id / title metadata from the typed table.
-        let mut metadata = metadata_from_table(&table);
-
-        // Surface YAML-declared references as Vista metadata so
-        // generic UI layers see them via `vista.get_references()`.
-        for (rel_name, ref_spec) in &spec.references {
-            metadata = metadata.with_reference(VistaReference::new(
-                rel_name.clone(),
-                ref_spec.table.clone(),
-                ref_spec.kind,
-                ref_spec.foreign_key_or(rel_name),
-            ));
+        // Column / id / title metadata from the typed table, plus the YAML
+        // references, so generic UI layers see them through
+        // `vista.references()`. A target's URL form is its own concern (its
+        // `api.endpoint`); the parent only declares the join.
+        let mut metadata = metadata_from_table(&table, false);
+        let source_id = spec.resolve_id_column("id");
+        for (relation, reference) in &spec.references {
+            metadata = metadata.with_reference(reference.to_reference(relation, &source_id)?);
         }
 
-        // Build the YAML reference table for the shell. The shell
-        // consults this at `get_ref` time and threads a `DeferredFn`
-        // through the child. The child's URL form is the child's
-        // own concern (its `api.endpoint`), not the parent's.
-        let mut yaml_refs = indexmap::IndexMap::new();
-        for (rel_name, ref_spec) in &spec.references {
-            yaml_refs.insert(
-                rel_name.clone(),
-                YamlReference {
-                    target: ref_spec.table.clone(),
-                    kind: match ref_spec.kind {
-                        ReferenceKind::HasOne => YamlReferenceKind::HasOne,
-                        ReferenceKind::HasMany => YamlReferenceKind::HasMany,
-                    },
-                    foreign_key: ref_spec.foreign_key_or(rel_name),
-                    keys: ref_spec.keys.clone(),
-                },
-            );
-        }
-
-        let can_fetch_window = table.data_source().serves_windows();
-        let can_order = table.data_source().ordering().is_some();
-        let source = RestApiTableShell::new(
-            table,
-            VistaCapabilities {
-                can_count: true,
-                can_traverse_to_record: true,
-                can_fetch_window,
-                can_order,
-                ..VistaCapabilities::default()
-            },
-            metadata,
-        )
-        .with_yaml_refs(yaml_refs)
-        .with_resolver(self.resolver_for_specs());
-
-        let mut vista = Vista::new(vista_name.clone(), Box::new(source));
-        vista.set_name(vista_name);
-        Ok(vista)
+        let capabilities = rest_capabilities(table.data_source());
+        let shell = RestApiTableShell::new(table, capabilities, metadata)
+            .with_resolver(self.resolver_for_specs());
+        Ok(Vista::new(spec.name, shell))
     }
+}
+
+/// What the REST shell implements. It only reads: absolute-offset windows
+/// when the API pages (a `total_key` adds the grand total to each page),
+/// ordering when it has a sort param, and traversal. With no write
+/// capability advertised, the Vista refuses every write.
+fn rest_capabilities(api: &RestApi) -> VistaCapabilities {
+    let mut caps = VistaCapabilities::new().with(Capability::Traverse);
+    if api.serves_windows() {
+        caps = caps.with(Capability::Window);
+    }
+    if api.ordering().is_some() {
+        caps = caps.with(Capability::Order);
+    }
+    caps
 }
 
 impl RestApiVistaFactory {
@@ -236,7 +183,7 @@ impl RestApiVistaFactory {
 
         let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, self.api.clone());
         table.add_spec_columns(&spec.columns, build_column)?;
-        table.set_spec_id_field(&spec.resolve_id_column())?;
+        table.set_spec_id_field(&spec.resolve_id_column("id"))?;
         Ok(table)
     }
 }
@@ -274,7 +221,9 @@ fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<CborValue>> {
     Ok(col)
 }
 
-fn metadata_from_table<E>(table: &Table<RestApi, E>) -> VistaMetadata
+/// Column, id and title metadata, plus the typed table's own `with_one` /
+/// `with_many` relations when `references` is set.
+fn metadata_from_table<E>(table: &Table<RestApi, E>, references: bool) -> VistaMetadata
 where
     E: Entity<CborValue> + 'static,
 {
@@ -284,18 +233,10 @@ where
         Some(_) => Orderable::All,
         None => Orderable::None,
     };
-    let mut metadata = table.vista_metadata(VistaMetadataOptions {
+    table.vista_metadata(VistaMetadataOptions {
         orderable,
         id_flag: true,
+        references,
         ..VistaMetadataOptions::default()
-    });
-    for relation in table.references() {
-        metadata = metadata.with_reference(VistaReference::new(
-            relation.clone(),
-            "",
-            ReferenceKind::HasMany,
-            "",
-        ));
-    }
-    metadata
+    })
 }

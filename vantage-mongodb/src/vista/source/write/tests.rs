@@ -64,7 +64,6 @@ async fn spec_shell(yaml: &str) -> MongoTableShell {
         metadata,
         paths,
         None,
-        false,
         None,
     )
 }

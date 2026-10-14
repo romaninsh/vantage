@@ -1,6 +1,6 @@
 //! `FlashRejection` — a structured refusal of a [`ChangeFlash`](crate::ChangeFlash).
 //!
-//! A write path that turns a flash down (an `on_flash` route running
+//! A write path that turns a flash down (a Lens writer running
 //! validation, a master mapping a constraint violation) can say *which
 //! fields* failed, not just that the write did. The rejection rides the
 //! [`VantageError`] source chain back through the pipeline; the servo
@@ -54,7 +54,7 @@ impl FlashRejection {
     }
 
     /// Wrap into a [`VantageError`] whose source chain carries `self` —
-    /// what an `on_flash` route returns to reject a flash with structure.
+    /// what a Lens writer returns to reject a flash with structure.
     pub fn into_error(self) -> VantageError {
         let message = self.message.clone();
         Err::<(), _>(self)

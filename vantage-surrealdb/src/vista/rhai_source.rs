@@ -4,7 +4,8 @@
 //! built once, background limits, the full vendor vocabulary. When `base` is
 //! supplied it is pushed as the `base` variable (a `RhaiSelect` wrapping the
 //! source table's select) so scripts can *transform* an existing query rather
-//! than build one from scratch. `me` is always in scope.
+//! than build one from scratch. The vocabulary's free functions and the
+//! `surreal::me` anchor are in the `surreal::` namespace.
 //!
 //! Scripts compile as statements (`Block`), the same shape `Engine::eval`
 //! accepted before, so a `let` in an existing `rhai:` block keeps working; the
@@ -17,7 +18,6 @@
 use vantage_rhai::rhai;
 use vantage_rhai::{Block, Env};
 
-use crate::rhai_engine::surreal_env;
 use crate::statements::SurrealSelect;
 
 crate::register_surreal_engine!();
@@ -43,7 +43,7 @@ pub(crate) fn eval_to_select_args(
     for (k, v) in args {
         map.insert(k.as_str().into(), v.clone().into());
     }
-    let mut env = surreal_env(Env::new()).var("args", rhai::Dynamic::from_map(map));
+    let mut env = Env::new().var("args", rhai::Dynamic::from_map(map));
     if let Some(base) = base {
         env = env.var("base", rhai::Dynamic::from(Sel { inner: base }));
     }
@@ -62,14 +62,15 @@ pub(crate) fn eval_to_select_args(
 }
 
 /// Run `code`, returning the expression it builds — the vocabulary is the
-/// same as query-sourced scripts (`ident(...)`, operators, `expr("raw")`).
-/// Accepts a bare identifier result (`ident("batch")["name"]` yields an
-/// expression, `ident("x")` alone an identifier) so both shapes work.
+/// same as query-sourced scripts (`surreal::ident(...)`, operators,
+/// `surreal::expr("raw")`). Accepts a bare identifier result
+/// (`surreal::ident("batch")["name"]` yields an expression,
+/// `surreal::ident("x")` alone an identifier) so both shapes work.
 pub(crate) fn eval_to_expr(code: &str) -> vantage_core::Result<crate::Expr> {
     use vantage_expressions::Expressive as _;
     let value = __host()
         .compile(&Block::from(code))
-        .and_then(|script| script.eval(&surreal_env(Env::new())))
+        .and_then(|script| script.eval(&Env::new()))
         .map_err(|e| {
             vantage_core::error!(
                 "Rhai column expression failed to evaluate",
@@ -97,17 +98,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn me_is_in_scope_as_a_variable() {
-        assert!(eval_to_expr("me").is_ok());
-        assert!(eval_to_expr("me[\"name\"]").is_ok());
-        let err = eval_to_expr("nope").unwrap_err();
-        assert!(err.to_string().contains("nope"), "{err}");
+    fn me_is_a_namespace_variable() {
+        assert!(eval_to_expr("surreal::me").is_ok());
+        assert!(eval_to_expr("surreal::me[\"name\"]").is_ok());
+        assert!(eval_to_expr("fn anchor() { surreal::me } anchor()").is_ok());
+        let err = eval_to_expr("me").unwrap_err();
+        assert!(
+            err.to_string().contains("unknown name `me` in scope"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_vocabulary_is_namespaced() {
+        assert!(eval_to_expr(r#"surreal::ident("batch")["name"]"#).is_ok());
+        for (code, name) in [
+            (r#"ident("batch")"#, "ident"),
+            (r#"table("batch")"#, "table"),
+        ] {
+            let err = eval_to_expr(code).unwrap_err();
+            assert!(err.to_string().contains(name), "{code}: {err}");
+        }
     }
 
     #[test]
     fn me_coexists_with_a_host_resolver() {
-        // The reason `me` moved: the old hook replaced the host's resolver hook
-        // (rhai keeps only the last `on_var`). Both must work in one script.
+        // `surreal::me` is a namespace variable, not an `on_var` hook: rhai
+        // keeps only the last hook installed, so one would replace the host's
+        // resolver. Both must work in one script.
         struct Ns;
         impl Resolver for Ns {
             fn resolve(&self, path: &str) -> Lookup {
@@ -118,7 +136,7 @@ mod tests {
                 }
             }
         }
-        let env = surreal_env(Env::new().resolver(Arc::new(Ns)));
+        let env = Env::new().resolver(Arc::new(Ns));
 
         let read = __host()
             .compile(&Expr::from("app.n"))
@@ -132,13 +150,13 @@ mod tests {
         );
 
         let me = __host()
-            .compile(&Expr::from("me"))
+            .compile(&Expr::from("surreal::me"))
             .unwrap()
             .eval(&env)
             .unwrap();
         assert!(
             me.is::<Ex>(),
-            "`me` is the anchor expression, got {}",
+            "`surreal::me` is the anchor expression, got {}",
             me.type_name()
         );
     }
@@ -155,9 +173,9 @@ mod tests {
         // Observation-supplied args reach the script as a string map; values
         // the script embeds bind as parameters like every other scalar.
         const SCRIPT: &str = r#"
-            let q = select().from("order");
+            let q = surreal::select().from("order");
             if "bakery" in args && args.bakery != "" {
-                q = q.where(expr("bakery.name = {}", [args.bakery]));
+                q = q.where(surreal::expr("bakery.name = {}", [args.bakery]));
             }
             q
         "#;

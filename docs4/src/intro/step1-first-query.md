@@ -135,10 +135,15 @@ Run `cargo run` to make sure it compiles.
 
 Add this inside `run()`:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
 let db = SqliteDB::connect("sqlite:products.db?mode=ro")
     .await
     .context("Failed to connect to products.db")?;
+# Ok(())
+# }
 ```
 
 `SqliteDB` wraps an sqlx connection pool. The connection string is an
@@ -183,6 +188,7 @@ vendor-specific extensions. None of them need a database connection — they're 
 accumulate query parts. You build them with a chain of `.with_*()` calls:
 
 ```rust
+# use vantage_sql::prelude::*;
 let select = SqliteSelect::new()
     .with_source("product")
     .with_field("name")
@@ -190,6 +196,7 @@ let select = SqliteSelect::new()
 
 println!("{}", select.preview());
 // SELECT "name", "price" FROM "product"
+# assert_eq!(select.preview(), r#"SELECT "name", "price" FROM "product""#);
 ```
 
 `.preview()` renders the final SQL as a string — handy for debugging, but never used for execution.
@@ -220,9 +227,21 @@ you're building a query conditionally in a loop.
 
 ## Execute it
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+#     .await
+#     .context("Failed to connect to products.db")?;
+# let select = SqliteSelect::new()
+#     .with_source("product")
+#     .with_field("name")
+#     .with_field("price");
 let result = db.execute(&select.expr()).await?;
 println!("{:?}", result);
+# Ok(())
+# }
 ```
 
 Two steps here: `.expr()` turns the builder into an [`Expression`](vantage_expressions::Expression)
@@ -245,6 +264,7 @@ synchronous struct manipulation. You always know when a database call happens be
 Our database has a soft-delete flag — "A Stale Cake" has `is_deleted = 1`. Let's filter it out:
 
 ```rust
+# use vantage_sql::prelude::*;
 let condition = sqlite_expr!("\"is_deleted\" = {}", false);
 
 let select = SqliteSelect::new()
@@ -255,6 +275,10 @@ let select = SqliteSelect::new()
 
 println!("{}", select.preview());
 // SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0
+# assert_eq!(
+#     select.preview(),
+#     r#"SELECT "name", "price" FROM "product" WHERE "is_deleted" = 0"#
+# );
 ```
 
 `sqlite_expr!` creates an [`Expression`](vantage_expressions::Expression) — a SQL template with
@@ -288,11 +312,12 @@ condition. (`Column` lives in the `vantage-table` crate, but the `vantage_sql` p
 it — no new dependency needed.)
 
 ```rust
+# use vantage_sql::prelude::*;
 let is_deleted = Column::<bool>::new("is_deleted");
 let condition = is_deleted.eq(false);
 ```
 
-Same result, but the type parameter `<bool>` ensures you can only compare against matching types.
+The same condition, rendered as `is_deleted = 0` (a typed column isn't quoted), but the type parameter `<bool>` ensures you can only compare against matching types.
 Try `is_deleted.eq(42)` — it won't compile. Other operators — `.gt()`, `.lt()`, `.ne()`, `.in_()` —
 enforce the same type safety.
 
@@ -311,6 +336,7 @@ arguments — `.clone()` a column you want to reuse. The
 Multiple conditions combine with AND:
 
 ```rust
+# use vantage_sql::prelude::*;
 let is_deleted = Column::<bool>::new("is_deleted");
 let price = Column::<i64>::new("price");
 
@@ -319,7 +345,11 @@ let select = SqliteSelect::new()
     .with_field("name")
     .with_condition(is_deleted.eq(false))
     .with_condition(price.gt(150));
-// ... WHERE "is_deleted" = 0 AND "price" > 150
+// ... WHERE is_deleted = 0 AND price > 150
+# assert_eq!(
+#     select.preview(),
+#     r#"SELECT "name" FROM "product" WHERE is_deleted = 0 AND price > 150"#
+# );
 ```
 
 ```admonish info title="Primitives for untyped access"
@@ -358,6 +388,7 @@ cargo add vantage-types --features serde
 
 ```rust
 use vantage_types::prelude::*;
+# fn main() {}
 ```
 
 So far we've been printing raw `AnySqliteType` with `Debug`. That works for verifying queries, but
@@ -365,7 +396,18 @@ it's useless for real work. When `db.execute()` returns a multi-row result, the
 [`AnySqliteType`](vantage_sql::sqlite::AnySqliteType) holds an array of maps internally. Convert it
 to `Vec<Record<AnySqliteType>>` to work with individual rows:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+#     .await
+#     .context("Failed to connect to products.db")?;
+# let select = SqliteSelect::new()
+#     .with_source("product")
+#     .with_field("name")
+#     .with_field("price");
 let raw = db.execute(&select.expr()).await?;
 
 let records = Vec::<Record<AnySqliteType>>::try_from(raw)
@@ -379,6 +421,8 @@ for rec in &records {
 // Cupcake — 120 cents
 // Doughnut — 135 cents
 // ...
+# Ok(())
+# }
 ```
 
 Access fields by column name with `rec["name"]`. Each value is still an `AnySqliteType`, so you call
@@ -404,10 +448,25 @@ and `NaiveDateTime` through tagged values. MongoDB uses [BSON](https://bsonspec.
 regardless of which persistence you're using. If you ever need to inspect the raw representation,
 `.value()` gives you the underlying CBOR value:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+#     .await
+#     .context("Failed to connect to products.db")?;
+# let select = SqliteSelect::new()
+#     .with_source("product")
+#     .with_field("name")
+#     .with_field("price");
+# let records = Vec::<Record<AnySqliteType>>::try_from(db.execute(&select.expr()).await?)?;
+# let rec = &records[0];
 let price_cbor = rec["price"].value();
 println!("{:?}", price_cbor);
 // Integer(Integer(120))
+# Ok(())
+# }
 ```
 
 See [Persistence-aligned Type System](../type-system.md) for the full picture.
@@ -420,13 +479,24 @@ Calling `.try_get::<T>()` on every field gets tedious. The `#[entity]` macro gen
 [`TryFromRecord<AnySqliteType>`](vantage_types::TryFromRecord) for your struct, so conversion
 happens in one call with no type information lost:
 
-```rust
+```rust,no_run
+# use vantage_sql::prelude::*;
+# use vantage_types::prelude::*;
 #[entity(SqliteType)]
 struct Product {
     name: String,
     price: i64,
 }
 
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite:products.db?mode=ro")
+#     .await
+#     .context("Failed to connect to products.db")?;
+# let select = SqliteSelect::new()
+#     .with_source("product")
+#     .with_field("name")
+#     .with_field("price");
 let raw = db.execute(&select.expr()).await?;
 let records = Vec::<Record<AnySqliteType>>::try_from(raw)?;
 
@@ -434,6 +504,8 @@ for rec in records {
     let product = Product::from_record(rec)?;
     println!("{} — {} cents", product.name, product.price);
 }
+# Ok(())
+# }
 ```
 
 The macro needs `vantage-core` as a direct dependency (it's already a transitive dep through
@@ -461,7 +533,7 @@ includes decimals or dates.
 
 Here's the complete `src/main.rs` — connect, query, convert to entities, print:
 
-```rust
+```rust,no_run
 use vantage_sql::prelude::*;
 use vantage_types::prelude::*;
 

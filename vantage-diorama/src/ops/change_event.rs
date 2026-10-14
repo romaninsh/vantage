@@ -1,7 +1,8 @@
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
-/// Upstream change observation handed to an `on_event` callback.
+/// Upstream change observation, applied with
+/// [`Dio::apply_change`](crate::Dio::apply_change).
 ///
 /// This is the *external* event vocabulary — what a SurrealDB LIVE
 /// stream, a Kafka topic, or a SaaS webhook delivers about the master
@@ -13,6 +14,7 @@ use vantage_types::Record;
 /// a polling diff might only know the id and leave the callback to
 /// refetch via `dio.master().get_value(&id)`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ChangeEvent {
     Updated {
         id: String,

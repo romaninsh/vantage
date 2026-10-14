@@ -16,6 +16,7 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::DeferredFn;
 
 use crate::RestApi;
+use crate::rest::api::Order;
 
 /// The error every write and server-side aggregate returns.
 fn unsupported(method: &'static str) -> vantage_core::VantageError {
@@ -25,6 +26,36 @@ fn unsupported(method: &'static str) -> vantage_core::VantageError {
 /// Extract the id field name from a table's column flags.
 fn id_field_name<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Option<String> {
     table.id_field().map(|col| col.name().to_string())
+}
+
+impl RestApi {
+    /// The rows of `table` under its conditions and pagination, with `order`
+    /// sent as the ordering param when the API declares one.
+    pub(crate) async fn list_ordered<E: Entity<CborValue>>(
+        &self,
+        table: &Table<RestApi, E>,
+        order: Order<'_>,
+    ) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.fetch_records(
+            table.table_name(),
+            id_field_name(table).as_deref(),
+            &row_fields(table),
+            table.pagination(),
+            order,
+            table.conditions(),
+        )
+        .await
+    }
+}
+
+/// The fields a returned row carries: the table's
+/// [`row_fields`](Table::row_fields), less the endpoint's `{placeholder}`s,
+/// whose values fill the URL path and needn't come back in the rows.
+pub(crate) fn row_fields<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Vec<String> {
+    let placeholders: Vec<&str> = crate::rest::placeholders(table.table_name()).collect();
+    let mut fields = table.row_fields();
+    fields.retain(|name| !placeholders.contains(&name.as_str()));
+    fields
 }
 
 impl ExprDataSource<CborValue> for RestApi {
@@ -132,13 +163,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        self.fetch_records(
-            table.table_name(),
-            id_field_name(table).as_deref(),
-            table.pagination(),
-            table.conditions(),
-        )
-        .await
+        self.list_ordered(table, None).await
     }
 
     async fn get_table_value<E>(
@@ -150,14 +175,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self
-            .fetch_records(
-                table.table_name(),
-                id_field_name(table).as_deref(),
-                table.pagination(),
-                table.conditions(),
-            )
-            .await?;
+        let records = self.list_table_values(table).await?;
         Ok(records.get(id).cloned())
     }
 
@@ -169,14 +187,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self
-            .fetch_records(
-                table.table_name(),
-                id_field_name(table).as_deref(),
-                table.pagination(),
-                table.conditions(),
-            )
-            .await?;
+        let records = self.list_table_values(table).await?;
         Ok(records.into_iter().next())
     }
 
@@ -185,14 +196,7 @@ impl TableSource for RestApi {
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        let records = self
-            .fetch_records(
-                table.table_name(),
-                id_field_name(table).as_deref(),
-                table.pagination(),
-                table.conditions(),
-            )
-            .await?;
+        let records = self.list_table_values(table).await?;
         Ok(records.len() as i64)
     }
 

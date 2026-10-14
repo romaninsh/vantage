@@ -1,0 +1,1802 @@
+pub mod vantage_diorama
+pub mod vantage_diorama::aggregate
+#[non_exhaustive] pub enum vantage_diorama::aggregate::Reads
+pub vantage_diorama::aggregate::Reads::Columns(alloc::vec::Vec<alloc::string::String>)
+pub vantage_diorama::aggregate::Reads::Count
+pub vantage_diorama::aggregate::Reads::Rows
+impl core::clone::Clone for vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::Reads::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::aggregate::Reads
+impl core::cmp::PartialEq for vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::Reads::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::Reads::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::aggregate::Reads
+impl core::marker::Freeze for vantage_diorama::aggregate::Reads
+impl core::marker::Send for vantage_diorama::aggregate::Reads
+impl core::marker::Sync for vantage_diorama::aggregate::Reads
+impl core::marker::Unpin for vantage_diorama::aggregate::Reads
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Reads
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Reads
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Reads
+pub struct vantage_diorama::aggregate::AggregationCatalog
+impl vantage_diorama::aggregate::AggregationCatalog
+pub fn vantage_diorama::aggregate::AggregationCatalog::build(&self, &str, vantage_diorama::aggregate::AggregationSpec) -> vantage_core::util::error::Result<vantage_diorama::aggregate::ScalarAggregation>
+pub fn vantage_diorama::aggregate::AggregationCatalog::names(&self) -> alloc::vec::Vec<&str>
+pub fn vantage_diorama::aggregate::AggregationCatalog::new() -> Self
+pub fn vantage_diorama::aggregate::AggregationCatalog::register<F>(&mut self, impl core::convert::Into<alloc::string::String>, F) where F: core::ops::function::Fn(&str, &vantage_diorama::aggregate::AggregationSpec) -> vantage_core::util::error::Result<vantage_diorama::aggregate::ScalarAggregation> + core::marker::Send + core::marker::Sync + 'static
+pub fn vantage_diorama::aggregate::AggregationCatalog::with_builtins() -> Self
+impl vantage_diorama::aggregate::AggregationCatalog
+pub fn vantage_diorama::aggregate::AggregationCatalog::group_by(&self, impl core::convert::Into<alloc::string::String>, &str, impl core::convert::Into<alloc::string::String>, vantage_diorama::aggregate::AggregationSpec) -> vantage_core::util::error::Result<vantage_diorama::aggregate::GroupBy<vantage_diorama::aggregate::GroupReduction>>
+impl core::default::Default for vantage_diorama::aggregate::AggregationCatalog
+pub fn vantage_diorama::aggregate::AggregationCatalog::default() -> Self
+impl core::marker::Freeze for vantage_diorama::aggregate::AggregationCatalog
+impl core::marker::Send for vantage_diorama::aggregate::AggregationCatalog
+impl core::marker::Sync for vantage_diorama::aggregate::AggregationCatalog
+impl core::marker::Unpin for vantage_diorama::aggregate::AggregationCatalog
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::AggregationCatalog
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::AggregationCatalog
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::AggregationCatalog
+#[non_exhaustive] pub struct vantage_diorama::aggregate::AggregationSpec
+pub vantage_diorama::aggregate::AggregationSpec::column: core::option::Option<alloc::string::String>
+pub vantage_diorama::aggregate::AggregationSpec::conditions: vantage_diorama::aggregate::Conditions
+impl vantage_diorama::aggregate::AggregationSpec
+pub fn vantage_diorama::aggregate::AggregationSpec::new(core::option::Option<alloc::string::String>, vantage_diorama::aggregate::Conditions) -> Self
+pub fn vantage_diorama::aggregate::AggregationSpec::require_column(&self, &str) -> vantage_core::util::error::Result<alloc::string::String>
+impl core::marker::Freeze for vantage_diorama::aggregate::AggregationSpec
+impl core::marker::Send for vantage_diorama::aggregate::AggregationSpec
+impl core::marker::Sync for vantage_diorama::aggregate::AggregationSpec
+impl core::marker::Unpin for vantage_diorama::aggregate::AggregationSpec
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::AggregationSpec
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::AggregationSpec
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::AggregationSpec
+pub struct vantage_diorama::aggregate::AsRows<A>
+impl<A> vantage_diorama::aggregate::AsRows<A>
+pub fn vantage_diorama::aggregate::AsRows<A>::new(impl core::convert::Into<alloc::string::String>, A) -> Self
+impl<A: vantage_diorama::aggregate::Aggregation<Output = ciborium::value::Value>> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::AsRows<A>
+pub type vantage_diorama::aggregate::AsRows<A>::Output = vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::AsRows<A>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::AsRows<A>::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<A> core::marker::Freeze for vantage_diorama::aggregate::AsRows<A> where A: core::marker::Freeze
+impl<A> core::marker::Send for vantage_diorama::aggregate::AsRows<A> where A: core::marker::Send
+impl<A> core::marker::Sync for vantage_diorama::aggregate::AsRows<A> where A: core::marker::Sync
+impl<A> core::marker::Unpin for vantage_diorama::aggregate::AsRows<A> where A: core::marker::Unpin
+impl<A> core::marker::UnsafeUnpin for vantage_diorama::aggregate::AsRows<A> where A: core::marker::UnsafeUnpin
+impl<A> core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::AsRows<A> where A: core::panic::unwind_safe::RefUnwindSafe
+impl<A> core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::AsRows<A> where A: core::panic::unwind_safe::UnwindSafe
+pub struct vantage_diorama::aggregate::Avg
+impl vantage_diorama::aggregate::Avg
+pub fn vantage_diorama::aggregate::Avg::of(impl core::convert::Into<alloc::string::String>) -> Self
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Avg
+pub type vantage_diorama::aggregate::Avg::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Avg::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Avg::reads(&self) -> vantage_diorama::aggregate::Reads
+impl core::marker::Freeze for vantage_diorama::aggregate::Avg
+impl core::marker::Send for vantage_diorama::aggregate::Avg
+impl core::marker::Sync for vantage_diorama::aggregate::Avg
+impl core::marker::Unpin for vantage_diorama::aggregate::Avg
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Avg
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Avg
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Avg
+pub struct vantage_diorama::aggregate::Conditions
+impl vantage_diorama::aggregate::Conditions
+pub fn vantage_diorama::aggregate::Conditions::eq(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::aggregate::Conditions::is_empty(&self) -> bool
+pub fn vantage_diorama::aggregate::Conditions::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::metadata::VistaMetadata) -> bool
+pub fn vantage_diorama::aggregate::Conditions::narrow<'a>(&self, &'a vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> alloc::borrow::Cow<'a, vantage_diorama::aggregate::Rows>
+pub fn vantage_diorama::aggregate::Conditions::new() -> Self
+impl core::clone::Clone for vantage_diorama::aggregate::Conditions
+pub fn vantage_diorama::aggregate::Conditions::clone(&self) -> Self
+impl core::default::Default for vantage_diorama::aggregate::Conditions
+pub fn vantage_diorama::aggregate::Conditions::default() -> Self
+impl core::fmt::Debug for vantage_diorama::aggregate::Conditions
+pub fn vantage_diorama::aggregate::Conditions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::aggregate::Conditions
+impl core::marker::Send for vantage_diorama::aggregate::Conditions
+impl core::marker::Sync for vantage_diorama::aggregate::Conditions
+impl core::marker::Unpin for vantage_diorama::aggregate::Conditions
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Conditions
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Conditions
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Conditions
+pub struct vantage_diorama::aggregate::Count
+impl vantage_diorama::aggregate::Count
+pub fn vantage_diorama::aggregate::Count::rows() -> Self
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Count
+pub type vantage_diorama::aggregate::Count::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Count::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Count::reads(&self) -> vantage_diorama::aggregate::Reads
+impl core::marker::Freeze for vantage_diorama::aggregate::Count
+impl core::marker::Send for vantage_diorama::aggregate::Count
+impl core::marker::Sync for vantage_diorama::aggregate::Count
+impl core::marker::Unpin for vantage_diorama::aggregate::Count
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Count
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Count
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Count
+#[non_exhaustive] pub struct vantage_diorama::aggregate::DerivedRows
+pub vantage_diorama::aggregate::DerivedRows::columns: alloc::vec::Vec<vantage_vista::column::Column>
+pub vantage_diorama::aggregate::DerivedRows::rows: alloc::vec::Vec<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>
+impl vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::DerivedRows::is_empty(&self) -> bool
+pub fn vantage_diorama::aggregate::DerivedRows::len(&self) -> usize
+pub fn vantage_diorama::aggregate::DerivedRows::new(alloc::vec::Vec<(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)>, alloc::vec::Vec<vantage_vista::column::Column>) -> Self
+impl core::clone::Clone for vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::DerivedRows::clone(&self) -> Self
+impl core::cmp::PartialEq for vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::DerivedRows::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::DerivedRows::default() -> Self
+impl core::fmt::Debug for vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::DerivedRows::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl vantage_diorama::aggregate::AggregateOutput for vantage_diorama::aggregate::DerivedRows
+impl core::marker::Freeze for vantage_diorama::aggregate::DerivedRows
+impl core::marker::Send for vantage_diorama::aggregate::DerivedRows
+impl core::marker::Sync for vantage_diorama::aggregate::DerivedRows
+impl core::marker::Unpin for vantage_diorama::aggregate::DerivedRows
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::DerivedRows
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::DerivedRows
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::DerivedRows
+pub struct vantage_diorama::aggregate::Distinct
+impl vantage_diorama::aggregate::Distinct
+pub fn vantage_diorama::aggregate::Distinct::of(impl core::convert::Into<alloc::string::String>) -> Self
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Distinct
+pub type vantage_diorama::aggregate::Distinct::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Distinct::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Distinct::reads(&self) -> vantage_diorama::aggregate::Reads
+impl core::marker::Freeze for vantage_diorama::aggregate::Distinct
+impl core::marker::Send for vantage_diorama::aggregate::Distinct
+impl core::marker::Sync for vantage_diorama::aggregate::Distinct
+impl core::marker::Unpin for vantage_diorama::aggregate::Distinct
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Distinct
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Distinct
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Distinct
+pub struct vantage_diorama::aggregate::GroupBy<R>
+impl<R: vantage_diorama::aggregate::GroupReducer> vantage_diorama::aggregate::GroupBy<R>
+pub fn vantage_diorama::aggregate::GroupBy<R>::column(impl core::convert::Into<alloc::string::String>, R) -> Self
+impl<R: vantage_diorama::aggregate::GroupReducer> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::GroupBy<R>
+pub type vantage_diorama::aggregate::GroupBy<R>::Output = vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::GroupBy<R>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::GroupBy<R>::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<R> core::marker::Freeze for vantage_diorama::aggregate::GroupBy<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for vantage_diorama::aggregate::GroupBy<R> where R: core::marker::Send
+impl<R> core::marker::Sync for vantage_diorama::aggregate::GroupBy<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for vantage_diorama::aggregate::GroupBy<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for vantage_diorama::aggregate::GroupBy<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::GroupBy<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::GroupBy<R> where R: core::panic::unwind_safe::UnwindSafe
+pub struct vantage_diorama::aggregate::GroupReduction
+impl vantage_diorama::aggregate::GroupReducer for vantage_diorama::aggregate::GroupReduction
+pub fn vantage_diorama::aggregate::GroupReduction::columns(&self) -> alloc::vec::Vec<vantage_vista::column::Column>
+pub fn vantage_diorama::aggregate::GroupReduction::reads(&self) -> vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::GroupReduction::reduce(&self, &ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value>
+impl core::marker::Freeze for vantage_diorama::aggregate::GroupReduction
+impl core::marker::Send for vantage_diorama::aggregate::GroupReduction
+impl core::marker::Sync for vantage_diorama::aggregate::GroupReduction
+impl core::marker::Unpin for vantage_diorama::aggregate::GroupReduction
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::GroupReduction
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::GroupReduction
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::GroupReduction
+pub struct vantage_diorama::aggregate::Max
+impl vantage_diorama::aggregate::Max
+pub fn vantage_diorama::aggregate::Max::of(impl core::convert::Into<alloc::string::String>) -> Self
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Max
+pub type vantage_diorama::aggregate::Max::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Max::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Max::reads(&self) -> vantage_diorama::aggregate::Reads
+impl core::marker::Freeze for vantage_diorama::aggregate::Max
+impl core::marker::Send for vantage_diorama::aggregate::Max
+impl core::marker::Sync for vantage_diorama::aggregate::Max
+impl core::marker::Unpin for vantage_diorama::aggregate::Max
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Max
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Max
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Max
+pub struct vantage_diorama::aggregate::Min
+impl vantage_diorama::aggregate::Min
+pub fn vantage_diorama::aggregate::Min::of(impl core::convert::Into<alloc::string::String>) -> Self
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Min
+pub type vantage_diorama::aggregate::Min::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Min::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Min::reads(&self) -> vantage_diorama::aggregate::Reads
+impl core::marker::Freeze for vantage_diorama::aggregate::Min
+impl core::marker::Send for vantage_diorama::aggregate::Min
+impl core::marker::Sync for vantage_diorama::aggregate::Min
+impl core::marker::Unpin for vantage_diorama::aggregate::Min
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Min
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Min
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Min
+pub struct vantage_diorama::aggregate::Reduce<F>
+impl<F> vantage_diorama::aggregate::Reduce<F> where F: core::ops::function::Fn(&ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value> + core::marker::Send + core::marker::Sync + 'static
+pub fn vantage_diorama::aggregate::Reduce<F>::new(alloc::vec::Vec<vantage_vista::column::Column>, F) -> Self
+impl<F> vantage_diorama::aggregate::GroupReducer for vantage_diorama::aggregate::Reduce<F> where F: core::ops::function::Fn(&ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value> + core::marker::Send + core::marker::Sync + 'static
+pub fn vantage_diorama::aggregate::Reduce<F>::columns(&self) -> alloc::vec::Vec<vantage_vista::column::Column>
+pub fn vantage_diorama::aggregate::Reduce<F>::reads(&self) -> vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::Reduce<F>::reduce(&self, &ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value>
+impl<F> core::marker::Freeze for vantage_diorama::aggregate::Reduce<F> where F: core::marker::Freeze
+impl<F> core::marker::Send for vantage_diorama::aggregate::Reduce<F> where F: core::marker::Send
+impl<F> core::marker::Sync for vantage_diorama::aggregate::Reduce<F> where F: core::marker::Sync
+impl<F> core::marker::Unpin for vantage_diorama::aggregate::Reduce<F> where F: core::marker::Unpin
+impl<F> core::marker::UnsafeUnpin for vantage_diorama::aggregate::Reduce<F> where F: core::marker::UnsafeUnpin
+impl<F> !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Reduce<F>
+impl<F> !core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Reduce<F>
+pub struct vantage_diorama::aggregate::Sum
+impl vantage_diorama::aggregate::Sum
+pub fn vantage_diorama::aggregate::Sum::of(impl core::convert::Into<alloc::string::String>) -> Self
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Sum
+pub type vantage_diorama::aggregate::Sum::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Sum::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Sum::reads(&self) -> vantage_diorama::aggregate::Reads
+impl core::marker::Freeze for vantage_diorama::aggregate::Sum
+impl core::marker::Send for vantage_diorama::aggregate::Sum
+impl core::marker::Sync for vantage_diorama::aggregate::Sum
+impl core::marker::Unpin for vantage_diorama::aggregate::Sum
+impl core::marker::UnsafeUnpin for vantage_diorama::aggregate::Sum
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Sum
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Sum
+pub struct vantage_diorama::aggregate::Where<A>
+impl<A> vantage_diorama::aggregate::Where<A>
+pub fn vantage_diorama::aggregate::Where<A>::new(vantage_diorama::aggregate::Conditions, A) -> Self
+impl<A: vantage_diorama::aggregate::Aggregation> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Where<A>
+pub type vantage_diorama::aggregate::Where<A>::Output = <A as vantage_diorama::aggregate::Aggregation>::Output
+pub fn vantage_diorama::aggregate::Where<A>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> Self::Output
+pub fn vantage_diorama::aggregate::Where<A>::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<A> core::marker::Freeze for vantage_diorama::aggregate::Where<A> where A: core::marker::Freeze
+impl<A> core::marker::Send for vantage_diorama::aggregate::Where<A> where A: core::marker::Send
+impl<A> core::marker::Sync for vantage_diorama::aggregate::Where<A> where A: core::marker::Sync
+impl<A> core::marker::Unpin for vantage_diorama::aggregate::Where<A> where A: core::marker::Unpin
+impl<A> core::marker::UnsafeUnpin for vantage_diorama::aggregate::Where<A> where A: core::marker::UnsafeUnpin
+impl<A> core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::aggregate::Where<A> where A: core::panic::unwind_safe::RefUnwindSafe
+impl<A> core::panic::unwind_safe::UnwindSafe for vantage_diorama::aggregate::Where<A> where A: core::panic::unwind_safe::UnwindSafe
+pub trait vantage_diorama::aggregate::AggregateOutput: vantage_diorama::aggregate::aggregation::sealed::Sealed + core::cmp::PartialEq + core::clone::Clone + core::marker::Send + core::marker::Sync + 'static
+impl vantage_diorama::aggregate::AggregateOutput for ciborium::value::Value
+impl vantage_diorama::aggregate::AggregateOutput for vantage_diorama::aggregate::DerivedRows
+pub trait vantage_diorama::aggregate::Aggregation: core::marker::Send + core::marker::Sync + 'static
+pub type vantage_diorama::aggregate::Aggregation::Output: vantage_diorama::aggregate::AggregateOutput
+pub fn vantage_diorama::aggregate::Aggregation::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> Self::Output
+pub fn vantage_diorama::aggregate::Aggregation::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Avg
+pub type vantage_diorama::aggregate::Avg::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Avg::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Avg::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Count
+pub type vantage_diorama::aggregate::Count::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Count::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Count::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Distinct
+pub type vantage_diorama::aggregate::Distinct::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Distinct::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Distinct::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Max
+pub type vantage_diorama::aggregate::Max::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Max::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Max::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Min
+pub type vantage_diorama::aggregate::Min::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Min::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Min::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::ScalarAggregation
+pub type vantage_diorama::aggregate::ScalarAggregation::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::ScalarAggregation::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::ScalarAggregation::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Sum
+pub type vantage_diorama::aggregate::Sum::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Sum::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Sum::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<A: vantage_diorama::aggregate::Aggregation<Output = ciborium::value::Value>> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::AsRows<A>
+pub type vantage_diorama::aggregate::AsRows<A>::Output = vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::AsRows<A>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::AsRows<A>::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<A: vantage_diorama::aggregate::Aggregation> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Where<A>
+pub type vantage_diorama::aggregate::Where<A>::Output = <A as vantage_diorama::aggregate::Aggregation>::Output
+pub fn vantage_diorama::aggregate::Where<A>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> Self::Output
+pub fn vantage_diorama::aggregate::Where<A>::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<R: vantage_diorama::aggregate::GroupReducer> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::GroupBy<R>
+pub type vantage_diorama::aggregate::GroupBy<R>::Output = vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::GroupBy<R>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::GroupBy<R>::reads(&self) -> vantage_diorama::aggregate::Reads
+pub trait vantage_diorama::aggregate::GroupReducer: core::marker::Send + core::marker::Sync + 'static
+pub fn vantage_diorama::aggregate::GroupReducer::columns(&self) -> alloc::vec::Vec<vantage_vista::column::Column>
+pub fn vantage_diorama::aggregate::GroupReducer::reads(&self) -> vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::GroupReducer::reduce(&self, &ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value>
+impl vantage_diorama::aggregate::GroupReducer for vantage_diorama::aggregate::GroupReduction
+pub fn vantage_diorama::aggregate::GroupReduction::columns(&self) -> alloc::vec::Vec<vantage_vista::column::Column>
+pub fn vantage_diorama::aggregate::GroupReduction::reads(&self) -> vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::GroupReduction::reduce(&self, &ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value>
+impl<F> vantage_diorama::aggregate::GroupReducer for vantage_diorama::aggregate::Reduce<F> where F: core::ops::function::Fn(&ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value> + core::marker::Send + core::marker::Sync + 'static
+pub fn vantage_diorama::aggregate::Reduce<F>::columns(&self) -> alloc::vec::Vec<vantage_vista::column::Column>
+pub fn vantage_diorama::aggregate::Reduce<F>::reads(&self) -> vantage_diorama::aggregate::Reads
+pub fn vantage_diorama::aggregate::Reduce<F>::reduce(&self, &ciborium::value::Value, &[&vantage_types::record::Record<ciborium::value::Value>], &vantage_vista::metadata::VistaMetadata) -> vantage_types::record::Record<ciborium::value::Value>
+pub type vantage_diorama::aggregate::AggregationBuilder = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(&str, &vantage_diorama::aggregate::AggregationSpec) -> vantage_core::util::error::Result<vantage_diorama::aggregate::ScalarAggregation> + core::marker::Send + core::marker::Sync)>
+pub type vantage_diorama::aggregate::Rows = indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>
+pub type vantage_diorama::aggregate::ScalarAggregation = alloc::boxed::Box<dyn vantage_diorama::aggregate::Aggregation<Output = ciborium::value::Value>>
+pub mod vantage_diorama::debug
+pub struct vantage_diorama::debug::DebugTap
+impl vantage_diorama::debug::DebugTap
+pub fn vantage_diorama::debug::DebugTap::ds(&self) -> &str
+pub fn vantage_diorama::debug::DebugTap::enabled(&self) -> bool
+pub fn vantage_diorama::debug::DebugTap::for_datasource(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_diorama::debug::DebugTap::off() -> Self
+impl core::clone::Clone for vantage_diorama::debug::DebugTap
+pub fn vantage_diorama::debug::DebugTap::clone(&self) -> Self
+impl core::default::Default for vantage_diorama::debug::DebugTap
+pub fn vantage_diorama::debug::DebugTap::default() -> Self
+impl core::fmt::Debug for vantage_diorama::debug::DebugTap
+pub fn vantage_diorama::debug::DebugTap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::debug::DebugTap
+impl core::marker::Send for vantage_diorama::debug::DebugTap
+impl core::marker::Sync for vantage_diorama::debug::DebugTap
+impl core::marker::Unpin for vantage_diorama::debug::DebugTap
+impl core::marker::UnsafeUnpin for vantage_diorama::debug::DebugTap
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::debug::DebugTap
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::debug::DebugTap
+#[non_exhaustive] pub struct vantage_diorama::debug::ProcessStats
+pub vantage_diorama::debug::ProcessStats::cpu_ms: u64
+pub vantage_diorama::debug::ProcessStats::peak_rss_bytes: u64
+pub vantage_diorama::debug::ProcessStats::uptime_ms: u64
+impl core::clone::Clone for vantage_diorama::debug::ProcessStats
+pub fn vantage_diorama::debug::ProcessStats::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::debug::ProcessStats
+impl core::cmp::PartialEq for vantage_diorama::debug::ProcessStats
+pub fn vantage_diorama::debug::ProcessStats::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::debug::ProcessStats
+pub fn vantage_diorama::debug::ProcessStats::default() -> Self
+impl core::fmt::Debug for vantage_diorama::debug::ProcessStats
+pub fn vantage_diorama::debug::ProcessStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::debug::ProcessStats
+impl core::marker::StructuralPartialEq for vantage_diorama::debug::ProcessStats
+impl core::marker::Freeze for vantage_diorama::debug::ProcessStats
+impl core::marker::Send for vantage_diorama::debug::ProcessStats
+impl core::marker::Sync for vantage_diorama::debug::ProcessStats
+impl core::marker::Unpin for vantage_diorama::debug::ProcessStats
+impl core::marker::UnsafeUnpin for vantage_diorama::debug::ProcessStats
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::debug::ProcessStats
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::debug::ProcessStats
+pub fn vantage_diorama::debug::any_tap_enabled() -> bool
+pub fn vantage_diorama::debug::num(usize) -> alloc::string::String
+pub fn vantage_diorama::debug::process_stats() -> vantage_diorama::debug::ProcessStats
+pub mod vantage_diorama::prelude
+#[non_exhaustive] pub enum vantage_diorama::prelude::ChangeEvent
+pub vantage_diorama::prelude::ChangeEvent::Deleted
+pub vantage_diorama::prelude::ChangeEvent::Deleted::id: alloc::string::String
+pub vantage_diorama::prelude::ChangeEvent::Inserted
+pub vantage_diorama::prelude::ChangeEvent::Inserted::id: alloc::string::String
+pub vantage_diorama::prelude::ChangeEvent::Inserted::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+pub vantage_diorama::prelude::ChangeEvent::Invalidated
+pub vantage_diorama::prelude::ChangeEvent::Updated
+pub vantage_diorama::prelude::ChangeEvent::Updated::id: alloc::string::String
+pub vantage_diorama::prelude::ChangeEvent::Updated::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+impl core::clone::Clone for vantage_diorama::ChangeEvent
+pub fn vantage_diorama::ChangeEvent::clone(&self) -> Self
+impl core::convert::From<vantage_vista::change::VistaChange> for vantage_diorama::ChangeEvent
+pub fn vantage_diorama::ChangeEvent::from(vantage_vista::change::VistaChange) -> Self
+impl core::fmt::Debug for vantage_diorama::ChangeEvent
+pub fn vantage_diorama::ChangeEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::ChangeEvent
+impl core::marker::Send for vantage_diorama::ChangeEvent
+impl core::marker::Sync for vantage_diorama::ChangeEvent
+impl core::marker::Unpin for vantage_diorama::ChangeEvent
+impl core::marker::UnsafeUnpin for vantage_diorama::ChangeEvent
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ChangeEvent
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ChangeEvent
+pub struct vantage_diorama::prelude::ChangeFlash
+impl vantage_diorama::ChangeFlash
+pub fn vantage_diorama::ChangeFlash::active_record<'a, D>(&self, &'a D) -> vantage_core::util::error::Result<vantage_dataset::record::ActiveRecord<'a, D>> where D: vantage_dataset::traits::valueset::WritableValueSet<Value = ciborium::value::Value> + ?core::marker::Sized, <D as vantage_dataset::traits::valueset::ValueSet>::Id: core::convert::From<alloc::string::String>
+pub fn vantage_diorama::ChangeFlash::after(&self) -> core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+pub fn vantage_diorama::ChangeFlash::before(&self) -> core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>
+pub fn vantage_diorama::ChangeFlash::clear() -> Self
+pub fn vantage_diorama::ChangeFlash::delete(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_diorama::ChangeFlash::id(&self) -> core::option::Option<&str>
+pub fn vantage_diorama::ChangeFlash::insert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::insert_new(vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::kind(&self) -> &vantage_diorama::FlashKind
+pub fn vantage_diorama::ChangeFlash::partial(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::patch(&self) -> &vantage_types::record::Record<ciborium::value::Value>
+pub fn vantage_diorama::ChangeFlash::replace(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::upsert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::with_before(self, vantage_types::record::Record<ciborium::value::Value>) -> Self
+impl core::clone::Clone for vantage_diorama::ChangeFlash
+pub fn vantage_diorama::ChangeFlash::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::ChangeFlash
+pub fn vantage_diorama::ChangeFlash::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::ChangeFlash
+impl core::marker::Send for vantage_diorama::ChangeFlash
+impl core::marker::Sync for vantage_diorama::ChangeFlash
+impl core::marker::Unpin for vantage_diorama::ChangeFlash
+impl core::marker::UnsafeUnpin for vantage_diorama::ChangeFlash
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ChangeFlash
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ChangeFlash
+pub struct vantage_diorama::prelude::Dio
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::aggregate<A: vantage_diorama::aggregate::Aggregation<Output = vantage_diorama::aggregate::DerivedRows>>(&self, A) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+pub fn vantage_diorama::Dio::value_scenery<A: vantage_diorama::aggregate::Aggregation<Output = ciborium::value::Value>>(&self, A) -> vantage_diorama::ValueSceneryBuilder<A>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::apply_change(&self, vantage_diorama::ChangeEvent) -> vantage_core::util::error::Result<()>
+pub async fn vantage_diorama::Dio::reconcile(&self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<()>
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::cached(&self) -> vantage_vista::vista::Vista
+pub fn vantage_diorama::Dio::record_scenery(&self, impl core::convert::Into<alloc::string::String>) -> vantage_diorama::RecordSceneryBuilder
+pub async fn vantage_diorama::Dio::servo(&self, impl core::convert::Into<alloc::string::String>) -> vantage_core::util::error::Result<vantage_diorama::Servo>
+pub fn vantage_diorama::Dio::servo_new(&self, vantage_diorama::IdStrategy) -> vantage_diorama::Servo
+pub fn vantage_diorama::Dio::table_scenery(&self) -> vantage_diorama::TableSceneryBuilder
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::debug_tap(&self) -> vantage_diorama::debug::DebugTap
+pub fn vantage_diorama::Dio::id_column(&self) -> &str
+pub fn vantage_diorama::Dio::master(&self) -> &vantage_vista::vista::Vista
+pub fn vantage_diorama::Dio::residual(&self) -> &vantage_vista::query::VistaQuery
+pub fn vantage_diorama::Dio::subscribe_events(&self) -> tokio::sync::broadcast::Receiver<vantage_diorama::DioEvent>
+pub async fn vantage_diorama::Dio::take_write_worker_handle(&self) -> core::option::Option<tokio::runtime::task::join::JoinHandle<()>>
+pub fn vantage_diorama::Dio::write_capabilities(&self) -> vantage_diorama::WriteCapabilities
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::derive(&self) -> vantage_diorama::DeriveBuilder
+pub async fn vantage_diorama::Dio::get_ref(&self, &str, &vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+pub async fn vantage_diorama::Dio::get_ref_target(&self, &str) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::diagnostics(&self) -> vantage_core::util::error::Result<vantage_diorama::DioDiagnostics>
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::downgrade(&self) -> vantage_diorama::WeakDio
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::fetch(&self, core::ops::range::Range<usize>, &vantage_vista::query::VistaQuery) -> vantage_core::util::error::Result<vantage_diorama::Fetched>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::flash(&self, vantage_diorama::ChangeFlash) -> vantage_core::util::error::Result<vantage_diorama::FlashOutcome>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::import_values(&self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>, impl core::ops::function::FnMut(usize, usize) -> core::ops::control_flow::ControlFlow<()> + core::marker::Send) -> vantage_core::util::error::Result<vantage_diorama::ImportOutcome>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::refresh(&self) -> vantage_core::util::error::Result<()>
+impl core::clone::Clone for vantage_diorama::Dio
+pub fn vantage_diorama::Dio::clone(&self) -> Self
+impl core::marker::Freeze for vantage_diorama::Dio
+impl core::marker::Send for vantage_diorama::Dio
+impl core::marker::Sync for vantage_diorama::Dio
+impl core::marker::Unpin for vantage_diorama::Dio
+impl core::marker::UnsafeUnpin for vantage_diorama::Dio
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Dio
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Dio
+pub struct vantage_diorama::prelude::Lens
+impl vantage_diorama::Lens
+pub fn vantage_diorama::Lens::builder() -> vantage_diorama::LensBuilder
+pub fn vantage_diorama::Lens::dio(&alloc::rcs::arc::Arc<Self>, vantage_vista::vista::Vista) -> vantage_diorama::DioBuilder
+impl !core::marker::Freeze for vantage_diorama::Lens
+impl core::marker::Send for vantage_diorama::Lens
+impl core::marker::Sync for vantage_diorama::Lens
+impl core::marker::Unpin for vantage_diorama::Lens
+impl core::marker::UnsafeUnpin for vantage_diorama::Lens
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Lens
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Lens
+pub struct vantage_diorama::prelude::Servo
+impl vantage_diorama::Servo
+pub fn vantage_diorama::Servo::baseline(&self) -> core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+pub fn vantage_diorama::Servo::dirty(&self, &str) -> bool
+pub fn vantage_diorama::Servo::error(&self) -> vantage_types::record::Record<ciborium::value::Value>
+pub fn vantage_diorama::Servo::get(&self, &str) -> core::option::Option<ciborium::value::Value>
+pub fn vantage_diorama::Servo::is_dirty(&self) -> bool
+pub fn vantage_diorama::Servo::record(&self) -> vantage_types::record::Record<ciborium::value::Value>
+pub fn vantage_diorama::Servo::revert(&self, &str)
+pub fn vantage_diorama::Servo::revert_all(&self)
+pub fn vantage_diorama::Servo::set(&self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<ciborium::value::Value>)
+impl vantage_diorama::Servo
+pub async fn vantage_diorama::Servo::delete(&self) -> vantage_core::util::error::Result<vantage_diorama::ChangeFlash>
+impl vantage_diorama::Servo
+pub async fn vantage_diorama::Servo::flash(&self) -> vantage_core::util::error::Result<core::option::Option<vantage_diorama::ChangeFlash>>
+impl vantage_diorama::Servo
+pub fn vantage_diorama::Servo::id(&self) -> core::option::Option<alloc::string::String>
+pub fn vantage_diorama::Servo::status(&self) -> vantage_diorama::ServoStatus
+pub fn vantage_diorama::Servo::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+impl core::marker::Freeze for vantage_diorama::Servo
+impl core::marker::Send for vantage_diorama::Servo
+impl core::marker::Sync for vantage_diorama::Servo
+impl core::marker::Unpin for vantage_diorama::Servo
+impl core::marker::UnsafeUnpin for vantage_diorama::Servo
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Servo
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Servo
+pub trait vantage_diorama::prelude::Aggregation: core::marker::Send + core::marker::Sync + 'static
+pub type vantage_diorama::prelude::Aggregation::Output: vantage_diorama::aggregate::AggregateOutput
+pub fn vantage_diorama::prelude::Aggregation::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> Self::Output
+pub fn vantage_diorama::prelude::Aggregation::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Avg
+pub type vantage_diorama::aggregate::Avg::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Avg::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Avg::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Count
+pub type vantage_diorama::aggregate::Count::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Count::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Count::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Distinct
+pub type vantage_diorama::aggregate::Distinct::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Distinct::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Distinct::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Max
+pub type vantage_diorama::aggregate::Max::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Max::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Max::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Min
+pub type vantage_diorama::aggregate::Min::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Min::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Min::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::ScalarAggregation
+pub type vantage_diorama::aggregate::ScalarAggregation::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::ScalarAggregation::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::ScalarAggregation::reads(&self) -> vantage_diorama::aggregate::Reads
+impl vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Sum
+pub type vantage_diorama::aggregate::Sum::Output = ciborium::value::Value
+pub fn vantage_diorama::aggregate::Sum::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> ciborium::value::Value
+pub fn vantage_diorama::aggregate::Sum::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<A: vantage_diorama::aggregate::Aggregation<Output = ciborium::value::Value>> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::AsRows<A>
+pub type vantage_diorama::aggregate::AsRows<A>::Output = vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::AsRows<A>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::AsRows<A>::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<A: vantage_diorama::aggregate::Aggregation> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::Where<A>
+pub type vantage_diorama::aggregate::Where<A>::Output = <A as vantage_diorama::aggregate::Aggregation>::Output
+pub fn vantage_diorama::aggregate::Where<A>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> Self::Output
+pub fn vantage_diorama::aggregate::Where<A>::reads(&self) -> vantage_diorama::aggregate::Reads
+impl<R: vantage_diorama::aggregate::GroupReducer> vantage_diorama::aggregate::Aggregation for vantage_diorama::aggregate::GroupBy<R>
+pub type vantage_diorama::aggregate::GroupBy<R>::Output = vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::GroupBy<R>::compute(&self, &vantage_diorama::aggregate::Rows, &vantage_vista::metadata::VistaMetadata) -> vantage_diorama::aggregate::DerivedRows
+pub fn vantage_diorama::aggregate::GroupBy<R>::reads(&self) -> vantage_diorama::aggregate::Reads
+pub trait vantage_diorama::prelude::RecordScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::prelude::RecordScenery::record(&self) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::EnrichedRecord>>
+pub fn vantage_diorama::prelude::RecordScenery::refresh_source(&self)
+pub fn vantage_diorama::prelude::RecordScenery::status(&self) -> vantage_diorama::RecordStatus
+pub fn vantage_diorama::prelude::RecordScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub trait vantage_diorama::prelude::TableScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::prelude::TableScenery::count_where(&self, alloc::vec::Vec<vantage_vista::query::Condition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
+pub fn vantage_diorama::prelude::TableScenery::estimated_total(&self) -> core::option::Option<usize>
+pub fn vantage_diorama::prelude::TableScenery::filters_supported(&self, &[vantage_vista::query::Condition]) -> bool
+pub fn vantage_diorama::prelude::TableScenery::has_more(&self) -> bool
+pub fn vantage_diorama::prelude::TableScenery::load_state(&self) -> vantage_diorama::LoadState
+pub fn vantage_diorama::prelude::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
+pub fn vantage_diorama::prelude::TableScenery::refresh_source(&self)
+pub fn vantage_diorama::prelude::TableScenery::request_load_more(&self)
+pub fn vantage_diorama::prelude::TableScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::EnrichedRecord>>
+pub fn vantage_diorama::prelude::TableScenery::row_by_id(&self, &str) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::EnrichedRecord>>
+pub fn vantage_diorama::prelude::TableScenery::row_count(&self) -> usize
+pub fn vantage_diorama::prelude::TableScenery::search_supported(&self) -> bool
+pub fn vantage_diorama::prelude::TableScenery::set_filters(&self, alloc::vec::Vec<vantage_vista::query::Condition>)
+pub fn vantage_diorama::prelude::TableScenery::set_order(&self, core::option::Option<(alloc::string::String, vantage_vista::sort::SortDirection)>)
+pub fn vantage_diorama::prelude::TableScenery::set_search(&self, core::option::Option<alloc::string::String>)
+pub fn vantage_diorama::prelude::TableScenery::set_viewport(&self, core::ops::range::Range<usize>, core::ops::range::Range<usize>)
+pub fn vantage_diorama::prelude::TableScenery::status_summary(&self) -> vantage_diorama::RowStatusSummary
+pub fn vantage_diorama::prelude::TableScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::prelude::TableScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::prelude::TableScenery::view_stats(&self) -> vantage_diorama::ViewStats
+pub trait vantage_diorama::prelude::ValueScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::prelude::ValueScenery::refresh_source(&self)
+pub fn vantage_diorama::prelude::ValueScenery::status(&self) -> vantage_diorama::ValueStatus
+pub fn vantage_diorama::prelude::ValueScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::prelude::ValueScenery::value(&self) -> core::option::Option<ciborium::value::Value>
+pub mod vantage_diorama::rhai
+pub struct vantage_diorama::rhai::ServoVocab
+impl vantage_rhai::host::Vocab for vantage_diorama::rhai::ServoVocab
+pub fn vantage_diorama::rhai::ServoVocab::register(&self, &mut rhai::engine::Engine)
+impl core::marker::Freeze for vantage_diorama::rhai::ServoVocab
+impl core::marker::Send for vantage_diorama::rhai::ServoVocab
+impl core::marker::Sync for vantage_diorama::rhai::ServoVocab
+impl core::marker::Unpin for vantage_diorama::rhai::ServoVocab
+impl core::marker::UnsafeUnpin for vantage_diorama::rhai::ServoVocab
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::rhai::ServoVocab
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::rhai::ServoVocab
+pub fn vantage_diorama::rhai::register_servo_onto(&mut rhai::engine::Engine)
+pub mod vantage_diorama::stats
+#[non_exhaustive] pub struct vantage_diorama::stats::FetchStats
+pub vantage_diorama::stats::FetchStats::distinct_ranges: usize
+pub vantage_diorama::stats::FetchStats::fetches: usize
+pub vantage_diorama::stats::FetchStats::ms_max: u64
+pub vantage_diorama::stats::FetchStats::ms_total: u64
+pub vantage_diorama::stats::FetchStats::repeats: usize
+pub vantage_diorama::stats::FetchStats::rows_received: usize
+pub vantage_diorama::stats::FetchStats::rows_redundant: usize
+pub vantage_diorama::stats::FetchStats::table: alloc::string::String
+pub vantage_diorama::stats::FetchStats::worst_range: core::option::Option<(alloc::string::String, usize)>
+impl core::clone::Clone for vantage_diorama::stats::FetchStats
+pub fn vantage_diorama::stats::FetchStats::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::stats::FetchStats
+impl core::cmp::PartialEq for vantage_diorama::stats::FetchStats
+pub fn vantage_diorama::stats::FetchStats::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::stats::FetchStats
+pub fn vantage_diorama::stats::FetchStats::default() -> Self
+impl core::fmt::Debug for vantage_diorama::stats::FetchStats
+pub fn vantage_diorama::stats::FetchStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::stats::FetchStats
+impl core::marker::Freeze for vantage_diorama::stats::FetchStats
+impl core::marker::Send for vantage_diorama::stats::FetchStats
+impl core::marker::Sync for vantage_diorama::stats::FetchStats
+impl core::marker::Unpin for vantage_diorama::stats::FetchStats
+impl core::marker::UnsafeUnpin for vantage_diorama::stats::FetchStats
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::stats::FetchStats
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::stats::FetchStats
+#[non_exhaustive] pub struct vantage_diorama::stats::LiveCounts
+pub vantage_diorama::stats::LiveCounts::dios: usize
+pub vantage_diorama::stats::LiveCounts::record_sceneries: usize
+pub vantage_diorama::stats::LiveCounts::servos: usize
+pub vantage_diorama::stats::LiveCounts::table_sceneries: usize
+impl core::clone::Clone for vantage_diorama::stats::LiveCounts
+pub fn vantage_diorama::stats::LiveCounts::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::stats::LiveCounts
+impl core::cmp::PartialEq for vantage_diorama::stats::LiveCounts
+pub fn vantage_diorama::stats::LiveCounts::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::stats::LiveCounts
+pub fn vantage_diorama::stats::LiveCounts::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::stats::LiveCounts
+impl core::marker::StructuralPartialEq for vantage_diorama::stats::LiveCounts
+impl core::marker::Freeze for vantage_diorama::stats::LiveCounts
+impl core::marker::Send for vantage_diorama::stats::LiveCounts
+impl core::marker::Sync for vantage_diorama::stats::LiveCounts
+impl core::marker::Unpin for vantage_diorama::stats::LiveCounts
+impl core::marker::UnsafeUnpin for vantage_diorama::stats::LiveCounts
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::stats::LiveCounts
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::stats::LiveCounts
+pub fn vantage_diorama::stats::debug_summary_lines() -> alloc::vec::Vec<alloc::string::String>
+pub fn vantage_diorama::stats::emit_debug_summary()
+pub fn vantage_diorama::stats::fetch_stats() -> alloc::vec::Vec<vantage_diorama::stats::FetchStats>
+pub fn vantage_diorama::stats::live_counts() -> vantage_diorama::stats::LiveCounts
+pub fn vantage_diorama::stats::reset_fetch_stats()
+#[non_exhaustive] pub enum vantage_diorama::CacheStatus
+pub vantage_diorama::CacheStatus::Complete
+pub vantage_diorama::CacheStatus::Incomplete
+impl core::clone::Clone for vantage_diorama::CacheStatus
+pub fn vantage_diorama::CacheStatus::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::CacheStatus
+impl core::cmp::PartialEq for vantage_diorama::CacheStatus
+pub fn vantage_diorama::CacheStatus::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::CacheStatus
+pub fn vantage_diorama::CacheStatus::default() -> Self
+impl core::fmt::Debug for vantage_diorama::CacheStatus
+pub fn vantage_diorama::CacheStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::CacheStatus
+impl core::marker::StructuralPartialEq for vantage_diorama::CacheStatus
+impl core::marker::Freeze for vantage_diorama::CacheStatus
+impl core::marker::Send for vantage_diorama::CacheStatus
+impl core::marker::Sync for vantage_diorama::CacheStatus
+impl core::marker::Unpin for vantage_diorama::CacheStatus
+impl core::marker::UnsafeUnpin for vantage_diorama::CacheStatus
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::CacheStatus
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::CacheStatus
+#[non_exhaustive] pub enum vantage_diorama::ChangeEvent
+pub vantage_diorama::ChangeEvent::Deleted
+pub vantage_diorama::ChangeEvent::Deleted::id: alloc::string::String
+pub vantage_diorama::ChangeEvent::Inserted
+pub vantage_diorama::ChangeEvent::Inserted::id: alloc::string::String
+pub vantage_diorama::ChangeEvent::Inserted::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+pub vantage_diorama::ChangeEvent::Invalidated
+pub vantage_diorama::ChangeEvent::Updated
+pub vantage_diorama::ChangeEvent::Updated::id: alloc::string::String
+pub vantage_diorama::ChangeEvent::Updated::new: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+impl core::clone::Clone for vantage_diorama::ChangeEvent
+pub fn vantage_diorama::ChangeEvent::clone(&self) -> Self
+impl core::convert::From<vantage_vista::change::VistaChange> for vantage_diorama::ChangeEvent
+pub fn vantage_diorama::ChangeEvent::from(vantage_vista::change::VistaChange) -> Self
+impl core::fmt::Debug for vantage_diorama::ChangeEvent
+pub fn vantage_diorama::ChangeEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::ChangeEvent
+impl core::marker::Send for vantage_diorama::ChangeEvent
+impl core::marker::Sync for vantage_diorama::ChangeEvent
+impl core::marker::Unpin for vantage_diorama::ChangeEvent
+impl core::marker::UnsafeUnpin for vantage_diorama::ChangeEvent
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ChangeEvent
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ChangeEvent
+#[non_exhaustive] pub enum vantage_diorama::Clause
+pub vantage_diorama::Clause::Filter(alloc::string::String)
+pub vantage_diorama::Clause::Order(alloc::string::String)
+pub vantage_diorama::Clause::Search
+impl core::clone::Clone for vantage_diorama::Clause
+pub fn vantage_diorama::Clause::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::Clause
+impl core::cmp::PartialEq for vantage_diorama::Clause
+pub fn vantage_diorama::Clause::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::Clause
+pub fn vantage_diorama::Clause::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vantage_diorama::Clause
+pub fn vantage_diorama::Clause::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::Clause
+impl core::marker::Freeze for vantage_diorama::Clause
+impl core::marker::Send for vantage_diorama::Clause
+impl core::marker::Sync for vantage_diorama::Clause
+impl core::marker::Unpin for vantage_diorama::Clause
+impl core::marker::UnsafeUnpin for vantage_diorama::Clause
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Clause
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::Clause
+#[non_exhaustive] pub enum vantage_diorama::Detail
+pub vantage_diorama::Detail::Fixed(alloc::rcs::arc::Arc<vantage_vista::vista::Vista>)
+pub vantage_diorama::Detail::Resolved
+pub vantage_diorama::Detail::Resolved::name: alloc::string::String
+pub vantage_diorama::Detail::Resolved::resolver: alloc::rcs::arc::Arc<dyn vantage_vista::resolver::VistaResolver>
+impl core::marker::Freeze for vantage_diorama::Detail
+impl core::marker::Send for vantage_diorama::Detail
+impl core::marker::Sync for vantage_diorama::Detail
+impl core::marker::Unpin for vantage_diorama::Detail
+impl core::marker::UnsafeUnpin for vantage_diorama::Detail
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Detail
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Detail
+#[non_exhaustive] pub enum vantage_diorama::DioEvent
+pub vantage_diorama::DioEvent::DatasetChanged
+pub vantage_diorama::DioEvent::Hydrating
+pub vantage_diorama::DioEvent::Hydrating::pending: usize
+pub vantage_diorama::DioEvent::LoadFailed
+pub vantage_diorama::DioEvent::LoadFailed::error: alloc::string::String
+pub vantage_diorama::DioEvent::LoadFailed::range: core::ops::range::Range<usize>
+pub vantage_diorama::DioEvent::RangeLoaded
+pub vantage_diorama::DioEvent::RangeLoaded::range: core::ops::range::Range<usize>
+pub vantage_diorama::DioEvent::RecordChanged
+pub vantage_diorama::DioEvent::RecordChanged::id: alloc::string::String
+pub vantage_diorama::DioEvent::RecordInserted
+pub vantage_diorama::DioEvent::RecordInserted::id: alloc::string::String
+pub vantage_diorama::DioEvent::RecordLoadFailed
+pub vantage_diorama::DioEvent::RecordLoadFailed::error: alloc::string::String
+pub vantage_diorama::DioEvent::RecordLoadFailed::id: alloc::string::String
+pub vantage_diorama::DioEvent::RecordRemoved
+pub vantage_diorama::DioEvent::RecordRemoved::id: alloc::string::String
+pub vantage_diorama::DioEvent::RefreshFailed
+pub vantage_diorama::DioEvent::RefreshFailed::error: alloc::string::String
+pub vantage_diorama::DioEvent::Refreshing
+pub vantage_diorama::DioEvent::Seeded
+pub vantage_diorama::DioEvent::ViewportChanged
+pub vantage_diorama::DioEvent::ViewportChanged::range: core::ops::range::Range<usize>
+pub vantage_diorama::DioEvent::WriteFailed
+pub vantage_diorama::DioEvent::WriteFailed::error: alloc::string::String
+pub vantage_diorama::DioEvent::WriteFailed::id: core::option::Option<alloc::string::String>
+pub vantage_diorama::DioEvent::WritePending
+pub vantage_diorama::DioEvent::WritePending::id: alloc::string::String
+pub vantage_diorama::DioEvent::WritePending::kind: vantage_diorama::FlashKind
+pub vantage_diorama::DioEvent::WriteReverted
+pub vantage_diorama::DioEvent::WriteReverted::error: alloc::string::String
+pub vantage_diorama::DioEvent::WriteReverted::id: alloc::string::String
+pub vantage_diorama::DioEvent::WriteReverted::kind: vantage_diorama::FlashKind
+impl core::clone::Clone for vantage_diorama::DioEvent
+pub fn vantage_diorama::DioEvent::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::DioEvent
+pub fn vantage_diorama::DioEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::DioEvent
+impl core::marker::Send for vantage_diorama::DioEvent
+impl core::marker::Sync for vantage_diorama::DioEvent
+impl core::marker::Unpin for vantage_diorama::DioEvent
+impl core::marker::UnsafeUnpin for vantage_diorama::DioEvent
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::DioEvent
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::DioEvent
+#[non_exhaustive] pub enum vantage_diorama::Fetch
+pub vantage_diorama::Fetch::Custom(vantage_diorama::FetchFn)
+pub vantage_diorama::Fetch::PerRow
+impl core::marker::Freeze for vantage_diorama::Fetch
+impl core::marker::Send for vantage_diorama::Fetch
+impl core::marker::Sync for vantage_diorama::Fetch
+impl core::marker::Unpin for vantage_diorama::Fetch
+impl core::marker::UnsafeUnpin for vantage_diorama::Fetch
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Fetch
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Fetch
+#[non_exhaustive] pub enum vantage_diorama::FilterOrigin
+pub vantage_diorama::FilterOrigin::Query
+pub vantage_diorama::FilterOrigin::View
+impl core::clone::Clone for vantage_diorama::FilterOrigin
+pub fn vantage_diorama::FilterOrigin::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::FilterOrigin
+impl core::cmp::PartialEq for vantage_diorama::FilterOrigin
+pub fn vantage_diorama::FilterOrigin::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::FilterOrigin
+pub fn vantage_diorama::FilterOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::FilterOrigin
+impl core::marker::StructuralPartialEq for vantage_diorama::FilterOrigin
+impl core::marker::Freeze for vantage_diorama::FilterOrigin
+impl core::marker::Send for vantage_diorama::FilterOrigin
+impl core::marker::Sync for vantage_diorama::FilterOrigin
+impl core::marker::Unpin for vantage_diorama::FilterOrigin
+impl core::marker::UnsafeUnpin for vantage_diorama::FilterOrigin
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::FilterOrigin
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::FilterOrigin
+#[non_exhaustive] pub enum vantage_diorama::FlashKind
+pub vantage_diorama::FlashKind::Clear
+pub vantage_diorama::FlashKind::Delete
+pub vantage_diorama::FlashKind::Insert
+pub vantage_diorama::FlashKind::Patch
+pub vantage_diorama::FlashKind::Replace
+pub vantage_diorama::FlashKind::Upsert
+impl core::clone::Clone for vantage_diorama::FlashKind
+pub fn vantage_diorama::FlashKind::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::FlashKind
+impl core::cmp::PartialEq for vantage_diorama::FlashKind
+pub fn vantage_diorama::FlashKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::FlashKind
+pub fn vantage_diorama::FlashKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::FlashKind
+impl core::marker::StructuralPartialEq for vantage_diorama::FlashKind
+impl core::marker::Freeze for vantage_diorama::FlashKind
+impl core::marker::Send for vantage_diorama::FlashKind
+impl core::marker::Sync for vantage_diorama::FlashKind
+impl core::marker::Unpin for vantage_diorama::FlashKind
+impl core::marker::UnsafeUnpin for vantage_diorama::FlashKind
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::FlashKind
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::FlashKind
+#[non_exhaustive] pub enum vantage_diorama::IdStrategy
+pub vantage_diorama::IdStrategy::Auto
+pub vantage_diorama::IdStrategy::FromRecord
+pub vantage_diorama::IdStrategy::Uuid
+impl core::clone::Clone for vantage_diorama::IdStrategy
+pub fn vantage_diorama::IdStrategy::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::IdStrategy
+impl core::cmp::PartialEq for vantage_diorama::IdStrategy
+pub fn vantage_diorama::IdStrategy::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::IdStrategy
+pub fn vantage_diorama::IdStrategy::default() -> Self
+impl core::fmt::Debug for vantage_diorama::IdStrategy
+pub fn vantage_diorama::IdStrategy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::IdStrategy
+impl core::marker::StructuralPartialEq for vantage_diorama::IdStrategy
+impl core::marker::Freeze for vantage_diorama::IdStrategy
+impl core::marker::Send for vantage_diorama::IdStrategy
+impl core::marker::Sync for vantage_diorama::IdStrategy
+impl core::marker::Unpin for vantage_diorama::IdStrategy
+impl core::marker::UnsafeUnpin for vantage_diorama::IdStrategy
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::IdStrategy
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::IdStrategy
+#[non_exhaustive] pub enum vantage_diorama::LoadState
+pub vantage_diorama::LoadState::Complete
+pub vantage_diorama::LoadState::Failed(vantage_diorama::LoadFailure)
+pub vantage_diorama::LoadState::Loading
+pub vantage_diorama::LoadState::Partial
+impl core::clone::Clone for vantage_diorama::LoadState
+pub fn vantage_diorama::LoadState::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::LoadState
+impl core::cmp::PartialEq for vantage_diorama::LoadState
+pub fn vantage_diorama::LoadState::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::LoadState
+pub fn vantage_diorama::LoadState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::LoadState
+impl core::marker::Freeze for vantage_diorama::LoadState
+impl core::marker::Send for vantage_diorama::LoadState
+impl core::marker::Sync for vantage_diorama::LoadState
+impl core::marker::Unpin for vantage_diorama::LoadState
+impl core::marker::UnsafeUnpin for vantage_diorama::LoadState
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::LoadState
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::LoadState
+#[non_exhaustive] pub enum vantage_diorama::RecordStatus
+pub vantage_diorama::RecordStatus::Error(alloc::string::String)
+pub vantage_diorama::RecordStatus::Fresh
+pub vantage_diorama::RecordStatus::Incomplete
+pub vantage_diorama::RecordStatus::Loading
+pub vantage_diorama::RecordStatus::NotFound
+impl core::clone::Clone for vantage_diorama::RecordStatus
+pub fn vantage_diorama::RecordStatus::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::RecordStatus
+impl core::cmp::PartialEq for vantage_diorama::RecordStatus
+pub fn vantage_diorama::RecordStatus::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::RecordStatus
+pub fn vantage_diorama::RecordStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::RecordStatus
+impl core::marker::Freeze for vantage_diorama::RecordStatus
+impl core::marker::Send for vantage_diorama::RecordStatus
+impl core::marker::Sync for vantage_diorama::RecordStatus
+impl core::marker::Unpin for vantage_diorama::RecordStatus
+impl core::marker::UnsafeUnpin for vantage_diorama::RecordStatus
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::RecordStatus
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::RecordStatus
+#[non_exhaustive] pub enum vantage_diorama::RowStatus
+pub vantage_diorama::RowStatus::Fresh
+pub vantage_diorama::RowStatus::Incomplete
+pub vantage_diorama::RowStatus::LoadFailed
+pub vantage_diorama::RowStatus::LoadFailed::error: alloc::string::String
+pub vantage_diorama::RowStatus::PendingWrite
+pub vantage_diorama::RowStatus::WriteFailed
+pub vantage_diorama::RowStatus::WriteFailed::error: alloc::string::String
+impl core::clone::Clone for vantage_diorama::RowStatus
+pub fn vantage_diorama::RowStatus::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::RowStatus
+impl core::cmp::PartialEq for vantage_diorama::RowStatus
+pub fn vantage_diorama::RowStatus::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::RowStatus
+pub fn vantage_diorama::RowStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::RowStatus
+impl core::marker::Freeze for vantage_diorama::RowStatus
+impl core::marker::Send for vantage_diorama::RowStatus
+impl core::marker::Sync for vantage_diorama::RowStatus
+impl core::marker::Unpin for vantage_diorama::RowStatus
+impl core::marker::UnsafeUnpin for vantage_diorama::RowStatus
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::RowStatus
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::RowStatus
+#[non_exhaustive] pub enum vantage_diorama::ServoStatus
+pub vantage_diorama::ServoStatus::Failed(vantage_diorama::FlashRejection)
+pub vantage_diorama::ServoStatus::Pending
+pub vantage_diorama::ServoStatus::Tracking
+impl core::clone::Clone for vantage_diorama::ServoStatus
+pub fn vantage_diorama::ServoStatus::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::ServoStatus
+pub fn vantage_diorama::ServoStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::ServoStatus
+impl core::marker::Send for vantage_diorama::ServoStatus
+impl core::marker::Sync for vantage_diorama::ServoStatus
+impl core::marker::Unpin for vantage_diorama::ServoStatus
+impl core::marker::UnsafeUnpin for vantage_diorama::ServoStatus
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ServoStatus
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ServoStatus
+#[non_exhaustive] pub enum vantage_diorama::Source
+pub vantage_diorama::Source::Build(vantage_diorama::BuildFn)
+pub vantage_diorama::Source::Column
+pub vantage_diorama::Source::Column::from: alloc::string::String
+pub vantage_diorama::Source::Column::to: core::option::Option<alloc::string::String>
+pub vantage_diorama::Source::Id
+impl core::marker::Freeze for vantage_diorama::Source
+impl core::marker::Send for vantage_diorama::Source
+impl core::marker::Sync for vantage_diorama::Source
+impl core::marker::Unpin for vantage_diorama::Source
+impl core::marker::UnsafeUnpin for vantage_diorama::Source
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Source
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Source
+#[non_exhaustive] pub enum vantage_diorama::ValueStatus
+pub vantage_diorama::ValueStatus::Error(alloc::string::String)
+pub vantage_diorama::ValueStatus::Fresh
+pub vantage_diorama::ValueStatus::Loading
+impl core::clone::Clone for vantage_diorama::ValueStatus
+pub fn vantage_diorama::ValueStatus::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::ValueStatus
+impl core::cmp::PartialEq for vantage_diorama::ValueStatus
+pub fn vantage_diorama::ValueStatus::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::ValueStatus
+pub fn vantage_diorama::ValueStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::ValueStatus
+impl core::marker::Freeze for vantage_diorama::ValueStatus
+impl core::marker::Send for vantage_diorama::ValueStatus
+impl core::marker::Sync for vantage_diorama::ValueStatus
+impl core::marker::Unpin for vantage_diorama::ValueStatus
+impl core::marker::UnsafeUnpin for vantage_diorama::ValueStatus
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ValueStatus
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ValueStatus
+#[non_exhaustive] pub enum vantage_diorama::ViewCount
+pub vantage_diorama::ViewCount::AtLeast(usize)
+pub vantage_diorama::ViewCount::Estimated(usize)
+pub vantage_diorama::ViewCount::Exact(usize)
+pub vantage_diorama::ViewCount::Loaded(usize)
+impl vantage_diorama::ViewCount
+pub fn vantage_diorama::ViewCount::value(self) -> usize
+impl core::clone::Clone for vantage_diorama::ViewCount
+pub fn vantage_diorama::ViewCount::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::ViewCount
+impl core::cmp::PartialEq for vantage_diorama::ViewCount
+pub fn vantage_diorama::ViewCount::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::ViewCount
+pub fn vantage_diorama::ViewCount::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vantage_diorama::ViewCount
+pub fn vantage_diorama::ViewCount::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::ViewCount
+impl core::marker::StructuralPartialEq for vantage_diorama::ViewCount
+impl core::marker::Freeze for vantage_diorama::ViewCount
+impl core::marker::Send for vantage_diorama::ViewCount
+impl core::marker::Sync for vantage_diorama::ViewCount
+impl core::marker::Unpin for vantage_diorama::ViewCount
+impl core::marker::UnsafeUnpin for vantage_diorama::ViewCount
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ViewCount
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ViewCount
+#[non_exhaustive] pub enum vantage_diorama::ViewState
+pub vantage_diorama::ViewState::Failed
+pub vantage_diorama::ViewState::Loading
+pub vantage_diorama::ViewState::PendingWrites
+pub vantage_diorama::ViewState::Ready
+pub vantage_diorama::ViewState::Stale
+impl vantage_diorama::ViewState
+pub fn vantage_diorama::ViewState::derive(&vantage_diorama::LoadState, &vantage_diorama::RowStatusSummary, bool) -> Self
+impl core::clone::Clone for vantage_diorama::ViewState
+pub fn vantage_diorama::ViewState::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::ViewState
+impl core::cmp::PartialEq for vantage_diorama::ViewState
+pub fn vantage_diorama::ViewState::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::ViewState
+pub fn vantage_diorama::ViewState::default() -> Self
+impl core::fmt::Debug for vantage_diorama::ViewState
+pub fn vantage_diorama::ViewState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::ViewState
+impl core::marker::StructuralPartialEq for vantage_diorama::ViewState
+impl core::marker::Freeze for vantage_diorama::ViewState
+impl core::marker::Send for vantage_diorama::ViewState
+impl core::marker::Sync for vantage_diorama::ViewState
+impl core::marker::Unpin for vantage_diorama::ViewState
+impl core::marker::UnsafeUnpin for vantage_diorama::ViewState
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ViewState
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ViewState
+#[non_exhaustive] pub struct vantage_diorama::Augmentation
+pub vantage_diorama::Augmentation::detail: vantage_diorama::Detail
+pub vantage_diorama::Augmentation::fetch: vantage_diorama::Fetch
+pub vantage_diorama::Augmentation::merge: vantage_diorama::MergeRule
+pub vantage_diorama::Augmentation::source: vantage_diorama::Source
+impl vantage_diorama::Augmentation
+pub async fn vantage_diorama::Augmentation::augment_row(&self, &str, &str, &mut vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::Augmentation::new(vantage_diorama::Detail, vantage_diorama::Source, vantage_diorama::Fetch, vantage_diorama::MergeRule) -> Self
+impl core::marker::Freeze for vantage_diorama::Augmentation
+impl core::marker::Send for vantage_diorama::Augmentation
+impl core::marker::Sync for vantage_diorama::Augmentation
+impl core::marker::Unpin for vantage_diorama::Augmentation
+impl core::marker::UnsafeUnpin for vantage_diorama::Augmentation
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Augmentation
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Augmentation
+pub struct vantage_diorama::Cache(_)
+impl vantage_diorama::Cache
+pub fn vantage_diorama::Cache::backend(alloc::rcs::arc::Arc<dyn vantage_diorama::CacheBackend>) -> Self
+pub fn vantage_diorama::Cache::memory() -> Self
+pub fn vantage_diorama::Cache::redb(impl core::convert::Into<std::path::PathBuf>) -> Self
+impl core::marker::Freeze for vantage_diorama::Cache
+impl core::marker::Send for vantage_diorama::Cache
+impl core::marker::Sync for vantage_diorama::Cache
+impl core::marker::Unpin for vantage_diorama::Cache
+impl core::marker::UnsafeUnpin for vantage_diorama::Cache
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Cache
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Cache
+pub struct vantage_diorama::ChangeFlash
+impl vantage_diorama::ChangeFlash
+pub fn vantage_diorama::ChangeFlash::active_record<'a, D>(&self, &'a D) -> vantage_core::util::error::Result<vantage_dataset::record::ActiveRecord<'a, D>> where D: vantage_dataset::traits::valueset::WritableValueSet<Value = ciborium::value::Value> + ?core::marker::Sized, <D as vantage_dataset::traits::valueset::ValueSet>::Id: core::convert::From<alloc::string::String>
+pub fn vantage_diorama::ChangeFlash::after(&self) -> core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+pub fn vantage_diorama::ChangeFlash::before(&self) -> core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>
+pub fn vantage_diorama::ChangeFlash::clear() -> Self
+pub fn vantage_diorama::ChangeFlash::delete(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_diorama::ChangeFlash::id(&self) -> core::option::Option<&str>
+pub fn vantage_diorama::ChangeFlash::insert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::insert_new(vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::kind(&self) -> &vantage_diorama::FlashKind
+pub fn vantage_diorama::ChangeFlash::partial(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::patch(&self) -> &vantage_types::record::Record<ciborium::value::Value>
+pub fn vantage_diorama::ChangeFlash::replace(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::upsert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::with_before(self, vantage_types::record::Record<ciborium::value::Value>) -> Self
+impl core::clone::Clone for vantage_diorama::ChangeFlash
+pub fn vantage_diorama::ChangeFlash::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::ChangeFlash
+pub fn vantage_diorama::ChangeFlash::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::ChangeFlash
+impl core::marker::Send for vantage_diorama::ChangeFlash
+impl core::marker::Sync for vantage_diorama::ChangeFlash
+impl core::marker::Unpin for vantage_diorama::ChangeFlash
+impl core::marker::UnsafeUnpin for vantage_diorama::ChangeFlash
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ChangeFlash
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ChangeFlash
+pub struct vantage_diorama::ChunkSink
+impl vantage_diorama::ChunkSink
+pub async fn vantage_diorama::ChunkSink::push(&self, usize, impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<()>
+pub fn vantage_diorama::ChunkSink::set_total(&self, usize)
+impl core::clone::Clone for vantage_diorama::ChunkSink
+pub fn vantage_diorama::ChunkSink::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::ChunkSink
+pub fn vantage_diorama::ChunkSink::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::ChunkSink
+impl core::marker::Send for vantage_diorama::ChunkSink
+impl core::marker::Sync for vantage_diorama::ChunkSink
+impl core::marker::Unpin for vantage_diorama::ChunkSink
+impl core::marker::UnsafeUnpin for vantage_diorama::ChunkSink
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ChunkSink
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::ChunkSink
+pub struct vantage_diorama::DeriveBuilder
+impl vantage_diorama::DeriveBuilder
+pub async fn vantage_diorama::DeriveBuilder::build(self) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+pub fn vantage_diorama::DeriveBuilder::with_condition(self, vantage_vista::query::Condition) -> Self
+pub fn vantage_diorama::DeriveBuilder::with_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::sort::SortDirection) -> Self
+pub fn vantage_diorama::DeriveBuilder::with_query(self, &vantage_vista::query::VistaQuery) -> Self
+pub fn vantage_diorama::DeriveBuilder::with_search(self, impl core::convert::Into<alloc::string::String>) -> Self
+impl core::marker::Freeze for vantage_diorama::DeriveBuilder
+impl core::marker::Send for vantage_diorama::DeriveBuilder
+impl core::marker::Sync for vantage_diorama::DeriveBuilder
+impl core::marker::Unpin for vantage_diorama::DeriveBuilder
+impl core::marker::UnsafeUnpin for vantage_diorama::DeriveBuilder
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::DeriveBuilder
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::DeriveBuilder
+pub struct vantage_diorama::Dio
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::aggregate<A: vantage_diorama::aggregate::Aggregation<Output = vantage_diorama::aggregate::DerivedRows>>(&self, A) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+pub fn vantage_diorama::Dio::value_scenery<A: vantage_diorama::aggregate::Aggregation<Output = ciborium::value::Value>>(&self, A) -> vantage_diorama::ValueSceneryBuilder<A>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::apply_change(&self, vantage_diorama::ChangeEvent) -> vantage_core::util::error::Result<()>
+pub async fn vantage_diorama::Dio::reconcile(&self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<()>
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::cached(&self) -> vantage_vista::vista::Vista
+pub fn vantage_diorama::Dio::record_scenery(&self, impl core::convert::Into<alloc::string::String>) -> vantage_diorama::RecordSceneryBuilder
+pub async fn vantage_diorama::Dio::servo(&self, impl core::convert::Into<alloc::string::String>) -> vantage_core::util::error::Result<vantage_diorama::Servo>
+pub fn vantage_diorama::Dio::servo_new(&self, vantage_diorama::IdStrategy) -> vantage_diorama::Servo
+pub fn vantage_diorama::Dio::table_scenery(&self) -> vantage_diorama::TableSceneryBuilder
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::debug_tap(&self) -> vantage_diorama::debug::DebugTap
+pub fn vantage_diorama::Dio::id_column(&self) -> &str
+pub fn vantage_diorama::Dio::master(&self) -> &vantage_vista::vista::Vista
+pub fn vantage_diorama::Dio::residual(&self) -> &vantage_vista::query::VistaQuery
+pub fn vantage_diorama::Dio::subscribe_events(&self) -> tokio::sync::broadcast::Receiver<vantage_diorama::DioEvent>
+pub async fn vantage_diorama::Dio::take_write_worker_handle(&self) -> core::option::Option<tokio::runtime::task::join::JoinHandle<()>>
+pub fn vantage_diorama::Dio::write_capabilities(&self) -> vantage_diorama::WriteCapabilities
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::derive(&self) -> vantage_diorama::DeriveBuilder
+pub async fn vantage_diorama::Dio::get_ref(&self, &str, &vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+pub async fn vantage_diorama::Dio::get_ref_target(&self, &str) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::diagnostics(&self) -> vantage_core::util::error::Result<vantage_diorama::DioDiagnostics>
+impl vantage_diorama::Dio
+pub fn vantage_diorama::Dio::downgrade(&self) -> vantage_diorama::WeakDio
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::fetch(&self, core::ops::range::Range<usize>, &vantage_vista::query::VistaQuery) -> vantage_core::util::error::Result<vantage_diorama::Fetched>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::flash(&self, vantage_diorama::ChangeFlash) -> vantage_core::util::error::Result<vantage_diorama::FlashOutcome>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::import_values(&self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>, impl core::ops::function::FnMut(usize, usize) -> core::ops::control_flow::ControlFlow<()> + core::marker::Send) -> vantage_core::util::error::Result<vantage_diorama::ImportOutcome>
+impl vantage_diorama::Dio
+pub async fn vantage_diorama::Dio::refresh(&self) -> vantage_core::util::error::Result<()>
+impl core::clone::Clone for vantage_diorama::Dio
+pub fn vantage_diorama::Dio::clone(&self) -> Self
+impl core::marker::Freeze for vantage_diorama::Dio
+impl core::marker::Send for vantage_diorama::Dio
+impl core::marker::Sync for vantage_diorama::Dio
+impl core::marker::Unpin for vantage_diorama::Dio
+impl core::marker::UnsafeUnpin for vantage_diorama::Dio
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Dio
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Dio
+pub struct vantage_diorama::DioBuilder
+impl vantage_diorama::DioBuilder
+pub fn vantage_diorama::DioBuilder::augment(self, alloc::vec::Vec<vantage_diorama::Augmentation>) -> Self
+pub async fn vantage_diorama::DioBuilder::build(self) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+pub fn vantage_diorama::DioBuilder::live(self) -> Self
+impl core::marker::Freeze for vantage_diorama::DioBuilder
+impl core::marker::Send for vantage_diorama::DioBuilder
+impl core::marker::Sync for vantage_diorama::DioBuilder
+impl core::marker::Unpin for vantage_diorama::DioBuilder
+impl core::marker::UnsafeUnpin for vantage_diorama::DioBuilder
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::DioBuilder
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::DioBuilder
+#[non_exhaustive] pub struct vantage_diorama::DioDiagnostics
+pub vantage_diorama::DioDiagnostics::cache_rows: usize
+pub vantage_diorama::DioDiagnostics::cache_table: alloc::string::String
+pub vantage_diorama::DioDiagnostics::live: bool
+pub vantage_diorama::DioDiagnostics::query_indexes: usize
+pub vantage_diorama::DioDiagnostics::sceneries: alloc::vec::Vec<vantage_diorama::SceneryDiagnostic>
+impl vantage_diorama::DioDiagnostics
+pub fn vantage_diorama::DioDiagnostics::augmented_rows(&self) -> usize
+impl core::clone::Clone for vantage_diorama::DioDiagnostics
+pub fn vantage_diorama::DioDiagnostics::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::DioDiagnostics
+pub fn vantage_diorama::DioDiagnostics::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::DioDiagnostics
+impl core::marker::Send for vantage_diorama::DioDiagnostics
+impl core::marker::Sync for vantage_diorama::DioDiagnostics
+impl core::marker::Unpin for vantage_diorama::DioDiagnostics
+impl core::marker::UnsafeUnpin for vantage_diorama::DioDiagnostics
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::DioDiagnostics
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::DioDiagnostics
+#[non_exhaustive] pub struct vantage_diorama::EnrichedRecord
+pub vantage_diorama::EnrichedRecord::fetched_at: core::option::Option<std::time::SystemTime>
+pub vantage_diorama::EnrichedRecord::record: vantage_types::record::Record<ciborium::value::Value>
+pub vantage_diorama::EnrichedRecord::status: vantage_diorama::RowStatus
+impl vantage_diorama::EnrichedRecord
+pub fn vantage_diorama::EnrichedRecord::detail_failed(vantage_types::record::Record<ciborium::value::Value>, alloc::string::String, core::option::Option<std::time::SystemTime>) -> Self
+pub fn vantage_diorama::EnrichedRecord::fresh(vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::EnrichedRecord::incomplete(vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::EnrichedRecord::pending_write(vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::EnrichedRecord::write_failed(vantage_types::record::Record<ciborium::value::Value>, alloc::string::String) -> Self
+impl core::clone::Clone for vantage_diorama::EnrichedRecord
+pub fn vantage_diorama::EnrichedRecord::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::EnrichedRecord
+pub fn vantage_diorama::EnrichedRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::EnrichedRecord
+impl core::marker::Send for vantage_diorama::EnrichedRecord
+impl core::marker::Sync for vantage_diorama::EnrichedRecord
+impl core::marker::Unpin for vantage_diorama::EnrichedRecord
+impl core::marker::UnsafeUnpin for vantage_diorama::EnrichedRecord
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::EnrichedRecord
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::EnrichedRecord
+#[non_exhaustive] pub struct vantage_diorama::Fetched
+pub vantage_diorama::Fetched::page: vantage_vista::page::Page
+pub vantage_diorama::Fetched::refused: vantage_vista::query::VistaQuery
+impl core::clone::Clone for vantage_diorama::Fetched
+pub fn vantage_diorama::Fetched::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::Fetched
+pub fn vantage_diorama::Fetched::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::Fetched
+impl core::marker::Send for vantage_diorama::Fetched
+impl core::marker::Sync for vantage_diorama::Fetched
+impl core::marker::Unpin for vantage_diorama::Fetched
+impl core::marker::UnsafeUnpin for vantage_diorama::Fetched
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Fetched
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::Fetched
+#[non_exhaustive] pub struct vantage_diorama::FlashOutcome
+pub vantage_diorama::FlashOutcome::id: core::option::Option<alloc::string::String>
+pub vantage_diorama::FlashOutcome::record: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+impl vantage_diorama::FlashOutcome
+pub fn vantage_diorama::FlashOutcome::applied() -> Self
+pub fn vantage_diorama::FlashOutcome::with_id(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_diorama::FlashOutcome::with_record(self, vantage_types::record::Record<ciborium::value::Value>) -> Self
+impl core::clone::Clone for vantage_diorama::FlashOutcome
+pub fn vantage_diorama::FlashOutcome::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::FlashOutcome
+pub fn vantage_diorama::FlashOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::FlashOutcome
+impl core::marker::Send for vantage_diorama::FlashOutcome
+impl core::marker::Sync for vantage_diorama::FlashOutcome
+impl core::marker::Unpin for vantage_diorama::FlashOutcome
+impl core::marker::UnsafeUnpin for vantage_diorama::FlashOutcome
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::FlashOutcome
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::FlashOutcome
+pub struct vantage_diorama::FlashRejection
+impl vantage_diorama::FlashRejection
+pub fn vantage_diorama::FlashRejection::error_for(&self, &str) -> core::option::Option<&str>
+pub fn vantage_diorama::FlashRejection::field_errors(&self) -> &[(alloc::string::String, alloc::string::String)]
+pub fn vantage_diorama::FlashRejection::from_error(&vantage_core::util::error::VantageError) -> core::option::Option<Self>
+pub fn vantage_diorama::FlashRejection::from_error_or_message(&vantage_core::util::error::VantageError) -> Self
+pub fn vantage_diorama::FlashRejection::into_error(self) -> vantage_core::util::error::VantageError
+pub fn vantage_diorama::FlashRejection::message(&self) -> &str
+pub fn vantage_diorama::FlashRejection::new(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_diorama::FlashRejection::with_field(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for vantage_diorama::FlashRejection
+pub fn vantage_diorama::FlashRejection::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::FlashRejection
+impl core::cmp::PartialEq for vantage_diorama::FlashRejection
+pub fn vantage_diorama::FlashRejection::eq(&self, &Self) -> bool
+impl core::error::Error for vantage_diorama::FlashRejection
+impl core::fmt::Debug for vantage_diorama::FlashRejection
+pub fn vantage_diorama::FlashRejection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vantage_diorama::FlashRejection
+pub fn vantage_diorama::FlashRejection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::FlashRejection
+impl core::marker::Freeze for vantage_diorama::FlashRejection
+impl core::marker::Send for vantage_diorama::FlashRejection
+impl core::marker::Sync for vantage_diorama::FlashRejection
+impl core::marker::Unpin for vantage_diorama::FlashRejection
+impl core::marker::UnsafeUnpin for vantage_diorama::FlashRejection
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::FlashRejection
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::FlashRejection
+pub struct vantage_diorama::Generation(pub u64)
+impl core::clone::Clone for vantage_diorama::Generation
+pub fn vantage_diorama::Generation::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::Generation
+impl core::cmp::Ord for vantage_diorama::Generation
+pub fn vantage_diorama::Generation::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for vantage_diorama::Generation
+pub fn vantage_diorama::Generation::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for vantage_diorama::Generation
+pub fn vantage_diorama::Generation::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::convert::From<u64> for vantage_diorama::Generation
+pub fn vantage_diorama::Generation::from(u64) -> Self
+impl core::convert::From<vantage_diorama::Generation> for u64
+pub fn u64::from(vantage_diorama::Generation) -> Self
+impl core::default::Default for vantage_diorama::Generation
+pub fn vantage_diorama::Generation::default() -> Self
+impl core::fmt::Debug for vantage_diorama::Generation
+pub fn vantage_diorama::Generation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::Generation
+impl core::marker::StructuralPartialEq for vantage_diorama::Generation
+impl core::marker::Freeze for vantage_diorama::Generation
+impl core::marker::Send for vantage_diorama::Generation
+impl core::marker::Sync for vantage_diorama::Generation
+impl core::marker::Unpin for vantage_diorama::Generation
+impl core::marker::UnsafeUnpin for vantage_diorama::Generation
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Generation
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::Generation
+#[non_exhaustive] pub struct vantage_diorama::ImportOutcome
+pub vantage_diorama::ImportOutcome::cancelled: bool
+pub vantage_diorama::ImportOutcome::inserted: usize
+pub vantage_diorama::ImportOutcome::skipped: usize
+impl vantage_diorama::ImportOutcome
+pub fn vantage_diorama::ImportOutcome::processed(&self) -> usize
+impl core::clone::Clone for vantage_diorama::ImportOutcome
+pub fn vantage_diorama::ImportOutcome::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::ImportOutcome
+impl core::cmp::PartialEq for vantage_diorama::ImportOutcome
+pub fn vantage_diorama::ImportOutcome::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::ImportOutcome
+pub fn vantage_diorama::ImportOutcome::default() -> Self
+impl core::fmt::Debug for vantage_diorama::ImportOutcome
+pub fn vantage_diorama::ImportOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::ImportOutcome
+impl core::marker::StructuralPartialEq for vantage_diorama::ImportOutcome
+impl core::marker::Freeze for vantage_diorama::ImportOutcome
+impl core::marker::Send for vantage_diorama::ImportOutcome
+impl core::marker::Sync for vantage_diorama::ImportOutcome
+impl core::marker::Unpin for vantage_diorama::ImportOutcome
+impl core::marker::UnsafeUnpin for vantage_diorama::ImportOutcome
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ImportOutcome
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ImportOutcome
+pub struct vantage_diorama::Lens
+impl vantage_diorama::Lens
+pub fn vantage_diorama::Lens::builder() -> vantage_diorama::LensBuilder
+pub fn vantage_diorama::Lens::dio(&alloc::rcs::arc::Arc<Self>, vantage_vista::vista::Vista) -> vantage_diorama::DioBuilder
+impl !core::marker::Freeze for vantage_diorama::Lens
+impl core::marker::Send for vantage_diorama::Lens
+impl core::marker::Sync for vantage_diorama::Lens
+impl core::marker::Unpin for vantage_diorama::Lens
+impl core::marker::UnsafeUnpin for vantage_diorama::Lens
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Lens
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Lens
+pub struct vantage_diorama::LensBuilder
+impl vantage_diorama::LensBuilder
+pub fn vantage_diorama::LensBuilder::build(self) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<vantage_diorama::Lens>>
+pub fn vantage_diorama::LensBuilder::cache(self, vantage_diorama::Cache) -> Self
+pub fn vantage_diorama::LensBuilder::debug_datasource(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_diorama::LensBuilder::loader(self, vantage_diorama::Loader) -> Self
+pub fn vantage_diorama::LensBuilder::refresher(self, vantage_diorama::Refresher) -> Self
+pub fn vantage_diorama::LensBuilder::runtime(self, tokio::runtime::handle::Handle) -> Self
+pub fn vantage_diorama::LensBuilder::tuning(self, vantage_diorama::Tuning) -> Self
+pub fn vantage_diorama::LensBuilder::writer<F, Fut>(self, F) -> Self where F: core::ops::function::Fn(vantage_diorama::LoaderCx, vantage_diorama::ChangeFlash) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = vantage_core::util::error::Result<vantage_diorama::FlashOutcome>> + core::marker::Send + 'static
+impl core::marker::Freeze for vantage_diorama::LensBuilder
+impl core::marker::Send for vantage_diorama::LensBuilder
+impl core::marker::Sync for vantage_diorama::LensBuilder
+impl core::marker::Unpin for vantage_diorama::LensBuilder
+impl core::marker::UnsafeUnpin for vantage_diorama::LensBuilder
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::LensBuilder
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::LensBuilder
+#[non_exhaustive] pub struct vantage_diorama::LoadFailure
+pub vantage_diorama::LoadFailure::clause: core::option::Option<vantage_diorama::Clause>
+pub vantage_diorama::LoadFailure::message: alloc::string::String
+pub vantage_diorama::LoadFailure::table: alloc::string::String
+impl core::clone::Clone for vantage_diorama::LoadFailure
+pub fn vantage_diorama::LoadFailure::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::LoadFailure
+impl core::cmp::PartialEq for vantage_diorama::LoadFailure
+pub fn vantage_diorama::LoadFailure::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::LoadFailure
+pub fn vantage_diorama::LoadFailure::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vantage_diorama::LoadFailure
+pub fn vantage_diorama::LoadFailure::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::LoadFailure
+impl core::marker::Freeze for vantage_diorama::LoadFailure
+impl core::marker::Send for vantage_diorama::LoadFailure
+impl core::marker::Sync for vantage_diorama::LoadFailure
+impl core::marker::Unpin for vantage_diorama::LoadFailure
+impl core::marker::UnsafeUnpin for vantage_diorama::LoadFailure
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::LoadFailure
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::LoadFailure
+pub struct vantage_diorama::Loader
+impl vantage_diorama::Loader
+pub fn vantage_diorama::Loader::blocking(self, bool) -> Self
+pub fn vantage_diorama::Loader::eager<F, Fut>(F) -> Self where F: core::ops::function::Fn(vantage_diorama::LoaderCx) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'static
+pub fn vantage_diorama::Loader::or_eager<F, Fut>(self, F) -> Self where F: core::ops::function::Fn(vantage_diorama::LoaderCx) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'static
+pub fn vantage_diorama::Loader::paged<F, Fut>(F) -> Self where F: core::ops::function::Fn(vantage_diorama::LoaderCx, core::ops::range::Range<usize>, vantage_vista::query::VistaQuery, vantage_diorama::ChunkSink) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'static
+impl core::marker::Freeze for vantage_diorama::Loader
+impl core::marker::Send for vantage_diorama::Loader
+impl core::marker::Sync for vantage_diorama::Loader
+impl core::marker::Unpin for vantage_diorama::Loader
+impl core::marker::UnsafeUnpin for vantage_diorama::Loader
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Loader
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Loader
+pub struct vantage_diorama::LoaderCx
+impl vantage_diorama::LoaderCx
+pub fn vantage_diorama::LoaderCx::cache(&self) -> &alloc::rcs::arc::Arc<dyn vantage_diorama::CacheTable>
+pub async fn vantage_diorama::LoaderCx::fetch(&self, core::ops::range::Range<usize>, &vantage_vista::query::VistaQuery) -> vantage_core::util::error::Result<vantage_diorama::Fetched>
+pub fn vantage_diorama::LoaderCx::master(&self) -> &vantage_vista::vista::Vista
+pub async fn vantage_diorama::LoaderCx::reconcile(&self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<()>
+impl core::clone::Clone for vantage_diorama::LoaderCx
+pub fn vantage_diorama::LoaderCx::clone(&self) -> Self
+impl core::marker::Freeze for vantage_diorama::LoaderCx
+impl core::marker::Send for vantage_diorama::LoaderCx
+impl core::marker::Sync for vantage_diorama::LoaderCx
+impl core::marker::Unpin for vantage_diorama::LoaderCx
+impl core::marker::UnsafeUnpin for vantage_diorama::LoaderCx
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::LoaderCx
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::LoaderCx
+pub struct vantage_diorama::MemoryCache
+impl vantage_diorama::MemoryCache
+pub fn vantage_diorama::MemoryCache::new() -> Self
+impl core::default::Default for vantage_diorama::MemoryCache
+pub fn vantage_diorama::MemoryCache::default() -> Self
+impl vantage_diorama::CacheBackend for vantage_diorama::MemoryCache
+pub fn vantage_diorama::MemoryCache::close<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = ()> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCache::drop_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCache::list_tables<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<alloc::string::String>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCache::name(&self) -> &'static str
+pub fn vantage_diorama::MemoryCache::open_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::CacheTable>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+impl !core::marker::Freeze for vantage_diorama::MemoryCache
+impl core::marker::Send for vantage_diorama::MemoryCache
+impl core::marker::Sync for vantage_diorama::MemoryCache
+impl core::marker::Unpin for vantage_diorama::MemoryCache
+impl core::marker::UnsafeUnpin for vantage_diorama::MemoryCache
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::MemoryCache
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::MemoryCache
+pub struct vantage_diorama::MemoryCacheTable
+impl core::default::Default for vantage_diorama::MemoryCacheTable
+pub fn vantage_diorama::MemoryCacheTable::default() -> Self
+impl vantage_diorama::CacheTable for vantage_diorama::MemoryCacheTable
+pub fn vantage_diorama::MemoryCacheTable::clear<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::delete_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::get_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::get_value_with_status<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::insert_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::insert_value_with_status<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::insert_values<'life0, 'async_trait>(&'life0 self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::list_values<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::list_values_with_status<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, (vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::meta_copied_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::meta_refreshed_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::meta_total<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<u64>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::set_meta_copied_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::set_meta_refreshed_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::set_meta_total<'life0, 'async_trait>(&'life0 self, u64) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+impl !core::marker::Freeze for vantage_diorama::MemoryCacheTable
+impl core::marker::Send for vantage_diorama::MemoryCacheTable
+impl core::marker::Sync for vantage_diorama::MemoryCacheTable
+impl core::marker::Unpin for vantage_diorama::MemoryCacheTable
+impl core::marker::UnsafeUnpin for vantage_diorama::MemoryCacheTable
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::MemoryCacheTable
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::MemoryCacheTable
+#[non_exhaustive] pub struct vantage_diorama::MergeRule
+pub vantage_diorama::MergeRule::columns: alloc::vec::Vec<alloc::string::String>
+impl vantage_diorama::MergeRule
+pub fn vantage_diorama::MergeRule::apply(&self, &mut vantage_types::record::Record<ciborium::value::Value>, &vantage_types::record::Record<ciborium::value::Value>)
+pub fn vantage_diorama::MergeRule::lift(impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> Self
+pub fn vantage_diorama::MergeRule::lift_all() -> Self
+impl core::marker::Freeze for vantage_diorama::MergeRule
+impl core::marker::Send for vantage_diorama::MergeRule
+impl core::marker::Sync for vantage_diorama::MergeRule
+impl core::marker::Unpin for vantage_diorama::MergeRule
+impl core::marker::UnsafeUnpin for vantage_diorama::MergeRule
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::MergeRule
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::MergeRule
+pub struct vantage_diorama::RecordSceneryBuilder
+impl vantage_diorama::RecordSceneryBuilder
+pub fn vantage_diorama::RecordSceneryBuilder::load_on_miss(self) -> Self
+pub async fn vantage_diorama::RecordSceneryBuilder::open(self) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::RecordScenery>>
+pub fn vantage_diorama::RecordSceneryBuilder::seed(self, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::RecordSceneryBuilder::sugar(self, vantage_diorama::Sugar) -> Self
+impl core::marker::Freeze for vantage_diorama::RecordSceneryBuilder
+impl core::marker::Send for vantage_diorama::RecordSceneryBuilder
+impl core::marker::Sync for vantage_diorama::RecordSceneryBuilder
+impl core::marker::Unpin for vantage_diorama::RecordSceneryBuilder
+impl core::marker::UnsafeUnpin for vantage_diorama::RecordSceneryBuilder
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::RecordSceneryBuilder
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::RecordSceneryBuilder
+pub struct vantage_diorama::RedbCache
+impl vantage_diorama::RedbCache
+pub fn vantage_diorama::RedbCache::open(impl core::convert::AsRef<std::path::Path>) -> vantage_core::util::error::Result<Self>
+pub fn vantage_diorama::RedbCache::path(&self) -> &std::path::Path
+impl vantage_diorama::CacheBackend for vantage_diorama::RedbCache
+pub fn vantage_diorama::RedbCache::close<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = ()> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCache::drop_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCache::list_tables<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<alloc::string::String>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCache::name(&self) -> &'static str
+pub fn vantage_diorama::RedbCache::open_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::CacheTable>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+impl !core::marker::Freeze for vantage_diorama::RedbCache
+impl core::marker::Send for vantage_diorama::RedbCache
+impl core::marker::Sync for vantage_diorama::RedbCache
+impl core::marker::Unpin for vantage_diorama::RedbCache
+impl core::marker::UnsafeUnpin for vantage_diorama::RedbCache
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::RedbCache
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::RedbCache
+pub struct vantage_diorama::RedbCacheTable
+impl vantage_diorama::CacheTable for vantage_diorama::RedbCacheTable
+pub fn vantage_diorama::RedbCacheTable::clear<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::delete_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::get_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::get_value_with_status<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::insert_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::insert_value_with_status<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::insert_values<'life0, 'async_trait>(&'life0 self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::list_values<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::list_values_with_status<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, (vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::meta_copied_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::meta_refreshed_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::meta_total<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<u64>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::set_meta_copied_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::set_meta_refreshed_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::set_meta_total<'life0, 'async_trait>(&'life0 self, u64) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+impl core::marker::Freeze for vantage_diorama::RedbCacheTable
+impl core::marker::Send for vantage_diorama::RedbCacheTable
+impl core::marker::Sync for vantage_diorama::RedbCacheTable
+impl core::marker::Unpin for vantage_diorama::RedbCacheTable
+impl core::marker::UnsafeUnpin for vantage_diorama::RedbCacheTable
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::RedbCacheTable
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::RedbCacheTable
+pub struct vantage_diorama::Refresher
+impl vantage_diorama::Refresher
+pub fn vantage_diorama::Refresher::every(self, core::time::Duration) -> Self
+pub fn vantage_diorama::Refresher::max_age(self, core::time::Duration) -> Self
+pub fn vantage_diorama::Refresher::new<F, Fut>(F) -> Self where F: core::ops::function::Fn(vantage_diorama::LoaderCx) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'static
+impl core::marker::Freeze for vantage_diorama::Refresher
+impl core::marker::Send for vantage_diorama::Refresher
+impl core::marker::Sync for vantage_diorama::Refresher
+impl core::marker::Unpin for vantage_diorama::Refresher
+impl core::marker::UnsafeUnpin for vantage_diorama::Refresher
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Refresher
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Refresher
+#[non_exhaustive] pub struct vantage_diorama::RowStatusSummary
+pub vantage_diorama::RowStatusSummary::failed: usize
+pub vantage_diorama::RowStatusSummary::fresh: usize
+pub vantage_diorama::RowStatusSummary::incomplete: usize
+pub vantage_diorama::RowStatusSummary::loaded: usize
+pub vantage_diorama::RowStatusSummary::pending_write: usize
+impl core::clone::Clone for vantage_diorama::RowStatusSummary
+pub fn vantage_diorama::RowStatusSummary::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::RowStatusSummary
+impl core::cmp::PartialEq for vantage_diorama::RowStatusSummary
+pub fn vantage_diorama::RowStatusSummary::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::RowStatusSummary
+pub fn vantage_diorama::RowStatusSummary::default() -> Self
+impl core::fmt::Debug for vantage_diorama::RowStatusSummary
+pub fn vantage_diorama::RowStatusSummary::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::RowStatusSummary
+impl core::marker::Freeze for vantage_diorama::RowStatusSummary
+impl core::marker::Send for vantage_diorama::RowStatusSummary
+impl core::marker::Sync for vantage_diorama::RowStatusSummary
+impl core::marker::Unpin for vantage_diorama::RowStatusSummary
+impl core::marker::UnsafeUnpin for vantage_diorama::RowStatusSummary
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::RowStatusSummary
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::RowStatusSummary
+#[non_exhaustive] pub struct vantage_diorama::SceneryDiagnostic
+pub vantage_diorama::SceneryDiagnostic::key: alloc::string::String
+pub vantage_diorama::SceneryDiagnostic::row_count: usize
+pub vantage_diorama::SceneryDiagnostic::shared_by: usize
+pub vantage_diorama::SceneryDiagnostic::status: vantage_diorama::RowStatusSummary
+impl core::clone::Clone for vantage_diorama::SceneryDiagnostic
+pub fn vantage_diorama::SceneryDiagnostic::clone(&self) -> Self
+impl core::fmt::Debug for vantage_diorama::SceneryDiagnostic
+pub fn vantage_diorama::SceneryDiagnostic::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::SceneryDiagnostic
+impl core::marker::Send for vantage_diorama::SceneryDiagnostic
+impl core::marker::Sync for vantage_diorama::SceneryDiagnostic
+impl core::marker::Unpin for vantage_diorama::SceneryDiagnostic
+impl core::marker::UnsafeUnpin for vantage_diorama::SceneryDiagnostic
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::SceneryDiagnostic
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::SceneryDiagnostic
+pub struct vantage_diorama::Servo
+impl vantage_diorama::Servo
+pub fn vantage_diorama::Servo::baseline(&self) -> core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
+pub fn vantage_diorama::Servo::dirty(&self, &str) -> bool
+pub fn vantage_diorama::Servo::error(&self) -> vantage_types::record::Record<ciborium::value::Value>
+pub fn vantage_diorama::Servo::get(&self, &str) -> core::option::Option<ciborium::value::Value>
+pub fn vantage_diorama::Servo::is_dirty(&self) -> bool
+pub fn vantage_diorama::Servo::record(&self) -> vantage_types::record::Record<ciborium::value::Value>
+pub fn vantage_diorama::Servo::revert(&self, &str)
+pub fn vantage_diorama::Servo::revert_all(&self)
+pub fn vantage_diorama::Servo::set(&self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<ciborium::value::Value>)
+impl vantage_diorama::Servo
+pub async fn vantage_diorama::Servo::delete(&self) -> vantage_core::util::error::Result<vantage_diorama::ChangeFlash>
+impl vantage_diorama::Servo
+pub async fn vantage_diorama::Servo::flash(&self) -> vantage_core::util::error::Result<core::option::Option<vantage_diorama::ChangeFlash>>
+impl vantage_diorama::Servo
+pub fn vantage_diorama::Servo::id(&self) -> core::option::Option<alloc::string::String>
+pub fn vantage_diorama::Servo::status(&self) -> vantage_diorama::ServoStatus
+pub fn vantage_diorama::Servo::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+impl core::marker::Freeze for vantage_diorama::Servo
+impl core::marker::Send for vantage_diorama::Servo
+impl core::marker::Sync for vantage_diorama::Servo
+impl core::marker::Unpin for vantage_diorama::Servo
+impl core::marker::UnsafeUnpin for vantage_diorama::Servo
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Servo
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Servo
+pub struct vantage_diorama::Sugar
+impl vantage_diorama::Sugar
+pub fn vantage_diorama::Sugar::new(vantage_diorama::SugarFn, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> vantage_diorama::Sugar
+impl core::clone::Clone for vantage_diorama::Sugar
+pub fn vantage_diorama::Sugar::clone(&self) -> Self
+impl core::marker::Freeze for vantage_diorama::Sugar
+impl core::marker::Send for vantage_diorama::Sugar
+impl core::marker::Sync for vantage_diorama::Sugar
+impl core::marker::Unpin for vantage_diorama::Sugar
+impl core::marker::UnsafeUnpin for vantage_diorama::Sugar
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Sugar
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::Sugar
+pub struct vantage_diorama::TableSceneryBuilder
+impl vantage_diorama::TableSceneryBuilder
+pub fn vantage_diorama::TableSceneryBuilder::columns<I, S>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = S>, S: core::convert::Into<alloc::string::String>
+pub fn vantage_diorama::TableSceneryBuilder::filter(self, vantage_vista::query::Condition) -> Self
+pub fn vantage_diorama::TableSceneryBuilder::limit(self, usize) -> Self
+pub fn vantage_diorama::TableSceneryBuilder::order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::sort::SortDirection) -> Self
+pub fn vantage_diorama::TableSceneryBuilder::page_size(self, usize) -> Self
+pub fn vantage_diorama::TableSceneryBuilder::search(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_diorama::TableSceneryBuilder::sugar(self, vantage_diorama::Sugar) -> Self
+pub fn vantage_diorama::TableSceneryBuilder::tail(self, usize) -> Self
+pub fn vantage_diorama::TableSceneryBuilder::titles_only(self) -> Self
+impl vantage_diorama::TableSceneryBuilder
+pub async fn vantage_diorama::TableSceneryBuilder::open(self) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::TableScenery>>
+impl core::marker::Freeze for vantage_diorama::TableSceneryBuilder
+impl core::marker::Send for vantage_diorama::TableSceneryBuilder
+impl core::marker::Sync for vantage_diorama::TableSceneryBuilder
+impl core::marker::Unpin for vantage_diorama::TableSceneryBuilder
+impl core::marker::UnsafeUnpin for vantage_diorama::TableSceneryBuilder
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::TableSceneryBuilder
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::TableSceneryBuilder
+#[non_exhaustive] pub struct vantage_diorama::Tuning
+pub vantage_diorama::Tuning::aggregate_debounce: core::time::Duration
+pub vantage_diorama::Tuning::augment_workers: usize
+pub vantage_diorama::Tuning::refresh_on_open: bool
+pub vantage_diorama::Tuning::viewport_debounce: core::time::Duration
+pub vantage_diorama::Tuning::write_queue: usize
+impl vantage_diorama::Tuning
+pub fn vantage_diorama::Tuning::with_aggregate_debounce(self, core::time::Duration) -> Self
+pub fn vantage_diorama::Tuning::with_augment_workers(self, usize) -> Self
+pub fn vantage_diorama::Tuning::with_refresh_on_open(self, bool) -> Self
+pub fn vantage_diorama::Tuning::with_viewport_debounce(self, core::time::Duration) -> Self
+pub fn vantage_diorama::Tuning::with_write_queue(self, usize) -> Self
+impl core::clone::Clone for vantage_diorama::Tuning
+pub fn vantage_diorama::Tuning::clone(&self) -> Self
+impl core::default::Default for vantage_diorama::Tuning
+pub fn vantage_diorama::Tuning::default() -> Self
+impl core::fmt::Debug for vantage_diorama::Tuning
+pub fn vantage_diorama::Tuning::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_diorama::Tuning
+impl core::marker::Send for vantage_diorama::Tuning
+impl core::marker::Sync for vantage_diorama::Tuning
+impl core::marker::Unpin for vantage_diorama::Tuning
+impl core::marker::UnsafeUnpin for vantage_diorama::Tuning
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Tuning
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::Tuning
+pub struct vantage_diorama::ValueSceneryBuilder<A>
+impl<A: vantage_diorama::aggregate::Aggregation<Output = ciborium::value::Value>> vantage_diorama::ValueSceneryBuilder<A>
+pub async fn vantage_diorama::ValueSceneryBuilder<A>::open(self) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::ValueScenery>>
+impl<A> core::marker::Freeze for vantage_diorama::ValueSceneryBuilder<A> where A: core::marker::Freeze
+impl<A> core::marker::Send for vantage_diorama::ValueSceneryBuilder<A> where A: core::marker::Send
+impl<A> core::marker::Sync for vantage_diorama::ValueSceneryBuilder<A> where A: core::marker::Sync
+impl<A> core::marker::Unpin for vantage_diorama::ValueSceneryBuilder<A> where A: core::marker::Unpin
+impl<A> core::marker::UnsafeUnpin for vantage_diorama::ValueSceneryBuilder<A> where A: core::marker::UnsafeUnpin
+impl<A> !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ValueSceneryBuilder<A>
+impl<A> !core::panic::unwind_safe::UnwindSafe for vantage_diorama::ValueSceneryBuilder<A>
+#[non_exhaustive] pub struct vantage_diorama::ViewFilter
+pub vantage_diorama::ViewFilter::column: alloc::string::String
+pub vantage_diorama::ViewFilter::op: vantage_vista::filter::FilterOp
+pub vantage_diorama::ViewFilter::origin: vantage_diorama::FilterOrigin
+pub vantage_diorama::ViewFilter::value: ciborium::value::Value
+impl core::clone::Clone for vantage_diorama::ViewFilter
+pub fn vantage_diorama::ViewFilter::clone(&self) -> Self
+impl core::cmp::PartialEq for vantage_diorama::ViewFilter
+pub fn vantage_diorama::ViewFilter::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::ViewFilter
+pub fn vantage_diorama::ViewFilter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::ViewFilter
+impl core::marker::Freeze for vantage_diorama::ViewFilter
+impl core::marker::Send for vantage_diorama::ViewFilter
+impl core::marker::Sync for vantage_diorama::ViewFilter
+impl core::marker::Unpin for vantage_diorama::ViewFilter
+impl core::marker::UnsafeUnpin for vantage_diorama::ViewFilter
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ViewFilter
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ViewFilter
+#[non_exhaustive] pub struct vantage_diorama::ViewStats
+pub vantage_diorama::ViewStats::failed: usize
+pub vantage_diorama::ViewStats::filters: alloc::vec::Vec<vantage_diorama::ViewFilter>
+pub vantage_diorama::ViewStats::has_more: bool
+pub vantage_diorama::ViewStats::loaded: usize
+pub vantage_diorama::ViewStats::order: core::option::Option<(alloc::string::String, vantage_vista::sort::SortDirection)>
+pub vantage_diorama::ViewStats::pending_writes: usize
+pub vantage_diorama::ViewStats::search: core::option::Option<alloc::string::String>
+pub vantage_diorama::ViewStats::showing: core::option::Option<core::ops::range::Range<usize>>
+pub vantage_diorama::ViewStats::state: vantage_diorama::ViewState
+pub vantage_diorama::ViewStats::total: core::option::Option<usize>
+pub vantage_diorama::ViewStats::total_exact: bool
+impl vantage_diorama::ViewStats
+pub fn vantage_diorama::ViewStats::capped(self, usize) -> Self
+pub fn vantage_diorama::ViewStats::count(&self) -> vantage_diorama::ViewCount
+pub fn vantage_diorama::ViewStats::count_text(&self) -> alloc::string::String
+pub fn vantage_diorama::ViewStats::showing_count(&self) -> usize
+pub fn vantage_diorama::ViewStats::showing_len(&self) -> core::option::Option<usize>
+impl core::clone::Clone for vantage_diorama::ViewStats
+pub fn vantage_diorama::ViewStats::clone(&self) -> Self
+impl core::cmp::PartialEq for vantage_diorama::ViewStats
+pub fn vantage_diorama::ViewStats::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::ViewStats
+pub fn vantage_diorama::ViewStats::default() -> Self
+impl core::fmt::Debug for vantage_diorama::ViewStats
+pub fn vantage_diorama::ViewStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_diorama::ViewStats
+impl core::marker::Freeze for vantage_diorama::ViewStats
+impl core::marker::Send for vantage_diorama::ViewStats
+impl core::marker::Sync for vantage_diorama::ViewStats
+impl core::marker::Unpin for vantage_diorama::ViewStats
+impl core::marker::UnsafeUnpin for vantage_diorama::ViewStats
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::ViewStats
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::ViewStats
+pub struct vantage_diorama::WeakDio
+impl vantage_diorama::WeakDio
+pub fn vantage_diorama::WeakDio::upgrade(&self) -> core::option::Option<vantage_diorama::Dio>
+impl core::clone::Clone for vantage_diorama::WeakDio
+pub fn vantage_diorama::WeakDio::clone(&self) -> Self
+impl core::marker::Freeze for vantage_diorama::WeakDio
+impl core::marker::Send for vantage_diorama::WeakDio
+impl core::marker::Sync for vantage_diorama::WeakDio
+impl core::marker::Unpin for vantage_diorama::WeakDio
+impl core::marker::UnsafeUnpin for vantage_diorama::WeakDio
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::WeakDio
+impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::WeakDio
+#[non_exhaustive] pub struct vantage_diorama::WriteCapabilities
+pub vantage_diorama::WriteCapabilities::can_delete: bool
+pub vantage_diorama::WriteCapabilities::can_insert: bool
+pub vantage_diorama::WriteCapabilities::can_update: bool
+impl core::clone::Clone for vantage_diorama::WriteCapabilities
+pub fn vantage_diorama::WriteCapabilities::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::WriteCapabilities
+impl core::cmp::PartialEq for vantage_diorama::WriteCapabilities
+pub fn vantage_diorama::WriteCapabilities::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_diorama::WriteCapabilities
+pub fn vantage_diorama::WriteCapabilities::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::WriteCapabilities
+impl core::marker::StructuralPartialEq for vantage_diorama::WriteCapabilities
+impl core::marker::Freeze for vantage_diorama::WriteCapabilities
+impl core::marker::Send for vantage_diorama::WriteCapabilities
+impl core::marker::Sync for vantage_diorama::WriteCapabilities
+impl core::marker::Unpin for vantage_diorama::WriteCapabilities
+impl core::marker::UnsafeUnpin for vantage_diorama::WriteCapabilities
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::WriteCapabilities
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::WriteCapabilities
+pub trait vantage_diorama::CacheBackend: core::marker::Send + core::marker::Sync + 'static
+pub fn vantage_diorama::CacheBackend::close<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = ()> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheBackend::drop_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::CacheBackend::list_tables<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<alloc::string::String>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheBackend::name(&self) -> &'static str
+pub fn vantage_diorama::CacheBackend::open_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::CacheTable>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+impl vantage_diorama::CacheBackend for vantage_diorama::MemoryCache
+pub fn vantage_diorama::MemoryCache::close<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = ()> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCache::drop_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCache::list_tables<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<alloc::string::String>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCache::name(&self) -> &'static str
+pub fn vantage_diorama::MemoryCache::open_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::CacheTable>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+impl vantage_diorama::CacheBackend for vantage_diorama::RedbCache
+pub fn vantage_diorama::RedbCache::close<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = ()> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCache::drop_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCache::list_tables<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<alloc::string::String>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCache::name(&self) -> &'static str
+pub fn vantage_diorama::RedbCache::open_table<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::rcs::arc::Arc<dyn vantage_diorama::CacheTable>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub trait vantage_diorama::CacheTable: core::marker::Send + core::marker::Sync + 'static
+pub fn vantage_diorama::CacheTable::clear<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::delete_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::CacheTable::get_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::CacheTable::get_value_with_status<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::CacheTable::insert_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::CacheTable::insert_value_with_status<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::CacheTable::insert_values<'life0, 'async_trait>(&'life0 self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::list_values<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::list_values_with_status<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, (vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::meta_copied_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::meta_refreshed_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::meta_total<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<u64>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::set_meta_copied_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::set_meta_refreshed_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::CacheTable::set_meta_total<'life0, 'async_trait>(&'life0 self, u64) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+impl vantage_diorama::CacheTable for vantage_diorama::MemoryCacheTable
+pub fn vantage_diorama::MemoryCacheTable::clear<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::delete_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::get_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::get_value_with_status<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::insert_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::insert_value_with_status<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::insert_values<'life0, 'async_trait>(&'life0 self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::list_values<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::list_values_with_status<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, (vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::meta_copied_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::meta_refreshed_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::meta_total<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<u64>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::set_meta_copied_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::set_meta_refreshed_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::MemoryCacheTable::set_meta_total<'life0, 'async_trait>(&'life0 self, u64) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+impl vantage_diorama::CacheTable for vantage_diorama::RedbCacheTable
+pub fn vantage_diorama::RedbCacheTable::clear<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::delete_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::get_value<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::get_value_with_status<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<(vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::insert_value<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::insert_value_with_status<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::insert_values<'life0, 'async_trait>(&'life0 self, indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::list_values<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::list_values_with_status<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, (vantage_types::record::Record<ciborium::value::Value>, vantage_diorama::CacheStatus)>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::meta_copied_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::meta_refreshed_at<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<std::time::SystemTime>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::meta_total<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<core::option::Option<u64>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::set_meta_copied_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::set_meta_refreshed_at<'life0, 'async_trait>(&'life0 self, std::time::SystemTime) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_diorama::RedbCacheTable::set_meta_total<'life0, 'async_trait>(&'life0 self, u64) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub trait vantage_diorama::RecordScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::RecordScenery::record(&self) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::EnrichedRecord>>
+pub fn vantage_diorama::RecordScenery::refresh_source(&self)
+pub fn vantage_diorama::RecordScenery::status(&self) -> vantage_diorama::RecordStatus
+pub fn vantage_diorama::RecordScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub trait vantage_diorama::TableScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::TableScenery::count_where(&self, alloc::vec::Vec<vantage_vista::query::Condition>) -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<core::option::Option<usize>>>
+pub fn vantage_diorama::TableScenery::estimated_total(&self) -> core::option::Option<usize>
+pub fn vantage_diorama::TableScenery::filters_supported(&self, &[vantage_vista::query::Condition]) -> bool
+pub fn vantage_diorama::TableScenery::has_more(&self) -> bool
+pub fn vantage_diorama::TableScenery::load_state(&self) -> vantage_diorama::LoadState
+pub fn vantage_diorama::TableScenery::master_capabilities(&self) -> &vantage_vista::capabilities::set::VistaCapabilities
+pub fn vantage_diorama::TableScenery::refresh_source(&self)
+pub fn vantage_diorama::TableScenery::request_load_more(&self)
+pub fn vantage_diorama::TableScenery::row(&self, usize) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::EnrichedRecord>>
+pub fn vantage_diorama::TableScenery::row_by_id(&self, &str) -> core::option::Option<alloc::rcs::arc::Arc<vantage_diorama::EnrichedRecord>>
+pub fn vantage_diorama::TableScenery::row_count(&self) -> usize
+pub fn vantage_diorama::TableScenery::search_supported(&self) -> bool
+pub fn vantage_diorama::TableScenery::set_filters(&self, alloc::vec::Vec<vantage_vista::query::Condition>)
+pub fn vantage_diorama::TableScenery::set_order(&self, core::option::Option<(alloc::string::String, vantage_vista::sort::SortDirection)>)
+pub fn vantage_diorama::TableScenery::set_search(&self, core::option::Option<alloc::string::String>)
+pub fn vantage_diorama::TableScenery::set_viewport(&self, core::ops::range::Range<usize>, core::ops::range::Range<usize>)
+pub fn vantage_diorama::TableScenery::status_summary(&self) -> vantage_diorama::RowStatusSummary
+pub fn vantage_diorama::TableScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::TableScenery::subscribe_view_stats(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::TableScenery::view_stats(&self) -> vantage_diorama::ViewStats
+pub trait vantage_diorama::ValueScenery: core::marker::Send + core::marker::Sync
+pub fn vantage_diorama::ValueScenery::refresh_source(&self)
+pub fn vantage_diorama::ValueScenery::status(&self) -> vantage_diorama::ValueStatus
+pub fn vantage_diorama::ValueScenery::subscribe(&self) -> tokio::sync::watch::Receiver<vantage_diorama::Generation>
+pub fn vantage_diorama::ValueScenery::value(&self) -> core::option::Option<ciborium::value::Value>
+pub type vantage_diorama::BuildFn = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(&vantage_types::record::Record<ciborium::value::Value>, vantage_vista::vista::Vista) -> vantage_core::util::error::Result<vantage_vista::vista::Vista> + core::marker::Send + core::marker::Sync)>
+pub type vantage_diorama::FetchFn = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(vantage_vista::vista::Vista, vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send)>> + core::marker::Send + core::marker::Sync)>
+pub type vantage_diorama::SugarFn = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(alloc::vec::Vec<vantage_types::record::Record<ciborium::value::Value>>) -> vantage_diorama::SugarFuture + core::marker::Send + core::marker::Sync)>
+pub type vantage_diorama::SugarFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>>> + core::marker::Send)>>

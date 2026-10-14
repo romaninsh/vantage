@@ -4,13 +4,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use vantage_core::{Result, error};
-use vantage_vista::{
-    Column, NoExtras, Reference, ReferenceKind, ReferenceSugar, Vista, VistaFactory, VistaMetadata,
-    VistaSpec, flags,
-};
+use vantage_table::table::spec::spec_references;
+use vantage_vista::{Column, ColumnFlag, NoExtras, Vista, VistaFactory, VistaMetadata, VistaSpec};
 
-use super::{Catalog, MemoryTableShell};
+use super::affinity::conform_record;
+use super::{MemoryCatalog, MemoryTableShell};
 use crate::{MemoryStore, TableDef, seed};
+
+/// The id column a spec gets when it names none.
+const DEFAULT_ID_COLUMN: &str = "id";
 
 /// Table-level YAML block: `memory: { indexed: [..], seed: <file> }`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -31,14 +33,16 @@ pub struct MemoryBlock {
 
 pub type MemoryVistaSpec = VistaSpec<MemoryTableExtras, NoExtras, NoExtras>;
 
+/// Builds memory vistas from YAML specs, registering each one's metadata in
+/// its [`MemoryCatalog`] so traversals between them see declared columns.
 pub struct MemoryVistaFactory {
-    catalog: Catalog,
+    catalog: MemoryCatalog,
 }
 
 impl MemoryVistaFactory {
     pub fn new(store: MemoryStore) -> Self {
         Self {
-            catalog: Catalog::new(store),
+            catalog: MemoryCatalog::new(store),
         }
     }
 
@@ -60,7 +64,7 @@ impl VistaFactory for MemoryVistaFactory {
             ));
         }
         let metadata = metadata_from_spec(&spec)?;
-        let id_column = spec.resolve_id_column();
+        let id_column = spec.resolve_id_column(DEFAULT_ID_COLUMN);
         let block = spec.driver.memory;
         let table = self.store().define(
             &spec.name,
@@ -83,22 +87,27 @@ impl VistaFactory for MemoryVistaFactory {
             table.add_index(column);
         }
         // Seed only an empty table, so rebuilding the vista neither reverts
-        // edits made since nor duplicates rows without an id.
+        // edits made since nor duplicates rows without an id. Seeded cells
+        // take their declared type's form, as written cells do.
         if let Some(path) = &block.seed
             && table.is_empty()
         {
-            seed::load_file(&table, path)?;
+            seed::load_file_with(&table, path, |row| {
+                conform_record(&metadata, &id_column, row)
+            })?;
         }
         self.catalog.register(spec.name.clone(), metadata.clone());
         let shell = MemoryTableShell::new(table, metadata, self.catalog.clone());
-        Ok(Vista::new(spec.name, Box::new(shell)))
+        Ok(Vista::new(spec.name, shell))
     }
 }
 
-/// Every stored column is orderable: the store sorts on any field. A `lazy:`
+/// Every stored column is orderable: the store sorts on any field. A column
+/// without `type:` is untyped, so its cells are stored as given. A `lazy:`
 /// column is computed by the Vista.
 fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
-    let mut metadata = VistaMetadata::new().with_id_column(spec.resolve_id_column());
+    let id = spec.resolve_id_column(DEFAULT_ID_COLUMN);
+    let mut metadata = VistaMetadata::new().with_id_column(id.clone());
     for (name, col) in &spec.columns {
         if col.expr.is_some() {
             return Err(error!(
@@ -109,40 +118,21 @@ fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
         let column = match col.lazy_column(name)? {
             Some(computed) => computed,
             None => {
-                let mut column = Column::new(name, col.col_type.as_deref().unwrap_or("string"));
-                column.flags = col.flags.clone();
-                if !column.has_flag(flags::ORDERABLE) {
-                    column = column.with_flag(flags::ORDERABLE);
-                }
-                column
+                let column = match &col.col_type {
+                    Some(ty) => Column::new(name, ty),
+                    None => Column::untyped(name),
+                };
+                col.flags
+                    .iter()
+                    .cloned()
+                    .chain([ColumnFlag::Orderable])
+                    .fold(column, Column::with_flag)
             }
         };
         metadata = metadata.with_column(column);
-        match &col.references {
-            Some(ReferenceSugar::Sugar(target)) => {
-                metadata = metadata.with_reference(Reference::new(
-                    name,
-                    target,
-                    ReferenceKind::HasOne,
-                    name,
-                ));
-            }
-            Some(ReferenceSugar::Full(r)) => {
-                let fk = r.foreign_key_or(name);
-                metadata = metadata.with_reference(Reference::new(name, &r.table, r.kind, fk));
-            }
-            None => {}
-        }
     }
-    for (name, r) in &spec.references {
-        if !r.keys.is_empty() {
-            return Err(error!(
-                "Multi-key references are not supported by vantage-memory",
-                reference = name
-            ));
-        }
-        let fk = r.foreign_key_or(name);
-        metadata = metadata.with_reference(Reference::new(name, &r.table, r.kind, fk));
+    for reference in spec_references(spec, &id)? {
+        metadata = metadata.with_reference(reference);
     }
     Ok(metadata)
 }

@@ -244,12 +244,14 @@ where
     )))
 }
 
+/// `decimals` is written into the SQL, not bound: a bound i64 is a `bigint`
+/// on Postgres, which has no `round(numeric, bigint)`.
 pub fn fn_round<V>(
     value: rhai::Dynamic,
     decimals: i64,
 ) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
 where
-    V: Clone + Debug + Display + From<i64> + 'static,
+    V: Clone + Debug + Display + 'static,
     Identifier: Expressive<V>,
 {
     Ok(RhaiExpr(
@@ -257,7 +259,7 @@ where
             "ROUND",
             vec![
                 unwrap_expr::<V>(value)?,
-                Expression::new("{}", vec![ExpressiveEnum::Scalar(V::from(decimals))]),
+                Expression::new(decimals.to_string(), vec![]),
             ],
         )
         .expr(),
@@ -368,39 +370,38 @@ where
 
 #[macro_export]
 macro_rules! register_constructors {
-    ($engine:expr, value: $V:ty) => {{
+    ($engine:expr, $ns:expr, value: $V:ty) => {{
         // Uses type aliases Ex, Id, Expr from register_engine!
 
         // ── Constructors ────────────────────────────────────────────
-        $engine.register_fn("ident", $crate::rhai_engine::constructors::make_rhai_ident);
-        $engine.register_fn("table", $crate::rhai_engine::constructors::make_rhai_ident);
-        $engine.register_fn("expr", $crate::rhai_engine::constructors::make_expr0::<$V>);
-        $engine.register_fn("expr", $crate::rhai_engine::constructors::make_expr::<$V>);
-        $engine.register_fn("fx", $crate::rhai_engine::constructors::make_fx::<$V>);
+        $ns.func("ident", $crate::rhai_engine::constructors::make_rhai_ident)
+            .func("expr", $crate::rhai_engine::constructors::make_expr0::<$V>)
+            .func("expr", $crate::rhai_engine::constructors::make_expr::<$V>)
+            .func("fx", $crate::rhai_engine::constructors::make_fx::<$V>);
 
         // ── Aggregates ──────────────────────────────────────────────
-        $engine.register_fn("sum", $crate::rhai_engine::constructors::fn_sum::<$V>);
-        $engine.register_fn("count", $crate::rhai_engine::constructors::fn_count::<$V>);
-        $engine.register_fn("count_distinct", $crate::rhai_engine::constructors::fn_count_distinct::<$V>);
-        $engine.register_fn("avg", $crate::rhai_engine::constructors::fn_avg::<$V>);
-        $engine.register_fn("min", $crate::rhai_engine::constructors::fn_min::<$V>);
-        $engine.register_fn("max", $crate::rhai_engine::constructors::fn_max::<$V>);
+        $ns.func("sum", $crate::rhai_engine::constructors::fn_sum::<$V>)
+            .func("count", $crate::rhai_engine::constructors::fn_count::<$V>)
+            .func("count_distinct", $crate::rhai_engine::constructors::fn_count_distinct::<$V>)
+            .func("avg", $crate::rhai_engine::constructors::fn_avg::<$V>)
+            .func("min", $crate::rhai_engine::constructors::fn_min::<$V>)
+            .func("max", $crate::rhai_engine::constructors::fn_max::<$V>);
 
         // ── SQL functions ───────────────────────────────────────────
-        $engine.register_fn("coalesce", $crate::rhai_engine::constructors::fn_coalesce::<$V>);
-        $engine.register_fn("nullif", $crate::rhai_engine::constructors::fn_nullif::<$V>);
-        $engine.register_fn("cast", $crate::rhai_engine::constructors::fn_cast::<$V>);
-        $engine.register_fn("round", $crate::rhai_engine::constructors::fn_round::<$V>);
+        $ns.func("coalesce", $crate::rhai_engine::constructors::fn_coalesce::<$V>)
+            .func("nullif", $crate::rhai_engine::constructors::fn_nullif::<$V>)
+            .func("cast", $crate::rhai_engine::constructors::fn_cast::<$V>)
+            .func("round", $crate::rhai_engine::constructors::fn_round::<$V>);
 
         // ── Arithmetic ──────────────────────────────────────────────
-        $engine.register_fn("mul", $crate::rhai_engine::constructors::fn_mul::<$V>);
-        $engine.register_fn("add", $crate::rhai_engine::constructors::fn_add::<$V>);
-        $engine.register_fn("sub", $crate::rhai_engine::constructors::fn_sub::<$V>);
-        $engine.register_fn("div", $crate::rhai_engine::constructors::fn_div::<$V>);
+        $ns.func("mul", $crate::rhai_engine::constructors::fn_mul::<$V>)
+            .func("add", $crate::rhai_engine::constructors::fn_add::<$V>)
+            .func("sub", $crate::rhai_engine::constructors::fn_sub::<$V>)
+            .func("div", $crate::rhai_engine::constructors::fn_div::<$V>);
 
         // ── Date/Time functions ────────────────────────────────────────
-        $engine.register_fn("date_format", $crate::rhai_engine::constructors::fn_date_format::<$V>);
-        $engine.register_fn("group_concat", $crate::rhai_engine::constructors::fn_group_concat::<$V>);
+        $ns.func("date_format", $crate::rhai_engine::constructors::fn_date_format::<$V>)
+            .func("group_concat", $crate::rhai_engine::constructors::fn_group_concat::<$V>);
 
         // ── Ident methods ───────────────────────────────────────────
         $engine.register_fn("dot_of", |id: &mut Id, prefix: &str| -> Id {

@@ -2,18 +2,18 @@
 //! once, not forever.
 //!
 //! When a row hydrates and the detail source returns nothing, the Dio records
-//! it in its settled-empty set so the detail sweep stops re-fetching it. That
-//! set is what stops `gap → hydrate → still gapped → sweep again` from becoming
-//! a permanent background loop.
+//! its detail state as `Empty` so the detail sweep stops re-fetching it. That
+//! answer is what stops `gap → hydrate → still gapped → sweep again` from
+//! becoming a permanent background loop.
 //!
-//! The regression these tests pin: the refresh pass used to clear the whole set
-//! unconditionally, so the *scheduled* ticker wiped the answer every few
-//! seconds and the sweep re-asked the same absent rows for the life of the
-//! process. Harmless when every row has a detail record (the set is empty, so
-//! clearing it costs nothing) — which is why same-source augmentation never
-//! showed it. With a cross-source augment whose records are mostly absent, it
-//! is a continuous re-fetch of every missing row, each one rewriting its row
-//! and broadcasting `RecordChanged`, i.e. a permanently repainting UI.
+//! The regression these tests pin: a refresh pass that forgets every answer,
+//! so the *scheduled* ticker wipes `Empty` every few seconds and the sweep
+//! re-asks the same absent rows for the life of the process. Harmless when
+//! every row has a detail record (no row is `Empty`, so forgetting costs
+//! nothing) — which is why same-source augmentation never showed it. With a
+//! cross-source augment whose records are mostly absent, it is a continuous
+//! re-fetch of every missing row, each one rewriting its row and broadcasting
+//! `RecordChanged`, i.e. a permanently repainting UI.
 
 mod support;
 
@@ -22,14 +22,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use support::chunk::col_at;
-use support::{meta, record};
+use support::{augmented_dio, meta, record};
 use tempfile::TempDir;
 use vantage_diorama::{
-    Augmentation, Detail, Dio, Fetch, Lens, MergeRule, RowStatus, Source, TableScenery,
+    Augmentation, Cache, Detail, Dio, Fetch, Lens, MergeRule, Refresher, RowStatus, Source,
+    TableScenery, Tuning,
 };
-use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
-use vantage_vista_factory::VistaCatalog;
+use vantage_vista::{Catalog, Vista, VistaResolver};
 
 /// Master: two rows, cheap columns only.
 fn master_vista() -> Vista {
@@ -37,7 +37,7 @@ fn master_vista() -> Vista {
         .with_record("r0", record(&[("id", "r0"), ("branch", "main")]))
         .with_record("r1", record(&[("id", "r1"), ("branch", "dev")]))
         .with_metadata(meta(&["id", "branch"]));
-    Vista::new("runs", Box::new(shell))
+    Vista::new("runs", shell)
 }
 
 /// Detail source with a record for `r0` ONLY. `r1` is the row that settles
@@ -47,51 +47,43 @@ fn partial_detail_vista() -> Vista {
     let shell = MockShell::new()
         .with_record("r0", record(&[("id", "r0"), ("detail", "full-r0")]))
         .with_metadata(meta(&["id", "detail"]));
-    Vista::new("runs-detail", Box::new(shell))
+    Vista::new("runs-detail", shell)
 }
 
 /// A catalog whose loader counts how many times the detail vista is built —
 /// `Augmentation::base_vista` builds one per fetch, so this is an exact count
 /// of detail fetches attempted.
-fn counting_catalog(hits: Arc<AtomicUsize>) -> Arc<VistaCatalog> {
-    let mut c = VistaCatalog::new();
-    c.register(
-        "runs-detail",
-        Arc::new(move || {
-            hits.fetch_add(1, Ordering::SeqCst);
-            Ok(partial_detail_vista())
-        }),
-    );
-    Arc::new(c)
+fn counting_catalog(hits: Arc<AtomicUsize>) -> Arc<dyn VistaResolver> {
+    Arc::new(Catalog::new().with("runs-detail", move |_: &str| {
+        hits.fetch_add(1, Ordering::SeqCst);
+        Ok(partial_detail_vista())
+    }))
 }
 
-fn aug() -> Augmentation {
-    Augmentation {
-        detail: Detail::Catalog("runs-detail".into()),
-        source: Source::Id,
-        fetch: Fetch::PerRow,
-        merge: MergeRule {
-            columns: vec!["detail".to_string()],
+fn aug(hits: Arc<AtomicUsize>) -> Augmentation {
+    Augmentation::new(
+        Detail::Resolved {
+            resolver: counting_catalog(hits),
+            name: "runs-detail".into(),
         },
-    }
+        Source::Id,
+        Fetch::PerRow,
+        MergeRule::lift(["detail"]),
+    )
 }
 
-/// `refresh_every` only spawns the ticker when an `on_refresh` callback exists,
-/// so register a no-op one. An augmenting Dio never calls it — it runs its own
-/// reconciling pass — but its presence is what starts the timer, which is the
-/// path under test.
+/// The ticker is the refresher's `every`, so give the Lens a no-op refresher
+/// with that interval. Each tick runs the augmenting Dio's reconciling pass,
+/// which is the path under test.
 async fn open_with_ticker(tmp: &TempDir, hits: Arc<AtomicUsize>, tick: Option<Duration>) -> Dio {
-    let mut lens = Lens::new()
-        .cache_at(tmp.path().join("cache.redb"))
-        .viewport_debounce(Duration::from_millis(1));
+    let mut lens = Lens::builder()
+        .cache(Cache::redb(tmp.path().join("cache.redb")))
+        .tuning(Tuning::default().with_viewport_debounce(Duration::from_millis(1)));
     if let Some(tick) = tick {
-        lens = lens
-            .refresh_every(tick)
-            .on_refresh(|_dio: &Dio| async move { Ok(()) });
+        lens = lens.refresher(Refresher::new(|_cx| async { Ok(()) }).every(tick));
     }
-    let lens = Arc::new(lens.build().expect("lens builds"));
-    let dio = lens.make_dio(master_vista()).await.expect("make_dio");
-    dio.augment(counting_catalog(hits), vec![aug()])
+    let lens = lens.build().expect("lens builds");
+    augmented_dio(&lens, master_vista(), vec![aug(hits)]).await
 }
 
 fn status_of(s: &Arc<dyn TableScenery>, i: usize) -> Option<RowStatus> {
@@ -111,7 +103,7 @@ async fn eventually(label: &str, f: impl Fn() -> bool) {
 /// Bring both rows through the detail pass once and return the fetch count.
 async fn hydrate_both(dio: &Dio, hits: &AtomicUsize) -> (Arc<dyn TableScenery>, usize) {
     let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("r0 hydrated", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
     })
@@ -164,9 +156,9 @@ async fn a_row_with_no_detail_record_keeps_its_list_columns() {
 /// THE REGRESSION. With the ticker running, a settled-empty row must not be
 /// re-fetched on every tick.
 ///
-/// Before the fix this failed loudly: the scheduled refresh cleared the
-/// settled-empty set, so each tick re-fetched `r1` and the count climbed
-/// without bound for as long as the process ran.
+/// A scheduled refresh that forgot `Empty` fails this loudly: each tick
+/// re-fetches `r1` and the count climbs without bound for as long as the
+/// process runs.
 #[tokio::test]
 async fn the_scheduled_ticker_does_not_re_probe_a_settled_empty_row() {
     let tmp = TempDir::new().unwrap();
@@ -202,7 +194,7 @@ async fn an_explicit_refresh_re_probes_a_settled_empty_row() {
     let (scenery, after_hydration) = hydrate_both(&dio, &hits).await;
 
     dio.refresh().await.expect("refresh");
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
 
     eventually("explicit refresh re-probed", || {
         hits.load(Ordering::SeqCst) > after_hydration

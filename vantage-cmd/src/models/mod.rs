@@ -131,8 +131,8 @@ impl CmdModelFactory {
     /// Resolve a model name to a `Vista` plus its natural mode.
     ///
     /// The vista's references are lowered onto the wrapped `Table<Cmd>` (see
-    /// `build_table`), so the CLI's `:relation`
-    /// traversal flows through the built-in `Table::get_ref_from_row` path.
+    /// `build_table`), so the CLI's `:relation` traversal builds its target
+    /// through the table's own relation.
     pub fn for_name(&self, name: &str) -> Option<(Vista, FactoryMode)> {
         let table = Self::build_table(self.cmd.clone(), name)?;
         let vista = self.cmd.vista_factory().from_table(table).ok()?;
@@ -169,6 +169,8 @@ impl CmdModelFactory {
             table = match ref_spec.kind {
                 ReferenceKind::HasMany => table.with_many(rel_name, &fk, build_target),
                 ReferenceKind::HasOne => table.with_one(rel_name, &fk, build_target),
+                // A command's output has no embedded relations to contain.
+                _ => return None,
             };
         }
 

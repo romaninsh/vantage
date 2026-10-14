@@ -1,6 +1,6 @@
 //! Generic augmentation: a master Vista is listed cheaply, and each row is
 //! enriched one at a time from a *separate* detail Vista resolved through a
-//! [`VistaCatalog`]. The detail source can be any backend — here both are
+//! [`Catalog`]. The detail source can be any backend — here both are
 //! in-memory so the example is self-contained.
 //!
 //! Run with: `cargo run -p vantage-diorama --example augmentation`
@@ -9,11 +9,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use vantage_diorama::{Augmentation, Detail, Fetch, Lens, MergeRule, RowStatus, Source};
+use vantage_diorama::{
+    Augmentation, Cache, Detail, Fetch, Lens, LoadState, MergeRule, RowStatus, Source, Tuning,
+};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
-use vantage_vista_factory::VistaCatalog;
+use vantage_vista::{Catalog, Column, Vista, VistaMetadata};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -51,7 +52,7 @@ fn master() -> Vista {
             record(&[("id", "eu-west-1.tfstate"), ("size", "7kb")]),
         )
         .with_metadata(meta(&["id", "size"]));
-    Vista::new("buckets", Box::new(shell))
+    Vista::new("buckets", shell)
 }
 
 /// Detail: the expensive per-file analysis (resources, serial), keyed by id.
@@ -74,7 +75,7 @@ fn detail() -> Vista {
             ]),
         )
         .with_metadata(meta(&["id", "resources", "serial"]));
-    Vista::new("tfstate-detail", Box::new(shell))
+    Vista::new("tfstate-detail", shell)
 }
 
 fn cell(scenery: &Arc<dyn vantage_diorama::TableScenery>, i: usize, key: &str) -> String {
@@ -93,32 +94,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = std::fs::remove_file(&cache);
 
     // The catalog resolves the detail source by name (any persistence).
-    let mut catalog = VistaCatalog::new();
-    catalog.register("tfstate-detail", Arc::new(|| Ok(detail())));
+    let catalog = Catalog::new().with("tfstate-detail", |_: &str| Ok(detail()));
 
-    let lens = Arc::new(
-        Lens::new()
-            .cache_at(&cache)
-            .viewport_debounce(Duration::from_millis(1))
-            .build()?,
-    );
+    let lens = Lens::builder()
+        .cache(Cache::redb(&cache))
+        .tuning(Tuning::default().with_viewport_debounce(Duration::from_millis(1)))
+        .build()?;
 
-    // Augmentation is a property of the Dio, not the Lens: configure it after
-    // make_dio, before opening any scenery.
-    let dio = lens.make_dio(master()).await?.augment(
-        Arc::new(catalog),
-        vec![Augmentation {
-            // catalog name of the detail Vista (`Detail::Fixed` takes a
-            // direct handle for catalog-less get-only sources)
-            detail: Detail::Catalog("tfstate-detail".into()),
-            source: Source::Id,   // master.id -> detail.id
-            fetch: Fetch::PerRow, // one detail record per master row
-            merge: MergeRule {
-                columns: vec!["resources".into(), "serial".into()],
+    // Augmentation is a property of the Dio, not the Lens: it is fixed when
+    // the Dio is built.
+    let dio = lens
+        .dio(master())
+        .augment(vec![Augmentation::new(
+            // the detail Vista, resolved by name through the catalog
+            // (`Detail::Fixed` takes a direct handle for get-only sources no
+            // resolver knows)
+            Detail::Resolved {
+                resolver: Arc::new(catalog),
+                name: "tfstate-detail".into(),
             },
-        }],
-    );
+            Source::Id,    // master.id -> detail.id
+            Fetch::PerRow, // one detail record per master row
+            MergeRule::lift(["resources", "serial"]),
+        )])
+        .build()
+        .await?;
     let scenery = dio.table_scenery().page_size(10).open().await?;
+    // The list pass runs detached: the scenery opens `Loading` and the rows
+    // arrive with a generation bump.
+    for _ in 0..100 {
+        if !matches!(scenery.load_state(), LoadState::Loading) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
     let n = scenery.row_count();
 
     println!("after list pass (cheap columns only, rows are Incomplete):");
@@ -136,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Bring the rows on screen → the detail pass hydrates each from the second
     // Vista and merges its columns in place.
-    scenery.set_viewport(0..n);
+    scenery.set_viewport(0..n, 0..n);
     for _ in 0..100 {
         let all_fresh = (0..n).all(|i| {
             matches!(

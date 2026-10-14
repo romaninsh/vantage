@@ -1,18 +1,30 @@
-//! Stage 3: local emulation. A condition on an **augmented** column — one the
-//! master can't filter because it's produced client-side — is applied locally
-//! over the hydrated cache. The match is unknowable until a row is augmented, so
-//! matching rows surface as they hydrate ("fetch all → augment → keep applying
-//! the filter").
+//! Local emulation. A condition on an **augmented** column — one the master
+//! can't filter because it's produced client-side — goes into the derived
+//! Dio's residual and is applied locally over the hydrated cache. The match is
+//! unknowable until a row is augmented, so matching rows surface as they
+//! hydrate ("fetch all → augment → keep applying the filter").
 
 mod support;
 
-use support::{MockView, bucket_dio};
+use support::{MockView, bucket_dio, cond};
+use vantage_vista::{FilterOp, SortDirection};
 
 #[tokio::test]
 async fn condition_on_augmented_column_filters_locally() {
     // `name` is augmented from the `names` source; 1st and 3rd objects are John.
-    let dio = bucket_dio().await;
-    dio.with_condition_eq("name", "John");
+    let dio = bucket_dio()
+        .await
+        .derive()
+        .with_query(&cond("name", FilterOp::Eq, "John"))
+        .build()
+        .await
+        .expect("derives");
+    assert_eq!(
+        dio.residual().conditions.len(),
+        1,
+        "the master never sees it"
+    );
+    assert!(dio.master().query().is_empty());
 
     let view = MockView::open(&dio, 10).await;
     view.viewport(0..10); // pull the whole set into view so every row hydrates
@@ -30,8 +42,13 @@ async fn condition_on_augmented_column_filters_locally() {
 async fn native_column_condition_filters_cheap_rows_without_forcing_hydration() {
     // `kind` is a native list-pass column → the filter applies to the cheap
     // (gray) rows immediately and does NOT force full hydration. No viewport set.
-    let dio = bucket_dio().await;
-    dio.with_condition_eq("kind", "red");
+    let dio = bucket_dio()
+        .await
+        .derive()
+        .with_query(&cond("kind", FilterOp::Eq, "red"))
+        .build()
+        .await
+        .expect("derives");
 
     let view = MockView::open(&dio, 10).await;
     view.settle_until("native filter pre-hydration", |v| v.row_count() == 2)
@@ -56,8 +73,13 @@ async fn no_condition_keeps_all_augmented_rows() {
 async fn sort_on_augmented_column_orders_locally() {
     // The master can't sort by `name` (it's augmented). Sort is emulated over
     // the hydrated cache. Names: o1=John, o2=Jane, o3=John → asc: Jane, John, John.
-    let dio = bucket_dio().await;
-    dio.with_order("name", vantage_diorama::SortDir::Asc);
+    let dio = bucket_dio()
+        .await
+        .derive()
+        .with_order("name", SortDirection::Ascending)
+        .build()
+        .await
+        .expect("derives");
 
     let view = MockView::open(&dio, 10).await;
     view.viewport(0..10);

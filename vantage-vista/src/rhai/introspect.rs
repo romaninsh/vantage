@@ -4,67 +4,49 @@
 
 use vantage_rhai::rhai::{Array, Dynamic, Map as RhaiMap};
 
-use crate::vista::Vista;
+use crate::{Capability, vista::Vista};
 
-/// `{ can_count, can_insert, … }` — every capability flag as a bool.
+/// `{ insert, update, … }`: every capability, by name, as a bool.
 pub(crate) fn capabilities_map(vista: &Vista) -> RhaiMap {
-    let c = vista.capabilities();
-    let mut m = RhaiMap::new();
-    let mut put = |k: &str, b: bool| {
-        m.insert(k.into(), b.into());
-    };
-    put("can_count", c.can_count);
-    put("can_insert", c.can_insert);
-    put("can_update", c.can_update);
-    put("can_delete", c.can_delete);
-    put("can_import", c.can_import);
-    put("can_subscribe", c.can_subscribe);
-    put("can_invalidate", c.can_invalidate);
-    put("can_order", c.can_order);
-    put("can_search", c.can_search);
-    put("can_set_page_size", c.can_set_page_size);
-    put("can_fetch_page", c.can_fetch_page);
-    put("can_fetch_next", c.can_fetch_next);
-    put("can_fetch_window", c.can_fetch_window);
-    put("can_traverse_to_record", c.can_traverse_to_record);
-    put("can_traverse_to_set", c.can_traverse_to_set);
-    put("can_build_ref_via_script", c.can_build_ref_via_script);
-    put("can_traverse_in_columns", c.can_traverse_in_columns);
-    m
+    let caps = vista.capabilities();
+    Capability::iter()
+        .map(|c| (c.as_str().into(), caps.has(c).into()))
+        .collect()
 }
 
-/// `[{ name, type, flags }, …]` — one entry per column.
+/// `[{ name, type, flags }, …]` — one entry per column; `type` is `()` for
+/// a column with no declared type.
 pub(crate) fn columns_array(vista: &Vista) -> Array {
-    let mut arr = Array::new();
-    for name in vista.get_column_names() {
-        let mut m = RhaiMap::new();
-        m.insert("name".into(), name.to_string().into());
-        if let Some(col) = vista.get_column(name) {
-            m.insert("type".into(), col.original_type.clone().into());
-            let flags: Array = col.flags.iter().map(|f| f.clone().into()).collect();
+    vista
+        .columns()
+        .values()
+        .map(|col| {
+            let mut m = RhaiMap::new();
+            m.insert("name".into(), col.name.clone().into());
+            let ty = col
+                .original_type
+                .clone()
+                .map_or(Dynamic::UNIT, Dynamic::from);
+            m.insert("type".into(), ty);
+            let flags: Array = col.flags().iter().map(|f| f.as_str().into()).collect();
             m.insert("flags".into(), Dynamic::from_array(flags));
-        }
-        arr.push(Dynamic::from_map(m));
-    }
-    arr
+            Dynamic::from_map(m)
+        })
+        .collect()
 }
 
-/// `[{ name, kind, contained }, …]` — referenced and contained relations.
+/// `[{ name, kind, contained }, …]` — joined and contained relations; `kind`
+/// is the YAML name (`has_one`, `has_many`, `contains_one`, `contains_many`).
 pub(crate) fn references_array(vista: &Vista) -> Array {
-    let mut arr = Array::new();
-    for (name, kind) in vista.list_references() {
-        let mut m = RhaiMap::new();
-        m.insert("name".into(), name.into());
-        m.insert("kind".into(), format!("{kind:?}").into());
-        m.insert("contained".into(), false.into());
-        arr.push(Dynamic::from_map(m));
-    }
-    for (name, kind) in vista.list_contained() {
-        let mut m = RhaiMap::new();
-        m.insert("name".into(), name.into());
-        m.insert("kind".into(), format!("{kind:?}").into());
-        m.insert("contained".into(), true.into());
-        arr.push(Dynamic::from_map(m));
-    }
-    arr
+    vista
+        .references()
+        .values()
+        .map(|r| {
+            let mut m = RhaiMap::new();
+            m.insert("name".into(), r.name.clone().into());
+            m.insert("kind".into(), r.kind.as_str().into());
+            m.insert("contained".into(), r.kind.is_contained().into());
+            Dynamic::from_map(m)
+        })
+        .collect()
 }

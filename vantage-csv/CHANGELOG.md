@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.0 — 2026-10-14
+
+### Breaking changes
+
+- The shell implements `TableShell` 2.0 and advertises `Window` and `Traverse`; there is no
+  cursor and no write.
+- A condition takes `Eq` on a declared column; any other operator is `unsupported(FilterOps)`, and
+  an unknown column is an error.
+- Join traversal is strict: the target must declare the join column.
+- A dotted path into a declared column is refused as `Unimplemented`.
+- `preview()` is `{query}`: `read <file>`, plus ` where <cond> and ..` for each applied condition.
+
+### Other changes
+
+- Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0 and vantage-table 2.0.0.
+- `fetch_window` reads the filtered file once, slices it and sets `total`.
+- `get` picks the row from the set, so it honours the conditions.
+- `AnyCsvType` implements `Display`.
+
+Migration guide: https://vantage-ui.com/book/migration-2.0.html
+
 ## 0.6.8 — 2026-10-07
 
 - `ExprDataSource` builds on `vantage_expressions::execute_by_resolving` and `defer_execute`.
