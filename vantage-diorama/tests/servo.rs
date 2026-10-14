@@ -21,9 +21,7 @@ use vantage_diorama::{
     Generation, IdStrategy, Lens, LoaderCx, ServoStatus,
 };
 use vantage_types::Record;
-use vantage_vista::{
-    Column, Condition, FilterOp, Vista, VistaMetadata, mocks::MockShell,
-};
+use vantage_vista::{Column, Condition, FilterOp, Vista, VistaMetadata, mocks::MockShell};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.to_string())
@@ -767,7 +765,10 @@ async fn servo_new_on_a_derived_dio_fills_and_confines_the_insert() -> Result<()
         .with_id_column("id");
     let shell = MockShell::new().with_metadata(metadata);
     let lens = Lens::builder().cache(Cache::memory()).build()?;
-    let parent = lens.dio(Vista::new("members", shell.clone())).build().await?;
+    let parent = lens
+        .dio(Vista::new("members", shell.clone()))
+        .build()
+        .await?;
     let dio = parent
         .derive()
         .with_condition(Condition::new("team", FilterOp::Eq, "red"))
@@ -783,7 +784,11 @@ async fn servo_new_on_a_derived_dio_fills_and_confines_the_insert() -> Result<()
         .get_value(&id)
         .await?
         .expect("the master holds the row");
-    assert_eq!(stored.get("team"), Some(&text("red")), "filled from the narrowing");
+    assert_eq!(
+        stored.get("team"),
+        Some(&text("red")),
+        "filled from the narrowing"
+    );
 
     let blue = dio.servo_new(IdStrategy::Uuid);
     blue.set("name", text("Bob"));

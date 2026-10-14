@@ -208,8 +208,9 @@ impl Review {
 That's the entire model contribution. A consumer can now:
 
 ```rust
-use vantage_diorama::scenery::{Aggregate, SortDir};
+use vantage_diorama::aggregate::{Conditions, Count, Where};
 use vantage_sql::sqlite::SqliteVistaFactory;
+use vantage_vista::SortDirection;
 
 let reviews_vista = SqliteVistaFactory::new(db.clone())
     .from_table(Review::sqlite_table(db))?;
@@ -218,16 +219,13 @@ let reviews_dio = lens.make_dio(reviews_vista).await?;
 // UI grid with quicksearch + sort, served from the cache:
 let grid = reviews_dio
     .table_scenery()
-    .sort("rating", SortDir::Desc)
+    .order("rating", SortDirection::Descending)
     .open()
     .await?;
 
 // Live counter of 5-star reviews:
 let perfect_count = reviews_dio
-    .value_scenery()
-    .aggregate(Aggregate::CountWhere(vec![
-        ("rating".to_string(), 5i64.into()),
-    ]))
+    .value_scenery(Where::new(Conditions::new().eq("rating", 5i64), Count::rows()))
     .open()
     .await?;
 

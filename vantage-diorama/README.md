@@ -39,7 +39,8 @@ The picture: `Vista → Lens.make_dio(vista) → Dio → Vista | Scenery`.
 ```rust
 use std::sync::Arc;
 use std::time::Duration;
-use vantage_diorama::{Lens, scenery::SortDir};
+use vantage_diorama::Lens;
+use vantage_vista::SortDirection;
 
 let lens = Arc::new(
     Lens::new()
@@ -66,7 +67,7 @@ let books = facade.list_values().await?;
 // Or open a reactive view that re-renders when data changes:
 let scenery = products
     .table_scenery()
-    .sort("price", SortDir::Asc)
+    .order("price", SortDirection::Ascending)
     .open()
     .await?;
 ```

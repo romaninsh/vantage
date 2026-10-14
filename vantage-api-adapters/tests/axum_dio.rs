@@ -86,14 +86,12 @@ async fn fixture(open_permits: usize) -> Fixture {
         .expect("lens builds");
     let dio = lens
         .dio(master)
-        .augment(vec![Augmentation {
-            detail: Detail::Fixed(Arc::new(Vista::new("sizes", detail.clone()))),
-            source: Source::Id,
-            fetch: Fetch::PerRow,
-            merge: MergeRule {
-                columns: vec!["size".into()],
-            },
-        }])
+        .augment(vec![Augmentation::new(
+            Detail::Fixed(Arc::new(Vista::new("sizes", detail.clone()))),
+            Source::Id,
+            Fetch::PerRow,
+            MergeRule::lift(["size"]),
+        )])
         .build()
         .await
         .expect("dio builds");

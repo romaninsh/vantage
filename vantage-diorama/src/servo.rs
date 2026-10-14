@@ -48,6 +48,7 @@ use crate::ops::FlashRejection;
 
 /// Where the servo loop currently stands.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ServoStatus {
     /// Following the measurement; no write in flight.
     Tracking,
@@ -61,6 +62,7 @@ pub enum ServoStatus {
 
 /// How an unsaved servo ([`Dio::servo_new`]) gets its identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum IdStrategy {
     /// Mint a time-ordered UUID (v7) the moment the servo opens and
     /// bind the servo to it — every save reuses it, so a retried create

@@ -14,6 +14,7 @@ use vantage_types::Record;
 /// a polling diff might only know the id and leave the callback to
 /// refetch via `dio.master().get_value(&id)`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ChangeEvent {
     Updated {
         id: String,

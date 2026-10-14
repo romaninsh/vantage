@@ -248,6 +248,7 @@ pub struct ReferenceSpec<R = NoExtras> {
 /// name. Anything richer uses the full form.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum ReferenceSugar {
     Sugar(String),
     Full(ReferenceSpec<NoExtras>),

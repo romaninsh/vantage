@@ -3,6 +3,43 @@
 ## 0.15.0 — 2026-10-14
 
 - Vista 2.0: breaking API changes; see the migration guide (phase 5).
+- Absorbs `vantage-diorama-aggregate`: the aggregation vocabulary is `vantage_diorama::aggregate`,
+  and the separate crate is gone.
+- Table sceneries are owned views over a shared row index: identical opens share one set of rows,
+  and each view keeps its own query, viewport and cap. Changing one view's query re-points only
+  that view (copy-on-write); the other views keep their rows.
+- Table scenery builder options `filter(Condition)`, `search`, `order`, `limit(n)` and `tail(n)`.
+  On the handle: `set_filters(Vec<Condition>)`, `set_order(Option<(col, dir)>)`,
+  `set_viewport(loaded, shown)`, `row_by_id` and `refresh_source`. Every `TableScenery` method is
+  required.
+- Removed: `CappedScenery` (use `limit`/`tail`), `exclusive()` (every open is its own view),
+  `SortDir` (use `vantage_vista::SortDirection`), `OpCondition` (use `vantage_vista::Condition`),
+  `where_eq`/`where_op`, `set_sort`, `set_filter_terms`, `set_shown_range`, `request_refresh`.
+- Record scenery builder: `dio.record_scenery(id)` with `sugar`, `seed` and `load_on_miss`, then
+  `open()`. `record_scenery_sugared` and `record_scenery_with` are removed.
+- Status variants: `RecordStatus::Loading` and `Incomplete` are produced; the `Stale` variants,
+  `RowStatus::{Loading, NotFound}` and `EnrichedRecord.dirty_fields` are removed. The status enums
+  are `#[non_exhaustive]`.
+- The Lens hands back the live Dio when one with the same cache identity, augmentations and
+  `live` setting is held.
+- `dio.derive()` builds a narrowed Dio (`with_condition`, `with_order`, `with_search`,
+  `with_query`, then `build()`). `Dio::with_query` is removed.
+- `dio.value_scenery(aggregation)` and `dio.aggregate(aggregation)` replace the value scenery
+  builder methods and `AggregateLens`. `Aggregation::compute` takes the source schema, and
+  `Aggregation::reads` reports what it reads. `Where` converts operands by the column's declared
+  type and compares untyped columns as given.
+- `Refresher::max_age` works without `every`: it checks staleness at build and at open and starts
+  no timer.
+- `DioEvent::RefreshFailed { error }` for a failed live re-read. A rollback of stacked flashes
+  restores the last confirmed row.
+- Sorted single-pass rows held whole update in place on a live insert, patch or delete, with no
+  reseed. A two-pass listing reads a whole cached copy, and a confirmed insert or delete splices
+  the index.
+- `search_supported` is true for a paged view with an eager fallback.
+- New `CacheTable::{meta_copied_at, set_meta_copied_at}` (required).
+- The prelude is `Aggregation`, `ChangeEvent`, `ChangeFlash`, `Dio`, `Lens`, `RecordScenery`,
+  `Servo`, `TableScenery` and `ValueScenery`. `scenery` is a private module; its items are at the
+  crate root.
 
 ## 0.14.3 — 2026-10-11
 

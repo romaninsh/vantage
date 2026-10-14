@@ -1,4 +1,4 @@
-//! `PostgresTableShell` — the generic [`SqlTableShell`] over
+//! `PostgresTableShell` — the generic `SqlTableShell` over
 //! `Table<PostgresDB, E>`. Postgres matches `Like` case-insensitively, pages
 //! by the id column when no order is set, and feeds `watch` from
 //! `LISTEN/NOTIFY`.

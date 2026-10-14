@@ -659,6 +659,35 @@ async fn vista_set_search_filters_results_with_replace_semantics() -> TestResult
     Ok(())
 }
 
+/// Only `name` is flagged `searchable`, so a needle found only in `body`
+/// matches nothing.
+#[tokio::test]
+async fn sqlite_search_reads_only_searchable_columns() -> TestResult {
+    let db = SqliteDB::connect("sqlite::memory:").await?;
+    sqlx::query("CREATE TABLE note (id TEXT PRIMARY KEY, name TEXT NOT NULL, body TEXT NOT NULL)")
+        .execute(db.pool())
+        .await?;
+    sqlx::query("INSERT INTO note VALUES ('a', 'Alpha', 'hoverboard'), ('b', 'Beta', 'plutonium')")
+        .execute(db.pool())
+        .await?;
+    let yaml = r#"
+name: note
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [searchable] }
+  body: { type: string }
+"#;
+    let mut vista = db.vista_factory().from_yaml(yaml)?;
+
+    vista.set_search(Some("hover"))?;
+    assert!(vista.list_values().await?.is_empty(), "body isn't searched");
+
+    vista.set_search(Some("bet"))?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["b"]);
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_clearing_search_without_prior_search_is_noop() -> TestResult {
     let db = setup().await;

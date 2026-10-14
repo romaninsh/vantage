@@ -60,10 +60,12 @@ where
     let bus = source.subscribe_events();
     let tap = source.inner.tap();
     let start = tap.enabled().then(Instant::now);
-    let output = computed(source, aggregation).await.map(|(rows_in, output)| {
-        tap_recompute(tap, name, start, rows_in, &output, "initial", "published");
-        output
-    });
+    let output = computed(source, aggregation)
+        .await
+        .map(|(rows_in, output)| {
+            tap_recompute(tap, name, start, rows_in, &output, "initial", "published");
+            output
+        });
     (bus, output)
 }
 

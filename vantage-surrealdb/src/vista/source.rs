@@ -234,7 +234,7 @@ where
 
     /// SurrealDB's expression vocabulary under `surreal::` (with the
     /// `surreal::me` anchor) and `self.with_condition(<expr>)`; see
-    /// [`register_extensions`].
+    /// `register_extensions`.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
         register_extensions(engine);

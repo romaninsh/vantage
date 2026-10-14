@@ -3,6 +3,8 @@
 ## 0.7.0 — 2026-10-14
 
 - Vista 2.0: the axum diorama adapter reads rows through `cached()`.
+- Watch views no longer need `.exclusive()`: every open is its own view, so each connection keeps
+  its own viewport.
 
 ## 0.6.4 — 2026-10-05
 

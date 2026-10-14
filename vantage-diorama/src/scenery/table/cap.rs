@@ -129,7 +129,10 @@ mod tests {
         assert_eq!(tail.view_len(5), 2);
         let mapped = (tail.map(0, 5), tail.map(1, 5), tail.map(2, 5));
         assert_eq!(mapped, (Some(3), Some(4), None));
-        assert_eq!((tail.view_index(4, 5), tail.view_index(2, 5)), (Some(1), None));
+        assert_eq!(
+            (tail.view_index(4, 5), tail.view_index(2, 5)),
+            (Some(1), None)
+        );
         assert_eq!(tail.map(0, 1), Some(0));
         assert_eq!(tail.shared_range(0..10, 30, false), 28..30);
         assert_eq!(tail.shared_range(0..10, 0, false), 0..2);
@@ -140,7 +143,10 @@ mod tests {
         let tail = Cap::FlippedTail(2);
         let mapped = (tail.map(0, 5), tail.map(1, 5), tail.map(2, 5));
         assert_eq!(mapped, (Some(1), Some(0), None));
-        assert_eq!((tail.view_index(0, 5), tail.view_index(2, 5)), (Some(1), None));
+        assert_eq!(
+            (tail.view_index(0, 5), tail.view_index(2, 5)),
+            (Some(1), None)
+        );
         assert_eq!(tail.shared_range(1..2, 10, false), 0..2);
         assert_eq!(tail.shared_range(0..1, 10, true), 1..2);
     }

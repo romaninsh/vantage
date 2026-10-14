@@ -22,9 +22,7 @@ async fn aggregate_recompute_line_is_inherited_from_the_source_tap() -> Result<(
     shell.set_record("b", record(&[("status", text("done")), ("amount", int(5))]));
 
     let src = source_with_debug(shell.clone(), "agg-ds").await;
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
     settle().await;
 
     let lines = lines_containing(&log, "recomputed from");
@@ -59,9 +57,7 @@ async fn a_non_debug_source_emits_no_aggregate_recompute_lines() -> Result<()> {
     );
 
     let src = source(shell.clone()).await;
-    let derived = src
-        .aggregate(GroupBy::column("status", revenue()))
-        .await?;
+    let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
     settle().await;
 
     // A source refresh too — recompute definitely runs at least once more.

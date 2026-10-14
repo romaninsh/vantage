@@ -64,14 +64,16 @@ impl RowMap {
         let moved = self.rows.split_off(&idx);
         tally(&mut self.summary, &row.status, 1);
         self.rows.insert(idx, row);
-        self.rows.extend(moved.into_iter().map(|(at, row)| (at + 1, row)));
+        self.rows
+            .extend(moved.into_iter().map(|(at, row)| (at + 1, row)));
     }
 
     /// Take the row at `idx` out, moving every row past it down by one.
     pub(crate) fn remove_shift(&mut self, idx: usize) -> Option<Row> {
         let moved = self.rows.split_off(&(idx + 1));
         let removed = self.remove(&idx);
-        self.rows.extend(moved.into_iter().map(|(at, row)| (at - 1, row)));
+        self.rows
+            .extend(moved.into_iter().map(|(at, row)| (at - 1, row)));
         removed
     }
 

@@ -297,7 +297,6 @@ async fn shell_of(yaml: &str) -> MongoTableShell {
         metadata,
         paths,
         None,
-        false,
         None,
     )
 }

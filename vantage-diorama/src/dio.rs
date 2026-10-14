@@ -115,6 +115,7 @@ impl WeakDio {
 /// writer — not the master — then takes the writes (a read-only CSV becomes editable, with
 /// changes landing wherever the route sends them).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct WriteCapabilities {
     pub can_insert: bool,
     pub can_update: bool,

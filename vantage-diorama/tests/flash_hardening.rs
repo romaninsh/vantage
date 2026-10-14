@@ -362,9 +362,10 @@ async fn queued_flashes_survive_dropping_every_handle() -> Result<()> {
         .into_iter()
         .map(|id| {
             let dio = dio.clone();
-            tokio::spawn(
-                async move { dio.flash(ChangeFlash::insert(id, record(&[("id", id)]))).await },
-            )
+            tokio::spawn(async move {
+                dio.flash(ChangeFlash::insert(id, record(&[("id", id)])))
+                    .await
+            })
         })
         .collect();
     staged(&mut bus, &["t1", "t2"]).await;

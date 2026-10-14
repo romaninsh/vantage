@@ -144,7 +144,11 @@ pub(in super::super) async fn list_page_into(
         "list #{} got {} ids{} in {} — {} known so far{}",
         req.unwrap_or_default(),
         crate::debug::num(rows_len),
-        if from_cache { " from the whole copy" } else { "" },
+        if from_cache {
+            " from the whole copy"
+        } else {
+            ""
+        },
         crate::debug::dur(t.elapsed().as_millis() as u64),
         crate::debug::num(index.len()),
         if index.is_complete() {

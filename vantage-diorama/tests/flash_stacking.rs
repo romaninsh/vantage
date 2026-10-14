@@ -24,7 +24,9 @@ fn refusing_lens(gate: Arc<Semaphore>, refused: &'static [&'static str]) -> Arc<
         .cache(Cache::memory())
         .writer(move |_cx, flash| {
             let gate = gate.clone();
-            let refuse = refused.iter().any(|r| flash.patch().get("n") == Some(&text(r)));
+            let refuse = refused
+                .iter()
+                .any(|r| flash.patch().get("n") == Some(&text(r)));
             async move {
                 gate.acquire().await.expect("gate open").forget();
                 if refuse {
@@ -67,7 +69,9 @@ async fn two_flashes_on_a(dio: &Dio) -> [Pending; 2] {
 }
 
 async fn n_of(dio: &Dio) -> Result<Option<CborValue>> {
-    Ok(cached(dio, "a").await?.and_then(|row| row.get("n").cloned()))
+    Ok(cached(dio, "a")
+        .await?
+        .and_then(|row| row.get("n").cloned()))
 }
 
 #[tokio::test]
@@ -81,7 +85,11 @@ async fn two_failed_flashes_restore_the_last_confirmed_row() -> Result<()> {
     assert!(first.await.unwrap().is_err());
     assert!(second.await.unwrap().is_err());
 
-    assert_eq!(n_of(&dio).await?, Some(text("1")), "not the first flash's value");
+    assert_eq!(
+        n_of(&dio).await?,
+        Some(text("1")),
+        "not the first flash's value"
+    );
     let scenery = dio.record_scenery("a").open().await?;
     let shown = scenery.record().expect("record present");
     assert_eq!(shown.record.get("n"), Some(&text("1")));
@@ -97,7 +105,11 @@ async fn an_earlier_commit_does_not_overwrite_a_later_staged_value() -> Result<(
 
     gate.add_permits(1);
     first.await.unwrap()?;
-    assert_eq!(n_of(&dio).await?, Some(text("3")), "the later flash still shows");
+    assert_eq!(
+        n_of(&dio).await?,
+        Some(text("3")),
+        "the later flash still shows"
+    );
 
     gate.add_permits(1);
     assert!(second.await.unwrap().is_err());

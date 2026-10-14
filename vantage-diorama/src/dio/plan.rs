@@ -124,7 +124,10 @@ mod tests {
             .with_column(Column::new("team", "String"))
             .with_id_column("id");
         let master = Vista::new("teams", MockShell::new().with_metadata(metadata));
-        let lens = Lens::builder().cache(Cache::memory()).build().expect("lens");
+        let lens = Lens::builder()
+            .cache(Cache::memory())
+            .build()
+            .expect("lens");
         let dio = lens.dio(master).build().await.expect("dio builds");
         let derived = dio
             .derive()

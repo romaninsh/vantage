@@ -68,12 +68,12 @@ let dio = lens
 Each `Augmentation` has four parts:
 
 ```rust
-Augmentation {
-    detail: Detail::Catalog("tfstate_detail".into()), // resolved by name
-    source: Source::Column { from: "key".into(), to: None },
-    fetch:  Fetch::PerRow,
-    merge:  MergeRule { columns: vec!["resources".into(), "serial".into()] },
-}
+Augmentation::new(
+    Detail::Resolved { resolver, name: "tfstate_detail".into() }, // resolved by name
+    Source::Column { from: "key".into(), to: None },
+    Fetch::PerRow,
+    MergeRule::lift(["resources", "serial"]),
+)
 ```
 
 `Detail::Fixed(Arc<Vista>)` takes a detail Vista directly instead, for a side

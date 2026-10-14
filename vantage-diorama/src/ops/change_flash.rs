@@ -25,6 +25,7 @@ use vantage_types::Record;
 /// every row") keeps its historical no-optimism special-casing in the
 /// pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FlashKind {
     Insert,
     Replace,

@@ -22,8 +22,11 @@ use support::{augmented_dio, eventually, fixed_augmentation, quick_lens, size_de
 /// Rows `r01`..`r{count}` with `n = 1..=count`.
 fn counted(count: i64) -> MockShell {
     let ids: Vec<String> = (1..=count).map(|i| format!("r{i:02}")).collect();
-    let rows: Vec<(&str, Option<i64>)> =
-        ids.iter().zip(1..).map(|(id, n)| (id.as_str(), Some(n))).collect();
+    let rows: Vec<(&str, Option<i64>)> = ids
+        .iter()
+        .zip(1..)
+        .map(|(id, n)| (id.as_str(), Some(n)))
+        .collect();
     numbers_of(&rows)
 }
 
@@ -70,7 +73,11 @@ async fn a_paged_tail_reads_the_last_rows() -> Result<()> {
         loads.contains(&(28..30, Some(SortDirection::Ascending))),
         "the last window in the declared order: {loads:?}"
     );
-    assert!(loads.iter().all(|(_, dir)| *dir == Some(SortDirection::Ascending)));
+    assert!(
+        loads
+            .iter()
+            .all(|(_, dir)| *dir == Some(SortDirection::Ascending))
+    );
     assert!(!view.has_more());
     Ok(())
 }
@@ -88,7 +95,9 @@ async fn a_paged_tail_without_a_total_reads_the_flipped_order() -> Result<()> {
     );
     let loads = loads.lock().unwrap().clone();
     assert!(
-        loads.iter().any(|(_, dir)| *dir == Some(SortDirection::Descending)),
+        loads
+            .iter()
+            .any(|(_, dir)| *dir == Some(SortDirection::Descending)),
         "the flipped order reached the loader: {loads:?}"
     );
     Ok(())
@@ -123,7 +132,10 @@ forward_table_shell!(Gated, inner, {
 async fn a_two_pass_tail_reads_the_last_rows_past_the_first_list_page() -> Result<()> {
     let ids: Vec<String> = (1..=7).map(|i| format!("r{i:02}")).collect();
     let sizes: Vec<String> = (1..=7).map(|i| i.to_string()).collect();
-    let pairs = ids.iter().zip(&sizes).map(|(id, s)| (id.as_str(), s.as_str()));
+    let pairs = ids
+        .iter()
+        .zip(&sizes)
+        .map(|(id, s)| (id.as_str(), s.as_str()));
     let (gate, done) = (Arc::new(Semaphore::new(0)), Arc::new(AtomicUsize::new(0)));
     let (held, answered) = (gate.clone(), done.clone());
     let sizes = Vista::new("sizes", size_detail(pairs)).map_shell(move |inner| Gated {
@@ -160,7 +172,11 @@ async fn a_two_pass_tail_reads_the_last_rows_past_the_first_list_page() -> Resul
 
     gate.add_permits(1);
     let answered = eventually(Duration::from_secs(5), only_the_tail);
-    assert!(answered.await, "the tail never answered ({:?})", view.load_state());
+    assert!(
+        answered.await,
+        "the tail never answered ({:?})",
+        view.load_state()
+    );
     assert_eq!(view.row_count(), 2);
     Ok(())
 }

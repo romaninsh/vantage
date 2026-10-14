@@ -87,8 +87,17 @@ impl MemoryTableShell {
         Ok(())
     }
 
+    /// The search reads the metadata's
+    /// [`search_columns`](vantage_vista::VistaMetadata::search_columns);
+    /// metadata that declares no columns searches every cell.
     pub(super) fn replace_search(&mut self, text: Option<&str>) {
         self.query.search = text.map(str::to_string);
+        self.query.search_columns = self
+            .metadata
+            .search_columns()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
     }
 
     /// The store sorts on any field, so any declared column is an order key.

@@ -73,8 +73,14 @@ mod tests {
     fn rust_type_names_classify_like_their_short_names() {
         assert_eq!(family(type_name::<String>()), Some(ColumnFamily::Text));
         assert_eq!(family(type_name::<&str>()), Some(ColumnFamily::Text));
-        assert_eq!(family(type_name::<Option<i64>>()), Some(ColumnFamily::Integer));
-        assert_eq!(family(type_name::<Option<String>>()), Some(ColumnFamily::Text));
+        assert_eq!(
+            family(type_name::<Option<i64>>()),
+            Some(ColumnFamily::Integer)
+        );
+        assert_eq!(
+            family(type_name::<Option<String>>()),
+            Some(ColumnFamily::Text)
+        );
         assert_eq!(family(type_name::<bool>()), Some(ColumnFamily::Bool));
         assert_eq!(family(type_name::<f64>()), Some(ColumnFamily::Float));
         assert_eq!(

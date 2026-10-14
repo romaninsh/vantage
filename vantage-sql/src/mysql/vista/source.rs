@@ -1,4 +1,4 @@
-//! `MysqlTableShell` — the generic [`SqlTableShell`] over `Table<MysqlDB, E>`.
+//! `MysqlTableShell` — the generic `SqlTableShell` over `Table<MysqlDB, E>`.
 //! MySQL adds native conditions, transactional import and, with `rhai`,
 //! its expression vocabulary and scripted reference traversal. The shell
 //! carries the spec resolver handed to the factories that build traversal

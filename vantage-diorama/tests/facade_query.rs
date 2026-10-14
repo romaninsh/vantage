@@ -296,7 +296,10 @@ async fn a_cache_read_orders_by_the_evaluator_not_the_master() -> Result<()> {
     let master = Vista::new("fruit", shell).map_shell(|inner| CaseInsensitive { inner });
     let dio = eager_dio(master).await?;
 
-    let at_master = dio.master().clone().with_order("name", SortDirection::Ascending)?;
+    let at_master = dio
+        .master()
+        .clone()
+        .with_order("name", SortDirection::Ascending)?;
     assert_eq!(names(&at_master.list_values().await?), ["apple", "Banana"]);
 
     let cached = dio.cached().with_order("name", SortDirection::Ascending)?;

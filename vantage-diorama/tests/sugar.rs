@@ -195,7 +195,11 @@ async fn a_seeded_sugared_scenery_gains_the_sugar_columns() -> Result<()> {
         .open()
         .await?;
     let name = sweet.record().and_then(|r| r.record.get("name").cloned());
-    assert_eq!(name, Some(cbor_text("beta")), "the seeded row shows at once");
+    assert_eq!(
+        name,
+        Some(cbor_text("beta")),
+        "the seeded row shows at once"
+    );
 
     wait_for_gen(&mut sweet.subscribe(), 0).await;
     let twice = sweet.record().and_then(|r| r.record.get("twice").cloned());

@@ -3,6 +3,8 @@
 ## 2.0.0 — 2026-10-14
 
 - Vista 2.0: breaking API changes; see the migration guide (phase 5).
+- GraphQL quicksearch reads the columns flagged `Searchable`, or, when none is, every text column
+  other than the id.
 
 ## 1.0.0 — 2026-10-11
 

@@ -129,7 +129,8 @@ impl TableView {
             &self.base,
             filters,
             self.search.read().unwrap().clone(),
-            self.cap().map_or(order.clone(), |cap| cap.load_order(order)),
+            self.cap()
+                .map_or(order.clone(), |cap| cap.load_order(order)),
         )
     }
 
@@ -228,7 +229,10 @@ impl TableView {
             .upgrade()
             .map(|dio| dio.residual.conditions.clone())
             .unwrap_or_default();
-        residual.into_iter().chain(self.base.iter().cloned()).collect()
+        residual
+            .into_iter()
+            .chain(self.base.iter().cloned())
+            .collect()
     }
 }
 

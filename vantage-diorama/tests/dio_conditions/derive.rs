@@ -20,10 +20,22 @@ fn players() -> (Vista, MockShell) {
         .with_id_column("id");
     let shell = MockShell::new()
         .with_metadata(metadata)
-        .with_record("p1", record(&[("id", "p1"), ("team", "red"), ("name", "Cara")]))
-        .with_record("p2", record(&[("id", "p2"), ("team", "blue"), ("name", "Abe")]))
-        .with_record("p3", record(&[("id", "p3"), ("team", "red"), ("name", "Dot")]))
-        .with_record("p4", record(&[("id", "p4"), ("team", "red"), ("name", "Ann")]));
+        .with_record(
+            "p1",
+            record(&[("id", "p1"), ("team", "red"), ("name", "Cara")]),
+        )
+        .with_record(
+            "p2",
+            record(&[("id", "p2"), ("team", "blue"), ("name", "Abe")]),
+        )
+        .with_record(
+            "p3",
+            record(&[("id", "p3"), ("team", "red"), ("name", "Dot")]),
+        )
+        .with_record(
+            "p4",
+            record(&[("id", "p4"), ("team", "red"), ("name", "Ann")]),
+        );
     (Vista::new("players", shell.clone()), shell)
 }
 
@@ -36,7 +48,9 @@ async fn ids(dio: &Dio, expected: usize) -> Vec<Option<String>> {
     let view = MockView::open(dio, 10).await;
     view.settle_until("narrowed rows", |v| v.loaded_rows() == expected)
         .await;
-    (0..view.row_count()).map(|i| view.col_at(i, "id")).collect()
+    (0..view.row_count())
+        .map(|i| view.col_at(i, "id"))
+        .collect()
 }
 
 #[tokio::test]
@@ -97,7 +111,10 @@ async fn derive_with_query_takes_a_held_query() -> Result<()> {
         .build()
         .await?;
 
-    assert_eq!(from_held.master().query().key(), chained.master().query().key());
+    assert_eq!(
+        from_held.master().query().key(),
+        chained.master().query().key()
+    );
     assert_eq!(ids(&from_held, 2).await, ids(&chained, 2).await);
     Ok(())
 }
@@ -185,5 +202,8 @@ async fn derive_narrows_by_every_clause() {
         .await
         .expect("derives");
 
-    assert_eq!(ids(&narrowed, 2).await, [Some("c".into()), Some("a".into())]);
+    assert_eq!(
+        ids(&narrowed, 2).await,
+        [Some("c".into()), Some("a".into())]
+    );
 }

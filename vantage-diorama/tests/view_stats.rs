@@ -140,7 +140,11 @@ async fn the_shown_range_is_the_second_viewport_argument() -> Result<()> {
     assert_eq!(scenery.view_stats().showing_count(), 2);
 
     scenery.set_viewport(0..10, 0..0);
-    assert_eq!(scenery.view_stats().showing, None, "an empty range shows none");
+    assert_eq!(
+        scenery.view_stats().showing,
+        None,
+        "an empty range shows none"
+    );
     Ok(())
 }
 

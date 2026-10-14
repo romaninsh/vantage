@@ -185,8 +185,8 @@ impl TableSource for PostgresDB {
     {
         let pattern = crate::like_pattern_str(search_value);
         let conditions: Vec<Expression<AnyPostgresType>> = table
-            .columns()
-            .values()
+            .search_columns()
+            .into_iter()
             // Imported implicit-reference columns exist only as projection
             // aliases — a WHERE on the dotted identifier errors at fetch time.
             .filter(|col| !table.is_imported_column(col.name()))

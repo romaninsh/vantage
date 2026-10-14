@@ -3,7 +3,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use vantage_aws::prelude::{CborValueExt, VantageResult};
-use vantage_diorama::prelude::*;
+use vantage_diorama::CacheTable;
 use vantage_vista::prelude::*;
 
 /// A key-value cache for downloaded file contents with **lazy admission**:
@@ -54,7 +54,7 @@ impl ContentsCache {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use vantage_diorama::MemoryCache;
+    use vantage_diorama::{CacheBackend, MemoryCache};
 
     use super::*;
 

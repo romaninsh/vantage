@@ -29,68 +29,68 @@ Not *what could be fetched from master* — that's the Lens's `on_refresh` /
 ## The three Scenery types
 
 Every UI widget you wire to Diorama binds to one of three Sceneries. They
-all live in [`vantage_diorama::scenery`](src/scenery/mod.rs).
+are exported from the crate root (`vantage_diorama::TableScenery`, …).
 
 - **`TableScenery`** — a grid or list. Spawned via `dio.table_scenery()…
   .open().await?`, returns `Arc<dyn TableScenery>`.
 - **`RecordScenery`** — a single row by id. Spawned via
-  `dio.record_scenery(id).await?` or `dio.record_scenery_with(id, record)` if
-  you already hold the row.
+  `dio.record_scenery(id).open().await?`, or `dio.record_scenery(id).seed(record).open().await?`
+  if you already hold the row.
 - **`ValueScenery`** — a single scalar (count, sum, custom aggregate). Spawned
-  via `dio.value_scenery()…open().await?`.
+  via `dio.value_scenery(Count::rows()).open().await?`.
 
 Each handle is `Arc<dyn …>`. Cheap to clone, cheap to drop. The internal
 reload task watches the Dio's event bus and bumps a watch channel; the last
 external handle dropping lets the task wind down (the Dio is held weakly).
 
 ```rust
-use vantage_diorama::scenery::{Aggregate, SortDir, TableScenery};
+use vantage_diorama::TableScenery;
+use vantage_diorama::aggregate::{Conditions, Count, Where};
+use vantage_vista::SortDirection;
 
 let table = dio.table_scenery()
-    .sort("price", SortDir::Asc)
+    .order("price", SortDirection::Ascending)
     .open()
     .await?;
 
-let sheet = dio.record_scenery("sku-1234".to_string()).await?;
+let sheet = dio.record_scenery("sku-1234").open().await?;
 
-let counter = dio.value_scenery()
-    .aggregate(Aggregate::CountWhere(vec![
-        ("unread".to_string(), true.into()),
-    ]))
+let counter = dio
+    .value_scenery(Where::new(Conditions::new().eq("unread", true), Count::rows()))
     .open()
     .await?;
 ```
 
 ## Sharing and lifecycle
 
-Opening a `TableScenery` is **cheap and deduplicated**. Two widgets that ask for
-the same `(conditions, sort, search)` get back the *same* `Arc` — one reactor,
-one cache window, one in-flight fetch — not two parallel copies:
+Opening a `TableScenery` is **cheap**. Two widgets that ask for the same
+`(conditions, order, search)` each get their own view, but the views read one
+shared set of rows — one reactor, one cache window, one in-flight fetch — not
+two parallel copies:
 
 ```rust
-let grid     = dio.table_scenery().sort("price", SortDir::Asc).open().await?;
-let elsewhere = dio.table_scenery().sort("price", SortDir::Asc).open().await?;
-// `grid` and `elsewhere` are the same object; edits and loads are shared.
-debug_assert!(std::sync::Arc::ptr_eq(&grid, &elsewhere));
+let grid     = dio.table_scenery().order("price", SortDirection::Ascending).open().await?;
+let elsewhere = dio.table_scenery().order("price", SortDirection::Ascending).open().await?;
+// Two handles, one set of rows: loads are shared, viewports are not.
 ```
 
 This is why you don't budget for sceneries: a form with eight dropdowns over the
 same lookup table, or the same record shown in a grid row and a detail sheet,
-costs one scenery, not eight.
+costs one set of rows, not eight.
 
-Lifecycle is **refcounted**. The handle is the refcount; when the last clone
-drops, the scenery's background tasks are aborted. Because the viewport task
+Lifecycle is **refcounted**. Each handle holds its view; when the last view over
+a set of rows drops, the rows' background tasks are aborted. Because the viewport task
 owns every in-flight fetch inline, **a closing grid stops pulling** — outstanding
 chunk loads (and two-pass detail hydration) are cancelled rather than running to
 completion against a view nobody is watching. There is nothing to call: just drop
 the handle (clear the field, close the tab) and the work unwinds.
 
 ```rust
-// One open window onto the registry — useful in tests and the diagnostics panel.
-assert_eq!(dio.live_table_scenery_count(), 1); // grid + elsewhere share one
+// One open window onto the live views — useful in tests and the diagnostics panel.
+assert_eq!(dio.diagnostics().await?.sceneries[0].shared_by, 2); // grid + elsewhere share rows
 drop(grid);
 drop(elsewhere);
-assert_eq!(dio.live_table_scenery_count(), 0); // released → evicted, no leak
+assert!(dio.diagnostics().await?.sceneries.is_empty()); // released, no leak
 ```
 
 ## Dropdowns & autocomplete reuse the grid mechanic
@@ -105,12 +105,12 @@ let countries = countries_dio.table_scenery().titles_only().open().await?;
 // AutocompleteField additionally forwards keystrokes:
 //   countries.set_search((!q.is_empty()).then(|| q));
 // and its visible band:
-//   countries.set_viewport(visible);
+//   countries.set_viewport(visible.clone(), visible);
 ```
 
 Everything you already know about grids applies: the visible band drives loading
-via `set_viewport`, typeahead drives `set_search`, and the dedup registry means a
-form with eight pickers over the same lookup table costs **one** scenery, not
+via `set_viewport`, typeahead drives `set_search`, and the shared rows mean a
+form with eight pickers over the same lookup table costs **one** set of rows, not
 eight (see *Sharing and lifecycle*).
 
 The one difference `.titles_only()` makes is on an **augmented (two-pass)**
@@ -159,7 +159,7 @@ the handle, owns a task that listens for changes, and calls `cx.notify()`.
 ```rust
 use std::sync::Arc;
 use gpui::{Context, Task};
-use vantage_diorama::scenery::TableScenery;
+use vantage_diorama::TableScenery;
 
 pub struct TableSceneryEntity {
     scenery: Arc<dyn TableScenery>,
@@ -198,7 +198,7 @@ different inner trait types.
 use std::ops::Range;
 use gpui::{App, Context, Window, IntoElement};
 use gpui_component::table::{Column, ColumnSort, TableDelegate, TableState};
-use vantage_diorama::scenery::SortDir;
+use vantage_vista::SortDirection;
 
 pub struct ProductsTable {
     entity: gpui::Entity<TableSceneryEntity>,
@@ -262,7 +262,7 @@ impl TableDelegate for ProductsTable {
         // Forward the visible band straight to the Scenery; the
         // viewport pipeline debounces, deduplicates, and dispatches
         // `on_load_chunk` for any uncached ranges.
-        self.entity.read(cx).scenery().set_viewport(range);
+        self.entity.read(cx).scenery().set_viewport(range.clone(), range);
     }
 
     fn perform_sort(
@@ -273,22 +273,21 @@ impl TableDelegate for ProductsTable {
         cx: &mut Context<TableState<Self>>,
     ) {
         let column = &self.columns[col_ix];
-        let dir = match sort {
-            ColumnSort::Ascending => SortDir::Asc,
-            ColumnSort::Descending => SortDir::Desc,
-            ColumnSort::Default => SortDir::Asc,
+        let order = match sort {
+            ColumnSort::Ascending => Some((column.field.clone(), SortDirection::Ascending)),
+            ColumnSort::Descending => Some((column.field.clone(), SortDirection::Descending)),
+            ColumnSort::Default => None,
         };
         self.entity
             .read(cx.entity().read(cx).app())
             .scenery()
-            .set_sort(Some(column.field.clone()), dir);
+            .set_order(order);
     }
 }
 ```
 
 `render_cell` and `skeleton_cell` are your business. `EnrichedRecord` exposes
-`record: Record<CborValue>` plus `status: RowStatus` plus a `dirty_fields`
-slot (reserved for form editing in a later stage — leave it `None` for now).
+`record: Record<CborValue>` plus `status: RowStatus`.
 
 ### What `has_more` and `load_more` mean
 
@@ -312,7 +311,7 @@ Inside paged mode there are two paging primitives, picked per master
 by inspecting `scenery.master_capabilities()`:
 
 - **Random-access masters** (`can_fetch_page: true`) — SQLite,
-  Postgres, CSV, REST with offset. `set_viewport(range)` is the only
+  Postgres, CSV, REST with offset. `set_viewport(loaded, shown)` is the only
   growth primitive needed; dragging the scrollbar to the bottom
   fetches the visible band directly. `load_more` should be a no-op
   here — calling `request_load_more` would march the cache forward
@@ -359,7 +358,7 @@ let lens = Arc::new(
         .build()?,
 );
 let dio = lens.make_dio(products_vista).await?;
-let scenery = dio.table_scenery().sort("name", SortDir::Asc).open().await?;
+let scenery = dio.table_scenery().order("name", SortDirection::Ascending).open().await?;
 ```
 
 If the cache has 10k or 100k rows that fit comfortably in memory (most
@@ -490,7 +489,7 @@ let scenery = dio.table_scenery().page_size(200).open().await?;
 The Scenery:
 
 - Holds a sparse `BTreeMap<usize, Arc<EnrichedRecord>>`.
-- Honours `set_viewport(range)` via a 50ms-debounced channel that
+- Honours `set_viewport(loaded, shown)` via a 50ms-debounced channel that
   coalesces rapid scroll bursts into a single chunk fetch.
 - Honours `request_load_more` to page the next `page_size` rows past
   the cache end — the right primitive for cursor-only masters.
@@ -509,7 +508,7 @@ largest workloads where even chunked windowing is overkill.
 ## Search and sort: in-memory today
 
 `scenery.set_search(Some("cake".to_string()))` and
-`scenery.set_sort(Some("price".to_string()), SortDir::Desc)` both work end-to-end:
+`scenery.set_order(Some(("price".to_string(), SortDirection::Descending)))` both work end-to-end:
 the Scenery's reload task wakes, re-filters/sorts the cached row set,
 publishes a new generation. The widget re-renders.
 
@@ -519,8 +518,8 @@ visible rows from cache **immediately** — the grid never blanks — then resta
 the detail pass for the visible window in the background, so augmentation
 resumes without the user having to scroll. A sort you've used before reorders
 straight from cache with no refetch; a brand-new sort lists its first page once.
-(Mutating the sort/search in place takes the scenery out of the dedup registry —
-it's now a bespoke view, not the shareable canonical one for the original query.)
+(Changing the order or search re-points only this view; other views over the
+original query keep their rows.)
 
 What's **not** happening yet: push-down to master or to the cache backend.
 The filter runs in-memory across the loaded `Vec<Arc<EnrichedRecord>>`.
@@ -555,7 +554,7 @@ impl Render for RecordSheetView {
             RecordStatus::NotFound => return Self::deleted_view(),
             RecordStatus::Error(e) => return Self::error_view(e),
             RecordStatus::Loading => return Self::loading_view(),
-            RecordStatus::Stale | RecordStatus::Fresh => {}
+            _ => {}
         }
         let Some(record) = entity.scenery().record() else {
             return Self::loading_view();
@@ -576,7 +575,7 @@ fn on_row_double_clicked(&mut self, row: &EnrichedRecord, cx: &mut Context<Self>
         .unwrap_or_default();
     let dio = self.dio.clone();
     cx.spawn(|this, mut cx| async move {
-        let scenery = dio.record_scenery(id).await?;
+        let scenery = dio.record_scenery(id).open().await?;
         cx.update(|cx| {
             let bridge = cx.new(|cx| RecordSceneryEntity::new(scenery, cx));
             this.update(cx, |this, cx| this.open_sheet(bridge, cx)).ok();
@@ -594,7 +593,7 @@ generation. The sheet re-renders.
 
 ### Cache miss on open
 
-`Dio::record_scenery(id).await?` reads the cache once. If the row isn't
+`Dio::record_scenery(id).open().await?` reads the cache once. If the row isn't
 there, status is `RecordStatus::NotFound` and `record()` is `None`. There's
 **no master fallback in v1** — the cache is the source of truth on the UI
 side. Two ways to seed:
@@ -651,16 +650,14 @@ match record.status {
 ## `ValueScenery` — counters and badges
 
 ```rust
-let unread = dio.value_scenery()
-    .aggregate(Aggregate::CountWhere(vec![
-        ("read".to_string(), false.into()),
-    ]))
+let unread = dio
+    .value_scenery(Where::new(Conditions::new().eq("read", false), Count::rows()))
     .open()
     .await?;
 ```
 
-The builder also exposes `.count()`, `.count_where(conds)`, `.sum(col)`,
-`.max(col)`, `.min(col)`, and `.custom(closure)`. `Sum`/`Max`/`Min`
+`value_scenery` takes any `vantage_diorama::aggregate::Aggregation`: `Count::rows()`,
+`Sum::of(col)`, `Max::of(col)`, `Min::of(col)`, `Where::new(conds, inner)`, or your own impl. `Sum`/`Max`/`Min`
 recognise CBOR integers only in v1; floats yield `Error("non-integer field")`
 through the status surface (last good value is preserved). For free-form
 aggregates use `.custom()` and return whatever CBOR you want.
@@ -752,7 +749,8 @@ detail sheet that auto-refreshes.
 ```rust
 use std::sync::Arc;
 use gpui::{Context, Entity, Window};
-use vantage_diorama::{Dio, scenery::{SortDir, TableScenery}};
+use vantage_diorama::{Dio, TableScenery};
+use vantage_vista::SortDirection;
 
 pub struct ProductsView {
     dio: Dio,
@@ -764,7 +762,7 @@ pub struct ProductsView {
 impl ProductsView {
     pub async fn new(dio: Dio, cx: &mut Context<Self>) -> Result<Self> {
         let scenery = dio.table_scenery()
-            .sort("name", SortDir::Asc)
+            .order("name", SortDirection::Ascending)
             .open()
             .await?;
 
@@ -776,7 +774,7 @@ impl ProductsView {
             let dio = dio_for_open.clone();
             let id = ev.id.clone();
             cx.spawn(|this, mut cx| async move {
-                let scenery = dio.record_scenery(id).await?;
+                let scenery = dio.record_scenery(id).open().await?;
                 cx.update(|cx| {
                     let bridge = cx.new(|cx| RecordSceneryEntity::new(scenery, cx));
                     this.update(cx, |this, cx| this.open_sheet(bridge, cx)).ok();

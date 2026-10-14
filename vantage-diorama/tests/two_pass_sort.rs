@@ -42,8 +42,7 @@ async fn set_order_orders_a_scenery_opened_without_one() {
 #[tokio::test]
 async fn set_order_replaces_an_existing_order() {
     let dio = bucket_dio().await;
-    let view =
-        MockView::open_with(&dio, 10, |b| b.order("kind", SortDirection::Ascending)).await;
+    let view = MockView::open_with(&dio, 10, |b| b.order("kind", SortDirection::Ascending)).await;
     view.settle_until("sorted by kind asc", |v| order(v) == vec!["o2", "o1", "o3"])
         .await;
 
@@ -76,8 +75,7 @@ async fn set_order_orders_by_an_augmented_column() {
 #[tokio::test]
 async fn clearing_the_order_restores_list_order() {
     let dio = bucket_dio().await;
-    let view =
-        MockView::open_with(&dio, 10, |b| b.order("kind", SortDirection::Descending)).await;
+    let view = MockView::open_with(&dio, 10, |b| b.order("kind", SortDirection::Descending)).await;
     view.settle_until("sorted", |v| order(v) == vec!["o1", "o3", "o2"])
         .await;
 

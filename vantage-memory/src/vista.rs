@@ -152,7 +152,7 @@ fn describe(c: &MemoryCondition) -> String {
         MemoryCondition::Cmp { path, op, value } => {
             format!("{path} {} {}", op.key_symbol(), render_value(value))
         }
-        MemoryCondition::Search(text) => format!("search {text:?}"),
+        MemoryCondition::Search { text, .. } => format!("search {text:?}"),
         MemoryCondition::And(all) => join(all, " AND "),
         MemoryCondition::Or(any) => join(any, " OR "),
         MemoryCondition::Not(inner) => format!("NOT {}", describe(inner)),

@@ -82,11 +82,17 @@ mod tests {
 
     #[test]
     fn an_operand_takes_its_column_family() {
-        assert_eq!(coerced(text("200"), "BIGINT"), CborValue::Integer(200.into()));
+        assert_eq!(
+            coerced(text("200"), "BIGINT"),
+            CborValue::Integer(200.into())
+        );
         assert_eq!(coerced(text("3.0"), "i64"), CborValue::Float(3.0));
         assert_eq!(coerced(text("2.5"), "f64"), CborValue::Float(2.5));
         assert_eq!(coerced(text("TRUE"), "boolean"), CborValue::Bool(true));
-        assert_eq!(coerced(CborValue::Integer(7.into()), "varchar(8)"), text("7"));
+        assert_eq!(
+            coerced(CborValue::Integer(7.into()), "varchar(8)"),
+            text("7")
+        );
     }
 
     /// Table-backed vistas declare `std::any::type_name` strings.
@@ -100,7 +106,10 @@ mod tests {
             coerced(text("200"), type_name::<Option<i64>>()),
             CborValue::Integer(200.into())
         );
-        assert_eq!(coerced(text("false"), type_name::<bool>()), CborValue::Bool(false));
+        assert_eq!(
+            coerced(text("false"), type_name::<bool>()),
+            CborValue::Bool(false)
+        );
     }
 
     #[test]

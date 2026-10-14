@@ -67,13 +67,6 @@ pub struct MongoTableShell {
     /// Handle for the active quicksearch condition, removed when the search
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
-    /// A vista wrapping a typed table (`from_table`) searches every column
-    /// when none is flagged `searchable`; a spec-built vista searches only its
-    /// `searchable` columns, so none flagged matches nothing. Traversal
-    /// targets are wrapped with `from_table` even when their table came from
-    /// a spec, so they search every column and run neither that spec's
-    /// `modify:` script nor its reference scripts.
-    pub(crate) search_unflagged_columns: bool,
     /// The factory's live-update override, handed to the factories that build
     /// traversal targets.
     pub(crate) change_streams: Option<bool>,
@@ -89,13 +82,11 @@ impl MongoTableShell {
         metadata: VistaMetadata,
         column_paths: IndexMap<String, Vec<String>>,
         resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
-        search_unflagged_columns: bool,
         change_streams: Option<bool>,
     ) -> Self {
         let declared = write::declared_kinds(&table, metadata.id_column.as_deref());
         Self {
             declared,
-            search_unflagged_columns,
             change_streams,
             table,
             capabilities,
@@ -259,7 +250,7 @@ impl TableShell for MongoTableShell {
     }
 
     /// BSON constructors (`oid`, `date`, `doc`) plus
-    /// `self.with_condition(#{…})`; see [`register_extensions`].
+    /// `self.with_condition(#{…})`; see `register_extensions`.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
         register_extensions(engine);

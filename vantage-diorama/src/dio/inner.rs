@@ -61,7 +61,7 @@ pub(crate) struct DioInner {
     /// the master has never heard of.
     pub(crate) augmented_columns: HashSet<String>,
     /// The rows every live table view reads, keyed by
-    /// [`shared_key`](shared_rows::shared_key): views of one query share one
+    /// [`shared_rows::shared_key`]: views of one query share one
     /// set of rows (one reactor, one fetch per window). `Weak`, so the rows
     /// drop, and their tasks abort, with the last view pointing at them.
     pub(crate) shared_rows: std::sync::Mutex<HashMap<String, std::sync::Weak<SharedRows>>>,
