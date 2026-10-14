@@ -75,7 +75,7 @@ async fn on_load_chunk_error(w: &mut DioramaWorld) {
 #[when(regex = r"^the table scenery viewport is set to (\d+)\.\.(\d+)$")]
 async fn set_viewport(w: &mut DioramaWorld, start: usize, end: usize) {
     let scenery = w.scenery.as_ref().expect("scenery not opened");
-    scenery.set_viewport(start..end);
+    scenery.set_viewport(start..end, 0..0);
     w.settle().await;
 }
 
@@ -133,7 +133,7 @@ async fn cache_already_contains(w: &mut DioramaWorld, start: usize, end: usize) 
             continue;
         }
         let events_before = w.snapshot_events().await.len();
-        scenery.set_viewport(cursor..chunk_end);
+        scenery.set_viewport(cursor..chunk_end, 0..0);
         // Drive the paused clock until the chunk callback completes
         // (ViewportChanged + RangeLoaded both observed).
         for _ in 0..4_000 {

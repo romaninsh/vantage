@@ -11,6 +11,12 @@
 //! `$RUNS_LOG`, so a test reads that file back to assert the exact sequence of
 //! `list`/`detail` calls the machinery issued.
 
+#[path = "two_pass/listing.rs"]
+mod listing;
+#[path = "two_pass/splice.rs"]
+mod splice;
+#[path = "two_pass/stamps.rs"]
+mod stamps;
 mod support;
 
 use std::path::Path;
@@ -21,9 +27,10 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_cmd::{Cmd, CmdSpec};
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Cache, Dio, Lens, Loader, RowStatus, SortDir, TableScenery};
+use vantage_diorama::{Cache, Dio, Lens, Loader, RowStatus, TableScenery};
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
+use vantage_vista::{Condition, FilterOp, SortDirection};
 
 const ENTITY: &str = "gh-workflow-runs";
 
@@ -183,7 +190,7 @@ async fn detail_pass_hydrates_visible_rows_once_in_order() {
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
 
     eventually("rows hydrated", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
@@ -207,14 +214,14 @@ async fn detail_pass_hydrates_visible_rows_once_in_order() {
     assert_eq!(details, vec!["detail id=r0", "detail id=r1"]);
 
     // Re-entering the same viewport must not re-hydrate.
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("debounce settles", || true).await;
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(count_with_prefix(&log, "detail"), 2, "no re-hydration");
 }
 
-/// Regression (soft-refresh sort): changing the sort **restarts the detail
-/// pass for the visible window without a scroll**. Before the fix, `set_sort`
+/// Regression (soft-refresh sort): changing the order **restarts the detail
+/// pass for the visible window without a scroll**. Before the fix, `set_order`
 /// dropped a two-pass scenery onto the single-pass reseed path, which never
 /// rebuilt the ordered index nor re-issued the viewport — so augmentation
 /// silently stopped until the user happened to scroll.
@@ -226,7 +233,7 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
     let dio = open_dio(&lens, &make_cmd(&log)).await;
 
     let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     eventually("initial hydration", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
             && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
@@ -236,10 +243,10 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
 
     // Change the sort in place — NO new set_viewport. The machinery must rebuild
     // the ordered index for the new variant (one list page) and restart the
-    // detail pass on its own. Before the fix, set_sort fell to the single-pass
+    // detail pass on its own. Before the fix, set_order fell to the single-pass
     // reseed-from-cache path: it never listed the new variant nor re-issued the
     // viewport, so `list` stayed flat and augmentation was dead.
-    scenery.set_sort(Some("branch".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("branch".to_string(), SortDirection::Ascending)));
 
     // The fixture's branches are r0=main, r1=dev, so ascending by `branch` puts
     // r1 first. Wait on the resulting *order*, not merely on "row 0 is Fresh":
@@ -283,7 +290,7 @@ async fn sort_change_restarts_augmentation_without_scrolling() {
     // call is issued, and the grid never blanks.
     let list_after_sort = count_with_prefix(&log, "list");
     let detail_after_sort = count_with_prefix(&log, "detail");
-    scenery.set_sort(None, SortDir::Asc);
+    scenery.set_order(None);
     // Back to the index's own order, so r0 leads again — waiting on the order
     // rather than the status, for the same reason as above.
     eventually("revert reseeds from cache", || {
@@ -324,7 +331,7 @@ async fn titles_only_picker_skips_detail_hydration() {
         .await
         .unwrap();
     support::wait_listed(&picker).await;
-    picker.set_viewport(0..2);
+    picker.set_viewport(0..2, 0..0);
     // Let the viewport debounce + (suppressed) detail path run.
     tokio::time::sleep(Duration::from_millis(30)).await;
 
@@ -364,7 +371,7 @@ async fn titles_only_picker_skips_detail_hydration() {
         2
     );
 
-    grid.set_viewport(0..2);
+    grid.set_viewport(0..2, 0..0);
     eventually("grid hydrates", || {
         matches!(status_of(&grid, 0), Some(RowStatus::Fresh))
     })
@@ -375,9 +382,9 @@ async fn titles_only_picker_skips_detail_hydration() {
     );
 }
 
-/// `dio.diagnostics()` reports every open scenery with its refcount and
-/// hydration breakdown, the cache size, and dedup-aware sharing — and empties
-/// as handles are released.
+/// `dio.diagnostics()` reports every open view with how many views share its
+/// rows and their hydration breakdown, and the cache size — and empties as
+/// handles are released.
 #[cfg(feature = "diagnostics")]
 #[tokio::test]
 async fn diagnostics_report_sceneries_refcount_and_hydration() -> vantage_core::Result<()> {
@@ -406,7 +413,7 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() -> vantage_core::
     let d = dio.diagnostics().await?;
     assert!(!d.live, "built without DioBuilder::live");
     assert_eq!(d.sceneries.len(), 1);
-    assert_eq!(d.sceneries[0].refcount, 1);
+    assert_eq!(d.sceneries[0].shared_by, 1);
     assert!(
         d.sceneries[0].status.incomplete >= 2,
         "picker rows are Incomplete: {:?}",
@@ -414,7 +421,8 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() -> vantage_core::
     );
     assert_eq!(d.sceneries[0].status.fresh, 0);
 
-    // Dedup: re-opening the same picker query shares it → refcount 2.
+    // Re-opening the same picker query is a second view over the same rows:
+    // two entries, each shared by two.
     let picker2 = dio
         .table_scenery()
         .titles_only()
@@ -422,11 +430,13 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() -> vantage_core::
         .open()
         .await
         .unwrap();
-    assert_eq!(dio.diagnostics().await?.sceneries[0].refcount, 2);
+    let d = dio.diagnostics().await?;
+    assert_eq!(d.sceneries.len(), 2);
+    assert!(d.sceneries.iter().all(|s| s.shared_by == 2), "{:?}", d.sceneries);
 
-    // A full grid is a distinct scenery that hydrates → Fresh rows.
+    // A full grid reads distinct rows that hydrate → Fresh rows.
     let grid = support::open_listed(&dio, 2).await;
-    grid.set_viewport(0..2);
+    grid.set_viewport(0..2, 0..0);
     eventually("grid hydrates both rows", || {
         matches!(status_of(&grid, 0), Some(RowStatus::Fresh))
             && matches!(status_of(&grid, 1), Some(RowStatus::Fresh))
@@ -434,7 +444,7 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() -> vantage_core::
     .await;
 
     let d = dio.diagnostics().await?;
-    assert_eq!(d.sceneries.len(), 2, "picker + grid");
+    assert_eq!(d.sceneries.len(), 3, "two pickers + grid");
     assert!(d.augmented_rows() >= 2, "grid contributes Fresh rows");
     assert!(d.cache_rows >= 2);
 
@@ -503,7 +513,7 @@ async fn shared_detail_across_filter_variants() {
     eventually("page2", || all.estimated_total() == Some(4)).await;
     all.request_load_more();
     eventually("page3", || all.estimated_total() == Some(5)).await;
-    all.set_viewport(0..5);
+    all.set_viewport(0..5, 0..0);
     eventually("all hydrated", || {
         (0..5).all(|i| matches!(status_of(&all, i), Some(RowStatus::Fresh)))
     })
@@ -515,16 +525,17 @@ async fn shared_detail_across_filter_variants() {
     );
     let lists_after_unfiltered = count_with_prefix(&log, "list");
 
-    // Filtered to branch=main: a new index (list runs for the main variant),
-    // but its rows are already Fresh in the shared detail cache → no detail.
+    // Filtered to branch=main: a new index (list runs for the main variant:
+    // the paged listing above is no whole copy), but its rows are already
+    // Fresh in the shared detail cache → no detail.
     let main = dio
         .table_scenery()
-        .where_eq("branch", "main")
+        .filter(Condition::new("branch", FilterOp::Eq, "main"))
         .page_size(2)
         .open()
         .await
         .unwrap();
-    main.set_viewport(0..2);
+    main.set_viewport(0..2, 0..0);
     eventually("filtered rows present", || status_of(&main, 0).is_some()).await;
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(
@@ -541,12 +552,18 @@ async fn shared_detail_across_filter_variants() {
         count_with_prefix(&log, "list") > lists_after_unfiltered,
         "filtered variant builds its own index"
     );
+    assert!(main.row_count() > 0);
+    assert!(
+        (0..main.row_count()).all(|i| branch_of(&main, i).as_deref() == Some("main")),
+        "the rows are refined to main: {:?}",
+        (0..main.row_count()).map(|i| branch_of(&main, i)).collect::<Vec<_>>()
+    );
 
     // Switch back to unfiltered: same index_key → cached index reused, so
     // opening issues zero list calls and zero detail calls.
     let lists_before_switchback = count_with_prefix(&log, "list");
     let again = dio.table_scenery().page_size(2).open().await.unwrap();
-    again.set_viewport(0..5);
+    again.set_viewport(0..5, 0..0);
     eventually("switchback rows present", || status_of(&again, 4).is_some()).await;
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(again.estimated_total(), Some(5), "reused index is complete");
@@ -575,7 +592,7 @@ async fn reopen_resumes_without_refetching_complete_rows() {
         let lens = two_pass_lens(&cache_dir);
         let dio = open_dio(&lens, &make_cmd(&log)).await;
         let scenery = support::open_listed(&dio, 2).await;
-        scenery.set_viewport(0..2);
+        scenery.set_viewport(0..2, 0..0);
         eventually("run1 hydrated", || {
             matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
                 && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
@@ -595,7 +612,7 @@ async fn reopen_resumes_without_refetching_complete_rows() {
     assert!(matches!(status_of(&scenery2, 0), Some(RowStatus::Fresh)));
     assert_eq!(detail_of(&scenery2, 0).as_deref(), Some("full-r0"));
 
-    scenery2.set_viewport(0..2);
+    scenery2.set_viewport(0..2, 0..0);
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(
         count_with_prefix(&log2, "detail"),
@@ -618,7 +635,7 @@ async fn detail_failure_marks_only_that_row() {
     let lens = two_pass_lens(tmp.path());
     let dio = two_pass_dio(&lens, &make_cmd(&log), &detail_cmd).await;
     let scenery = support::open_listed(&dio, 2).await;
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
 
     eventually("r0 fresh, r1 failed", || {
         matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))

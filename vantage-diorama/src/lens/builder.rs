@@ -7,6 +7,7 @@ use tokio::runtime::Handle;
 use vantage_core::{Result, error};
 
 use super::callbacks::{LensCallbacks, WriteFn, boxed_writer};
+use super::registry::DioRegistry;
 use super::{Cache, Lens, Loader, LoaderCx, Refresher, Tuning};
 use crate::ops::{ChangeFlash, FlashOutcome};
 
@@ -128,6 +129,7 @@ impl LensBuilder {
             tuning: self.tuning,
             runtime,
             debug: self.debug,
+            dios: DioRegistry::default(),
         }))
     }
 }

@@ -63,8 +63,8 @@ async fn dio_base_conditions_reach_every_path() -> Result<()> {
         failures.push(format!("value scenery count must be 2; is {count:?}"));
     }
 
-    let outside = dio.record_scenery("b").await?;
-    if !matches!(outside.status(), RecordStatus::NotFound) || outside.record().is_some() {
+    let outside = dio.record_scenery("b").open().await?;
+    if outside.status() != RecordStatus::NotFound || outside.record().is_some() {
         failures.push(format!(
             "record_scenery(\"b\") must be NotFound; is {:?}",
             outside.status()

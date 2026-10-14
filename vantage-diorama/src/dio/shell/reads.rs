@@ -218,7 +218,9 @@ impl DioShell {
     ///
     /// Sorted by `local`'s order, or, when the handle has none, by the Dio's
     /// own: the residual's, which the master never applied, or on a cache
-    /// read the Dio's whole query's, since the cache keeps no order.
+    /// read the Dio's whole query's, since the cache keeps no order. The
+    /// sort is the evaluator's, which can differ from the master's collation
+    /// (see [`Dio::cached`](crate::Dio::cached)).
     fn refine(&self, rows: Rows, local: &VistaQuery, from_master: bool) -> Result<Rows> {
         let mut kept = Vec::with_capacity(rows.len());
         for (id, row) in rows {

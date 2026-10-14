@@ -4,7 +4,7 @@
 //! loader any table under it might need — `Loader::paged(..).or_eager(..)`:
 //! an eager start to copy a whole set, a paged loader to window a pageable
 //! one. Which applies is a property of the master, decided per scenery at open
-//! (`builder::pages_lazily`) and recorded as `TableSceneryState::paged`.
+//! (`builder::open::pages_lazily`) and recorded as `SharedRows::paged`.
 //!
 //! The shape that broke: an eager scenery opens over a cold cache, shows
 //! nothing (correctly — there is nothing yet), and the detached eager start

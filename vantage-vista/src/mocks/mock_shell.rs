@@ -9,19 +9,21 @@ use vantage_types::Record;
 
 use crate::{
     capabilities::{Capability, VistaCapabilities},
-    eval::compare_rows,
     filter::FilterOp,
     metadata::VistaMetadata,
     query::VistaQuery,
     reference::Reference,
 };
 
+mod calls;
 mod get_only;
 mod refs;
 mod store;
 mod table_shell;
 #[cfg(test)]
 mod tests;
+
+pub use calls::MockCalls;
 
 type Rec = Record<CborValue>;
 
@@ -40,6 +42,8 @@ pub struct MockShell {
     data: Arc<Mutex<IndexMap<String, Rec>>>,
     next_auto_id: Arc<Mutex<i64>>,
     fail_reads: Arc<AtomicBool>,
+    /// See [`Self::calls`].
+    calls: Arc<calls::Counters>,
     /// Conditions, search and order; never a native condition, which the
     /// mock refuses.
     query: VistaQuery,
@@ -63,6 +67,7 @@ impl MockShell {
             data: Arc::default(),
             next_auto_id: Arc::new(Mutex::new(1)),
             fail_reads: Arc::default(),
+            calls: Arc::default(),
             query: VistaQuery::default(),
             capabilities: [
                 Capability::Insert,
@@ -192,10 +197,9 @@ impl MockShell {
                 rows.push((id, row));
             }
         }
-        if let Some((column, dir)) = &self.query.order {
-            let metadata = &self.metadata;
+        if self.query.order.is_some() {
             rows.sort_by(|(a_id, a), (b_id, b)| {
-                compare_rows(column, *dir, metadata, (a_id, a), (b_id, b))
+                self.query.cmp_rows((a_id, a), (b_id, b), &self.metadata)
             });
         }
         Ok(rows)

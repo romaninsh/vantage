@@ -2,7 +2,7 @@ use ciborium::Value as CborValue;
 use vantage_dataset::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 
-use super::MockShell;
+use super::{MockCalls, MockShell};
 use crate::{
     Capability, Column, ColumnFlag, FilterOp, JoinKey, Reference, Vista, VistaCapabilities,
     VistaMetadata,
@@ -76,6 +76,22 @@ async fn reads_return_seeded_rows() {
     let page = vista.fetch_window(1, 1).await.unwrap();
     assert_eq!(page.rows[0].0, "2");
     assert_eq!(page.total, Some(3));
+}
+
+#[tokio::test]
+async fn calls_are_counted_across_clones() {
+    let original = three_users();
+    let vista = user_vista(original.clone());
+    vista.count().await.unwrap();
+    vista.fetch_window(0, 1).await.unwrap();
+    assert_eq!(
+        original.calls(),
+        MockCalls {
+            count: 1,
+            fetch_window: 1,
+            ..MockCalls::default()
+        }
+    );
 }
 
 #[tokio::test]

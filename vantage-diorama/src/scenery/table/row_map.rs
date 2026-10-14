@@ -19,7 +19,7 @@ type Row = Arc<EnrichedRecord>;
 ///
 /// Reads go through `Deref`; every write goes through a method here so the
 /// counts can't drift from the map.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct RowMap {
     rows: BTreeMap<usize, Row>,
     summary: RowStatusSummary,
@@ -59,6 +59,22 @@ impl RowMap {
         previous
     }
 
+    /// Put `row` at `idx`, moving every row at `idx` or past it up by one.
+    pub(crate) fn insert_shift(&mut self, idx: usize, row: Row) {
+        let moved = self.rows.split_off(&idx);
+        tally(&mut self.summary, &row.status, 1);
+        self.rows.insert(idx, row);
+        self.rows.extend(moved.into_iter().map(|(at, row)| (at + 1, row)));
+    }
+
+    /// Take the row at `idx` out, moving every row past it down by one.
+    pub(crate) fn remove_shift(&mut self, idx: usize) -> Option<Row> {
+        let moved = self.rows.split_off(&(idx + 1));
+        let removed = self.remove(&idx);
+        self.rows.extend(moved.into_iter().map(|(at, row)| (at - 1, row)));
+        removed
+    }
+
     /// Drop every row at `len` or past it, returning them.
     pub(crate) fn truncate(&mut self, len: usize) -> BTreeMap<usize, Row> {
         let dropped = self.rows.split_off(&len);
@@ -84,16 +100,14 @@ impl Deref for RowMap {
 
 /// Add (`delta = 1`) or remove (`delta = -1`) one row of `status`.
 fn tally(summary: &mut RowStatusSummary, status: &RowStatus, delta: isize) {
+    summary.loaded = summary.loaded.wrapping_add_signed(delta);
     let bucket = match status {
-        RowStatus::Fresh => Some(&mut summary.fresh),
-        RowStatus::Incomplete => Some(&mut summary.incomplete),
-        RowStatus::PendingWrite => Some(&mut summary.pending_write),
-        RowStatus::LoadFailed { .. } | RowStatus::WriteFailed { .. } => Some(&mut summary.failed),
-        _ => None,
+        RowStatus::Fresh => &mut summary.fresh,
+        RowStatus::Incomplete => &mut summary.incomplete,
+        RowStatus::PendingWrite => &mut summary.pending_write,
+        RowStatus::LoadFailed { .. } | RowStatus::WriteFailed { .. } => &mut summary.failed,
     };
-    for count in std::iter::once(&mut summary.loaded).chain(bucket) {
-        *count = count.wrapping_add_signed(delta);
-    }
+    *bucket = bucket.wrapping_add_signed(delta);
 }
 
 #[cfg(test)]

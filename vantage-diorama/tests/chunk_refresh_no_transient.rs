@@ -18,9 +18,9 @@ use std::sync::{Arc, Mutex, Weak};
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Cache, Lens, Loader, SortDir, TableScenery};
+use vantage_diorama::{Cache, Lens, Loader, TableScenery};
 use vantage_types::Record;
-use vantage_vista::Vista;
+use vantage_vista::{SortDirection, Vista};
 
 mod support;
 use support::chunk::{Backend, col_at, master as master_cols, wait_for_gen};
@@ -109,13 +109,13 @@ async fn refresh_never_exposes_master_order_midload() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
 
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     wait_for_gen(&mut gen_rx, g0).await;
 
     let loads_before_sort = load_count.load(Ordering::SeqCst);
     observed.lock().unwrap().clear();
     let g1 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     wait_for_gen(&mut gen_rx, g1).await;
     assert_eq!(value(&scenery, 0).as_deref(), Some("v1"), "sorted top");
 

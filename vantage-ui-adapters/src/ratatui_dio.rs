@@ -137,7 +137,10 @@ impl SceneryTable {
             // Hydrate a small band around the cursor — the rows the user is
             // actually looking at, not the whole screen.
             let band_start = selected.saturating_sub(HYDRATE_BAND / 2);
-            scenery.set_viewport(band_start..(band_start + HYDRATE_BAND).min(total));
+            scenery.set_viewport(
+                band_start..(band_start + HYDRATE_BAND).min(total),
+                offset..(offset + height).min(total),
+            );
 
             tokio::select! {
                 // recv() returning None means the channel closed (generation
@@ -162,7 +165,7 @@ impl SceneryTable {
                         KeyCode::Home => 0,
                         KeyCode::End => usize::MAX,
                         KeyCode::Char('r') => {
-                            scenery.request_refresh();
+                            scenery.refresh_source();
                             continue;
                         }
                         _ => continue,

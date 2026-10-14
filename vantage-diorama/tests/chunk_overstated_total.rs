@@ -19,8 +19,9 @@ use std::sync::{Arc, Mutex};
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Lens, Loader, SortDir};
+use vantage_diorama::{Lens, Loader};
 use vantage_types::Record;
+use vantage_vista::SortDirection;
 
 mod support;
 use support::chunk::{master as master_cols, redb_lens, settle};
@@ -120,14 +121,14 @@ async fn overstated_total_does_not_loop() -> Result<()> {
     let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
 
-    scenery.set_viewport(0..STATED);
+    scenery.set_viewport(0..STATED, 0..0);
     wait_for_row(&scenery, SERVED - 1).await;
-    scenery.set_viewport(0..STATED);
+    scenery.set_viewport(0..STATED, 0..0);
     wait_for_row_count(&scenery, SERVED).await;
     let settled = calls.lock().unwrap().len();
 
     for _ in 0..4 {
-        scenery.set_viewport(0..STATED);
+        scenery.set_viewport(0..STATED, 0..0);
         tokio::time::sleep(DEBOUNCE_MARGIN).await;
     }
     let after = calls.lock().unwrap().clone();
@@ -155,11 +156,11 @@ async fn a_sorted_view_over_a_lying_source_does_not_re_fetch_the_tail() -> Resul
     // A client-side sort makes the visible map a projection of the cache — the
     // shape this bites in, because duplicate ids collapse there and the slots
     // would stay empty however many rows came back.
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     settle().await;
 
     // Look at the whole set the source claims exists.
-    scenery.set_viewport(0..STATED);
+    scenery.set_viewport(0..STATED, 0..0);
 
     // Wait for the outcome, not for a duration. A fixed sleep here is a speed
     // assertion — and the opening fetch writes a row per redb transaction, so
@@ -173,7 +174,7 @@ async fn a_sorted_view_over_a_lying_source_does_not_re_fetch_the_tail() -> Resul
     // debounce plus a fetch — not the quarter-second `settle` uses to be safe
     // about arrivals, which is the wrong budget for observing nothing.
     for _ in 0..4 {
-        scenery.set_viewport(0..STATED);
+        scenery.set_viewport(0..STATED, 0..0);
         tokio::time::sleep(DEBOUNCE_MARGIN).await;
     }
     let after = calls.lock().unwrap().clone();
@@ -268,7 +269,7 @@ async fn page_capped_source_still_pages() -> Result<()> {
     let dio = lens.dio(master_cols(&[("v", "String")])).build().await?;
     let scenery = dio.table_scenery().open().await?;
 
-    scenery.set_viewport(0..CAP);
+    scenery.set_viewport(0..CAP, 0..0);
     settle().await;
     assert_eq!(
         scenery.row_count(),
@@ -281,7 +282,7 @@ async fn page_capped_source_still_pages() -> Result<()> {
     // the thing being asserted, and they announce themselves.
     for start in (0..TOTAL).step_by(CAP) {
         let end = (start + CAP).min(TOTAL);
-        scenery.set_viewport(start..end);
+        scenery.set_viewport(start..end, 0..0);
         wait_for_row(&scenery, end - 1).await;
     }
     assert_eq!(scenery.row_count(), TOTAL, "the set did not shrink");

@@ -45,7 +45,7 @@ async fn settled_johns(
         .with_query(&crate::support::cond("name", FilterOp::Eq, "John"))
         .await?;
     let view = johns.table_scenery().page_size(20).open().await?;
-    view.set_viewport(0..20);
+    view.set_viewport(0..20, 0..0);
     assert_eq!(settle(&view, only_johns).await, john_ids());
     // Let a stray re-read land before counting.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;

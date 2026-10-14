@@ -79,7 +79,7 @@ pub async fn source_with_debug(shell: MockShell, ds_name: &str) -> Dio {
 
 /// A debug-tapped source whose refresher always fails.
 ///
-/// `AggregateValue::request_refresh` always calls the source's `refresh()`
+/// `AggregateValue::refresh_source` always calls the source's `refresh()`
 /// *and then* nudges the engine loop directly — the nudge is there for a
 /// source with no refresh route, so the value doesn't just sit inert. A
 /// working refresh makes those two signals arrive together (the

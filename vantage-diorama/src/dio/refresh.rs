@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet as _;
@@ -62,7 +62,9 @@ impl Dio {
             (refresher.refresh)(cx.clone()).await?;
             reconciled = cx.reconciled();
         }
-        self.announce_refresh(reconciled).await;
+        // The augmentation refresh pass reconciles the whole set with the
+        // master; a refresher alone may have written any part of it.
+        self.announce_refresh(reconciled, augmented).await;
         Ok(())
     }
 
@@ -85,7 +87,7 @@ impl Dio {
         if let Some(start) = loader.eager.as_ref() {
             let cx = LoaderCx::new(self.clone());
             start(cx.clone()).await?;
-            self.announce_refresh(cx.reconciled()).await;
+            self.announce_refresh(cx.reconciled(), true).await;
             return Ok(());
         }
         let mark = inner.pending_flashes.mark();
@@ -93,13 +95,19 @@ impl Dio {
         self.reconcile_since(&mark, snapshot).await
     }
 
-    /// Record the refresh time and publish `DatasetChanged`, unless the
-    /// callback already did both by reconciling.
-    async fn announce_refresh(&self, reconciled: bool) {
-        if !reconciled {
-            self.inner.stamp_refreshed().await;
-            self.notify_dataset_changed();
+    /// Record the refresh time, and the whole copy when the refresh wrote
+    /// one (`whole`), then publish `DatasetChanged`, unless the callback
+    /// already did all of it by reconciling.
+    async fn announce_refresh(&self, reconciled: bool, whole: bool) {
+        if reconciled {
+            return;
         }
+        if whole {
+            self.inner.stamp_whole().await;
+        } else {
+            self.inner.stamp_refreshed().await;
+        }
+        self.notify_dataset_changed();
     }
 }
 
@@ -127,13 +135,7 @@ impl DioInner {
         if !self.seed_complete.load(Ordering::SeqCst) {
             return;
         }
-        let Some(max_age) = self
-            .lens
-            .callbacks
-            .refresher
-            .as_ref()
-            .and_then(|r| r.max_age)
-        else {
+        let Some(max_age) = self.max_age() else {
             return;
         };
         if self.stale_check_pending.swap(true, Ordering::SeqCst) {
@@ -144,9 +146,7 @@ impl DioInner {
         };
         self.lens.runtime.spawn(async move {
             let stale = match dio.inner.cache.meta_refreshed_at().await {
-                Ok(Some(at)) => SystemTime::now()
-                    .duration_since(at)
-                    .is_ok_and(|age| age > max_age),
+                Ok(Some(at)) => outlived(at, max_age),
                 Ok(None) => true,
                 Err(e) => {
                     tracing::warn!(
@@ -163,4 +163,21 @@ impl DioInner {
             dio.inner.stale_check_pending.store(false, Ordering::SeqCst);
         });
     }
+
+    /// The refresher's `max_age`, when the Lens has a refresher with one.
+    pub(crate) fn max_age(&self) -> Option<Duration> {
+        self.lens
+            .callbacks
+            .refresher
+            .as_ref()
+            .and_then(|r| r.max_age)
+    }
+}
+
+/// Whether a refresh recorded at `at` is older than `max_age`. A stamp in the
+/// future (the clock stepped back) counts as young.
+pub(crate) fn outlived(at: SystemTime, max_age: Duration) -> bool {
+    SystemTime::now()
+        .duration_since(at)
+        .is_ok_and(|age| age > max_age)
 }

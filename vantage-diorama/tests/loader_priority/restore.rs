@@ -28,14 +28,14 @@ async fn a_cancelled_refresh_over_unchanged_rows_keeps_them() -> Result<()> {
     // identical-fresh-record dedup in `write_chunk_row` answers `Skipped`
     // for them (they were already bound, unchanged, by call 1) — then it
     // blocks on the gate.
-    scenery.request_refresh();
+    scenery.refresh_source();
     wait_until("the refresh to start", || gated.calls_len() >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 0..10);
 
     // Supersede it with a different range before it finishes: call 2 is
     // cancelled. Its early-pushed rows were never *bound*, so the undo must
     // not touch them.
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     wait_until("the superseding load to start", || gated.calls_len() >= 3).await;
     assert_eq!(gated.calls.lock().unwrap()[2], 20..30);
 
@@ -67,7 +67,7 @@ async fn a_cancelled_refresh_over_a_changed_row_restores_the_old_one() -> Result
     // its early push — row 3 is genuinely re-bound, with the old record
     // handed back as what it replaced.
     backend.lock().unwrap()[3].1 = rec("v3-new");
-    scenery.request_refresh();
+    scenery.refresh_source();
     wait_until("the refresh to start", || gated.calls_len() >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 0..10);
     wait_until("row 3 to take the new value", || {
@@ -137,7 +137,7 @@ async fn restore_re_registers_numeric_ids() -> Result<()> {
     changed.insert("id".to_string(), CborValue::Integer(2.into()));
     changed.insert("v".to_string(), CborValue::Text("v2-new".into()));
     backend.lock().unwrap()[2].1 = changed;
-    scenery.request_refresh();
+    scenery.refresh_source();
     wait_until("the refresh to start", || gated.calls_len() >= 2).await;
     wait_until("row 2 to take the new value", || {
         col_at(&scenery, 2, "v").as_deref() == Some("v2-new")

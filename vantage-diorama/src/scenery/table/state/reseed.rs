@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
@@ -9,10 +10,10 @@ use vantage_types::Record;
 use crate::scenery::enriched_record::EnrichedRecord;
 
 use super::super::plan::{Serving, admitted_by_view};
-use super::TableSceneryState;
+use super::SharedRows;
 use crate::scenery::table::LoadFailure;
 
-impl TableSceneryState {
+impl SharedRows {
     /// Replace the sparse map from a freshly-listed cache snapshot, with the
     /// whole view query and the Dio's residual evaluated over it.
     ///
@@ -88,6 +89,7 @@ impl TableSceneryState {
             return Ok(());
         }
         if self.is_chunk_loaded() && query.order.is_some() && !holds_everything {
+            self.placed.store(false, Ordering::SeqCst);
             self.rows.write().unwrap().clear();
             self.id_to_idx.write().unwrap().clear();
             tracing::debug!(
@@ -133,6 +135,7 @@ impl TableSceneryState {
         }
         *self.rows.write().unwrap() = super::super::row_map::RowMap::from_map(rows);
         *self.id_to_idx.write().unwrap() = id_to_idx;
+        self.placed.store(true, Ordering::SeqCst);
         Ok(())
     }
 }

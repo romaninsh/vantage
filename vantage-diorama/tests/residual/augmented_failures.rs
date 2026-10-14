@@ -8,7 +8,7 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_diorama::{Clause, LoadState, TableScenery};
-use vantage_vista::{FilterOp, Vista};
+use vantage_vista::{Condition, FilterOp, Vista};
 
 use super::augmented_views::{name_of, settle, settle_as};
 use super::big_bucket::{DetailProbe, john_ids, master_shell, probed_dio};
@@ -34,7 +34,7 @@ async fn an_eq_view_leaves_a_failed_row_out_and_reads_partial() -> Result<()> {
         .with_query(&cond("name", FilterOp::Eq, "John"))
         .await?;
     let view = johns.table_scenery().page_size(20).open().await?;
-    view.set_viewport(0..20);
+    view.set_viewport(0..20, 0..0);
     let settled = settle_as(&view, LoadState::Partial, never_failing).await;
     let want: Vec<String> = john_ids().into_iter().filter(|id| id != FAILING).collect();
     assert_eq!(settled, want);
@@ -48,7 +48,7 @@ async fn a_ne_view_never_admits_a_failed_row_and_reads_partial() -> Result<()> {
         .with_query(&cond("name", FilterOp::Ne, "John"))
         .await?;
     let view = others.table_scenery().page_size(20).open().await?;
-    view.set_viewport(0..20);
+    view.set_viewport(0..20, 0..0);
     let settled = settle_as(&view, LoadState::Partial, never_failing).await;
     assert_eq!(settled.len(), 180, "every Jane; the failed John isn't one");
     Ok(())
@@ -71,7 +71,7 @@ async fn a_lift_all_picker_with_a_condition_fails() -> Result<()> {
     let view = dio
         .table_scenery()
         .titles_only()
-        .where_eq("kind", "red")
+        .filter(Condition::new("kind", FilterOp::Eq, "red"))
         .open()
         .await?;
     wait_listed(&view).await;
@@ -97,7 +97,7 @@ async fn a_lift_all_refined_view_sweeps_before_it_settles() -> Result<()> {
     let view = dio
         .table_scenery()
         .page_size(20)
-        .where_eq("kind", "red")
+        .filter(Condition::new("kind", FilterOp::Eq, "red"))
         .open()
         .await?;
     let settled = settle(&view, |scenery| {

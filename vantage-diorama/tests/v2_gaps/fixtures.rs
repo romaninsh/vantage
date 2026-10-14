@@ -1,7 +1,6 @@
 //! Fixtures shared by the gap tests.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use vantage_diorama::TableScenery;
 
@@ -16,18 +15,6 @@ pub fn scenery_ids(scenery: &Arc<dyn TableScenery>) -> Vec<String> {
         .collect();
     ids.sort();
     ids
-}
-
-/// Poll `holds` every 5ms until it is true or `within` elapses. Returns
-/// whether it came true. Bounds a wait; it is not a speed assertion.
-pub async fn eventually(within: Duration, holds: impl Fn() -> bool) -> bool {
-    tokio::time::timeout(within, async {
-        while !holds() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await
-    .is_ok()
 }
 
 /// Panic with every failed check at once, so a gap test that covers several

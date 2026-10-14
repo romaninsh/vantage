@@ -202,7 +202,7 @@ async fn a_failed_reread_after_a_resubscribe_is_published_and_retried() -> Resul
 
     let failed = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            if let Ok(DioEvent::LoadFailed { error, .. }) = bus.recv().await {
+            if let Ok(DioEvent::RefreshFailed { error }) = bus.recv().await {
                 return error;
             }
         }

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use futures::FutureExt as _;
 use tokio::sync::{mpsc, oneshot};
-use vantage_core::{Context as _, Result, error};
+use vantage_core::{Context as _, ErrorKind, Result, VantageError, error};
 use vantage_dataset::traits::{InsertableValueSet as _, WritableValueSet};
 use vantage_types::Record;
 
@@ -70,7 +70,15 @@ pub(crate) async fn write_worker_loop(mut rx: mpsc::Receiver<QueuedFlash>) {
                     table = dio.inner.cache_table_name
                 ))
             });
-        let settled = settle(&dio, &flash, pre.as_ref(), staged.as_ref(), written).await;
+        let settled = settle(
+            &dio,
+            &flash,
+            pending.as_ref(),
+            pre.as_ref(),
+            staged.as_ref(),
+            written,
+        )
+        .await;
         if let Err(err) = &settled {
             tracing::debug!(error = %err, "Dio flash failed");
         }
@@ -150,6 +158,14 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
     // and `FlashRejection::from_error`, which walks the SOURCE chain for
     // the per-field errors a form highlights. `context` keeps both:
     // `Display` renders "write failed: <driver error>" and the driver's
-    // error stays reachable underneath.
-    written.context(error!("write failed"))
+    // error stays reachable underneath. The wrapper keeps the driver's
+    // `Conflict` or `NotFound`: a master that confines writes itself refuses
+    // a record outside its set there, and callers branch on the kind.
+    let kind = written.as_ref().err().map(VantageError::kind);
+    let wrapped = written.context(error!("write failed"));
+    match kind {
+        Some(ErrorKind::Conflict) => wrapped.map_err(VantageError::mark_conflict),
+        Some(ErrorKind::NotFound) => wrapped.map_err(VantageError::mark_not_found),
+        _ => wrapped,
+    }
 }

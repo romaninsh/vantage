@@ -6,9 +6,9 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
-use vantage_diorama::{Dio, SortDir, Sugar, SugarFn, TableScenery};
+use vantage_diorama::{Dio, Sugar, SugarFn, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{Column, SortDirection, Vista, VistaMetadata, mocks::MockShell};
 
 mod support;
 use support::chunk::redb_lens;
@@ -111,7 +111,7 @@ async fn a_sugared_view_sorts_by_an_output_and_a_plain_view_sees_none() -> Resul
     let sweet = dio
         .table_scenery()
         .sugar(doubling())
-        .sort("twice", SortDir::Desc)
+        .order("twice", SortDirection::Descending)
         .open()
         .await?;
     let plain = dio.table_scenery().open().await?;
@@ -171,12 +171,34 @@ async fn a_record_scenery_reads_the_sugared_row() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let dio = seeded_dio(tmp.path().join("cache.redb")).await?;
 
-    let sweet = dio.record_scenery_sugared("b", doubling()).await?;
-    let plain = dio.record_scenery("b").await?;
+    let sweet = dio.record_scenery("b").sugar(doubling()).open().await?;
+    let plain = dio.record_scenery("b").open().await?;
     let twice = |r: Option<Arc<vantage_diorama::EnrichedRecord>>| {
         r.and_then(|r| r.record.get("twice").cloned())
     };
     assert_eq!(twice(sweet.record()), Some(CborValue::Integer(20.into())));
     assert_eq!(twice(plain.record()), None);
+    Ok(())
+}
+
+/// The handed row shows at once, then gains the sugar columns from the
+/// cache's copy.
+#[tokio::test]
+async fn a_seeded_sugared_scenery_gains_the_sugar_columns() -> Result<()> {
+    let tmp = TempDir::new().unwrap();
+    let dio = seeded_dio(tmp.path().join("cache.redb")).await?;
+
+    let sweet = dio
+        .record_scenery("b")
+        .sugar(doubling())
+        .seed(record("beta", 10))
+        .open()
+        .await?;
+    let name = sweet.record().and_then(|r| r.record.get("name").cloned());
+    assert_eq!(name, Some(cbor_text("beta")), "the seeded row shows at once");
+
+    wait_for_gen(&mut sweet.subscribe(), 0).await;
+    let twice = sweet.record().and_then(|r| r.record.get("twice").cloned());
+    assert_eq!(twice, Some(CborValue::Integer(20.into())));
     Ok(())
 }

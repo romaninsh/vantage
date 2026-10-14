@@ -17,11 +17,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// Shared set of in-flight row ids, counted so overlapping flashes on
-/// one id keep it protected until the last one settles.
+use ciborium::Value as CborValue;
+use vantage_types::Record;
+
+use super::flash::Flight;
+
+/// Shared set of in-flight row ids. Each id keeps its [`Flight`]: overlapping
+/// flashes on one id keep it protected until the last one settles, and the
+/// flight goes with it.
 #[derive(Default)]
 pub(crate) struct PendingFlashes {
-    ids: Mutex<HashMap<String, usize>>,
+    ids: Mutex<HashMap<String, Flight>>,
     settles: Mutex<Settles>,
 }
 
@@ -45,10 +51,11 @@ impl PendingFlashes {
 
     /// Mark `id` in flight until the returned guard drops.
     pub(crate) fn begin(self: &Arc<Self>, id: String) -> PendingFlashGuard {
-        *self.ids.lock().unwrap().entry(id.clone()).or_insert(0) += 1;
+        self.ids.lock().unwrap().entry(id.clone()).or_default().depth += 1;
         PendingFlashGuard {
             registry: self.clone(),
             id,
+            seq: None,
         }
     }
 
@@ -69,18 +76,22 @@ impl PendingFlashes {
         self.contains(id) || self.settled_since(mark, id)
     }
 
+    #[cfg(test)]
+    pub(crate) fn open_marks(&self) -> usize {
+        self.settles.lock().unwrap().open_marks
+    }
+
     fn settled_since(&self, mark: &SettleMark, id: &str) -> bool {
         let settles = self.settles.lock().unwrap();
         settles.settled.get(id).is_some_and(|at| *at > mark.epoch)
     }
 
-    fn settle(&self, id: &str) {
+    fn settle(&self, id: &str, seq: Option<u64>) {
         let mut ids = self.ids.lock().unwrap();
-        if let Some(count) = ids.get_mut(id) {
-            *count -= 1;
-            if *count == 0 {
-                ids.remove(id);
-            }
+        if let Some(flight) = ids.get_mut(id)
+            && flight.end(seq)
+        {
+            ids.remove(id);
         }
         drop(ids);
         let mut settles = self.settles.lock().unwrap();
@@ -98,11 +109,31 @@ impl PendingFlashes {
 pub(crate) struct PendingFlashGuard {
     registry: Arc<PendingFlashes>,
     id: String,
+    /// The flash's place in its id's stage order, once it staged.
+    seq: Option<u64>,
+}
+
+impl PendingFlashGuard {
+    /// The flash stages now over `pre`, the row the cache held before it.
+    pub(crate) fn stage(&mut self, pre: Option<&Record<CborValue>>) {
+        let seq = self.flight(|flight| flight.stage(pre));
+        self.seq = Some(seq);
+    }
+
+    pub(crate) fn seq(&self) -> Option<u64> {
+        self.seq
+    }
+
+    /// Run `f` over this flash's id's flight, under the registry's lock.
+    pub(crate) fn flight<R>(&self, f: impl FnOnce(&mut Flight) -> R) -> R {
+        let mut ids = self.registry.ids.lock().unwrap();
+        f(ids.get_mut(&self.id).expect("a live guard keeps its flight"))
+    }
 }
 
 impl Drop for PendingFlashGuard {
     fn drop(&mut self) {
-        self.registry.settle(&self.id);
+        self.registry.settle(&self.id, self.seq);
     }
 }
 

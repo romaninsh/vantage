@@ -6,6 +6,7 @@
 //! Augmentation is the only way to declare two-pass loading.
 
 mod hydrate;
+mod page;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
@@ -16,6 +17,7 @@ use crate::dio::Dio;
 use crate::lens::CacheStatus;
 
 pub(crate) use hydrate::{hydrate_gaps, hydrate_one};
+pub(crate) use page::{ListedPage, list_page};
 
 /// What prompted a refresh — the two differ in how much they are entitled to
 /// assume about the DETAIL source.
@@ -28,35 +30,9 @@ pub(crate) use hydrate::{hydrate_gaps, hydrate_one};
 pub(crate) enum RefreshKind {
     /// The periodic timer (`Refresher::every`).
     Scheduled,
-    /// Someone asked — a Refresh button, `Dio::refresh`, a scenery's
-    /// `request_refresh`.
+    /// Someone asked — a Refresh button, `Dio::refresh`, or a scenery's
+    /// `refresh_source`.
     Requested,
-}
-
-/// Capability-aware **list pass**: push the `[offset, offset+limit)` window down
-/// to the master when it advertises `Window`, otherwise list the whole
-/// set and window it locally so sequential paging still terminates.
-///
-/// Returns the window's rows and the set's total when it is known: the one
-/// the master states, or the whole list's length.
-pub(crate) async fn list_page(
-    dio: &Dio,
-    offset: usize,
-    limit: usize,
-) -> Result<(Vec<(String, Record<CborValue>)>, Option<usize>)> {
-    let master = dio.master();
-    if master.capabilities().has(vantage_vista::Capability::Window) {
-        let page = master.fetch_window(offset, limit).await?;
-        let total = page.total.and_then(|t| usize::try_from(t).ok());
-        Ok((page.rows, total))
-    } else {
-        let rows = master.list_values().await?;
-        let total = rows.len();
-        Ok((
-            rows.into_iter().skip(offset).take(limit).collect(),
-            Some(total),
-        ))
-    }
 }
 
 /// **Refresh pass**: re-run the cheap list pass and reconcile against the cache
@@ -78,46 +54,18 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
     let cache = &dio.inner.cache;
     let existing = cache.list_values_with_status().await?;
     let augmented = &dio.inner.augmented_columns;
-    // A refreshed detail source may have gained records for rows that
-    // previously settled empty — let them fetch again. Only on an explicit
-    // request, though.
-    //
-    // Doing it on the scheduled tick makes the sweep unable to converge
-    // whenever absences are common: every settled-empty row is un-settled,
-    // re-fetched, found empty again, and re-settled — then the next tick wipes
-    // the answer and asks again. With a 2s cadence and a detail source that
-    // legitimately has no record for most rows, that is a permanent background
-    // sweep (measured: ~33 detail fetches/sec that never finish), and every
-    // hydration writes the row back and broadcasts `RecordChanged`, so the UI
-    // repaints continuously. The set exists precisely to stop that, and
-    // clearing it on a timer defeated it.
-    //
-    // Cost of the narrower rule: a detail record that appears *after* a row
-    // settled empty is not picked up by the ticker alone. That is the right
-    // trade — a scheduled re-pull of the MASTER is no evidence the DETAIL
-    // source changed, and an explicit refresh (which is what a user reaches
-    // for when data looks stale) still re-probes everything.
-    // The FILLED memo goes on every refresh, scheduled or not: the reconcile
-    // below demotes changed rows to `Incomplete` precisely to make the detail
-    // pass refetch them, and a memo saying "settled" would have the sweep skip
-    // them forever. Costs one re-read per row on the next sweep, no fetches.
-    dio.inner.augment_settled.lock().unwrap().clear();
-    dio.inner.augment_failed.lock().unwrap().clear();
-
-    if matches!(kind, RefreshKind::Requested) {
-        let cleared = {
-            let mut settled = dio.inner.augment_settled_empty.lock().unwrap();
-            let n = settled.len();
-            settled.clear();
-            n
-        };
-        if cleared > 0 {
-            tracing::debug!(
-                target: "vantage_diorama::augment",
-                cleared,
-                "explicit refresh — re-probing rows that previously had no detail record",
-            );
-        }
+    // A detail record that appears after a row settled empty is picked up by
+    // a requested refresh only (see `detail_state`). With a 2s ticker and a
+    // detail source that has no record for most rows, re-probing them on
+    // each tick measured ~33 detail fetches/sec that never finished, each
+    // one a `RecordChanged` and a repaint.
+    let scheduled = matches!(kind, RefreshKind::Scheduled);
+    dio.inner.clear_detail_states(scheduled);
+    if !scheduled {
+        tracing::debug!(
+            target: "vantage_diorama::augment",
+            "explicit refresh — re-probing rows that previously had no detail record",
+        );
     }
 
     for (id, list_row) in &fresh {

@@ -71,11 +71,13 @@ pub struct MemoryCacheTable {
     meta: Mutex<Meta>,
 }
 
-/// See [`CacheTable::meta_total`] and [`CacheTable::meta_refreshed_at`].
+/// See [`CacheTable::meta_total`], [`CacheTable::meta_refreshed_at`] and
+/// [`CacheTable::meta_copied_at`].
 #[derive(Default)]
 struct Meta {
     total: Option<u64>,
     refreshed_at: Option<SystemTime>,
+    copied_at: Option<SystemTime>,
 }
 
 impl MemoryCacheTable {
@@ -140,7 +142,11 @@ impl CacheTable for MemoryCacheTable {
 
     async fn clear(&self) -> Result<()> {
         Self::yield_point().await;
-        self.meta().refreshed_at = None;
+        {
+            let mut meta = self.meta();
+            meta.refreshed_at = None;
+            meta.copied_at = None;
+        }
         self.lock().clear();
         Ok(())
     }
@@ -169,6 +175,17 @@ impl CacheTable for MemoryCacheTable {
     async fn set_meta_refreshed_at(&self, at: SystemTime) -> Result<()> {
         Self::yield_point().await;
         self.meta().refreshed_at = Some(at);
+        Ok(())
+    }
+
+    async fn meta_copied_at(&self) -> Result<Option<SystemTime>> {
+        Self::yield_point().await;
+        Ok(self.meta().copied_at)
+    }
+
+    async fn set_meta_copied_at(&self, at: SystemTime) -> Result<()> {
+        Self::yield_point().await;
+        self.meta().copied_at = Some(at);
         Ok(())
     }
 

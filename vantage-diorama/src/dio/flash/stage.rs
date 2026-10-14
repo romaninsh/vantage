@@ -5,6 +5,8 @@ use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_types::{Record, cbor_id_to_string};
 
+use super::confirmed::{confirm, roll_back};
+use crate::dio::pending::PendingFlashGuard;
 use crate::dio::{Dio, DioEvent, DioInner};
 use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
 
@@ -34,30 +36,14 @@ pub(super) async fn write_row(
     }
 }
 
-/// Put `pre` back under `id`, but only while the row still holds `staged`,
-/// the value this flash staged. A later flash on the same id that staged
-/// over it owns the row now, and restoring would overwrite its value.
-/// `true` when the row was restored.
-pub(super) async fn restore_if_staged(
-    inner: &DioInner,
-    id: &str,
-    pre: Option<&Record<CborValue>>,
-    staged: Option<&Record<CborValue>>,
-) -> Result<bool> {
-    if inner.cache.get_value(id).await?.as_ref() != staged {
-        return Ok(false);
-    }
-    write_row(inner, id, pre).await?;
-    Ok(true)
-}
-
 /// Settle `flash` once its write-through answered `written`, and report
 /// the outcome its caller receives.
 ///
 /// - A staged flash commits (the row settles, re-keyed when the backend
-///   moved it) or rolls back to `pre` and returns the write's error. The
-///   rollback is skipped when a later flash on the same id has staged over
-///   `staged` since.
+///   moved it) or rolls back and returns the write's error. A rollback
+///   restores the last confirmed row, never an earlier flash's unconfirmed
+///   value, and is skipped when a later flash on the same id has staged over
+///   `staged` since (see [`roll_back`]).
 /// - An id-less insert seeds the cache with the stored row under the id the
 ///   write reported.
 /// - A `Clear` empties the cache table.
@@ -67,15 +53,16 @@ pub(super) async fn restore_if_staged(
 pub(crate) async fn settle(
     dio: &Dio,
     flash: &ChangeFlash,
+    pending: Option<&PendingFlashGuard>,
     pre: Option<&Record<CborValue>>,
     staged: Option<&Record<CborValue>>,
     written: Result<FlashOutcome>,
 ) -> Result<FlashOutcome> {
     let inner = &dio.inner;
     match (flash.id(), written) {
-        (Some(id), Ok(outcome)) => commit(dio, flash, id, pre, outcome).await,
+        (Some(id), Ok(outcome)) => commit(dio, flash, id, pending, pre, staged, outcome).await,
         (Some(id), Err(err)) => {
-            restore_if_staged(inner, id, pre, staged).await?;
+            roll_back(inner, id, pending, pre, staged).await?;
             let _ = inner.event_bus.send(DioEvent::WriteReverted {
                 id: id.to_string(),
                 error: err.to_string(),
@@ -110,11 +97,17 @@ pub(crate) async fn settle(
 /// before staging): a delete is [`DioEvent::RecordRemoved`], a row new to the
 /// cache is [`DioEvent::RecordInserted`] (even if the master held it), and any
 /// other write is [`DioEvent::RecordChanged`].
+///
+/// The flash's value becomes the id's confirmed row. Its fields are
+/// re-asserted in the cache only while no later flash on the id is staged:
+/// that flash's value is what the row shows until it settles.
 async fn commit(
     dio: &Dio,
     flash: &ChangeFlash,
     id: &str,
+    pending: Option<&PendingFlashGuard>,
     pre: Option<&Record<CborValue>>,
+    staged: Option<&Record<CborValue>>,
     outcome: FlashOutcome,
 ) -> Result<FlashOutcome> {
     let inner = &dio.inner;
@@ -162,7 +155,9 @@ async fn commit(
             record,
         });
     }
-    reassert_confirmed(inner, flash).await?;
+    if confirm(pending, flash, staged) {
+        reassert_confirmed(inner, flash).await?;
+    }
     let id_owned = id.to_string();
     let event = match (flash.kind(), pre) {
         (FlashKind::Delete, _) => DioEvent::RecordRemoved { id: id_owned },

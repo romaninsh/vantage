@@ -5,7 +5,9 @@
 
 use vantage_core::Result;
 use vantage_diorama::{Clause, Dio, LoadState, TableScenery};
-use vantage_vista::{Capability, FilterOp, Vista, VistaCapabilities, mocks::MockShell};
+use vantage_vista::{
+    Capability, Condition, FilterOp, SortDirection, Vista, VistaCapabilities, mocks::MockShell,
+};
 
 use super::fixtures::wait_for_ids;
 use crate::support::{
@@ -86,7 +88,7 @@ async fn a_picker_filtered_on_an_augmented_column_fails() -> Result<()> {
     let view = dio
         .table_scenery()
         .titles_only()
-        .where_eq("name", "John")
+        .filter(Condition::new("name", FilterOp::Eq, "John"))
         .open()
         .await?;
     wait_listed(&view).await;
@@ -112,7 +114,7 @@ async fn a_picker_over_a_dio_narrowed_on_an_augmented_column_fails() -> Result<(
 async fn a_picker_sorted_by_an_augmented_column_fails() -> Result<()> {
     let dio = bucket_dio().await;
     let view = picker(&dio).await;
-    view.set_sort(Some("name".into()), vantage_diorama::SortDir::Asc);
+    view.set_order(Some(("name".into(), SortDirection::Ascending)));
     assert_fails_on_name(&view, Clause::Order("name".into())).await;
     Ok(())
 }

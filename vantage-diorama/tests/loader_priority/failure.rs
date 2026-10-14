@@ -76,7 +76,7 @@ impl FailedRefresh {
         let calls_before = calls.load(Ordering::SeqCst);
 
         fail.store(true, Ordering::SeqCst);
-        view.scenery().request_refresh();
+        view.scenery().refresh_source();
         // Wait for the failing fetch to have actually run: without this the
         // assertions hold vacuously, over a refresh that never dispatched.
         wait_until("the failing refresh to run", || {

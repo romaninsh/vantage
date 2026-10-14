@@ -6,7 +6,7 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
-use super::stage::restore_if_staged;
+use super::confirmed::roll_back;
 use crate::dio::pending::PendingFlashGuard;
 use crate::dio::{DioEvent, DioInner};
 
@@ -16,9 +16,9 @@ use crate::dio::{DioEvent, DioInner};
 /// [`DioEvent::RecordChanged`] so views re-read the row.
 ///
 /// It holds the flash's pending guard until the restore is done, so no
-/// reconcile writes the row in between, and it restores only while the row
-/// still holds this flash's staged value: a later flash on the same id that
-/// staged over it keeps its own.
+/// reconcile writes the row in between. The restore is a rollback like a
+/// failed write's: a later flash on the same id that staged over it keeps
+/// its own value.
 pub(super) struct Unstage {
     inner: Option<Arc<DioInner>>,
     id: String,
@@ -61,7 +61,7 @@ impl Drop for Unstage {
         let (pre, staged, pending) = (self.pre.take(), self.staged.take(), self.pending.take());
         let runtime = inner.lens.runtime.clone();
         runtime.spawn(async move {
-            match restore_if_staged(&inner, &id, pre.as_ref(), staged.as_ref()).await {
+            match roll_back(&inner, &id, pending.as_ref(), pre.as_ref(), staged.as_ref()).await {
                 Ok(true) => {
                     let _ = inner.event_bus.send(DioEvent::RecordChanged { id });
                 }

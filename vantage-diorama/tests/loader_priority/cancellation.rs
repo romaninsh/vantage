@@ -16,13 +16,13 @@ async fn a_newer_viewport_cancels_the_in_flight_load() -> Result<()> {
     let scenery = &open.scenery;
 
     // Scroll to 20..30: call 2 starts and blocks on the gate.
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     wait_until("the 20..30 load to start", || gated.calls_len() >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 20..30);
 
     // Scroll on to 30..40 while call 2 is still blocked: call 2 must be
     // dropped (not finished) and call 3 must start.
-    scenery.set_viewport(30..40);
+    scenery.set_viewport(30..40, 0..0);
     wait_until("the 30..40 load to start", || gated.calls_len() >= 3).await;
     assert_eq!(gated.calls.lock().unwrap()[2], 30..40);
     assert_eq!(
@@ -49,7 +49,7 @@ async fn a_newer_viewport_cancels_the_in_flight_load() -> Result<()> {
 
     // The in-flight marker was cleared by the cancellation: asking for
     // 20..30 again fetches it.
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     wait_until("20..30 to be re-requested", || gated.calls_len() >= 4).await;
     assert_eq!(gated.calls.lock().unwrap()[3], 20..30);
     gated.release.notify_one();
@@ -63,10 +63,10 @@ async fn an_identical_viewport_is_absorbed_into_the_running_load() -> Result<()>
     let open = GatedScenery::open(&gated, rows(40)).await?;
     let scenery = &open.scenery;
 
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     wait_until("the 20..30 load to start", || gated.calls_len() >= 2).await;
     // The same range again while it is loading: absorbed, no new call.
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     // Longer than the default 50 ms debounce, so a would-be regression that
     // routed this through the debounce absorb loop instead of the mid-load
     // select would still have fired call 3 well before this check runs.
@@ -86,16 +86,16 @@ async fn a_same_range_refresh_runs_after_the_current_load() -> Result<()> {
     let scenery = &open.scenery;
 
     // Scroll to 20..30: call 2 starts and blocks on the gate. By the time
-    // its callback has run at all, `last_viewport` is already 20..30 (it is
-    // stamped before the callback is even dispatched), so the refresh below
+    // its callback has run at all, the view's viewport is already 20..30 (it
+    // is stamped before the callback is even dispatched), so the refresh below
     // targets this same block, not the one loaded before it.
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     wait_until("the 20..30 load to start", || gated.calls_len() >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 20..30);
 
     // A force_load refresh of the block currently loading: same range, so it
     // must park behind the running load rather than race or cancel it.
-    scenery.request_refresh();
+    scenery.refresh_source();
     tokio::time::sleep(Duration::from_millis(120)).await;
     assert_eq!(
         gated.calls_len(),
@@ -128,16 +128,16 @@ async fn a_parked_refresh_survives_a_supersede() -> Result<()> {
     let scenery = &open.scenery;
 
     // Call 2 for 20..30 blocks on the gate; the refresh behind it parks.
-    scenery.set_viewport(20..30);
+    scenery.set_viewport(20..30, 0..0);
     wait_until("the 20..30 load to start", || gated.calls_len() >= 2).await;
-    scenery.request_refresh();
+    scenery.refresh_source();
     tokio::time::sleep(Duration::from_millis(120)).await;
     assert_eq!(gated.calls_len(), 2, "the refresh parked behind the load");
 
     // Supersede both with 0..10 — fully cached by call 1. A plain viewport
     // for it would be served locally and never reach the callback; call 3
     // happening at all is the parked refresh's `force_load` arriving on it.
-    scenery.set_viewport(0..10);
+    scenery.set_viewport(0..10, 0..0);
     wait_until("the superseding load to run", || gated.calls_len() >= 3).await;
     assert_eq!(
         gated.calls.lock().unwrap()[2],
@@ -162,7 +162,7 @@ async fn a_parked_requests_priority_survives_a_supersede() -> Result<()> {
     let scenery = &open.scenery;
 
     // Call 2 for 10..20 blocks on the gate, having bound nothing.
-    scenery.set_viewport(10..20);
+    scenery.set_viewport(10..20, 0..0);
     wait_until("the 10..20 load to start", || gated.calls_len() >= 2).await;
     assert_eq!(gated.calls.lock().unwrap()[1], 10..20);
 
@@ -176,7 +176,7 @@ async fn a_parked_requests_priority_survives_a_supersede() -> Result<()> {
     // The refresh poll then supersedes both: its contiguous-block expansion
     // reaches back over the cached rows 0..9, so it asks for 0..20 — a
     // different range, and a background one.
-    scenery.request_refresh();
+    scenery.refresh_source();
     wait_until("the superseding load to run", || gated.calls_len() >= 3).await;
     assert_eq!(gated.calls.lock().unwrap()[2], 0..20);
     assert_eq!(

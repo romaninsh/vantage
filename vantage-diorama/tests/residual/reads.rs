@@ -26,11 +26,11 @@ async fn above_one() -> Result<Dio> {
 #[tokio::test]
 async fn a_record_scenery_never_finds_a_row_outside_the_residual() -> Result<()> {
     let dio = above_one().await?;
-    let outside = dio.record_scenery("a").await?;
-    assert!(matches!(outside.status(), RecordStatus::NotFound));
+    let outside = dio.record_scenery("a").open().await?;
+    assert_eq!(outside.status(), RecordStatus::NotFound);
     assert!(outside.record().is_none());
-    let inside = dio.record_scenery("b").await?;
-    assert!(matches!(inside.status(), RecordStatus::Fresh));
+    let inside = dio.record_scenery("b").open().await?;
+    assert_eq!(inside.status(), RecordStatus::Fresh);
     Ok(())
 }
 
