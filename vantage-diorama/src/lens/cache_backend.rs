@@ -89,8 +89,9 @@ pub trait CacheTable: Send + Sync + 'static {
 
     async fn delete_value(&self, id: &str) -> Result<()>;
 
-    /// Remove every row. Also forgets [`meta_refreshed_at`](Self::meta_refreshed_at),
-    /// so an emptied table never looks fresh; the stated total stays.
+    /// Remove every row. Also forgets [`meta_refreshed_at`](Self::meta_refreshed_at)
+    /// and [`meta_copied_at`](Self::meta_copied_at), so an emptied table never
+    /// looks fresh or whole; the stated total stays.
     async fn clear(&self) -> Result<()>;
 
     async fn count(&self) -> Result<i64>;
@@ -117,6 +118,20 @@ pub trait CacheTable: Send + Sync + 'static {
     /// [`Self::meta_refreshed_at`]. A backend may refuse a time it can't
     /// store with an error; redb refuses one before the Unix epoch.
     async fn set_meta_refreshed_at(&self, at: SystemTime) -> Result<()>;
+
+    /// When the table last became a whole copy of the master's set, as
+    /// recorded by [`set_meta_copied_at`](Self::set_meta_copied_at). `None`
+    /// = never. Unlike [`meta_refreshed_at`](Self::meta_refreshed_at), which
+    /// any refresh records (a paged or load-on-miss table included), this is
+    /// written only after every row of the set was written and every row
+    /// outside it dropped, so a reader may serve the whole set from the
+    /// table. [`clear`](Self::clear) forgets it.
+    async fn meta_copied_at(&self) -> Result<Option<SystemTime>>;
+
+    /// Record that the table is a whole copy — see [`Self::meta_copied_at`].
+    /// A backend may refuse a time it can't store, as for
+    /// [`set_meta_refreshed_at`](Self::set_meta_refreshed_at).
+    async fn set_meta_copied_at(&self, at: SystemTime) -> Result<()>;
 
     /// Read a record together with its persisted [`CacheStatus`].
     async fn get_value_with_status(

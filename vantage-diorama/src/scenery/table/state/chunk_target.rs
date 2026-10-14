@@ -9,9 +9,9 @@ use vantage_types::{Record, cbor_id_to_string};
 use crate::lens::{ChunkWrite, SceneryChunkTarget};
 use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
-use super::TableSceneryState;
+use super::SharedRows;
 
-impl SceneryChunkTarget for TableSceneryState {
+impl SceneryChunkTarget for SharedRows {
     /// A total learned from the chunk fetch itself. This is how a paged lens
     /// sizes the scrollbar without a separate count — i.e. without a second
     /// request on open, which is the one network call `open()` used to await.
@@ -92,12 +92,13 @@ impl SceneryChunkTarget for TableSceneryState {
         // `RecordChanged` update for it is skipped, which is a miss the next
         // fetch corrects, where a mapping left pointing at a row that is no
         // longer there would write the wrong record into a live slot.
+        // `rows` before `id_to_idx`, the order every writer takes them in.
+        let rows = self.rows.read().unwrap();
         let mut id_to_idx = self.id_to_idx.write().unwrap();
         id_to_idx.retain(|_, idx| !touched.contains(idx));
         let Some(dio) = self.dio_weak.upgrade() else {
             return;
         };
-        let rows = self.rows.read().unwrap();
         for idx in &touched {
             if let Some(record) = rows.get(idx)
                 && let Some(id) = record

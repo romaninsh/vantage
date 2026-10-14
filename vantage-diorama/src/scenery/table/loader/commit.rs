@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::dio::{DioEvent, DioInner};
-use crate::scenery::table::state::TableSceneryState;
+use crate::scenery::table::state::SharedRows;
 
 use super::guards::{PendingChunk, restore_bound_rows};
 use super::telemetry::{tap_cache_write, tap_payload_columns};
@@ -11,7 +11,7 @@ use super::telemetry::{tap_cache_write, tap_payload_columns};
 /// inference, the "rows nobody can deliver" clamp and the generation bump. `viewport_loop` only calls this once
 /// `run_chunk_callback`'s future has resolved on its own — never raced
 /// against the viewport channel — so none of it can be cancelled.
-pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: PendingChunk) {
+pub(super) async fn finish_chunk_load(state: &SharedRows, pending: PendingChunk) {
     let PendingChunk {
         dio_inner,
         req,
@@ -189,7 +189,7 @@ pub(super) async fn finish_chunk_load(state: &TableSceneryState, pending: Pendin
 /// fetch already made — including for a list opened before its rows existed,
 /// counted once at 0.
 async fn settle_total(
-    state: &TableSceneryState,
+    state: &SharedRows,
     dio_inner: &DioInner,
     range: &Range<usize>,
     pushed: usize,
@@ -302,7 +302,7 @@ async fn settle_total(
 /// total claims, the addressable set ends at the first of those holes — so say
 /// so, and the range stops being requested.
 fn clamp_to_reachable(
-    state: &TableSceneryState,
+    state: &SharedRows,
     dio_inner: &DioInner,
     range: &Range<usize>,
     first_hole: Option<usize>,

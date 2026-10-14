@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::scenery::table::state::TableSceneryState;
+use crate::scenery::table::state::SharedRows;
 
 /// Pick an effective fetch range given the visible viewport.
 ///
@@ -13,7 +13,7 @@ use crate::scenery::table::state::TableSceneryState;
 ///
 /// Returns `None` when the visible range is fully cached.
 pub(super) fn compute_fetch_range(
-    state: &TableSceneryState,
+    state: &SharedRows,
     visible: &Range<usize>,
     total: Option<usize>,
 ) -> Option<Range<usize>> {

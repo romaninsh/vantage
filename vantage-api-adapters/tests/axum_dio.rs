@@ -272,6 +272,7 @@ async fn dropping_watch_connection_releases_the_scenery() -> vantage_core::Resul
     );
 
     drop(lines);
+    // The connection's view closes, and it was the only view on its rows.
     let mut released = false;
     for _ in 0..200 {
         if fx.dio.diagnostics().await?.sceneries.is_empty() {
@@ -281,6 +282,13 @@ async fn dropping_watch_connection_releases_the_scenery() -> vantage_core::Resul
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     assert!(released, "scenery released after disconnect");
+
+    // A closed view stops pulling: only the detail fetch already in flight
+    // when it closed runs; the rest of its window is withdrawn.
+    fx.gate.add_permits(16);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let log = fx.detail.get_log();
+    assert!(log.len() <= 1, "fetches after disconnect: {log:?}");
     Ok(())
 }
 

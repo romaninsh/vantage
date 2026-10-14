@@ -9,11 +9,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::broadcast::{Receiver, error::RecvError};
 use tokio::task::JoinHandle;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Cache, Dio, Lens, Loader, LoaderCx, SortDir, TableScenery};
+use vantage_diorama::{Cache, Dio, Lens, Loader, LoaderCx, TableScenery};
 use vantage_memory::{
     MemoryCatalog, MemoryChange, MemoryStore, MemoryTableHandle, MemoryTableShell,
 };
-use vantage_vista::{Vista, VistaMetadata};
+use vantage_vista::{SortDirection, Vista, VistaMetadata};
 
 use crate::sampler::EventTotals;
 
@@ -115,11 +115,11 @@ pub async fn attach(
                 .map_err(|e| format!("dio: {e}"))?;
             let scenery: Arc<dyn TableScenery> = dio
                 .table_scenery()
-                .sort(&id, SortDir::Asc)
+                .order(&id, SortDirection::Ascending)
                 .open()
                 .await
                 .map_err(|e| format!("scenery: {e}"))?;
-            scenery.set_viewport(0..VIEWPORT);
+            scenery.set_viewport(0..VIEWPORT, 0..0);
             (Some(dio), Some(scenery))
         }
         None => (None, None),

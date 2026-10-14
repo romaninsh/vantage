@@ -1,6 +1,5 @@
-//! Every scenario starts, samples and stops. Chaos scenarios need their
-//! full duration for a verdict, so that test is ignored by default:
-//! `cargo test --test smoke -- --ignored`.
+//! Every scenario starts, samples and stops. Chaos scenarios run for their
+//! full duration to reach a verdict, so that test takes about two minutes.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -49,7 +48,6 @@ async fn every_load_scenario_runs_briefly() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "runs each chaos scenario for its full duration"]
 async fn every_chaos_scenario_is_contained() {
     let chaos = root().join("chaos");
     let mut failed = Vec::new();

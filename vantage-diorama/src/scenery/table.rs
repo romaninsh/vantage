@@ -18,10 +18,9 @@
 //! on its own output.
 
 mod builder;
-mod capped;
+mod cap;
 mod count;
 mod handle;
-mod helpers;
 mod load_failure;
 mod loader;
 mod plan;
@@ -29,79 +28,35 @@ mod reactor;
 mod row_map;
 mod state;
 mod two_pass;
+mod view;
 mod view_stats;
 
 use std::ops::Range;
 use std::sync::Arc;
 
+use futures::future::BoxFuture;
 use tokio::sync::watch;
-use vantage_vista::VistaCapabilities;
+use vantage_core::Result;
+use vantage_vista::{Condition, SortDirection, VistaCapabilities};
 
 use crate::dio::Generation;
 
 use super::enriched_record::EnrichedRecord;
 
 pub use builder::TableSceneryBuilder;
-pub use capped::CappedScenery;
 pub(crate) use handle::compute_load_state;
 pub use load_failure::{Clause, LoadFailure};
+pub(crate) use state::SharedRows;
+pub(crate) use view::TableView;
 pub use view_stats::{FilterOrigin, ViewCount, ViewFilter, ViewState, ViewStats};
-
-/// UI-side sort direction. Mirrors `vantage_vista::SortDirection` but
-/// kept distinct so Scenery callers don't need to import vista types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortDir {
-    Asc,
-    Desc,
-}
-
-impl SortDir {
-    pub(crate) fn to_vista(self) -> vantage_vista::SortDirection {
-        match self {
-            SortDir::Asc => vantage_vista::SortDirection::Ascending,
-            SortDir::Desc => vantage_vista::SortDirection::Descending,
-        }
-    }
-}
-
-/// A non-equality filter condition applied **locally** over the cached rows —
-/// the fallback path when the master vista can't push the operator into its
-/// query (advertised via
-/// [`Capability::FilterOps`](vantage_vista::Capability::FilterOps)).
-/// `value` carries a scalar for the scalar operators and a
-/// [`CborValue::Array`](ciborium::Value::Array) for `InSet` / `NotInSet`.
-/// Plain equality keeps using the lighter `where_eq` / `conditions` path.
-#[derive(Debug, Clone)]
-pub struct OpCondition {
-    pub column: String,
-    pub op: vantage_vista::FilterOp,
-    pub value: ciborium::Value,
-}
-
-impl OpCondition {
-    pub fn new(
-        column: impl Into<String>,
-        op: vantage_vista::FilterOp,
-        value: impl Into<ciborium::Value>,
-    ) -> Self {
-        Self {
-            column: column.into(),
-            op,
-            value: value.into(),
-        }
-    }
-
-    /// Stable `field<sym>value` fragment for the query-variant cache key, so a
-    /// scenery narrowed by this operator gets its own ordered index (never
-    /// colliding with the unfiltered set or a different-operator filter).
-    pub fn key_fragment(&self) -> String {
-        format!("{}{}{:?}", self.column, self.op.key_symbol(), self.value)
-    }
-}
 
 /// Internal viewport request carried over the debounce channel.
 #[derive(Debug, Clone)]
 pub(crate) struct ViewportRequest {
+    /// The view that asked, or `None` for a request the rows make for
+    /// themselves. The viewport loop coalesces each view's requests apart,
+    /// and a two-pass request hydrates under its view's ticket.
+    pub(crate) view: Option<view::ViewId>,
     pub(crate) range: Range<usize>,
     /// `request_load_more` sets this true so a fully-cached range
     /// still triggers a fetch (paging past the cache end).
@@ -169,6 +124,10 @@ pub struct RowStatusSummary {
 }
 
 /// Reactive view onto a Dio that exposes an ordered, paginated row set.
+///
+/// Every method is required: the one implementation is the view
+/// [`TableSceneryBuilder::open`] returns, and a test double states each
+/// answer rather than inherit a guess.
 pub trait TableScenery: Send + Sync {
     fn row_count(&self) -> usize;
 
@@ -178,14 +137,7 @@ pub trait TableScenery: Send + Sync {
     /// tell "no rows" from "no rows *yet*" (they render identically and mean
     /// opposite things), and a test or a profiler needs to tell "showing
     /// something" from "showing everything" before it measures.
-    fn load_state(&self) -> LoadState {
-        LoadState::Complete
-    }
-
-    /// Shorthand for [`LoadState::Loading`] — the view has no answer yet.
-    fn is_loading(&self) -> bool {
-        self.load_state() == LoadState::Loading
-    }
+    fn load_state(&self) -> LoadState;
 
     /// Status breakdown over the rows currently in the sparse map. Used by the
     /// diagnostics surface to report how much of a scenery is hydrated.
@@ -194,48 +146,44 @@ pub trait TableScenery: Send + Sync {
     fn estimated_total(&self) -> Option<usize>;
     fn row(&self, idx: usize) -> Option<Arc<EnrichedRecord>>;
 
-    /// Declare the rows to hydrate. Any consumer may call it — a grid, a
-    /// dashboard counter, an observation probe — and it does not change what
-    /// [`ViewStats::showing`] reports; see [`set_shown_range`](Self::set_shown_range).
-    fn set_viewport(&self, range: Range<usize>);
+    /// The row with id `id`, wherever the view's order puts it; `None` when
+    /// the view doesn't hold it (not loaded, filtered out, or beyond a
+    /// [`limit`](TableSceneryBuilder::limit) or [`tail`](TableSceneryBuilder::tail)).
+    fn row_by_id(&self, id: &str) -> Option<Arc<EnrichedRecord>>;
 
-    /// Declare the rows a displaying consumer (a grid) has on screen, or
-    /// `None` when it shows none — closed, hidden or scrolled to nothing.
-    /// The only input to [`ViewStats::showing`]. Kept apart from
-    /// [`set_viewport`](Self::set_viewport) so a consumer that loads rows
-    /// without displaying them doesn't claim the status bar's "Showing a–b".
-    /// A grid typically calls both with the same range. Default no-op.
-    fn set_shown_range(&self, _range: Option<Range<usize>>) {}
+    /// Declare the rows to load and hydrate (`loaded`) and the rows a
+    /// displaying consumer has on screen (`shown`), both in the view's
+    /// indices. An empty `shown` means none on screen: a dashboard counter
+    /// or an observation probe loads rows without claiming the status bar's
+    /// "Showing a–b". `shown` is the only input to [`ViewStats::showing`].
+    /// A grid typically passes the same range twice.
+    fn set_viewport(&self, loaded: Range<usize>, shown: Range<usize>);
 
     fn request_load_more(&self);
-    fn request_refresh(&self);
-    fn set_sort(&self, column: Option<String>, dir: SortDir);
-    /// Replace the UI-level equality filter set (grid filter chips) —
-    /// `column == value` terms ANDed together and with the query's own
-    /// conditions. A paged scenery carries them into every chunk fetch; an
-    /// eager one evaluates them over its cache (which is what lets them
-    /// reference augmented columns). Empty vec clears.
-    fn set_filters(&self, filters: Vec<(String, ciborium::Value)>);
 
-    /// Replace the UI-level operator filter set (the grid's filter panel):
-    /// `column <op> value` terms ANDed together and with the query's own
-    /// conditions. Same mechanics as [`set_search`](Self::set_search): a
-    /// paged scenery carries the terms into every chunk fetch and the master
-    /// takes what it can — equality always, richer operators when it
-    /// advertises `FilterOps` — handing the rest back as the view's residual;
-    /// an eager scenery evaluates them over its complete cache. Empty vec
-    /// clears. Default no-op for wrappers that don't filter.
-    fn set_filter_terms(&self, _terms: Vec<OpCondition>) {}
+    /// Ask the Dio to refresh from its source; the view reloads as the
+    /// fresh rows land.
+    fn refresh_source(&self);
 
-    /// The operator filter set currently in force — what a chip strip or a
-    /// persisted-filter store reads, so there is one list, held here.
-    fn filter_terms(&self) -> Vec<OpCondition> {
-        Vec::new()
-    }
+    /// Replace the view's order; `None` clears it, leaving the Dio's order
+    /// or none. A [`tail`](TableSceneryBuilder::tail) needs an order:
+    /// clearing it fails the view until one is set again.
+    fn set_order(&self, order: Option<(String, SortDirection)>);
 
-    /// How many rows this view would hold with `terms` in place of its
-    /// current UI filter terms. The view's other clauses (its conditions,
-    /// filter chips and search) and the Dio's residual still apply.
+    /// Replace the runtime filters (the grid's chips and filter panel):
+    /// conditions ANDed together and with the builder's
+    /// [`filter`](TableSceneryBuilder::filter)s. Same mechanics as
+    /// [`set_search`](Self::set_search): a paged scenery carries them into
+    /// every chunk fetch and the master takes what it can, handing the rest
+    /// back as the view's residual; an eager scenery evaluates them over its
+    /// complete cache (which is what lets them name augmented columns). An
+    /// empty vec clears. The current set reads back from
+    /// [`ViewStats::filters`].
+    fn set_filters(&self, filters: Vec<Condition>);
+
+    /// How many rows this view would hold with `filters` in place of its
+    /// current runtime filters. The builder's filters, the search and the
+    /// Dio's residual still apply.
     ///
     /// - A paged view whose master takes the whole query counts at the
     ///   master. One that leaves a clause over counts the complete set its
@@ -245,52 +193,40 @@ pub trait TableScenery: Send + Sync {
     ///
     /// `Ok(None)` means no honest count. The future is runtime-agnostic: it
     /// may be awaited from any executor, and dropping it abandons the count.
-    fn count_where(
-        &self,
-        _terms: Vec<OpCondition>,
-    ) -> futures::future::BoxFuture<'static, vantage_core::Result<Option<usize>>> {
-        Box::pin(async { Ok(None) })
-    }
+    fn count_where(&self, filters: Vec<Condition>) -> BoxFuture<'static, Result<Option<usize>>>;
 
-    /// Whether [`Self::set_filter_terms`] with `terms` leaves the view able
-    /// to answer: a paged view needs a master that takes every term, or a
+    /// Whether [`Self::set_filters`] with `filters` leaves the view able to
+    /// answer: a paged view needs a master that takes every filter, or a
     /// Lens that copies the whole set when it doesn't; an eager or two-pass
     /// view evaluates them over its own rows, unless a titles-only picker
     /// would have to judge an augmented column it never hydrates.
-    fn terms_supported(&self, _terms: &[OpCondition]) -> bool {
-        false
-    }
+    fn filters_supported(&self, filters: &[Condition]) -> bool;
 
     /// Replace the quicksearch text (replace semantics; `None` or blank
     /// clears). Paged sceneries push it into every chunk fetch — callers
     /// should offer search only when [`Self::search_supported`] says so.
-    /// Eager sceneries filter locally over their (complete) cache. Default
-    /// no-op for wrappers that don't search.
-    fn set_search(&self, _query: Option<String>) {}
+    /// Eager sceneries filter locally over their (complete) cache.
+    fn set_search(&self, text: Option<String>);
 
-    /// Whether [`Self::set_search`] will do something honest here: a paged
-    /// scenery needs the master's `Search` (a local filter would silently
-    /// search only the loaded slice); an eager one always can.
-    fn search_supported(&self) -> bool {
-        false
-    }
+    /// Whether [`Self::set_search`] will do something honest here, decided
+    /// for the view's current query as [`Self::filters_supported`] decides:
+    /// a paged view needs a master that searches, or a Lens that copies the
+    /// whole set when it doesn't (a local filter over a window would search
+    /// only the loaded slice); an eager view always can.
+    fn search_supported(&self) -> bool;
 
     fn subscribe(&self) -> watch::Receiver<Generation>;
 
     /// The view's current [`ViewStats`]: totals, loaded and visible rows,
     /// order, search, filters and live state. Cheap — a clone of the last
     /// published snapshot, never a fetch.
-    fn view_stats(&self) -> ViewStats {
-        ViewStats::from_scenery(self)
-    }
+    fn view_stats(&self) -> ViewStats;
 
     /// Signals each time [`view_stats`](Self::view_stats) changes. Separate
     /// from [`subscribe`](Self::subscribe): a viewport move or a fetch
     /// starting changes the snapshot without changing any row, and a row
     /// hydrating changes a row without changing the snapshot.
-    fn subscribe_view_stats(&self) -> watch::Receiver<Generation> {
-        self.subscribe()
-    }
+    fn subscribe_view_stats(&self) -> watch::Receiver<Generation>;
 
     /// Snapshot of the master Vista's capability flags taken at open
     /// time. UI delegates branch on these to pick the right page
@@ -298,11 +234,4 @@ pub trait TableScenery: Send + Sync {
     /// `set_viewport`; cursor-only (`Cursor`) → call
     /// `request_load_more` to walk forward.
     fn master_capabilities(&self) -> &VistaCapabilities;
-
-    /// The columns this view declared it shows (its demand, from the
-    /// builder's `columns()`). `None` = demands everything — the default for
-    /// implementations that don't track demand.
-    fn demanded_columns(&self) -> Option<Vec<String>> {
-        None
-    }
 }

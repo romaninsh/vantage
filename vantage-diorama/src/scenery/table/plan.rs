@@ -1,59 +1,53 @@
 //! The view's query, and where it goes.
 //!
-//! A table scenery's clauses arrive through several setters: the builder's
-//! `where_eq` and `where_op`, the filter chips, the operator terms, search and
-//! sort. [`TableSceneryState::view_query`] composes them into the one
-//! `VistaQuery` a paged loader receives, and [`ViewPlan`] records where the
-//! Dio routes it.
+//! A table view's clauses arrive through several setters: the builder's
+//! `filter`s, the runtime `set_filters`, search and order.
+//! [`TableView::view_query`](super::TableView::view_query) composes them
+//! into the one `VistaQuery` its [`SharedRows`] answer and a paged loader
+//! receives, and [`ViewPlan`] records where the Dio routes it.
 
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_types::Record;
-use vantage_vista::{Condition, FilterOp, VistaQuery};
+use vantage_vista::VistaQuery;
 
 use crate::dio::{DioInner, Plan, admitted_by_dio};
 
-use super::state::TableSceneryState;
+use super::state::SharedRows;
 
 mod failures;
 mod serving;
 
 pub(crate) use serving::Serving;
 
-/// A view query and the Dio's plan for it. Recomputed whenever the view query
-/// changes, so it always describes the query the next load sends.
+/// A view query and what the Dio's plan for it leaves over. Recomputed
+/// whenever the view query changes, so it always describes the query the
+/// next load sends.
 pub(crate) struct ViewPlan {
     query: VistaQuery,
-    plan: Plan,
-    /// `plan.refused` with the Dio's own residual laid over it.
+    has_residual: bool,
+    /// What the master refused of `query`, with the Dio's own residual laid
+    /// over it.
     residual: VistaQuery,
-    /// Whether the Dio's own residual narrows its rows.
-    dio_narrows: bool,
 }
 
 impl ViewPlan {
     /// Plan `query` against `dio`'s master. Fails when the master rejects a
     /// clause outright.
     pub(crate) fn new(dio: &DioInner, query: VistaQuery) -> Result<Self> {
-        let plan = dio.plan(&query)?;
+        let Plan { refused, .. } = dio.plan(&query)?;
         Ok(Self {
-            residual: dio.with_own_residual(&query, plan.refused.clone()),
-            dio_narrows: dio.residual_narrows(),
+            has_residual: !refused.is_empty() || dio.residual_narrows(),
+            residual: dio.with_own_residual(&query, refused),
             query,
-            plan,
         })
     }
 
     /// The view query this plan routes: what the next load sends.
     pub(crate) fn query(&self) -> &VistaQuery {
         &self.query
-    }
-
-    /// The master narrowed by every clause it took.
-    pub(crate) fn narrowed(&self) -> &vantage_vista::Vista {
-        &self.plan.narrowed
     }
 
     /// Whether a window read from the master leaves anything out: a clause
@@ -65,7 +59,7 @@ impl ViewPlan {
     /// `Orderable` column), so its windows arrive sorted and nothing
     /// re-sorts them.
     pub(crate) fn has_residual(&self) -> bool {
-        !self.plan.refused.is_empty() || self.dio_narrows
+        self.has_residual
     }
 
     /// Every clause a window read from the master doesn't reflect: what the
@@ -80,56 +74,23 @@ impl ViewPlan {
     }
 }
 
-impl TableSceneryState {
-    /// Every clause of this view as one query: the builder's conditions, the
-    /// filter chips, the operator terms, search and sort. Built fresh on each
-    /// call, because two sceneries over one Dio load concurrently and must
-    /// never see each other's narrowing.
+impl SharedRows {
+    /// Every clause these rows answer, as one query.
     pub(crate) fn view_query(&self) -> VistaQuery {
-        let terms = self.ui_terms.read().unwrap().clone();
-        self.query_with_terms(&terms)
+        self.query.clone()
     }
 
-    /// [`view_query`](Self::view_query) with `terms` standing in for the
-    /// view's operator terms.
-    pub(crate) fn query_with_terms(&self, terms: &[super::OpCondition]) -> VistaQuery {
-        let eq = |(column, value): &(String, CborValue)| {
-            Condition::new(column, FilterOp::Eq, value.clone())
-        };
-        let op =
-            |term: &super::OpCondition| Condition::new(&term.column, term.op, term.value.clone());
-        let mut query = VistaQuery::new();
-        query
-            .conditions
-            .extend(self.conditions.read().unwrap().iter().map(eq));
-        query
-            .conditions
-            .extend(self.op_conditions.read().unwrap().iter().map(op));
-        query
-            .conditions
-            .extend(self.ui_filters.read().unwrap().iter().map(eq));
-        query.conditions.extend(terms.iter().map(op));
-        query.search = self.search.read().unwrap().clone();
-        query.order = self
-            .sort
-            .read()
-            .unwrap()
-            .as_ref()
-            .map(|(column, dir)| (column.clone(), dir.to_vista()));
-        query
-    }
-
-    /// The plan for the current view query, or `None` when the master
-    /// rejected it outright. A paged view never loads a rejected query: its
-    /// [`Serving`] is failed instead.
+    /// The plan for the query, or `None` when the master rejected it
+    /// outright. Rows never load a rejected query: their [`Serving`] is
+    /// failed instead.
     pub(crate) fn view_plan(&self) -> Option<Arc<ViewPlan>> {
         self.view_plan.read().unwrap().clone()
     }
 
-    /// Recompute the plan and the [`Serving`] from the current view query.
-    /// Every setter that changes a clause calls this after writing it, and
-    /// skips its own reload when this returns `true`: the change of serving
-    /// already reloaded the view (see [`TableSceneryState::enter`]).
+    /// Plan the query and decide the [`Serving`]. Runs once, as the rows are
+    /// built. Returns `true` when the change of serving from the one the
+    /// rows started with already reloaded them (see [`SharedRows::enter`]),
+    /// so a caller that would reload skips its own.
     pub(crate) fn replan(&self) -> bool {
         let Some(dio) = self.dio_weak.upgrade() else {
             return false;
@@ -152,10 +113,10 @@ impl TableSceneryState {
         self.enter(&dio, &previous, &next)
     }
 
-    /// Plan `query` as this view plans its own: the clauses offered to the
+    /// Plan `query` as these rows plan their own: the clauses offered to the
     /// master, those on sugar outputs, and the Dio's plan for the offered
     /// ones.
-    pub(super) fn plan_query(
+    pub(crate) fn plan_query(
         &self,
         dio: &DioInner,
         query: VistaQuery,
@@ -188,12 +149,11 @@ impl TableSceneryState {
         (query, sugar)
     }
 
-    /// Whether the view query narrows the set: a condition or a search. A
-    /// total stated under a narrowing query describes the narrowed set, so it
-    /// is neither remembered as the table's total nor restored into this view.
+    /// Whether the query narrows the set: a condition or a search. A total
+    /// stated under a narrowing query describes the narrowed set, so it is
+    /// neither remembered as the table's total nor restored into these rows.
     pub(crate) fn view_narrows(&self) -> bool {
-        let view = self.view_query();
-        !view.conditions.is_empty() || view.search.is_some()
+        !self.query.conditions.is_empty() || self.query.search.is_some()
     }
 }
 

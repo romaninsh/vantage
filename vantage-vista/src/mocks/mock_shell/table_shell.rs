@@ -46,6 +46,7 @@ impl TableShell for MockShell {
     }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {
+        self.calls.list();
         self.guard_reads()?;
         self.gets.refuse_listing("list")?;
         let data = self.data.lock().unwrap();
@@ -57,6 +58,7 @@ impl TableShell for MockShell {
     }
 
     async fn get(&self, id: &str) -> Result<Option<Rec>> {
+        self.calls.get();
         self.guard_reads()?;
         self.gets.admit(id).await?;
         let data = self.data.lock().unwrap();
@@ -65,6 +67,7 @@ impl TableShell for MockShell {
 
     /// Counts the matching rows without copying them.
     async fn count(&self) -> Result<i64> {
+        self.calls.count();
         self.guard_reads()?;
         self.gets.refuse_listing("count")?;
         let data = self.data.lock().unwrap();
@@ -74,6 +77,7 @@ impl TableShell for MockShell {
     /// Filters and orders references, then copies only the window: copying
     /// the whole store per window stalls on a large mock.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
+        self.calls.fetch_window();
         self.guard_reads()?;
         self.gets.refuse_listing("fetch_window")?;
         let data = self.data.lock().unwrap();

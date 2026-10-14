@@ -9,9 +9,9 @@ use ciborium::Value as CborValue;
 use tokio::sync::Semaphore;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Clause, Dio, LoadState, OpCondition, TableScenery};
+use vantage_diorama::{Clause, Dio, LoadState, TableScenery};
 use vantage_types::Record;
-use vantage_vista::{Capability, FilterOp};
+use vantage_vista::{Capability, Condition, FilterOp};
 
 use super::fixtures::{assert_fails, ids, items, open, wait_for_ids};
 use crate::support::{memory_lens, page_master};
@@ -83,7 +83,7 @@ async fn a_copy_landing_after_a_failure_installs_no_rows() -> Result<()> {
     let view = windowed(&dio).await;
     copying(&view).await;
 
-    view.set_filter_terms(vec![OpCondition::new("colour", FilterOp::Ne, "x")]);
+    view.set_filters(vec![Condition::new("colour", FilterOp::Ne, "x")]);
     assert_fails(&view, Clause::Filter("colour".into()));
     gate.add_permits(1);
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -99,7 +99,7 @@ async fn a_failed_view_waiting_on_the_copy_reads_as_loading() -> Result<()> {
     let dio = gated_dio(gate.clone()).await;
     let view = windowed(&dio).await;
 
-    view.set_filters(vec![("colour".to_string(), "x".into())]);
+    view.set_filters(vec![Condition::new("colour", FilterOp::Eq, "x")]);
     assert_fails(&view, Clause::Filter("colour".into()));
     view.set_search(Some("re".into()));
     assert_fails(&view, Clause::Filter("colour".into()));

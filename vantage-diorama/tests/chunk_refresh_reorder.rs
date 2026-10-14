@@ -56,13 +56,13 @@ async fn refresh_after_reorder_does_not_duplicate_rows() -> Result<()> {
     // Load the whole set, then narrow the live viewport to the top rows (the
     // grid's visible window is smaller than what it has loaded).
     let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..4);
+    scenery.set_viewport(0..4, 0..0);
     wait_for_gen(&mut gen_rx, g).await;
     settle().await;
     assert_eq!(name_at(&scenery, 0).as_deref(), Some("a"));
     assert_eq!(name_at(&scenery, 3).as_deref(), Some("d"));
 
-    scenery.set_viewport(0..2); // visible window shrinks; last_viewport = 0..2
+    scenery.set_viewport(0..2, 0..0); // visible window shrinks; the view's viewport = 0..2
     settle().await;
 
     // Simulator bumps d to the top: native order becomes d,a,b,c.

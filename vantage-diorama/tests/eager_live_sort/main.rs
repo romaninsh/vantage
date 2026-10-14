@@ -12,11 +12,13 @@ use std::time::Duration;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::{Cache, ChangeEvent, Dio, Lens, Refresher, SortDir, TableScenery};
+use vantage_diorama::{Cache, ChangeEvent, Dio, Lens, Refresher, TableScenery};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
-use vantage_vista::{Column, Vista, VistaMetadata};
+use vantage_vista::{Column, SortDirection, Vista, VistaMetadata};
 
+mod splice;
+#[path = "../support/mod.rs"]
 mod support;
 use support::chunk::wait_for_gen;
 use support::eager_dio;
@@ -68,7 +70,7 @@ async fn client_sort_survives_live_patched_insert() -> Result<()> {
 
     // Sort by amount descending → a(30), c(20), b(10).
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("amount".to_string()), SortDir::Desc);
+    scenery.set_order(Some(("amount".to_string(), SortDirection::Descending)));
     wait_for_gen(&mut gen_rx, g0).await;
     assert_eq!(order(&scenery), vec!["a", "c", "b"], "sorted desc at open");
 
@@ -123,7 +125,7 @@ async fn float_column_sorts_numerically_not_lexically() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
 
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("amount".to_string()), SortDir::Desc);
+    scenery.set_order(Some(("amount".to_string(), SortDirection::Descending)));
     wait_for_gen(&mut gen_rx, g0).await;
 
     // Numeric desc: 6416.51, 1826.19, 657.96 → [hi, mid, lo].
@@ -171,7 +173,7 @@ async fn eager_dio_with_refresh(master: Vista) -> Dio {
 
 /// Mirrors the running faker dashboard: one sorted scenery and one unsorted
 /// scenery share a single eager Dio; a fifo stream writes to the master AND
-/// patches the Dio (the effect + forwarder), while the list's `request_refresh`
+/// patches the Dio (the effect + forwarder), while the list's `refresh_source`
 /// fires periodically. The sorted view must stay sorted through all of it.
 #[tokio::test]
 async fn client_sort_survives_shared_dio_live_stream() -> Result<()> {
@@ -191,13 +193,13 @@ async fn client_sort_survives_shared_dio_live_stream() -> Result<()> {
     // an unsorted sibling on the same Dio (like the feed-order list / charts).
     let sorted = dio
         .table_scenery()
-        .sort("amount", SortDir::Desc)
+        .order("amount", SortDirection::Descending)
         .open()
         .await?;
     let _unsorted = dio.table_scenery().open().await?;
 
     let mut gen_rx = sorted.subscribe();
-    sorted.set_viewport(0..100);
+    sorted.set_viewport(0..100, 0..0);
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(is_desc(&sorted), "sorted at open: {:?}", amounts(&sorted));
 
@@ -214,7 +216,7 @@ async fn client_sort_survives_shared_dio_live_stream() -> Result<()> {
         // The list's 2s poll fires a whole-Dio refresh on some ticks.
         if i % 3 == 2 {
             let gr = u64::from(*gen_rx.borrow_and_update());
-            sorted.request_refresh();
+            sorted.refresh_source();
             wait_for_gen(&mut gen_rx, gr).await;
         }
 

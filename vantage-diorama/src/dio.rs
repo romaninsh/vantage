@@ -3,6 +3,7 @@ pub(crate) mod augment_scheduler;
 mod augmented;
 mod builder;
 mod derive;
+mod detail_state;
 #[cfg(feature = "diagnostics")]
 mod diagnostics;
 mod event_bus;
@@ -32,12 +33,13 @@ use vantage_vista::{Vista, VistaQuery};
 pub(crate) use augmented::AugmentedClause;
 pub use builder::DioBuilder;
 pub(crate) use builder::DioParts;
+pub(crate) use detail_state::DetailState;
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{DioDiagnostics, SceneryDiagnostic};
 pub use event_bus::DioEvent;
 pub use fetch::Fetched;
 pub use import::ImportOutcome;
-pub(crate) use inner::DioInner;
+pub(crate) use inner::{DioInner, shared_key};
 pub(crate) use plan::Plan;
 pub(crate) use residual::admitted_by_dio;
 pub(crate) use shell::DioShell;

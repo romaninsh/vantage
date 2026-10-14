@@ -122,8 +122,8 @@ pub struct DioramaWorld {
     /// Opened by the `the table scenery is opened` step; subsequent
     /// generation assertions read from `scenery.subscribe()`.
     pub scenery: Option<Arc<dyn TableScenery>>,
-    /// A second handle to a table scenery, for dedup/refcount scenarios —
-    /// opening the same query again should hand back the *same* object.
+    /// A second view of the same query, for the shared-rows scenarios —
+    /// opening it again hands back a view of its own over the same rows.
     pub scenery2: Option<Arc<dyn TableScenery>>,
     /// Multi-dio scenarios: a single Lens producing several Dios bound
     /// to different masters, each claiming its own cache table.

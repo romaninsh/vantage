@@ -173,7 +173,7 @@ async fn a_non_debug_source_emits_no_aggregate_recompute_lines() -> Result<()> {
     Ok(())
 }
 
-/// `AggregateValue::request_refresh` covers a source with no refresh route
+/// `AggregateValue::refresh_source` covers a source with no refresh route
 /// by nudging the engine loop directly, in addition to asking the source to
 /// refresh. A working refresh would also emit `DatasetChanged`, racing the
 /// nudge for which one the engine loop's `wait()` observes first — so this
@@ -195,10 +195,10 @@ async fn nudge_trigger_is_emitted_by_a_values_local_write_through() -> Result<()
         .value(&src, "total", Sum::new("amount"))
         .await?;
     settle().await;
-    // Only interested in what request_refresh triggers below.
+    // Only interested in what refresh_source triggers below.
     log.lock().unwrap().clear();
 
-    total.request_refresh();
+    total.refresh_source();
     settle().await;
 
     let nudge_lines = lines_containing(&log, "(nudge,");

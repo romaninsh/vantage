@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
-use vantage_diorama::{Cache, Dio, LoadState, SortDir};
+use vantage_diorama::{Cache, Dio, LoadState};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{
@@ -106,7 +106,11 @@ async fn a_dotted_condition_under_an_augmented_column_stays_in_the_residual() ->
 #[tokio::test]
 async fn a_view_ordered_by_a_dotted_augmented_path_sweeps_rather_than_fails() -> Result<()> {
     let (dio, offered) = detail_dio().await;
-    let view = open(&dio, |b| b.page_size(10).sort("detail.size", SortDir::Asc)).await;
+    let view = open(&dio, |b| {
+        b.page_size(10)
+            .order("detail.size", SortDirection::Ascending)
+    })
+    .await;
     wait_for_ids(&view, &["o3", "o1", "o2", "o4"]).await;
     assert!(!matches!(view.load_state(), LoadState::Failed(_)));
     assert!(

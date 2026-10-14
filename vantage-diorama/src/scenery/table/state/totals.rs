@@ -1,8 +1,8 @@
 //! Grand total, row count and "more pages" answers.
 
-use super::TableSceneryState;
+use super::SharedRows;
 
-impl TableSceneryState {
+impl SharedRows {
     /// Overwrite the cached grand total with an exact one. Returns `true` if
     /// it changed (so the loader can bump the generation for `row_count`
     /// consumers).

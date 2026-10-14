@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::dio::{Dio, DioEvent};
 use crate::lens::{ChunkSink, LoaderCx};
 use crate::scenery::table::ViewportRequest;
-use crate::scenery::table::state::{InFlightMarker, TableSceneryState};
+use crate::scenery::table::state::{InFlightMarker, SharedRows};
 use crate::scenery::table::view_stats::TotalKind;
 
 use super::guards::{CancelOnDrop, PendingChunk};
@@ -20,13 +20,14 @@ use super::range::compute_fetch_range;
 /// `CancelOnDrop` restores whatever rows the callback had bound so a
 /// cancelled load leaves the visible map as it found it.
 pub(super) async fn run_chunk_callback(
-    state: Arc<TableSceneryState>,
+    state: Arc<SharedRows>,
     request: ViewportRequest,
 ) -> Option<PendingChunk> {
     let ViewportRequest {
         range: visible,
         force_load,
         priority,
+        view,
     } = request;
     let Some(dio_inner) = state.dio_weak.upgrade() else {
         tracing::warn!(target: "vantage_diorama::viewport", "fire_chunk_load: dio dropped");
@@ -34,9 +35,11 @@ pub(super) async fn run_chunk_callback(
     };
     let tap = dio_inner.tap();
 
-    // Remember the window the grid last asked for so a refresh can re-fetch
-    // exactly it in place (see `TableSceneryState::refresh_loaded_viewport`).
-    *state.last_viewport.write().unwrap() = Some(visible.clone());
+    // Remember the window the view last asked for so a refresh can re-fetch
+    // exactly it in place (see `SharedRows::refresh_loaded_viewport`).
+    if let Some(view) = view {
+        state.record_viewport(view, visible.clone());
+    }
 
     let _ = dio_inner.event_bus.send(DioEvent::ViewportChanged {
         range: visible.clone(),
@@ -55,9 +58,14 @@ pub(super) async fn run_chunk_callback(
     // superseding viewport sweeps its own rows, and hydration dedups against
     // ids already `Complete`, so a half-finished sweep costs at most a repeat
     // of the rows it did not reach.
+    //
+    // The rows hydrate under the ticket of the view that asked, so two views
+    // on the same rows keep their own places in the scheduler's round robin.
     if state.two_pass {
         if !state.titles_only {
-            crate::scenery::table::two_pass::run_detail_for_range(state.clone(), visible).await;
+            let ticket = state.ticket_for(view);
+            crate::scenery::table::two_pass::run_detail_for_range(state.clone(), visible, ticket)
+                .await;
         }
         return None;
     }

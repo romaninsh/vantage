@@ -20,7 +20,6 @@ fn row(status: RowStatus) -> Row {
     Arc::new(EnrichedRecord {
         record: Record::new(),
         status,
-        dirty_fields: None,
         fetched_at: None,
     })
 }
@@ -65,7 +64,7 @@ fn writes_keep_counts_in_step() {
     let mut map = RowMap::default();
     map.insert(0, row(RowStatus::Fresh));
     map.insert(1, row(RowStatus::PendingWrite));
-    map.insert(2, row(RowStatus::Stale));
+    map.insert(2, row(RowStatus::Incomplete));
     assert_eq!(map.summary(), scanned(&map));
     assert_eq!(map.summary().loaded, 3);
 
@@ -85,4 +84,24 @@ fn writes_keep_counts_in_step() {
 
     map.clear();
     assert_eq!(map.summary(), RowStatusSummary::default());
+}
+
+#[test]
+fn shifts_keep_the_map_dense_and_counted() {
+    let mut map = RowMap::from_map((0..4).map(|i| (i, row(RowStatus::Fresh))).collect());
+    map.insert_shift(1, row(RowStatus::PendingWrite));
+    assert_eq!(map.keys().copied().collect::<Vec<_>>(), [0, 1, 2, 3, 4]);
+    assert_eq!(map[&1].status, RowStatus::PendingWrite);
+    assert_eq!(map.summary(), scanned(&map));
+
+    let removed = map.remove_shift(1).expect("held");
+    assert_eq!(removed.status, RowStatus::PendingWrite);
+    assert_eq!(map.keys().copied().collect::<Vec<_>>(), [0, 1, 2, 3]);
+    assert_eq!(map.summary(), scanned(&map));
+
+    map.insert_shift(4, row(RowStatus::Incomplete));
+    assert!(map.remove_shift(0).is_some());
+    assert_eq!(map.keys().copied().collect::<Vec<_>>(), [0, 1, 2, 3]);
+    assert_eq!(map[&3].status, RowStatus::Incomplete);
+    assert_eq!(map.summary(), scanned(&map));
 }

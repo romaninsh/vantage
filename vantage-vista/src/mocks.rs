@@ -2,4 +2,4 @@
 
 mod mock_shell;
 
-pub use mock_shell::MockShell;
+pub use mock_shell::{MockCalls, MockShell};

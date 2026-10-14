@@ -5,7 +5,6 @@ mod support;
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::SortDir;
 use vantage_diorama_aggregate::{
     AggregateLens, Aggregation, Count, CountWhere, DerivedRows, GroupBy, Max, Reduce, Rows, Sum,
 };
@@ -265,7 +264,7 @@ async fn a_burst_coalesces_and_still_lands_on_the_final_value() -> Result<()> {
 /// locally — recomputing over unchanged rows would just produce the same
 /// number.
 #[tokio::test]
-async fn request_refresh_reaches_the_datasource() -> Result<()> {
+async fn refresh_source_reaches_the_datasource() -> Result<()> {
     let shell = master(&[("amount", "i64")]);
     shell.set_record("a", record(&[("amount", int(1))]));
 
@@ -278,7 +277,7 @@ async fn request_refresh_reaches_the_datasource() -> Result<()> {
     shell.set_record("b", record(&[("amount", int(4))]));
     assert_eq!(as_i64(total.value()), Some(1), "still stale, as expected");
 
-    total.request_refresh();
+    total.refresh_source();
     settle().await;
     assert_eq!(as_i64(total.value()), Some(5), "refresh reached the source");
     Ok(())
@@ -388,7 +387,7 @@ async fn a_scenery_opens_over_the_derived_dio() -> Result<()> {
 
     let scenery = derived
         .table_scenery()
-        .sort("revenue", SortDir::Desc)
+        .order("revenue", SortDirection::Descending)
         .open()
         .await?;
     assert_eq!(scenery.row_count(), 2);

@@ -11,7 +11,9 @@
 #![allow(dead_code)]
 
 pub mod chunk;
+pub mod flash;
 pub mod spy_cache;
+pub mod views;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -150,6 +152,20 @@ pub fn size_detail<'a>(sizes: impl IntoIterator<Item = (&'a str, &'a str)>) -> M
             |shell, (id, size)| shell.with_record(id, record(&[("id", id), ("size", size)])),
         )
         .get_only()
+}
+
+// ---- waiting -------------------------------------------------------------
+
+/// Poll `holds` every 5ms until it is true or `within` elapses. Returns
+/// whether it came true. Bounds a wait; it is not a speed assertion.
+pub async fn eventually(within: Duration, holds: impl Fn() -> bool) -> bool {
+    tokio::time::timeout(within, async {
+        while !holds() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .is_ok()
 }
 
 // ---- record/metadata helpers ---------------------------------------------
@@ -325,7 +341,7 @@ impl MockView {
     }
 
     /// Open a view, customizing the scenery builder first — e.g. to add a
-    /// `where_op` operator filter or a `sort`.
+    /// `filter` or an `order`.
     pub async fn open_with(
         dio: &Dio,
         page_size: usize,
@@ -376,7 +392,7 @@ impl MockView {
     }
 
     pub fn viewport(&self, range: std::ops::Range<usize>) {
-        self.scenery.set_viewport(range);
+        self.scenery.set_viewport(range, 0..0);
     }
 
     /// Pump until `pred` holds or a bounded budget elapses. Wall-clock based

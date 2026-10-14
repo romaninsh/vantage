@@ -85,23 +85,3 @@ async fn with_both_searches_left_the_residual_names_the_view_search() {
     assert!(plan.has_residual());
     assert_eq!(plan.residual().search.as_deref(), Some("y"));
 }
-
-/// A master holding the Dio's search is never offered the view's, which it
-/// would take in place of the Dio's.
-#[tokio::test]
-async fn a_view_search_is_not_offered_over_a_pushed_dio_search() {
-    let derived = dio(teams(true))
-        .await
-        .with_query(&VistaQuery::new().with_search("x"))
-        .await
-        .expect("derives");
-    assert_eq!(derived.master().query().search.as_deref(), Some("x"));
-    let plan = plan(&derived, VistaQuery::new().with_search("y"));
-    assert!(plan.has_residual());
-    assert_eq!(plan.residual().search.as_deref(), Some("y"));
-    assert_eq!(
-        plan.plan.narrowed.query().search.as_deref(),
-        Some("x"),
-        "the narrowed master keeps the Dio's search"
-    );
-}

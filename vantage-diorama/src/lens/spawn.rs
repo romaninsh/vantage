@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::sync::{Mutex, broadcast, mpsc};
 use vantage_core::Result;
 
+use super::registry::DioKey;
 use super::{Lens, LoaderCx};
 use crate::dio::{Dio, DioInner, DioParts, Follower, worker::write_worker_loop};
 
@@ -18,8 +19,9 @@ impl Lens {
     /// Open the cache table, spawn the write worker and the refresh timer,
     /// run the eager start when the loader has one for this master, request
     /// a background refresh when the cache is older than the refresher's
-    /// `max_age`, and start the live follow when asked for.
-    pub(crate) async fn spawn_dio(self: &Arc<Self>, parts: DioParts) -> Result<Dio> {
+    /// `max_age`, and start the live follow when asked for. Registered under
+    /// `key` once it is up; a failed spawn registers nothing.
+    pub(crate) async fn spawn_dio(self: &Arc<Self>, key: DioKey, parts: DioParts) -> Result<Dio> {
         let DioParts {
             master,
             residual,
@@ -56,18 +58,18 @@ impl Lens {
             refresh_task: Mutex::new(None),
             write_worker: Mutex::new(None),
             query_indexes: std::sync::Mutex::new(std::collections::HashMap::new()),
-            table_sceneries: std::sync::Mutex::new(std::collections::HashMap::new()),
+            shared_rows: std::sync::Mutex::new(std::collections::HashMap::new()),
+            table_views: std::sync::Mutex::new(Vec::new()),
             augmentations,
             augmented_columns,
             augment_scheduler: Arc::new(crate::dio::augment_scheduler::AugmentScheduler::new()),
             augment_worker_handles: std::sync::Mutex::new(Vec::new()),
-            augment_settled_empty: std::sync::Mutex::new(std::collections::HashSet::new()),
-            augment_settled: std::sync::Mutex::new(std::collections::HashSet::new()),
-            augment_failed: std::sync::Mutex::new(std::collections::HashSet::new()),
+            detail_state: std::sync::Mutex::new(std::collections::HashMap::new()),
             // Set before any scenery can open, so one opening over the cold
             // cache waits for the detached start instead of showing no rows.
             seed_complete: AtomicBool::new(!detached),
             whole_copy: std::sync::Mutex::new(None),
+            built_at: std::time::SystemTime::now(),
             stale_check_pending: AtomicBool::new(false),
             req_seq: std::sync::atomic::AtomicU64::new(0),
             servo_census: std::sync::atomic::AtomicUsize::new(0),
@@ -99,7 +101,7 @@ impl Lens {
             dio.inner.refresh_if_stale();
             spawn_follow(&dio, follower);
         }
-        Ok(dio)
+        Ok(self.dios.insert(key, &dio))
     }
 }
 
@@ -140,7 +142,7 @@ async fn announce(dio: &Dio) {
 async fn run_eager_start(dio: &Dio, detached: bool, follower: Option<Follower>) -> Result<()> {
     if !detached {
         start(dio).await?;
-        dio.inner.stamp_refreshed().await;
+        dio.inner.stamp_whole().await;
         spawn_follow(dio, follower);
         return Ok(());
     }
@@ -154,7 +156,7 @@ async fn run_eager_start(dio: &Dio, detached: bool, follower: Option<Follower>) 
         dio.inner.seed_complete.store(true, Ordering::SeqCst);
         match outcome {
             Ok(()) => {
-                dio.inner.stamp_refreshed().await;
+                dio.inner.stamp_whole().await;
                 dio.notify_seeded();
             }
             Err(e) => tracing::error!(error = %e, "eager start failed"),

@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex, Weak};
 use indexmap::IndexMap;
 use tokio::sync::{Notify, oneshot};
 
-use super::DioInner;
+use super::{DetailState, DioInner};
 use crate::DioEvent;
 
 pub(crate) struct AugmentScheduler {
@@ -258,7 +258,7 @@ pub(crate) async fn augment_worker_loop(dio: Weak<DioInner>, sched: Arc<AugmentS
             Ok(()) => Ok(()),
             Err(e) => {
                 let error = e.to_string();
-                inner.augment_failed.lock().unwrap().insert(id.clone());
+                inner.set_detail_state(&id, DetailState::Failed);
                 let _ = inner.event_bus.send(DioEvent::RecordLoadFailed {
                     id: id.clone(),
                     error: error.clone(),

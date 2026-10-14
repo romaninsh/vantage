@@ -7,7 +7,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
-use vantage_diorama::{Clause, LoadState, SortDir};
+use vantage_diorama::{Clause, LoadState};
 use vantage_types::Record;
 use vantage_vista::{
     Capability, Column, ColumnFlag, SortDirection, Vista, VistaMetadata, VistaQuery,
@@ -138,10 +138,10 @@ async fn a_refused_sort_on_an_ordering_master_is_returned() -> Result<()> {
 async fn a_paged_view_sorted_by_a_refused_column_fails() -> Result<()> {
     let dio = paged_dio(unorderable_master()).await;
     let scenery = dio.table_scenery().open().await?;
-    scenery.set_viewport(0..2);
+    scenery.set_viewport(0..2, 0..0);
     support::wait_listed(&scenery).await;
 
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     match scenery.load_state() {
         LoadState::Failed(failure) => {
             assert_eq!(failure.table, "items");
@@ -162,7 +162,7 @@ async fn an_eager_start_sorts_a_refused_order_locally() -> Result<()> {
     let scenery = dio.table_scenery().open().await?;
     let mut gen_rx = scenery.subscribe();
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     wait_for_gen(&mut gen_rx, g0).await;
     support::wait_listed(&scenery).await;
 
@@ -184,7 +184,7 @@ async fn paged_scenery_orders_server_side() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
 
     let g0 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..3);
+    scenery.set_viewport(0..3, 0..0);
     wait_for_gen(&mut gen_rx, g0).await;
     assert_eq!(
         col_at(&scenery, 0, "v").as_deref(),
@@ -193,7 +193,7 @@ async fn paged_scenery_orders_server_side() -> Result<()> {
     );
 
     let g1 = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_sort(Some("v".to_string()), SortDir::Asc);
+    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
     wait_for_gen(&mut gen_rx, g1).await;
     let got: Vec<Option<String>> = (0..3).map(|i| col_at(&scenery, i, "v")).collect();
     assert_eq!(

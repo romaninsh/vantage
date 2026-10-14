@@ -120,7 +120,7 @@ fn detail(probe: DetailProbe) -> Vista {
     Vista::new("names", shell).map_shell(|inner| ProbedDetail { inner, probe })
 }
 
-fn augmentation() -> Augmentation {
+pub fn augmentation() -> Augmentation {
     fixed_augmentation(detail(DetailProbe::default()), &["name", "size"])
 }
 

@@ -8,11 +8,13 @@ use tempfile::TempDir;
 use tokio::sync::Semaphore;
 use vantage_core::Result;
 use vantage_diorama::{
-    Cache, CacheBackend, CappedScenery, Dio, FilterOrigin, Lens, Loader, OpCondition, RedbCache,
-    SortDir, TableScenery, ViewCount, ViewState, ViewStats,
+    Cache, CacheBackend, Dio, FilterOrigin, Lens, Loader, RedbCache, TableScenery, ViewCount,
+    ViewState, ViewStats,
 };
 use vantage_types::Record;
-use vantage_vista::{Column, FilterOp, Vista, VistaMetadata, mocks::MockShell};
+use vantage_vista::{
+    Column, Condition, FilterOp, SortDirection, Vista, VistaMetadata, mocks::MockShell,
+};
 
 mod support;
 use support::chunk::{master as paged_master, redb_lens};
@@ -120,7 +122,7 @@ async fn loaded_rows_make_an_exact_total() -> Result<()> {
 }
 
 #[tokio::test]
-async fn showing_follows_the_shown_range() -> Result<()> {
+async fn the_shown_range_is_the_second_viewport_argument() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let dio = eager_dio(tmp.path().join("c.redb")).await?;
     let scenery = dio.table_scenery().open().await?;
@@ -128,17 +130,17 @@ async fn showing_follows_the_shown_range() -> Result<()> {
 
     let mut rx = scenery.subscribe_view_stats();
     rx.borrow_and_update();
-    scenery.set_shown_range(Some(0..2));
+    scenery.set_viewport(0..10, 1..3);
     assert!(rx.has_changed().unwrap(), "a shown-range move signals");
-    assert_eq!(scenery.view_stats().showing, Some(0..2));
+    assert_eq!(scenery.view_stats().showing, Some(1..3));
 
     // Clamped to the rows the view has.
-    scenery.set_shown_range(Some(1..50));
+    scenery.set_viewport(0..10, 1..50);
     assert_eq!(scenery.view_stats().showing, Some(1..3));
     assert_eq!(scenery.view_stats().showing_count(), 2);
 
-    scenery.set_shown_range(None);
-    assert_eq!(scenery.view_stats().showing, None);
+    scenery.set_viewport(0..10, 0..0);
+    assert_eq!(scenery.view_stats().showing, None, "an empty range shows none");
     Ok(())
 }
 
@@ -146,20 +148,14 @@ async fn showing_follows_the_shown_range() -> Result<()> {
 async fn a_hydration_viewport_is_not_showing() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let dio = eager_dio(tmp.path().join("c.redb")).await?;
-    // A dashboard counter and a grid share one scenery.
     let scenery = dio.table_scenery().open().await?;
     wait_stats("rows", &scenery, |s| s.loaded == 3).await;
 
-    scenery.set_viewport(0..200);
-    assert_eq!(scenery.view_stats().showing, None, "no grid shows the view");
+    scenery.set_viewport(0..200, 0..0);
+    assert_eq!(scenery.view_stats().showing, None, "nothing is on screen");
 
-    scenery.set_shown_range(Some(0..2));
-    scenery.set_viewport(1..3);
-    assert_eq!(
-        scenery.view_stats().showing,
-        Some(0..2),
-        "another consumer's viewport leaves the grid's range alone",
-    );
+    scenery.set_viewport(0..2, 0..2);
+    assert_eq!(scenery.view_stats().showing, Some(0..2));
     Ok(())
 }
 
@@ -169,7 +165,7 @@ async fn order_search_and_filters_are_reported() -> Result<()> {
     let dio = eager_dio(tmp.path().join("c.redb")).await?;
     let scenery = dio
         .table_scenery()
-        .where_op("price", FilterOp::Gt, 5)
+        .filter(Condition::new("price", FilterOp::Gt, 5))
         .open()
         .await?;
     wait_stats("rows", &scenery, |s| s.loaded == 3).await;
@@ -178,16 +174,16 @@ async fn order_search_and_filters_are_reported() -> Result<()> {
     assert_eq!(filters[0].origin, FilterOrigin::Query);
     assert_eq!(filters[0].op, FilterOp::Gt);
 
-    scenery.set_sort(Some("price".into()), SortDir::Desc);
+    scenery.set_order(Some(("price".into(), SortDirection::Descending)));
     assert_eq!(
         scenery.view_stats().order,
-        Some(("price".to_string(), SortDir::Desc))
+        Some(("price".to_string(), SortDirection::Descending))
     );
 
     scenery.set_search(Some("al".into()));
     assert_eq!(scenery.view_stats().search.as_deref(), Some("al"));
 
-    scenery.set_filter_terms(vec![OpCondition::new("name", FilterOp::Ne, "beta")]);
+    scenery.set_filters(vec![Condition::new("name", FilterOp::Ne, "beta")]);
     let stats = scenery.view_stats();
     assert_eq!(stats.filters.len(), 2);
     assert_eq!(stats.filters[1].origin, FilterOrigin::View);
@@ -246,8 +242,7 @@ async fn horizon_is_a_lower_bound_until_the_end_is_found() -> Result<()> {
     assert_eq!(stats.count_text(), "100+");
 
     // The short page past it is the end of the set.
-    scenery.set_viewport(100..200);
-    scenery.set_shown_range(Some(100..200));
+    scenery.set_viewport(100..200, 100..200);
     let stats = wait_stats("end of set", &scenery, |s| s.total_exact).await;
     assert_eq!(stats.count(), ViewCount::Exact(REAL_TOTAL));
     assert_eq!(stats.loaded, REAL_TOTAL);
@@ -257,15 +252,13 @@ async fn horizon_is_a_lower_bound_until_the_end_is_found() -> Result<()> {
 }
 
 #[tokio::test]
-async fn capped_scenery_reports_the_cap() -> Result<()> {
+async fn a_limit_reports_the_cap() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let dio = eager_dio(tmp.path().join("c.redb")).await?;
-    let inner = dio.table_scenery().open().await?;
-    wait_stats("rows", &inner, |s| s.loaded == 3).await;
+    let capped = dio.table_scenery().limit(2).open().await?;
+    wait_stats("rows", &capped, |s| s.loaded == 2).await;
 
-    let capped: Arc<dyn TableScenery> = CappedScenery::wrap(inner, 2);
-    capped.set_viewport(0..10);
-    capped.set_shown_range(Some(0..10));
+    capped.set_viewport(0..10, 0..10);
     let stats = wait_stats("capped viewport", &capped, |s| s.showing.is_some()).await;
     assert_eq!(stats.count(), ViewCount::Exact(2));
     assert_eq!(stats.loaded, 2);

@@ -3,7 +3,7 @@
 //! no eager start, and handed back by `Dio::fetch`.
 
 use vantage_core::Result;
-use vantage_diorama::{Clause, Dio};
+use vantage_diorama::{Clause, Dio, FilterOrigin};
 use vantage_vista::{Capability, Condition, FilterOp, Vista, VistaQuery};
 
 use super::fixtures::{NoBytes, assert_fails, items, open, wait_for_ids};
@@ -32,11 +32,17 @@ async fn check(
     eager_ids: &[&str],
 ) -> Result<()> {
     let eager = eager_dio(master()).await;
-    let view = open(&eager, |b| b.where_op(column, op, value.clone())).await;
+    let view = open(&eager, |b| {
+        b.filter(Condition::new(column, op, value.clone()))
+    })
+    .await;
     wait_for_ids(&view, eager_ids).await;
 
     let paged = paged_dio(master()).await;
-    let view = open(&paged, |b| b.where_op(column, op, value.clone())).await;
+    let view = open(&paged, |b| {
+        b.filter(Condition::new(column, op, value.clone()))
+    })
+    .await;
     assert_fails(&view, Clause::Filter(column.into()));
 
     assert_refused(&paged, Condition::new(column, op, value)).await
@@ -90,8 +96,45 @@ async fn a_dotted_path_the_master_refuses() -> Result<()> {
     check(|| items(ALL), "dims.w", FilterOp::Eq, 2.into(), &["b"]).await?;
 
     let fallback = paged_or_eager_dio(items(ALL)).await;
-    let view = open(&fallback, |b| b.where_eq("dims.w", 3)).await;
+    let view = open(&fallback, |b| {
+        b.filter(Condition::new("dims.w", FilterOp::Eq, 3))
+    })
+    .await;
     wait_for_ids(&view, &["c"]).await;
+    Ok(())
+}
+
+/// A narrowed Dio's residual condition is part of what its views are: the
+/// view stats list it as a query filter, ahead of the builder's, and the
+/// runtime filters after both.
+#[tokio::test]
+async fn view_stats_list_the_dio_residual_first() -> Result<()> {
+    let above_one = eager_dio(items(NO_FILTER_OPS))
+        .await
+        .with_query(&crate::support::cond("n", FilterOp::Gt, 1))
+        .await?;
+    assert_eq!(above_one.residual().conditions.len(), 1, "the master refused it");
+    let view = open(&above_one, |b| {
+        b.filter(Condition::new("n", FilterOp::Ne, 3))
+    })
+    .await;
+    wait_for_ids(&view, &["b"]).await;
+    view.set_filters(vec![Condition::new("n", FilterOp::Ne, 0)]);
+
+    let listed: Vec<(FilterOp, ciborium::Value, FilterOrigin)> = view
+        .view_stats()
+        .filters
+        .into_iter()
+        .map(|f| (f.op, f.value, f.origin))
+        .collect();
+    assert_eq!(
+        listed,
+        vec![
+            (FilterOp::Gt, 1.into(), FilterOrigin::Query),
+            (FilterOp::Ne, 3.into(), FilterOrigin::Query),
+            (FilterOp::Ne, 0.into(), FilterOrigin::View),
+        ]
+    );
     Ok(())
 }
 
@@ -108,7 +151,7 @@ async fn an_augmented_column_through_a_derived_dio() -> Result<()> {
 
     let view = johns.table_scenery().page_size(10).open().await?;
     crate::support::wait_listed(&view).await;
-    view.set_viewport(0..10);
+    view.set_viewport(0..10, 0..0);
     let mut generations = view.subscribe();
     let hydrated = async {
         while super::fixtures::ids(&view) != ["o1", "o3"] {

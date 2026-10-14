@@ -274,6 +274,12 @@ impl CacheTable for FlakyTable {
     async fn set_meta_refreshed_at(&self, at: std::time::SystemTime) -> Result<()> {
         self.0.set_meta_refreshed_at(at).await
     }
+    async fn meta_copied_at(&self) -> Result<Option<std::time::SystemTime>> {
+        self.0.meta_copied_at().await
+    }
+    async fn set_meta_copied_at(&self, at: std::time::SystemTime) -> Result<()> {
+        self.0.set_meta_copied_at(at).await
+    }
     async fn get_value_with_status(&self, id: &str) -> Result<Option<(Rec, CacheStatus)>> {
         self.0.get_value_with_status(id).await
     }

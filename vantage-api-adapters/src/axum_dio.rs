@@ -296,17 +296,12 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
         .dio
         .table_scenery()
         .columns(demand)
-        // Every connection is its own standing view: two watchers of
-        // different pages must each keep their own viewport (and their own
-        // place in the augment scheduler's round-robin) — a shared scenery
-        // would hydrate only the last-set window.
-        .exclusive()
         // Size list pages so a fresh scenery's first page already covers the
         // watched window. Saturating: an absurd offset must not panic.
         .page_size(offset.saturating_add(limit).max(1))
         .open()
         .await?;
-    scenery.set_viewport(offset..offset.saturating_add(limit));
+    scenery.set_viewport(offset..offset.saturating_add(limit), 0..0);
     let mut generations = scenery.subscribe();
     let columns = st.columns.clone();
     let key_field = st.key_field.clone();
@@ -400,7 +395,7 @@ async fn watch_detail(st: ApiState, id: String) -> ApiResult<Response> {
         .get_value(key.clone())
         .await?
         .ok_or_else(|| st.not_found(&key))?;
-    let scenery = st.dio.record_scenery(key).await?;
+    let scenery = st.dio.record_scenery(key).open().await?;
     let mut generations = scenery.subscribe();
     // Open on the subscribed scenery's snapshot, not the pre-subscription
     // read: a change landing between the two would otherwise never produce
