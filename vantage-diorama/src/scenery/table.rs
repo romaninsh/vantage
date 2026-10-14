@@ -112,6 +112,7 @@ impl LoadState {
 /// map, kept current as rows are written, so reading it costs nothing per
 /// row. The per-scenery slice of the diagnostics surface.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RowStatusSummary {
     /// Rows actually present in the sparse map (a paged scenery's `row_count`
     /// can be far larger — most indices are unloaded).

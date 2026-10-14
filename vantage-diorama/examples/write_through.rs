@@ -9,7 +9,7 @@
 
 use ciborium::Value as CborValue;
 use tempfile::TempDir;
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_dataset::prelude::{ReadableValueSet, WritableValueSet};
 use vantage_diorama::{Cache, ChangeFlash, FlashKind, FlashOutcome, Lens, LoaderCx};
 use vantage_types::Record;
@@ -61,6 +61,12 @@ async fn main() -> Result<()> {
                     master.delete(id).await?;
                 }
                 FlashKind::Clear => master.delete_all().await?,
+                other => {
+                    return Err(error!(
+                        "the writer has no route for this flash kind",
+                        kind = format!("{other:?}")
+                    ));
+                }
             }
             // The Dio already staged the change in the cache; a confirmed
             // write keeps it.

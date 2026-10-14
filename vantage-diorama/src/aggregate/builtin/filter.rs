@@ -53,7 +53,8 @@ impl Conditions {
     /// Add `column == value`. The column may be a dotted path into a nested
     /// record (`Message.Headers.Subject`).
     pub fn eq(mut self, column: impl Into<String>, value: impl Into<CborValue>) -> Self {
-        self.terms.push(Condition::new(column.into(), FilterOp::Eq, value));
+        self.terms
+            .push(Condition::new(column.into(), FilterOp::Eq, value));
         self
     }
 
@@ -129,6 +130,7 @@ impl<A: Aggregation> Aggregation for Where<A> {
     }
 
     fn compute(&self, rows: &Rows, schema: &VistaMetadata) -> Self::Output {
-        self.inner.compute(&self.conditions.narrow(rows, schema), schema)
+        self.inner
+            .compute(&self.conditions.narrow(rows, schema), schema)
     }
 }

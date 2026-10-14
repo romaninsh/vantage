@@ -141,7 +141,7 @@ The Scenery implements exactly this:
 - rows are served the moment it opens — whatever the cache already holds, with `…` standing in
   for details still pending;
 - every landed detail updates its own row and bumps the `Generation` — one tick, one repaint;
-- `set_viewport(range)` registers the user's attention, and only those rows hydrate.
+- `set_viewport(loaded, shown)` registers the user's attention, and only those rows hydrate.
 
 For the consumer, this chapter reaches for **ratatui** — a terminal-UI library — which Vantage
 updates in real time through a ready-made adapter. The `dataset-ui-adapters` crate ships such
@@ -275,20 +275,19 @@ synchronous:
 
 - `row_count()` and `row(idx)` — an [`EnrichedRecord`](vantage_diorama::EnrichedRecord): the
   record plus a per-row status;
-- `set_viewport(range)` — more on this in a moment;
+- `set_viewport(loaded, shown)` — more on this in a moment;
 - `subscribe()` — the generation channel from the start of the chapter.
 
-The builder can also chain `sort(col, dir)`, `search(text)`, and `where_eq(col, value)` — every
+The builder can also chain `order(col, dir)`, `search(text)`, and `filter(condition)` — every
 one of them served locally, on a backend that can do none of it. We don't use them here — the
 table shows the archive as-is.
 
 A UI rarely commits to one order at open time, though — and it doesn't have to reopen. The
-handle mutates in place: `set_sort(col, dir)` and `set_search(text)`, bound to a key or a header
+handle mutates in place: `set_order(Some((col, dir)))` and `set_search(text)`, bound to a key or a header
 click, re-point the scenery at the ordered index for the new variant, swap the visible rows in
 one atomic step (the grid never blanks mid-reorder), and restart hydration for whatever is on
-screen. Sorting back reuses the already-built index — zero list calls. Conditions are the
-exception: `where_eq` defines what the view *is*, so it's set at open, not toggled on a live
-scenery.
+screen. Sorting back reuses the already-built index — zero list calls. Conditions change the
+same way, through `set_filters(conditions)`.
 
 One thing probably caught your eye: `page_size(200_000)`?! That's the *list pass* — how many
 spine rows one `on_list_page` call returns. It's a separate axis from the viewport, which drives
@@ -299,7 +298,7 @@ size, the first list call builds the entire spine — one cheap read of the loca
 ### The viewport
 
 The **viewport** is the scenery's answer to "which rows is the user actually looking at?" — a
-plain range of row indexes, like `40..80`. It's declared through `set_viewport(range)`, the
+plain range of row indexes, like `40..80`. It's declared through `set_viewport(loaded, shown)`, the
 method on the handle we just opened. You rarely call it yourself: whoever renders the table
 calls it as the user scrolls — later in this chapter, that's the ratatui adapter's job.
 
@@ -316,7 +315,7 @@ chose the window; here the viewport is the window, and it moves with the user.
 ```rust
 // Grand total of the ROWS column — recomputes reactively as files
 // hydrate, so the status bar counts up while data arrives.
-let totals = dio.value_scenery().sum("rows").open().await?;
+let totals = dio.value_scenery(Sum::of("rows")).open().await?;
 ```
 
 Hold on — how can it sum `rows` when most rows aren't augmented yet? It doesn't wait for them:
@@ -329,7 +328,7 @@ Hold on — how can it sum `rows` when most rows aren't augmented yet? It doesn'
 So the number in the status bar is honest about coverage: it starts at zero and climbs with
 hydration, one landed file at a time.
 
-(There is a third kind, **RecordScenery** — `dio.record_scenery(id)` — one record under the same
+(There is a third kind, **RecordScenery** — `dio.record_scenery(id).open()` — one record under the same
 contract: read it, subscribe, redraw on bump. A detail pane beside the table would use one; our
 table doesn't need it.)
 
@@ -409,7 +408,7 @@ real UI binds to Vantage.
 | [`Generation`](vantage_diorama::Generation) / `subscribe()` | Latest-value watch channel — one bump, one repaint          |
 | Two-pass loading                                  | List pass builds the spine; detail pass hydrates rows in view         |
 | `on_list_page`                                    | Plug the list pass — ours serves pages from the chapter-5 cache       |
-| `set_viewport(range)`                             | Declares what's visible — and thereby what hydrates                   |
+| `set_viewport(loaded, shown)`                     | Declares what's visible — and thereby what hydrates                   |
 | `on_start_blocking(false)`                        | UI first: `make_dio` returns immediately, the sync streams behind it  |
 | `refresh_every` + `notify_dataset_changed`        | Standing freshness: reconcile on a timer, announce every change       |
 | `ratatui_dio::SceneryTable`                       | The ratatui binding: virtualized rows, viewport, status bar, keys     |

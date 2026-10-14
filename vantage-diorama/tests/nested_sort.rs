@@ -180,7 +180,10 @@ async fn sort_by_dotted_nested_column() -> Result<()> {
     let mut gen_rx = scenery.subscribe();
     let g = u64::from(*gen_rx.borrow_and_update());
 
-    scenery.set_order(Some(("provider.name".to_string(), SortDirection::Ascending)));
+    scenery.set_order(Some((
+        "provider.name".to_string(),
+        SortDirection::Ascending,
+    )));
     // Wait for the reseed bump. Bounds a hang, not a speed — see
     // `support/chunk.rs::wait_for_gen`.
     tokio::time::timeout(std::time::Duration::from_secs(10), async {

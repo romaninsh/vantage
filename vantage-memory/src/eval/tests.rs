@@ -144,9 +144,9 @@ fn boolean_combinators() {
 #[test]
 fn search_checks_text_and_numbers_case_insensitively() {
     let r = rec(&[("name", text("Alice")), ("n", int(42))]);
-    assert!(yes(MemoryCondition::Search("ALI".into()), &r));
-    assert!(yes(MemoryCondition::Search("42".into()), &r));
-    assert!(!yes(MemoryCondition::Search("bob".into()), &r));
+    assert!(yes(MemoryCondition::search("ALI"), &r));
+    assert!(yes(MemoryCondition::search("42"), &r));
+    assert!(!yes(MemoryCondition::search("bob"), &r));
 }
 
 #[test]
@@ -246,4 +246,13 @@ fn query_search_combines_with_conditions() {
         .search("o")
         .filter(MemoryCondition::cmp("n", FilterOp::Eq, int(2)));
     assert_eq!(ids(t.query(&q).unwrap()), ["c"]);
+}
+
+#[test]
+fn query_search_reads_only_its_search_columns() {
+    let t = filled();
+    let mut q = Query::new().search("1");
+    assert_eq!(ids(t.query(&q).unwrap()), ["b", "d"]);
+    q.search_columns = vec!["name".to_string()];
+    assert!(t.query(&q).unwrap().is_empty());
 }

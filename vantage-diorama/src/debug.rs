@@ -119,7 +119,7 @@ macro_rules! tapline {
 pub(crate) use tapline;
 
 /// A duration in the unit a reader thinks in: `840ms`, `3.0s`, `1m12s`.
-pub fn dur(ms: u64) -> String {
+pub(crate) fn dur(ms: u64) -> String {
     if ms < 1_000 {
         format!("{ms}ms")
     } else if ms < 60_000 {
@@ -130,7 +130,7 @@ pub fn dur(ms: u64) -> String {
 }
 
 /// A byte count as `812B`, `24KB`, `1.2MB`.
-pub fn bytes(n: usize) -> String {
+pub(crate) fn bytes(n: usize) -> String {
     const KB: usize = 1024;
     const MB: usize = KB * 1024;
     if n < KB {
@@ -157,7 +157,7 @@ pub fn num(n: usize) -> String {
 
 /// `held` of `total` as a percentage, precise enough to stay honest at the
 /// small end: 200 of 200,000 is `0.1%`, not `0%`.
-pub fn pct(held: usize, total: usize) -> String {
+pub(crate) fn pct(held: usize, total: usize) -> String {
     if total == 0 {
         return "—".into();
     }

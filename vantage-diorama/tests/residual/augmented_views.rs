@@ -13,9 +13,7 @@ use vantage_core::Result;
 use vantage_diorama::{Cache, Lens, LoadState, TableScenery, Tuning};
 use vantage_vista::{Condition, FilterOp, Vista};
 
-use super::big_bucket::{
-    ROWS, augmentation, john_ids, listed_dio, master_shell, without_window,
-};
+use super::big_bucket::{ROWS, augmentation, john_ids, listed_dio, master_shell, without_window};
 use super::fixtures::ids;
 use crate::support::spy_cache::{SpyCache, SpyTable};
 use crate::support::{augmented_dio, eventually, wait_listed};
@@ -211,7 +209,11 @@ async fn a_sweep_reseeds_once_per_batch_not_once_per_row() -> Result<()> {
         .open()
         .await?;
     view.set_viewport(0..20, 0..0);
-    assert_eq!(settle(&view, |_| {}).await.len(), ROWS - 1, "every size but 0");
+    assert_eq!(
+        settle(&view, |_| {}).await.len(),
+        ROWS - 1,
+        "every size but 0"
+    );
     // The view settles on the first reseed after the last hydration; the
     // ones still queued behind it run after.
     let reads = || table.status_reads.load(Ordering::SeqCst);

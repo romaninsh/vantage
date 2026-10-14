@@ -82,17 +82,14 @@ where
 
     /// Replace the quicksearch condition; `None` drops it.
     pub(super) fn apply_search(&mut self, text: Option<&str>) -> Result<()> {
-        if let Some(handle) = self.current_search_handle {
-            self.table.temp_remove_condition(handle)?;
-            self.current_search_handle = None;
-        }
-        if let Some(text) = text {
-            let condition = self
-                .table
+        let condition = text.map(|text| {
+            self.table
                 .data_source()
-                .search_table_condition(&self.table, text);
-            self.current_search_handle = Some(self.table.temp_add_condition(condition));
-        }
+                .search_table_condition(&self.table, text)
+        });
+        self.current_search_handle = self
+            .table
+            .replace_temp_condition(self.current_search_handle, condition)?;
         Ok(())
     }
 
@@ -102,9 +99,7 @@ where
     /// condition, say) is an error.
     pub(super) async fn read_back(&self, id: &str) -> Result<Record<CborValue>> {
         let mut table = self.table.clone();
-        if let Some(handle) = self.current_search_handle {
-            table.temp_remove_condition(handle)?;
-        }
+        table.replace_temp_condition(self.current_search_handle, None)?;
         table
             .get_value(id)
             .await?

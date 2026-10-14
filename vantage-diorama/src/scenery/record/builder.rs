@@ -146,7 +146,10 @@ async fn fetch_on_miss(dio: Arc<DioInner>, state: Arc<RecordSceneryState>) {
                 id: state.id.clone(),
                 new: Some(row),
             };
-            (Dio { inner: dio }).apply_change(inserted).await.map(|()| true)
+            (Dio { inner: dio })
+                .apply_change(inserted)
+                .await
+                .map(|()| true)
         }
         Ok(None) => Ok(false),
         Err(e) => Err(e),

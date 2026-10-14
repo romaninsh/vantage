@@ -102,7 +102,10 @@ impl TableView {
             return Refusal::Unchanged;
         }
         let refusal = unordered.then(|| {
-            let table = self.dio_weak.upgrade().map(|dio| dio.master.name().to_string());
+            let table = self
+                .dio_weak
+                .upgrade()
+                .map(|dio| dio.master.name().to_string());
             LoadFailure::new(table.unwrap_or_default(), "a tail view needs an order")
         });
         if let Some(failure) = &refusal {
@@ -117,8 +120,7 @@ impl TableView {
                 "refused: a tail view needs an order"
             );
         }
-        let was_refused =
-            std::mem::replace(&mut *self.refused.write().unwrap(), refusal).is_some();
+        let was_refused = std::mem::replace(&mut *self.refused.write().unwrap(), refusal).is_some();
         if unordered || was_refused {
             self.signal.bump();
             self.signal.bump_stats();
@@ -147,7 +149,10 @@ impl TableView {
                 let mut placed = self.placed_end.lock().unwrap();
                 if *placed != Some(len) {
                     *placed = Some(len);
-                    self.ask(&shared, Cap::Tail(n).shared_range(0..n, len, shared.two_pass));
+                    self.ask(
+                        &shared,
+                        Cap::Tail(n).shared_range(0..n, len, shared.two_pass),
+                    );
                 }
             }
             End::Horizon => {

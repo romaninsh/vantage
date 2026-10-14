@@ -3,6 +3,9 @@
 ## 2.0.0 — 2026-10-14
 
 - Vista 2.0: breaking API changes; see the migration guide (phase 5).
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is, in the vista
+  and the typed table alike. `MemoryCondition::Search(text)` is now `Search { text, columns }`;
+  `MemoryCondition::search(text)` builds one that reads every cell.
 
 ## 1.2.2 — 2026-10-11
 

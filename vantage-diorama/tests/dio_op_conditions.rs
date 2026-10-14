@@ -77,14 +77,16 @@ async fn runtime_filters_narrow_and_clear() {
     let view = MockView::open(&dio, 10).await;
     view.settle_until("all rows", |v| v.row_count() == 3).await;
 
-    view.scenery().set_filters(vec![Condition::new("team", FilterOp::Ne, "red")]);
+    view.scenery()
+        .set_filters(vec![Condition::new("team", FilterOp::Ne, "red")]);
     view.settle_until("only non-red rows", |v| v.row_count() == 1)
         .await;
     assert_eq!(view.col_at(0, "team").as_deref(), Some("blue"));
     assert_eq!(view.scenery().view_stats().filters.len(), 1);
 
     // A pattern match is evaluated locally: this master pushes nothing.
-    view.scenery().set_filters(vec![Condition::new("team", FilterOp::Like, "RE")]);
+    view.scenery()
+        .set_filters(vec![Condition::new("team", FilterOp::Like, "RE")]);
     view.settle_until("case-insensitive substring", |v| v.row_count() == 2)
         .await;
 

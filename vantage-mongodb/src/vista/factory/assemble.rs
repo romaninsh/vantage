@@ -73,7 +73,6 @@ impl MongoVistaFactory {
         table: Table<MongoDB, EmptyEntity>,
         column_paths: IndexMap<String, Vec<String>>,
         name: String,
-        search_unflagged_columns: bool,
         metadata: VistaMetadata,
     ) -> Vista {
         let writable = table.data_source().is_stored();
@@ -84,7 +83,6 @@ impl MongoVistaFactory {
             metadata,
             column_paths,
             self.resolver.clone(),
-            search_unflagged_columns,
             self.change_streams,
         );
         Vista::new(name, shell)
@@ -123,7 +121,7 @@ impl VistaFactory for MongoVistaFactory {
         } else {
             paths_from_table_columns(&table)
         };
-        let vista = self.wrap_with_paths(table, column_paths, spec.name, false, metadata);
+        let vista = self.wrap_with_paths(table, column_paths, spec.name, metadata);
 
         // Last step: a `modify:` script narrows or tweaks the built vista.
         #[cfg(feature = "rhai")]

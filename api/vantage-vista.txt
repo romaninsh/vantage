@@ -7,9 +7,33 @@ pub async fn vantage_vista::contract::check_narrowing(&vantage_vista::Vista)
 pub mod vantage_vista::eval
 pub fn vantage_vista::eval::cbor_cmp(&ciborium::value::Value, &ciborium::value::Value) -> core::cmp::Ordering
 pub fn vantage_vista::eval::cell_get<'a>(&'a vantage_types::record::Record<ciborium::value::Value>, &str, &vantage_vista::VistaMetadata) -> core::option::Option<&'a ciborium::value::Value>
-pub fn vantage_vista::eval::path_get<'a>(&'a vantage_types::record::Record<ciborium::value::Value>, &str) -> core::option::Option<&'a ciborium::value::Value>
 pub mod vantage_vista::mocks
+#[non_exhaustive] pub struct vantage_vista::mocks::MockCalls
+pub vantage_vista::mocks::MockCalls::count: usize
+pub vantage_vista::mocks::MockCalls::fetch_window: usize
+pub vantage_vista::mocks::MockCalls::get: usize
+pub vantage_vista::mocks::MockCalls::list: usize
+impl core::clone::Clone for vantage_vista::mocks::MockCalls
+pub fn vantage_vista::mocks::MockCalls::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::mocks::MockCalls
+impl core::cmp::PartialEq for vantage_vista::mocks::MockCalls
+pub fn vantage_vista::mocks::MockCalls::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_vista::mocks::MockCalls
+pub fn vantage_vista::mocks::MockCalls::default() -> Self
+impl core::fmt::Debug for vantage_vista::mocks::MockCalls
+pub fn vantage_vista::mocks::MockCalls::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_vista::mocks::MockCalls
+impl core::marker::StructuralPartialEq for vantage_vista::mocks::MockCalls
+impl core::marker::Freeze for vantage_vista::mocks::MockCalls
+impl core::marker::Send for vantage_vista::mocks::MockCalls
+impl core::marker::Sync for vantage_vista::mocks::MockCalls
+impl core::marker::Unpin for vantage_vista::mocks::MockCalls
+impl core::marker::UnsafeUnpin for vantage_vista::mocks::MockCalls
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::mocks::MockCalls
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::mocks::MockCalls
 pub struct vantage_vista::mocks::MockShell
+impl vantage_vista::mocks::MockShell
+pub fn vantage_vista::mocks::MockShell::calls(&self) -> vantage_vista::mocks::MockCalls
 impl vantage_vista::mocks::MockShell
 pub fn vantage_vista::mocks::MockShell::clear_records(&self)
 pub fn vantage_vista::mocks::MockShell::get_record(&self, &str) -> core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
@@ -271,16 +295,17 @@ pub vantage_vista::prelude::VistaQuery::native: alloc::vec::Vec<alloc::string::S
 pub vantage_vista::prelude::VistaQuery::order: core::option::Option<(alloc::string::String, vantage_vista::SortDirection)>
 pub vantage_vista::prelude::VistaQuery::search: core::option::Option<alloc::string::String>
 impl vantage_vista::VistaQuery
+pub fn vantage_vista::VistaQuery::cmp_rows(&self, (&str, &vantage_types::record::Record<ciborium::value::Value>), (&str, &vantage_types::record::Record<ciborium::value::Value>), &vantage_vista::VistaMetadata) -> core::cmp::Ordering
+pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
+pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
+pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
+impl vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::is_empty(&self) -> bool
 pub fn vantage_vista::VistaQuery::key(&self) -> alloc::string::String
 pub fn vantage_vista::VistaQuery::new() -> Self
 pub fn vantage_vista::VistaQuery::with_condition(self, vantage_vista::Condition) -> Self
 pub fn vantage_vista::VistaQuery::with_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_search(self, impl core::convert::Into<alloc::string::String>) -> Self
-impl vantage_vista::VistaQuery
-pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
-pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
-pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
 impl core::clone::Clone for vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::clone(&self) -> Self
 impl core::cmp::PartialEq for vantage_vista::VistaQuery
@@ -450,6 +475,28 @@ impl core::marker::Unpin for vantage_vista::Capability
 impl core::marker::UnsafeUnpin for vantage_vista::Capability
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::Capability
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::Capability
+#[non_exhaustive] pub enum vantage_vista::ColumnFamily
+pub vantage_vista::ColumnFamily::Bool
+pub vantage_vista::ColumnFamily::Decimal
+pub vantage_vista::ColumnFamily::Float
+pub vantage_vista::ColumnFamily::Integer
+pub vantage_vista::ColumnFamily::Text
+impl core::clone::Clone for vantage_vista::ColumnFamily
+pub fn vantage_vista::ColumnFamily::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::ColumnFamily
+impl core::cmp::PartialEq for vantage_vista::ColumnFamily
+pub fn vantage_vista::ColumnFamily::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::ColumnFamily
+pub fn vantage_vista::ColumnFamily::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_vista::ColumnFamily
+impl core::marker::StructuralPartialEq for vantage_vista::ColumnFamily
+impl core::marker::Freeze for vantage_vista::ColumnFamily
+impl core::marker::Send for vantage_vista::ColumnFamily
+impl core::marker::Sync for vantage_vista::ColumnFamily
+impl core::marker::Unpin for vantage_vista::ColumnFamily
+impl core::marker::UnsafeUnpin for vantage_vista::ColumnFamily
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ColumnFamily
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::ColumnFamily
 #[non_exhaustive] pub enum vantage_vista::ColumnFlag
 pub vantage_vista::ColumnFlag::Auto
 pub vantage_vista::ColumnFlag::Calculated
@@ -554,7 +601,7 @@ impl core::marker::Unpin for vantage_vista::ReferenceKind
 impl core::marker::UnsafeUnpin for vantage_vista::ReferenceKind
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ReferenceKind
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::ReferenceKind
-pub enum vantage_vista::ReferenceSugar
+#[non_exhaustive] pub enum vantage_vista::ReferenceSugar
 pub vantage_vista::ReferenceSugar::Full(vantage_vista::ReferenceSpec<vantage_vista::NoExtras>)
 pub vantage_vista::ReferenceSugar::Sugar(alloc::string::String)
 impl core::clone::Clone for vantage_vista::ReferenceSugar
@@ -649,6 +696,8 @@ pub fn vantage_vista::Column::new(impl core::convert::Into<alloc::string::String
 pub fn vantage_vista::Column::untyped(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_vista::Column::with_expression(self, impl core::convert::Into<alloc::string::String>) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::Column::with_flag(self, impl core::convert::Into<vantage_vista::ColumnFlag>) -> Self
+impl vantage_vista::Column
+pub fn vantage_vista::Column::family(&self) -> core::option::Option<vantage_vista::ColumnFamily>
 impl core::clone::Clone for vantage_vista::Column
 pub fn vantage_vista::Column::clone(&self) -> Self
 impl core::fmt::Debug for vantage_vista::Column
@@ -1008,6 +1057,7 @@ pub vantage_vista::VistaMetadata::id_column: core::option::Option<alloc::string:
 pub vantage_vista::VistaMetadata::references: indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
 impl vantage_vista::VistaMetadata
 pub fn vantage_vista::VistaMetadata::new() -> Self
+pub fn vantage_vista::VistaMetadata::search_columns(&self) -> alloc::vec::Vec<&str>
 pub fn vantage_vista::VistaMetadata::with_column(self, vantage_vista::Column) -> Self
 pub fn vantage_vista::VistaMetadata::with_columns_at<'a>(self, impl core::iter::traits::collect::IntoIterator<Item = (usize, &'a vantage_vista::Column)>) -> Self
 pub fn vantage_vista::VistaMetadata::with_id_column(self, impl core::convert::Into<alloc::string::String>) -> Self
@@ -1031,16 +1081,17 @@ pub vantage_vista::VistaQuery::native: alloc::vec::Vec<alloc::string::String>
 pub vantage_vista::VistaQuery::order: core::option::Option<(alloc::string::String, vantage_vista::SortDirection)>
 pub vantage_vista::VistaQuery::search: core::option::Option<alloc::string::String>
 impl vantage_vista::VistaQuery
+pub fn vantage_vista::VistaQuery::cmp_rows(&self, (&str, &vantage_types::record::Record<ciborium::value::Value>), (&str, &vantage_types::record::Record<ciborium::value::Value>), &vantage_vista::VistaMetadata) -> core::cmp::Ordering
+pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
+pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
+pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
+impl vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::is_empty(&self) -> bool
 pub fn vantage_vista::VistaQuery::key(&self) -> alloc::string::String
 pub fn vantage_vista::VistaQuery::new() -> Self
 pub fn vantage_vista::VistaQuery::with_condition(self, vantage_vista::Condition) -> Self
 pub fn vantage_vista::VistaQuery::with_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_search(self, impl core::convert::Into<alloc::string::String>) -> Self
-impl vantage_vista::VistaQuery
-pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
-pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
-pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
 impl core::clone::Clone for vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::clone(&self) -> Self
 impl core::cmp::PartialEq for vantage_vista::VistaQuery

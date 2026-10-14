@@ -33,8 +33,8 @@ use super::state::SharedRows;
 pub(crate) use coalesce::{Coalescer, reseed_loop};
 pub(crate) use detail::{mark_detail_failed, resume_hydration, run_detail_for_range};
 pub(crate) use list::{run_list_page, seed_from_index};
-pub(crate) use reindex::refresh_index;
 pub(crate) use refine::{reseed_filtered, resort, update_row_from_cache};
+pub(crate) use reindex::refresh_index;
 pub(crate) use splice::{splice_inserted, splice_removed};
 
 /// A cached row as the view shows it: `Fresh` once hydrated, `Incomplete`

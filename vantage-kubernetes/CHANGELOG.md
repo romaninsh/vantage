@@ -3,6 +3,8 @@
 ## 0.7.0 — 2026-10-14
 
 - Vista 2.0 driver cleanup: builds against vantage-vista 2.0.0 and vantage-table 2.0.0.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is (every field
+  when the table declares no columns). No column is flagged by default.
 
 ## 0.6.5 — 2026-10-07
 

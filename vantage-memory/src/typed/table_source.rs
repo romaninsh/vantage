@@ -59,13 +59,20 @@ impl TableSource for MemoryDB {
 
     fn search_table_condition<E>(
         &self,
-        _table: &Table<Self, E>,
+        table: &Table<Self, E>,
         search_value: &str,
     ) -> Self::Condition
     where
         E: Entity<Self::Value>,
     {
-        MemoryCondition::Search(search_value.to_string())
+        MemoryCondition::Search {
+            text: search_value.to_string(),
+            columns: table
+                .search_columns()
+                .into_iter()
+                .map(|column| column.name().to_string())
+                .collect(),
+        }
     }
 
     fn eq_condition(field: &str, value: &str) -> Result<Self::Condition> {

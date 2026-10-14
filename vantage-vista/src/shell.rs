@@ -127,9 +127,12 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     }
 
     /// Replace the quicksearch text; `None` clears it
-    /// ([`Search`](Capability::Search)). The shell decides which columns the
-    /// text is matched against, usually those flagged `searchable`. Text the
-    /// backend can't express is a normal error, not `Unsupported`.
+    /// ([`Search`](Capability::Search)). Quicksearch reads the columns
+    /// flagged `Searchable`, or every column when none is
+    /// ([`VistaMetadata::search_columns`](crate::VistaMetadata::search_columns));
+    /// a shell may exclude columns it can't filter on (dotted paths, imported
+    /// columns). Text the backend can't express is a normal error, not
+    /// `Unsupported`.
     fn set_search(&mut self, _text: Option<&str>) -> Result<()> {
         unsupported(Capability::Search)
     }

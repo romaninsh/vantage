@@ -63,7 +63,10 @@ mod tests {
             CborValue::Map(vec![(text("country"), text("LV"))]),
         );
         let schema = VistaMetadata::new();
-        assert_eq!(column(&record, "customer.country", &schema), Some(&text("LV")));
+        assert_eq!(
+            column(&record, "customer.country", &schema),
+            Some(&text("LV"))
+        );
         assert_eq!(column(&record, "customer.missing", &schema), None);
     }
 

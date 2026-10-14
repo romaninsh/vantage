@@ -7,6 +7,7 @@ use std::time::Duration;
 use product::Product;
 use vantage_api_adapters::axum_dio::DioRouter;
 use vantage_diorama::prelude::*;
+use vantage_diorama::{Cache, Loader, LoaderCx, Refresher};
 use vantage_sql::prelude::*;
 
 #[tokio::main]

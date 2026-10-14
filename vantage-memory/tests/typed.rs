@@ -118,6 +118,37 @@ async fn search_matches_text_cells() {
     assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["p3"]);
 }
 
+/// Only `name` is flagged `Searchable`, so a needle found only in
+/// `category` matches nothing.
+#[tokio::test]
+async fn search_reads_only_searchable_columns() {
+    let db = seeded().await;
+    let t = Table::<MemoryDB, EmptyEntity>::new("product", db.clone())
+        .with_id_column("id")
+        .with_column(Column::<String>::new("name").with_flag(ColumnFlag::Searchable))
+        .with_column_of::<String>("category");
+    let searched = |needle: &str| {
+        let mut t = t.clone();
+        let c = t.data_source().search_table_condition(&t, needle);
+        t.add_condition(c);
+        t
+    };
+    let drinks = searched("drink");
+    let rows = drinks
+        .data_source()
+        .list_table_values(&drinks)
+        .await
+        .unwrap();
+    assert!(rows.is_empty(), "category isn't searched");
+    let coffee = searched("cof");
+    let rows = coffee
+        .data_source()
+        .list_table_values(&coffee)
+        .await
+        .unwrap();
+    assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["p3"]);
+}
+
 #[tokio::test]
 async fn related_in_condition_narrows_by_source_rows() {
     let db = seeded().await;

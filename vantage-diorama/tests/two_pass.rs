@@ -432,7 +432,11 @@ async fn diagnostics_report_sceneries_refcount_and_hydration() -> vantage_core::
         .unwrap();
     let d = dio.diagnostics().await?;
     assert_eq!(d.sceneries.len(), 2);
-    assert!(d.sceneries.iter().all(|s| s.shared_by == 2), "{:?}", d.sceneries);
+    assert!(
+        d.sceneries.iter().all(|s| s.shared_by == 2),
+        "{:?}",
+        d.sceneries
+    );
 
     // A full grid reads distinct rows that hydrate → Fresh rows.
     let grid = support::open_listed(&dio, 2).await;
@@ -556,7 +560,9 @@ async fn shared_detail_across_filter_variants() {
     assert!(
         (0..main.row_count()).all(|i| branch_of(&main, i).as_deref() == Some("main")),
         "the rows are refined to main: {:?}",
-        (0..main.row_count()).map(|i| branch_of(&main, i)).collect::<Vec<_>>()
+        (0..main.row_count())
+            .map(|i| branch_of(&main, i))
+            .collect::<Vec<_>>()
     );
 
     // Switch back to unfiltered: same index_key → cached index reused, so

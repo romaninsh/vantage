@@ -63,6 +63,7 @@ impl Drop for Tally {
 /// Point-in-time census of live diorama objects.
 #[cfg(feature = "diagnostics")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct LiveCounts {
     pub dios: usize,
     pub table_sceneries: usize,

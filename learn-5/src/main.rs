@@ -8,6 +8,9 @@ use files::File;
 use readings::Readings;
 use vantage_aws::prelude::*;
 use vantage_diorama::prelude::*;
+use vantage_diorama::{
+    Augmentation, Cache, Detail, DioEvent, Fetch, Loader, LoaderCx, MergeRule, Source,
+};
 use vantage_vista::prelude::*;
 
 const CACHE_FILE: &str = "cache.redb";
@@ -48,17 +51,15 @@ async fn run() -> VantageResult<()> {
     // to exactly one key per row.
     let dio = lens
         .dio(master)
-        .augment(vec![Augmentation {
-            detail: Detail::Fixed(Arc::new(augmenter)),
-            source: Source::Column {
+        .augment(vec![Augmentation::new(
+            Detail::Fixed(Arc::new(augmenter)),
+            Source::Column {
                 from: "Key".into(),
                 to: Some("prefix".into()),
             },
-            fetch: Fetch::PerRow,
-            merge: MergeRule {
-                columns: vec!["rows".into(), "latest".into()],
-            },
-        }])
+            Fetch::PerRow,
+            MergeRule::lift(["rows", "latest"]),
+        )])
         .build()
         .await?;
 

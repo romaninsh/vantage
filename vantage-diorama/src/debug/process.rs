@@ -12,6 +12,7 @@ use std::time::Instant;
 /// Wall/CPU/memory snapshot for census lines and the exit summary.
 #[cfg(feature = "diagnostics")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ProcessStats {
     /// Milliseconds since the debug stream was armed (the first
     /// [`DebugTap::for_datasource`](super::DebugTap::for_datasource)), not

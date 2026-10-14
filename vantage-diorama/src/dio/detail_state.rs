@@ -80,7 +80,10 @@ mod tests {
             .build()
             .expect("lens builds");
         let dio = lens
-            .dio(Vista::new("items", MockShell::new().with_metadata(metadata)))
+            .dio(Vista::new(
+                "items",
+                MockShell::new().with_metadata(metadata),
+            ))
             .build()
             .await
             .expect("dio builds");

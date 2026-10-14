@@ -40,6 +40,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         }
     }
 
+    /// Swap the temporary condition `old` for `new`: `old` is removed when
+    /// given, `new` added when given, and the handle of `new` returned. A
+    /// stale `old` fails as [`temp_remove_condition`](Self::temp_remove_condition)
+    /// does, before `new` is added.
+    pub fn replace_temp_condition(
+        &mut self,
+        old: Option<ConditionHandle>,
+        new: Option<T::Condition>,
+    ) -> Result<Option<ConditionHandle>> {
+        if let Some(handle) = old {
+            self.temp_remove_condition(handle)?;
+        }
+        Ok(new.map(|condition| self.temp_add_condition(condition)))
+    }
+
     /// Get all conditions
     pub fn conditions(&self) -> impl Iterator<Item = &T::Condition> {
         self.conditions.values()
@@ -51,7 +66,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self
     }
 
-    /// Add a search condition that matches `value` across all columns.
+    /// Add a search condition that matches `value` across
+    /// [`search_columns`](Self::search_columns).
     pub fn add_search(&mut self, value: &str)
     where
         T: Sized,
@@ -142,6 +158,31 @@ mod tests {
         let err = table.temp_remove_condition(handle).unwrap_err();
         assert!(err.is_not_found(), "{err}");
         assert_eq!(table.conditions().count(), 0);
+    }
+
+    #[test]
+    fn replace_temp_condition_swaps_and_clears() {
+        let mut table = Table::<_, EmptyEntity>::new("test", MockTableSource::new());
+        table.add_condition(expr_any!("perm"));
+        let first = table
+            .replace_temp_condition(None, Some(expr_any!("a")))
+            .unwrap();
+        let second = table
+            .replace_temp_condition(first, Some(expr_any!("b")))
+            .unwrap();
+        let previews: Vec<String> = table.conditions().map(|c| c.preview()).collect();
+        assert_eq!(previews, ["perm", "b"]);
+
+        let cleared = table.replace_temp_condition(second, None).unwrap();
+        assert!(cleared.is_none());
+        let previews: Vec<String> = table.conditions().map(|c| c.preview()).collect();
+        assert_eq!(previews, ["perm"]);
+
+        let err = table
+            .replace_temp_condition(first, Some(expr_any!("c")))
+            .unwrap_err();
+        assert!(err.is_not_found(), "{err}");
+        assert_eq!(table.conditions().count(), 1, "a refused swap adds nothing");
     }
 
     #[test]

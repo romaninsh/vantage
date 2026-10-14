@@ -65,14 +65,12 @@ fn resolved(table: &str) -> Detail {
 }
 
 fn aug(table: &str, source: Source, merge: &[&str]) -> Augmentation {
-    Augmentation {
-        detail: resolved(table),
+    Augmentation::new(
+        resolved(table),
         source,
-        fetch: Fetch::PerRow,
-        merge: MergeRule {
-            columns: merge.iter().map(|s| s.to_string()).collect(),
-        },
-    }
+        Fetch::PerRow,
+        MergeRule::lift(merge.iter().copied()),
+    )
 }
 
 /// A no-loader Lens over a redb file in `tmp`.
@@ -228,16 +226,14 @@ async fn custom_fetch_closure_reads_narrowed_detail() {
     use vantage_vista::Vista as V;
 
     let tmp = TempDir::new().unwrap();
-    let augmentation = Augmentation {
-        detail: resolved("runs-detail"),
-        source: Source::Id,
-        fetch: Fetch::Custom(Arc::new(|detail: V, _row| {
+    let augmentation = Augmentation::new(
+        resolved("runs-detail"),
+        Source::Id,
+        Fetch::Custom(Arc::new(|detail: V, _row| {
             Box::pin(async move { Ok(detail.list_values().await?.into_values().collect()) })
         })),
-        merge: MergeRule {
-            columns: vec!["detail".into()],
-        },
-    };
+        MergeRule::lift(["detail"]),
+    );
     let dio = open(&tmp, vec![augmentation]).await;
     let scenery = hydrated(&dio, 0).await;
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
@@ -249,10 +245,10 @@ async fn custom_fetch_closure_reads_narrowed_detail() {
 #[tokio::test]
 async fn custom_fetch_closure_reads_the_master_row() {
     let tmp = TempDir::new().unwrap();
-    let augmentation = Augmentation {
-        detail: resolved("runs-detail"),
-        source: Source::Id,
-        fetch: Fetch::Custom(Arc::new(|detail: Vista, row| {
+    let augmentation = Augmentation::new(
+        resolved("runs-detail"),
+        Source::Id,
+        Fetch::Custom(Arc::new(|detail: Vista, row| {
             Box::pin(async move {
                 assert!(detail.column("branch").is_none(), "only the row has it");
                 let branch = match row.get("branch") {
@@ -262,10 +258,8 @@ async fn custom_fetch_closure_reads_the_master_row() {
                 Ok(vec![record(&[("label", &format!("on {branch}"))])])
             })
         })),
-        merge: MergeRule {
-            columns: vec!["label".into()],
-        },
-    };
+        MergeRule::lift(["label"]),
+    );
     let dio = open(&tmp, vec![augmentation]).await;
     let scenery = hydrated(&dio, 1).await;
     assert_eq!(col_of(&scenery, 0, "label").as_deref(), Some("on main"));
@@ -304,17 +298,15 @@ async fn fixed_detail_vista_hydrates_without_a_catalog() {
     let dio = augmented_dio(
         &redb_lens(&tmp),
         Vista::new("listing", master),
-        vec![Augmentation {
-            detail: Detail::Fixed(fixed),
-            source: Source::Column {
+        vec![Augmentation::new(
+            Detail::Fixed(fixed),
+            Source::Column {
                 from: "path".into(),
                 to: None,
             },
-            fetch: Fetch::PerRow,
-            merge: MergeRule {
-                columns: vec!["size".into(), "file_count".into()],
-            },
-        }],
+            Fetch::PerRow,
+            MergeRule::lift(["size", "file_count"]),
+        )],
     )
     .await;
     let scenery = support::open_listed(&dio, 2).await;
@@ -631,7 +623,11 @@ async fn ui_filter_narrows_on_an_augmented_column() {
     .await;
     assert_eq!(scenery.row_count(), 2);
 
-    scenery.set_filters(vec![Condition::new("detail", FilterOp::Eq, text("full-r0"))]);
+    scenery.set_filters(vec![Condition::new(
+        "detail",
+        FilterOp::Eq,
+        text("full-r0"),
+    )]);
     eventually("filter narrowed the visible set", || {
         scenery.row_count() == 1
     })

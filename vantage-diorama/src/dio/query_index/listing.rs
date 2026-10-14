@@ -65,7 +65,10 @@ impl QueryIndex {
     /// Returns the ids pushed, in order.
     pub(crate) fn flush_deferred(&self) -> Vec<String> {
         let deferred = std::mem::take(&mut *self.deferred.lock().unwrap());
-        deferred.into_iter().filter(|id| self.push(id.clone())).collect()
+        deferred
+            .into_iter()
+            .filter(|id| self.push(id.clone()))
+            .collect()
     }
 }
 
@@ -82,13 +85,19 @@ mod tests {
         let idx = QueryIndex::new();
         assert_eq!(idx.reads_cache(), None);
         assert!(!idx.pin_source(false, flashes.mark()));
-        assert!(!idx.pin_source(true, flashes.mark()), "the master stays pinned");
+        assert!(
+            !idx.pin_source(true, flashes.mark()),
+            "the master stays pinned"
+        );
         assert!(idx.end_listing().is_some());
         assert!(idx.end_listing().is_none(), "the mark is handed out once");
 
         let cached = QueryIndex::new();
         assert!(cached.pin_source(true, flashes.mark()));
-        assert!(cached.end_listing().is_none(), "a cache listing has no mark");
+        assert!(
+            cached.end_listing().is_none(),
+            "a cache listing has no mark"
+        );
     }
 
     #[test]
@@ -122,7 +131,11 @@ mod tests {
         fresh.append_page(vec!["a".into()], 2, None);
         assert_eq!(fresh.flush_deferred(), vec!["b"]);
         assert_eq!(fresh.ids(), vec!["a", "b"]);
-        assert_eq!(old.flush_deferred(), vec!["b"], "the old index keeps its own");
+        assert_eq!(
+            old.flush_deferred(),
+            vec!["b"],
+            "the old index keeps its own"
+        );
     }
 
     #[test]

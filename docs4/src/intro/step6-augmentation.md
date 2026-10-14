@@ -155,17 +155,15 @@ let augmenter = aws
 
 let dio = lens.make_dio(master).await?.augment(
     Arc::new(Catalog::new()),
-    vec![Augmentation {
-        detail: Detail::Fixed(Arc::new(augmenter)),
-        source: Source::Column {
+    vec![Augmentation::new(
+        Detail::Fixed(Arc::new(augmenter)),
+        Source::Column {
             from: "Key".into(),
             to: Some("prefix".into()),
         },
-        fetch: Fetch::PerRow,
-        merge: MergeRule {
-            columns: vec!["rows".into(), "latest".into()],
-        },
-    }],
+        Fetch::PerRow,
+        MergeRule::lift(["rows", "latest"]),
+    )],
 );
 ```
 

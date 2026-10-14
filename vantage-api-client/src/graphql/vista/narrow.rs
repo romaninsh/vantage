@@ -84,18 +84,17 @@ impl GraphqlApiTableShell {
         }
     }
 
-    /// Replace the quicksearch condition; `None` drops it. The old handle is
-    /// cleared only once its condition is removed.
+    /// Replace the quicksearch condition; `None` drops it. A failed removal
+    /// keeps the old handle.
     pub(crate) fn apply_search(&mut self, text: Option<&str>) -> Result<()> {
-        if let Some(handle) = self.search_handle {
-            self.table.temp_remove_condition(handle)?;
-            self.search_handle = None;
-        }
-        if let Some(text) = text {
-            let api = self.table.data_source().clone();
-            let condition = api.search_table_condition(&self.table, text);
-            self.search_handle = Some(self.table.temp_add_condition(condition));
-        }
+        let condition = text.map(|text| {
+            self.table
+                .data_source()
+                .search_table_condition(&self.table, text)
+        });
+        self.search_handle = self
+            .table
+            .replace_temp_condition(self.search_handle, condition)?;
         Ok(())
     }
 

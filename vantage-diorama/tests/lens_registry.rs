@@ -19,8 +19,14 @@ use vantage_vista::{Condition, FilterOp, JoinKey, Reference, Vista, VistaQuery};
 fn teams() -> (Vista, MockShell, MockShell) {
     let players = MockShell::new()
         .with_metadata(meta(&["id", "team_id", "name"]))
-        .with_record("p1", record(&[("id", "p1"), ("team_id", "t1"), ("name", "Ann")]))
-        .with_record("p2", record(&[("id", "p2"), ("team_id", "t2"), ("name", "Bob")]));
+        .with_record(
+            "p1",
+            record(&[("id", "p1"), ("team_id", "t1"), ("name", "Ann")]),
+        )
+        .with_record(
+            "p2",
+            record(&[("id", "p2"), ("team_id", "t2"), ("name", "Bob")]),
+        );
     let shell = MockShell::new()
         .with_metadata(meta(&["id", "team"]).with_reference(Reference::has_many(
             "members",
@@ -44,7 +50,9 @@ fn team_names() -> Augmentation {
 }
 
 fn ids(view: &MockView) -> Vec<Option<String>> {
-    (0..view.row_count()).map(|i| view.col_at(i, "id")).collect()
+    (0..view.row_count())
+        .map(|i| view.col_at(i, "id"))
+        .collect()
 }
 
 #[tokio::test]
@@ -67,8 +75,10 @@ async fn two_derivations_of_one_query_share_one_dio() {
 
     let a = MockView::open(&first, 10).await;
     let b = MockView::open(&second, 10).await;
-    a.settle_until("two red rows", |v| v.loaded_rows() == 2).await;
-    b.settle_until("two red rows", |v| v.loaded_rows() == 2).await;
+    a.settle_until("two red rows", |v| v.loaded_rows() == 2)
+        .await;
+    b.settle_until("two red rows", |v| v.loaded_rows() == 2)
+        .await;
     assert_eq!(ids(&a), ids(&b));
 }
 
@@ -104,7 +114,9 @@ async fn the_same_vista_with_other_augmentations_builds_its_own_dio() {
     // Checked before the augmented Dio hydrates: both read the one `teams`
     // cache table, so merged names would show here afterwards.
     let single = MockView::open(&plain, 10).await;
-    single.settle_until("three rows", |v| v.loaded_rows() == 3).await;
+    single
+        .settle_until("three rows", |v| v.loaded_rows() == 3)
+        .await;
     assert!(
         (0..3).all(|i| single.col_at(i, "name").is_none()),
         "the plain Dio has no augmented columns"
@@ -157,7 +169,9 @@ async fn a_build_that_shares_a_dio_still_checks_max_age() -> vantage_core::Resul
         "fresh at the first build"
     );
 
-    table.set_meta_refreshed_at(SystemTime::now() - TTL * 2).await?;
+    table
+        .set_meta_refreshed_at(SystemTime::now() - TTL * 2)
+        .await?;
     let _shared = lens.dio(master).build().await?;
     assert!(
         tokio::time::timeout(wait, refreshes.recv()).await.is_ok(),

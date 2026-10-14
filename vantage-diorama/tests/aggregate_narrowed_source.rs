@@ -90,11 +90,7 @@ async fn a_value_and_a_derive_see_a_residual_narrowing() -> Result<()> {
         .collect();
     let shell = orders(master(&[("status", "String")]).with_capabilities(caps));
     let src = source(shell).await;
-    let open = src
-        .derive()
-        .with_search("open")
-        .build()
-        .await?;
+    let open = src.derive().with_search("open").build().await?;
     assert!(
         open.residual().search.is_some(),
         "the master refused the search"

@@ -3,6 +3,7 @@
 ## 0.9.0 — 2026-10-14
 
 - Vista 2.0 driver cleanup: one generic spec builder for the three dialects; spec `keys:` honoured.
+- Quicksearch reads the columns flagged `Searchable`, or every column when none is.
 
 ## 0.8.0 — 2026-10-10
 

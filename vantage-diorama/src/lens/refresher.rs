@@ -46,7 +46,8 @@ impl Refresher {
     }
 
     /// The oldest a cache may be when it is opened before a background refresh
-    /// is requested. Needs [`every`](Self::every).
+    /// is requested. Works alone: staleness is checked at build and at open,
+    /// and no timer runs without [`every`](Self::every).
     pub fn max_age(mut self, ttl: Duration) -> Self {
         self.max_age = Some(ttl);
         self
@@ -57,12 +58,6 @@ impl Refresher {
             return Err(error!(
                 "Refresher::every needs a non-zero interval",
                 setting = "refresher.every"
-            ));
-        }
-        if self.max_age.is_some() && self.every.is_none() {
-            return Err(error!(
-                "Refresher::max_age needs Refresher::every",
-                setting = "refresher.max_age"
             ));
         }
         Ok(())

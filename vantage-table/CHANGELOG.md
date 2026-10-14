@@ -4,6 +4,9 @@
 
 - Vista 2.0: breaking API changes; see the migration guide (phase 5).
 - `Cardinality` removed in favour of `Reference::vista_reference`; `Table::traverse_erased`; column-level `references:` lowered in the spec path; `name_spec_targets` removed.
+- `Table::replace_temp_condition(old, new)`: swap a temporary condition in one call.
+- `Table::search_columns`: the columns flagged `Searchable`, or every column when none is. The
+  mock table source searches them.
 
 ## 1.3.0 — 2026-10-10
 

@@ -181,22 +181,16 @@ async fn an_augmented_live_dio_filters_by_an_accepted_search() -> Result<()> {
     let lens = Lens::builder().cache(Cache::memory()).build()?;
     let dio = lens
         .dio(master(None))
-        .augment(vec![Augmentation {
-            detail: Detail::Fixed(Arc::new(notes)),
-            source: Source::Id,
-            fetch: Fetch::PerRow,
-            merge: MergeRule {
-                columns: vec!["note".into()],
-            },
-        }])
+        .augment(vec![Augmentation::new(
+            Detail::Fixed(Arc::new(notes)),
+            Source::Id,
+            Fetch::PerRow,
+            MergeRule::lift(["note"]),
+        )])
         .live()
         .build()
         .await?;
-    let in_transit = dio
-        .derive()
-        .with_search("transit")
-        .build()
-        .await?;
+    let in_transit = dio.derive().with_search("transit").build().await?;
     assert!(
         in_transit.master().capabilities().has(Capability::Search)
             && in_transit.master().query().search.is_some(),

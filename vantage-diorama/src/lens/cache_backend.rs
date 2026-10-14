@@ -55,6 +55,7 @@ pub trait CacheBackend: Send + Sync + 'static {
 /// once the detail pass hydrates them. Persisting this lets hydration
 /// resume across restarts and skip records that are already complete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum CacheStatus {
     /// Fully hydrated — no further detail fetch needed.
     #[default]
