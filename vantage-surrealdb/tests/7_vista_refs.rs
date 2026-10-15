@@ -18,7 +18,7 @@ use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::{SurrealVistaFactory, SurrealVistaSpec};
-use vantage_vista::{SpecResolver, VistaFactory};
+use vantage_vista::{ColumnFlag, SpecResolver, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -205,5 +205,208 @@ async fn many_to_many_via_chained_has_many_through_has_one() -> TestResult {
     let sibling_rows = sibling_clients.list_values().await?;
     assert_eq!(sibling_rows.len(), 3, "all 3 clients of marty's bakery");
 
+    Ok(())
+}
+
+/// Every driver answers an unknown relation with `unknown_relation`: a
+/// not-found error.
+#[tokio::test]
+async fn unknown_relation_is_not_found() -> TestResult {
+    let (db, bakery_table, client_table) = setup().await;
+    let (bakery_spec, _) = build_specs(&bakery_table, &client_table);
+    let bakery = SurrealVistaFactory::new(db).build_from_spec(bakery_spec)?;
+
+    let err = bakery
+        .get_ref("nope", None)
+        .map(drop)
+        .expect_err("no such relation");
+    assert!(err.is_not_found(), "{err:?}");
+    Ok(())
+}
+
+/// A dotted spec column through a declared relation (`bakery.name`) is an
+/// implicit reference: each row carries the related value under the dotted
+/// name, and the column is flagged calculated (read-only for consumers).
+#[tokio::test]
+async fn dotted_spec_column_reads_through_its_relation() -> TestResult {
+    let (db, bakery_table, client_table) = setup().await;
+    seed_v2_like(&db, &bakery_table, &client_table).await?;
+
+    let (bakery_spec, _) = build_specs(&bakery_table, &client_table);
+    let client_yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: thing, flags: [id] }}
+  name: {{ type: string }}
+  bakery: {{ type: thing, references: bakery }}
+  bakery.name: {{ type: string }}
+surreal:
+  table: {client_table}
+"#
+    );
+    let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
+    let resolver = registry_resolver(vec![("bakery".into(), bakery_spec)]);
+    let clients = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(client_spec)?;
+
+    let column = clients.column("bakery.name").expect("dotted column");
+    assert!(column.has_flag(ColumnFlag::Calculated));
+
+    let marty = clients.get_value("marty").await?.expect("marty");
+    assert_eq!(
+        marty.get("bakery.name"),
+        Some(&ciborium::Value::Text("Hill Valley Bakery".to_string()))
+    );
+    Ok(())
+}
+
+/// Quicksearch reads every column when none is flagged, but leaves imported
+/// reference columns out: text only `bakery.name` holds matches no row.
+#[tokio::test]
+async fn search_leaves_imported_reference_columns_out() -> TestResult {
+    let (db, bakery_table, client_table) = setup().await;
+    seed_v2_like(&db, &bakery_table, &client_table).await?;
+
+    let (bakery_spec, _) = build_specs(&bakery_table, &client_table);
+    let client_yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: thing, flags: [id] }}
+  name: {{ type: string }}
+  bakery: {{ type: thing, references: bakery }}
+  bakery.name: {{ type: string }}
+surreal:
+  table: {client_table}
+"#
+    );
+    let resolver = registry_resolver(vec![("bakery".into(), bakery_spec)]);
+    let factory = SurrealVistaFactory::new(db).with_resolver(resolver);
+
+    let mut by_import = factory.build_from_spec(serde_yaml_ng::from_str(&client_yaml)?)?;
+    by_import.set_search(Some("valley bakery"))?;
+    assert!(by_import.list_values().await?.is_empty());
+
+    let mut by_name = factory.build_from_spec(serde_yaml_ng::from_str(&client_yaml)?)?;
+    by_name.set_search(Some("marty"))?;
+    assert_eq!(by_name.list_values().await?.len(), 1);
+    Ok(())
+}
+
+/// A dotted column through a relation the spec doesn't declare fails the
+/// spec load, not the first fetch.
+#[test]
+fn dotted_spec_column_through_an_unknown_relation_fails_the_build() {
+    let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
+    let spec: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: client
+columns:
+  id: { type: thing, flags: [id] }
+  nope.name: { type: string }
+"#,
+    )
+    .expect("client yaml");
+    assert!(SurrealVistaFactory::new(db).build_from_spec(spec).is_err());
+}
+
+#[cfg(feature = "rhai")]
+const INVOICE: &str = r#"
+name: invoice
+columns:
+  id: { type: thing, flags: [id] }
+  client: { type: thing }
+  status: { type: string }
+"#;
+
+/// A client with one scripted reference, `due_invoices`, whose build script
+/// is `script`.
+#[cfg(feature = "rhai")]
+fn client_with_script(script: &str) -> SurrealVistaSpec {
+    let yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: thing, flags: [id] }}
+  name: {{ type: string }}
+references:
+  due_invoices:
+    table: invoice
+    kind: has_many
+    foreign_key: client
+    surreal:
+      rhai: '{script}'
+"#
+    );
+    serde_yaml_ng::from_str(&yaml).expect("client yaml")
+}
+
+#[cfg(feature = "rhai")]
+async fn seed_invoices(db: &SurrealDB) -> TestResult {
+    for sql in [
+        "CREATE client:marty SET name = 'Marty'",
+        "CREATE client:doc SET name = 'Doc'",
+        "CREATE invoice:i1 SET client = client:marty, status = 'due'",
+        "CREATE invoice:i2 SET client = client:marty, status = 'paid'",
+        "CREATE invoice:i3 SET client = client:doc, status = 'due'",
+    ] {
+        db.execute(&surreal_expr!(sql)).await?;
+    }
+    Ok(())
+}
+
+/// The book's reference build script: it lands in the reference's
+/// `build_script` and, at traversal time, builds the target from the parent
+/// `row` in place of the key match.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn scripted_reference_builds_its_target_from_the_parent_row() -> TestResult {
+    let (db, _, _) = setup().await;
+    seed_invoices(&db).await?;
+    let script = r#"table("invoice").where("client", row.id).where("status", "due")"#;
+    let client_spec = client_with_script(script);
+    let resolver = registry_resolver(vec![
+        ("client".into(), client_spec.clone()),
+        ("invoice".into(), serde_yaml_ng::from_str(INVOICE)?),
+    ]);
+    let clients = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(client_spec)?;
+
+    let reference = clients.reference("due_invoices").expect("reference");
+    assert_eq!(reference.build_script.as_deref(), Some(script));
+
+    let marty = clients.get_value("marty").await?.expect("marty");
+    let due = clients.get_ref("due_invoices", Some(&marty))?;
+    let ids: Vec<String> = due.list_values().await?.into_keys().collect();
+    assert_eq!(ids, ["invoice:i1"]);
+    Ok(())
+}
+
+/// `with_condition` narrows a Vista in hand: on a handle from `table(name)`
+/// it throws an error naming the verb.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn with_condition_on_a_table_handle_is_refused_naming_the_verb() -> TestResult {
+    let (db, _, _) = setup().await;
+    seed_invoices(&db).await?;
+    let client_spec =
+        client_with_script(r#"table("invoice").with_condition(surreal::ident("status") == "due")"#);
+    let resolver = registry_resolver(vec![
+        ("client".into(), client_spec.clone()),
+        ("invoice".into(), serde_yaml_ng::from_str(INVOICE)?),
+    ]);
+    let clients = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(client_spec)?;
+
+    let marty = clients.get_value("marty").await?.expect("marty");
+    let err = clients
+        .get_ref("due_invoices", Some(&marty))
+        .map(drop)
+        .expect_err("with_condition on table(...) must fail");
+    assert!(err.to_string().contains("with_condition"), "{err}");
     Ok(())
 }

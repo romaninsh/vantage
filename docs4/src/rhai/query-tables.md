@@ -83,7 +83,7 @@ A query-sourced table can take arguments. The host sets them on the driver block
 the table; YAML can't set them. The script sees them as `args`, a map of strings, where `""` means
 "not set". They reach `rhai:` sources and `base:` transforms, not `modify:` scripts.
 
-<!-- tested: vantage-surrealdb vista::rhai_source::tests::args_map_is_in_scope -->
+<!-- tested: vantage-surrealdb tests/6_vista/query_sourced.rs args_reach_a_rhai_source_and_bind_as_parameters -->
 ```rhai
 let q = surreal::select().from("order");
 if "bakery" in args && args.bakery != "" {

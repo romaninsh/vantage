@@ -1,37 +1,16 @@
-//! # SurrealDB Identifiers
-//!
-//! doc wip
+//! Function-call expressions: `math::sum` and any named function.
 
 use vantage_expressions::{Expression, Expressive};
 
 use crate::{AnySurrealType, Expr, surreal_expr};
 
-/// SurrealDB identifier with automatic escaping
-///
-/// doc wip
-///
-/// # Examples
-///
-/// ```rust
-/// use vantage_surrealdb::identifier::Identifier;
-///
-/// // doc wip
-/// let id = Identifier::new("user_name");
-/// let escaped = Identifier::new("SELECT"); // Reserved keyword
-/// ```
+/// `math::sum(expr)`.
 #[derive(Debug, Clone)]
 pub struct Sum {
     expr: Expr,
 }
 
 impl Sum {
-    /// Calculate sum of expression
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `identifier` - doc wip
     pub fn new(expr: Expr) -> Self {
         Self {
             expr: surreal_expr!("math::sum({})", (expr)),
@@ -51,6 +30,8 @@ impl From<Sum> for Expr {
     }
 }
 
+/// A call `name(arg, …)` to any SurrealQL function. The name is emitted
+/// verbatim, so pass a trusted built-in path such as `string::lowercase`.
 #[derive(Debug, Clone)]
 pub struct Fx {
     name: String,
@@ -58,13 +39,6 @@ pub struct Fx {
 }
 
 impl Fx {
-    /// Execute any function
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `identifier` - doc wip
     pub fn new(name: impl Into<String>, expr: Vec<Expr>) -> Self {
         Self {
             name: name.into(),
@@ -75,9 +49,8 @@ impl Fx {
 
 impl Expressive<AnySurrealType> for Fx {
     fn expr(&self) -> Expr {
-        // The function name is a trusted, qualified built-in path (e.g.
-        // `string::lowercase`) — it is not a column identifier and must not be
-        // ⟨…⟩-escaped, so it is emitted verbatim rather than through `Identifier`.
+        // A qualified function path isn't a column name; ⟨…⟩-escaping it
+        // would break the call.
         surreal_expr!(
             "{}({})",
             (Expression::new(self.name.clone(), vec![])),

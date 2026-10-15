@@ -134,7 +134,7 @@ which registers its functions and constants in one call. SurrealDB adds its whol
 plus `with_condition(expr)`, which narrows by a native SurrealQL expression that `where` can't
 spell:
 
-<!-- tested: vantage-surrealdb vista::factory::tests::scripts::modify_script_tweaks_built_vista_with_vendor_condition -->
+<!-- tested: vantage-surrealdb tests/6_vista/query_sourced.rs modify_with_condition_narrows_a_writable_table -->
 ```rhai
 self.with_condition(surreal::ident("is_paying_client") == true)
    .sort("name", "asc")

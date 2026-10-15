@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! SurrealDB statement builders.
 //!
 //! Provides type-safe builders for the four core SurrealDB statements:

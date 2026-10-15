@@ -10,9 +10,40 @@ use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::SurrealVistaSpec;
-use vantage_vista::{Capability, SpecResolver, VistaFactory};
+use vantage_vista::{Capability, SpecResolver, Vista, VistaFactory};
 
 use super::{TestResult, seed_row, setup};
+
+/// The `args` example from the book's "Tables Defined by a Query" page.
+const ORDERS_BY_BAKERY: &str = r#"
+name: bakery_orders
+columns:
+  id: { type: thing, flags: [id] }
+surreal:
+  rhai: |
+    let q = surreal::select().from("order");
+    if "bakery" in args && args.bakery != "" {
+        q = q.where(surreal::expr("bakery.name = {}", [args.bakery]));
+    }
+    q
+"#;
+
+/// `yaml` parsed, with `args` set on its driver block the way a host sets them.
+fn spec_with_args(yaml: &str, args: &[(&str, &str)]) -> SurrealVistaSpec {
+    let mut spec: SurrealVistaSpec = serde_yaml_ng::from_str(yaml).expect("spec yaml");
+    let block = spec.driver.surreal.as_mut().expect("surreal block");
+    block.args = args
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    spec
+}
+
+async fn sorted_ids(vista: &Vista) -> vantage_core::Result<Vec<String>> {
+    let mut ids: Vec<String> = vista.list_values().await?.into_keys().collect();
+    ids.sort();
+    Ok(ids)
+}
 
 async fn seed_client(db: &SurrealDB, id: &str, name: &str) -> TestResult {
     let name_owned = name.to_string();
@@ -221,6 +252,285 @@ surreal:
     assert_eq!(
         bob.get("total_due"),
         Some(&CborValue::Integer(30i64.into()))
+    );
+    Ok(())
+}
+
+/// The book's `args` example: with `bakery` set the query gains the
+/// condition, with the name bound as a parameter, and without it the script
+/// skips the condition instead of failing.
+#[tokio::test]
+async fn args_reach_a_rhai_source_and_bind_as_parameters() -> TestResult {
+    let (db, _) = setup().await;
+    for sql in [
+        "CREATE bakery:breg SET name = 'Breg'",
+        "CREATE bakery:other SET name = 'Other'",
+        "CREATE ⟨order⟩:o1 SET bakery = bakery:breg",
+        "CREATE ⟨order⟩:o2 SET bakery = bakery:other",
+    ] {
+        db.execute(&surreal_expr!(sql)).await?;
+    }
+    let open = |args: &[(&str, &str)]| {
+        db.vista_factory()
+            .build_from_spec(spec_with_args(ORDERS_BY_BAKERY, args))
+    };
+
+    let breg = open(&[("bakery", "Breg")])?;
+    assert_eq!(sorted_ids(&breg).await?, ["order:o1"]);
+
+    for unset in [open(&[("bakery", "")])?, open(&[])?] {
+        assert_eq!(sorted_ids(&unset).await?, ["order:o1", "order:o2"]);
+    }
+
+    // A bound value is compared whole, so quotes in it can't widen the query.
+    let crafted = open(&[("bakery", "Breg\" OR true OR \"")])?;
+    assert!(sorted_ids(&crafted).await?.is_empty());
+    Ok(())
+}
+
+/// Arguments reach a `base:` transform as they reach a `rhai:` source.
+#[tokio::test]
+async fn args_reach_a_base_transform() -> TestResult {
+    let (db, _) = setup().await;
+    seed_client(&db, "alice", "Alice").await?;
+    seed_client(&db, "bob", "Bob").await?;
+
+    let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: client
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+"#,
+    )?;
+    let picked_yaml = r#"
+name: picked_clients
+columns: {}
+surreal:
+  base: client
+  inherit:
+    columns: [id, name]
+  rhai: |
+    base.where(surreal::expr("name = {}", [args.who]))
+"#;
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver("client", client_spec))
+        .build_from_spec(spec_with_args(picked_yaml, &[("who", "Bob")]))?;
+    assert_eq!(sorted_ids(&vista).await?, ["client:bob"]);
+    Ok(())
+}
+
+/// A `modify:` script runs without `args`, so one that reads them fails the
+/// build even when the host set some.
+#[tokio::test]
+async fn args_do_not_reach_a_modify_script() -> TestResult {
+    let (db, _) = setup().await;
+    let yaml = r#"
+name: client
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+surreal:
+  table: client
+  modify: |
+    self.where("name", args.who)
+"#;
+    let built = db
+        .vista_factory()
+        .build_from_spec(spec_with_args(yaml, &[("who", "Bob")]));
+    assert!(built.is_err(), "a modify script has no `args` in scope");
+    Ok(())
+}
+
+/// Without `rhai:`, `base:` uses the base query as it is; the vista is still
+/// read-only.
+#[tokio::test]
+async fn base_without_rhai_reads_the_base_query_as_it_is() -> TestResult {
+    let (db, _) = setup().await;
+    seed_client(&db, "alice", "Alice").await?;
+    seed_client(&db, "bob", "Bob").await?;
+
+    let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: client
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+"#,
+    )?;
+    let all_yaml = r#"
+name: all_clients
+columns: {}
+surreal:
+  base: client
+  inherit:
+    columns: [id, name]
+"#;
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver("client", client_spec))
+        .build_from_spec(serde_yaml_ng::from_str(all_yaml)?)?;
+    assert!(!vista.capabilities().has(Capability::Insert));
+    assert_eq!(sorted_ids(&vista).await?, ["client:alice", "client:bob"]);
+    Ok(())
+}
+
+/// A query-sourced vista has no table to write to or subscribe to, so it
+/// advertises the reads only, and `watch` is refused.
+#[tokio::test]
+async fn query_sourced_vista_advertises_the_reads_only() -> TestResult {
+    let (db, _) = setup().await;
+    seed_row(&db, "product", "a", "A", 10, false).await?;
+    let yaml = r#"
+name: all_products
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+surreal:
+  rhai: |
+    surreal::select().from("product").field("id").field("name")
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let caps = vista.capabilities();
+    for read in [
+        Capability::Order,
+        Capability::Search,
+        Capability::FilterOps,
+        Capability::NativeConditions,
+        Capability::Window,
+        Capability::Traverse,
+    ] {
+        assert!(caps.has(read), "{read:?}");
+    }
+    for table_only in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::ConfineWrites,
+        Capability::Subscribe,
+    ] {
+        assert!(!caps.has(table_only), "{table_only:?}");
+    }
+    let err = vista.watch().await.map(drop).expect_err("no LIVE source");
+    assert!(err.is_unsupported(), "{err:?}");
+    Ok(())
+}
+
+/// A script that fails, or that doesn't end on a `select()`, fails the build.
+#[test]
+fn rhai_source_that_fails_or_ends_on_no_select_fails_the_build() {
+    let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
+    for script in [r#"surreal::select().from("product").nope()"#, "42"] {
+        let yaml = format!(
+            "name: broken\ncolumns:\n  id: {{ type: thing, flags: [id] }}\nsurreal:\n  rhai: '{script}'\n"
+        );
+        assert!(
+            db.vista_factory().from_yaml(&yaml).is_err(),
+            "{script} must fail the build"
+        );
+    }
+}
+
+/// An `expr:` script is evaluated once, at build time, like a `rhai:` source:
+/// one that fails, or that yields no expression, fails the build.
+#[test]
+fn expr_column_that_fails_or_yields_no_expression_fails_the_build() {
+    let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
+    for script in ["surreal::nope()", "42"] {
+        let yaml = format!(
+            "name: line\ncolumns:\n  id: {{ type: thing, flags: [id] }}\n  total: {{ type: int, expr: '{script}' }}\n"
+        );
+        assert!(
+            db.vista_factory().from_yaml(&yaml).is_err(),
+            "{script} must fail the build"
+        );
+    }
+}
+
+/// A derived vista builds only the relations it inherits, so a reference it
+/// declares itself would have no target: the build refuses it.
+#[test]
+fn derived_vista_declaring_its_own_reference_fails_the_build() {
+    let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
+    let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: client
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+"#,
+    )
+    .expect("client yaml");
+    let derived: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: vip_clients
+columns: {}
+surreal:
+  base: client
+  inherit:
+    columns: [id, name]
+references:
+  orders:
+    table: order
+    kind: has_many
+    foreign_key: client
+"#,
+    )
+    .expect("derived yaml");
+    let built = db
+        .vista_factory()
+        .with_resolver(resolver("client", client_spec))
+        .build_from_spec(derived);
+    assert!(built.is_err());
+}
+
+/// The book's `with_condition` example: a `modify:` script narrows a real
+/// table by a native SurrealQL expression and sorts it, and the vista stays
+/// writable.
+#[tokio::test]
+async fn modify_with_condition_narrows_a_writable_table() -> TestResult {
+    let (db, _) = setup().await;
+    for (id, name, paying) in [
+        ("marty", "Marty", true),
+        ("biff", "Biff", false),
+        ("doc", "Doc", true),
+    ] {
+        let name = name.to_string();
+        db.execute(&surreal_expr!(
+            &format!("CREATE client:{id} SET name = {{}}, is_paying_client = {{}}"),
+            name,
+            paying
+        ))
+        .await?;
+    }
+    let yaml = r#"
+name: client
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string, flags: [title] }
+  is_paying_client: { type: bool }
+surreal:
+  table: client
+  modify: |
+    self.with_condition(surreal::ident("is_paying_client") == true)
+       .sort("name", "asc")
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    assert!(vista.capabilities().has(Capability::Insert));
+
+    let names: Vec<CborValue> = vista
+        .list_values()
+        .await?
+        .into_values()
+        .filter_map(|row| row.get("name").cloned())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            CborValue::Text("Doc".into()),
+            CborValue::Text("Marty".into())
+        ]
     );
     Ok(())
 }

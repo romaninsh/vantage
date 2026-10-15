@@ -29,16 +29,11 @@ where
 {
     /// The left-hand side of a condition on `field`.
     ///
-    /// A usual column is its identifier. A server-side `expr:` column is
-    /// projected as `(<expr>) AS <name>`, but SurrealDB evaluates WHERE
-    /// before the projection, so the alias is not a field there and a
-    /// condition on it matches nothing. Such a column is therefore filtered
-    /// on its (parenthesised) expression.
+    /// An `expr:` column is filtered on its parenthesised expression: WHERE
+    /// runs before the projection, so its alias isn't a field there.
     ///
-    /// A dotted path (`address.city`) that is not itself a column is
-    /// evaluated natively: SurrealQL walks into a nested object, or follows a
-    /// record link, from a stored root column. Its root must be declared and
-    /// stored.
+    /// A dotted path (`address.city`) that isn't itself a column walks into
+    /// the object or record link a declared, stored root column holds.
     ///
     /// `None` when neither the field nor such a root is a column.
     fn condition_subject(&self, field: &str) -> Option<Expr> {

@@ -1,7 +1,5 @@
-//! Comparison operators: ==, !=, <, >, <=, >=
-//!
-//! All operators accept Dynamic args and auto-convert
-//! RhaiExpr, RhaiIdent, or scalar values.
+//! Operator support: lowering a Rhai value to an expression, and the
+//! comparison and arithmetic forms the registered operators build.
 
 use crate::AnySurrealType;
 use crate::Expr;
@@ -11,8 +9,8 @@ use vantage_rhai::rhai::Dynamic;
 
 use super::{RhaiExpr, RhaiIdent};
 
-/// Convert a Dynamic value into an Expression.
-/// Accepts RhaiExpr, RhaiIdent, i64, f64, bool, string.
+/// A Rhai value as an expression: an expression or identifier as it is, a
+/// scalar bound as a parameter, a `[…]` array or `#{…}` map as a literal.
 pub fn to_expr(val: Dynamic) -> Result<Expr, Box<rhai::EvalAltResult>> {
     if let Some(e) = val.clone().try_cast::<RhaiExpr>() {
         Ok(e.0)
@@ -44,15 +42,13 @@ pub fn to_expr(val: Dynamic) -> Result<Expr, Box<rhai::EvalAltResult>> {
             vec![ExpressiveEnum::Scalar(AnySurrealType::from(v))],
         ))
     } else if let Some(arr) = val.clone().try_cast::<rhai::Array>() {
-        // a native `[…]` literal → SurrealQL array literal
         let items = arr
             .into_iter()
             .map(to_expr)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(crate::primitives::array_literal(items))
     } else if let Some(map) = val.clone().try_cast::<rhai::Map>() {
-        // a native `#{…}` literal → SurrealQL object literal. Rhai's map is a
-        // BTreeMap, so iteration is key-sorted (deterministic output).
+        // Rhai's map is a BTreeMap, so the keys render sorted.
         let mut entries = Vec::with_capacity(map.len());
         for (k, v) in map.into_iter() {
             entries.push((k.to_string(), to_expr(v)?));
@@ -71,9 +67,7 @@ pub fn scalar(val: AnySurrealType) -> Expr {
     Expression::new("{}", vec![ExpressiveEnum::Scalar(val)])
 }
 
-/// Build a binary arithmetic expression, parenthesized: `(a op b)`. Used by the
-/// `*`/`+`/`-`/`/` operators so closure bodies and ad-hoc maths render with
-/// explicit precedence.
+/// `(a op b)`, parenthesized so arithmetic renders with explicit precedence.
 pub fn arith(op: &str, a: Expr, b: Expr) -> RhaiExpr {
     RhaiExpr(Expression::new(
         format!("({{}} {} {{}})", op),
@@ -81,7 +75,7 @@ pub fn arith(op: &str, a: Expr, b: Expr) -> RhaiExpr {
     ))
 }
 
-/// Build a binary comparison expression.
+/// `a op b`, unparenthesized.
 pub fn cmp_binary(op: &str, a: Expr, b: Expr) -> RhaiExpr {
     RhaiExpr(Expression::new(
         format!("{{}} {} {{}}", op),

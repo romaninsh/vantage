@@ -123,8 +123,8 @@ impl<T: QueryResult> SurrealSelect<T> {
         )
     }
 
-    /// Renders everything into a string. Use for
-    /// debug only. Never or use as part of another query!!
+    /// The statement as text, values inlined. For debugging only: never
+    /// embed it in another query.
     pub fn preview(&self) -> String {
         self.render().preview()
     }

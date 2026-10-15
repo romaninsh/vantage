@@ -5,28 +5,6 @@ use vantage_vista::{Capability, SortDirection};
 
 use super::{TestResult, name_of, product_table, seed_row, setup};
 
-#[tokio::test]
-async fn vista_fetch_window_returns_row_indexed_slice() -> TestResult {
-    let (db, table_name) = setup().await;
-    for (id, name) in [
-        ("a", "Apple"),
-        ("b", "Banana"),
-        ("c", "Cherry"),
-        ("d", "Date"),
-    ] {
-        seed_row(&db, &table_name, id, name, 1, false).await?;
-    }
-
-    let table = product_table(db.clone(), &table_name);
-    let mut vista = db.vista_factory().from_table(table)?;
-    vista.set_order(Some(("name", SortDirection::Ascending)))?;
-
-    let window = vista.fetch_window(1, 2).await?;
-    let names: Vec<String> = window.rows.iter().map(|(_, r)| name_of(r)).collect();
-    assert_eq!(names, vec!["Banana".to_string(), "Cherry".into()]);
-    Ok(())
-}
-
 /// Consecutive windows page through an ordered set; the last is short.
 #[tokio::test]
 async fn vista_fetch_window_pages_through_the_set() -> TestResult {

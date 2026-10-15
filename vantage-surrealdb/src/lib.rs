@@ -1,14 +1,7 @@
-//! # Vantage SurrealDB Extension
-//!
-//! Extends Vantage by adding Query Builders for SurrealDB. Standard
-//! functionality is implemented through protocol, advanced SurrealDB-only
-//! features are implemented as part of default impl.
-//!
-//! ## Features
-//!
-//! Implements the following database interaction protocols:
-//!
-//! - SurrealSelect implements SelectQuery
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
+//! SurrealDB for Vantage: SurrealQL statement builders and primitives, the
+//! `SurrealDB` datasource for typed tables, and (behind features) a Vista
+//! driver and a Rhai query-building vocabulary.
 
 pub mod ext;
 pub mod field;
@@ -29,28 +22,23 @@ pub mod vista;
 #[cfg(feature = "rhai")]
 pub mod rhai_engine;
 
-// Re-export statement builders at crate root for convenience
 pub use statements::SurrealDelete;
 pub use statements::SurrealInsert;
 pub use statements::SurrealSelect;
 pub use statements::SurrealUpdate;
 
-// Backwards-compat module aliases
 pub use statements::delete;
 pub use statements::insert;
 pub use statements::select;
 pub use statements::update;
 
-// SurrealDB expression support using vantage-expressions with AnySurrealType
+/// A SurrealQL expression over SurrealDB values.
 pub type Expr = vantage_expressions::Expression<AnySurrealType>;
 
-// Add types module
 pub mod types;
 pub use types::*;
 
-// Re-export extension trait
 pub use ext::SurrealTableExt;
 
-// Re-export main SurrealDB types for convenience
 pub use ciborium::Value as CborValue;
 pub use types::{AnySurrealType, SurrealType, SurrealTypeVariants};

@@ -25,9 +25,6 @@
 pub mod builder;
 pub mod render;
 
-#[cfg(test)]
-mod tests;
-
 use crate::Expr;
 
 /// Builder for SurrealDB `DELETE` statements.

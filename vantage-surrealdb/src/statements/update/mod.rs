@@ -39,9 +39,6 @@
 pub mod builder;
 pub mod render;
 
-#[cfg(test)]
-mod tests;
-
 use indexmap::IndexMap;
 
 use crate::Expr;

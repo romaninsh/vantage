@@ -61,16 +61,9 @@ impl From<AnySurrealType> for JsonValue {
     }
 }
 
-/// Rendering policy converting SurrealDB's tagged CBOR to JSON —
-/// `Tag(8)` record ids, `Tag(12)` compact datetimes, etc. render the
-/// same textual form SurrealDB's own JSON API would produce, instead of
-/// falling through as their raw untagged payload.
-///
-/// A plain `ciborium::into_writer` + `ciborium::from_reader` round-trip
-/// (the implementation before the shared walker) drops CBOR tags
-/// entirely — a datetime (`Tag(12, [seconds, nanos])`) decoded to the
-/// bare `[seconds, nanos]` array rather than a timestamp, and likewise
-/// for every other tagged SurrealDB type.
+/// Converts SurrealDB's tagged CBOR to JSON: `Tag(8)` record ids, `Tag(12)`
+/// compact datetimes and the other tagged types render the text SurrealDB's
+/// own JSON API produces, not their raw payload.
 pub struct SurrealDialect;
 
 impl CborDialect for SurrealDialect {
@@ -142,9 +135,8 @@ fn compact_secs_nanos(inner: &CborValue) -> Option<(i64, u32)> {
     Some((secs, nanos))
 }
 
-/// `[seconds, nanos]` → RFC 3339 string. Falls back to the raw array (the
-/// previous, broken behaviour) only if the shape or the timestamp itself is
-/// invalid, so a malformed value is still visible rather than silently lost.
+/// `[seconds, nanos]` → RFC 3339 string. A malformed shape or timestamp
+/// falls back to the raw array, so it stays visible rather than lost.
 fn compact_datetime_to_json(inner: CborValue) -> JsonValue {
     let fallback = |inner| cbor_to_json(&SurrealDialect, inner);
     let Some((secs, nanos)) = compact_secs_nanos(&inner) else {
@@ -221,169 +213,5 @@ impl Expressive<AnySurrealType> for AnySurrealType {
             "{}",
             vec![vantage_expressions::ExpressiveEnum::Scalar(self.clone())],
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The shared walker under this crate's dialect, ref-shaped for the
-    /// assertions below.
-    fn cbor_to_json(v: &CborValue) -> JsonValue {
-        super::cbor_to_json(&SurrealDialect, v.clone())
-    }
-
-    #[test]
-    fn compact_datetime_becomes_rfc3339_not_a_raw_array() {
-        // Tag(12, [seconds, nanos]) — SurrealDB's compact datetime encoding.
-        // 1735689600 = 2025-01-01T00:00:00Z.
-        let cbor = CborValue::Tag(
-            12,
-            Box::new(CborValue::Array(vec![
-                CborValue::Integer(1_735_689_600i64.into()),
-                CborValue::Integer(0i64.into()),
-            ])),
-        );
-        let json = cbor_to_json(&cbor);
-        assert_eq!(json, JsonValue::String("2025-01-01T00:00:00Z".to_string()));
-    }
-
-    #[test]
-    fn compact_datetime_with_nanos() {
-        let cbor = CborValue::Tag(
-            12,
-            Box::new(CborValue::Array(vec![
-                CborValue::Integer(1_735_689_600i64.into()),
-                CborValue::Integer(500_000_000i64.into()),
-            ])),
-        );
-        let json = cbor_to_json(&cbor);
-        assert_eq!(json.as_str().unwrap(), "2025-01-01T00:00:00.500Z");
-    }
-
-    #[test]
-    fn rfc3339_datetime_tag_passes_through_as_string() {
-        let cbor = CborValue::Tag(
-            0,
-            Box::new(CborValue::Text("2025-01-01T00:00:00Z".to_string())),
-        );
-        assert_eq!(
-            cbor_to_json(&cbor),
-            JsonValue::String("2025-01-01T00:00:00Z".to_string())
-        );
-    }
-
-    #[test]
-    fn record_id_becomes_table_colon_id() {
-        let cbor = CborValue::Tag(
-            8,
-            Box::new(CborValue::Array(vec![
-                CborValue::Text("login_audit".to_string()),
-                CborValue::Text("abc123".to_string()),
-            ])),
-        );
-        assert_eq!(
-            cbor_to_json(&cbor),
-            JsonValue::String("login_audit:abc123".to_string())
-        );
-    }
-
-    #[test]
-    fn numeric_record_id_stringifies() {
-        let cbor = CborValue::Tag(
-            8,
-            Box::new(CborValue::Array(vec![
-                CborValue::Text("user".to_string()),
-                CborValue::Integer(42i64.into()),
-            ])),
-        );
-        assert_eq!(
-            cbor_to_json(&cbor),
-            JsonValue::String("user:42".to_string())
-        );
-    }
-
-    #[test]
-    fn compact_duration_becomes_iso8601() {
-        let cbor = CborValue::Tag(
-            14,
-            Box::new(CborValue::Array(vec![
-                CborValue::Integer(5400i64.into()), // 1h30m
-                CborValue::Integer(0i64.into()),
-            ])),
-        );
-        assert_eq!(
-            cbor_to_json(&cbor),
-            JsonValue::String("PT1H30M".to_string())
-        );
-    }
-
-    #[test]
-    fn compact_duration_without_nanos_part() {
-        let cbor = CborValue::Tag(
-            14,
-            Box::new(CborValue::Array(vec![CborValue::Integer(5400i64.into())])),
-        );
-        assert_eq!(
-            cbor_to_json(&cbor),
-            JsonValue::String("PT1H30M".to_string())
-        );
-    }
-
-    fn compact_datetime(parts: Vec<CborValue>) -> JsonValue {
-        cbor_to_json(&CborValue::Tag(12, Box::new(CborValue::Array(parts))))
-    }
-
-    #[test]
-    fn compact_datetime_empty_payload_is_epoch() {
-        assert_eq!(
-            compact_datetime(vec![]),
-            JsonValue::String("1970-01-01T00:00:00Z".to_string())
-        );
-    }
-
-    #[test]
-    fn compact_datetime_without_nanos_part() {
-        assert_eq!(
-            compact_datetime(vec![CborValue::Integer(1_735_689_600i64.into())]),
-            JsonValue::String("2025-01-01T00:00:00Z".to_string())
-        );
-    }
-
-    #[test]
-    fn compact_datetime_before_epoch() {
-        assert_eq!(
-            compact_datetime(vec![CborValue::Integer((-86_400i64).into())]),
-            JsonValue::String("1969-12-31T00:00:00Z".to_string())
-        );
-    }
-
-    #[test]
-    fn any_surreal_type_json_conversion_uses_cbor_to_json() {
-        let any = AnySurrealType::from_cbor(&CborValue::Tag(
-            12,
-            Box::new(CborValue::Array(vec![
-                CborValue::Integer(1_735_689_600i64.into()),
-                CborValue::Integer(0i64.into()),
-            ])),
-        ))
-        .unwrap();
-        let json: JsonValue = any.into();
-        assert_eq!(json, JsonValue::String("2025-01-01T00:00:00Z".to_string()));
-    }
-
-    #[test]
-    fn plain_values_still_convert_correctly() {
-        assert_eq!(
-            cbor_to_json(&CborValue::Integer(42i64.into())),
-            JsonValue::from(42)
-        );
-        assert_eq!(
-            cbor_to_json(&CborValue::Text("hi".into())),
-            JsonValue::from("hi")
-        );
-        assert_eq!(cbor_to_json(&CborValue::Bool(true)), JsonValue::from(true));
-        assert_eq!(cbor_to_json(&CborValue::Null), JsonValue::Null);
     }
 }

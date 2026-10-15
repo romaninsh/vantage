@@ -1,8 +1,5 @@
-//! Rhai scripting engine for building SurrealDB queries.
-//!
-//! Self-contained module — does not depend on vantage-sql's rhai_engine.
-//! Registers wrapper types, constructors, operators, and select builder
-//! methods into a Rhai engine.
+//! The Rhai vocabulary for building SurrealDB queries: wrapper types,
+//! constructors, operators and select-builder methods.
 
 use vantage_rhai::rhai;
 
@@ -35,24 +32,15 @@ impl vantage_rhai::Vocab for SurrealVocab {
 
 /// Register the full SurrealDB query-building vocabulary onto `engine`.
 ///
-/// The free functions (constructors such as `ident`, `expr`, `select`,
-/// `thing` and `graph`, the aggregates, the scalar functions) live in the
-/// `surreal::` namespace, and so does `surreal::me`, the current-record
-/// anchor: `surreal::graph(surreal::me, "placed", "order")`. Methods and
-/// operators on the vocabulary's own types (`.from`, `.where`, `.alias`,
-/// `["col"]`, `==`, `*`, ..) stay global, since they dispatch on their
-/// receiver and can't shadow the data vocabulary's verbs.
+/// Free functions (`ident`, `expr`, `select`, `thing`, `graph`, the
+/// aggregates and scalar functions) and `me`, the current-record anchor, live
+/// in the `surreal::` namespace. Methods and operators on the vocabulary's own
+/// types (`.from`, `.where`, `.alias`, `["col"]`, `==`, `*`, …) stay global:
+/// they dispatch on their receiver, so they can't shadow a data verb.
 ///
-/// Shared by two entry points:
-/// - [`SurrealVocab`], the form a [`vantage_rhai::Host`] takes (the `rhai:`
-///   vista source, the standalone Rhai tests/examples via
-///   [`register_surreal_engine!`](crate::register_surreal_engine));
-/// - `SurrealTableShell::register_rhai_extensions`, which layers it on top of
-///   vantage-vista's conventional `Vista` verbs so a reference build-script can
-///   use `ident`/`==`/`fx`/graph syntax and `with_condition`.
-///
-/// Prefer [`SurrealVocab`] on a host — this is the registration behind it.
-/// Limits are the host's business, not this function's.
+/// Prefer [`SurrealVocab`] on a host; this is the registration behind it, and
+/// behind the extensions a SurrealDB vista registers for its scripts. Limits
+/// are the host's business.
 #[cfg(feature = "rhai")]
 pub fn register_surreal_onto(engine: &mut rhai::Engine) {
     use crate::AnySurrealType as AST;

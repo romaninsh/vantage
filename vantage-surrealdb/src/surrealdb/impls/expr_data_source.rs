@@ -32,7 +32,7 @@ impl ExprDataSource<AnySurrealType> for SurrealDB {
                 expression = query_str.clone()
             ))?;
 
-        // Ensure we have exactly one response (we only send single queries)
+        // One statement is sent, so exactly one response comes back.
         let responses = result
             .as_array()
             .ok_or_else(|| vantage_core::error!("Expected array response from SurrealDB"))?;
@@ -49,7 +49,6 @@ impl ExprDataSource<AnySurrealType> for SurrealDB {
             .as_map()
             .ok_or_else(|| vantage_core::error!("Expected map response from SurrealDB"))?;
 
-        // Check if query was successful by looking at status
         let is_success = response_map
             .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(key) if key == "status"))
@@ -60,7 +59,6 @@ impl ExprDataSource<AnySurrealType> for SurrealDB {
             .unwrap_or(false);
 
         if is_success {
-            // Extract "result" key from successful response
             let extracted_result = response_map
                 .iter()
                 .find(|(k, _)| matches!(k, ciborium::Value::Text(key) if key == "result"))
@@ -76,7 +74,7 @@ impl ExprDataSource<AnySurrealType> for SurrealDB {
                 vantage_core::error!("Failed to convert SurrealDB result to AnySurrealType")
             })
         } else {
-            // Extract error message from "result" key in failed response
+            // A failed response carries its message under "result".
             let error_message = response_map
                 .iter()
                 .find(|(k, _)| matches!(k, ciborium::Value::Text(key) if key == "result"))

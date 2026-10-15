@@ -121,6 +121,18 @@ async fn contains_many_eager_writeback_on_real_surreal() {
     vista.delete(&id).await.unwrap();
 }
 
+/// Without a parent row a contained relation is its bare target: the
+/// embedded table with the columns its builder declares.
+#[tokio::test]
+async fn contained_relation_without_a_row_is_its_bare_target() {
+    let db = v2_db().await;
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_table(test_table(db))
+        .unwrap();
+    let lines = vista.get_ref("lines", None).unwrap();
+    assert!(lines.column("a").is_some());
+}
+
 /// A simple `product`-shaped vista for the traverse-out test.
 fn product_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
     Table::new("product", db)

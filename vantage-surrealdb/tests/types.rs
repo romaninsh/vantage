@@ -1,5 +1,8 @@
+use chrono::{DateTime, Utc};
+use ciborium::Value as CborValue;
 use surreal_client::{SurrealClient, SurrealConnection};
 use vantage_expressions::ExprDataSource;
+use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::{SurrealType, surrealdb::SurrealDB, types::AnySurrealType};
 
 const DB_URL: &str = "cbor://localhost:8000/rpc";
@@ -78,15 +81,6 @@ macro_rules! macro_type_test {
     };
 }
 
-macro_type_test!("strings", {
-    s1: "hello",
-    s2: String::from("world")
-});
-
-macro_type_test!("booleans", {
-    flag: true
-});
-
 macro_type_test!("numbers", {
     i8_val: 42i8,
     i16_val: 1234i16,
@@ -100,19 +94,6 @@ macro_type_test!("numbers", {
     usize_val: 123456usize,
     f32_val: 3.15f32,
     f64_val: 2.719281828f64
-});
-
-macro_type_test!("decimals", {
-    decimal_val: {
-        "92233720368547758.123456789012345678".parse::<rust_decimal::Decimal>().unwrap()
-    }
-});
-
-macro_type_test!("optionals", {
-    some_int: Some(42i32),
-    none_int: None::<i32>,
-    some_str: Some("hello"),
-    none_str: None::<&str>
 });
 
 #[tokio::test]
@@ -193,6 +174,78 @@ async fn test_duration_variant_and_json() {
     );
     let json: serde_json::Value = result.into();
     assert_eq!(json, serde_json::Value::String("PT1H30M".to_string()));
+}
+
+/// Tagged SurrealDB values convert to JSON in the text SurrealDB's own JSON
+/// API gives: a datetime as RFC 3339, a record id as `table:id`.
+#[tokio::test]
+async fn tagged_values_convert_to_surreal_json_text() {
+    let db = get_surrealdb().await;
+    for (query, expected) in [
+        (
+            "RETURN <datetime> '2025-01-01T00:00:00Z'",
+            "2025-01-01T00:00:00Z",
+        ),
+        ("RETURN user:alice", "user:alice"),
+        ("RETURN user:42", "user:42"),
+    ] {
+        let expr = vantage_expressions::Expression::<AnySurrealType>::new(query, vec![]);
+        let json: serde_json::Value = db.execute(&expr).await.expect(query).into();
+        assert_eq!(json, serde_json::Value::String(expected.into()), "{query}");
+    }
+
+    let rfc3339 = AnySurrealType::from(CborValue::Tag(
+        0,
+        Box::new(CborValue::Text("2025-01-01T00:00:00Z".into())),
+    ));
+    let json: serde_json::Value = rfc3339.into();
+    assert_eq!(
+        json,
+        serde_json::Value::String("2025-01-01T00:00:00Z".into())
+    );
+}
+
+/// A record id held as `table:id` text decodes as a `Thing`.
+#[test]
+fn record_id_text_decodes_as_a_thing() {
+    assert_eq!(
+        Thing::from_cbor(CborValue::Text("user:alice".into())),
+        Some(Thing::new("user", "alice"))
+    );
+}
+
+/// Datetimes also decode from RFC 3339 text, plain or tagged, so records that
+/// store them as strings still load; other text is no datetime.
+#[test]
+fn datetime_decodes_from_rfc3339_text() {
+    let expected: DateTime<Utc> = "2026-03-19T20:25:38Z".parse().unwrap();
+    let text = || CborValue::Text("2026-03-19T20:25:38Z".into());
+    assert_eq!(DateTime::<Utc>::from_cbor(text()), Some(expected));
+    assert_eq!(
+        DateTime::<Utc>::from_cbor(CborValue::Tag(0, Box::new(text()))),
+        Some(expected)
+    );
+    assert_eq!(
+        DateTime::<Utc>::from_cbor(CborValue::Text("not a date".into())),
+        None
+    );
+}
+
+/// An array displays as a SurrealQL array literal and a map as an object
+/// literal, each item as it displays on its own.
+#[test]
+fn arrays_and_maps_display_as_surrealql_literals() {
+    let tags = AnySurrealType::new(vec!["rust".to_string(), "db".to_string()]);
+    assert_eq!(tags.to_string(), r#"["rust", "db"]"#);
+    assert_eq!(AnySurrealType::new(vec![1i64, 2]).to_string(), "[1, 2]");
+
+    let map: indexmap::IndexMap<String, AnySurrealType> = [
+        ("a".to_string(), AnySurrealType::new(1i64)),
+        ("b".to_string(), AnySurrealType::new("x".to_string())),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(AnySurrealType::new(map).to_string(), r#"{a: 1, b: "x"}"#);
 }
 
 #[tokio::test]

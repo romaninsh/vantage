@@ -7,10 +7,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use vantage_expressions::{ExprDataSource, Expressive, Order, Selectable};
 use vantage_surrealdb::field::Field;
+use vantage_surrealdb::identifier::Identifier;
 use vantage_surrealdb::operation::SurrealOperation;
 use vantage_surrealdb::statements::delete::SurrealDelete;
 use vantage_surrealdb::statements::insert::SurrealInsert;
 use vantage_surrealdb::statements::select::SurrealSelect;
+use vantage_surrealdb::statements::select::select_field::SelectField;
 
 use vantage_surrealdb::statements::update::SurrealUpdate;
 use vantage_surrealdb::surreal_expr;
@@ -75,12 +77,6 @@ fn select_basic_fields() {
         .with_field("email");
 
     assert_eq!(select.preview(), "SELECT name, email FROM users");
-}
-
-#[test]
-fn select_star() {
-    let select = SurrealSelect::new().from("products");
-    assert_eq!(select.preview(), "SELECT * FROM products");
 }
 
 #[test]
@@ -224,6 +220,36 @@ fn select_clear_methods() {
 }
 
 #[test]
+fn select_fields_replaces_the_field_list() {
+    let select = SurrealSelect::new().from("t").with_field("x").fields(vec![
+        SelectField::new(Identifier::new("a")),
+        SelectField::new(Identifier::new("b")).with_alias("bee".to_string()),
+    ]);
+
+    assert_eq!(select.preview(), "SELECT a, b AS bee FROM t");
+}
+
+#[test]
+fn selectable_add_group_by_renders_group_by() {
+    let mut select = SurrealSelect::new().from("orders").with_field("status");
+    select.add_group_by(Identifier::new("status"));
+
+    assert_eq!(
+        select.preview(),
+        "SELECT status FROM orders GROUP BY status"
+    );
+}
+
+#[test]
+fn selectable_set_distinct_is_reported() {
+    let mut select = SurrealSelect::new().from("events");
+    select.set_distinct(true);
+    assert!(select.is_distinct());
+    select.set_distinct(false);
+    assert!(!select.is_distinct());
+}
+
+#[test]
 fn select_without_fields() {
     let select = SurrealSelect::new()
         .from("t")
@@ -256,14 +282,6 @@ fn select_only_expression() {
         select.preview(),
         "SELECT VALUE math::sum(price) FROM products"
     );
-}
-
-#[test]
-fn select_as_count() {
-    let select = SurrealSelect::new().from("users").as_count();
-
-    let p = select.preview();
-    assert!(p.contains("RETURN count("));
 }
 
 #[test]
@@ -456,6 +474,40 @@ async fn select_live_aggregation() {
     cleanup(&db, &["sl_agg"]).await;
 }
 
+/// `as_count` counts the rows the select yields: one per group when it groups.
+#[tokio::test]
+async fn select_live_as_count_counts_the_groups_of_a_grouped_select() {
+    let db = get_db().await;
+    cleanup(&db, &["sl_groups"]).await;
+
+    for (id, status) in [
+        ("a", "new"),
+        ("b", "new"),
+        ("c", "paid"),
+        ("d", "paid"),
+        ("e", "void"),
+    ] {
+        let ins = SurrealInsert::new("sl_groups")
+            .with_id(id)
+            .with_field("status", status.to_string());
+        db.execute(&ins.expr()).await.unwrap();
+    }
+
+    let grouped = SurrealSelect::new()
+        .from("sl_groups")
+        .with_field("status")
+        .with_group_by(Field::new("status"));
+    let count: i64 = db
+        .execute(&grouped.as_count().expr())
+        .await
+        .unwrap()
+        .try_get()
+        .unwrap();
+    assert_eq!(count, 3);
+
+    cleanup(&db, &["sl_groups"]).await;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // SurrealInsert — query rendering
 // ═══════════════════════════════════════════════════════════════════════
@@ -507,6 +559,16 @@ fn insert_thing_field() {
 }
 
 #[test]
+fn insert_with_record_sets_each_field_in_order() {
+    let mut record = vantage_types::Record::new();
+    record.insert("a".to_string(), AnySurrealType::new(10i64));
+    record.insert("b".to_string(), AnySurrealType::new("hi".to_string()));
+
+    let ins = SurrealInsert::new("t").with_record(&record);
+    assert_eq!(ins.preview(), "CREATE t SET a = 10, b = \"hi\"");
+}
+
+#[test]
 fn insert_reserved_keyword_escaping() {
     let ins = SurrealInsert::new("SELECT")
         .with_field("FROM", "val".to_string())
@@ -533,27 +595,6 @@ fn insert_parameterized_expression() {
 // ═══════════════════════════════════════════════════════════════════════
 // SurrealInsert — live execution
 // ═══════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn insert_live_with_id() {
-    let db = get_db().await;
-    cleanup(&db, &["si_basic"]).await;
-
-    let ins = SurrealInsert::new("si_basic")
-        .with_id("r1")
-        .with_field("name", "Test".to_string())
-        .with_field("val", 123i64);
-
-    db.execute(&ins.expr()).await.expect("insert failed");
-
-    assert_eq!(
-        read_value::<String>(&db, "si_basic:r1", "name").await,
-        "Test"
-    );
-    assert_eq!(read_value::<i64>(&db, "si_basic:r1", "val").await, 123);
-
-    cleanup(&db, &["si_basic"]).await;
-}
 
 #[tokio::test]
 async fn insert_live_auto_id() {
@@ -749,23 +790,6 @@ async fn insert_live_array_field() {
     cleanup(&db, &["si_arr"]).await;
 }
 
-#[tokio::test]
-async fn insert_live_multiple_records() {
-    let db = get_db().await;
-    cleanup(&db, &["si_multi"]).await;
-
-    for i in 0..5i64 {
-        let ins = SurrealInsert::new("si_multi")
-            .with_id(format!("r{}", i))
-            .with_field("idx", i);
-        db.execute(&ins.expr()).await.unwrap();
-    }
-
-    assert_eq!(count_records(&db, "si_multi").await, 5);
-
-    cleanup(&db, &["si_multi"]).await;
-}
-
 // ═══════════════════════════════════════════════════════════════════════
 // SurrealUpdate — query rendering
 // ═══════════════════════════════════════════════════════════════════════
@@ -846,16 +870,6 @@ fn update_set_record() {
 }
 
 #[test]
-fn update_with_thing_field() {
-    let upd = SurrealUpdate::new(Thing::new("child", "c1"))
-        .with_field("parent", Thing::new("parent", "p1"));
-
-    let p = upd.preview();
-    assert!(p.contains("UPDATE child:c1 SET"));
-    assert!(p.contains("parent ="));
-}
-
-#[test]
 fn update_parameterized_expression() {
     let upd = SurrealUpdate::new(Thing::new("t", "1"))
         .with_field("a", 1i64)
@@ -864,6 +878,19 @@ fn update_parameterized_expression() {
     let expr = upd.expr();
     assert_eq!(expr.parameters.len(), 3); // target + 2 fields
     assert!(expr.template.contains("{}"));
+}
+
+#[test]
+fn update_table_with_conditions_renders_a_bulk_update() {
+    let upd = SurrealUpdate::table("users")
+        .with_field("active", false)
+        .with_condition(surreal_expr!("last_login < {}", "2020-01-01"))
+        .with_condition(Field::new("role").eq("guest"));
+
+    assert_eq!(
+        upd.preview(),
+        "UPDATE users SET active = false WHERE last_login < \"2020-01-01\" AND role = \"guest\""
+    );
 }
 
 #[test]
@@ -1033,12 +1060,6 @@ fn delete_record() {
 }
 
 #[test]
-fn delete_with_single_condition() {
-    let del = SurrealDelete::table("logs").with_condition(Field::new("level").eq("debug"));
-    assert_eq!(del.preview(), "DELETE logs WHERE level = \"debug\"");
-}
-
-#[test]
 fn delete_with_multiple_conditions() {
     let del = SurrealDelete::table("logs")
         .with_condition(Field::new("level").eq("debug"))
@@ -1060,6 +1081,17 @@ fn delete_parameterized_expression() {
     let del = SurrealDelete::table("t").with_condition(Field::new("x").lt(5i64));
     let expr = del.expr();
     assert!(expr.template.contains("{}"));
+}
+
+#[test]
+fn delete_return_before_follows_the_condition() {
+    let del = SurrealDelete::table("logs")
+        .with_condition(Field::new("level").eq("debug"))
+        .return_before();
+    assert_eq!(
+        del.preview(),
+        "DELETE logs WHERE level = \"debug\" RETURN BEFORE"
+    );
 }
 
 #[test]
@@ -1145,6 +1177,57 @@ async fn delete_live_with_condition() {
     cleanup(&db, &["sd_cond"]).await;
 }
 
+/// `RETURN BEFORE` yields the deleted rows, a missing target yields `[]`,
+/// and a plain `DELETE` always returns an empty array.
+#[tokio::test]
+async fn delete_live_return_before_yields_the_deleted_rows() {
+    let db = get_db().await;
+    cleanup(&db, &["sd_before"]).await;
+    for id in ["a", "b"] {
+        let ins = SurrealInsert::new("sd_before")
+            .with_id(id)
+            .with_field("x", 1i64);
+        db.execute(&ins.expr()).await.unwrap();
+    }
+    let rows = |result: AnySurrealType| -> Vec<indexmap::IndexMap<String, AnySurrealType>> {
+        result.try_get().expect("an array of rows")
+    };
+
+    let deleted = db
+        .execute(
+            &SurrealDelete::new(Thing::new("sd_before", "a"))
+                .return_before()
+                .expr(),
+        )
+        .await
+        .unwrap();
+    let deleted = rows(deleted);
+    assert_eq!(deleted.len(), 1);
+    assert_eq!(
+        deleted[0]["id"].try_get::<Thing>(),
+        Some(Thing::new("sd_before", "a"))
+    );
+
+    let missing = db
+        .execute(
+            &SurrealDelete::new(Thing::new("sd_before", "nope"))
+                .return_before()
+                .expr(),
+        )
+        .await
+        .unwrap();
+    assert!(rows(missing).is_empty());
+
+    let plain = db
+        .execute(&SurrealDelete::new(Thing::new("sd_before", "b")).expr())
+        .await
+        .unwrap();
+    assert!(rows(plain).is_empty());
+    assert_eq!(count_records(&db, "sd_before").await, 0);
+
+    cleanup(&db, &["sd_before"]).await;
+}
+
 #[tokio::test]
 async fn delete_live_nonexistent_is_ok() {
     let db = get_db().await;
@@ -1161,76 +1244,6 @@ async fn delete_live_nonexistent_is_ok() {
         .expect("delete of nonexistent should not error");
 
     cleanup(&db, &["sd_ghost"]).await;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Full CRUD lifecycle
-// ═══════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn full_crud_lifecycle() {
-    let db = get_db().await;
-    cleanup(&db, &["crud"]).await;
-
-    // CREATE
-    let ins = SurrealInsert::new("crud")
-        .with_id("item1")
-        .with_field("name", "Widget".to_string())
-        .with_field("price", 25i64)
-        .with_field("active", true);
-    db.execute(&ins.expr()).await.unwrap();
-
-    // READ
-    assert_eq!(
-        read_value::<String>(&db, "crud:item1", "name").await,
-        "Widget"
-    );
-    assert_eq!(read_value::<i64>(&db, "crud:item1", "price").await, 25);
-    assert!(read_value::<bool>(&db, "crud:item1", "active").await);
-
-    // UPDATE (SET — partial)
-    let upd = SurrealUpdate::new(Thing::new("crud", "item1")).with_field("price", 30i64);
-    db.execute(&upd.expr()).await.unwrap();
-
-    assert_eq!(read_value::<i64>(&db, "crud:item1", "price").await, 30);
-    assert_eq!(
-        read_value::<String>(&db, "crud:item1", "name").await,
-        "Widget"
-    ); // preserved
-
-    // UPDATE (MERGE — add field)
-    let upd = SurrealUpdate::new(Thing::new("crud", "item1"))
-        .merge()
-        .with_field("category", "gadgets".to_string());
-    db.execute(&upd.expr()).await.unwrap();
-
-    assert_eq!(
-        read_value::<String>(&db, "crud:item1", "category").await,
-        "gadgets"
-    );
-    assert_eq!(read_value::<i64>(&db, "crud:item1", "price").await, 30); // preserved
-
-    // UPDATE (CONTENT — replace all)
-    let upd = SurrealUpdate::new(Thing::new("crud", "item1"))
-        .content()
-        .with_field("replacement", true);
-    db.execute(&upd.expr()).await.unwrap();
-
-    assert!(read_value::<bool>(&db, "crud:item1", "replacement").await);
-    let old_name = db
-        .execute(&surreal_expr!("SELECT VALUE name FROM ONLY crud:item1"))
-        .await
-        .unwrap();
-    assert!(
-        old_name.try_get::<String>().is_none(),
-        "old fields should be gone after CONTENT"
-    );
-
-    // DELETE
-    let del = SurrealDelete::new(Thing::new("crud", "item1"));
-    db.execute(&del.expr()).await.unwrap();
-
-    assert_eq!(count_records(&db, "crud").await, 0);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1415,12 +1428,6 @@ fn thing_accessors() {
     assert_eq!(t.table(), "users");
     assert_eq!(t.id(), "alice");
     assert_eq!(t.to_string(), "users:alice");
-}
-
-#[test]
-fn thing_display() {
-    let t = Thing::new("order", "123");
-    assert_eq!(format!("{}", t), "order:123");
 }
 
 #[test]

@@ -1,21 +1,14 @@
-//! # SurrealDB Field Representation
-//!
-//! doc wip
+//! A named field, for conditions and projections.
 
 use vantage_expressions::Expressive;
 
 use crate::{AnySurrealType, Expr, identifier::Identifier};
 
-/// Represents a database field
-///
-/// doc wip
-///
-/// # Examples
+/// A field by name, rendered as an escaped [`Identifier`].
 ///
 /// ```rust
 /// use vantage_surrealdb::field::Field;
 ///
-/// // doc wip
 /// let field = Field::new("user_name");
 /// ```
 
@@ -25,19 +18,13 @@ pub struct Field {
 }
 
 impl Field {
-    /// Creates a new field
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `field` - doc wip
     pub fn new(field: impl Into<String>) -> Self {
         Self {
             field: field.into(),
         }
     }
 
+    /// `field.other`, each segment escaped on its own.
     pub fn dot(&self, field: impl Into<String>) -> Expr {
         Identifier::new(self.field.clone()).dot(field.into())
     }

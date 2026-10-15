@@ -32,7 +32,6 @@ impl SelectableDataSource<AnySurrealType> for SurrealDB {
 
         let result = self.execute(&select.expr()).await?;
 
-        // Result should be an array of rows
         let arr = result
             .into_value()
             .into_array()

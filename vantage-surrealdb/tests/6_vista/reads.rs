@@ -3,7 +3,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
-use vantage_vista::{Capability, VistaFactory};
+use vantage_vista::{Capability, FilterOp, SortDirection, VistaFactory};
 
 use super::{TestResult, product_table, seed_row, setup};
 
@@ -112,6 +112,28 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.has(Capability::Subscribe));
     assert_eq!(vista.driver_name(), "surrealdb");
 
+    Ok(())
+}
+
+/// The preview is the SurrealQL SELECT as it stands, with every condition and
+/// order inline; a window's `LIMIT`/`START` is added at fetch time.
+#[tokio::test]
+async fn preview_renders_the_narrowed_select_without_a_window() -> TestResult {
+    let (db, table_name) = setup().await;
+    seed_row(&db, &table_name, "alpha", "Alpha", 10, false).await?;
+    let mut vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    vista.add_condition("price", FilterOp::Gt, CborValue::Integer(5.into()))?;
+    vista.set_order(Some(("name", SortDirection::Ascending)))?;
+    let _ = vista.fetch_window(0, 2).await?;
+
+    assert_eq!(
+        vista.preview().query,
+        Some(format!(
+            "SELECT id, name, price, is_deleted FROM {table_name} WHERE price > 5 ORDER BY name"
+        ))
+    );
     Ok(())
 }
 
