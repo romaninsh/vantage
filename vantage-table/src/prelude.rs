@@ -1,35 +1,25 @@
-//! Prelude module for vantage-table
-//!
-//! This module re-exports commonly used traits and types for convenient importing.
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
+//! The commonly used types and traits of vantage-table, for `use vantage_table::prelude::*;`.
 
-// Core table types
 pub use crate::table::Table;
 pub use crate::table::{Hook, HookReturn, IdGenerator, Phase, Timestamps};
 
-// Column functionality
 pub use crate::column::collection::ColumnCollectionExt;
 pub use crate::column::core::Column;
 pub use crate::column::flags::ColumnFlag;
 
-// Traits
 pub use crate::active_entity_ext::GetRefExt;
 pub use crate::traits::column_like::ColumnLike;
 pub use crate::traits::table_source::TableSource;
 
-// Ordering functionality
 pub use crate::sorting::{OrderBy, SortDirection};
 pub use crate::table::sorting::OrderByExt;
 
-// Pagination functionality
 pub use crate::pagination::Pagination;
 
-// Conditions
 pub use crate::conditions::ConditionHandle;
 
-// CBOR value accessor helpers (for `Record<CborValue>` consumers crossing
-// the typed/erased boundary via `vantage_vista::Vista`).
 pub use crate::cbor_ext::CborValueExt;
 
-// Mock functionality for testing
 #[cfg(any(test, feature = "mocks"))]
 pub use crate::mocks::mock_table_source::MockTableSource;

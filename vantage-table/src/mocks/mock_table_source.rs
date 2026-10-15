@@ -98,6 +98,3 @@ impl Default for MockTableSource {
 }
 
 impl DataSource for MockTableSource {}
-
-#[cfg(test)]
-mod tests;

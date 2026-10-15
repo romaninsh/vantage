@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 pub mod columns;
 pub mod conditions;
 pub mod expr;
@@ -9,6 +10,5 @@ pub mod sorting;
 pub mod spec;
 pub mod traverse;
 pub mod vista_metadata;
-// pub mod valueset;
 
 pub use vista_metadata::{Orderable, VistaMetadataOptions};

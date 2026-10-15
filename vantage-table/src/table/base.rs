@@ -14,25 +14,14 @@ mod accessors;
 mod computed;
 mod relations;
 
-/// Type alias for expression closures stored on Table.
-///
-/// Stored against the entity-erased `Table<T, EmptyEntity>` rather than the
-/// concrete `Table<T, E>` so the closures survive [`Table::into_entity`] — an
-/// expression only ever reads entity-agnostic table state (columns and
-/// relations by name, conditions, subqueries), never the entity's typed fields.
-/// [`Table::with_expression`] adapts the caller's `Fn(&Table<T, E>)` into this
-/// shape; see `Table::as_entity_erased` for the soundness of the cast.
+/// An expression closure stored on a table, against the entity-erased table so
+/// it survives [`Table::into_entity`]. See [`Table::with_expression`].
 pub type ExpressionFn<T> =
     Arc<dyn Fn(&Table<T, EmptyEntity>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
 
-/// Type alias for lazy-expression callbacks stored on Table.
-///
-/// A lazy expression runs *after* the data source returns a record.
-/// Callbacks apply in declaration order: each borrows the record as built
-/// so far, and the value it returns is inserted under the expression's
-/// name. A later lazy expression therefore sees the columns produced by
-/// earlier ones — one expensive fetch (a file's contents) can feed several
-/// cheap derived columns. See [`Table::with_lazy_expression`].
+/// A lazy-expression callback stored on a table: runs on each returned record
+/// and sees the columns earlier callbacks produced. See
+/// [`Table::with_lazy_expression`].
 pub type LazyExpressionFn<T> = Arc<
     dyn Fn(
             &vantage_types::Record<<T as TableSource>::Value>,
@@ -63,46 +52,26 @@ where
     pub(super) contained: Vec<crate::references::ContainedRelation<T>>,
     pub(super) expressions: IndexMap<String, ExpressionFn<T>>,
     pub(super) lazy_expressions: IndexMap<String, LazyExpressionFn<T>>,
-    /// Columns the `Vista` computes after each read (see
-    /// `vantage_vista::Column::with_expression`). The table never selects or
-    /// writes them; it carries them so a Vista built from this table — a
-    /// traversal target included — knows them. Each carries its position
-    /// among all columns, stored and computed, as declared.
+    /// Vista-computed columns with their position among all columns, stored
+    /// and computed. The table never selects or writes them.
     pub(super) computed_columns: IndexMap<String, (usize, vantage_vista::Column)>,
-    /// When `Some`, `select()` projects only these column names (plus the id
-    /// column, always). `None` keeps the default "project every column"
-    /// behavior. The set holds both plain column names and dotted implicit
-    /// references (`"country.name"`); set via [`Self::with_active_columns`].
+    /// When `Some`, `select()` projects only these names (plus the id column);
+    /// dotted names are implicit references. See [`Self::with_active_columns`].
     pub(super) active_columns: Option<indexmap::IndexSet<String>>,
-    /// Dotted implicit-reference columns imported by traversal
-    /// (`"country.name"`). These are read-only, expression-backed projections;
-    /// they are tracked here so write paths never persist them (a SCHEMALESS
-    /// store would otherwise create a literal `country.name` field).
+    /// Dotted implicit-reference columns (`"country.name"`): read-only
+    /// projections that write paths must never persist (a SCHEMALESS store
+    /// would create a literal `country.name` field).
     pub(super) imported_columns: indexmap::IndexSet<String>,
     pub(super) pagination: Option<Pagination>,
     pub(super) title_field: Option<String>,
     pub(super) title_fields: Vec<String>,
     pub(super) id_field: Option<String>,
-    /// When true, the id column is a text/string key and backends must NOT
-    /// numerically coerce it (e.g. the Postgres backend otherwise binds an
-    /// all-digit id like `"121"` as `bigint`, which breaks against a `TEXT` id
-    /// column). Set via [`Self::with_text_id`]. Defaults to false to preserve
-    /// the integer-id convention used by other models.
+    /// See [`Self::with_text_id`].
     pub(super) id_text: bool,
-    /// When true, the backend makes this table's ids (auto-increment,
-    /// generated record ids). Set via [`Self::with_auto_id`]; Vista metadata
-    /// flags the id column `auto`.
+    /// See [`Self::with_auto_id`].
     pub(super) id_auto: bool,
-    /// Column values every row in this set must hold, because they are part of
-    /// the set's definition (e.g. a has-many child carries the parent's foreign
-    /// key). Registered wherever the table is narrowed by a literal
-    /// `column = value` (see [`Self::with_id`], `Reference::resolve_from_row`);
-    /// never from an expression scope (and every literal `column = value`
-    /// passed to `add_condition`). Enforced on write: insert and replace fill a
-    /// null/absent column and reject a conflicting one; patch never fills, and
-    /// rejects a present value that differs (or is null).
+    /// See [`Self::invariants`].
     pub(super) invariants: IndexMap<String, T::Value>,
-    /// Lifecycle hooks (see [`Hook`](super::Hook)). Registered via [`Self::with_hook`].
     pub(super) hooks: Hooks<T>,
 }
 
@@ -204,6 +173,3 @@ impl<T: TableSource, E: Entity<T::Value>> std::fmt::Debug for Table<T, E> {
             .finish()
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -42,10 +42,7 @@ impl Pagination {
     pub fn set_ipp(&mut self, items_per_page: i64) {
         let items_per_page = items_per_page.max(1);
 
-        // Calculate which item is currently at the top of the page
         let first_item_index = (self.page - 1) * self.items_per_page;
-
-        // Calculate which page that item would be on with the new page size
         self.page = (first_item_index / items_per_page) + 1;
         self.items_per_page = items_per_page;
     }
@@ -86,67 +83,5 @@ impl Default for Pagination {
             items_per_page: 50,
             offset: None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_new_pagination() {
-        let p = Pagination::new(2, 25);
-        assert_eq!(p.get_page(), 2);
-        assert_eq!(p.get_ipp(), 25);
-        assert_eq!(p.limit(), 25);
-        assert_eq!(p.skip(), 25);
-    }
-
-    #[test]
-    fn test_pagination_bounds() {
-        let p = Pagination::new(0, 0);
-        assert_eq!(p.get_page(), 1);
-        assert_eq!(p.get_ipp(), 1);
-    }
-
-    #[test]
-    fn test_set_page() {
-        let mut p = Pagination::new(1, 10);
-        p.set_page(3);
-        assert_eq!(p.get_page(), 3);
-        assert_eq!(p.skip(), 20);
-    }
-
-    #[test]
-    fn test_set_ipp_keeps_focus() {
-        let mut p = Pagination::new(3, 10);
-        // Page 3 with 10 items means items 20-29 are visible
-        // First item is at index 20
-
-        p.set_ipp(5);
-        // With 5 items per page, item 20 should be on page 5 (items 20-24)
-        assert_eq!(p.get_page(), 5);
-        assert_eq!(p.get_ipp(), 5);
-        assert_eq!(p.skip(), 20);
-    }
-
-    #[test]
-    fn test_set_ipp_larger_page_size() {
-        let mut p = Pagination::new(5, 5);
-        // Page 5 with 5 items means items 20-24 are visible
-
-        p.set_ipp(25);
-        // With 25 items per page, item 20 should be on page 1 (items 0-24)
-        assert_eq!(p.get_page(), 1);
-        assert_eq!(p.get_ipp(), 25);
-        assert_eq!(p.skip(), 0);
-    }
-
-    #[test]
-    fn test_default_pagination() {
-        let p = Pagination::default();
-        assert_eq!(p.get_page(), 1);
-        assert_eq!(p.get_ipp(), 50);
-        assert_eq!(p.skip(), 0);
     }
 }

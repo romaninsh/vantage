@@ -119,10 +119,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.pagination.as_ref()
     }
 
-    /// Column values every row in this set must hold (see the `invariants`
-    /// field): insert and replace fill a null/absent column and reject a
-    /// conflicting one; patch never fills, and rejects a present value that
-    /// differs (or is null).
+    /// Column values every row in this set must hold: insert and replace fill
+    /// a null or absent column and reject a conflicting one; patch never fills,
+    /// and rejects a present value that differs (or is null). Registered by
+    /// every literal `column = value` condition, [`Self::with_id`] and
+    /// has-one/has-many traversal; never by an expression condition.
     pub fn invariants(&self) -> &IndexMap<String, T::Value> {
         &self.invariants
     }

@@ -289,7 +289,6 @@ impl TableSource for MockTableSource {
     where
         Self: Sized,
     {
-        // target_field IN (subquery)
         let tgt_col: Expression<Value> = Expression::new(target_field, vec![]);
         Expression::new(
             "{} IN ({})",

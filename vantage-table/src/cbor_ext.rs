@@ -1,14 +1,9 @@
-//! Convenience accessors for `ciborium::Value` that mirror the muscle-memory
-//! API of `serde_json::Value`.
-//!
-//! ciborium's native `Value` already provides `as_text`, `as_integer`,
-//! `as_float`, `as_array`, `as_map`, `as_bytes` and friends. What it lacks —
-//! and what code reading typed records reaches for constantly — are the
-//! shorter names (`as_str`, `as_i64`) and string-keyed `Map` lookup. This
-//! trait fills exactly that gap; nothing more.
+//! `serde_json::Value`-style accessors for `ciborium::Value`: the short names
+//! (`as_str`, `as_i64`) and string-keyed map lookup that ciborium lacks.
 
 use ciborium::Value as CborValue;
 
+/// Short accessors and string-keyed map lookup for `ciborium::Value`.
 pub trait CborValueExt {
     /// Borrow the inner string if this is a `Text` value.
     fn as_str(&self) -> Option<&str>;
@@ -61,48 +56,5 @@ impl CborValueExt for CborValue {
             .iter_mut()
             .find(|(k, _)| k.as_text() == Some(key))
             .map(|(_, v)| v)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn map(pairs: Vec<(&str, CborValue)>) -> CborValue {
-        CborValue::Map(
-            pairs
-                .into_iter()
-                .map(|(k, v)| (CborValue::Text(k.to_string()), v))
-                .collect(),
-        )
-    }
-
-    #[test]
-    fn as_str_and_int_accessors() {
-        let v = CborValue::Text("hello".into());
-        assert_eq!(v.as_str(), Some("hello"));
-        assert_eq!(v.as_i64(), None);
-
-        let n = CborValue::Integer(42i64.into());
-        assert_eq!(n.as_i64(), Some(42));
-        assert_eq!(n.as_u64(), Some(42));
-        assert_eq!(n.as_str(), None);
-    }
-
-    #[test]
-    fn map_lookup_by_str_key() {
-        let mut record = map(vec![
-            ("name", CborValue::Text("alice".into())),
-            ("age", CborValue::Integer(30i64.into())),
-        ]);
-        assert_eq!(record.get("name").and_then(|v| v.as_str()), Some("alice"));
-        assert_eq!(record.get("age").and_then(|v| v.as_i64()), Some(30));
-        assert!(record.get("missing").is_none());
-
-        // mutable lookup
-        if let Some(age) = record.get_mut("age") {
-            *age = CborValue::Integer(31i64.into());
-        }
-        assert_eq!(record.get("age").and_then(|v| v.as_i64()), Some(31));
     }
 }

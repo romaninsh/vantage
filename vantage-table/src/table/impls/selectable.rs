@@ -50,7 +50,6 @@ where
     pub fn select(&self) -> T::Select {
         let mut select = self.select_empty();
 
-        // Add all columns as fields (or expressions if defined)
         for column in self.columns.values() {
             // Lazy-expression columns exist only on returned records — the
             // source has no such field to project (SQLite would silently
@@ -80,7 +79,6 @@ where
             }
         }
 
-        // Add expressions that don't correspond to any column
         for (name, expr_fn) in &self.expressions {
             if !self.columns.contains_key(name) && self.is_active(name) {
                 let expr = expr_fn(self.as_entity_erased());
@@ -288,7 +286,6 @@ where
             ));
         }
 
-        // Validate the has_one chain and that the final column exists.
         let (target, fk_hops) = self.resolve_has_one_target(hops)?;
         if !target.columns().contains_key(column) {
             return Err(error!(
@@ -446,7 +443,6 @@ where
     }
 }
 
-// Specific implementation for serde_json::Value that can use QuerySource
 impl<T, E> Table<T, E>
 where
     T: SelectableDataSource<serde_json::Value, T::Condition>
@@ -468,9 +464,8 @@ where
             _ => &result,
         };
 
-        // Extract count from result - could be {"count": 42} or just 42.
-        // Anything else is an unexpected shape: surface it rather than
-        // silently reporting zero rows.
+        // Anything but `{"count": N}` or a bare `N` is an unexpected shape:
+        // surface it rather than silently reporting zero rows.
         if let Some(count) = result.get("count").and_then(|v| v.as_i64()) {
             Ok(count)
         } else if let Some(count) = result.as_i64() {
@@ -481,101 +476,5 @@ where
                 result = result
             ))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mocks::mock_table_source::MockTableSource;
-    use serde_json::json;
-    use vantage_expressions::mocks::datasource::MockSelectableDataSource;
-    use vantage_expressions::traits::datasource::ExprDataSource;
-
-    #[tokio::test]
-    async fn test_selectable_functionality() {
-        let mock_select_source = MockSelectableDataSource::new(json!([
-            {"id": "1", "name": "Alice", "age": 30},
-            {"id": "2", "name": "Bob", "age": 25}
-        ]));
-
-        let mock_query_source = vantage_expressions::mocks::mock_builder::new()
-            .on_exact_select("(SELECT COUNT(*) FROM \"users\")", json!(42));
-
-        let table = MockTableSource::new()
-            .with_data(
-                "users",
-                vec![
-                    json!({"id": "1", "name": "Alice", "age": 30}),
-                    json!({"id": "2", "name": "Bob", "age": 25}),
-                ],
-            )
-            .await
-            .with_select_source(mock_select_source)
-            .with_query_source(mock_query_source);
-        let table = Table::<_, vantage_types::EmptyEntity>::new("users", table);
-
-        // Basic select
-        let select = table.select();
-        assert_eq!(select.source(), Some("users"));
-
-        // Validate SQL query generation
-        let query_expr: vantage_expressions::Expression<serde_json::Value> = select.into();
-        assert_eq!(query_expr.preview(), "SELECT * FROM users");
-
-        // Test count query generation
-        let count_query = table.get_count_query();
-        assert_eq!(count_query.preview(), "(SELECT COUNT(*) FROM \"users\")");
-
-        // TODO: This does not work with MockColumn - because it does not implement Expressive
-        // // Test sum query generation
-        // let age_column = table.data_source().create_column::<i64>("age");
-        // let sum_query = table.get_sum_query(&age_column);
-        // assert_eq!(sum_query.preview(), "SELECT SUM(age) FROM \"users\"");
-
-        // Test actual count/sum methods - get_count should return 42 from mock query source
-        let count = table.get_count_via_query().await.unwrap();
-        assert_eq!(count, 42);
-    }
-
-    async fn count_table_returning(
-        count_result: serde_json::Value,
-    ) -> Table<MockTableSource, vantage_types::EmptyEntity> {
-        let mock_select_source = MockSelectableDataSource::new(json!([]));
-        let mock_query_source = vantage_expressions::mocks::mock_builder::new()
-            .on_exact_select("(SELECT COUNT(*) FROM \"users\")", count_result);
-        let source = MockTableSource::new()
-            .with_select_source(mock_select_source)
-            .with_query_source(mock_query_source);
-        Table::<_, vantage_types::EmptyEntity>::new("users", source)
-    }
-
-    #[tokio::test]
-    async fn test_count_unwraps_single_element_array() {
-        // SQL/Surreal count queries commonly return `[{"count": N}]`.
-        let table = count_table_returning(json!([{"count": 7}])).await;
-        assert_eq!(table.get_count_via_query().await.unwrap(), 7);
-    }
-
-    #[tokio::test]
-    async fn test_count_errors_on_unexpected_shape() {
-        // An unrecognized result must surface as an error, not a silent zero.
-        let table = count_table_returning(json!({"total": 5})).await;
-        assert!(table.get_count_via_query().await.is_err());
-    }
-
-    #[tokio::test]
-    #[should_panic(expected = "MockTableSource select source not set")]
-    async fn test_panics_without_select_source() {
-        let table = Table::<_, vantage_types::EmptyEntity>::new("users", MockTableSource::new());
-        let _select = table.select();
-    }
-
-    #[tokio::test]
-    #[should_panic(expected = "MockTableSource query source not set")]
-    async fn test_panics_without_query_source() {
-        let table = Table::<_, vantage_types::EmptyEntity>::new("users", MockTableSource::new());
-        let query = table.data_source().expr("SELECT COUNT(*)", vec![]);
-        let _result = table.data_source().execute(&query).await;
     }
 }

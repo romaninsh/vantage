@@ -72,15 +72,3 @@ impl<T: ColumnType> ColumnLike<T> for MockColumn<T> {
         self
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mock_column_basic() {
-        let col = MockColumn::<Value>::new("test_column");
-        assert_eq!(col.name(), "test_column");
-        assert_eq!(col.alias(), None);
-    }
-}

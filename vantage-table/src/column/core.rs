@@ -8,7 +8,6 @@ use crate::{column::flags::ColumnFlag, traits::column_like::ColumnLike};
 
 pub trait ColumnType: Sync + Send + std::fmt::Debug + Clone + 'static {}
 
-// Blanket implementation for any type that satisfies the requirements
 impl<T> ColumnType for T where T: Sync + Send + std::fmt::Debug + Clone + 'static {}
 
 /// Represents a table column with optional alias and flags.

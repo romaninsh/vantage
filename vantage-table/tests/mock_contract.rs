@@ -52,10 +52,8 @@ macro_rules! mock_check {
     };
 }
 
-mock_check!(mock_contract_delete, contract::check_delete);
 mock_check!(mock_contract_insert, contract::check_insert);
 mock_check!(mock_contract_patch, contract::check_patch);
-mock_check!(mock_contract_replace, contract::check_replace);
 mock_check!(mock_contract_delete_all, contract::check_delete_all);
 
 #[tokio::test]

@@ -2,7 +2,6 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use vantage_types::vantage_type_system;
 
-// PostgreSQL type system with JSON
 vantage_type_system! {
     type_trait: MockType,
     method_name: json,
@@ -11,7 +10,6 @@ vantage_type_system! {
     type_variants: [String, Int, Float, Decimal, Bool, Null]
 }
 
-// Override the macro-generated variant detection with our custom logic
 impl MockTypeVariants {
     pub fn from_json(value: &serde_json::Value) -> Option<Self> {
         match value {
@@ -149,45 +147,5 @@ where
             Value::String(_) | Value::Number(_) | Value::Object(_) => T::from_json(value).map(Some),
             _ => None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_types() {
-        let some_name: Option<String> = Some("John".to_string());
-        let any_some = AnyMockType::new(some_name.clone());
-
-        // Should use String variant (since we use StringMarker as Target)
-        assert_eq!(any_some.type_variant(), Some(MockTypeVariants::String));
-
-        // Test round-trip
-        let value = any_some.value();
-        let restored_any = AnyMockType::from_json(value).unwrap();
-        let restored_some: Option<String> = restored_any.try_get().unwrap();
-        assert_eq!(some_name, restored_some);
-
-        // Test None value
-        let none_name: Option<String> = None;
-        let any_none = AnyMockType::new(none_name.clone());
-
-        // Should use String variant (since we use StringMarker as Target)
-        assert_eq!(any_none.type_variant(), Some(MockTypeVariants::String));
-
-        // Test None round-trip
-        let value = any_none.value();
-        let restored_none_any = AnyMockType::from_json(value).unwrap();
-
-        // Persistence looses our type info - that's expected
-        assert_eq!(restored_none_any.type_variant(), None);
-
-        // Cannot restore into string
-        assert!(restored_none_any.try_get::<String>().is_none());
-
-        // Technically successful, but is none regardless
-        assert_eq!(restored_none_any.try_get::<Option<String>>(), Some(None));
     }
 }

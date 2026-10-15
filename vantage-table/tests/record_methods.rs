@@ -12,186 +12,29 @@ struct TestUser {
     active: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-struct VipUser {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct Person {
     id: Option<String>,
     name: String,
-    email: String,
-    vip_level: Option<String>,
+    age: i32,
 }
 
-#[tokio::test]
-async fn test_iter_records_modify_and_save() {
-    let mock = MockTableSource::new().with_data(
-        "users",
-        vec![
-            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
-            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@test.com", "active": false}),
-        ],
-    );
-
-    let table =
-        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
-    for mut record in table.list_entities().await.unwrap() {
-        record.active = true;
-        // MockTableSource now supports save, so this should succeed
-        record.save().await.unwrap();
-    }
-
-    // Verify that modifications persisted
-    let records = table.list_entities().await.unwrap();
-    for record in records {
-        assert!(record.active); // Should now be true after save
+fn person(id: &str, name: &str, age: i32) -> Person {
+    Person {
+        id: Some(id.to_string()),
+        name: name.to_string(),
+        age,
     }
 }
 
-#[tokio::test]
-async fn test_get_some_record_modify_workflow() {
-    let mock = MockTableSource::new().with_data(
-        "users",
-        vec![
-            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
-            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@test.com", "active": true}),
-        ],
-    );
-
-    let table =
-        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
-
-    // Test get_entity by ID - existing entity
-    let alice = table.get_entity("1").await.unwrap().unwrap();
-    assert_eq!(alice.name, "Alice");
-    assert_eq!(alice.id(), "1");
-    assert!(!alice.active);
-
-    // Test get_entity by ID - non-existent entity
-    let missing = table.get_entity("999").await.unwrap();
-    assert!(missing.is_none());
-
-    // Test get_some_entity (any entity)
-    let mut record = table.get_some_entity().await.unwrap().unwrap();
-
-    // Verify initial state
-    assert_eq!(record.name, "Alice");
-    assert_eq!(record.email, "alice@test.com");
-    assert!(!record.active);
-    assert_eq!(record.id(), "1");
-
-    // Modify the record
-    record.name = "Alice Updated".to_string();
-    record.email = "alice.new@test.com".to_string();
-    record.active = true;
-
-    // Verify modifications
-    assert_eq!(record.name, "Alice Updated");
-    assert_eq!(record.email, "alice.new@test.com");
-    assert!(record.active);
-    assert_eq!(record.id(), "1"); // ID should remain unchanged
-
-    // Save the record (should now succeed with MockTableSource)
-    record.save().await.unwrap();
-
-    // Verify changes persisted by fetching the record again using get_entity
-    let updated_record = table.get_entity("1").await.unwrap().unwrap();
-    assert_eq!(updated_record.name, "Alice Updated");
-    assert_eq!(updated_record.email, "alice.new@test.com");
-    assert!(updated_record.active);
-    assert_eq!(updated_record.id(), "1"); // ID should remain unchanged
+async fn users(rows: Vec<serde_json::Value>) -> Table<MockTableSource, TestUser> {
+    let mock = MockTableSource::new().with_data("users", rows).await;
+    Table::<MockTableSource, EmptyEntity>::new("users", mock).into_entity::<TestUser>()
 }
 
-#[tokio::test]
-async fn test_record_type_conversion_workflow() {
-    let mock = MockTableSource::new().with_data(
-        "users",
-        vec![serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": true})],
-    );
-
-    let table =
-        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
-    let record = table.get_some_entity().await.unwrap().unwrap();
-
-    // Convert TestUser record to VipUser (accessing the underlying entity)
-    let vip_user = VipUser {
-        id: record.id.clone(),
-        name: record.name.clone(),
-        email: record.email.clone(),
-        vip_level: None,
-    };
-
-    // Verify the conversion worked and preserved data
-    assert_eq!(vip_user.id, record.id);
-    assert_eq!(vip_user.name, "Alice");
-    assert_eq!(vip_user.email, "alice@test.com");
-    // New field should have default value
-    assert_eq!(vip_user.vip_level, None);
-}
-
-#[tokio::test]
-async fn test_bulk_record_processing() {
-    let mock = MockTableSource::new().with_data(
-        "users",
-        vec![
-            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@old.com", "active": false}),
-            serde_json::json!({"id": "2", "name": "Bob", "email": "bob@old.com", "active": true}),
-            serde_json::json!({"id": "3", "name": "Charlie", "email": "charlie@old.com", "active": false}),
-        ],
-    );
-
-    let table =
-        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
-    let mut records = table.list_entities().await.unwrap();
-
-    // Bulk operation: activate inactive users and update their emails
-    let mut modified_count = 0;
-    for record in &mut records {
-        if !record.active {
-            record.active = true;
-            record.email = record.email.replace("@old.com", "@new.com");
-            modified_count += 1;
-        }
-    }
-
-    // Should have modified Alice and Charlie (2 users)
-    assert_eq!(modified_count, 2);
-
-    // Verify specific changes
-    let alice = records.iter().find(|r| r.name == "Alice").unwrap();
-    assert!(alice.active);
-    assert_eq!(alice.email, "alice@new.com");
-
-    let bob = records.iter().find(|r| r.name == "Bob").unwrap();
-    assert!(bob.active); // Was already active
-    assert_eq!(bob.email, "bob@old.com"); // Should remain unchanged
-
-    let charlie = records.iter().find(|r| r.name == "Charlie").unwrap();
-    assert!(charlie.active);
-    assert_eq!(charlie.email, "charlie@new.com");
-
-    // Attempt to save modified records
-    let inactive_count_before = records.iter().filter(|r| !r.active).count();
-    assert_eq!(inactive_count_before, 0); // All should be active now
-
-    // Save all records (should now succeed with MockTableSource)
-    for record in &records {
-        record.save().await.unwrap();
-    }
-
-    // Verify changes persisted by fetching records again
-    let updated_records = table.list_entities().await.unwrap();
-    let alice = updated_records.iter().find(|r| r.name == "Alice").unwrap();
-    assert!(alice.active);
-    assert_eq!(alice.email, "alice@new.com");
-
-    let charlie = updated_records
-        .iter()
-        .find(|r| r.name == "Charlie")
-        .unwrap();
-    assert!(charlie.active);
-    assert_eq!(charlie.email, "charlie@new.com");
-
-    let bob = updated_records.iter().find(|r| r.name == "Bob").unwrap();
-    assert!(bob.active);
-    assert_eq!(bob.email, "bob@old.com"); // Should remain unchanged
+async fn people(rows: Vec<serde_json::Value>) -> Table<MockTableSource, Person> {
+    let mock = MockTableSource::new().with_data("people", rows).await;
+    Table::<MockTableSource, EmptyEntity>::new("people", mock).into_entity::<Person>()
 }
 
 #[tokio::test]
@@ -219,60 +62,248 @@ async fn test_active_entity_delete() {
 }
 
 #[tokio::test]
-async fn test_active_entity_reload() {
-    let mock = MockTableSource::new().with_data(
-        "users",
-        vec![
-            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
-        ],
-    );
+async fn active_entity_reload_fails_when_row_is_gone() {
+    let table = users(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "email": "a@test.com", "active": false}),
+    ])
+    .await;
+    let mut alice = table.get_entity("1").await.unwrap().unwrap();
 
-    let table =
-        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+    WritableValueSet::delete(&table, "1").await.unwrap();
 
+    assert!(alice.reload().await.is_err());
+}
+
+#[tokio::test]
+async fn active_entity_reload_picks_up_an_external_write() {
+    let table = users(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "email": "a@test.com", "active": false}),
+    ])
+    .await;
     let mut alice = table.get_entity("1").await.unwrap().unwrap();
     assert!(!alice.active);
 
-    // Simulate an external write
     table
         .replace(
             "1",
             &TestUser {
                 id: Some("1".to_string()),
                 name: "Alice".into(),
-                email: "alice@test.com".into(),
+                email: "a@test.com".into(),
                 active: true,
             },
         )
         .await
         .unwrap();
-
-    // Our in-memory copy is stale
-    assert!(!alice.active);
+    assert!(!alice.active, "the in-memory copy is stale until reloaded");
 
     alice.reload().await.unwrap();
     assert!(alice.active);
 }
 
 #[tokio::test]
-async fn test_active_entity_reload_missing() {
-    let mock = MockTableSource::new().with_data(
-        "users",
-        vec![
-            serde_json::json!({"id": "1", "name": "Alice", "email": "alice@test.com", "active": false}),
-        ],
+async fn saving_every_listed_entity_persists_each_modification() {
+    let table = users(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "email": "a@test.com", "active": false}),
+        serde_json::json!({"id": "2", "name": "Bob", "email": "b@test.com", "active": false}),
+    ])
+    .await;
+    for mut entity in table.list_entities().await.unwrap() {
+        entity.active = true;
+        entity.save().await.unwrap();
+    }
+    for entity in table.list_entities().await.unwrap() {
+        assert!(entity.active, "{}", entity.name);
+    }
+}
+
+#[tokio::test]
+async fn get_entity_returns_the_row_by_id_and_none_for_a_missing_one() {
+    let table = users(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "email": "a@test.com", "active": false}),
+        serde_json::json!({"id": "2", "name": "Bob", "email": "b@test.com", "active": true}),
+    ])
+    .await;
+    let alice = table.get_entity("1").await.unwrap().unwrap();
+    assert_eq!(alice.name, "Alice");
+    assert_eq!(alice.id(), "1");
+    assert!(table.get_entity("999").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn a_modified_entity_is_saved_under_its_id() {
+    let table = users(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "email": "a@test.com", "active": false}),
+    ])
+    .await;
+    let mut record = table.get_some_entity().await.unwrap().unwrap();
+    assert_eq!(record.id(), "1");
+    record.name = "Alice Updated".to_string();
+    record.active = true;
+    record.save().await.unwrap();
+
+    let updated = table.get_entity("1").await.unwrap().unwrap();
+    assert_eq!(updated.name, "Alice Updated");
+    assert!(updated.active);
+    assert_eq!(updated.id(), "1");
+}
+
+// --- the typed dataset surface -----------------------------------------------
+
+#[tokio::test]
+async fn list_get_and_get_some_return_typed_entities_by_id() {
+    let table = people(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "age": 30}),
+        serde_json::json!({"id": "2", "name": "Bob", "age": 25}),
+    ])
+    .await;
+
+    let all = table.list().await.unwrap();
+    assert_eq!(all.keys().collect::<Vec<_>>(), ["1", "2"]);
+    assert_eq!(all["1"], person("1", "Alice", 30));
+
+    assert_eq!(table.get("2").await.unwrap(), Some(person("2", "Bob", 25)));
+    assert_eq!(table.get("999").await.unwrap(), None);
+
+    let (id, first) = table.get_some().await.unwrap().unwrap();
+    assert_eq!(id, "1");
+    assert_eq!(first.name, "Alice");
+}
+
+#[tokio::test]
+async fn get_some_on_an_empty_table_is_none() {
+    let table = people(vec![]).await;
+    assert!(table.get_some().await.unwrap().is_none());
+    assert!(table.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_row_that_does_not_fit_the_entity_is_a_read_error() {
+    let table = people(vec![serde_json::json!({"id": "1", "name": "Alice"})]).await;
+    assert!(table.list().await.is_err());
+    assert!(table.get("1").await.is_err());
+    assert!(table.get_some().await.is_err());
+}
+
+#[tokio::test]
+async fn streamed_entities_are_the_listed_ones_in_order() {
+    let table = people(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "age": 30}),
+        serde_json::json!({"id": "2", "name": "Bob", "age": 25}),
+    ])
+    .await;
+    let mut stream = table.stream();
+    let mut seen = Vec::new();
+    while let Some(item) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+        seen.push(item.unwrap());
+    }
+    assert_eq!(
+        seen,
+        [
+            ("1".to_string(), person("1", "Alice", 30)),
+            ("2".to_string(), person("2", "Bob", 25)),
+        ]
     );
+}
 
-    let table =
-        Table::<MockTableSource, EmptyEntity>::new("users", mock.await).into_entity::<TestUser>();
+#[tokio::test]
+async fn streaming_a_row_that_does_not_fit_the_entity_yields_an_error() {
+    let table = people(vec![serde_json::json!({"id": "1", "name": "Alice"})]).await;
+    let mut stream = table.stream();
+    let first = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await;
+    assert!(first.unwrap().is_err());
+}
 
-    let mut alice = table.get_entity("1").await.unwrap().unwrap();
+#[tokio::test]
+async fn insert_stores_a_new_entity_and_returns_it_as_stored() {
+    let table = people(vec![]).await;
+    let stored = table
+        .insert("3", &person("3", "Charlie", 35))
+        .await
+        .unwrap();
+    assert_eq!(stored, person("3", "Charlie", 35));
+    assert_eq!(
+        table.get("3").await.unwrap(),
+        Some(person("3", "Charlie", 35))
+    );
+}
 
-    // Delete via the table — the ActiveEntity's id is now orphaned.
-    WritableValueSet::delete(&table, "1").await.unwrap();
+#[tokio::test]
+async fn insert_of_an_existing_id_returns_the_stored_entity_untouched() {
+    let table = people(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "age": 30}),
+    ])
+    .await;
+    let stored = table.insert("1", &person("1", "David", 40)).await.unwrap();
+    assert_eq!(stored.name, "Alice");
+    assert_eq!(table.get("1").await.unwrap().unwrap().name, "Alice");
+}
 
-    let result = alice.reload().await;
-    assert!(result.is_err());
+#[tokio::test]
+async fn replace_overwrites_an_entity_and_creates_a_missing_one() {
+    let table = people(vec![
+        serde_json::json!({"id": "2", "name": "Bob", "age": 25}),
+    ])
+    .await;
+    let replaced = table
+        .replace("2", &person("2", "Bob Updated", 26))
+        .await
+        .unwrap();
+    assert_eq!(replaced, person("2", "Bob Updated", 26));
+    table.replace("4", &person("4", "Eve", 28)).await.unwrap();
+    assert_eq!(table.get("4").await.unwrap(), Some(person("4", "Eve", 28)));
+}
+
+#[tokio::test]
+async fn patch_changes_the_fields_given_and_returns_the_whole_stored_entity() {
+    let table = people(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "age": 30}),
+    ])
+    .await;
+    let patched = table
+        .patch("1", &person("1", "Alice Updated", 30))
+        .await
+        .unwrap();
+    assert_eq!(patched, person("1", "Alice Updated", 30));
+}
+
+#[tokio::test]
+async fn patch_of_a_missing_entity_is_not_found() {
+    let table = people(vec![]).await;
+    let err = table
+        .patch("999", &person("999", "Ghost", 50))
+        .await
+        .unwrap_err();
+    assert!(err.is_not_found(), "{err}");
+}
+
+#[tokio::test]
+async fn delete_and_delete_all_remove_entities_and_a_missing_id_is_fine() {
+    let table = people(vec![
+        serde_json::json!({"id": "1", "name": "Alice", "age": 30}),
+        serde_json::json!({"id": "2", "name": "Bob", "age": 25}),
+    ])
+    .await;
+    WritableValueSet::delete(&table, "2").await.unwrap();
+    assert!(table.get("2").await.unwrap().is_none());
+    WritableValueSet::delete(&table, "999").await.unwrap();
+    WritableValueSet::delete_all(&table).await.unwrap();
+    assert!(table.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn insert_return_id_makes_a_fresh_id_for_each_call() {
+    let table = people(vec![]).await;
+    let entity = Person {
+        id: None,
+        name: "Alice".into(),
+        age: 30,
+    };
+    let first = table.insert_return_id(&entity).await.unwrap();
+    let second = table.insert_return_id(&entity).await.unwrap();
+    assert!(!first.is_empty());
+    assert_ne!(first, second);
+    assert_eq!(table.list().await.unwrap().len(), 2);
 }
 
 #[tokio::test]
