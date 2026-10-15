@@ -1,4 +1,4 @@
-//! Connection builder for SurrealDB with authentication and engine creation
+//! Connection builder: URL or DSN, credentials, then `connect()`.
 
 use crate::{DebugEngine, Engine, Result, SurrealClient, SurrealError, WsCborEngine};
 
@@ -36,7 +36,7 @@ pub enum AuthParams {
     Namespace { username: String, password: String },
     /// Database authentication
     Database { username: String, password: String },
-    /// Scope authentication
+    /// Scope authentication; `connect` rejects it as unsupported
     Scope {
         namespace: String,
         database: String,
@@ -57,32 +57,33 @@ impl SurrealConnection {
         }
     }
 
-    /// Parse connection from DSN string
+    /// Parse a DSN: `scheme://[user:pass@]host[:port][/namespace[/database]]`.
+    ///
+    /// DSN credentials sign in as root unless `?auth=` (or `?auth_level=`) is
+    /// `namespace`/`ns` or `database`/`db`. `?namespace=` and `?database=`
+    /// override the path. A DSN without a host is an error.
     pub fn dsn(dsn: impl AsRef<str>) -> Result<Self> {
         let mut conn = Self::new();
         let url = Url::parse(dsn.as_ref())?;
 
-        // Ensure URL has a proper host
         if url.host().is_none() {
             return Err(SurrealError::Connection(
                 "URL must have a valid host".to_string(),
             ));
         }
 
-        // Store the URL without user credentials and path/query
+        // The stored URL keeps no credentials, path or query.
         let base_url = format!("{}://{}", url.scheme(), url.host_str().unwrap());
         let port = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
         let final_url = format!("{}{}", base_url, port);
         conn.url = Some(final_url);
 
-        // Extract user credentials for root auth
         if !url.username().is_empty() {
             let username = url.username().to_string();
             let password = url.password().unwrap_or("").to_string();
             conn.auth = Some(AuthParams::Root { username, password });
         }
 
-        // Extract namespace and database from path segments
         let path_segments: Vec<&str> = url.path_segments().map(|c| c.collect()).unwrap_or_default();
 
         if let Some(namespace) = path_segments.first().filter(|s| !s.is_empty()) {
@@ -92,7 +93,6 @@ impl SurrealConnection {
             conn.database = Some(database.to_string());
         }
 
-        // Parse query parameters
         for (key, value) in url.query_pairs() {
             match key.as_ref() {
                 "namespace" => conn.namespace = Some(value.into_owned()),
@@ -100,10 +100,8 @@ impl SurrealConnection {
                 "version_check" => {
                     conn.version_check = value.parse().unwrap_or(true);
                 }
-                // Signin level for the DSN credentials. Without it, DSN
-                // credentials sign in as root — a namespace- or
-                // database-defined user needs `?auth=namespace` /
-                // `?auth=database` (cloud instances have no root users).
+                // Cloud instances have no root users, so DSN credentials need
+                // a way to sign in at namespace or database level.
                 "auth" | "auth_level" => {
                     let (username, password) = match conn.auth.take() {
                         Some(AuthParams::Root { username, password }) => (username, password),
@@ -183,7 +181,8 @@ impl SurrealConnection {
         self
     }
 
-    /// Set scope authentication
+    /// Set scope authentication. `connect` currently rejects it as an
+    /// unsupported method.
     pub fn auth_scope(
         mut self,
         namespace: impl Into<String>,
@@ -217,12 +216,6 @@ impl SurrealConnection {
         self.debug = enabled;
         self
     }
-
-    // /// Configure connection pool with custom settings
-    // pub fn with_pool_config(mut self, config: PoolConfig) -> Self {
-    //     self.pool_config = Some(config);
-    //     self
-    // }
 
     pub(crate) async fn init_engine(&self, engine: &mut crate::WsCborEngine) -> Result<()> {
         use ciborium::Value as CborValue;
@@ -288,9 +281,7 @@ impl SurrealConnection {
                 engine.send_message_cbor("signin", auth_params).await?;
             }
             AuthParams::Token(token) => {
-                // JWT auth (used for SurrealDB Cloud instances, whose per-instance
-                // access token is brokered out of band). `authenticate` takes the
-                // raw token; the `use` step below selects ns/db when configured.
+                // SurrealDB Cloud brokers per-instance access tokens out of band.
                 let auth_params = CborValue::Array(vec![CborValue::Text(token.clone())]);
                 engine
                     .send_message_cbor("authenticate", auth_params)
@@ -303,12 +294,9 @@ impl SurrealConnection {
             }
         }
 
-        // Credential logins (root / NS / DB users) select their working scope
-        // with an explicit `use`. A JWT (`authenticate`) is already scoped to the
-        // namespace/database carried in its claims, and re-selecting the namespace
-        // is a privileged action a database-scoped access actor isn't permitted to
-        // perform — SurrealDB answers `use` with an IAM `NotAllowed`. So skip `use`
-        // for token auth and rely on the token's own scope.
+        // A token is already scoped by its claims, and a database-scoped actor
+        // may not re-select the namespace: SurrealDB answers `use` with IAM
+        // `NotAllowed`. So only credential logins send `use`.
         let is_token_auth = matches!(self.auth, Some(AuthParams::Token(_)));
         if !is_token_auth && let Some(namespace) = &self.namespace {
             let use_params = CborValue::Array(vec![
@@ -321,7 +309,8 @@ impl SurrealConnection {
         Ok(())
     }
 
-    /// Connect to SurrealDB and return an immutable client
+    /// Connect over `ws://`, `wss://` or `cbor://` (an alias for `ws://`), sign
+    /// in, select the namespace and database, and return the client
     pub async fn connect(self) -> Result<SurrealClient> {
         let url_str = self
             .url
@@ -345,112 +334,5 @@ impl SurrealConnection {
 
         let client = SurrealClient::new(engine, self.namespace, self.database);
         Ok(client.with_debug(self.debug))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_connection_builder() {
-        let conn = SurrealConnection::new()
-            .url("ws://localhost:8000")
-            .namespace("test_ns")
-            .database("test_db")
-            .auth_root("root", "root")
-            .version_check(false);
-
-        assert_eq!(conn.url, Some("ws://localhost:8000".to_string()));
-        assert_eq!(conn.namespace, Some("test_ns".to_string()));
-        assert_eq!(conn.database, Some("test_db".to_string()));
-        assert!(!conn.version_check);
-        assert!(matches!(conn.auth, Some(AuthParams::Root { .. })));
-    }
-
-    #[test]
-    fn test_dsn_auth_level() {
-        let conn =
-            SurrealConnection::dsn("cbor://user:pw@cloud.example/ns/db?auth=namespace").unwrap();
-        assert!(matches!(conn.auth, Some(AuthParams::Namespace { .. })));
-
-        let conn = SurrealConnection::dsn("cbor://user:pw@cloud.example/ns/db?auth=db").unwrap();
-        assert!(matches!(conn.auth, Some(AuthParams::Database { .. })));
-
-        assert!(SurrealConnection::dsn("cbor://user:pw@h/n/d?auth=nope").is_err());
-    }
-
-    #[test]
-    fn test_dsn_parsing() {
-        let conn = SurrealConnection::dsn(
-            "ws://root:root@localhost:8000/test_ns/test_db?version_check=false",
-        )
-        .unwrap();
-
-        assert_eq!(conn.url, Some("ws://localhost:8000".to_string()));
-        assert_eq!(conn.namespace, Some("test_ns".to_string()));
-        assert_eq!(conn.database, Some("test_db".to_string()));
-        assert!(!conn.version_check);
-        assert!(matches!(conn.auth, Some(AuthParams::Root { .. })));
-    }
-
-    #[test]
-    fn test_dsn_with_query_params() {
-        let conn =
-            SurrealConnection::dsn("http://localhost:8000?namespace=ns&database=db").unwrap();
-
-        assert_eq!(conn.url, Some("http://localhost:8000".to_string()));
-        assert_eq!(conn.namespace, Some("ns".to_string()));
-        assert_eq!(conn.database, Some("db".to_string()));
-    }
-
-    #[test]
-    fn test_auth_methods() {
-        let conn1 = SurrealConnection::new().auth_root("admin", "pass");
-        assert!(matches!(conn1.auth, Some(AuthParams::Root { .. })));
-
-        let conn2 = SurrealConnection::new().auth_namespace("ns_user", "ns_pass");
-        assert!(matches!(conn2.auth, Some(AuthParams::Namespace { .. })));
-
-        let conn3 = SurrealConnection::new().auth_database("db_user", "db_pass");
-        assert!(matches!(conn3.auth, Some(AuthParams::Database { .. })));
-
-        let conn4 = SurrealConnection::new().auth_token("jwt_token");
-        assert!(matches!(conn4.auth, Some(AuthParams::Token(_))));
-    }
-
-    #[tokio::test]
-    async fn test_connection_to_client_flow() {
-        // Example of the new flow: Connection -> authenticate -> creates engine -> returns immutable client
-
-        // This would be the typical usage:
-        // let client = Connection::new()
-        //     .url("ws://localhost:8000")
-        //     .namespace("bakery")
-        //     .database("inventory")
-        //     .auth_root("root", "root")
-        //     .connect()
-        //     .await
-        //     .unwrap();
-
-        // For testing, we just verify the builder pattern works
-        let connection = SurrealConnection::new()
-            .url("ws://localhost:8000")
-            .namespace("test_namespace")
-            .database("test_database")
-            .auth_root("admin", "password")
-            .version_check(false);
-
-        assert_eq!(connection.url, Some("ws://localhost:8000".to_string()));
-        assert_eq!(connection.namespace, Some("test_namespace".to_string()));
-        assert_eq!(connection.database, Some("test_database".to_string()));
-        assert!(!connection.version_check);
-        assert!(matches!(connection.auth, Some(AuthParams::Root { .. })));
-
-        // The client would be immutable once created:
-        // - client.query() - no mut needed
-        // - client.select() - no mut needed
-        // - client.let_var() - changes session but client stays immutable
-        // - Multiple clients can be cloned, each with unique session
     }
 }

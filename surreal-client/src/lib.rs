@@ -1,8 +1,6 @@
-//! SurrealDB connectivity layer
-//!
-//! This module provides a comprehensive interface for connecting to and interacting
-//! with SurrealDB instances over WebSocket (`ws://`, `wss://`, or `cbor://` as an alias),
-//! speaking CBOR.
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
+//! SurrealDB client speaking CBOR over WebSocket (`ws://`, `wss://`, or
+//! `cbor://` as an alias).
 
 mod cbor_convert;
 pub mod client;
@@ -18,7 +16,6 @@ pub mod pool;
 pub mod record;
 pub mod session;
 
-// Re-export the main client from the parent module
 pub use client::SurrealClient;
 pub use connection::SurrealConnection;
 

@@ -89,7 +89,6 @@ fn parse_notification(inner: &[(CborValue, CborValue)]) -> Option<Notification> 
     })
 }
 
-/// Request structure for CBOR WebSocket protocol
 #[derive(Debug, Clone)]
 struct RouterRequest {
     id: String,
@@ -114,6 +113,8 @@ pub struct WsCborEngine {
 }
 
 impl WsCborEngine {
+    /// Open the socket and sign in as `connect` describes. `/rpc` is
+    /// appended to the URL when missing.
     pub async fn from_connection(connect: &SurrealConnection) -> Result<Self> {
         // rustls 0.23 needs a process-wide crypto provider before any `wss://`
         // handshake. Install ring once; a competing prior install is fine.
@@ -196,7 +197,7 @@ impl WsCborEngine {
 
                     match msg {
                         Message::Text(_text) => {
-                            // Ignore text messages - we only use CBOR binary
+                            // The cbor subprotocol answers in binary frames only.
                         }
                         Message::Binary(binary) => {
                             // Two frame shapes share this channel:
@@ -236,7 +237,6 @@ impl WsCborEngine {
                                         continue;
                                     }
 
-                                    // Otherwise it is a reply — route it to the waiter.
                                     if let Some(id) = top_id.as_ref().and_then(cbor_id_key) {
                                         let tx = {
                                             let mut pending = pending_requests.lock().await;

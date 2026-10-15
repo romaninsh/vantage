@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-10-15
+
+- The in-crate unit tests move to a blackbox suite under `tests/`, written from the README and run
+  against a live SurrealDB. No API or behaviour change. The suite found that single-record calls
+  given a `"table:id"` string address a table on SurrealDB 3; see VAN-447.
+
 ## 1.0.0 — 2026-10-10
 
 - `LiveStream` sends `KILL` when dropped.

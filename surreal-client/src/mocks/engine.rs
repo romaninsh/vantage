@@ -1,7 +1,4 @@
-//! Mock SurrealDB Engine with Exact Request Matching
-//!
-//! Provides a simplified mock implementation that requires exact matching of method calls
-//! and parameters, making it predictable and easy to debug.
+//! Mock engine that answers only exact method-and-params matches.
 
 use crate::live::Notification;
 use crate::{Engine, error::Result};
@@ -18,13 +15,9 @@ pub type CallLog = Arc<Mutex<Vec<String>>>;
 /// A mock SurrealDB engine that requires exact matching of requests
 #[derive(Debug, Clone)]
 pub struct MockSurrealEngine {
-    /// Exact method+params combinations mapped to responses
     exact_matches: HashMap<(String, Value), Value>,
-    /// Enable debug logging of queries
     debug: bool,
-    /// Method names of every request received, in order
     calls: CallLog,
-    /// Senders for registered live queries, keyed by query id
     live: HashMap<String, mpsc::UnboundedSender<Notification>>,
 }
 
@@ -62,14 +55,14 @@ impl MockSurrealEngine {
         self
     }
 
-    /// Add a response for a method with empty parameters
+    /// Add a response for `method` called with params `{}`, an empty object
     pub fn with_method_response(mut self, method: impl Into<String>, response: Value) -> Self {
         self.exact_matches
             .insert((method.into(), json!({})), response);
         self
     }
 
-    /// Add a response for a query method with specific query string
+    /// Add a response for a `query` call with this SQL and no variables
     pub fn with_query_response(mut self, query: impl Into<String>, response: Value) -> Self {
         let params = json!([query.into()]);
         self.exact_matches
@@ -97,7 +90,6 @@ impl MockSurrealEngine {
             return response.clone();
         }
 
-        // No exact match found - panic with descriptive error
         let allowed_patterns: Vec<String> = self
             .exact_matches
             .keys()
@@ -149,7 +141,8 @@ impl Engine for MockSurrealEngine {
     }
 }
 
-/// Builder for creating mock SurrealDB instances with test data
+/// Builds a [`SurrealClient`](crate::SurrealClient) over a [`MockSurrealEngine`],
+/// targeting namespace and database `test` unless set
 pub struct SurrealMockBuilder {
     engine: MockSurrealEngine,
     namespace: Option<String>,
@@ -200,19 +193,19 @@ impl SurrealMockBuilder {
         self
     }
 
-    /// Add response for method with empty parameters
+    /// Add a response for `method` called with params `{}`, an empty object
     pub fn with_method_response(mut self, method: impl Into<String>, response: Value) -> Self {
         self.engine = self.engine.with_method_response(method, response);
         self
     }
 
-    /// Add response for queries with specific query string
+    /// Add a response for a `query` call with this SQL and no variables
     pub fn with_query_response(mut self, query: impl Into<String>, response: Value) -> Self {
         self.engine = self.engine.with_query_response(query, response);
         self
     }
 
-    /// Build the SurrealClient instance with the configured mock engine
+    /// Build a client over the mock engine
     pub fn build(self) -> crate::SurrealClient {
         crate::SurrealClient::new(Box::new(self.engine), self.namespace, self.database)
     }
@@ -221,137 +214,5 @@ impl SurrealMockBuilder {
 impl Default for SurrealMockBuilder {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[tokio::test]
-    #[should_panic(
-        expected = "executed method any_method({}), but allowed patterns are: NONE - no patterns configured!"
-    )]
-    async fn test_mock_engine_no_patterns_panics() {
-        let mut engine = MockSurrealEngine::new();
-        let _result = engine.send_message("any_method", json!({})).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_mock_engine_method_response() {
-        let mut engine =
-            MockSurrealEngine::new().with_method_response("query", json!([{"name": "John"}]));
-
-        let result = engine.send_message("query", json!({})).await.unwrap();
-        assert_eq!(result, json!([{"name": "John"}]));
-    }
-
-    #[tokio::test]
-    #[should_panic(expected = "executed method select({}), but allowed patterns are: query({})")]
-    async fn test_mock_engine_method_response_panics_on_unmatch() {
-        let mut engine =
-            MockSurrealEngine::new().with_method_response("query", json!([{"name": "John"}]));
-
-        let _result = engine.send_message("select", json!({})).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_mock_engine_exact_query_response() {
-        let mut engine = MockSurrealEngine::new()
-            .with_query_response("SELECT * FROM users", json!([{"type": "user"}]));
-
-        let result = engine
-            .send_message("query", json!(["SELECT * FROM users"]))
-            .await
-            .unwrap();
-        assert_eq!(result, json!([{"type": "user"}]));
-    }
-
-    #[tokio::test]
-    async fn test_mock_engine_exact_response() {
-        let mut engine = MockSurrealEngine::new().with_exact_response(
-            "custom",
-            json!({"param": "value"}),
-            json!({"result": "success"}),
-        );
-
-        let result = engine
-            .send_message("custom", json!({"param": "value"}))
-            .await
-            .unwrap();
-        assert_eq!(result, json!({"result": "success"}));
-
-        // This should panic because parameters don't match exactly
-        let should_panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                engine
-                    .send_message("custom", json!({"param": "different"}))
-                    .await
-            })
-        }));
-        assert!(should_panic.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_surreal_mock_builder() {
-        let db = SurrealMockBuilder::new()
-            .with_query_response("SELECT * FROM users", json!([{"name": "Alice"}]))
-            .build();
-
-        // Test that we can execute the exact matching query
-        let result = db.query("SELECT * FROM users", None).await.unwrap();
-        assert_eq!(result, json!([{"name": "Alice"}]));
-    }
-
-    #[tokio::test]
-    #[should_panic(
-        expected = "executed method query([\"SELECT * FROM posts\"]), but allowed patterns are"
-    )]
-    async fn test_surreal_mock_builder_panics_on_unmatch() {
-        let db = SurrealMockBuilder::new()
-            .with_query_response("SELECT * FROM users", json!([{"name": "Alice"}]))
-            .build();
-
-        // This should panic because we're querying "posts" but only "users" is configured
-        let _result = db.query("SELECT * FROM posts", None).await.unwrap();
-    }
-
-    #[test]
-    fn test_exact_matching_only() {
-        let engine = MockSurrealEngine::new()
-            .with_query_response("SELECT name FROM users", json!([{"name": "Alice"}]))
-            .with_query_response(
-                "SELECT * FROM users",
-                json!([{"name": "Alice", "email": "alice@example.com"}]),
-            );
-
-        // Test that only exact matches work
-        let key1 = ("query".to_string(), json!(["SELECT name FROM users"]));
-        let key2 = ("query".to_string(), json!(["SELECT * FROM users"]));
-        let key3 = ("query".to_string(), json!(["SELECT name FROM posts"]));
-
-        assert!(engine.exact_matches.contains_key(&key1));
-        assert!(engine.exact_matches.contains_key(&key2));
-        assert!(!engine.exact_matches.contains_key(&key3));
-    }
-
-    #[test]
-    fn test_different_parameter_types() {
-        let engine = MockSurrealEngine::new()
-            .with_exact_response("method1", json!({}), json!("empty"))
-            .with_exact_response("method1", json!([]), json!("array"))
-            .with_exact_response("method1", json!({"key": "value"}), json!("object"));
-
-        // All three should be different keys
-        assert_eq!(engine.exact_matches.len(), 3);
-
-        let key1 = ("method1".to_string(), json!({}));
-        let key2 = ("method1".to_string(), json!([]));
-        let key3 = ("method1".to_string(), json!({"key": "value"}));
-
-        assert_eq!(engine.exact_matches.get(&key1), Some(&json!("empty")));
-        assert_eq!(engine.exact_matches.get(&key2), Some(&json!("array")));
-        assert_eq!(engine.exact_matches.get(&key3), Some(&json!("object")));
     }
 }
