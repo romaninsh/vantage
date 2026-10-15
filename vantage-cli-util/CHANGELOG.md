@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.5 — 2026-10-14
+
+- The in-crate unit tests move to the blackbox suite under `tests/`; comments trimmed. No API or
+  behaviour change.
+
 ## 0.6.4 — 2026-10-14
 
 - Vista CLI follows the Vista 2.0 API: `ModelFactory` returns 2.0 Vistas, sort and search go

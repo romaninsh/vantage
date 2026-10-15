@@ -4,6 +4,7 @@
 
 - Requires vantage-vista 2.0.0: `ModelBundle::build_vista` returns a 2.0 `Vista`, so a bundle
   builds its tables through the 2.0 driver factories.
+- Module docs shortened.
 
 Migration guide: https://vantage-ui.com/book/migration-2.0.html
 

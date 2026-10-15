@@ -16,20 +16,15 @@ pub trait ModelFactory {
     /// [`Mode::List`]. Returns `None` for unknown names.
     fn for_name(&self, name: &str) -> Option<(Vista, Mode)>;
 
-    /// Resolve a universal resource locator — anything with a scheme,
-    /// not just AWS ARNs. Examples:
-    /// `arn:aws:iam::123:user/alice`, `user:abc123` (SurrealDB Thing),
-    /// `urn:isbn:0451450523`. Backends without a locator vocabulary
-    /// can leave the default `None`.
-    ///
-    /// Defaults to forwarding to [`Self::for_arn`] so the older one-method
-    /// trait surface keeps working.
+    /// Resolve a locator: anything with a scheme, such as
+    /// `arn:aws:iam::123:user/alice`, `user:abc123` or `urn:isbn:0451450523`.
+    /// Forwards to [`Self::for_arn`] by default, so factories that only
+    /// know ARNs keep working.
     fn for_locator(&self, locator: &str) -> Option<Vista> {
         self.for_arn(locator)
     }
 
-    /// Resolve an ARN. Kept for backwards-compatibility with factories
-    /// that only knew ARNs; new factories should override
+    /// Resolve an ARN. Returns `None` by default; new factories override
     /// [`Self::for_locator`] instead.
     fn for_arn(&self, _arn: &str) -> Option<Vista> {
         None
@@ -37,10 +32,6 @@ pub trait ModelFactory {
 }
 
 /// Backend hook for printing list, single-record, and scalar results.
-///
-/// New `render_scalar` carries aggregate output (`@sum:price`, `@count`,
-/// …). Implementors that don't care about aggregates can rely on the
-/// default impl, which prints a one-liner to stdout.
 pub trait Renderer {
     fn render_list(
         &self,
@@ -57,7 +48,8 @@ pub trait Renderer {
         relations: &[String],
     );
 
-    /// Render the result of an aggregate token (`@sum:field` etc.).
+    /// Render the result of an aggregate token (`@sum:field` etc.). The
+    /// default prints a one-liner to stdout.
     fn render_scalar(
         &self,
         _vista: &Vista,
@@ -71,9 +63,7 @@ pub trait Renderer {
         }
     }
 
-    /// Side-channel signal that the runner hit a feature that's parsed
-    /// but not yet wired through Vista. Default impl is silent;
-    /// integration tests override to record exactly which stubs were
-    /// reached.
+    /// Called when the runner hits a feature that parses but isn't wired
+    /// through Vista yet. Silent by default.
     fn note_stub(&self, _what: &str) {}
 }
