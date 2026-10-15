@@ -272,9 +272,7 @@ impl TableSource for LogWriter {
 
 /// Project a record onto the table's declared column set, then attach the id.
 ///
-/// Entity fields not declared as columns are dropped — this is the contract
-/// the user pinned down: "entity values with non-existent columns would be
-/// dropped".
+/// Fields not declared as columns are dropped.
 fn project_record<'a, I>(
     column_names: I,
     record: &Record<Value>,

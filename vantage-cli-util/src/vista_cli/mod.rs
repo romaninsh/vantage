@@ -1,12 +1,9 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Vista-backed model-driven CLI runner.
 //!
-//! Drives a [`Vista`](vantage_vista::Vista) from positional argv tokens. The grammar covers
-//! model selection, locator resolution, operator conditions, relation
-//! traversal, sort/slice selectors, search, aggregates, column
-//! overrides, and JSON-typed value escapes. Backend specifics (which
-//! names map to which models, what locator schemes are recognised, how
-//! records are rendered) are injected through [`ModelFactory`] and
-//! [`Renderer`].
+//! Drives a [`Vista`](vantage_vista::Vista) from positional argv tokens.
+//! Backend specifics (model names, locator schemes, rendering) are
+//! injected through [`ModelFactory`] and [`Renderer`].
 //!
 //! ## Token forms
 //!

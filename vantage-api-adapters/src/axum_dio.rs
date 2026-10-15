@@ -4,21 +4,18 @@
 //! Two endpoints, each in two modes:
 //!
 //! - `GET /?offset=&limit=` — one page of the cached listing, instantly.
-//!   Deliberately does NOT hydrate: a plain GET is not a standing view, so it
-//!   serves the Dio's current knowledge (augmented values appear once some
-//!   view has paid for them).
+//!   Does not hydrate: a plain GET is not a standing view, so augmented
+//!   values appear once some view has paid for them.
 //! - `GET /?offset=&limit=&watch=true` — the same page as a **watch**: the
-//!   connection stays open and streams NDJSON events, kubernetes-style —
+//!   connection stays open and streams NDJSON events,
 //!   `{"type":"ADDED","object":{…}}` per row, then `MODIFIED` lines as rows
-//!   change. A watch is a real [`TableScenery`](vantage_diorama::TableScenery):
-//!   it declares the configured
-//!   columns as its demand and its page as the viewport, which is exactly
-//!   what drives augmentation. Closing the connection drops the scenery —
-//!   its queued detail fetches are withdrawn and its demand drains.
-//! - `GET /{id}` — one record with every column, hydrated: a bounded facade
-//!   read that blocks until the row's augment columns are filled (cached, so
-//!   the cost is paid once). Fetches share the augment scheduler, so a
-//!   detail GET racing a watch never downloads a row twice.
+//!   change. A watch is a [`TableScenery`](vantage_diorama::TableScenery)
+//!   whose demand is the configured columns, which is what drives
+//!   augmentation. Closing the connection drops the scenery and withdraws
+//!   its queued detail fetches.
+//! - `GET /{id}` — one record with every column, hydrated: blocks until the
+//!   row's augment columns are filled. Fetches share the augment scheduler,
+//!   so a detail GET racing a watch never downloads a row twice.
 //! - `GET /{id}?watch=true` — the record as a watch: `ADDED` with the
 //!   current value, `MODIFIED` on every change, via a
 //!   [`RecordScenery`](vantage_diorama::RecordScenery).
@@ -52,8 +49,6 @@ use vantage_types::Record;
 
 use state::ApiState;
 
-// ---- Errors — the learn-3 vantage_axum shape -------------------------------
-
 pub struct ApiError {
     pub status: StatusCode,
     pub message: String,
@@ -83,8 +78,6 @@ fn not_found(id: &str) -> ApiError {
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
-
-// ---- Router builder ---------------------------------------------------------
 
 /// Maps the id from the URL path to the Dio cache key.
 pub type IdMap = dyn Fn(&str) -> String + Send + Sync;

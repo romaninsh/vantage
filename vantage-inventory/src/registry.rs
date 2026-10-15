@@ -1,10 +1,6 @@
 //! [`Inventory`]: the registered kinds plus the leaf store, one leaf per
-//! file found.
-//!
-//! [`Inventory::load`] walks every kind, parses each file and then runs one
-//! validation pass over all leaves (`validate`). [`Inventory::reload_path`]
-//! (`reload`) updates the store for one changed path, which is what a file
-//! watcher calls.
+//! file found. `validate` holds the validation pass, `reload` the per-path
+//! update a file watcher calls.
 
 use std::any::TypeId;
 use std::collections::BTreeMap;
@@ -39,6 +35,7 @@ impl Inventory {
         }
     }
 
+    /// Register a kind. Panics like [`Inventory::with_dyn`].
     pub fn with<K: Kind>(self, kind: K) -> Self {
         self.with_dyn(Box::new(kind))
     }
@@ -77,10 +74,12 @@ impl Inventory {
         self
     }
 
+    /// Register boxed kinds in order. Panics like [`Inventory::with_dyn`].
     pub fn with_all(self, kinds: impl IntoIterator<Item = Box<dyn DynKind>>) -> Self {
         kinds.into_iter().fold(self, Self::with_dyn)
     }
 
+    /// The project root given to [`Inventory::new`].
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -156,7 +155,6 @@ impl Inventory {
         }
     }
 
-    /// A [`Missing::Default`] root file gets its leaf even when absent.
     fn ensure_default_leaf(&mut self, at: usize) {
         let kind = &self.kinds[at];
         if let (Location::RootFile(name), Missing::Default) = (kind.location(), kind.on_missing())
