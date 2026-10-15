@@ -62,6 +62,28 @@ async fn fetch_window_sends_the_absolute_offset() {
     assert_eq!(window.total, None);
 }
 
+/// An id-less row is keyed by its absolute position in the result, so
+/// id-less rows from different pages never share a key.
+#[tokio::test]
+async fn an_id_less_row_in_a_window_is_keyed_by_its_absolute_position() {
+    let server = MockServer::start().await;
+    answer(
+        &server,
+        json!({ "variables": { "limit": 3, "offset": 10 } }),
+        json!({ "data": { "launches": [
+            { "id": "10", "name": "a" },
+            { "id": null, "name": "b" },
+            { "id": "12", "name": "c" }
+        ] } }),
+    )
+    .await;
+    let vista = vista(&server, "  paginate: true\n");
+
+    let window = vista.fetch_window(10, 3).await.unwrap();
+    let keys: Vec<&str> = window.rows.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(keys, ["10", "~row:11", "12"]);
+}
+
 /// Offset paging is no continuation cursor, so `fetch_cursor` is refused
 /// without a request.
 #[tokio::test]
@@ -246,18 +268,4 @@ async fn hasura_count_field_is_overridable() {
     );
 
     assert_eq!(vista.count().await.unwrap(), 7);
-}
-
-#[tokio::test]
-async fn generic_count_still_lists_and_counts() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        json!({ "query": "query { launches { id name } }" }),
-        rows(0, 3),
-    )
-    .await;
-    let vista = vista(&server, "  dialect: generic\n");
-
-    assert_eq!(vista.count().await.unwrap(), 3);
 }

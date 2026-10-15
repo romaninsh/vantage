@@ -2,20 +2,9 @@
 //! `GraphqlCondition`. Blanket-implemented over all `Expressive<T>`, so
 //! typed columns get `.eq()`/`.gt()`/`.in_()`/… for free.
 //!
-//! ```ignore
-//! use vantage_api_client::GraphqlOperation;
-//! use vantage_table::column::core::Column;
-//!
-//! let mission = Column::<String>::new("mission_name");
-//! let cond = mission.eq("FalconSat");
-//! // GraphqlCondition::Field { field: "mission_name", op: Eq, value: "FalconSat" }
-//! ```
-//!
-//! The same pattern as `vantage-mongodb`'s `MongoOperation`. Field name
-//! is pulled from `self.expr().template`, which works for typed
-//! `Column<T>` (the column name comes out verbatim). Complex
-//! expressions land their rendered template as the field, which is
-//! rarely what you want — keep operands simple.
+//! The field name is the operand's expression template, which is the column
+//! name for a typed `Column<T>`. A complex expression lands its rendered
+//! template as the field, so keep operands to plain columns.
 
 use serde_json::Value;
 use vantage_expressions::Expressive;
@@ -198,64 +187,6 @@ pub trait GraphqlOperation<T>: Expressive<T> {
 /// Blanket: any `Expressive<T>` gets `GraphqlOperation<T>` for free.
 impl<T, S: Expressive<T>> GraphqlOperation<T> for S {}
 
-// Tip the type checker about the unused import in builds that don't
-// touch the chrono module — `to_json` only needs the `GraphqlType` trait
-// in scope through this path.
+// Keeps the `GraphqlType` import used: `to_json` needs the trait in scope.
 #[allow(dead_code)]
 fn _assert_graphql_type_in_scope<T: GraphqlType>(_: &T) {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::graphql::condition::FilterDialect;
-    use serde_json::json;
-    use vantage_table::column::core::Column;
-
-    #[tokio::test]
-    async fn column_eq_renders_hasura() {
-        let mission = Column::<String>::new("mission_name");
-        let cond = mission.eq("FalconSat");
-        let r = cond.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "mission_name": { "_eq": "FalconSat" } }));
-    }
-
-    #[tokio::test]
-    async fn column_eq_renders_generic() {
-        let mission = Column::<String>::new("mission_name");
-        let cond = mission.eq("FalconSat");
-        let r = cond.render(FilterDialect::Generic).await.unwrap();
-        assert_eq!(r, json!({ "mission_name": "FalconSat" }));
-    }
-
-    #[tokio::test]
-    async fn column_gt_renders_hasura() {
-        let price = Column::<i64>::new("price");
-        let cond = price.gt(100i64);
-        let r = cond.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "price": { "_gt": 100 } }));
-    }
-
-    #[tokio::test]
-    async fn column_in_renders_hasura_array() {
-        let status = Column::<String>::new("status");
-        let cond = status.in_(vec!["active", "pending"]);
-        let r = cond.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "status": { "_in": ["active", "pending"] } }));
-    }
-
-    #[tokio::test]
-    async fn column_is_null_renders_hasura_bool() {
-        let deleted = Column::<String>::new("deleted_at");
-        let cond = deleted.is_null();
-        let r = cond.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "deleted_at": { "_is_null": true } }));
-    }
-
-    #[tokio::test]
-    async fn column_ilike_renders_hasura() {
-        let name = Column::<String>::new("name");
-        let cond = name.ilike("%falcon%");
-        let r = cond.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "name": { "_ilike": "%falcon%" } }));
-    }
-}

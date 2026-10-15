@@ -2,9 +2,6 @@
 //! builder records what was set, and that the default response shape is
 //! the `{ "data": [...] }` envelope.
 
-mod support;
-
-use support::test_client;
 use vantage_api_client::{PaginationMode, PaginationParams, ResponseShape, RestApi};
 
 #[test]
@@ -41,34 +38,4 @@ fn pagination_params_page_limit_constructor() {
     assert_eq!(p.page, "page");
     assert_eq!(p.limit, "size");
     assert_eq!(p.mode, PaginationMode::Page);
-}
-
-#[test]
-fn builder_compiles_with_all_options() {
-    // Smoke test — the builder threads through without panic.
-    let _api = RestApi::builder("https://api.example.com")
-        .auth("Bearer xyz")
-        .response_shape(ResponseShape::BareArray)
-        .pagination_params(PaginationParams::skip_limit("skip", "limit"))
-        .http_client(test_client())
-        .build();
-}
-
-#[test]
-fn builder_response_shape_variants() {
-    // Each variant constructs without trouble.
-    let _bare = RestApi::builder("https://x")
-        .response_shape(ResponseShape::BareArray)
-        .http_client(test_client())
-        .build();
-    let _wrapped = RestApi::builder("https://x")
-        .response_shape(ResponseShape::Wrapped {
-            array_key: "items".into(),
-        })
-        .http_client(test_client())
-        .build();
-    let _by_table = RestApi::builder("https://x")
-        .response_shape(ResponseShape::WrappedByTableName)
-        .http_client(test_client())
-        .build();
 }

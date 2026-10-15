@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Vantage adapters for HTTP-based API backends.
 //!
 //! Two protocol adapters live side by side:

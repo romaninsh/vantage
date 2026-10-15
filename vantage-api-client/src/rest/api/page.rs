@@ -70,10 +70,7 @@ impl RestApi {
                     _ => None,
                 });
 
-            // The HTTP body parses as JSON for free; convert to CBOR
-            // at this single boundary so the rest of the pipeline
-            // (Table, Vista) sees the universal carrier. json_to_cbor
-            // is total — JSON is a strict subset of CBOR.
+            // The one JSON-to-CBOR boundary: Table and Vista speak CBOR.
             let mut record: Record<CborValue> = Record::new();
             for (k, v) in obj {
                 record.insert(k.clone(), vantage_types::json_to_cbor(v.clone()));
@@ -82,8 +79,6 @@ impl RestApi {
             insert_row(&mut records, id, offset + row_idx, record)?;
         }
 
-        // Client-side filtering (FilterStrategy::Client): drop rows that
-        // don't match the non-path eq-conditions.
         if !client_filters.is_empty() {
             let filters: Vec<(&str, &str)> = client_filters
                 .iter()

@@ -185,6 +185,3 @@ fn join_base_path(base: &str, path: &str) -> String {
         path.trim_start_matches('/')
     )
 }
-
-#[cfg(test)]
-mod tests;

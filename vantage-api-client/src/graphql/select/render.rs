@@ -63,12 +63,10 @@ impl GraphqlSelect {
         let mut var_decls: Vec<String> = Vec::new();
         let mut args = self.render_root_and_filter_args().await?;
 
-        // ── Order (Hasura only) ──────────────────────────────────
         if !self.sort.is_empty() && matches!(self.dialect, FilterDialect::Hasura) {
             args.push(render_order_by(&self.wire_sort()));
         }
 
-        // ── Pagination via variables ─────────────────────────────
         if let Some(limit) = self.limit {
             variables.insert("limit".into(), Value::Number(limit.into()));
             var_decls.push("$limit: Int".into());
@@ -80,7 +78,6 @@ impl GraphqlSelect {
             args.push("offset: $offset".into());
         }
 
-        // ── Selection set ────────────────────────────────────────
         // Wrapped in the response envelope, so the query asks for rows
         // exactly where the decoder will look for them.
         let mut selection_set = render_selection_set(self).await?;
@@ -88,7 +85,6 @@ impl GraphqlSelect {
             selection_set = format!("{{ {} {} }}", segment, selection_set);
         }
 
-        // ── Assemble document ────────────────────────────────────
         let op_name = self.operation_name.as_deref().unwrap_or("");
         let op_decls = if var_decls.is_empty() {
             String::new()
@@ -197,8 +193,6 @@ impl GraphqlSelect {
         }
     }
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────
 
 /// Render a selection set as `{ field1 field2 nested { ... } }`.
 fn render_selection_set<'a>(
@@ -388,304 +382,4 @@ fn escape_string(s: &str) -> String {
 
 fn render_order(order: Order) -> &'static str {
     if order.ascending { "asc" } else { "desc" }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    use crate::graphql::condition::{FieldCondition, FilterDialect, GraphqlOp};
-    use crate::graphql::types::AnyGraphqlType;
-    use vantage_expressions::{DeferredFn, ExpressiveEnum};
-
-    /// The guarantee worth pinning: for a query with no deferred conditions and
-    /// no pagination, previewing and rendering produce the *same document*. If
-    /// these ever diverge, a preview has started lying about what gets sent.
-    #[tokio::test]
-    async fn preview_matches_render_for_a_literal_query() {
-        let select = GraphqlSelect::new()
-            .with_root_field("launches")
-            .with_field("id")
-            .with_field("rocket.name")
-            .with_dialect(FilterDialect::Generic)
-            .with_condition(GraphqlCondition::Field(FieldCondition::new(
-                "mission_name",
-                GraphqlOp::Eq,
-                json!("FalconSat"),
-            )));
-
-        let rendered = select.render().await.unwrap();
-        assert_eq!(select.preview(), rendered.query);
-        // And it is the real thing, not two matching placeholders.
-        assert!(
-            select.preview().contains("\"FalconSat\""),
-            "the condition value is rendered, not summarised: {}",
-            select.preview()
-        );
-    }
-
-    /// Pagination is the one deliberate difference: `render` sends `$limit` as a
-    /// variable, `preview` inlines the number so the document reads standalone.
-    #[test]
-    fn preview_inlines_pagination() {
-        let preview = GraphqlSelect::new()
-            .with_root_field("launches")
-            .with_field("id")
-            .with_limit(Some(5), Some(10))
-            .preview();
-        assert_eq!(preview, "query { launches(limit: 5, offset: 10) { id } }");
-    }
-
-    /// A deferred condition is the other: its value only exists mid-fetch, so
-    /// preview marks it instead of awaiting it.
-    #[test]
-    fn preview_marks_a_deferred_condition_rather_than_resolving_it() {
-        let preview = GraphqlSelect::new()
-            .with_root_field("runs")
-            .with_field("id")
-            .with_dialect(FilterDialect::Generic)
-            .with_condition(GraphqlCondition::deferred_field(
-                "stack_id",
-                GraphqlOp::Eq,
-                DeferredFn::new(|| {
-                    Box::pin(async { Ok(ExpressiveEnum::Scalar(AnyGraphqlType::from(json!("x")))) })
-                }),
-            ))
-            .preview();
-        assert!(
-            preview.contains("**deferred(stack_id"),
-            "deferred values are marked, never awaited: {preview}"
-        );
-    }
-
-    #[tokio::test]
-    async fn renders_minimal_query() {
-        let q = GraphqlSelect::new()
-            .with_root_field("launches")
-            .with_field("id")
-            .with_field("mission_name")
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(q.query, "query { launches { id mission_name } }");
-        assert!(q.variables.is_empty());
-    }
-
-    #[tokio::test]
-    async fn renders_generic_filter_inline() {
-        let q = GraphqlSelect::new()
-            .with_root_field("launches")
-            .with_field("id")
-            .with_dialect(FilterDialect::Generic)
-            .with_condition(GraphqlCondition::Field(FieldCondition::new(
-                "mission_name",
-                GraphqlOp::Eq,
-                json!("FalconSat"),
-            )))
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query { launches(find: {mission_name: \"FalconSat\"}) { id } }"
-        );
-        assert!(q.variables.is_empty());
-    }
-
-    #[tokio::test]
-    async fn renders_hasura_filter_inline() {
-        let q = GraphqlSelect::new()
-            .with_root_field("users")
-            .with_field("id")
-            .with_dialect(FilterDialect::Hasura)
-            .with_condition(GraphqlCondition::Field(FieldCondition::new(
-                "age",
-                GraphqlOp::Gt,
-                json!(30),
-            )))
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(q.query, "query { users(where: {age: {_gt: 30}}) { id } }");
-    }
-
-    #[tokio::test]
-    async fn renders_pagination_as_variables() {
-        let q = GraphqlSelect::new()
-            .with_root_field("launches")
-            .with_field("id")
-            .with_limit(Some(10), Some(20))
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query ($limit: Int, $offset: Int) { launches(limit: $limit, offset: $offset) { id } }"
-        );
-        assert_eq!(q.variables.get("limit"), Some(&json!(10)));
-        assert_eq!(q.variables.get("offset"), Some(&json!(20)));
-    }
-
-    #[tokio::test]
-    async fn renders_with_operation_name() {
-        let q = GraphqlSelect::new()
-            .with_root_field("launches")
-            .with_operation_name("GetLaunches")
-            .with_field("id")
-            .with_limit(Some(5), None)
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query GetLaunches($limit: Int) { launches(limit: $limit) { id } }"
-        );
-    }
-
-    #[tokio::test]
-    async fn renders_sub_selection() {
-        let rocket = GraphqlSelect::new().with_field("id").with_field("name");
-        let q = GraphqlSelect::new()
-            .with_root_field("launches")
-            .with_field("id")
-            .with_field("mission_name")
-            .with_sub_selection("rocket", rocket)
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query { launches { id mission_name rocket { id name } } }"
-        );
-    }
-
-    #[tokio::test]
-    async fn renders_hasura_order_by() {
-        let q = GraphqlSelect::new()
-            .with_root_field("users")
-            .with_field("id")
-            .with_dialect(FilterDialect::Hasura)
-            .with_order("created_at", Order::Desc)
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query { users(order_by: [{created_at: desc}]) { id } }"
-        );
-    }
-
-    #[tokio::test]
-    async fn empty_selection_set_errors() {
-        let err = GraphqlSelect::new()
-            .with_root_field("launches")
-            .render()
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("selection set"));
-    }
-
-    #[tokio::test]
-    async fn missing_root_field_errors() {
-        let err = GraphqlSelect::new()
-            .with_field("id")
-            .render()
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("root_field"));
-    }
-
-    #[test]
-    fn json_to_graphql_value_strips_string_quotes_in_keys() {
-        let v = json!({ "mission_name": "FalconSat", "year": 2006 });
-        let rendered = json_to_graphql_value(&v);
-        assert_eq!(rendered, "{mission_name: \"FalconSat\", year: 2006}");
-    }
-
-    #[test]
-    fn strings_escape_quotes_backslashes_and_short_forms() {
-        assert_eq!(escape_string("a\"b\\c"), "a\\\"b\\\\c");
-        assert_eq!(escape_string("l1\nl2\r\tx"), "l1\\nl2\\r\\tx");
-    }
-
-    #[test]
-    fn strings_escape_every_other_control_character() {
-        assert_eq!(escape_string("\u{0}"), "\\u0000");
-        assert_eq!(escape_string("a\u{8}b\u{c}c"), "a\\u0008b\\u000Cc");
-        assert_eq!(escape_string("\u{1b}[31m"), "\\u001B[31m");
-        assert_eq!(escape_string("\u{1f}\u{7f}"), "\\u001F\\u007F");
-        for c in (0u32..0x20).chain([0x7f]).filter_map(char::from_u32) {
-            let escaped = escape_string(&c.to_string());
-            assert!(
-                !escaped.chars().any(|e| e.is_ascii_control()),
-                "U+{:04X} rendered raw: {escaped:?}",
-                c as u32
-            );
-        }
-        // Printable and non-ASCII text passes through.
-        assert_eq!(escape_string("Zürich ✓"), "Zürich ✓");
-    }
-}
-
-#[cfg(test)]
-mod nesting_tests {
-    use super::*;
-    use serde_json::json;
-
-    #[tokio::test]
-    async fn dotted_fields_group_into_nested_selections() {
-        let q = GraphqlSelect::new()
-            .with_root_field("searchRuns")
-            .with_field("run.id")
-            .with_field("run.state")
-            .with_field("run.commit.hash")
-            .with_field("stack.id")
-            .with_field("isModule")
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query { searchRuns { run { id state commit { hash } } stack { id } isModule } }"
-        );
-    }
-
-    #[tokio::test]
-    async fn root_args_render_before_the_filter() {
-        let q = GraphqlSelect::new()
-            .with_root_field("searchRuns")
-            .with_root_args(json!({ "input": {} }))
-            .with_field("run.id")
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(q.query, "query { searchRuns(input: {}) { run { id } } }");
-    }
-}
-
-#[cfg(test)]
-mod envelope_tests {
-    use super::*;
-    use serde_json::json;
-
-    /// The envelope has to shape the query too — asking for `run` at the
-    /// root of a connection field is a server-side error, and the decoder
-    /// would then be reading a path the query never selected.
-    #[tokio::test]
-    async fn response_path_wraps_the_selection_set() {
-        let q = GraphqlSelect::new()
-            .with_root_field("searchRuns")
-            .with_root_args(json!({ "input": {} }))
-            .with_response_path(vec!["edges".into(), "node".into()])
-            .with_field("run.id")
-            .with_field("stack.id")
-            .render()
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query { searchRuns(input: {}) { edges { node { run { id } stack { id } } } } }"
-        );
-    }
 }

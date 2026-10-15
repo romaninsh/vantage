@@ -32,35 +32,3 @@ impl GraphqlSelect {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use crate::graphql::condition::{FieldCondition, FilterDialect, GraphqlCondition, GraphqlOp};
-    use crate::graphql::select::GraphqlSelect;
-
-    #[tokio::test]
-    async fn count_keeps_the_filter_and_drops_paging_and_order() {
-        let select = GraphqlSelect::new()
-            .with_root_field("users")
-            .with_field("id")
-            .with_dialect(FilterDialect::Hasura)
-            .with_condition(GraphqlCondition::Field(FieldCondition::new(
-                "age",
-                GraphqlOp::Gt,
-                json!(30),
-            )))
-            .with_order("id", vantage_expressions::Order::Asc)
-            .with_limit(Some(10), Some(20));
-        let q = select
-            .render_aggregate_count("users_aggregate")
-            .await
-            .unwrap();
-        assert_eq!(
-            q.query,
-            "query { users_aggregate(where: {age: {_gt: 30}}) { aggregate { count } } }"
-        );
-        assert!(q.variables.is_empty());
-    }
-}

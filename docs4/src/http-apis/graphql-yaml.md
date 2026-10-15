@@ -87,7 +87,7 @@ above applies only when the builder left it unset too.
 | `generic` | `launches(find: {launch_year: 2018})` | equality only |
 
 A condition the dialect can't spell fails before anything is sent. On Generic, a Vista
-`contains` filter is reported as unimplemented, so the consumer filters locally.
+`contains` filter is refused as unsupported, so the consumer filters locally.
 
 ### `filter: false`
 

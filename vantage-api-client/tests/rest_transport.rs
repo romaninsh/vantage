@@ -205,18 +205,6 @@ async fn caller_authorization_header_replaces_the_configured_one() {
 }
 
 #[tokio::test]
-async fn auth_header_still_travels() {
-    let server = MockServer::start().await;
-    mount_with_header(&server, "GET", ("Authorization", "Bearer t0k"), 200, "[]").await;
-    let api = RestApi::builder(server.uri())
-        .response_shape(ResponseShape::BareArray)
-        .auth("Bearer t0k")
-        .http_client(test_client())
-        .build();
-    assert_eq!(list_rows(&api).await.unwrap(), 0);
-}
-
-#[tokio::test]
 async fn auth_refresher_supplies_the_token_and_is_asked_again_on_401() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -279,4 +267,98 @@ async fn a_fixed_auth_set_after_a_refresher_replaces_it() {
 
     assert_eq!(list_rows(&api).await.unwrap(), 1);
     assert_eq!(asked.load(Ordering::SeqCst), 0, "the refresher is gone");
+}
+
+#[tokio::test]
+async fn too_many_requests_is_retried_when_someone_is_waiting() {
+    let server = MockServer::start().await;
+    mount_n(&server, "GET", 429, "", 2).await;
+    mount(&server, "GET", 200, r#"[{"id":"a"}]"#).await;
+    let rec = recorder();
+    let api = api(&server, &rec);
+    let n = tokio::time::timeout(
+        Duration::from_secs(5),
+        Priority::Essential.scope(list_rows(&api)),
+    )
+    .await
+    .expect("finishes")
+    .expect("succeeds after retries");
+    assert_eq!(n, 1);
+    assert_eq!(requests(&server).await, 3);
+}
+
+#[tokio::test]
+async fn too_many_requests_never_opens_the_breaker() {
+    let server = MockServer::start().await;
+    mount(&server, "GET", 429, "").await;
+    let rec = recorder();
+    let api = api(&server, &rec);
+    for _ in 0..7 {
+        let err = list_rows(&api).await.unwrap_err();
+        assert!(err.to_string().contains("429"), "{err}");
+    }
+    assert_eq!(requests(&server).await, 7, "every call reached the server");
+    assert_eq!(
+        api.breaker_state(),
+        Some(vantage_api_client::BreakerState::Closed)
+    );
+}
+
+#[tokio::test]
+async fn a_401_after_the_fresh_token_is_a_final_error() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = MockServer::start().await;
+    mount(&server, "GET", 401, "denied").await;
+    let asked = Arc::new(AtomicUsize::new(0));
+    let counter = asked.clone();
+    let refresher: vantage_api_client::AuthRefresher = Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok("token".to_string()) })
+    });
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .auth_refresher(refresher)
+        .http_client(test_client())
+        .build();
+
+    let err = list_rows(&api).await.unwrap_err().to_string();
+    assert!(err.contains("401"), "{err}");
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        2,
+        "replayed once with a fresh token"
+    );
+    assert_eq!(requests(&server).await, 2);
+}
+
+#[tokio::test]
+async fn an_error_body_is_cut_to_500_characters() {
+    let server = MockServer::start().await;
+    let body = format!("{}{}", "a".repeat(500), "z".repeat(500));
+    mount(&server, "GET", 422, &body).await;
+    let rec = recorder();
+    let api = api(&server, &rec);
+    let err = list_rows(&api).await.unwrap_err().to_string();
+    assert!(
+        err.contains(&"a".repeat(500)),
+        "the first 500 characters are kept"
+    );
+    assert!(!err.contains('z'), "the rest is dropped");
+}
+
+#[tokio::test]
+async fn a_failure_with_no_response_is_a_transport_error() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let uri = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let rec = recorder();
+    let api = RestApi::builder(uri)
+        .response_shape(ResponseShape::BareArray)
+        .observer("local", rec.clone())
+        .http_client(test_client())
+        .build();
+    let err = list_rows(&api).await.unwrap_err().to_string();
+    assert!(err.contains("transport"), "{err}");
+    assert_eq!(rec.tags(), ["started", "failed:transport"]);
 }

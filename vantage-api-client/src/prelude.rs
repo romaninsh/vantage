@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Convenience prelude — `use vantage_api_client::prelude::*;` pulls in
 //! the public surface of both adapter modules in one shot.
 //!

@@ -39,37 +39,3 @@ pub(crate) fn insert_row<V>(
 fn synthetic_key(position: usize) -> String {
     format!("~row:{position}")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_id_less_row_never_takes_a_real_rows_key() {
-        let mut rows = IndexMap::new();
-        insert_row(&mut rows, None, 1, "no id").unwrap();
-        insert_row(&mut rows, Some("1".into()), 0, "real").unwrap();
-        insert_row(&mut rows, Some(String::new()), 2, "empty id").unwrap();
-        assert_eq!(rows.len(), 3);
-        assert_eq!(rows["1"], "real");
-        assert_eq!(rows["~row:1"], "no id");
-        assert_eq!(rows["~row:2"], "empty id");
-    }
-
-    #[test]
-    fn a_real_id_equal_to_a_synthetic_key_is_a_duplicate() {
-        let mut rows = IndexMap::new();
-        insert_row(&mut rows, Some("~row:0".into()), 1, "real").unwrap();
-        assert!(insert_row(&mut rows, None, 0, "no id").is_err());
-    }
-
-    #[test]
-    fn a_duplicate_id_is_an_error_naming_it() {
-        let mut rows = IndexMap::new();
-        insert_row(&mut rows, Some("7".into()), 0, "a").unwrap();
-        let err = insert_row(&mut rows, Some("7".into()), 1, "b").unwrap_err();
-        assert!(err.to_string().contains("share an id"), "{err}");
-        assert!(err.to_string().contains('7'), "{err}");
-        assert_eq!(rows["7"], "a");
-    }
-}

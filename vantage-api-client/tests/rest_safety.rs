@@ -94,6 +94,50 @@ async fn writes_are_unsupported() {
     assert_eq!(requests(&server).await, 0);
 }
 
+#[tokio::test]
+#[ignore = "possible bug: README_rest.md says a write is refused with `REST API is a read-only data source`; the error reads `REST data source supports reads only`"]
+async fn a_refused_write_says_the_api_is_read_only() {
+    let server = MockServer::start().await;
+    let api = api(&server);
+    let table = users(api.clone());
+    let err = api
+        .insert_table_value(&table, &"1".to_string(), &Default::default())
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("REST API is a read-only data source"),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+async fn sums_minimums_and_maximums_are_unsupported() {
+    let server = MockServer::start().await;
+    let api = api(&server);
+    let table = users(api.clone());
+    let column = Column::<CborValue>::new("age");
+    assert!(
+        api.get_table_sum(&table, &column)
+            .await
+            .unwrap_err()
+            .is_unsupported()
+    );
+    assert!(
+        api.get_table_max(&table, &column)
+            .await
+            .unwrap_err()
+            .is_unsupported()
+    );
+    assert!(
+        api.get_table_min(&table, &column)
+            .await
+            .unwrap_err()
+            .is_unsupported()
+    );
+    assert_eq!(requests(&server).await, 0);
+}
+
 /// An id-less row keyed by its index, "1", would overwrite the real row
 /// with that id; it gets a synthetic `~row:` key instead.
 #[tokio::test]

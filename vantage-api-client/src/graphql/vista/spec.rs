@@ -1,30 +1,7 @@
-//! YAML-facing types for the GraphQL Vista driver.
-//!
-//! ```yaml
-//! name: launches
-//! id_column: id
-//! columns:
-//!   id:
-//!     type: string
-//!     flags: [id]
-//!   mission:
-//!     type: string
-//!     flags: [title]
-//!     graphql:
-//!       field: mission_name   # optional, server field read for this column
-//!   launch_year:
-//!     type: int
-//! graphql:
-//!   root_field: launches      # optional, defaults to `name`
-//!   dialect: generic          # generic | hasura, optional
-//!   filter_arg: find          # optional, dialect default otherwise
-//!   paginate: true            # optional, sends limit/offset
-//!   count: aggregate          # list (default) | aggregate (Hasura)
-//!   count_field: launches_aggregate  # optional, Hasura count field
-//! ```
-//!
-//! A user-maintained schema YAML drives `GraphqlApiVistaFactory::build_from_spec`
-//! — the alternative to runtime introspection.
+//! YAML-facing types for the GraphQL Vista driver: a table-level `graphql:`
+//! block and a column-level one. A hand-kept spec drives
+//! `GraphqlApiVistaFactory::build_from_spec` in place of introspection. Every
+//! key is listed in the book's "HTTP APIs" chapter.
 
 use serde::{Deserialize, Serialize};
 use vantage_vista::{NoExtras, VistaSpec};
@@ -234,5 +211,5 @@ impl GraphqlColumnBlock {
     }
 }
 
-/// A GraphQL table described in YAML; see the module docs for the shape.
+/// A GraphQL table described in YAML.
 pub type GraphqlApiVistaSpec = VistaSpec<GraphqlTableExtras, GraphqlColumnExtras, NoExtras>;

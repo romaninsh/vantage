@@ -9,8 +9,8 @@ use vantage_types::Record;
 use super::{Order, PaginationMode, RestApi};
 
 impl RestApi {
-    /// Also reports the envelope total when `total_key` is configured and the
-    /// body carries it. Unlike [`Self::fetch_total`] this never errors on a
+    /// The rows of `window`, with the envelope total when `total_key` is
+    /// configured and the body carries it. Unlike [`Self::fetch_total`] this never errors on a
     /// missing total: the rows are the point here, and a caller that needs a
     /// definitive count can still ask for one.
     ///
@@ -25,11 +25,9 @@ impl RestApi {
         order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<(IndexMap<String, Record<CborValue>>, Option<i64>)> {
-        // Non-paginating endpoints return the whole list on the first
-        // window; a later window would just re-deliver the same rows and the
-        // perpetual grid would never mark itself exhausted. Short-circuit any
-        // window past the start to empty so the grid sees the chunk shrink
-        // and stops asking for more.
+        // A non-paginating endpoint returns the whole list on the first
+        // window; a later one would re-deliver the same rows and a scrolling
+        // grid would never see the end. Windows past the start are empty.
         if self.no_pagination && window.is_some_and(|(offset, _)| offset > 0) {
             return Ok((IndexMap::new(), None));
         }
@@ -42,8 +40,6 @@ impl RestApi {
         };
         let (offset, limit) = (offset.max(0), limit.max(1));
 
-        // Page-based APIs are addressed by whole pages: start at the page
-        // holding `offset`.
         let start = match self.pagination.mode {
             PaginationMode::Skip => offset,
             PaginationMode::Page => offset - offset % limit,
