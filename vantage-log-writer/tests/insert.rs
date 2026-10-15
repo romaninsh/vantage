@@ -3,10 +3,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tempfile::tempdir;
 use tokio::time::sleep;
-use vantage_dataset::traits::{InsertableDataSet, ReadableValueSet};
+use vantage_dataset::traits::{InsertableDataSet, ReadableValueSet, WritableValueSet};
 use vantage_log_writer::LogWriter;
 use vantage_table::table::Table;
-use vantage_types::EmptyEntity;
+use vantage_types::{EmptyEntity, Record};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Event {
@@ -14,6 +14,15 @@ struct Event {
     user_id: i64,
     is_admin: bool,
     extra: String,
+}
+
+fn event() -> Event {
+    Event {
+        name: "login".into(),
+        user_id: 42,
+        is_admin: true,
+        extra: "should be dropped".into(),
+    }
 }
 
 async fn read_lines(path: &std::path::Path) -> Vec<serde_json::Value> {
@@ -24,31 +33,25 @@ async fn read_lines(path: &std::path::Path) -> Vec<serde_json::Value> {
         .collect()
 }
 
-#[tokio::test]
-async fn insert_writes_jsonl_line() {
-    let dir = tempdir().unwrap();
-    let writer = LogWriter::new(dir.path());
-    let table = Table::<LogWriter, Event>::new("events", writer.clone())
+fn events_table(writer: &LogWriter) -> Table<LogWriter, Event> {
+    Table::<LogWriter, Event>::new("events", writer.clone())
         .with_column_of::<String>("name")
         .with_column_of::<i64>("user_id")
-        .with_column_of::<bool>("is_admin");
+        .with_column_of::<bool>("is_admin")
+}
 
-    let event = Event {
-        name: "login".into(),
-        user_id: 42,
-        is_admin: true,
-        extra: "should be dropped".into(),
-    };
+#[tokio::test]
+async fn insert_appends_one_json_line_with_declared_columns_and_a_ulid() {
+    let dir = tempdir().unwrap();
+    let table = events_table(&LogWriter::new(dir.path()));
 
-    let id = table.insert_return_id(&event).await.unwrap();
-    assert_eq!(id.len(), 26, "ULID is 26 chars: {}", id);
+    let id = table.insert_return_id(&event()).await.unwrap();
+    assert_eq!(id.len(), 26, "a ULID is 26 characters: {id}");
 
     sleep(Duration::from_millis(100)).await;
 
-    let path = dir.path().join("events.jsonl");
-    let rows = read_lines(&path).await;
+    let rows = read_lines(&dir.path().join("events.jsonl")).await;
     assert_eq!(rows.len(), 1);
-
     let row = &rows[0];
     assert_eq!(row["name"], "login");
     assert_eq!(row["user_id"], 42);
@@ -56,33 +59,94 @@ async fn insert_writes_jsonl_line() {
     assert_eq!(row["id"], id);
     assert!(
         row.get("extra").is_none(),
-        "fields not in column list must be dropped"
+        "a field outside the column list is dropped"
     );
 }
 
 #[tokio::test]
-async fn cloned_table_shares_writer() {
+async fn inserts_through_a_cloned_table_land_in_the_same_log() {
     let dir = tempdir().unwrap();
-    let writer = LogWriter::new(dir.path());
-    let t1 = Table::<LogWriter, Event>::new("events", writer.clone())
-        .with_column_of::<String>("name")
-        .with_column_of::<i64>("user_id")
-        .with_column_of::<bool>("is_admin");
+    let t1 = events_table(&LogWriter::new(dir.path()));
     let t2 = t1.clone();
 
-    let e = Event {
-        name: "x".into(),
-        user_id: 1,
-        is_admin: false,
-        extra: "".into(),
-    };
-    let _ = t1.insert_return_id(&e).await.unwrap();
-    let _ = t2.insert_return_id(&e).await.unwrap();
+    t1.insert_return_id(&event()).await.unwrap();
+    t2.insert_return_id(&event()).await.unwrap();
 
     sleep(Duration::from_millis(100)).await;
 
     let rows = read_lines(&dir.path().join("events.jsonl")).await;
     assert_eq!(rows.len(), 2);
+}
+
+#[tokio::test]
+async fn consecutive_inserts_append_in_order() {
+    let dir = tempdir().unwrap();
+    let table = events_table(&LogWriter::new(dir.path()));
+
+    for user_id in 1..=3 {
+        let mut e = event();
+        e.user_id = user_id;
+        table.insert_return_id(&e).await.unwrap();
+    }
+
+    sleep(Duration::from_millis(100)).await;
+
+    let rows = read_lines(&dir.path().join("events.jsonl")).await;
+    let ids: Vec<_> = rows
+        .iter()
+        .map(|r| r["user_id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(ids, [1, 2, 3]);
+}
+
+#[tokio::test]
+async fn insert_with_an_explicit_id_uses_it() {
+    let dir = tempdir().unwrap();
+    let table = Table::<LogWriter, EmptyEntity>::new("events", LogWriter::new(dir.path()))
+        .with_column_of::<String>("name");
+
+    let mut record = Record::<serde_json::Value>::new();
+    record.insert("name".into(), serde_json::Value::String("hello".into()));
+    let stored = WritableValueSet::insert_value(&table, "my-id", &record)
+        .await
+        .unwrap();
+    assert_eq!(stored["id"], "my-id");
+
+    sleep(Duration::from_millis(100)).await;
+
+    let rows = read_lines(&dir.path().join("events.jsonl")).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], "my-id");
+    assert_eq!(rows[0]["name"], "hello");
+}
+
+#[tokio::test]
+async fn with_id_column_renames_the_id_field() {
+    let dir = tempdir().unwrap();
+    let writer = LogWriter::new(dir.path()).with_id_column("uid");
+    let table = events_table(&writer);
+
+    let id = table.insert_return_id(&event()).await.unwrap();
+
+    sleep(Duration::from_millis(100)).await;
+
+    let rows = read_lines(&dir.path().join("events.jsonl")).await;
+    assert_eq!(rows[0]["uid"], id);
+    assert!(rows[0].get("id").is_none());
+}
+
+#[tokio::test]
+async fn a_declared_id_column_is_written_once_with_the_row_id() {
+    let dir = tempdir().unwrap();
+    let table = events_table(&LogWriter::new(dir.path())).with_column_of::<String>("id");
+
+    let id = table.insert_return_id(&event()).await.unwrap();
+
+    sleep(Duration::from_millis(100)).await;
+
+    let rows = read_lines(&dir.path().join("events.jsonl")).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], id);
 }
 
 #[tokio::test]
@@ -104,27 +168,4 @@ async fn read_methods_return_unsupported() {
         res.unwrap_err().kind(),
         vantage_core::ErrorKind::Unsupported
     );
-}
-
-#[tokio::test]
-async fn insert_with_explicit_id_uses_it() {
-    let dir = tempdir().unwrap();
-    let writer = LogWriter::new(dir.path());
-    let table =
-        Table::<LogWriter, EmptyEntity>::new("events", writer).with_column_of::<String>("name");
-
-    use vantage_dataset::traits::WritableValueSet;
-    let mut record = vantage_types::Record::<serde_json::Value>::new();
-    record.insert("name".into(), serde_json::Value::String("hello".into()));
-    let stored = WritableValueSet::insert_value(&table, "my-id", &record)
-        .await
-        .unwrap();
-    assert_eq!(stored["id"], "my-id");
-
-    sleep(Duration::from_millis(100)).await;
-
-    let rows = read_lines(&dir.path().join("events.jsonl")).await;
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["id"], "my-id");
-    assert_eq!(rows[0]["name"], "hello");
 }

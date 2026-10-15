@@ -1,9 +1,8 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Append-only persistence that writes JSONL records to files.
 //!
-//! See `docs4/src/new-persistence/` for the full guide; this crate is the
-//! POC implementation of step5 (insert-only TableSource). It has a type
-//! system (`type_system`) and, behind the `vista` feature, a vista layer;
-//! expressions are not executed.
+//! Insert-only: reads and expression execution return `Unsupported`. See
+//! `docs4/src/new-persistence/` for the guide this crate illustrates.
 
 mod log_writer;
 mod table_source;

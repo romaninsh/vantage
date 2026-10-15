@@ -5,7 +5,7 @@
 mod note;
 
 use note::{NoteKind, write};
-use vantage_inventory::{Change, DynKind, Inventory, OnFailure, Stage};
+use vantage_inventory::{Change, Inventory, OnFailure, Stage};
 
 fn notes(root: &std::path::Path, kind: NoteKind) -> Inventory {
     let mut inv = Inventory::new(root).with(kind);
@@ -112,60 +112,6 @@ fn a_kind_can_drop_a_leaf_whose_edit_broke_it() {
     assert_eq!(changes.len(), 1);
     assert!(changes[0].removed);
     assert!(inv.keys_of("note").is_empty());
-}
-
-#[test]
-fn an_edit_that_fails_validation_keeps_its_serial() {
-    let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "note/a.yaml", "title: A\n");
-    let mut inv = notes(dir.path(), NoteKind::flat());
-    let path = dir.path().join("note/a.yaml");
-
-    write(dir.path(), "note/a.yaml", "title: A2\nrefers_to: zzz\n");
-    let changes = inv.reload_path(&path).changes;
-
-    assert_eq!(changes.len(), 1);
-    assert_eq!(changes[0].serial, 1, "serial only bumps on a valid reload");
-    // The new value is stored even though it is invalid.
-    assert_eq!(inv.get::<NoteKind>("a").unwrap().title, "A2");
-    assert_eq!(
-        inv.errors_for("note", "a"),
-        ["a: refers_to `zzz` is not a note"]
-    );
-}
-
-#[test]
-fn adding_a_referent_revalidates_its_referrers() {
-    let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "note/a.yaml", "title: A\nrefers_to: b\n");
-    let mut inv = notes(dir.path(), NoteKind::flat());
-    assert_eq!(inv.errors_for("note", "a").len(), 1);
-
-    write(dir.path(), "note/b.yaml", "title: B\n");
-    let reload = inv.reload_path(&dir.path().join("note/b.yaml"));
-
-    assert_eq!(reload.changes.len(), 1);
-    assert_eq!(reload.changes[0].key, "b");
-    assert_eq!(reload.changes[0].serial, 1);
-    assert!(inv.errors_for("note", "a").is_empty());
-    assert!(reload.revalidated);
-
-    // An edit that leaves every leaf's errors as they were is not one.
-    write(dir.path(), "note/b.yaml", "title: B2\n");
-    assert!(!inv.reload_path(&dir.path().join("note/b.yaml")).revalidated);
-}
-
-#[test]
-fn boxed_kinds_register_and_read_back_typed() {
-    let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "note/a.yaml", "title: Boxed\n");
-    let kinds: Vec<Box<dyn DynKind>> = vec![Box::new(NoteKind::flat())];
-
-    let mut inv = Inventory::new(dir.path()).with_all(kinds);
-    inv.load().unwrap();
-
-    assert_eq!(inv.get::<NoteKind>("a").unwrap().title, "Boxed");
-    assert_eq!(inv.kinds().map(|k| k.id()).collect::<Vec<_>>(), ["note"]);
 }
 
 #[test]

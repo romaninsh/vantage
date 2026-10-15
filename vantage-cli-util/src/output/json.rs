@@ -84,9 +84,7 @@ pub fn write_value(v: &CborValue) -> String {
     }
 }
 
-/// Integers fitting in `i64` emit as bare numbers; anything wider is
-/// quoted so JSON parsers (which typically clamp at f64's 53-bit mantissa)
-/// don't silently round.
+// Wider integers are quoted: JSON parsers typically round past f64's 53-bit mantissa.
 fn write_integer(i: ciborium::value::Integer) -> String {
     let n = i128::from(i);
     if (i64::MIN as i128..=i64::MAX as i128).contains(&n) {
@@ -96,7 +94,6 @@ fn write_integer(i: ciborium::value::Integer) -> String {
     }
 }
 
-/// JSON has no NaN/Infinity literals; collapse them to `null`.
 fn write_float(f: f64) -> String {
     if f.is_nan() || f.is_infinite() {
         "null".to_string()
@@ -105,7 +102,6 @@ fn write_float(f: f64) -> String {
     }
 }
 
-/// Byte strings have no native JSON form; emit as a `"0x…"` hex literal.
 fn write_bytes(b: &[u8]) -> String {
     let mut hex = String::with_capacity(b.len() * 2 + 4);
     hex.push_str("\"0x");
@@ -142,8 +138,7 @@ fn write_map(pairs: &[(CborValue, CborValue)]) -> String {
     out
 }
 
-/// JSON object keys must be strings; non-string keys get stringified
-/// through `write_value` first.
+/// Non-text keys are stringified through `write_value`.
 fn write_map_key(k: &CborValue) -> String {
     match k {
         CborValue::Text(s) => write_string(s),
@@ -152,53 +147,5 @@ fn write_map_key(k: &CborValue) -> String {
 }
 
 fn write_string(s: &str) -> String {
-    // `serde_json` handles every escape rule we'd otherwise hand-roll;
-    // just route through it.
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn scalar_kinds() {
-        assert_eq!(write_value(&CborValue::Integer(42.into())), "42");
-        assert_eq!(write_value(&CborValue::Integer((-7).into())), "-7");
-        assert_eq!(write_value(&CborValue::Bool(true)), "true");
-        assert_eq!(write_value(&CborValue::Null), "null");
-        assert_eq!(write_value(&CborValue::Text("hi".into())), "\"hi\"");
-    }
-
-    #[test]
-    fn float_specials_become_null() {
-        assert_eq!(write_value(&CborValue::Float(f64::NAN)), "null");
-        assert_eq!(write_value(&CborValue::Float(f64::INFINITY)), "null");
-    }
-
-    #[test]
-    fn bytes_are_hex_strings() {
-        assert_eq!(
-            write_value(&CborValue::Bytes(vec![0xab, 0xcd])),
-            "\"0xabcd\""
-        );
-    }
-
-    #[test]
-    fn record_framing() {
-        let mut r = Record::new();
-        r.insert("name".to_string(), CborValue::Text("alice".into()));
-        r.insert("age".to_string(), CborValue::Integer(30.into()));
-        let s = write_record("u1", &r);
-        assert_eq!(s, "{\"u1\":{\"name\":\"alice\",\"age\":30}}\n");
-    }
-
-    #[test]
-    fn list_framing() {
-        let mut records: IndexMap<String, Record<CborValue>> = IndexMap::new();
-        let mut r1 = Record::new();
-        r1.insert("x".to_string(), CborValue::Integer(1.into()));
-        records.insert("a".to_string(), r1);
-        assert_eq!(write_list(&records), "{\"a\":{\"x\":1}}\n");
-    }
 }

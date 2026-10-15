@@ -1,22 +1,6 @@
-//! Files the inventory writes into a project for editors and for git.
-//!
-//! **Schemas.** Each folder kind gets `<folder>/<folder>-schema-<N>.json`,
-//! where `N` is the version the caller passes; bump it whenever a kind's
-//! value type changes shape. Project files opt into editor validation with
-//! a `# yaml-language-server: $schema=./<folder>-schema-<N>.json` header in
-//! their first ten lines. Older `<folder>-schema-<N>.json` files are
-//! deleted once no file in the folder references them, so a version stays
-//! on disk for exactly as long as something still uses it. When a YAML
-//! file in the folder cannot be read, nothing is deleted.
-//!
-//! **READMEs.** A kind with [`Kind::readme`](crate::Kind::readme) text gets
-//! it as `<folder>/README.md`.
-//!
-//! **`.gitignore`.** [`ensure_gitignore`] keeps a delimited block of the
-//! caller's lines in the project's `.gitignore`. Only the text between the
-//! markers is ever replaced; the project's own entries stay.
-//!
-//! Every write is skipped when the file already holds the wanted text.
+//! Files the inventory writes into a project for editors and for git:
+//! versioned JSON schemas, folder READMEs, and a managed `.gitignore` block.
+//! A write is skipped when the file already holds the wanted text.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -44,9 +28,13 @@ pub struct EmitReport {
 
 impl Inventory {
     /// Create every folder kind's folder, write its README and its schema
-    /// at `version`, and delete its unreferenced older schemas. Root-file
+    /// as `<folder>-schema-<version>.json`, and delete older
+    /// `<folder>-schema-<N>.json` files that no `*.yaml` in the folder names
+    /// in a `# yaml-language-server: $schema=./<file>` header (first ten
+    /// lines). Bump `version` when a kind's value changes shape. Root-file
     /// kinds get nothing. Stops at the first error, including a kind whose
-    /// [`schema`](crate::Kind::schema) fails.
+    /// [`schema`](crate::Kind::schema) fails or a YAML file that can't be
+    /// read; nothing is deleted then.
     pub fn emit_schemas(&self, version: u32) -> Result<EmitReport> {
         let mut report = EmitReport::default();
         for kind in self.kinds() {
@@ -155,10 +143,7 @@ fn is_schema_version(name: &str, file: &str) -> bool {
         .is_some_and(|n| n.parse::<u32>().is_ok())
 }
 
-/// The schema file names that `*.yaml` files directly in `folder` name in
-/// a `# yaml-language-server: $schema=./<file>` header within their first
-/// ten lines. A file that cannot be read is an error, since its reference
-/// is unknown.
+/// A `*.yaml` that can't be read is an error: its reference is unknown.
 fn schema_references(folder: &Path) -> Result<HashSet<String>> {
     let mut refs = HashSet::new();
     for entry in std::fs::read_dir(folder)?.flatten() {

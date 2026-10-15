@@ -1,21 +1,17 @@
 //! Bringing the leaf store up to date after one path changed on disk.
 //!
 //! The rules, in order:
-//! - every leaf that `!include`d the path reloads first, so an edit to a
-//!   shared script or fragment reaches the documents that use it;
+//! - every leaf that `!include`d the path reloads first;
 //! - a path that is not a leaf of any kind stops there;
 //! - a deleted file removes its leaf (a [`Missing::Default`] root file
 //!   keeps the leaf and loses its value);
-//! - a file whose composite hash matches its leaf is left alone, so a
-//!   watcher's duplicate events and same-content saves change nothing;
-//! - a parsed file replaces the leaf's value. Its serial bumps only when
-//!   validation finds nothing, so a broken state stays at the previous
-//!   serial until it is fixed;
-//! - a file that fails to load or parse is handled by the kind's
+//! - a file whose composite hash matches its leaf is left alone, so
+//!   duplicate watcher events and same-content saves change nothing;
+//! - a parsed file replaces the leaf's value; the serial bumps only when
+//!   validation finds nothing;
+//! - a file that fails to load or parse goes to the kind's
 //!   [`on_reload_failure`](crate::Kind::on_reload_failure);
-//! - after anything but a deduplicated save, every leaf is revalidated, so
-//!   adding a referenced file clears the errors of the files that
-//!   reference it.
+//! - after anything but a deduplicated save, every leaf is revalidated.
 
 use std::collections::btree_map::Entry;
 use std::path::{Path, PathBuf};
@@ -40,9 +36,7 @@ impl Inventory {
         reload
     }
 
-    /// Paths of every leaf that `!include`d `changed`. Derived by scanning
-    /// the leaves on demand rather than kept as a reverse map that could
-    /// go stale.
+    /// Scanned on demand: a stored reverse map could go stale.
     fn dependents_of(&self, changed: &Path) -> Vec<PathBuf> {
         let changed = walk::canonical_or_same(changed);
         let mut out: Vec<PathBuf> = self
@@ -87,9 +81,8 @@ impl Inventory {
         reload.revalidated |= self.revalidate();
     }
 
-    /// Store a freshly parsed value. Validation runs against the keys as
-    /// they were before this leaf changed; the pass that follows sees the
-    /// update.
+    /// Validates against the keys as they were before this leaf changed;
+    /// the revalidation that follows sees the update.
     fn upsert(
         &mut self,
         at: usize,
@@ -130,9 +123,7 @@ impl Inventory {
         });
     }
 
-    /// Drop a leaf whose file was deleted or whose kind asked for
-    /// [`OnFailure::Remove`]. A [`Missing::Default`] root file's leaf stays
-    /// and reverts to no value.
+    /// A [`Missing::Default`] root file's leaf stays and loses its value.
     fn remove(&mut self, at: usize, key: &str, changes: &mut Vec<Change>) {
         let kind = self.kinds[at].id();
         if self.is_default_root(at) {
@@ -163,8 +154,6 @@ impl Inventory {
         }
     }
 
-    /// A reload that failed. The failure is always reported; what happens
-    /// to the leaf depends on the kind.
     fn failed(&mut self, failed: Failed<'_>, reload: &mut Reload) {
         let Failed {
             at,
@@ -195,8 +184,8 @@ impl Inventory {
                         slot.hash = doc.hash;
                         slot.includes = doc.includes;
                     }
-                    // No document to hash: hash the broken bytes, so that
-                    // restoring the last good text is not deduplicated.
+                    // Hash the broken bytes so restoring the last good text
+                    // is not deduplicated.
                     None => slot.hash = walk::raw_hash(path),
                 }
                 slot.errors = messages;
@@ -221,7 +210,6 @@ impl Inventory {
     }
 }
 
-/// A reload that failed, and where.
 struct Failed<'a> {
     at: usize,
     key: &'a str,

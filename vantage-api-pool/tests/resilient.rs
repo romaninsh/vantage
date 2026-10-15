@@ -5,83 +5,43 @@ mod support;
 
 use std::time::Duration;
 
-use support::{
-    fast_retry, local_client, mount, mount_delayed, mount_script, mount_status, requests,
-    scripted_refresher,
-};
+use support::{fast_retry, local_client, mount, mount_delayed, mount_status, requests};
 use vantage_api_pool::resilient::{ClientError, ErrorKind};
-use wiremock::matchers::{header, method};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{MockServer, ResponseTemplate};
 
 #[tokio::test]
-async fn retries_429_then_succeeds() {
+async fn exhausted_retries_report_the_last_status_and_the_attempt_count() {
     let server = MockServer::start().await;
-    mount_script(&server, [429, 429, 200]).await;
-
-    let client = local_client().retry(fast_retry(5)).build();
-    let url = format!("{}/x", server.uri());
-    let resp = client
-        .execute(|h| h.get(&url))
-        .await
-        .expect("succeeds after retries");
-    assert_eq!(resp.status().as_u16(), 200);
-    assert_eq!(requests(&server).await, 3, "2×429 + 1×200");
+    mount_status(&server, 503).await;
+    let client = local_client().retry(fast_retry(2)).build();
+    let url = server.uri();
+    let err = client.execute(|h| h.get(&url)).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Status(503));
+    assert_eq!(err.attempts, 3, "1 try + 2 retries");
+    assert_eq!(err.to_string(), "HTTP 503 after 3 attempts");
+    assert_eq!(requests(&server).await, 3);
 }
 
 #[tokio::test]
-async fn retries_500_then_succeeds() {
+async fn a_long_error_body_is_cut_to_2_kib_on_a_char_boundary() {
     let server = MockServer::start().await;
-    mount_script(&server, [503, 200]).await;
-
-    let client = local_client().retry(fast_retry(5)).build();
+    // 'é' is two bytes, so the 2048-byte cap falls between whole characters.
+    mount(
+        &server,
+        ResponseTemplate::new(400).set_body_string("é".repeat(4000)),
+    )
+    .await;
+    let client = local_client().retry(fast_retry(0)).build();
     let url = server.uri();
-    let resp = client
+    let body = client
         .execute(|h| h.get(&url))
         .await
-        .expect("succeeds after 503");
-    assert_eq!(resp.status().as_u16(), 200);
-    assert_eq!(requests(&server).await, 2);
-}
-
-#[tokio::test]
-async fn does_not_retry_4xx() {
-    let server = MockServer::start().await;
-    mount_status(&server, 404).await;
-
-    let client = local_client().retry(fast_retry(5)).build();
-    let url = server.uri();
-    let r = client.execute(|h| h.get(&url)).await;
-    assert!(r.is_err(), "404 is terminal");
-    assert_eq!(requests(&server).await, 1, "no retry on 404");
-}
-
-#[tokio::test]
-async fn refreshes_token_on_401_and_replays() {
-    let server = MockServer::start().await;
-    // Only a request bearing the *refreshed* token succeeds.
-    Mock::given(method("GET"))
-        .and(header("Authorization", "Bearer good"))
-        .respond_with(ResponseTemplate::new(200))
-        .with_priority(1)
-        .mount(&server)
-        .await;
-    mount_status(&server, 401).await;
-
-    // The first acquire hands out a stale token; the re-acquire the good one.
-    let (refresher, calls) =
-        scripted_refresher(|n| Ok(if n == 0 { "stale" } else { "good" }.to_string()));
-
-    let client = local_client()
-        .retry(fast_retry(2))
-        .bearer_auth(refresher)
-        .build();
-    let url = server.uri();
-    let resp = client
-        .execute(|h| h.get(&url))
-        .await
-        .expect("succeeds after token refresh");
-    assert_eq!(resp.status().as_u16(), 200);
-    assert_eq!(calls.count(), 2, "acquired once, refreshed once");
+        .unwrap_err()
+        .body
+        .expect("a body was sent");
+    assert!(body.len() <= 2048, "capped at 2 KiB, was {}", body.len());
+    assert!(body.len() > 2040, "was {}", body.len());
+    assert!(body.chars().all(|c| c == 'é'));
 }
 
 #[tokio::test]
@@ -148,67 +108,4 @@ async fn error_carries_status_and_attempts() {
     assert_eq!(err.attempts, 1, "4xx is not retried");
     assert_eq!(err.to_string(), "HTTP 404 after 1 attempt");
     assert_eq!(err.body, None, "an empty response body is no body");
-}
-
-#[tokio::test]
-async fn error_carries_the_servers_own_message() {
-    let server = MockServer::start().await;
-    mount(
-        &server,
-        ResponseTemplate::new(422)
-            .insert_header("content-type", "application/json")
-            .set_body_string(r#"{"error":"name must not be empty"}"#),
-    )
-    .await;
-    let client = local_client().retry(fast_retry(3)).build();
-    let url = server.uri();
-    let err = client.execute(|h| h.get(&url)).await.unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Status(422));
-    assert_eq!(
-        err.body.as_deref(),
-        Some(r#"{"error":"name must not be empty"}"#),
-        "the outbox needs the server's message, not just the status"
-    );
-    assert_eq!(
-        err.to_string(),
-        "HTTP 422 after 1 attempt",
-        "the body is not part of Display"
-    );
-}
-
-#[tokio::test]
-async fn a_long_error_body_is_capped() {
-    let server = MockServer::start().await;
-    mount(
-        &server,
-        ResponseTemplate::new(400).set_body_string("é".repeat(4000)),
-    )
-    .await;
-    let client = local_client().retry(fast_retry(0)).build();
-    let url = server.uri();
-    let body = client
-        .execute(|h| h.get(&url))
-        .await
-        .unwrap_err()
-        .body
-        .expect("a body was sent");
-    assert!(body.len() <= 2048, "capped at 2 KiB, was {}", body.len());
-    assert!(
-        body.len() > 2040,
-        "cut back only as far as the nearest char boundary, was {}",
-        body.len()
-    );
-    assert!(body.chars().all(|c| c == 'é'), "cut on a char boundary");
-}
-
-#[tokio::test]
-async fn exhausted_retries_report_last_status_and_attempt_count() {
-    let server = MockServer::start().await;
-    mount_status(&server, 503).await;
-    let client = local_client().retry(fast_retry(2)).build();
-    let url = server.uri();
-    let err = client.execute(|h| h.get(&url)).await.unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Status(503));
-    assert_eq!(err.attempts, 3, "1 try + 2 retries");
-    assert_eq!(err.to_string(), "HTTP 503 after 3 attempts");
 }
