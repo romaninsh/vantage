@@ -1,8 +1,6 @@
 //! Token, operator, and selector types produced by the parser.
 //!
-//! The parser turns argv positionals into a `Vec<Token>`; the runner
-//! consumes them. Keeping the data types in one place makes the grammar
-//! easy to read at a glance.
+//! The parser turns argv positionals into `Token`s; the runner consumes them.
 
 use ciborium::Value as CborValue;
 
@@ -13,10 +11,9 @@ pub enum Mode {
     Single,
 }
 
-/// Comparison + membership operators in the universal Vista vocabulary
-/// (stage 5 of the Vista roadmap). The parser recognises every variant;
-/// only `Eq` currently translates to a real Vista call — see
-/// `vista_cli::run` for the stub paths.
+/// Comparison and membership operators. The parser recognises every
+/// variant; only `Eq` currently reaches Vista, the rest are reported
+/// through `Renderer::note_stub`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
     Eq,
@@ -132,25 +129,21 @@ impl Selector {
 }
 
 /// One parsed argv token. Glued forms (`users[0]`, `:rel[0]`,
-/// `field=v[0]`, `=col1[0]`) attach the selector as the second tuple
-/// field on each variant that supports a trailing bracket.
+/// `field=v[0]`, `=col1[0]`) carry their trailing bracket as a selector.
 ///
-/// Only `PartialEq` is derived (not `Eq`) because `ciborium::Value`
-/// includes `Float`, which is itself only `PartialEq`.
+/// No `Eq`: `ciborium::Value` holds floats.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     /// `users` / `user` — model name plus optional selector.
     ModelName(String, Option<Selector>),
-    /// `arn:…`, `user:abc123`, `urn:…` — anything backend-specific the
-    /// `ModelFactory::for_locator` recognises. Stored verbatim.
+    /// `arn:…`, `user:abc123`, `urn:…`, stored verbatim for
+    /// `ModelFactory::for_locator`.
     Locator(String),
     /// `field=value`, `field:op=value`, `field:null`, `field:notnull`.
-    /// `value` is `None` for nullary ops, otherwise the parsed CBOR.
-    /// `value_raw` is `Some(text)` when the parser took the auto-detect
-    /// path (no `#`-typed escape) and the raw user text should be
-    /// re-coerced against the target column's declared type at run time.
-    /// `None` when the user explicitly forced the type via `#literal` or
-    /// when the op is nullary.
+    /// `value` is `None` for nullary ops. `value_raw` holds the user's
+    /// text when the value was auto-detected, so the runner can re-coerce
+    /// it against the column's declared type; it is `None` for `#literal`
+    /// values, `:in` lists and nullary ops.
     OpCondition {
         field: String,
         op: Op,
@@ -164,11 +157,9 @@ pub enum Token {
     Bracket(Selector),
     /// `=col1,col2,…` — column override for the next render.
     Columns(Vec<String>, Option<Selector>),
-    /// `?keyword` or `?"two words"` — full-text-ish search across
-    /// `SEARCHABLE`-flagged columns.
+    /// `?keyword` or `?"two words"` — search across searchable columns.
     Search(String),
-    /// `@sum:price`, `@count`, etc. Aggregates short-circuit normal
-    /// list/single rendering — the runner produces a single scalar.
+    /// `@sum:price`, `@count`, etc. The runner renders a single scalar.
     Aggregate {
         op: AggregateOp,
         field: Option<String>,

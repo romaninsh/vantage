@@ -38,12 +38,10 @@ impl OutputFormat {
     }
 }
 
-/// Render a list of records to a String in the chosen non-table format.
+/// Render a list of records in the chosen non-table format.
 ///
-/// `Table` is handled by `table_display` directly (it needs ANSI/terminal
-/// concerns) and is not produced here — calling `render_list` with
-/// `OutputFormat::Table` is a programming error and returns an empty
-/// string.
+/// `Table` is printed by `table_display`, not produced here: every
+/// `render_*` function returns an empty string for it.
 pub fn render_list(format: OutputFormat, records: &IndexMap<String, Record<CborValue>>) -> String {
     match format {
         OutputFormat::Table => String::new(),
@@ -53,7 +51,7 @@ pub fn render_list(format: OutputFormat, records: &IndexMap<String, Record<CborV
     }
 }
 
-/// Render a single record to a String in the chosen non-table format.
+/// Render a single record in the chosen non-table format.
 pub fn render_record(format: OutputFormat, id: &str, record: &Record<CborValue>) -> String {
     match format {
         OutputFormat::Table => String::new(),
@@ -63,29 +61,12 @@ pub fn render_record(format: OutputFormat, id: &str, record: &Record<CborValue>)
     }
 }
 
-/// Render a scalar (aggregate result) to a String.
+/// Render a scalar (aggregate result) in the chosen non-table format.
 pub fn render_scalar(format: OutputFormat, label: &str, value: &CborValue) -> String {
     match format {
         OutputFormat::Table => String::new(),
         OutputFormat::Json => json::write_scalar(label, value),
         OutputFormat::Ndjson => ndjson::write_scalar(label, value),
         OutputFormat::CborDiag => cbor_diag::write_scalar(label, value),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_known_formats() {
-        assert_eq!(OutputFormat::parse("table"), Some(OutputFormat::Table));
-        assert_eq!(OutputFormat::parse("json"), Some(OutputFormat::Json));
-        assert_eq!(OutputFormat::parse("ndjson"), Some(OutputFormat::Ndjson));
-        assert_eq!(
-            OutputFormat::parse("cbor-diag"),
-            Some(OutputFormat::CborDiag)
-        );
-        assert_eq!(OutputFormat::parse("yaml"), None);
     }
 }

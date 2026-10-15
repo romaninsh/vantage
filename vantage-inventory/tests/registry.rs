@@ -111,24 +111,6 @@ fn deleting_a_file_removes_its_leaf() {
 }
 
 #[test]
-fn unchanged_content_does_not_bump_serial() {
-    let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "note/a.yaml", "title: A\n");
-    let mut inv = notes(dir.path());
-
-    write(dir.path(), "note/a.yaml", "title: A\n");
-    let changes = inv.reload_path(&dir.path().join("note/a.yaml")).changes;
-
-    assert!(changes.is_empty(), "{changes:?}");
-    assert_eq!(inv.leaf::<NoteKind>("a").unwrap().serial, 1);
-
-    write(dir.path(), "note/a.yaml", "title: A2\n");
-    let changes = inv.reload_path(&dir.path().join("note/a.yaml")).changes;
-    assert_eq!(changes.len(), 1);
-    assert_eq!(changes[0].serial, 2);
-}
-
-#[test]
 fn one_level_subfolders_key_as_sub_slash_stem() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "note/top.yaml", "title: Top\n");
@@ -205,6 +187,47 @@ fn root_file_missing_uses_default_when_asked() {
     assert!(!changes[0].removed);
     assert_eq!(inv.keys_of("settings"), ["settings"]);
     assert!(value(&inv).is_none());
+}
+
+#[test]
+fn rewriting_a_file_with_identical_content_reports_no_change() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "note/a.yaml", "title: A\n");
+    let mut inv = notes(dir.path());
+
+    write(dir.path(), "note/a.yaml", "title: A\n");
+    let changes = inv.reload_path(&dir.path().join("note/a.yaml")).changes;
+
+    assert!(changes.is_empty(), "{changes:?}");
+    assert_eq!(inv.leaf::<NoteKind>("a").unwrap().serial, 1);
+}
+
+#[test]
+fn a_clean_edit_bumps_the_serial_and_is_reported_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "note/a.yaml", "title: A\n");
+    let mut inv = notes(dir.path());
+
+    write(dir.path(), "note/a.yaml", "title: A2\n");
+    let changes = inv.reload_path(&dir.path().join("note/a.yaml")).changes;
+
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].serial, 2);
+    assert_eq!(inv.leaf::<NoteKind>("a").unwrap().serial, 2);
+    assert_eq!(inv.get::<NoteKind>("a").unwrap().title, "A2");
+}
+
+#[test]
+fn boxed_kinds_register_in_order_and_read_back_typed() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "note/a.yaml", "title: Boxed\n");
+    let kinds: Vec<Box<dyn vantage_inventory::DynKind>> = vec![Box::new(NoteKind::flat())];
+
+    let mut inv = Inventory::new(dir.path()).with_all(kinds);
+    inv.load().unwrap();
+
+    assert_eq!(inv.get::<NoteKind>("a").unwrap().title, "Boxed");
+    assert_eq!(inv.kinds().map(|k| k.id()).collect::<Vec<_>>(), ["note"]);
 }
 
 #[test]

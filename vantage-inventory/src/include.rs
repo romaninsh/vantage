@@ -1,23 +1,15 @@
-//! The `!include <path>` pass: runs on the parsed `serde_yaml_ng::Value`
-//! before it becomes JSON, because `Value::Tagged` has no JSON form. When
-//! this pass is done no tag is left behind — `!include` is spliced, any
-//! other tag is a hard error naming the file and the tag.
+//! The `!include <path>` pass, run on the parsed YAML before it becomes JSON
+//! (`Value::Tagged` has no JSON form). Afterwards no tag is left: `!include`
+//! is spliced, any other tag is an error naming the file and the tag.
 //!
-//! Semantics:
-//! - the path is relative to the directory of the file that contains the
-//!   tag (nested includes resolve against the included file's own directory);
-//! - after canonicalising, the target must sit under the project root —
-//!   `../` inside the project is fine, escaping it is an error;
-//! - `.yaml` / `.yml` / `.json` are parsed, recursed and spliced as data;
-//!   anything else is slurped as one string (a `.rhai` script, a `.md`
-//!   description, a `.sql` query);
-//! - a file included twice is read once per load; an include cycle is an
-//!   error listing the chain;
-//! - every resolved path is recorded so a watcher can reload the including
-//!   document when a dependency changes.
+//! - The path is relative to the including file's directory and must stay
+//!   under the project root.
+//! - `.yaml` / `.yml` / `.json` are spliced as data; anything else is one string.
+//! - A file included twice is read once; a cycle is an error listing the chain.
+//! - Every resolved path is recorded so a watcher can reload dependents.
 //!
-//! YAML merge keys (`<<:`) are not applied by this loader — they never were —
-//! so `!include` cannot be combined with them.
+//! YAML merge keys (`<<:`) are not applied, so `!include` cannot be combined
+//! with them.
 
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
@@ -29,9 +21,8 @@ use serde_yaml_ng::Value;
 
 const INCLUDE_TAG: &str = "!include";
 
-/// One parsed document: the tag-free YAML value, every file it pulled in
-/// through `!include`, and a hash over the file bytes plus every include —
-/// so an edit to a dependency changes the hash of the document that uses it.
+/// A parsed, tag-free document, the files it pulled in through `!include`,
+/// and a hash over its bytes plus every include's.
 #[derive(Debug, Clone)]
 pub struct Document {
     pub value: Value,
@@ -43,7 +34,7 @@ pub(crate) struct Includer {
     root: PathBuf,
     cache: HashMap<PathBuf, Value>,
     includes: Vec<PathBuf>,
-    /// Canonical paths currently being expanded, outermost first.
+    /// Canonical paths being expanded, outermost first; a repeat is a cycle.
     stack: Vec<PathBuf>,
     hasher: DefaultHasher,
 }
@@ -62,8 +53,6 @@ impl Includer {
         })
     }
 
-    /// Fold `bytes` into the composite hash. Called for the main document
-    /// and once per include, in resolution order.
     pub(crate) fn hash_bytes(&mut self, bytes: &[u8]) {
         bytes.hash(&mut self.hasher);
     }
@@ -76,9 +65,7 @@ impl Includer {
         }
     }
 
-    /// Expand every `!include` under `value`. `file` is the document the
-    /// value came from (relative includes resolve against its directory);
-    /// it need not exist on disk for an in-memory document.
+    /// `file` need not exist on disk; only its directory is used.
     pub(crate) fn expand(&mut self, value: Value, file: &Path) -> Result<Value> {
         let base_dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
         self.expand_in(value, &base_dir, file)
@@ -203,6 +190,3 @@ fn describe(value: &Value) -> &'static str {
         Value::Tagged(_) => "a tagged value",
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,13 +1,10 @@
 //! `LogWriterTableShell` — an append-only JSONL sink behind the `TableShell`
 //! boundary.
 //!
-//! The shell only inserts. Nothing it writes can be read back, so every read
-//! refuses with `unsupported(Capability::Window)`: the window is the read
-//! family's one capability, and the shell advertises none of it. Equality
-//! conditions on declared columns are recorded so a narrowed handle is
-//! honest about its query, but no read ever runs, and `Vista` refuses writes
-//! through a narrowed handle since the shell doesn't advertise
-//! `ConfineWrites`.
+//! The shell only inserts: every read refuses with
+//! `unsupported(Capability::Window)`. Equality conditions on declared columns
+//! are recorded on the handle, and `Vista` refuses writes through a narrowed
+//! handle since the shell doesn't advertise `ConfineWrites`.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -30,9 +27,7 @@ pub struct LogWriterTableShell {
     pub(crate) table: Table<LogWriter, EmptyEntity>,
     pub(crate) capabilities: VistaCapabilities,
     pub(crate) metadata: VistaMetadata,
-    /// Equality conditions applied to this handle. Reads refuse and narrowed
-    /// writes are refused by `Vista`, so they never filter anything; they are
-    /// kept so the preview reports them.
+    /// Never filters anything; kept so the preview reports them.
     pub(crate) conditions: Vec<Condition>,
 }
 
@@ -61,8 +56,7 @@ fn cbor_record_to_json(record: &Record<CborValue>) -> Record<Value> {
         .collect()
 }
 
-/// The refusal every read answers with: `Window` is the read family's
-/// capability, and the context says why the shell lacks it.
+/// The refusal every read answers with.
 fn refuse_read<T>() -> Result<T> {
     unsupported(Capability::Window).map_err(|mut e| {
         e.context

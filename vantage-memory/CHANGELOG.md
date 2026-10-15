@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 — 2026-10-14
+
+- The in-crate unit tests move to the blackbox suite under `tests/`, and tests that covered nothing
+  another test didn't are dropped. No API or behaviour change.
+
 ## 2.0.0 — 2026-10-14
 
 ### Breaking changes

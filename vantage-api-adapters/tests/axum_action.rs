@@ -39,6 +39,7 @@ fn failing_record(table: &str, name: &str, kind: &'static str) -> Arc<dyn ModelA
             Err::<Echo, _>(match kind {
                 "not_found" => e.mark_not_found(),
                 "incorrect_usage" => e.mark_incorrect_usage(),
+                "conflict" => e.mark_conflict(),
                 _ => e,
             })
         },
@@ -117,6 +118,7 @@ async fn status_follows_the_error_kind_not_the_message() {
     for (kind, expected) in [
         ("not_found", StatusCode::NOT_FOUND),
         ("incorrect_usage", StatusCode::BAD_REQUEST),
+        ("conflict", StatusCode::CONFLICT),
         ("generic", StatusCode::INTERNAL_SERVER_ERROR),
     ] {
         let app: Router = ActionRouter::new(vec![failing_record("tag", "go", kind)])
@@ -126,37 +128,6 @@ async fn status_follows_the_error_kind_not_the_message() {
         assert_eq!(status, expected, "kind {kind}");
         assert!(body.contains("the body refused"), "kind {kind}: {body}");
     }
-}
-
-/// An outage must not be reported as the caller's fault. Before the fix
-/// every unrecognised message fell through to 400, which tells clients
-/// and alerting that nothing is wrong.
-#[tokio::test]
-async fn an_unclassified_failure_is_never_a_4xx() {
-    let app: Router = ActionRouter::new(vec![failing_record("tag", "go", "generic")])
-        .unwrap()
-        .into_router();
-    let (status, _) = post(app, "/tag/t1/actions/go", "{}").await;
-    assert!(status.is_server_error(), "got {status}");
-}
-
-/// A body that does not match the input type is the caller's fault, so
-/// the action layer classifies it and the transport answers 400.
-#[tokio::test]
-async fn a_wrong_shaped_body_is_a_400() {
-    #[derive(serde::Deserialize, schemars::JsonSchema)]
-    struct Needs {
-        #[allow(dead_code)]
-        who: String,
-    }
-    let action = record_action("go", "tag", "needs input", |_: String, _: Needs| async {
-        Ok(Echo { saw: String::new() })
-    });
-    let app: Router = ActionRouter::new(vec![action]).unwrap().into_router();
-
-    let (status, body) = post(app, "/tag/t1/actions/go", "{}").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.contains("invalid action input"), "{body}");
 }
 
 /// Legacy paths may carry captures besides the id. `Path<String>` used
