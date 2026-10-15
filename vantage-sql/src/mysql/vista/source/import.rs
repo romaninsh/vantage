@@ -1,28 +1,26 @@
 //! All-or-nothing bulk import, inside one transaction.
 //!
-//! Each record is prepared exactly as a single insert would (hooks, imported
-//! columns, set invariants), and the id the caller keyed it under is written
-//! over any id the record carries. Records whose id the set already holds are
+//! Each record is prepared as a single insert would be (hooks, imported
+//! columns, set invariants), and the id the caller keyed it under overwrites
+//! any id the record carries. Records whose id the set already holds are
 //! skipped untouched; an id held by a row outside the set, or a new record
-//! that does not belong to it, is a conflict. The rest are written with
-//! multi-row `INSERT` statements.
+//! that does not belong to it, is a conflict. The rest go in with multi-row
+//! `INSERT` statements.
 //!
-//! Ids are compared by MySQL under the id column's collation, as a single
-//! insert's `WHERE id = ?` lookup compares them: with a case-insensitive
-//! collation an incoming `A` finds a stored `a` and is skipped. Two *new* ids
-//! that are equal under the collation (`X` and `x`) collide on the primary
-//! key, and the import fails as a whole.
+//! MySQL compares ids under the id column's collation, as a single insert's
+//! `WHERE id = ?` lookup does: with a case-insensitive collation an incoming
+//! `A` finds a stored `a` and is skipped. Two *new* ids equal under the
+//! collation (`X` and `x`) collide on the primary key and fail the whole
+//! import.
 //!
-//! After-insert hooks run once the transaction has committed, for the newly
-//! inserted records only. They receive the prepared row as written, id
-//! included, without re-reading it, so server-side defaults are not in it
-//! (MongoDB's import does the same). If an after hook fails, the import is
-//! already committed; the error is returned and the remaining hooks do not
-//! run.
+//! After-insert hooks run after the commit, for newly inserted records only.
+//! They receive the prepared row as written, id included, so server-side
+//! defaults are not in it. If a hook fails the import is already committed:
+//! the error is returned and the remaining hooks do not run.
 //!
-//! Any failure before the commit rolls the transaction back, so the table is
-//! left as it was. A concurrent writer taking one of the ids between the
-//! existence check and the INSERT fails the import as a whole (duplicate key).
+//! Any failure before the commit rolls back and leaves the table as it was. A
+//! concurrent writer taking an id between the existence check and the `INSERT`
+//! fails the whole import (duplicate key).
 
 mod lookup;
 mod rows;
@@ -158,20 +156,4 @@ where
             .await?;
     }
     Ok(new)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn chunks_are_capped_by_rows_and_parameters() {
-        assert_eq!(rows_per_chunk(0), MAX_ROWS);
-        assert_eq!(rows_per_chunk(1), MAX_ROWS);
-        assert_eq!(rows_per_chunk(100), MAX_ROWS);
-        assert_eq!(rows_per_chunk(200), PARAM_BUDGET / 200);
-        assert!(rows_per_chunk(200) * 200 <= PARAM_BUDGET);
-        assert_eq!(rows_per_chunk(PARAM_BUDGET), 1);
-        assert_eq!(rows_per_chunk(100_000), 1);
-    }
 }

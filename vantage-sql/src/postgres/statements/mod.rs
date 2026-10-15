@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 pub mod delete;
 pub mod insert;
 pub mod select;

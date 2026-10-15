@@ -29,11 +29,6 @@ mod rhai_smoke {
     }
 
     #[test]
-    fn host_builds() {
-        let _host = host();
-    }
-
-    #[test]
     fn eval_literal() {
         let result: i64 = eval_rhai("2 + 3").cast();
         assert_eq!(result, 5);

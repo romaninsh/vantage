@@ -1,11 +1,6 @@
-//! Helpers for converting between sqlx rows/values and vantage types.
-//!
-//! **Writing** (bind): Takes `AnySqliteType` with variant tags — the variant
-//! tells us exactly how to bind each value to sqlx.
-//!
-//! **Reading** (row): Returns `Record<AnySqliteType>` with variant inferred from
-//! the SQLite column type. Values are stored as `ciborium::Value` (CBOR) for
-//! lossless type preservation.
+//! sqlx rows and bind values for SQLite. Binding follows the variant tag of
+//! `AnySqliteType`; reading infers the variant from the column type and keeps
+//! the value as CBOR.
 
 use ciborium::Value as CborValue;
 use sqlx::sqlite::SqliteRow;
@@ -17,8 +12,6 @@ use super::types::{AnySqliteType, SqliteTypeVariants};
 pub(crate) type SqliteQuery<'q> =
     sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>;
 
-/// Bind an AnySqliteType to a sqlx query. Uses the variant tag to pick
-/// the right sqlx bind type — no guessing from the CBOR value format.
 /// Values the binder cannot express as a SQLite parameter come straight
 /// from user data, so they surface as errors — never a panic.
 pub(crate) fn bind_sqlite_value<'q>(
@@ -258,14 +251,12 @@ fn sqlite_column_to_cbor(
         return (CborValue::Bool(v), Some(SqliteTypeVariants::Bool));
     }
 
-    // BLOB
     if dt == "BLOB"
         && let Ok(v) = row.try_get::<Vec<u8>, _>(ordinal)
     {
         return (CborValue::Bytes(v), Some(SqliteTypeVariants::Blob));
     }
 
-    // Fallback: try common types in order
     if let Ok(v) = row.try_get::<i64, _>(ordinal) {
         return (
             CborValue::Integer(v.into()),
@@ -286,170 +277,4 @@ fn sqlite_column_to_cbor(
         declared_type,
     );
     (CborValue::Null, None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sqlite::SqliteDB;
-    use serde::{Deserialize, Serialize};
-    use serde_json::Value as JsonValue;
-    use vantage_types::TryFromRecord;
-
-    #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    struct Product {
-        name: String,
-        price: i64,
-        is_deleted: bool,
-    }
-
-    #[tokio::test]
-    async fn test_row_to_record_try_get() {
-        let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
-
-        sqlx::query(
-            "CREATE TABLE t (
-                name TEXT NOT NULL,
-                score INTEGER NOT NULL,
-                ratio REAL NOT NULL,
-                active BOOLEAN NOT NULL,
-                note TEXT
-            )",
-        )
-        .execute(db.pool())
-        .await
-        .unwrap();
-
-        sqlx::query("INSERT INTO t VALUES ('Alice', 42, 3.15, 1, NULL)")
-            .execute(db.pool())
-            .await
-            .unwrap();
-
-        let rows: Vec<SqliteRow> = sqlx::query("SELECT * FROM t")
-            .fetch_all(db.pool())
-            .await
-            .unwrap();
-
-        let record = row_to_record(&rows[0]);
-
-        assert_eq!(
-            record["name"].try_get::<String>(),
-            Some("Alice".to_string())
-        );
-        assert_eq!(record["score"].try_get::<i64>(), Some(42));
-        assert!((record["ratio"].try_get::<f64>().unwrap() - 3.15).abs() < f64::EPSILON);
-        assert_eq!(record["active"].try_get::<bool>(), Some(true));
-
-        // NULL column — try_get on Option works
-        assert_eq!(record["note"].try_get::<Option<String>>(), Some(None));
-    }
-
-    #[tokio::test]
-    async fn test_row_to_record_into_struct() {
-        let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
-
-        sqlx::query(
-            "CREATE TABLE products (
-                name TEXT NOT NULL,
-                price INTEGER NOT NULL,
-                is_deleted BOOLEAN NOT NULL
-            )",
-        )
-        .execute(db.pool())
-        .await
-        .unwrap();
-
-        sqlx::query("INSERT INTO products VALUES ('Cupcake', 120, 0)")
-            .execute(db.pool())
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO products VALUES ('Tart', 220, 1)")
-            .execute(db.pool())
-            .await
-            .unwrap();
-
-        let rows: Vec<SqliteRow> = sqlx::query("SELECT * FROM products ORDER BY price")
-            .fetch_all(db.pool())
-            .await
-            .unwrap();
-
-        // Record<AnySqliteType> → Record<JsonValue> via JSON bridge → struct via serde
-        let products: Vec<Product> = rows
-            .iter()
-            .map(|row| {
-                let record = row_to_record(row);
-                let json_record: Record<JsonValue> = record
-                    .into_iter()
-                    .map(|(k, v)| (k, JsonValue::from(v)))
-                    .collect();
-                Product::from_record(json_record).unwrap()
-            })
-            .collect();
-
-        assert_eq!(products.len(), 2);
-        assert_eq!(
-            products[0],
-            Product {
-                name: "Cupcake".into(),
-                price: 120,
-                is_deleted: false
-            }
-        );
-        assert_eq!(
-            products[1],
-            Product {
-                name: "Tart".into(),
-                price: 220,
-                is_deleted: true
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn test_bind_sqlite_value_types() {
-        let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
-
-        sqlx::query("CREATE TABLE bind_test (val TEXT)")
-            .execute(db.pool())
-            .await
-            .unwrap();
-
-        let text_val = AnySqliteType::new("hello".to_string());
-        let mut q = sqlx::query("INSERT INTO bind_test VALUES (?)");
-        q = bind_sqlite_value(q, &text_val).unwrap();
-        q.execute(db.pool()).await.unwrap();
-
-        let rows: Vec<SqliteRow> = sqlx::query("SELECT val FROM bind_test")
-            .fetch_all(db.pool())
-            .await
-            .unwrap();
-        let record = row_to_record(&rows[0]);
-        assert_eq!(record["val"].try_get::<String>(), Some("hello".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_bind_integer_and_bool() {
-        let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
-
-        sqlx::query("CREATE TABLE ib (i INTEGER, b BOOLEAN)")
-            .execute(db.pool())
-            .await
-            .unwrap();
-
-        let int_val = AnySqliteType::new(42i64);
-        let bool_val = AnySqliteType::new(true);
-
-        let mut q = sqlx::query("INSERT INTO ib VALUES (?, ?)");
-        q = bind_sqlite_value(q, &int_val).unwrap();
-        q = bind_sqlite_value(q, &bool_val).unwrap();
-        q.execute(db.pool()).await.unwrap();
-
-        let rows: Vec<SqliteRow> = sqlx::query("SELECT * FROM ib")
-            .fetch_all(db.pool())
-            .await
-            .unwrap();
-        let record = row_to_record(&rows[0]);
-        assert_eq!(record["i"].try_get::<i64>(), Some(42));
-        assert_eq!(record["b"].try_get::<bool>(), Some(true));
-    }
 }

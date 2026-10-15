@@ -1,20 +1,14 @@
-//! Logical operators for SQL conditions: `or_()` and `and_()`, and the
-//! [`ConditionGroup`] that they make.
+//! `or_()` and `and_()`, and the [`ConditionGroup`] they make.
 //!
-//! A group writes one set of brackets around the full chain. It writes
-//! no brackets around each operand: `(a OR b OR c)`. A chain stays flat
-//! while the operator does not change, and thus `a.or_(b).or_(c)` gives
-//! `(a OR b OR c)`. To make a different group, nest the calls.
-//! `a.or_(b.or_(c))` gives `(a OR (b OR c))`, because the inner group is
-//! an operand and it writes its own brackets.
+//! A group writes one set of brackets around its whole chain and none around
+//! each operand. A chain stays flat while the operator does not change:
+//! `a.or_(b).or_(c)` gives `(a OR b OR c)`. Nesting makes a different group:
+//! `a.or_(b.or_(c))` gives `(a OR (b OR c))`.
 //!
-//! The group writes the brackets. The statement renderer does not.
-//! `WHERE` joins its conditions with a plain `AND`, and each group
-//! arrives complete. This keeps the conditions of a table when a search
-//! runs on top of them. The query says `role = 'admin' AND (a OR b)`. It
-//! does not say `role = 'admin' AND a OR b`, which means
-//! `(role = 'admin' AND a) OR b`, because `AND` binds more tightly than
-//! `OR`.
+//! The group writes the brackets, not the statement renderer: `WHERE` joins
+//! its conditions with a plain `AND`, so a search on top of a table's
+//! conditions reads `role = 'admin' AND (a OR b)`. Without the group it would
+//! read `role = 'admin' AND a OR b`, which means `(role = 'admin' AND a) OR b`.
 
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 

@@ -12,7 +12,6 @@ pub enum PostgresJoinType {
     Left,
     Right,
     FullOuter,
-    // -- PostgreSQL-specific --
     LeftLateral,
     CrossLateral,
 }

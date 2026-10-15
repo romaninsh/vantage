@@ -59,7 +59,6 @@ impl std::fmt::Display for AnyMysqlType {
             CborValue::Text(s) => write!(f, "'{}'", s.replace('\'', "''")),
             CborValue::Bytes(b) => write!(f, "x'{}'", hex::encode(b)),
             CborValue::Tag(10, inner) => {
-                // Decimal
                 if let CborValue::Text(s) = inner.as_ref() {
                     write!(f, "{}", s)
                 } else {
@@ -67,7 +66,6 @@ impl std::fmt::Display for AnyMysqlType {
                 }
             }
             CborValue::Tag(0, inner) | CborValue::Tag(100, inner) | CborValue::Tag(101, inner) => {
-                // DateTime / Date / Time
                 if let CborValue::Text(s) = inner.as_ref() {
                     write!(f, "'{}'", s)
                 } else {
@@ -111,8 +109,6 @@ impl std::fmt::Display for AnyMysqlType {
     }
 }
 
-// -- From impls for common types ----------------------------------------------
-
 macro_rules! impl_from_for_any_mysql {
     ($($ty:ty),*) => {
         $(
@@ -150,8 +146,6 @@ impl From<&str> for AnyMysqlType {
     }
 }
 
-// -- JSON <-> CBOR bridge (for AnyTable interop) ------------------------------
-
 impl From<JsonValue> for AnyMysqlType {
     fn from(val: JsonValue) -> Self {
         if val.is_null() {
@@ -168,8 +162,6 @@ impl From<AnyMysqlType> for JsonValue {
         cbor_to_json(val.into_value())
     }
 }
-
-// -- Expressive impls ---------------------------------------------------------
 
 macro_rules! impl_expressive_for_mysql_scalar {
     ($($ty:ty),*) => {
@@ -220,15 +212,12 @@ impl Expressive<AnyMysqlType> for AnyMysqlType {
     }
 }
 
-// -- TryFrom impls (for AssociatedExpression::get()) --------------------------
-
 macro_rules! impl_try_from_mysql {
     ($($ty:ty),*) => {
         $(
             impl TryFrom<AnyMysqlType> for $ty {
                 type Error = vantage_core::VantageError;
                 fn try_from(val: AnyMysqlType) -> Result<Self, Self::Error> {
-                    // Try direct extraction first
                     if let Some(v) = val.try_get::<$ty>() {
                         return Ok(v);
                     }
@@ -259,7 +248,6 @@ macro_rules! impl_try_from_mysql {
 
 impl_try_from_mysql!(i64, i32, f64, bool, String, rust_decimal::Decimal);
 
-/// Extract first row from a CBOR result array as a map.
 fn extract_first_row(val: &AnyMysqlType) -> Option<CborValue> {
     match val.value() {
         CborValue::Array(arr) => arr.first().cloned(),
@@ -284,7 +272,6 @@ impl TryFrom<AnyMysqlType> for vantage_types::Record<AnyMysqlType> {
     }
 }
 
-/// Convert a CBOR Map into a `Record<AnyMysqlType>`.
 fn cbor_map_to_record(map: Vec<(CborValue, CborValue)>) -> vantage_types::Record<AnyMysqlType> {
     map.into_iter()
         .map(|(k, v)| {

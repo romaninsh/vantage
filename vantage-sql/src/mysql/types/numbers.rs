@@ -15,8 +15,6 @@ use super::{
 };
 use ciborium::Value;
 
-// -- i16 -> Int2 (SMALLINT) ---------------------------------------------------
-
 impl MysqlType for i16 {
     type Target = MysqlTypeInt2Marker;
 
@@ -32,8 +30,6 @@ impl MysqlType for i16 {
         }
     }
 }
-
-// -- i32 -> Int4 (INT) --------------------------------------------------------
 
 impl MysqlType for i32 {
     type Target = MysqlTypeInt4Marker;
@@ -51,8 +47,6 @@ impl MysqlType for i32 {
     }
 }
 
-// -- i64 -> Int8 (BIGINT) ----------------------------------------------------
-
 impl MysqlType for i64 {
     type Target = MysqlTypeInt8Marker;
 
@@ -68,8 +62,6 @@ impl MysqlType for i64 {
         }
     }
 }
-
-// -- Smaller integer types mapped to appropriate MySQL variants ---------------
 
 impl MysqlType for i8 {
     type Target = MysqlTypeInt2Marker;
@@ -135,8 +127,6 @@ impl MysqlType for u32 {
     }
 }
 
-// -- Float types --------------------------------------------------------------
-
 impl MysqlType for f32 {
     type Target = MysqlTypeFloat4Marker;
 
@@ -168,8 +158,6 @@ impl MysqlType for f64 {
         }
     }
 }
-
-// -- Option<T> -> Null for None, delegates to T for Some ----------------------
 
 impl<T: MysqlType> MysqlType for Option<T> {
     type Target = T::Target;

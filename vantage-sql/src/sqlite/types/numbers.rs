@@ -12,8 +12,6 @@
 use super::{SqliteType, SqliteTypeIntegerMarker, SqliteTypeRealMarker};
 use ciborium::Value;
 
-// -- Signed integers → Integer affinity ------------------------------------
-
 impl SqliteType for i64 {
     type Target = SqliteTypeIntegerMarker;
 
@@ -78,8 +76,6 @@ impl SqliteType for i8 {
     }
 }
 
-// -- Unsigned integers → Integer affinity ----------------------------------
-
 impl SqliteType for u32 {
     type Target = SqliteTypeIntegerMarker;
 
@@ -128,8 +124,6 @@ impl SqliteType for u8 {
     }
 }
 
-// -- Float types → Real affinity -------------------------------------------
-
 impl SqliteType for f64 {
     type Target = SqliteTypeRealMarker;
 
@@ -161,8 +155,6 @@ impl SqliteType for f32 {
         }
     }
 }
-
-// -- Option<T> → Null for None, delegates to T for Some --------------------
 
 impl<T: SqliteType> SqliteType for Option<T> {
     type Target = T::Target;

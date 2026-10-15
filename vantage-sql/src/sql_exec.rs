@@ -247,31 +247,3 @@ fn prepare_typed_query<V: Clone>(
 
     Ok((sql, params))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn expr(template: &str, n: usize) -> Expression<i64> {
-        Expression::new(
-            template,
-            (0..n as i64).map(ExpressiveEnum::Scalar).collect(),
-        )
-    }
-
-    #[test]
-    fn renders_each_placeholder_style() {
-        let e = expr("a = {} AND b = {}", 2);
-        let render = |p| prepare_typed_query(&e, p).unwrap().0;
-        assert_eq!(render(Placeholder::QuestionNumbered), "a = ?1 AND b = ?2");
-        assert_eq!(render(Placeholder::DollarNumbered), "a = $1 AND b = $2");
-        assert_eq!(render(Placeholder::Question), "a = ? AND b = ?");
-    }
-
-    #[test]
-    fn truncates_long_sql() {
-        let long = "x".repeat(600);
-        assert_eq!(truncate_sql(&long).chars().count(), 501);
-        assert_eq!(truncate_sql("short"), "short");
-    }
-}

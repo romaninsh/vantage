@@ -1,12 +1,7 @@
-//! Helpers for converting between sqlx rows/values and vantage types.
-//!
-//! **Writing** (bind): Takes `AnyMysqlType` with variant tags — the variant
-//! tells us exactly how to bind each value to sqlx.
-//!
-//! **Reading** (row): Returns `Record<AnyMysqlType>` with variant inferred from
-//! the MySQL column type. Values are stored as `ciborium::Value` (CBOR) for
-//! lossless type preservation — decimals stay as tagged strings, datetimes
-//! keep their type identity, booleans aren't confused with integers.
+//! sqlx rows and bind values for MySQL. Binding follows the variant tag of
+//! `AnyMysqlType`; reading infers the variant from the column type and keeps
+//! the value as CBOR, so decimals stay tagged strings and booleans stay
+//! distinct from integers.
 
 use ciborium::Value as CborValue;
 use sqlx::mysql::MySqlRow;
@@ -15,7 +10,6 @@ use vantage_types::Record;
 
 use super::types::{AnyMysqlType, MysqlTypeVariants};
 
-/// Bind an AnyMysqlType to a sqlx query.
 pub(crate) fn bind_mysql_value<'q>(
     query: sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>,
     value: &'q AnyMysqlType,
@@ -126,7 +120,6 @@ pub(crate) fn bind_mysql_value<'q>(
     }
 }
 
-/// Bind a CBOR value without type variant — infers from the value itself.
 fn bind_by_cbor<'q>(
     query: sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>,
     cbor: &'q CborValue,
@@ -164,10 +157,6 @@ fn bind_by_cbor<'q>(
     }
 }
 
-/// Convert a MySqlRow to `Record<AnyMysqlType>`.
-///
-/// Each value is stored as CBOR with the type variant inferred from the
-/// MySQL column type, preserving full type fidelity.
 pub(crate) fn row_to_record(row: &MySqlRow) -> Record<AnyMysqlType> {
     let mut record = Record::new();
     for col in row.columns() {
@@ -183,8 +172,6 @@ pub(crate) fn row_to_record(row: &MySqlRow) -> Record<AnyMysqlType> {
     record
 }
 
-/// Read a single column from a MySQL row as CborValue, returning both the
-/// value and the detected type variant.
 fn mysql_column_to_cbor(
     row: &MySqlRow,
     ordinal: usize,
@@ -286,7 +273,6 @@ fn mysql_column_to_cbor(
                     Some(MysqlTypeVariants::Decimal),
                 );
             }
-            // Fallback: try as string
             if let Ok(v) = row.try_get::<String, _>(ordinal) {
                 return (
                     CborValue::Tag(10, Box::new(CborValue::Text(v))),
@@ -385,7 +371,6 @@ fn mysql_column_to_cbor(
         _ => {}
     }
 
-    // Fallback: try common types in order
     if let Ok(v) = row.try_get::<i64, _>(ordinal) {
         return (CborValue::Integer(v.into()), Some(MysqlTypeVariants::Int8));
     }

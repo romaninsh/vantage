@@ -34,8 +34,6 @@ impl Point {
     }
 }
 
-// -- MySQL: ST_GeomFromText('POINT(x y)', srid) -------------------------------
-
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Point {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
@@ -49,8 +47,6 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Point {
     }
 }
 
-// -- PostgreSQL: ST_SetSRID(ST_MakePoint(x, y), srid) -------------------------
-
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType> for Point {
     fn expr(&self) -> Expression<crate::postgres::types::AnyPostgresType> {
@@ -63,8 +59,6 @@ impl Expressive<crate::postgres::types::AnyPostgresType> for Point {
         )
     }
 }
-
-// -- SQLite: MakePoint(x, y, srid) (SpatiaLite) ------------------------------
 
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType> for Point {

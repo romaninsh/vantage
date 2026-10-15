@@ -110,8 +110,6 @@ fn strftime_to_mysql(fmt: &str) -> String {
     out
 }
 
-// -- SQLite: STRFTIME('%Y-%m', expr) -----------------------------------------
-
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType>
     for DateFormat<crate::sqlite::types::AnySqliteType>
@@ -129,8 +127,6 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
         )
     }
 }
-
-// -- MySQL: DATE_FORMAT(expr, '%Y-%m') ---------------------------------------
 
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType>
@@ -151,8 +147,6 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
         )
     }
 }
-
-// -- PostgreSQL: TO_CHAR(expr, 'YYYY-MM') ------------------------------------
 
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType>

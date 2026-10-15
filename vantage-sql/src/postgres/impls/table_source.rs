@@ -362,7 +362,6 @@ impl TableSource for PostgresDB {
         guard_replace(self, table, id, record).await?;
 
         let id_field_name = table.id_field_name();
-        // PostgreSQL: INSERT ... ON CONFLICT (id) DO UPDATE SET ...
         let insert = crate::postgres::statements::PostgresInsert::new(table.table_name())
             .with_record(record)
             // The explicit id param is authoritative on this path, so apply it

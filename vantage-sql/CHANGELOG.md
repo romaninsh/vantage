@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1 — 2026-10-15
+
+- The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,
+  and public behaviour the docs promise but nothing tested gets a test. No API or behaviour change.
+
 ## 0.9.0 — 2026-10-14
 
 ### Breaking changes

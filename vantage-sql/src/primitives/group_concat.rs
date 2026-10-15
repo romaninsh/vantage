@@ -31,7 +31,6 @@ impl<T: Debug + Display + Clone> GroupConcat<T> {
     }
 }
 
-// SQLite: GROUP_CONCAT(DISTINCT expr, separator)
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType>
     for GroupConcat<crate::sqlite::types::AnySqliteType>
@@ -43,7 +42,6 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     }
 }
 
-// PostgreSQL: STRING_AGG(DISTINCT expr, separator)
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType>
     for GroupConcat<crate::postgres::types::AnyPostgresType>
@@ -55,7 +53,6 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
     }
 }
 
-// MySQL: GROUP_CONCAT(DISTINCT expr SEPARATOR separator)
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType>
     for GroupConcat<crate::mysql::types::AnyMysqlType>

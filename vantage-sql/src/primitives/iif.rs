@@ -39,8 +39,6 @@ impl<T: Debug + Display + Clone> Iif<T> {
     }
 }
 
-// -- SQLite: IIF(cond, then, else) --------------------------------------------
-
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType> for Iif<crate::sqlite::types::AnySqliteType> {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
@@ -55,8 +53,6 @@ impl Expressive<crate::sqlite::types::AnySqliteType> for Iif<crate::sqlite::type
     }
 }
 
-// -- MySQL: IF(cond, then, else) ----------------------------------------------
-
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Iif<crate::mysql::types::AnyMysqlType> {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
@@ -70,8 +66,6 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Iif<crate::mysql::types::
         )
     }
 }
-
-// -- PostgreSQL: CASE WHEN cond THEN then ELSE else END -----------------------
 
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType>

@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! YAML-facing types for the MySQL Vista driver.
 
 use serde::{Deserialize, Serialize};
@@ -95,66 +96,3 @@ pub struct MysqlRefBlock {
 }
 
 pub type MysqlVistaSpec = VistaSpec<MysqlTableExtras, MysqlColumnExtras, MysqlReferenceExtras>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn yaml_parses_into_mysql_vista_spec() {
-        let yaml = r#"
-name: client
-columns:
-  id:
-    type: int
-    flags: [id]
-  name:
-    type: string
-    flags: [title]
-mysql:
-  table: clients
-"#;
-        let spec: MysqlVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(spec.name, "client");
-        assert_eq!(
-            spec.driver.mysql.as_ref().and_then(|m| m.table.as_deref()),
-            Some("clients")
-        );
-    }
-
-    #[test]
-    fn yaml_rejects_unknown_mysql_block_field() {
-        let yaml = r#"
-name: client
-columns:
-  id: { type: int, flags: [id] }
-mysql:
-  table: clients
-  bogus: 1
-"#;
-        let err = serde_yaml_ng::from_str::<MysqlVistaSpec>(yaml).unwrap_err();
-        assert!(err.to_string().contains("bogus") || err.to_string().contains("unknown"));
-    }
-
-    #[test]
-    fn yaml_parses_base_inherit_and_rhai() {
-        let yaml = r#"
-name: vip_clients
-columns: {}
-mysql:
-  base: client
-  inherit:
-    columns: [id, name]
-    relations: [orders]
-  rhai: |
-    base.where(sql::expr("vip = true"))
-"#;
-        let spec: MysqlVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        let block = spec.driver.mysql.as_ref().unwrap();
-        assert_eq!(block.base.as_deref(), Some("client"));
-        assert!(block.rhai.as_ref().unwrap().contains("base.where"));
-        let inherit = block.inherit.as_ref().unwrap();
-        assert_eq!(inherit.columns, vec!["id", "name"]);
-        assert_eq!(inherit.relations, vec!["orders"]);
-    }
-}

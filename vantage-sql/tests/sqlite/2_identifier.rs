@@ -4,12 +4,6 @@ use vantage_sql::primitives::identifier::ident;
 use vantage_sql::sqlite_expr;
 
 #[test]
-fn test_id_in_select() {
-    let expr = sqlite_expr!("SELECT {} FROM {}", (ident("name")), (ident("product")));
-    assert_eq!(expr.preview(), "SELECT \"name\" FROM \"product\"");
-}
-
-#[test]
 fn test_id_in_condition() {
     let expr = sqlite_expr!("{} = {}", (ident("price")), 100i64);
     assert_eq!(expr.preview(), "\"price\" = 100");
@@ -22,43 +16,19 @@ fn test_id_with_alias() {
 }
 
 #[test]
+fn test_id_embedded_quote_is_doubled() {
+    let expr = sqlite_expr!("SELECT {}", (ident("x\" ; DROP TABLE users --")));
+    assert_eq!(expr.preview(), "SELECT \"x\"\" ; DROP TABLE users --\"");
+}
+
+#[test]
+fn test_id_embedded_quote_in_alias_is_doubled() {
+    let expr = sqlite_expr!("SELECT {}", (ident("col").with_alias("a\"b")));
+    assert_eq!(expr.preview(), "SELECT \"col\" AS \"a\"\"b\"");
+}
+
+#[test]
 fn test_id_qualified() {
     let expr = sqlite_expr!("SELECT {}", (ident("name").dot_of("t")));
     assert_eq!(expr.preview(), "SELECT \"t\".\"name\"");
-}
-
-#[test]
-fn test_id_with_space() {
-    let expr = sqlite_expr!("SELECT {}", (ident("first name")));
-    assert_eq!(expr.preview(), "SELECT \"first name\"");
-}
-
-#[test]
-fn test_id_with_hyphen() {
-    let expr = sqlite_expr!("SELECT {}", (ident("my-column")));
-    assert_eq!(expr.preview(), "SELECT \"my-column\"");
-}
-
-#[test]
-fn test_id_reserved_word() {
-    let expr = sqlite_expr!("SELECT {} FROM {}", (ident("select")), (ident("order")));
-    assert_eq!(expr.preview(), "SELECT \"select\" FROM \"order\"");
-}
-
-#[test]
-fn test_id_with_dot_in_name() {
-    let expr = sqlite_expr!("SELECT {}", (ident("weird.name")));
-    assert_eq!(expr.preview(), "SELECT \"weird.name\"");
-}
-
-#[test]
-fn test_id_unicode() {
-    let expr = sqlite_expr!("SELECT {}", (ident("名前")));
-    assert_eq!(expr.preview(), "SELECT \"名前\"");
-}
-
-#[test]
-fn test_id_number_start() {
-    let expr = sqlite_expr!("SELECT {}", (ident("1bad_name")));
-    assert_eq!(expr.preview(), "SELECT \"1bad_name\"");
 }

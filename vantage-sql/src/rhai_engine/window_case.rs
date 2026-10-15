@@ -12,8 +12,6 @@ use vantage_rhai::rhai;
 
 use super::{RhaiCase, RhaiExpr, RhaiIdent, RhaiWindow};
 
-// ── Window helpers ─────────────────────────────────────────────────────
-
 pub fn window_new<V: Debug + Display + Clone>() -> RhaiWindow<V> {
     RhaiWindow(Window::new())
 }
@@ -93,8 +91,6 @@ where
     RhaiExpr(w.0.apply(id.0.expr()))
 }
 
-// ── Case helpers ───────────────────────────────────────────────────────
-
 pub fn case_new<V: Debug + Display + Clone>() -> RhaiCase<V> {
     RhaiCase(Case::new())
 }
@@ -140,12 +136,9 @@ where
     RhaiExpr(c.0.expr())
 }
 
-// ── Macro ──────────────────────────────────────────────────────────────
-
 #[macro_export]
 macro_rules! register_window_case {
     ($engine:expr, $ns:expr, value: $V:ty) => {{
-        // Window constructors and methods
         $ns.func("window", $crate::rhai_engine::window_case::window_new::<$V>);
 
         $engine.register_fn(
@@ -181,7 +174,6 @@ macro_rules! register_window_case {
             $crate::rhai_engine::window_case::window_apply_id::<$V>,
         );
 
-        // Case constructors and methods
         $ns.func(
             "case_when",
             $crate::rhai_engine::window_case::case_new::<$V>,
@@ -198,7 +190,6 @@ macro_rules! register_window_case {
 
         $engine.register_fn("expr", $crate::rhai_engine::window_case::case_expr::<$V>);
 
-        // Clone for window/case
         $engine.register_fn(
             "clone",
             |w: $crate::rhai_engine::RhaiWindow<$V>| -> $crate::rhai_engine::RhaiWindow<$V> { w },

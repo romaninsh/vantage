@@ -95,6 +95,14 @@ fn test_select_order_and_limit() {
 }
 
 #[test]
+fn test_select_limit_with_offset() {
+    let s = SqliteSelect::new()
+        .with_source("product")
+        .with_limit(Some(10), Some(20));
+    assert_eq!(s.preview(), "SELECT * FROM \"product\" LIMIT 10 OFFSET 20");
+}
+
+#[test]
 fn test_select_distinct() {
     let mut s = SqliteSelect::new()
         .with_source("product")

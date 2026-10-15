@@ -32,10 +32,7 @@ pub fn friendly_type_name(val: &Dynamic) -> &'static str {
     }
 }
 
-// ── Macro ──────────────────────────────────────────────────────────────
-//
 // Uses type aliases Ex, Id from register_engine! scope.
-
 #[macro_export]
 macro_rules! register_convert {
     (value: $V:ty) => {

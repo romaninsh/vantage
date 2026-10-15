@@ -29,6 +29,10 @@ def load(out, crate, package, jaccard=0.9):
         files += [os.path.join(root, n) for n in names if n.endswith(".rs")]
     texts = {f: open(f, encoding="utf-8").read().splitlines() for f in files}
 
+    # Runs since matrix.py records the binary kind know which tests are unit
+    # tests; older runs fall back to where the function name is found.
+    unit = set(data["internal"]) if "internal" in data else None
+
     def locate(key):
         """(relative file, first line, last line, source lines) of a test
         function, attributes and doc comments included; lines are 1-based."""
@@ -38,9 +42,12 @@ def load(out, crate, package, jaccard=0.9):
         pattern = re.compile(rf"^\s*(pub(\(crate\))?\s+)?(async\s+)?fn\s+{re.escape(name)}\s*\(")
         best = None
         for f, lines in texts.items():
+            rel = os.path.relpath(f, crate)
+            # A name shared by a unit test and a `tests/` test must not swap their files.
+            if unit is not None and (key in unit) != rel.startswith("src/"):
+                continue
             for i, line in enumerate(lines):
                 if pattern.match(line):
-                    rel = os.path.relpath(f, crate)
                     parts = re.split(r"[/.]", rel)
                     score = sum(1 for s in segments[:-1] if s in parts)
                     score += 1 if binary.split("::")[-1] in parts else 0
@@ -63,7 +70,10 @@ def load(out, crate, package, jaccard=0.9):
         return (rel, top + 1, end + 1, lines[top:end + 1])
 
     loc = {k: locate(k) for k in all_sets}
-    internal = sorted(k for k in all_sets if loc[k][0].startswith("src/"))
+    if unit is not None:
+        internal = sorted(k for k in all_sets if k in unit)
+    else:
+        internal = sorted(k for k in all_sets if loc[k][0].startswith("src/"))
     internal_set = set(internal)
     sets = {k: s for k, s in all_sets.items() if k not in internal_set}
 

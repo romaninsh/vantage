@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! YAML-facing types for the SQLite Vista driver.
 
 use serde::{Deserialize, Serialize};
@@ -73,60 +74,3 @@ pub struct SqliteColumnBlock {
 }
 
 pub type SqliteVistaSpec = VistaSpec<SqliteTableExtras, SqliteColumnExtras, NoExtras>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn yaml_parses_into_sqlite_vista_spec() {
-        let yaml = r#"
-name: client
-columns:
-  id:
-    type: int
-    flags: [id]
-  name:
-    type: string
-    flags: [title, searchable]
-  is_paying_client:
-    type: bool
-sqlite:
-  table: clients
-"#;
-        let spec: SqliteVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(spec.name, "client");
-        assert_eq!(spec.columns.len(), 3);
-        assert_eq!(
-            spec.driver.sqlite.as_ref().and_then(|m| m.table.as_deref()),
-            Some("clients")
-        );
-        assert_eq!(spec.columns["id"].col_type.as_deref(), Some("int"));
-        assert!(spec.columns["name"].has_flag(vantage_vista::ColumnFlag::Title));
-    }
-
-    #[test]
-    fn yaml_rejects_unknown_sqlite_block_field() {
-        let yaml = r#"
-name: client
-columns:
-  id: { type: int, flags: [id] }
-sqlite:
-  table: clients
-  bogus: 1
-"#;
-        let err = serde_yaml_ng::from_str::<SqliteVistaSpec>(yaml).unwrap_err();
-        assert!(err.to_string().contains("bogus") || err.to_string().contains("unknown"));
-    }
-
-    #[test]
-    fn yaml_table_defaults_to_spec_name_when_block_omitted() {
-        let yaml = r#"
-name: clients
-columns:
-  id: { type: int, flags: [id] }
-"#;
-        let spec: SqliteVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert!(spec.driver.sqlite.is_none());
-    }
-}

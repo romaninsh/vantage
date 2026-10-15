@@ -57,11 +57,8 @@ impl MysqlDB {
     }
 }
 
-// DataSource marker trait
 impl vantage_expressions::traits::datasource::DataSource for MysqlDB {}
 
-// ExprDataSource impl
 mod expr_data_source;
 
-// SelectableDataSource impl
 mod selectable_data_source;

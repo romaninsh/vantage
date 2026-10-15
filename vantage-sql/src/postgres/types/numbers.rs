@@ -15,8 +15,6 @@ use super::{
 };
 use ciborium::Value;
 
-// -- i16 -> Int2 (SMALLINT) ---------------------------------------------------
-
 impl PostgresType for i16 {
     type Target = PostgresTypeInt2Marker;
 
@@ -32,8 +30,6 @@ impl PostgresType for i16 {
         }
     }
 }
-
-// -- i32 -> Int4 (INTEGER) ----------------------------------------------------
 
 impl PostgresType for i32 {
     type Target = PostgresTypeInt4Marker;
@@ -51,8 +47,6 @@ impl PostgresType for i32 {
     }
 }
 
-// -- i64 -> Int8 (BIGINT) ----------------------------------------------------
-
 impl PostgresType for i64 {
     type Target = PostgresTypeInt8Marker;
 
@@ -68,8 +62,6 @@ impl PostgresType for i64 {
         }
     }
 }
-
-// -- Smaller integer types mapped to appropriate PostgreSQL variants -----------
 
 impl PostgresType for i8 {
     type Target = PostgresTypeInt2Marker;
@@ -135,8 +127,6 @@ impl PostgresType for u32 {
     }
 }
 
-// -- Float types --------------------------------------------------------------
-
 impl PostgresType for f32 {
     type Target = PostgresTypeFloat4Marker;
 
@@ -168,8 +158,6 @@ impl PostgresType for f64 {
         }
     }
 }
-
-// -- Option<T> -> Null for None, delegates to T for Some ----------------------
 
 impl<T: PostgresType> PostgresType for Option<T> {
     type Target = T::Target;

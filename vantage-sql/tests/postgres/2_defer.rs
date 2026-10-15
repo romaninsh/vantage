@@ -94,6 +94,24 @@ async fn test_cross_database_deferred() {
     );
 }
 
+// ── Deferred query that finds nothing ──────────────────────────────────────
+
+#[tokio::test]
+async fn test_deferred_without_a_row_resolves_to_no_rows() {
+    let (config_db, _) = setup("defer4").await;
+
+    let missing = postgres_expr!(
+        "SELECT value FROM \"defer4_config\" WHERE key = {}",
+        "no_such_key"
+    );
+    let resolved = match config_db.defer(missing).call().await.unwrap() {
+        ExpressiveEnum::Scalar(value) => value,
+        _ => panic!("a deferred query resolves to a scalar"),
+    };
+
+    assert!(records(resolved).is_empty());
+}
+
 // ── Deferred mixed with regular scalar parameters ──────────────────────────
 
 #[tokio::test]

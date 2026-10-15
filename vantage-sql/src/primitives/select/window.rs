@@ -82,7 +82,6 @@ impl<T: Debug + Display + Clone> Window<T> {
         )
     }
 
-    /// Render the window spec — either a named reference or inline `(...)`.
     fn spec_expr(&self) -> Expression<T> {
         if let Some(name) = &self.named_ref {
             return Expression::new(name.clone(), vec![]);

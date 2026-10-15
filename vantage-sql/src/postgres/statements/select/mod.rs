@@ -25,7 +25,6 @@ pub struct PostgresSelect {
     pub limit: Option<i64>,
     pub skip: Option<i64>,
 
-    // -- PostgreSQL-specific fields --
     pub distinct_on: Vec<Expr>,
 }
 
@@ -80,8 +79,6 @@ impl PostgresSelect {
         self
     }
 }
-
-// -- PostgreSQL-specific methods --
 
 impl PostgresSelect {
     /// `SELECT DISTINCT ON (expr, ...) ...`

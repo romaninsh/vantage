@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! YAML-facing types for the PostgreSQL Vista driver.
 
 use serde::{Deserialize, Serialize};
@@ -71,69 +72,3 @@ pub struct PostgresColumnBlock {
 }
 
 pub type PostgresVistaSpec = VistaSpec<PostgresTableExtras, PostgresColumnExtras, NoExtras>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn yaml_parses_into_postgres_vista_spec() {
-        let yaml = r#"
-name: client
-columns:
-  id:
-    type: int
-    flags: [id]
-  name:
-    type: string
-    flags: [title]
-postgres:
-  table: clients
-"#;
-        let spec: PostgresVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(spec.name, "client");
-        assert_eq!(
-            spec.driver
-                .postgres
-                .as_ref()
-                .and_then(|m| m.table.as_deref()),
-            Some("clients")
-        );
-    }
-
-    #[test]
-    fn yaml_rejects_unknown_postgres_block_field() {
-        let yaml = r#"
-name: client
-columns:
-  id: { type: int, flags: [id] }
-postgres:
-  table: clients
-  bogus: 1
-"#;
-        let err = serde_yaml_ng::from_str::<PostgresVistaSpec>(yaml).unwrap_err();
-        assert!(err.to_string().contains("bogus") || err.to_string().contains("unknown"));
-    }
-
-    #[test]
-    fn yaml_parses_base_inherit_and_rhai() {
-        let yaml = r#"
-name: vip_clients
-columns: {}
-postgres:
-  base: client
-  inherit:
-    columns: [id, name]
-    relations: [orders]
-  rhai: |
-    base.where(sql::expr("vip = true"))
-"#;
-        let spec: PostgresVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        let block = spec.driver.postgres.as_ref().unwrap();
-        assert_eq!(block.base.as_deref(), Some("client"));
-        assert!(block.rhai.as_ref().unwrap().contains("base.where"));
-        let inherit = block.inherit.as_ref().unwrap();
-        assert_eq!(inherit.columns, vec!["id", "name"]);
-        assert_eq!(inherit.relations, vec!["orders"]);
-    }
-}

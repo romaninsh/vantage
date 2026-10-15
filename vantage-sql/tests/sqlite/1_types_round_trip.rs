@@ -101,3 +101,16 @@ fn test_from_bool() {
     let val: AnySqliteType = false.into();
     assert_eq!(val.try_get::<bool>(), Some(false));
 }
+
+// ── Variant detection from raw CBOR tags ───────────────────────────────────
+
+#[test]
+fn test_variant_from_cbor_decimal_tag() {
+    use ciborium::Value as CborValue;
+
+    let decimal = CborValue::Tag(10, Box::new(CborValue::Text("123.456".into())));
+    assert_eq!(
+        SqliteTypeVariants::from_cbor(&decimal),
+        Some(SqliteTypeVariants::Numeric)
+    );
+}

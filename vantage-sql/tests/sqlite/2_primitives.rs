@@ -41,6 +41,77 @@ fn test_typed_column_ne() {
     assert_eq!(cond.into_expr().preview(), "status != 'cancelled'");
 }
 
+#[test]
+fn test_typed_column_lt_and_gte() {
+    let price = Column::<i64>::new("price");
+    let lt: SqliteCondition = price.lt(150i64);
+    assert_eq!(lt.into_expr().preview(), "price < 150");
+    let gte: SqliteCondition = price.gte(150i64);
+    assert_eq!(gte.into_expr().preview(), "price >= 150");
+}
+
+#[test]
+fn test_in_and_not_in_take_a_values_expression() {
+    let vip = || sqlite_expr!("SELECT id FROM vip");
+    assert_eq!(
+        ident("id").in_(vip()).into_expr().preview(),
+        "\"id\" IN (SELECT id FROM vip)"
+    );
+    assert_eq!(
+        ident("id").not_in(vip()).into_expr().preview(),
+        "\"id\" NOT IN (SELECT id FROM vip)"
+    );
+}
+
+#[test]
+fn test_in_list_and_not_in_list_take_scalars() {
+    assert_eq!(
+        ident("status")
+            .in_list(&["new", "open"])
+            .into_expr()
+            .preview(),
+        "\"status\" IN ('new', 'open')"
+    );
+    assert_eq!(
+        ident("status")
+            .not_in_list(&["new", "open"])
+            .into_expr()
+            .preview(),
+        "\"status\" NOT IN ('new', 'open')"
+    );
+}
+
+#[test]
+fn test_cast_wraps_the_expression() {
+    assert_eq!(
+        ident("price").cast("TEXT").into_expr().preview(),
+        "CAST(\"price\" AS TEXT)"
+    );
+}
+
+#[test]
+fn test_and_groups_two_conditions() {
+    let price = Column::<i64>::new("price");
+    assert_eq!(
+        price.gt(10i64).and_(price.lt(99i64)).preview(),
+        "(price > 10 AND price < 99)"
+    );
+}
+
+#[test]
+fn test_typed_column_is_null() {
+    let note = Column::<i64>::new("note");
+    let cond: SqliteCondition = note.is_null();
+    assert_eq!(cond.into_expr().preview(), "note IS NULL");
+}
+
+#[test]
+fn test_typed_column_is_not_null() {
+    let note = Column::<i64>::new("note");
+    let cond: SqliteCondition = note.is_not_null();
+    assert_eq!(cond.into_expr().preview(), "note IS NOT NULL");
+}
+
 // ── Chaining across type boundaries ─────────────────────────────────
 
 #[test]
@@ -104,6 +175,23 @@ fn test_fx_nested() {
     let f: vantage_sql::primitives::Fx<AnySqliteType> =
         fx!("round", fx!("avg", ident("price")), 2i64);
     assert_eq!(f.expr().preview(), "ROUND(AVG(\"price\"), 2)");
+}
+
+// ── Interval: SQLite has no interval type, so it renders days ──────────
+
+#[test]
+fn test_interval_renders_as_days() {
+    let days = |amount: i64, unit: &str| -> String {
+        let e: vantage_expressions::Expression<AnySqliteType> = Interval::new(amount, unit).expr();
+        e.preview()
+    };
+
+    assert_eq!(days(30, "day"), "30");
+    assert_eq!(days(2, "weeks"), "14");
+    assert_eq!(days(1, "week"), "7");
+    assert_eq!(days(1, "month"), "30");
+    assert_eq!(days(1, "year"), "365");
+    assert_eq!(days(48, "hours"), "2");
 }
 
 // ── ternary ─────────────────────────────────────────────────────────
@@ -175,6 +263,23 @@ fn test_ident_qualified() {
 fn test_ident_alias() {
     let e: vantage_expressions::Expression<AnySqliteType> = ident("total").with_alias("t").expr();
     assert_eq!(e.preview(), "\"total\" AS \"t\"");
+}
+
+// ── Union ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_union_intersect_joins_selects_with_intersect() {
+    use vantage_expressions::Selectable;
+    use vantage_sql::primitives::union::Union;
+    use vantage_sql::sqlite::statements::SqliteSelect;
+
+    let first = SqliteSelect::new().with_source("t1").with_field("id");
+    let second = SqliteSelect::new().with_source("t2").with_field("id");
+    let compound = Union::new(first).intersect(second);
+    assert_eq!(
+        compound.expr().preview(),
+        "SELECT \"id\" FROM \"t1\" INTERSECT SELECT \"id\" FROM \"t2\""
+    );
 }
 
 // ── or_ / and_ ─────────────────────────────────────────────────────

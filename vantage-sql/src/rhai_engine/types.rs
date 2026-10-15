@@ -6,8 +6,6 @@ use crate::primitives::select::window::Window;
 use std::fmt::{self, Debug, Display};
 use vantage_expressions::Expression;
 
-// ── RhaiIdent ──────────────────────────────────────────────────────────
-
 #[derive(Clone, Debug)]
 pub struct RhaiIdent(pub Identifier);
 
@@ -16,8 +14,6 @@ impl RhaiIdent {
         self.0
     }
 }
-
-// ── RhaiExpr ───────────────────────────────────────────────────────────
 
 pub struct RhaiExpr<V: Clone>(pub Expression<V>);
 
@@ -38,8 +34,6 @@ impl<V: Clone> RhaiExpr<V> {
         self.0
     }
 }
-
-// ── RhaiSelect ─────────────────────────────────────────────────────────
 
 pub struct RhaiSelect<V, S, J, C> {
     pub inner: S,
@@ -75,8 +69,6 @@ impl<V, S, J, C> RhaiSelect<V, S, J, C> {
     }
 }
 
-// ── RhaiWindow ─────────────────────────────────────────────────────────
-
 pub struct RhaiWindow<V: Debug + Display + Clone>(pub Window<V>);
 
 impl<V: Debug + Display + Clone> Clone for RhaiWindow<V> {
@@ -91,8 +83,6 @@ impl<V: Debug + Display + Clone> Debug for RhaiWindow<V> {
     }
 }
 
-// ── RhaiCase ───────────────────────────────────────────────────────────
-
 pub struct RhaiCase<V: Debug + Display + Clone>(pub Case<V>);
 
 impl<V: Debug + Display + Clone> Clone for RhaiCase<V> {
@@ -106,8 +96,6 @@ impl<V: Debug + Display + Clone> Debug for RhaiCase<V> {
         f.debug_tuple("RhaiCase").field(&self.0).finish()
     }
 }
-
-// ── Macro ──────────────────────────────────────────────────────────────
 
 #[macro_export]
 macro_rules! register_types {

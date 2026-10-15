@@ -33,7 +33,6 @@ impl SelectableDataSource<AnySqliteType, crate::condition::SqliteCondition> for 
 
         let result = self.execute(&select.expr()).await?;
 
-        // Result is an array of row objects — unwrap into individual AnySqliteType values
         match result.value() {
             ciborium::Value::Array(arr) => Ok(arr
                 .iter()

@@ -64,15 +64,9 @@ impl Identifier {
         self.alias.as_deref()
     }
 
-    /// Render with a given quote character. Used by backend `Expressive` impls.
-    ///
-    /// Every quote character inside a part is DOUBLED, the escape all three
-    /// supported dialects use (`"a""b"`, `` `a``b` ``). Identifiers were
-    /// historically code-defined, so an unescaped `format!` was safe by
-    /// construction; that stopped being true once vista scripts could read
-    /// runtime values (an observation's `args`), where `ident(args.col)` on
-    /// a value containing a quote would otherwise terminate the identifier
-    /// and let the rest of the value be parsed as SQL.
+    /// Every quote character inside a part is doubled (`"a""b"`, `` `a``b` ``):
+    /// vista scripts pass runtime values to `ident(args.col)`, and an
+    /// unescaped quote would end the identifier and let the rest parse as SQL.
     fn render_with(&self, q: char) -> String {
         let quote = |p: &str| format!("{q}{}{q}", p.replace(q, &format!("{q}{q}")));
         let base = self
@@ -134,32 +128,5 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Identifier {
 impl From<Identifier> for Expression<crate::mysql::types::AnyMysqlType> {
     fn from(id: Identifier) -> Self {
         id.expr()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parts_and_alias_quote_normally() {
-        let id = ident("name").dot_of("u").with_alias("n");
-        assert_eq!(id.render_with('"'), r#""u"."name" AS "n""#);
-    }
-
-    #[test]
-    fn embedded_quotes_are_doubled_not_escaped_out_of() {
-        // The break-out attempt: a value that would close the identifier and
-        // continue as SQL. Doubling keeps it one (absurd but inert) name.
-        let id = ident(r#"x" ; DROP TABLE users --"#);
-        assert_eq!(id.render_with('"'), r#""x"" ; DROP TABLE users --""#);
-        let id = ident("a`b");
-        assert_eq!(id.render_with('`'), "`a``b`");
-    }
-
-    #[test]
-    fn alias_is_escaped_too() {
-        let id = ident("col").with_alias(r#"a"b"#);
-        assert_eq!(id.render_with('"'), r#""col" AS "a""b""#);
     }
 }

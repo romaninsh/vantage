@@ -1,13 +1,8 @@
-//! Vista bridge for the SQLite backend.
-//!
-//! Construct a `Vista` from a typed `Table<SqliteDB, E>` via
-//! `SqliteDB::vista_factory()`, or from a YAML spec via
-//! `SqliteVistaFactory::from_yaml`. The YAML path builds a
-//! `Table<SqliteDB, EmptyEntity>` first and wraps it as `from_table` does —
-//! one construction path, one reading path.
-//!
-//! `AnySqliteType` already wraps `ciborium::Value`, so the boundary
-//! translation is a passthrough; ids stringify (matching `TableSource::Id`).
+//! Vista bridge for the SQLite backend: `SqliteDB::vista_factory()` builds a
+//! `Vista` from a typed `Table<SqliteDB, E>` or, through
+//! `VistaFactory::from_yaml`, from a YAML spec. The YAML path builds a
+//! `Table<SqliteDB, EmptyEntity>` first and wraps it as `from_table` does.
+//! Ids stringify, matching `TableSource::Id`.
 
 pub mod factory;
 #[cfg(feature = "rhai")]
