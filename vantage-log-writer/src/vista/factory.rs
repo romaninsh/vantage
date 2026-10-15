@@ -26,7 +26,6 @@ impl LogWriterVistaFactory {
         let name = table.table_name().to_string();
         let any_table = table.into_entity::<EmptyEntity>();
 
-        // Insert is the shell's one capability: it reads nothing back.
         let capabilities = VistaCapabilities::new().with(Capability::Insert);
         let shell = LogWriterTableShell::new(any_table, capabilities, metadata);
         Ok(Vista::new(name, shell))

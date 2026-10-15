@@ -1,75 +1,36 @@
 //! The contract a compiled-in model crate implements to serve its
 //! tables and actions to an application.
 //!
-//! A Vantage application reads its screens from YAML, and its tables
-//! from whatever the YAML declares. A *bundle* is the other source: a
-//! Rust crate, compiled into the binary, that hands the application
-//! typed tables and the operations that go with them. The application
-//! resolves a bundle table exactly like a declared one — pages, menus,
-//! relations and scripting cannot tell them apart.
+//! A *bundle* is a Rust crate, compiled into the binary, that hands the
+//! application typed tables and the operations that go with them. The
+//! application resolves a bundle table exactly like one declared in YAML.
 //!
-//! # Why this is its own crate
+//! The traits live in their own crate, above `vantage-vista` and
+//! `vantage-action`, so a model crate can implement them without
+//! depending on an application.
 //!
-//! The traits are small, but which side of the dependency they sit on
-//! decides how a model ships. Keeping them inside the application means
-//! a model crate must depend on the application to implement them,
-//! which it cannot: the application is a binary, and a model belongs to
-//! whoever owns the data. So the application's build grows a branch per
-//! model — a Cargo feature, an optional path dependency, and a
-//! hand-written shim — and every release is merged onto each one.
+//! [`ModelBundle::Connection`] is an associated type: a bundle names its
+//! own database handle, and the application holds the matching
+//! connections (`dyn ModelBundle<Connection = SurrealDB>`).
 //!
-//! Published here, the arrow turns around. A model crate depends on
-//! this, implements [`ModelBundle`], and any application can compile it
-//! in knowing nothing about that model beyond its name.
-//!
-//! It cannot live in `vantage-core` or `vantage-types` for a duller
-//! reason: [`Vista`] and [`vantage_action::ModelAction`] both sit above
-//! those, so the traits have to sit above them in turn.
-//!
-//! # The connection is the bundle's to name
-//!
-//! [`ModelBundle::Connection`] is an associated type, not a concrete
-//! database handle. A bundle over SurrealDB sets it to `SurrealDB`; one
-//! over Postgres sets it to whatever it connects with. The application
-//! holds the connections and hands the right one back — it just has to
-//! agree with the bundle on the type, which it does by naming it:
-//! `dyn ModelBundle<Connection = SurrealDB>`.
-//!
-//! Writing the database into the trait itself would have been shorter
-//! and would have made the second kind of bundle a breaking change to
-//! everyone who had implemented the first.
-//!
-//! # What a bundle provides
-//!
-//! - [`ModelBundle::tables`] — the tables, by catalog key and the
-//!   datasource whose connection they use. Note there is no schema
-//!   here: the application builds each table's [`Vista`] and reads the
-//!   columns, flags and references off it, so the model crate stays the
-//!   single source of truth and cannot drift from a copy of itself.
-//! - [`ModelBundle::model_actions`] — typed operations carrying their
-//!   own input and output schemas ([`vantage_action::ModelAction`]).
-//!   The application synthesizes a form from the input schema, so the
-//!   screen declaring the action does not restate its fields.
-//! - [`ModelBundle::actions`] — the older, untyped [`BuiltinAction`]:
-//!   JSON in, JSON out, with the fields declared by the screen. Kept
-//!   for bodies that predate model actions; prefer `model_actions` for
-//!   anything new.
+//! A bundle provides [`ModelBundle::tables`] (keys and datasources, no
+//! schema: the application reads columns off each table's [`Vista`]),
+//! [`ModelBundle::model_actions`] (typed, self-describing operations) and
+//! the older untyped [`ModelBundle::actions`].
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use vantage_vista::Vista;
 
-/// One table a bundle provides.
-///
-/// There is deliberately no schema: see the note on
+/// One table a bundle provides. Carries no schema: see
 /// [`ModelBundle::tables`].
 pub struct BundleTable {
     /// Catalog key the table is reachable under (`tag`, `batch`, …).
     pub key: String,
-    /// Datasource key (e.g. `golf`) whose connection this table uses.
-    /// Named, not held — the application owns connections and hands the
-    /// right one to [`ModelBundle::build_vista`].
+    /// Datasource key (e.g. `golf`) whose connection this table uses. The
+    /// application owns connections and passes the right one to
+    /// [`ModelBundle::build_vista`].
     pub datasource: String,
     /// Display title for the synthesized config.
     pub title: Option<String>,
@@ -88,11 +49,9 @@ pub trait ModelBundle: Send + Sync {
 
     /// The tables this bundle provides.
     ///
-    /// Only keys and datasources — the application introspects each
-    /// table's real shape from the [`Vista`] that
-    /// [`ModelBundle::build_vista`] returns, rather than from anything
-    /// restated here. A description that could disagree with the model
-    /// eventually does.
+    /// Only keys and datasources: the application introspects each
+    /// table's shape from the [`Vista`] that [`ModelBundle::build_vista`]
+    /// returns, so the model stays the single source of truth.
     fn tables(&self) -> Vec<BundleTable>;
 
     /// Build the typed Vista for one table, given the live connection
@@ -120,14 +79,9 @@ pub trait ModelBundle: Send + Sync {
     }
 }
 
-/// A compiled-in action body with no schema of its own.
-///
-/// The screen declaring it owns the contract — dialog, form fields,
-/// placement — and this is only what runs when the user confirms.
-/// [`vantage_action::ModelAction`] supersedes it: an action that
-/// describes its own input can be rendered, called over HTTP and
-/// scripted from one definition, where this one can only be rendered
-/// from a screen that already knows its fields.
+/// A compiled-in action body with no schema of its own: the screen that
+/// declares it owns the form fields. Superseded by
+/// [`vantage_action::ModelAction`], which describes its own input.
 #[async_trait::async_trait]
 pub trait BuiltinAction: Send + Sync {
     /// The database handle this action writes through. Matches the

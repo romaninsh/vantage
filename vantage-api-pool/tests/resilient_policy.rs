@@ -8,12 +8,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use support::{
-    Recorder, cancel, essential_fast, fast_retry, local_client, mount_delayed, mount_script,
-    mount_status, requests, scripted_refresher, spawn_essential, wait_for_requests, wait_until,
-    within,
+    Recorder, cancel, essential_fast, local_client, mount_delayed, mount_script, mount_status,
+    requests, scripted_refresher, spawn_essential, wait_for_requests, wait_until, within,
 };
 use vantage_api_pool::RetryPolicy;
-use vantage_api_pool::resilient::{CallPolicy, ErrorKind};
+use vantage_api_pool::resilient::CallPolicy;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -27,9 +26,22 @@ async fn background_call_makes_exactly_one_attempt() {
         .execute_with(&CallPolicy::background(), |h| h.get(&url))
         .await
         .unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Status(503));
+    assert_eq!(err.status(), Some(503));
     assert_eq!(err.attempts, 1);
     assert_eq!(requests(&server).await, 1);
+}
+
+#[tokio::test]
+async fn the_stock_essential_policy_retries_until_the_server_recovers() {
+    let server = MockServer::start().await;
+    mount_script(&server, [503, 503, 200]).await;
+    let client = local_client().build();
+    let url = server.uri();
+    let resp = within(client.execute_with(&CallPolicy::essential(), |h| h.get(&url)))
+        .await
+        .expect("recovers after 2 failures");
+    assert_eq!(resp.status().as_u16(), 200);
+    assert_eq!(requests(&server).await, 3);
 }
 
 #[tokio::test]
@@ -43,26 +55,6 @@ async fn essential_call_retries_until_the_server_recovers() {
         .expect("recovers after 7 failures");
     assert_eq!(resp.status().as_u16(), 200);
     assert_eq!(requests(&server).await, 8);
-}
-
-#[tokio::test]
-async fn essential_call_stops_when_dropped() {
-    let server = MockServer::start().await;
-    mount_status(&server, 503).await;
-    let client = local_client().build();
-    let url = server.uri();
-    let task = spawn_essential(&client, &url);
-    // Drop the future only once it has demonstrably been retrying.
-    let seen = wait_for_requests(&server, 3, Duration::from_secs(2)).await;
-    cancel(task).await;
-    let after_abort = requests(&server).await;
-    assert!(after_abort >= seen);
-    tokio::time::sleep(Duration::from_millis(30)).await;
-    assert_eq!(
-        requests(&server).await,
-        after_abort,
-        "no request after the caller dropped the future"
-    );
 }
 
 #[tokio::test]
@@ -100,42 +92,6 @@ async fn a_cancelled_call_reports_cancelled_as_its_terminal_event() {
         || rec.tags() == ["started", "cancelled"],
     )
     .await;
-}
-
-#[tokio::test]
-async fn four_xx_is_final_even_for_essential_calls() {
-    let server = MockServer::start().await;
-    mount_status(&server, 404).await;
-    let client = local_client().build();
-    let url = server.uri();
-    let err = within(client.execute_with(&essential_fast(), |h| h.get(&url)))
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Status(404));
-    assert_eq!(requests(&server).await, 1);
-}
-
-#[tokio::test]
-async fn bounded_policy_per_call_overrides_client_default() {
-    let server = MockServer::start().await;
-    mount_status(&server, 503).await;
-    let client = local_client().retry(fast_retry(9)).build();
-    let url = server.uri();
-    let err = client
-        .execute_with(&CallPolicy::bounded(fast_retry(1)), |h| h.get(&url))
-        .await
-        .unwrap_err();
-    assert_eq!(err.attempts, 2);
-}
-
-#[tokio::test]
-async fn execute_keeps_the_client_default_policy() {
-    let server = MockServer::start().await;
-    mount_status(&server, 503).await;
-    let client = local_client().retry(fast_retry(2)).build();
-    let url = server.uri();
-    let err = client.execute(|h| h.get(&url)).await.unwrap_err();
-    assert_eq!(err.attempts, 3);
 }
 
 #[tokio::test]

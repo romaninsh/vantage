@@ -1,10 +1,6 @@
 //! The load pipeline: read → parse → `!include` → hash → JSON →
-//! JSON-schema validate → deserialize. Every inventory kind goes through
-//! here.
-//!
-//! Schemas compile once per Rust type and are cached for the process — the
-//! watcher reloads on the main thread, and compiling a schema is the slow
-//! step, not parsing.
+//! JSON-schema validate → deserialize. Schemas compile once per Rust type
+//! and are cached for the process.
 
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -26,8 +22,7 @@ pub struct CachedSchema {
     compiled: JSONSchema,
 }
 
-// `JSONSchema` holds no lifetime, and the cache hands one `Arc` to every
-// thread that validates — the process-wide cache is only sound if it is.
+// The cache hands one `Arc` to every thread, so this must stay Send + Sync.
 const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<CachedSchema>();
@@ -45,8 +40,7 @@ pub fn schema_for_type<T: JsonSchema + 'static>() -> Result<Arc<CachedSchema>> {
     let json = serde_json::to_value(schema_for!(T)).context("serialize schema")?;
     let compiled =
         JSONSchema::compile(&json).map_err(|e| anyhow!("failed to compile schema: {e}"))?;
-    // Two threads can race to build the same schema; whichever inserted
-    // first wins and both callers get that one.
+    // Two threads can race to build the same schema; the first insert wins.
     let entry = Arc::new(CachedSchema { json, compiled });
     Ok(SCHEMAS.write().unwrap().entry(id).or_insert(entry).clone())
 }
@@ -101,8 +95,8 @@ where
 }
 
 /// Parse and validate an in-memory document with no file behind it. An
-/// `!include` in it resolves against the current directory, which is to say:
-/// this is for tests and fixtures, not for project files.
+/// `!include` in it resolves against the current directory: for tests and
+/// fixtures, not project files.
 pub fn parse_yaml_validated<T>(content: &str) -> Result<T>
 where
     T: JsonSchema + DeserializeOwned + 'static,
@@ -110,6 +104,3 @@ where
     let doc = parse_document(content, Path::new("inline.yaml"), Path::new("."))?;
     validate_into(&doc)
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,7 +1,5 @@
-//! What a client tells the outside world about its traffic. The consumer
-//! (typically a health registry) keys everything by the `key` given to the
-//! builder, usually the datasource name; the crate never learns what a
-//! datasource is.
+//! What a client tells the outside world about its traffic, keyed by the `key`
+//! given to the builder.
 
 use std::time::Duration;
 
