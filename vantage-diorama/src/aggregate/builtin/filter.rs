@@ -16,9 +16,6 @@ use vantage_vista::{Condition, FilterOp, VistaMetadata};
 use crate::aggregate::aggregation::{Aggregation, Reads, Rows};
 use crate::aggregate::coerce::coerce_operand;
 
-#[cfg(test)]
-mod tests;
-
 /// Equality terms, ANDed together.
 ///
 /// # Matching

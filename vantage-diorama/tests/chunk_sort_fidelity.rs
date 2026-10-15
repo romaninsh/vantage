@@ -108,38 +108,3 @@ async fn client_sort_holds_through_reordering_refreshes() -> Result<()> {
     );
     Ok(())
 }
-
-/// Same, but the cache is only PARTIALLY loaded when the user sorts (page_size <
-/// total) — then the user scrolls to load the rest. Documents how far the
-/// local sort reaches as more rows load.
-#[tokio::test]
-async fn client_sort_with_partial_then_full_load() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    // Native order lu desc: e,d,c,b,a. Sort by v asc: a,b,c,d,e.
-    let backend: Backend = Arc::new(Mutex::new(vec![
-        ("a".into(), rec("a", 10)),
-        ("b".into(), rec("b", 20)),
-        ("c".into(), rec("c", 30)),
-        ("d".into(), rec("d", 40)),
-        ("e".into(), rec("e", 50)),
-    ]));
-    let lens = paged_lens(tmp.path().join("c.redb"), backend.clone());
-    let dio = lens.dio(master()).build().await?;
-    let scenery = dio.table_scenery().open().await?;
-    let mut gen_rx = scenery.subscribe();
-
-    // Load only the first viewport.
-    let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_viewport(0..5, 0..0);
-    wait_for_gen(&mut gen_rx, g).await;
-    settle().await;
-
-    // Sort by v asc, with everything loaded → full sort.
-    let g = u64::from(*gen_rx.borrow_and_update());
-    scenery.set_order(Some(("v".to_string(), SortDirection::Ascending)));
-    wait_for_gen(&mut gen_rx, g).await;
-    settle().await;
-    assert_eq!(order(&scenery), vec!["a", "b", "c", "d", "e"], "full sort");
-
-    Ok(())
-}

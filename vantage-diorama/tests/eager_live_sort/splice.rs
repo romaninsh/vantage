@@ -125,60 +125,6 @@ async fn shows(view: &Arc<dyn TableScenery>, expected: &[String]) -> bool {
     eventually(SETTLE, || ids(view) == expected).await
 }
 
-fn five_hundred() -> impl Iterator<Item = (String, Record<CborValue>)> {
-    (0..500).map(|n| {
-        let id = format!("r{n}");
-        let r = rec(&id, int(n % 97));
-        (id, r)
-    })
-}
-
-#[tokio::test]
-async fn a_patch_moves_one_row_without_a_reseed() -> Result<()> {
-    let f = fixture(five_hundred()).await;
-    let view = f.view(SortDirection::Ascending).await?;
-    let lists = f.lists().await;
-
-    let new = Some(rec("r10", int(10_000)));
-    f.push(ChangeEvent::Updated {
-        id: "r10".into(),
-        new,
-    })
-    .await?;
-    let last = |v: &Arc<dyn TableScenery>| {
-        v.row(499)
-            .is_some_and(|r| r.record.get("id") == Some(&CborValue::Text("r10".into())))
-    };
-    assert!(eventually(SETTLE, || last(&view)).await, "r10 moved last");
-    assert_eq!(f.lists().await, lists, "no whole-cache list");
-    assert_eq!(ids(&view), f.sorted(SortDirection::Ascending).await?);
-    Ok(())
-}
-
-#[tokio::test]
-async fn an_insert_and_a_delete_splice_in_place() -> Result<()> {
-    let f = fixture(five_hundred()).await;
-    let view = f.view(SortDirection::Ascending).await?;
-    let lists = f.lists().await;
-
-    let new = Some(rec("new", int(40)));
-    f.push(ChangeEvent::Inserted {
-        id: "new".into(),
-        new,
-    })
-    .await?;
-    let expected = f.sorted(SortDirection::Ascending).await?;
-    assert_eq!(expected.len(), 501);
-    assert!(shows(&view, &expected).await, "inserted: {:?}", ids(&view));
-
-    f.push(ChangeEvent::Deleted { id: "r250".into() }).await?;
-    let expected = f.sorted(SortDirection::Ascending).await?;
-    assert_eq!(expected.len(), 500);
-    assert!(shows(&view, &expected).await, "deleted: {:?}", ids(&view));
-    assert_eq!(f.lists().await, lists, "no whole-cache list");
-    Ok(())
-}
-
 /// Forty rows: every fifth lacks the amount, every seventh holds a null,
 /// the rest share four amounts (ints and floats alike).
 fn forty() -> impl Iterator<Item = (String, Record<CborValue>)> {

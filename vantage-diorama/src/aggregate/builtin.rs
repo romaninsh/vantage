@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Aggregations that ship with diorama.
 //!
 //! Each is a small [`Aggregation`](crate::aggregate::Aggregation) impl and nothing more —
@@ -6,8 +7,6 @@
 mod as_rows;
 mod count;
 mod filter;
-#[cfg(test)]
-mod fixtures;
 mod group;
 mod stats;
 

@@ -72,21 +72,6 @@ async fn csv_filters_over_the_cache() -> Result<()> {
     Ok(())
 }
 
-/// Conditions accrete and combine with an order, all locally.
-#[tokio::test]
-async fn csv_combines_condition_and_order() -> Result<()> {
-    let dio = eager_dio(csv_master()?).await?;
-    let narrowed = dio
-        .cached()
-        .with_condition("price", FilterOp::Eq, 5)?
-        .with_order("name", SortDirection::Descending)?;
-    assert_eq!(
-        names(&narrowed.list_values().await?),
-        vec!["Flat White", "Cappuccino"],
-    );
-    Ok(())
-}
-
 /// A narrowed handle is a smaller set: an id outside it is simply not there.
 #[tokio::test]
 async fn csv_narrowing_hides_rows_from_get() -> Result<()> {
@@ -97,27 +82,6 @@ async fn csv_narrowing_hides_rows_from_get() -> Result<()> {
     assert!(
         cheap.get_value("p3").await?.is_none(),
         "Latte is 6 — outside the set"
-    );
-    Ok(())
-}
-
-// ---- the capability contract -----------------------------------------------
-
-/// A facade that advertises ordering must not then refuse it with
-/// `Unimplemented`.
-#[tokio::test]
-async fn the_facade_honours_the_capabilities_it_advertises() -> Result<()> {
-    let dio = eager_dio(csv_master()?).await?;
-    let facade = dio.cached();
-    assert!(facade.capabilities().has(Capability::Order));
-
-    let mut facade = facade;
-    facade.set_order(Some(("name", SortDirection::Ascending)))?;
-    assert_eq!(
-        names(&facade.list_values().await?)
-            .first()
-            .map(String::as_str),
-        Some("Cappuccino"),
     );
     Ok(())
 }

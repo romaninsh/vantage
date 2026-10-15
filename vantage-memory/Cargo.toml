@@ -1,6 +1,6 @@
 [package]
 name = "vantage-memory"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -37,6 +37,6 @@ rhai = ["vantage-vista/rhai"]
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }
 vantage-vista = { version = "2.0.0", path = "../vantage-vista", features = ["contract"] }
 tokio = { version = "1", features = ["full"] }
-vantage-diorama = { version = "0.15.0", path = "../vantage-diorama" }
+vantage-diorama = { version = "1.0.0", path = "../vantage-diorama" }
 futures-util = "0.3"
 tempfile = "3"

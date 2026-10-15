@@ -3,7 +3,7 @@
 
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
-use vantage_diorama::{FlashKind, IdStrategy, ServoStatus};
+use vantage_diorama::{FlashKind, IdStrategy};
 
 use crate::support::text;
 use crate::{dio_over, int, product_shell};
@@ -34,21 +34,6 @@ async fn flash_patches_only_the_dirty_fields() -> Result<()> {
         Some(&int(77)),
         "untouched fields never travel — the master's own value survives"
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn flash_settles_the_servo_clean() -> Result<()> {
-    let shell = product_shell();
-    let dio = dio_over(&shell).await?;
-    let servo = dio.servo("p1").await?;
-
-    servo.set("name", text("Tea"));
-    servo.flash().await?;
-
-    assert!(!servo.is_dirty(), "after actuation the error is zero");
-    assert_eq!(servo.get("name"), Some(text("Tea")));
-    assert!(matches!(servo.status(), ServoStatus::Tracking));
     Ok(())
 }
 

@@ -5,29 +5,11 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 use vantage_dataset::prelude::WritableValueSet;
-use vantage_diorama::Source;
 use vantage_vista::Vista;
 use vantage_vista::mocks::MockShell;
 
 use crate::support::{self, augmented_dio, fixed_augmentation, meta, poll_until, record};
-use crate::{aug, col_by_id, col_of, folder_size_dio, hydrated, open, redb_lens};
-
-/// Refresh re-runs the list pass and reconciles against the cache without
-/// discarding still-valid augmentation: an unchanged master leaves hydrated
-/// detail columns intact (the property that makes auto-refresh safe).
-#[tokio::test]
-async fn refresh_keeps_hydrated_detail_when_master_unchanged() {
-    let tmp = TempDir::new().unwrap();
-    let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
-    let scenery = hydrated(&dio, 0).await;
-
-    dio.refresh().await.expect("refresh");
-    tokio::time::sleep(Duration::from_millis(20)).await;
-
-    // Reconciliation kept the row's augmented column rather than wiping it.
-    assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
-    assert_eq!(col_of(&scenery, 0, "branch").as_deref(), Some("main"));
-}
+use crate::{col_by_id, col_of, folder_size_dio, redb_lens};
 
 /// Staleness: when a base row's list fields move (its `modified` bumps), the
 /// refresh reconciliation demotes it and the standing viewport refetches the

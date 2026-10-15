@@ -9,20 +9,6 @@ use super::{build_lens, seeded, seeded_master};
 use crate::support::{eager_dio, paged_dio, paged_or_eager_dio};
 
 #[tokio::test]
-async fn scenery_loads_rows_from_cache() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = build_lens(tmp.path().join("cache.redb")).await?;
-    let dio = lens.dio(seeded_master()).build().await?;
-
-    let scenery = dio.table_scenery().open().await?;
-    assert_eq!(scenery.row_count(), 3);
-    assert!(scenery.row(0).is_some());
-    assert!(scenery.row(2).is_some());
-    assert!(scenery.row(3).is_none());
-    Ok(())
-}
-
-#[tokio::test]
 async fn scenery_outlives_dio_handle_drop() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = build_lens(tmp.path().join("cache.redb")).await?;

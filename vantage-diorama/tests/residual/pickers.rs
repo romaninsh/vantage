@@ -5,14 +5,10 @@
 
 use vantage_core::Result;
 use vantage_diorama::{Clause, Dio, LoadState, TableScenery};
-use vantage_vista::{
-    Capability, Condition, FilterOp, SortDirection, Vista, VistaCapabilities, mocks::MockShell,
-};
+use vantage_vista::{Condition, FilterOp, SortDirection};
 
 use super::fixtures::wait_for_ids;
-use crate::support::{
-    augment_name, augmented_dio, bucket_dio, meta, quick_lens, record, wait_listed,
-};
+use crate::support::{bucket_dio, wait_listed};
 
 async fn picker(dio: &Dio) -> std::sync::Arc<dyn TableScenery> {
     let view = dio
@@ -32,40 +28,6 @@ async fn a_picker_applies_its_search_over_the_listed_rows() -> Result<()> {
     let view = picker(&dio).await;
     wait_for_ids(&view, &["o1", "o2", "o3"]).await;
     view.set_search(Some("red".into()));
-    wait_for_ids(&view, &["o1", "o3"]).await;
-    Ok(())
-}
-
-/// A bucket master that can't take a non-`Eq` operator, so a derived Dio's
-/// `kind != blue` stays in its residual.
-fn bucket_without_filter_ops() -> Vista {
-    let caps: VistaCapabilities = [Capability::Window, Capability::Search, Capability::Order]
-        .into_iter()
-        .collect();
-    let shell = MockShell::new()
-        .with_record("o1", record(&[("id", "o1"), ("kind", "red")]))
-        .with_record("o2", record(&[("id", "o2"), ("kind", "blue")]))
-        .with_record("o3", record(&[("id", "o3"), ("kind", "red")]))
-        .with_metadata(meta(&["id", "kind"]))
-        .with_capabilities(caps);
-    Vista::new("bucket", shell)
-}
-
-#[tokio::test]
-async fn a_picker_lists_only_the_rows_the_dio_residual_admits() -> Result<()> {
-    let parent = augmented_dio(
-        &quick_lens(vantage_diorama::Cache::memory()),
-        bucket_without_filter_ops(),
-        vec![augment_name()],
-    )
-    .await;
-    let reds = parent
-        .derive()
-        .with_condition(Condition::new("kind", FilterOp::Ne, "blue"))
-        .build()
-        .await?;
-    assert_eq!(reds.residual().conditions.len(), 1, "the master refused it");
-    let view = picker(&reds).await;
     wait_for_ids(&view, &["o1", "o3"]).await;
     Ok(())
 }

@@ -5681,7 +5681,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-adapters"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-stream",
  "axum",
@@ -5877,7 +5877,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.15.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5998,7 +5998,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "async-stream",
  "async-trait",

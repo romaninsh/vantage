@@ -11,8 +11,6 @@
 //! [`TableScenery::subscribe_view_stats`](crate::TableScenery::subscribe_view_stats).
 
 mod publish;
-#[cfg(test)]
-mod tests;
 
 use std::ops::Range;
 

@@ -1,18 +1,10 @@
-//! Generic augmentation: enrich a master Vista's rows from a *second* Vista,
-//! loaded one row at a time and merged on top.
+//! Augmentation: enrich a master Vista's rows from a second Vista, one row at
+//! a time.
 //!
-//! The master is listed; for each visible row an [`Augmentation`] finds its
-//! detail Vista ([`Detail`]), narrows it for that row, fetches a record, and
-//! merges chosen columns onto the master row. The detail source may be the
-//! same Vista as the master (cmd's two-pass) or an entirely different backend
-//! (REST master enriched by a cmd script, or vice versa).
-//!
-//! Runtime, closure-based form: consumers build an [`Augmentation`] directly —
-//! `Source::Build` and `Fetch::Custom` take plain Rust closures.
-//!
-//! There is deliberately no serde/YAML mirror of these types: every consumer
-//! describes its augmentation in its own config shape and constructs
-//! [`Augmentation`] in Rust.
+//! For each visible row an [`Augmentation`] finds its detail Vista
+//! ([`Detail`]), narrows it for that row, fetches a record and merges the
+//! chosen columns on top. The book's augmentation chapter covers the passes
+//! and why the types have no serde mirror.
 
 mod fetch;
 
@@ -216,6 +208,3 @@ fn scalar_text(v: &CborValue) -> String {
         _ => "<nested>".to_string(),
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -228,6 +228,3 @@ async fn stub_statuses(
     }
     ids
 }
-
-#[cfg(test)]
-mod tests;

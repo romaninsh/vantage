@@ -81,11 +81,6 @@ impl PendingFlashes {
         self.contains(id) || self.settled_since(mark, id)
     }
 
-    #[cfg(test)]
-    pub(crate) fn open_marks(&self) -> usize {
-        self.settles.lock().unwrap().open_marks
-    }
-
     fn settled_since(&self, mark: &SettleMark, id: &str) -> bool {
         let settles = self.settles.lock().unwrap();
         settles.settled.get(id).is_some_and(|at| *at > mark.epoch)

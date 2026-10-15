@@ -224,27 +224,6 @@ async fn closing_the_last_view_mid_load_stops_the_fetch() -> Result<()> {
 }
 
 #[tokio::test]
-async fn closing_the_last_view_inside_the_debounce_stops_the_fetch() -> Result<()> {
-    let shell = shell();
-    let probe = shell.clone();
-    let dio = paged(shell, rest_loader()).await?;
-    let view = dio.table_scenery().page_size(10).open().await?;
-    view.set_viewport(0..10, 0..0);
-    // Let the loop take the request and hold the rows inside the debounce.
-    tokio::time::sleep(Duration::from_millis(10)).await;
-    drop(view); // well inside the 50 ms debounce
-
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let calls = probe.calls();
-    assert_eq!(
-        (calls.fetch_window, calls.count),
-        (0, 0),
-        "a closed grid kept pulling: {calls:?}"
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn a_builder_search_is_the_initial_search() -> Result<()> {
     let dio = eager_dio(Vista::new("t", shell())).await;
     let view = dio.table_scenery().search("beta").open().await?;

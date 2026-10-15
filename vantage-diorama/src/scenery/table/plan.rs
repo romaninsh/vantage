@@ -192,6 +192,3 @@ pub(crate) fn admitted_by_view(
     };
     view && admitted_by_dio(dio, record)
 }
-
-#[cfg(test)]
-mod tests;

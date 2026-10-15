@@ -8,8 +8,8 @@ use tempfile::TempDir;
 use tokio::sync::Semaphore;
 use vantage_core::Result;
 use vantage_diorama::{
-    Cache, CacheBackend, Dio, FilterOrigin, Lens, Loader, RedbCache, TableScenery, ViewCount,
-    ViewState, ViewStats,
+    Cache, CacheBackend, Dio, FilterOrigin, Lens, LoadState, Loader, RedbCache, RowStatusSummary,
+    TableScenery, ViewCount, ViewState, ViewStats,
 };
 use vantage_types::Record;
 use vantage_vista::{
@@ -269,4 +269,113 @@ async fn a_limit_reports_the_cap() -> Result<()> {
     assert!(!stats.has_more);
     assert_eq!(stats.showing, Some(0..2));
     Ok(())
+}
+
+// ---- the snapshot's own rules ----------------------------------------------
+
+fn stats(total: Option<usize>, total_exact: bool, loaded: usize, has_more: bool) -> ViewStats {
+    let mut stats = ViewStats::default();
+    stats.total = total;
+    stats.total_exact = total_exact;
+    stats.loaded = loaded;
+    stats.has_more = has_more;
+    stats
+}
+
+#[test]
+fn the_count_rule_never_presents_a_partial_number_as_the_whole() {
+    let exact = stats(Some(1_240), true, 100, true);
+    assert_eq!(exact.count(), ViewCount::Exact(1_240));
+    assert_eq!(exact.count_text(), "1,240");
+
+    let estimated = stats(Some(1_200), false, 100, true);
+    assert_eq!(estimated.count(), ViewCount::Estimated(1_200));
+    assert_eq!(estimated.count_text(), "~1,200");
+
+    let lower_bound = stats(None, false, 300, true);
+    assert_eq!(lower_bound.count(), ViewCount::AtLeast(300));
+    assert_eq!(lower_bound.count_text(), "300+");
+
+    let all_there = stats(None, false, 5, false);
+    assert_eq!(all_there.count(), ViewCount::Loaded(5));
+    assert_eq!(all_there.count_text(), "5");
+}
+
+#[test]
+fn a_count_value_drops_its_qualifier() {
+    for count in [
+        ViewCount::Exact(7),
+        ViewCount::Estimated(7),
+        ViewCount::AtLeast(7),
+        ViewCount::Loaded(7),
+    ] {
+        assert_eq!(count.value(), 7, "{count:?}");
+    }
+}
+
+#[test]
+fn showing_counts_zero_while_no_grid_shows_the_view() {
+    let mut idle = ViewStats::default();
+    assert_eq!(idle.showing_len(), None);
+    assert_eq!(idle.showing_count(), 0);
+    idle.showing = Some(40..60);
+    assert_eq!(idle.showing_len(), Some(20));
+    assert_eq!(idle.showing_count(), 20);
+}
+
+#[test]
+fn a_cap_reached_completes_the_view_at_exactly_the_cap() {
+    let mut full = stats(None, false, 50, true);
+    full.showing = Some(5..50);
+    let capped = full.capped(10);
+    assert_eq!(capped.loaded, 10);
+    assert_eq!(capped.total, Some(10));
+    assert!(capped.total_exact);
+    assert!(!capped.has_more);
+    assert_eq!(capped.showing, Some(5..10));
+}
+
+#[test]
+fn a_cap_not_yet_reached_keeps_the_inner_answer_bounded_by_the_cap() {
+    let mut partial = stats(Some(500), true, 3, true);
+    partial.showing = Some(20..30);
+    let capped = partial.capped(10);
+    assert_eq!(capped.loaded, 3);
+    assert_eq!(capped.total, Some(10));
+    assert!(capped.has_more);
+    assert_eq!(capped.showing, None, "nothing shown remains inside the cap");
+
+    let small = stats(Some(4), true, 3, true).capped(10);
+    assert_eq!(small.total, Some(4));
+}
+
+#[test]
+fn the_state_marker_picks_the_most_urgent() {
+    let rows = |failed, pending_write| {
+        let mut rows = RowStatusSummary::default();
+        rows.failed = failed;
+        rows.pending_write = pending_write;
+        rows
+    };
+    let complete = LoadState::Complete;
+    assert_eq!(
+        ViewState::derive(&LoadState::Loading, &rows(1, 1), true),
+        ViewState::Loading
+    );
+    assert_eq!(
+        ViewState::derive(&complete, &rows(1, 1), true),
+        ViewState::Failed
+    );
+    assert_eq!(
+        ViewState::derive(&complete, &rows(0, 1), true),
+        ViewState::PendingWrites
+    );
+    assert_eq!(
+        ViewState::derive(&complete, &rows(0, 0), true),
+        ViewState::Stale
+    );
+    assert_eq!(
+        ViewState::derive(&complete, &rows(0, 0), false),
+        ViewState::Ready
+    );
 }

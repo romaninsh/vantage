@@ -135,7 +135,6 @@ where
         }
 
         loop {
-            // Idle until something happens.
             let trigger = match wait(&mut bus, &nudge, &tap).await {
                 Wake::Changed(trigger) => trigger,
                 Wake::SourceGone => return,

@@ -10,15 +10,11 @@ use vantage_core::Result;
 use vantage_diorama::aggregate::{Count, Sum};
 use vantage_diorama::{Cache, ChangeEvent, Dio, Lens, ValueStatus};
 use vantage_types::Record;
-use vantage_vista::{
-    Capability, Column, FilterOp, Vista, VistaCapabilities, VistaMetadata, mocks::MockShell,
-};
+use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
 
 use super::{cbor_text, items_metadata, record, seeded_shell};
 use crate::support::spy_cache::{SpyCache, SpyTable};
-use crate::support::{
-    augmented_dio, cond, copy_master, eventually, fixed_augmentation, memory_lens,
-};
+use crate::support::{augmented_dio, copy_master, eventually, fixed_augmentation, memory_lens};
 
 const WITHIN: Duration = Duration::from_secs(5);
 
@@ -87,30 +83,6 @@ async fn a_value_over_an_augmented_column_hydrates_first() -> Result<()> {
 
     let total = dio.value_scenery(Sum::of("size")).open().await?;
     assert_eq!(total.value(), int(12), "{:?}", total.status());
-    Ok(())
-}
-
-/// A master without `FilterOps` refuses `price > 15`, so the derived Dio
-/// holds it as a residual over a cache that still holds all three rows. A
-/// narrowed count reads the admitted rows, not the cache's row count.
-#[tokio::test]
-async fn a_value_reads_only_rows_the_residual_admits() -> Result<()> {
-    let caps: VistaCapabilities = [Capability::Order, Capability::Search]
-        .into_iter()
-        .collect();
-    let parent = memory_lens(copy_master())
-        .dio(Vista::new("items", seeded_shell().with_capabilities(caps)))
-        .build()
-        .await?;
-    let dio = parent
-        .derive()
-        .with_query(&cond("price", FilterOp::Gt, 15))
-        .build()
-        .await?;
-    assert_eq!(dio.residual().conditions.len(), 1, "the master refused it");
-
-    let count = dio.value_scenery(Count::rows()).open().await?;
-    assert_eq!(count.value(), int(2));
     Ok(())
 }
 

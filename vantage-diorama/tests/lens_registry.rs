@@ -129,6 +129,36 @@ async fn the_same_vista_with_other_augmentations_builds_its_own_dio() {
         .await;
 }
 
+/// Two builds of one identity racing each other end on one Dio: a change
+/// applied through one is announced on the other's bus.
+#[tokio::test(flavor = "multi_thread")]
+async fn racing_builds_of_one_identity_share_one_dio() {
+    let (master, _, _) = teams();
+    let lens = memory_lens(copy_master());
+    let (first, second) = tokio::join!(lens.dio(master.clone()).build(), lens.dio(master).build());
+    let (first, second) = (first.expect("builds"), second.expect("builds"));
+
+    let mut bus = first.subscribe_events();
+    second
+        .apply_change(vantage_diorama::ChangeEvent::Inserted {
+            id: "t9".into(),
+            new: Some(record(&[("id", "t9"), ("team", "green")])),
+        })
+        .await
+        .expect("applies");
+    let announced = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Ok(vantage_diorama::DioEvent::RecordInserted { id }) = bus.recv().await
+                && id == "t9"
+            {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(announced.is_ok(), "the other build's bus never saw it");
+}
+
 #[tokio::test]
 async fn a_dropped_dio_is_rebuilt_not_revived() {
     let (master, probe, _) = teams();

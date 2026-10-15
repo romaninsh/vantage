@@ -197,6 +197,3 @@ impl Run {
         errors.into_result()
     }
 }
-
-#[cfg(test)]
-mod tests;

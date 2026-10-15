@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod catalog;
+mod conditions;
 mod derived;
 mod values;
 

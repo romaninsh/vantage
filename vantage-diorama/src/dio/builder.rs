@@ -208,6 +208,3 @@ fn metadata_of(master: &Vista) -> VistaMetadata {
     metadata.id_column = master.id_column().map(str::to_string);
     metadata
 }
-
-#[cfg(test)]
-mod tests;

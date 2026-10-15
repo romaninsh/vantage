@@ -206,6 +206,3 @@ fn move_slot(
         ids.insert(at, id.to_string());
     }
 }
-
-#[cfg(test)]
-mod tests;

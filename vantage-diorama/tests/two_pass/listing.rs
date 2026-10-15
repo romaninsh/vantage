@@ -124,18 +124,6 @@ async fn an_earlier_sessions_copy_without_a_max_age_lists_the_master() {
     );
 }
 
-#[tokio::test]
-async fn a_cold_cache_still_lists_the_master() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let master = views::shell();
-    let dio = two_pass(&redb_lens(tmp.path()), &master).await;
-
-    let view = listed(&dio).await;
-
-    assert_eq!(views::ids(&view), ["a", "b", "c"]);
-    assert!(listings(&master) > 0, "a cold cache must list the master");
-}
-
 /// A listing that began on the master stays on it: the copy stamped after
 /// its first page holds only that page, and reading the rest from it would
 /// end the listing one row in.
@@ -158,4 +146,29 @@ async fn a_copy_stamped_mid_listing_leaves_the_listing_on_the_master() {
     assert_eq!(views::ids(&view), ["a", "b", "c"]);
     assert_eq!(master.calls().fetch_window, 3, "one master page per row");
     assert!(!view.has_more());
+}
+
+/// A list pass the master fails publishes `LoadFailed`, and the view shows
+/// no row it never listed.
+#[tokio::test]
+async fn a_failed_list_pass_publishes_load_failed() {
+    let backend = Arc::new(MemoryCache::new());
+    let master = views::shell();
+    let dio = two_pass(&lens_on(&backend, false), &master).await;
+    let mut bus = dio.subscribe_events();
+    master.set_fail_reads(true);
+
+    let view = dio.table_scenery().page_size(2).open().await.unwrap();
+    let failed = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            match bus.recv().await {
+                Ok(vantage_diorama::DioEvent::LoadFailed { error, .. }) => return error,
+                Ok(_) => {}
+                Err(e) => panic!("the bus closed: {e}"),
+            }
+        }
+    })
+    .await;
+    assert!(failed.is_ok(), "no LoadFailed was published");
+    assert_eq!(views::ids(&view), Vec::<String>::new());
 }

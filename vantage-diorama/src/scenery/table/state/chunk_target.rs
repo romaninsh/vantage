@@ -12,9 +12,8 @@ use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 use super::SharedRows;
 
 impl SceneryChunkTarget for SharedRows {
-    /// A total learned from the chunk fetch itself. This is how a paged lens
-    /// sizes the scrollbar without a separate count — i.e. without a second
-    /// request on open, which is the one network call `open()` used to await.
+    /// A total learned from the chunk fetch itself, so a paged lens sizes the
+    /// scrollbar without a separate count request on open.
     fn set_chunk_total(&self, total: usize) -> bool {
         self.load_total_reported.store(true, Ordering::SeqCst);
         self.total_ever_stated.store(true, Ordering::SeqCst);

@@ -101,7 +101,7 @@ come before the result line.
 Use `fetch #N` to connect the lines. Do not use their positions.
 ```
 
-The origin is what you search for. There are twelve origins:
+The origin is what you search for. There are fourteen origins:
 
 | Origin | What the line reports |
 | --- | --- |
@@ -115,6 +115,8 @@ The origin is what you search for. There are twelve origins:
 | `total` | The total count changed, and what supplied the new value. |
 | `sort` | A sort changed. Says whether the source does the work. |
 | `search` | A search changed. Says whether the source does the work. |
+| `filter` | The runtime filters changed. Says whether the source does the work. |
+| `derive` | An aggregate recomputed. The first line of a mount says **initial**: the computation that makes the schema of the derived table. After it, the aggregate waits for the source to change. |
 | `hydrate` | A second pass fetched the remaining columns of rows that are on screen. Section 4 explains the two passes. |
 | `summary` | The session summary, printed when Vantage UI quits. |
 

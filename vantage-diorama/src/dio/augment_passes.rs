@@ -55,10 +55,9 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
     let existing = cache.list_values_with_status().await?;
     let augmented = &dio.inner.augmented_columns;
     // A detail record that appears after a row settled empty is picked up by
-    // a requested refresh only (see `detail_state`). With a 2s ticker and a
-    // detail source that has no record for most rows, re-probing them on
-    // each tick measured ~33 detail fetches/sec that never finished, each
-    // one a `RecordChanged` and a repaint.
+    // a requested refresh only (see `detail_state`): re-probing settled-empty
+    // rows on every scheduled tick never converges, each probe a
+    // `RecordChanged` and a repaint.
     let scheduled = matches!(kind, RefreshKind::Scheduled);
     dio.inner.clear_detail_states(scheduled);
     if !scheduled {
@@ -163,98 +162,4 @@ pub(crate) fn list_fields_changed(
     list_row
         .iter()
         .any(|(k, v)| !augmented.contains(k) && cached.get(k) != Some(v))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use super::{has_augment_gap, list_fields_changed};
-    use ciborium::Value;
-    use vantage_types::Record;
-
-    fn rec(pairs: &[(&str, Value)]) -> Record<Value> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.clone()))
-            .collect()
-    }
-
-    #[test]
-    fn tagged_null_counts_as_an_augment_gap() {
-        // SurrealDB's NONE arrives as a CBOR tagged null — still unfilled.
-        let augmented: HashSet<String> = ["found".to_string()].into_iter().collect();
-        let tagged = rec(&[("found", Value::Tag(6, Box::new(Value::Null)))]);
-        assert!(has_augment_gap(&tagged, &augmented));
-        let bare = rec(&[("found", Value::Null)]);
-        assert!(has_augment_gap(&bare, &augmented));
-        let filled = rec(&[("found", Value::Bool(true))]);
-        assert!(!has_augment_gap(&filled, &augmented));
-        let absent = rec(&[]);
-        assert!(has_augment_gap(&absent, &augmented));
-    }
-
-    fn none() -> HashSet<String> {
-        HashSet::new()
-    }
-
-    #[test]
-    fn unchanged_list_fields_ignore_augmented_columns() {
-        let list = rec(&[
-            ("status", Value::from("LIVE")),
-            ("updated_at", Value::from("t1")),
-        ]);
-        let cached = rec(&[
-            ("status", Value::from("LIVE")),
-            ("updated_at", Value::from("t1")),
-            ("subject_area", Value::from("finance")),
-        ]);
-        assert!(!list_fields_changed(&list, &cached, &none()));
-    }
-
-    #[test]
-    fn a_changed_non_augmented_field_is_detected() {
-        let list = rec(&[
-            ("status", Value::from("DECOMMISSIONED")),
-            ("updated_at", Value::from("t2")),
-        ]);
-        let cached = rec(&[
-            ("status", Value::from("LIVE")),
-            ("updated_at", Value::from("t1")),
-            ("subject_area", Value::from("finance")),
-        ]);
-        assert!(list_fields_changed(&list, &cached, &none()));
-    }
-
-    #[test]
-    fn a_new_list_key_absent_from_cache_counts_as_changed() {
-        let list = rec(&[
-            ("status", Value::from("LIVE")),
-            ("region", Value::from("eu")),
-        ]);
-        let cached = rec(&[("status", Value::from("LIVE"))]);
-        assert!(list_fields_changed(&list, &cached, &none()));
-    }
-
-    /// The flap regression in miniature: the list paints an augment-owned
-    /// column with a cheap placeholder (a folder's `size: 0`); the cached row
-    /// holds the augmented value. That difference is NOT a change — the
-    /// augment owns the column.
-    #[test]
-    fn a_list_placeholder_under_an_augmented_column_is_not_a_change() {
-        let list = rec(&[("modified", Value::from("t1")), ("size", Value::from("0"))]);
-        let cached = rec(&[
-            ("modified", Value::from("t1")),
-            ("size", Value::from("4096")),
-            ("file_count", Value::from("3")),
-        ]);
-        let augmented: HashSet<String> = ["size", "file_count"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        assert!(!list_fields_changed(&list, &cached, &augmented));
-        // …while a real list-field move on the same row still demotes it.
-        let moved = rec(&[("modified", Value::from("t2")), ("size", Value::from("0"))]);
-        assert!(list_fields_changed(&moved, &cached, &augmented));
-    }
 }

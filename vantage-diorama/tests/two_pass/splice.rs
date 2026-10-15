@@ -89,3 +89,39 @@ async fn an_insert_during_the_listing_waits_for_its_end() {
     assert!(ended, "{:?}", views::ids(&view));
     assert_eq!(listings(&master), 2);
 }
+
+/// An insert waiting for the listing's end, deleted before it, never shows.
+#[tokio::test]
+async fn an_insert_deleted_during_the_listing_never_shows() {
+    let tmp = TempDir::new().unwrap();
+    let master = reversed();
+    let dio = two_pass(&redb_lens(tmp.path()), &master).await;
+    let view = support::open_listed(&dio, 2).await;
+    assert_eq!(views::ids(&view), ["c", "b"]);
+
+    dio.flash(zero()).await.unwrap();
+    dio.flash(ChangeFlash::delete("0")).await.unwrap();
+    view.request_load_more();
+
+    let ended = support::eventually(Duration::from_secs(3), || !view.has_more()).await;
+    assert!(ended, "{:?}", views::ids(&view));
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert_eq!(views::ids(&view), ["c", "b", "a"]);
+}
+
+/// A row deleted before the listing reached it is simply not listed.
+#[tokio::test]
+async fn a_row_deleted_before_the_listing_reaches_it_is_not_listed() {
+    let tmp = TempDir::new().unwrap();
+    let master = reversed();
+    let dio = two_pass(&redb_lens(tmp.path()), &master).await;
+    let view = support::open_listed(&dio, 2).await;
+    assert_eq!(views::ids(&view), ["c", "b"]);
+
+    dio.flash(ChangeFlash::delete("a")).await.unwrap();
+    view.request_load_more();
+
+    let ended = support::eventually(Duration::from_secs(3), || !view.has_more()).await;
+    assert!(ended, "{:?}", views::ids(&view));
+    assert_eq!(views::ids(&view), ["c", "b"]);
+}
