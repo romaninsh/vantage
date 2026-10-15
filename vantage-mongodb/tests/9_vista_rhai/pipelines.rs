@@ -32,6 +32,82 @@ async fn rhai_pipeline_view_with_args() -> TestResult {
     Ok(())
 }
 
+/// The error a `rhai:` pipeline script with the given body fails the build with.
+async fn script_build_error(code: &str) -> String {
+    let (db, name) = setup().await;
+    let yaml = format!(
+        "name: scripted\ncolumns:\n  _id: {{ type: string, flags: [id] }}\nmongo:\n  collection: products\n  rhai: |\n    {code}\n"
+    );
+    let Err(err) = db.vista_factory().build_from_spec(spec(&yaml)) else {
+        panic!("script `{code}` must fail the build");
+    };
+    teardown(&db, &name).await;
+    format!("{err} {err:?}")
+}
+
+#[tokio::test]
+async fn rhai_pipeline_script_must_evaluate_to_an_array_of_stages() {
+    let msg = script_build_error(r#"#{"$match": #{}}"#).await;
+    assert!(msg.contains("array of stages"), "error: {msg}");
+}
+
+#[tokio::test]
+async fn rhai_pipeline_script_needs_at_least_one_stage() {
+    let msg = script_build_error("[]").await;
+    assert!(msg.contains("at least one stage"), "error: {msg}");
+}
+
+#[tokio::test]
+async fn rhai_pipeline_script_stages_must_be_maps_naming_the_bad_index() {
+    let msg = script_build_error(r#"[#{"$match": #{}}, 1]"#).await;
+    assert!(msg.contains("stage: 1"), "error: {msg}");
+}
+
+#[tokio::test]
+async fn rhai_pipeline_script_cannot_write_with_out_or_merge() {
+    let msg = script_build_error(r#"[#{"$match": #{}}, #{"$out": "copy"}]"#).await;
+    assert!(msg.contains("read-only"), "error: {msg}");
+    assert!(msg.contains("stage: 1"), "error: {msg}");
+}
+
+#[tokio::test]
+async fn rhai_pipeline_script_that_fails_or_never_ends_fails_the_build() {
+    let msg = script_build_error("this_does_not_exist()").await;
+    assert!(msg.contains("script failed"), "error: {msg}");
+
+    let msg = script_build_error("loop {}").await;
+    assert!(msg.contains("limit"), "error: {msg}");
+}
+
+#[tokio::test]
+async fn rhai_pipeline_view_without_args_sees_an_empty_args_map() -> TestResult {
+    let (db, name) = setup().await;
+    seed_products(&db).await?;
+
+    // Nothing sets `args`, so the script can still run and branch on it.
+    let yaml = r#"
+name: totals
+columns:
+  _id: { type: string, flags: [id] }
+  n: { type: int }
+mongo:
+  collection: products
+  rhai: |
+    let stages = [];
+    if "cat" in args { stages.push(#{"$match": #{category: args.cat}}); }
+    stages.push(#{"$group": #{_id: "$category", n: #{"$sum": 1}}});
+    stages
+"#;
+    let v = db.vista_factory().build_from_spec(spec(yaml))?;
+    let rows = v.list_values().await?;
+    let mut keys: Vec<&str> = rows.keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(keys, vec!["bread", "cake", "candy"]);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn rhai_pipeline_stages_are_validated() -> TestResult {
     let (db, name) = setup().await;

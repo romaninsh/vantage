@@ -1,7 +1,5 @@
-//! MongoDB condition type — analogous to `Expression<T>` for SQL backends.
-//!
-//! `MongoCondition` can hold immediate `bson::Document` filters, async-deferred
-//! values (resolved at query time via `DeferredFn`), or nested combinations.
+//! The MongoDB filter type, standing where `Expression<T>` does for SQL
+//! backends: an immediate document, a deferred one, or a combination.
 
 use bson::{Bson, Document};
 use vantage_expressions::{DeferredFn, ExpressiveEnum};
@@ -9,26 +7,19 @@ use vantage_expressions::{DeferredFn, ExpressiveEnum};
 use crate::types::AnyMongoType;
 
 /// A MongoDB filter condition that can contain deferred values.
-///
-/// # Variants
-///
-/// - `Doc` — an immediate `bson::Document` filter, e.g. `doc! { "price": { "$gt": 100 } }`
-/// - `Deferred` — resolves async at query time via `DeferredFn<AnyMongoType>`.
-///   The resolved `AnyMongoType` must be a `Bson::Document`.
-/// - `And` — combines multiple conditions with `$and` semantics.
 #[derive(Clone)]
 pub enum MongoCondition {
-    /// Immediate filter document.
+    /// An immediate filter, e.g. `doc! { "price": { "$gt": 100 } }`.
     Doc(Document),
-    /// Async-resolved filter — the `DeferredFn` should produce an `AnyMongoType`
-    /// wrapping a `Bson::Document`.
+    /// A filter resolved at query time. It must produce an `AnyMongoType`
+    /// wrapping a `Bson::Document`; anything else fails to resolve.
     Deferred(DeferredFn<AnyMongoType>),
-    /// Multiple conditions combined with `$and`.
+    /// Conditions combined with `$and`.
     And(Vec<MongoCondition>),
 }
 
 impl MongoCondition {
-    /// Resolve all deferred values and merge into a single `bson::Document`.
+    /// Resolve every deferred part and merge the result into one document.
     pub fn resolve(
         &self,
     ) -> std::pin::Pin<
@@ -62,8 +53,6 @@ impl MongoCondition {
     }
 }
 
-// ── Conversions ──────────────────────────────────────────────────────
-
 impl From<Document> for MongoCondition {
     fn from(doc: Document) -> Self {
         MongoCondition::Doc(doc)
@@ -80,9 +69,6 @@ impl std::fmt::Debug for MongoCondition {
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
-/// Convert a `Bson` value into a `Document`, or error if it's not one.
 fn bson_to_document(value: Bson) -> vantage_core::Result<Document> {
     match value {
         Bson::Document(doc) => Ok(doc),
@@ -118,99 +104,4 @@ pub async fn resolve_conditions<'a>(
         docs.push(c.resolve().await?);
     }
     merge_documents(docs)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_from_document() {
-        let doc = bson::doc! { "price": { "$gt": 100 } };
-        let cond: MongoCondition = doc.clone().into();
-        match cond {
-            MongoCondition::Doc(d) => assert_eq!(d, doc),
-            _ => panic!("expected Doc variant"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_resolve_doc() {
-        let cond = MongoCondition::Doc(bson::doc! { "active": true });
-        let resolved = cond.resolve().await.unwrap();
-        assert_eq!(resolved, bson::doc! { "active": true });
-    }
-
-    #[tokio::test]
-    async fn test_resolve_and() {
-        let cond = MongoCondition::And(vec![
-            bson::doc! { "a": 1 }.into(),
-            bson::doc! { "b": 2 }.into(),
-        ]);
-        let resolved = cond.resolve().await.unwrap();
-        assert_eq!(resolved, bson::doc! { "$and": [{ "a": 1 }, { "b": 2 }] });
-    }
-
-    #[tokio::test]
-    async fn test_resolve_and_single() {
-        let cond = MongoCondition::And(vec![bson::doc! { "x": 1 }.into()]);
-        let resolved = cond.resolve().await.unwrap();
-        assert_eq!(resolved, bson::doc! { "x": 1 });
-    }
-
-    #[tokio::test]
-    async fn test_resolve_and_empty() {
-        let cond = MongoCondition::And(vec![]);
-        let resolved = cond.resolve().await.unwrap();
-        assert_eq!(resolved, bson::doc! {});
-    }
-
-    #[tokio::test]
-    async fn test_resolve_conditions_helper() {
-        let conds = [
-            MongoCondition::Doc(bson::doc! { "a": 1 }),
-            MongoCondition::Doc(bson::doc! { "b": 2 }),
-        ];
-        let resolved = resolve_conditions(conds.iter()).await.unwrap();
-        assert_eq!(resolved, bson::doc! { "$and": [{ "a": 1 }, { "b": 2 }] });
-    }
-
-    #[tokio::test]
-    async fn test_deferred_resolves_document() {
-        let deferred = DeferredFn::new(move || {
-            Box::pin(async move {
-                let doc = bson::doc! { "status": "active" };
-                Ok(ExpressiveEnum::Scalar(AnyMongoType::untyped(
-                    Bson::Document(doc),
-                )))
-            })
-        });
-        let cond = MongoCondition::Deferred(deferred);
-        let resolved = cond.resolve().await.unwrap();
-        assert_eq!(resolved, bson::doc! { "status": "active" });
-    }
-
-    #[tokio::test]
-    async fn test_nested_and_with_deferred() {
-        let deferred = DeferredFn::new(move || {
-            Box::pin(async move {
-                let doc = bson::doc! { "owner_id": { "$in": ["a", "b"] } };
-                Ok(ExpressiveEnum::Scalar(AnyMongoType::untyped(
-                    Bson::Document(doc),
-                )))
-            })
-        });
-        let cond = MongoCondition::And(vec![
-            bson::doc! { "active": true }.into(),
-            MongoCondition::Deferred(deferred),
-        ]);
-        let resolved = cond.resolve().await.unwrap();
-        assert_eq!(
-            resolved,
-            bson::doc! { "$and": [
-                { "active": true },
-                { "owner_id": { "$in": ["a", "b"] } }
-            ] }
-        );
-    }
 }

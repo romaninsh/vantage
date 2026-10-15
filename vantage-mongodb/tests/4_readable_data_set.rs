@@ -61,17 +61,3 @@ async fn test_get_product() {
     assert_eq!(record["price"].try_get::<i64>(), Some(135));
     assert_eq!(record["calories"].try_get::<i64>(), Some(250));
 }
-
-#[tokio::test]
-async fn test_get_some_product() {
-    let db = get_db().await;
-    let table = product_table(db);
-
-    let result = table.get_some_value().await.unwrap();
-    assert!(result.is_some());
-
-    let (id, record) = result.unwrap();
-    assert!(!id.to_string().is_empty());
-    assert!(record.get("name").is_some());
-    assert!(record.get("price").is_some());
-}

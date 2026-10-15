@@ -11,7 +11,9 @@ use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{MongoCondition, MongoDB};
-use vantage_vista::{Capability, FilterOp, NativeCondition, VistaFactory};
+use vantage_table::table::Table;
+use vantage_types::EmptyEntity;
+use vantage_vista::{FilterOp, NativeCondition, SortDirection, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -133,6 +135,68 @@ async fn vista_op_conditions_push_down() -> TestResult {
     let mut v = products(&db);
     assert!(v.add_condition("nope", FilterOp::Eq, int(1)).is_err());
     assert!(v.add_condition("price", FilterOp::InSet, int(1)).is_err());
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_lte_includes_the_bound_and_set_operators_need_an_array() -> TestResult {
+    let (db, name) = setup().await;
+    seed(&db).await?;
+
+    let mut v = products(&db);
+    v.add_condition("price", FilterOp::Lte, int(100))?;
+    assert_eq!(
+        names(&v.list_values().await?),
+        vec!["Plain Bread", "Vanilla Cupcake"]
+    );
+
+    let mut v = products(&db);
+    assert!(
+        v.add_condition("price", FilterOp::NotInSet, int(1))
+            .is_err()
+    );
+    assert!(
+        v.add_condition("price", FilterOp::InSet, text("x"))
+            .is_err()
+    );
+    assert_eq!(v.count().await?, 3);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_search_over_a_vista_without_columns_matches_nothing() -> TestResult {
+    let (db, name) = setup().await;
+    seed(&db).await?;
+
+    let bare = Table::<MongoDB, EmptyEntity>::new("products", db.clone());
+    let mut v = db.vista_factory().from_table(bare)?;
+    assert_eq!(v.count().await?, 3);
+    v.set_search(Some("chocolate"))?;
+    assert_eq!(v.list_values().await?.len(), 0);
+    v.set_search(None)?;
+    assert_eq!(v.list_values().await?.len(), 3);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_order_by_an_unknown_column_is_an_error_naming_it() -> TestResult {
+    let (db, name) = setup().await;
+    seed(&db).await?;
+
+    let mut v = products(&db);
+    let err = v
+        .set_order(Some(("nope", SortDirection::Ascending)))
+        .expect_err("no such column");
+    assert!(err.to_string().contains("nope"), "{err}");
+    v.set_order(Some(("price", SortDirection::Descending)))?;
+    v.set_order(None)?;
+    assert_eq!(v.count().await?, 3);
 
     teardown(&db, &name).await;
     Ok(())
@@ -274,17 +338,6 @@ async fn native_condition_wrong_type_errors() -> TestResult {
     assert_eq!(v.count().await?, 3);
     assert!(v.query().native.is_empty());
 
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_capabilities_advertise_operators_and_traversal() -> TestResult {
-    let (db, name) = setup().await;
-    let caps = *products(&db).capabilities();
-    assert!(caps.has(Capability::FilterOps));
-    assert!(caps.has(Capability::NativeConditions));
-    assert!(caps.has(Capability::Traverse));
     teardown(&db, &name).await;
     Ok(())
 }

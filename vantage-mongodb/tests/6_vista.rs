@@ -11,6 +11,7 @@ use std::error::Error;
 use bson::oid::ObjectId;
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
+use vantage_mongodb::vista::{MongoBlock, MongoColumnBlock, MongoVistaSpec};
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoId};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
@@ -184,6 +185,192 @@ mongo:
 
     teardown(&db, &name).await;
     Ok(())
+}
+
+#[test]
+fn yaml_spec_parses_the_collection_columns_types_and_flags() {
+    let yaml = r#"
+name: client
+columns:
+  _id:
+    type: object_id
+    flags: [id]
+  name:
+    type: string
+    flags: [title, searchable]
+  is_paying_client:
+    type: bool
+mongo:
+  collection: clients
+"#;
+    let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+    assert_eq!(spec.name, "client");
+    assert_eq!(spec.columns.len(), 3);
+    assert_eq!(
+        spec.driver
+            .mongo
+            .as_ref()
+            .and_then(|m| m.collection.as_deref()),
+        Some("clients")
+    );
+    assert_eq!(spec.columns["_id"].col_type.as_deref(), Some("object_id"));
+    assert!(spec.columns["name"].has_flag(vantage_vista::ColumnFlag::Title));
+}
+
+#[test]
+fn yaml_mongo_blocks_reject_unknown_fields_naming_the_key() {
+    let table = "name: c\ncolumns:\n  _id: { flags: [id] }\nmongo:\n  collection: c\n  bogus: 1\n";
+    let err = serde_yaml_ng::from_str::<MongoVistaSpec>(table).unwrap_err();
+    assert!(err.to_string().contains("bogus"), "{err}");
+
+    let column = "name: c\ncolumns:\n  _id: { flags: [id], mongo: { bogus: 1 } }\n";
+    let err = serde_yaml_ng::from_str::<MongoVistaSpec>(column).unwrap_err();
+    assert!(err.to_string().contains("bogus"), "{err}");
+
+    let reference = "name: c\ncolumns:\n  _id: { flags: [id] }\nreferences:\n  o:\n    table: o\n    kind: has_many\n    foreign_key: c_id\n    mongo: { bogus: 1 }\n";
+    let err = serde_yaml_ng::from_str::<MongoVistaSpec>(reference).unwrap_err();
+    assert!(err.to_string().contains("bogus"), "{err}");
+}
+
+#[test]
+fn the_view_flag_parses_defaults_off_and_is_left_out_when_off() {
+    let yaml = "name: report\ncolumns:\n  _id: { flags: [id] }\nmongo:\n  collection: sales_report\n  view: true\n";
+    let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+    assert!(spec.driver.mongo.as_ref().unwrap().view);
+    assert!(!MongoBlock::default().view);
+
+    let off = serde_yaml_ng::to_string(&MongoBlock::default()).unwrap();
+    assert!(!off.contains("view"), "{off}");
+    let on = MongoBlock {
+        view: true,
+        ..MongoBlock::default()
+    };
+    assert!(
+        serde_yaml_ng::to_string(&on)
+            .unwrap()
+            .contains("view: true")
+    );
+}
+
+#[test]
+fn yaml_without_a_mongo_block_has_none_and_scripts_and_reference_blocks_parse() {
+    let bare: MongoVistaSpec = serde_yaml_ng::from_str(
+        "name: clients\ncolumns:\n  _id: { type: object_id, flags: [id] }\n",
+    )
+    .unwrap();
+    assert!(bare.driver.mongo.is_none());
+
+    let yaml = r#"
+name: client
+columns:
+  _id: { type: object_id, flags: [id] }
+mongo:
+  rhai: '[#{"$match": #{}}]'
+  modify: 'self.with_condition(#{a: 1})'
+references:
+  orders:
+    table: order
+    kind: has_many
+    foreign_key: client_id
+    mongo:
+      rhai: 'table("order").where("client_id", row._id)'
+"#;
+    let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+    let block = spec.driver.mongo.as_ref().unwrap();
+    assert!(block.rhai.as_deref().unwrap().contains("$match"));
+    assert!(block.modify.as_deref().unwrap().contains("with_condition"));
+    assert!(block.args.is_empty());
+    let reference = spec.references["orders"].driver.mongo.as_ref().unwrap();
+    assert!(reference.rhai.as_deref().unwrap().starts_with("table("));
+}
+
+#[tokio::test]
+async fn a_spec_without_a_mongo_block_reads_the_collection_named_like_the_spec() -> TestResult {
+    let (db, name) = setup().await;
+    db.doc_collection("clients")
+        .insert_one(bson::doc! { "_id": "c1", "name": "Marty" })
+        .await?;
+
+    let vista = db.vista_factory().from_yaml(
+        "name: clients\ncolumns:\n  _id: { type: string, flags: [id] }\n  name: { type: string }\n",
+    )?;
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows["c1"].get("name"),
+        Some(&CborValue::Text("Marty".into()))
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[test]
+fn a_column_path_is_the_nested_path_split_on_dots_the_field_or_nothing() {
+    let nested = MongoColumnBlock {
+        field: None,
+        nested_path: Some("address.city".into()),
+    };
+    assert_eq!(
+        nested.resolved_path("city").unwrap(),
+        Some(vec!["address".to_string(), "city".to_string()])
+    );
+
+    let renamed = MongoColumnBlock {
+        field: Some("fullName".into()),
+        nested_path: None,
+    };
+    assert_eq!(
+        renamed.resolved_path("full_name").unwrap(),
+        Some(vec!["fullName".to_string()])
+    );
+
+    assert_eq!(
+        MongoColumnBlock::default()
+            .resolved_path("anything")
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn a_nested_path_wins_over_a_field_when_both_are_set() {
+    let both = MongoColumnBlock {
+        field: Some("fullName".into()),
+        nested_path: Some("name.full".into()),
+    };
+    assert_eq!(
+        both.resolved_path("full_name").unwrap(),
+        Some(vec!["name".to_string(), "full".to_string()])
+    );
+}
+
+#[test]
+fn an_empty_nested_path_or_empty_segment_is_refused_naming_the_column() {
+    for bad in ["", "a..b", ".a", "a.", "."] {
+        let block = MongoColumnBlock {
+            field: None,
+            nested_path: Some(bad.to_string()),
+        };
+        let err = block
+            .resolved_path("city")
+            .expect_err("a nested path with an empty segment must be refused");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nested_path") && msg.contains("city"),
+            "`{bad}`: {msg}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_field_is_refused_naming_the_column() {
+    let block = MongoColumnBlock {
+        field: Some(String::new()),
+        nested_path: None,
+    };
+    let msg = block.resolved_path("name").unwrap_err().to_string();
+    assert!(msg.contains("field") && msg.contains("name"), "{msg}");
 }
 
 #[tokio::test]
@@ -416,6 +603,46 @@ mongo:
         Some(&CborValue::Text("Biff Tannen".into()))
     );
     assert_eq!(read.get("zip"), Some(&CborValue::Text("2015".into())));
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_nested_path_with_nothing_behind_it_reads_as_no_value() -> TestResult {
+    let (db, name) = setup().await;
+    db.collection::<bson::Document>("clients")
+        .insert_many(vec![
+            bson::doc! { "_id": "full", "address": { "city": "Riga" } },
+            bson::doc! { "_id": "scalar", "address": "n/a" },
+            bson::doc! { "_id": "missing" },
+            bson::doc! { "_id": "no_city", "address": { "zip": "1001" } },
+        ])
+        .await?;
+    let vista = db.vista_factory().from_yaml(
+        r#"
+name: client
+columns:
+  _id: { type: string, flags: [id] }
+  city: { type: string, mongo: { nested_path: address.city } }
+mongo:
+  collection: clients
+"#,
+    )?;
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 4);
+    assert_eq!(
+        rows["full"].get("city"),
+        Some(&CborValue::Text("Riga".into()))
+    );
+    for id in ["scalar", "missing", "no_city"] {
+        assert!(
+            matches!(rows[id].get("city"), None | Some(CborValue::Null)),
+            "{id}: {:?}",
+            rows[id]
+        );
+    }
 
     teardown(&db, &name).await;
     Ok(())

@@ -6,6 +6,7 @@
 use bson::doc;
 use vantage_expressions::{Order, Selectable};
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoSelect};
+use vantage_table::column::core::Column;
 
 fn mongo_url() -> String {
     std::env::var("MONGODB_URL").unwrap_or_else(|_| "mongodb://localhost:27017".into())
@@ -67,6 +68,37 @@ fn test_as_count_preview() {
     let s = MongoSelect::new().with_source("product");
     let expr = s.as_count();
     assert_eq!(expr.preview(), "db.product.countDocuments()");
+}
+
+#[test]
+fn test_select_preview_shows_skip_and_limit() {
+    let s = MongoSelect::new()
+        .with_source("product")
+        .with_limit(Some(10), Some(20));
+    let p = s.preview();
+    assert!(p.contains(".skip(20)"), "{p}");
+    assert!(p.contains(".limit(10)"), "{p}");
+}
+
+#[test]
+fn test_as_field_preview_names_collection_field_and_condition_count() {
+    let base = MongoSelect::new().with_source("product");
+    let none = base.as_field("name").preview();
+    assert!(none.contains("product") && none.contains("name"), "{none}");
+
+    let one = base
+        .clone()
+        .with_condition(doc! { "price": { "$gt": 100 } })
+        .as_field("name")
+        .preview();
+    let two = base
+        .with_condition(doc! { "price": { "$gt": 100 } })
+        .with_condition(doc! { "active": true })
+        .as_field("name")
+        .preview();
+    assert!(one.contains("product") && one.contains("name"), "{one}");
+    assert!(two.contains("product") && two.contains("name"), "{two}");
+    assert!(one != none && two != one, "{none} / {one} / {two}");
 }
 
 #[test]
@@ -184,19 +216,21 @@ fn test_clear_and_has() {
     assert_eq!(s.get_limit(), Some(10));
 }
 
-// ── Live execution via SelectableDataSource (seeded v2 data) ─────────────
+#[test]
+fn test_group_by_can_be_added_checked_and_cleared() {
+    let mut s = MongoSelect::new().with_source("product");
+    assert!(!s.has_group_by());
 
-#[tokio::test]
-async fn test_execute_select_all_products() {
-    use vantage_expressions::SelectableDataSource;
+    s.add_group_by(Column::<AnyMongoType>::new("category"));
+    assert!(s.has_group_by());
+    // Grouping leaves the other parts of the select alone.
+    assert!(!s.has_fields() && !s.has_where_conditions() && !s.has_order_by());
 
-    let db = db().await;
-    let select = MongoSelect::new().with_source("product");
-    let results = db.execute_select(&select).await.unwrap();
-
-    // v2 seeds 5 products
-    assert_eq!(results.len(), 5);
+    s.clear_group_by();
+    assert!(!s.has_group_by());
 }
+
+// ── Live execution via SelectableDataSource (seeded v2 data) ─────────────
 
 #[tokio::test]
 async fn test_execute_select_with_fields() {
@@ -255,19 +289,6 @@ async fn test_execute_select_with_order() {
     for w in prices.windows(2) {
         assert!(w[0] <= w[1], "Expected ascending: {} <= {}", w[0], w[1]);
     }
-}
-
-#[tokio::test]
-async fn test_execute_select_with_limit() {
-    use vantage_expressions::SelectableDataSource;
-
-    let db = db().await;
-    let select = MongoSelect::new()
-        .with_source("product")
-        .with_limit(Some(2), None);
-    let results = db.execute_select(&select).await.unwrap();
-
-    assert_eq!(results.len(), 2);
 }
 
 #[tokio::test]

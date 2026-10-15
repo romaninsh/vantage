@@ -10,7 +10,7 @@ use bson::doc;
 use bson::oid::ObjectId;
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
-use vantage_mongodb::vista::MongoVistaSpec;
+use vantage_mongodb::vista::{DriverBlockArgs, MongoBlock, MongoVistaSpec};
 use vantage_mongodb::{AnyMongoType, MongoDB, MongoId, MongoView};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
@@ -284,6 +284,141 @@ async fn pipeline_view_without_stages_reads_view_collection() -> TestResult {
 
     teardown(&db, &name).await;
     Ok(())
+}
+
+#[tokio::test]
+async fn a_new_view_replaces_the_old_one_and_leaves_the_original_handle_alone() -> TestResult {
+    let (db, name) = setup().await;
+    assert!(db.view().is_none());
+
+    let first = db.clone().with_view(MongoView::new(
+        "products",
+        vec![doc! { "$match": { "a": 1 } }],
+    ));
+    let second = first.clone().with_view(MongoView::new("orders", vec![]));
+
+    let view = first.view().expect("first view");
+    assert_eq!(view.collection, "products");
+    assert_eq!(view.stages, vec![doc! { "$match": { "a": 1 } }]);
+    let view = second.view().expect("second view");
+    assert_eq!(view.collection, "orders");
+    assert!(view.stages.is_empty());
+    assert!(db.view().is_none());
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_server_view_flag_is_off_by_default_and_composes_with_a_pipeline_view() -> TestResult {
+    let (db, name) = setup().await;
+    assert!(!db.is_server_view());
+
+    let flagged = db.clone().with_server_view(true);
+    assert!(flagged.is_server_view());
+    assert!(!db.is_server_view());
+
+    let both = flagged.with_view(MongoView::new("products", vec![]));
+    assert!(both.is_server_view() && both.view().is_some());
+    assert!(!both.with_server_view(false).is_server_view());
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+fn block_with(stages: Vec<serde_json::Value>) -> MongoBlock {
+    MongoBlock {
+        pipeline: Some(stages),
+        ..MongoBlock::default()
+    }
+}
+
+#[test]
+fn a_block_without_a_pipeline_has_no_stages() {
+    assert!(MongoBlock::default().pipeline_stages().unwrap().is_none());
+}
+
+#[test]
+fn yaml_pipeline_stages_parse_into_bson_documents_in_written_order() {
+    let yaml = r#"
+name: totals
+columns:
+  _id: { type: string, flags: [id] }
+mongo:
+  collection: products
+  pipeline:
+    - $group: { _id: "$category", total: { $sum: "$price" } }
+    - $sort: { total: -1 }
+"#;
+    let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
+    let stages = spec
+        .driver
+        .mongo
+        .unwrap()
+        .pipeline_stages()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stages,
+        vec![
+            doc! { "$group": { "_id": "$category", "total": { "$sum": "$price" } } },
+            doc! { "$sort": { "total": -1_i64 } },
+        ]
+    );
+}
+
+#[test]
+fn an_empty_pipeline_is_refused() {
+    let msg = block_with(vec![])
+        .pipeline_stages()
+        .unwrap_err()
+        .to_string();
+    assert!(msg.contains("at least one stage"), "{msg}");
+}
+
+#[test]
+fn a_stage_must_be_a_map_with_one_dollar_operator_and_the_error_names_its_index() {
+    for bad in [
+        serde_json::json!({ "group": { "_id": 1 } }),
+        serde_json::json!({ "$match": {}, "$sort": { "a": 1 } }),
+        serde_json::json!(["$match"]),
+        serde_json::json!("$match"),
+        serde_json::json!({}),
+    ] {
+        let block = block_with(vec![serde_json::json!({ "$match": {} }), bad.clone()]);
+        let msg = block.pipeline_stages().unwrap_err().to_string();
+        assert!(msg.contains("pipeline stage"), "{bad}: {msg}");
+        assert!(msg.contains("stage: 1"), "{bad}: {msg}");
+    }
+}
+
+#[test]
+fn a_pipeline_cannot_write_with_out_or_merge() {
+    for writer in [
+        serde_json::json!({ "$out": "copy" }),
+        serde_json::json!({ "$merge": { "into": "copy" } }),
+    ] {
+        let block = block_with(vec![serde_json::json!({ "$match": {} }), writer.clone()]);
+        let msg = block.pipeline_stages().unwrap_err().to_string();
+        assert!(msg.contains("read-only"), "{writer}: {msg}");
+        assert!(msg.contains("stage: 1"), "{writer}: {msg}");
+    }
+}
+
+#[test]
+fn driver_block_args_reads_the_args_off_a_spec_and_is_empty_without_a_block() {
+    let mut spec: MongoVistaSpec = serde_yaml_ng::from_str(CATEGORY_TOTALS).unwrap();
+    assert!(spec.driver_block_args().is_empty());
+    spec.driver.mongo.as_mut().unwrap().args = vec![("cat".into(), "cake".into())];
+    assert_eq!(
+        spec.driver_block_args(),
+        vec![("cat".to_string(), "cake".to_string())]
+    );
+
+    let bare: MongoVistaSpec =
+        serde_yaml_ng::from_str("name: bare\ncolumns:\n  _id: { type: string, flags: [id] }\n")
+            .unwrap();
+    assert!(bare.driver_block_args().is_empty());
 }
 
 #[tokio::test]

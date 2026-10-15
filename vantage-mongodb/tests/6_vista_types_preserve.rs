@@ -173,6 +173,110 @@ mongo:
     Ok(())
 }
 
+const UNTYPED_EVENT: &str = r#"
+name: event
+columns:
+  _id: { flags: [id] }
+  tags: {}
+  place: {}
+  count: {}
+mongo:
+  collection: events
+"#;
+
+#[tokio::test]
+async fn nested_documents_keep_stored_types_key_by_key() -> TestResult {
+    let (db, name) = setup().await;
+    let seed = seed(&db).await?;
+    let vista = db.vista_factory().build_from_spec(spec(UNTYPED_EVENT))?;
+
+    let other = ObjectId::new();
+    let place = vec![
+        (text("venue_id"), text(&other.to_hex())),
+        (text("label"), text("arena")),
+        (text("extra"), text(&ObjectId::new().to_hex())),
+    ];
+    let mut partial = Record::new();
+    partial.insert("place".to_string(), CborValue::Map(place));
+    vista.patch_value("e1", &partial).await?;
+
+    let stored = raw(&db, "e1").await;
+    let stored_place = stored.get_document("place")?;
+    // The stored ObjectId stays one when the new value parses as it.
+    assert_eq!(stored_place.get("venue_id"), Some(&Bson::ObjectId(other)));
+    assert_eq!(stored_place.get_str("label")?, "arena");
+    // A key with nothing stored under it is written as plain text.
+    assert!(matches!(stored_place.get("extra"), Some(Bson::String(_))));
+    assert_types_kept_except(&stored, &seed, "place");
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+fn assert_types_kept_except(stored: &Document, seed: &Document, skipped: &str) {
+    for (key, value) in seed
+        .iter()
+        .filter(|(k, _)| *k != "note" && *k != skipped && *k != "count")
+    {
+        assert_eq!(stored.get(key), Some(value), "{key}: {stored:?}");
+    }
+}
+
+#[tokio::test]
+async fn arrays_of_the_same_length_keep_stored_types_position_by_position() -> TestResult {
+    let (db, name) = setup().await;
+    let seed = seed(&db).await?;
+    let vista = db.vista_factory().build_from_spec(spec(UNTYPED_EVENT))?;
+    let tags = seed.get_array("tags")?.clone();
+    let Bson::ObjectId(first) = tags[0] else {
+        panic!("seeded tags are ObjectIds");
+    };
+
+    let replacement = ObjectId::new();
+    let mut partial = Record::new();
+    partial.insert(
+        "tags".to_string(),
+        CborValue::Array(vec![text(&first.to_hex()), text(&replacement.to_hex())]),
+    );
+    vista.patch_value("e1", &partial).await?;
+
+    assert_eq!(
+        raw(&db, "e1").await.get("tags"),
+        Some(&Bson::Array(vec![
+            Bson::ObjectId(first),
+            Bson::ObjectId(replacement)
+        ]))
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_stored_int32_stays_int32_only_while_the_new_integer_fits() -> TestResult {
+    let (db, name) = setup().await;
+    seed(&db).await?;
+    let vista = db.vista_factory().build_from_spec(spec(UNTYPED_EVENT))?;
+
+    let mut partial = Record::new();
+    partial.insert("count".to_string(), CborValue::Integer(7i64.into()));
+    vista.patch_value("e1", &partial).await?;
+    assert_eq!(raw(&db, "e1").await.get("count"), Some(&Bson::Int32(7)));
+
+    partial.insert(
+        "count".to_string(),
+        CborValue::Integer(3_000_000_000i64.into()),
+    );
+    vista.patch_value("e1", &partial).await?;
+    assert_eq!(
+        raw(&db, "e1").await.get("count"),
+        Some(&Bson::Int64(3_000_000_000))
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 const CLIENT: &str = r#"
 name: client
 columns:

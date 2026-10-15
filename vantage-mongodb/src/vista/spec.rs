@@ -8,8 +8,8 @@ pub(crate) mod pipeline;
 
 pub use pipeline::DriverBlockArgs;
 
-/// Table-level `mongo:` block in YAML. All fields optional — when the block
-/// is omitted entirely, the spec name doubles as the collection name.
+/// Table-level driver slot: the optional `mongo:` block. Without it the spec
+/// name doubles as the collection name.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MongoTableExtras {
@@ -17,6 +17,8 @@ pub struct MongoTableExtras {
     pub mongo: Option<MongoBlock>,
 }
 
+/// A table's `mongo:` block: which collection it reads, whether that is a
+/// view or a pipeline, and the Rhai scripts that shape it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MongoBlock {
@@ -66,6 +68,7 @@ pub struct MongoBlock {
     pub args: Vec<(String, String)>,
 }
 
+/// Column-level driver slot: the optional `mongo:` block.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MongoColumnExtras {
@@ -73,13 +76,14 @@ pub struct MongoColumnExtras {
     pub mongo: Option<MongoColumnBlock>,
 }
 
+/// A column's `mongo:` block: where its value lives in the document.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MongoColumnBlock {
     /// BSON field name when it differs from the spec column name.
-    /// Single-level rename only — for nested documents use `nested_path`.
-    /// Mutually exclusive with `nested_path`; `nested_path` wins if both set.
-    /// A reference key cannot be renamed; see `nested_path`.
+    /// Single-level rename only; for nested documents use `nested_path`.
+    /// `nested_path` wins if both are set. A reference key cannot be
+    /// renamed; see `nested_path`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
     /// Dotted BSON path into a nested document (e.g. `address.city`). The
@@ -100,14 +104,12 @@ pub struct MongoColumnBlock {
 }
 
 impl MongoColumnBlock {
-    /// Resolve the BSON path for this column. `nested_path` (split on `.`)
-    /// wins; otherwise `field`; otherwise `Ok(None)` so the caller falls back
-    /// to the spec column name.
+    /// The BSON path for this column: `nested_path` split on `.`, else
+    /// `field`, else `Ok(None)` so the caller falls back to the spec column
+    /// name.
     ///
-    /// Validates that neither `nested_path` nor `field` is empty, and that
-    /// `nested_path` contains no empty segments (e.g. `""`, `".a"`, `"a..b"`).
-    /// `column_name` is woven into the error so the caller can locate the bad
-    /// entry in YAML without re-walking the spec.
+    /// An empty `field`, or a `nested_path` that is empty or has an empty
+    /// segment (`""`, `".a"`, `"a..b"`), is an error naming `column_name`.
     pub fn resolved_path(&self, column_name: &str) -> Result<Option<Vec<String>>> {
         if let Some(p) = &self.nested_path {
             let segments: Vec<String> = p.split('.').map(str::to_string).collect();
@@ -142,6 +144,7 @@ pub struct MongoReferenceExtras {
     pub mongo: Option<MongoRefBlock>,
 }
 
+/// A reference's `mongo:` block.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MongoRefBlock {
@@ -149,257 +152,9 @@ pub struct MongoRefBlock {
     /// instead of the foreign-key condition, e.g.
     /// `table("order").where("client_id", row._id)`. Evaluated at traversal
     /// time with the parent row in scope as `row` (and `me`). Requires the
-    /// `rhai` feature; ignored by builds without it.
+    /// `rhai` feature: a build without it fails on a spec that sets one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rhai: Option<String>,
 }
 
 pub type MongoVistaSpec = VistaSpec<MongoTableExtras, MongoColumnExtras, MongoReferenceExtras>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn yaml_parses_into_mongo_vista_spec() {
-        let yaml = r#"
-name: client
-columns:
-  _id:
-    type: object_id
-    flags: [id]
-  name:
-    type: string
-    flags: [title, searchable]
-  is_paying_client:
-    type: bool
-mongo:
-  collection: clients
-"#;
-        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(spec.name, "client");
-        assert_eq!(spec.columns.len(), 3);
-        assert_eq!(
-            spec.driver
-                .mongo
-                .as_ref()
-                .and_then(|m| m.collection.as_deref()),
-            Some("clients")
-        );
-        assert_eq!(spec.columns["_id"].col_type.as_deref(), Some("object_id"));
-        assert!(spec.columns["name"].has_flag(vantage_vista::ColumnFlag::Title));
-    }
-
-    #[test]
-    fn yaml_rejects_unknown_mongo_block_field() {
-        let yaml = r#"
-name: client
-columns:
-  _id: { type: object_id, flags: [id] }
-mongo:
-  collection: clients
-  bogus: 1
-"#;
-        let err = serde_yaml_ng::from_str::<MongoVistaSpec>(yaml).unwrap_err();
-        assert!(err.to_string().contains("bogus") || err.to_string().contains("unknown"));
-    }
-
-    #[test]
-    fn yaml_view_flag_parses_and_defaults_off() {
-        let yaml = r#"
-name: report
-columns:
-  _id: { type: object_id, flags: [id] }
-mongo:
-  collection: sales_report
-  view: true
-"#;
-        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert!(spec.driver.mongo.as_ref().unwrap().view);
-        assert!(!MongoBlock::default().view);
-
-        let unknown = format!("{yaml}  bogus: 1\n");
-        let err = serde_yaml_ng::from_str::<MongoVistaSpec>(&unknown).unwrap_err();
-        assert!(err.to_string().contains("bogus"), "{err}");
-    }
-
-    #[test]
-    fn yaml_view_flag_is_omitted_when_off() {
-        let off = serde_yaml_ng::to_string(&MongoBlock::default()).unwrap();
-        assert!(!off.contains("view"), "{off}");
-        let on = MongoBlock {
-            view: true,
-            ..MongoBlock::default()
-        };
-        assert!(
-            serde_yaml_ng::to_string(&on)
-                .unwrap()
-                .contains("view: true")
-        );
-    }
-
-    #[test]
-    fn yaml_collection_defaults_to_spec_name_when_block_omitted() {
-        let yaml = r#"
-name: clients
-columns:
-  _id: { type: object_id, flags: [id] }
-"#;
-        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        assert!(spec.driver.mongo.is_none());
-    }
-
-    #[test]
-    fn yaml_pipeline_parses_into_bson_stages() {
-        let yaml = r#"
-name: totals
-columns:
-  _id: { type: string, flags: [id] }
-mongo:
-  collection: products
-  pipeline:
-    - $group: { _id: "$category", total: { $sum: "$price" } }
-    - $sort: { total: -1 }
-"#;
-        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        let stages = spec
-            .driver
-            .mongo
-            .unwrap()
-            .pipeline_stages()
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            stages,
-            vec![
-                bson::doc! { "$group": { "_id": "$category", "total": { "$sum": "$price" } } },
-                bson::doc! { "$sort": { "total": -1_i64 } },
-            ]
-        );
-    }
-
-    #[test]
-    fn yaml_parses_scripts_and_reference_block() {
-        let yaml = r#"
-name: client
-columns:
-  _id: { type: object_id, flags: [id] }
-mongo:
-  rhai: '[#{"$match": #{}}]'
-  modify: 'self.with_condition(#{a: 1})'
-references:
-  orders:
-    table: order
-    kind: has_many
-    foreign_key: client_id
-    mongo:
-      rhai: 'table("order").where("client_id", row._id)'
-"#;
-        let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        let block = spec.driver.mongo.as_ref().unwrap();
-        assert!(block.rhai.as_deref().unwrap().contains("$match"));
-        assert!(block.modify.as_deref().unwrap().contains("with_condition"));
-        assert!(block.args.is_empty());
-        let reference = spec.references["orders"].driver.mongo.as_ref().unwrap();
-        assert!(reference.rhai.as_deref().unwrap().starts_with("table("));
-    }
-
-    #[test]
-    fn pipeline_stages_absent_without_pipeline() {
-        assert!(MongoBlock::default().pipeline_stages().unwrap().is_none());
-    }
-
-    #[test]
-    fn pipeline_rejects_empty_pipeline() {
-        let block = MongoBlock {
-            pipeline: Some(vec![]),
-            ..MongoBlock::default()
-        };
-        let msg = block.pipeline_stages().unwrap_err().to_string();
-        assert!(msg.contains("at least one stage"), "{msg}");
-    }
-
-    #[test]
-    fn pipeline_rejects_bad_stage_naming_its_index() {
-        for bad in [
-            serde_json::json!({ "group": { "_id": 1 } }),
-            serde_json::json!({ "$match": {}, "$sort": { "a": 1 } }),
-            serde_json::json!(["$match"]),
-            serde_json::json!({}),
-        ] {
-            let block = MongoBlock {
-                pipeline: Some(vec![serde_json::json!({ "$match": {} }), bad.clone()]),
-                ..MongoBlock::default()
-            };
-            let msg = block.pipeline_stages().unwrap_err().to_string();
-            assert!(msg.contains("pipeline stage"), "{bad}: {msg}");
-            assert!(msg.contains("stage: 1"), "{bad}: {msg}");
-        }
-    }
-
-    #[test]
-    fn resolved_path_rejects_empty_nested_path() {
-        let block = MongoColumnBlock {
-            field: None,
-            nested_path: Some(String::new()),
-        };
-        let err = block
-            .resolved_path("city")
-            .expect_err("empty nested_path must error");
-        let msg = err.to_string();
-        assert!(msg.contains("nested_path"), "error: {msg}");
-        assert!(msg.contains("city"), "error: {msg}");
-    }
-
-    #[test]
-    fn resolved_path_rejects_nested_path_with_empty_segments() {
-        for bad in ["a..b", ".a", "a.", "."] {
-            let block = MongoColumnBlock {
-                field: None,
-                nested_path: Some(bad.to_string()),
-            };
-            assert!(
-                block.resolved_path("city").is_err(),
-                "path `{bad}` should have errored"
-            );
-        }
-    }
-
-    #[test]
-    fn resolved_path_rejects_empty_field() {
-        let block = MongoColumnBlock {
-            field: Some(String::new()),
-            nested_path: None,
-        };
-        let err = block
-            .resolved_path("name")
-            .expect_err("empty field must error");
-        let msg = err.to_string();
-        assert!(msg.contains("field"), "error: {msg}");
-        assert!(msg.contains("name"), "error: {msg}");
-    }
-
-    #[test]
-    fn resolved_path_accepts_valid_nested_and_field() {
-        let block = MongoColumnBlock {
-            field: None,
-            nested_path: Some("address.city".into()),
-        };
-        assert_eq!(
-            block.resolved_path("city").unwrap(),
-            Some(vec!["address".into(), "city".into()])
-        );
-
-        let block = MongoColumnBlock {
-            field: Some("fullName".into()),
-            nested_path: None,
-        };
-        assert_eq!(
-            block.resolved_path("full_name").unwrap(),
-            Some(vec!["fullName".into()])
-        );
-
-        let block = MongoColumnBlock::default();
-        assert_eq!(block.resolved_path("anything").unwrap(), None);
-    }
-}

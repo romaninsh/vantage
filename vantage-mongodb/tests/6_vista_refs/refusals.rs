@@ -47,6 +47,28 @@ references:
 }
 
 #[tokio::test]
+async fn traversing_a_relation_the_spec_does_not_declare_is_an_error_naming_it() -> TestResult {
+    let (db, name) = setup().await;
+    seed(&db).await?;
+    let clients = db
+        .vista_factory()
+        .with_resolver(resolver(vec![spec(CLIENT), spec(ORDER)]))
+        .build_from_spec(spec(CLIENT))?;
+    let row = clients.get_value("c1").await?.expect("client c1");
+
+    for row in [Some(&row), None] {
+        let err = clients
+            .get_ref("nope", row)
+            .map(drop)
+            .expect_err("no such relation");
+        assert!(err.to_string().contains("nope"), "{err}");
+    }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn traversal_into_target_with_renamed_reference_key_errors() -> TestResult {
     let (db, name) = setup().await;
     seed(&db).await?;

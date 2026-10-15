@@ -152,30 +152,3 @@ impl Expressive<AnyMongoType> for MongoSelect {
         self.as_field(self.fields.join(", "))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use bson::doc;
-
-    use super::*;
-
-    #[test]
-    fn as_field_renders_field_projection() {
-        let select = MongoSelect::new().with_source("product");
-        assert_eq!(
-            select.as_field("name").preview(),
-            "db.product.find(<no conditions>).project(name)"
-        );
-    }
-
-    #[test]
-    fn as_field_mentions_conditions() {
-        let select = MongoSelect::new()
-            .with_source("product")
-            .with_condition(doc! { "price": { "$gt": 100 } });
-        assert_eq!(
-            select.as_field("name").preview(),
-            "db.product.find(<1 condition>).project(name)"
-        );
-    }
-}

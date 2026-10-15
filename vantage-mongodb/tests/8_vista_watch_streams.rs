@@ -285,6 +285,18 @@ async fn clones_share_one_stream_client() -> TestResult {
 }
 
 #[tokio::test]
+async fn stream_pool_size_defaults_to_100_can_be_set_and_never_drops_below_one() -> TestResult {
+    let client = Client::with_uri_str(mongo_url()).await?;
+    let db = MongoDB::new(client, db_name());
+
+    assert_eq!(DEFAULT_STREAM_POOL_SIZE, 100);
+    assert_eq!(db.stream_pool_size(), 100);
+    assert_eq!(db.clone().with_stream_pool_size(7).stream_pool_size(), 7);
+    assert_eq!(db.with_stream_pool_size(0).stream_pool_size(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn new_handle_watches_on_its_client() -> TestResult {
     let client = Client::with_uri_str(url_with(&format!("appName={MAIN_APP_NAME}"))).await?;
     let db = MongoDB::new(client, db_name()).with_stream_pool_size(1);

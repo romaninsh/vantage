@@ -133,6 +133,3 @@ fn insert_at_path(doc: &mut Document, path: &[String], value: Bson) {
         insert_at_path(sub, &path[1..], value);
     }
 }
-
-#[cfg(test)]
-mod tests;

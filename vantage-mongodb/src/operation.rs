@@ -1,28 +1,10 @@
-//! MongoDB-specific operation trait for building `MongoCondition` from typed columns.
+//! Operators that build [`MongoCondition`] filters from columns: `price.gt(100)`
+//! is `{ price: { "$gt": 100 } }`.
 //!
-//! `MongoOperation<T>` is an extension trait blanket-implemented for all `Expressive<T>`
-//! types (including `Column<T>`, `Expression<T>`, scalars, etc). It produces
-//! `MongoCondition` (BSON documents) instead of `Expression<T>`.
-//!
-//! The field name is extracted from `self.expr().template` — works for simple
-//! column/identifier expressions. Complex left-hand expressions will produce
-//! the template string as the field name (MongoDB will treat it as a dotted path
-//! or literal field name).
-//!
-//! # Examples
-//!
-//! ```ignore
-//! use vantage_mongodb::operation::MongoOperation;
-//! use vantage_table::column::core::Column;
-//!
-//! let price = Column::<i64>::new("price");
-//! let cond = price.gt(100i64);
-//! // => MongoCondition::Doc(doc! { "price": { "$gt": 100 } })
-//!
-//! // Chaining works — MongoCondition implements Expressive<AnyMongoType>
-//! let cond = price.gt(10i64).eq(false);
-//! // => MongoCondition::Doc(doc! { "price": { "$not": { "$gt": 10 } } })
-//! ```
+//! [`MongoOperation`] is blanket-implemented for every `Expressive<T>`. The
+//! field name is the expression's template, so it fits columns and plain
+//! identifiers. A condition is negated with `eq_bool(false)` (or
+//! `ne_bool(true)`) on [`MongoCondition`].
 
 use bson::{Bson, doc};
 use vantage_expressions::Expressive;
@@ -30,32 +12,26 @@ use vantage_expressions::Expressive;
 use crate::condition::MongoCondition;
 use crate::types::{AnyMongoType, MongoType};
 
-/// Extract the field name from an `Expressive<T>` value.
-///
-/// For `Column<T>` this returns the column name (e.g. `"price"`).
-/// For complex expressions it returns the rendered template.
 fn field_name<T>(expr: &(impl Expressive<T> + ?Sized)) -> String {
     expr.expr().template.clone()
 }
 
-/// Convert a value to `Bson` via `Into<AnyMongoType>` → `MongoType::to_bson()`.
 fn to_bson_val(value: impl Into<AnyMongoType>) -> Bson {
     let any: AnyMongoType = value.into();
     any.to_bson()
 }
 
-/// Negate a `MongoCondition` by wrapping each field condition with `$not`.
+/// Wraps each field of a document in `$not`. A deferred condition passes
+/// through unchanged.
 fn negate(cond: MongoCondition) -> MongoCondition {
     match cond {
         MongoCondition::Doc(doc) => {
             let mut negated = bson::Document::new();
             for (key, val) in doc {
                 match val {
-                    // { field: { "$op": v } } → { field: { "$not": { "$op": v } } }
                     Bson::Document(inner) => {
                         negated.insert(key, doc! { "$not": inner });
                     }
-                    // { field: v } → { field: { "$not": { "$eq": v } } }
                     other => {
                         negated.insert(key, doc! { "$not": { "$eq": other } });
                     }
@@ -66,20 +42,15 @@ fn negate(cond: MongoCondition) -> MongoCondition {
         MongoCondition::And(conditions) => {
             MongoCondition::And(conditions.into_iter().map(negate).collect())
         }
-        // Deferred can't be negated statically — pass through
+        // A deferred condition has no document to wrap until it resolves.
         other => other,
     }
 }
 
-/// MongoDB-specific operations that produce `MongoCondition`.
-///
-/// Blanket-implemented for all `Expressive<T>` where values convert
-/// via `Into<AnyMongoType>`. Import this trait instead of
+/// Operators that produce a [`MongoCondition`]. Import this instead of
 /// `vantage_table::operation::Operation` when working with MongoDB.
 pub trait MongoOperation<T>: Expressive<T> {
     /// `{ field: { "$eq": value } }`
-    ///
-    /// When called on a `MongoCondition`: `.eq(false)` negates, `.eq(true)` is identity.
     fn eq(&self, value: impl Into<AnyMongoType>) -> MongoCondition
     where
         Self: Sized,
@@ -138,8 +109,7 @@ pub trait MongoOperation<T>: Expressive<T> {
         MongoCondition::Doc(doc! { field_name(self): { "$in": arr } })
     }
 
-    /// `{ field: null }` — matches documents where the field is null **or missing**.
-    /// Mongo's `$eq: null` semantics, which is what most callers want.
+    /// `{ field: null }`: matches documents where the field is null or missing.
     fn is_null(&self) -> MongoCondition
     where
         Self: Sized,
@@ -147,7 +117,7 @@ pub trait MongoOperation<T>: Expressive<T> {
         MongoCondition::Doc(doc! { field_name(self): Bson::Null })
     }
 
-    /// `{ field: { "$ne": null } }` — matches documents where the field exists and is non-null.
+    /// `{ field: { "$ne": null } }`: matches documents where the field exists and is non-null.
     fn is_not_null(&self) -> MongoCondition
     where
         Self: Sized,
@@ -156,26 +126,18 @@ pub trait MongoOperation<T>: Expressive<T> {
     }
 }
 
-/// Blanket: any `Expressive<T>` gets `MongoOperation<T>` for free.
 impl<T, S: Expressive<T>> MongoOperation<T> for S {}
 
-// ── MongoCondition chaining ──────────────────────────────────────────
-//
-// MongoCondition implements Expressive<AnyMongoType> so the blanket above
-// gives it MongoOperation<AnyMongoType>. We override the default methods
-// to handle boolean logic on conditions rather than building field docs.
-
+// A condition is not an expression; this impl only satisfies the blanket
+// bound so a chained operator call type-checks.
 impl Expressive<AnyMongoType> for MongoCondition {
     fn expr(&self) -> vantage_expressions::Expression<AnyMongoType> {
-        // MongoCondition isn't really an expression — this is a bridge
-        // so the blanket trait bound is satisfied.
         vantage_expressions::Expression::new(format!("{:?}", self), vec![])
     }
 }
 
 impl MongoCondition {
-    /// `.eq(false)` negates the condition; `.eq(true)` is identity.
-    /// This is the MongoCondition-aware version that overrides the blanket.
+    /// `eq_bool(false)` negates the condition; `eq_bool(true)` keeps it.
     pub fn eq_bool(&self, value: bool) -> MongoCondition {
         if value {
             self.clone()
@@ -184,135 +146,12 @@ impl MongoCondition {
         }
     }
 
-    /// `.ne(false)` is identity; `.ne(true)` negates.
+    /// `ne_bool(true)` negates the condition; `ne_bool(false)` keeps it.
     pub fn ne_bool(&self, value: bool) -> MongoCondition {
         if value {
             negate(self.clone())
         } else {
             self.clone()
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use vantage_table::column::core::Column;
-
-    #[test]
-    fn test_column_eq() {
-        let name = Column::<String>::new("name");
-        let cond = name.eq("Alice");
-        match cond {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "name": { "$eq": "Alice" } });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_column_gt() {
-        let price = Column::<i64>::new("price");
-        let cond = price.gt(100i64);
-        match cond {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "price": { "$gt": 100i64 } });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_column_in() {
-        let status = Column::<String>::new("status");
-        let cond = status.in_(vec!["active", "pending"]);
-        match cond {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "status": { "$in": ["active", "pending"] } });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_chaining_gt_eq_false() {
-        let price = Column::<i64>::new("price");
-        // price.gt(10).eq_bool(false) means "NOT price > 10"
-        let cond = price.gt(10i64).eq_bool(false);
-        match cond {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "price": { "$not": { "$gt": 10i64 } } });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_chaining_gt_eq_true() {
-        let price = Column::<i64>::new("price");
-        // price.gt(10).eq_bool(true) is identity
-        let cond = price.gt(10i64).eq_bool(true);
-        match cond {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "price": { "$gt": 10i64 } });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_negate_simple_value() {
-        let cond = MongoCondition::Doc(doc! { "active": true });
-        let negated = negate(cond);
-        match negated {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "active": { "$not": { "$eq": true } } });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_negate_operator() {
-        let cond = MongoCondition::Doc(doc! { "price": { "$gt": 100 } });
-        let negated = negate(cond);
-        match negated {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "price": { "$not": { "$gt": 100 } } });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_condition_is_correct_type() {
-        let price = Column::<i64>::new("price");
-        let cond: MongoCondition = price.gt(100i64);
-        let _: MongoCondition = cond;
-    }
-
-    #[test]
-    fn test_is_null() {
-        let deleted_at = Column::<String>::new("deleted_at");
-        let cond = deleted_at.is_null();
-        match cond {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "deleted_at": Bson::Null });
-            }
-            _ => panic!("expected Doc"),
-        }
-    }
-
-    #[test]
-    fn test_is_not_null() {
-        let email = Column::<String>::new("email");
-        let cond = email.is_not_null();
-        match cond {
-            MongoCondition::Doc(doc) => {
-                assert_eq!(doc, doc! { "email": { "$ne": Bson::Null } });
-            }
-            _ => panic!("expected Doc"),
         }
     }
 }

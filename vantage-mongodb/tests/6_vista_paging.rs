@@ -343,6 +343,43 @@ mongo:
 }
 
 #[tokio::test]
+async fn vista_fetch_cursor_refuses_tokens_it_did_not_issue() -> TestResult {
+    let (db, name) = setup().await;
+    seed(&db).await?;
+    let vista = ordered_products(&db);
+
+    let bogus = [
+        CborValue::Integer(2.into()),
+        CborValue::Array(vec![CborValue::Null]),
+        CborValue::Array(vec![CborValue::Bytes(vec![1, 2, 3])]),
+        // The sort has two keys (price, then the `_id` tiebreak).
+        CborValue::Array(vec![]),
+    ];
+    for token in bogus {
+        let err = vista
+            .fetch_cursor(Some(token.clone()), 2)
+            .await
+            .expect_err("a foreign token must be refused");
+        assert!(
+            err.to_string().contains("invalid fetch_cursor token"),
+            "{token:?}: {err}"
+        );
+    }
+
+    // A token handed back unchanged keeps working.
+    let (first, token) = vista.fetch_cursor(None, 2).await?;
+    assert_eq!(first.rows.len(), 2);
+    let (second, _) = vista.fetch_cursor(token, 2).await?;
+    assert_eq!(
+        names(second.rows.iter().map(|(_, r)| r)),
+        vec!["item-2", "item-3"]
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn vista_some_value_reads_one_document() -> TestResult {
     let (db, name) = setup().await;
     seed(&db).await?;
