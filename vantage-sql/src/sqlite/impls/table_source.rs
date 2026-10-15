@@ -319,7 +319,6 @@ impl TableSource for SqliteDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
-        // Rewrite as INSERT OR REPLACE
         let expr = insert.expr();
         let replace_expr = Expression::new(
             expr.template
@@ -403,7 +402,6 @@ impl TableSource for SqliteDB {
         let insert =
             crate::sqlite::statements::SqliteInsert::new(table.table_name()).with_record(record);
 
-        // Append RETURNING id_field to get the generated ID back
         let base = insert.expr();
         let returning = expr_any!("{} RETURNING {}", (base), (ident(&id_field_name)));
         let result = self.execute(&returning).await?;

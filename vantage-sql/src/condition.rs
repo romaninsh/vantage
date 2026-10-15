@@ -44,8 +44,6 @@ macro_rules! define_sql_condition {
             }
         }
 
-        // From Expression<F> where F: Into<BackendType> — accepts both
-        // Expression<BackendType> (identity) and typed Expression<i64> etc.
         impl<F> From<Expression<F>> for $name
         where
             F: Into<$any_type> + Send + Clone + 'static,
@@ -55,7 +53,6 @@ macro_rules! define_sql_condition {
             }
         }
 
-        // From Identifier
         impl From<Identifier> for $name {
             fn from(id: Identifier) -> Self {
                 use vantage_expressions::Expressive;
@@ -63,14 +60,12 @@ macro_rules! define_sql_condition {
             }
         }
 
-        // Into Expression<BackendType> — unwrap the newtype
         impl From<$name> for Expression<$any_type> {
             fn from(cond: $name) -> Self {
                 cond.0
             }
         }
 
-        // From Fx<BackendType>
         impl From<Fx<$any_type>> for $name {
             fn from(fx: Fx<$any_type>) -> Self {
                 Self(fx.into())
@@ -88,15 +83,12 @@ define_sql_condition!(PostgresCondition, crate::postgres::types::AnyPostgresType
 #[cfg(feature = "mysql")]
 define_sql_condition!(MysqlCondition, crate::mysql::types::AnyMysqlType);
 
-// MySQL-specific: FulltextMatch
 #[cfg(feature = "mysql")]
 impl From<crate::mysql::statements::primitives::FulltextMatch> for MysqlCondition {
     fn from(fm: crate::mysql::statements::primitives::FulltextMatch) -> Self {
         Self(fm.into())
     }
 }
-
-// ── Backend-typed identifier wrapper ────────────────────────────────
 
 /// Defines a backend-specific identifier wrapper that only implements
 /// `Expressive<$any_type>`, avoiding ambiguity when multiple backend
@@ -159,8 +151,6 @@ macro_rules! define_typed_ident {
         }
     };
 }
-
-// ── Vendor-specific operation traits ─────────────────────────────────
 
 #[macro_export]
 macro_rules! define_sql_operation {

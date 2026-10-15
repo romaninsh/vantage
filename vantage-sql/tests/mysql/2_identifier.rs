@@ -26,6 +26,18 @@ fn test_id_with_alias() {
 }
 
 #[test]
+fn test_id_embedded_backtick_is_doubled() {
+    let expr = mysql_expr!("SELECT {}", (ident("x` ; DROP TABLE users --")));
+    assert_eq!(expr.preview(), "SELECT `x`` ; DROP TABLE users --`");
+}
+
+#[test]
+fn test_id_embedded_backtick_in_alias_is_doubled() {
+    let expr = mysql_expr!("SELECT {}", (ident("col").with_alias("a`b")));
+    assert_eq!(expr.preview(), "SELECT `col` AS `a``b`");
+}
+
+#[test]
 fn test_id_qualified() {
     let expr = mysql_expr!("SELECT {}", (ident("name").dot_of("t")));
     assert_eq!(expr.preview(), "SELECT `t`.`name`");

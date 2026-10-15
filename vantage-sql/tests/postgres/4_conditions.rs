@@ -7,6 +7,7 @@ use vantage_sql::postgres::PostgresDB;
 use vantage_sql::postgres::PostgresType;
 use vantage_sql::postgres::operation::PostgresOperation;
 use vantage_sql::postgres_expr;
+use vantage_table::column::core::Column;
 use vantage_table::table::Table;
 use vantage_types::entity;
 
@@ -80,4 +81,16 @@ async fn test_operation_eq() {
 
     let products = table.list().await.unwrap();
     assert_eq!(products.len(), 5); // all products have is_deleted=false
+}
+
+#[test]
+fn test_typed_column_is_null() {
+    let note = Column::<i64>::new("note");
+    assert_eq!(note.is_null().into_expr().preview(), "note IS NULL");
+}
+
+#[test]
+fn test_typed_column_is_not_null() {
+    let note = Column::<i64>::new("note");
+    assert_eq!(note.is_not_null().into_expr().preview(), "note IS NOT NULL");
 }

@@ -38,32 +38,3 @@ pub(crate) fn first_cell<D: SqlDialect>(rows: D::Value) -> D::Value {
         other => D::from_cbor_rows(other),
     }
 }
-
-#[cfg(all(test, feature = "postgres"))]
-mod tests {
-    use super::*;
-    use crate::postgres::PostgresDB;
-
-    fn rows(rows: Vec<Vec<(&str, i64)>>) -> CborValue {
-        CborValue::Array(
-            rows.into_iter()
-                .map(|row| {
-                    CborValue::Map(
-                        row.into_iter()
-                            .map(|(k, v)| (CborValue::Text(k.into()), CborValue::Integer(v.into())))
-                            .collect(),
-                    )
-                })
-                .collect(),
-        )
-    }
-
-    #[test]
-    fn first_cell_of_first_row_or_every_row() {
-        let cell = |r| first_cell::<PostgresDB>(PostgresDB::from_cbor_rows(r)).into_value();
-        let two = rows(vec![vec![("a", 1), ("b", 2)], vec![("a", 3)]]);
-        assert_eq!(cell(two), CborValue::Integer(1.into()));
-        assert_eq!(cell(rows(vec![])), rows(vec![]));
-        assert_eq!(cell(rows(vec![vec![]])), rows(vec![vec![]]));
-    }
-}

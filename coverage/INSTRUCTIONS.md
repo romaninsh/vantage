@@ -105,12 +105,18 @@ question at the top of your report. Don't ask about anything these instructions 
    - Delete the `#[cfg(test)] mod tests;` line pointing at a deleted file, and directories left empty.
    - Delete test-only helpers, imports and `#[cfg(test)]` items the deletions leave dead. If non-test code
      uses a `#[cfg(test)]` item, leave it and report it.
-2. **Keep exactly one test per cluster.** Read each member's line range, then put `KEEP` on one row and
-   `DELETE` on the rest, with a one-line reason. In a cluster with `EXEMPT` rows, first mark
+2. **Keep one test per cluster, plus any that pins a distinct outcome.** Read each member's line
+   range, then put `KEEP` on one row and `DELETE` on the rest, with a one-line reason. In a cluster with `EXEMPT` rows, first mark
    `DELETE` on every row whose `beyond exempt` is 0. The rows left over get exactly one `KEEP`
    between them, chosen the same way, or none if no rows are left over.
    - Keep the test whose assertions say the most about behaviour.
    - If two are equal, keep the one covering more regions.
+   - **A test that pins a distinct outcome stays.** A cluster groups tests by the code they run,
+     not by what they assert. If a row asserts an outcome no other row in the cluster asserts (a
+     rendered query or SQL string, a specific error, a documented promise for one input), mark it
+     `KEEP` too, with "distinct outcome: …" as its reason. Delete a row only when another row asserts
+     the same outcome. Never delete a test and then restore the same behaviour by name: that is
+     churn, not deduplication.
 3. **Never delete a test the book names.** The book marks the test behind an example with
    `<!-- tested: <test path> -->` in `docs4/src`. Those tests are vended as exceptions. If you find a
    marked test that isn't `EXEMPT`, keep it and propose an exception for it.

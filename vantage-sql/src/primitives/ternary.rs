@@ -63,8 +63,6 @@ pub fn ternary<T: Debug + Display + Clone>(
     Ternary::new(condition, true_val, false_val)
 }
 
-// -- SQLite: IIF(cond, true, false) -----------------------------------------
-
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType>
     for Ternary<crate::sqlite::types::AnySqliteType>
@@ -74,16 +72,12 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     }
 }
 
-// -- MySQL: IF(cond, true, false) --------------------------------------------
-
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Ternary<crate::mysql::types::AnyMysqlType> {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         Expression::new("IF({}, {}, {})", self.args())
     }
 }
-
-// -- PostgreSQL: CASE WHEN cond THEN true ELSE false END ---------------------
 
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType>

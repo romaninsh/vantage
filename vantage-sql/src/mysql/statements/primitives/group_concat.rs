@@ -59,7 +59,6 @@ impl GroupConcat {
 
 impl Expressive<AnyMysqlType> for GroupConcat {
     fn expr(&self) -> Expr {
-        // Build the inner parts: [DISTINCT] expr [ORDER BY ...] [SEPARATOR '...']
         let mut parts: Vec<Expr> = Vec::new();
 
         if self.distinct {

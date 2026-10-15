@@ -10,8 +10,6 @@
 mod assemble;
 #[cfg(feature = "rhai")]
 mod scripting;
-#[cfg(all(test, not(feature = "rhai")))]
-mod tests;
 
 use std::sync::Arc;
 

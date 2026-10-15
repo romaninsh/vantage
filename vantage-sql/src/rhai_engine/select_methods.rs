@@ -9,8 +9,6 @@ use vantage_rhai::rhai;
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 
-// ── Generic helpers ────────────────────────────────────────────────────
-
 pub fn select_new<V, S: Default, J, C>() -> RhaiSelect<V, S, J, C> {
     RhaiSelect::new(S::default())
 }
@@ -248,8 +246,6 @@ where
     s.inner.push_join(J::make_left(table, alias, on.0));
     s
 }
-
-// ── Macro ──────────────────────────────────────────────────────────────
 
 #[macro_export]
 macro_rules! register_select {

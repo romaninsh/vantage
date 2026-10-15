@@ -1,12 +1,7 @@
-//! Helpers for converting between sqlx rows/values and vantage types.
-//!
-//! **Writing** (bind): Takes `AnyPostgresType` with variant tags — the variant
-//! tells us exactly how to bind each value to sqlx.
-//!
-//! **Reading** (row): Returns `Record<AnyPostgresType>` with variant inferred from
-//! the PostgreSQL column type. Values are stored as `ciborium::Value` (CBOR) for
-//! lossless type preservation — decimals stay as tagged strings, datetimes
-//! keep their type identity, booleans aren't confused with integers.
+//! sqlx rows and bind values for PostgreSQL. Binding follows the variant tag of
+//! `AnyPostgresType`; reading infers the variant from the column type and keeps
+//! the value as CBOR, so decimals stay tagged strings and booleans stay
+//! distinct from integers.
 
 use ciborium::Value as CborValue;
 use sqlx::postgres::PgRow;
@@ -15,8 +10,6 @@ use vantage_types::Record;
 
 use super::types::{AnyPostgresType, PostgresTypeVariants};
 
-/// Bind an AnyPostgresType to a sqlx query. Uses the variant tag to pick
-/// the right sqlx bind type — no guessing from the CBOR value format.
 pub(crate) fn bind_postgres_value<'q>(
     query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
     value: &'q AnyPostgresType,
@@ -207,7 +200,6 @@ fn bind_by_cbor<'q>(
             }
         }
         CborValue::Tag(9, inner) => {
-            // UUID — bind as string
             if let CborValue::Text(s) = inner.as_ref() {
                 query.bind(s.as_str())
             } else {
@@ -306,7 +298,6 @@ fn pg_column_to_cbor(
                 );
             }
         }
-        // -- PostgreSQL array types --
         "_TEXT" | "TEXT[]" => {
             if let Ok(v) = row.try_get::<Vec<String>, _>(ordinal) {
                 return (
@@ -397,7 +388,6 @@ fn pg_column_to_cbor(
         _ => {}
     }
 
-    // Fallback: try common types in order
     if let Ok(v) = row.try_get::<bool, _>(ordinal) {
         return (CborValue::Bool(v), Some(PostgresTypeVariants::Bool));
     }

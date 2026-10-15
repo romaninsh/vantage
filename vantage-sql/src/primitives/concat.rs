@@ -66,15 +66,12 @@ macro_rules! concat_ {
     };
 }
 
-// -- SQLite: a || b || c or a || sep || b || sep || c -------------------------
-
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType>
     for Concat<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         if let Some(sep) = &self.separator {
-            // Interleave parts with separator: a || sep || b || sep || c
             let mut interleaved = Vec::with_capacity(self.parts.len() * 2 - 1);
             for (i, part) in self.parts.iter().enumerate() {
                 if i > 0 {
@@ -88,8 +85,6 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
         }
     }
 }
-
-// -- MySQL: CONCAT(a, b, c) or CONCAT_WS(sep, a, b, c) ----------------------
 
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::types::AnyMysqlType> {
@@ -107,8 +102,6 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Concat<crate::mysql::type
         }
     }
 }
-
-// -- PostgreSQL: a || b || c or CONCAT_WS(sep, a, b, c) ----------------------
 
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType>

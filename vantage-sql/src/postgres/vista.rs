@@ -1,13 +1,8 @@
-//! Vista bridge for the PostgreSQL backend.
-//!
-//! Construct a `Vista` from a typed `Table<PostgresDB, E>` via
-//! `PostgresDB::vista_factory()`, or from a YAML spec via
-//! `PostgresVistaFactory::from_yaml`. The YAML path builds a
-//! `Table<PostgresDB, EmptyEntity>` first and wraps it as `from_table` does —
-//! one construction path, one reading path.
-//!
-//! `AnyPostgresType` already wraps `ciborium::Value`, so the boundary
-//! translation is a passthrough; ids stringify (matching `TableSource::Id`).
+//! Vista bridge for the PostgreSQL backend: `PostgresDB::vista_factory()`
+//! builds a `Vista` from a typed `Table<PostgresDB, E>` or, through
+//! `VistaFactory::from_yaml`, from a YAML spec. The YAML path builds a
+//! `Table<PostgresDB, EmptyEntity>` first and wraps it as `from_table` does.
+//! Ids stringify, matching `TableSource::Id`.
 
 pub mod factory;
 #[cfg(feature = "rhai")]

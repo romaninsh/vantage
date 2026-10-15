@@ -66,8 +66,6 @@ fn sql_lit<T: Debug + Display + Clone>(s: &str) -> Expression<T> {
     Expression::new(format!("'{escaped}'"), vec![])
 }
 
-// -- SQLite: JSON_EXTRACT("col", '$.a.b') ------------------------------------
-
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType>
     for JsonExtract<crate::sqlite::types::AnySqliteType>
@@ -84,7 +82,6 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     }
 }
 
-// -- MySQL: JSON_UNQUOTE(JSON_EXTRACT(`col`, '$.a.b')) ------------------------
 // The function forms of MySQL's `->>` / `->`; MariaDB has only the functions.
 
 #[cfg(feature = "mysql")]
@@ -107,8 +104,6 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
         )
     }
 }
-
-// -- PostgreSQL: "col"->'a'->>'b' --------------------------------------------
 
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType>

@@ -209,3 +209,34 @@ async fn failed_query_error_includes_sql_and_param_types() {
         "error should summarize parameter types: {msg}"
     );
 }
+
+#[tokio::test]
+async fn failed_query_error_shows_numbered_question_placeholders() {
+    let db = setup().await;
+
+    let query = Expression::<AnySqliteType>::new(
+        "SELECT * FROM \"no_such_table\" WHERE a = {} AND b = {}",
+        vec![
+            ExpressiveEnum::Scalar(AnySqliteType::new(1i64)),
+            ExpressiveEnum::Scalar(AnySqliteType::new(2i64)),
+        ],
+    );
+    let msg = db.execute(&query).await.unwrap_err().to_string();
+
+    assert!(msg.contains("a = ?1 AND b = ?2"), "{msg}");
+}
+
+#[tokio::test]
+async fn failed_query_error_caps_long_sql() {
+    let db = setup().await;
+
+    let padding = "x".repeat(5000);
+    let query = Expression::<AnySqliteType>::new(
+        format!("SELECT * FROM \"no_such_table\" /* {padding} */"),
+        vec![],
+    );
+    let msg = db.execute(&query).await.unwrap_err().to_string();
+
+    assert!(msg.contains("no_such_table"), "{msg}");
+    assert!(!msg.contains(&padding), "the whole statement was echoed");
+}

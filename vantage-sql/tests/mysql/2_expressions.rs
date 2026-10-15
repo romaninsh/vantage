@@ -44,6 +44,19 @@ fn records(result: AnyMysqlType) -> Vec<Record<AnyMysqlType>> {
     Vec::<Record<AnyMysqlType>>::try_from(result).unwrap()
 }
 
+// ── Interval renders as INTERVAL <amount> <UNIT> ───────────────────────────
+
+#[test]
+fn test_interval_renders_interval_literal() {
+    use vantage_expressions::Expressive;
+    use vantage_sql::primitives::interval::Interval;
+
+    let thirty_days: Expression<AnyMysqlType> = Interval::new(30, "day").expr();
+    assert_eq!(thirty_days.preview(), "INTERVAL 30 DAY");
+    let one_month: Expression<AnyMysqlType> = Interval::new(1, "month").expr();
+    assert_eq!(one_month.preview(), "INTERVAL 1 MONTH");
+}
+
 // ── Basic select via ExprDataSource ────────────────────────────────────────
 
 #[tokio::test]
@@ -177,4 +190,35 @@ async fn test_empty_result() {
     let result = records(db.execute(&expr).await.unwrap());
 
     assert!(result.is_empty());
+}
+
+// ── A failed query reports its SQL, capped, with `?` placeholders ──────────
+
+#[tokio::test]
+async fn test_failed_query_error_shows_question_placeholders() {
+    let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
+    let expr = Expression::<AnyMysqlType>::new(
+        "SELECT * FROM `no_such_table` WHERE a = {} AND b = {}",
+        vec![
+            ExpressiveEnum::Scalar(AnyMysqlType::new(1i64)),
+            ExpressiveEnum::Scalar(AnyMysqlType::new(2i64)),
+        ],
+    );
+    let msg = db.execute(&expr).await.unwrap_err().to_string();
+
+    assert!(msg.contains("a = ? AND b = ?"), "{msg}");
+}
+
+#[tokio::test]
+async fn test_failed_query_error_caps_long_sql() {
+    let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
+    let padding = "x".repeat(5000);
+    let expr = Expression::<AnyMysqlType>::new(
+        format!("SELECT * FROM `no_such_table` /* {padding} */"),
+        vec![],
+    );
+    let msg = db.execute(&expr).await.unwrap_err().to_string();
+
+    assert!(msg.contains("no_such_table"), "{msg}");
+    assert!(!msg.contains(&padding), "the whole statement was echoed");
 }

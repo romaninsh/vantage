@@ -12,7 +12,6 @@ use vantage_rhai::rhai::Array;
 
 use super::{RhaiExpr, RhaiIdent};
 
-/// Extract `Expression<V>` from a Dynamic that is either RhaiExpr or RhaiIdent.
 fn unwrap_expr<V: Clone + 'static>(
     val: rhai::Dynamic,
 ) -> Result<Expression<V>, Box<rhai::EvalAltResult>>
@@ -30,8 +29,6 @@ where
         )))
     }
 }
-
-// ── Ident constructors ─────────────────────────────────────────────────
 
 pub fn make_rhai_ident(name: &str) -> RhaiIdent {
     RhaiIdent(make_ident(name))
@@ -72,8 +69,6 @@ where
     )
 }
 
-// ── Expr constructors ──────────────────────────────────────────────────
-
 pub fn make_expr0<V: Clone>(template: &str) -> RhaiExpr<V> {
     RhaiExpr(Expression::new(template, vec![]))
 }
@@ -109,8 +104,6 @@ where
     Ok(RhaiExpr(Expression::new(template, params?)))
 }
 
-// ── SQL function call ──────────────────────────────────────────────────
-
 pub fn make_fx<V: Clone + Debug + Display + 'static>(
     name: &str,
     args: Array,
@@ -135,8 +128,6 @@ where
         .collect();
     Ok(RhaiExpr(Fx::new(name, exprs?).expr()))
 }
-
-// ── Aggregates ─────────────────────────────────────────────────────────
 
 pub fn fn_sum<V: Clone + Debug + Display + 'static>(
     arg: rhai::Dynamic,
@@ -205,8 +196,6 @@ where
     ))
 }
 
-// ── SQL functions ──────────────────────────────────────────────────────
-
 pub fn fn_coalesce<V: Clone + Debug + Display + 'static>(
     a: rhai::Dynamic,
     b: rhai::Dynamic,
@@ -266,8 +255,6 @@ where
     ))
 }
 
-// ── Date/Time functions ──────────────────────────────────────────────
-
 pub fn fn_date_format<V>(
     expr: rhai::Dynamic,
     format: &str,
@@ -299,8 +286,6 @@ where
     }
     Ok(RhaiExpr(gc.expr()))
 }
-
-// ── Arithmetic ─────────────────────────────────────────────────────────
 
 pub fn fn_mul<V: Clone + Debug + Display + 'static>(
     a: rhai::Dynamic,
@@ -366,63 +351,73 @@ where
     )))
 }
 
-// ── Macro ──────────────────────────────────────────────────────────────
-
 #[macro_export]
 macro_rules! register_constructors {
     ($engine:expr, $ns:expr, value: $V:ty) => {{
         // Uses type aliases Ex, Id, Expr from register_engine!
 
-        // ── Constructors ────────────────────────────────────────────
         $ns.func("ident", $crate::rhai_engine::constructors::make_rhai_ident)
             .func("expr", $crate::rhai_engine::constructors::make_expr0::<$V>)
             .func("expr", $crate::rhai_engine::constructors::make_expr::<$V>)
             .func("fx", $crate::rhai_engine::constructors::make_fx::<$V>);
 
-        // ── Aggregates ──────────────────────────────────────────────
         $ns.func("sum", $crate::rhai_engine::constructors::fn_sum::<$V>)
             .func("count", $crate::rhai_engine::constructors::fn_count::<$V>)
-            .func("count_distinct", $crate::rhai_engine::constructors::fn_count_distinct::<$V>)
+            .func(
+                "count_distinct",
+                $crate::rhai_engine::constructors::fn_count_distinct::<$V>,
+            )
             .func("avg", $crate::rhai_engine::constructors::fn_avg::<$V>)
             .func("min", $crate::rhai_engine::constructors::fn_min::<$V>)
             .func("max", $crate::rhai_engine::constructors::fn_max::<$V>);
 
-        // ── SQL functions ───────────────────────────────────────────
-        $ns.func("coalesce", $crate::rhai_engine::constructors::fn_coalesce::<$V>)
-            .func("nullif", $crate::rhai_engine::constructors::fn_nullif::<$V>)
-            .func("cast", $crate::rhai_engine::constructors::fn_cast::<$V>)
-            .func("round", $crate::rhai_engine::constructors::fn_round::<$V>);
+        $ns.func(
+            "coalesce",
+            $crate::rhai_engine::constructors::fn_coalesce::<$V>,
+        )
+        .func("nullif", $crate::rhai_engine::constructors::fn_nullif::<$V>)
+        .func("cast", $crate::rhai_engine::constructors::fn_cast::<$V>)
+        .func("round", $crate::rhai_engine::constructors::fn_round::<$V>);
 
-        // ── Arithmetic ──────────────────────────────────────────────
         $ns.func("mul", $crate::rhai_engine::constructors::fn_mul::<$V>)
             .func("add", $crate::rhai_engine::constructors::fn_add::<$V>)
             .func("sub", $crate::rhai_engine::constructors::fn_sub::<$V>)
             .func("div", $crate::rhai_engine::constructors::fn_div::<$V>);
 
-        // ── Date/Time functions ────────────────────────────────────────
-        $ns.func("date_format", $crate::rhai_engine::constructors::fn_date_format::<$V>)
-            .func("group_concat", $crate::rhai_engine::constructors::fn_group_concat::<$V>);
+        $ns.func(
+            "date_format",
+            $crate::rhai_engine::constructors::fn_date_format::<$V>,
+        )
+        .func(
+            "group_concat",
+            $crate::rhai_engine::constructors::fn_group_concat::<$V>,
+        );
 
-        // ── Ident methods ───────────────────────────────────────────
         $engine.register_fn("dot_of", |id: &mut Id, prefix: &str| -> Id {
-            $crate::rhai_engine::RhaiIdent($crate::rhai_engine::constructors::ident_dot_of(id.0.clone(), prefix))
+            $crate::rhai_engine::RhaiIdent($crate::rhai_engine::constructors::ident_dot_of(
+                id.0.clone(),
+                prefix,
+            ))
         });
 
         $engine.register_fn("alias", |id: &mut Id, alias: &str| -> Id {
             $crate::rhai_engine::RhaiIdent(id.0.clone().with_alias(alias))
         });
 
-        // ── Expr methods ────────────────────────────────────────────
         $engine.register_fn("alias", |e: &mut Ex, alias: &str| -> Ex {
-            $crate::rhai_engine::RhaiExpr($crate::rhai_engine::constructors::expr_as_alias::<$V>(e.0.clone(), alias))
+            $crate::rhai_engine::RhaiExpr($crate::rhai_engine::constructors::expr_as_alias::<$V>(
+                e.0.clone(),
+                alias,
+            ))
         });
 
-        // ── Indexer: t["col"] ───────────────────────────────────────
         $engine.register_indexer_get(|id: &mut Id, col: &str| -> Id {
-            $crate::rhai_engine::RhaiIdent($crate::rhai_engine::constructors::ident_index(id.0.clone(), col))
+            $crate::rhai_engine::RhaiIdent($crate::rhai_engine::constructors::ident_index(
+                id.0.clone(),
+                col,
+            ))
         });
 
-        // ── Clone ───────────────────────────────────────────────────
         $engine.register_fn("clone", |e: Ex| -> Ex { e });
         $engine.register_fn("clone", |id: Id| -> Id { id });
     }};

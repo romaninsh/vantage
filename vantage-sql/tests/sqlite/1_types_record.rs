@@ -172,6 +172,41 @@ fn test_json_round_trip_bool() {
     assert_eq!(restored.try_get::<i64>(), Some(1));
 }
 
+#[test]
+fn test_json_bridge_keeps_non_finite_floats_as_strings() {
+    // JSON has no NaN or Infinity; the bridge keeps the value as a string.
+    for float in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let json: serde_json::Value = AnySqliteType::untyped(CborValue::Float(float)).into();
+        assert!(json.is_string(), "{float} became {json}");
+    }
+}
+
+#[test]
+fn test_json_bridge_keeps_entries_with_non_text_map_keys() {
+    let map = CborValue::Map(vec![(
+        CborValue::Integer(1.into()),
+        CborValue::Text("val".into()),
+    )]);
+    let json: serde_json::Value = AnySqliteType::untyped(map).into();
+
+    let object = json.as_object().expect("a map becomes a JSON object");
+    assert_eq!(object.len(), 1);
+    assert_eq!(object.values().next(), Some(&serde_json::json!("val")));
+}
+
+#[test]
+fn test_json_bridge_renders_bytes_as_text_or_hex() {
+    let text: serde_json::Value =
+        AnySqliteType::untyped(CborValue::Bytes(b"hello".to_vec())).into();
+    assert_eq!(text, serde_json::json!("hello"));
+
+    let hex: serde_json::Value = AnySqliteType::untyped(CborValue::Bytes(vec![0xFF, 0xFE])).into();
+    assert_eq!(
+        hex.as_str().map(str::to_lowercase),
+        Some("fffe".to_string())
+    );
+}
+
 // ── Error cases ────────────────────────────────────────────────────────────
 
 #[test]

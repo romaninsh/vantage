@@ -66,7 +66,6 @@ impl std::fmt::Display for AnyPostgresType {
                 }
             }
             CborValue::Tag(9, inner) => {
-                // UUID
                 if let CborValue::Text(s) = inner.as_ref() {
                     write!(f, "'{}'", s)
                 } else {
@@ -117,8 +116,6 @@ impl std::fmt::Display for AnyPostgresType {
     }
 }
 
-// -- From impls for common types ----------------------------------------------
-
 macro_rules! impl_from_for_any_postgres {
     ($($ty:ty),*) => {
         $(
@@ -156,8 +153,6 @@ impl From<&str> for AnyPostgresType {
     }
 }
 
-// -- JSON <-> CBOR bridge (for AnyTable interop) ------------------------------
-
 impl From<JsonValue> for AnyPostgresType {
     fn from(val: JsonValue) -> Self {
         if val.is_null() {
@@ -174,8 +169,6 @@ impl From<AnyPostgresType> for JsonValue {
         cbor_to_json(val.into_value())
     }
 }
-
-// -- Expressive impls ---------------------------------------------------------
 
 macro_rules! impl_expressive_for_postgres_scalar {
     ($($ty:ty),*) => {
@@ -227,8 +220,6 @@ impl Expressive<AnyPostgresType> for AnyPostgresType {
         Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
     }
 }
-
-// -- TryFrom impls (for AssociatedExpression::get()) --------------------------
 
 macro_rules! impl_try_from_postgres {
     ($($ty:ty),*) => {

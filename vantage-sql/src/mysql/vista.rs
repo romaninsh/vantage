@@ -1,13 +1,8 @@
-//! Vista bridge for the MySQL backend.
-//!
-//! Construct a `Vista` from a typed `Table<MysqlDB, E>` via
-//! `MysqlDB::vista_factory()`, or from a YAML spec via
-//! `MysqlVistaFactory::from_yaml`. The YAML path builds a
-//! `Table<MysqlDB, EmptyEntity>` first and wraps it as `from_table` does —
-//! one construction path, one reading path.
-//!
-//! `AnyMysqlType` already wraps `ciborium::Value`, so the boundary
-//! translation is a passthrough; ids stringify (matching `TableSource::Id`).
+//! Vista bridge for the MySQL backend: `MysqlDB::vista_factory()` builds a
+//! `Vista` from a typed `Table<MysqlDB, E>` or, through
+//! `VistaFactory::from_yaml`, from a YAML spec. The YAML path builds a
+//! `Table<MysqlDB, EmptyEntity>` first and wraps it as `from_table` does.
+//! Ids stringify, matching `TableSource::Id`.
 
 pub mod factory;
 #[cfg(feature = "rhai")]

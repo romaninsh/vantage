@@ -23,12 +23,16 @@ SRC = os.path.join(CRATE, "src")
 os.makedirs(os.path.join(OUT, "prof"), exist_ok=True)
 
 suites = json.load(open(LIST))["rust-suites"]
-tests = []
+# Unit tests built into a crate target are internal; `tests/` binaries are blackbox.
+UNIT_KINDS = {"lib", "bin", "proc-macro", "cdylib", "staticlib", "rlib", "dylib"}
+tests, internal = [], []
 for suite in suites.values():
     for name, case in suite["testcases"].items():
         if case.get("ignored") or case.get("filter-match", {}).get("status") != "matches":
             continue
         tests.append((suite["binary-id"], suite["binary-path"], suite["cwd"], name))
+        if suite.get("kind") in UNIT_KINDS:
+            internal.append(f"{suite['binary-id']}::{name}")
 
 sources = []
 for root, _, files in os.walk(SRC):
@@ -116,6 +120,7 @@ index = {r: i for i, r in enumerate(sorted(universe))}
 json.dump({
     "regions": [list(r) for r in sorted(universe)],
     "tests": {k: sorted(index[r] for r in regions) for k, regions in covered.items()},
+    "internal": sorted(internal),
 }, open(os.path.join(OUT, "regions.json"), "w"))
 json.dump({
     "tests": len(tests), "measured": len(covered), "failed": failed,

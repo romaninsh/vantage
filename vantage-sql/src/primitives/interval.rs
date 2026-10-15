@@ -5,7 +5,8 @@ use vantage_expressions::{Expression, Expressive};
 /// Renders as:
 /// - **PostgreSQL:** `INTERVAL '1 year'`
 /// - **MySQL:**      `INTERVAL 1 YEAR`
-/// - **SQLite:**     `1` (numeric days — caller must convert units)
+/// - **SQLite:**     a number of days: a week is 7, a month 30, a year 365,
+///   and hours round to whole days
 ///
 /// # Examples
 ///
@@ -23,6 +24,8 @@ pub struct Interval {
 }
 
 impl Interval {
+    /// `unit` is `day`, `week`, `month`, `year` or `hour`, singular or
+    /// plural. Use the singular when the query may run on MySQL.
     pub fn new(amount: i64, unit: impl Into<String>) -> Self {
         Self {
             amount,
@@ -30,7 +33,6 @@ impl Interval {
         }
     }
 
-    /// Convert to approximate days for SQLite (which has no INTERVAL type).
     #[cfg(feature = "sqlite")]
     fn to_days(&self) -> i64 {
         match self.unit.as_str() {
@@ -44,16 +46,12 @@ impl Interval {
     }
 }
 
-// -- SQLite: numeric days (approximate) --------------------------------------
-
 #[cfg(feature = "sqlite")]
 impl Expressive<crate::sqlite::types::AnySqliteType> for Interval {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
         Expression::new(format!("{}", self.to_days()), vec![])
     }
 }
-
-// -- MySQL: INTERVAL 1 YEAR -------------------------------------------------
 
 #[cfg(feature = "mysql")]
 impl Expressive<crate::mysql::types::AnyMysqlType> for Interval {
@@ -64,8 +62,6 @@ impl Expressive<crate::mysql::types::AnyMysqlType> for Interval {
         )
     }
 }
-
-// -- PostgreSQL: INTERVAL '1 year' ------------------------------------------
 
 #[cfg(feature = "postgres")]
 impl Expressive<crate::postgres::types::AnyPostgresType> for Interval {

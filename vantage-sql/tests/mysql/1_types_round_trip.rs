@@ -152,3 +152,18 @@ fn test_f32_vs_f64_variant_boundary() {
     assert_eq!(val32.try_get::<f64>(), None); // Float4 ≠ Float8
     assert_eq!(val64.try_get::<f32>(), None); // Float8 ≠ Float4
 }
+
+// ── Variant detection from raw CBOR tags ───────────────────────────────────
+
+#[test]
+fn test_variant_from_cbor_tags() {
+    use ciborium::Value as CborValue;
+
+    let tagged = |tag: u64| CborValue::Tag(tag, Box::new(CborValue::Text("x".into())));
+    let variant = |tag: u64| MysqlTypeVariants::from_cbor(&tagged(tag));
+
+    assert_eq!(variant(0), Some(MysqlTypeVariants::DateTime));
+    assert_eq!(variant(10), Some(MysqlTypeVariants::Decimal));
+    assert_eq!(variant(100), Some(MysqlTypeVariants::Date));
+    assert_eq!(variant(101), Some(MysqlTypeVariants::Time));
+}

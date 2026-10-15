@@ -62,16 +62,10 @@ pub fn cmp_binary<V: Clone>(op: &str, a: Expression<V>, b: Expression<V>) -> Rha
     ))
 }
 
-// ── Macro: register all comparison operators ───────────────────────────
-//
-// Uses Dynamic args so we only need 1 function per operator (not 20+).
-
+// Dynamic args need one function per operator, not one per operand type pair.
 #[macro_export]
 macro_rules! register_operators {
     ($engine:expr, value: $V:ty) => {{
-        // Each closure takes (Dynamic, Dynamic), converts both sides,
-        // and produces a comparison RhaiExpr.
-
         macro_rules! reg_op {
             ($rhai_op:expr, $sql_op:expr, $name:ident) => {
                 fn $name(

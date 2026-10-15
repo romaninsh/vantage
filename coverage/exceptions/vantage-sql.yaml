@@ -1,0 +1,32 @@
+# @llm-protected: approved test exceptions. Add entries only with coverage/vend-exception.sh.
+#
+# Each entry keeps one test out of the matrix's deletion candidates. The token signs the
+# package (this file's name), the test and the reason: edit either and the entry stops counting.
+
+- test: rhai_smoke::rhai_smoke::round_writes_decimals_into_the_sql
+  reason: 'regression test for #446: sql::round bound decimals as bigint, and Postgres has no round(numeric, bigint)'
+  token: 979803e3-48787cb3984e
+
+- test: postgres::postgres::vista::vista_yaml_rhai_source_is_read_only_and_filters
+  reason: 'named by the book: docs4/src/rhai/dialects.md:33 and rhai/query-tables.md:18 test their examples with it'
+  token: b369d6e6-da21a5fbbd24
+
+- test: mysql::mysql::vista::vista_yaml_rhai_source_is_read_only_and_filters
+  reason: 'named by the book: docs4/src/rhai/dialects.md:33 and rhai/query-tables.md:18 test their examples with it'
+  token: 10ff6fbf-8f3c884309ff
+
+- test: sqlite::sqlite::vista::vista_yaml_rhai_source_is_read_only_and_filters
+  reason: 'named by the book: docs4/src/rhai/dialects.md:33 and rhai/query-tables.md:18 test their examples with it'
+  token: b9e8783e-fd0178584c6e
+
+- test: postgres::postgres::vista::vista_yaml_base_aggregates_into_declared_column
+  reason: 'named by the book: docs4/src/rhai/query-tables.md:48 tests its example with it'
+  token: b7e6794f-f619b1771ac8
+
+- test: mysql::mysql::vista::vista_yaml_base_aggregates_into_declared_column
+  reason: 'named by the book: docs4/src/rhai/query-tables.md:48 tests its example with it'
+  token: 3991f2f7-d0eca122828a
+
+- test: sqlite::sqlite::vista::vista_yaml_base_aggregates_into_declared_column
+  reason: 'named by the book: docs4/src/rhai/query-tables.md:48 tests its example with it'
+  token: ee401356-60d0d3af8ab9
