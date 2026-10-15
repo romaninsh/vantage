@@ -94,8 +94,9 @@ A template that is **one hole and nothing else** evaluates to that hole's value
 with its type intact, so a slot can accept either text or structure:
 `'${ #{ text: label, color: "red" } }'` yields the map, and
 `Template::from("${ 1 + 1 }").eval_as::<String>()` is a `WrongType` error
-rather than `"2"`. Add a single space of literal text and the parts join into a
-`String` instead, with a unit-valued hole rendering as empty.
+rather than `"2"`. Whitespace around the hole doesn't count, so the trailing
+newline of a YAML block scalar keeps the value. Add visible literal text and the
+parts join into a `String` instead, with a unit-valued hole rendering as empty.
 
 Use `compile` for anything a project holds onto — the host's cache means the
 same source parses once. Use `compile_uncached` for a one-shot script that will

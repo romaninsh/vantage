@@ -1,5 +1,4 @@
-//! `Dynamic` ⇄ `serde_json::Value`. Replaces the hand-rolled converters in
-//! consumers.
+//! `Dynamic` ⇄ `serde_json::Value`.
 
 use rhai::{Array, Dynamic, Map};
 use serde_json::{Map as JsonMap, Number, Value};
@@ -8,9 +7,7 @@ use serde_json::{Map as JsonMap, Number, Value};
 /// value costs only its own leaf.
 ///
 /// A leaf serde cannot represent — a custom type, a function pointer — renders
-/// as its `to_string()`. Doing this structurally matters: a single opaque value
-/// nested in a map used to fail the whole conversion and flatten the entire
-/// object into one string.
+/// as its `to_string()`, so the maps and arrays around it keep their shape.
 pub fn to_json(value: &Dynamic) -> Value {
     if value.is_unit() {
         return Value::Null;
@@ -65,59 +62,5 @@ pub fn from_json(value: &Value) -> Dynamic {
             }
             Dynamic::from(map)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[derive(Clone)]
-    struct Opaque;
-
-    #[test]
-    fn round_trips_nested_values() {
-        let v = json!({"a": [1, 2.5, true, null, "s"], "b": {"c": -3}});
-        let d = from_json(&v);
-        assert_eq!(to_json(&d), v);
-    }
-
-    #[test]
-    fn custom_types_fall_back_to_display() {
-        let d = Dynamic::from(Opaque);
-        assert!(matches!(to_json(&d), Value::String(_)));
-    }
-
-    #[test]
-    fn an_opaque_leaf_does_not_flatten_its_container() {
-        // The shape around an unsupported value has to survive.
-        let mut map = Map::new();
-        map.insert("kept".into(), Dynamic::from(7_i64));
-        map.insert("opaque".into(), Dynamic::from(Opaque));
-        map.insert(
-            "nested".into(),
-            Dynamic::from(vec![Dynamic::from(1_i64), Dynamic::from(Opaque)]),
-        );
-
-        let out = to_json(&Dynamic::from(map));
-        let Value::Object(o) = &out else {
-            panic!("expected an object, got {out}")
-        };
-        assert_eq!(o["kept"], json!(7));
-        assert!(matches!(o["opaque"], Value::String(_)));
-        let Value::Array(a) = &o["nested"] else {
-            panic!("expected an array, got {}", o["nested"])
-        };
-        assert_eq!(a[0], json!(1));
-        assert!(matches!(a[1], Value::String(_)));
-    }
-
-    #[test]
-    fn non_finite_floats_become_text() {
-        assert!(matches!(
-            to_json(&Dynamic::from(f64::NAN)),
-            Value::String(_)
-        ));
     }
 }

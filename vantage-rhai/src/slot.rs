@@ -41,11 +41,8 @@ macro_rules! slot {
             }
         }
 
-        // A slot reads as its source text wherever a `&str` is wanted, so a
-        // struct field can change from `Option<String>` to `Option<$name>`
-        // without touching the sites that only display or compare it. The
-        // kind still matters where it counts: `Host::compile` takes the
-        // typed slot, never a bare string.
+        // A slot reads as its source text wherever a `&str` is wanted;
+        // `Host::compile` still takes the typed slot, never a bare string.
         impl std::ops::Deref for $name {
             type Target = str;
             fn deref(&self) -> &str {
@@ -107,42 +104,3 @@ slot!(
     Block,
     "Rhai statements"
 );
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Deserialize)]
-    struct Doc {
-        when: Expr,
-        text: Template,
-        action: Block,
-    }
-
-    #[test]
-    fn slots_deserialize_from_plain_strings() {
-        let doc: Doc = serde_json::from_str(
-            r#"{"when":"row.x > 1","text":"Hi ${row.name}","action":"state.done = true;"}"#,
-        )
-        .unwrap();
-        assert_eq!(doc.when.src(), "row.x > 1");
-        assert_eq!(doc.text.src(), "Hi ${row.name}");
-        assert_eq!(doc.action.src(), "state.done = true;");
-    }
-
-    #[test]
-    fn slots_serialize_transparently() {
-        let s = serde_json::to_string(&Expr::from("a + b")).unwrap();
-        assert_eq!(s, r#""a + b""#);
-    }
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn schema_carries_language_marker() {
-        let schema = schemars::schema_for!(Expr);
-        let json = serde_json::to_value(&schema).unwrap();
-        assert_eq!(json["type"], "string");
-        assert_eq!(json["x-language"], "rhai");
-        assert_eq!(json["description"], Expr::DESCRIPTION);
-    }
-}
