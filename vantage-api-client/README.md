@@ -134,7 +134,7 @@ let graphql = gql_api
 let backends: Vec<Vista> = vec![rest, graphql];
 ```
 
-Each `Vista`'s `driver()` reports `"rest-api"` or `"graphql"` so generic UI code can branch on capability when needed.
+Each `Vista`'s `driver_name()` reports `"rest-api"` or `"graphql"` so generic UI code can branch on capability when needed.
 
 ## Relationship Traversal
 

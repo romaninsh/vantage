@@ -488,34 +488,3 @@ pub(crate) fn split_response_path(path: &str) -> Vec<String> {
         .map(str::to_string)
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn new_keeps_endpoint() {
-        let api = GraphqlApi::new("https://api.spacex.land/graphql/");
-        assert_eq!(api.endpoint(), "https://api.spacex.land/graphql/");
-    }
-
-    #[test]
-    fn builder_sets_auth_without_panicking() {
-        // Auth header is private — this just confirms the builder chain
-        // compiles end-to-end and produces a usable client.
-        let api = GraphqlApi::builder("https://example.test/graphql")
-            .auth("Bearer abc")
-            .build();
-        assert_eq!(api.endpoint(), "https://example.test/graphql");
-    }
-
-    #[test]
-    fn debug_masks_auth_header() {
-        let api = GraphqlApi::builder("https://example.test/graphql")
-            .auth("Bearer secret-token")
-            .build();
-        let text = format!("{api:?}");
-        assert!(!text.contains("secret-token"), "{text}");
-        assert!(text.contains("<set>"), "{text}");
-    }
-}

@@ -1,12 +1,10 @@
 //! `Selectable<AnyGraphqlType, GraphqlCondition>` for `GraphqlSelect`.
 //!
-//! Same shape as `vantage-mongodb`'s impl — most methods are direct
-//! field accessors; grouping and `DISTINCT` are no-ops (GraphQL has no
-//! spelling for either); the as_field/as_count/as_sum/as_max/as_min
-//! aggregate constructors return placeholder expressions because the
-//! actual aggregate semantics depend on the schema (Hasura ships
-//! `<table>_aggregate { aggregate { count, sum {...} } }`; generic
-//! schemas vary).
+//! Most methods are direct field accessors. Grouping and `DISTINCT` are
+//! no-ops (GraphQL has no spelling for either). The
+//! as_field/as_count/as_sum/as_max/as_min constructors return placeholder
+//! expressions in Hasura's `<table>_aggregate { aggregate { … } }` shape,
+//! since aggregate semantics depend on the schema.
 
 use vantage_expressions::traits::selectable::SourceRef;
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum, Order, Selectable};
@@ -30,9 +28,7 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
     }
 
     fn add_expression(&mut self, _expression: impl Expressive<AnyGraphqlType>) {
-        // GraphQL selection sets don't accept arbitrary expressions —
-        // only field names (plus arguments and aliases, which we
-        // handle elsewhere). Drop silently to mirror Mongo's posture.
+        // A selection set holds field names only, so an expression is dropped.
     }
 
     fn add_where_condition(&mut self, condition: impl Into<GraphqlCondition>) {
@@ -43,9 +39,8 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
     fn set_distinct(&mut self, _distinct: bool) {}
 
     fn add_order_by(&mut self, order: impl Into<GraphqlCondition>, direction: Order) {
-        // Convention: an order argument that resolves to a Field
-        // condition carries the column name as `field`. Anything else
-        // gets dropped — same posture as Mongo's `add_order_by`.
+        // A Field condition carries the sort column as its `field`; any other
+        // condition has no column to sort by and is dropped.
         let cond = order.into();
         if let GraphqlCondition::Field(fc) = cond {
             self.sort.push((fc.field, direction));
@@ -103,9 +98,8 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
     }
 
     fn as_field(&self, _field: impl Into<String>) -> Expression<AnyGraphqlType> {
-        // Subquery-as-field needs schema-driven aggregate field names that
-        // this layer doesn't have, so the expression only previews the
-        // query.
+        // Without the schema's aggregate field names this can only preview
+        // the query.
         Expression::new(self.preview(), vec![])
     }
 

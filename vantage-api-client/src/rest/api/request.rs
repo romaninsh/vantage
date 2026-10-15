@@ -89,8 +89,7 @@ impl RestApi {
     /// Build the combined query-string from pagination + conditions.
     /// `consumed` lists condition indices already baked into the URI
     /// path; those don't appear in the query string. Conditions that
-    /// don't peel cleanly into eq pairs are skipped — same "best effort"
-    /// stance as before.
+    /// don't peel into eq pairs are skipped.
     pub(super) fn build_query_string(
         &self,
         window: Option<(i64, i64)>,
@@ -100,15 +99,13 @@ impl RestApi {
     ) -> String {
         let mut params: Vec<(String, String)> = Vec::new();
 
-        // Pagination first — matches the order users see in the URL bar.
-        // When `no_pagination` is set the API doesn't accept page/limit
-        // query params (and may treat them as strict filters that
-        // return empty), so we leave them off.
+        // With `no_pagination` the API may treat page/limit as strict filters
+        // and return nothing, so they are left off.
         //
         // `window` is a half-open `[offset, offset+limit)` band. Skip-based
-        // APIs take the offset verbatim; page-based APIs are addressed by
-        // 1-based page, derived from the offset (the loader may hand
-        // non-page-aligned windows, so it rounds down to the containing page).
+        // APIs take the offset verbatim; page-based ones are addressed by the
+        // 1-based page containing the offset (the loader may hand
+        // non-page-aligned windows).
         if !self.no_pagination
             && let Some((offset, limit)) = window
         {
@@ -128,8 +125,6 @@ impl RestApi {
             params.push((spec.param.clone(), spec.value(field, dir)));
         }
 
-        // Conditions: each `eq` becomes `?field=value`. Multiple
-        // conditions AND together (JSON Server semantics).
         for (i, cond) in conditions.iter().enumerate() {
             if consumed.contains(&i) {
                 continue;
@@ -147,9 +142,6 @@ impl RestApi {
             if i > 0 {
                 s.push('&');
             }
-            // Minimal URL encoding — we encode `&` and `=` and spaces
-            // because those break the query format. Anything else
-            // passes through; the JSON Server convention is permissive.
             s.push_str(&urlencode(k));
             s.push('=');
             s.push_str(&urlencode(v));

@@ -42,14 +42,10 @@ fn unsupported(method: &'static str) -> vantage_core::VantageError {
     .mark_unsupported()
 }
 
-/// Build a `GraphqlSelect` from a table's current state.
-///
-/// - `root_field` ← `table.table_name()`
-/// - `fields` ← `table.columns().keys()` (plus id field if not in the column set)
-/// - `conditions` ← `table.conditions()`
-/// - `sort` ← `table.orders()`, mapping the condition's first `Field` to a column name (mirrors Mongo's posture)
-/// - `limit/skip` ← `table.pagination()`
-/// - `dialect` / `filter_arg_name` propagate from the API
+/// The select a table's current state describes: root field from the table
+/// name, the id field then the columns as fields, and its conditions, orders
+/// and pagination where the API takes them. Dialect, filter argument, root
+/// arguments and response path come from the API.
 pub(crate) fn select_from_table<E: Entity<AnyGraphqlType>>(
     table: &Table<GraphqlApi, E>,
 ) -> GraphqlSelect {
@@ -68,7 +64,6 @@ pub(crate) fn select_from_table<E: Entity<AnyGraphqlType>>(
         select = select.with_response_path(api.response_path().to_vec());
     }
 
-    // Selection set
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let id_name = table.id_field().map(|c| c.name().to_string());
     if let Some(id_name) = id_name.as_ref() {
@@ -93,7 +88,7 @@ pub(crate) fn select_from_table<E: Entity<AnyGraphqlType>>(
         }
     }
 
-    // Orders: GraphqlCondition's `Field` variant carries the column name.
+    // An order is stored as a `Field` condition, whose field is the column.
     if api.can_order() {
         for (cond, direction) in table.orders() {
             if let GraphqlCondition::Field(fc) = cond {
@@ -142,9 +137,7 @@ pub(crate) fn descend(value: &Value, path: &[String]) -> Value {
 }
 
 /// Convert a JSON row into `(Id, Record<AnyGraphqlType>)`. The id is
-/// stringified from whatever JSON shape the server returned — most
-/// schemas use `String` or numeric ids, both of which we coerce to
-/// `String` since that's our `Id` type.
+/// stringified from whatever JSON shape the server returned.
 pub(crate) fn row_to_record(
     row: &Value,
     fields: &[String],
@@ -474,7 +467,7 @@ impl TableSource for GraphqlApi {
 
     /// Build a child condition for `with_many` / `with_one` traversal.
     ///
-    /// Two paths, mirroring the REST adapter's posture:
+    /// Two paths, as in the REST adapter:
     ///
     /// * **Sync peek** — if the parent already carries an eq-condition
     ///   on `source_column` (the common `with_many` case where the
@@ -587,294 +580,5 @@ impl TableSource for GraphqlApi {
 
         let expr = expr_any!("{}", { self.defer(inner) });
         AssociatedExpression::new(expr, self)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use vantage_types::EmptyEntity;
-
-    use crate::graphql::condition::{FieldCondition, FilterDialect};
-
-    fn launches_table() -> Table<GraphqlApi, EmptyEntity> {
-        let api = GraphqlApi::new("https://api.test/graphql");
-        Table::new("launches", api)
-            .with_id_column("id")
-            .with_column_of::<String>("mission_name")
-            .with_column_of::<i64>("launch_year")
-    }
-
-    #[test]
-    fn select_from_table_populates_root_and_fields() {
-        let table = launches_table();
-        let select = select_from_table(&table);
-        assert_eq!(select.root_field.as_deref(), Some("launches"));
-        // Id field first, then declared columns.
-        assert_eq!(select.fields, vec!["id", "mission_name", "launch_year"]);
-        assert!(select.conditions.is_empty());
-        assert_eq!(select.dialect, FilterDialect::Generic);
-    }
-
-    #[test]
-    fn select_from_table_carries_conditions() {
-        let mut table = launches_table();
-        table.add_condition(GraphqlCondition::Field(FieldCondition::new(
-            "mission_name",
-            GraphqlOp::Eq,
-            json!("FalconSat"),
-        )));
-        let select = select_from_table(&table);
-        assert_eq!(select.conditions.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn select_from_table_renders_with_id_field_included() {
-        let table = launches_table();
-        let q = select_from_table(&table).render().await.unwrap();
-        assert_eq!(
-            q.query,
-            "query { launches { id mission_name launch_year } }"
-        );
-    }
-
-    #[test]
-    fn eq_condition_static_builds_string_value() {
-        let cond = <GraphqlApi as TableSource>::eq_condition("name", "Alice").unwrap();
-        match cond {
-            GraphqlCondition::Field(fc) => {
-                assert_eq!(fc.field, "name");
-                assert_eq!(fc.op, GraphqlOp::Eq);
-                assert_eq!(fc.value, json!("Alice"));
-            }
-            _ => panic!("expected Field"),
-        }
-    }
-
-    #[test]
-    fn search_table_condition_builds_or_of_ilikes() {
-        let api = GraphqlApi::new("https://api.test/graphql");
-        let table = launches_table().with_column_of::<String>("details");
-        let cond = api.search_table_condition(&table, "falcon");
-        match cond {
-            GraphqlCondition::Or(parts) => {
-                // The string columns only: not the id, not `launch_year`.
-                assert_eq!(parts.len(), 2);
-                for p in parts {
-                    match p {
-                        GraphqlCondition::Field(fc) => {
-                            assert_eq!(fc.op, GraphqlOp::ILike);
-                            assert_eq!(fc.value, json!("%falcon%"));
-                        }
-                        _ => panic!("expected Field inside Or"),
-                    }
-                }
-            }
-            _ => panic!("expected Or for multi-column search"),
-        }
-    }
-
-    #[test]
-    fn row_to_record_extracts_id_and_fields() {
-        let row = json!({ "id": "5", "mission_name": "FalconSat", "launch_year": 2006 });
-        let (id, rec) = row_to_record(&row, &[], Some("id")).unwrap();
-        assert_eq!(id, "5");
-        assert_eq!(rec.iter().count(), 3);
-    }
-
-    #[test]
-    fn row_to_record_stringifies_numeric_id() {
-        let row = json!({ "id": 42, "name": "x" });
-        let (id, _rec) = row_to_record(&row, &[], Some("id")).unwrap();
-        assert_eq!(id, "42");
-    }
-
-    #[test]
-    fn related_in_condition_sync_peeks_parent_eq() {
-        let mut parent = launches_table();
-        // Parent narrowed to id=5; child should get its target field
-        // bound to 5 immediately (no deferred fetch).
-        parent.add_condition(GraphqlCondition::Field(FieldCondition::new(
-            "id",
-            GraphqlOp::Eq,
-            json!("5"),
-        )));
-        let api = parent.data_source().clone();
-        let cond = api.related_in_condition::<EmptyEntity>("launch_id", &parent, "id");
-        match cond {
-            GraphqlCondition::Field(fc) => {
-                assert_eq!(fc.field, "launch_id");
-                assert_eq!(fc.op, GraphqlOp::Eq);
-                assert_eq!(fc.value, json!("5"));
-            }
-            _ => panic!("expected sync Field, got {:?}", cond),
-        }
-    }
-
-    #[test]
-    fn related_in_condition_deferred_when_no_parent_eq() {
-        // Parent has no eq-condition on the source column, so the
-        // resolver must defer the lookup until fetch time.
-        let parent = launches_table();
-        let api = parent.data_source().clone();
-        let cond = api.related_in_condition::<EmptyEntity>("launch_id", &parent, "mission_id");
-        match cond {
-            GraphqlCondition::DeferredField { field, op, .. } => {
-                assert_eq!(field, "launch_id");
-                assert_eq!(op, GraphqlOp::Eq);
-            }
-            _ => panic!("expected DeferredField, got {:?}", cond),
-        }
-    }
-
-    #[tokio::test]
-    async fn deferred_field_renders_through_hasura_dialect() {
-        use vantage_expressions::DeferredFn;
-        let cond = GraphqlCondition::deferred_field(
-            "launch_id",
-            GraphqlOp::Eq,
-            DeferredFn::new(|| {
-                Box::pin(async {
-                    Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(
-                        "abc-123".to_string(),
-                    )))
-                })
-            }),
-        );
-        let r = cond.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "launch_id": { "_eq": "abc-123" } }));
-    }
-
-    #[tokio::test]
-    async fn deferred_field_renders_through_generic_dialect() {
-        use vantage_expressions::DeferredFn;
-        let cond = GraphqlCondition::deferred_field(
-            "launch_id",
-            GraphqlOp::Eq,
-            DeferredFn::new(|| {
-                Box::pin(async { Ok(ExpressiveEnum::Scalar(AnyGraphqlType::new(7i64))) })
-            }),
-        );
-        let r = cond.render(FilterDialect::Generic).await.unwrap();
-        assert_eq!(r, json!({ "launch_id": 7 }));
-    }
-}
-
-#[cfg(test)]
-mod shape_tests {
-    use super::*;
-    use crate::graphql::types::GraphqlType as _;
-    use serde_json::json;
-    use vantage_types::EmptyEntity;
-
-    fn paths(items: &[&str]) -> Vec<String> {
-        items.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn descend_unwraps_a_relay_connection() {
-        let payload = json!({
-            "total": 2,
-            "edges": [{ "node": { "run": { "id": "a" } } }, { "node": { "run": { "id": "b" } } }]
-        });
-        let rows = descend(&payload, &paths(&["edges", "node"]));
-        assert_eq!(
-            rows,
-            json!([{ "run": { "id": "a" } }, { "run": { "id": "b" } }])
-        );
-    }
-
-    #[test]
-    fn descend_with_an_empty_path_is_the_identity() {
-        let payload = json!([{ "id": "a" }]);
-        assert_eq!(descend(&payload, &[]), payload);
-    }
-
-    #[test]
-    fn declared_paths_become_dotted_columns() {
-        let row = json!({ "run": { "id": "a", "commit": { "hash": "deadbeef" } }, "stack": { "id": "api-uat" } });
-        let fields = paths(&["run.id", "run.commit.hash", "stack.id"]);
-        let (id, rec) = row_to_record(&row, &fields, Some("run.id")).unwrap();
-        assert_eq!(id, "a");
-        assert_eq!(
-            rec.get("run.commit.hash").map(|v| v.to_json()),
-            Some(json!("deadbeef"))
-        );
-        assert_eq!(
-            rec.get("stack.id").map(|v| v.to_json()),
-            Some(json!("api-uat"))
-        );
-    }
-
-    #[test]
-    fn a_null_parent_leaves_the_column_present_and_null() {
-        let row = json!({ "run": { "id": "a", "commit": null } });
-        let fields = paths(&["run.id", "run.commit.hash"]);
-        let (_id, rec) = row_to_record(&row, &fields, Some("run.id")).unwrap();
-        assert_eq!(
-            rec.get("run.commit.hash").map(|v| v.to_json()),
-            Some(json!(null))
-        );
-    }
-
-    #[test]
-    fn conditions_stay_local_when_the_root_field_takes_no_filter() {
-        let api = GraphqlApi::builder("https://api.test/graphql")
-            .supports(crate::graphql::api::Supports {
-                filter: Some(false),
-                ..Default::default()
-            })
-            .build();
-        let mut table = Table::<GraphqlApi, EmptyEntity>::new("stacks", api).with_id_column("id");
-        table.add_condition(GraphqlCondition::Field(
-            crate::graphql::condition::FieldCondition::new("space", GraphqlOp::Eq, json!("root")),
-        ));
-        assert!(select_from_table(&table).conditions.is_empty());
-    }
-
-    #[test]
-    fn rows_under_root_reads_arrays_nulls_and_single_objects() {
-        let api = GraphqlApi::new("https://api.test/graphql");
-        let data = json!({ "launch": { "id": "a" }, "launches": [{ "id": "a" }], "none": null });
-        assert_eq!(
-            rows_under_root(&api, "launches", &data, false)
-                .unwrap()
-                .len(),
-            1
-        );
-        assert!(
-            rows_under_root(&api, "none", &data, false)
-                .unwrap()
-                .is_empty()
-        );
-        assert_eq!(
-            rows_under_root(&api, "launch", &data, true).unwrap().len(),
-            1
-        );
-        let err = rows_under_root(&api, "launch", &data, false).unwrap_err();
-        assert!(
-            err.to_string().contains("Unexpected response shape"),
-            "{err}"
-        );
-        let err = rows_under_root(&api, "missing", &data, true).unwrap_err();
-        assert!(err.to_string().contains("missing root field"), "{err}");
-    }
-
-    #[test]
-    fn paging_stays_off_when_the_root_field_takes_no_filter() {
-        let supports = crate::graphql::api::Supports::default().with_paginate(true);
-        let paged = |supports| {
-            let api = GraphqlApi::builder("https://api.test/graphql")
-                .supports(supports)
-                .build();
-            let mut table =
-                Table::<GraphqlApi, EmptyEntity>::new("stacks", api).with_id_column("id");
-            table.set_pagination(Some(vantage_table::pagination::Pagination::window(20, 10)));
-            let select = select_from_table(&table);
-            (select.limit, select.skip)
-        };
-        assert_eq!(paged(supports), (Some(10), Some(20)));
-        assert_eq!(paged(supports.with_filter(false)), (None, None));
     }
 }

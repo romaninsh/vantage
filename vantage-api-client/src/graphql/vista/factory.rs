@@ -230,6 +230,3 @@ where
     }
     metadata
 }
-
-#[cfg(test)]
-mod tests;

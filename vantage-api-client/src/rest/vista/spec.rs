@@ -1,21 +1,6 @@
-//! YAML-facing types for the REST-API Vista driver.
-//!
-//! ```yaml
-//! name: users
-//! columns:
-//!   id: { type: int, flags: [id] }
-//!   name: { type: string, flags: [title] }
-//! api:
-//!   endpoint: teams/{team_id}/users   # optional, defaults to `name`
-//! ```
-//!
-//! Only the table-level `api` block carries driver-specific fields.
-//! Column and reference extras stay at `NoExtras` — the universal
-//! `VistaSpec` already covers what's needed (column type/flags,
-//! reference target/kind/foreign_key). URL templating lives on each
-//! table's own `api.endpoint` and is shared across all traversals;
-//! the URL builder peels matching eq-conditions into `{placeholder}`
-//! segments and lets the rest fall through to the query string.
+//! YAML-facing types for the REST Vista driver. Only the table-level `api:`
+//! block is driver-specific; columns and references use the universal
+//! `VistaSpec` keys. Every key is listed in the book's "HTTP APIs" chapter.
 
 use serde::{Deserialize, Serialize};
 use vantage_vista::{NoExtras, VistaSpec};
@@ -64,5 +49,5 @@ pub type ApiColumnExtras = NoExtras;
 /// Reference-level driver extras: none beyond the universal reference spec.
 pub type ApiReferenceExtras = NoExtras;
 
-/// A REST table described in YAML; see the module docs for the shape.
+/// A REST table described in YAML.
 pub type RestApiVistaSpec = VistaSpec<ApiTableExtras, ApiColumnExtras, ApiReferenceExtras>;

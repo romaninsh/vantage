@@ -16,6 +16,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 /// A Hasura `launches` Vista with `columns` (YAML, indented two spaces) and
 /// `graphql` lines appended to its `graphql:` block.
 fn vista(server: &MockServer, columns: &str, graphql: &str) -> Vista {
+    try_vista(server, columns, graphql).unwrap()
+}
+
+fn try_vista(server: &MockServer, columns: &str, graphql: &str) -> vantage_core::Result<Vista> {
     let yaml = format!("name: launches\ncolumns:\n{columns}graphql:\n  dialect: hasura\n{graphql}");
     let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(&yaml).unwrap();
     GraphqlApi::builder(server.uri())
@@ -23,7 +27,6 @@ fn vista(server: &MockServer, columns: &str, graphql: &str) -> Vista {
         .build()
         .vista_factory()
         .build_from_spec(spec)
-        .unwrap()
 }
 
 /// `id` plus a `mission` column reading the `mission_name` field.
@@ -105,4 +108,73 @@ async fn get_by_id_on_an_aliased_id_column_filters_on_the_server_field() {
 
     let row = vista.get_value("7").await.unwrap().expect("row 7");
     assert_eq!(row.get("name"), Some(&text("Falcon")));
+}
+
+/// The aggregate count sees the same narrowing a list would, so its filter
+/// names the server field too.
+#[tokio::test]
+async fn the_aggregate_count_filters_on_the_server_field() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "query": "query { launches_aggregate(where: {mission_name: {_eq: \"x\"}}) { aggregate { count } } }"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({ "data": { "launches_aggregate": { "aggregate": { "count": 4 } } } }),
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut vista = vista(&server, MISSION, "  count: aggregate\n");
+    vista
+        .add_condition("mission", FilterOp::Eq, text("x"))
+        .unwrap();
+
+    assert_eq!(vista.count().await.unwrap(), 4);
+}
+
+/// A quicksearch over an aliased column is sent as the server field.
+#[tokio::test]
+async fn search_on_an_aliased_column_is_sent_as_the_server_field() {
+    let server = MockServer::start().await;
+    answer(
+        &server,
+        "query { launches(where: {_or: [{mission_name: {_ilike: \"%fal%\"}}, {details: {_ilike: \"%fal%\"}}]}) { id mission: mission_name details } }",
+        json!([{ "id": "1", "mission": "Falcon", "details": null }]),
+    )
+    .await;
+    let columns = "  id:\n    type: string\n    flags: [id]\n  mission:\n    type: string\n    flags: [searchable]\n    graphql:\n      field: mission_name\n  details:\n    type: string\n    flags: [searchable]\n";
+    let mut vista = vista(&server, columns, "");
+    vista.set_search(Some("fal")).unwrap();
+
+    let rows = vista.list_values().await.unwrap();
+    assert_eq!(rows["1"].get("mission"), Some(&text("Falcon")));
+}
+
+#[tokio::test]
+async fn aliases_must_be_plain_names() {
+    let server = MockServer::start().await;
+    let dotted_field = "  id:\n    type: string\n    flags: [id]\n  run_id:\n    type: string\n    graphql:\n      field: run.id\n";
+    let err = try_vista(&server, dotted_field, "").expect_err("refused");
+    assert!(err.is_unsupported(), "{err}");
+    assert!(err.to_string().contains("dotted"), "{err}");
+
+    let dotted_column = "  id:\n    type: string\n    flags: [id]\n  run.id:\n    type: string\n    graphql:\n      field: run_id\n";
+    let err = try_vista(&server, dotted_column, "").expect_err("refused");
+    assert!(err.is_unsupported(), "{err}");
+
+    let bad_field = "  id:\n    type: string\n    flags: [id]\n  run_id:\n    type: string\n    graphql:\n      field: \"run id\"\n";
+    let err = try_vista(&server, bad_field, "").expect_err("refused");
+    assert!(
+        err.to_string().contains("GraphQL name is not valid"),
+        "{err}"
+    );
+
+    let bad_column = "  id:\n    type: string\n    flags: [id]\n  \"run id\":\n    type: string\n    graphql:\n      field: run_id\n";
+    let err = try_vista(&server, bad_column, "").expect_err("refused");
+    assert!(
+        err.to_string().contains("GraphQL name is not valid"),
+        "{err}"
+    );
+    assert_eq!(support::requests(&server).await, 0);
 }

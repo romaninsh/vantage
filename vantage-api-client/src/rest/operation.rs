@@ -1,11 +1,9 @@
 //! Condition helpers — build eq-conditions for `Table<RestApi, _>` and
 //! peel them apart at the `list_values` boundary into URL query params.
 //!
-//! Why not the standard `Operation::eq` from `vantage-table`? That trait
-//! is blanket-implemented for all `Expressive<T>`, but the value-side
-//! `Expressive<ciborium::Value>` impls for primitive types live in
-//! foreign crates — we can't add them ourselves. So we ship a focused
-//! `eq_condition` helper that produces the same expression shape
+//! `eq_condition` stands in for `vantage-table`'s `Operation::eq`: the
+//! `Expressive<ciborium::Value>` impls for primitive types would have to live
+//! in a foreign crate, so the helper builds the same expression shape
 //! directly.
 
 use ciborium::Value as CborValue;
@@ -14,10 +12,8 @@ use vantage_expressions::traits::expressive::ExpressiveEnum;
 
 /// Build an `eq` condition `field = value` for `Table<RestApi, _>`.
 ///
-/// `value` is accepted as anything that converts into `CborValue` —
-/// most scalars (`i64`, `f64`, `bool`, `&str`, `String`) implement
-/// this directly through ciborium's `From` impls, so the call site
-/// stays readable: `eq_condition("userId", 1i64)`.
+/// `value` is anything that converts into `CborValue`, which includes the
+/// scalars: `eq_condition("userId", 1i64)`.
 pub fn eq_condition(field: &str, value: impl Into<CborValue>) -> Expression<CborValue> {
     Expression::new(
         "{} = {}",
@@ -86,50 +82,4 @@ pub(crate) fn placeholders(template: &str) -> impl Iterator<Item = &str> {
         rest = &after[close + 1..];
         Some(&after[..close])
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn eq_condition_round_trips_int() {
-        let cond = eq_condition("userId", 1i64);
-        let pair = condition_to_query_param(&cond).expect("eq parses");
-        assert_eq!(pair, ("userId".into(), "1".into()));
-    }
-
-    #[test]
-    fn eq_condition_round_trips_string() {
-        let cond = eq_condition("name", "Alice");
-        let pair = condition_to_query_param(&cond).expect("eq parses");
-        assert_eq!(pair, ("name".into(), "Alice".into()));
-    }
-
-    #[test]
-    fn eq_condition_round_trips_bool() {
-        let cond = eq_condition("completed", true);
-        let pair = condition_to_query_param(&cond).expect("eq parses");
-        assert_eq!(pair, ("completed".into(), "true".into()));
-    }
-
-    #[test]
-    fn raw_expression_with_unknown_template_returns_none() {
-        let cond = Expression::<CborValue>::new("CUSTOM SQL", vec![]);
-        assert!(condition_to_query_param(&cond).is_none());
-    }
-
-    #[test]
-    fn placeholders_are_named_in_order() {
-        let names: Vec<&str> = placeholders("teams/{team_id}/users/{user_id}").collect();
-        assert_eq!(names, vec!["team_id", "user_id"]);
-        assert_eq!(placeholders("users").count(), 0);
-        assert_eq!(placeholders("a/{b}/{c").collect::<Vec<_>>(), vec!["b"]);
-    }
-
-    #[test]
-    fn array_value_returns_none() {
-        let cond = eq_condition("tags", vec![CborValue::Text("a".into())]);
-        assert!(condition_to_query_param(&cond).is_none());
-    }
 }

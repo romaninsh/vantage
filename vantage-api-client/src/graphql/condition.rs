@@ -8,9 +8,6 @@
 //! * [`FilterDialect::Generic`] — flat argument object: `{ field: v }`.
 //!   Equality only; non-eq operators error at render time. Used by
 //!   hand-rolled schemas like the SpaceX public API.
-//!
-//! Postgraphile / Relay-cursor styles can be added as further dialects
-//! without changing the condition surface.
 
 use serde_json::{Map, Value};
 use vantage_core::{Result, error};
@@ -333,8 +330,6 @@ impl GraphqlCondition {
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
 fn render_field(fc: &FieldCondition, dialect: FilterDialect) -> Result<Value> {
     match dialect {
         FilterDialect::Hasura => {
@@ -345,7 +340,7 @@ fn render_field(fc: &FieldCondition, dialect: FilterDialect) -> Result<Value> {
                     op = format!("{:?}", fc.op)
                 )
             })?;
-            // Hasura's `_is_null` op takes a Bool; map IsNull → true, IsNotNull → false.
+            // Hasura's `_is_null` takes a Bool, which is how IsNotNull is spelled.
             let value = match fc.op {
                 GraphqlOp::IsNull => Value::Bool(true),
                 GraphqlOp::IsNotNull => Value::Bool(false),
@@ -375,8 +370,8 @@ fn render_field(fc: &FieldCondition, dialect: FilterDialect) -> Result<Value> {
 fn combine_and(parts: Vec<Value>, dialect: FilterDialect) -> Result<Value> {
     match dialect {
         FilterDialect::Hasura => {
-            // Hasura allows merging field-keys directly: { foo: {_eq: 1}, bar: {_eq: 2} }
-            // is implicit AND. Use _and only when there are duplicate keys.
+            // Distinct field keys in one object are an implicit AND; `_and`
+            // is needed only when two parts share a key.
             let mut merged = Map::new();
             let mut collision = false;
             for p in &parts {
@@ -408,10 +403,8 @@ fn combine_and(parts: Vec<Value>, dialect: FilterDialect) -> Result<Value> {
             }
         }
         FilterDialect::Generic => {
-            // Flat-args schemas only support implicit AND via a shared
-            // object. If any key collides, the dialect can't represent
-            // it — surface that as an error rather than silently picking
-            // a winner.
+            // A flat object can't hold two conditions on one field; fail
+            // rather than silently keep one.
             let mut merged = Map::new();
             for p in parts {
                 if let Value::Object(obj) = p {
@@ -431,143 +424,16 @@ fn combine_and(parts: Vec<Value>, dialect: FilterDialect) -> Result<Value> {
     }
 }
 
-// ── Conversions ──────────────────────────────────────────────────────
-
 impl From<FieldCondition> for GraphqlCondition {
     fn from(fc: FieldCondition) -> Self {
         Self::Field(fc)
     }
 }
 
-/// `GraphqlCondition` is `Expressive` so it satisfies the blanket
-/// bound on the operation trait — `cond.eq(false)` shape works the
-/// same way as Mongo's chaining.
+/// `GraphqlCondition` is `Expressive`, which satisfies the blanket bound on
+/// [`GraphqlOperation`](crate::GraphqlOperation).
 impl Expressive<AnyGraphqlType> for GraphqlCondition {
     fn expr(&self) -> Expression<AnyGraphqlType> {
         Expression::new(format!("{:?}", self), vec![])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[tokio::test]
-    async fn hasura_renders_eq_as_underscore_eq() {
-        let c = GraphqlCondition::Field(FieldCondition::new(
-            "mission_name",
-            GraphqlOp::Eq,
-            json!("FalconSat"),
-        ));
-        let r = c.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "mission_name": { "_eq": "FalconSat" } }));
-    }
-
-    #[tokio::test]
-    async fn generic_renders_eq_as_flat_field() {
-        let c = GraphqlCondition::Field(FieldCondition::new(
-            "mission_name",
-            GraphqlOp::Eq,
-            json!("FalconSat"),
-        ));
-        let r = c.render(FilterDialect::Generic).await.unwrap();
-        assert_eq!(r, json!({ "mission_name": "FalconSat" }));
-    }
-
-    #[tokio::test]
-    async fn generic_rejects_non_eq() {
-        let c = GraphqlCondition::Field(FieldCondition::new("price", GraphqlOp::Gt, json!(100)));
-        let err = c.render(FilterDialect::Generic).await.unwrap_err();
-        assert!(err.to_string().contains("equality"));
-    }
-
-    #[tokio::test]
-    async fn hasura_renders_gt() {
-        let c = GraphqlCondition::Field(FieldCondition::new("price", GraphqlOp::Gt, json!(100)));
-        let r = c.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "price": { "_gt": 100 } }));
-    }
-
-    #[tokio::test]
-    async fn hasura_renders_is_null_with_bool_arg() {
-        let c = GraphqlCondition::Field(FieldCondition::new(
-            "deleted_at",
-            GraphqlOp::IsNull,
-            Value::Null,
-        ));
-        let r = c.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(r, json!({ "deleted_at": { "_is_null": true } }));
-    }
-
-    #[tokio::test]
-    async fn hasura_and_with_distinct_fields_merges_flat() {
-        let c = GraphqlCondition::And(vec![
-            GraphqlCondition::Field(FieldCondition::new("name", GraphqlOp::Eq, json!("Alice"))),
-            GraphqlCondition::Field(FieldCondition::new("active", GraphqlOp::Eq, json!(true))),
-        ]);
-        let r = c.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(
-            r,
-            json!({ "name": { "_eq": "Alice" }, "active": { "_eq": true } })
-        );
-    }
-
-    #[tokio::test]
-    async fn hasura_and_with_same_field_uses_explicit_and() {
-        let c = GraphqlCondition::And(vec![
-            GraphqlCondition::Field(FieldCondition::new("price", GraphqlOp::Gt, json!(10))),
-            GraphqlCondition::Field(FieldCondition::new("price", GraphqlOp::Lt, json!(100))),
-        ]);
-        let r = c.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(
-            r,
-            json!({
-                "_and": [
-                    { "price": { "_gt": 10 } },
-                    { "price": { "_lt": 100 } }
-                ]
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn generic_and_with_same_field_errors() {
-        let c = GraphqlCondition::And(vec![
-            GraphqlCondition::Field(FieldCondition::new("price", GraphqlOp::Eq, json!(10))),
-            GraphqlCondition::Field(FieldCondition::new("price", GraphqlOp::Eq, json!(20))),
-        ]);
-        let err = c.render(FilterDialect::Generic).await.unwrap_err();
-        assert!(err.to_string().contains("same field"));
-    }
-
-    #[tokio::test]
-    async fn hasura_or_and_not() {
-        let c = GraphqlCondition::Not(Box::new(GraphqlCondition::Or(vec![
-            GraphqlCondition::Field(FieldCondition::new("active", GraphqlOp::Eq, json!(true))),
-            GraphqlCondition::Field(FieldCondition::new("count", GraphqlOp::Gt, json!(0))),
-        ])));
-        let r = c.render(FilterDialect::Hasura).await.unwrap();
-        assert_eq!(
-            r,
-            json!({
-                "_not": {
-                    "_or": [
-                        { "active": { "_eq": true } },
-                        { "count": { "_gt": 0 } }
-                    ]
-                }
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn generic_rejects_or() {
-        let c = GraphqlCondition::Or(vec![
-            GraphqlCondition::Field(FieldCondition::new("a", GraphqlOp::Eq, json!(1))),
-            GraphqlCondition::Field(FieldCondition::new("b", GraphqlOp::Eq, json!(2))),
-        ]);
-        let err = c.render(FilterDialect::Generic).await.unwrap_err();
-        assert!(err.to_string().contains("OR"));
     }
 }

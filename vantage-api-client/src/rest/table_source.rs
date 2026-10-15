@@ -342,9 +342,6 @@ impl TableSource for RestApi {
             }
         }
 
-        // Deferred fallback. Clone the parent table into the closure
-        // so it stays valid past this stack frame; at fetch time we
-        // list its values, take the first, and pull `source_column`.
         let parent = source_table.clone();
         let column = source_column.to_string();
         let parent_name = source_table.table_name().to_string();

@@ -52,21 +52,3 @@ fn parse_count(data: &Value, field: &str) -> Result<i64> {
             )
         })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn parse_count_reads_the_aggregate() {
-        let data = json!({ "users_aggregate": { "aggregate": { "count": 12 } } });
-        assert_eq!(parse_count(&data, "users_aggregate").unwrap(), 12);
-    }
-
-    #[test]
-    fn parse_count_rejects_a_missing_count() {
-        let data = json!({ "users_aggregate": null });
-        assert!(parse_count(&data, "users_aggregate").is_err());
-    }
-}

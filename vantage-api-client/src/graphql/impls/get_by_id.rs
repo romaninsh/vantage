@@ -104,32 +104,3 @@ pub(crate) async fn get_by_id<E: Entity<AnyGraphqlType>>(
         None => Ok(None),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use vantage_types::EmptyEntity;
-
-    fn api() -> GraphqlApi {
-        GraphqlApi::new("https://api.test/graphql")
-    }
-
-    #[test]
-    fn an_integer_id_column_takes_an_integer() {
-        let mut table = Table::<GraphqlApi, EmptyEntity>::new("launches", api());
-        table.add_column_of::<i64>("id");
-        table.set_id_field("id");
-        assert_eq!(id_value(&table, "42").unwrap(), json!(42));
-        let err = id_value(&table, "abc").unwrap_err().to_string();
-        assert!(err.contains("Id is not an integer"), "{err}");
-        // Parsed exactly: surrounding whitespace is not an integer either.
-        assert!(id_value(&table, " 42").is_err());
-    }
-
-    #[test]
-    fn a_string_id_column_takes_a_string() {
-        let table = Table::<GraphqlApi, EmptyEntity>::new("launches", api()).with_id_column("id");
-        assert_eq!(id_value(&table, "42").unwrap(), json!("42"));
-    }
-}

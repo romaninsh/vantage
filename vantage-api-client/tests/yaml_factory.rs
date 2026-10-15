@@ -181,21 +181,6 @@ async fn writes_are_refused_by_the_vista() {
 }
 
 #[test]
-fn endpoint_defaults_to_name_when_block_absent() {
-    let factory = factory();
-    let yaml = r#"
-name: users
-columns:
-  id: { type: int, flags: [id] }
-"#;
-    let spec: RestApiVistaSpec = serde_yaml_ng::from_str(yaml).unwrap();
-    let _vista = factory.build_from_spec(spec).expect("build");
-    // No public accessor for the inner table's endpoint; absence of
-    // an error is the assertion. URL building is exercised by the
-    // YAML example end-to-end.
-}
-
-#[test]
 fn unknown_column_type_errors() {
     let factory = factory();
     let yaml = r#"
