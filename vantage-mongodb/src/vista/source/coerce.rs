@@ -236,6 +236,3 @@ pub(crate) fn preserve(stored: &Bson, value: &CborValue) -> Bson {
             .unwrap_or_else(|| cbor_to_bson(value)),
     }
 }
-
-#[cfg(test)]
-mod tests;

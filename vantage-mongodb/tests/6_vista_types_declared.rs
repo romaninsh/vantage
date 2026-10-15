@@ -218,6 +218,299 @@ async fn declared_type_keeps_nonconforming_stored_data() -> TestResult {
     Ok(())
 }
 
+fn tag(n: u64, inner: CborValue) -> CborValue {
+    CborValue::Tag(n, Box::new(inner))
+}
+
+fn int(n: i64) -> CborValue {
+    CborValue::Integer(n.into())
+}
+
+fn row_with(column: &str, value: CborValue) -> Record<CborValue> {
+    let mut row = typed_row(ObjectId::new(), ObjectId::new(), ObjectId::new());
+    row.insert(column.to_string(), value);
+    row
+}
+
+#[tokio::test]
+async fn declared_datetime_accepts_text_tagged_text_and_epoch_seconds() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+    let at = DateTime::parse_rfc3339_str("2026-10-10T08:00:00Z")?;
+
+    vista
+        .insert_value(
+            "d1",
+            &row_with("when", tag(0, text("2026-10-10T08:00:00Z"))),
+        )
+        .await?;
+    assert_eq!(raw(&db, "d1").await.get("when"), Some(&Bson::DateTime(at)));
+
+    vista
+        .insert_value("d2", &row_with("when", tag(1, int(1_760_083_200))))
+        .await?;
+    assert_eq!(
+        raw(&db, "d2").await.get("when"),
+        Some(&Bson::DateTime(DateTime::from_millis(1_760_083_200_000)))
+    );
+
+    // Fractions of a second survive down to the millisecond.
+    vista
+        .insert_value(
+            "d3",
+            &row_with("when", tag(1, CborValue::Float(1_760_083_200.25))),
+        )
+        .await?;
+    assert_eq!(
+        raw(&db, "d3").await.get("when"),
+        Some(&Bson::DateTime(DateTime::from_millis(1_760_083_200_250)))
+    );
+
+    // Finer than a millisecond is dropped.
+    vista
+        .insert_value("d4", &row_with("when", text("2026-10-10T08:00:00.123456Z")))
+        .await?;
+    assert_eq!(
+        raw(&db, "d4").await.get("when"),
+        Some(&Bson::DateTime(DateTime::from_millis(
+            at.timestamp_millis() + 123
+        )))
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_datetime_refuses_values_it_cannot_read_as_a_date() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+
+    let refused = [
+        tag(1, text("soon")),
+        tag(0, int(5)),
+        tag(1, CborValue::Float(f64::NAN)),
+        tag(1, CborValue::Float(1e300)),
+        tag(1, int(i64::MAX)),
+        CborValue::Bool(true),
+        int(1_760_083_200),
+    ];
+    for (i, value) in refused.into_iter().enumerate() {
+        let err = vista
+            .insert_value(format!("r{i}"), &row_with("when", value.clone()))
+            .await
+            .expect_err("a value that is no date must be refused");
+        assert!(err.is_conflict(), "{value:?}: {err}");
+        assert!(err.to_string().contains("when"), "{value:?}: {err}");
+        assert!(err.to_string().contains("datetime"), "{value:?}: {err}");
+    }
+    assert_eq!(
+        db.doc_collection("events").count_documents(doc! {}).await?,
+        0
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_decimal_accepts_text_numbers_bignums_and_decimal_fractions() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+    let dec = |s: &str| Bson::Decimal128(Decimal128::from_str(s).unwrap());
+
+    let cases = [
+        ("m1", CborValue::Float(2.5), "2.5"),
+        ("m2", int(-12), "-12"),
+        ("m3", tag(2, CborValue::Bytes(vec![1, 0])), "256"),
+        ("m4", tag(3, CborValue::Bytes(vec![1, 0])), "-257"),
+        (
+            "m5",
+            tag(4, CborValue::Array(vec![int(-2), int(31415)])),
+            "314.15",
+        ),
+        (
+            "m6",
+            tag(
+                4,
+                CborValue::Array(vec![int(-1), tag(2, CborValue::Bytes(vec![1, 0]))]),
+            ),
+            "25.6",
+        ),
+    ];
+    for (id, value, want) in cases {
+        vista.insert_value(id, &row_with("amount", value)).await?;
+        assert_eq!(raw(&db, id).await.get("amount"), Some(&dec(want)), "{id}");
+    }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_decimal_refuses_values_that_are_no_number() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+
+    let refused = [
+        text("twelve"),
+        CborValue::Bool(true),
+        CborValue::Float(f64::INFINITY),
+        tag(4, CborValue::Array(vec![int(-2)])),
+        tag(4, text("31415e-2")),
+        tag(2, text("not bytes")),
+    ];
+    for (i, value) in refused.into_iter().enumerate() {
+        let err = vista
+            .insert_value(format!("r{i}"), &row_with("amount", value.clone()))
+            .await
+            .expect_err("a value that is no number must be refused");
+        assert!(err.is_conflict(), "{value:?}: {err}");
+        assert!(err.to_string().contains("decimal"), "{value:?}: {err}");
+    }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_object_id_refusal_names_the_column_and_type() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+
+    let err = vista
+        .insert_value("o1", &row_with("client_id", text("not-hex")))
+        .await
+        .expect_err("text that is no ObjectId must be refused");
+    assert!(err.is_conflict(), "{err}");
+    assert!(err.to_string().contains("client_id"), "{err}");
+    assert!(err.to_string().contains("object_id"), "{err}");
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_array_keeps_unchanged_elements_as_stored_and_types_the_rest() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+    let (first, second) = (ObjectId::new(), ObjectId::new());
+    // A legacy element in an `object_id` array column: a string.
+    db.doc_collection("events")
+        .insert_one(doc! { "_id": "a1", "tags": [first, "legacy"] })
+        .await?;
+
+    // Written back as read, nothing changes.
+    let row = vista.get_value("a1").await?.expect("a1");
+    assert_eq!(
+        row.get("tags"),
+        Some(&CborValue::Array(vec![
+            text(&first.to_hex()),
+            text("legacy")
+        ]))
+    );
+    vista.replace_value("a1", &row).await?;
+    assert_eq!(
+        raw(&db, "a1").await.get("tags"),
+        Some(&Bson::Array(vec![
+            Bson::ObjectId(first),
+            Bson::String("legacy".into())
+        ]))
+    );
+
+    // Change only the first element: the legacy one still keeps its stored value.
+    let mut edited = row.clone();
+    edited.insert(
+        "tags".into(),
+        CborValue::Array(vec![text(&second.to_hex()), text("legacy")]),
+    );
+    vista.replace_value("a1", &edited).await?;
+    assert_eq!(
+        raw(&db, "a1").await.get("tags"),
+        Some(&Bson::Array(vec![
+            Bson::ObjectId(second),
+            Bson::String("legacy".into())
+        ]))
+    );
+
+    // A different length is typed as a whole, so the legacy element is refused.
+    let mut longer = row.clone();
+    longer.insert(
+        "tags".into(),
+        CborValue::Array(vec![
+            text(&second.to_hex()),
+            text("legacy"),
+            text(&first.to_hex()),
+        ]),
+    );
+    let err = vista
+        .replace_value("a1", &longer)
+        .await
+        .expect_err("a legacy element is refused once the array changes length");
+    assert!(err.is_conflict(), "{err}");
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_empty_text_and_null_clear_inside_an_array_too() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+    let tag_id = ObjectId::new();
+    let row = row_with(
+        "tags",
+        CborValue::Array(vec![text(&tag_id.to_hex()), text(""), CborValue::Null]),
+    );
+    vista.insert_value("n1", &row).await?;
+    assert_eq!(
+        raw(&db, "n1").await.get("tags"),
+        Some(&Bson::Array(vec![
+            Bson::ObjectId(tag_id),
+            Bson::Null,
+            Bson::Null
+        ]))
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_decimal_refusal_in_a_patch_writes_nothing() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+    vista
+        .insert_value("p1", &row_with("amount", text("1.50")))
+        .await?;
+    let before = raw(&db, "p1").await;
+
+    let mut partial = Record::new();
+    partial.insert("amount".to_string(), text("lots"));
+    let err = vista
+        .patch_value("p1", &partial)
+        .await
+        .expect_err("text that is no decimal must be refused");
+    assert!(err.is_conflict(), "{err}");
+    assert_eq!(raw(&db, "p1").await, before);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_decimal_empty_text_clears() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = typed_events(&db);
+    vista
+        .insert_value("c1", &row_with("amount", text("")))
+        .await?;
+    assert_eq!(raw(&db, "c1").await.get("amount"), Some(&Bson::Null));
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn declared_type_empty_text_clears() -> TestResult {
     let (db, name) = setup().await;

@@ -4,10 +4,13 @@
 //! to mongodb://localhost:27017. Uses a randomised database name so tests
 //! don't collide.
 
-use bson::doc;
+use bson::oid::ObjectId;
+use bson::{Bson, doc};
 use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoId;
-use vantage_mongodb::{AnyMongoType, MongoDB};
+use vantage_mongodb::{AnyMongoType, MongoCondition, MongoDB, MongoType};
+use vantage_table::column::core::Column;
+use vantage_table::column::flags::ColumnFlag;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
@@ -81,30 +84,6 @@ async fn test_insert_and_list() {
     let fetched = &values[&id];
     assert_eq!(fetched["name"].try_get::<String>(), Some("Cupcake".into()));
     assert_eq!(fetched["price"].try_get::<i64>(), Some(250));
-
-    teardown(&db, &db_name).await;
-}
-
-#[tokio::test]
-async fn test_get_value_by_id() {
-    let (db, db_name) = setup().await;
-    let table = product_table(db.clone());
-
-    let id = MongoId::from(bson::oid::ObjectId::new());
-    let rec = record(&[
-        ("name", AnyMongoType::new("Tart".to_string())),
-        ("price", AnyMongoType::new(180i64)),
-        ("calories", AnyMongoType::new(200i64)),
-        ("is_deleted", AnyMongoType::new(false)),
-    ]);
-    table.insert_value(id.clone(), &rec).await.unwrap();
-
-    let fetched = table
-        .get_value(id.clone())
-        .await
-        .unwrap()
-        .expect("row exists");
-    assert_eq!(fetched["name"].try_get::<String>(), Some("Tart".into()));
 
     teardown(&db, &db_name).await;
 }
@@ -279,27 +258,6 @@ async fn test_delete_all() {
     teardown(&db, &db_name).await;
 }
 
-#[tokio::test]
-async fn test_insert_return_id() {
-    let (db, db_name) = setup().await;
-    let table = product_table(db.clone());
-
-    let rec = record(&[
-        ("name", AnyMongoType::new("Auto".to_string())),
-        ("price", AnyMongoType::new(42i64)),
-    ]);
-    let id = table.insert_return_id_value(&rec).await.unwrap();
-
-    let fetched = table
-        .get_value(id.clone())
-        .await
-        .unwrap()
-        .expect("row exists");
-    assert_eq!(fetched["name"].try_get::<String>(), Some("Auto".into()));
-
-    teardown(&db, &db_name).await;
-}
-
 // ── Conditions (native bson::Document) ───────────────────────────────
 
 #[tokio::test]
@@ -403,6 +361,311 @@ async fn test_multiple_conditions() {
         .collect();
     assert!(names.contains(&"B".to_string()));
     assert!(names.contains(&"D".to_string()));
+
+    teardown(&db, &db_name).await;
+}
+
+// ── Equality conditions and reference values ─────────────────────────
+
+async fn sorted_ids(table: &Table<MongoDB, EmptyEntity>) -> Vec<String> {
+    let mut ids: Vec<String> = table
+        .list_values()
+        .await
+        .unwrap()
+        .keys()
+        .map(|id| id.to_string())
+        .collect();
+    ids.sort();
+    ids
+}
+
+fn link_table(db: &MongoDB) -> Table<MongoDB, EmptyEntity> {
+    Table::<MongoDB, EmptyEntity>::new("link", db.clone())
+        .with_id_column("_id")
+        .with_column_of::<AnyMongoType>("fk")
+}
+
+#[tokio::test]
+async fn eq_value_condition_matches_an_id_in_either_spelling() {
+    let (db, db_name) = setup().await;
+    let oid = ObjectId::new();
+    db.doc_collection("link")
+        .insert_many(vec![
+            doc! { "_id": "as_oid", "fk": oid },
+            doc! { "_id": "as_hex", "fk": oid.to_hex() },
+            doc! { "_id": "other", "fk": "c1" },
+        ])
+        .await
+        .unwrap();
+
+    for value in [Bson::ObjectId(oid), Bson::String(oid.to_hex())] {
+        let condition = db
+            .eq_value_condition("fk", AnyMongoType::untyped(value))
+            .unwrap();
+        let table = link_table(&db).with_condition(condition);
+        assert_eq!(sorted_ids(&table).await, ["as_hex", "as_oid"]);
+    }
+
+    let plain = db
+        .eq_value_condition("fk", AnyMongoType::untyped(Bson::String("c1".into())))
+        .unwrap();
+    assert_eq!(
+        sorted_ids(&link_table(&db).with_condition(plain)).await,
+        ["other"]
+    );
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn coerce_reference_value_turns_a_hex_string_into_the_object_id_it_spells() {
+    let (db, db_name) = setup().await;
+    let oid = ObjectId::new();
+
+    let coerced = db.coerce_reference_value(AnyMongoType::untyped(Bson::String(oid.to_hex())));
+    assert_eq!(coerced.to_bson(), Bson::ObjectId(oid));
+
+    let text = AnyMongoType::untyped(Bson::String("c1".into()));
+    assert_eq!(
+        db.coerce_reference_value(text).to_bson(),
+        Bson::String("c1".into())
+    );
+    let number = AnyMongoType::untyped(Bson::Int64(7));
+    assert_eq!(db.coerce_reference_value(number).to_bson(), Bson::Int64(7));
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn an_equality_condition_fills_the_column_of_a_row_inserted_through_the_set() {
+    let (db, db_name) = setup().await;
+    let oid = ObjectId::new();
+    let coll = db.doc_collection("link");
+
+    let as_object_id = db.coerce_reference_value(AnyMongoType::untyped(Bson::String(oid.to_hex())));
+    let by_id = db.eq_value_condition("fk", as_object_id).unwrap();
+    link_table(&db)
+        .with_condition(by_id)
+        .insert_value(MongoId::from("n1"), &record(&[]))
+        .await
+        .unwrap();
+    let stored = coll.find_one(doc! { "_id": "n1" }).await.unwrap().unwrap();
+    assert_eq!(stored.get("fk"), Some(&Bson::ObjectId(oid)));
+
+    let by_text = db
+        .eq_value_condition("fk", AnyMongoType::untyped(Bson::String("c1".into())))
+        .unwrap();
+    link_table(&db)
+        .with_condition(by_text)
+        .insert_value(MongoId::from("n2"), &record(&[]))
+        .await
+        .unwrap();
+    let stored = coll.find_one(doc! { "_id": "n2" }).await.unwrap().unwrap();
+    assert_eq!(stored.get("fk"), Some(&Bson::String("c1".into())));
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn a_set_condition_that_is_no_equality_fills_nothing_and_refuses_rows_outside_it() {
+    let (db, db_name) = setup().await;
+    let table =
+        link_table(&db).with_condition(MongoCondition::Doc(doc! { "fk": { "$in": ["a", "b"] } }));
+
+    let err = table
+        .insert_value(MongoId::from("n1"), &record(&[]))
+        .await
+        .expect_err("a row without fk is outside the set");
+    assert!(err.is_conflict(), "{err}");
+
+    table
+        .insert_value(
+            MongoId::from("n2"),
+            &record(&[("fk", AnyMongoType::new("a".to_string()))]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sorted_ids(&table).await, ["n2"]);
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn condition_equality_reads_literal_equalities_and_nothing_else() {
+    let (db, db_name) = setup().await;
+    let read = |condition: MongoCondition| db.condition_equality(&condition);
+
+    let plain = read(MongoCondition::Doc(doc! { "fk": "c1" })).unwrap();
+    assert_eq!(plain.0, "fk");
+    assert_eq!(plain.1.to_bson(), Bson::String("c1".into()));
+
+    let explicit = read(MongoCondition::Doc(doc! { "n": { "$eq": 5_i64 } })).unwrap();
+    assert_eq!(explicit.0, "n");
+    assert_eq!(explicit.1.to_bson(), Bson::Int64(5));
+
+    for not_equality in [
+        doc! { "fk": { "$in": ["a", "b"] } },
+        doc! { "n": { "$gt": 5 } },
+        doc! { "a": 1, "b": 2 },
+        doc! { "$or": [{ "a": 1 }, { "b": 2 }] },
+        doc! { "tags": ["a", "b"] },
+    ] {
+        assert!(
+            read(MongoCondition::Doc(not_equality.clone())).is_none(),
+            "{not_equality}"
+        );
+    }
+    assert!(read(MongoCondition::And(vec![doc! { "a": 1 }.into()])).is_none());
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn related_in_collects_each_source_value_in_both_id_spellings() {
+    let (db, db_name) = setup().await;
+    let (a, b) = (ObjectId::new(), ObjectId::new());
+    db.doc_collection("orders")
+        .insert_many(vec![
+            doc! { "_id": "o1", "client_id": a },
+            doc! { "_id": "o2", "client_id": b.to_hex() },
+        ])
+        .await
+        .unwrap();
+    let orders = Table::<MongoDB, EmptyEntity>::new("orders", db.clone())
+        .with_id_column("_id")
+        .with_column_of::<AnyMongoType>("client_id");
+
+    let resolved = db
+        .related_in_condition("_id", &orders, "client_id")
+        .resolve()
+        .await
+        .unwrap();
+    let list = resolved
+        .get_document("_id")
+        .unwrap()
+        .get_array("$in")
+        .unwrap();
+    for id in [a, b] {
+        assert!(list.contains(&Bson::ObjectId(id)), "{id}: {list:?}");
+        assert!(list.contains(&Bson::String(id.to_hex())), "{id}: {list:?}");
+    }
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn related_in_refuses_a_source_column_stored_under_another_name() {
+    let (db, db_name) = setup().await;
+    for alias in ["refs.client", "clientId"] {
+        let orders = Table::<MongoDB, EmptyEntity>::new("orders", db.clone())
+            .with_column(Column::<AnyMongoType>::new("client_id").with_alias(alias));
+        let err = db
+            .related_in_condition("_id", &orders, "client_id")
+            .resolve()
+            .await
+            .expect_err("a renamed reference key must be refused");
+        assert!(
+            err.to_string().contains("its own field name"),
+            "{alias}: {err}"
+        );
+    }
+
+    teardown(&db, &db_name).await;
+}
+
+// ── Search ───────────────────────────────────────────────────────────
+
+fn people_table(db: &MongoDB) -> Table<MongoDB, EmptyEntity> {
+    Table::<MongoDB, EmptyEntity>::new("people", db.clone())
+        .with_id_column("_id")
+        .with_column_of::<String>("name")
+}
+
+#[tokio::test]
+async fn search_is_a_literal_case_insensitive_substring_match() {
+    let (db, db_name) = setup().await;
+    db.doc_collection("people")
+        .insert_many(vec![
+            doc! { "_id": "1", "name": "a.b" },
+            doc! { "_id": "2", "name": "axb" },
+            doc! { "_id": "3", "name": "Quick (fox)" },
+        ])
+        .await
+        .unwrap();
+
+    let people = people_table(&db);
+    assert_eq!(sorted_ids(&people.clone().with_search("a.b")).await, ["1"]);
+    assert_eq!(sorted_ids(&people.clone().with_search("A.B")).await, ["1"]);
+    assert_eq!(sorted_ids(&people.clone().with_search("(fox")).await, ["3"]);
+    assert_eq!(
+        sorted_ids(&people.clone().with_search("nobody")).await,
+        Vec::<String>::new()
+    );
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn search_reads_each_column_at_its_stored_path() {
+    let (db, db_name) = setup().await;
+    db.doc_collection("people")
+        .insert_many(vec![
+            doc! { "_id": "1", "name": "zed", "address": { "city": "Hill Valley" } },
+            doc! { "_id": "2", "name": "amy", "address": { "city": "Springfield" } },
+        ])
+        .await
+        .unwrap();
+    let people = people_table(&db)
+        .with_column(Column::<AnyMongoType>::new("city").with_alias("address.city"));
+
+    assert_eq!(sorted_ids(&people.clone().with_search("hill")).await, ["1"]);
+    assert_eq!(sorted_ids(&people.clone().with_search("amy")).await, ["2"]);
+    assert_eq!(
+        sorted_ids(&people.clone().with_search("zzz")).await,
+        Vec::<String>::new()
+    );
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn search_covers_only_the_searchable_columns_once_any_is_flagged() {
+    let (db, db_name) = setup().await;
+    db.doc_collection("people")
+        .insert_many(vec![
+            doc! { "_id": "1", "name": "zed", "address": { "city": "Hill Valley" } },
+            doc! { "_id": "2", "name": "amy", "address": { "city": "Springfield" } },
+        ])
+        .await
+        .unwrap();
+    let people = Table::<MongoDB, EmptyEntity>::new("people", db.clone())
+        .with_id_column("_id")
+        .with_column(Column::<AnyMongoType>::new("name").with_flag(ColumnFlag::Searchable))
+        .with_column(Column::<AnyMongoType>::new("city").with_alias("address.city"));
+
+    assert_eq!(sorted_ids(&people.clone().with_search("zed")).await, ["1"]);
+    assert_eq!(
+        sorted_ids(&people.clone().with_search("hill")).await,
+        Vec::<String>::new()
+    );
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn search_over_a_table_without_columns_matches_nothing() {
+    let (db, db_name) = setup().await;
+    db.doc_collection("people")
+        .insert_one(doc! { "_id": "1", "name": "zed" })
+        .await
+        .unwrap();
+    let bare = Table::<MongoDB, EmptyEntity>::new("people", db.clone());
+
+    assert_eq!(sorted_ids(&bare.clone()).await, ["1"]);
+    assert_eq!(
+        sorted_ids(&bare.with_search("zed")).await,
+        Vec::<String>::new()
+    );
 
     teardown(&db, &db_name).await;
 }

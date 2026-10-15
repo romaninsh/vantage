@@ -220,6 +220,28 @@ async fn import_fills_set_columns_the_record_lacks() -> TestResult {
 }
 
 #[tokio::test]
+async fn import_into_a_narrowed_set_takes_rows_beyond_one_command_worth() -> TestResult {
+    let db = setup().await;
+    let mut open = vista(&db, TASK);
+    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
+
+    // Five rows of about 3.5 MB: more than a single check of the rows
+    // against the set can carry.
+    let pad = "x".repeat(3_500_000);
+    let rows = batch(
+        (0..5)
+            .map(|_| (ObjectId::new(), row(&pad, "open")))
+            .collect(),
+    );
+
+    assert_eq!(open.import_values(&rows).await?, 5);
+    assert_eq!(stored(&db, "tasks").await?.len(), 5);
+
+    teardown(&db).await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn import_conflicts_on_id_held_outside_the_set() -> TestResult {
     let db = setup().await;
     let all = vista(&db, TASK);
@@ -387,6 +409,12 @@ async fn import_empty_is_zero() -> TestResult {
     let db = setup().await;
     let v = vista(&db, TASK);
     assert_eq!(v.import_values(&IndexMap::new()).await?, 0);
+
+    let mut open = vista(&db, TASK);
+    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
+    assert_eq!(open.import_values(&IndexMap::new()).await?, 0);
+    assert!(stored(&db, "tasks").await?.is_empty());
+
     teardown(&db).await;
     Ok(())
 }

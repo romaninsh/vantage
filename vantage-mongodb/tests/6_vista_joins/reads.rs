@@ -5,7 +5,9 @@ use bson::doc;
 use ciborium::Value as CborValue;
 use futures_util::StreamExt;
 use vantage_dataset::prelude::*;
-use vantage_mongodb::AnyMongoType;
+use vantage_mongodb::{AnyMongoType, MongoDB, MongoId};
+use vantage_table::table::Table;
+use vantage_types::EmptyEntity;
 use vantage_vista::{Capability, FilterOp, SortDirection};
 
 use super::{ORDER, TestResult, column, orders, pair, resolver, seed, setup, spec, teardown, text};
@@ -29,6 +31,68 @@ async fn dotted_column_reads_joined_value() -> TestResult {
     let o1 = &rows["o1"];
     assert!(text(o1, "client_id").is_some());
     assert!(o1.keys().all(|k| !k.starts_with("__")), "{o1:?}");
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_table_joins_through_a_target_that_names_no_id_column() -> TestResult {
+    let (db, name) = setup().await;
+    let marty = bson::oid::ObjectId::new();
+    db.doc_collection("clients")
+        .insert_one(doc! { "_id": marty, "name": "Marty" })
+        .await?;
+    db.doc_collection("orders")
+        .insert_many(vec![
+            doc! { "_id": "o1", "client_id": marty, "item": "skateboard" },
+            doc! { "_id": "o2", "client_id": bson::oid::ObjectId::new(), "item": "almanac" },
+        ])
+        .await?;
+
+    let mut orders = Table::<MongoDB, EmptyEntity>::new("orders", db.clone())
+        .with_id_column("_id")
+        .with_column_of::<AnyMongoType>("client_id")
+        .with_column_of::<String>("item")
+        .with_one("client", "client_id", |db| {
+            Table::<MongoDB, EmptyEntity>::new("clients", db).with_column_of::<String>("name")
+        });
+    orders.add_imported_column("client.name")?;
+
+    let rows = orders.list_values().await?;
+    let joined = |id: &str| {
+        rows[&MongoId::from(id)]
+            .get("client.name")
+            .and_then(|v| v.try_get::<String>())
+    };
+    assert_eq!(joined("o1").as_deref(), Some("Marty"));
+    assert_eq!(joined("o2"), None);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_string_foreign_key_does_not_join_an_object_id_key() -> TestResult {
+    let (db, name) = setup().await;
+    let marty = bson::oid::ObjectId::new();
+    db.doc_collection("clients")
+        .insert_one(doc! { "_id": marty, "name": "Marty" })
+        .await?;
+    db.doc_collection("orders")
+        .insert_many(vec![
+            doc! { "_id": "typed", "client_id": marty, "item": "skateboard" },
+            doc! { "_id": "text", "client_id": marty.to_hex(), "item": "almanac" },
+        ])
+        .await?;
+
+    // $lookup compares types strictly: the hex text joins nothing.
+    let rows = orders(&db).list_values().await?;
+    assert_eq!(
+        column(&rows, "client.name"),
+        vec![pair("typed", Some("Marty")), pair("text", None)]
+    );
+    assert_eq!(rows.len(), 2);
 
     teardown(&db, &name).await;
     Ok(())
@@ -130,6 +194,47 @@ async fn dotted_column_filter_and_order() -> TestResult {
     let rows = searched.list_values().await?;
     assert_eq!(rows.keys().collect::<Vec<_>>(), vec!["o3"]);
     assert_eq!(searched.count().await?, 1);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_filter_value_that_looks_like_a_field_reference_is_matched_as_plain_text() -> TestResult {
+    let (db, name) = setup().await;
+    seed(&db).await?;
+    db.doc_collection("orders")
+        .insert_many(vec![
+            doc! { "_id": "d1", "client_id": bson::oid::ObjectId::new(), "item": "$__vc0" },
+            doc! { "_id": "d2", "client_id": bson::oid::ObjectId::new(), "item": "$__vcx" },
+        ])
+        .await?;
+
+    for (literal, id) in [("$__vc0", "d1"), ("$__vcx", "d2")] {
+        let mut v = orders(&db);
+        v.add_condition("item", FilterOp::Eq, CborValue::Text(literal.into()))?;
+        let rows = v.list_values().await?;
+        assert_eq!(rows.keys().collect::<Vec<_>>(), vec![id], "{literal}");
+    }
+
+    // A number is data too: nothing here is stored as one.
+    let mut numeric = orders(&db);
+    numeric.add_condition("item", FilterOp::Eq, CborValue::Integer(5.into()))?;
+    assert_eq!(numeric.count().await?, 0);
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn preview_of_a_vista_filtered_on_a_joined_column_shows_the_lookup() -> TestResult {
+    let (db, name) = setup().await;
+
+    let mut filtered = orders(&db);
+    filtered.add_condition("item", FilterOp::Eq, CborValue::Text("almanac".into()))?;
+    filtered.add_condition("client.name", FilterOp::Eq, CborValue::Text("Marty".into()))?;
+    let query = filtered.preview().query.expect("a rendered query");
+    assert!(query.contains("$lookup"), "{query}");
 
     teardown(&db, &name).await;
     Ok(())

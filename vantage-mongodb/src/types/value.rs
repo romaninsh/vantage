@@ -4,9 +4,8 @@ use super::{AnyMongoType, MongoType, MongoTypeArrayMarker, MongoTypeNullMarker};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 impl AnyMongoType {
-    /// Create an AnyMongoType with no type marker. Used for values coming
-    /// back from the database where we don't know the original type.
-    /// `try_get` on these values bypasses variant checking.
+    /// A value with no type marker, as read back from the database.
+    /// `try_get` on it skips the variant check.
     pub fn untyped(value: bson::Bson) -> Self {
         Self {
             value,
@@ -15,7 +14,6 @@ impl AnyMongoType {
     }
 }
 
-/// AnyMongoType is itself a MongoType — passthrough for type-erased values.
 impl MongoType for AnyMongoType {
     type Target = MongoTypeNullMarker;
 
@@ -28,8 +26,7 @@ impl MongoType for AnyMongoType {
     }
 }
 
-/// `Vec<AnyMongoType>` is a MongoType — used by column_table_values_expr to
-/// return a list of column values wrapped in an AnyMongoType.
+// A column's values travel as one array value (`column_table_values_expr`).
 impl MongoType for Vec<AnyMongoType> {
     type Target = MongoTypeArrayMarker;
 
@@ -57,7 +54,6 @@ impl TryFrom<AnyMongoType> for Vec<AnyMongoType> {
     }
 }
 
-// From impls for common types
 macro_rules! impl_from_for_any_mongo {
     ($($ty:ty),*) => {
         $(
@@ -82,10 +78,8 @@ impl_from_for_any_mongo!(
 );
 
 impl From<&str> for AnyMongoType {
-    /// Converts a `&str` into an `AnyMongoType`. 24-character hex strings are
-    /// treated as `ObjectId`, anything else stays a plain `String`. This mirrors
-    /// `MongoId::from_str` and makes id comparisons like `column.eq("68c1...")`
-    /// work without an explicit `MongoId::parse` step.
+    /// A 24-character hex string is an `ObjectId`, so `column.eq("68c1...")`
+    /// compares ids without an explicit parse; anything else is a `String`.
     fn from(val: &str) -> Self {
         if val.len() == 24
             && let Ok(oid) = bson::oid::ObjectId::parse_str(val)
@@ -105,7 +99,6 @@ impl From<crate::id::MongoId> for AnyMongoType {
     }
 }
 
-// Expressive impls — allows passing scalars directly into mongo expressions
 macro_rules! impl_expressive_for_mongo_scalar {
     ($($ty:ty),*) => {
         $(
@@ -143,11 +136,10 @@ impl Expressive<AnyMongoType> for AnyMongoType {
         Expression::new("{}", vec![ExpressiveEnum::Scalar(self.clone())])
     }
 }
-// Into<serde_json::Value> for AnyTable::from_table() bridge.
-// Uses serde: Bson -> serde_json::Value via Bson's Serialize impl (extended
-// JSON for ObjectId/DateTime/…), and serde_json::Value -> Bson via Bson's
-// Deserialize impl. Neither direction panics: the rare failure falls back
-// to the structural bson<->cbor bridge instead of `.expect()`.
+
+// The `AnyTable::from_table()` bridge. BSON serializes to extended JSON
+// (ObjectId, DateTime, ...) and back through serde; a value serde rejects
+// falls back to the structural bson<->cbor bridge instead of panicking.
 impl From<AnyMongoType> for serde_json::Value {
     fn from(val: AnyMongoType) -> Self {
         let bson = val.into_value();
@@ -162,10 +154,9 @@ impl From<AnyMongoType> for serde_json::Value {
 
 impl From<serde_json::Value> for AnyMongoType {
     fn from(val: serde_json::Value) -> Self {
-        // Deserialize from the borrow (`&Value` is a `Deserializer`) so the
-        // value stays available for the fallback: Bson's Deserialize rejects
-        // malformed extended JSON (e.g. `{"$oid": "not-a-hex-id"}`), and we
-        // fall back to the structural conversion instead of panicking.
+        // Deserialize from the borrow so `val` is still there for the
+        // fallback: malformed extended JSON (`{"$oid": "not-a-hex-id"}`) is
+        // rejected.
         use serde::Deserialize as _;
         let bson = bson::Bson::deserialize(&val).unwrap_or_else(|_| {
             crate::types::cbor::cbor_to_bson(&vantage_types::json_to_cbor(val))
@@ -174,10 +165,8 @@ impl From<serde_json::Value> for AnyMongoType {
     }
 }
 
-// CBOR bridge for `AnyTable` interop — the same structural bson<->cbor
-// bridge the Vista source uses, so both surfaces render values identically
-// (ObjectId as its hex string, Binary as bytes). The previous serde_json
-// round-trip collapsed any tagged CBOR value to Null.
+// The same bson<->cbor bridge the vista source uses, so both surfaces render
+// values identically (ObjectId as its hex string, Binary as bytes).
 impl From<AnyMongoType> for ciborium::Value {
     fn from(val: AnyMongoType) -> Self {
         crate::types::cbor::bson_to_cbor(&val.into_value())

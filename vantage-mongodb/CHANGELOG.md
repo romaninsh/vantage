@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1 — 2026-10-15
+
+- The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,
+  and public behaviour the docs promise but nothing tested gets a test. No API or behaviour change.
+- Doc fixes: the `operation` example uses `eq_bool(false)`, the real method, and `MongoRefBlock::rhai`
+  says a build without the `rhai` feature fails rather than ignoring the script.
+
 ## 2.0.0 — 2026-10-14
 
 ### Breaking changes

@@ -88,24 +88,3 @@ impl<C, R> DriverBlockArgs for VistaSpec<MongoTableExtras, C, R> {
             .unwrap_or_default()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use bson::doc;
-
-    use super::*;
-
-    #[test]
-    fn writing_stages_are_refused() {
-        for writer in [
-            doc! { "$out": "copy" },
-            doc! { "$merge": { "into": "copy" } },
-        ] {
-            let stages = vec![doc! { "$match": {} }, writer.clone()];
-            let msg = check_stages(&stages).unwrap_err().to_string();
-            assert!(msg.contains("read-only"), "{writer}: {msg}");
-            assert!(msg.contains("stage: 1"), "{writer}: {msg}");
-        }
-        assert!(check_stages(&[doc! { "$match": {} }]).is_ok());
-    }
-}

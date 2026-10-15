@@ -45,8 +45,6 @@ mod project;
 mod refs;
 #[cfg(feature = "rhai")]
 mod scripted;
-#[cfg(test)]
-mod tests;
 mod watch;
 mod write;
 

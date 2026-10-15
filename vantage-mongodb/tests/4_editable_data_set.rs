@@ -63,48 +63,6 @@ async fn test_insert() {
 }
 
 #[tokio::test]
-async fn test_replace() {
-    let (_db, table) = setup("replace").await;
-
-    let rec = record(&[
-        ("name", AnyMongoType::new("Alpha Replaced".to_string())),
-        ("price", AnyMongoType::new(99i64)),
-    ]);
-    table.replace_value(MongoId::from("a"), &rec).await.unwrap();
-
-    let fetched = table
-        .get_value(MongoId::from("a"))
-        .await
-        .unwrap()
-        .expect("row a exists");
-    assert_eq!(
-        fetched["name"].try_get::<String>(),
-        Some("Alpha Replaced".into())
-    );
-    assert_eq!(fetched["price"].try_get::<i64>(), Some(99));
-}
-
-#[tokio::test]
-async fn test_patch() {
-    let (_db, table) = setup("patch").await;
-
-    let partial = record(&[("price", AnyMongoType::new(55i64))]);
-    table
-        .patch_value(MongoId::from("a"), &partial)
-        .await
-        .unwrap();
-
-    let fetched = table
-        .get_value(MongoId::from("a"))
-        .await
-        .unwrap()
-        .expect("row a exists");
-    assert_eq!(fetched["price"].try_get::<i64>(), Some(55));
-    // name untouched
-    assert_eq!(fetched["name"].try_get::<String>(), Some("Alpha".into()));
-}
-
-#[tokio::test]
 async fn test_delete() {
     let (_db, table) = setup("delete").await;
 
@@ -115,14 +73,6 @@ async fn test_delete() {
     let all = table.list_values().await.unwrap();
     assert_eq!(all.len(), 1);
     assert!(!all.contains_key(&MongoId::from("a")));
-}
-
-#[tokio::test]
-async fn test_delete_all() {
-    let (_db, table) = setup("delete_all").await;
-
-    WritableValueSet::delete_all(&table).await.unwrap();
-    assert!(table.list_values().await.unwrap().is_empty());
 }
 
 #[tokio::test]

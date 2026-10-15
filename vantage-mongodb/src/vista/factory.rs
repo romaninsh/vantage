@@ -24,8 +24,6 @@ mod assemble;
 mod build;
 mod columns;
 mod ref_keys;
-#[cfg(test)]
-mod tests;
 
 pub(crate) use build::build_mongo_table;
 pub(crate) use columns::{build_column, paths_from_table_columns};

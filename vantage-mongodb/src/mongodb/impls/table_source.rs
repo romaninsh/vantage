@@ -1,11 +1,7 @@
-//! TableSource implementation for MongoDB.
-//!
-//! Uses `MongoCondition` as the condition type. Read/aggregate operations
-//! build a `MongoSelect` from table state and use its helper methods
-//! (`build_filter`, `build_find_options`, `as_aggregate_pipeline`). Over a
-//! data source carrying a `MongoView`, reads aggregate after the view's
-//! stages and writes are refused.
-//! Write operations use the `mongodb` driver directly.
+//! `TableSource` for MongoDB, with `MongoCondition` as the condition type.
+//! Reads build a `MongoSelect` from the table; writes go straight to the
+//! driver. Over a data source carrying a `MongoView`, reads run after the
+//! view's stages and writes are refused.
 
 use async_trait::async_trait;
 use bson::{Bson, doc};
@@ -110,7 +106,8 @@ fn select_base<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> MongoSelec
     }
 
     for (cond, direction) in table.orders() {
-        // Order entries are MongoCondition — extract field name, apply direction
+        // An order is a document whose first key names the field; the
+        // direction comes from the entry, not the document's value.
         if let MongoCondition::Doc(doc) = cond
             && let Some((key, _)) = doc.iter().next()
         {
@@ -373,11 +370,10 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        // Escape regex metacharacters so the search is a literal substring match
         let escaped = regex_escape(search_value);
 
-        // Build $or across the search columns with a case-insensitive regex,
-        // each at its stored BSON path (the alias) or its join alias.
+        // Each column is searched at its stored BSON path (the alias), or at
+        // its join alias when it is a joined column.
         let conditions: Vec<bson::Bson> = table
             .search_columns()
             .into_iter()
@@ -389,7 +385,7 @@ impl TableSource for MongoDB {
             .collect();
 
         if conditions.is_empty() {
-            // No columns — return always-false filter (consistent with SQL backends)
+            // No column to search matches nothing, as on the SQL backends.
             doc! { "_id": { "$exists": false } }.into()
         } else if conditions.len() == 1 {
             match conditions.into_iter().next().unwrap() {
@@ -400,8 +396,6 @@ impl TableSource for MongoDB {
             doc! { "$or": conditions }.into()
         }
     }
-
-    // ── Read ─────────────────────────────────────────────────────────
 
     async fn list_table_values<E>(
         &self,
@@ -492,8 +486,6 @@ impl TableSource for MongoDB {
         }
     }
 
-    // ── Aggregates ───────────────────────────────────────────────────
-
     async fn get_table_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
@@ -548,8 +540,6 @@ impl TableSource for MongoDB {
             .await?;
         Ok(AnyMongoType::untyped(val))
     }
-
-    // ── Write ────────────────────────────────────────────────────────
 
     async fn insert_table_value<E>(
         &self,
@@ -878,110 +868,4 @@ pub(crate) fn regex_escape(s: &str) -> String {
         out.push(c);
     }
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bson::oid::ObjectId;
-
-    #[test]
-    fn chunk_ranges_respects_limit() {
-        assert_eq!(chunk_ranges(&[], 10), Vec::<std::ops::Range<usize>>::new());
-        assert_eq!(chunk_ranges(&[4, 4, 4], 10), vec![0..2, 2..3]);
-        assert_eq!(chunk_ranges(&[3, 3, 4], 10), vec![0..3]);
-        assert_eq!(chunk_ranges(&[4, 4, 2, 5], 10), vec![0..3, 3..4]);
-    }
-
-    #[test]
-    fn chunk_ranges_gives_an_oversized_item_its_own_chunk() {
-        assert_eq!(chunk_ranges(&[2, 50, 2], 10), vec![0..1, 1..2, 2..3]);
-        assert_eq!(chunk_ranges(&[50], 10), vec![0..1]);
-    }
-
-    /// A handle that never talks to a server: the client connects lazily and
-    /// `MongoDB::new` skips the topology probe.
-    async fn offline() -> MongoDB {
-        let client = mongodb::Client::with_uri_str("mongodb://localhost:27017")
-            .await
-            .unwrap();
-        MongoDB::new(client, "unit")
-    }
-
-    fn roundtrip(db: &MongoDB, value: Bson) -> (MongoCondition, Option<(String, Bson)>) {
-        let condition = db
-            .eq_value_condition("fk", AnyMongoType::untyped(value))
-            .unwrap();
-        let back = db
-            .condition_equality(&condition)
-            .map(|(field, v)| (field, v.to_bson()));
-        (condition, back)
-    }
-
-    #[tokio::test]
-    async fn plain_value_round_trips_unchanged() {
-        let db = offline().await;
-        let (condition, back) = roundtrip(&db, Bson::String("c1".into()));
-        assert!(matches!(&condition, MongoCondition::Doc(d) if *d == doc! { "fk": "c1" }));
-        assert_eq!(back, Some(("fk".into(), Bson::String("c1".into()))));
-    }
-
-    #[tokio::test]
-    async fn hex_string_matches_both_spellings_and_yields_object_id() {
-        let db = offline().await;
-        let oid = ObjectId::new();
-        let (condition, back) = roundtrip(&db, Bson::String(oid.to_hex()));
-        assert!(matches!(
-            &condition,
-            MongoCondition::Doc(d) if *d == doc! { "fk": { "$in": [oid.to_hex(), oid] } }
-        ));
-        assert_eq!(back, Some(("fk".into(), Bson::ObjectId(oid))));
-    }
-
-    #[tokio::test]
-    async fn object_id_round_trips_as_object_id() {
-        let db = offline().await;
-        let oid = ObjectId::new();
-        let (_, back) = roundtrip(&db, Bson::ObjectId(oid));
-        assert_eq!(back, Some(("fk".into(), Bson::ObjectId(oid))));
-    }
-
-    #[tokio::test]
-    async fn search_reads_columns_at_their_stored_paths() {
-        let db = offline().await;
-        let table = Table::<MongoDB, vantage_types::EmptyEntity>::new("clients", db.clone())
-            .with_column(Column::<AnyMongoType>::new("city").with_alias("address.city"))
-            .with_column(Column::<AnyMongoType>::new("name"));
-        let MongoCondition::Doc(filter) = db.search_table_condition(&table, "a") else {
-            panic!("search is a plain filter document");
-        };
-        let regex = doc! { "$regex": "a", "$options": "i" };
-        assert_eq!(
-            filter,
-            doc! { "$or": [ { "address.city": regex.clone() }, { "name": regex } ] }
-        );
-    }
-
-    #[tokio::test]
-    async fn related_in_refuses_a_renamed_source_column() {
-        let db = offline().await;
-        for alias in ["refs.client", "clientId"] {
-            let orders = Table::<MongoDB, vantage_types::EmptyEntity>::new("orders", db.clone())
-                .with_column(Column::<AnyMongoType>::new("client_id").with_alias(alias));
-            let MongoCondition::Deferred(deferred) =
-                db.related_in_condition("_id", &orders, "client_id")
-            else {
-                panic!("related_in is deferred");
-            };
-            let msg = deferred.call().await.unwrap_err().to_string();
-            assert!(msg.contains("its own field name"), "{alias}: {msg}");
-        }
-    }
-
-    #[tokio::test]
-    async fn unrelated_in_has_no_equality() {
-        let db = offline().await;
-        let condition = MongoCondition::Doc(doc! { "fk": { "$in": ["a", "b"] } });
-        assert!(db.condition_equality(&condition).is_none());
-    }
 }

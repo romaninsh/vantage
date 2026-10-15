@@ -35,35 +35,3 @@ impl Topology {
         matches!(self, Self::ReplicaSet | Self::Sharded)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bson::doc;
-
-    #[test]
-    fn hello_with_set_name_is_replica_set() {
-        let reply = doc! { "isWritablePrimary": true, "setName": "rs0" };
-        assert_eq!(Topology::from_hello(&reply), Topology::ReplicaSet);
-    }
-
-    #[test]
-    fn hello_from_mongos_is_sharded() {
-        let reply = doc! { "isWritablePrimary": true, "msg": "isdbgrid" };
-        assert_eq!(Topology::from_hello(&reply), Topology::Sharded);
-    }
-
-    #[test]
-    fn plain_hello_is_standalone() {
-        let reply = doc! { "isWritablePrimary": true, "maxBsonObjectSize": 16777216 };
-        assert_eq!(Topology::from_hello(&reply), Topology::Standalone);
-    }
-
-    #[test]
-    fn only_replica_set_and_sharded_support_change_streams() {
-        assert!(Topology::ReplicaSet.supports_change_streams());
-        assert!(Topology::Sharded.supports_change_streams());
-        assert!(!Topology::Standalone.supports_change_streams());
-        assert!(!Topology::Unknown.supports_change_streams());
-    }
-}
