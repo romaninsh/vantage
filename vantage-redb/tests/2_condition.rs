@@ -6,11 +6,22 @@
 //! at execution time.
 
 use ciborium::Value as CborValue;
-use vantage_expressions::{DeferredFn, ExpressiveEnum};
+use vantage_expressions::{DeferredFn, Expression, ExpressiveEnum};
 use vantage_redb::AnyRedbType;
 use vantage_redb::condition::RedbCondition;
 use vantage_redb::operation::RedbOperation;
 use vantage_table::column::core::Column;
+
+fn deferred_returning(payload: CborValue) -> RedbCondition {
+    RedbCondition::Deferred(DeferredFn::new(move || {
+        let payload = payload.clone();
+        Box::pin(async move { Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload))) })
+    }))
+}
+
+fn text(s: &str) -> CborValue {
+    CborValue::Text(s.into())
+}
 
 // ── Eq ─────────────────────────────────────────────────────────────────────
 
@@ -112,6 +123,22 @@ fn test_in_column_target_extracted() {
     assert_eq!(cond.column(), Some("status"));
 }
 
+#[test]
+fn test_in_helper_builds_an_in_condition() {
+    let cond = RedbCondition::in_("x", vec![1i64, 2]);
+
+    assert_eq!(cond.column(), Some("x"));
+    assert!(matches!(cond, RedbCondition::In { ref values, .. } if values.len() == 2));
+}
+
+#[test]
+fn test_operations_work_on_any_expressive_value() {
+    let expr: Expression<AnyRedbType> = Expression::new("owner", vec![]);
+
+    assert_eq!(expr.eq("a").column(), Some("owner"));
+    assert_eq!(expr.in_(vec!["a", "b"]).column(), Some("owner"));
+}
+
 // ── Deferred resolution ───────────────────────────────────────────────────
 
 #[tokio::test]
@@ -119,20 +146,11 @@ async fn test_deferred_resolves_to_in() {
     // The relationship traversal path encodes [target, [values]] as a
     // CBOR tuple wrapped in an untyped AnyRedbType. resolve() should
     // unpack that into an In condition.
-    let payload = CborValue::Array(vec![
-        CborValue::Text("client_id".into()),
-        CborValue::Array(vec![
-            CborValue::Text("c1".into()),
-            CborValue::Text("c2".into()),
-        ]),
-    ]);
+    let cond = deferred_returning(CborValue::Array(vec![
+        text("client_id"),
+        CborValue::Array(vec![text("c1"), text("c2")]),
+    ]));
 
-    let deferred = DeferredFn::new(move || {
-        let payload = payload.clone();
-        Box::pin(async move { Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload))) })
-    });
-
-    let cond = RedbCondition::Deferred(deferred);
     let resolved = cond.resolve().await.unwrap();
 
     match resolved {
@@ -148,16 +166,22 @@ async fn test_deferred_resolves_to_in() {
 
 #[tokio::test]
 async fn test_deferred_with_empty_values() {
-    let payload = CborValue::Array(vec![CborValue::Text("fk".into()), CborValue::Array(vec![])]);
-    let deferred = DeferredFn::new(move || {
-        let payload = payload.clone();
-        Box::pin(async move { Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload))) })
-    });
-    let resolved = RedbCondition::Deferred(deferred).resolve().await.unwrap();
+    let cond = deferred_returning(CborValue::Array(vec![text("fk"), CborValue::Array(vec![])]));
+
+    let resolved = cond.resolve().await.unwrap();
+
     match resolved {
         RedbCondition::In { values, .. } => assert!(values.is_empty()),
         _ => panic!("expected In"),
     }
+}
+
+#[tokio::test]
+async fn test_deferred_has_no_column_until_resolved() {
+    let cond = deferred_returning(CborValue::Array(vec![text("fk"), CborValue::Array(vec![])]));
+
+    assert_eq!(cond.column(), None);
+    assert_eq!(cond.resolve().await.unwrap().column(), Some("fk"));
 }
 
 #[tokio::test]
@@ -175,12 +199,42 @@ async fn test_deferred_bad_payload_errors() {
 }
 
 #[tokio::test]
+async fn test_deferred_with_malformed_tuples_errors() {
+    let wrong_length = CborValue::Array(vec![text("fk")]);
+    let column_not_text =
+        CborValue::Array(vec![CborValue::Integer(1.into()), CborValue::Array(vec![])]);
+    let values_not_array = CborValue::Array(vec![text("fk"), text("c1")]);
+
+    for payload in [wrong_length, column_not_text, values_not_array] {
+        let result = deferred_returning(payload).resolve().await;
+        assert!(result.is_err());
+    }
+}
+
+#[tokio::test]
+async fn test_deferred_producing_a_non_scalar_errors() {
+    let cond = RedbCondition::Deferred(DeferredFn::new(|| {
+        Box::pin(async {
+            Ok(ExpressiveEnum::Nested(Expression::<AnyRedbType>::new(
+                "x",
+                vec![],
+            )))
+        })
+    }));
+
+    assert!(cond.resolve().await.is_err());
+}
+
+#[tokio::test]
 async fn test_resolve_passes_through_eq() {
     // Non-deferred conditions pass through resolve unchanged.
     let cond = RedbCondition::eq("a", 1i64);
     let resolved = cond.resolve().await.unwrap();
     match resolved {
-        RedbCondition::Eq { column, .. } => assert_eq!(column, "a"),
+        RedbCondition::Eq { column, value } => {
+            assert_eq!(column, "a");
+            assert_eq!(value.try_get::<i64>(), Some(1));
+        }
         _ => panic!("expected Eq passthrough"),
     }
 }

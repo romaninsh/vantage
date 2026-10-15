@@ -64,6 +64,6 @@ fn test_indexed_flag_visible_on_column() {
 fn test_table_carries_data_source() {
     let (_tmp, db) = fresh_db();
     let table = Table::<Redb, EmptyEntity>::new("things", db.clone());
-    // We can re-use the same Redb handle; cloning is cheap (Arc).
+
     let _: &Redb = table.data_source();
 }

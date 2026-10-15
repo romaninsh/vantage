@@ -3,7 +3,11 @@
 //! share state.
 
 use vantage_dataset::prelude::*;
+use vantage_redb::operation::RedbOperation;
 use vantage_redb::{AnyRedbType, Redb};
+use vantage_table::column::core::Column;
+use vantage_table::column::flags::ColumnFlag;
+use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
@@ -16,14 +20,18 @@ fn product_record(name: &str, price: i64, calories: i64) -> Record<AnyRedbType> 
     r
 }
 
-async fn seeded_table() -> (tempfile::NamedTempFile, Table<Redb, EmptyEntity>) {
-    let path = tempfile::NamedTempFile::new().unwrap();
-    let db = Redb::create(path.path()).unwrap();
-    let table = Table::<Redb, EmptyEntity>::new("product", db)
+fn product_table(db: Redb) -> Table<Redb, EmptyEntity> {
+    Table::<Redb, EmptyEntity>::new("product", db)
         .with_id_column("id")
         .with_column_of::<String>("name")
         .with_column_of::<i64>("price")
-        .with_column_of::<i64>("calories");
+        .with_column(Column::<i64>::new("calories").with_flag(ColumnFlag::Indexed))
+}
+
+async fn seeded_table() -> (tempfile::NamedTempFile, Table<Redb, EmptyEntity>) {
+    let path = tempfile::NamedTempFile::new().unwrap();
+    let db = Redb::create(path.path()).unwrap();
+    let table = product_table(db);
 
     table
         .insert_value(
@@ -47,6 +55,12 @@ async fn seeded_table() -> (tempfile::NamedTempFile, Table<Redb, EmptyEntity>) {
     (path, table)
 }
 
+fn never_written_table() -> (tempfile::NamedTempFile, Table<Redb, EmptyEntity>) {
+    let path = tempfile::NamedTempFile::new().unwrap();
+    let db = Redb::create(path.path()).unwrap();
+    (path, product_table(db))
+}
+
 #[tokio::test]
 async fn test_list_products() {
     let (_tmp, table) = seeded_table().await;
@@ -61,6 +75,13 @@ async fn test_list_products() {
     );
     assert_eq!(cupcake["price"].try_get::<i64>(), Some(120));
     assert_eq!(cupcake["calories"].try_get::<i64>(), Some(300));
+}
+
+#[tokio::test]
+async fn test_list_of_a_table_never_written_is_empty() {
+    let (_tmp, table) = never_written_table();
+
+    assert!(table.list_values().await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -88,6 +109,13 @@ async fn test_get_missing_id_returns_none() {
 }
 
 #[tokio::test]
+async fn test_get_in_a_table_never_written_returns_none() {
+    let (_tmp, table) = never_written_table();
+
+    assert!(table.get_value("anything").await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn test_get_some_returns_arbitrary_row() {
     let (_tmp, table) = seeded_table().await;
 
@@ -108,8 +136,6 @@ async fn test_get_some_on_empty_table_returns_none() {
         .with_id_column("id")
         .with_column_of::<String>("name");
 
-    // Insert and immediately delete to force the table to be created but
-    // empty (redb refuses to scan a never-opened table).
     let mut r: Record<AnyRedbType> = Record::new();
     r.insert("name".into(), AnyRedbType::new("seed".to_string()));
     table.insert_value("seed", &r).await.unwrap();
@@ -120,6 +146,16 @@ async fn test_get_some_on_empty_table_returns_none() {
 }
 
 #[tokio::test]
+async fn test_get_some_honours_conditions() {
+    let (_tmp, mut table) = seeded_table().await;
+    table.add_condition(table["calories"].clone().eq(250i64));
+
+    let (id, _) = table.get_some_value().await.unwrap().expect("a match");
+
+    assert_eq!(id, "delorean_donut");
+}
+
+#[tokio::test]
 async fn test_count_unconditional() {
     let (_tmp, table) = seeded_table().await;
     let n = table.data_source().get_table_count(&table).await.unwrap();
@@ -127,13 +163,78 @@ async fn test_count_unconditional() {
 }
 
 #[tokio::test]
+async fn test_count_of_a_table_never_written_is_zero() {
+    let (_tmp, table) = never_written_table();
+
+    let n = table.data_source().get_table_count(&table).await.unwrap();
+
+    assert_eq!(n, 0);
+}
+
+#[tokio::test]
+async fn test_count_follows_conditions() {
+    let (_tmp, mut table) = seeded_table().await;
+    table.add_condition(table["calories"].clone().in_(vec![200i64, 250]));
+
+    let n = table.data_source().get_table_count(&table).await.unwrap();
+
+    assert_eq!(n, 2);
+}
+
+#[tokio::test]
 async fn test_pagination_skip_and_limit() {
     let (_tmp, table) = seeded_table().await;
 
     let mut paged = table.clone();
-    paged.set_pagination(Some(vantage_table::pagination::Pagination::new(2, 1)));
+    paged.set_pagination(Some(Pagination::new(2, 1)));
 
     let rows = paged.list_values().await.unwrap();
-    // page=2 with 1 item per page → skip 1, take 1
+    // page 2 with 1 item per page → exactly one row, not the whole set
     assert_eq!(rows.len(), 1);
+}
+
+#[tokio::test]
+async fn test_pagination_pages_partition_the_rows() {
+    let (_tmp, table) = seeded_table().await;
+
+    let mut seen = Vec::new();
+    for page in 1..=3 {
+        let mut paged = table.clone();
+        paged.set_pagination(Some(Pagination::new(page, 1)));
+        seen.extend(paged.list_values().await.unwrap().into_keys());
+    }
+    seen.sort();
+
+    assert_eq!(seen, ["delorean_donut", "flux_cupcake", "time_tart"]);
+}
+
+#[tokio::test]
+async fn test_pagination_past_the_end_is_empty() {
+    let (_tmp, table) = seeded_table().await;
+
+    let mut paged = table.clone();
+    paged.set_pagination(Some(Pagination::new(2, 3)));
+
+    assert!(paged.list_values().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_search_is_unsupported() {
+    let (_tmp, mut table) = seeded_table().await;
+    table.add_search("cupcake");
+
+    let err = table.list_values().await.expect_err("redb has no search");
+
+    assert!(err.is_unsupported(), "{err:?}");
+}
+
+#[tokio::test]
+async fn test_sum_max_min_return_errors() {
+    let (_tmp, table) = seeded_table().await;
+    let db = table.data_source();
+    let price = db.create_column::<AnyRedbType>("price");
+
+    assert!(db.get_table_sum(&table, &price).await.is_err());
+    assert!(db.get_table_max(&table, &price).await.is_err());
+    assert!(db.get_table_min(&table, &price).await.is_err());
 }

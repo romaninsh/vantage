@@ -81,9 +81,8 @@ impl TableSource for Redb {
     where
         E: Entity<Self::Value>,
     {
-        // redb cannot do full-table search — return a deferred condition that
-        // errors when resolved, matching how get_table_sum/max/min surface
-        // unsupported features.
+        // No search: a deferred condition that errors when resolved, so a
+        // search never silently matches every row.
         RedbCondition::Deferred(DeferredFn::from_fn(|| {
             Box::pin(async {
                 Err::<AnyRedbType, _>(
@@ -96,8 +95,6 @@ impl TableSource for Redb {
             })
         }))
     }
-
-    // ── Read ─────────────────────────────────────────────────────────
 
     async fn list_table_values<E>(
         &self,
@@ -153,7 +150,6 @@ impl TableSource for Redb {
         E: Entity<Self::Value>,
     {
         if table.conditions().count() == 0 {
-            // Cheap path: ask redb for its row count directly.
             use redb::ReadableTableMetadata;
             let txn = self.begin_read()?;
             let main = match txn.open_table(main_table_def(table.table_name())) {
@@ -207,8 +203,6 @@ impl TableSource for Redb {
     {
         Err(error!("redb does not support min aggregation"))
     }
-
-    // ── Write ────────────────────────────────────────────────────────
 
     async fn insert_table_value<E>(
         &self,
@@ -283,7 +277,6 @@ impl TableSource for Redb {
 
         let txn = self.begin_write()?;
 
-        // Remove old index entries (read previous row first, in its own scope).
         let old_record = {
             let main = txn
                 .open_table(main_table_def(table_name))
@@ -301,7 +294,6 @@ impl TableSource for Redb {
             delete_indexes(&txn, table_name, &old_pairs, id)?;
         }
 
-        // Write new main row + new index entries.
         {
             let mut main = txn.open_table(main_table_def(table_name)).map_err(|e| {
                 error!("Failed to reopen main for replace", details = e.to_string())
@@ -331,9 +323,7 @@ impl TableSource for Redb {
         let conditions = resolved_conditions(table).await?;
         let txn = self.begin_write()?;
 
-        // Phase 1 — read the existing row in its own scope so the read
-        // borrow is released before we re-open for write. A row outside the
-        // set is as good as missing.
+        // A row outside the set is as good as missing.
         let mut record = {
             let main = txn
                 .open_table(main_table_def(table_name))
@@ -349,8 +339,7 @@ impl TableSource for Redb {
             })?
         };
 
-        // Snapshot old indexed pairs before mutating the record (owned copies
-        // so the borrow on `record` doesn't outlive the patch loop below).
+        // Owned copies: the patch loop below mutates `record`.
         let old_indexed: Vec<(String, AnyRedbType)> = record
             .iter()
             .filter(|(name, _)| indexed_cols.contains(name.as_str()))
@@ -367,7 +356,6 @@ impl TableSource for Redb {
             );
         }
 
-        // Phase 2 — write new bytes + maintain indexes.
         {
             let new_bytes = encode_record(&record)?;
             let mut main = txn
@@ -399,8 +387,7 @@ impl TableSource for Redb {
         let conditions = resolved_conditions(table).await?;
         let txn = self.begin_write()?;
 
-        // Read the row to know what to delete from indexes; only a row in the
-        // set is removed.
+        // Only a row in the set is removed.
         let row = {
             let mut main = txn
                 .open_table(main_table_def(table_name))
@@ -440,7 +427,6 @@ impl TableSource for Redb {
             return Ok(());
         }
 
-        // Wholesale truncate — drop main table and all index tables.
         let table_name = table.table_name();
         let txn = self.begin_write()?;
         let _ = txn

@@ -74,6 +74,13 @@ check!(replace_is_confined, contract::check_replace);
 check!(delete_all_is_confined, contract::check_delete_all);
 
 #[tokio::test]
+async fn unnarrowed_table_reads_and_writes_everything() {
+    let (_f, all) = seeded().await;
+
+    contract::check_unnarrowed(&all, |s| s.to_string(), text).await;
+}
+
+#[tokio::test]
 async fn get_honours_conditions() {
     let (_f, all) = seeded().await;
     let set = all
@@ -91,6 +98,7 @@ async fn insert_return_id_keeps_a_supplied_id() {
         .await
         .unwrap();
     assert_eq!(id, "given");
+    assert!(t.get_value("given").await.unwrap().is_some());
 }
 
 #[tokio::test]

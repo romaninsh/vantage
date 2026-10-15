@@ -60,6 +60,24 @@ async fn test_insert() {
 
     let fetched = table.get_value("c").await.unwrap().expect("row exists");
     assert_eq!(fetched["name"].try_get::<String>(), Some("Gamma".into()));
+    assert_eq!(table.list_values().await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn test_insert_of_an_existing_id_keeps_the_stored_row() {
+    let (_tmp, table) = fresh_table("insidem");
+    seed(&table).await;
+
+    let other = record(&[
+        ("name", AnyRedbType::new("Changed".to_string())),
+        ("price", AnyRedbType::new(999i64)),
+    ]);
+    let returned = table.insert_value("a", &other).await.unwrap();
+
+    assert_eq!(returned["name"].try_get::<String>(), Some("Alpha".into()));
+    let stored = table.get_value("a").await.unwrap().expect("row exists");
+    assert_eq!(stored["name"].try_get::<String>(), Some("Alpha".into()));
+    assert_eq!(stored["price"].try_get::<i64>(), Some(10));
 }
 
 #[tokio::test]
@@ -67,10 +85,7 @@ async fn test_replace_overwrites_all_fields() {
     let (_tmp, table) = fresh_table("rep");
     seed(&table).await;
 
-    let rec = record(&[
-        ("name", AnyRedbType::new("Alpha Replaced".to_string())),
-        ("price", AnyRedbType::new(99i64)),
-    ]);
+    let rec = record(&[("name", AnyRedbType::new("Alpha Replaced".to_string()))]);
     table.replace_value("a", &rec).await.unwrap();
 
     let fetched = table.get_value("a").await.unwrap().expect("row a exists");
@@ -78,7 +93,33 @@ async fn test_replace_overwrites_all_fields() {
         fetched["name"].try_get::<String>(),
         Some("Alpha Replaced".into())
     );
-    assert_eq!(fetched["price"].try_get::<i64>(), Some(99));
+    assert!(
+        fetched.get("price").is_none(),
+        "replace must drop fields the new record lacks"
+    );
+}
+
+#[tokio::test]
+async fn test_replace_creates_if_missing() {
+    let (_tmp, table) = fresh_table("repmiss");
+    seed(&table).await;
+
+    let rec = record(&[
+        ("name", AnyRedbType::new("Brand new".to_string())),
+        ("price", AnyRedbType::new(7i64)),
+    ]);
+    table.replace_value("new", &rec).await.unwrap();
+
+    let fetched = table
+        .get_value("new")
+        .await
+        .unwrap()
+        .expect("upserted row exists");
+    assert_eq!(
+        fetched["name"].try_get::<String>(),
+        Some("Brand new".into())
+    );
+    assert_eq!(table.list_values().await.unwrap().len(), 3);
 }
 
 #[tokio::test]
@@ -87,12 +128,14 @@ async fn test_patch_merges_fields() {
     seed(&table).await;
 
     let partial = record(&[("price", AnyRedbType::new(55i64))]);
-    table.patch_value("a", &partial).await.unwrap();
+    let returned = table.patch_value("a", &partial).await.unwrap();
 
     let fetched = table.get_value("a").await.unwrap().expect("row a exists");
     assert_eq!(fetched["price"].try_get::<i64>(), Some(55));
-    // name untouched
     assert_eq!(fetched["name"].try_get::<String>(), Some("Alpha".into()));
+    // The result is the whole stored row, not only the change.
+    assert_eq!(returned["price"].try_get::<i64>(), Some(55));
+    assert_eq!(returned["name"].try_get::<String>(), Some("Alpha".into()));
 }
 
 #[tokio::test]
@@ -101,8 +144,13 @@ async fn test_patch_missing_row_errors() {
     seed(&table).await;
 
     let partial = record(&[("price", AnyRedbType::new(55i64))]);
-    let result = table.patch_value("nope", &partial).await;
-    assert!(result.is_err());
+    let err = table
+        .patch_value("nope", &partial)
+        .await
+        .expect_err("patching a missing row fails");
+
+    assert!(err.is_not_found(), "{err:?}");
+    assert!(table.get_value("nope").await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -119,12 +167,44 @@ async fn test_delete_one() {
 }
 
 #[tokio::test]
+async fn test_delete_of_a_missing_row_is_ok() {
+    let (_tmp, table) = fresh_table("delmiss");
+    seed(&table).await;
+
+    WritableValueSet::delete(&table, "nope").await.unwrap();
+
+    assert_eq!(table.list_values().await.unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn test_delete_all() {
     let (_tmp, table) = fresh_table("delall");
     seed(&table).await;
 
     WritableValueSet::delete_all(&table).await.unwrap();
     assert!(table.list_values().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_delete_all_can_be_repeated() {
+    let (_tmp, table) = fresh_table("delall2");
+    seed(&table).await;
+
+    WritableValueSet::delete_all(&table).await.unwrap();
+    WritableValueSet::delete_all(&table).await.unwrap();
+
+    assert!(table.list_values().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_rows_written_after_delete_all_are_readable() {
+    let (_tmp, table) = fresh_table("delallthenwrite");
+    seed(&table).await;
+    WritableValueSet::delete_all(&table).await.unwrap();
+
+    seed(&table).await;
+
+    assert_eq!(table.list_values().await.unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -143,25 +223,13 @@ async fn test_insert_return_id_generates_uuid() {
 }
 
 #[tokio::test]
-async fn test_replace_creates_if_missing() {
-    let (_tmp, table) = fresh_table("repmiss");
-    seed(&table).await;
+async fn test_insert_return_id_makes_a_new_id_on_every_call() {
+    let (_tmp, table) = fresh_table("autotwice");
+    let rec = record(&[("name", AnyRedbType::new("Same".to_string()))]);
 
-    // redb's insert overwrites by default; replace_value should also work
-    // for a missing id (acts as upsert).
-    let rec = record(&[
-        ("name", AnyRedbType::new("Brand new".to_string())),
-        ("price", AnyRedbType::new(7i64)),
-    ]);
-    table.replace_value("new", &rec).await.unwrap();
+    let first = table.insert_return_id_value(&rec).await.unwrap();
+    let second = table.insert_return_id_value(&rec).await.unwrap();
 
-    let fetched = table
-        .get_value("new")
-        .await
-        .unwrap()
-        .expect("upserted row exists");
-    assert_eq!(
-        fetched["name"].try_get::<String>(),
-        Some("Brand new".into())
-    );
+    assert_ne!(first, second);
+    assert_eq!(table.list_values().await.unwrap().len(), 2);
 }

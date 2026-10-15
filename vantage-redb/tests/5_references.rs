@@ -87,6 +87,12 @@ async fn seed() -> (tempfile::NamedTempFile, Redb) {
     (path, db)
 }
 
+fn sorted_keys<V>(rows: &indexmap::IndexMap<String, V>) -> Vec<&str> {
+    let mut keys: Vec<&str> = rows.keys().map(String::as_str).collect();
+    keys.sort();
+    keys
+}
+
 #[tokio::test]
 async fn test_has_many_orders_for_paying_clients() {
     let (_tmp, db) = seed().await;
@@ -96,12 +102,9 @@ async fn test_has_many_orders_for_paying_clients() {
 
     let orders = clients.get_ref_as::<Order>("orders").unwrap();
     let list = orders.list().await.unwrap();
-    // Marty (1) + Doc (2) = 3 orders.
-    assert_eq!(list.len(), 3);
-    assert!(list.contains_key("o1"));
-    assert!(list.contains_key("o2"));
-    assert!(list.contains_key("o3"));
-    assert!(!list.contains_key("o4"));
+
+    // Marty (1) + Doc (2) = 3 orders, none of Biff's.
+    assert_eq!(sorted_keys(&list), ["o1", "o2", "o3"]);
 }
 
 #[tokio::test]
@@ -114,9 +117,7 @@ async fn test_has_many_orders_for_single_client() {
 
     let orders = clients.get_ref_as::<Order>("orders").unwrap();
     let list = orders.list().await.unwrap();
-    assert_eq!(list.len(), 2);
-    assert!(list.contains_key("o2"));
-    assert!(list.contains_key("o3"));
+    assert_eq!(sorted_keys(&list), ["o2", "o3"]);
 }
 
 #[tokio::test]
@@ -133,6 +134,18 @@ async fn test_has_many_for_no_matching_clients_yields_empty() {
 }
 
 #[tokio::test]
+async fn test_has_many_without_conditions_covers_every_order() {
+    let (_tmp, db) = seed().await;
+
+    let orders = client_table(db).get_ref_as::<Order>("orders").unwrap();
+
+    assert_eq!(
+        sorted_keys(&orders.list().await.unwrap()),
+        ["o1", "o2", "o3", "o4"]
+    );
+}
+
+#[tokio::test]
 async fn test_has_one_client_for_order() {
     let (_tmp, db) = seed().await;
 
@@ -142,8 +155,20 @@ async fn test_has_one_client_for_order() {
 
     let client = orders.get_ref_as::<Client>("client").unwrap();
     let list = client.list().await.unwrap();
-    assert_eq!(list.len(), 1);
-    assert!(list.contains_key("marty"));
+    assert_eq!(sorted_keys(&list), ["marty"]);
+}
+
+#[tokio::test]
+async fn test_has_one_for_several_orders_collects_each_client_once() {
+    let (_tmp, db) = seed().await;
+
+    let mut orders = order_table(db);
+    let id_col = orders["id"].clone();
+    orders.add_condition(id_col.in_(vec!["o2", "o3", "o4"]));
+
+    let clients = orders.get_ref_as::<Client>("client").unwrap();
+
+    assert_eq!(sorted_keys(&clients.list().await.unwrap()), ["biff", "doc"]);
 }
 
 #[tokio::test]
@@ -151,8 +176,6 @@ async fn test_typed_entity_round_trip() {
     let (_tmp, db) = seed().await;
     let table = client_table(db);
 
-    // Reads through the typed `get` go entity → record → struct via the
-    // generated TryFromRecord impl on Client.
     let marty: Client = table
         .get("marty".to_string())
         .await

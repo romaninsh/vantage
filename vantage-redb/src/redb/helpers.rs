@@ -25,10 +25,8 @@ where
         .collect()
 }
 
-/// Apply pagination skip/limit to a fully loaded result set. We always
-/// post-filter rather than push pagination into the iteration so the
-/// "first condition seeds candidates" algorithm in `query.rs` doesn't
-/// have to know about pagination.
+/// Apply pagination skip/limit to a fully loaded result set, so the candidate
+/// seeding in `query.rs` doesn't have to know about pagination.
 pub(crate) fn paginate<E>(
     table: &Table<Redb, E>,
     out: IndexMap<String, Record<AnyRedbType>>,
@@ -45,9 +43,7 @@ where
     }
 }
 
-/// Project a record's indexed (column, value) pairs as borrowed slices —
-/// used by both the write path (insert/replace/patch/delete) and the
-/// trait impl wrapper.
+/// A record's indexed (column, value) pairs, borrowed.
 pub(crate) fn collect_indexed_pairs<'a>(
     record: &'a Record<AnyRedbType>,
     indexed: &HashSet<String>,
