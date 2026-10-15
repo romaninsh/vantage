@@ -4,11 +4,6 @@
 //! auth refresh, a rate limit and a circuit breaker are inline middleware.
 //! Cancellation is structural: drop the future and the in-flight request goes
 //! with it.
-//!
-//! The pieces live in one file each: `builder` assembles a client, `attempt`
-//! runs one call's attempt loop, `breaker` is the circuit breaker, `rate` the
-//! token bucket, `policy` the retry knobs, and `auth`, `error` and `observer`
-//! the types those exchange.
 
 mod attempt;
 mod auth;
@@ -92,9 +87,8 @@ impl ResilientClient {
         self.peak_in_flight.load(Ordering::SeqCst)
     }
 
-    /// What the circuit breaker is doing right now, for consumers that poll
-    /// rather than follow `TransportEvent`s. `None` when this client has no
-    /// breaker configured.
+    /// What the circuit breaker is doing right now; `None` when this client
+    /// has no breaker.
     pub fn breaker_state(&self) -> Option<BreakerState> {
         self.breaker.as_ref().map(|b| b.state())
     }
@@ -111,9 +105,8 @@ impl ResilientClient {
         }
     }
 
-    /// Count one request as in flight until the returned guard is dropped —
-    /// including when the caller's future is cancelled mid-send, which is why
-    /// this is a guard and not a pair of `fetch_add` / `fetch_sub` calls.
+    /// A guard, not a `fetch_add` / `fetch_sub` pair, so a future cancelled
+    /// mid-send still decrements.
     fn enter_flight(&self) -> InFlightGuard {
         let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
         self.peak_in_flight.fetch_max(now, Ordering::SeqCst);

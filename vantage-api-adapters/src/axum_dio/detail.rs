@@ -22,8 +22,6 @@ pub(super) async fn detail(
     if q.watch.unwrap_or(false) {
         return watch_detail(st, id).await;
     }
-    // Bounded facade read: hydrates this row (through the shared scheduler)
-    // before returning, so the response always carries the augment columns.
     let key = st.cache_key(&id);
     let row = st
         .dio
@@ -35,8 +33,6 @@ pub(super) async fn detail(
 }
 
 async fn watch_detail(st: ApiState, id: String) -> ApiResult<Response> {
-    // Hydrate first so the watch opens on a complete record instead of
-    // sitting on an unfilled one.
     let key = st.cache_key(&id);
     let row = st
         .dio

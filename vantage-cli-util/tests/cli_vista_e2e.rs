@@ -3,8 +3,8 @@
 //! eq filter, `id=` alias, `[N]` narrow, `[+col]` sort, `?keyword`
 //! search, locator dispatch, and the three output formats. Parser
 //! behaviour for the still-stubbed paths (non-`eq` operators,
-//! `[N:M]` range slicing, aggregates) is covered in `parse.rs` unit
-//! tests — no need to re-assert it here.
+//! `[N:M]` range slicing, aggregates) is covered in `parse_tokens.rs`
+//! — no need to re-assert it here.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -198,40 +198,6 @@ fn argv(parts: &[&str]) -> Vec<String> {
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn plain_list_renders_all_records() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users"]))
-        .await
-        .unwrap();
-
-    assert!(
-        rec.stubs().is_empty(),
-        "no stubs expected, got {:?}",
-        rec.stubs()
-    );
-    let lists = rec.lists();
-    assert_eq!(lists.len(), 1);
-    // Three records, Alice/Bob/Carol all present (cbor-diag is stable).
-    assert!(lists[0].contains("\"Alice\""));
-    assert!(lists[0].contains("\"Bob\""));
-    assert!(lists[0].contains("\"Carol\""));
-}
-
-#[tokio::test]
-async fn eq_filter_narrows_results() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "vip_flag=true"]))
-        .await
-        .unwrap();
-
-    let lists = rec.lists();
-    assert_eq!(lists.len(), 1);
-    assert!(lists[0].contains("\"Alice\""));
-    assert!(!lists[0].contains("\"Bob\""));
-    assert!(lists[0].contains("\"Carol\""));
-}
-
-#[tokio::test]
 async fn eq_on_string_column_keeps_text_even_when_value_looks_like_bool() {
     // Without column-typed coercion, `name=true` would auto-detect to
     // `Bool(true)` and miss row id=4 (whose name is literally the string
@@ -261,31 +227,6 @@ async fn eq_on_string_column_keeps_text_even_when_value_looks_like_bool() {
 }
 
 #[tokio::test]
-async fn typed_bool_works_same_as_autodetect() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "vip_flag=#true"]))
-        .await
-        .unwrap();
-
-    let lists = rec.lists();
-    assert!(lists[0].contains("\"Alice\""));
-    assert!(!lists[0].contains("\"Bob\""));
-}
-
-#[tokio::test]
-async fn id_alias_forces_single_mode() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "id=2"]))
-        .await
-        .unwrap();
-
-    assert!(rec.lists().is_empty());
-    let records = rec.records();
-    assert_eq!(records.len(), 1);
-    assert!(records[0].contains("\"Bob\""));
-}
-
-#[tokio::test]
 async fn index_narrows_to_single() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
     vista_cli::run(&TestFactory, &rec, &argv(&["users[0]"]))
@@ -295,29 +236,6 @@ async fn index_narrows_to_single() {
     let records = rec.records();
     assert_eq!(records.len(), 1);
     assert!(records[0].contains("\"Alice\""));
-}
-
-#[tokio::test]
-async fn sort_applies_via_set_order() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "[+name]"]))
-        .await
-        .unwrap();
-
-    assert!(
-        rec.stubs().is_empty(),
-        "sort is wired to Vista::set_order, no stub expected: {:?}",
-        rec.stubs()
-    );
-    // MockShell honours set_order, so the rendered list comes back in
-    // name-ascending order: Alice, Bob, Carol.
-    let lists = rec.lists();
-    assert_eq!(lists.len(), 1);
-    let rendered = &lists[0];
-    let alice = rendered.find("Alice").expect("Alice present");
-    let bob = rendered.find("Bob").expect("Bob present");
-    let carol = rendered.find("Carol").expect("Carol present");
-    assert!(alice < bob && bob < carol, "got: {rendered}");
 }
 
 #[tokio::test]
@@ -423,6 +341,66 @@ async fn json_output_keeps_int_and_bool() {
         records[0],
         "{\"1\":{\"id\":\"1\",\"name\":\"Alice\",\"salary\":900,\"vip_flag\":true}}\n"
     );
+}
+
+#[tokio::test]
+async fn hash_typed_value_filters_like_the_column_typed_one() {
+    let rec = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec, &argv(&["users", "vip_flag=#true"]))
+        .await
+        .unwrap();
+
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    assert!(lists[0].contains("\"Alice\""));
+    assert!(lists[0].contains("\"Carol\""));
+    assert!(!lists[0].contains("\"Bob\""));
+}
+
+#[tokio::test]
+async fn id_condition_narrows_to_single_record() {
+    let rec = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec, &argv(&["users", "id=2"]))
+        .await
+        .unwrap();
+
+    assert!(rec.lists().is_empty());
+    let records = rec.records();
+    assert_eq!(records.len(), 1);
+    assert!(records[0].contains("\"Bob\""));
+}
+
+#[tokio::test]
+async fn bracket_sort_ascending_orders_list_by_column() {
+    let rec = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec, &argv(&["users", "[+name]"]))
+        .await
+        .unwrap();
+
+    assert!(rec.stubs().is_empty(), "stubs: {:?}", rec.stubs());
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    let alice = rendered.find("Alice").expect("Alice present");
+    let bob = rendered.find("Bob").expect("Bob present");
+    let carol = rendered.find("Carol").expect("Carol present");
+    assert!(alice < bob && bob < carol, "got: {rendered}");
+}
+
+#[tokio::test]
+async fn bracket_sort_descending_reverses_the_order() {
+    let rec = Recorder::with_format(OutputFormat::CborDiag);
+    vista_cli::run(&TestFactory, &rec, &argv(&["users", "[-name]"]))
+        .await
+        .unwrap();
+
+    let lists = rec.lists();
+    assert_eq!(lists.len(), 1);
+    let rendered = &lists[0];
+    let alice = rendered.find("Alice").expect("Alice present");
+    let bob = rendered.find("Bob").expect("Bob present");
+    let carol = rendered.find("Carol").expect("Carol present");
+    assert!(carol < bob && bob < alice, "got: {rendered}");
 }
 
 #[tokio::test]

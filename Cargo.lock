@@ -5659,7 +5659,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-action"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "schemars",
@@ -5681,7 +5681,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-adapters"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "async-stream",
  "axum",
@@ -5735,7 +5735,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -5783,7 +5783,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5961,7 +5961,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-inventory"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "jsonschema",
@@ -5975,7 +5975,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-log-writer"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5998,7 +5998,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-stream",
  "async-trait",

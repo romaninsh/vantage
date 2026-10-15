@@ -32,21 +32,16 @@ pub fn parse_value(s: &str) -> Result<CborValue> {
     }
 }
 
-/// Column-typed coercion. Looks up `field` in `vista`'s metadata and
-/// targets the matching CBOR variant — so `name=true` against a string
-/// column produces `Text("true")`, not `Bool(true)`. Callers pass the
-/// raw user-typed text (without any `#`-prefix; the `#`-typed escape
-/// hatch is handled at the parser layer and stored as a pre-parsed
-/// `CborValue` instead).
+/// Column-typed coercion: `name=true` against a string column gives
+/// `Text("true")`, not `Bool(true)`. `raw` is the user's text without a
+/// `#` prefix; `#` values are parsed earlier.
 ///
-/// Returns an error when the raw value can't be parsed as the column's
-/// declared type — e.g. `calories=abc` on an `i64` column. The user
-/// almost certainly made a typo; surfacing it at the CLI boundary is
-/// kinder than silently shipping an unmatched filter to the driver.
+/// Errors when `raw` doesn't parse as the column's declared type
+/// (`calories=abc` on an `i64` column): a typo is better caught here than
+/// sent to the driver as a filter that matches nothing.
 ///
 /// Falls back to [`auto_detect`] (never errors) when the column is
-/// missing from the metadata, declares no type, or has a type the cli
-/// runner doesn't recognise.
+/// missing, declares no type, or has an unrecognised type.
 pub fn coerce_for_column(vista: &Vista, field: &str, raw: &str) -> Result<CborValue> {
     let Some(original_type) = vista
         .column(field)
@@ -94,9 +89,7 @@ enum ColumnKind {
     Unknown,
 }
 
-/// Bucket a Rust type-name string (from `std::any::type_name::<T>()` or
-/// a YAML type alias) into a coercion kind. Strips the leading module
-/// path so `alloc::string::String` and `String` both land as `Text`.
+/// The module path is ignored: `alloc::string::String` and `String` are both `Text`.
 fn column_kind(original_type: &str) -> ColumnKind {
     let tail = original_type.rsplit("::").next().unwrap_or(original_type);
     match tail {
@@ -126,9 +119,8 @@ pub fn auto_detect(value: &str) -> CborValue {
     }
 }
 
-/// Translate a `serde_json::Value` into the matching `ciborium::Value`.
-/// Lossless for the JSON type set (the JSON Number's int-vs-float
-/// distinction maps onto CBOR's `Integer` vs `Float`).
+/// Translate a `serde_json::Value` into the matching `ciborium::Value`;
+/// JSON integers become `Integer`, other numbers `Float`.
 pub fn json_to_cbor(j: serde_json::Value) -> CborValue {
     vantage_types::cbor_json::json_to_cbor(j)
 }
@@ -138,7 +130,6 @@ pub fn json_to_cbor(j: serde_json::Value) -> CborValue {
 /// (`#1,#2,#"three"` etc., though `#[1,2,"three"]` is usually cleaner).
 pub fn parse_value_list(s: &str) -> Result<Vec<CborValue>> {
     if let Some(rest) = s.strip_prefix('#') {
-        // The whole list is a JSON array.
         let json: serde_json::Value =
             serde_json::from_str(rest).context(error!("invalid JSON array", literal = rest))?;
         match json {
@@ -154,160 +145,5 @@ pub fn parse_value_list(s: &str) -> Result<Vec<CborValue>> {
             .filter(|p| !p.is_empty())
             .map(auto_detect)
             .collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn autodetect_kinds() {
-        assert!(matches!(auto_detect("42"), CborValue::Integer(_)));
-        assert!(matches!(auto_detect("3.14"), CborValue::Float(_)));
-        assert_eq!(auto_detect("true"), CborValue::Bool(true));
-        assert_eq!(auto_detect("false"), CborValue::Bool(false));
-        assert_eq!(auto_detect("alice"), CborValue::Text("alice".into()));
-    }
-
-    #[test]
-    fn typed_json_overrides_autodetect() {
-        // Without `#`, "42" is an int.
-        assert!(matches!(parse_value("42").unwrap(), CborValue::Integer(_)));
-        // With `#"42"`, it's a string.
-        assert_eq!(
-            parse_value("#\"42\"").unwrap(),
-            CborValue::Text("42".into())
-        );
-    }
-
-    #[test]
-    fn typed_json_bool_int_null() {
-        assert_eq!(parse_value("#true").unwrap(), CborValue::Bool(true));
-        assert!(matches!(parse_value("#42").unwrap(), CborValue::Integer(_)));
-        assert_eq!(parse_value("#null").unwrap(), CborValue::Null);
-    }
-
-    #[test]
-    fn typed_json_array() {
-        let v = parse_value("#[1, 2, \"three\"]").unwrap();
-        match v {
-            CborValue::Array(items) => {
-                assert_eq!(items.len(), 3);
-                assert_eq!(items[2], CborValue::Text("three".into()));
-            }
-            other => panic!("expected Array, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn typed_json_object() {
-        let v = parse_value("#{\"nested\": \"obj\"}").unwrap();
-        match v {
-            CborValue::Map(pairs) => {
-                assert_eq!(pairs.len(), 1);
-                assert_eq!(pairs[0].0, CborValue::Text("nested".into()));
-                assert_eq!(pairs[0].1, CborValue::Text("obj".into()));
-            }
-            other => panic!("expected Map, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn typed_json_bad_input() {
-        assert!(parse_value("#{bad json").is_err());
-    }
-
-    #[test]
-    fn value_list_split() {
-        let xs = parse_value_list("a,b,c").unwrap();
-        assert_eq!(xs.len(), 3);
-        assert_eq!(xs[0], CborValue::Text("a".into()));
-
-        let nums = parse_value_list("1,2,3").unwrap();
-        assert!(matches!(nums[0], CborValue::Integer(_)));
-    }
-
-    #[test]
-    fn value_list_json_array() {
-        let xs = parse_value_list("#[1, \"two\", true]").unwrap();
-        assert_eq!(xs.len(), 3);
-        assert_eq!(xs[2], CborValue::Bool(true));
-    }
-
-    #[test]
-    fn column_kind_handles_module_paths() {
-        // Rust's `type_name::<String>()` is `alloc::string::String`.
-        assert!(matches!(
-            column_kind("alloc::string::String"),
-            ColumnKind::Text
-        ));
-        // Bare aliases from YAML factories also classify correctly.
-        assert!(matches!(column_kind("bool"), ColumnKind::Bool));
-        assert!(matches!(column_kind("i64"), ColumnKind::Int));
-        assert!(matches!(column_kind("f64"), ColumnKind::Float));
-        assert!(matches!(column_kind("string"), ColumnKind::Text));
-        assert!(matches!(column_kind("text"), ColumnKind::Text));
-        assert!(matches!(column_kind("integer"), ColumnKind::Int));
-        assert!(matches!(
-            column_kind("custom::Wrapper"),
-            ColumnKind::Unknown
-        ));
-    }
-
-    #[test]
-    fn coerce_for_column_targets_declared_type() {
-        use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
-        let metadata = VistaMetadata::new()
-            .with_column(Column::new("name", "String"))
-            .with_column(Column::new("vip_flag", "bool"))
-            .with_column(Column::new("salary", "i64"));
-        let vista = Vista::new("users", MockShell::new().with_metadata(metadata));
-
-        // `name=true` against a string column stays a string.
-        assert_eq!(
-            coerce_for_column(&vista, "name", "true").unwrap(),
-            CborValue::Text("true".into())
-        );
-        // `name=42` against a string column stays a string.
-        assert_eq!(
-            coerce_for_column(&vista, "name", "42").unwrap(),
-            CborValue::Text("42".into())
-        );
-        // `vip_flag=true` against a bool column becomes a bool.
-        assert_eq!(
-            coerce_for_column(&vista, "vip_flag", "true").unwrap(),
-            CborValue::Bool(true)
-        );
-        // `salary=900` against an i64 column becomes an int.
-        assert!(matches!(
-            coerce_for_column(&vista, "salary", "900").unwrap(),
-            CborValue::Integer(_)
-        ));
-        // Unknown column falls back to auto-detect (never errors).
-        assert_eq!(
-            coerce_for_column(&vista, "unseen", "true").unwrap(),
-            CborValue::Bool(true)
-        );
-    }
-
-    #[test]
-    fn coerce_for_column_rejects_typo_against_typed_column() {
-        use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
-        let metadata = VistaMetadata::new()
-            .with_column(Column::new("vip_flag", "bool"))
-            .with_column(Column::new("salary", "i64"))
-            .with_column(Column::new("ratio", "f64"));
-        let vista = Vista::new("users", MockShell::new().with_metadata(metadata));
-
-        let bool_err = coerce_for_column(&vista, "vip_flag", "yes").unwrap_err();
-        assert!(format!("{bool_err}").contains("bool column"));
-        assert_eq!(bool_err.context.get("field").unwrap(), "\"vip_flag\"");
-
-        let int_err = coerce_for_column(&vista, "salary", "abc").unwrap_err();
-        assert!(format!("{int_err}").contains("integer column"));
-
-        let float_err = coerce_for_column(&vista, "ratio", "xyz").unwrap_err();
-        assert!(format!("{float_err}").contains("float column"));
     }
 }

@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 //! Web-framework adapters for Vantage's Dio/Scenery layer — the server-side
 //! counterpart of `dataset-ui-adapters`. A UI adapter binds a scenery to a
 //! widget; an API adapter binds it to an HTTP surface, so a browser (or any

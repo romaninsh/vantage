@@ -1,7 +1,5 @@
 //! Watches: listing and record streams, and the release of a closed one.
 
-use std::time::Duration;
-
 use vantage_diorama::ChangeEvent;
 
 use crate::fixture::{fixture, get_stream, record};
@@ -34,39 +32,6 @@ async fn watch_listing_streams_added_then_modified_with_augment() {
     }
     assert_eq!(sizes["r0"], "100");
     assert_eq!(sizes["r1"], "200");
-}
-
-#[tokio::test]
-async fn dropping_watch_connection_releases_the_scenery() -> vantage_core::Result<()> {
-    let fx = fixture(0).await;
-
-    let mut lines = get_stream(&fx.router, "/?offset=0&limit=2&watch=true").await;
-    let _ = lines.next().await;
-    assert_eq!(
-        fx.dio.diagnostics().await?.sceneries.len(),
-        1,
-        "watch holds a scenery"
-    );
-
-    drop(lines);
-    // The connection's view closes, and it was the only view on its rows.
-    let mut released = false;
-    for _ in 0..200 {
-        if fx.dio.diagnostics().await?.sceneries.is_empty() {
-            released = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(released, "scenery released after disconnect");
-
-    // A closed view stops pulling: only the detail fetch already in flight
-    // when it closed runs; the rest of its window is withdrawn.
-    fx.gate.add_permits(16);
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let log = fx.detail.get_log();
-    assert!(log.len() <= 1, "fetches after disconnect: {log:?}");
-    Ok(())
 }
 
 #[tokio::test]

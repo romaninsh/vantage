@@ -1,13 +1,11 @@
-//! One `execute_with` call, as a loop over three named steps.
+//! One `execute_with` call, as a loop over three steps: `wait_for_gate` (circuit
+//! breaker, then rate-limit token), `send_once` (the request), `record`
+//! (breaker, observer, what to do next).
 //!
-//! Per attempt, in this order: `wait_for_gate` waits out the circuit breaker
-//! and then takes a rate-limit token, holding no permit; `send_once` acquires
-//! a permit and covers only build, send and the response head; `record`
-//! applies the outcome to the breaker, tells the observer and says what the
-//! loop does next. The permit is dropped when `send_once` returns, so nothing
-//! that sleeps for a policy reason — a cooldown, a token wait, a retry
-//! back-off — occupies the client's parallelism budget. A `FailFast` caller
-//! is therefore never queued behind a caller waiting out a cooldown.
+//! The parallelism permit is held only inside `send_once`, so nothing that
+//! sleeps for a policy reason (cooldown, token wait, back-off) occupies the
+//! client's parallelism budget. A `FailFast` caller is never queued behind a
+//! caller waiting out a cooldown.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -19,14 +17,12 @@ use super::{BreakerMode, CallPolicy, ClientError, ErrorKind, ResilientClient, Tr
 /// How much of a failing response body is kept on [`ClientError::body`].
 const BODY_CAP: usize = 2048;
 
-/// What one attempt produced, before the breaker and the retry policy see it.
 enum Outcome {
     Success {
         resp: reqwest::Response,
         ms: u64,
     },
-    /// A `401` on a client whose token has not yet been re-acquired for this
-    /// call: the token is refreshed and the attempt replayed.
+    /// A `401` before this call's token was re-acquired.
     Unauthorized {
         ms: u64,
     },
@@ -39,14 +35,11 @@ enum Outcome {
     },
 }
 
-/// What the loop does once an outcome has been recorded.
 enum Decision {
     Return(Result<reqwest::Response, ClientError>),
-    /// Sleep this long, then attempt again. The attempt counter has advanced
-    /// and `RetryScheduled` has been reported.
     Retry(Duration),
-    /// Attempt again at once with the freshly acquired token. Not a retry: it
-    /// spends no retry budget and reports no `RetryScheduled`.
+    /// Attempt again at once with the fresh token. Spends no retry budget and
+    /// reports no `RetryScheduled`.
     Replay,
 }
 
@@ -54,14 +47,13 @@ pub(super) struct AttemptLoop<'a, F> {
     client: &'a ResilientClient,
     policy: &'a CallPolicy,
     build: &'a F,
-    /// Retries made so far; the attempt now running is number `attempt + 1`.
+    /// Retries made so far.
     attempt: usize,
-    /// The token has already been re-acquired once for this call, so another
-    /// `401` is a genuine authorization failure and not a stale token.
+    /// The token was already re-acquired for this call, so another `401` is a
+    /// real authorization failure.
     refreshed: bool,
-    /// Set between `Started` and the attempt's terminal event. Dropping the
-    /// call's future in that window drops the guard, which reports
-    /// `Cancelled` so the observer never sees a `Started` without an end.
+    /// Set between `Started` and the terminal event: dropping the future in
+    /// that window reports `Cancelled`.
     pending: Option<PendingAttempt<'a>>,
 }
 
@@ -102,9 +94,6 @@ where
             pending: None,
         };
         loop {
-            // Held only for this attempt. Every early return below drops it,
-            // and so does the enclosing future being cancelled, so a probe
-            // that never records an outcome cannot jam the breaker open.
             let probe = call.wait_for_gate().await?;
             let outcome = call.send_once().await?;
             match call.record(outcome, probe).await {
@@ -115,9 +104,8 @@ where
         }
     }
 
-    /// Wait until this attempt may run: first the circuit breaker, then a
-    /// rate-limit token. Neither wait holds a semaphore permit. Returns the
-    /// guard for the half-open probe slot when this attempt was granted it.
+    /// Wait for the breaker, then a rate-limit token, holding no permit.
+    /// Returns the probe guard when this attempt was granted the probe slot.
     async fn wait_for_gate(&self) -> Result<Option<ProbeGuard>, ClientError> {
         let mut probe = None;
         if let Some(b) = &self.client.breaker {
@@ -146,9 +134,8 @@ where
         Ok(probe)
     }
 
-    /// Build, authenticate and send one request. The permit and the in-flight
-    /// count are held for exactly this window and released before the caller
-    /// sleeps for anything.
+    /// Build, authenticate and send one request, holding the permit and the
+    /// in-flight count only for this window.
     async fn send_once(&mut self) -> Result<Outcome, ClientError> {
         let _permit = self.client.semaphore.acquire().await.map_err(|_| {
             ClientError::new(
@@ -180,8 +167,6 @@ where
             let acquiring = Instant::now();
             match auth.current().await {
                 Ok(token) => req = req.header(&auth.header, format!("{}{token}", auth.scheme)),
-                // Reported as this attempt's terminal event by `record`, so
-                // the `Started` above is not left dangling.
                 Err(e) => {
                     return Ok(Outcome::Failed {
                         kind: ErrorKind::Auth(e.to_string()),
@@ -224,9 +209,8 @@ where
     }
 
     /// Apply the outcome to the breaker, tell the observer, and decide what
-    /// the loop does next. The probe guard is consumed here: the slot is
-    /// released as soon as the breaker has been told, before any observer
-    /// callback runs and before any sleep.
+    /// the loop does next. Consumes the probe guard, releasing the slot before
+    /// any observer callback or sleep.
     async fn record(&mut self, outcome: Outcome, probe: Option<ProbeGuard>) -> Decision {
         match outcome {
             Outcome::Success { resp, ms } => {
@@ -240,8 +224,6 @@ where
             }
 
             Outcome::Unauthorized { ms } => {
-                // A 401 is an answer: it closes an open breaker, but it is no
-                // evidence of health, so the failure run stands.
                 let failed = TransportEvent::Failed {
                     error: ClientError::new(ErrorKind::Status(401), self.attempt + 1),
                     ms,
@@ -276,8 +258,7 @@ where
                         (policy::is_retryable_status(*s), policy::status_health(*s))
                     }
                     ErrorKind::Transport(_) => (true, Health::Failing),
-                    // An auth refresher that failed says nothing about the
-                    // API, and no retry will fix it.
+                    // A failed auth refresh says nothing about the API.
                     _ => (false, Health::Inconclusive),
                 };
                 let error = ClientError::new(kind, self.attempt + 1).with_body(body);
@@ -294,8 +275,6 @@ where
                     return Decision::Return(Err(error));
                 };
                 self.attempt += 1;
-                // A server asking for two minutes must not outlast the
-                // caller's own ceiling.
                 let cap = self.policy.retry_after_cap().unwrap_or(delay);
                 let after = with_jitter(hint.map_or(delay, |h| h.min(cap)));
                 self.client.report(TransportEvent::RetryScheduled {
@@ -307,10 +286,9 @@ where
         }
     }
 
-    /// Settle one attempt: tell the breaker what it proved, then report its
-    /// terminal event, then the breaker transition it caused. That order is
-    /// what the observer contract promises — the probe slot is free before any
-    /// callback runs, and a transition follows the attempt that caused it.
+    /// Tell the breaker what the attempt proved, then report its terminal
+    /// event, then the breaker transition it caused: the order the observer
+    /// contract promises.
     fn settle_and_report(
         &mut self,
         probe: Option<ProbeGuard>,
@@ -327,8 +305,7 @@ where
         }
     }
 
-    /// Tell the breaker what this attempt proved, then release the probe
-    /// slot. Returns the transition to report, if the breaker changed state.
+    /// Returns the breaker transition to report, if the state changed.
     fn settle(&self, probe: Option<ProbeGuard>, health: Health) -> Option<TransportEvent> {
         let event = self.client.breaker.as_ref().and_then(|b| match health {
             Health::Healthy => b.record_success().then_some(TransportEvent::BreakerClosed),
@@ -344,9 +321,8 @@ where
         event
     }
 
-    /// Report an attempt that failed without a request going out — a fail-fast
-    /// breaker rejection, or a token refresh that never produced one. The
-    /// observer still sees a paired `Started` / `Failed`.
+    /// Report an attempt that failed with no request sent, as a paired
+    /// `Started` / `Failed`.
     fn report_rejection(&self, kind: ErrorKind, attempts: usize, ms: u64) -> ClientError {
         self.client.report(TransportEvent::Started);
         let error = ClientError::new(kind, attempts);

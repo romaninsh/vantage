@@ -29,8 +29,6 @@ pub(super) async fn listing(
         return watch_listing(st, offset, limit).await;
     }
 
-    // Plain GET: a window over the cache, no hydration. Instant regardless
-    // of how many augment columns are still unfilled.
     let all = st.dio.cached().list_values().await?;
     let total = all.len();
     let items: Vec<serde_json::Value> = all
@@ -49,12 +47,9 @@ pub(super) async fn listing(
     .into_response())
 }
 
-/// A stable string key for an identity-watch diff.
-///
-/// Strings key by their raw value (the common case: a text id). Other JSON —
-/// numeric ids, Mongo `ObjectId` objects, SurrealDB `Thing` tags — keys by its
-/// canonical serialization, so `key_by` works for any backend whose id isn't a
-/// bare string. `null`/absent yields no key (the row is skipped from the diff).
+/// Strings key by their raw value; other JSON (numeric ids, `ObjectId`,
+/// `Thing`) by its serialization. `null` yields no key, so the row is
+/// skipped from the diff.
 fn stable_key(v: &serde_json::Value) -> Option<String> {
     match v {
         serde_json::Value::Null => None,
@@ -63,19 +58,15 @@ fn stable_key(v: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// The watch mode: open a scenery for the requested page and stream row
-/// events for as long as the client stays connected. The scenery is owned by
-/// the response stream — when the client disconnects the stream drops, the
-/// scenery's guard aborts its tasks, and its queued augment work is
-/// withdrawn.
+/// The scenery is owned by the response stream: a client disconnect drops
+/// it and withdraws its queued augment work.
 async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<Response> {
     let demand: Vec<String> = st.columns.iter().map(|(_, field)| field.clone()).collect();
     let scenery = st
         .dio
         .table_scenery()
         .columns(demand)
-        // Size list pages so a fresh scenery's first page already covers the
-        // watched window. Saturating: an absurd offset must not panic.
+        // Saturating: an absurd offset must not panic.
         .page_size(offset.saturating_add(limit).max(1))
         .open()
         .await?;
@@ -85,16 +76,11 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
     let key_field = st.key_field.clone();
 
     let stream = async_stream::stream! {
-        // Diff base. Positional watches key it by row index; identity watches
-        // (a `key_by` field is set) key it by that field's value, so a removed
-        // row can be reported as `DELETED` and a shifted row isn't re-sent.
         let mut last: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         loop {
-            // The index pages lazily and is shared per-query across
-            // sceneries — an earlier watch may have built it shallower than
-            // this window. Keep asking for list pages until it reaches us;
-            // each landed page bumps the generation, which re-runs this
-            // check.
+            // The index is shared and pages lazily, so an earlier watch may
+            // have built it shallower than this window. Each landed page
+            // bumps the generation, which re-runs this check.
             if scenery.has_more() && scenery.row_count() < offset.saturating_add(limit) {
                 scenery.request_load_more();
             }
@@ -103,7 +89,6 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
             for idx in offset..end {
                 let Some(row) = scenery.row(idx) else { continue };
                 let object = project(idx, &row.record, &columns);
-                // Diff key: the identity field's value, or the row index.
                 let key = match &key_field {
                     Some(field) => match object.get(field.as_ref()).and_then(stable_key) {
                         Some(id) => id,
@@ -133,8 +118,7 @@ async fn watch_listing(st: ApiState, offset: usize, limit: usize) -> ApiResult<R
                     }
                 }
             }
-            // Wait for the next generation; the sender lives as long as the
-            // scenery, which this stream owns — an error means the Dio died.
+            // An error means the Dio died.
             if generations.changed().await.is_err() {
                 break;
             }

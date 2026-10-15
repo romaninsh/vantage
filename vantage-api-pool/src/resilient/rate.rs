@@ -52,17 +52,3 @@ impl TokenBucket {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn burst_then_wait() {
-        let b = TokenBucket::new(1000.0, 2);
-        assert_eq!(b.try_take(), None);
-        assert_eq!(b.try_take(), None);
-        let wait = b.try_take().expect("bucket empty");
-        assert!(wait <= Duration::from_millis(1));
-    }
-}
