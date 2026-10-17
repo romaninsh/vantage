@@ -6,8 +6,6 @@
 //! pre-image, and the derived `after` merge.
 
 use ciborium::Value as CborValue;
-use vantage_core::Result;
-use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::{ChangeFlash, FlashKind};
 use vantage_types::Record;
 use vantage_vista::{Column, Vista, VistaMetadata, mocks::MockShell};
@@ -63,16 +61,6 @@ fn insert_new_carries_no_id() {
 }
 
 #[test]
-fn partial_is_a_patch() {
-    let flash = ChangeFlash::partial("c1", rec(&[("plan", text("pro"))]))
-        .with_before(rec(&[("name", text("Ada"))]));
-    assert_eq!(flash.kind(), &FlashKind::Patch);
-    let after = flash.after().unwrap();
-    assert_eq!(after.get("name"), Some(&text("Ada")));
-    assert_eq!(after.get("plan"), Some(&text("pro")));
-}
-
-#[test]
 fn replace_flash_after_is_authoritative_not_merged() {
     // Replace exists because a patch-merge cannot express field removal.
     let flash = ChangeFlash::replace("c1", rec(&[("name", text("Ada"))]))
@@ -114,28 +102,6 @@ fn shadow_vista(shell: &MockShell) -> Vista {
         .with_column(Column::new("id", "String").with_flag("id"))
         .with_id_column("id");
     Vista::new("shadow", shell.clone().with_metadata(metadata))
-}
-
-#[tokio::test]
-async fn active_record_routes_the_merged_record_into_another_dataset() -> Result<()> {
-    let shadow_shell = MockShell::new();
-    let shadow = shadow_vista(&shadow_shell);
-
-    let flash = ChangeFlash::partial("c1", rec(&[("status", text("won"))]))
-        .with_before(rec(&[("status", text("lead")), ("name", text("Ada"))]));
-
-    // The routing ergonomic: same record concept, different datasource.
-    let record = flash.active_record(&shadow)?;
-    record.save().await?;
-
-    let landed = shadow.get_value("c1").await?.expect("routed row landed");
-    assert_eq!(landed.get("status"), Some(&text("won")));
-    assert_eq!(
-        landed.get("name"),
-        Some(&text("Ada")),
-        "the AFTER image lands, not the bare patch"
-    );
-    Ok(())
 }
 
 #[tokio::test]

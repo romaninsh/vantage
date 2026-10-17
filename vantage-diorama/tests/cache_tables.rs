@@ -235,6 +235,33 @@ async fn a_dio_encodes_control_characters_in_its_table_name() -> Result<()> {
     Ok(())
 }
 
+/// A `?` or `%` in a vista's name is percent-encoded in its Dio's table, so
+/// the first `?` always starts a narrowed Dio's key and no vista passes for
+/// another's narrowed table.
+#[tokio::test]
+async fn a_question_mark_or_percent_in_a_vista_name_is_encoded() -> Result<()> {
+    let backend = std::sync::Arc::new(MemoryCache::new());
+    let lens = Lens::builder()
+        .cache(Cache::backend(backend.clone()))
+        .build()?;
+    for name in ["orders?team=red", "50%off"] {
+        let vista = vantage_vista::Vista::new(
+            name,
+            vantage_vista::mocks::MockShell::new().with_metadata(support::meta(&["id", "v"])),
+        );
+        let dio = lens.dio(vista).build().await?;
+        dio.apply_change(vantage_diorama::ChangeEvent::Inserted {
+            id: "a".into(),
+            new: Some(record(1)),
+        })
+        .await?;
+    }
+    let mut tables = backend.list_tables().await?;
+    tables.sort();
+    assert_eq!(tables, ["50%25off", "orders%3Fteam=red"]);
+    Ok(())
+}
+
 /// A table opened but never written to does not exist yet — the handle is
 /// lazy. Worth pinning: a sweep that expects to see every opened name would
 /// otherwise be surprised.

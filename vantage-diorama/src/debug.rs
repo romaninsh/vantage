@@ -1,58 +1,12 @@
 //! The official per-datasource debug stream.
 //!
-//! A [`DebugTap`] is carried by every [`Lens`](crate::Lens) and reached from
-//! every task the lens spawns. Enabled per datasource via
-//! [`LensBuilder::debug_datasource`](crate::lens::LensBuilder::debug_datasource),
-//! it emits at `info` level under the single target `vantage_diorama::debug`
-//! — visible in a default log with no `RUST_LOG` required. Every line carries
-//! `ds=<datasource>`; every per-dio line also carries `dio=<master table
-//! name>`. Off — the default — nothing is emitted and nothing is paid: every
-//! call site checks [`DebugTap::enabled`] before doing any work the line
-//! itself needs, not just before formatting it.
-//!
-//! This stream is the mechanism for demonstrating the cache's efficiency
-//! and its resilience to backend faults: every master round trip, every
-//! cache mutation, every consumer open/close (the *census*), every status
-//! transition — attributable, correlated (`req=N`), and greppable.
-//!
-//! # Line shape
-//!
-//! Every line is `<datasource>  <tag>  <clause>` — a scannable left edge and
-//! one clause of plain English. Units are human (`3.0s`, `24KB`, `200,000`,
-//! `0.1%`), and a field is omitted rather than printed empty.
-//!
-//! The **tag** is the grep anchor and comes from a closed set:
-//!
-//! | Tag | Says |
-//! |---|---|
-//! | `dio` | a Dio was created; a fetch was asked for, came back, or failed (`fetch #N`, `list #N`) |
-//! | `source` | what the master can and cannot do, and how this view loads — once, at open |
-//! | `scenery` | a view opened; a load-state transition; row positions dropped |
-//! | `census` | a consumer attached or detached, with live counts and RSS |
-//! | `viewport` | the range a consumer declared, and how many scroll events coalesced into it |
-//! | `cache` | rows committed, or a viewport served locally with no fetch |
-//! | `payload` | columns received against columns displayed, and the bytes |
-//! | `total` | the grand total changed, and what decided it |
-//! | `sort` / `search` | the query changed, and whether it was pushed to the source |
-//! | `filter` | runtime filters changed, and whether they were pushed to the source |
-//! | `hydrate` | a two-pass detail sweep queued its pending ids |
-//! | `derive` | an [`aggregate`](crate::aggregate) layer recomputed |
-//! | `summary` | the end-of-session ledger (see [`stats::emit_debug_summary`](crate::stats::emit_debug_summary)) |
-//!
-//! `fetch #N` / `list #N` is a per-dio counter tying a request to its outcome;
-//! it is allocated only when the tap is enabled. Lines from one load are not
-//! emitted in a fixed order — the cache commit and the state transition happen
-//! inside the operation the return line closes — so correlate on the id rather
-//! than on adjacency.
-//!
-//! A [`Dio::aggregate`](crate::Dio::aggregate) mount emits one `derive` line
-//! on its first load, labelled `initial`: the compute that seeds the derived
-//! Vista's schema. The engine then waits for the source to change.
-//!
-//! # Feature
-//!
-//! The tap is compiled into every build, because every `tapline!` site calls
-//! it, and it stays off unless a Lens enables it. Turning it on, and this
+//! A [`DebugTap`] rides every [`Lens`](crate::Lens). Enabled per datasource
+//! with [`LensBuilder::debug_datasource`](crate::lens::LensBuilder::debug_datasource),
+//! it emits `<datasource>  <tag>  <clause>` lines at `info` under the one
+//! target `vantage_diorama::debug`, visible without `RUST_LOG`. Off, the
+//! default, nothing is emitted and nothing is paid. The tags, the `fetch #N`
+//! correlation and how to read a session are in the book's debug-stream
+//! chapter (`optimising-diorama/debug-stream.md`). Turning the tap on, and this
 //! module's public surface, need the `diagnostics` feature.
 
 mod process;
@@ -167,25 +121,5 @@ pub(crate) fn pct(held: usize, total: usize) -> String {
         format!("{p:.0}%")
     } else {
         format!("{p:.1}%")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tap_is_off_by_default() {
-        let off = DebugTap::default();
-        assert!(!off.enabled());
-        assert_eq!(off.ds(), "");
-    }
-
-    #[cfg(feature = "diagnostics")]
-    #[test]
-    fn an_enabled_tap_carries_the_datasource_name() {
-        let on = DebugTap::for_datasource("librarian");
-        assert!(on.enabled());
-        assert_eq!(on.ds(), "librarian");
     }
 }

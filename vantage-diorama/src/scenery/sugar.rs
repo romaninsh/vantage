@@ -8,8 +8,6 @@
 //! keeps re-sorts from re-running the closure; a changed row misses it.
 
 mod cache;
-#[cfg(test)]
-mod tests;
 
 use std::collections::HashSet;
 use std::future::Future;

@@ -1,0 +1,8 @@
+# @llm-protected: approved test exceptions. Add entries only with coverage/vend-exception.sh.
+#
+# Each entry keeps one test out of the matrix's deletion candidates. The token signs the
+# package (this file's name), the test and the reason: edit either and the entry stops counting.
+
+- test: rhai_servo::set_flash_settles_a_new_record
+  reason: 'named by the book: docs4/src/rhai/layers.md:38 tests its example with it'
+  token: 337ed2b0-e98dc8989bd0

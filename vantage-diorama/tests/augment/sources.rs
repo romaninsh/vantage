@@ -11,40 +11,7 @@ use vantage_vista::mocks::MockShell;
 use vantage_vista::{Column, Vista, VistaMetadata};
 
 use crate::support::{self, augmented_dio, meta, poll_until, record, status_of};
-use crate::{aug, col_of, hydrated, open, redb_lens, resolved};
-
-/// The list pass stubs rows `Incomplete` with cheap columns; no detail fetched
-/// until a viewport asks. Then the detail pass merges the second vista's column
-/// and flips the row `Fresh`, keeping the cheap columns.
-#[tokio::test]
-async fn id_source_augments_from_a_separate_vista() {
-    let tmp = TempDir::new().unwrap();
-    let dio = open(&tmp, vec![aug("runs-detail", Source::Id, &["detail"])]).await;
-    let scenery = support::open_listed(&dio, 2).await;
-
-    // List pass ran: cheap columns present, Incomplete, no augmented column yet.
-    assert!(matches!(
-        status_of(&scenery, 0),
-        Some(RowStatus::Incomplete)
-    ));
-    assert_eq!(col_of(&scenery, 0, "branch").as_deref(), Some("main"));
-    assert!(
-        col_of(&scenery, 0, "detail").is_none(),
-        "no detail before viewport"
-    );
-
-    scenery.set_viewport(0..2, 0..0);
-    poll_until("rows hydrated", || {
-        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
-            && matches!(status_of(&scenery, 1), Some(RowStatus::Fresh))
-    })
-    .await;
-
-    // Augmented column merged from runs-detail; cheap column survived.
-    assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
-    assert_eq!(col_of(&scenery, 1, "detail").as_deref(), Some("full-r1"));
-    assert_eq!(col_of(&scenery, 0, "branch").as_deref(), Some("main"));
-}
+use crate::{aug, col_by_id, col_of, hydrated, open, redb_lens, resolved};
 
 /// A `Column` source keyed on an explicit master field resolves the same way.
 #[tokio::test]
@@ -76,6 +43,48 @@ async fn multiple_augmentations_merge_independently() {
     assert_eq!(col_of(&scenery, 0, "detail").as_deref(), Some("full-r0"));
     assert_eq!(col_of(&scenery, 0, "extra").as_deref(), Some("x0"));
     assert_eq!(col_of(&scenery, 0, "branch").as_deref(), Some("main"));
+}
+
+/// `lift_all` lifts every detail column, and on a name clash the detail's
+/// value wins over the cheap list value.
+#[tokio::test]
+async fn lift_all_lifts_every_detail_column_and_the_detail_wins_a_clash() {
+    let tmp = TempDir::new().unwrap();
+    let detail = MockShell::new()
+        .with_record(
+            "r0",
+            record(&[("id", "r0"), ("detail", "full-r0"), ("branch", "release")]),
+        )
+        .with_record(
+            "r1",
+            record(&[("id", "r1"), ("detail", "full-r1"), ("branch", "hotfix")]),
+        )
+        .with_metadata(meta(&["id", "detail", "branch"]));
+    let augmentation = Augmentation::new(
+        Detail::Fixed(Arc::new(Vista::new("runs-full", detail))),
+        Source::Id,
+        Fetch::PerRow,
+        MergeRule::lift_all(),
+    );
+    let dio = open(&tmp, vec![augmentation]).await;
+    let scenery = hydrated(&dio, 1).await;
+    poll_until("both rows hydrated", || {
+        matches!(status_of(&scenery, 0), Some(RowStatus::Fresh))
+    })
+    .await;
+
+    assert_eq!(
+        col_by_id(&scenery, "r0", "detail").as_deref(),
+        Some("full-r0")
+    );
+    assert_eq!(
+        col_by_id(&scenery, "r0", "branch").as_deref(),
+        Some("release")
+    );
+    assert_eq!(
+        col_by_id(&scenery, "r1", "branch").as_deref(),
+        Some("hotfix")
+    );
 }
 
 /// A missing key field surfaces as a failed row — the detail pass error marks

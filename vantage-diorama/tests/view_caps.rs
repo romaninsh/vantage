@@ -195,6 +195,18 @@ async fn row_by_id_reads_the_row_under_any_order() -> Result<()> {
     );
     assert!(view.row_by_id("zz").is_none());
 
+    let limited = dio.table_scenery().limit(2).open().await?;
+    assert!(eventually(Duration::from_secs(5), || limited.row_count() == 2).await);
+    let first = ids(&limited)[0].clone();
+    assert!(limited.row_by_id(&first).is_some(), "inside the limit");
+    let beyond: Vec<String> = ["a", "b", "c"]
+        .into_iter()
+        .map(String::from)
+        .filter(|id| !ids(&limited).contains(id))
+        .collect();
+    assert_eq!(beyond.len(), 1);
+    assert!(limited.row_by_id(&beyond[0]).is_none(), "outside the limit");
+
     let (_numbers, tail) = ascending_tail(numbers(), 2).await?;
     assert!(eventually(Duration::from_secs(5), || ns(&tail) == [4, 5]).await);
     assert!(tail.row_by_id("e").is_some(), "the last row is in the tail");

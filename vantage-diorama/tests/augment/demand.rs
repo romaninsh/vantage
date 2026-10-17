@@ -103,6 +103,42 @@ async fn augment_fetches_only_while_a_view_demands_augment_columns() {
     );
 }
 
+/// A driver's tagged null (SurrealDB's NONE is `Tag(6, Null)`) is still an
+/// unfilled augment column: the row fetches its detail. A listed value is no
+/// gap and fetches nothing.
+#[tokio::test]
+async fn a_tagged_null_augment_column_is_a_gap_to_fill() {
+    let tmp = TempDir::new().unwrap();
+    let mut logs = record(&[("id", "logs")]);
+    logs.insert(
+        "size".to_string(),
+        ciborium::Value::Tag(6, Box::new(ciborium::Value::Null)),
+    );
+    let master_shell = MockShell::new()
+        .with_record("logs", logs)
+        .with_record("run.log", record(&[("id", "run.log"), ("size", "64")]))
+        .with_metadata(meta(&["id", "size"]));
+
+    let (dio, detail) = folder_size_dio(&tmp, master_shell).await;
+    let listing = dio
+        .table_scenery()
+        .page_size(4)
+        .columns(["id", "size"])
+        .open()
+        .await
+        .unwrap();
+    listing.set_viewport(0..2, 0..0);
+    poll_until("the tagged null filled", || {
+        col_by_id(&listing, "logs", "size").as_deref() == Some("4096")
+    })
+    .await;
+    assert_eq!(detail.get_log().len(), 1, "only the gap fetched");
+    assert_eq!(
+        col_by_id(&listing, "run.log", "size").as_deref(),
+        Some("64")
+    );
+}
+
 /// A UI filter chip over an AUGMENTED column. The master never sees the
 /// column (it exists only after hydration), so the term can't be pushed
 /// down — `set_filters` refines the visible set over the cache instead,

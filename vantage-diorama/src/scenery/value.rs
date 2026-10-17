@@ -1,22 +1,10 @@
-//! `ValueScenery` — reactive single-scalar view.
+//! `ValueScenery`: one [`Aggregation`] over the rows the Dio admits, kept
+//! current as they change: a badge, a dashboard counter.
 //!
-//! One [`Aggregation`] over the rows the Dio admits, recomputed when the Dio
-//! changes. It suits any "one number that refreshes" shape: a badge, a
-//! dashboard counter. Open one with
-//! [`Dio::value_scenery`](crate::Dio::value_scenery).
-//!
-//! Status + value transitions:
-//!
-//! | Trigger                              | Status     | Value                  | Bump |
-//! |--------------------------------------|------------|------------------------|------|
-//! | Open, rows read                      | `Fresh`    | computed               | yes  |
-//! | Open, reading the rows failed        | `Error(_)` | `None`                 | yes  |
-//! | Recompute, unchanged                 | unchanged  | unchanged              | no   |
-//! | Recompute, changed                   | `Fresh`    | new                    | yes  |
-//! | Reading the rows failed              | `Error(_)` | **last good preserved**| yes  |
-//! | First good read after a failure      | `Fresh`    | computed               | yes  |
-//!
-//! The aggregation runs over the Dio's cache; nothing is asked of the master.
+//! Opened with [`Dio::value_scenery`](crate::Dio::value_scenery). It reads the
+//! Dio's cache, never the master. A changed value bumps the generation and an
+//! unchanged one doesn't; a failed read reads `Error(_)` and keeps the last
+//! good value until a read succeeds again.
 
 use std::sync::Arc;
 

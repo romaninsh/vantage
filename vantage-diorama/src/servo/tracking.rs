@@ -161,6 +161,3 @@ async fn absorb_from_cache(state: &Arc<ServoState>, dio_weak: &Weak<DioInner>) {
         Err(e) => tracing::error!(error = %e, "servo measurement read failed"),
     }
 }
-
-#[cfg(test)]
-mod tests;

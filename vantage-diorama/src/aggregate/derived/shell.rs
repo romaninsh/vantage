@@ -21,9 +21,6 @@ use vantage_vista::{
 
 use crate::aggregate::aggregation::DerivedRows;
 
-#[cfg(test)]
-mod tests;
-
 /// The rows an aggregation last produced, shared between the engine (which
 /// replaces them) and every Vista clone (which reads them).
 pub(crate) type AggregateRows = Arc<RwLock<DerivedRows>>;

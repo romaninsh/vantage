@@ -101,38 +101,3 @@ impl fmt::Display for FlashRejection {
 }
 
 impl std::error::Error for FlashRejection {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn round_trips_through_the_error_chain() {
-        let rejection = FlashRejection::new("validation failed")
-            .with_field("price", "must be positive")
-            .with_field("name", "required");
-        let err = rejection.clone().into_error();
-        assert_eq!(FlashRejection::from_error(&err), Some(rejection));
-    }
-
-    #[test]
-    fn survives_extra_wrapping() {
-        let inner = FlashRejection::new("nope")
-            .with_field("a", "bad")
-            .into_error();
-        let outer = Err::<(), _>(inner)
-            .context(vantage_core::error!("route rejected the flash"))
-            .unwrap_err();
-        let got = FlashRejection::from_error(&outer).expect("found through wrapping");
-        assert_eq!(got.error_for("a"), Some("bad"));
-    }
-
-    #[test]
-    fn unstructured_failure_becomes_message_only() {
-        let err = vantage_core::error!("disk on fire");
-        assert_eq!(FlashRejection::from_error(&err), None);
-        let fallback = FlashRejection::from_error_or_message(&err);
-        assert_eq!(fallback.message(), "disk on fire");
-        assert!(fallback.field_errors().is_empty());
-    }
-}

@@ -92,12 +92,9 @@ pub(crate) async fn reload_loop(
                     // cache is not an answer and must not be treated as one:
                     // reseeding a paged scenery here would paint the cache's
                     // id-keyed order and mark it settled over a set it never
-                    // fetched.
-                    //
-                    // A shared lens makes this reachable for all three shapes.
-                    // The scenery reads its own recorded shape rather than the
-                    // lens's offers, which is the distinction that was wrong
-                    // when the seed went unseen.
+                    // fetched. A shared lens can seed under any of the three
+                    // shapes, so the scenery reads its own recorded shape, not
+                    // what the lens offers.
                     Ok(DioEvent::Seeded) => {
                         if state.two_pass {
                             super::two_pass::refresh_index(&state).await;
@@ -206,22 +203,15 @@ async fn reseed(state: &Arc<SharedRows>) {
     if let Err(e) = state.reseed_from_cache().await {
         tracing::error!(error = %e, "TableScenery reseed failed");
     } else {
-        // An eager lens loads in the background; this is where its rows reach
-        // the view, so this is where "still loading" ends.
-        //
         // A reseed that found rows is an answer. One that found none is only an
-        // answer if nothing further is coming, and both shapes have a way to
-        // still be waiting:
+        // answer if nothing further is coming:
         //
-        // - **serving windows** — the cache is not the row source at all;
-        //   rows arrive from the master a window at a time. A grid applying its default
-        //   sort at mount pings this loop, and that reseed landed milliseconds
-        //   before the first fetch even dispatched. The loader settles it when
-        //   the window arrives.
-        // - **eager** — the cache IS the row source, but a detached eager
-        //   start may still be filling it. An empty cache and an empty table are
-        //   indistinguishable from here; `seed_complete` is what tells them
-        //   apart. Without it a grid flashed "no rows" and then filled in.
+        // - **serving windows**: the cache is not the row source; the loader
+        //   settles the view when the window arrives, which can be after a
+        //   reseed triggered at mount.
+        // - **eager**: a detached eager start may still be filling the cache,
+        //   and an empty cache looks like an empty table until
+        //   `seed_complete` says the copy is done.
         //
         // Same rule the open path uses (see `builder`).
         let has_rows = !state.rows.read().unwrap().is_empty();

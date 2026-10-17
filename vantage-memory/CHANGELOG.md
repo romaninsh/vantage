@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.2 — 2026-10-15
+
+- The tests use `vantage-diorama` 1.0.0, the proper version of the 0.15.0 rework. No change here.
+
 ## 2.0.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, and tests that covered nothing

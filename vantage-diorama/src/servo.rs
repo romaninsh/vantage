@@ -1,35 +1,15 @@
-//! `Servo` — the editing companion: a servo loop over a record.
+//! `Servo`: a change draft over one record.
 //!
-//! A form is a servomechanism. `data` holds the **commanded setpoints**
-//! (what the user typed), the `baseline` holds the **measured upstream
-//! state** (what the vista last reported, arriving through the Dio's
-//! event bus), and the **error signal** is their per-field difference —
-//! computed by diff, never by interception. Untouched fields run in
-//! continuous tracking: upstream changes update them live and they stay
-//! clean. Touched fields lock and hold; upstream converging to the
-//! setpoint zeroes the error and releases the lock on its own.
-//!
-//! The servo is a **change draft**: the baseline moves only on measured
-//! upstream state, never on hope. [`flash`](Servo::flash) freezes the
-//! error signal at fire time into an immutable
-//! [`ChangeFlash`](crate::ChangeFlash) carrying only the changed fields and
-//! writes it through [`Dio::flash`] — but the setpoints stay locked until
-//! the write resolves. Confirmation absorbs the confirmed record and
-//! convergence releases every lock; rejection absorbs the restored
-//! pre-image and the setpoints still stand — the user's draft survives a
-//! failed save, reported through [`ServoStatus::Failed`] as a
-//! [`FlashRejection`] (with per-field errors when the write path named
-//! them).
-//!
-//! Identity is the servo's, not the form's: [`Dio::servo_new`] mints a
-//! time-ordered UUID up front (or defers to the backend with
-//! [`IdStrategy::Auto`]), so a retried create reuses the same id — if
-//! the first insert actually landed, the retry patches over it as a
-//! noop instead of duplicating the record.
-//!
-//! A servo holds a **strong** Dio handle — deliberately, unlike
-//! sceneries: while a form is open, the write pipeline it will flash
-//! through must stay alive.
+//! `data` holds the commanded setpoints (what the user typed), `baseline` the
+//! measured upstream state, and the error signal is their per-field diff.
+//! Untouched fields track upstream and stay clean; touched fields hold until
+//! upstream converges or a flash confirms. [`flash`](Servo::flash) sends only
+//! the changed fields through [`Dio::flash`], and the setpoints stay locked
+//! until it resolves: a rejection leaves the draft standing, reported as
+//! [`ServoStatus::Failed`] with its [`FlashRejection`]. [`Dio::servo_new`]
+//! binds its id up front ([`IdStrategy`]), so a retried create reuses it. A
+//! servo holds a strong Dio, unlike a scenery, so the write pipeline outlives
+//! the open form.
 
 mod delete;
 mod draft;

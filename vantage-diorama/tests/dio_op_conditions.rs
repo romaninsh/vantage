@@ -15,24 +15,6 @@ use vantage_diorama::Dio;
 use vantage_vista::{Condition, FilterOp};
 
 #[tokio::test]
-async fn ne_filters_out_the_equal_rows() {
-    let dio: Dio = eager_dio(teams_master()).await;
-    let view = MockView::open_with(&dio, 10, |b| {
-        b.filter(Condition::new("team", FilterOp::Ne, "red"))
-    })
-    .await;
-    view.settle_until("only non-red rows", |v| v.row_count() == 1)
-        .await;
-
-    assert_eq!(
-        view.row_count(),
-        1,
-        "only the one blue row survives `!= red`"
-    );
-    assert_eq!(view.col_at(0, "team").as_deref(), Some("blue"));
-}
-
-#[tokio::test]
 async fn in_set_keeps_only_listed_values() {
     let dio: Dio = eager_dio(teams_master()).await;
     let set = CborValue::Array(vec![CborValue::Text("blue".into())]);
@@ -59,14 +41,6 @@ async fn not_in_set_excludes_listed_values() {
 
     assert_eq!(view.row_count(), 1, "both reds excluded, blue remains");
     assert_eq!(view.col_at(0, "team").as_deref(), Some("blue"));
-}
-
-#[tokio::test]
-async fn no_op_condition_keeps_all_rows() {
-    let dio: Dio = eager_dio(teams_master()).await;
-    let view = MockView::open(&dio, 10).await;
-    view.settle_until("all rows", |v| v.row_count() == 3).await;
-    assert_eq!(view.row_count(), 3);
 }
 
 /// Runtime filters — the grid's filter panel — narrow an already-open view

@@ -100,6 +100,30 @@ async fn clean_fields_track_upstream_while_a_field_is_locked() -> Result<()> {
     Ok(())
 }
 
+/// A field the user added holds its setpoint when the record moves upstream
+/// without it.
+#[tokio::test]
+async fn a_commanded_new_field_survives_an_upstream_change() -> Result<()> {
+    let shell = product_shell();
+    let dio = dio_over(&shell).await?;
+    let servo = dio.servo("p1").await?;
+    let mut gen_rx = servo.subscribe();
+
+    servo.set("note", text("fragile"));
+    let g = u64::from(*gen_rx.borrow_and_update());
+    upstream(&dio, "Coffee", 42).await?;
+    wait_for_gen(&mut gen_rx, g).await;
+
+    assert_eq!(servo.get("stock"), Some(int(42)), "tracking followed");
+    assert_eq!(
+        servo.get("note"),
+        Some(text("fragile")),
+        "the addition held"
+    );
+    assert!(servo.dirty("note"));
+    Ok(())
+}
+
 #[tokio::test]
 async fn upstream_convergence_zeroes_the_error() -> Result<()> {
     let shell = product_shell();

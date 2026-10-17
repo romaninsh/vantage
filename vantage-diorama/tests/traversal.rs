@@ -81,20 +81,6 @@ fn eager_lens(cache: std::path::PathBuf) -> Arc<Lens> {
 }
 
 #[tokio::test]
-async fn get_ref_resolves_and_lists_the_related_rows() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let lens = eager_lens(tmp.path().join("cache.redb"));
-    let launches = lens.dio(launch_master(crew_shell())).build().await?;
-
-    let l1 = rec(&[("id", "L1"), ("name", "Apollo 11")]);
-    let crew = launches.get_ref("crew", &l1).await?;
-
-    let scenery = crew.table_scenery().open().await?;
-    assert_eq!(scenery.row_count(), 1, "L1 has exactly one crew member");
-    Ok(())
-}
-
-#[tokio::test]
 async fn get_ref_undefined_relation_errors_synchronously() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let lens = eager_lens(tmp.path().join("cache.redb"));

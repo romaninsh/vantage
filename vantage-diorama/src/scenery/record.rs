@@ -1,32 +1,11 @@
-//! `RecordScenery` — reactive single-row view.
+//! `RecordScenery`: one row by id, following its changes.
 //!
-//! Opens for one record id through [`Dio::record_scenery`](crate::Dio::record_scenery),
-//! exposes its current cached row + status, and bumps a watch channel when
-//! the underlying row changes. A row outside the Dio's residual is not
-//! found; when the residual names an augmented value, the row is hydrated
-//! before it is judged. Status transitions:
-//!
-//! | Trigger                                           | Status       |
-//! |---------------------------------------------------|--------------|
-//! | Open, cache has the row                           | `Fresh`      |
-//! | Open, the row still waits for its detail pass     | `Incomplete` |
-//! | Open, cache miss                                  | `NotFound`   |
-//! | Open, cache miss with `load_on_miss`              | `Loading`    |
-//! | The master's row lands, inside the residual       | `Fresh`      |
-//! | The master has no row, or one outside the residual| `NotFound`   |
-//! | Reload finds the row                              | `Fresh`      |
-//! | Reload finds nothing                              | `NotFound`   |
-//! | Reload or fetch errored, or the detail pass failed| `Error(_)`   |
-//!
-//! An `Incomplete` row is queued for its detail pass; the `RecordChanged`
-//! that follows the hydration makes it `Fresh`.
-//!
-//! Not supported:
-//!
-//! - **A `PendingWrite` status** — an in-flight write shows as the row's
-//!   [`EnrichedRecord`] state, not as a status.
-//! - **Dirty fields** — the form view ([`Servo`](crate::servo::Servo))
-//!   manages its own draft state.
+//! Opened through [`Dio::record_scenery`](crate::Dio::record_scenery), it
+//! shows the cached row and a [`RecordStatus`], and bumps a watch channel when
+//! the row changes. A row outside the Dio's residual is `NotFound`. The status
+//! table is in `README_ui.md`, "RecordScenery". An in-flight write shows on the
+//! row's [`EnrichedRecord`], not as a status; dirty fields are the
+//! [`Servo`](crate::servo::Servo)'s.
 
 pub(crate) mod builder;
 mod handle;

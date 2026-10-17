@@ -1,10 +1,7 @@
-//! Rhai scripting surface over [`Servo`] — the same treatment
-//! vantage-vista's `rhai` feature gives queries.
+//! The [`Servo`] as a Rhai type, with the Rust API's vocabulary.
 //!
-//! [`register_servo_onto`] teaches an engine the `Servo` type; the host
-//! pushes an `Arc<Servo>` into scope (or returns one from another
-//! registered fn) and scripts drive the draft with the same vocabulary
-//! the Rust API has:
+//! [`register_servo_onto`] teaches an engine the type; the host puts an
+//! `Arc<Servo>` in scope:
 //!
 //! ```rhai
 //! servo.set("name", "Coffee");
@@ -13,12 +10,9 @@
 //! }
 //! ```
 //!
-//! Rhai is synchronous; [`Servo::flash`] is async. `flash()` runs it
-//! via `vantage_vista::rhai::block_on`, which is only legal on a
-//! thread with a runtime *context* but no async *frame* — the same
-//! contract as vantage-vista's fetch verbs (see
-//! `vantage-vista/src/rhai/runtime.rs`): evaluate scripts under
-//! `tokio::task::spawn_blocking`, never directly inside an async task.
+//! `flash()` blocks on the async [`Servo::flash`], so evaluate scripts under
+//! `tokio::task::spawn_blocking`, never inside an async task: the same rule as
+//! vantage-vista's fetch verbs.
 
 use std::sync::Arc;
 

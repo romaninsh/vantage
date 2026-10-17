@@ -10,35 +10,6 @@ use support::{MockView, bucket_dio, cond};
 use vantage_vista::{FilterOp, SortDirection};
 
 #[tokio::test]
-async fn condition_on_augmented_column_filters_locally() {
-    // `name` is augmented from the `names` source; 1st and 3rd objects are John.
-    let dio = bucket_dio()
-        .await
-        .derive()
-        .with_query(&cond("name", FilterOp::Eq, "John"))
-        .build()
-        .await
-        .expect("derives");
-    assert_eq!(
-        dio.residual().conditions.len(),
-        1,
-        "the master never sees it"
-    );
-    assert!(dio.master().query().is_empty());
-
-    let view = MockView::open(&dio, 10).await;
-    view.viewport(0..10); // pull the whole set into view so every row hydrates
-
-    view.settle_until("filtered to the two Johns", |v| v.loaded_rows() == 2)
-        .await;
-
-    assert_eq!(view.loaded_rows(), 2, "only the two John rows remain");
-    assert_eq!(view.row_count(), 2);
-    assert_eq!(view.col_at(0, "name").as_deref(), Some("John"));
-    assert_eq!(view.col_at(1, "name").as_deref(), Some("John"));
-}
-
-#[tokio::test]
 async fn native_column_condition_filters_cheap_rows_without_forcing_hydration() {
     // `kind` is a native list-pass column → the filter applies to the cheap
     // (gray) rows immediately and does NOT force full hydration. No viewport set.
@@ -57,16 +28,6 @@ async fn native_column_condition_filters_cheap_rows_without_forcing_hydration() 
     assert_eq!(view.row_count(), 2, "two red rows");
     assert_eq!(view.gray_rows(), 2, "shown as gray — no forced hydration");
     assert_eq!(view.loaded_rows(), 0);
-}
-
-#[tokio::test]
-async fn no_condition_keeps_all_augmented_rows() {
-    let dio = bucket_dio().await;
-    let view = MockView::open(&dio, 10).await;
-    view.viewport(0..10);
-    view.settle_until("all hydrated", |v| v.loaded_rows() == 3)
-        .await;
-    assert_eq!(view.loaded_rows(), 3);
 }
 
 #[tokio::test]

@@ -86,17 +86,6 @@ fn cbor_int(v: &CborValue) -> Option<i128> {
 }
 
 #[tokio::test]
-async fn count_returns_cache_size() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let dio = seeded_dio(&tmp).await?;
-
-    let scenery = dio.value_scenery(Count::rows()).open().await?;
-    let v = scenery.value().expect("computed");
-    assert_eq!(cbor_int(&v), Some(3));
-    Ok(())
-}
-
-#[tokio::test]
 async fn count_where_filters() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let dio = seeded_dio(&tmp).await?;

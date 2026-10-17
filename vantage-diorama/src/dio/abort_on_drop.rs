@@ -24,25 +24,3 @@ impl<T> Drop for AbortOnDrop<T> {
         self.0.abort();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::AbortOnDrop;
-
-    #[tokio::test]
-    async fn dropping_the_guard_aborts_the_task() {
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        let guard = AbortOnDrop(tokio::spawn(async move {
-            let _tx = tx;
-            std::future::pending::<()>().await;
-        }));
-        drop(guard);
-        // The never-finishing task only releases its sender when it is aborted.
-        let closed = tokio::time::timeout(Duration::from_secs(5), rx)
-            .await
-            .expect("task was not aborted");
-        assert!(closed.is_err());
-    }
-}

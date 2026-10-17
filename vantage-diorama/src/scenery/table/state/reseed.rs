@@ -50,34 +50,18 @@ impl SharedRows {
             .filter(|(_, rec)| admitted_by_view(&dio_inner, &query, rec))
             .collect();
 
-        // A paged view whose MASTER does the ordering cannot position cached
-        // rows after the order changes. The cache holds an arbitrary subset of
-        // the previous order — the windows this view happened to visit — and
-        // re-sorting that subset locally would place it at rows 0..N of the new
-        // order, which it is not: row 0 of "by name descending" is somewhere in
-        // the 199,700 rows never fetched. The result is a grid that looks sorted
-        // at the top and is wrong everywhere, mixed with correctly-positioned
-        // rows wherever a later fetch landed.
+        // A paged view whose master does the ordering can't place cached rows
+        // after the order changes: the cache holds the windows it happened to
+        // visit, and re-sorting that sample would seat it at rows 0..N of the
+        // new order, which it is not. So the positions go and the cache stays;
+        // the loader refills the window in the new order. Two-pass views are
+        // excluded: their positions come from the query index, which
+        // `two_pass::resort` rebuilds.
         //
-        // So drop the positions and keep the cache. The loader refills the
-        // visible window from the master in the new order; the cached records
-        // are still valid as values, just not as places.
-        // Two-pass views are excluded: their positions come from the query
-        // index, not from master windows, and `two_pass::resort` already
-        // rebuilds that index. Clearing here would drop a spine that nothing
-        // in this path refills.
-        //
-        // ...and only while the cache holds a SUBSET. A view that has fetched
-        // the whole set can order it locally and be right, which is both
-        // cheaper and instant; the hazard is strictly about ordering a sample
-        // and presenting it as the whole.
-        //
-        // Count MATCHING rows, not cached rows: `total` describes the narrowed
-        // set, so a cache full of rows the search excludes would otherwise
-        // clear the bar while the matching rows are still a sample.
-        //
-        // A view serving windows has no residual, so any order it holds is
-        // the one the master applies.
+        // Only while the cache holds a sample: a view holding the whole set
+        // orders it locally and is right. Matching rows are counted, not
+        // cached ones, because `total` describes the narrowed set. A view
+        // serving windows has no residual, so its order is the master's.
         let holds_everything = match *self.total.read().unwrap() {
             Some(total) => filtered.len() >= total,
             None => false,

@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.15.0 — 2026-10-14
+## 1.0.0 — 2026-10-15
+
+The 2.0 rework of the Lens and Dio layer, which needs the upgrade notes below and the migration
+guide. It first went out as 0.15.0 on 2026-10-14, a minor bump; a change this size should have been
+a major one, so 1.0.0 is its proper version. 1.0.0 adds no API change over 0.15.0. Its tests moved to
+the blackbox suite under `tests/` and its comments were cleaned up.
 
 ### Breaking changes
 

@@ -79,11 +79,9 @@ pub(crate) async fn refresh_index(state: &Arc<SharedRows>) {
         .insert(key, fresh.clone());
     state.set_index(Some(fresh.clone()));
 
-    // Publish EXACTLY ONE visible map, built off to the side like the spine
-    // above. Writing the raw index-order map first and reseeding a moment
-    // later served a refined grid's whole unfiltered candidate set for the
-    // length of the reseed's per-id reads, and a repaint landing inside that
-    // window showed rows the filter exists to hide.
+    // Publish exactly one visible map, built off to the side like the spine
+    // above: an intermediate raw index-order map would let a repaint show a
+    // refined grid rows its filter hides.
     refine::publish(state, &dio_inner, &fresh).await;
     state.bump_generation();
 

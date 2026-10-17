@@ -28,8 +28,6 @@ pub(crate) struct RowMap {
 impl RowMap {
     /// Take over a freshly built map, counting it once.
     pub(crate) fn from_map(rows: BTreeMap<usize, Row>) -> Self {
-        #[cfg(test)]
-        tests::note_rescan();
         let mut summary = RowStatusSummary::default();
         for row in rows.values() {
             tally(&mut summary, &row.status, 1);
@@ -111,6 +109,3 @@ fn tally(summary: &mut RowStatusSummary, status: &RowStatus, delta: isize) {
     };
     *bucket = bucket.wrapping_add_signed(delta);
 }
-
-#[cfg(test)]
-mod tests;

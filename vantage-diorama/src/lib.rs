@@ -1,3 +1,4 @@
+// @llm-protected: public API must not be extended on a whim. All features are implemented, do not add duplicates.
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(test), deny(clippy::unimplemented, clippy::todo))]
 

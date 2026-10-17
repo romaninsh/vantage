@@ -31,17 +31,10 @@ pub(super) async fn seed(state: &Arc<SharedRows>, dio: &Arc<DioInner>) -> Result
             .index()
             .is_some_and(|i| !i.is_empty() && (i.is_complete() || !state.local_refine()));
         if !index_ready {
-            // The first list page is a query against the datasource, and
-            // awaiting it here put a whole round trip on the open path —
-            // which is a UI thread waiting to mount. On a slow source that
-            // is the entire cost of opening the page: one measured
-            // SurrealDB list of 872 rows took 13.5s, and the window was
-            // frozen for all of it.
-            //
-            // So run it detached. The view opens in `LoadState::Loading`,
-            // the rows arrive with a generation bump, and consumers that
-            // need rows wait for the state to leave `Loading` rather than
-            // assuming `open()` implies data.
+            // Detached: the first list page is a round trip to the source,
+            // and the caller opening the view is often a UI thread. The view
+            // opens `Loading`, the rows arrive with a generation bump, and
+            // consumers wait for the state to leave `Loading`.
             let seed_state = state.clone();
             let list = dio.lens.runtime.spawn(async move {
                 two_pass::run_list_page(seed_state.clone()).await;
@@ -96,17 +89,11 @@ pub(super) async fn seed(state: &Arc<SharedRows>, dio: &Arc<DioInner>) -> Result
             if seeded_rows > 0 { "warm" } else { "cold" },
             crate::debug::num(seeded_rows),
         );
-        // The cache IS the row set for this shape, so a seed that found
-        // rows IS the answer. A seed that found none is not: a cold cache
-        // with a background copy still in flight looks exactly like an
-        // empty table, and calling it settled here is what made the grid
-        // skip its loading state and paint "no rows" over a load that had
-        // not started. Wait for the reactor's reseed in that case.
-        //
-        // Unless nothing more is coming — no eager start is still running
-        // (`seed_complete`), so zero rows is a real answer and there will
-        // be no second reseed to wait for. The reactor applies the same
-        // rule.
+        // A seed that found rows is the answer. One that found none is
+        // only an answer once no eager start is still copying
+        // (`seed_complete`): a cold cache mid-copy looks exactly like an
+        // empty table. Otherwise the reactor's reseed settles it, by the
+        // same rule.
         if seeded_rows > 0 || dio.seed_complete.load(Ordering::SeqCst) {
             state.mark_settled("open: seeded from cache");
         }

@@ -87,11 +87,9 @@ pub(crate) async fn viewport_loop(
         //
         // Absorbing takes each view's newest RANGE — an older viewport is not
         // worth fetching — but `force_load` is not a property of the range, it
-        // is an instruction to consult the master rather than the cache.
-        // Dropping it with the request that carried it lost the on-open
-        // refresh on every mount, because the grid always pushes its first
-        // real viewport inside the debounce window: the table then sat on
-        // cached rows and never contacted the source at all.
+        // is an instruction to consult the master rather than the cache, so
+        // it is ORed in: a grid pushes its first real viewport inside the
+        // debounce window, and the on-open refresh must survive that.
         //
         // `priority` merges the same way and for the same reason: it describes
         // the *wait*, not the range. An `Essential` scroll absorbed together

@@ -87,28 +87,3 @@ fn rusage() -> Option<(u64, u64)> {
 fn rusage() -> Option<(u64, u64)> {
     None
 }
-
-#[cfg(all(test, feature = "diagnostics"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn process_stats_reports_nonzero_cpu_and_rss() {
-        // Burn a little CPU so utime is measurable.
-        let mut x = 0u64;
-        for i in 0..5_000_000u64 {
-            x = x.wrapping_add(i);
-        }
-        std::hint::black_box(x);
-        let s = process_stats();
-        #[cfg(unix)]
-        {
-            assert!(
-                s.peak_rss_bytes > 0,
-                "peak RSS should be measurable on unix"
-            );
-            assert!(s.cpu_ms > 0, "cpu time should be nonzero after busy loop");
-        }
-        let _ = s.uptime_ms; // monotonic, may be 0 in a fast test — presence is enough
-    }
-}

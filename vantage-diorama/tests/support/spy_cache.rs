@@ -1,11 +1,11 @@
 //! A memory cache that reports what is done to it: how many refresh times
 //! were recorded, rows written, rows read and whole-table lists, and, once
 //! armed, a single-row write that lands and then stalls, catching a flash
-//! mid-stage. Single-row inserts and whole-table lists can also be made to
-//! fail outright.
+//! mid-stage. Single-row inserts (all, or chosen ids), batched inserts and
+//! whole-table lists can also be made to fail outright.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -39,11 +39,16 @@ pub struct SpyTable {
     pub fail_inserts: AtomicBool,
     /// While set, `list_values` fails (and still counts as a list).
     pub fail_lists: AtomicBool,
+    /// While set, `insert_values` fails without writing.
+    pub fail_batches: AtomicBool,
+    /// Ids whose single-row inserts fail without writing.
+    pub fail_ids: Mutex<Vec<String>>,
 }
 
 impl SpyTable {
     fn check_insert(&self, id: &str) -> Result<()> {
-        if self.fail_inserts.load(Ordering::SeqCst) {
+        let refused = self.fail_ids.lock().unwrap().iter().any(|f| f == id);
+        if refused || self.fail_inserts.load(Ordering::SeqCst) {
             return Err(vantage_core::error!("cache write failed", id = id));
         }
         Ok(())
@@ -73,6 +78,9 @@ impl CacheTable for SpyTable {
         Ok(())
     }
     async fn insert_values(&self, rows: IndexMap<String, Rec>) -> Result<()> {
+        if self.fail_batches.load(Ordering::SeqCst) {
+            return Err(vantage_core::error!("cache batch write failed"));
+        }
         self.rows_written.fetch_add(rows.len(), Ordering::SeqCst);
         self.inner.insert_values(rows).await
     }

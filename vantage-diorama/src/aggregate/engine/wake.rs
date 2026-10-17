@@ -85,12 +85,8 @@ pub(super) async fn wait(
                         dropped,
                         "source event bus lagged — recomputing from the current rows",
                     );
-                    // "lagged" is intentionally untested: forcing a broadcast
-                    // receiver to fall behind deterministically (fill its
-                    // ring buffer faster than this task drains it) isn't
-                    // worth the test complexity for one trigger label. The
-                    // label exists so a real lag shows up in the stream
-                    // rather than masquerading as some other trigger.
+                    // Its own label, so a lag in the debug stream doesn't pass
+                    // for another trigger.
                     return Wake::Changed(tap.enabled().then(|| "lagged".to_string()));
                 }
                 Err(broadcast::error::RecvError::Closed) => return Wake::SourceGone,

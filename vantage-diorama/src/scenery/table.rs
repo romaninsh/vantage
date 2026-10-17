@@ -1,21 +1,10 @@
-//! `TableScenery` — reactive ordered-rows view onto a Dio.
+//! `TableScenery`: an ordered, paged view of a Dio's rows.
 //!
-//! The Scenery holds a sparse
-//! `BTreeMap<usize, Arc<EnrichedRecord>>` keyed by row index. Rows
-//! arrive via two paths:
-//!
-//! - **Cache seed** — `open()` reads whatever is already in the cache
-//!   (e.g. warmed from disk on restart) and assigns indices in the view's
-//!   order, or the cache's iteration order without one. Subsequent
-//!   `DatasetChanged` / `Refreshing` events re-seed the same way, and a
-//!   single changed row of an ordered set held whole is spliced into place.
-//! - **Chunk load** — `set_viewport` / `request_load_more` queue a
-//!   range request on a debounce channel; on commit, the Lens's paged
-//!   loader fetches the missing indices from the
-//!   master and streams them back through [`ChunkSink`](crate::ChunkSink).
-//!
-//! The reactor task ignores the scenery's own viewport events
-//! (`ViewportChanged`, `RangeLoaded`, `LoadFailed`) to avoid looping
+//! The view holds a sparse map of rows by index, filled two ways: seeded from
+//! the cache in the view's order (and re-seeded or spliced as the set
+//! changes), or loaded a window at a time by the Lens's paged loader through
+//! [`ChunkSink`](crate::ChunkSink) as `set_viewport` and `request_load_more`
+//! ask. The reactor ignores the view's own viewport events, so it never loops
 //! on its own output.
 
 mod builder;

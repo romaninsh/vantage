@@ -67,6 +67,3 @@ impl DioRegistry {
 fn upgrade(weak: &Weak<DioInner>) -> Option<Dio> {
     weak.upgrade().map(|inner| Dio { inner })
 }
-
-#[cfg(test)]
-mod tests;

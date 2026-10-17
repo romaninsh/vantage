@@ -103,6 +103,27 @@ async fn a_paged_tail_without_a_total_reads_the_flipped_order() -> Result<()> {
     Ok(())
 }
 
+/// A flipped tail still answers in the declared order: `row_by_id` finds its
+/// rows and only its rows, and a viewport over it keeps the same two.
+#[tokio::test]
+async fn a_flipped_tail_finds_its_rows_by_id_and_keeps_them_under_a_viewport() -> Result<()> {
+    let loads = Loads::default();
+    let (_dio, view) = paged_tail(&loads, false).await?;
+    assert!(eventually(Duration::from_secs(5), || ns(&view) == [29, 30]).await);
+    assert!(
+        view.row_by_id("r30").is_some(),
+        "the last row is in the tail"
+    );
+    assert!(view.row_by_id("r29").is_some());
+    assert!(view.row_by_id("r01").is_none(), "the first row is not");
+
+    view.set_viewport(0..2, 0..2);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(ns(&view), [29, 30]);
+    assert_eq!(view.view_stats().showing, Some(0..2));
+    Ok(())
+}
+
 /// A detail source whose `get` for `r07` waits on `gate`. `done` counts the
 /// lookups answered.
 #[derive(Clone)]
