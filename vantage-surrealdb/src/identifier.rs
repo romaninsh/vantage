@@ -1,22 +1,16 @@
-//! # SurrealDB Identifiers
-//!
-//! doc wip
+//! SurrealDB identifiers (table and field names), escaped when rendered.
 
 use crate::Expr;
 use crate::surreal_expr;
 use vantage_expressions::{Expressive, ExpressiveOr};
 use vantage_table::column::core::{Column, ColumnType};
 
-/// SurrealDB identifier with automatic escaping
-///
-/// doc wip
-///
-/// # Examples
+/// A table or field name. A plain name renders bare; a reserved keyword or
+/// any other name that needs it renders ⟨quoted⟩.
 ///
 /// ```rust
 /// use vantage_surrealdb::identifier::Identifier;
 ///
-/// // doc wip
 /// let id = Identifier::new("user_name");
 /// let escaped = Identifier::new("SELECT"); // Reserved keyword
 /// ```
@@ -26,19 +20,13 @@ pub struct Identifier {
 }
 
 impl Identifier {
-    /// Creates a new identifier
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `identifier` - doc wip
     pub fn new(identifier: impl Into<String>) -> Self {
         Self {
             identifier: identifier.into(),
         }
     }
 
+    /// `self.other`, each segment escaped on its own.
     pub fn dot(self, other: impl Into<String>) -> crate::Expr {
         surreal_expr!("{}.{}", (self), (Identifier::new(other.into())))
     }
@@ -53,24 +41,23 @@ impl From<Identifier> for crate::Expr {
 impl Expressive<crate::AnySurrealType> for Identifier {
     fn expr(&self) -> crate::Expr {
         use vantage_expressions::Expression;
-        // Single escaping authority lives in `surreal-client` so the rules
-        // can't drift between the two query builders.
+        // `surreal-client` owns the escaping rules, so they can't drift.
         Expression::new(surreal_client::escape_identifier(&self.identifier), vec![])
     }
 }
 
+/// The `$parent` subquery parameter.
 pub struct Parent {}
 impl Parent {
-    /// `$parent` is a SurrealQL built-in subquery parameter — not a user
-    /// identifier — so it must be emitted verbatim, not through `escape_identifier`.
+    /// `$parent.field`: `$parent` is a built-in parameter, emitted verbatim;
+    /// the field is escaped.
     pub fn dot(field: impl Into<String>) -> crate::Expr {
         crate::surreal_expr!("$parent.{}", (Identifier::new(field.into())))
     }
 }
 
-// ExpressiveOr<AnySurrealType, Identifier> impls
-// Strings go through Identifier (unquoted column names),
-// everything else passes through via Expressive.
+// A string given where a field is expected names a column; any other
+// expression passes through.
 
 impl ExpressiveOr<crate::AnySurrealType, Identifier> for &str {
     fn field_expr(&self) -> Expr {
@@ -105,39 +92,5 @@ impl ExpressiveOr<crate::AnySurrealType, Identifier> for crate::field::Field {
 impl<T: ColumnType> ExpressiveOr<crate::AnySurrealType, Identifier> for Column<T> {
     fn field_expr(&self) -> Expr {
         Identifier::new(self.name()).expr()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn embedded_close_bracket_cannot_break_out_of_quoting() {
-        // `\⟩` is an invalid escape inside ⟨…⟩, so a `⟩` must be emitted as the
-        // `\u{27E9}` unicode escape — the only form the SurrealDB lexer accepts.
-        let expr = Identifier::new("a⟩b").expr();
-        assert_eq!(expr.preview(), "⟨a\\u{27E9}b⟩");
-    }
-
-    #[test]
-    fn crafted_backslash_bracket_cannot_break_out_of_quoting() {
-        // A raw `\⟩` would collapse (via `\\`) and let the `⟩` close the
-        // identifier early, injecting whatever follows. The backslash must be
-        // doubled so the whole sequence stays one identifier.
-        let expr = Identifier::new("a\\⟩: 1 }; RETURN 999; x").expr();
-        assert_eq!(expr.preview(), "⟨a\\\\\\u{27E9}: 1 }; RETURN 999; x⟩");
-    }
-
-    #[test]
-    fn reserved_keyword_is_escaped() {
-        let expr = Identifier::new("SELECT").expr();
-        assert_eq!(expr.preview(), "⟨SELECT⟩");
-    }
-
-    #[test]
-    fn plain_identifier_is_unquoted() {
-        let expr = Identifier::new("user_name").expr();
-        assert_eq!(expr.preview(), "user_name");
     }
 }

@@ -1,11 +1,7 @@
-//! Named SurrealQL expression primitives.
-//!
-//! Meaningful, single-purpose building blocks that mirror the vantage-sql
-//! primitive vocabulary (`count`, `sum`, `avg`, `coalesce`, `round`,
-//! `case_when`, …) and lower to SurrealQL. Each carries the same name as its
-//! SQL counterpart where the concept exists, so db-agnostic Rhai scripts keep
-//! one vocabulary across backends. Prefer these over the generic `Fx` /
-//! `surreal_expr!` escape hatches.
+//! Named SurrealQL expression primitives: single-purpose builders that reuse
+//! the vantage-sql name where the concept exists (`count`, `avg`, `coalesce`,
+//! `case_when`, …) and lower to SurrealQL. Prefer them over `Fx` and
+//! `surreal_expr!`.
 
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
@@ -89,12 +85,8 @@ pub fn date_format(expr: impl Expressive<AnySurrealType>, fmt: &str) -> Expr {
 
 // ── Graph traversal ─────────────────────────────────────────────────────
 //
-// SurrealQL builds a graph path by prefixing each step with an arrow:
-// `->placed->order`, `<-reports_to<-employee`. Every segment — edge or node
-// table alike — gets the same arrow, so a traversal is just an anchor plus a
-// list of arrow-prefixed segments. The anchor is your standpoint: `me()`
-// renders empty, so a leading hop starts from the current record; a nested
-// `graph_*` result lets paths change direction (`->a->b<-c<-d`) by composition.
+// Every segment, edge or node table, takes the same arrow, so a path is an
+// anchor plus arrow-prefixed segments. Nesting changes direction.
 
 /// Current-record marker for a `graph` traversal. Renders to an empty path so
 /// a leading hop (`->placed->order`) starts from the current row.
@@ -160,10 +152,7 @@ pub fn subquery(inner: impl Expressive<AnySurrealType>) -> Expr {
     Expression::new("({})", vec![ExpressiveEnum::Nested(inner.expr())])
 }
 
-// ── Tier 2: surreal-specific scalar/collection functions ────────────────────
-// Each mirrors a `math::`/`array::`/`object::`/`string::`/`time::` function under
-// a single-purpose name. The plain ones are `Fx` one-liners (like `avg`/`round`);
-// `time_group`/`similarity` bind their config/search token as a parameter.
+// ── SurrealDB scalar and collection functions ───────────────────────────
 
 /// `first(expr)` → `array::first(expr)`.
 pub fn first(expr: impl Expressive<AnySurrealType>) -> Expr {
@@ -241,15 +230,11 @@ pub fn recurse(path: impl Expressive<AnySurrealType>, min: i64, max: i64) -> Exp
     )
 }
 
-// ── Tier 3: embedded-array closures ─────────────────────────────────────
+// ── Embedded-array closures ─────────────────────────────────────────────
 //
-// SurrealDB's `array.map`/`fold`/`filter` take an inline closure (`|$l| …`),
-// which is the one place it exceeds the SQL vocabulary. We don't model the
-// closure as data — instead the Rhai engine binds each parameter to a
-// placeholder `$name` expression and *runs the native `|l| …` closure
-// symbolically*, so every operation in the body builds SurrealQL. These
-// helpers only render the surrounding `.method(|$params| body)` shell and the
-// `{…}` / `[…]` literals the body may produce.
+// The Rhai engine runs a native closure symbolically over `$name`
+// placeholders; these helpers render only the `.method(|$params| body)` shell
+// and the `{…}` / `[…]` literals a body produces.
 
 /// A closure parameter placeholder: `closure_param("value")` → `$value`. Bound
 /// to the closure's argument so the body renders against it.
@@ -398,246 +383,5 @@ impl Expressive<AnySurrealType> for Case {
 impl From<Case> for Expr {
     fn from(c: Case) -> Self {
         c.expr()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::identifier::Identifier;
-    use crate::surreal_expr;
-
-    #[test]
-    fn aggregates_lower_to_surreal() {
-        assert_eq!(
-            count_of(surreal_expr!("->placed->order")).preview(),
-            "count(->placed->order)"
-        );
-        assert_eq!(
-            avg(Identifier::new("salary")).preview(),
-            "math::mean(salary)"
-        );
-        assert_eq!(
-            round(avg(Identifier::new("total"))).preview(),
-            "math::round(math::mean(total))"
-        );
-        assert_eq!(
-            round_to(avg(Identifier::new("price")), 2).preview(),
-            "math::fixed(math::mean(price), 2)"
-        );
-        assert_eq!(
-            count_distinct(Identifier::new("id")).preview(),
-            "count(array::distinct(id))"
-        );
-    }
-
-    #[test]
-    fn coalesce_and_nullif() {
-        assert_eq!(
-            coalesce(surreal_expr!("array::first(x)"), "n/a".to_string()).preview(),
-            r#"(array::first(x) ?? "n/a")"#
-        );
-        let compared = Expression::new(
-            "{} = 0",
-            vec![ExpressiveEnum::Nested(coalesce(surreal_expr!("x"), 0i64))],
-        );
-        assert_eq!(compared.preview(), "(x ?? 0) = 0");
-        assert_eq!(
-            nullif(Identifier::new("qty"), 0i64).preview(),
-            "IF qty = 0 THEN NONE ELSE qty END"
-        );
-    }
-
-    #[test]
-    fn cast_and_date_format() {
-        assert_eq!(cast(Identifier::new("x"), "int").preview(), "type::int(x)");
-        assert_eq!(
-            date_format(Identifier::new("created_at"), "%Y-%m").preview(),
-            r#"time::format(created_at, "%Y-%m")"#
-        );
-    }
-
-    fn segs(names: &[&str]) -> Vec<String> {
-        names.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn graph_traversal_lowers_to_arrow_paths() {
-        // leading outgoing / incoming from the current record
-        assert_eq!(
-            graph_out(me(), &segs(&["reports_to", "employee"])).preview(),
-            "->reports_to->employee"
-        );
-        assert_eq!(
-            graph_in(me(), &segs(&["reports_to", "employee"])).preview(),
-            "<-reports_to<-employee"
-        );
-        // edge-only (single segment)
-        assert_eq!(
-            graph_out(me(), &segs(&["reviewed"])).preview(),
-            "->reviewed"
-        );
-        // field tail
-        assert_eq!(
-            field(graph_out(me(), &segs(&["reports_to", "employee"])), "name").preview(),
-            "->reports_to->employee.name"
-        );
-    }
-
-    #[test]
-    fn nesting_yields_mixed_direction() {
-        // "clients who placed the same order as me":
-        // anchor on the right of the outer call → the appended hop reverses.
-        let inner = graph_out(me(), &segs(&["placed", "order"]));
-        assert_eq!(
-            graph_in(inner, &segs(&["placed", "client"])).preview(),
-            "->placed->order<-placed<-client"
-        );
-    }
-
-    #[test]
-    fn numeric_index_appends_brackets() {
-        // element access on a subquery / fanned-out path
-        assert_eq!(
-            index_at(surreal_expr!("(SELECT VALUE x FROM y GROUP ALL)"), 0).preview(),
-            "(SELECT VALUE x FROM y GROUP ALL)[0]"
-        );
-        assert_eq!(
-            index_at(graph_out(me(), &segs(&["placed", "order"])), 0).preview(),
-            "->placed->order[0]"
-        );
-    }
-
-    #[test]
-    fn recursion_wraps_a_path() {
-        let path = graph_in(me(), &segs(&["reports_to", "employee"]));
-        assert_eq!(
-            field(recurse(path, 1, 5), "name").preview(),
-            "@.{1..5}(<-reports_to<-employee).name"
-        );
-    }
-
-    #[test]
-    fn case_renders_if_then_else() {
-        let c = Case::new()
-            .when(surreal_expr!("price >= 250"), "premium".to_string())
-            .when(surreal_expr!("price >= 150"), "mid".to_string())
-            .else_("value".to_string());
-        assert_eq!(
-            c.preview(),
-            r#"IF price >= 250 THEN "premium" ELSE IF price >= 150 THEN "mid" ELSE "value" END"#
-        );
-    }
-
-    #[test]
-    fn tier2_fns_lower_to_surreal() {
-        let f = Identifier::new("salary");
-        assert_eq!(first(Identifier::new("x")).preview(), "array::first(x)");
-        assert_eq!(len(Identifier::new("lines")).preview(), "array::len(lines)");
-        assert_eq!(stddev(f.clone()).preview(), "math::stddev(salary)");
-        assert_eq!(median(f).preview(), "math::median(salary)");
-        assert_eq!(
-            lower(Identifier::new("name")).preview(),
-            "string::lowercase(name)"
-        );
-        assert_eq!(
-            words(Identifier::new("name")).preview(),
-            "string::words(name)"
-        );
-        assert_eq!(
-            object_entries(Identifier::new("nutrition")).preview(),
-            "object::entries(nutrition)"
-        );
-        assert_eq!(
-            object_values(Identifier::new("nutrition")).preview(),
-            "object::values(nutrition)"
-        );
-    }
-
-    #[test]
-    fn closure_literals_and_methods_lower_to_surreal() {
-        let l = closure_param("value");
-        // object literal (keys arrive sorted from Rhai's map)
-        let obj = object_literal(vec![
-            ("product".to_string(), field(l.clone(), "product")),
-            ("subtotal".to_string(), field(l.clone(), "price")),
-        ]);
-        assert_eq!(
-            obj.preview(),
-            "{ product: $value.product, subtotal: $value.price }"
-        );
-        // array literal
-        assert_eq!(
-            array_literal(vec![field(l.clone(), "a"), field(l.clone(), "b")]).preview(),
-            "[$value.a, $value.b]"
-        );
-        // map / fold / filter render the closure shell around a body
-        assert_eq!(
-            array_map(Identifier::new("lines"), &["value"], obj).preview(),
-            "lines.map(|$value| { product: $value.product, subtotal: $value.price })"
-        );
-        assert_eq!(
-            array_fold(
-                Identifier::new("lines"),
-                0i64,
-                &["acc", "value"],
-                field(l.clone(), "price")
-            )
-            .preview(),
-            "lines.fold(0, |$acc, $value| $value.price)"
-        );
-        assert_eq!(
-            array_filter(Identifier::new("lines"), &["value"], field(l, "ok")).preview(),
-            "lines.filter(|$value| $value.ok)"
-        );
-    }
-
-    #[test]
-    fn tier2_literal_tokens_are_bound_params() {
-        // time unit and search term are bound parameters (rendered as double-quoted
-        // strings, routed through prepare_query → CBOR $_arg at execution), not
-        // interpolated into a single-quoted SurrealQL literal.
-        assert_eq!(
-            time_group(Identifier::new("created_at"), "month").preview(),
-            r#"time::group(created_at, "month")"#
-        );
-        assert_eq!(
-            similarity(lower(Identifier::new("name")), "marti mcfligh").preview(),
-            r#"string::similarity::jaro_winkler(string::lowercase(name), "marti mcfligh")"#
-        );
-    }
-
-    #[test]
-    fn tier2_literal_tokens_cannot_break_out_of_query() {
-        // Regression for SurrealQL injection: a term/unit containing a quote must not
-        // escape its literal. The token is carried as a bound Scalar parameter — never
-        // interpolated into the template — so it cannot alter query structure.
-        let evil = "x') OR true OR ('";
-
-        let s = similarity(Identifier::new("name"), evil);
-        assert!(
-            !s.template.contains(evil),
-            "term leaked into template (injectable): {}",
-            s.template
-        );
-        assert!(
-            s.parameters
-                .iter()
-                .any(|p| matches!(p, ExpressiveEnum::Scalar(v) if format!("{v}").contains(evil))),
-            "term must be a bound Scalar parameter"
-        );
-
-        let t = time_group(Identifier::new("created_at"), evil);
-        assert!(
-            !t.template.contains(evil),
-            "unit leaked into template (injectable): {}",
-            t.template
-        );
-        assert!(
-            t.parameters
-                .iter()
-                .any(|p| matches!(p, ExpressiveEnum::Scalar(v) if format!("{v}").contains(evil))),
-            "unit must be a bound Scalar parameter"
-        );
     }
 }

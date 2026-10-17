@@ -1,6 +1,4 @@
-//! # SurrealDB Select Query Builder
-//!
-//! Builds SELECT query for SurrealDB. Implements the `Selectable` protocol.
+//! The SurrealDB `SELECT` builder, implementing `Selectable`.
 
 pub mod builder;
 pub mod exec;
@@ -10,9 +8,6 @@ pub mod select_field;
 pub mod select_target;
 pub mod transform;
 
-#[cfg(test)]
-mod tests;
-
 use std::marker::PhantomData;
 
 use crate::Expr;
@@ -20,11 +15,8 @@ use select_field::SelectField;
 use select_target::SelectTarget;
 use vantage_expressions::result;
 
-/// SurrealDB SELECT query builder
-///
-/// doc wip
-///
-/// # Examples
+/// A SurrealDB `SELECT`. `T` is the result shape: rows, a list of values
+/// (`VALUE`), one row (`ONLY`) or one value.
 ///
 /// ```rust
 /// use vantage_expressions::Selectable;

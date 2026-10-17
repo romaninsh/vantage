@@ -1,6 +1,4 @@
-//! # SurrealDB Variables
-//!
-//! doc wip
+//! SurrealDB `$`-variables.
 
 use vantage_expressions::{Expression, Expressive};
 
@@ -43,24 +41,5 @@ impl Expressive<AnySurrealType> for Variable {
 impl From<Variable> for Expr {
     fn from(val: Variable) -> Self {
         val.expr()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::primitives::field;
-
-    #[test]
-    fn variable_renders_dollar_name() {
-        assert_eq!(Variable::new("parent").expr().preview(), "$parent");
-        assert_eq!(Variable::new("this").expr().preview(), "$this");
-    }
-
-    #[test]
-    fn field_tail_matches_legacy_parent() {
-        // `parent("id")` is now `field(Variable::new("parent"), "id")`;
-        // confirm it still renders the previous `$parent.id`.
-        assert_eq!(field(Variable::new("parent"), "id").preview(), "$parent.id");
     }
 }

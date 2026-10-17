@@ -1,25 +1,12 @@
-//! `SurrealTableShell` — owns the typed `Table<SurrealDB, E>` and exposes it
-//! through the `TableShell` boundary.
-//!
-//! The shell is generic in `E` so `with_expression` closures (parameterized
-//! over `E`) survive the wrap; `Vista` erases `E` once at the
-//! `Box<dyn TableShell>` boundary. A clone copies the table's query state
-//! (conditions, order, search) and shares the connection.
-//!
-//! Vista exposes ids as `String`. SurrealDB's native id is `Thing`
-//! (`table:id`). The shell stringifies via `Thing::to_string()` on the way
-//! out and parses back via `String::contains(':')` on the way in — bare ids
-//! get prefixed with the wrapped table's name.
-//!
-//! `AnySurrealType` already wraps `ciborium::Value`, so the value boundary
-//! is a straight unwrap/rewrap.
+//! `SurrealTableShell`: a typed `Table<SurrealDB, E>` behind the `TableShell`
+//! boundary. It stays generic in `E` so `with_expression` closures survive
+//! the wrap; a clone copies the query state and shares the connection. Ids
+//! cross as `table:id` text, and a bare id names a record of this table.
 
 mod narrow;
 mod refs;
 #[cfg(feature = "rhai")]
 mod scripted;
-#[cfg(test)]
-mod tests;
 mod watch;
 
 use std::sync::Arc;
@@ -46,6 +33,7 @@ use crate::vista::spec::SurrealVistaSpec;
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
 
+/// The `TableShell` a SurrealDB vista wraps.
 #[derive(Clone)]
 pub struct SurrealTableShell<E = EmptyEntity>
 where
@@ -80,10 +68,8 @@ where
         }
     }
 
-    /// Resolve a Vista-side string id into a SurrealDB `Thing`. A `table:id`
-    /// pair is parsed verbatim; a bare id gets prefixed with the wrapped
-    /// table's name so `vista.get_value("biff")` works the same as
-    /// `vista.get_value("client:biff")`.
+    /// A Vista-side id as a `Thing`: `table:id` parses as it is, and a bare
+    /// id takes this table's name, so `"biff"` and `"client:biff"` agree.
     fn parse_id(&self, id: &str) -> Thing {
         if id.contains(':') {
             id.parse::<Thing>()

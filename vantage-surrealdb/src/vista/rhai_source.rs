@@ -1,15 +1,7 @@
-//! Evaluate a Rhai script into a `SurrealSelect` for use as a vista source.
-//!
-//! Uses the same host the standalone Rhai tests use (`register_surreal_engine!`):
-//! built once, background limits, the full vendor vocabulary. When `base` is
-//! supplied it is pushed as the `base` variable (a `RhaiSelect` wrapping the
-//! source table's select) so scripts can *transform* an existing query rather
-//! than build one from scratch. The vocabulary's free functions and the
-//! `surreal::me` anchor are in the `surreal::` namespace.
-//!
-//! Scripts compile as statements (`Block`), the same shape `Engine::eval`
-//! accepted before, so a `let` in an existing `rhai:` block keeps working; the
-//! final expression is the value.
+//! Evaluate a vista's `rhai:` source, `base:` transform or `expr:` column
+//! script on the shared background host (`register_surreal_engine!`). Scripts
+//! compile as statement blocks, so `let` works; the last expression is the
+//! value.
 // `register_surreal_engine!` brings several type aliases into scope; a vista
 // source only needs `Sel`/`Ex`/`Id` + `__host`, so the unused remainder of the
 // generated toolkit is allowed here.
@@ -31,9 +23,9 @@ pub(crate) fn eval_to_select(
     eval_to_select_args(code, base, &[])
 }
 
-/// [`eval_to_select`] with an observation-supplied `args` map in scope.
-/// Values are plain strings ("" = not set by convention); anything the
-/// script embeds in the query binds as a parameter like every other scalar.
+/// [`eval_to_select`] with the host's `args` map in scope. Values are strings
+/// (`""` means not set); one the script puts in the query binds as a
+/// parameter like any other scalar.
 pub(crate) fn eval_to_select_args(
     code: &str,
     base: Option<SurrealSelect>,
@@ -61,11 +53,8 @@ pub(crate) fn eval_to_select_args(
         .ok_or_else(|| vantage_core::error!("Rhai vista source must evaluate to a select"))
 }
 
-/// Run `code`, returning the expression it builds — the vocabulary is the
-/// same as query-sourced scripts (`surreal::ident(...)`, operators,
-/// `surreal::expr("raw")`). Accepts a bare identifier result
-/// (`surreal::ident("batch")["name"]` yields an expression,
-/// `surreal::ident("x")` alone an identifier) so both shapes work.
+/// Run `code`, returning the expression it builds. A bare identifier
+/// (`surreal::ident("x")`) is accepted as well as an expression.
 pub(crate) fn eval_to_expr(code: &str) -> vantage_core::Result<crate::Expr> {
     use vantage_expressions::Expressive as _;
     let value = __host()
@@ -87,110 +76,4 @@ pub(crate) fn eval_to_expr(code: &str) -> vantage_core::Result<crate::Expr> {
         "Rhai column expression must evaluate to an expression or identifier",
         got = value.type_name()
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use vantage_rhai::{Expr, Lookup, Resolver};
-
-    use super::*;
-
-    #[test]
-    fn me_is_a_namespace_variable() {
-        assert!(eval_to_expr("surreal::me").is_ok());
-        assert!(eval_to_expr("surreal::me[\"name\"]").is_ok());
-        assert!(eval_to_expr("fn anchor() { surreal::me } anchor()").is_ok());
-        let err = eval_to_expr("me").unwrap_err();
-        assert!(
-            err.to_string().contains("unknown name `me` in scope"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn the_vocabulary_is_namespaced() {
-        assert!(eval_to_expr(r#"surreal::ident("batch")["name"]"#).is_ok());
-        for (code, name) in [
-            (r#"ident("batch")"#, "ident"),
-            (r#"table("batch")"#, "table"),
-        ] {
-            let err = eval_to_expr(code).unwrap_err();
-            assert!(err.to_string().contains(name), "{code}: {err}");
-        }
-    }
-
-    #[test]
-    fn me_coexists_with_a_host_resolver() {
-        // `surreal::me` is a namespace variable, not an `on_var` hook: rhai
-        // keeps only the last hook installed, so one would replace the host's
-        // resolver. Both must work in one script.
-        struct Ns;
-        impl Resolver for Ns {
-            fn resolve(&self, path: &str) -> Lookup {
-                match path {
-                    "app" => Lookup::Namespace,
-                    "app.n" => Lookup::Leaf(rhai::Dynamic::from(2_i64)),
-                    _ => Lookup::Unknown,
-                }
-            }
-        }
-        let env = Env::new().resolver(Arc::new(Ns));
-
-        let read = __host()
-            .compile(&Expr::from("app.n"))
-            .unwrap()
-            .discover(&env)
-            .unwrap();
-        assert_eq!(read.eval(&env).unwrap().as_int().unwrap(), 2);
-        assert!(
-            read.read_set().contains("app.n"),
-            "resolver reads are recorded"
-        );
-
-        let me = __host()
-            .compile(&Expr::from("surreal::me"))
-            .unwrap()
-            .eval(&env)
-            .unwrap();
-        assert!(
-            me.is::<Ex>(),
-            "`surreal::me` is the anchor expression, got {}",
-            me.type_name()
-        );
-    }
-
-    #[test]
-    fn query_source_is_bounded() {
-        let err = eval_to_select("loop {}", None).unwrap_err();
-        assert!(err.to_string().contains("limit"), "{err}");
-    }
-
-    #[test]
-    fn args_map_is_in_scope() {
-        use vantage_expressions::Selectable as _;
-        // Observation-supplied args reach the script as a string map; values
-        // the script embeds bind as parameters like every other scalar.
-        const SCRIPT: &str = r#"
-            let q = surreal::select().from("order");
-            if "bakery" in args && args.bakery != "" {
-                q = q.where(surreal::expr("bakery.name = {}", [args.bakery]));
-            }
-            q
-        "#;
-        let select =
-            eval_to_select_args(SCRIPT, None, &[("bakery".to_string(), "Breg".to_string())])
-                .unwrap();
-        let preview = select.preview();
-        assert!(preview.contains("bakery.name = \"Breg\""), "{preview}");
-
-        // Without args the same script skips the condition instead of failing.
-        let bare = eval_to_select_args(SCRIPT, None, &[]).unwrap();
-        assert!(
-            !bare.preview().contains("bakery.name"),
-            "{}",
-            bare.preview()
-        );
-    }
 }

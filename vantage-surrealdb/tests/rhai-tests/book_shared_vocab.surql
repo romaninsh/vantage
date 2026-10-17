@@ -1,0 +1,1 @@
+SELECT count(array::distinct(dept)) AS depts, IF qty = 0 THEN NONE ELSE qty END AS qty_or_none, type::float(qty) AS qty_f, time::format(created_at, "%Y-%m") AS period, math::median(salary) AS mid FROM employee

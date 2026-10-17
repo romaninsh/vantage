@@ -136,6 +136,13 @@ fn query04() {
 }
 
 #[test]
+fn surreal_return_derefs_to_its_expression() {
+    let ret = SurrealReturn::new(surreal_expr!("math::sum([1, 2])"));
+    let expr: &vantage_surrealdb::Expr = &ret;
+    assert_eq!(expr.preview(), "RETURN math::sum([1, 2])");
+}
+
+#[test]
 fn sniptest() {
     assert_eq!(
         "RETURN math::sum(SELECT VALUE inventory.stock FROM product WHERE is_deleted = false) - count(SELECT * FROM product)",
@@ -147,16 +154,6 @@ fn sniptest() {
             ) - count(SELECT * FROM product)"
         )
     )
-}
-
-#[test]
-fn query07() {
-    // Skip FieldProjection test as it's not available
-    let select = SurrealSelect::new()
-        .with_source("order")
-        .field("id")
-        .field("created_at");
-    assert_eq!(select.preview(), "SELECT id, created_at FROM order")
 }
 
 #[test]

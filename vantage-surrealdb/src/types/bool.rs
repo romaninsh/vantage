@@ -1,6 +1,4 @@
-//! Boolean type implementations for SurrealDB
-//!
-//! This module provides implementations of the SurrealType trait for boolean types.
+//! `SurrealType` for `bool`.
 
 use crate::types::{SurrealType, SurrealTypeBoolMarker};
 use ciborium::Value as CborValue;

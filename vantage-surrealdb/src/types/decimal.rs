@@ -1,6 +1,4 @@
-//! Decimal type implementations for SurrealDB
-//!
-//! This module provides implementations of the SurrealType trait for high-precision decimal types.
+//! `rust_decimal::Decimal` as SurrealDB's decimal (CBOR tag 10 over its text).
 
 use crate::types::{SurrealType, SurrealTypeDecimalMarker};
 use ciborium::Value as CborValue;
@@ -10,7 +8,6 @@ impl SurrealType for rust_decimal::Decimal {
     type Target = SurrealTypeDecimalMarker;
 
     fn to_cbor(&self) -> CborValue {
-        // SurrealDB uses Tag 10 for decimal strings
         CborValue::Tag(10, Box::new(CborValue::Text(self.to_string())))
     }
 
@@ -28,5 +25,3 @@ impl SurrealType for rust_decimal::Decimal {
         }
     }
 }
-
-// Only rust_decimal::Decimal is supported - no custom decimal types

@@ -52,11 +52,10 @@ pub(super) fn build_surreal_table(
         .with_spec_references(spec, resolver, build_surreal_table)?
         .with_contained_specs(&spec.contained, build_column)?;
 
-    // A dotted spec column (`batch.name`) is an implicit reference — route it
-    // through `with_active_columns` so it becomes a validated traversal import.
-    // Left as a literal column it would project a single-escaped ⟨batch.name⟩
-    // field lookup: a dead column that renders NONE in every row. The active
-    // set must then name every column, so pass the full declared set.
+    // A dotted column (`batch.name`) is an implicit reference, imported
+    // through `with_active_columns`; as a plain column it would read one
+    // ⟨batch.name⟩ field that doesn't exist. The active set must name every
+    // column.
     let table = if spec.columns.keys().any(|n| n.contains('.')) {
         let names: Vec<String> = table.columns().keys().cloned().collect();
         let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
@@ -67,9 +66,8 @@ pub(super) fn build_surreal_table(
     Ok(table)
 }
 
-/// Lower a column's `expr:` script into a server-side computed column via
-/// `Table::with_expression` — the select then projects `(<expr>) AS <name>`
-/// instead of the bare field.
+/// Lower a column's `expr:` script into a server-side computed column,
+/// projected as `(<expr>) AS <name>`.
 #[cfg(feature = "rhai")]
 fn add_expr_column(
     table: Table<SurrealDB, EmptyEntity>,
@@ -115,10 +113,9 @@ fn table_from_rhai(
     ))
 }
 
-/// Build a derived table: resolve `base_name` eagerly via the resolver, build
-/// the base table, optionally transform its `select()` through a `rhai:` script
-/// (transform mode — `base` is seeded into the engine scope), and inherit the
-/// listed columns/relations (see `Table::derive_from_spec`).
+/// A derived table: build `base_name` through the resolver, transform its
+/// `select()` by the `rhai:` script if there is one, and inherit the listed
+/// columns and relations.
 fn build_derived_table(
     spec: &SurrealVistaSpec,
     base_name: &str,

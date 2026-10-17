@@ -1,12 +1,9 @@
-//! SurrealDB Type System for Vantage Framework
-//!
-//! This module provides a SurrealDB-specific type system using the vantage-types framework.
-//! It defines the core SurrealType trait and AnySurrealType for type-erased operations.
+//! The SurrealDB type system: the `SurrealType` trait over CBOR values and
+//! the type-erased `AnySurrealType`.
 
 use vantage_core::VantageError;
 use vantage_types::{Record, TerminalRender, vantage_type_system};
 
-// Generate the SurrealDB type system
 vantage_type_system! {
     type_trait: SurrealType,
     method_name: cbor,
@@ -53,9 +50,8 @@ vantage_type_system! {
     ]
 }
 
-// Override the macro-generated variant detection with SurrealDB-specific logic
 impl SurrealTypeVariants {
-    /// Detect the SurrealDB type from a CBOR value
+    /// The SurrealDB type of a CBOR value, reading SurrealDB's CBOR tags.
     pub fn from_cbor(value: &ciborium::Value) -> Option<Self> {
         use ciborium::Value::*;
 
@@ -141,7 +137,6 @@ impl SurrealTypeVariants {
     }
 }
 
-// Type implementations are organized in separate modules
 mod bool;
 mod datetime;
 mod decimal;
@@ -149,22 +144,6 @@ mod generic;
 mod numbers;
 mod string;
 mod value;
-
-// Re-export the implementations
-// pub use bool::*;
-// pub use decimal::*;
-// pub use numbers::*;
-// pub use string::*;
-
-// // Blanket From implementation for any type that implements SurrealType
-// impl<T> From<T> for AnySurrealType
-// where
-//     T: SurrealType,
-// {
-//     fn from(value: T) -> Self {
-//         AnySurrealType::new(value)
-//     }
-// }
 
 impl std::fmt::Display for AnySurrealType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -323,16 +302,5 @@ impl TryFrom<AnySurrealType> for Record<AnySurrealType> {
                 Ok((key, val))
             })
             .collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_any_surreal_type_display() {
-        let bool_val = AnySurrealType::from_cbor(&ciborium::Value::Bool(true)).unwrap();
-        assert_eq!(format!("{}", bool_val), "true");
     }
 }

@@ -107,30 +107,6 @@ async fn query05_client_orders() {
     assert_eq!(rows.len(), 1); // Marty has 1 order
 }
 
-#[tokio::test]
-async fn query05_doc_orders() {
-    let db = v1_db().await;
-
-    let select = SurrealSelect::new().from(Thing::new("client", "doc").rref("placed", "order"));
-
-    let rows = select.get(&db).await.unwrap();
-    assert_eq!(rows.len(), 2); // Doc has 2 orders
-}
-
-// ── Query 06: same as 01 (graph products, non-deleted) ──────────────────
-
-#[tokio::test]
-async fn query06_bakery_products_not_deleted() {
-    let db = v1_db().await;
-
-    let select = SurrealSelect::new()
-        .from(Thing::new("bakery", "hill_valley").rref("owns", "product"))
-        .with_where(surreal_expr!("is_deleted = {}", false));
-
-    let rows = select.get(&db).await.unwrap();
-    assert_eq!(rows.len(), 5);
-}
-
 // ── Query 10: reverse graph in WHERE clause ─────────────────────────────
 
 #[tokio::test]

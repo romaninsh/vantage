@@ -20,7 +20,6 @@ impl Expressive<AnySurrealType> for SurrealInsert {
             return crate::surreal_expr!("CREATE {}", (target));
         }
 
-        // Build "key1 = {}, key2 = {}" with field values as scalar params
         let keys: Vec<&String> = self.fields.keys().collect();
         let placeholders: Vec<String> = keys
             .iter()

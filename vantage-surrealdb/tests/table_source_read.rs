@@ -1,4 +1,4 @@
-use bakery_model3::{Bakery, Client, Order, Product, SurrealConnection, SurrealDB};
+use bakery_model3::{Client, Product, SurrealConnection, SurrealDB};
 use surreal_client::SurrealMockBuilder;
 use vantage_expressions::Expressive;
 use vantage_surrealdb::SurrealTableExt;
@@ -20,18 +20,6 @@ async fn get_db() -> SurrealDB {
 }
 
 // -- Query generation tests --
-
-#[tokio::test]
-async fn test_build_select_basic() {
-    let db = get_db().await;
-    let table = Product::surreal_table(db);
-
-    let select = table.select();
-    assert_eq!(
-        select.preview(),
-        "SELECT id, name, calories, price, is_deleted, sticker, bakery, inventory FROM product"
-    );
-}
 
 #[tokio::test]
 async fn test_build_select_with_condition() {
@@ -164,28 +152,12 @@ async fn test_get_count_products() {
 }
 
 #[tokio::test]
-async fn test_get_count_clients() {
-    let db = get_db().await;
-    let table = Client::surreal_table(db.clone());
-    let count = db.get_table_count(&table).await.unwrap();
-    assert_eq!(count, 3);
-}
-
-#[tokio::test]
 async fn test_get_count_with_condition() {
     let db = get_db().await;
     let table = Client::surreal_table(db.clone())
         .with_condition(surreal_expr!("is_paying_client = {}", true));
     let count = db.get_table_count(&table).await.unwrap();
     assert_eq!(count, 2);
-}
-
-#[tokio::test]
-async fn test_get_count_orders() {
-    let db = get_db().await;
-    let table = Order::surreal_table(db.clone());
-    let count = db.get_table_count(&table).await.unwrap();
-    assert_eq!(count, 3);
 }
 
 // -- Aggregation tests (prices: 120, 135, 220, 299, 199) --
@@ -229,21 +201,6 @@ async fn test_get_sum_with_condition() {
 }
 
 // -- list_table_values tests --
-
-#[tokio::test]
-async fn test_list_table_values_bakery() {
-    let db = get_db().await;
-    let table = Bakery::surreal_table(db.clone());
-
-    let values = table.data_source().list_table_values(&table).await.unwrap();
-    assert_eq!(values.len(), 1);
-
-    let hill_valley_id = Thing::new("bakery", "hill_valley");
-    let record = &values[&hill_valley_id];
-    let bakery = Bakery::from_record(record.clone()).unwrap();
-    assert_eq!(bakery.name, "Hill Valley Bakery");
-    assert_eq!(bakery.profit_margin, 15);
-}
 
 #[tokio::test]
 async fn test_list_table_values_products() {
@@ -297,23 +254,6 @@ async fn test_get_table_value_product() {
     assert_eq!(product.price, 135);
 }
 
-#[tokio::test]
-async fn test_get_table_value_client() {
-    let db = get_db().await;
-    let table = Client::surreal_table(db.clone());
-
-    let id = Thing::new("client", "doc");
-    let record = db
-        .get_table_value(&table, &id)
-        .await
-        .unwrap()
-        .expect("client exists");
-    let client = Client::from_record(record).unwrap();
-    assert_eq!(client.name, "Doc Brown");
-    assert_eq!(client.email, "doc@brown.com");
-    assert!(client.is_paying_client);
-}
-
 // -- get_table_some_value tests --
 
 #[tokio::test]
@@ -327,6 +267,27 @@ async fn test_get_table_some_value_product() {
     let product = Product::from_record(record).unwrap();
     assert!(!product.name.is_empty());
     assert!(product.price > 0);
+}
+
+/// `with_id` narrows the table to the one row with that id.
+#[tokio::test]
+async fn test_with_id_narrows_to_one_row() {
+    let db = get_db().await;
+    let table = Product::surreal_table(db.clone())
+        .with_id(AnySurrealType::new(Thing::new("product", "flux_cupcake")))
+        .unwrap();
+
+    assert_eq!(db.get_table_count(&table).await.unwrap(), 1);
+    let (id, record) = db
+        .get_table_some_value(&table)
+        .await
+        .unwrap()
+        .expect("the narrowed row");
+    assert_eq!(id, Thing::new("product", "flux_cupcake"));
+    assert_eq!(
+        Product::from_record(record).unwrap().name,
+        "Flux Capacitor Cupcake"
+    );
 }
 
 #[tokio::test]

@@ -1,16 +1,10 @@
-//! # SurrealDB Select Fields
-//!
-//! doc wip
+//! Fields of a SELECT's projection.
 
 use vantage_expressions::Expressive;
 
 use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
 
-/// Represents a field in a SELECT clause
-///
-/// doc wip
-///
-/// # Examples
+/// One projected expression, optionally `AS alias` and optionally `VALUE`.
 ///
 /// ```rust
 /// use vantage_surrealdb::{select::select_field::SelectField, surreal_expr};
@@ -23,17 +17,10 @@ use crate::{AnySurrealType, Expr, identifier::Identifier, surreal_expr};
 pub struct SelectField {
     expression: Expr,
     alias: Option<String>,
-    is_value: bool, // For VALUE clause
+    is_value: bool,
 }
 
 impl SelectField {
-    /// Creates a new select field
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `expression` - doc wip
     pub fn new(expression: impl Expressive<AnySurrealType>) -> Self {
         Self {
             expression: expression.expr(),
@@ -42,21 +29,13 @@ impl SelectField {
         }
     }
 
-    /// Adds an alias to the field
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `alias` - doc wip
+    /// Render as `expr AS alias`, the alias escaped.
     pub fn with_alias(mut self, alias: String) -> Self {
         self.alias = Some(alias);
         self
     }
 
-    /// Marks field as a VALUE expression
-    ///
-    /// doc wip
+    /// Render with a leading `VALUE`.
     pub fn as_value(mut self) -> Self {
         self.is_value = true;
         self

@@ -1,17 +1,12 @@
-//! # SurrealDB Query Targets
-//!
-//! doc wip
+//! Targets of a SELECT's `FROM` clause.
 
 use crate::surreal_expr;
 use crate::{AnySurrealType, Expr, identifier::Identifier};
 use vantage_core::IntoVec;
 use vantage_expressions::{Expressive, ExpressiveEnum, traits::selectable::SourceRef};
 
-/// Represents a target in a FROM clause
-///
-/// doc wip
-///
-/// # Examples
+/// One `FROM` target. A name becomes an escaped identifier; a nested
+/// expression, such as a subquery, is wrapped in parentheses.
 ///
 /// ```rust
 /// use vantage_surrealdb::{statements::select::select_target::SelectTarget, surreal_expr};
@@ -25,13 +20,6 @@ pub struct SelectTarget {
 }
 
 impl SelectTarget {
-    /// Creates a new query target
-    ///
-    /// doc wip
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - doc wip
     pub fn new(target: impl Into<Expr>) -> Self {
         Self {
             target: target.into(),
@@ -86,8 +74,6 @@ impl From<SourceRef<AnySurrealType>> for SelectTarget {
         Self::new(expr)
     }
 }
-
-// IntoVec<Target> impls for single items
 
 impl IntoVec<SelectTarget> for SelectTarget {
     fn into_vec(self) -> Vec<SelectTarget> {

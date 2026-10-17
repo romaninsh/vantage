@@ -1,6 +1,4 @@
-//! String type implementations for SurrealDB
-//!
-//! This module provides implementations of the SurrealType trait for string types.
+//! `SurrealType` for strings and `char`.
 
 use crate::types::{SurrealType, SurrealTypeStringMarker};
 use ciborium::Value as CborValue;
@@ -28,7 +26,7 @@ impl SurrealType for &'static str {
     }
 
     fn from_cbor(_cbor: CborValue) -> Option<Self> {
-        // Cannot safely convert arbitrary strings to static strings
+        // A decoded string can't be borrowed for 'static.
         None
     }
 }

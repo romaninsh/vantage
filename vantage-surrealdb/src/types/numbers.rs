@@ -1,6 +1,4 @@
-//! Numeric type implementations for SurrealDB
-//!
-//! This module provides implementations of the SurrealType trait for all standard Rust numeric types.
+//! `SurrealType` for Rust's integer and float types.
 
 use crate::types::{SurrealType, SurrealTypeFloatMarker, SurrealTypeIntMarker};
 use ciborium::Value as CborValue;

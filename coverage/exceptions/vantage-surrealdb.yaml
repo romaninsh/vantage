@@ -1,0 +1,12 @@
+# @llm-protected: approved test exceptions. Add entries only with coverage/vend-exception.sh.
+#
+# Each entry keeps one test out of the matrix's deletion candidates. The token signs the
+# package (this file's name), the test and the reason: edit either and the entry stops counting.
+
+- test: 6_vista::query_sourced::args_reach_a_rhai_source_and_bind_as_parameters
+  reason: 'named by the book: docs4/src/rhai/query-tables.md:86 tests its example with it'
+  token: 921a2855-0f54c2b7d234
+
+- test: 6_vista::query_sourced::modify_with_condition_narrows_a_writable_table
+  reason: 'named by the book: docs4/src/rhai/surfaces.md:137 tests its example with it'
+  token: d72ef8f2-fa7e947108d4

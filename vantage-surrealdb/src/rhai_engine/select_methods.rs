@@ -7,8 +7,6 @@ use vantage_rhai::rhai;
 
 use super::{RhaiExpr, RhaiIdent, RhaiSelect};
 
-// ── Generic helpers ────────────────────────────────────────────────────
-
 pub fn select_new() -> RhaiSelect {
     RhaiSelect::new()
 }
@@ -33,11 +31,8 @@ pub fn select_field(mut s: RhaiSelect, name: &str) -> RhaiSelect {
     s
 }
 
-/// Drop every field collected so far. In transform mode the seeded `base`
-/// carries all of the base vista's fields; aggregations call this first so the
-/// projection is rebuilt from scratch (the grouping key plus the aggregate
-/// expression) rather than inheriting the base's bare columns alongside a
-/// `GROUP BY`.
+/// Drop every field collected so far, e.g. the base vista's columns before an
+/// aggregate rebuilds the projection around a `GROUP BY`.
 pub fn select_clear_fields(mut s: RhaiSelect) -> RhaiSelect {
     s.inner.fields.clear();
     s
@@ -111,7 +106,7 @@ pub fn select_split_id(mut s: RhaiSelect, id: RhaiIdent) -> RhaiSelect {
     s
 }
 
-/// SurrealDB: LIMIT n START s
+/// `LIMIT n START s`; a `start` of 0 adds no `START`.
 pub fn select_limit(mut s: RhaiSelect, limit: i64, start: i64) -> RhaiSelect {
     s.inner = s.inner.with_limit(limit);
     if start > 0 {
@@ -134,9 +129,8 @@ pub fn select_value(mut s: RhaiSelect) -> RhaiSelect {
     s
 }
 
-/// Use the select as a scalar subquery expression: `(SELECT …)`. Bridges
-/// `RhaiSelect → RhaiExpr` (wrapping in parens) so the result composes with the
-/// `[n]` indexer, `.alias()`, comparisons, and `from()`.
+/// The select as a scalar subquery, `(SELECT …)`, which composes with the
+/// `[n]` indexer, `.alias()`, comparisons and `from()`.
 pub fn select_subquery(s: RhaiSelect) -> RhaiExpr {
     RhaiExpr(crate::primitives::subquery(s.inner))
 }

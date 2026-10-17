@@ -38,7 +38,6 @@ pub fn make_rhai_ident(name: &str) -> RhaiIdent {
 }
 
 pub fn ident_dot(id: Identifier, field: &str) -> RhaiIdent {
-    // SurrealDB dot notation: table.field
     RhaiIdent(Identifier::new(format!(
         "{}.{}",
         id.expr().preview(),
@@ -199,9 +198,8 @@ pub fn fn_div(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::
 
 // ── Record ID constructor ──────────────────────────────────────────────
 
-/// `type::record(table, id)` → a Record ID reference (SurrealDB 3 renamed
-/// `type::thing`). Both parts are bound as query parameters, never written
-/// into the query text.
+/// `type::record(table, id)` → a record id (SurrealDB 3's name for
+/// `type::thing`). Both parts bind as parameters, never into the query text.
 pub fn fn_thing(table: &str, id: &str) -> RhaiExpr {
     RhaiExpr(Expression::new(
         "type::record({}, {})",
@@ -214,10 +212,8 @@ pub fn fn_thing(table: &str, id: &str) -> RhaiExpr {
 
 // ── Parameters: param(name) → $name ─────────────────────────────────────
 
-/// `param("parent")` → `$parent`. Covers any SurrealDB `$`-parameter
-/// (`$parent`, `$this`, `$value`, …) or a `LET`-bound name — "parameter" is
-/// SurrealDB's own term for `$`-prefixed names. (Rhai reserves `var`, so this
-/// is named `param`.) The string `[...]` indexer adds the field tail:
+/// `param("parent")` → `$parent`: any SurrealDB `$`-parameter or `LET`-bound
+/// name (Rhai reserves `var`). The string indexer adds a field tail:
 /// `param("parent")["id"]` → `$parent.id`.
 pub fn fn_param(name: &str) -> RhaiExpr {
     RhaiExpr(crate::variable::Variable::new(name).expr())
@@ -266,7 +262,7 @@ pub fn fn_type_int(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResu
     ))
 }
 
-// ── Tier 1 shared-vocabulary primitives (same names as vantage-sql) ─────
+// ── Shared vocabulary (same names as vantage-sql) ───────────────────────
 
 /// `count(expr)` → `count(expr)` (arg overload of the zero-arg `count()`).
 pub fn fn_count_of(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
@@ -293,7 +289,7 @@ pub fn fn_round_to(arg: rhai::Dynamic, places: i64) -> Result<RhaiExpr, Box<rhai
     Ok(RhaiExpr(primitives::round_to(unwrap_expr(arg)?, places)))
 }
 
-// ── Tier 2 scalar/collection functions ──────────────────────────────────
+// ── Scalar and collection functions ─────────────────────────────────────
 
 /// `first(expr)` → `array::first(expr)`.
 pub fn fn_first(arg: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
@@ -392,14 +388,10 @@ fn dyn_is_anchor(d: &rhai::Dynamic) -> bool {
     d.is::<RhaiExpr>() || d.is::<RhaiIdent>()
 }
 
-/// `surreal::graph(surreal::me, "edge", "table", …)` builds a graph-traversal
-/// path. Exactly one argument is the *anchor* — `surreal::me` (the current
-/// record) or a nested `surreal::graph(…)`; every other argument is an
-/// edge/table name. The anchor's position sets the direction: anchor on the
-/// **left** walks outward (`->edge->table`), anchor on the **right** walks
-/// inward (`table<-edge<-…`). Nesting changes direction per hop, so
-/// `graph("client", "placed", graph(me, "placed", "order"))` (each call and
-/// `me` qualified with `surreal::`) renders `->placed->order<-placed<-client`.
+/// `surreal::graph(surreal::me, "edge", "table", …)`: a graph path. Exactly
+/// one argument, first or last, is the anchor (`surreal::me` or a nested
+/// `graph`); the rest are edge/table names. Anchor first walks outward
+/// (`->edge->table`), anchor last walks inward (`<-edge<-table`).
 pub fn graph_impl(args: Vec<rhai::Dynamic>) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     let n = args.len();
     let mut anchor_idx = None;
@@ -516,14 +508,10 @@ pub fn fn_recurse(
     Ok(RhaiExpr(primitives::recurse(unwrap_expr(path)?, min, max)))
 }
 
-// ── Tier 3: embedded-array closures via native `|params| body` ──────────
+// ── Embedded-array closures ─────────────────────────────────────────────
 //
-// `.map`/`.fold`/`.filter` take a *native Rhai closure* and run it
-// symbolically: each parameter is bound to a placeholder `$name` expression,
-// so the body's operators/indexers build SurrealQL instead of computing. The
-// returned value (an `Ex`, or a `#{…}` / `[…]` literal) is lowered by
-// `to_expr`. The emitted `$name` is engine-chosen, not the script's parameter
-// name (Rhai locals can't carry the `$`).
+// The native closure runs once over `$name` placeholders, so its body builds
+// SurrealQL. The names are engine-chosen: Rhai locals can't carry a `$`.
 
 /// `expr.map(|item| body)` → `{expr}.map(|$value| {body})`.
 pub fn fn_map(
@@ -596,16 +584,4 @@ pub fn fn_case_else(
 
 pub fn fn_case_expr(c: RhaiCase) -> RhaiExpr {
     RhaiExpr(c.0.expr())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::fn_thing;
-
-    #[test]
-    fn thing_binds_table_and_id_as_parameters() {
-        let expr = fn_thing("order", "x\") OR true OR (\"").0;
-        assert_eq!(expr.template, "type::record({}, {})");
-        assert_eq!(expr.parameters.len(), 2);
-    }
 }

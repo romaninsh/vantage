@@ -1,10 +1,6 @@
-//! `SurrealVistaFactory` — typed-table and YAML entry points, plus the
-//! `VistaFactory` trait impl. SurrealDB advertises reads, writes, order,
-//! search, operator filters, native conditions, windowed reads, traversal
-//! and (for real tables) LIVE subscriptions; a query-sourced vista is
-//! read-only.
+//! `SurrealVistaFactory`: the typed-table and YAML entry points and the
+//! capabilities a SurrealDB vista advertises.
 //!
-//! - this file: the factory, its entry points and capabilities;
 //! - `build`: spec → table lowering;
 //! - `columns`: spec columns and their YAML types;
 //! - `references`: table metadata, with a spec's `references:` lowered in;
@@ -15,8 +11,6 @@ mod columns;
 mod references;
 #[cfg(feature = "rhai")]
 mod scripting;
-#[cfg(test)]
-mod tests;
 
 use std::sync::Arc;
 
@@ -71,10 +65,9 @@ impl SurrealVistaFactory {
         Ok(self.wrap(table, name, metadata, false))
     }
 
-    /// Single source-construction site shared by `from_table` and
-    /// `build_from_spec`. Keeps the capability set and `Vista::new` call in one
-    /// place. A query-sourced (e.g. `rhai:` or `base:`) vista is `read_only`,
-    /// which clears the write capabilities.
+    /// The one place a vista is made, so `from_table` and `build_from_spec`
+    /// agree on capabilities. `read_only` (a `rhai:` or `base:` source)
+    /// clears the write capabilities.
     fn wrap<E>(
         &self,
         table: Table<SurrealDB, E>,
@@ -127,9 +120,7 @@ impl VistaFactory for SurrealVistaFactory {
         #[cfg_attr(not(feature = "rhai"), allow(unused_mut))]
         let mut vista = self.wrap(table, spec.name, metadata, read_only);
 
-        // Final step: a `surreal: { modify }` script tweaks the just-built vista
-        // (e.g. an expression condition YAML can't express). Runs last, so it
-        // composes with `table`/`rhai`/`base`.
+        // `modify:` runs last, so it composes with `table`/`rhai`/`base`.
         #[cfg(feature = "rhai")]
         if let Some(code) = modify {
             vista = self.apply_modify(vista, &code)?;

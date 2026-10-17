@@ -3,17 +3,21 @@
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
-#[cfg(feature = "rhai")]
 use vantage_expressions::ExprDataSource;
-#[cfg(feature = "rhai")]
 use vantage_surrealdb::surreal_expr;
 #[cfg(feature = "rhai")]
 use vantage_types::Record;
-#[cfg(feature = "rhai")]
-use vantage_vista::VistaFactory;
-use vantage_vista::{Capability, FilterOp, SortDirection};
+use vantage_vista::{
+    Capability, Condition, FilterOp, SortDirection, Vista, VistaFactory, VistaQuery,
+};
 
 use super::{TestResult, name_of, product_table, seed_row, setup};
+
+async fn sorted_ids(vista: &Vista) -> vantage_core::Result<Vec<String>> {
+    let mut ids: Vec<String> = vista.list_values().await?.into_keys().collect();
+    ids.sort();
+    Ok(ids)
+}
 
 #[tokio::test]
 async fn vista_count_with_eq_condition() -> TestResult {
@@ -187,5 +191,130 @@ surreal:
     let mut searched = vista()?;
     searched.set_search(Some("item-2"))?;
     assert_eq!(ids(searched.list_values().await?), vec![big]);
+    Ok(())
+}
+
+/// SurrealDB evaluates `root.leaf` natively when `root` is declared: the
+/// condition walks into the object the root column holds.
+#[tokio::test]
+async fn dotted_condition_walks_into_a_declared_column() -> TestResult {
+    let (db, table_name) = setup().await;
+    for (id, city) in [("marty", "Hill Valley"), ("biff", "Courthouse")] {
+        let sql = format!("CREATE {table_name}:{id} SET address = {{ city: '{city}' }}");
+        db.execute(&surreal_expr!(&sql)).await?;
+    }
+    let yaml = format!(
+        r#"
+name: resident
+columns:
+  id: {{ type: thing, flags: [id] }}
+  address: {{}}
+surreal:
+  table: {table_name}
+"#
+    );
+    let mut vista = db.vista_factory().from_yaml(&yaml)?;
+    vista.add_condition(
+        "address.city",
+        FilterOp::Eq,
+        CborValue::Text("Hill Valley".into()),
+    )?;
+    assert_eq!(sorted_ids(&vista).await?, [format!("{table_name}:marty")]);
+    Ok(())
+}
+
+/// A dotted path whose root isn't declared is a plain error, not a refusal a
+/// caller would evaluate locally.
+#[tokio::test]
+async fn dotted_condition_on_an_undeclared_root_is_a_plain_error() -> TestResult {
+    let (db, table_name) = setup().await;
+    let mut vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    let err = vista
+        .add_condition("address.city", FilterOp::Eq, CborValue::Text("x".into()))
+        .expect_err("address is not declared");
+    assert!(!err.is_unsupported(), "{err:?}");
+    Ok(())
+}
+
+/// On the id column a record id held as text, bare or `table:key`, is
+/// re-tagged into this table's record id, element by element in an `IN` set.
+#[tokio::test]
+async fn id_condition_in_a_set_takes_ids_held_as_text() -> TestResult {
+    let (db, table_name) = setup().await;
+    for id in ["a", "b", "c"] {
+        seed_row(&db, &table_name, id, id, 1, false).await?;
+    }
+    let mut vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    vista.add_condition(
+        "id",
+        FilterOp::InSet,
+        CborValue::Array(vec![
+            CborValue::Text("a".into()),
+            CborValue::Text(format!("{table_name}:b")),
+        ]),
+    )?;
+    assert_eq!(
+        sorted_ids(&vista).await?,
+        [format!("{table_name}:a"), format!("{table_name}:b")]
+    );
+    Ok(())
+}
+
+/// A `table:key` text is re-tagged into a record id on a record-link column
+/// (typed `thing`, or read by one of the table's has-one references); any
+/// other column compares text as text.
+#[tokio::test]
+async fn record_id_text_is_retagged_only_on_record_link_columns() -> TestResult {
+    let (db, table_name) = setup().await;
+    for (id, bakery) in [("marty", "hv"), ("biff", "tp")] {
+        let sql = format!(
+            "CREATE {table_name}:{id} SET bakery = bakery:{bakery}, owner = bakery:{bakery}, label = 'bakery:{bakery}'"
+        );
+        db.execute(&surreal_expr!(&sql)).await?;
+    }
+    let yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: thing, flags: [id] }}
+  bakery: {{ type: thing }}
+  owner: {{ type: string, references: bakery }}
+  label: {{ type: string }}
+surreal:
+  table: {table_name}
+"#
+    );
+    for column in ["bakery", "owner", "label"] {
+        let mut vista = db.vista_factory().from_yaml(&yaml)?;
+        vista.add_condition(column, FilterOp::Eq, CborValue::Text("bakery:hv".into()))?;
+        assert_eq!(
+            sorted_ids(&vista).await?,
+            [format!("{table_name}:marty")],
+            "condition on {column}"
+        );
+    }
+    Ok(())
+}
+
+/// SurrealDB has no `NOT IN` combinator here, so the clause is refused as
+/// unsupported and handed back for the caller to evaluate locally.
+#[tokio::test]
+async fn not_in_set_is_handed_back_for_local_evaluation() -> TestResult {
+    let (db, table_name) = setup().await;
+    let vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    let condition = Condition::new(
+        "name",
+        FilterOp::NotInSet,
+        CborValue::Array(vec![CborValue::Text("A".into())]),
+    );
+    let query = VistaQuery::new().with_condition(condition.clone());
+    let (_, refused) = vista.with_query(&query)?;
+    assert_eq!(refused.conditions, [condition]);
     Ok(())
 }

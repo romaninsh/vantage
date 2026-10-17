@@ -170,8 +170,6 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        // OR across the search columns using SurrealDB's case-insensitive
-        // `string::contains` after lower-casing both sides.
         let parts: Vec<Expression<AnySurrealType>> = table
             .search_columns()
             .into_iter()
@@ -181,10 +179,8 @@ impl TableSource for SurrealDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let needle = search_value.to_lowercase();
-                // The query writes a computed column as `(<expr>) AS <name>`.
-                // The alias does not exist where the WHERE clause runs, so
-                // search the expression instead. For a usual column,
-                // `get_column_expr` gives the identifier.
+                // A computed column's alias doesn't exist where WHERE runs,
+                // so search its expression.
                 let target = table
                     .get_column_expr(col.name())
                     .unwrap_or_else(|| crate::surreal_expr!("{}", (Identifier::new(col.name()))));
@@ -195,17 +191,14 @@ impl TableSource for SurrealDB {
                 )
             })
             .collect();
-        // Add each branch with `or_`. The accumulator stays a group, and
-        // thus the branches stay flat: `(a OR b OR c)`, not
-        // `((a OR b) OR c)`. The brackets of the group keep the other
-        // conditions of the table when WHERE joins them with AND.
+        // Chaining `or_` on the group keeps it flat, `(a OR b OR c)`, and its
+        // brackets keep the table's other conditions in force.
         let mut branches = parts.into_iter();
         let Some(first) = branches.next() else {
-            // The table has no columns to search. Match no rows.
+            // No columns to search: match no rows.
             return crate::surreal_expr!("false");
         };
         let Some(second) = branches.next() else {
-            // One branch does not need a group.
             return first;
         };
         let mut group = first.or_(second);
@@ -560,7 +553,6 @@ impl TableSource for SurrealDB {
         for (key, value) in record.iter() {
             insert = insert.with_any_field(key, value.clone());
         }
-        // Append RETURN id
         let base = insert.expr();
         let query = Expression::new(format!("{} RETURN id", base.template), base.parameters);
         let result = self.execute(&query).await?;
@@ -604,11 +596,9 @@ impl TableSource for SurrealDB {
     }
 
     fn traversal_path_expr(&self, hops: &[&str], column: &str) -> Option<Expression<Self::Value>> {
-        // A SurrealQL idiom path: each segment escaped on its own, joined by
-        // literal dots so SurrealDB traverses the record links
-        // (`batch.golf_course.name`). Joining first and escaping once would
-        // instead render a single ⟨batch.golf_course.name⟩ literal field — a
-        // dead lookup, not a traversal. Multi-hop comes for free.
+        // Escape each segment on its own and join with literal dots, so
+        // SurrealDB follows the record links; escaping the joined path would
+        // name one ⟨a.b.c⟩ field that doesn't exist.
         let path = hops
             .iter()
             .copied()
