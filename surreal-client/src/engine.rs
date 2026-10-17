@@ -11,8 +11,10 @@ use crate::live::Notification;
 /// the JSON method is a default convenience that transcodes through it.
 #[async_trait]
 pub trait Engine: Send + Sync {
+    /// Send one RPC and return its result, or the server's error.
     async fn send_message_cbor(&mut self, method: &str, params: CborValue) -> Result<CborValue>;
 
+    /// [`send_message_cbor`](Self::send_message_cbor) with JSON in and out.
     async fn send_message(&mut self, method: &str, params: Value) -> Result<Value> {
         let cbor_params = crate::cbor_convert::json_to_cbor(params);
         let response = self.send_message_cbor(method, cbor_params).await?;
@@ -22,11 +24,9 @@ pub trait Engine: Send + Sync {
     /// Register interest in a live query's notifications.
     ///
     /// The caller has already issued the `live` RPC and holds the returned
-    /// query id; this hands back the receiving end of a channel the engine's
-    /// read loop pushes matching [`Notification`]s onto. Only transport engines
-    /// that can receive server-pushed frames (the WebSocket engine) implement
-    /// this — the default refuses, so request/response-only engines (mocks,
-    /// HTTP) surface an honest error.
+    /// query id; this returns a channel the engine pushes matching
+    /// [`Notification`]s onto. The default returns an error, so an engine
+    /// that can't receive server-pushed frames refuses live queries.
     async fn register_live(
         &mut self,
         _query_id: &str,

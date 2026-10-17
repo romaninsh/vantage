@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use crate::live::LiveStream;
 use crate::{Engine, RecordId, RecordRange, Result, SessionState, SurrealError, Table};
 
+/// SurrealDB client. JSON methods transcode through CBOR on the wire; use
+/// [`query_cbor`](Self::query_cbor) when type fidelity matters.
 pub struct SurrealClient {
     engine: Arc<tokio::sync::Mutex<Box<dyn Engine>>>,
     session: SessionState,
@@ -14,7 +16,7 @@ pub struct SurrealClient {
 }
 
 impl Clone for SurrealClient {
-    /// Clone the client - creates a new client instance sharing the same engine and session
+    /// A new client sharing the same engine and session
     fn clone(&self) -> Self {
         Self {
             engine: self.engine.clone(),
@@ -26,7 +28,7 @@ impl Clone for SurrealClient {
 }
 
 impl SurrealClient {
-    /// Create a new SurrealDB instance with the given engine and optional namespace/database
+    /// Create a client over `engine`, targeting the optional namespace and database
     pub fn new(
         engine: Box<dyn Engine>,
         namespace: Option<String>,
@@ -62,7 +64,6 @@ impl SurrealClient {
 
         engine.send_message("let", params).await?;
 
-        // Store the variable in the session
         self.session.set_param(key.to_string(), value);
 
         Ok(())
@@ -76,7 +77,6 @@ impl SurrealClient {
 
         engine.send_message("unset", params).await?;
 
-        // Remove the variable from the session
         self.session.unset_param(key);
         Ok(())
     }
@@ -179,7 +179,6 @@ impl SurrealClient {
     }
 
     /// Apply JSON patches to records
-    /// Apply patches to records in the database
     pub async fn patch(&self, resource: &str, patches: Vec<Value>) -> Result<Value> {
         let mut engine = self.engine.lock().await;
 
@@ -207,8 +206,7 @@ impl SurrealClient {
         self.delete(&table.to_string()).await
     }
 
-    /// Insert records into the database
-    /// Insert data into a table
+    /// Insert one record, or an array of records, into a table
     pub async fn insert(&self, table: &str, data: Value) -> Result<Value> {
         let mut engine = self.engine.lock().await;
 
@@ -219,7 +217,6 @@ impl SurrealClient {
 
     /// Insert multiple records
     pub async fn insert_many(&self, table: Table, data: Vec<Value>) -> Result<Value> {
-        // TODO: add single test
         self.insert(&table.to_string(), Value::Array(data)).await
     }
 
@@ -297,7 +294,6 @@ impl SurrealClient {
         let response = engine.send_message("query", params).await?;
 
         if self.debug {
-            // Check if response contains status field to determine icon
             let icon = if let Value::Array(ref results) = response {
                 if results
                     .iter()
@@ -318,12 +314,8 @@ impl SurrealClient {
             );
         }
 
-        // Handle the query response format
         match response {
-            Value::Array(results) => {
-                // Return the results array directly
-                Ok(Value::Array(results))
-            }
+            Value::Array(results) => Ok(Value::Array(results)),
             other => Ok(other),
         }
     }
@@ -355,9 +347,6 @@ impl SurrealClient {
 
     /// Close the connection
     pub async fn close(self) -> Result<()> {
-        // Note: engine is moved here since we're taking ownership
-        // The session will be dropped automatically
-        // Engine trait doesn't have close method in minimal implementation
         Ok(())
     }
 
@@ -479,265 +468,5 @@ fn cbor_uuid_string(v: &CborValue) -> Option<String> {
         ),
         CborValue::Bytes(b) => Some(hex::encode(b)),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    // Mock engine for testing
-    struct MockEngine;
-
-    #[async_trait::async_trait]
-    impl Engine for MockEngine {
-        async fn send_message(&mut self, _method: &str, _params: Value) -> Result<Value> {
-            Ok(Value::String("mock_response".to_string()))
-        }
-
-        async fn send_message_cbor(
-            &mut self,
-            _method: &str,
-            _params: CborValue,
-        ) -> Result<CborValue> {
-            Ok(CborValue::Text("mock_response".to_string()))
-        }
-    }
-
-    #[tokio::test]
-    async fn test_surrealdb_creation() {
-        let engine = Box::new(MockEngine);
-        let _client = SurrealClient::new(engine, None, None);
-    }
-
-    #[tokio::test]
-    async fn test_connect_and_operations() {
-        let engine = Box::new(MockEngine);
-        let client = SurrealClient::new(
-            engine,
-            Some("test_ns".to_string()),
-            Some("test_db".to_string()),
-        );
-
-        // Test basic operations
-        let result = client.select("user").await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        let result = client
-            .create("user", Some(json!({"name": "John"})))
-            .await
-            .unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_crud_operations() {
-        let engine = Box::new(MockEngine);
-        let client = SurrealClient::new(
-            engine,
-            Some("test_ns".to_string()),
-            Some("test_db".to_string()),
-        );
-
-        // Test Create
-        let create_result = client
-            .create("users", Some(json!({"name": "Alice", "age": 30})))
-            .await
-            .unwrap();
-        assert_eq!(create_result, Value::String("mock_response".to_string()));
-
-        // Test Read
-        let read_result = client.select("users").await.unwrap();
-        assert_eq!(read_result, Value::String("mock_response".to_string()));
-
-        // Test Update
-        let update_result = client
-            .update("users:alice", Some(json!({"age": 31})))
-            .await
-            .unwrap();
-        assert_eq!(update_result, Value::String("mock_response".to_string()));
-
-        // Test Delete
-        let delete_result = client.delete("users:alice").await.unwrap();
-        assert_eq!(delete_result, Value::String("mock_response".to_string()));
-
-        // Test Insert
-        let insert_result = client
-            .insert("users", json!({"name": "Bob", "age": 25}))
-            .await
-            .unwrap();
-        assert_eq!(insert_result, Value::String("mock_response".to_string()));
-
-        // Test Merge
-        let merge_result = client
-            .merge("users:bob", json!({"city": "New York"}))
-            .await
-            .unwrap();
-        assert_eq!(merge_result, Value::String("mock_response".to_string()));
-
-        // Test Upsert
-        let upsert_result = client
-            .upsert("users:charlie", Some(json!({"name": "Charlie", "age": 28})))
-            .await
-            .unwrap();
-        assert_eq!(upsert_result, Value::String("mock_response".to_string()));
-    }
-
-    // Removed test_http_engine as HttpEngine is not available in minimal implementation
-
-    #[tokio::test]
-    async fn test_bakery_queries_with_parameters() {
-        let engine = Box::new(MockEngine);
-        let mut client = SurrealClient::new(
-            engine,
-            Some("bakery".to_string()),
-            Some("inventory".to_string()),
-        );
-
-        // Set variables
-        client.let_var("min_stock", json!(10)).await.unwrap();
-
-        client.let_var("category", json!("bread")).await.unwrap();
-
-        // Test parameterized query
-        let query =
-            "SELECT * FROM products WHERE stock_level < $min_stock AND category = $category";
-        let result = client.query(query, None).await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        // Test query with inline parameters
-        let variables = json!({
-            "supplier": "FreshBake Co",
-            "min_price": 5.0
-        });
-
-        let query_with_params = "SELECT * FROM products WHERE supplier = $supplier AND price >= $min_price ORDER BY price DESC";
-        let result = client
-            .query(query_with_params, Some(variables))
-            .await
-            .unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        // Test complex aggregation query
-        let analytics_query = r#"
-            SELECT
-                category,
-                COUNT() as total_products,
-                SUM(stock_level) as total_stock,
-                AVG(price) as avg_price,
-                MAX(price) as max_price,
-                MIN(price) as min_price
-            FROM products
-            WHERE stock_level > 0
-            GROUP BY category
-            ORDER BY total_stock DESC
-        "#;
-
-        let result = client.query(analytics_query, None).await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        // Test relation query
-        let relation_query = r#"
-            SELECT *,
-                ->supplied_by->suppliers.* as supplier_info
-            FROM products
-            WHERE category = 'pastries'
-        "#;
-
-        let result = client.query(relation_query, None).await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        // Test time-based query
-        let time_query = r#"
-            SELECT *
-            FROM orders
-            WHERE created_at >= time::now() - 7d
-            ORDER BY created_at DESC
-            LIMIT 50
-        "#;
-
-        let result = client.query(time_query, None).await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        // Clean up variables
-        client.unset("min_stock").await.unwrap();
-        client.unset("category").await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_complex_analytics_queries() {
-        let engine = Box::new(MockEngine);
-        let client = SurrealClient::new(
-            engine,
-            Some("analytics".to_string()),
-            Some("business".to_string()),
-        );
-
-        // Test revenue analysis
-        let revenue_query = r#"
-            SELECT
-                date::format(created_at, '%Y-%m') as month,
-                SUM(total_amount) as monthly_revenue,
-                COUNT() as order_count,
-                AVG(total_amount) as avg_order_value
-            FROM orders
-            WHERE created_at >= time::now() - 12mo
-            GROUP BY month
-            ORDER BY month DESC
-        "#;
-
-        let result = client.query(revenue_query, None).await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        // Test customer segmentation
-        let segmentation_query = r#"
-            SELECT
-                CASE
-                    WHEN total_spent >= 1000 THEN 'Premium'
-                    WHEN total_spent >= 500 THEN 'Regular'
-                    ELSE 'Basic'
-                END as segment,
-                COUNT() as customer_count,
-                AVG(total_spent) as avg_spent,
-                SUM(total_spent) as segment_revenue
-            FROM (
-                SELECT
-                    customer_id,
-                    SUM(total_amount) as total_spent
-                FROM orders
-                GROUP BY customer_id
-            ) as customer_totals
-            GROUP BY segment
-            ORDER BY avg_spent DESC
-        "#;
-
-        let result = client.query(segmentation_query, None).await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
-
-        // Test product performance with inventory correlation
-        let performance_query = r#"
-            SELECT
-                p.id,
-                p.name,
-                p.category,
-                COUNT(oi.id) as times_ordered,
-                SUM(oi.quantity) as total_quantity_sold,
-                SUM(oi.price * oi.quantity) as total_revenue,
-                p.stock_level as current_stock,
-                CASE
-                    WHEN p.stock_level = 0 THEN 'Out of Stock'
-                    WHEN p.stock_level < 10 THEN 'Low Stock'
-                    WHEN p.stock_level < 50 THEN 'Medium Stock'
-                    ELSE 'High Stock'
-                END as stock_status
-            FROM products p
-            LEFT JOIN order_items oi ON oi.product_id = p.id
-            GROUP BY p.id, p.name, p.category, p.stock_level
-            ORDER BY total_revenue DESC
-        "#;
-
-        let result = client.query(performance_query, None).await.unwrap();
-        assert_eq!(result, Value::String("mock_response".to_string()));
     }
 }

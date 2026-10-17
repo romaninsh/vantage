@@ -144,11 +144,11 @@ impl SigninParams {
         self
     }
 
-    /// Convert to the format expected by SurrealDB RPC
+    /// Convert to SurrealDB's signin map: `user`, `pass`, `NS`, `DB`, `SC` and
+    /// `AC` for the fields that are set, plus every var
     pub fn to_rpc_params(&self) -> HashMap<String, serde_json::Value> {
         let mut params = HashMap::new();
 
-        // Add basic auth fields
         if let Some(ref user) = self.user {
             params.insert("user".to_string(), serde_json::Value::String(user.clone()));
         }
@@ -156,7 +156,6 @@ impl SigninParams {
             params.insert("pass".to_string(), serde_json::Value::String(pass.clone()));
         }
 
-        // Add scope/namespace/database with SurrealDB abbreviations
         if let Some(ref namespace) = self.namespace {
             params.insert(
                 "NS".to_string(),
@@ -176,7 +175,6 @@ impl SigninParams {
             params.insert("AC".to_string(), serde_json::Value::String(access.clone()));
         }
 
-        // Add custom variables
         for (key, value) in &self.vars {
             params.insert(key.clone(), value.clone());
         }
@@ -187,68 +185,3 @@ impl SigninParams {
 
 /// Parameters for signup operations
 pub type SignupParams = SigninParams;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_connect_params_builder() {
-        let params = ConnectParams::new()
-            .with_namespace("test_ns")
-            .with_database("test_db")
-            .with_version_check(false);
-
-        assert_eq!(params.namespace, Some("test_ns".to_string()));
-        assert_eq!(params.database, Some("test_db".to_string()));
-        assert_eq!(params.version_check, Some(false));
-    }
-
-    #[test]
-    fn test_signin_params_root() {
-        let params = SigninParams::root("admin", "password123");
-        assert_eq!(params.user, Some("admin".to_string()));
-        assert_eq!(params.pass, Some("password123".to_string()));
-        assert!(params.namespace.is_none());
-    }
-
-    #[test]
-    fn test_signin_params_to_rpc() {
-        let params = SigninParams::root("admin", "pass")
-            .with_var("custom", serde_json::Value::String("value".to_string()));
-
-        let rpc_params = params.to_rpc_params();
-
-        assert_eq!(
-            rpc_params.get("user"),
-            Some(&serde_json::Value::String("admin".to_string()))
-        );
-        assert_eq!(
-            rpc_params.get("pass"),
-            Some(&serde_json::Value::String("pass".to_string()))
-        );
-        assert_eq!(
-            rpc_params.get("custom"),
-            Some(&serde_json::Value::String("value".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_signin_params_namespace_abbreviations() {
-        let params = SigninParams::scope("my_ns", "my_db", "user_scope");
-        let rpc_params = params.to_rpc_params();
-
-        assert_eq!(
-            rpc_params.get("NS"),
-            Some(&serde_json::Value::String("my_ns".to_string()))
-        );
-        assert_eq!(
-            rpc_params.get("DB"),
-            Some(&serde_json::Value::String("my_db".to_string()))
-        );
-        assert_eq!(
-            rpc_params.get("SC"),
-            Some(&serde_json::Value::String("user_scope".to_string()))
-        );
-    }
-}

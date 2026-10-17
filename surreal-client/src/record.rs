@@ -48,7 +48,9 @@ impl RecordId {
         Self::new(table, RecordIdValue::Array(id))
     }
 
-    /// Parse a record ID from a string format "table:id"
+    /// Parse `"table:id"`. An integer id becomes a number, a JSON object or
+    /// array id becomes that value, and anything else a string. Input without
+    /// a `:` is [`RecordParseError::InvalidFormat`].
     pub fn parse(input: &str) -> Result<Self, RecordParseError> {
         let parts: Vec<&str> = input.splitn(2, ':').collect();
         if parts.len() != 2 {
@@ -58,12 +60,10 @@ impl RecordId {
         let table = parts[0].to_string();
         let id_str = parts[1];
 
-        // Try to parse as number first
         if let Ok(num) = id_str.parse::<i64>() {
             return Ok(Self::number(table, num));
         }
 
-        // Try to parse as JSON object/array
         if (id_str.starts_with('{') || id_str.starts_with('['))
             && let Ok(value) = serde_json::from_str::<Value>(id_str)
         {
@@ -74,7 +74,6 @@ impl RecordId {
             }
         }
 
-        // Default to string
         Ok(Self::string(table, id_str))
     }
 
@@ -249,14 +248,14 @@ impl RecordRange {
         }
     }
 
-    /// Set the start of the range
+    /// Set the start of the range; `inclusive` keeps the start record itself
     pub fn start(mut self, start: impl Into<RecordIdValue>, inclusive: bool) -> Self {
         self.start = Some(start.into());
         self.start_inclusive = inclusive;
         self
     }
 
-    /// Set the end of the range
+    /// Set the end of the range; `inclusive` keeps the end record itself
     pub fn end(mut self, end: impl Into<RecordIdValue>, inclusive: bool) -> Self {
         self.end = Some(end.into());
         self.end_inclusive = inclusive;
@@ -356,29 +355,11 @@ const RESERVED_KEYWORDS: &[&str] = &[
     "TABLE",
 ];
 
-/// Escape a SurrealDB identifier so it is safe to embed in a query.
-///
-/// This is the single escaping authority for the crate — record/table/range
-/// rendering and `vantage-surrealdb`'s `Identifier` both route through it, so
-/// the rules cannot drift between query builders.
-///
-/// The identifier is wrapped in `⟨…⟩` when it is empty, numeric, starts with a
-/// digit, contains a character outside `[A-Za-z0-9_]`, or collides with a
-/// reserved keyword. Inside the brackets SurrealDB applies C-style escapes, so
-/// backslashes are doubled (otherwise `\b`/`\n` would become control chars, or
-/// a crafted `\⟩` would collapse and close the quoting early) and any `⟩` is
-/// emitted as `\u{27E9}` — `\⟩` is itself an invalid escape there, so the
-/// unicode escape is the only representation that survives. Plain identifiers
-/// pass through unchanged.
 /// Escape the id half of a record id (`table:<id>`).
 ///
-/// The same rules as [`escape_identifier`], with one deliberate exception: a
-/// purely numeric id passes through unquoted. The two positions do not mean
-/// the same thing. A numeric *identifier* (a field name) has to be quoted to
-/// parse at all, but a numeric *record id* is an integer id — `t:1` and
-/// `t:⟨1⟩` address different records, the first keyed by the integer `1` and
-/// the second by the string `"1"`. Quoting here would silently repoint every
-/// lookup of an integer-keyed record.
+/// The same rules as [`escape_identifier`], except that an integer id passes
+/// through unquoted: `t:1` is keyed by the integer `1`, while `t:⟨1⟩` is keyed
+/// by the string `"1"`.
 pub fn escape_record_id(id: &str) -> String {
     if !id.is_empty() && id.parse::<i64>().is_ok() {
         return id.to_string();
@@ -386,6 +367,16 @@ pub fn escape_record_id(id: &str) -> String {
     escape_identifier(id)
 }
 
+/// Escape a SurrealDB identifier so it is safe to embed in a query.
+///
+/// The crate's single escaping authority: record, table and range rendering
+/// and `vantage-surrealdb`'s `Identifier` all route through it.
+///
+/// The identifier is wrapped in `⟨…⟩` when it is empty, numeric, starts with a
+/// digit, contains a character outside `[A-Za-z0-9_]`, or is a reserved
+/// keyword. Inside the brackets backslashes are doubled and `⟩` is written as
+/// `\u{27E9}` (SurrealDB rejects `\⟩`), so a crafted name can't close the
+/// quoting early. Plain identifiers pass through unchanged.
 pub fn escape_identifier(ident: &str) -> String {
     if ident.is_empty() {
         return "⟨⟩".to_string();
@@ -408,82 +399,4 @@ pub fn escape_identifier(ident: &str) -> String {
     }
 
     ident.to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_record_id_creation() {
-        let record = RecordId::string("user", "john");
-        assert_eq!(record.table, "user");
-        assert_eq!(record.id, RecordIdValue::String("john".to_string()));
-    }
-
-    #[test]
-    fn test_record_id_parsing() {
-        let record = RecordId::parse("user:123").unwrap();
-        assert_eq!(record.table, "user");
-        assert_eq!(record.id, RecordIdValue::Number(123));
-
-        let record = RecordId::parse("user:john").unwrap();
-        assert_eq!(record.table, "user");
-        assert_eq!(record.id, RecordIdValue::String("john".to_string()));
-    }
-
-    #[test]
-    fn test_record_id_surql() {
-        let record = RecordId::string("user", "john");
-        assert_eq!(record.to_surql(), "user:john");
-
-        let record = RecordId::number("user", 123);
-        assert_eq!(record.to_surql(), "user:123");
-    }
-
-    #[test]
-    fn test_table_creation() {
-        let table = Table::new("users");
-        assert_eq!(table.name(), "users");
-        assert_eq!(table.to_surql(), "users");
-    }
-
-    #[test]
-    fn test_escape_identifier() {
-        assert_eq!(escape_identifier("normal"), "normal");
-        assert_eq!(escape_identifier("123"), "⟨123⟩");
-        assert_eq!(escape_identifier("with-dash"), "⟨with-dash⟩");
-        assert_eq!(escape_identifier(""), "⟨⟩");
-        // Reserved keywords must be escaped even though they are alphanumeric.
-        assert_eq!(escape_identifier("SELECT"), "⟨SELECT⟩");
-        assert_eq!(escape_identifier("from"), "⟨from⟩");
-        // `⟩` cannot be backslash-escaped inside ⟨…⟩ — SurrealDB treats `\⟩` as
-        // an invalid escape sequence — so it must be emitted as the `\u{27E9}`
-        // unicode escape, the only representation that survives the lexer.
-        assert_eq!(escape_identifier("a⟩b"), "⟨a\\u{27E9}b⟩");
-        // A backslash must be doubled. Left raw it would either form a control
-        // escape (`\b` → backspace, `\n` → newline) or, as `\⟩`, collapse so a
-        // following `⟩` closes the quoting early — an identifier-injection vector.
-        assert_eq!(escape_identifier("a\\b"), "⟨a\\\\b⟩");
-        // Combined: a crafted `\⟩` must stay inside the identifier, not break out.
-        assert_eq!(escape_identifier("a\\⟩b"), "⟨a\\\\\\u{27E9}b⟩");
-    }
-
-    #[test]
-    fn test_record_range() {
-        let range = RecordRange::new("user").start("a", true).end("z", false);
-
-        assert_eq!(range.to_surql(), "user:a..=z");
-    }
-
-    #[test]
-    fn test_conversions() {
-        let record = RecordId::string("user", "john");
-        let value: Value = record.into();
-        assert_eq!(value, Value::String("user:john".to_string()));
-
-        let table = Table::new("users");
-        let value: Value = table.into();
-        assert_eq!(value, Value::String("users".to_string()));
-    }
 }

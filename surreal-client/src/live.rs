@@ -1,11 +1,8 @@
 //! Live-query notifications.
 //!
-//! SurrealDB pushes a change frame over the same WebSocket for every row a
-//! `LIVE SELECT` matches. Those frames are *not* replies to a request — they
-//! arrive unsolicited, tagged with the live-query id the server returned from
-//! the `live` RPC. The engine's read loop demultiplexes them from ordinary
-//! responses and forwards each as a [`Notification`] onto a channel that backs
-//! a [`LiveStream`].
+//! SurrealDB pushes change frames, tagged with the live-query id, over the same
+//! WebSocket as replies. The engine's read loop sorts them out and forwards each
+//! as a [`Notification`] to the matching [`LiveStream`].
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -116,68 +113,5 @@ impl Stream for LiveStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.rx.poll_recv(cx)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::SurrealMockBuilder;
-    use serde_json::json;
-
-    const QID: &str = "11111111-2222-3333-4444-555555555555";
-
-    fn mock() -> (crate::SurrealClient, crate::mocks::CallLog) {
-        let builder = SurrealMockBuilder::new()
-            .with_exact_response("live", json!(["t"]), json!(QID))
-            .with_exact_response("kill", json!([QID]), json!(null));
-        let calls = builder.call_log();
-        (builder.build(), calls)
-    }
-
-    fn kills(calls: &crate::mocks::CallLog) -> usize {
-        calls
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|m| *m == "kill")
-            .count()
-    }
-
-    async fn settle() {
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
-    }
-
-    #[tokio::test]
-    async fn drop_sends_kill() {
-        let (client, calls) = mock();
-        let stream = client.live("t").await.unwrap();
-        assert_eq!(stream.query_id(), QID);
-        assert_eq!(kills(&calls), 0);
-
-        drop(stream);
-        settle().await;
-        assert_eq!(kills(&calls), 1);
-    }
-
-    #[tokio::test]
-    async fn close_sends_kill_once() {
-        let (client, calls) = mock();
-        let stream = client.live("t").await.unwrap();
-
-        stream.close().await.unwrap();
-        settle().await;
-        assert_eq!(kills(&calls), 1);
-    }
-
-    #[test]
-    fn drop_outside_runtime_does_not_panic() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let (client, calls) = mock();
-        let stream = rt.block_on(client.live("t")).unwrap();
-
-        drop(stream);
-        assert_eq!(kills(&calls), 0);
     }
 }

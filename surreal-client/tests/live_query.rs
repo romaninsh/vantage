@@ -7,7 +7,9 @@
 //! Run: `cargo test --test live_query`
 
 use futures::StreamExt;
-use surreal_client::{Action, SurrealConnection};
+use serde_json::json;
+use surreal_client::mocks::CallLog;
+use surreal_client::{Action, SurrealConnection, SurrealMockBuilder};
 
 const DB_URL: &str = "ws://localhost:8000";
 
@@ -86,6 +88,135 @@ async fn live_notification_carries_the_record() {
 
     let qid = stream.query_id().to_string();
     db.kill(&qid).await.expect("kill");
+}
+
+#[tokio::test]
+async fn delete_notification_carries_the_record_id() {
+    let db = client("live_delete").await;
+    db.query("DEFINE TABLE gadget SCHEMALESS; DELETE gadget", None)
+        .await
+        .expect("define + clear");
+    db.query("CREATE gadget:one SET label = 'x'", None)
+        .await
+        .expect("create");
+
+    let mut stream = db.live("gadget").await.expect("live");
+    db.query("DELETE gadget:one", None).await.expect("delete");
+
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), stream.recv())
+        .await
+        .expect("timed out waiting for a live notification")
+        .expect("live stream closed unexpectedly");
+    assert_eq!(n.action, Action::Delete);
+    assert_eq!(n.query_id, stream.query_id());
+    assert_eq!(
+        n.record_id,
+        ciborium::Value::Tag(
+            8,
+            Box::new(ciborium::Value::Array(vec![
+                ciborium::Value::Text("gadget".into()),
+                ciborium::Value::Text("one".into()),
+            ]))
+        )
+    );
+
+    stream.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn killed_live_query_delivers_no_further_notifications() {
+    let db = client("live_kill").await;
+    db.query("DEFINE TABLE gizmo SCHEMALESS; DELETE gizmo", None)
+        .await
+        .expect("define + clear");
+
+    let mut stream = db.live("gizmo").await.expect("live");
+    let qid = stream.query_id().to_string();
+    db.kill(&qid).await.expect("kill");
+
+    db.query("CREATE gizmo:one SET label = 'late'", None)
+        .await
+        .expect("create");
+    let after_kill =
+        tokio::time::timeout(std::time::Duration::from_millis(500), stream.recv()).await;
+    assert!(
+        !matches!(after_kill, Ok(Some(_))),
+        "a killed live query must not deliver notifications"
+    );
+}
+
+#[test]
+fn action_parse_reads_change_kinds_case_insensitively() {
+    assert_eq!(Action::parse("CREATE"), Some(Action::Create));
+    assert_eq!(Action::parse("update"), Some(Action::Update));
+    assert_eq!(Action::parse("Delete"), Some(Action::Delete));
+    assert_eq!(Action::parse("KILLED"), None);
+}
+
+const MOCK_QID: &str = "11111111-2222-3333-4444-555555555555";
+
+fn mock_client() -> (surreal_client::SurrealClient, CallLog) {
+    let builder = SurrealMockBuilder::new()
+        .with_exact_response("live", json!(["t"]), json!(MOCK_QID))
+        .with_exact_response("kill", json!([MOCK_QID]), json!(null));
+    let calls = builder.call_log();
+    (builder.build(), calls)
+}
+
+fn kills(calls: &CallLog) -> usize {
+    calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| *m == "kill")
+        .count()
+}
+
+async fn let_background_tasks_run() {
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+}
+
+#[tokio::test]
+async fn live_stream_reports_the_server_query_id() {
+    let (client, _) = mock_client();
+    let stream = client.live("t").await.expect("live");
+    assert_eq!(stream.query_id(), MOCK_QID);
+    stream.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn dropping_a_live_stream_kills_the_query() {
+    let (client, calls) = mock_client();
+    let stream = client.live("t").await.expect("live");
+    assert_eq!(kills(&calls), 0);
+
+    drop(stream);
+    let_background_tasks_run().await;
+    assert_eq!(kills(&calls), 1);
+}
+
+#[tokio::test]
+async fn closing_a_live_stream_kills_the_query_once() {
+    let (client, calls) = mock_client();
+    let stream = client.live("t").await.expect("live");
+
+    stream.close().await.expect("close");
+    assert_eq!(kills(&calls), 1);
+
+    let_background_tasks_run().await;
+    assert_eq!(kills(&calls), 1);
+}
+
+#[test]
+fn dropping_a_live_stream_outside_a_runtime_sends_nothing() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let (client, calls) = mock_client();
+    let stream = rt.block_on(client.live("t")).expect("live");
+
+    drop(stream);
+    assert_eq!(kills(&calls), 0);
 }
 
 async fn next(stream: &mut surreal_client::LiveStream) -> surreal_client::Notification {
