@@ -83,6 +83,9 @@ pub(crate) async fn write_worker_loop(mut rx: mpsc::Receiver<QueuedFlash>) {
             tracing::debug!(error = %err, "Dio flash failed");
         }
         drop(pending);
+        if let Some(id) = flash.id() {
+            dio.inner.recheck_deferred(id);
+        }
         let _ = reply.send(settled);
     }
 }

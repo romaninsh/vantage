@@ -19,6 +19,8 @@ use vantage_vista::{VistaChange, VistaChangeStream};
 
 use super::admit::Admit;
 use crate::dio::{Dio, DioEvent, DioInner};
+use crate::lens::CacheStatus;
+use crate::lens::hub::TableChange;
 use crate::lens::spawn::EVENT_BUS_CAPACITY;
 use crate::ops::ChangeEvent;
 
@@ -72,16 +74,22 @@ pub(super) async fn apply_ready(
         let Some(dio) = upgrade() else {
             return (Ok(()), Some(Tail::Dropped));
         };
+        // The other Dios over the table get the change as the backend
+        // pushed it, not as this Dio's query judges it: a row leaving this
+        // Dio's set may be entering theirs. It goes out once this Dio's
+        // cache holds it, so a Dio sharing that cache reads the new row.
+        let fact = dio.inner.publishes().then(|| pushed(&dio.inner, &change));
         match admit.judge(change.into()) {
             Some(change) => errors.keep(run.apply(&dio, change).await),
             None => reread = true,
         }
+        run.facts.extend(fact);
         // A stream that stays ready doesn't hold a pending re-read back:
         // every `MAX_RUN` changes it runs, and the task yields.
         since_reread += 1;
         if reread && since_reread >= MAX_RUN {
             errors.keep(run.flush(&dio).await);
-            errors.keep(dio.apply_change(ChangeEvent::Invalidated).await);
+            errors.keep(dio.apply_local(ChangeEvent::Invalidated).await);
             (reread, since_reread) = (false, 0);
             tokio::task::yield_now().await;
         }
@@ -91,9 +99,24 @@ pub(super) async fn apply_ready(
     };
     errors.keep(run.flush(&dio).await);
     if reread {
-        errors.keep(dio.apply_change(ChangeEvent::Invalidated).await);
+        errors.keep(dio.apply_local(ChangeEvent::Invalidated).await);
     }
     (errors.into_result(), tail)
+}
+
+/// The hub fact for a change the master pushed. A delete pushed over a
+/// narrowed set may only mean the row left that set (drivers that judge
+/// their own stream report it so), so unless this Dio covers the whole
+/// table the others re-check the row rather than delete it. A pushed row
+/// has never been through a detail pass, so it is judged `Incomplete`.
+fn pushed(inner: &DioInner, change: &VistaChange) -> TableChange {
+    match change {
+        VistaChange::Inserted { id, value } | VistaChange::Updated { id, value } => {
+            inner.upserted(id, value.clone(), CacheStatus::Incomplete)
+        }
+        VistaChange::Deleted { id } => inner.vanished(id),
+        _ => TableChange::Invalidated,
+    }
 }
 
 /// The first of several errors.
@@ -120,6 +143,9 @@ type EventFor = fn(String) -> DioEvent;
 struct Run {
     rows: IndexMap<String, Record<CborValue>>,
     events: Vec<(String, EventFor)>,
+    /// Hub facts for the changes applied so far, published at the next
+    /// flush: after the cache holds them.
+    facts: Vec<TableChange>,
 }
 
 impl Run {
@@ -143,7 +169,7 @@ impl Run {
             }
             other => {
                 let flushed = self.flush(dio).await;
-                let applied = dio.apply_change(other).await;
+                let applied = dio.apply_local(other).await;
                 flushed.and(applied)
             }
         }
@@ -167,10 +193,24 @@ impl Run {
         }
     }
 
-    /// Commit the run in one transaction, then send its events and yield.
-    /// When the transaction fails, each row is written on its own and only
-    /// the rows that landed get their events; the first failure is returned.
+    /// Commit the run in one transaction, then send its events and the hub
+    /// facts waiting, and yield. When the transaction fails, each row is
+    /// written on its own and only the rows that landed get their events;
+    /// the first failure is returned. The facts go out either way: they
+    /// state what the backend holds, whatever this cache managed to store.
     async fn flush(&mut self, dio: &Dio) -> Result<()> {
+        let busy = !self.events.is_empty() || !self.facts.is_empty();
+        let written = self.write(dio).await;
+        for fact in self.facts.drain(..) {
+            dio.inner.publish(fact);
+        }
+        if busy {
+            tokio::task::yield_now().await;
+        }
+        written
+    }
+
+    async fn write(&mut self, dio: &Dio) -> Result<()> {
         if self.events.is_empty() {
             return Ok(());
         }
@@ -193,7 +233,6 @@ impl Run {
                 let _ = dio.inner.event_bus.send(event(id));
             }
         }
-        tokio::task::yield_now().await;
         errors.into_result()
     }
 }

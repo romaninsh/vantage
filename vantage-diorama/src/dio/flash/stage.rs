@@ -10,6 +10,7 @@ use vantage_types::Record;
 use super::confirmed::{confirm, roll_back};
 use crate::dio::pending::PendingFlashGuard;
 use crate::dio::{Dio, DioEvent, DioInner};
+use crate::lens::hub::TableChange;
 use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
 use seed::{merged, seed_new_row, stored_id};
 
@@ -53,6 +54,11 @@ pub(super) async fn write_row(
 ///
 /// A failed id-less write has no row to revert, so it is announced as
 /// [`DioEvent::WriteFailed`].
+///
+/// What a confirmed flash settles is published to the other Dios over the
+/// table (see [`crate::lens::hub`]). A rollback that restored a row asks
+/// them to re-check it: the restored row is never published as it is,
+/// since it may be older than what another Dio holds.
 pub(crate) async fn settle(
     dio: &Dio,
     flash: &ChangeFlash,
@@ -65,7 +71,13 @@ pub(crate) async fn settle(
     match (flash.id(), written) {
         (Some(id), Ok(outcome)) => commit(dio, flash, id, pending, pre, staged, outcome).await,
         (Some(id), Err(err)) => {
-            roll_back(inner, id, pending, pre, staged).await?;
+            if roll_back(inner, id, pending, pre, staged).await? {
+                // The restored row may be an earlier flash's confirmed value
+                // that was never published, because this flash had staged
+                // over it. The others re-read the row rather than take the
+                // restored one on trust: it may be older than theirs.
+                inner.publish(TableChange::Recheck { id: id.to_string() });
+            }
             let _ = inner.event_bus.send(DioEvent::WriteReverted {
                 id: id.to_string(),
                 error: err.to_string(),
@@ -79,6 +91,9 @@ pub(crate) async fn settle(
         (None, Ok(outcome)) => {
             inner.cache.clear().await?;
             let _ = inner.event_bus.send(DioEvent::DatasetChanged);
+            // Every row of this Dio's set went: each other Dio over the
+            // table re-reads its own.
+            inner.publish(TableChange::Invalidated);
             Ok(outcome)
         }
         (None, Err(err)) => {
@@ -148,17 +163,26 @@ async fn commit(
         let _ = inner
             .event_bus
             .send(DioEvent::RecordRemoved { id: id.to_string() });
+        // The other Dios over the table never saw the minted id, but one
+        // may have read it from the master meanwhile.
+        inner.publish(TableChange::Deleted { id: id.to_string() });
         if record.is_some() {
             let _ = inner.event_bus.send(DioEvent::RecordInserted {
                 id: settled.clone(),
             });
+            inner.publish_row(&settled).await;
         }
         return Ok(FlashOutcome {
             id: Some(settled),
             record,
         });
     }
-    if confirm(pending, flash, staged) {
+    // With a later flash on the id staged over this one, the cache shows
+    // that flash's unconfirmed value: nothing is published until it settles.
+    // Its commit publishes the row then, and its rollback, which restores
+    // this flash's value, asks the others to re-check it.
+    let confirmed = confirm(pending, flash, staged);
+    if confirmed {
         reassert_confirmed(inner, flash).await?;
     }
     let id_owned = id.to_string();
@@ -168,6 +192,19 @@ async fn commit(
         _ => DioEvent::RecordChanged { id: id_owned },
     };
     let _ = inner.event_bus.send(event);
+    match flash.kind() {
+        // A confirmed delete removed the row from the table, whatever set
+        // this Dio narrows it to.
+        FlashKind::Delete => inner.publish(TableChange::Deleted { id: id.to_string() }),
+        // Another Dio changed the row while this flash was in flight, and
+        // that change was skipped here: the cached row is current only in
+        // this flash's own fields. The others re-read it instead.
+        _ if confirmed && inner.has_deferred(id) => {
+            inner.publish(TableChange::Recheck { id: id.to_string() })
+        }
+        _ if confirmed => inner.publish_row(id).await,
+        _ => {}
+    }
     Ok(FlashOutcome {
         id: Some(id.to_string()),
         record: outcome.record,

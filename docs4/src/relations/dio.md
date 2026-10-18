@@ -137,6 +137,24 @@ assert_eq!(martys.cached().list_values().await?.len(), 1);
 # }
 ```
 
+`martys` keeps a cache table and an event bus of its own, but it isn't cut off from `dio`. Every
+Dio over the `order` table on this Lens joins the table's hub. What one of them settles (a
+confirmed flash, an `apply_change`, what a reconcile changed, a change its live follow received)
+reaches the others, and each judges it against its own conditions. Move `o1` to doc through `dio`
+and it leaves `martys`. Insert an order for marty and it shows up in `martys`. A row that only left
+a narrowed Dio's set is never taken as a delete: the others re-read it through their own masters.
+
+The hub is keyed by the master's driver and name. A layer that renames vistas, one name per
+session, passes the backend table to `DioBuilder::hub(key)` so its Dios still hear each other. An
+explicit key also names the cache table, so Dios keyed apart never share cached rows. A master
+narrowed by a rule its `query()` doesn't record (a table hook's) is built with
+`DioBuilder::recheck_facts()`, which re-reads each reported row through that master rather than
+judging it in memory.
+
+`recheck_facts` keeps nothing apart. Dios are told apart by vista name, recorded query and hub key
+only, so a hidden per-session rule needs its own vista name, a vista condition, or its own hub key.
+Without one, two sessions share a cache table and each can list the other's rows.
+
 ### The join the layers below cannot express
 
 A [`Catalog`](./vistas.md#across-datasources-the-catalog) can already *navigate* across

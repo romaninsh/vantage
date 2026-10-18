@@ -15,6 +15,7 @@ use vantage_types::Record;
 
 use crate::dio::Dio;
 use crate::lens::CacheStatus;
+use crate::lens::hub::TableChange;
 
 pub(crate) use hydrate::{hydrate_gaps, hydrate_one};
 pub(crate) use page::{ListedPage, list_page};
@@ -49,7 +50,18 @@ pub(crate) enum RefreshKind {
 /// staleness lives out-of-band in [`CacheStatus`]: `Incomplete` is what drives
 /// the detail pass, so the cell never has to blank to signal the gap. Blank is
 /// reserved for rows that were never filled.
+///
+/// What the pass changed reaches the other Dios over the table, as a
+/// reconcile's diff does: each rewritten row, and each dropped one. That
+/// takes a cache that held the whole set before the pass. Over any other
+/// (rows only some views listed), a dropped row may never have been held
+/// and a written one may only be new to this cache, so a pass that changed
+/// anything publishes `Invalidated` instead.
 pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
+    let publishes = dio.inner.publishes();
+    let diffs = publishes && dio.inner.holds_whole_copy().await;
+    let mut written = Vec::new();
+    let mut dropped = Vec::new();
     let fresh = dio.master().list_values().await?;
     let cache = &dio.inner.cache;
     let existing = cache.list_values_with_status().await?;
@@ -106,16 +118,28 @@ pub(crate) async fn refresh(dio: &Dio, kind: RefreshKind) -> Result<()> {
                     merged.insert(k.clone(), v.clone());
                 }
                 cache.insert_value_with_status(id, &merged, status).await?;
+                if publishes {
+                    written.push((id.clone(), merged, status));
+                }
             }
             None => {
                 cache.insert_value_with_status(id, list_row, status).await?;
+                if publishes {
+                    written.push((id.clone(), list_row.clone(), status));
+                }
             }
         }
     }
     for id in existing.keys() {
         if !fresh.contains_key(id) && !dio.inner.pending_flashes.contains(id) {
             cache.delete_value(id).await?;
+            dropped.push(id.clone());
         }
+    }
+    if diffs {
+        dio.inner.publish_diff(written, dropped);
+    } else if !written.is_empty() || !dropped.is_empty() {
+        dio.inner.publish(TableChange::Invalidated);
     }
     Ok(())
 }

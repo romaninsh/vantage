@@ -69,6 +69,11 @@ impl DeriveBuilder {
     /// setting, so the Lens hands two derivations of one query the same Dio.
     /// Opening that table, and running its eager start, is why this is async.
     ///
+    /// It joins the parent's table hub (see [`DioBuilder::hub`](crate::DioBuilder::hub)),
+    /// so a change either one settles reaches the other: a row the parent
+    /// moves out of the derived set leaves it, and a row the parent writes
+    /// into the set appears in it.
+    ///
     /// Fails when the master rejects a clause outright (an unknown column),
     /// and when the query holds native conditions, which can't be re-applied
     /// from a `VistaQuery` nor evaluated in memory.
@@ -96,6 +101,7 @@ impl DeriveBuilder {
             .lens
             .dio(narrowed)
             .derived(inner.augmentations.clone(), inner.live, residual)
+            .same_table_as(inner.explicit_hub.clone(), inner.recheck_facts)
             .build()
             .await
     }

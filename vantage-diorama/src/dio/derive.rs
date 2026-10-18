@@ -17,6 +17,10 @@ impl Dio {
     /// [`build`](DeriveBuilder::build); a search or order given there
     /// replaces this Dio's, whether its master or its residual held it.
     ///
+    /// The derived Dio has a cache table of its own, yet it hears what this
+    /// one settles, and this one hears it: both join the table's hub (see
+    /// [`DioBuilder::hub`](crate::DioBuilder::hub)).
+    ///
     /// ```ignore
     /// let johns = dio
     ///     .derive()

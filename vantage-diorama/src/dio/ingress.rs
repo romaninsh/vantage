@@ -10,7 +10,9 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use super::pending::SettleMark;
-use super::{Dio, DioEvent};
+use super::{Dio, DioEvent, DioInner, applying};
+use crate::lens::CacheStatus;
+use crate::lens::hub::{HUB_CAPACITY, TableChange};
 use crate::ops::ChangeEvent;
 
 impl Dio {
@@ -27,7 +29,42 @@ impl Dio {
     /// A `None` value on `Inserted`/`Updated` publishes the event without
     /// touching the cache (notify-only); push sources that carry the row (the
     /// SurrealDB LIVE path) always supply it.
+    ///
+    /// The change also reaches every other Dio over the table on this Lens,
+    /// each judging it against its own query: a row that leaves a derived
+    /// Dio's set is removed there. A notify-only change makes each of them
+    /// re-read the row, and `Invalidated` makes each re-read its set.
     pub async fn apply_change(&self, evt: ChangeEvent) -> Result<()> {
+        let inner = &self.inner;
+        let fact = match &evt {
+            ChangeEvent::Inserted { id, new: Some(row) }
+            | ChangeEvent::Updated { id, new: Some(row) } => {
+                // A row from outside, never through this Dio's detail pass.
+                inner.upserted(id, row.clone(), CacheStatus::Incomplete)
+            }
+            ChangeEvent::Inserted { id, new: None } | ChangeEvent::Updated { id, new: None } => {
+                TableChange::Recheck { id: id.clone() }
+            }
+            ChangeEvent::Deleted { id } => TableChange::Deleted { id: id.clone() },
+            ChangeEvent::Invalidated => TableChange::Invalidated,
+        };
+        if matches!(evt, ChangeEvent::Invalidated) {
+            // The others re-read their own sets; this Dio's re-read would
+            // only tell them the same again, row by row.
+            applying(self.apply_local(evt)).await?;
+        } else {
+            self.apply_local(evt).await?;
+        }
+        inner.publish(fact);
+        Ok(())
+    }
+
+    /// [`apply_change`](Self::apply_change) for this Dio alone: the cache
+    /// write and the bus event, with nothing published to the other Dios
+    /// over the table. For a change that is no news to them: a row read on
+    /// a cache miss, or a change the live follow judged against this Dio's
+    /// own query.
+    pub(crate) async fn apply_local(&self, evt: ChangeEvent) -> Result<()> {
         match evt {
             ChangeEvent::Inserted { id, new } => {
                 if let Some(record) = new {
@@ -56,7 +93,13 @@ impl Dio {
     /// - the refresh time is recorded (see
     ///   [`Refresher::max_age`](crate::Refresher::max_age)), and the cache is
     ///   recorded as a whole copy;
-    /// - one [`DatasetChanged`](DioEvent::DatasetChanged) is published.
+    /// - one [`DatasetChanged`](DioEvent::DatasetChanged) is published;
+    /// - when the cache already held a whole copy, what changed reaches
+    ///   every other Dio over the table on this Lens: a written row as its
+    ///   new value, a dropped one as a delete when this Dio's set is the
+    ///   whole table, else as a request to re-check it, since leaving a
+    ///   narrowed set says nothing about anyone else's. A first fill tells
+    ///   nobody anything.
     ///
     /// A row with a flash in flight is left to the flash, because the
     /// snapshot may predate the write and would revert the staged value.
@@ -78,8 +121,14 @@ impl Dio {
         mark: &SettleMark,
         snapshot: IndexMap<String, Record<CborValue>>,
     ) -> Result<()> {
-        let pending = &self.inner.pending_flashes;
-        let cache = &self.inner.cache;
+        let inner = &self.inner;
+        let pending = &inner.pending_flashes;
+        let cache = &inner.cache;
+        // Only a cache that already held the whole set can tell what the
+        // snapshot changed. Over any other (a first fill, a copy past its
+        // age) every row would read as news, and the other Dios over the
+        // table would be flooded with rows they already hold.
+        let diffs = inner.publishes() && inner.holds_whole_copy().await;
         let keep: HashSet<String> = snapshot.keys().cloned().collect();
         let cached = cache.list_values().await?;
         // A row the cache already holds unchanged is not rewritten.
@@ -87,12 +136,23 @@ impl Dio {
             .into_iter()
             .filter(|(id, row)| !pending.guarded_since(mark, id) && cached.get(id) != Some(row))
             .collect();
+        // A snapshot row comes from the master, never through a detail pass.
+        let written: Vec<_> = match diffs {
+            true => rows
+                .iter()
+                .map(|(id, row)| (id.clone(), row.clone(), CacheStatus::Incomplete))
+                .collect(),
+            false => Vec::new(),
+        };
         if !rows.is_empty() {
             cache.insert_values(rows).await?;
         }
-        self.inner.drop_vanished(cached.keys(), &keep, mark).await?;
-        self.inner.stamp_whole().await;
+        let dropped = inner.drop_vanished(cached.keys(), &keep, mark).await?;
+        inner.stamp_whole().await;
         self.notify_dataset_changed();
+        if diffs {
+            inner.publish_diff(written, dropped);
+        }
         Ok(())
     }
 
@@ -116,6 +176,32 @@ impl Dio {
         self.inner.cache.delete_value(&id).await?;
         let _ = self.inner.event_bus.send(DioEvent::RecordRemoved { id });
         Ok(())
+    }
+}
+
+impl DioInner {
+    /// Publish what a reconcile changed: each written row, and each dropped
+    /// one as [`vanished`](Self::vanished) names it. A diff too big for the
+    /// hub to carry comfortably goes as one `Invalidated`, so the others
+    /// re-read their sets once instead of lagging.
+    ///
+    /// Each written row carries the status it was stored under, which says
+    /// whether it holds its augmented values.
+    pub(crate) fn publish_diff(
+        &self,
+        written: Vec<(String, Record<CborValue>, CacheStatus)>,
+        dropped: Vec<String>,
+    ) {
+        if written.len() + dropped.len() > HUB_CAPACITY / 2 {
+            self.publish(TableChange::Invalidated);
+            return;
+        }
+        for (id, row, status) in written {
+            self.publish(self.upserted(&id, row, status));
+        }
+        for id in dropped {
+            self.publish(self.vanished(&id));
+        }
     }
 }
 

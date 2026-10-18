@@ -3,6 +3,7 @@ mod cache;
 pub(crate) mod cache_backend;
 pub(crate) mod callbacks;
 pub(crate) mod chunk_sink;
+pub(crate) mod hub;
 mod loader;
 mod loader_cx;
 pub(crate) mod memory_cache;
@@ -46,6 +47,11 @@ pub struct Lens {
     /// The live Dios built on this Lens, so a second build of one identity
     /// shares the first instead of starting another.
     pub(crate) dios: registry::DioRegistry,
+    /// One hub per table, over which its Dios tell each other what settled.
+    /// See [`hub`].
+    pub(crate) hubs: hub::HubRegistry,
+    /// The source of [`Lens::next_serial`].
+    pub(crate) serials: std::sync::atomic::AtomicU64,
 }
 
 impl Lens {

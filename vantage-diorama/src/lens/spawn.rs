@@ -7,10 +7,11 @@ use std::time::Duration;
 
 use tokio::sync::{Mutex, broadcast, mpsc};
 use vantage_core::Result;
+use vantage_vista::Capability;
 
 use super::registry::DioKey;
 use super::{Lens, LoaderCx};
-use crate::dio::{Dio, DioInner, DioParts, Follower, worker::write_worker_loop};
+use crate::dio::{Dio, DioInner, DioParts, Follower, HubFollower, worker::write_worker_loop};
 
 /// Events a Dio's bus holds before a slow subscriber lags.
 pub(crate) const EVENT_BUS_CAPACITY: usize = 64;
@@ -32,8 +33,12 @@ impl Lens {
             augmented_columns,
             live,
             cache_table_name,
+            hub_key,
+            explicit_hub,
+            recheck_facts,
         } = parts;
         let cache = self.cache.open_table(&cache_table_name).await?;
+        let hub = hub_key.as_deref().map(|key| self.hub(key));
         let loader = &self.callbacks.loader;
         let eager = loader.runs_eager_start(master.capabilities());
         let detached = eager && !loader.eager_blocking();
@@ -76,6 +81,13 @@ impl Lens {
             record_census: std::sync::atomic::AtomicUsize::new(0),
             watch_cancel: tokio::sync::watch::Sender::new(()),
             owned_task: std::sync::OnceLock::new(),
+            hub,
+            serial: self.next_serial(),
+            explicit_hub,
+            recheck_facts,
+            feed_source: std::sync::OnceLock::new(),
+            deferred_rechecks: Default::default(),
+            published: Default::default(),
         });
         let dio = Dio { inner };
         announce(&dio).await;
@@ -88,28 +100,77 @@ impl Lens {
 
         // Subscribed before the eager start copies the set and followed once
         // the copy has landed, so a change made during the copy is applied
-        // over it rather than lost or overwritten by it.
-        let follower = if dio.inner.live {
-            dio.subscribe().await?
-        } else {
-            None
+        // over it rather than lost or overwritten by it. The hub is joined
+        // the same way, for the same reason.
+        let follows = Follows {
+            hub: HubFollower::join(&dio.inner),
+            live: if dio.inner.live {
+                live_follow(&dio).await?
+            } else {
+                None
+            },
         };
         if eager {
-            run_eager_start(&dio, detached, follower).await?;
+            run_eager_start(&dio, detached, follows).await?;
         } else {
             // An eager start is itself the fresh load; anything else may be
             // serving a cache older than the refresher allows.
             dio.inner.refresh_if_stale();
-            spawn_follow(&dio, follower);
+            follows.spawn(&dio);
         }
         Ok(self.dios.insert(key, &dio))
     }
 }
 
-fn spawn_follow(dio: &Dio, follower: Option<Follower>) {
-    if let Some(follower) = follower {
-        dio.inner.lens.runtime.spawn(follower.run());
+/// The follows a Dio starts once its cache holds its first copy.
+struct Follows {
+    hub: Option<HubFollower>,
+    live: Option<Follower>,
+}
+
+impl Follows {
+    fn spawn(self, dio: &Dio) {
+        let runtime = &dio.inner.lens.runtime;
+        if let Some(hub) = self.hub {
+            runtime.spawn(hub.run());
+        }
+        if let Some(live) = self.live {
+            runtime.spawn(live.run());
+        }
     }
+}
+
+/// The live follow of a Dio built with `live`: its own subscription, unless
+/// the table already has a live feed that can serve it.
+///
+/// One subscription per table is enough when it covers the whole table: a
+/// Dio whose master is unnarrowed, with no residual and no hidden rule, and
+/// that isn't another Dio's facade. The first such live Dio becomes the
+/// table's feed. Its follow publishes every change the master pushes to the
+/// hub, where each other Dio over the table judges it against its own query.
+/// A narrowed live Dio built while a feed is up therefore subscribes to
+/// nothing, and holds the feed alive instead. Without a feed, a live Dio
+/// subscribes itself, as it always has. Should the feed and an older
+/// subscription both deliver a change, the second one finds the row already
+/// equal and writes nothing.
+async fn live_follow(dio: &Dio) -> Result<Option<Follower>> {
+    let inner = &dio.inner;
+    let Some(hub) = inner.hub.as_ref() else {
+        return dio.subscribe().await;
+    };
+    if !inner.master.capabilities().has(Capability::Subscribe) {
+        return Ok(None);
+    }
+    let covers_the_table = !inner.covers_less_than_the_table();
+    if !covers_the_table && let Some(feed) = hub.feed() {
+        let _ = inner.feed_source.set(feed);
+        return Ok(None);
+    }
+    let follower = dio.subscribe().await?;
+    if covers_the_table {
+        hub.claim_feed(dio);
+    }
+    Ok(follower)
 }
 
 /// The debug stream's first line for a Dio: what it is a copy of, and whether
@@ -137,14 +198,14 @@ async fn announce(dio: &Dio) {
     );
 }
 
-/// Run the loader's eager start, awaited or detached, then start `follower`.
+/// Run the loader's eager start, awaited or detached, then start `follows`.
 /// A detached start announces its rows with `Seeded` once they land, because
 /// writes through the raw cache raise no events of their own.
-async fn run_eager_start(dio: &Dio, detached: bool, follower: Option<Follower>) -> Result<()> {
+async fn run_eager_start(dio: &Dio, detached: bool, follows: Follows) -> Result<()> {
     if !detached {
         start(dio).await?;
         dio.inner.stamp_whole().await;
-        spawn_follow(dio, follower);
+        follows.spawn(dio);
         return Ok(());
     }
     let dio = dio.clone();
@@ -162,7 +223,7 @@ async fn run_eager_start(dio: &Dio, detached: bool, follower: Option<Follower>) 
             }
             Err(e) => tracing::error!(error = %e, "eager start failed"),
         }
-        spawn_follow(&dio, follower);
+        follows.spawn(&dio);
     });
     Ok(())
 }
