@@ -205,9 +205,12 @@ before traversal so a missing spec is an error rather than an empty table.
   everything else → `background()`.
 - `client_error(ClientError, what, url)` produces the `VantageError` shape
   above, keeping the URL and body in the context and out of the message.
-- `AuthHeader` is the newtype behind `auth_header` whose `Debug` prints
-  `<set>`; every `Debug` derive in the crate goes through it so a token
-  can never reach a log.
+- `AuthHeader` is the enum behind `auth_header`: none, a fixed value, or a
+  `BearerSource` asked inside the request-building closure, so once per
+  attempt. Its `Debug` prints `<set>` or `<per request>`; every `Debug`
+  derive in the crate goes through it so a token can never reach a log.
+  An `auth_refresher` isn't in it: the `ResilientClient` adds that header
+  itself, which is why a `with_bearer_source` clone can't drop it.
 
 The behaviour of the client itself, including the breaker rules and the
 observer contract, is documented in

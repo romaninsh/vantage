@@ -2,7 +2,6 @@
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use reqwest::header::AUTHORIZATION;
 use vantage_core::{Priority, error};
 use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
@@ -147,13 +146,7 @@ impl RestApi {
         let policy = crate::transport::policy_for(Priority::current());
         let response = self
             .client
-            .execute_with(&policy, |http| {
-                let req = http.get(&url);
-                match self.auth_header.value() {
-                    Some(auth) => req.header(AUTHORIZATION, auth),
-                    None => req,
-                }
-            })
+            .execute_with(&policy, |http| self.auth_header.apply(http.get(&url)))
             .await
             .map_err(|e| {
                 let ms = started.elapsed().as_millis() as u64;

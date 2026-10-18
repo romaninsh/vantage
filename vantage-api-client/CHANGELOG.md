@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.0 — 2026-10-18
+
+- A bearer token can come from a `BearerSource` (`Arc<dyn Fn() -> Option<String> + Send + Sync>`),
+  asked each time a request goes out, retries included. `None` sends no `Authorization` header.
+  Until now a datasource had one fixed header or one refresher per client, so a client shared by
+  several sessions sent the same token for all of them.
+- `RestApiBuilder::bearer_source` and `GraphqlApiBuilder::bearer_source` set one; like `auth` and
+  `auth_refresher`, each replaces the others.
+- `RestApi::with_bearer_source` and `GraphqlApi::with_bearer_source` return a clone that sends its
+  own source's token and shares the original's client: connection pool, parallel cap, breaker
+  and observer. One clone per session costs no extra connections. The client still adds an
+  `auth_refresher`'s header itself, so build the shared API without one when clones bring tokens.
+- A `401` on a request whose token came from a source is a final error, not refreshed; the next
+  request asks the source again.
+
 ## 2.1.0 — 2026-10-18
 
 - Requires vantage-table 3.0.0.

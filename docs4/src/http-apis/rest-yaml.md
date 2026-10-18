@@ -124,8 +124,13 @@ set on `RestApi::builder(base_url)`:
 | `total_key("count")` | none | Envelope key holding the total row count |
 | `filter_strategy(FilterStrategy)` | `Query` | `Client` keeps non-path conditions off the wire |
 | `ordering(OrderingParams::new("ordering", "-"))` | none | Sort parameter; makes every column orderable |
-| `auth(..)` / `auth_refresher(..)` | none | `Authorization` header, fixed or refreshed after a `401` |
+| `auth(..)` / `auth_refresher(..)` / `bearer_source(..)` | none | `Authorization` header: fixed, refreshed after a `401`, or asked for on every request |
 | `max_parallel`, `rate_limit`, `request_timeout`, `observer`, `http_client` | 4, none, 30 s, none, default | Transport; see the crate's `README_transport.md` |
+
+When each signed-in session has its own token, build one `RestApi` and hand each session
+`api.with_bearer_source(source)`: a clone that shares the client (connection pool, cap, breaker)
+but asks its own source for the token on every request. Don't give the shared API an
+`auth_refresher`, since the client adds that header itself and a clone can't drop it.
 
 A REST Vista can always count and traverse. It advertises `Window` when the API pages (a
 `total_key` puts the grand total on every page), and `Order` when `ordering` is set. It never

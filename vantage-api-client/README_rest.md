@@ -56,6 +56,30 @@ Other knobs:
 - `.debug(true)` logs every request URL at `info` under
   `vantage_api_client::rest`.
 
+### A token per caller
+
+`.auth(..)` sends one header for everyone using the `RestApi`. When each
+signed-in session has its own token, keep one shared `RestApi` and give each
+session a clone with a `BearerSource`. The source is asked every time a
+request goes out, retries included, and its token goes out as
+`Bearer <token>`; `None` sends no `Authorization` header:
+
+```rust
+use std::sync::Arc;
+use vantage_api_client::{BearerSource, RestApi};
+
+let shared = RestApi::new("https://api.example.com");
+let source: BearerSource = Arc::new(move || session.token());
+let for_session = shared.with_bearer_source(source);
+```
+
+Clones share the original's client: connection pool, parallel cap, breaker
+and observer. A `401` on such a request is a final error; the next request
+asks the source again. The client adds an `auth_refresher`'s header itself,
+and a clone can't drop it, so don't configure one on a shared API whose
+clones bring their own tokens. `.bearer_source(..)` on the builder sets a
+source on the API itself.
+
 ## 3. Declare tables
 
 ```rust
