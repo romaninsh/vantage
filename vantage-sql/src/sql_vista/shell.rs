@@ -116,6 +116,7 @@ where
     }
 
     async fn count(&self) -> Result<i64> {
+        self.table.check_read().await?;
         self.table.data_source().get_table_count(&self.table).await
     }
 
@@ -127,6 +128,7 @@ where
     }
 
     async fn watch(&self) -> Result<VistaChangeStream> {
+        self.table.check_read().await?;
         T::watch(self)
     }
 

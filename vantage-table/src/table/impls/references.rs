@@ -56,6 +56,42 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         self
     }
 
+    /// [`with_one`](Self::with_one) whose target build can fail: traversing
+    /// the relation returns the error instead of an unconditioned table.
+    /// `target` names the target in metadata, read without running the build.
+    pub fn try_with_one<E2: Entity<T::Value> + 'static>(
+        mut self,
+        relation: &str,
+        foreign_key: &str,
+        target: &str,
+        build_target: impl Fn(T) -> Result<Table<T, E2>> + Send + Sync + 'static,
+    ) -> Self
+    where
+        T::Value: Into<ciborium::Value> + From<ciborium::Value>,
+        T::Id: std::fmt::Display + From<String>,
+    {
+        let reference = HasOne::<T, E, E2>::try_new(foreign_key, target, build_target);
+        self.add_ref(relation, Box::new(reference));
+        self
+    }
+
+    /// [`with_many`](Self::with_many) whose target build can fail.
+    pub fn try_with_many<E2: Entity<T::Value> + 'static>(
+        mut self,
+        relation: &str,
+        foreign_key: &str,
+        target: &str,
+        build_target: impl Fn(T) -> Result<Table<T, E2>> + Send + Sync + 'static,
+    ) -> Self
+    where
+        T::Value: Into<ciborium::Value> + From<ciborium::Value>,
+        T::Id: std::fmt::Display + From<String>,
+    {
+        let reference = HasMany::<T, E, E2>::try_new(foreign_key, target, build_target);
+        self.add_ref(relation, Box::new(reference));
+        self
+    }
+
     pub(crate) fn add_ref(&mut self, relation: &str, reference: Box<dyn Reference>) {
         self.add_ref_arc(relation, Arc::from(reference));
     }

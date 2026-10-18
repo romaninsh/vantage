@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 use tempfile::tempdir;
 use tokio::time::sleep;
 use vantage_dataset::traits::{InsertableDataSet, ReadableValueSet, WritableValueSet};
+use vantage_expressions::{Expression, ExpressiveEnum};
 use vantage_log_writer::LogWriter;
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -147,6 +149,57 @@ async fn a_declared_id_column_is_written_once_with_the_row_id() {
     let rows = read_lines(&dir.path().join("events.jsonl")).await;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["id"], id);
+}
+
+fn eq_expr(column: &str, value: serde_json::Value) -> Expression<serde_json::Value> {
+    Expression::new(
+        "{} = {}",
+        vec![
+            ExpressiveEnum::Nested(Expression::new(column, vec![])),
+            ExpressiveEnum::Nested(Expression::new("{}", vec![ExpressiveEnum::Scalar(value)])),
+        ],
+    )
+}
+
+// The writer builds no equality itself (`eq_value_condition` is the
+// trait's unsupported default), so conditions are spelled by hand.
+#[tokio::test]
+async fn describe_condition_reads_as_the_expression() {
+    let dir = tempdir().unwrap();
+    let writer = LogWriter::new(dir.path());
+    let cond = eq_expr("parent", serde_json::json!("p1"));
+    assert_eq!(writer.describe_condition(&cond), "parent = \"p1\"");
+}
+
+#[tokio::test]
+async fn condition_column_names_eq_only() {
+    let dir = tempdir().unwrap();
+    let writer = LogWriter::new(dir.path());
+    let eq = eq_expr("parent", serde_json::json!("p1"));
+    assert_eq!(writer.condition_column(&eq), Some("parent".to_string()));
+
+    // The writer traverses nothing: its IN is an empty expression.
+    let invoices = Table::<LogWriter, EmptyEntity>::new("invoice", writer.clone());
+    let in_cond = writer.related_in_condition("invoice_id", &invoices, "id");
+    assert_eq!(writer.condition_column(&in_cond), None);
+}
+
+#[tokio::test]
+async fn condition_column_is_none_for_raw_expressions() {
+    let dir = tempdir().unwrap();
+    let writer = LogWriter::new(dir.path());
+    assert_eq!(
+        writer.condition_column(&Expression::new("1 = 1", vec![])),
+        None
+    );
+    let both = Expression::new(
+        "{} AND {}",
+        vec![
+            ExpressiveEnum::Nested(eq_expr("a", serde_json::json!(1))),
+            ExpressiveEnum::Nested(eq_expr("b", serde_json::json!(2))),
+        ],
+    );
+    assert_eq!(writer.condition_column(&both), None);
 }
 
 #[tokio::test]

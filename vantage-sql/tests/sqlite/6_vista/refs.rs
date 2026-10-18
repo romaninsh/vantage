@@ -240,3 +240,71 @@ references:
     assert_eq!(ids, ["o1", "o2"]);
     Ok(())
 }
+
+const CLIENT_WITH_ORDERS: &str = r#"
+name: client
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [title] }
+references:
+  orders:
+    table: orders
+    kind: has_many
+    foreign_key: client_id
+"#;
+
+fn resolver_of(specs: &[(&str, &str)]) -> Arc<dyn SpecResolver<SqliteVistaSpec>> {
+    let map: IndexMap<String, SqliteVistaSpec> = specs
+        .iter()
+        .map(|(name, yaml)| (name.to_string(), serde_yaml_ng::from_str(yaml).unwrap()))
+        .collect();
+    let map = Arc::new(map);
+    Arc::new(move |name: &str| map.get(name).cloned())
+}
+
+/// A resolver that has no spec for the target makes traversal an error, not
+/// a column-less table over every row; the relation still shows.
+#[tokio::test]
+async fn reference_target_without_spec_is_an_error() -> TestResult {
+    let db = setup_clients_orders().await;
+    let clients = db
+        .vista_factory()
+        .with_resolver(resolver_of(&[]))
+        .build_from_spec(serde_yaml_ng::from_str(CLIENT_WITH_ORDERS)?)?;
+    assert!(clients.references().contains_key("orders"));
+
+    let alice = clients.get_value("alice").await?.expect("alice exists");
+    let Err(err) = clients.get_ref("orders", Some(&alice)) else {
+        panic!("traversal fails");
+    };
+    assert!(
+        format!("{err:?}").contains("reference target has no spec"),
+        "{err:?}"
+    );
+    Ok(())
+}
+
+/// A target spec that fails to build makes traversal an error.
+#[tokio::test]
+async fn reference_target_failing_build_is_an_error() -> TestResult {
+    let db = setup_clients_orders().await;
+    let broken_orders = r#"
+name: orders
+columns: {}
+sqlite:
+  base: nowhere
+"#;
+    let clients = db
+        .vista_factory()
+        .with_resolver(resolver_of(&[("orders", broken_orders)]))
+        .build_from_spec(serde_yaml_ng::from_str(CLIENT_WITH_ORDERS)?)?;
+    let alice = clients.get_value("alice").await?.expect("alice exists");
+    let Err(err) = clients.get_ref("orders", Some(&alice)) else {
+        panic!("traversal fails");
+    };
+    assert!(
+        format!("{err:?}").contains("reference target failed to build"),
+        "{err:?}"
+    );
+    Ok(())
+}

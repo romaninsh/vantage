@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 — 2026-10-18
+
+- Requires vantage-table 3.0.0.
+- `CsvVistaFactory::with_injector(TableInjector<Csv>)`: the injector runs on every table built
+  from a spec, including reference targets.
+- `in_values_condition` builds an `IN` over the listed values; `describe_condition` and
+  `condition_column` are implemented.
+
 ## 0.7.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, tests that covered nothing

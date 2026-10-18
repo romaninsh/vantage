@@ -385,6 +385,117 @@ async fn scripted_reference_builds_its_target_from_the_parent_row() -> TestResul
     Ok(())
 }
 
+/// Narrows `client` to Marty and `invoice` to the due ones; other keys pass.
+#[cfg(feature = "rhai")]
+fn marty_and_due() -> vantage_table::table::TableInjector<SurrealDB> {
+    use vantage_surrealdb::types::AnySurrealType;
+    use vantage_table::traits::table_source::TableSource;
+
+    Arc::new(|cx, table| {
+        let (column, value) = match cx.key {
+            "client" => ("name", "Marty"),
+            "invoice" => ("status", "due"),
+            _ => return Ok(()),
+        };
+        let condition = table
+            .data_source()
+            .eq_value_condition(column, AnySurrealType::from(value))?;
+        table.add_condition(condition);
+        Ok(())
+    })
+}
+
+#[cfg(feature = "rhai")]
+async fn sorted_keys(vista: &vantage_vista::Vista) -> vantage_core::Result<Vec<String>> {
+    let mut keys: Vec<String> = vista.list_values().await?.into_keys().collect();
+    keys.sort();
+    Ok(keys)
+}
+
+/// The injector reaches the root, a traversed reference, a scripted
+/// reference's `table()`, a `base:` table and a `table()` inside `modify:`.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn injector_condition_applies_to_root_reference_base_and_scripts() -> TestResult {
+    let (db, _, _) = setup().await;
+    seed_invoices(&db).await?;
+    let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: client
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+references:
+  invoices:
+    table: invoice
+    kind: has_many
+    foreign_key: client
+  scripted:
+    table: invoice
+    kind: has_many
+    foreign_key: client
+    surreal:
+      rhai: 'table("invoice").where("client", row.id)'
+"#,
+    )?;
+    let base_spec: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: invoice_view
+columns: {}
+surreal:
+  base: invoice
+  inherit:
+    columns: [id, client, status]
+"#,
+    )?;
+    let modify_spec: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: client_modified
+columns:
+  id: { type: thing, flags: [id] }
+surreal:
+  table: client
+  modify: 'table("invoice")'
+"#,
+    )?;
+    let resolver = registry_resolver(vec![
+        ("client".into(), client_spec.clone()),
+        ("invoice".into(), serde_yaml_ng::from_str(INVOICE)?),
+    ]);
+    let factory = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .with_injector(marty_and_due());
+    let due = ["invoice:i1", "invoice:i3"];
+
+    let clients = factory.build_from_spec(client_spec)?;
+    assert_eq!(sorted_keys(&clients).await?, ["client:marty"]);
+    assert_eq!(sorted_keys(&clients.get_ref("invoices", None)?).await?, due);
+    let marty = clients.get_value("marty").await?.expect("marty");
+    let scripted = clients.get_ref("scripted", Some(&marty))?;
+    assert_eq!(sorted_keys(&scripted).await?, ["invoice:i1"]);
+
+    assert_eq!(
+        sorted_keys(&factory.build_from_spec(base_spec)?).await?,
+        due
+    );
+    assert_eq!(
+        sorted_keys(&factory.build_from_spec(modify_spec)?).await?,
+        due
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn capabilities_report_writes_reach_hooks() -> TestResult {
+    use vantage_vista::Capability;
+
+    let (db, bakery_table, client_table) = setup().await;
+    let (bakery_spec, _) = build_specs(&bakery_table, &client_table);
+    let vista = SurrealVistaFactory::new(db).build_from_spec(bakery_spec)?;
+    assert!(vista.capabilities().has(Capability::WritesReachHooks));
+    Ok(())
+}
+
 /// `with_condition` narrows a Vista in hand: on a handle from `table(name)`
 /// it throws an error naming the verb.
 #[cfg(feature = "rhai")]

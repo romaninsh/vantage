@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-10-18
+
+- Requires vantage-table 3.0.0.
+- Writes carry the caller's `WriteContext`. `Dio::flash` takes the context in scope when the flash
+  has none, and the write worker runs the write inside it, so the master table's hooks and a Lens
+  writer see who made the change. `ChangeFlash::with_context` sets one explicitly and
+  `ChangeFlash::context` reads it. A `clear` run as one delete per row passes its context to each.
+
 ## 1.0.0 — 2026-10-15
 
 The 2.0 rework of the Lens and Dio layer, which needs the upgrade notes below and the migration

@@ -62,6 +62,31 @@ impl TableSource for Redb {
         Expression::new(template, parameters)
     }
 
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        match condition {
+            RedbCondition::Eq { column, value } => format!("{column} = {value}"),
+            RedbCondition::In { column, values } => {
+                let values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+                format!("{column} IN ({})", values.join(", "))
+            }
+            RedbCondition::Deferred(_) => "<deferred>".to_string(),
+            RedbCondition::DeferredIn { column, .. } => format!("{column} IN <deferred>"),
+        }
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        condition.column().map(str::to_string)
+    }
+
+    /// An indexed (or id) `column`, as every redb read's first condition must be.
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        Ok(RedbCondition::in_(field, values))
+    }
+
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
         match condition {
             RedbCondition::Eq { column, value } => Some((column.clone(), value.clone())),
@@ -480,7 +505,7 @@ impl TableSource for Redb {
         // row bodies in redb.
         let source_id_col = source_table.id_field_name();
 
-        RedbCondition::Deferred(DeferredFn::new(move || {
+        let deferred = DeferredFn::new(move || {
             let db = db.clone();
             let source = source.clone();
             let col = col.clone();
@@ -505,7 +530,11 @@ impl TableSource for Redb {
                 ]);
                 Ok(ExpressiveEnum::Scalar(AnyRedbType::untyped(payload)))
             })
-        }))
+        });
+        RedbCondition::DeferredIn {
+            column: target_field.to_string(),
+            deferred,
+        }
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

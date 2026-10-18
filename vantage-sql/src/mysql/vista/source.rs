@@ -1,14 +1,12 @@
 //! `MysqlTableShell` — the generic `SqlTableShell` over `Table<MysqlDB, E>`.
 //! MySQL adds native conditions, transactional import and, with `rhai`,
 //! its expression vocabulary and scripted reference traversal. The shell
-//! carries the spec resolver handed to the factories that build traversal
-//! targets.
+//! carries its factory (spec resolver and build injector included) for the
+//! traversal targets it builds.
 
 mod import;
 #[cfg(feature = "rhai")]
 mod scripted;
-
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -19,13 +17,12 @@ use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
-use vantage_vista::{NativeCondition, Reference, SpecResolver, Vista};
+use vantage_vista::{NativeCondition, Reference, Vista};
 
 use crate::condition::{MysqlCondition, build_sql_binary};
 use crate::mysql::MysqlDB;
 use crate::mysql::operation::MysqlOperation;
 use crate::mysql::types::AnyMysqlType;
-use crate::mysql::vista::MysqlVistaSpec;
 use crate::mysql::vista::factory::MysqlVistaFactory;
 use crate::primitives::identifier::ident;
 use crate::sql_vista::{Shell, SqlShellDialect, SqlTableShell};
@@ -33,26 +30,22 @@ use crate::sql_vista::{Shell, SqlShellDialect, SqlTableShell};
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
 
-pub type MysqlTableShell<E = EmptyEntity> =
-    SqlTableShell<MysqlDB, E, Option<Arc<dyn SpecResolver<MysqlVistaSpec>>>>;
+/// The shell carries the factory that built it, with its spec resolver and
+/// build injector, for the targets and scripts it builds in turn.
+pub type MysqlTableShell<E = EmptyEntity> = SqlTableShell<MysqlDB, E, MysqlVistaFactory>;
 
 impl<E> MysqlTableShell<E>
 where
     E: Entity<AnyMysqlType>,
 {
-    /// A factory over this table's data source, carrying the spec resolver.
     fn factory(&self) -> MysqlVistaFactory {
-        let factory = MysqlVistaFactory::new(self.table.data_source().clone());
-        match &self.extra {
-            Some(resolver) => factory.with_resolver(resolver.clone()),
-            None => factory,
-        }
+        self.extra.clone()
     }
 }
 
 #[async_trait]
 impl SqlShellDialect for MysqlDB {
-    type Extra = Option<Arc<dyn SpecResolver<MysqlVistaSpec>>>;
+    type Extra = MysqlVistaFactory;
 
     const DRIVER: &'static str = "mysql";
 

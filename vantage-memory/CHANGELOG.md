@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.0 — 2026-10-18
+
+Requires vantage-table 3.0.0.
+
+### Breaking changes
+
+- `MemoryCondition::DeferredIn { path, deferred }`: what `related_in_condition` now returns, so
+  the condition names its column. It resolves like `Deferred`. Upgrade: an exhaustive `match` on
+  `MemoryCondition` needs the new arm.
+
+### Other changes
+
+- `in_values_condition` builds an `InSet` comparison; `describe_condition` and `condition_column`
+  are implemented, and the vista preview shows `col IN <deferred>`.
+
 ## 2.0.2 — 2026-10-15
 
 - The tests use `vantage-diorama` 1.0.0, the proper version of the 0.15.0 rework. No change here.

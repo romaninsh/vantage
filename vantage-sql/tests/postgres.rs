@@ -7,6 +7,10 @@ mod safe_writes_contract;
 #[path = "common/dotted.rs"]
 mod dotted;
 
+#[cfg(feature = "postgres")]
+#[path = "common/condition_text.rs"]
+mod condition_text;
+
 #[cfg(all(feature = "postgres", feature = "vista"))]
 #[macro_use]
 #[path = "common/vista.rs"]

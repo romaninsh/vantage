@@ -276,6 +276,65 @@ impl TableSource for MongoDB {
         Ok(MongoCondition::Doc(eq_filter(field, &value.to_bson())))
     }
 
+    /// `{ field: { $in: [...] } }`, each id-like value in both spellings, as
+    /// `eq_value_condition` matches them.
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        let mut listed = Vec::with_capacity(values.len());
+        for value in values {
+            let bson = value.to_bson();
+            let alt = id_variants(&bson);
+            listed.push(bson);
+            listed.extend(alt);
+        }
+        Ok(MongoCondition::Doc(doc! { field: { "$in": listed } }))
+    }
+
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        match condition {
+            MongoCondition::Doc(d) => d.to_string(),
+            MongoCondition::Deferred(_) => "<deferred>".to_string(),
+            MongoCondition::DeferredIn { column, .. } => format!("{column} IN <deferred>"),
+            MongoCondition::And(parts) => parts
+                .iter()
+                .map(|c| self.describe_condition(c))
+                .collect::<Vec<_>>()
+                .join(" AND "),
+        }
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        let d = match condition {
+            MongoCondition::Doc(d) => d,
+            MongoCondition::DeferredIn { column, .. } => return Some(column.clone()),
+            _ => return None,
+        };
+        if d.len() != 1 {
+            return None;
+        }
+        let (key, value) = d.iter().next()?;
+        if key.starts_with('$') {
+            return None;
+        }
+        // Only operators that narrow to values; `$ne`, `$nin`, `$not`,
+        // `$exists` and the rest read as `None`.
+        const NARROWING: [&str; 8] = [
+            "$eq", "$gt", "$gte", "$lt", "$lte", "$in", "$regex", "$options",
+        ];
+        let narrows = match value {
+            Bson::Document(ops) => {
+                !ops.is_empty()
+                    && ops.keys().all(|op| NARROWING.contains(&op.as_str()))
+                    && ops.keys().any(|op| op != "$options")
+            }
+            _ => true,
+        };
+        narrows.then(|| key.clone())
+    }
+
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
         let MongoCondition::Doc(d) = condition else {
             return None;
@@ -779,7 +838,7 @@ impl TableSource for MongoDB {
             || source_table.is_imported_column(source_column);
         let col = source_column.to_string();
 
-        MongoCondition::Deferred(DeferredFn::new(move || {
+        let deferred = DeferredFn::new(move || {
             let source = source.clone();
             let col = col.clone();
             let field = field.clone();
@@ -820,7 +879,11 @@ impl TableSource for MongoDB {
                     Bson::Document(doc),
                 )))
             })
-        }))
+        });
+        MongoCondition::DeferredIn {
+            column: target_field.to_string(),
+            deferred,
+        }
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

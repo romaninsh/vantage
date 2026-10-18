@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — 2026-10-18
+
+- Requires vantage-table 3.0.0.
+
 ## 0.8.0 — 2026-10-14
 
 ### Breaking changes

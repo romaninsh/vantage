@@ -97,8 +97,25 @@ impl TableSource for SqliteDB {
         Ok(SqliteOperation::eq(&column, value))
     }
 
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnySqliteType> = Column::new(field);
+        Ok(crate::condition::in_values(&column, &values))
+    }
+
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
         vantage_table::conditions::literal_equality(&condition.0)
+    }
+
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        condition.0.preview()
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        vantage_table::conditions::condition_column_of(&condition.0)
     }
 
     fn can_confine_writes(&self) -> bool {

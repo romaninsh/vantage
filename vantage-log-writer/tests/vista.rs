@@ -76,8 +76,9 @@ columns:
 async fn a_table_vista_is_insert_only_and_names_its_driver() {
     let (_dir, _writer, vista) = events();
 
+    // Insert is its only operation; its inserts go through the table, so hooks run.
     let caps: Vec<Capability> = vista.capabilities().iter().collect();
-    assert_eq!(caps, [Capability::Insert]);
+    assert_eq!(caps, [Capability::Insert, Capability::WritesReachHooks]);
     assert_eq!(vista.driver_name(), "log-writer");
 }
 
@@ -218,6 +219,16 @@ async fn the_vista_satisfies_the_advertised_capability_contract() {
 
     contract::check_advertised(&vista).await;
     contract::check_advertised_writes(&vista).await;
+}
+
+#[tokio::test]
+async fn capabilities_report_writes_reach_hooks() {
+    let (_dir, _writer, vista) = events();
+    assert!(
+        vista
+            .capabilities()
+            .has(vantage_vista::Capability::WritesReachHooks)
+    );
 }
 
 #[tokio::test]

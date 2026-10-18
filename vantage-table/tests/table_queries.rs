@@ -13,6 +13,7 @@ use vantage_expressions::{Expression, ExpressiveEnum, expr, expr_any};
 use vantage_table::conditions::literal_equality;
 use vantage_table::mocks::MockColumn;
 use vantage_table::prelude::*;
+use vantage_table::table::{Hook, SelectCx, select_hook};
 use vantage_types::{EmptyEntity, Record};
 
 type MockTable = Table<MockTableSource, EmptyEntity>;
@@ -153,6 +154,117 @@ fn literal_equality_rejects_empty_and_non_identifier_columns() {
 fn literal_equality_rejects_any_operator_other_than_equals() {
     let gt = Expression::new("{} > {}", eq_expr("price", json!(1)).parameters);
     assert_eq!(literal_equality(&gt), None);
+}
+
+fn op_expr(template: &str, lhs: &str, v: Value) -> Expression<Value> {
+    Expression::new(template, eq_expr(lhs, v).parameters)
+}
+
+#[test]
+fn describe_condition_reads_as_the_expression() {
+    let t = table();
+    assert_eq!(
+        t.data_source()
+            .describe_condition(&eq_expr("parent", json!("p1"))),
+        "parent = \"p1\""
+    );
+}
+
+#[test]
+fn condition_column_names_eq_in_and_comparisons() {
+    let t = table();
+    let src = t.data_source();
+    for template in [
+        "{} = {}",
+        "{} > {}",
+        "{} <= {}",
+        "{} IN ({})",
+        "{} in {}",
+        "{} LIKE {}",
+    ] {
+        assert_eq!(
+            src.condition_column(&op_expr(template, "invoice_id", json!(1))),
+            Some("invoice_id".to_string()),
+            "{template}"
+        );
+    }
+    assert_eq!(
+        src.condition_column(&op_expr("{} = {}", "\"invoice_id\"", json!(1))),
+        Some("invoice_id".to_string())
+    );
+}
+
+#[test]
+fn condition_column_is_none_for_raw_expressions() {
+    let t = table();
+    let src = t.data_source();
+    assert_eq!(src.condition_column(&expr_any!("1 = 1")), None);
+    assert_eq!(src.condition_column(&expr_any!("price > {}", 10)), None);
+    assert_eq!(
+        src.condition_column(&op_expr("{} = {}", "\"t\".\"col\"", json!(1))),
+        None
+    );
+    assert_eq!(
+        src.condition_column(&op_expr("{} AND {}", "a", json!(1))),
+        None
+    );
+    assert_eq!(
+        src.condition_column(&op_expr("{} IN ({}", "a", json!(1))),
+        None
+    );
+}
+
+#[test]
+fn condition_column_is_none_for_negations() {
+    let t = table();
+    let src = t.data_source();
+    for template in ["{} != {}", "{} <> {}", "{} NOT IN ({})", "{} NOT LIKE {}"] {
+        assert_eq!(
+            src.condition_column(&op_expr(template, "tenant_id", json!(1))),
+            None,
+            "{template}"
+        );
+    }
+}
+
+fn column_vs(lhs: &str, rhs: Expression<Value>) -> Expression<Value> {
+    Expression::new(
+        "{} = {}",
+        vec![
+            ExpressiveEnum::Nested(Expression::new(lhs, vec![])),
+            ExpressiveEnum::Nested(rhs),
+        ],
+    )
+}
+
+#[test]
+fn condition_column_is_none_for_column_vs_column() {
+    let t = table();
+    let src = t.data_source();
+    let same = column_vs("tenant_id", Expression::new("tenant_id", vec![]));
+    assert_eq!(src.condition_column(&same), None);
+}
+
+#[test]
+fn condition_column_is_none_for_an_or_combined_operand() {
+    let t = table();
+    let src = t.data_source();
+    let or = column_vs("tenant_id", expr_any!("7 OR 1 = 1"));
+    assert_eq!(src.condition_column(&or), None);
+}
+
+#[test]
+fn condition_column_names_an_in_over_a_subquery() {
+    let t = table();
+    let src = t.data_source();
+    let sub = Expression::new(
+        "{} IN ({})",
+        vec![
+            ExpressiveEnum::Nested(Expression::new("tenant_id", vec![])),
+            ExpressiveEnum::Nested(expr_any!("SELECT id FROM tenant WHERE name = {}", "acme")),
+        ],
+    );
+    assert_eq!(src.condition_column(&sub), Some("tenant_id".to_string()));
 }
 
 #[test]
@@ -520,4 +632,119 @@ async fn the_count_expression_executes_to_the_live_row_count() {
         .await
         .unwrap();
     assert_eq!(raw, json!(3));
+}
+
+// --- in_values_condition ------------------------------------------------------
+
+#[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() {
+    let src = MockTableSource::new()
+        .with_data(
+            "t",
+            vec![
+                json!({"id": "a", "code": "a"}),
+                json!({"id": "b", "code": "b"}),
+                json!({"id": "c", "code": "c"}),
+            ],
+        )
+        .await;
+    let condition = src
+        .in_values_condition("code", vec![json!("a"), json!("c")])
+        .unwrap();
+    let table = MockTable::new("t", src).with_condition(condition);
+    assert_eq!(found(table).await, ["a", "c"]);
+}
+
+#[test]
+fn condition_column_names_an_in_values_condition() {
+    let src = MockTableSource::new();
+    let condition = src.in_values_condition("code", vec![json!("a")]).unwrap();
+    assert_eq!(src.condition_column(&condition), Some("code".to_string()));
+}
+
+// --- read hook ----------------------------------------------------------------
+
+fn refusing() -> Hook<MockTableSource> {
+    Hook::BeforeSelect(select_hook(|_cx: SelectCx<'_, MockTableSource>| {
+        Box::pin(async { Err(vantage_core::error!("read refused")) })
+    }))
+}
+
+fn refused<X: std::fmt::Debug>(result: vantage_core::Result<X>) -> bool {
+    matches!(result, Err(e) if e.to_string().contains("read refused"))
+}
+
+#[tokio::test]
+async fn before_select_error_refuses_list_get_count_and_aggregates() {
+    let table = people()
+        .await
+        .with_column_of::<i64>("age")
+        .with_hook(refusing());
+    let age = MockColumn::<vantage_table::mocks::mock_type_system::AnyMockType>::new("age");
+
+    assert!(refused(table.list_values().await));
+    assert!(refused(table.get_value("1").await));
+    assert!(refused(table.get_some_value().await));
+    assert!(refused(table.list().await));
+    assert!(refused(table.get("1").await));
+    assert!(refused(table.get_count().await));
+    assert!(refused(table.get_sum(&age).await));
+    assert!(refused(table.get_max(&age).await));
+    assert!(refused(table.get_min(&age).await));
+    assert!(refused(table.check_read().await));
+}
+
+#[tokio::test]
+async fn before_select_error_is_the_first_item_of_a_stream() {
+    let table = people().await.with_hook(refusing());
+    let mut values = table.stream_values();
+    let first = std::future::poll_fn(|cx| values.as_mut().poll_next(cx)).await;
+    assert!(refused(first.unwrap()));
+    assert!(
+        std::future::poll_fn(|cx| values.as_mut().poll_next(cx))
+            .await
+            .is_none()
+    );
+
+    let mut entities = table.stream();
+    let first = std::future::poll_fn(|cx| entities.as_mut().poll_next(cx)).await;
+    assert!(refused(first.unwrap()));
+}
+
+#[tokio::test]
+async fn before_select_sees_the_set_and_the_context_and_ok_lets_the_read_through() {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let hook = select_hook(move |cx: SelectCx<'_, MockTableSource>| {
+        let log = log.clone();
+        let group = cx.context.and_then(|c| c.group.clone());
+        let conditions = cx.table.conditions().count();
+        Box::pin(async move {
+            log.lock().unwrap().push((group, conditions));
+            Ok(())
+        })
+    });
+    let all = people().await;
+    let alice = all
+        .data_source()
+        .eq_value_condition("name", json!("Alice"))
+        .unwrap();
+    let table = all
+        .with_condition(alice)
+        .with_hook(Hook::BeforeSelect(hook));
+
+    let context = vantage_table::write_context::WriteContext::new().with_group("g1");
+    let rows = context.scope(table.list_values()).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(table.get_count().await.unwrap(), 1);
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [(Some("g1".to_string()), 1), (None, 1)]
+    );
+}
+
+#[test]
+fn before_select_does_not_run_when_the_table_is_only_built_into_an_expression() {
+    let table = users(json!(0)).with_hook(refusing());
+    assert!(table.get_count_query().preview().contains("COUNT"));
 }

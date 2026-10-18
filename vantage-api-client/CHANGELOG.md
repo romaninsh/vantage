@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0 — 2026-10-18
+
+- Requires vantage-table 3.0.0.
+- `in_values_condition`: GraphQL builds an `in` filter. REST takes one value, sent as the same
+  `field=value` param as an equality, and refuses any other list as `Unsupported`, since a URL
+  filter param carries one value and dropping the condition would widen the set.
+- `describe_condition` and `condition_column` are implemented for REST and GraphQL.
+- REST `list`, `count` and `fetch_window` run the table's `BeforeSelect` hooks before any request
+  goes out.
+
 ## 2.0.1 — 2026-10-15
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,

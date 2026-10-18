@@ -1,6 +1,6 @@
 [package]
 name = "vantage-mongodb"
-version = "2.0.1"
+version = "3.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "MongoDB persistence backend for Vantage framework"
@@ -19,9 +19,9 @@ rhai = ["dep:vantage-rhai", "vista", "vantage-vista/rhai"]
 vantage-core = { version = "1.1.0", path = "../vantage-core" }
 vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
 vantage-expressions = { version = "1.2.0", path = "../vantage-expressions" }
-vantage-table = { version = "2.0.0", path = "../vantage-table" }
+vantage-table = { version = "3.0.0", path = "../vantage-table" }
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
-vantage-vista = { version = "2.0.0", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "2.1.0", path = "../vantage-vista", optional = true }
 vantage-rhai = { version = "1.1.0", path = "../vantage-rhai", optional = true }
 
 bson = "2"
@@ -41,4 +41,4 @@ tokio = { version = "1", features = ["full"] }
 pretty_assertions = "1"
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "2.0.0", path = "../vantage-vista", features = ["contract"] }
+vantage-vista = { version = "2.1.0", path = "../vantage-vista", features = ["contract"] }

@@ -114,6 +114,17 @@ impl TableSource for SurrealDB {
         Ok(SurrealOperation::eq(&column, value))
     }
 
+    /// `field IN ([…])`: the values travel as one array literal.
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnySurrealType> = Column::new(field);
+        let list = ciborium::Value::Array(values.into_iter().map(|v| v.into_value()).collect());
+        Ok(SurrealOperation::in_(&column, AnySurrealType::from(list)))
+    }
+
     /// A join value in `"table:key"` string form (a record id that
     /// round-tripped through JSON or a script) is re-tagged into a record
     /// id, so narrowing renders a record literal and inserts store a link.
@@ -130,6 +141,14 @@ impl TableSource for SurrealDB {
 
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
         vantage_table::conditions::literal_equality(condition)
+    }
+
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        condition.preview()
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        vantage_table::conditions::condition_column_of(condition)
     }
 
     fn can_confine_writes(&self) -> bool {

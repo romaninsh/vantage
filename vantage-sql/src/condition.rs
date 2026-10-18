@@ -90,6 +90,33 @@ impl From<crate::mysql::statements::primitives::FulltextMatch> for MysqlConditio
     }
 }
 
+/// `column IN (values)`, in the shape `condition_column_of` reads. An empty
+/// list renders `IN (NULL)`: `IN ()` isn't SQL on every dialect, and
+/// `x IN (NULL)` matches no row.
+pub(crate) fn in_values<V, C>(column: &impl Expressive<V>, values: &[V]) -> C
+where
+    V: Clone + Send + Sync + 'static,
+    C: From<Expression<V>>,
+{
+    let list = if values.is_empty() {
+        Expression::new("NULL", vec![])
+    } else {
+        let items = values
+            .iter()
+            .map(|v| Expression::new("{}", vec![ExpressiveEnum::Scalar(v.clone())]))
+            .collect();
+        Expression::from_vec(items, ", ")
+    };
+    Expression::new(
+        "{} IN ({})",
+        vec![
+            ExpressiveEnum::Nested(column.expr()),
+            ExpressiveEnum::Nested(list),
+        ],
+    )
+    .into()
+}
+
 /// Defines a backend-specific identifier wrapper that only implements
 /// `Expressive<$any_type>`, avoiding ambiguity when multiple backend
 /// features are enabled.

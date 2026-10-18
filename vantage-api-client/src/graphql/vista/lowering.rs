@@ -14,7 +14,7 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::table::Table;
+use vantage_table::table::{BuildEnv, Table};
 use vantage_types::EmptyEntity;
 use vantage_vista::{ColumnSpec, SpecResolver};
 
@@ -77,17 +77,19 @@ pub(crate) fn build_table(
     let mut table = Table::<GraphqlApi, EmptyEntity>::new(root_field, api);
     table.add_spec_columns(&spec.columns, build_column)?;
     table.set_spec_id_field(&spec.resolve_id_column("id"))?;
-    table.with_spec_references(spec, resolver, build_target_table)
+    let env = BuildEnv::root(&spec.name, resolver, None);
+    table.with_spec_references(spec, &env, build_target_table)
 }
 
 /// The `with_spec_references` builder. The parent's API is ignored in favour
-/// of the factory's one carried by `target` (see the module docs).
+/// of the factory's one carried by `target` (see the module docs). GraphQL
+/// factories take no build injector.
 fn build_target_table(
     target: &TargetSpec,
     _parent_api: GraphqlApi,
-    resolver: Option<TargetSpecResolver>,
+    env: &BuildEnv<TargetSpec, GraphqlApi>,
 ) -> Result<Table<GraphqlApi, EmptyEntity>> {
-    build_table(&target.spec, &target.api, resolver)
+    build_table(&target.spec, &target.api, env.resolver.clone())
 }
 
 /// Per-table dialect / filter-arg / root-field overrides from a `graphql:`

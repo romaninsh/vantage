@@ -4,7 +4,7 @@
 
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::table::{Table, VistaMetadataOptions};
+use vantage_table::table::{BuildEnv, Table, TableInjector, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory};
 
@@ -15,11 +15,25 @@ use crate::vista::spec::{CsvColumnExtras, CsvTableExtras, CsvVistaSpec};
 
 pub struct CsvVistaFactory {
     csv: Csv,
+    injector: Option<TableInjector<Csv>>,
 }
 
 impl CsvVistaFactory {
     pub fn new(csv: Csv) -> Self {
-        Self { csv }
+        Self {
+            csv,
+            injector: None,
+        }
+    }
+
+    /// Attach a build injector, run on every table built from a spec. CSV
+    /// specs declare no references and the factory has no spec resolver, so
+    /// the injector's table builder always errors here. A table handed to
+    /// [`from_table`](Self::from_table) is the caller's and is wrapped as it
+    /// is.
+    pub fn with_injector(mut self, injector: TableInjector<Csv>) -> Self {
+        self.injector = Some(injector);
+        self
     }
 
     /// Wrap a typed table as a Vista. Column metadata is harvested from the
@@ -42,28 +56,40 @@ impl CsvVistaFactory {
     /// with its YAML-declared type; `csv.source` becomes the column's alias
     /// so `read_csv` knows which CSV header to read from.
     pub fn table_from_spec(&self, spec: &CsvVistaSpec) -> Result<Table<Csv, EmptyEntity>> {
-        let csv_path = if spec.driver.csv.path.is_absolute() {
-            spec.driver.csv.path.clone()
-        } else {
-            self.csv.base_dir().join(&spec.driver.csv.path)
-        };
-        let stem = csv_path
-            .file_stem()
-            .ok_or_else(|| error!("csv.path must point to a file", path = csv_path.display()))?
-            .to_string_lossy()
-            .to_string();
-        let parent = csv_path
-            .parent()
-            .ok_or_else(|| error!("csv.path must have a parent", path = csv_path.display()))?
-            .to_path_buf();
-
-        let id_column = spec.resolve_id_column("id");
-        let csv = Csv::new(parent).with_id_column(&id_column);
-        let mut table = Table::<Csv, EmptyEntity>::new(stem, csv);
-        table.add_spec_columns(&spec.columns, build_column)?;
-        table.set_spec_id_field(&id_column)?;
-        Ok(table)
+        let env = BuildEnv::root(&spec.name, None, self.injector.clone());
+        build_csv_table(spec, self.csv.clone(), &env)
     }
+}
+
+/// The table `spec` describes over the files under `csv`'s base directory,
+/// then run through `env`'s injector.
+fn build_csv_table(
+    spec: &CsvVistaSpec,
+    csv: Csv,
+    env: &BuildEnv<CsvVistaSpec, Csv>,
+) -> Result<Table<Csv, EmptyEntity>> {
+    let csv_path = if spec.driver.csv.path.is_absolute() {
+        spec.driver.csv.path.clone()
+    } else {
+        csv.base_dir().join(&spec.driver.csv.path)
+    };
+    let stem = csv_path
+        .file_stem()
+        .ok_or_else(|| error!("csv.path must point to a file", path = csv_path.display()))?
+        .to_string_lossy()
+        .to_string();
+    let parent = csv_path
+        .parent()
+        .ok_or_else(|| error!("csv.path must have a parent", path = csv_path.display()))?
+        .to_path_buf();
+
+    let id_column = spec.resolve_id_column("id");
+    let csv = Csv::new(parent).with_id_column(&id_column);
+    let mut table = Table::<Csv, EmptyEntity>::new(stem, csv);
+    table.add_spec_columns(&spec.columns, build_column)?;
+    table.set_spec_id_field(&id_column)?;
+    env.inject(&spec.name, &mut table, build_csv_table)?;
+    Ok(table)
 }
 
 impl VistaFactory for CsvVistaFactory {

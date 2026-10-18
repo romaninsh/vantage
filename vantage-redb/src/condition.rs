@@ -23,6 +23,13 @@ pub enum RedbCondition {
     },
     /// Resolved async at execution time into an `In`; see [`RedbCondition::resolve`].
     Deferred(DeferredFn<AnyRedbType>),
+    /// A [`Deferred`](Self::Deferred) known to constrain `column` (traversal's
+    /// `fk IN (parent ids)`), so the column is readable before resolution.
+    /// Resolves exactly as `Deferred` does.
+    DeferredIn {
+        column: String,
+        deferred: DeferredFn<AnyRedbType>,
+    },
 }
 
 impl RedbCondition {
@@ -48,7 +55,7 @@ impl RedbCondition {
     /// `[column, values]` tuple is an error. Other conditions return unchanged.
     pub async fn resolve(self) -> vantage_core::Result<Self> {
         match self {
-            Self::Deferred(d) => {
+            Self::Deferred(d) | Self::DeferredIn { deferred: d, .. } => {
                 let resolved = d.call().await?;
                 let any = match resolved {
                     ExpressiveEnum::Scalar(v) => v,
@@ -96,7 +103,9 @@ impl RedbCondition {
     /// Field name targeted by this condition (post-resolution).
     pub fn column(&self) -> Option<&str> {
         match self {
-            Self::Eq { column, .. } | Self::In { column, .. } => Some(column.as_str()),
+            Self::Eq { column, .. } | Self::In { column, .. } | Self::DeferredIn { column, .. } => {
+                Some(column.as_str())
+            }
             Self::Deferred(_) => None,
         }
     }
@@ -108,6 +117,7 @@ impl std::fmt::Debug for RedbCondition {
             Self::Eq { column, value } => write!(f, "Eq({} = {})", column, value),
             Self::In { column, values } => write!(f, "In({} ∈ {} values)", column, values.len()),
             Self::Deferred(_) => write!(f, "Deferred(...)"),
+            Self::DeferredIn { column, .. } => write!(f, "DeferredIn({column} ∈ ...)"),
         }
     }
 }

@@ -31,7 +31,7 @@ pub(crate) fn fits(conditions: &[RedbCondition], row: &Record<AnyRedbType>) -> b
         RedbCondition::In { column, values } => row
             .get(column.as_str())
             .is_some_and(|v| values.iter().any(|x| v.value_eq(x))),
-        RedbCondition::Deferred(_) => false,
+        RedbCondition::Deferred(_) | RedbCondition::DeferredIn { .. } => false,
     })
 }
 

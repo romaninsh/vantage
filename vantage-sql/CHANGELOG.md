@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.0 — 2026-10-18
+
+Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
+
+### Breaking changes
+
+- `MysqlTableShell` is `SqlTableShell<MysqlDB, E, MysqlVistaFactory>`: the shell holds its whole
+  factory, so scripts it runs inherit the factory's resolver and injector. Code that names the
+  alias with its default parameters is unaffected.
+
+### Other changes
+
+- `with_injector(TableInjector<Db>)` on the SQLite, PostgreSQL and MySQL vista factories. The
+  injector runs on the root table, each reference target, each `base:` table, and tables built
+  in `modify:` and reference scripts.
+- `in_values_condition` builds `col IN (v1, v2)`; an empty list renders `col IN (NULL)` and
+  matches no row. `describe_condition` and `condition_column` are implemented.
+- The shells' `count` and `watch` run the table's `BeforeSelect` hooks first.
+- Writable SQL vistas advertise `writes_reach_hooks`.
+
 ## 0.9.1 — 2026-10-15
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,

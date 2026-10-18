@@ -11,7 +11,6 @@
 //! shares the client.
 
 use std::str::FromStr;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -23,14 +22,14 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Condition, NativeCondition, Page, Preview, SortDirection, SpecResolver, TableShell, Vista,
-    VistaCapabilities, VistaChangeStream, VistaMetadata,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaChangeStream, VistaMetadata,
 };
 
 use crate::id::MongoId;
 use crate::mongodb::MongoDB;
 use crate::types::AnyMongoType;
-use crate::vista::spec::MongoVistaSpec;
+use crate::vista::factory::MongoVistaFactory;
 use coerce::BsonKind;
 use project::{project_record, walk_bson_path};
 
@@ -60,14 +59,13 @@ pub struct MongoTableShell {
     /// Empty map ⇒ identity passthrough (bare collections and typed
     /// `from_table` paths without columns).
     pub(crate) column_paths: IndexMap<String, Vec<String>>,
-    /// Spec resolver handed to the factories that build traversal targets.
-    pub(crate) resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
+    /// The factory that built this shell (spec resolver, build injector,
+    /// live-update override), for the traversal targets and scripts it
+    /// builds in turn.
+    pub(crate) factory: MongoVistaFactory,
     /// Handle for the active quicksearch condition, removed when the search
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
-    /// The factory's live-update override, handed to the factories that build
-    /// traversal targets.
-    pub(crate) change_streams: Option<bool>,
     /// Columns whose table type is a BSON type the CBOR surface reads as
     /// text; writes parse their values back (see the `coerce` module).
     declared: IndexMap<String, BsonKind>,
@@ -79,18 +77,16 @@ impl MongoTableShell {
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
         column_paths: IndexMap<String, Vec<String>>,
-        resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
-        change_streams: Option<bool>,
+        factory: MongoVistaFactory,
     ) -> Self {
         let declared = write::declared_kinds(&table, metadata.id_column.as_deref());
         Self {
             declared,
-            change_streams,
             table,
             capabilities,
             metadata,
             column_paths,
-            resolver,
+            factory,
             current_search_handle: None,
         }
     }
@@ -152,6 +148,7 @@ impl TableShell for MongoTableShell {
     }
 
     async fn count(&self) -> Result<i64> {
+        self.table.check_read().await?;
         self.table.data_source().get_table_count(&self.table).await
     }
 

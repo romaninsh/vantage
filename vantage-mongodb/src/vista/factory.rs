@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 use vantage_core::Result;
-use vantage_table::table::Table;
+use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{Capability, SpecResolver, Vista, VistaCapabilities};
 
@@ -34,6 +34,8 @@ pub struct MongoVistaFactory {
     /// Resolves a YAML spec by table name, so references can rebuild their
     /// target tables from the live spec.
     pub(crate) resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
+    /// Run on every table built from a spec; see [`Self::with_injector`].
+    pub(crate) injector: Option<TableInjector<MongoDB>>,
     /// Explicit live-update choice; `None` follows the detected topology.
     pub(crate) change_streams: Option<bool>,
 }
@@ -43,8 +45,20 @@ impl MongoVistaFactory {
         Self {
             mongo,
             resolver: None,
+            injector: None,
             change_streams: None,
         }
+    }
+
+    /// Attach a build injector, run on every table built from a spec: the
+    /// root, each reference target when traversed (a target the resolver
+    /// doesn't know included, built from its fallback spec), and the tables
+    /// a script's `table(name)` builds. A table handed to
+    /// [`from_table`](Self::from_table) is the caller's and is wrapped as it
+    /// is.
+    pub fn with_injector(mut self, injector: TableInjector<MongoDB>) -> Self {
+        self.injector = Some(injector);
+        self
     }
 
     /// Force live updates on or off, instead of following whether the
@@ -104,14 +118,14 @@ impl MongoVistaFactory {
     /// whose key is stored under another field name (see `ref_keys`).
     ///
     /// The reference-key check runs here rather than in `build_mongo_table`,
-    /// which also rebuilds traversal targets: vantage-table swallows a target
-    /// build error into a column-less fallback, so the check would turn a bad
-    /// target into silently empty reads. Traversal targets are checked from
-    /// their columns when wrapped (`from_table`), which errors loudly.
+    /// which also rebuilds traversal targets; those are checked from their
+    /// columns when wrapped (`from_table`). A target whose build fails makes
+    /// the traversal an error.
     pub fn table_from_spec(&self, spec: &MongoVistaSpec) -> Result<Table<MongoDB, EmptyEntity>> {
         let resolver = self.resolver_with_fallback();
         ref_keys::check_spec(spec, Some(&resolver))?;
-        build_mongo_table(spec, self.mongo.clone(), Some(resolver))
+        let env = BuildEnv::root(&spec.name, Some(resolver), self.injector.clone());
+        build_mongo_table(spec, self.mongo.clone(), &env)
     }
 }
 
@@ -138,6 +152,7 @@ pub(crate) fn mongo_capabilities(writable: bool, live: bool) -> VistaCapabilitie
         Capability::Update,
         Capability::Delete,
         Capability::ConfineWrites,
+        Capability::WritesReachHooks,
     ];
     let streams = [Capability::Subscribe, Capability::Import];
     reads

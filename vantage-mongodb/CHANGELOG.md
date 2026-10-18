@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.0.0 — 2026-10-18
+
+Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
+
+### Breaking changes
+
+- `MongoCondition::DeferredIn { column, deferred }`: what `related_in_condition` now returns, so
+  the condition names its column. It resolves like `Deferred`. Upgrade: an exhaustive `match` on
+  `MongoCondition` needs the new arm.
+
+### Other changes
+
+- `MongoVistaFactory::with_injector(TableInjector<MongoDB>)`. The injector runs on the root
+  table, each reference target (plain or scripted), and `table()` inside `modify:` scripts.
+- `in_values_condition` builds `{ field: { $in: [..] } }`, with each id-like value in both
+  spellings as `eq_value_condition` does. `describe_condition` and `condition_column` are
+  implemented.
+- The shell's `count` and `watch` run the table's `BeforeSelect` hooks first. Replace and patch
+  read the stored row through the table, so a refusing `BeforeSelect` refuses them too.
+- Writable collection vistas advertise `writes_reach_hooks`; pipeline views don't.
+
 ## 2.0.1 — 2026-10-15
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,

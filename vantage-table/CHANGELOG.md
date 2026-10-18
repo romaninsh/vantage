@@ -1,5 +1,43 @@
 # Changelog
 
+## 3.0.0 — 2026-10-18
+
+### Breaking changes
+
+- Hooks take one context struct: `BeforeCx { record, context, table }`, `AfterCx { id, record,
+  before, context, table }`, `DeleteCx { id, record, context, table }`. Upgrade: a closure over
+  `(rec, table)` becomes one over `cx` and reads `cx.record` / `cx.table`; wrap it in
+  `before_hook`, `after_hook` or `before_delete_hook` so the closure's lifetimes infer.
+- `Hook` gains `BeforeSelect`, `BeforeDeleteAll` and `AfterDeleteAll`, and is now
+  `#[non_exhaustive]`: a `match` on it needs a wildcard arm. The hook context structs,
+  `InjectCx`, `BuildKind` and `WriteContext` are `#[non_exhaustive]` too, so later fields and
+  variants aren't breaking: destructure a `cx` with `..`.
+- The `Reference` trait's `build_target` and `build_target_erased` return `Result`. A spec
+  reference whose target has no spec, or fails to build, is a traversal error instead of a
+  column-less table.
+- `Table::with_spec_references(spec, env, build)` takes a `&BuildEnv` in place of the resolver,
+  and `SpecTableBuilder` is `fn(&S, T, &BuildEnv<S, T>)`.
+
+### Other changes
+
+- `WriteContext` (`new()`, `with_principal`, `with_group`; `principal` and `group` readable) with
+  `scope(fut)` and `current()`: who is writing, handed to every hook as `cx.context`.
+- After-update hooks get `cx.before`, the row as it was. The row is read only when such hooks
+  exist.
+- `delete_all` runs `BeforeDeleteAll` / `AfterDeleteAll` once for the set; an error from the
+  before hook cancels it. Per-row delete hooks still don't run.
+- `Hook::BeforeSelect` refuses reads (list, get, stream, count, aggregates) by returning `Err`;
+  `Table::check_read` runs it for shells that read the source directly.
+- `TableSource::in_values_condition`, `describe_condition` and `condition_column`, all defaulted;
+  `conditions::condition_column_of` reads the column a `col <op> value` expression narrows to
+  values. A negation (`!=`, `<>`, `NOT IN`, `NOT LIKE`) or a right side that isn't a value, a
+  value list or a subquery (`col = other_col`, `col = 7 OR 1 = 1`) reads as `None`.
+- `try_with_one` / `try_with_many` (and `HasOne::try_new` / `HasMany::try_new`): relations whose
+  target build can fail. Their metadata target is the declared name, read without running the
+  build, so a metadata snapshot runs no target build and no injector.
+- The build injector: `TableInjector`, `InjectCx`, `BuildKind`, `BuildEnv`, `BuildTrail`. A
+  nested build that re-enters a key is an error naming the cycle.
+
 ## 2.0.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, tests that covered nothing

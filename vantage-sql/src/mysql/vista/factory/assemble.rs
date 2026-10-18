@@ -36,7 +36,7 @@ impl MysqlVistaFactory {
         if !read_only {
             capabilities = capabilities.with(Capability::Import);
         }
-        let shell = MysqlTableShell::new(table, capabilities, metadata, self.resolver.clone());
+        let shell = MysqlTableShell::new(table, capabilities, metadata, self.clone());
         Vista::new(name, shell)
     }
 }
@@ -56,7 +56,7 @@ impl VistaFactory for MysqlVistaFactory {
             ));
         }
 
-        let lowered = lower_spec(&spec, self.db.clone(), self.resolver.clone())?;
+        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name))?;
         #[cfg_attr(not(feature = "rhai"), allow(unused_mut))]
         let mut vista = self.wrap(
             lowered.table,

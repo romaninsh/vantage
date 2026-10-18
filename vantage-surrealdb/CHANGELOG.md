@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.0 — 2026-10-18
+
+- Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
+- `SurrealVistaFactory::with_injector(TableInjector<SurrealDB>)`. The injector runs on the root
+  table, each reference target (plain or `rhai:`), each `base:` table, and `table()` inside
+  `modify:` scripts.
+- `in_values_condition` builds `col IN [..]`; `describe_condition` and `condition_column` are
+  implemented.
+- The shell's `watch` runs the table's `BeforeSelect` hooks first.
+- Writable vistas advertise `writes_reach_hooks`.
+
 ## 2.0.1 — 2026-10-15
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,

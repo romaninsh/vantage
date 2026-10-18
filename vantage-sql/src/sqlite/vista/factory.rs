@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use vantage_core::Result;
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::table::Table;
+use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata};
 
@@ -22,11 +22,29 @@ use crate::sqlite::vista::spec::{SqliteColumnExtras, SqliteTableExtras, SqliteVi
 pub struct SqliteVistaFactory {
     db: SqliteDB,
     resolver: Option<Arc<dyn SpecResolver<SqliteVistaSpec>>>,
+    injector: Option<TableInjector<SqliteDB>>,
 }
 
 impl SqliteVistaFactory {
     pub fn new(db: SqliteDB) -> Self {
-        Self { db, resolver: None }
+        Self {
+            db,
+            resolver: None,
+            injector: None,
+        }
+    }
+
+    /// Attach a build injector, run on every table built from a spec: the
+    /// root, each reference target when traversed, and each `base:` table.
+    /// A table handed to [`from_table`](Self::from_table) is the caller's
+    /// and is wrapped as it is.
+    pub fn with_injector(mut self, injector: TableInjector<SqliteDB>) -> Self {
+        self.injector = Some(injector);
+        self
+    }
+
+    fn env(&self, key: &str) -> BuildEnv<SqliteVistaSpec, SqliteDB> {
+        BuildEnv::root(key, self.resolver.clone(), self.injector.clone())
     }
 
     /// Attach a spec resolver, which finds a YAML spec by table name so
@@ -70,7 +88,7 @@ impl SqliteVistaFactory {
     /// Build a `Table<SqliteDB, EmptyEntity>` from a spec, resolving any
     /// `references:` against the attached resolver.
     pub fn table_from_spec(&self, spec: &SqliteVistaSpec) -> Result<Table<SqliteDB, EmptyEntity>> {
-        build_spec_table(spec, self.db.clone(), self.resolver.clone())
+        build_spec_table(spec, self.db.clone(), &self.env(&spec.name))
     }
 }
 
@@ -80,7 +98,7 @@ impl VistaFactory for SqliteVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: SqliteVistaSpec) -> Result<Vista> {
-        let lowered = lower_spec(&spec, self.db.clone(), self.resolver.clone())?;
+        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name))?;
         Ok(self.wrap(
             lowered.table,
             spec.name,

@@ -8,6 +8,10 @@ use vantage_api_client::{
     FilterStrategy, ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec,
 };
 use vantage_dataset::traits::ReadableValueSet;
+use vantage_expressions::{Expression, ExpressiveEnum};
+use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
+use vantage_types::EmptyEntity;
 use vantage_vista::{Condition, FilterOp, Vista, VistaFactory, VistaQuery};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -30,6 +34,92 @@ fn albums() -> Vista {
     RestApiVistaFactory::new(api)
         .build_from_spec(spec)
         .expect("build")
+}
+
+#[test]
+fn describe_condition_reads_as_the_expression() {
+    let api = RestApi::new("https://example.com");
+    let cond = api
+        .eq_value_condition("parent", CborValue::Text("p1".into()))
+        .unwrap();
+    assert_eq!(api.describe_condition(&cond), "parent = \"p1\"");
+}
+
+#[test]
+fn condition_column_names_eq_and_in() {
+    let api = RestApi::new("https://example.com");
+    let eq = api
+        .eq_value_condition("parent", CborValue::Text("p1".into()))
+        .unwrap();
+    assert_eq!(api.condition_column(&eq), Some("parent".to_string()));
+
+    let invoices = Table::<RestApi, EmptyEntity>::new("invoice", api.clone()).with_id_column("id");
+    let in_cond = api.related_in_condition("invoice_id", &invoices, "id");
+    assert_eq!(
+        api.condition_column(&in_cond),
+        Some("invoice_id".to_string())
+    );
+}
+
+/// A URL filter param holds one value, so only a one-value list narrows (as
+/// the same `field = value` an equality sends); any other list is refused
+/// rather than dropped from the request.
+#[tokio::test]
+async fn in_values_condition_narrows_to_one_value_and_refuses_lists() {
+    let server = MockServer::start().await;
+    support::mount(&server, "GET", 200, r#"[{"id":1}]"#).await;
+    let api = RestApi::builder(server.uri())
+        .response_shape(ResponseShape::BareArray)
+        .http_client(support::test_client())
+        .build();
+    let one = api
+        .in_values_condition("userId", vec![CborValue::Integer(7.into())])
+        .unwrap();
+    Table::<RestApi, EmptyEntity>::new("albums", api.clone())
+        .with_id_column("id")
+        .with_condition(one)
+        .list_values()
+        .await
+        .unwrap();
+    let received = server.received_requests().await.unwrap();
+    assert_eq!(received[0].url.query(), Some("userId=7"));
+
+    for list in [
+        vec![],
+        vec![CborValue::Integer(1.into()), CborValue::Integer(2.into())],
+    ] {
+        let refused = api.in_values_condition("userId", list);
+        assert!(refused.is_err_and(|e| e.is_unsupported()));
+    }
+}
+
+#[test]
+fn condition_column_names_an_in_values_condition() {
+    let api = RestApi::new("https://example.com");
+    let cond = api
+        .in_values_condition("invoice_id", vec![CborValue::Text("i1".into())])
+        .unwrap();
+    assert_eq!(api.condition_column(&cond), Some("invoice_id".to_string()));
+}
+
+#[test]
+fn condition_column_is_none_for_raw_expressions() {
+    let api = RestApi::new("https://example.com");
+    assert_eq!(
+        api.condition_column(&Expression::new("1 = 1", vec![])),
+        None
+    );
+    let a = api
+        .eq_value_condition("a", CborValue::Text("x".into()))
+        .unwrap();
+    let b = api
+        .eq_value_condition("b", CborValue::Text("y".into()))
+        .unwrap();
+    let both = Expression::new(
+        "{} AND {}",
+        vec![ExpressiveEnum::Nested(a), ExpressiveEnum::Nested(b)],
+    );
+    assert_eq!(api.condition_column(&both), None);
 }
 
 #[test]

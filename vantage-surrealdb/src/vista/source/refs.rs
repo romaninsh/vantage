@@ -46,13 +46,10 @@ where
         }
     }
 
-    /// A factory over this table's data source, carrying the spec resolver.
+    /// The factory that built this shell, carrying its spec resolver and
+    /// build injector.
     pub(super) fn factory(&self) -> SurrealVistaFactory {
-        let factory = SurrealVistaFactory::new(self.table.data_source().clone());
-        match &self.resolver {
-            Some(resolver) => factory.with_resolver(resolver.clone()),
-            None => factory,
-        }
+        self.factory.clone()
     }
 
     /// SurrealDB stores the embedded object / array natively, so the host

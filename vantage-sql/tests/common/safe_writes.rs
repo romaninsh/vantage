@@ -99,6 +99,58 @@ macro_rules! safe_writes_tests {
             assert!(err.is_conflict(), "expected a conflict, got: {err:?}");
             assert!(all.get_value("nop").await.unwrap().is_none());
         }
+
+        type Seen = std::sync::Arc<std::sync::Mutex<Vec<(Option<$value>, Option<$value>)>>>;
+
+        /// An after-update hook recording `(before.name, record.name)`.
+        fn name_before_and_after(seen: Seen) -> vantage_table::prelude::Hook<$db> {
+            vantage_table::prelude::Hook::AfterUpdate(vantage_table::table::after_hook(
+                move |cx: vantage_table::table::AfterCx<'_, $db>| {
+                    let pair = (
+                        cx.before.and_then(|b| b.get("name").cloned()),
+                        cx.record.get("name").cloned(),
+                    );
+                    let seen = seen.clone();
+                    Box::pin(async move {
+                        seen.lock().unwrap().push(pair);
+                        Ok(())
+                    })
+                },
+            ))
+        }
+
+        /// `in1` is named `a`; the update names it `z`.
+        async fn assert_after_update_sees_the_former_row(test: &str, patch: bool) {
+            let seen = Seen::default();
+            let (all, _) = fixture(test).await;
+            let hooked = all.with_hook(name_before_and_after(seen.clone()));
+            if patch {
+                hooked
+                    .patch_value("in1", &rec(&[("name", "z".into())]))
+                    .await
+                    .unwrap();
+            } else {
+                hooked
+                    .replace_value(
+                        "in1",
+                        &rec(&[("name", "z".into()), ("parent", "p1".into())]),
+                    )
+                    .await
+                    .unwrap();
+            }
+            let text = |s: &str| Some(<$value>::from(s.to_string()));
+            assert_eq!(*seen.lock().unwrap(), vec![(text("a"), text("z"))]);
+        }
+
+        #[tokio::test]
+        async fn after_update_sees_the_former_row_on_replace() {
+            assert_after_update_sees_the_former_row("after_update_former_replace", false).await;
+        }
+
+        #[tokio::test]
+        async fn after_update_sees_the_former_row_on_patch() {
+            assert_after_update_sees_the_former_row("after_update_former_patch", true).await;
+        }
     };
 }
 

@@ -2,21 +2,18 @@
 //! the steps every driver factory shares. Type mapping and driver blocks stay
 //! with the driver, passed in as `build` functions.
 
-use std::sync::Arc;
-
 use indexmap::IndexMap;
-use vantage_core::{Result, VantageError, error};
+use vantage_core::{Context, Result, VantageError, error};
 use vantage_expressions::{Expressive, SelectableDataSource};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{
-    ColumnFlag, ColumnSpec, JoinKey, ReferenceKind, ReferenceSugar, SpecResolver, VistaSpec,
+use vantage_vista::{ColumnFlag, ColumnSpec, JoinKey, ReferenceKind, ReferenceSugar, VistaSpec};
+
+use crate::{
+    source::SelectSource,
+    table::Table,
+    table::inject::{BuildEnv, BuildKind, BuildTrail, SpecTableBuilder},
+    traits::table_source::TableSource,
 };
-
-use crate::{source::SelectSource, table::Table, traits::table_source::TableSource};
-
-/// Rebuilds a referenced table from its spec, a data source and the resolver.
-type SpecTableBuilder<S, T> =
-    fn(&S, T, Option<Arc<dyn SpecResolver<S>>>) -> Result<Table<T, EmptyEntity>>;
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add one spec column. A `lazy:` column becomes a computed column;
@@ -73,25 +70,28 @@ where
     /// `references:` entries, then the column-level `references:` sugar
     /// (see [`spec_references`]).
     ///
-    /// At traversal time the reference asks `resolver` for the target's
-    /// current spec and rebuilds it with `build`. Without a resolver, or on a
-    /// miss or a build error, the target is a column-less `Table::new(target)`
-    /// and the next query against it fails. A contained kind is an error:
-    /// contained relations are declared under `contained:`.
+    /// At traversal time the reference asks `env`'s resolver for the target's
+    /// current spec and rebuilds it with `build`, in a fresh environment of
+    /// kind [`BuildKind::Reference`] carrying `env`'s injector. A miss or a
+    /// build error is a traversal error, never a wider table. Without a
+    /// resolver the target is a column-less `Table::new(target)`, still run
+    /// through the injector. A contained kind is an error: contained
+    /// relations are declared under `contained:`.
     pub fn with_spec_references<X, C, R, S: 'static>(
         mut self,
         spec: &VistaSpec<X, C, R>,
-        resolver: Option<Arc<dyn SpecResolver<S>>>,
+        env: &BuildEnv<S, T>,
         build: SpecTableBuilder<S, T>,
     ) -> Result<Self> {
         for (relation, reference) in &spec.references {
             let foreign_key = reference.foreign_key(relation);
             self = self.with_spec_join(
+                &spec.name,
                 relation,
                 &reference.table,
                 reference.kind,
                 &foreign_key,
-                resolver.clone(),
+                env,
                 build,
             )?;
         }
@@ -102,33 +102,61 @@ where
                 _ => return Err(unknown_sugar(column)),
             };
             self =
-                self.with_spec_join(column, target, kind, &foreign_key, resolver.clone(), build)?;
+                self.with_spec_join(&spec.name, column, target, kind, &foreign_key, env, build)?;
         }
         Ok(self)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn with_spec_join<S: 'static>(
         self,
+        from: &str,
         relation: &str,
         target: &str,
         kind: ReferenceKind,
         foreign_key: &str,
-        resolver: Option<Arc<dyn SpecResolver<S>>>,
+        env: &BuildEnv<S, T>,
         build: SpecTableBuilder<S, T>,
     ) -> Result<Self> {
-        let target = target.to_string();
-        let build_target = move |source: T| -> Table<T, EmptyEntity> {
-            if let Some(r) = &resolver
-                && let Some(spec) = r.resolve(&target)
-                && let Ok(table) = build(&spec, source.clone(), Some(r.clone()))
-            {
-                return table;
-            }
-            Table::new(target.clone(), source)
+        let target_name = target.to_string();
+        let relation_name = relation.to_string();
+        let child = BuildEnv {
+            resolver: env.resolver.clone(),
+            injector: env.injector.clone(),
+            trail: BuildTrail::default().enter(target)?,
+            kind: BuildKind::Reference {
+                from: from.to_string(),
+                relation: relation.to_string(),
+            },
+        };
+        let build_target = move |source: T| -> Result<Table<T, EmptyEntity>> {
+            let Some(r) = &child.resolver else {
+                let mut table = Table::new(target_name.clone(), source);
+                child.inject(&target_name, &mut table, build)?;
+                return Ok(table);
+            };
+            let spec = r.resolve(&target_name).ok_or_else(|| {
+                error!(
+                    "reference target has no spec",
+                    relation = relation_name.as_str(),
+                    target = target_name.as_str()
+                )
+            })?;
+            build(&spec, source, &child).with_context(|| {
+                error!(
+                    "reference target failed to build",
+                    relation = relation_name.as_str(),
+                    target = target_name.as_str()
+                )
+            })
         };
         match kind {
-            ReferenceKind::HasOne => Ok(self.with_one(relation, foreign_key, build_target)),
-            ReferenceKind::HasMany => Ok(self.with_many(relation, foreign_key, build_target)),
+            ReferenceKind::HasOne => {
+                Ok(self.try_with_one(relation, foreign_key, target, build_target))
+            }
+            ReferenceKind::HasMany => {
+                Ok(self.try_with_many(relation, foreign_key, target, build_target))
+            }
             _ => Err(error!(
                 "references: entries must be has_one or has_many",
                 relation = relation

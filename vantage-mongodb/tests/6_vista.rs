@@ -145,6 +145,30 @@ async fn vista_count_with_eq_condition() -> TestResult {
     Ok(())
 }
 
+/// The shell's count reads the source directly, so it must check the hook
+/// itself; list, get, windows and cursors go through the table.
+#[tokio::test]
+async fn before_select_refuses_vista_list_get_count_and_window() -> TestResult {
+    use vantage_table::table::{Hook, SelectCx, select_hook};
+
+    let (db, name) = setup().await;
+    let table = product_table(db.clone()).with_hook(Hook::BeforeSelect(select_hook(
+        |_cx: SelectCx<'_, MongoDB>| Box::pin(async { Err(vantage_core::error!("read refused")) }),
+    )));
+    let vista = db.vista_factory().from_table(table)?;
+
+    let refused = |e: vantage_core::VantageError| e.to_string().contains("read refused");
+    assert!(vista.list_values().await.is_err_and(refused));
+    let id = MongoId::from(ObjectId::new()).to_string();
+    assert!(vista.get_value(id).await.is_err_and(refused));
+    assert!(vista.count().await.is_err_and(refused));
+    assert!(vista.fetch_window(0, 2).await.is_err_and(refused));
+    assert!(vista.fetch_cursor(None, 2).await.is_err_and(refused));
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_yaml_loads_collection_and_columns() -> TestResult {
     let (db, name) = setup().await;

@@ -17,6 +17,7 @@ where
     E: Entity<T::Value>,
 {
     async fn list(&self) -> Result<IndexMap<Self::Id, E>> {
+        self.check_read().await?;
         let records = self.data_source().list_table_values(self).await?;
         let mut entities = IndexMap::new();
 
@@ -31,6 +32,7 @@ where
     }
 
     async fn get(&self, id: impl Into<Self::Id> + Send) -> Result<Option<E>> {
+        self.check_read().await?;
         let id = id.into();
         let Some(mut record) = self.data_source().get_table_value(self, &id).await? else {
             return Ok(None);
@@ -42,6 +44,7 @@ where
     }
 
     async fn get_some(&self) -> Result<Option<(Self::Id, E)>> {
+        self.check_read().await?;
         if let Some((id, mut record)) = self.data_source().get_table_some_value(self).await? {
             self.apply_lazy_expressions(&mut record).await?;
             let entity: E = E::try_from_record(&record)
@@ -67,6 +70,10 @@ where
     pub fn stream(&self) -> Pin<Box<dyn Stream<Item = Result<(T::Id, E)>> + Send + '_>> {
         let value_stream = self.data_source().stream_table_values(self);
         Box::pin(async_stream::stream! {
+            if let Err(e) = self.check_read().await {
+                yield Err(e);
+                return;
+            }
             tokio::pin!(value_stream);
             loop {
                 let item = {

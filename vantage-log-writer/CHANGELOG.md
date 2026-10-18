@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 — 2026-10-18
+
+- Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
+- `describe_condition` and `condition_column` are implemented.
+- The vista advertises `writes_reach_hooks` beside `insert`.
+
 ## 0.7.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; comments trimmed. No API or

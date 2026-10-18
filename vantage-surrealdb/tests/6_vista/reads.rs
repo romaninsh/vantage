@@ -35,6 +35,27 @@ async fn vista_lists_typed_surreal_as_cbor() -> TestResult {
 }
 
 #[tokio::test]
+async fn before_select_refuses_vista_list_get_count_and_window() -> TestResult {
+    use vantage_surrealdb::surrealdb::SurrealDB;
+    use vantage_table::table::{Hook, SelectCx, select_hook};
+
+    let (db, table_name) = setup().await;
+    let table = product_table(db.clone(), &table_name).with_hook(Hook::BeforeSelect(select_hook(
+        |_cx: SelectCx<'_, SurrealDB>| {
+            Box::pin(async { Err(vantage_core::error!("read refused")) })
+        },
+    )));
+    let vista = db.vista_factory().from_table(table)?;
+
+    let refused = |e: vantage_core::VantageError| e.to_string().contains("read refused");
+    assert!(vista.list_values().await.is_err_and(refused));
+    assert!(vista.get_value("alpha").await.is_err_and(refused));
+    assert!(vista.count().await.is_err_and(refused));
+    assert!(vista.fetch_window(0, 2).await.is_err_and(refused));
+    Ok(())
+}
+
+#[tokio::test]
 async fn vista_get_value_by_id() -> TestResult {
     let (db, table_name) = setup().await;
     seed_row(&db, &table_name, "alpha", "Alpha", 10, false).await?;

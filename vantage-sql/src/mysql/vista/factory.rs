@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use vantage_core::Result;
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::table::Table;
+use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{ColumnSpec, ReferenceSpec, SpecResolver, Vista};
 
@@ -33,11 +33,30 @@ use crate::sql_vista::{
 pub struct MysqlVistaFactory {
     db: MysqlDB,
     resolver: Option<Arc<dyn SpecResolver<MysqlVistaSpec>>>,
+    injector: Option<TableInjector<MysqlDB>>,
 }
 
 impl MysqlVistaFactory {
     pub fn new(db: MysqlDB) -> Self {
-        Self { db, resolver: None }
+        Self {
+            db,
+            resolver: None,
+            injector: None,
+        }
+    }
+
+    /// Attach a build injector, run on every table built from a spec: the
+    /// root, each reference target when traversed, each `base:` table, and
+    /// the tables a script's `table(name)` builds. A table handed to
+    /// [`from_table`](Self::from_table) is the caller's and is wrapped as it
+    /// is.
+    pub fn with_injector(mut self, injector: TableInjector<MysqlDB>) -> Self {
+        self.injector = Some(injector);
+        self
+    }
+
+    fn env(&self, key: &str) -> BuildEnv<MysqlVistaSpec, MysqlDB> {
+        BuildEnv::root(key, self.resolver.clone(), self.injector.clone())
     }
 
     /// Attach a spec resolver, which finds a YAML spec by table name so
@@ -61,7 +80,7 @@ impl MysqlVistaFactory {
     /// Build a `Table<MysqlDB, EmptyEntity>` from a spec, resolving any
     /// `references:` against the attached resolver.
     pub fn table_from_spec(&self, spec: &MysqlVistaSpec) -> Result<Table<MysqlDB, EmptyEntity>> {
-        build_spec_table(spec, self.db.clone(), self.resolver.clone())
+        build_spec_table(spec, self.db.clone(), &self.env(&spec.name))
     }
 }
 

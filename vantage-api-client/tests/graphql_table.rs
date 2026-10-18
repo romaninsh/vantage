@@ -538,6 +538,17 @@ async fn local_comparisons_follow_the_operators() {
 }
 
 #[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() {
+    let api = GraphqlApi::new("https://example.test/graphql");
+    let listed = |ids: &[&str]| {
+        let values = ids.iter().map(|id| AnyGraphqlType::from(*id)).collect();
+        api.in_values_condition("id", values).unwrap()
+    };
+    assert_eq!(local_ids(listed(&["1", "3"])).await, ["1", "3"]);
+    assert!(local_ids(listed(&[])).await.is_empty());
+}
+
+#[tokio::test]
 async fn local_set_membership_and_nulls() {
     assert_eq!(
         local_ids(col("year").in_(vec![2006i64, 2020])).await,

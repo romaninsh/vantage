@@ -7,10 +7,13 @@
 
 use ciborium::Value as CborValue;
 use vantage_expressions::{DeferredFn, Expression, ExpressiveEnum};
-use vantage_redb::AnyRedbType;
 use vantage_redb::condition::RedbCondition;
 use vantage_redb::operation::RedbOperation;
+use vantage_redb::{AnyRedbType, Redb};
 use vantage_table::column::core::Column;
+use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
+use vantage_types::EmptyEntity;
 
 fn deferred_returning(payload: CborValue) -> RedbCondition {
     RedbCondition::Deferred(DeferredFn::new(move || {
@@ -137,6 +140,47 @@ fn test_operations_work_on_any_expressive_value() {
 
     assert_eq!(expr.eq("a").column(), Some("owner"));
     assert_eq!(expr.in_(vec!["a", "b"]).column(), Some("owner"));
+}
+
+// ── describe_condition / condition_column ─────────────────────────────────
+
+#[test]
+fn describe_condition_reads_as_the_expression() {
+    let path = tempfile::NamedTempFile::new().unwrap();
+    let db = Redb::create(path.path()).unwrap();
+    let cond = RedbCondition::eq("parent", "p1");
+    assert_eq!(db.describe_condition(&cond), "parent = \"p1\"");
+}
+
+#[test]
+fn condition_column_names_eq_and_in() {
+    let path = tempfile::NamedTempFile::new().unwrap();
+    let db = Redb::create(path.path()).unwrap();
+    let eq = RedbCondition::eq("parent", "p1");
+    assert_eq!(db.condition_column(&eq), Some("parent".to_string()));
+    let literal_in = RedbCondition::in_("invoice_id", vec!["i1", "i2"]);
+    assert_eq!(
+        db.condition_column(&literal_in),
+        Some("invoice_id".to_string())
+    );
+
+    let invoices = Table::<Redb, EmptyEntity>::new("invoice", db.clone()).with_id_column("id");
+    let in_cond = db.related_in_condition("invoice_id", &invoices, "id");
+    assert_eq!(
+        db.condition_column(&in_cond),
+        Some("invoice_id".to_string())
+    );
+    assert_eq!(db.describe_condition(&in_cond), "invoice_id IN <deferred>");
+}
+
+#[test]
+fn condition_column_names_an_in_values_condition() {
+    let path = tempfile::NamedTempFile::new().unwrap();
+    let db = Redb::create(path.path()).unwrap();
+    let cond = db
+        .in_values_condition("invoice_id", vec![AnyRedbType::new("i1".to_string())])
+        .unwrap();
+    assert_eq!(db.condition_column(&cond), Some("invoice_id".to_string()));
 }
 
 // ── Deferred resolution ───────────────────────────────────────────────────

@@ -117,7 +117,12 @@ impl MemoryTableShell {
     /// The query rendered for `preview`.
     fn render_query(&self) -> String {
         let mut out = format!("scan {}", self.table.name());
-        let mut clauses: Vec<String> = self.query.conditions.iter().map(describe).collect();
+        let mut clauses: Vec<String> = self
+            .query
+            .conditions
+            .iter()
+            .map(MemoryCondition::describe)
+            .collect();
         if let Some(text) = &self.query.search {
             clauses.push(format!("search {text:?}"));
         }
@@ -139,41 +144,5 @@ impl MemoryTableShell {
             out.push_str(&keys.join(", "));
         }
         out
-    }
-}
-
-/// Human-readable form of a condition, for `preview`.
-fn describe(c: &MemoryCondition) -> String {
-    let join = |list: &[MemoryCondition], sep: &str| {
-        let parts: Vec<String> = list.iter().map(describe).collect();
-        format!("({})", parts.join(sep))
-    };
-    match c {
-        MemoryCondition::Cmp { path, op, value } => {
-            format!("{path} {} {}", op.key_symbol(), render_value(value))
-        }
-        MemoryCondition::Search { text, .. } => format!("search {text:?}"),
-        MemoryCondition::And(all) => join(all, " AND "),
-        MemoryCondition::Or(any) => join(any, " OR "),
-        MemoryCondition::Not(inner) => format!("NOT {}", describe(inner)),
-        MemoryCondition::Column(name) => name.clone(),
-        MemoryCondition::Deferred(_) => "<deferred>".to_string(),
-    }
-}
-
-/// A condition operand as a literal: text quoted, numbers and booleans bare,
-/// arrays bracketed.
-fn render_value(value: &CborValue) -> String {
-    match value {
-        CborValue::Text(s) => format!("{s:?}"),
-        CborValue::Integer(i) => i128::from(*i).to_string(),
-        CborValue::Float(f) => f.to_string(),
-        CborValue::Bool(b) => b.to_string(),
-        CborValue::Null => "null".to_string(),
-        CborValue::Array(items) => {
-            let items: Vec<String> = items.iter().map(render_value).collect();
-            format!("[{}]", items.join(", "))
-        }
-        other => format!("{other:?}"),
     }
 }

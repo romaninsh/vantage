@@ -95,7 +95,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         let source_id = self.id_field_name();
 
         let mut target: Table<T, E2> = downcast_target(
-            reference.build_target(self.data_source() as &dyn Any),
+            reference.build_target(self.data_source() as &dyn Any)?,
             relation,
         )?;
 
@@ -123,7 +123,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     ) -> Result<Table<T, E2>> {
         let reference = self.lookup_ref(relation)?;
         let mut target: Table<T, E2> = downcast_target(
-            reference.build_target(self.data_source() as &dyn Any),
+            reference.build_target(self.data_source() as &dyn Any)?,
             relation,
         )?;
         self.attach_correlated_condition(reference, &mut target);
@@ -137,7 +137,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     pub fn get_subquery_erased(&self, relation: &str) -> Result<Table<T, EmptyEntity>> {
         let reference = self.lookup_ref(relation)?;
         let mut target: Table<T, EmptyEntity> = downcast_target(
-            reference.build_target_erased(self.data_source() as &dyn Any),
+            reference.build_target_erased(self.data_source() as &dyn Any)?,
             relation,
         )?;
         self.attach_correlated_condition(reference, &mut target);
@@ -182,7 +182,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     pub fn get_ref_target_erased(&self, relation: &str) -> Result<Table<T, EmptyEntity>> {
         let reference = self.lookup_ref(relation)?;
         downcast_target(
-            reference.build_target_erased(self.data_source() as &dyn Any),
+            reference.build_target_erased(self.data_source() as &dyn Any)?,
             relation,
         )
     }

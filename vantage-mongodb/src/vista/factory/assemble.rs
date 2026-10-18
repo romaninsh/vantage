@@ -77,14 +77,7 @@ impl MongoVistaFactory {
     ) -> Vista {
         let writable = table.data_source().is_stored();
         let capabilities = mongo_capabilities(writable, writable && self.live_enabled());
-        let shell = MongoTableShell::new(
-            table,
-            capabilities,
-            metadata,
-            column_paths,
-            self.resolver.clone(),
-            self.change_streams,
-        );
+        let shell = MongoTableShell::new(table, capabilities, metadata, column_paths, self.clone());
         Vista::new(name, shell)
     }
 }

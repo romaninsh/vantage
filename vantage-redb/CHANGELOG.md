@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — 2026-10-18
+
+- Requires vantage-table 3.0.0.
+- **Breaking:** `RedbCondition::DeferredIn { column, deferred }`: what `related_in_condition` now
+  returns, so the condition names its column. It resolves like `Deferred`, and `column()` returns
+  the column. Upgrade: an exhaustive `match` on `RedbCondition` needs the new arm.
+- `in_values_condition` builds `RedbCondition::In`; `describe_condition` and `condition_column`
+  are implemented.
+
 ## 0.7.3 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, tests that covered nothing

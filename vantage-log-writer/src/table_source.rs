@@ -48,6 +48,14 @@ impl TableSource for LogWriter {
     type Condition = Expression<Self::Value>;
     type Source = String;
 
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        condition.preview()
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        vantage_table::conditions::condition_column_of(condition)
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }

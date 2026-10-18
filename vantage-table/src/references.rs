@@ -45,15 +45,16 @@ pub trait Reference: Send + Sync {
     /// `Box<dyn Any>` so callers can downcast back to the concrete
     /// `Table<T, TargetE>`. Used by [`crate::table::Table::get_ref_as`] and
     /// [`crate::table::Table::get_subquery_as`] to build the target before
-    /// applying the join condition.
-    fn build_target(&self, data_source: &dyn Any) -> Box<dyn Any>;
+    /// applying the join condition. Errors when the target can't be built
+    /// (e.g. a spec reference whose target has no spec).
+    fn build_target(&self, data_source: &dyn Any) -> Result<Box<dyn Any>>;
 
     /// Produce a fresh target table with its entity type erased to
     /// `EmptyEntity`, wrapped in `Box<dyn Any>` for downcast to
     /// `Table<T, EmptyEntity>`. Unlike [`build_target`](Self::build_target),
     /// the caller need not know the concrete target entity type — used by
     /// implicit-reference traversal, which walks relations by name.
-    fn build_target_erased(&self, data_source: &dyn Any) -> Box<dyn Any>;
+    fn build_target_erased(&self, data_source: &dyn Any) -> Result<Box<dyn Any>>;
 
     /// Resolve traversal using a known source row. Returns the target table
     /// (entity type erased to `EmptyEntity`) wrapped in `Box<dyn Any>`, with
@@ -73,8 +74,12 @@ pub trait Reference: Send + Sync {
         source_row: &dyn Any,
     ) -> Result<Box<dyn Any>>;
 
-    /// The table name of the target built over `data_source` (`&T`). It
-    /// names the relation's target in Vista metadata, which a catalog
-    /// resolves by name.
+    /// The name of the relation's target in Vista metadata, which a catalog
+    /// resolves by name. A relation declared with a target name
+    /// (`try_with_one` / `try_with_many`, so every spec reference) returns
+    /// it without building the target, so a metadata snapshot runs no
+    /// target build and no injector; traversing it reports any build error.
+    /// Otherwise, the table name of the target built over `data_source`
+    /// (`&T`).
     fn target_table_name(&self, data_source: &dyn Any) -> String;
 }

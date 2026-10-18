@@ -21,6 +21,7 @@ use ciborium::Value as CborValue;
 use tokio::sync::oneshot;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet as _;
+use vantage_table::write_context::WriteContext;
 use vantage_types::Record;
 use vantage_vista::VistaQuery;
 
@@ -64,6 +65,10 @@ impl Dio {
     /// [`insert_new`](ChangeFlash::insert_new) or a re-keyed insert), or the
     /// write's error after the rollback. A caller that stops waiting doesn't
     /// stop the write; it still lands and settles.
+    ///
+    /// A flash without a [`context`](ChangeFlash::context) takes the
+    /// [`WriteContext`] in scope here; the write runs inside it, so the
+    /// master's table hooks see who made the change.
     pub async fn flash(&self, mut flash: ChangeFlash) -> Result<FlashOutcome> {
         let inner = &self.inner;
         if super::worker::writing_for(inner) {
@@ -72,10 +77,11 @@ impl Dio {
                 table = inner.cache_table_name
             ));
         }
+        flash.ensure_context();
         let set = inner.write_set();
         let rule = SetRule::new(set, inner);
         if *flash.kind() == FlashKind::Clear && rule.narrows() {
-            return self.clear_set().await;
+            return self.clear_set(flash.context()).await;
         }
 
         let id = flash.id().map(str::to_string);
@@ -201,10 +207,15 @@ impl Dio {
 
     /// Delete every row of the set, one confined delete each: the rows the
     /// Dio's facade reads, so on a paged Dio only the rows its cache holds.
-    async fn clear_set(&self) -> Result<FlashOutcome> {
+    /// Each delete carries the clear's `context`.
+    async fn clear_set(&self, context: Option<&WriteContext>) -> Result<FlashOutcome> {
         let rows = DioShell::new(self.inner.clone()).read().await?;
         for id in rows.into_keys() {
-            Box::pin(self.flash(ChangeFlash::delete(id))).await?;
+            let mut delete = ChangeFlash::delete(id);
+            if let Some(context) = context {
+                delete = delete.with_context(context.clone());
+            }
+            Box::pin(self.flash(delete)).await?;
         }
         Ok(FlashOutcome::applied())
     }

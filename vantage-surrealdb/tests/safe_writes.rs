@@ -1,12 +1,15 @@
 //! The write contract on SurrealDB: confined, idempotent, invariant-filling.
 
+use std::sync::{Arc, Mutex};
+
 use vantage_dataset::contract::{self, Fixture, OpFixture};
 use vantage_dataset::prelude::*;
 use vantage_surrealdb::operation::SurrealOperation;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::types::AnySurrealType;
-use vantage_table::table::Table;
+use vantage_table::prelude::Hook;
+use vantage_table::table::{AfterCx, Table, after_hook};
 use vantage_types::{EmptyEntity, Record};
 
 async fn get_db() -> SurrealDB {
@@ -97,6 +100,53 @@ async fn where_eq_fills_on_insert() {
             .unwrap()["parent"],
         text("p1")
     );
+}
+
+type Seen = Arc<Mutex<Vec<(Option<AnySurrealType>, Option<AnySurrealType>)>>>;
+
+/// `in1` is named `a`; an update through a table with an after-update hook
+/// names it `z`, and the hook sees both.
+async fn assert_after_update_sees_the_former_row(patch: bool) {
+    let seen = Seen::default();
+    let log = seen.clone();
+    let (all, _) = fixture().await;
+    let hooked = all.with_hook(Hook::AfterUpdate(after_hook(
+        move |cx: AfterCx<'_, SurrealDB>| {
+            let pair = (
+                cx.before.and_then(|b| b.get("name").cloned()),
+                cx.record.get("name").cloned(),
+            );
+            let log = log.clone();
+            Box::pin(async move {
+                log.lock().unwrap().push(pair);
+                Ok(())
+            })
+        },
+    )));
+    let id = Thing::new("item", "in1");
+    if patch {
+        hooked
+            .patch_value(id, &rec(&[("name", text("z"))]))
+            .await
+            .unwrap();
+    } else {
+        let full = rec(&[("name", text("z")), ("parent", text("p1"))]);
+        hooked.replace_value(id, &full).await.unwrap();
+    }
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![(Some(text("a")), Some(text("z")))]
+    );
+}
+
+#[tokio::test]
+async fn after_update_sees_the_former_row_on_replace() {
+    assert_after_update_sees_the_former_row(false).await;
+}
+
+#[tokio::test]
+async fn after_update_sees_the_former_row_on_patch() {
+    assert_after_update_sees_the_former_row(true).await;
 }
 
 #[tokio::test]

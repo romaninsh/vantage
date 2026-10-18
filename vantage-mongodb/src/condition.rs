@@ -14,6 +14,13 @@ pub enum MongoCondition {
     /// A filter resolved at query time. It must produce an `AnyMongoType`
     /// wrapping a `Bson::Document`; anything else fails to resolve.
     Deferred(DeferredFn<AnyMongoType>),
+    /// A [`Deferred`](Self::Deferred) filter known to constrain `column`
+    /// (traversal's `{ fk: { $in: parent ids } }`), so the column is readable
+    /// before resolution. Resolves exactly as `Deferred` does.
+    DeferredIn {
+        column: String,
+        deferred: DeferredFn<AnyMongoType>,
+    },
     /// Conditions combined with `$and`.
     And(Vec<MongoCondition>),
 }
@@ -28,7 +35,8 @@ impl MongoCondition {
         Box::pin(async move {
             match self {
                 MongoCondition::Doc(doc) => Ok(doc.clone()),
-                MongoCondition::Deferred(deferred) => {
+                MongoCondition::Deferred(deferred)
+                | MongoCondition::DeferredIn { deferred, .. } => {
                     let result = deferred.call().await?;
                     let resolved = match result {
                         ExpressiveEnum::Scalar(val) => val,
@@ -64,6 +72,7 @@ impl std::fmt::Debug for MongoCondition {
         match self {
             MongoCondition::Doc(doc) => write!(f, "Doc({doc})"),
             MongoCondition::Deferred(_) => write!(f, "Deferred(...)"),
+            MongoCondition::DeferredIn { column, .. } => write!(f, "DeferredIn({column}, ...)"),
             MongoCondition::And(conditions) => f.debug_tuple("And").field(conditions).finish(),
         }
     }

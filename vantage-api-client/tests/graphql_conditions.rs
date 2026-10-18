@@ -4,10 +4,14 @@
 
 use serde_json::{Value, json};
 use vantage_api_client::{
-    AnyGraphqlType, FieldCondition, FilterDialect, GraphqlCondition, GraphqlOp, GraphqlOperation,
+    AnyGraphqlType, FieldCondition, FilterDialect, GraphqlApi, GraphqlCondition, GraphqlOp,
+    GraphqlOperation,
 };
 use vantage_expressions::{DeferredFn, ExpressiveEnum};
 use vantage_table::column::core::Column;
+use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
+use vantage_types::EmptyEntity;
 
 fn field(name: &str, op: GraphqlOp, value: Value) -> GraphqlCondition {
     GraphqlCondition::Field(FieldCondition::new(name, op, value))
@@ -89,6 +93,85 @@ async fn generic_refuses_every_operator_but_equality() {
         let err = generic_error(&field("price", op.clone(), json!(100))).await;
         assert!(err.contains("Generic"), "{op:?}: {err}");
     }
+}
+
+#[test]
+fn describe_condition_reads_as_the_expression() {
+    let api = GraphqlApi::new("https://example.test/graphql");
+    let cond = api
+        .eq_value_condition("parent", AnyGraphqlType::from("p1"))
+        .unwrap();
+    assert_eq!(api.describe_condition(&cond), "parent = \"p1\"");
+}
+
+#[test]
+fn condition_column_names_eq_and_in() {
+    let api = GraphqlApi::new("https://example.test/graphql");
+    let eq = api
+        .eq_value_condition("parent", AnyGraphqlType::from("p1"))
+        .unwrap();
+    assert_eq!(api.condition_column(&eq), Some("parent".to_string()));
+
+    let invoices =
+        Table::<GraphqlApi, EmptyEntity>::new("invoice", api.clone()).with_id_column("id");
+    let in_cond = api.related_in_condition("invoice_id", &invoices, "id");
+    assert_eq!(
+        api.condition_column(&in_cond),
+        Some("invoice_id".to_string())
+    );
+}
+
+#[test]
+fn condition_column_names_an_in_values_condition() {
+    let api = GraphqlApi::new("https://example.test/graphql");
+    let cond = api
+        .in_values_condition("invoice_id", vec![AnyGraphqlType::from("i1")])
+        .unwrap();
+    assert_eq!(api.condition_column(&cond), Some("invoice_id".to_string()));
+}
+
+#[test]
+fn condition_column_is_none_for_raw_expressions() {
+    let api = GraphqlApi::new("https://example.test/graphql");
+    let both = GraphqlCondition::And(vec![
+        field("name", GraphqlOp::Eq, json!("Alice")),
+        field("active", GraphqlOp::Eq, json!(true)),
+    ]);
+    assert_eq!(api.condition_column(&both), None);
+    let not = GraphqlCondition::Not(Box::new(field("active", GraphqlOp::Eq, json!(true))));
+    assert_eq!(api.condition_column(&not), None);
+    let or = GraphqlCondition::Or(vec![
+        field("tenant_id", GraphqlOp::Eq, json!("acme")),
+        field("id", GraphqlOp::Gte, json!(0)),
+    ]);
+    assert_eq!(api.condition_column(&or), None);
+}
+
+#[test]
+fn condition_column_names_a_comparison() {
+    let api = GraphqlApi::new("https://example.test/graphql");
+    let gt = field("invoice_id", GraphqlOp::Gt, json!(1));
+    assert_eq!(api.condition_column(&gt), Some("invoice_id".to_string()));
+}
+
+#[test]
+fn condition_column_is_none_for_negations() {
+    let api = GraphqlApi::new("https://example.test/graphql");
+    for op in [
+        GraphqlOp::Ne,
+        GraphqlOp::NotIn,
+        GraphqlOp::IsNull,
+        GraphqlOp::IsNotNull,
+    ] {
+        let cond = field("tenant_id", op.clone(), json!("acme"));
+        assert_eq!(api.condition_column(&cond), None, "{op:?}");
+    }
+    let deferred = GraphqlCondition::deferred_field(
+        "tenant_id",
+        GraphqlOp::Ne,
+        deferred_scalar(AnyGraphqlType::new("acme".to_string())),
+    );
+    assert_eq!(api.condition_column(&deferred), None);
 }
 
 #[test]

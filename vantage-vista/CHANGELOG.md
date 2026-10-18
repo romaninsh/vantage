@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0 — 2026-10-18
+
+- `Capability::WritesReachHooks` (`writes_reach_hooks`): every write the vista advertises runs
+  through a `Table`, so its hooks (audit stamps, generated ids, access checks) see it. The contract
+  checks treat it as a declaration with no probe.
+
 ## 2.0.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, and tests that covered nothing

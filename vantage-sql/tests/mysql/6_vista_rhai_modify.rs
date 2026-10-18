@@ -103,6 +103,49 @@ async fn modify_script_table_resolves_through_resolver() -> TestResult {
     Ok(())
 }
 
+/// `table(name)` in a `modify:` script builds through the factory, so the
+/// factory's injector narrows it: bob's `o3` is outside the injected `o1`.
+#[tokio::test]
+async fn injector_condition_applies_to_a_modify_script_table() -> TestResult {
+    use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
+    use vantage_table::table::TableInjector;
+    use vantage_table::traits::table_source::TableSource;
+
+    let f = Fixture::new("modinject").await;
+    let only_o1: TableInjector<MysqlDB> = std::sync::Arc::new(|cx, table| {
+        if cx.key == "orders" {
+            let o1 = table
+                .data_source()
+                .eq_value_condition("id", AnyMysqlType::from("o1"))?;
+            table.add_condition(o1);
+        }
+        Ok(())
+    });
+    let bob_orders = spec(&format!(
+        r#"
+name: bob_orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+  total: {{ type: int }}
+mysql:
+  table: {}
+  modify: |
+    table("orders").where("client_id", "bob")
+"#,
+        f.orders_t
+    ));
+    let factory =
+        f.db.vista_factory()
+            .with_resolver(f.resolver())
+            .with_injector(only_o1);
+    let orders = factory.build_from_spec(bob_orders)?;
+    assert!(orders.list_values().await?.is_empty());
+
+    f.drop_tables().await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn native_condition_rejects_foreign_type() -> TestResult {
     let f = Fixture::new("raw").await;

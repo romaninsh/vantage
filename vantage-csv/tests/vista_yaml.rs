@@ -65,6 +65,35 @@ fn load_yaml(name: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"))
 }
 
+/// The injector narrows a spec-built table; CSV has no resolver, so its
+/// table builder refuses to build another table.
+#[tokio::test]
+async fn injector_condition_applies_to_a_spec_built_table() -> Result<()> {
+    use std::sync::{Arc, Mutex};
+    use vantage_csv::AnyCsvType;
+    use vantage_table::table::{BuildKind, TableInjector};
+    use vantage_table::traits::table_source::TableSource;
+
+    let built_other = Arc::new(Mutex::new(None));
+    let seen = built_other.clone();
+    let only_doc: TableInjector<Csv> = Arc::new(move |cx, table| {
+        assert_eq!((cx.key, &cx.kind), ("client", &BuildKind::Root));
+        *seen.lock().unwrap() = Some((cx.build)("order").is_err());
+        let doc = AnyCsvType::new("doc".to_string());
+        table.add_condition(table.data_source().eq_value_condition("id", doc)?);
+        Ok(())
+    });
+    let vista = Csv::new(data_dir())
+        .vista_factory()
+        .with_injector(only_doc)
+        .from_yaml(&load_yaml("client.vista.yaml"))?;
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["doc"]);
+    assert_eq!(*built_other.lock().unwrap(), Some(true));
+    Ok(())
+}
+
 #[tokio::test]
 async fn yaml_spec_sets_name_id_title_and_hidden_flags() -> Result<()> {
     let csv = Csv::new(data_dir());
