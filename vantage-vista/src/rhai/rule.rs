@@ -43,20 +43,32 @@ pub enum HookOn {
 
 /// What a rule hook receives.
 ///
-/// A closure registered with `before_delete(|id| …)` gets the id from both
-/// [`Id`](Self::Id) and [`Delete`](Self::Delete); one written as
-/// `before_delete(|id, row| …)` also gets the row from `Delete`, and unit
-/// from `Id`.
+/// A closure takes one or two arguments, and a two-argument closure gets
+/// unit for a second value its input lacks:
+///
+/// - `before_delete(|id| …)` gets the id from [`Id`](Self::Id) and
+///   [`Delete`](Self::Delete); `|id, row| …` also gets the stored row from
+///   `Delete`.
+/// - `before_update` / `before_save(|record| …)` get the record from
+///   [`Record`](Self::Record) and [`Update`](Self::Update);
+///   `|record, stored| …` also gets the row as it was before the write, so
+///   a rule can judge where a row came from, not only where it goes.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum RuleHookInput {
-    /// The record about to be written. On an update, a rule target hands
-    /// over the full row: the stored row with the written fields on top.
+    /// The record about to be written.
     Record(CborValue),
     /// The id of the row about to be deleted.
     Id(CborValue),
     /// The id of the row about to be deleted, and the row as stored.
     Delete { id: CborValue, row: CborValue },
+    /// The record about to be written (on a patch, the stored row with the
+    /// patched fields on top) and the row as stored before the write;
+    /// `stored` is `None` on an insert, or when the set doesn't hold the row.
+    Update {
+        record: CborValue,
+        stored: Option<CborValue>,
+    },
 }
 
 /// A rule hook: `Err(message)` refuses the write with the script's message.
@@ -145,13 +157,19 @@ impl RuleHandle {
             .unwrap()
             .clone()
             .ok_or("rule hooks need a script run by eval_rule_script")?;
-        let takes_row = on == HookOn::BeforeDelete && arity(&closure, &runtime.ast) == Some(2);
+        // Insert hooks have no stored row to offer, so only they keep to one
+        // argument.
+        let takes_row = on != HookOn::BeforeInsert && arity(&closure, &runtime.ast) == Some(2);
         let run: RuleHookFn = Arc::new(move |input| {
             let (first, row) = match input {
                 RuleHookInput::Record(value) | RuleHookInput::Id(value) => {
                     (cbor_to_dynamic(&value), Dynamic::UNIT)
                 }
                 RuleHookInput::Delete { id, row } => (cbor_to_dynamic(&id), cbor_to_dynamic(&row)),
+                RuleHookInput::Update { record, stored } => (
+                    cbor_to_dynamic(&record),
+                    stored.as_ref().map_or(Dynamic::UNIT, cbor_to_dynamic),
+                ),
             };
             let outcome = if takes_row {
                 closure.call::<Dynamic>(&runtime.engine, &runtime.ast, (first, row))

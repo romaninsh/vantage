@@ -87,6 +87,74 @@ async fn rule_where_with_an_unsupported_operator_names_it() {
     assert!(err.to_string().contains("operator `>`"), "{err}");
 }
 
+/// The review's case: an editor allowed only bakery 3 patches a bakery-4
+/// row into bakery 3. The merged row says 3, so a check on `record` alone
+/// passes; a closure that also checks `stored` refuses it.
+#[tokio::test]
+async fn an_update_closure_sees_the_stored_row() {
+    let src = MockTableSource::new()
+        .with_data(
+            "client",
+            vec![
+                json!({"id": "1", "name": "a", "bakery_id": 3}),
+                json!({"id": "2", "name": "b", "bakery_id": 4}),
+            ],
+        )
+        .await;
+    let table = MockTable::new("client", src)
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("bakery_id");
+    let (table, _) = rule(
+        table,
+        r#"
+        let mine = [3];
+        table.before_update(|record, stored| {
+            if !mine.contains(record.bakery_id) { throw "not your bakery" }
+            if stored != () && !mine.contains(stored.bakery_id) { throw "that row is not yours" }
+        });
+        table.before_save(|record, stored| if stored != () && stored.name != record.name && record.name == "x" { throw "save sees both" });
+        "#,
+    )
+    .unwrap();
+
+    let err = table
+        .patch_value("2".to_string(), &Record::from(json!({"bakery_id": 3})))
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "that row is not yours");
+    let row = table.get_value("2".to_string()).await.unwrap().unwrap();
+    assert_eq!(row["bakery_id"], json!(4));
+
+    let err = table
+        .replace_value(
+            "2".to_string(),
+            &Record::from(json!({"name": "b", "bakery_id": 3})),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "that row is not yours");
+
+    table
+        .patch_value("1".to_string(), &Record::from(json!({"name": "z"})))
+        .await
+        .unwrap();
+    let err = table
+        .patch_value("1".to_string(), &Record::from(json!({"name": "x"})))
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "save sees both");
+
+    // An insert has no stored row: the closure gets unit.
+    table
+        .insert_value(
+            "3".to_string(),
+            &Record::from(json!({"name": "x", "bakery_id": 3})),
+        )
+        .await
+        .unwrap();
+}
+
 /// The spec's editor rule: a patch that doesn't name `bakery_id` is judged
 /// on the stored row, so it passes; one that moves the row out is refused.
 #[tokio::test]

@@ -55,8 +55,9 @@
 - `rhai` feature: `rule::TableRuleTarget` (with `RuleCodec`) is the table a vantage-vista
   `RuleHandle` narrows. `where` takes `eq` and `in`; other operators are an error naming them.
   Hooks register in `Phase::Validate`. On a patch the script sees the full row (the stored row
-  with the patched fields on top); on an insert or a replace, exactly the record written. A
-  delete hook gets the id and the stored row.
+  with the patched fields on top); on an insert or a replace, exactly the record written. An
+  update or save hook also gets the stored row (`RuleHookInput::Update`), and a delete hook the
+  id and the stored row.
   `into_table` returns the table as the rule left it.
 
 ## 2.0.1 — 2026-10-14

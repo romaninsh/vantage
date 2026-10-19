@@ -185,10 +185,14 @@ where
                         }
                         _ => cx.record.clone(),
                     };
-                    run(RuleHookInput::Record(record_to_cbor::<T>(
-                        codec.to_cbor,
-                        &row,
-                    )))
+                    // The row before the write rides along, so a rule can
+                    // judge where a row was as well as where it goes.
+                    run(RuleHookInput::Update {
+                        record: record_to_cbor::<T>(codec.to_cbor, &row),
+                        stored: cx
+                            .stored
+                            .map(|stored| record_to_cbor::<T>(codec.to_cbor, stored)),
+                    })
                     .map_err(refuse)
                 });
                 match on {

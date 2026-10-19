@@ -212,6 +212,54 @@ fn before_delete_sees_the_row_when_it_asks_for_it() {
     );
 }
 
+/// An editor allowed only `dev` patches a `prod` flag to `dev`: the merged
+/// record says `dev`, the stored row says `prod`, and the two-argument
+/// closure refuses on the stored row.
+#[test]
+fn an_update_closure_sees_the_stored_row() {
+    let (recorder, _, outcome) = run(
+        r#"let mine = ["dev"];
+           table.before_update(|record, stored| {
+               if !mine.contains(record.environment) { throw "not your environment" }
+               if stored != () && !mine.contains(stored.environment) { throw "that flag is not yours" }
+           });
+           table.before_save(|record| if record.environment == "qa" { throw "no qa" });"#,
+        Env::new(),
+    );
+    outcome.unwrap();
+    let env = |e: &str| {
+        CborValue::Map(vec![(
+            CborValue::Text("environment".into()),
+            CborValue::Text(e.into()),
+        )])
+    };
+    let update = |record: &str, stored: Option<&str>| RuleHookInput::Update {
+        record: env(record),
+        stored: stored.map(env),
+    };
+    assert_eq!(
+        recorder.fire(HookOn::BeforeUpdate, update("dev", Some("prod"))),
+        Err("that flag is not yours".to_string())
+    );
+    assert_eq!(
+        recorder.fire(HookOn::BeforeUpdate, update("dev", Some("dev"))),
+        Ok(())
+    );
+    assert_eq!(
+        recorder.fire(HookOn::BeforeUpdate, update("dev", None)),
+        Ok(())
+    );
+    // The one-argument form still gets the record.
+    assert_eq!(
+        recorder.fire(HookOn::BeforeSave, update("qa", Some("dev"))),
+        Err("no qa".to_string())
+    );
+    assert_eq!(
+        recorder.fire(HookOn::BeforeSave, RuleHookInput::Record(env("qa"))),
+        Err("no qa".to_string())
+    );
+}
+
 #[test]
 fn closure_captures_script_variables() {
     let mut session = RhaiMap::new();
