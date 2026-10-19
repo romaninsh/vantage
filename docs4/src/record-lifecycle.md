@@ -276,8 +276,8 @@ available at its stage, so new fields can be added without breaking existing hoo
 
 | variant | when | receives | may |
 | --- | --- | --- | --- |
-| `BeforeInsert(Phase, _)` | before an insert | `BeforeCx { record: &mut Record, context, table }` | mutate / `Err` to cancel |
-| `BeforeUpdate(Phase, _)` | before replace/patch | `BeforeCx` | mutate / `Err` to cancel |
+| `BeforeInsert(Phase, _)` | before an insert | `BeforeCx { record: &mut Record, id: None, stored: None, context, table }` | mutate / `Err` to cancel |
+| `BeforeUpdate(Phase, _)` | before replace/patch | `BeforeCx`, with `id`, the `stored` row and `patch` (a patch's `record` holds only the patched fields; a replace's is the whole new row) | mutate / `Err` to cancel |
 | `BeforeSave(Phase, _)` | before insert **and** update | `BeforeCx` | mutate / `Err` to cancel |
 | `BeforeDelete(_)` | before a delete | `DeleteCx { id, record (former), context, table }` | `Err` to veto, or `HookReturn::Handled` to take over |
 | `AfterInsert` / `AfterUpdate` / `AfterSave` | after the write commits | `AfterCx { id, record, before, context, table }` | side-effects |

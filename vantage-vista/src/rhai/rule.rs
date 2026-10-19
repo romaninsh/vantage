@@ -41,12 +41,22 @@ pub enum HookOn {
     BeforeDelete,
 }
 
-/// What a rule hook receives: the record about to be written, or the id of
-/// the row about to be deleted.
+/// What a rule hook receives.
+///
+/// A closure registered with `before_delete(|id| …)` gets the id from both
+/// [`Id`](Self::Id) and [`Delete`](Self::Delete); one written as
+/// `before_delete(|id, row| …)` also gets the row from `Delete`, and unit
+/// from `Id`.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum RuleHookInput {
+    /// The record about to be written. On an update, a rule target hands
+    /// over the full row: the stored row with the written fields on top.
     Record(CborValue),
+    /// The id of the row about to be deleted.
     Id(CborValue),
+    /// The id of the row about to be deleted, and the row as stored.
+    Delete { id: CborValue, row: CborValue },
 }
 
 /// A rule hook: `Err(message)` refuses the write with the script's message.
@@ -135,14 +145,20 @@ impl RuleHandle {
             .unwrap()
             .clone()
             .ok_or("rule hooks need a script run by eval_rule_script")?;
+        let takes_row = on == HookOn::BeforeDelete && arity(&closure, &runtime.ast) == Some(2);
         let run: RuleHookFn = Arc::new(move |input| {
-            let arg = match input {
-                RuleHookInput::Record(value) | RuleHookInput::Id(value) => cbor_to_dynamic(&value),
+            let (first, row) = match input {
+                RuleHookInput::Record(value) | RuleHookInput::Id(value) => {
+                    (cbor_to_dynamic(&value), Dynamic::UNIT)
+                }
+                RuleHookInput::Delete { id, row } => (cbor_to_dynamic(&id), cbor_to_dynamic(&row)),
             };
-            closure
-                .call::<Dynamic>(&runtime.engine, &runtime.ast, (arg,))
-                .map(|_| ())
-                .map_err(|e| refusal(*e))
+            let outcome = if takes_row {
+                closure.call::<Dynamic>(&runtime.engine, &runtime.ast, (first, row))
+            } else {
+                closure.call::<Dynamic>(&runtime.engine, &runtime.ast, (first,))
+            };
+            outcome.map(|_| ()).map_err(|e| refusal(*e))
         });
         self.target().hook(on, run).map_err(|e| e.to_string())?;
         self.record(RuleVerb::Hook { on });
@@ -158,6 +174,14 @@ impl RuleHandle {
         });
         Ok(self.clone())
     }
+}
+
+/// How many arguments `closure` takes: its script function's parameters,
+/// less the variables it captured (Rhai curries those in front). `None`
+/// for a pointer to a function the script doesn't define.
+fn arity(closure: &FnPtr, ast: &AST) -> Option<usize> {
+    let function = ast.iter_functions().find(|f| f.name == closure.fn_name())?;
+    function.params.len().checked_sub(closure.curry().len())
 }
 
 /// The message a hook closure refused with: what it threw, or, when it

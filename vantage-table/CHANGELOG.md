@@ -4,8 +4,9 @@
 
 ### Breaking changes
 
-- Hooks take one context struct: `BeforeCx { record, context, table }`, `AfterCx { id, record,
-  before, context, table }`, `DeleteCx { id, record, context, table }`. Upgrade: a closure over
+- Hooks take one context struct: `BeforeCx { record, id, stored, patch, context, table }`,
+  `AfterCx { id, record, before, context, table }`, `DeleteCx { id, record, context, table }`.
+  Upgrade: a closure over
   `(rec, table)` becomes one over `cx` and reads `cx.record` / `cx.table`; wrap it in
   `before_hook`, `after_hook` or `before_delete_hook` so the closure's lifetimes infer.
 - `Hook` gains `BeforeSelect`, `BeforeDeleteAll` and `AfterDeleteAll`, and is now
@@ -42,11 +43,21 @@
   Invariants and conditions on it stay (inserts are still stamped), and references keep their
   foreign key. Removing the id column or an unknown column is an error.
 - `before_hook_sync` and `before_delete_hook_sync` build before-write and before-delete hooks
-  from synchronous closures over `(record, context)` and `(id, context)`. An `Err` refuses the
-  write; a delete hook's `Ok` proceeds.
+  from synchronous closures over `(record, context)` and `(id, context)`; `before_hook_sync_cx`
+  takes a closure over the whole `BeforeCx`. An `Err` refuses the write; a delete hook's `Ok`
+  proceeds.
+- `BeforeCx` has `id` and `stored`: on replace and patch, the row's id and the row as the set
+  holds it, read once before the before-update hooks and shared with the after-update hooks'
+  `before`. Both are `None` on insert, and `stored` is `None` when the set doesn't hold the row.
+  The row is read only when update hooks exist, so a refusing `BeforeSelect` now also refuses an
+  update that has only before-update hooks. `BeforeCx::patch` is true on a patch, whose `record`
+  holds only the patched fields; a replace's `record` is the whole new row.
 - `rhai` feature: `rule::TableRuleTarget` (with `RuleCodec`) is the table a vantage-vista
   `RuleHandle` narrows. `where` takes `eq` and `in`; other operators are an error naming them.
-  Hooks register in `Phase::Validate`. `into_table` returns the table as the rule left it.
+  Hooks register in `Phase::Validate`. On a patch the script sees the full row (the stored row
+  with the patched fields on top); on an insert or a replace, exactly the record written. A
+  delete hook gets the id and the stored row.
+  `into_table` returns the table as the rule left it.
 
 ## 2.0.1 — 2026-10-14
 

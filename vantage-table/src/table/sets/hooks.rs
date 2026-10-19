@@ -34,6 +34,7 @@ where
         run_before(
             self.before_insert_hooks(),
             &mut record,
+            None,
             self.as_entity_erased(),
         )
         .await?;
@@ -56,9 +57,19 @@ where
     }
 }
 
+/// The row an update writes, the row as the set holds it, and whether the
+/// update is a patch (its record holds only the patched fields).
+pub(crate) struct UpdateOf<'a, T: TableSource> {
+    pub id: &'a T::Id,
+    pub stored: Option<&'a Record<T::Value>>,
+    pub patch: bool,
+}
+
+/// `update` is `None` on insert.
 pub(crate) async fn run_before<T: TableSource>(
     hooks: &[(Phase, BeforeFn<T>)],
     record: &mut Record<T::Value>,
+    update: Option<UpdateOf<'_, T>>,
     table: &Table<T, EmptyEntity>,
 ) -> Result<()> {
     if hooks.is_empty() {
@@ -68,6 +79,9 @@ pub(crate) async fn run_before<T: TableSource>(
     for (_phase, hook) in hooks {
         hook(BeforeCx {
             record: &mut *record,
+            id: update.as_ref().map(|u| u.id),
+            stored: update.as_ref().and_then(|u| u.stored),
+            patch: update.as_ref().is_some_and(|u| u.patch),
             context: context.as_ref(),
             table,
         })

@@ -87,6 +87,82 @@ async fn rule_where_with_an_unsupported_operator_names_it() {
     assert!(err.to_string().contains("operator `>`"), "{err}");
 }
 
+/// The spec's editor rule: a patch that doesn't name `bakery_id` is judged
+/// on the stored row, so it passes; one that moves the row out is refused.
+#[tokio::test]
+async fn rule_update_hooks_judge_the_full_row() {
+    let (table, _) = rule(
+        client().await,
+        r#"
+        let mine = [3];
+        table.before_update(|record| if !mine.contains(record.bakery_id) { throw "not your bakery" });
+        table.before_save(|record| if record.name == () { throw "no name" });
+        "#,
+    )
+    .unwrap();
+    table
+        .patch_value("1".to_string(), &Record::from(json!({"name": "z"})))
+        .await
+        .unwrap();
+    let err = table
+        .patch_value("1".to_string(), &Record::from(json!({"bakery_id": 4})))
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "not your bakery");
+    let row = table.get_value("1".to_string()).await.unwrap().unwrap();
+    assert_eq!(row["name"], json!("z"));
+    assert_eq!(row["bakery_id"], json!(3));
+}
+
+/// A replace is the whole new row: the script sees exactly what is written,
+/// with nothing left over from the stored row. A patch is merged.
+#[tokio::test]
+async fn a_replace_is_judged_on_the_written_record_only() {
+    let (table, _) = rule(
+        client().await,
+        r#"
+        table.before_update(|record| if record.bakery_id != () { throw "bakery_id is still there" });
+        table.before_save(|record| if record.bakery_id != () { throw "save sees bakery_id" });
+        "#,
+    )
+    .unwrap();
+    table
+        .replace_value("1".to_string(), &Record::from(json!({"name": "z"})))
+        .await
+        .unwrap();
+    let row = table.get_value("1".to_string()).await.unwrap().unwrap();
+    assert_eq!(Value::from(row), json!({"id": "1", "name": "z"}));
+
+    let err = table
+        .patch_value("1".to_string(), &Record::from(json!({"bakery_id": 3})))
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "bakery_id is still there");
+
+    let (table, _) = rule(
+        client().await,
+        r#"table.before_save(|record| if record.bakery_id != () { throw "save sees bakery_id" });"#,
+    )
+    .unwrap();
+    let err = table
+        .patch_value("1".to_string(), &Record::from(json!({"name": "y"})))
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "save sees bakery_id");
+}
+
+#[tokio::test]
+async fn rule_delete_hook_sees_the_stored_row() {
+    let (table, _) = rule(
+        client().await,
+        r#"table.before_delete(|id, row| if row.name == "a" { throw `keep ${id}` });"#,
+    )
+    .unwrap();
+    let err = table.delete("1".to_string()).await.unwrap_err();
+    assert_eq!(err.message(), "keep 1");
+    assert!(table.get_value("1".to_string()).await.unwrap().is_some());
+}
+
 #[tokio::test]
 async fn rule_hooks_refuse_writes() {
     let (table, _) = rule(

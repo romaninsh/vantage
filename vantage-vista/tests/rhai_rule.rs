@@ -170,6 +170,49 @@ fn before_insert_closure_throws_its_message() {
 }
 
 #[test]
+fn before_delete_sees_the_row_when_it_asks_for_it() {
+    let (recorder, _, outcome) = run(
+        r#"let keep = "a";
+           table.before_delete(|id, row| if row.name == keep { throw `keep ${id}` });"#,
+        Env::new(),
+    );
+    outcome.unwrap();
+    let delete = |id: &str, name: &str| RuleHookInput::Delete {
+        id: CborValue::Text(id.into()),
+        row: CborValue::Map(vec![(
+            CborValue::Text("name".into()),
+            CborValue::Text(name.into()),
+        )]),
+    };
+    assert_eq!(
+        recorder.fire(HookOn::BeforeDelete, delete("1", "a")),
+        Err("keep 1".to_string())
+    );
+    assert_eq!(
+        recorder.fire(HookOn::BeforeDelete, delete("2", "b")),
+        Ok(())
+    );
+
+    // A closure over the id alone gets the id from either input.
+    let (recorder, _, outcome) = run(
+        r#"table.before_delete(|id| if id == "1" { throw "kept" });"#,
+        Env::new(),
+    );
+    outcome.unwrap();
+    assert_eq!(
+        recorder.fire(HookOn::BeforeDelete, delete("1", "a")),
+        Err("kept".to_string())
+    );
+    assert_eq!(
+        recorder.fire(
+            HookOn::BeforeDelete,
+            RuleHookInput::Id(CborValue::Text("1".into()))
+        ),
+        Err("kept".to_string())
+    );
+}
+
+#[test]
 fn closure_captures_script_variables() {
     let mut session = RhaiMap::new();
     session.insert("role".into(), "editor".into());

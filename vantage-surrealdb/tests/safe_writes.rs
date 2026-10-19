@@ -149,6 +149,37 @@ async fn after_update_sees_the_former_row_on_patch() {
     assert_after_update_sees_the_former_row(true).await;
 }
 
+/// A before-update hook on a patch sees the id and the row as stored before
+/// the patch, next to the patched fields.
+#[tokio::test]
+async fn before_update_sees_the_stored_row_on_patch() {
+    use vantage_table::table::{Phase, before_hook_sync_cx};
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let (all, _) = fixture().await;
+    let hooked = all.with_hook(Hook::BeforeUpdate(
+        Phase::Validate,
+        before_hook_sync_cx::<SurrealDB>(move |cx| {
+            log.lock().unwrap().push((
+                cx.id.cloned(),
+                cx.stored.and_then(|row| row.get("name").cloned()),
+                cx.record.get("name").cloned(),
+            ));
+            Ok(())
+        }),
+    ));
+    let id = Thing::new("item", "in1");
+    hooked
+        .patch_value(id.clone(), &rec(&[("name", text("z"))]))
+        .await
+        .unwrap();
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![(Some(id), Some(text("a")), Some(text("z")))]
+    );
+}
+
 #[tokio::test]
 async fn operator_condition_keeps_rows_in_set() {
     let all = item(get_db().await);

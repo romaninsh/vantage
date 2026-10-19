@@ -12,7 +12,9 @@ use vantage_types::{EmptyEntity, Record};
 use vantage_vista::FilterOp;
 use vantage_vista::rhai::{HookOn, RuleHookFn, RuleHookInput, RuleTarget};
 
-use crate::table::{Hook, Phase, Table, before_delete_hook_sync, before_hook_sync};
+use crate::table::{
+    DeleteCx, Hook, HookReturn, Phase, Table, before_delete_hook, before_hook_sync_cx,
+};
 use crate::traits::table_source::TableSource;
 
 /// How a rule target moves the source's values to and from the CBOR a
@@ -39,7 +41,10 @@ impl<T: TableSource> Copy for RuleCodec<T> {}
 /// [`TableSource::eq_value_condition`] and
 /// [`TableSource::in_values_condition`]; any other operator is an error
 /// naming it. Hooks run in [`Phase::Validate`], so they see the record as
-/// it will be written.
+/// it will be written. On a patch the script's `record` is the full row,
+/// the stored row with the patched fields on top; on an insert or a replace
+/// it is exactly the record written. A delete hands the id and the stored
+/// row ([`RuleHookInput::Delete`]).
 pub struct TableRuleTarget<T: TableSource> {
     table: Arc<Mutex<Table<T, EmptyEntity>>>,
     codec: RuleCodec<T>,
@@ -155,15 +160,34 @@ where
         let refuse = |message: String| error!(message);
         let hook = match on {
             HookOn::BeforeDelete => {
-                Hook::BeforeDelete(before_delete_hook_sync::<T>(move |id, _| {
-                    run(RuleHookInput::Id((codec.id_cbor)(id))).map_err(refuse)
+                Hook::BeforeDelete(before_delete_hook::<T, _>(move |cx: DeleteCx<'_, T>| {
+                    let outcome = run(RuleHookInput::Delete {
+                        id: (codec.id_cbor)(cx.id),
+                        row: record_to_cbor::<T>(codec.to_cbor, cx.record),
+                    })
+                    .map(|()| HookReturn::Proceed)
+                    .map_err(refuse);
+                    Box::pin(std::future::ready(outcome))
                 }))
             }
             on => {
-                let before = before_hook_sync::<T>(move |record, _| {
+                // The script judges the row as it will be: a patch is the
+                // stored row with the patched fields on top; an insert or a
+                // replace is exactly the record written.
+                let before = before_hook_sync_cx::<T>(move |cx| {
+                    let row = match cx.stored {
+                        Some(stored) if cx.patch => {
+                            let mut row = stored.clone();
+                            for (k, v) in cx.record.iter() {
+                                row.insert(k.clone(), v.clone());
+                            }
+                            row
+                        }
+                        _ => cx.record.clone(),
+                    };
                     run(RuleHookInput::Record(record_to_cbor::<T>(
                         codec.to_cbor,
-                        record,
+                        &row,
                     )))
                     .map_err(refuse)
                 });

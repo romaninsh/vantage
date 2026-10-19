@@ -40,9 +40,21 @@ pub type BoxFuture<'r, X> = Pin<Box<dyn Future<Output = X> + Send + 'r>>;
 
 /// What a before-write hook receives: the record about to be written (mutable),
 /// the write's [`WriteContext`] if one is in scope, and the entity-erased table.
+///
+/// On an update (replace or patch), `id` is the row being written and
+/// `stored` the row as the set holds it now, read once before the hooks
+/// run; `stored` is `None` when the set doesn't hold the row. Both are
+/// `None` on insert.
+///
+/// `patch` is true on a patch, whose `record` holds only the patched
+/// fields: a hook judging the whole row reads the rest from `stored`. On a
+/// replace, `record` is the whole new row and fields it lacks are dropped.
 #[non_exhaustive]
 pub struct BeforeCx<'r, T: TableSource> {
     pub record: &'r mut Record<T::Value>,
+    pub id: Option<&'r T::Id>,
+    pub stored: Option<&'r Record<T::Value>>,
+    pub patch: bool,
     pub context: Option<&'r WriteContext>,
     pub table: &'r Table<T, EmptyEntity>,
 }
@@ -150,6 +162,14 @@ pub fn before_hook_sync<T: TableSource>(
     })
 }
 
+/// Build a [`BeforeFn`] from a synchronous closure over the whole
+/// [`BeforeCx`]: the record, and on an update the id and the stored row.
+pub fn before_hook_sync_cx<T: TableSource>(
+    f: impl for<'r> Fn(BeforeCx<'r, T>) -> vantage_core::Result<()> + Send + Sync + 'static,
+) -> BeforeFn<T> {
+    Arc::new(move |cx: BeforeCx<'_, T>| Box::pin(std::future::ready(f(cx))))
+}
+
 /// Build a [`BeforeDeleteFn`] from a synchronous closure over the row id and
 /// the write's context: `Ok` proceeds with the delete, an `Err` vetoes it.
 pub fn before_delete_hook_sync<T: TableSource>(
@@ -215,8 +235,8 @@ pub enum Hook<T: TableSource> {
     /// conditions, added when it is built.
     ///
     /// Reads a write makes run it too, so a refusing `BeforeSelect` also
-    /// refuses: an update when after-update hooks exist (the `before` row is
-    /// read first), a delete when delete hooks exist (the row is read for
+    /// refuses: an update when before- or after-update hooks exist (the
+    /// stored row is read first), a delete when delete hooks exist (the row is read for
     /// them), and a write whose backend reads the row back. A Dio serves
     /// reads from its cache, filled by its own loader, so reads through a
     /// Dio don't run the master table's `BeforeSelect`.
