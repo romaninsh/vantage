@@ -37,6 +37,16 @@
   build, so a metadata snapshot runs no target build and no injector.
 - The build injector: `TableInjector`, `InjectCx`, `BuildKind`, `BuildEnv`, `BuildTrail`. A
   nested build that re-enters a key is an error naming the cycle.
+- `Table::remove_column(name)` takes a stored, expression, lazy or computed column out of the
+  table, along with its active-column and title entries, so it is neither selected nor shown.
+  Invariants and conditions on it stay (inserts are still stamped), and references keep their
+  foreign key. Removing the id column or an unknown column is an error.
+- `before_hook_sync` and `before_delete_hook_sync` build before-write and before-delete hooks
+  from synchronous closures over `(record, context)` and `(id, context)`. An `Err` refuses the
+  write; a delete hook's `Ok` proceeds.
+- `rhai` feature: `rule::TableRuleTarget` (with `RuleCodec`) is the table a vantage-vista
+  `RuleHandle` narrows. `where` takes `eq` and `in`; other operators are an error naming them.
+  Hooks register in `Phase::Validate`. `into_table` returns the table as the rule left it.
 
 ## 2.0.1 — 2026-10-14
 

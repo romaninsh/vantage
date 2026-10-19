@@ -534,3 +534,54 @@ surreal:
     );
     Ok(())
 }
+
+/// A rule script narrows the table itself, before any vista exists, with
+/// the same `with_condition` a `modify:` script has.
+#[test]
+fn rule_with_condition_narrows_the_table() {
+    use vantage_rhai::{Env, Host, Limits};
+    use vantage_surrealdb::thing::Thing;
+    use vantage_surrealdb::types::{AnySurrealType, SurrealType};
+    use vantage_surrealdb::vista::register_rule_conditions;
+    use vantage_table::rule::{RuleCodec, TableRuleTarget};
+    use vantage_table::table::Table;
+    use vantage_types::EmptyEntity;
+    use vantage_vista::rhai::{RuleHandle, RuleVerb, eval_rule_script, register_rule_vocab};
+
+    let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
+    let table = Table::<SurrealDB, EmptyEntity>::new("client", db)
+        .with_id_column("id")
+        .with_column_of::<i64>("bakery_id");
+    let target = TableRuleTarget::new(
+        table,
+        RuleCodec {
+            to_cbor: AnySurrealType::into_value,
+            from_cbor: AnySurrealType::from,
+            id_cbor: Thing::to_cbor,
+        },
+    );
+    let handle = RuleHandle::new(Box::new(target.clone()));
+    let host = Host::builder(Limits::background())
+        .vocab_fn(register_rule_vocab)
+        .vocab_fn(register_rule_conditions)
+        .build();
+    eval_rule_script(
+        &host,
+        r#"table.with_condition(surreal::expr("bakery_id = {}", [3]))"#,
+        Env::new(),
+        &handle,
+    )
+    .unwrap();
+
+    let table = target.into_table();
+    assert_eq!(
+        table.select().preview(),
+        "SELECT id, bakery_id FROM client WHERE bakery_id = 3"
+    );
+    assert_eq!(
+        handle.verbs(),
+        [RuleVerb::Condition {
+            described: "bakery_id = 3".into()
+        }]
+    );
+}

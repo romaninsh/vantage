@@ -20,6 +20,9 @@ Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
 - The shell's `count` and `watch` run the table's `BeforeSelect` hooks first. Replace and patch
   read the stored row through the table, so a refusing `BeforeSelect` refuses them too.
 - Writable collection vistas advertise `writes_reach_hooks`; pipeline views don't.
+- `vista::register_rule_conditions(engine)` (`rhai` feature): the `mongo::` vocabulary and
+  `table.with_condition(<map or mongo::doc()>)` for rule scripts, which narrows the table by
+  the filter document as a `modify:` script's `with_condition` narrows a vista.
 
 ## 2.0.1 — 2026-10-15
 

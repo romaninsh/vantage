@@ -6,7 +6,7 @@ use vantage_core::Result;
 use vantage_rhai::Env;
 use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_types::{Entity, Record};
-use vantage_vista::rhai::{Handle, eval_ref_script};
+use vantage_vista::rhai::{Handle, RuleHandle, eval_ref_script};
 use vantage_vista::{NativeCondition, Vista};
 
 use super::SurrealTableShell;
@@ -27,6 +27,25 @@ pub(crate) fn register_extensions(engine: &mut Engine) {
             let key = cond.0.preview();
             h.with_native_condition("with_condition", NativeCondition::new(cond.0, key))
                 .map_err(|e| e.to_string().into())
+        },
+    );
+}
+
+/// The SurrealDB vocabulary for rule scripts: the `surreal::` constructors
+/// and operators, and `table.with_condition(<expr>)` on the
+/// [`RuleHandle`], which narrows the table by the expression. Register it
+/// after [`register_rule_vocab`](vantage_vista::rhai::register_rule_vocab).
+pub fn register_rule_conditions(engine: &mut Engine) {
+    register_surreal_onto(engine);
+    engine.register_fn(
+        "with_condition",
+        |h: &mut RuleHandle,
+         cond: RhaiExpr|
+         -> std::result::Result<RuleHandle, Box<EvalAltResult>> {
+            let key = cond.0.preview();
+            h.native_condition(Box::new(cond.0), key)
+                .map_err(|e| e.to_string())?;
+            Ok(h.clone())
         },
     );
 }

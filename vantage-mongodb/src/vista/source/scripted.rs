@@ -13,10 +13,11 @@ use vantage_core::Result;
 use vantage_rhai::Env;
 use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult};
 use vantage_types::Record;
-use vantage_vista::rhai::{Handle, eval_ref_script, record_to_dynamic};
+use vantage_vista::rhai::{Handle, RuleHandle, eval_ref_script, record_to_dynamic};
 use vantage_vista::{NativeCondition, Vista};
 
 use super::{MongoTableShell, conditions};
+use crate::condition::MongoCondition;
 use crate::rhai_engine::{dynamic_to_document, register_mongo_onto};
 use crate::vista::scripting::script_host;
 
@@ -33,6 +34,26 @@ pub(crate) fn register_extensions(engine: &mut Engine) {
             let key = conditions::native_key(&filter);
             h.with_native_condition("with_condition", NativeCondition::new(filter, key))
                 .map_err(|e| e.to_string().into())
+        },
+    );
+}
+
+/// The MongoDB vocabulary for rule scripts: the `mongo::` constructors, and
+/// `table.with_condition(<map or mongo::doc()>)` on the [`RuleHandle`],
+/// which narrows the table by the filter document. Register it after
+/// [`register_rule_vocab`](vantage_vista::rhai::register_rule_vocab).
+pub fn register_rule_conditions(engine: &mut Engine) {
+    register_mongo_onto(engine);
+    engine.register_fn(
+        "with_condition",
+        |h: &mut RuleHandle,
+         filter: Dynamic|
+         -> std::result::Result<RuleHandle, Box<EvalAltResult>> {
+            let filter = dynamic_to_document(filter).map_err(|e| e.to_string())?;
+            let key = conditions::native_key(&filter);
+            h.native_condition(Box::new(MongoCondition::Doc(filter)), key)
+                .map_err(|e| e.to_string())?;
+            Ok(h.clone())
         },
     );
 }

@@ -29,6 +29,8 @@ use crate::sql_vista::{Shell, SqlShellDialect, SqlTableShell};
 
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
+#[cfg(feature = "rhai")]
+pub use scripted::register_rule_conditions;
 
 /// The shell carries the factory that built it, with its spec resolver and
 /// build injector, for the targets and scripts it builds in turn.

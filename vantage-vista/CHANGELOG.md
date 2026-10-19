@@ -5,6 +5,13 @@
 - `Capability::WritesReachHooks` (`writes_reach_hooks`): every write the vista advertises runs
   through a `Table`, so its hooks (audit stamps, generated ids, access checks) see it. The contract
   checks treat it as a declaration with no probe.
+- Rule scripts (`rhai` feature): `RuleHandle` is the `table` a rule script narrows, over a
+  `RuleTarget`. `register_rule_vocab` gives it `where(column, value)`, `where(column, op, value)`,
+  `before_insert`/`before_update`/`before_save`/`before_delete(fn)` and `remove_column(name)`,
+  and nothing that reads, writes, sorts, limits, searches or reaches another table: those are
+  "function not found". `eval_rule_script(host, code, env, &handle)` runs one with the handle as
+  `table`. A hook closure's `throw` refuses the write with its message, and so does any other
+  failure inside it. `RuleHandle::verbs` lists what the script did, as `RuleVerb`s.
 
 ## 2.0.1 — 2026-10-14
 

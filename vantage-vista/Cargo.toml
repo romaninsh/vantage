@@ -78,3 +78,7 @@ required-features = ["rhai", "mocks"]
 [[test]]
 name = "rhai_guide"
 required-features = ["rhai"]
+
+[[test]]
+name = "rhai_rule"
+required-features = ["rhai"]

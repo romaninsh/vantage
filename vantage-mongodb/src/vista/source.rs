@@ -49,6 +49,8 @@ mod write;
 
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
+#[cfg(feature = "rhai")]
+pub use scripted::register_rule_conditions;
 
 #[derive(Clone)]
 pub struct MongoTableShell {

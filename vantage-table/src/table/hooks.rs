@@ -135,6 +135,32 @@ where
     Arc::new(f)
 }
 
+/// Build a [`BeforeFn`] from a synchronous closure over the record and the
+/// write's context; an `Err` cancels the write. For callers with nothing to
+/// await, such as a script evaluated in place.
+pub fn before_hook_sync<T: TableSource>(
+    f: impl Fn(&mut Record<T::Value>, Option<&WriteContext>) -> vantage_core::Result<()>
+    + Send
+    + Sync
+    + 'static,
+) -> BeforeFn<T> {
+    Arc::new(move |cx: BeforeCx<'_, T>| {
+        let outcome = f(cx.record, cx.context);
+        Box::pin(std::future::ready(outcome))
+    })
+}
+
+/// Build a [`BeforeDeleteFn`] from a synchronous closure over the row id and
+/// the write's context: `Ok` proceeds with the delete, an `Err` vetoes it.
+pub fn before_delete_hook_sync<T: TableSource>(
+    f: impl Fn(&T::Id, Option<&WriteContext>) -> vantage_core::Result<()> + Send + Sync + 'static,
+) -> BeforeDeleteFn<T> {
+    Arc::new(move |cx: DeleteCx<'_, T>| {
+        let outcome = f(cx.id, cx.context).map(|()| HookReturn::Proceed);
+        Box::pin(std::future::ready(outcome))
+    })
+}
+
 /// Build an [`AfterFn`] from a closure.
 pub fn after_hook<T, F>(f: F) -> AfterFn<T>
 where

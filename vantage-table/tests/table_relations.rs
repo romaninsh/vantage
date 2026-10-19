@@ -624,6 +624,15 @@ fn get_ref_as_from_a_has_one_matches_the_targets_id_to_the_sources_foreign_key()
 }
 
 #[test]
+fn removed_fk_column_still_traverses() {
+    let mut client = client();
+    client.remove_column("bakery_id").unwrap();
+    let bakery = client.get_ref_as::<EmptyEntity>("bakery").unwrap();
+    let conditions: Vec<&str> = bakery.conditions().map(|c| c.template.as_str()).collect();
+    assert_eq!(conditions, ["id IN (SELECT bakery_id FROM client)"]);
+}
+
+#[test]
 fn get_subquery_as_correlates_the_target_with_the_source() {
     let orders = client().get_subquery_as::<EmptyEntity>("orders").unwrap();
     let conditions: Vec<&str> = orders.conditions().map(|c| c.template.as_str()).collect();

@@ -30,6 +30,8 @@ pub mod conditions;
 pub mod pagination;
 pub mod prelude;
 pub mod references;
+#[cfg(feature = "rhai")]
+pub mod rule;
 pub mod sorting;
 
 pub mod column;

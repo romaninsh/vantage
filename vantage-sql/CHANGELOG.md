@@ -19,6 +19,10 @@ Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
   matches no row. `describe_condition` and `condition_column` are implemented.
 - The shells' `count` and `watch` run the table's `BeforeSelect` hooks first.
 - Writable SQL vistas advertise `writes_reach_hooks`.
+- `mysql::vista::register_rule_conditions(engine)` (`rhai` feature): the `sql::` vocabulary and
+  `table.with_condition(<expr>)` for rule scripts, which narrows the table by a `MysqlCondition`
+  built as a `modify:` script's is. SQLite and Postgres have no `modify:` vocabulary and get no
+  rule `with_condition`; there it is "function not found".
 
 ## 0.9.1 — 2026-10-15
 

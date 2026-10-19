@@ -10,6 +10,8 @@ pub mod spec;
 
 pub use factory::SurrealVistaFactory;
 pub use source::SurrealTableShell;
+#[cfg(feature = "rhai")]
+pub use source::register_rule_conditions;
 pub use spec::{
     InheritBlock, SurrealColumnBlock, SurrealColumnExtras, SurrealTableBlock, SurrealTableExtras,
     SurrealVistaSpec,

@@ -30,6 +30,8 @@ use crate::vista::factory::SurrealVistaFactory;
 
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
+#[cfg(feature = "rhai")]
+pub use scripted::register_rule_conditions;
 
 /// The `TableShell` a SurrealDB vista wraps.
 #[derive(Clone)]

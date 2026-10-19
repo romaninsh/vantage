@@ -101,7 +101,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Position among all columns of the stored column at `stored_index`:
     /// computed columns occupy their recorded positions, stored columns fill
     /// the remaining slots in order.
-    fn position_of_stored(&self, stored_index: usize) -> usize {
+    pub(in crate::table) fn position_of_stored(&self, stored_index: usize) -> usize {
         let mut computed: Vec<usize> = self.computed_columns.values().map(|(at, _)| *at).collect();
         computed.sort_unstable();
         let mut at = stored_index;

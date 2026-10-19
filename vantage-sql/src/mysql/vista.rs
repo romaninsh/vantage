@@ -12,6 +12,8 @@ pub mod spec;
 
 pub use factory::MysqlVistaFactory;
 pub use source::MysqlTableShell;
+#[cfg(feature = "rhai")]
+pub use source::register_rule_conditions;
 pub use spec::{
     InheritBlock, MysqlColumnBlock, MysqlColumnExtras, MysqlRefBlock, MysqlReferenceExtras,
     MysqlTableBlock, MysqlTableExtras, MysqlVistaSpec,

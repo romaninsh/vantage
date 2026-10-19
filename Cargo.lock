@@ -6165,6 +6165,7 @@ dependencies = [
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
+ "vantage-rhai",
  "vantage-types",
  "vantage-vista",
 ]

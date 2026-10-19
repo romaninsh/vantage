@@ -12,6 +12,10 @@
   - `insert` (with or without an id), `replace` and `patch` say the write had no effect instead
     of "expected map in array result" or "Row not found". A patch of a missing row is still
     `NotFound`.
+- `vista::register_rule_conditions(engine)` (`rhai` feature): the `surreal::` vocabulary and
+  `table.with_condition(<expr>)` for rule scripts, narrowing the table as a `modify:` script's
+  `with_condition` narrows a vista. SQLite, Postgres and CSV have no `modify:` vocabulary and no
+  rule `with_condition`; there it is "function not found".
 
 ## 2.1.0 — 2026-10-18
 
