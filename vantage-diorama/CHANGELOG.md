@@ -2,6 +2,11 @@
 
 ## 1.2.0 — 2026-10-18
 
+- A view served from the cache now shows rows another view's window brings in. A paged view's
+  window load writes its rows straight into the Dio's shared cache and announces only
+  `RangeLoaded`, and a hub recheck that then finds the cached row equal announces nothing, so a
+  sorted view over the same Dio never showed the new row. A single-pass view that doesn't serve
+  windows now reseeds from the cache on `RangeLoaded`.
 - Dios over one table on one Lens see each other's settled changes. A Dio derived for client 7
   used to keep listing an invoice its parent had moved to client 8, because each Dio has its own
   cache table and bus. Now a confirmed flash, an `apply_change`, a reconcile's diff and a live

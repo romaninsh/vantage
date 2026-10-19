@@ -12,10 +12,11 @@ use super::state::SharedRows;
 /// splice the one row: into a two-pass index, or into single-pass rows that
 /// hold their ordered set whole. Other single-pass rows refresh. Whole-set
 /// events (`DatasetChanged`, `Refreshing`) drop the sparse map and re-seed
-/// from cache. Our own viewport events
-/// (`ViewportChanged`, `RangeLoaded`, `LoadFailed`) are emitted *by* the
-/// loader pipeline — the reactor ignores them so it doesn't loop on its own
-/// output.
+/// from cache. Viewport events (`ViewportChanged`, `RangeLoaded`,
+/// `LoadFailed`) are emitted *by* the loader pipeline, and the reactor
+/// ignores them so it doesn't loop on its own output, with one exception: a
+/// cache-served single-pass view reseeds on another scenery's `RangeLoaded`,
+/// since that window wrote rows into the cache it reads.
 ///
 /// Holds the rows weakly while it waits, so it never keeps them alive.
 pub(crate) async fn reload_loop(
@@ -125,6 +126,17 @@ pub(crate) async fn reload_loop(
                         state
                             .mark_row(&id, crate::scenery::RowStatus::WriteFailed { error })
                             .await;
+                    }
+                    // Another scenery's window landed. Its rows went straight
+                    // into the shared cache through `ChunkSink::push`, with no
+                    // per-row event, and a hub recheck that finds them equal
+                    // announces nothing more. A single-pass view whose rows
+                    // come from the cache reseeds, or it never shows them. It
+                    // runs no loader, so it never sees its own `RangeLoaded`.
+                    Ok(DioEvent::RangeLoaded { .. })
+                        if !state.two_pass && !state.is_chunk_loaded() =>
+                    {
+                        reseed(&state).await;
                     }
                     // A facade read announcing its hydration sweep; each
                     // hydrated row follows as `RecordChanged`, which is
