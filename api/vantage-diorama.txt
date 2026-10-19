@@ -382,6 +382,7 @@ pub fn vantage_diorama::ChangeFlash::active_record<'a, D>(&self, &'a D) -> vanta
 pub fn vantage_diorama::ChangeFlash::after(&self) -> core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
 pub fn vantage_diorama::ChangeFlash::before(&self) -> core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>
 pub fn vantage_diorama::ChangeFlash::clear() -> Self
+pub fn vantage_diorama::ChangeFlash::context(&self) -> core::option::Option<&vantage_table::write_context::WriteContext>
 pub fn vantage_diorama::ChangeFlash::delete(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_diorama::ChangeFlash::id(&self) -> core::option::Option<&str>
 pub fn vantage_diorama::ChangeFlash::insert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
@@ -392,6 +393,7 @@ pub fn vantage_diorama::ChangeFlash::patch(&self) -> &vantage_types::record::Rec
 pub fn vantage_diorama::ChangeFlash::replace(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
 pub fn vantage_diorama::ChangeFlash::upsert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
 pub fn vantage_diorama::ChangeFlash::with_before(self, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::with_context(self, vantage_table::write_context::WriteContext) -> Self
 impl core::clone::Clone for vantage_diorama::ChangeFlash
 pub fn vantage_diorama::ChangeFlash::clone(&self) -> Self
 impl core::fmt::Debug for vantage_diorama::ChangeFlash
@@ -1018,6 +1020,7 @@ pub fn vantage_diorama::ChangeFlash::active_record<'a, D>(&self, &'a D) -> vanta
 pub fn vantage_diorama::ChangeFlash::after(&self) -> core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
 pub fn vantage_diorama::ChangeFlash::before(&self) -> core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>
 pub fn vantage_diorama::ChangeFlash::clear() -> Self
+pub fn vantage_diorama::ChangeFlash::context(&self) -> core::option::Option<&vantage_table::write_context::WriteContext>
 pub fn vantage_diorama::ChangeFlash::delete(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_diorama::ChangeFlash::id(&self) -> core::option::Option<&str>
 pub fn vantage_diorama::ChangeFlash::insert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
@@ -1028,6 +1031,7 @@ pub fn vantage_diorama::ChangeFlash::patch(&self) -> &vantage_types::record::Rec
 pub fn vantage_diorama::ChangeFlash::replace(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
 pub fn vantage_diorama::ChangeFlash::upsert(impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
 pub fn vantage_diorama::ChangeFlash::with_before(self, vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::ChangeFlash::with_context(self, vantage_table::write_context::WriteContext) -> Self
 impl core::clone::Clone for vantage_diorama::ChangeFlash
 pub fn vantage_diorama::ChangeFlash::clone(&self) -> Self
 impl core::fmt::Debug for vantage_diorama::ChangeFlash
@@ -1118,7 +1122,9 @@ pub struct vantage_diorama::DioBuilder
 impl vantage_diorama::DioBuilder
 pub fn vantage_diorama::DioBuilder::augment(self, alloc::vec::Vec<vantage_diorama::Augmentation>) -> Self
 pub async fn vantage_diorama::DioBuilder::build(self) -> vantage_core::util::error::Result<vantage_diorama::Dio>
+pub fn vantage_diorama::DioBuilder::hub(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_diorama::DioBuilder::live(self) -> Self
+pub fn vantage_diorama::DioBuilder::recheck_facts(self) -> Self
 impl core::marker::Freeze for vantage_diorama::DioBuilder
 impl core::marker::Send for vantage_diorama::DioBuilder
 impl core::marker::Sync for vantage_diorama::DioBuilder

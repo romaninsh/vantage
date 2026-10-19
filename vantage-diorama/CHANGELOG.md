@@ -2,6 +2,7 @@
 
 ## 1.2.0 — 2026-10-18
 
+- Requires vantage-table 3.0.0.
 - A view served from the cache now shows rows another view's window brings in. A paged view's
   window load writes its rows straight into the Dio's shared cache and announces only
   `RangeLoaded`, and a hub recheck that then finds the cached row equal announces nothing, so a
@@ -30,10 +31,6 @@
   can list the other's rows: Dios are told apart only by vista name, recorded query and hub key.
 - Known limit: facts carry no version, so two Dios writing one row at the same moment may reach a
   third in either order. The next refresh settles it.
-
-## 1.1.0 — 2026-10-18
-
-- Requires vantage-table 3.0.0.
 - Writes carry the caller's `WriteContext`. `Dio::flash` takes the context in scope when the flash
   has none, and the write worker runs the write inside it, so the master table's hooks and a Lens
   writer see who made the change. `ChangeFlash::with_context` sets one explicitly and

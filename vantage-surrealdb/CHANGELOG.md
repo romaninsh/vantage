@@ -2,6 +2,7 @@
 
 ## 2.1.1 — 2026-10-19
 
+- Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
 - A write the connection may not perform now fails. SurrealDB answers a refused write (a `VIEWER`
   user, or table permissions) with an empty result, which the driver took for success: a delete
   of a row it could not remove returned `Ok`, so after-delete hooks ran for a row still there.
@@ -16,10 +17,6 @@
   `table.with_condition(<expr>)` for rule scripts, narrowing the table as a `modify:` script's
   `with_condition` narrows a vista. SQLite, Postgres and CSV have no `modify:` vocabulary and no
   rule `with_condition`; there it is "function not found".
-
-## 2.1.0 — 2026-10-18
-
-- Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
 - `SurrealVistaFactory::with_injector(TableInjector<SurrealDB>)`. The injector runs on the root
   table, each reference target (plain or `rhai:`), each `base:` table, and `table()` inside
   `modify:` scripts.

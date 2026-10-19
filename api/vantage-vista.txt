@@ -111,6 +111,7 @@ pub vantage_vista::prelude::Capability::Subscribe
 pub vantage_vista::prelude::Capability::Traverse
 pub vantage_vista::prelude::Capability::Update
 pub vantage_vista::prelude::Capability::Window
+pub vantage_vista::prelude::Capability::WritesReachHooks
 impl vantage_vista::Capability
 pub fn vantage_vista::Capability::as_str(self) -> &'static str
 pub fn vantage_vista::Capability::iter() -> impl core::iter::traits::iterator::Iterator<Item = vantage_vista::Capability>
@@ -330,6 +331,72 @@ impl<F: core::ops::function::Fn(&str) -> vantage_core::util::error::Result<vanta
 pub fn F::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub type vantage_vista::prelude::CborValue = ciborium::value::Value
 pub mod vantage_vista::rhai
+pub enum vantage_vista::rhai::HookOn
+pub vantage_vista::rhai::HookOn::BeforeDelete
+pub vantage_vista::rhai::HookOn::BeforeInsert
+pub vantage_vista::rhai::HookOn::BeforeSave
+pub vantage_vista::rhai::HookOn::BeforeUpdate
+impl core::clone::Clone for vantage_vista::rhai::HookOn
+pub fn vantage_vista::rhai::HookOn::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::rhai::HookOn
+impl core::cmp::PartialEq for vantage_vista::rhai::HookOn
+pub fn vantage_vista::rhai::HookOn::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::rhai::HookOn
+pub fn vantage_vista::rhai::HookOn::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_vista::rhai::HookOn
+impl core::marker::StructuralPartialEq for vantage_vista::rhai::HookOn
+impl core::marker::Freeze for vantage_vista::rhai::HookOn
+impl core::marker::Send for vantage_vista::rhai::HookOn
+impl core::marker::Sync for vantage_vista::rhai::HookOn
+impl core::marker::Unpin for vantage_vista::rhai::HookOn
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::HookOn
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::HookOn
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::HookOn
+#[non_exhaustive] pub enum vantage_vista::rhai::RuleHookInput
+pub vantage_vista::rhai::RuleHookInput::Delete
+pub vantage_vista::rhai::RuleHookInput::Delete::id: ciborium::value::Value
+pub vantage_vista::rhai::RuleHookInput::Delete::row: ciborium::value::Value
+pub vantage_vista::rhai::RuleHookInput::Id(ciborium::value::Value)
+pub vantage_vista::rhai::RuleHookInput::Record(ciborium::value::Value)
+pub vantage_vista::rhai::RuleHookInput::Update
+pub vantage_vista::rhai::RuleHookInput::Update::record: ciborium::value::Value
+pub vantage_vista::rhai::RuleHookInput::Update::stored: core::option::Option<ciborium::value::Value>
+impl core::clone::Clone for vantage_vista::rhai::RuleHookInput
+pub fn vantage_vista::rhai::RuleHookInput::clone(&self) -> Self
+impl core::fmt::Debug for vantage_vista::rhai::RuleHookInput
+pub fn vantage_vista::rhai::RuleHookInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_vista::rhai::RuleHookInput
+impl core::marker::Send for vantage_vista::rhai::RuleHookInput
+impl core::marker::Sync for vantage_vista::rhai::RuleHookInput
+impl core::marker::Unpin for vantage_vista::rhai::RuleHookInput
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::RuleHookInput
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RuleHookInput
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RuleHookInput
+pub enum vantage_vista::rhai::RuleVerb
+pub vantage_vista::rhai::RuleVerb::Condition
+pub vantage_vista::rhai::RuleVerb::Condition::described: alloc::string::String
+pub vantage_vista::rhai::RuleVerb::Hook
+pub vantage_vista::rhai::RuleVerb::Hook::on: vantage_vista::rhai::HookOn
+pub vantage_vista::rhai::RuleVerb::RemoveColumn
+pub vantage_vista::rhai::RuleVerb::RemoveColumn::column: alloc::string::String
+pub vantage_vista::rhai::RuleVerb::Where
+pub vantage_vista::rhai::RuleVerb::Where::column: alloc::string::String
+pub vantage_vista::rhai::RuleVerb::Where::described: alloc::string::String
+impl core::clone::Clone for vantage_vista::rhai::RuleVerb
+pub fn vantage_vista::rhai::RuleVerb::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::rhai::RuleVerb
+impl core::cmp::PartialEq for vantage_vista::rhai::RuleVerb
+pub fn vantage_vista::rhai::RuleVerb::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::rhai::RuleVerb
+pub fn vantage_vista::rhai::RuleVerb::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_vista::rhai::RuleVerb
+impl core::marker::Freeze for vantage_vista::rhai::RuleVerb
+impl core::marker::Send for vantage_vista::rhai::RuleVerb
+impl core::marker::Sync for vantage_vista::rhai::RuleVerb
+impl core::marker::Unpin for vantage_vista::rhai::RuleVerb
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::RuleVerb
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RuleVerb
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RuleVerb
 #[non_exhaustive] pub enum vantage_vista::rhai::Terminals
 pub vantage_vista::rhai::Terminals::Describe
 pub vantage_vista::rhai::Terminals::ReadWrite
@@ -410,23 +477,45 @@ impl core::marker::Unpin for vantage_vista::rhai::RecordDraft
 impl core::marker::UnsafeUnpin for vantage_vista::rhai::RecordDraft
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RecordDraft
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RecordDraft
+pub struct vantage_vista::rhai::RuleHandle
+impl vantage_vista::rhai::RuleHandle
+pub fn vantage_vista::rhai::RuleHandle::native_condition(&self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>, alloc::string::String) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::rhai::RuleHandle::new(alloc::boxed::Box<dyn vantage_vista::rhai::RuleTarget>) -> Self
+pub fn vantage_vista::rhai::RuleHandle::verbs(&self) -> alloc::vec::Vec<vantage_vista::rhai::RuleVerb>
+impl core::clone::Clone for vantage_vista::rhai::RuleHandle
+pub fn vantage_vista::rhai::RuleHandle::clone(&self) -> Self
+impl core::marker::Freeze for vantage_vista::rhai::RuleHandle
+impl core::marker::Send for vantage_vista::rhai::RuleHandle
+impl core::marker::Sync for vantage_vista::rhai::RuleHandle
+impl core::marker::Unpin for vantage_vista::rhai::RuleHandle
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::RuleHandle
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RuleHandle
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RuleHandle
 pub const vantage_vista::rhai::DEFAULT_LIMIT: usize
 pub const vantage_vista::rhai::IMPORT_CANCELLED: &str
 pub const vantage_vista::rhai::IMPORT_CANCELLED_SKIPPED: &str
 pub const vantage_vista::rhai::MAX_LIMIT: usize
 pub const vantage_vista::rhai::MIN_LIMIT: usize
+pub trait vantage_vista::rhai::RuleTarget: core::marker::Send
+pub fn vantage_vista::rhai::RuleTarget::hook(&mut self, vantage_vista::rhai::HookOn, vantage_vista::rhai::RuleHookFn) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::rhai::RuleTarget::native_condition(&mut self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>, alloc::string::String) -> vantage_core::util::error::Result<alloc::string::String>
+pub fn vantage_vista::rhai::RuleTarget::remove_column(&mut self, &str) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::rhai::RuleTarget::where_value(&mut self, &str, vantage_vista::FilterOp, ciborium::value::Value) -> vantage_core::util::error::Result<alloc::string::String>
 pub fn vantage_vista::rhai::block_on<F: core::future::future::Future>(F) -> vantage_core::util::error::Result<<F as core::future::future::Future>::Output>
 pub fn vantage_vista::rhai::cbor_to_dynamic(&ciborium::value::Value) -> rhai::types::dynamic::Dynamic
 pub fn vantage_vista::rhai::dynamic_to_cbor(rhai::types::dynamic::Dynamic) -> core::result::Result<ciborium::value::Value, alloc::boxed::Box<rhai::types::error::EvalAltResult>>
 pub fn vantage_vista::rhai::eval_modify_script(&vantage_rhai::host::Host, &str, vantage_vista::Vista) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::rhai::eval_ref_script(&vantage_rhai::host::Host, &str, vantage_rhai::compiled::Env, &vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<vantage_vista::Vista>
+pub fn vantage_vista::rhai::eval_rule_script(&vantage_rhai::host::Host, &str, vantage_rhai::compiled::Env, &vantage_vista::rhai::RuleHandle) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::rhai::map_to_record(rhai::Map) -> core::result::Result<vantage_types::record::Record<ciborium::value::Value>, alloc::boxed::Box<rhai::types::error::EvalAltResult>>
 pub fn vantage_vista::rhai::preview_script(alloc::string::String, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>) -> core::result::Result<serde_json::value::Value, alloc::string::String>
 pub fn vantage_vista::rhai::record_to_dynamic(&vantage_types::record::Record<ciborium::value::Value>) -> rhai::types::dynamic::Dynamic
 pub fn vantage_vista::rhai::record_to_map(&vantage_types::record::Record<ciborium::value::Value>) -> rhai::Map
+pub fn vantage_vista::rhai::register_rule_vocab(&mut rhai::engine::Engine)
 pub fn vantage_vista::rhai::reject_dropped_narrowing(&rhai::ast::ast::AST, &'static str, bool) -> vantage_core::util::error::Result<()>
 pub async fn vantage_vista::rhai::run_script(alloc::string::String, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>, usize, vantage_vista::rhai::Writes) -> core::result::Result<serde_json::value::Value, alloc::string::String>
 pub fn vantage_vista::rhai::script_tables<F: vantage_vista::VistaFactory>(F, core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::SpecResolver<vantage_vista::VistaSpec<<F as vantage_vista::VistaFactory>::TableExtras, <F as vantage_vista::VistaFactory>::ColumnExtras, <F as vantage_vista::VistaFactory>::ReferenceExtras>>>>, core::option::Option<fn(&str) -> vantage_vista::VistaSpec<<F as vantage_vista::VistaFactory>::TableExtras, <F as vantage_vista::VistaFactory>::ColumnExtras, <F as vantage_vista::VistaFactory>::ReferenceExtras>>) -> alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>
+pub type vantage_vista::rhai::RuleHookFn = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(vantage_vista::rhai::RuleHookInput) -> core::result::Result<(), alloc::string::String> + core::marker::Send + core::marker::Sync)>
 pub macro vantage_vista::forward_table_shell!
 #[non_exhaustive] pub enum vantage_vista::Capability
 pub vantage_vista::Capability::ConfineWrites
@@ -442,6 +531,7 @@ pub vantage_vista::Capability::Subscribe
 pub vantage_vista::Capability::Traverse
 pub vantage_vista::Capability::Update
 pub vantage_vista::Capability::Window
+pub vantage_vista::Capability::WritesReachHooks
 impl vantage_vista::Capability
 pub fn vantage_vista::Capability::as_str(self) -> &'static str
 pub fn vantage_vista::Capability::iter() -> impl core::iter::traits::iterator::Iterator<Item = vantage_vista::Capability>
