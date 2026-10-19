@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.1 — 2026-10-19
+
+- A write the connection may not perform now fails. SurrealDB answers a refused write (a `VIEWER`
+  user, or table permissions) with an empty result, which the driver took for success: a delete
+  of a row it could not remove returned `Ok`, so after-delete hooks ran for a row still there.
+  - `delete` runs `DELETE … RETURN BEFORE`; when it removes nothing and the set still holds the
+    row, it errors with "delete of `item:x` had no effect: the connection may not delete it".
+    Deleting a missing row stays a successful no-op.
+  - `delete_all` errors when rows of the set remain afterwards.
+  - `insert` (with or without an id), `replace` and `patch` say the write had no effect instead
+    of "expected map in array result" or "Row not found". A patch of a missing row is still
+    `NotFound`.
+
 ## 2.1.0 — 2026-10-18
 
 - Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
