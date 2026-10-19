@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1 — 2026-10-18
+
+- Requires vantage-memory 3.0.0.
+
 ## 2.0.0 — 2026-10-14
 
 ### Breaking changes

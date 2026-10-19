@@ -23,6 +23,10 @@
 //!
 //! [`run_script`] and [`preview_script`] are the agent-tool runners; the
 //! `eval_*` functions evaluate YAML script slots into Vistas.
+//!
+//! A rule script is the exception: it runs on a table before any Vista
+//! exists, through [`eval_rule_script`], and its `table` is a
+//! [`RuleHandle`] with narrowing verbs only (see [`register_rule_vocab`]).
 
 mod bridge;
 mod convert;
@@ -35,6 +39,7 @@ mod narrow;
 mod no_rows;
 mod read;
 mod record;
+mod rule;
 mod runtime;
 mod tables;
 mod traverse;
@@ -50,6 +55,10 @@ pub use handle::Handle;
 pub use import::{IMPORT_CANCELLED, IMPORT_CANCELLED_SKIPPED};
 pub(crate) use lazy::lazy_value_closure;
 pub use record::RecordDraft;
+pub use rule::{
+    HookOn, RuleHandle, RuleHookFn, RuleHookInput, RuleTarget, RuleVerb, eval_rule_script,
+    register_rule_vocab,
+};
 pub use runtime::{DEFAULT_LIMIT, MAX_LIMIT, MIN_LIMIT, preview_script, run_script};
 pub use tables::script_tables;
 pub use vocab::{DataVocab, Terminals, Writes};

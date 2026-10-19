@@ -139,7 +139,7 @@ fn candidates_for(
             }
             Ok(out)
         }
-        RedbCondition::Deferred(_) => {
+        RedbCondition::Deferred(_) | RedbCondition::DeferredIn { .. } => {
             // Resolved in load_filtered before reaching here.
             unreachable!("deferred condition reached candidates_for after resolve()")
         }
@@ -261,6 +261,6 @@ fn condition_matches(
                 false
             }
         }
-        RedbCondition::Deferred(_) => false,
+        RedbCondition::Deferred(_) | RedbCondition::DeferredIn { .. } => false,
     }
 }

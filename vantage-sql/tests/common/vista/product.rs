@@ -42,6 +42,38 @@ macro_rules! vista_product_tests {
             Ok(())
         }
 
+        /// The shell's count reads the source directly, so it must check the
+        /// hook itself; list, get and windows go through the table.
+        #[tokio::test]
+        async fn before_select_refuses_vista_list_get_count_and_window() -> TestResult {
+            use vantage_table::table::{Hook, SelectCx, select_hook};
+
+            let (db, table) = product("refuse").await;
+            let table = table.with_hook(Hook::BeforeSelect(select_hook(|_cx: SelectCx<'_, _>| {
+                Box::pin(async { Err(vantage_core::error!("read refused")) })
+            })));
+            let vista = db.vista_factory().from_table(table)?;
+
+            let refused = |e: vantage_core::VantageError| e.to_string().contains("read refused");
+            assert!(vista.list_values().await.is_err_and(refused));
+            assert!(vista.get_value("a").await.is_err_and(refused));
+            assert!(vista.count().await.is_err_and(refused));
+            assert!(vista.fetch_window(0, 2).await.is_err_and(refused));
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn capabilities_report_writes_reach_hooks() -> TestResult {
+            let (db, table) = product("writes_hooks").await;
+            let vista = db.vista_factory().from_table(table)?;
+            assert!(
+                vista
+                    .capabilities()
+                    .has(vantage_vista::Capability::WritesReachHooks)
+            );
+            Ok(())
+        }
+
         /// SQL compares whole column values, so a path into one is refused as
         /// `Unimplemented`, and `with_query` hands it back as residual.
         #[tokio::test]

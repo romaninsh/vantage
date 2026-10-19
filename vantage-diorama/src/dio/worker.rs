@@ -83,6 +83,9 @@ pub(crate) async fn write_worker_loop(mut rx: mpsc::Receiver<QueuedFlash>) {
             tracing::debug!(error = %err, "Dio flash failed");
         }
         drop(pending);
+        if let Some(id) = flash.id() {
+            dio.inner.recheck_deferred(id);
+        }
         let _ = reply.send(settled);
     }
 }
@@ -103,8 +106,18 @@ pub(crate) fn writing_for(inner: &Arc<DioInner>) -> bool {
 }
 
 /// Run a flash through the Lens's writer, or the default write-to-master
-/// path when it has none.
+/// path when it has none, inside the flash's
+/// [`WriteContext`](vantage_table::write_context::WriteContext). The worker is
+/// its own task, so the caller's scope ended at the queue; the flash brought
+/// the context across.
 async fn run_write_through(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
+    match flash.context().cloned() {
+        Some(context) => context.scope(route(dio, flash)).await,
+        None => route(dio, flash).await,
+    }
+}
+
+async fn route(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
     match dio.inner.lens.callbacks.writer.as_ref() {
         Some(writer) => {
             let writing = Arc::as_ptr(&dio.inner) as usize;

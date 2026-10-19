@@ -1,7 +1,7 @@
 //! Live follow: push from the master Vista into the cache, for as long as the
 //! Dio lives.
 
-mod admit;
+pub(crate) mod admit;
 mod batch;
 
 use std::sync::{Arc, Weak};
@@ -182,6 +182,7 @@ impl Follower {
                 return false;
             };
             let table = inner.master.name().to_string();
+            let published = inner.published.load(std::sync::atomic::Ordering::Relaxed);
             let reread = Dio {
                 inner: inner.clone(),
             }
@@ -190,6 +191,15 @@ impl Follower {
             match reread {
                 Ok(()) => {
                     tracing::info!(table = %table, "watch: re-read the set");
+                    // The Dios following this one's changes through the hub
+                    // missed the gap too. A re-read publishes its diff only
+                    // when it reconciled over a whole copy; any other (an
+                    // augmentation pass, a paged or lazy cache, a refresher
+                    // writing the cache itself) tells them nothing, so they
+                    // re-read their own sets.
+                    if inner.published.load(std::sync::atomic::Ordering::Relaxed) == published {
+                        inner.publish(crate::lens::hub::TableChange::Invalidated);
+                    }
                     return true;
                 }
                 Err(e) => {
@@ -227,7 +237,7 @@ impl Follower {
 /// Run `fut` unless the Dio drops first. `None` means it dropped and `fut`
 /// was abandoned. Nothing is ever sent on the channel, so `changed()` only
 /// resolves when the sender closes with the last Dio handle.
-async fn until_dio_drops<F: std::future::Future>(
+pub(crate) async fn until_dio_drops<F: std::future::Future>(
     cancel: &mut tokio::sync::watch::Receiver<()>,
     fut: F,
 ) -> Option<F::Output> {

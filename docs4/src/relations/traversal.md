@@ -105,6 +105,25 @@ row, and yields the list as a single value. Filtering the target is then a per-r
 check. Same declared relation, same traversal call — no database anywhere.
 ```
 
+### Building and reading conditions by column
+
+`related_in_condition` has siblings on `TableSource` for code that builds or inspects a narrowing
+without a relation, such as an access rule or an audit log line:
+
+- `eq_value_condition(field, value)` and `in_values_condition(field, values)` build
+  `field = value` and `field IN (values)` from native values. An empty list matches no row. REST
+  accepts a single value only and refuses longer lists: a URL filter carries one value, and
+  silently dropping the condition would widen the set.
+- `condition_column(&condition)` names the column a condition narrows to values: equality, `IN`
+  (including the related and deferred forms above), comparisons, `LIKE`, each with a value (or,
+  for `IN`, a value list or subquery) on the right. It returns `None` when it can't tell, as for a
+  raw expression or an `OR`, and for anything that doesn't pin the column to values: a negation
+  (`!=`, `NOT IN`, `NOT LIKE`, a null check), or a column or expression on the right
+  (`tenant_id = tenant_id`, `tenant_id = 7 OR 1 = 1`). So a check that demands a condition on,
+  say, `tenant_id` fails safe.
+- `describe_condition(&condition)` renders a condition for people (`client_id = 7`,
+  `invoice_id IN <deferred>`), for log entries. Don't parse it; use `condition_column` in code.
+
 Use this form when the parent is a set — filtered, unfiltered, one row or a thousand.
 
 ## Form 2 — set-to-set, for embedding: `get_subquery_as`
@@ -252,6 +271,18 @@ a relation is built by a caller-supplied constructor, so the traversal site cann
 Where the traversal forms narrow
 the target to related rows, `get_ref_target_erased` hands you the table you'd insert a new related row
 into before any join value exists (this is what Vista's nested insert uses).
+
+## When a target can't be built
+
+`with_one` and `with_many` take a constructor that always returns a table. Their siblings
+`try_with_one` and `try_with_many` take one that returns `Result`, plus the target's name for
+metadata. When the constructor fails, every traversal form returns that error. It never falls back
+to a table without the target's own conditions: if the target carried an access rule, a fallback
+would read rows the rule hides.
+
+Spec references (from YAML) are built this way. A target the resolver doesn't know, or one whose
+build fails (a build injector refusing it, say), makes the traversal an error. The relation still
+appears in metadata under its declared target name.
 
 ## Contained relations
 

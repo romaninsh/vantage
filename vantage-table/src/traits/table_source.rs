@@ -67,6 +67,21 @@ pub trait TableSource: DataSource + Clone + 'static {
         ))
     }
 
+    /// Build a `field IN (values)` condition from native-typed values: the
+    /// list-valued sibling of [`Self::eq_value_condition`].
+    /// [`Self::condition_column`] names `field` for it. An empty `values`
+    /// matches no row. The default returns an error.
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        let _ = (field, values);
+        Err(vantage_core::error!(
+            "in_values_condition not implemented for this TableSource"
+        ))
+    }
+
     /// When `condition` is a literal `column = value`, return the pair.
     ///
     /// [`Table::add_condition`] registers it as a set invariant: an insert or
@@ -75,6 +90,26 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// document backends read their own filter shape. Default `None`: the
     /// condition still narrows, it just fills nothing.
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
+        let _ = condition;
+        None
+    }
+
+    /// `condition` as text for people, e.g. `client_id = 7`: what a log entry
+    /// records for a bulk delete. Not for parsing; use
+    /// [`Self::condition_column`] / [`Self::condition_equality`] in code.
+    /// A part resolved only at query time renders as a placeholder.
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        let _ = condition;
+        "<condition>".to_string()
+    }
+
+    /// The column `condition` narrows to values, for the shapes this backend
+    /// can read (`col = v`, `col IN (…)`, comparisons, `LIKE`), with a value
+    /// — not a column or an arbitrary expression — on the right. `None` when
+    /// it can't tell — a raw expression, a combination, a negation (`!=`,
+    /// `NOT IN`, `NOT LIKE`), `col = other_col` — so a check that requires a
+    /// condition on some column fails safe.
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
         let _ = condition;
         None
     }

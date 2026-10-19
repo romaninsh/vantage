@@ -26,7 +26,9 @@ impl LogWriterVistaFactory {
         let name = table.table_name().to_string();
         let any_table = table.into_entity::<EmptyEntity>();
 
-        let capabilities = VistaCapabilities::new().with(Capability::Insert);
+        let capabilities = VistaCapabilities::new()
+            .with(Capability::Insert)
+            .with(Capability::WritesReachHooks);
         let shell = LogWriterTableShell::new(any_table, capabilities, metadata);
         Ok(Vista::new(name, shell))
     }

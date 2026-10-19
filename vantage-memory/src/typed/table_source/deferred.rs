@@ -24,7 +24,7 @@ impl MemoryDB {
         let source = source_table.clone();
         let col = source_column.to_string();
         let target = target_field.to_string();
-        MemoryCondition::Deferred(DeferredFn::from_fn(move || {
+        let deferred = DeferredFn::from_fn(move || {
             let (db, source, col, target) =
                 (db.clone(), source.clone(), col.clone(), target.clone());
             async move {
@@ -35,7 +35,11 @@ impl MemoryDB {
                     CborValue::Array(vec![CborValue::Text(target), CborValue::Array(values)]);
                 Ok(AnyMemoryType::untyped(payload))
             }
-        }))
+        });
+        MemoryCondition::DeferredIn {
+            path: target_field.to_string(),
+            deferred,
+        }
     }
 
     /// The values of column `col` across `table`'s rows, as one array.

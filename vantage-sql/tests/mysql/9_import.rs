@@ -132,16 +132,16 @@ async fn import_runs_insert_hooks_for_new_records_only() -> TestResult {
     let (db, name) = setup("hooks").await;
     let after_calls = Arc::new(AtomicUsize::new(0));
     let calls = after_calls.clone();
-    let before: BeforeFn<MysqlDB> = Arc::new(|record, _table| {
+    let before: BeforeFn<MysqlDB> = Arc::new(|cx| {
         Box::pin(async move {
-            record.insert(
+            cx.record.insert(
                 "status".to_string(),
                 AnyMysqlType::from("defaulted".to_string()),
             );
             Ok(())
         })
     });
-    let after: AfterFn<MysqlDB> = Arc::new(move |_id, _record, _table| {
+    let after: AfterFn<MysqlDB> = Arc::new(move |_cx| {
         let calls = calls.clone();
         Box::pin(async move {
             calls.fetch_add(1, Ordering::SeqCst);

@@ -56,7 +56,7 @@ the outbox (a write). Datasources and drivers only read it.
 | `2xx` | — | closes if open, resets the failure run | rows |
 | `5xx`, connection error, timeout | yes, per the policy | counts toward opening | after retries: error with `status`, `attempts`, `kind: status` or `transport` |
 | `408`, `429` | yes, per the policy; `Retry-After` honoured up to the policy's ceiling | not counted, not closed | as above |
-| `401` (auth configured) | replayed once with a fresh token | closes if open | rows, or a `401` error if the fresh token fails too |
+| `401` (`auth_refresher` configured) | replayed once with a fresh token | closes if open | rows, or a `401` error if the fresh token fails too |
 | other `4xx` | no | closes if open | error on the first attempt, with `status` and up to 500 chars of the body |
 | `200` with a GraphQL `errors` array | no | closed (it was a `2xx`) | error carrying the server's messages |
 

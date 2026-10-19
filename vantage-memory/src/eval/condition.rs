@@ -31,6 +31,13 @@ pub enum MemoryCondition {
     /// Resolved before evaluation into `Cmp { op: InSet }`. The payload is
     /// a CBOR array `[Text(path), Array(values)]`.
     Deferred(DeferredFn<AnyMemoryType>),
+    /// A [`Deferred`](Self::Deferred) known to constrain `path` (traversal's
+    /// `fk IN (parent ids)`), so the column is readable before resolution.
+    /// Resolves exactly as `Deferred` does.
+    DeferredIn {
+        path: String,
+        deferred: DeferredFn<AnyMemoryType>,
+    },
 }
 
 impl MemoryCondition {
@@ -47,6 +54,27 @@ impl MemoryCondition {
         Self::Search {
             text: text.into(),
             columns: Vec::new(),
+        }
+    }
+
+    /// The condition as text for people: a shell's `preview` and the
+    /// table source's `describe_condition`.
+    pub(crate) fn describe(&self) -> String {
+        let join = |list: &[MemoryCondition], sep: &str| {
+            let parts: Vec<String> = list.iter().map(MemoryCondition::describe).collect();
+            format!("({})", parts.join(sep))
+        };
+        match self {
+            MemoryCondition::Cmp { path, op, value } => {
+                format!("{path} {} {}", op.key_symbol(), render_value(value))
+            }
+            MemoryCondition::Search { text, .. } => format!("search {text:?}"),
+            MemoryCondition::And(all) => join(all, " AND "),
+            MemoryCondition::Or(any) => join(any, " OR "),
+            MemoryCondition::Not(inner) => format!("NOT {}", inner.describe()),
+            MemoryCondition::Column(name) => name.clone(),
+            MemoryCondition::Deferred(_) => "<deferred>".to_string(),
+            MemoryCondition::DeferredIn { path, .. } => format!("{path} IN <deferred>"),
         }
     }
 
@@ -74,7 +102,9 @@ impl MemoryCondition {
             Self::Column(c) => {
                 return Err(error!("A column reference is not a filter", column = c));
             }
-            Self::Deferred(_) => return Err(error!("Deferred condition used before resolve()")),
+            Self::Deferred(_) | Self::DeferredIn { .. } => {
+                return Err(error!("Deferred condition used before resolve()"));
+            }
         })
     }
 
@@ -84,7 +114,9 @@ impl MemoryCondition {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self>> + Send>> {
         Box::pin(async move {
             Ok(match self {
-                Self::Deferred(d) => deferred_to_in_set(d).await?,
+                Self::Deferred(d) | Self::DeferredIn { deferred: d, .. } => {
+                    deferred_to_in_set(d).await?
+                }
                 Self::And(all) => Self::And(resolve_all(all).await?),
                 Self::Or(any) => Self::Or(resolve_all(any).await?),
                 Self::Not(inner) => Self::Not(Box::new(inner.resolve().await?)),
@@ -117,6 +149,23 @@ async fn deferred_to_in_set(d: DeferredFn<AnyMemoryType>) -> Result<MemoryCondit
             }
         }
         _ => Err(error!("Deferred condition: expected [path, [values]]")),
+    }
+}
+
+/// A condition operand as a literal: text quoted, numbers and booleans bare,
+/// arrays bracketed.
+fn render_value(value: &CborValue) -> String {
+    match value {
+        CborValue::Text(s) => format!("{s:?}"),
+        CborValue::Integer(i) => i128::from(*i).to_string(),
+        CborValue::Float(f) => f.to_string(),
+        CborValue::Bool(b) => b.to_string(),
+        CborValue::Null => "null".to_string(),
+        CborValue::Array(items) => {
+            let items: Vec<String> = items.iter().map(render_value).collect();
+            format!("[{}]", items.join(", "))
+        }
+        other => format!("{other:?}"),
     }
 }
 

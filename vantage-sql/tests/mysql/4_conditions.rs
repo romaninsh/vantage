@@ -54,6 +54,56 @@ async fn test_custom_expression_condition() {
 }
 
 #[tokio::test]
+async fn conditions_describe_themselves_and_name_their_column() {
+    use vantage_table::traits::table_source::TableSource;
+    let db = get_db().await;
+    let a = db.eq_value_condition("a", AnyMysqlType::from("x")).unwrap();
+    let b = db.eq_value_condition("b", AnyMysqlType::from("y")).unwrap();
+    crate::condition_text::assert_condition_text_and_column(
+        &db,
+        AnyMysqlType::from("p1"),
+        mysql_expr!("1 = 1").into(),
+        mysql_expr!("{} AND {}", (a.0), (b.0)).into(),
+    );
+}
+
+#[tokio::test]
+async fn condition_column_names_only_a_column_narrowed_to_values() {
+    let tenant = Column::<AnyMysqlType>::new("tenant_id");
+    let invoice = Column::<AnyMysqlType>::new("invoice_id");
+    crate::condition_text::assert_condition_column_names_only_narrowing(
+        &get_db().await,
+        crate::condition_text::NarrowingShapes {
+            negations: vec![
+                mysql_expr!("{} != {}", (tenant), "acme").into(),
+                mysql_expr!("{} <> {}", (tenant), "acme").into(),
+                mysql_expr!("{} NOT IN ({})", (tenant), "acme").into(),
+                mysql_expr!("{} NOT LIKE {}", (tenant), "a%").into(),
+            ],
+            gt: mysql_expr!("{} > {}", (invoice), 1i64).into(),
+            column_vs_column: mysql_expr!("{} = {}", (tenant), (tenant)).into(),
+            or_operand: mysql_expr!("{} = {}", (tenant), (mysql_expr!("7 OR 1 = 1"))).into(),
+        },
+    );
+}
+
+#[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() {
+    crate::condition_text::assert_in_values_narrows_products(&get_db().await, |id| {
+        AnyMysqlType::from(id)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn condition_column_names_an_in_values_condition() {
+    crate::condition_text::assert_in_values_names_its_column(
+        &get_db().await,
+        AnyMysqlType::from("i1"),
+    );
+}
+
+#[tokio::test]
 async fn test_multiple_conditions() {
     let db = get_db().await;
     let mut table = Product::mysql_table(db);

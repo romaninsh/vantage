@@ -137,6 +137,8 @@ impl LensBuilder {
             runtime,
             debug: self.debug,
             dios: DioRegistry::default(),
+            hubs: Default::default(),
+            serials: Default::default(),
         }))
     }
 }

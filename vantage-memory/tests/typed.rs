@@ -1,7 +1,8 @@
-use vantage_memory::MemoryDB;
 use vantage_memory::prelude::*;
+use vantage_memory::{MemoryCondition, MemoryDB};
 use vantage_table::prelude::*;
 use vantage_types::{EmptyEntity, Record};
+use vantage_vista::FilterOp;
 
 fn products(db: &MemoryDB) -> Table<MemoryDB, EmptyEntity> {
     Table::new("product", db.clone())
@@ -167,6 +168,113 @@ async fn related_in_condition_matches_integer_foreign_keys() {
     o.add_condition(c);
     let rows = o.data_source().list_table_values(&o).await.unwrap();
     assert_eq!(rows.keys().cloned().collect::<Vec<_>>(), ["o2"]);
+}
+
+#[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() {
+    let db = MemoryDB::new();
+    let rows = db.store().table("t");
+    for id in ["a", "b", "c"] {
+        rows.upsert(
+            id,
+            [("code".to_string(), ciborium::Value::Text(id.into()))]
+                .into_iter()
+                .collect(),
+        );
+    }
+    let listed = |codes: &[&str]| {
+        let values = codes.iter().map(|c| AnyMemoryType::from(*c)).collect();
+        Table::<MemoryDB, EmptyEntity>::new("t", db.clone())
+            .with_id_column("id")
+            .with_condition(db.in_values_condition("code", values).unwrap())
+    };
+    let a_and_c = listed(&["a", "c"]);
+    let found = db.list_table_values(&a_and_c).await.unwrap();
+    assert_eq!(found.keys().cloned().collect::<Vec<_>>(), ["a", "c"]);
+    let none = listed(&[]);
+    assert!(db.list_table_values(&none).await.unwrap().is_empty());
+}
+
+#[test]
+fn condition_column_names_an_in_values_condition() {
+    let db = MemoryDB::new();
+    let cond = db
+        .in_values_condition("invoice_id", vec![AnyMemoryType::from("i1")])
+        .unwrap();
+    assert_eq!(db.condition_column(&cond), Some("invoice_id".to_string()));
+}
+
+#[test]
+fn describe_condition_reads_as_the_expression() {
+    let db = MemoryDB::new();
+    let cond = db
+        .eq_value_condition("parent", AnyMemoryType::from("p1"))
+        .unwrap();
+    assert_eq!(db.describe_condition(&cond), "parent = \"p1\"");
+}
+
+#[test]
+fn condition_column_names_eq_and_in() {
+    let db = MemoryDB::new();
+    let eq = db
+        .eq_value_condition("parent", AnyMemoryType::from("p1"))
+        .unwrap();
+    assert_eq!(db.condition_column(&eq), Some("parent".to_string()));
+
+    let invoices = Table::<MemoryDB, EmptyEntity>::new("invoice", db.clone()).with_id_column("id");
+    let in_cond = db.related_in_condition("invoice_id", &invoices, "id");
+    assert_eq!(
+        db.condition_column(&in_cond),
+        Some("invoice_id".to_string())
+    );
+    assert_eq!(db.describe_condition(&in_cond), "invoice_id IN <deferred>");
+}
+
+#[test]
+fn condition_column_is_none_for_raw_expressions() {
+    let db = MemoryDB::new();
+    assert_eq!(db.condition_column(&MemoryCondition::search("tea")), None);
+    let a = db
+        .eq_value_condition("a", AnyMemoryType::from("x"))
+        .unwrap();
+    let b = db
+        .eq_value_condition("b", AnyMemoryType::from("y"))
+        .unwrap();
+    assert_eq!(db.condition_column(&MemoryCondition::And(vec![a, b])), None);
+}
+
+#[test]
+fn condition_column_names_a_comparison() {
+    let db = MemoryDB::new();
+    let gt = MemoryCondition::cmp("invoice_id", FilterOp::Gt, 1);
+    assert_eq!(db.condition_column(&gt), Some("invoice_id".to_string()));
+}
+
+#[test]
+fn condition_column_is_none_for_negations() {
+    let db = MemoryDB::new();
+    let ne = MemoryCondition::cmp("tenant_id", FilterOp::Ne, "acme");
+    assert_eq!(db.condition_column(&ne), None);
+    let not_in = MemoryCondition::cmp(
+        "tenant_id",
+        FilterOp::NotInSet,
+        ciborium::Value::Array(vec!["acme".into()]),
+    );
+    assert_eq!(db.condition_column(&not_in), None);
+    let not = MemoryCondition::Not(Box::new(MemoryCondition::cmp(
+        "tenant_id",
+        FilterOp::Eq,
+        "acme",
+    )));
+    assert_eq!(db.condition_column(&not), None);
+}
+
+#[test]
+fn condition_column_is_none_for_an_or() {
+    let db = MemoryDB::new();
+    let a = MemoryCondition::cmp("tenant_id", FilterOp::Eq, "acme");
+    let b = MemoryCondition::cmp("id", FilterOp::Gte, 0);
+    assert_eq!(db.condition_column(&MemoryCondition::Or(vec![a, b])), None);
 }
 
 #[test]

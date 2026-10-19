@@ -43,8 +43,9 @@ impl LoaderCx {
         self.dio.master()
     }
 
-    /// The Dio's cache table. Writes here raise no events and ignore flashes
-    /// in flight; [`reconcile`](Self::reconcile) is the write for a full set.
+    /// The Dio's cache table. Writes here raise no events, ignore flashes
+    /// in flight, and stay unknown to the other Dios over the table;
+    /// [`reconcile`](Self::reconcile) is the write for a full set.
     pub fn cache(&self) -> &Arc<dyn CacheTable> {
         &self.dio.inner.cache
     }

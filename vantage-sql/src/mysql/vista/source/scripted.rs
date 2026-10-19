@@ -9,10 +9,11 @@ use vantage_core::Result;
 use vantage_rhai::Env;
 use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_types::{Entity, Record};
-use vantage_vista::rhai::{Handle, eval_ref_script, record_to_dynamic};
+use vantage_vista::rhai::{Handle, RuleHandle, eval_ref_script, record_to_dynamic};
 use vantage_vista::{NativeCondition, Vista};
 
 use super::MysqlTableShell;
+use crate::condition::MysqlCondition;
 use crate::mysql::types::AnyMysqlType;
 use crate::mysql::vista::rhai_source::register_mysql_onto;
 use crate::rhai_engine::RhaiExpr;
@@ -31,6 +32,25 @@ pub(crate) fn register_extensions(engine: &mut Engine) {
             let key = cond.0.preview();
             h.with_native_condition("with_condition", NativeCondition::new(cond.0, key))
                 .map_err(|e| e.to_string().into())
+        },
+    );
+}
+
+/// The MySQL vocabulary for rule scripts: the `sql::` constructors and
+/// operators, and `table.with_condition(<expr>)` on the [`RuleHandle`],
+/// which narrows the table by the expression as a [`MysqlCondition`].
+/// Register it after [`register_rule_vocab`](vantage_vista::rhai::register_rule_vocab).
+pub fn register_rule_conditions(engine: &mut Engine) {
+    register_mysql_onto(engine);
+    engine.register_fn(
+        "with_condition",
+        |h: &mut RuleHandle,
+         cond: RhaiExpr<AnyMysqlType>|
+         -> std::result::Result<RuleHandle, Box<EvalAltResult>> {
+            let key = cond.0.preview();
+            h.native_condition(Box::new(MysqlCondition::from(cond.0)), key)
+                .map_err(|e| e.to_string())?;
+            Ok(h.clone())
         },
     );
 }

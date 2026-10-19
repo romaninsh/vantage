@@ -103,6 +103,49 @@ async fn modify_script_table_resolves_through_resolver() -> TestResult {
     Ok(())
 }
 
+/// `table(name)` in a `modify:` script builds through the factory, so the
+/// factory's injector narrows it: bob's `o3` is outside the injected `o1`.
+#[tokio::test]
+async fn injector_condition_applies_to_a_modify_script_table() -> TestResult {
+    use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
+    use vantage_table::table::TableInjector;
+    use vantage_table::traits::table_source::TableSource;
+
+    let f = Fixture::new("modinject").await;
+    let only_o1: TableInjector<MysqlDB> = std::sync::Arc::new(|cx, table| {
+        if cx.key == "orders" {
+            let o1 = table
+                .data_source()
+                .eq_value_condition("id", AnyMysqlType::from("o1"))?;
+            table.add_condition(o1);
+        }
+        Ok(())
+    });
+    let bob_orders = spec(&format!(
+        r#"
+name: bob_orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+  total: {{ type: int }}
+mysql:
+  table: {}
+  modify: |
+    table("orders").where("client_id", "bob")
+"#,
+        f.orders_t
+    ));
+    let factory =
+        f.db.vista_factory()
+            .with_resolver(f.resolver())
+            .with_injector(only_o1);
+    let orders = factory.build_from_spec(bob_orders)?;
+    assert!(orders.list_values().await?.is_empty());
+
+    f.drop_tables().await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn native_condition_rejects_foreign_type() -> TestResult {
     let f = Fixture::new("raw").await;
@@ -241,4 +284,78 @@ async fn modify_script_condition_guards_writes() -> TestResult {
 
     f.drop_tables().await;
     Ok(())
+}
+
+/// A rule script's `with_condition` hands the rule target a `MysqlCondition`,
+/// built as a `modify:` script's is. A `MysqlDB` can't be built without a
+/// server, so the target here only takes the condition and renders it.
+#[test]
+fn rule_with_condition_narrows_the_table() {
+    use std::any::Any;
+    use std::sync::{Arc, Mutex};
+
+    use vantage_rhai::{Env, Host, Limits};
+    use vantage_sql::condition::MysqlCondition;
+    use vantage_sql::mysql::vista::register_rule_conditions;
+    use vantage_vista::FilterOp;
+    use vantage_vista::rhai::{
+        HookOn, RuleHandle, RuleHookFn, RuleTarget, RuleVerb, eval_rule_script, register_rule_vocab,
+    };
+
+    #[derive(Clone, Default)]
+    struct Rendered(Arc<Mutex<Vec<String>>>);
+
+    impl RuleTarget for Rendered {
+        fn where_value(
+            &mut self,
+            _: &str,
+            _: FilterOp,
+            _: CborValue,
+        ) -> vantage_core::Result<String> {
+            unreachable!("the script only calls with_condition")
+        }
+
+        fn native_condition(
+            &mut self,
+            condition: Box<dyn Any + Send>,
+            _preview: String,
+        ) -> vantage_core::Result<String> {
+            let condition = condition
+                .downcast::<MysqlCondition>()
+                .expect("a MysqlCondition");
+            let sql = condition.into_expr().preview();
+            self.0.lock().unwrap().push(sql.clone());
+            Ok(sql)
+        }
+
+        fn hook(&mut self, _: HookOn, _: RuleHookFn) -> vantage_core::Result<()> {
+            unreachable!("the script only calls with_condition")
+        }
+
+        fn remove_column(&mut self, _: &str) -> vantage_core::Result<()> {
+            unreachable!("the script only calls with_condition")
+        }
+    }
+
+    let target = Rendered::default();
+    let handle = RuleHandle::new(Box::new(target.clone()));
+    let host = Host::builder(Limits::background())
+        .vocab_fn(register_rule_vocab)
+        .vocab_fn(register_rule_conditions)
+        .build();
+    eval_rule_script(
+        &host,
+        r#"table.with_condition(sql::expr("bakery_id = {}", [3]))"#,
+        Env::new(),
+        &handle,
+    )
+    .unwrap();
+
+    assert_eq!(*target.0.lock().unwrap(), ["bakery_id = 3"]);
+    assert_eq!(
+        handle.verbs(),
+        [RuleVerb::Condition {
+            described: "bakery_id = 3".into()
+        }]
+    );
 }

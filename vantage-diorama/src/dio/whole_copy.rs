@@ -58,20 +58,23 @@ impl DioInner {
 
     /// Delete the cached rows among `cached` that `keep` doesn't hold: they
     /// vanished upstream. A row with a flash in flight, or one settled since
-    /// `mark` (taken before the set was read), is left alone.
+    /// `mark` (taken before the set was read), is left alone. Returns the
+    /// ids it deleted.
     pub(crate) async fn drop_vanished<'a>(
         &self,
         cached: impl IntoIterator<Item = &'a String>,
         keep: &HashSet<String>,
         mark: &SettleMark,
-    ) -> Result<()> {
+    ) -> Result<Vec<String>> {
         let pending = &self.pending_flashes;
+        let mut dropped = Vec::new();
         for id in cached {
             if !keep.contains(id) && !pending.guarded_since(mark, id) {
                 self.cache.delete_value(id).await?;
+                dropped.push(id.clone());
             }
         }
-        Ok(())
+        Ok(dropped)
     }
 
     /// Record that the cache is a whole copy, after a list pass read the

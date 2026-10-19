@@ -15,6 +15,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_dataset::record::ActiveRecord;
 use vantage_dataset::traits::WritableValueSet;
+use vantage_table::write_context::WriteContext;
 use vantage_types::Record;
 
 /// What kind of change this flash carries.
@@ -47,6 +48,10 @@ pub struct ChangeFlash {
     /// insert) or the emitter had no snapshot; the optimistic path fills
     /// it from the cache before routing.
     before: Option<Record<CborValue>>,
+    /// Who made the change. The write runs on the Dio's worker task, where
+    /// the caller's [`WriteContext::scope`] doesn't reach, so the flash
+    /// carries it there and the worker re-scopes the write with it.
+    context: Option<WriteContext>,
 }
 
 impl ChangeFlash {
@@ -58,6 +63,7 @@ impl ChangeFlash {
             id,
             patch,
             before: None,
+            context: None,
         }
     }
 
@@ -107,6 +113,21 @@ impl ChangeFlash {
         self
     }
 
+    /// Attach the write context the master's table hooks receive. Without
+    /// one, [`Dio::flash`](crate::Dio::flash) takes the context in scope
+    /// where it is called, if any.
+    pub fn with_context(mut self, context: WriteContext) -> Self {
+        self.context = Some(context);
+        self
+    }
+
+    /// Take the context in scope at fire time when the flash carries none.
+    pub(crate) fn ensure_context(&mut self) {
+        if self.context.is_none() {
+            self.context = WriteContext::current();
+        }
+    }
+
     /// Fill the pre-image if the emitter didn't supply one — the
     /// optimistic path calls this with the cache snapshot it took, so
     /// routing callbacks always see a complete flash.
@@ -148,6 +169,11 @@ impl ChangeFlash {
     /// Pre-image at fire time, when known.
     pub fn before(&self) -> Option<&Record<CborValue>> {
         self.before.as_ref()
+    }
+
+    /// The write context the flash carries, when it has one.
+    pub fn context(&self) -> Option<&WriteContext> {
+        self.context.as_ref()
     }
 
     /// The merged result of applying this flash: the record itself for

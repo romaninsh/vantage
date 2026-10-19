@@ -152,6 +152,55 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.with_column(column)
     }
 
+    /// Take a column out of the table: stored, expression, lazy or
+    /// vista-computed, so it is neither selected nor shown. Invariants and
+    /// conditions naming it stay, so inserts are still stamped with its
+    /// value and rows are still narrowed by it; references hold their
+    /// foreign key by name and keep traversing.
+    pub fn remove_column(&mut self, name: &str) -> vantage_core::Result<()> {
+        if name == self.id_field_name() {
+            return Err(vantage_core::error!(format!(
+                "`{name}` is the id column of `{}`; it can't be removed",
+                self.table_name()
+            )));
+        }
+        let mut found = false;
+        if let Some((stored_index, _, _)) = self.columns.shift_remove_full(name) {
+            found = true;
+            let removed = self.position_of_stored(stored_index);
+            for (at, _) in self.computed_columns.values_mut() {
+                if *at > removed {
+                    *at -= 1;
+                }
+            }
+        }
+        if let Some((removed, _)) = self.computed_columns.shift_remove(name) {
+            found = true;
+            for (at, _) in self.computed_columns.values_mut() {
+                if *at > removed {
+                    *at -= 1;
+                }
+            }
+        }
+        found |= self.expressions.shift_remove(name).is_some();
+        found |= self.lazy_expressions.shift_remove(name).is_some();
+        if !found {
+            return Err(vantage_core::error!(format!(
+                "no column `{name}` in `{}`",
+                self.table_name()
+            )));
+        }
+        self.imported_columns.shift_remove(name);
+        if let Some(active) = &mut self.active_columns {
+            active.shift_remove(name);
+        }
+        self.title_fields.retain(|title| title != name);
+        if self.title_field.as_deref() == Some(name) {
+            self.title_field = self.title_fields.first().cloned();
+        }
+        Ok(())
+    }
+
     /// Get all columns as type-erased columns (`Column<AnyType>`)
     pub fn columns(&self) -> &IndexMap<String, T::Column<T::AnyType>> {
         &self.columns

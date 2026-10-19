@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.2.0 — 2026-10-18
+
+- Requires vantage-table 3.0.0.
+- A bearer token can come from a `BearerSource` (`Arc<dyn Fn() -> Option<String> + Send + Sync>`),
+  asked each time a request goes out, retries included. `None` sends no `Authorization` header.
+  Until now a datasource had one fixed header or one refresher per client, so a client shared by
+  several sessions sent the same token for all of them.
+- `RestApiBuilder::bearer_source` and `GraphqlApiBuilder::bearer_source` set one; like `auth` and
+  `auth_refresher`, each replaces the others.
+- `RestApi::with_bearer_source` and `GraphqlApi::with_bearer_source` return a clone that sends its
+  own source's token and shares the original's client: connection pool, parallel cap, breaker
+  and observer. One clone per session costs no extra connections. The client still adds an
+  `auth_refresher`'s header itself, so build the shared API without one when clones bring tokens.
+- A `401` on a request whose token came from a source is a final error, not refreshed; the next
+  request asks the source again.
+- `in_values_condition`: GraphQL builds an `in` filter. REST takes one value, sent as the same
+  `field=value` param as an equality, and refuses any other list as `Unsupported`, since a URL
+  filter param carries one value and dropping the condition would widen the set.
+- `describe_condition` and `condition_column` are implemented for REST and GraphQL.
+- REST `list`, `count` and `fetch_window` run the table's `BeforeSelect` hooks before any request
+  goes out.
+
 ## 2.0.1 — 2026-10-15
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,

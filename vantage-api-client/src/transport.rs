@@ -3,33 +3,77 @@
 //! task-local becomes a call policy, and how a transport error becomes a
 //! `VantageError` that keeps the status and the server's message.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 
+use reqwest::RequestBuilder;
+use reqwest::header::AUTHORIZATION;
 use vantage_api_pool::resilient::{
     AuthRefresher, CallPolicy, ClientError, ResilientClient, TransportObserver,
 };
 use vantage_core::{Priority, VantageError, error};
 
-/// A configured `Authorization` header value. Held in its own type so
-/// that `Debug` — derived on every struct that carries one — prints
-/// `Some("<set>")` instead of leaking the token into a log line.
+/// Where a request's bearer token comes from when it differs per caller:
+/// asked each time a request goes out, retries included, and answering
+/// the bare token (`Bearer ` is prepended). `None` sends no
+/// `Authorization` header on that request.
+///
+/// Set with `bearer_source` on a builder, or `with_bearer_source` on a
+/// built API to get a clone that shares its client but sends its own
+/// caller's token, e.g. one clone per signed-in session.
+pub type BearerSource = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
+/// The `Authorization` header a datasource adds to its requests. Held in
+/// its own type so that `Debug` — derived on every struct that carries
+/// one — prints `Some("<set>")` instead of leaking the token into a log
+/// line.
 #[derive(Clone, Default)]
-pub(crate) struct AuthHeader(Option<String>);
+pub(crate) enum AuthHeader {
+    /// No header from the datasource (an `auth_refresher` on the client
+    /// may still add one).
+    #[default]
+    None,
+    /// The same header value on every request.
+    Fixed(String),
+    /// A token asked for per request.
+    Source(BearerSource),
+}
 
 impl AuthHeader {
     pub(crate) fn new(value: impl Into<String>) -> Self {
-        Self(Some(value.into()))
+        Self::Fixed(value.into())
     }
 
-    /// The value to send, `None` when no auth is configured.
-    pub(crate) fn value(&self) -> Option<&str> {
-        self.0.as_deref()
+    /// The value for the request going out now: the fixed value, or
+    /// `Bearer <token>` with the source asked at this moment. `None` sends
+    /// no header.
+    pub(crate) fn value(&self) -> Option<Cow<'_, str>> {
+        match self {
+            Self::None => None,
+            Self::Fixed(value) => Some(Cow::Borrowed(value)),
+            Self::Source(source) => source().map(|token| Cow::Owned(format!("Bearer {token}"))),
+        }
     }
 
-    /// What a debug dump shows in place of the value.
+    /// `req` with this header added, when there is one to send. Call it
+    /// inside the request-building closure so a source is asked again on
+    /// every attempt.
+    pub(crate) fn apply(&self, req: RequestBuilder) -> RequestBuilder {
+        match self.value() {
+            Some(value) => req.header(AUTHORIZATION, value.as_ref()),
+            None => req,
+        }
+    }
+
+    /// What a debug dump shows in place of the value. A source isn't
+    /// asked: a preview shouldn't consume a token.
     pub(crate) fn masked(&self) -> Option<&'static str> {
-        self.0.as_ref().map(|_| "<set>")
+        match self {
+            Self::None => None,
+            Self::Fixed(_) => Some("<set>"),
+            Self::Source(_) => Some("<per request>"),
+        }
     }
 }
 

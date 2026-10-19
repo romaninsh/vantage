@@ -244,6 +244,22 @@ impl GraphqlApi {
         &self.client
     }
 
+    /// A clone whose requests carry the bearer token `source` gives at the
+    /// moment each one goes out, in place of the configured `auth`. The
+    /// clone shares this API's client — connection pool, parallel cap,
+    /// breaker and observer — so one clone per session costs no extra
+    /// connections. See [`BearerSource`](crate::BearerSource).
+    ///
+    /// The client adds an [`auth_refresher`](GraphqlApiBuilder::auth_refresher)'s
+    /// header itself, so a clone can't withdraw it: build the shared API
+    /// without a refresher when its clones bring their own tokens.
+    pub fn with_bearer_source(&self, source: crate::BearerSource) -> Self {
+        Self {
+            auth_header: AuthHeader::Source(source),
+            ..self.clone()
+        }
+    }
+
     /// Report rows decoded from a response to the observer.
     pub(crate) fn report_rows(&self, n: usize) {
         self.client.report(TransportEvent::rows_pulled(n));
@@ -285,11 +301,8 @@ impl GraphqlApi {
         let response = self
             .client
             .execute_with(&policy, |http| {
-                let req = http.post(&self.endpoint).json(&body);
-                match self.auth_header.value() {
-                    Some(auth) => req.header(reqwest::header::AUTHORIZATION, auth),
-                    None => req,
-                }
+                self.auth_header
+                    .apply(http.post(&self.endpoint).json(&body))
             })
             .await
             .map_err(|e| {
@@ -438,6 +451,15 @@ impl GraphqlApiBuilder {
     pub fn auth_refresher(mut self, refresher: crate::AuthRefresher) -> Self {
         self.auth_header = AuthHeader::default();
         self.transport.auth_refresher = Some(refresher);
+        self
+    }
+
+    /// Ask `source` for the bearer token on every request, retries
+    /// included; see [`BearerSource`](crate::BearerSource). Replaces
+    /// [`auth`](Self::auth) and [`auth_refresher`](Self::auth_refresher).
+    pub fn bearer_source(mut self, source: crate::BearerSource) -> Self {
+        self.auth_header = AuthHeader::Source(source);
+        self.transport.auth_refresher = None;
         self
     }
 

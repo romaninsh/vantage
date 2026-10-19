@@ -9,8 +9,6 @@ mod refs;
 mod scripted;
 mod watch;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -21,17 +19,19 @@ use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Condition, NativeCondition, Page, Preview, SortDirection, SpecResolver, TableShell, Vista,
-    VistaCapabilities, VistaChangeStream, VistaMetadata,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
+    VistaChangeStream, VistaMetadata,
 };
 
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
 use crate::types::AnySurrealType;
-use crate::vista::spec::SurrealVistaSpec;
+use crate::vista::factory::SurrealVistaFactory;
 
 #[cfg(feature = "rhai")]
 pub(crate) use scripted::register_extensions;
+#[cfg(feature = "rhai")]
+pub use scripted::register_rule_conditions;
 
 /// The `TableShell` a SurrealDB vista wraps.
 #[derive(Clone)]
@@ -45,8 +45,9 @@ where
     /// Handle for the active quicksearch condition, removed when the search
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
-    /// Spec resolver handed to the factories that build traversal targets.
-    pub(crate) resolver: Option<Arc<dyn SpecResolver<SurrealVistaSpec>>>,
+    /// The factory that built this shell, with its spec resolver and build
+    /// injector, for the traversal targets and scripts it builds in turn.
+    pub(crate) factory: SurrealVistaFactory,
 }
 
 impl<E> SurrealTableShell<E>
@@ -57,14 +58,14 @@ where
         table: Table<SurrealDB, E>,
         capabilities: VistaCapabilities,
         metadata: VistaMetadata,
-        resolver: Option<Arc<dyn SpecResolver<SurrealVistaSpec>>>,
+        factory: SurrealVistaFactory,
     ) -> Self {
         Self {
             table,
             capabilities,
             metadata,
             current_search_handle: None,
-            resolver,
+            factory,
         }
     }
 
@@ -149,6 +150,7 @@ where
     }
 
     async fn watch(&self) -> Result<VistaChangeStream> {
+        self.table.check_read().await?;
         self.live_changes().await
     }
 

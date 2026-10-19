@@ -2,7 +2,7 @@
 //! requests. Reads are lowered to URLs in `request`, sent in `fetch`, and
 //! assembled into windows in `window` and `page`.
 
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use vantage_api_pool::resilient::{ResilientClient, TransportEvent};
 use vantage_core::{Priority, error};
 
@@ -113,6 +113,22 @@ impl RestApi {
         &self.base_url
     }
 
+    /// A clone whose requests carry the bearer token `source` gives at the
+    /// moment each one goes out, in place of the configured `auth`. The
+    /// clone shares this API's client — connection pool, parallel cap,
+    /// breaker and observer — so one clone per session costs no extra
+    /// connections. See [`BearerSource`](crate::BearerSource).
+    ///
+    /// The client adds an [`auth_refresher`](RestApiBuilder::auth_refresher)'s
+    /// header itself, so a clone can't withdraw it: build the shared API
+    /// without a refresher when its clones bring their own tokens.
+    pub fn with_bearer_source(&self, source: crate::BearerSource) -> Self {
+        Self {
+            auth_header: AuthHeader::Source(source),
+            ..self.clone()
+        }
+    }
+
     /// Issue an arbitrary HTTP request against `base_url`/`path`, through
     /// the same resilient client and auth header as reads.
     ///
@@ -134,16 +150,15 @@ impl RestApi {
     ) -> vantage_core::Result<reqwest::Response> {
         let url = join_base_path(&self.base_url, path);
 
-        // `HeaderMap::insert` replaces a same-named entry rather than
-        // appending — unlike `RequestBuilder::header` — so a caller header
-        // actually overrides the configured auth instead of riding alongside
-        // it on the wire.
-        let mut header_map = HeaderMap::new();
-        if let Some(auth) = self.auth_header.value() {
-            let value = HeaderValue::from_str(auth)
+        // A fixed value is checked before anything is sent; a bad one would
+        // otherwise surface as a transport error, which an essential call
+        // retries forever. A bearer source is asked per attempt, below.
+        if let AuthHeader::Fixed(auth) = &self.auth_header {
+            HeaderValue::from_str(auth)
                 .map_err(|_| error!("Configured Authorization header value is not valid"))?;
-            header_map.insert(AUTHORIZATION, value);
         }
+
+        let mut header_map = HeaderMap::new();
         for (name, value) in headers {
             let header_name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|_| error!("HTTP header name is not valid", name = *name))?;
@@ -157,8 +172,12 @@ impl RestApi {
         let response = self
             .client
             .execute_with(&policy, |http| {
-                let req = http
-                    .request(method.clone(), &url)
+                // `RequestBuilder::headers` replaces same-named entries
+                // rather than appending, so a caller header overrides the
+                // configured auth instead of riding alongside it on the wire.
+                let req = self
+                    .auth_header
+                    .apply(http.request(method.clone(), &url))
                     .headers(header_map.clone());
                 match body {
                     Some(body) => req.json(body),

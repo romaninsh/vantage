@@ -521,6 +521,106 @@ async fn condition_equality_reads_literal_equalities_and_nothing_else() {
 }
 
 #[tokio::test]
+async fn describe_condition_reads_as_the_expression() {
+    let (db, db_name) = setup().await;
+    let cond = db
+        .eq_value_condition("parent", AnyMongoType::from("p1"))
+        .unwrap();
+    assert_eq!(db.describe_condition(&cond), "{ \"parent\": \"p1\" }");
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn condition_column_names_eq_and_in() {
+    let (db, db_name) = setup().await;
+    let eq = db
+        .eq_value_condition("parent", AnyMongoType::from("p1"))
+        .unwrap();
+    assert_eq!(db.condition_column(&eq), Some("parent".to_string()));
+
+    let invoices = Table::<MongoDB, EmptyEntity>::new("invoice", db.clone()).with_id_column("_id");
+    let in_cond = db.related_in_condition("invoice_id", &invoices, "_id");
+    assert_eq!(
+        db.condition_column(&in_cond),
+        Some("invoice_id".to_string())
+    );
+    assert_eq!(db.describe_condition(&in_cond), "invoice_id IN <deferred>");
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() {
+    let (db, db_name) = setup().await;
+    let oid = ObjectId::new();
+    db.doc_collection("link")
+        .insert_many(vec![
+            doc! { "_id": "a", "fk": "a" },
+            doc! { "_id": "b", "fk": "b" },
+            doc! { "_id": "c", "fk": oid.to_hex() },
+        ])
+        .await
+        .unwrap();
+
+    let listed = |values: Vec<Bson>| {
+        let values = values.into_iter().map(AnyMongoType::untyped).collect();
+        link_table(&db).with_condition(db.in_values_condition("fk", values).unwrap())
+    };
+    let a_and_c = listed(vec![Bson::String("a".into()), Bson::ObjectId(oid)]);
+    assert_eq!(sorted_ids(&a_and_c).await, ["a", "c"]);
+    assert!(sorted_ids(&listed(vec![])).await.is_empty());
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn condition_column_names_an_in_values_condition() {
+    let (db, db_name) = setup().await;
+    let cond = db
+        .in_values_condition("invoice_id", vec![AnyMongoType::from("i1")])
+        .unwrap();
+    assert_eq!(db.condition_column(&cond), Some("invoice_id".to_string()));
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn condition_column_is_none_for_raw_expressions() {
+    let (db, db_name) = setup().await;
+    let or = MongoCondition::Doc(doc! { "$or": [{ "a": 1 }, { "b": 2 }] });
+    assert_eq!(db.condition_column(&or), None);
+    let two_fields = MongoCondition::Doc(doc! { "a": 1, "b": 2 });
+    assert_eq!(db.condition_column(&two_fields), None);
+    let and = MongoCondition::And(vec![doc! { "a": 1 }.into(), doc! { "b": 2 }.into()]);
+    assert_eq!(db.condition_column(&and), None);
+
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn condition_column_names_a_comparison() {
+    let (db, db_name) = setup().await;
+    let gt = MongoCondition::Doc(doc! { "invoice_id": { "$gt": 1 } });
+    assert_eq!(db.condition_column(&gt), Some("invoice_id".to_string()));
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
+async fn condition_column_is_none_for_negations() {
+    let (db, db_name) = setup().await;
+    for negated in [
+        doc! { "tenant_id": { "$ne": "acme" } },
+        doc! { "tenant_id": { "$nin": ["acme"] } },
+        doc! { "tenant_id": { "$not": { "$eq": "acme" } } },
+        doc! { "tenant_id": { "$exists": false } },
+    ] {
+        let cond = MongoCondition::Doc(negated.clone());
+        assert_eq!(db.condition_column(&cond), None, "{negated}");
+    }
+    teardown(&db, &db_name).await;
+}
+
+#[tokio::test]
 async fn related_in_collects_each_source_value_in_both_id_spellings() {
     let (db, db_name) = setup().await;
     let (a, b) = (ObjectId::new(), ObjectId::new());

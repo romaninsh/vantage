@@ -31,6 +31,7 @@ pub use set::VistaCapabilities;
 /// | `Cursor` | `fetch_cursor` |
 /// | `Traverse` | `get_ref` |
 /// | `ConfineWrites` | every write keeps to the narrowed set (see `WritableValueSet`) |
+/// | `WritesReachHooks` | every write runs through a `Table`, so its hooks (audit, generated ids, access checks) see it |
 ///
 /// `list`, `get`, `count` and equality conditions have no capability: every
 /// shell answers them. Nor does the leading window, `fetch_window(0, n)`,
@@ -51,11 +52,12 @@ pub enum Capability {
     Cursor,
     Traverse,
     ConfineWrites,
+    WritesReachHooks,
 }
 
 /// Every variant, in declaration order. The set is a `u16` bitset, so this
 /// holds at most 16.
-const ALL: [Capability; 13] = [
+const ALL: [Capability; 14] = [
     Capability::Insert,
     Capability::Update,
     Capability::Delete,
@@ -69,6 +71,7 @@ const ALL: [Capability; 13] = [
     Capability::Cursor,
     Capability::Traverse,
     Capability::ConfineWrites,
+    Capability::WritesReachHooks,
 ];
 
 impl Capability {
@@ -94,6 +97,7 @@ impl Capability {
             Capability::Cursor => "cursor",
             Capability::Traverse => "traverse",
             Capability::ConfineWrites => "confine_writes",
+            Capability::WritesReachHooks => "writes_reach_hooks",
         }
     }
 

@@ -115,6 +115,7 @@ impl TableShell for RestApiTableShell {
     /// hold. A typed table's lazy expressions are applied as `list_values`
     /// would.
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
+        self.table.check_read().await?;
         let api = self.table.data_source();
         let mut rows = api.list_ordered(&self.table, self.order()).await?;
         for rec in rows.values_mut() {
@@ -131,6 +132,7 @@ impl TableShell for RestApiTableShell {
     }
 
     async fn count(&self) -> Result<i64> {
+        self.table.check_read().await?;
         let api = self.table.data_source();
         // Prefer the envelope total (`total_key`) — one cheap request that
         // reflects the active conditions. Falls back to counting fetched rows
@@ -152,6 +154,7 @@ impl TableShell for RestApiTableShell {
         if !self.capabilities.has(Capability::Window) {
             return Ok(Page::from_listing(self.list().await?, offset, limit));
         }
+        self.table.check_read().await?;
         let id_field = self.table.id_field().map(|c| c.name().to_string());
         let (records, total) = self
             .table

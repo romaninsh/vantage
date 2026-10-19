@@ -74,6 +74,7 @@ pub(crate) fn sql_capabilities(read_only: bool) -> VistaCapabilities {
         Capability::Update,
         Capability::Delete,
         Capability::ConfineWrites,
+        Capability::WritesReachHooks,
     ];
     let caps: VistaCapabilities = reads.into_iter().collect();
     if read_only {

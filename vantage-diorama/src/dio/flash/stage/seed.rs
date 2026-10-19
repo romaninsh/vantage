@@ -37,6 +37,7 @@ pub(super) async fn seed_new_row(
             let _ = inner
                 .event_bus
                 .send(DioEvent::RecordInserted { id: id.clone() });
+            inner.publish_row(&id).await;
         }
         Err(e) => tracing::warn!(
             target: "vantage_diorama",

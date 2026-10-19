@@ -4,16 +4,17 @@
 //! generated ids and audit timestamps. Expected outcomes come from the write
 //! contract on `WritableValueSet` and the record-lifecycle chapter of the book.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use vantage_core::Result;
 use vantage_dataset::prelude::*;
 use vantage_table::prelude::*;
-use vantage_table::table::{AfterFn, BeforeDeleteFn, BeforeFn};
+use vantage_table::table::{
+    AfterCx, AfterFn, BeforeCx, BeforeDeleteFn, BeforeFn, DeleteAllCx, DeleteAllFn, DeleteCx,
+    SelectCx, after_hook, before_delete_hook, before_hook, delete_all_hook, select_hook,
+};
+use vantage_table::write_context::WriteContext;
 use vantage_types::{EmptyEntity, Record};
 
 type MockTable = Table<MockTableSource, EmptyEntity>;
@@ -50,123 +51,81 @@ async fn sets() -> (MockTable, MockTable) {
 }
 
 fn recording_before(label: &'static str, log: Log) -> BeforeFn<MockTableSource> {
-    Arc::new(
-        move |_r: &mut Record<Value>,
-              _t: &MockTable|
-              -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            let log = log.clone();
-            Box::pin(async move {
-                log.lock().unwrap().push(label.to_string());
-                Ok(())
-            })
-        },
-    )
+    before_hook(move |_cx: BeforeCx<'_, MockTableSource>| {
+        let log = log.clone();
+        Box::pin(async move {
+            log.lock().unwrap().push(label.to_string());
+            Ok(())
+        })
+    })
 }
 
 fn setting(column: &'static str, value: &'static str) -> BeforeFn<MockTableSource> {
-    Arc::new(
-        move |r: &mut Record<Value>,
-              _t: &MockTable|
-              -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            r.insert(column.to_string(), json!(value));
-            Box::pin(async move { Ok(()) })
-        },
-    )
+    before_hook(move |cx: BeforeCx<'_, MockTableSource>| {
+        cx.record.insert(column.to_string(), json!(value));
+        Box::pin(async move { Ok(()) })
+    })
 }
 
 fn failing_before() -> BeforeFn<MockTableSource> {
-    Arc::new(
-        |_r: &mut Record<Value>,
-         _t: &MockTable|
-         -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            Box::pin(async move { Err(vantage_core::error!("rejected by hook")) })
-        },
-    )
+    before_hook(|_cx: BeforeCx<'_, MockTableSource>| {
+        Box::pin(async move { Err(vantage_core::error!("rejected by hook")) })
+    })
 }
 
 fn recording_after(label: &'static str, log: Log) -> AfterFn<MockTableSource> {
-    Arc::new(
-        move |id: &String,
-              _rec: &Record<Value>,
-              _t: &MockTable|
-              -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            let log = log.clone();
-            let entry = format!("{label}:{id}");
-            Box::pin(async move {
-                log.lock().unwrap().push(entry);
-                Ok(())
-            })
-        },
-    )
+    after_hook(move |cx: AfterCx<'_, MockTableSource>| {
+        let log = log.clone();
+        let entry = format!("{label}:{}", cx.id);
+        Box::pin(async move {
+            log.lock().unwrap().push(entry);
+            Ok(())
+        })
+    })
 }
 
 fn failing_after() -> AfterFn<MockTableSource> {
-    Arc::new(
-        |_id: &String,
-         _rec: &Record<Value>,
-         _t: &MockTable|
-         -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            Box::pin(async move { Err(vantage_core::error!("after-hook failed")) })
-        },
-    )
+    after_hook(|_cx: AfterCx<'_, MockTableSource>| {
+        Box::pin(async move { Err(vantage_core::error!("after-hook failed")) })
+    })
 }
 
 fn veto() -> BeforeDeleteFn<MockTableSource> {
-    Arc::new(
-        |_id: &String,
-         _rec: &Record<Value>,
-         _t: &MockTable|
-         -> Pin<Box<dyn Future<Output = Result<HookReturn>> + Send + '_>> {
-            Box::pin(async move { Err(vantage_core::error!("deletion not allowed")) })
-        },
-    )
+    before_delete_hook(|_cx: DeleteCx<'_, MockTableSource>| {
+        Box::pin(async move { Err(vantage_core::error!("deletion not allowed")) })
+    })
 }
 
 fn soft_delete() -> BeforeDeleteFn<MockTableSource> {
-    Arc::new(
-        |id: &String,
-         _rec: &Record<Value>,
-         table: &MockTable|
-         -> Pin<Box<dyn Future<Output = Result<HookReturn>> + Send + '_>> {
-            Box::pin(async move {
-                let mut patch = Record::new();
-                patch.insert("deleted".to_string(), json!("2026-01-01"));
-                table.patch_value(id.clone(), &patch).await?;
-                Ok(HookReturn::Handled)
-            })
-        },
-    )
+    before_delete_hook(|cx: DeleteCx<'_, MockTableSource>| {
+        Box::pin(async move {
+            let mut patch = Record::new();
+            patch.insert("deleted".to_string(), json!("2026-01-01"));
+            cx.table.patch_value(cx.id.clone(), &patch).await?;
+            Ok(HookReturn::Handled)
+        })
+    })
 }
 
 fn seeing_former(seen: Arc<Mutex<Vec<Value>>>) -> BeforeDeleteFn<MockTableSource> {
-    Arc::new(
-        move |_id: &String,
-              former: &Record<Value>,
-              _t: &MockTable|
-              -> Pin<Box<dyn Future<Output = Result<HookReturn>> + Send + '_>> {
-            let seen = seen.clone();
-            let former = former["name"].clone();
-            Box::pin(async move {
-                seen.lock().unwrap().push(former);
-                Ok(HookReturn::Proceed)
-            })
-        },
-    )
+    before_delete_hook(move |cx: DeleteCx<'_, MockTableSource>| {
+        let seen = seen.clone();
+        let former = cx.record["name"].clone();
+        Box::pin(async move {
+            seen.lock().unwrap().push(former);
+            Ok(HookReturn::Proceed)
+        })
+    })
 }
 
 fn counting_after(calls: Arc<AtomicUsize>) -> AfterFn<MockTableSource> {
-    Arc::new(
-        move |_id: &String,
-              _rec: &Record<Value>,
-              _t: &MockTable|
-              -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            let calls = calls.clone();
-            Box::pin(async move {
-                calls.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-        },
-    )
+    after_hook(move |_cx: AfterCx<'_, MockTableSource>| {
+        let calls = calls.clone();
+        Box::pin(async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+    })
 }
 
 // --- the set: confined writes -------------------------------------------------
@@ -665,16 +624,66 @@ async fn after_save_hook_fires_on_insert_and_update() {
     assert_eq!(*log.lock().unwrap(), ["save:2", "save:1"]);
 }
 
+fn counting_delete_all(calls: Arc<AtomicUsize>) -> DeleteAllFn<MockTableSource> {
+    delete_all_hook(move |_cx: DeleteAllCx<'_, MockTableSource>| {
+        let calls = calls.clone();
+        Box::pin(async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+    })
+}
+
 #[tokio::test]
-async fn delete_all_fires_no_hooks() {
-    let calls = Arc::new(AtomicUsize::new(0));
+async fn delete_all_runs_its_hooks_once_and_never_the_row_hooks() {
+    let row_calls = Arc::new(AtomicUsize::new(0));
+    let before_all = Arc::new(AtomicUsize::new(0));
+    let after_all = Arc::new(AtomicUsize::new(0));
+    let table = with_rows(vec![
+        json!({"id": "1", "name": "a"}),
+        json!({"id": "2", "name": "b"}),
+        json!({"id": "3", "name": "c"}),
+    ])
+    .await
+    .with_hook(Hook::AfterDelete(counting_after(row_calls.clone())))
+    .with_hook(Hook::BeforeDelete(veto()))
+    .with_hook(Hook::BeforeDeleteAll(counting_delete_all(
+        before_all.clone(),
+    )))
+    .with_hook(Hook::AfterDeleteAll(counting_delete_all(after_all.clone())));
+    table.delete_all().await.unwrap();
+    assert_eq!(row_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(before_all.load(Ordering::SeqCst), 1);
+    assert_eq!(after_all.load(Ordering::SeqCst), 1);
+    assert!(table.list_values().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn before_delete_all_error_cancels() {
     let table = with_rows(vec![json!({"id": "1", "name": "a"})])
         .await
-        .with_hook(Hook::AfterDelete(counting_after(calls.clone())))
-        .with_hook(Hook::BeforeDelete(veto()));
-    table.delete_all().await.unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
-    assert!(table.list_values().await.unwrap().is_empty());
+        .with_hook(Hook::BeforeDeleteAll(delete_all_hook(
+            |_cx: DeleteAllCx<'_, MockTableSource>| {
+                Box::pin(async move { Err(vantage_core::error!("not allowed")) })
+            },
+        )));
+    assert!(table.delete_all().await.is_err());
+    assert_eq!(table.list_values().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn delete_all_hook_sees_the_set_conditions() {
+    let seen = Arc::new(Mutex::new(0usize));
+    let (_all, set) = sets().await;
+    let s = seen.clone();
+    let set = set.with_hook(Hook::BeforeDeleteAll(delete_all_hook(
+        move |cx: DeleteAllCx<'_, MockTableSource>| {
+            *s.lock().unwrap() = cx.table.conditions().count();
+            Box::pin(async move { Ok(()) })
+        },
+    )));
+    set.delete_all().await.unwrap();
+    assert_eq!(*seen.lock().unwrap(), 1);
 }
 
 #[tokio::test]
@@ -967,4 +976,203 @@ async fn timestamps_default_to_created_at_and_updated_at() {
         .unwrap();
     assert!(stored.contains_key("created_at"));
     assert!(stored.contains_key("updated_at"));
+}
+
+// ---- before values on update ----
+
+type Seen = Arc<Mutex<Vec<(Option<Value>, Value)>>>;
+
+/// Records `(before[column], record[column])` for each after-update.
+fn before_and_after(column: &'static str, seen: Seen) -> AfterFn<MockTableSource> {
+    after_hook(move |cx: AfterCx<'_, MockTableSource>| {
+        let pair = (
+            cx.before.map(|b| b[column].clone()),
+            cx.record[column].clone(),
+        );
+        let seen = seen.clone();
+        Box::pin(async move {
+            seen.lock().unwrap().push(pair);
+            Ok(())
+        })
+    })
+}
+
+#[tokio::test]
+async fn after_update_sees_former_and_written_row_on_replace() {
+    let seen: Seen = Arc::default();
+    let table = with_rows(vec![json!({"id": "1", "name": "a", "age": 1})])
+        .await
+        .with_hook(Hook::AfterUpdate(before_and_after("name", seen.clone())));
+    table
+        .replace_value("1", &rec(json!({"name": "b", "age": 1})))
+        .await
+        .unwrap();
+    assert_eq!(*seen.lock().unwrap(), vec![(Some(json!("a")), json!("b"))]);
+}
+
+#[tokio::test]
+async fn after_update_sees_former_and_written_row_on_patch() {
+    let seen: Seen = Arc::default();
+    let table = with_rows(vec![json!({"id": "1", "name": "a", "age": 1})])
+        .await
+        .with_hook(Hook::AfterUpdate(before_and_after("age", seen.clone())));
+    table
+        .patch_value("1", &rec(json!({"age": 2})))
+        .await
+        .unwrap();
+    assert_eq!(*seen.lock().unwrap(), vec![(Some(json!(1)), json!(2))]);
+}
+
+fn counting_reads(calls: Arc<AtomicUsize>) -> Hook<MockTableSource> {
+    Hook::BeforeSelect(select_hook(move |_cx: SelectCx<'_, MockTableSource>| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }))
+}
+
+/// A `BeforeSelect` counts the table's reads: an update reads the former
+/// row only for an after-update hook.
+#[tokio::test]
+async fn update_reads_former_only_when_update_hooks_exist() {
+    let row = || vec![json!({"id": "1", "name": "a", "age": 1})];
+    let update = |table: MockTable| async move {
+        table
+            .replace_value("1", &rec(json!({"name": "b", "age": 1})))
+            .await
+            .unwrap();
+        table
+            .patch_value("1", &rec(json!({"age": 2})))
+            .await
+            .unwrap();
+    };
+
+    let reads = Arc::new(AtomicUsize::new(0));
+    update(
+        with_rows(row())
+            .await
+            .with_hook(counting_reads(reads.clone())),
+    )
+    .await;
+    assert_eq!(reads.load(Ordering::SeqCst), 0, "no update hooks, no read");
+
+    let reads = Arc::new(AtomicUsize::new(0));
+    let seen: Seen = Arc::default();
+    let hooked = with_rows(row())
+        .await
+        .with_hook(counting_reads(reads.clone()))
+        .with_hook(Hook::AfterUpdate(before_and_after("age", seen)));
+    update(hooked).await;
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        2,
+        "one former-row read per update"
+    );
+}
+
+#[tokio::test]
+async fn after_save_on_insert_has_no_before() {
+    let seen: Seen = Arc::default();
+    let table = empty()
+        .await
+        .with_hook(Hook::AfterSave(before_and_after("name", seen.clone())));
+    table
+        .insert_value("1", &rec(json!({"name": "a"})))
+        .await
+        .unwrap();
+    assert_eq!(*seen.lock().unwrap(), vec![(None, json!("a"))]);
+}
+
+#[tokio::test]
+async fn patch_of_a_row_outside_the_set_runs_no_after_hook() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (all, set) = sets().await;
+    let set = set.with_hook(Hook::AfterUpdate(counting_after(calls.clone())));
+    let _ = set.patch_value("out1", &rec(json!({"name": "x"}))).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        all.get_value("out1").await.unwrap().unwrap()["name"],
+        json!("b"),
+        "the row outside the set is untouched"
+    );
+}
+
+// ---- write context ----
+
+fn principal(name: &str) -> ciborium::Value {
+    ciborium::Value::Map(vec![(
+        ciborium::Value::Text("name".into()),
+        ciborium::Value::Text(name.into()),
+    )])
+}
+
+fn group_seen_before(seen: Arc<Mutex<Vec<Option<String>>>>) -> BeforeFn<MockTableSource> {
+    before_hook(move |cx: BeforeCx<'_, MockTableSource>| {
+        let group = cx.context.and_then(|c| c.group.clone());
+        let seen = seen.clone();
+        Box::pin(async move {
+            seen.lock().unwrap().push(group);
+            Ok(())
+        })
+    })
+}
+
+fn group_seen_after(seen: Arc<Mutex<Vec<Option<String>>>>) -> AfterFn<MockTableSource> {
+    after_hook(move |cx: AfterCx<'_, MockTableSource>| {
+        let group = cx.context.and_then(|c| c.group.clone());
+        let seen = seen.clone();
+        Box::pin(async move {
+            seen.lock().unwrap().push(group);
+            Ok(())
+        })
+    })
+}
+
+#[tokio::test]
+async fn write_context_reaches_before_and_after_hooks() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let table = empty()
+        .await
+        .with_hook(Hook::BeforeInsert(
+            Phase::Populate,
+            group_seen_before(seen.clone()),
+        ))
+        .with_hook(Hook::AfterInsert(group_seen_after(seen.clone())));
+    let context = WriteContext::new()
+        .with_principal(principal("ana"))
+        .with_group("g1");
+    context
+        .scope(async { table.insert_value("1", &rec(json!({"name": "a"}))).await })
+        .await
+        .unwrap();
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![Some("g1".to_string()), Some("g1".to_string())]
+    );
+}
+
+#[tokio::test]
+async fn no_context_outside_a_scope() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let table = empty()
+        .await
+        .with_hook(Hook::BeforeInsert(
+            Phase::Populate,
+            group_seen_before(seen.clone()),
+        ))
+        .with_hook(Hook::AfterInsert(group_seen_after(seen.clone())));
+    table
+        .insert_value("1", &rec(json!({"name": "a"})))
+        .await
+        .unwrap();
+    assert_eq!(*seen.lock().unwrap(), vec![None, None]);
+}
+
+#[tokio::test]
+async fn write_context_current_is_none_outside_a_scope() {
+    assert!(WriteContext::current().is_none());
+    let inside = WriteContext::new()
+        .with_principal(principal("ana"))
+        .scope(async { WriteContext::current() })
+        .await;
+    assert_eq!(inside.unwrap().principal, Some(principal("ana")));
 }

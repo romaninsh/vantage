@@ -231,6 +231,44 @@ pub(crate) fn value_to_string(v: &Value) -> String {
     }
 }
 
+/// A GraphQL condition as text: `field op value`, parts joined by `AND`/`OR`.
+fn describe_graphql(condition: &GraphqlCondition) -> String {
+    let symbol = |op: &GraphqlOp| match op {
+        GraphqlOp::Eq => "=",
+        GraphqlOp::Ne => "!=",
+        GraphqlOp::Gt => ">",
+        GraphqlOp::Gte => ">=",
+        GraphqlOp::Lt => "<",
+        GraphqlOp::Lte => "<=",
+        GraphqlOp::In => "IN",
+        GraphqlOp::NotIn => "NOT IN",
+        GraphqlOp::Like => "LIKE",
+        GraphqlOp::ILike => "ILIKE",
+        GraphqlOp::IsNull => "IS NULL",
+        GraphqlOp::IsNotNull => "IS NOT NULL",
+    };
+    let join = |parts: &[GraphqlCondition], sep: &str| {
+        parts
+            .iter()
+            .map(describe_graphql)
+            .collect::<Vec<_>>()
+            .join(sep)
+    };
+    match condition {
+        GraphqlCondition::Field(fc) => match fc.op {
+            GraphqlOp::IsNull | GraphqlOp::IsNotNull => format!("{} {}", fc.field, symbol(&fc.op)),
+            _ => format!("{} {} {}", fc.field, symbol(&fc.op), fc.value),
+        },
+        GraphqlCondition::DeferredField { field, op, .. } => {
+            format!("{field} {} <deferred>", symbol(op))
+        }
+        GraphqlCondition::And(parts) => join(parts, " AND "),
+        GraphqlCondition::Or(parts) => format!("({})", join(parts, " OR ")),
+        GraphqlCondition::Not(inner) => format!("NOT ({})", describe_graphql(inner)),
+        GraphqlCondition::Deferred(_) => "<deferred>".to_string(),
+    }
+}
+
 #[async_trait]
 impl TableSource for GraphqlApi {
     type Column<Type>
@@ -254,6 +292,32 @@ impl TableSource for GraphqlApi {
     /// join value onto a child table without a string round-trip.
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         Ok(Column::<AnyGraphqlType>::new(field).eq(value))
+    }
+
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        Ok(Column::<AnyGraphqlType>::new(field).in_(values))
+    }
+
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        describe_graphql(condition)
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        let narrows = |op: &GraphqlOp| {
+            !matches!(
+                op,
+                GraphqlOp::Ne | GraphqlOp::NotIn | GraphqlOp::IsNull | GraphqlOp::IsNotNull
+            )
+        };
+        match condition {
+            GraphqlCondition::Field(fc) if narrows(&fc.op) => Some(fc.field.clone()),
+            GraphqlCondition::DeferredField { field, op, .. } if narrows(op) => Some(field.clone()),
+            _ => None,
+        }
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {

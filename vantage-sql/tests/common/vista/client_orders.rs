@@ -86,6 +86,155 @@ columns:
             Ok(())
         }
 
+        /// Narrows `client` to alice and `orders` to hers; other keys pass.
+        fn alice_only<T>() -> vantage_table::table::TableInjector<T>
+        where
+            T: vantage_table::traits::table_source::TableSource,
+            T::Value: From<ciborium::Value>,
+        {
+            std::sync::Arc::new(|cx, table| {
+                let column = match cx.key {
+                    "client" => "id",
+                    "orders" => "client_id",
+                    _ => return Ok(()),
+                };
+                let alice = T::Value::from(ciborium::Value::Text("alice".into()));
+                let condition = table.data_source().eq_value_condition(column, alice)?;
+                table.add_condition(condition);
+                Ok(())
+            })
+        }
+
+        /// The injector reaches every table a spec builds: the root, a
+        /// reference target when traversed, and a `base:` table under a
+        /// derived vista.
+        #[tokio::test]
+        async fn injector_condition_applies_to_root_reference_and_base() -> TestResult {
+            let (db, client_t, orders_t) = clients_orders("inject").await;
+            let block = $block;
+
+            let client_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: client
+columns:
+  id: {{ type: string, flags: [id] }}
+  name: {{ type: string, flags: [title] }}
+{block}:
+  table: {client_t}
+references:
+  orders:
+    table: orders
+    kind: has_many
+    foreign_key: client_id
+"#
+            ))?;
+            let orders_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+  total: {{ type: int }}
+{block}:
+  table: {orders_t}
+"#
+            ))?;
+            let derived_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: order_view
+columns: {{}}
+{block}:
+  base: orders
+  inherit:
+    columns: [id, client_id, total]
+"#
+            ))?;
+
+            let factory = db
+                .vista_factory()
+                .with_resolver(spec_resolver(vec![
+                    ("client", client_spec.clone()),
+                    ("orders", orders_spec),
+                ]))
+                .with_injector(alice_only());
+            let sorted = |rows: indexmap::IndexMap<String, _>| {
+                let mut keys: Vec<String> = rows.into_keys().collect();
+                keys.sort();
+                keys
+            };
+
+            let clients = factory.build_from_spec(client_spec)?;
+            assert_eq!(sorted(clients.list_values().await?), ["alice"]);
+
+            let orders = clients.get_ref("orders", None)?;
+            assert_eq!(sorted(orders.list_values().await?), ["o1", "o2"]);
+
+            let derived = factory.build_from_spec(derived_spec)?;
+            assert_eq!(sorted(derived.list_values().await?), ["o1", "o2"]);
+            Ok(())
+        }
+
+        type Kinds = std::sync::Arc<std::sync::Mutex<Vec<(String, vantage_table::table::BuildKind)>>>;
+
+        /// Records the key and kind of every build it sees.
+        fn recording_kinds<T: vantage_table::traits::table_source::TableSource>(
+            kinds: Kinds,
+        ) -> vantage_table::table::TableInjector<T> {
+            std::sync::Arc::new(move |cx, _table| {
+                kinds
+                    .lock()
+                    .unwrap()
+                    .push((cx.key.to_string(), cx.kind.clone()));
+                Ok(())
+            })
+        }
+
+        /// A `base:` table is built as `BuildKind::Base` naming the derived
+        /// spec; the derived vista itself is the root build.
+        #[tokio::test]
+        async fn injector_sees_a_base_build_as_kind_base() -> TestResult {
+            let (db, _client_t, orders_t) = clients_orders("base_kind").await;
+            let block = $block;
+            let orders_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+{block}:
+  table: {orders_t}
+"#
+            ))?;
+            let derived_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: order_view
+columns: {{}}
+{block}:
+  base: orders
+  inherit:
+    columns: [id, client_id]
+"#
+            ))?;
+            let kinds = Kinds::default();
+            db.vista_factory()
+                .with_resolver(spec_resolver(vec![("orders", orders_spec)]))
+                .with_injector(recording_kinds(kinds.clone()))
+                .build_from_spec(derived_spec)?;
+            assert_eq!(
+                *kinds.lock().unwrap(),
+                [
+                    (
+                        "orders".to_string(),
+                        vantage_table::table::BuildKind::Base {
+                            derived: "order_view".into()
+                        }
+                    ),
+                    ("order_view".to_string(), vantage_table::table::BuildKind::Root),
+                ]
+            );
+            Ok(())
+        }
+
         /// A derived vista: `base: client` resolves eagerly through the
         /// resolver, the base table's `select()` is seeded into the Rhai engine
         /// as `base` (transform mode), and the listed columns are inherited.

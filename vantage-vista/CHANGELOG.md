@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.1.0 — 2026-10-18
+
+- `Capability::WritesReachHooks` (`writes_reach_hooks`): every write the vista advertises runs
+  through a `Table`, so its hooks (audit stamps, generated ids, access checks) see it. The contract
+  checks treat it as a declaration with no probe.
+- Rule scripts (`rhai` feature): `RuleHandle` is the `table` a rule script narrows, over a
+  `RuleTarget`. `register_rule_vocab` gives it `where(column, value)`, `where(column, op, value)`,
+  `before_insert`/`before_update`/`before_save`/`before_delete(fn)` and `remove_column(name)`,
+  and nothing that reads, writes, sorts, limits, searches or reaches another table: those are
+  "function not found". `eval_rule_script(host, code, env, &handle)` runs one with the handle as
+  `table`. A hook closure's `throw` refuses the write with its message, and so does any other
+  failure inside it. `RuleHandle::verbs` lists what the script did, as `RuleVerb`s. `RuleVerb`
+  and `HookOn` are `#[non_exhaustive]`.
+  `RuleHookInput` (`#[non_exhaustive]`) is `Record`, `Id`, `Delete { id, row }` or
+  `Update { record, stored }`. A `before_delete(|id, row| …)` closure gets the stored row, and a
+  `before_update` / `before_save(|record, stored| …)` closure gets the row as it was before the
+  write (unit on an insert), so a rule can refuse moving a row it may not touch into a set it
+  may. The one-argument forms still get the id or the record alone.
+
 ## 2.0.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, and tests that covered nothing

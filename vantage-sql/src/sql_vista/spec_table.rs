@@ -4,21 +4,17 @@
 //! come the columns, the id, the references, dotted imports and contained
 //! relations.
 
-use std::sync::Arc;
-
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 #[cfg(not(feature = "rhai"))]
 use vantage_core::error;
 use vantage_expressions::{Expressive, SelectableDataSource};
 use vantage_table::source::SelectSource;
-use vantage_table::table::Table;
 use vantage_table::table::spec::spec_references;
+use vantage_table::table::{BuildEnv, BuildKind, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::EmptyEntity;
-use vantage_vista::{
-    ColumnSpec, ReferenceSpec, SpecResolver, VistaMetadata, VistaSpec, resolve_base_spec,
-};
+use vantage_vista::{ColumnSpec, ReferenceSpec, VistaMetadata, VistaSpec, resolve_base_spec};
 
 use super::{SqlShellDialect, metadata_options};
 
@@ -101,7 +97,7 @@ pub(crate) struct LoweredSpec<T: SqlSpecDialect> {
 pub(crate) fn lower_spec<T>(
     spec: &SpecOf<T>,
     db: T,
-    resolver: Option<Arc<dyn SpecResolver<SpecOf<T>>>>,
+    env: &BuildEnv<SpecOf<T>, T>,
 ) -> Result<LoweredSpec<T>>
 where
     T: SqlSpecDialect,
@@ -120,7 +116,7 @@ where
         ));
     }
 
-    let table = build_spec_table(spec, db, resolver)?;
+    let table = build_spec_table(spec, db, env)?;
     let mut metadata = table.vista_metadata(metadata_options());
     for mut lowered in spec_references(spec, &table.id_field_name())? {
         if let Some(code) = spec
@@ -141,13 +137,13 @@ where
     })
 }
 
-/// Build the table `spec` describes. Each `references:` entry rebuilds its
-/// target through `resolver` at traversal time (see
-/// `Table::with_spec_references`).
+/// Build the table `spec` describes, then run `env`'s injector on it. Each
+/// `references:` entry rebuilds its target through the resolver at traversal
+/// time (see `Table::with_spec_references`).
 pub(crate) fn build_spec_table<T>(
     spec: &SpecOf<T>,
     db: T,
-    resolver: Option<Arc<dyn SpecResolver<SpecOf<T>>>>,
+    env: &BuildEnv<SpecOf<T>, T>,
 ) -> Result<Table<T, EmptyEntity>>
 where
     T: SqlSpecDialect,
@@ -155,7 +151,7 @@ where
 {
     let block = T::source_block(spec);
     if let Some(base) = block.base {
-        return build_derived_table(spec, &block, base, db, resolver);
+        return build_derived_table(spec, &block, base, db, env);
     }
 
     let mut table = match block.rhai {
@@ -175,7 +171,7 @@ where
     }
     table.set_spec_id_field(&spec.resolve_id_column("id"))?;
 
-    let mut table = table.with_spec_references(spec, resolver, build_spec_table::<T>)?;
+    let mut table = table.with_spec_references(spec, env, build_spec_table::<T>)?;
 
     if spec.columns.keys().any(|n| n.contains('.')) {
         // Every non-lazy spec column is listed, so the plain set keeps
@@ -190,26 +186,36 @@ where
         table = table.with_active_columns(&names)?;
     }
 
-    table.with_contained_specs(&spec.contained, T::spec_column)
+    let mut table = table.with_contained_specs(&spec.contained, T::spec_column)?;
+    env.inject(&spec.name, &mut table, build_spec_table::<T>)?;
+    Ok(table)
 }
 
-/// Build a derived table: resolve `base` eagerly, build its table, run the
-/// optional `rhai:` transform over its `select()` (with `base` in the
-/// script's scope), inherit the listed columns and relations, and add the
-/// spec's own references alongside the inherited ones.
+/// Build a derived table: resolve `base` eagerly, build its table (injected
+/// as [`BuildKind::Base`], so its conditions are in the select the derived
+/// table reads), run the optional `rhai:` transform over its `select()`
+/// (with `base` in the script's scope), inherit the listed columns and
+/// relations, add the spec's own references alongside the inherited ones,
+/// and inject the derived table too.
 fn build_derived_table<T>(
     spec: &SpecOf<T>,
     block: &SourceBlock<'_>,
     base: &str,
     db: T,
-    resolver: Option<Arc<dyn SpecResolver<SpecOf<T>>>>,
+    env: &BuildEnv<SpecOf<T>, T>,
 ) -> Result<Table<T, EmptyEntity>>
 where
     T: SqlSpecDialect,
     T::Column<T::AnyType>: Expressive<T::Value>,
 {
-    let (resolver, base_spec) = resolve_base_spec(resolver, base)?;
-    let base_table = build_spec_table(&base_spec, db, Some(resolver.clone()))?;
+    let (_, base_spec) = resolve_base_spec(env.resolver.clone(), base)?;
+    let base_env = env.nested(
+        base,
+        BuildKind::Base {
+            derived: spec.name.clone(),
+        },
+    )?;
+    let base_table = build_spec_table(&base_spec, db, &base_env)?;
 
     let select = match block.rhai {
         Some(code) => rhai_select::<T>(code, Some(base_table.select()), block.args)?,
@@ -223,7 +229,9 @@ where
         block.inherit_relations,
         T::spec_column,
     )?;
-    table.with_spec_references(spec, Some(resolver), build_spec_table::<T>)
+    let mut table = table.with_spec_references(spec, env, build_spec_table::<T>)?;
+    env.inject(&spec.name, &mut table, build_spec_table::<T>)?;
+    Ok(table)
 }
 
 #[cfg(feature = "rhai")]

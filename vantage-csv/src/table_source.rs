@@ -36,6 +36,24 @@ impl TableSource for Csv {
         Ok(CsvOperation::eq(&column, value))
     }
 
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnyCsvType> = Column::new(field);
+        let list = Expression::new("{}", vec![ExpressiveEnum::Scalar(AnyCsvType::new(values))]);
+        Ok(CsvOperation::in_(&column, list))
+    }
+
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        condition.preview()
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        vantage_table::conditions::condition_column_of(condition)
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }

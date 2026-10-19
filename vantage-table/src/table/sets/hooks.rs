@@ -10,8 +10,12 @@ use vantage_core::Result;
 use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
 
 use super::invariants::enforce_invariants;
-use crate::table::{AfterFn, BeforeDeleteFn, BeforeFn, HookReturn, Phase, Table};
+use crate::table::{
+    AfterCx, AfterFn, BeforeCx, BeforeDeleteFn, BeforeFn, DeleteAllCx, DeleteAllFn, DeleteCx,
+    HookReturn, Phase, Table,
+};
 use crate::traits::table_source::TableSource;
+use crate::write_context::WriteContext;
 
 /// The two halves of a single-record insert that surround the driver's write.
 /// A driver's bulk path calls them around its batch so that it stays
@@ -30,6 +34,7 @@ where
         run_before(
             self.before_insert_hooks(),
             &mut record,
+            None,
             self.as_entity_erased(),
         )
         .await?;
@@ -45,19 +50,42 @@ where
             self.after_insert_hooks(),
             id,
             record,
+            None,
             self.as_entity_erased(),
         )
         .await
     }
 }
 
+/// The row an update writes, the row as the set holds it, and whether the
+/// update is a patch (its record holds only the patched fields).
+pub(crate) struct UpdateOf<'a, T: TableSource> {
+    pub id: &'a T::Id,
+    pub stored: Option<&'a Record<T::Value>>,
+    pub patch: bool,
+}
+
+/// `update` is `None` on insert.
 pub(crate) async fn run_before<T: TableSource>(
     hooks: &[(Phase, BeforeFn<T>)],
     record: &mut Record<T::Value>,
+    update: Option<UpdateOf<'_, T>>,
     table: &Table<T, EmptyEntity>,
 ) -> Result<()> {
+    if hooks.is_empty() {
+        return Ok(());
+    }
+    let context = WriteContext::current();
     for (_phase, hook) in hooks {
-        hook(record, table).await?;
+        hook(BeforeCx {
+            record: &mut *record,
+            id: update.as_ref().map(|u| u.id),
+            stored: update.as_ref().and_then(|u| u.stored),
+            patch: update.as_ref().is_some_and(|u| u.patch),
+            context: context.as_ref(),
+            table,
+        })
+        .await?;
     }
     Ok(())
 }
@@ -66,10 +94,40 @@ pub(crate) async fn run_after<T: TableSource>(
     hooks: &[AfterFn<T>],
     id: &T::Id,
     record: &Record<T::Value>,
+    before: Option<&Record<T::Value>>,
     table: &Table<T, EmptyEntity>,
 ) -> Result<()> {
+    if hooks.is_empty() {
+        return Ok(());
+    }
+    let context = WriteContext::current();
     for hook in hooks {
-        hook(id, record, table).await?;
+        hook(AfterCx {
+            id,
+            record,
+            before,
+            context: context.as_ref(),
+            table,
+        })
+        .await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn run_delete_all<T: TableSource>(
+    hooks: &[DeleteAllFn<T>],
+    table: &Table<T, EmptyEntity>,
+) -> Result<()> {
+    if hooks.is_empty() {
+        return Ok(());
+    }
+    let context = WriteContext::current();
+    for hook in hooks {
+        hook(DeleteAllCx {
+            context: context.as_ref(),
+            table,
+        })
+        .await?;
     }
     Ok(())
 }
@@ -82,8 +140,15 @@ pub(crate) async fn run_before_delete<T: TableSource>(
     record: &Record<T::Value>,
     table: &Table<T, EmptyEntity>,
 ) -> Result<HookReturn> {
+    let context = WriteContext::current();
     for hook in hooks {
-        if let HookReturn::Handled = hook(id, record, table).await? {
+        let cx = DeleteCx {
+            id,
+            record,
+            context: context.as_ref(),
+            table,
+        };
+        if let HookReturn::Handled = hook(cx).await? {
             return Ok(HookReturn::Handled);
         }
     }

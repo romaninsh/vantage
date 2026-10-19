@@ -23,6 +23,24 @@ fn unsupported(method: &'static str) -> vantage_core::VantageError {
     error!("REST data source supports reads only", method = method).mark_unsupported()
 }
 
+/// A CBOR expression as text, the way `Expression::preview` renders
+/// display types (which `CborValue` isn't): text values quoted, other
+/// scalars spelled out, deferred parts as a placeholder.
+fn cbor_preview(expr: &Expression<CborValue>) -> String {
+    let mut parts = expr.template.split("{}");
+    let mut out = String::from(parts.next().unwrap_or(""));
+    for param in &expr.parameters {
+        match param {
+            ExpressiveEnum::Scalar(CborValue::Text(s)) => out.push_str(&format!("{s:?}")),
+            ExpressiveEnum::Scalar(v) => out.push_str(&vantage_vista::operand_text(v)),
+            ExpressiveEnum::Nested(e) => out.push_str(&cbor_preview(e)),
+            ExpressiveEnum::Deferred(_) => out.push_str("**deferred()"),
+        }
+        out.push_str(parts.next().unwrap_or(""));
+    }
+    out
+}
+
 /// Extract the id field name from a table's column flags.
 fn id_field_name<E: Entity<CborValue>>(table: &Table<RestApi, E>) -> Option<String> {
     table.id_field().map(|col| col.name().to_string())
@@ -116,6 +134,34 @@ impl TableSource for RestApi {
     /// string round-trip.
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         Ok(crate::eq_condition(field, value))
+    }
+
+    /// A REST endpoint takes one value per filter param, so a single value
+    /// becomes the same `field = value` as `eq_value_condition`. Any other
+    /// list is refused: an `IN` the URL can't carry would be dropped from the
+    /// request and widen the set.
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        match <[CborValue; 1]>::try_from(values) {
+            Ok([value]) => Ok(crate::eq_condition(field, value)),
+            Err(values) => Err(error!(
+                "a REST filter takes exactly one value",
+                field = field,
+                values = values.len()
+            )
+            .mark_unsupported()),
+        }
+    }
+
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        cbor_preview(condition)
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        vantage_table::conditions::condition_column_of(condition)
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {

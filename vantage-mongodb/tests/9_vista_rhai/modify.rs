@@ -108,3 +108,53 @@ async fn modify_script_resolves_self_twice() -> TestResult {
     teardown(&db, &name).await;
     Ok(())
 }
+
+/// A rule script narrows the table itself, before any vista exists, with
+/// the same `with_condition` a `modify:` script has. The client never
+/// connects: the filter is built offline.
+#[tokio::test]
+async fn rule_with_condition_narrows_the_table() -> TestResult {
+    use vantage_mongodb::types::cbor::{bson_to_cbor, cbor_to_bson};
+    use vantage_mongodb::vista::register_rule_conditions;
+    use vantage_mongodb::{AnyMongoType, MongoDB, MongoId};
+    use vantage_rhai::{Env, Host, Limits};
+    use vantage_table::rule::{RuleCodec, TableRuleTarget};
+    use vantage_table::table::Table;
+    use vantage_types::EmptyEntity;
+    use vantage_vista::rhai::{RuleHandle, RuleVerb, eval_rule_script, register_rule_vocab};
+
+    let client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:1").await?;
+    let table = Table::<MongoDB, EmptyEntity>::new("client", MongoDB::new(client, "offline"))
+        .with_id_column("_id")
+        .with_column_of::<i64>("bakery_id");
+    let target = TableRuleTarget::new(
+        table,
+        RuleCodec {
+            to_cbor: |v: AnyMongoType| bson_to_cbor(v.value()),
+            from_cbor: |v: CborValue| AnyMongoType::untyped(cbor_to_bson(&v)),
+            id_cbor: |id: &MongoId| bson_to_cbor(&bson::Bson::from(id.clone())),
+        },
+    );
+    let handle = RuleHandle::new(Box::new(target.clone()));
+    let host = Host::builder(Limits::background())
+        .vocab_fn(register_rule_vocab)
+        .vocab_fn(register_rule_conditions)
+        .build();
+    eval_rule_script(
+        &host,
+        "table.with_condition(#{bakery_id: 3})",
+        Env::new(),
+        &handle,
+    )?;
+
+    let table = target.into_table();
+    assert_eq!(
+        table.select().build_filter().await?,
+        doc! { "bakery_id": 3_i64 }
+    );
+    assert!(matches!(
+        handle.verbs().as_slice(),
+        [RuleVerb::Condition { .. }]
+    ));
+    Ok(())
+}

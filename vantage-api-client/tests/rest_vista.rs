@@ -6,6 +6,7 @@ mod support;
 
 use std::sync::Arc;
 
+#[cfg(feature = "rhai")]
 use ciborium::Value as CborValue;
 use serde_json::json;
 use support::references::{row, texts};
@@ -110,6 +111,35 @@ async fn without_a_total_key_a_count_counts_what_came_back() {
             .unwrap(),
         3
     );
+}
+
+/// The shell's list, count and window call the API directly, so each checks
+/// the hook first, before any request goes out.
+#[tokio::test]
+async fn before_select_refuses_vista_list_get_count_and_window() {
+    use vantage_table::table::{Hook, SelectCx, Table, select_hook};
+    use vantage_types::EmptyEntity;
+
+    let server = MockServer::start().await;
+    let api = builder(&server)
+        .total_key("count")
+        .pagination_params(PaginationParams::skip_limit("offset", "limit"))
+        .build();
+    let table = Table::<RestApi, EmptyEntity>::new("products", api.clone())
+        .with_id_column("id")
+        .with_hook(Hook::BeforeSelect(select_hook(
+            |_cx: SelectCx<'_, RestApi>| {
+                Box::pin(async { Err(vantage_core::error!("read refused")) })
+            },
+        )));
+    let products = RestApiVistaFactory::new(api).from_table(table).unwrap();
+
+    let refused = |e: vantage_core::VantageError| e.to_string().contains("read refused");
+    assert!(products.list_values().await.is_err_and(refused));
+    assert!(products.get_value("1").await.is_err_and(refused));
+    assert!(products.count().await.is_err_and(refused));
+    assert!(products.fetch_window(0, 2).await.is_err_and(refused));
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]

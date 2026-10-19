@@ -35,6 +35,36 @@ async fn build_script_reference_resolves_target() -> TestResult {
     Ok(())
 }
 
+/// `table(name)` in a reference script builds through the factory, so the
+/// factory's injector narrows it: alice's `o2` is outside the injected `o3`.
+#[tokio::test]
+async fn injector_condition_applies_to_a_scripted_reference() -> TestResult {
+    use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
+    use vantage_table::table::TableInjector;
+    use vantage_table::traits::table_source::TableSource;
+
+    let f = Fixture::new("inject").await;
+    let only_o3: TableInjector<MysqlDB> = std::sync::Arc::new(|cx, table| {
+        if cx.key == "orders" {
+            let o3 = table
+                .data_source()
+                .eq_value_condition("id", AnyMysqlType::from("o3"))?;
+            table.add_condition(o3);
+        }
+        Ok(())
+    });
+    let factory =
+        f.db.vista_factory()
+            .with_resolver(f.resolver())
+            .with_injector(only_o3);
+    let clients = factory.build_from_spec(f.client_spec(ORDERS_SCRIPT))?;
+    let orders = clients.get_ref("orders", Some(&row_with_id("alice")))?;
+    assert!(orders.list_values().await?.is_empty());
+
+    f.drop_tables().await;
+    Ok(())
+}
+
 /// The metadata names a scripted reference's target by its spec (`orders`),
 /// not by the physical table that spec reads, and carries the script.
 #[tokio::test]

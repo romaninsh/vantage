@@ -11,14 +11,11 @@
 //! never touch the id. Because a present id is always kept, an id the caller
 //! assigned once survives a retried insert — generation stays idempotent.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
-use vantage_core::Result;
-use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
+use vantage_types::{Entity, InvariantValue};
 
-use crate::table::{BeforeFn, Hook, Phase, Table};
+use crate::table::{BeforeCx, BeforeFn, Hook, Phase, Table, before_hook};
 use crate::traits::table_source::TableSource;
 
 /// How a missing id is minted when a new record is inserted.
@@ -100,22 +97,19 @@ fn id_fill_hook<T: TableSource>(generator: IdGenerator) -> BeforeFn<T>
 where
     T::Value: InvariantValue + From<String>,
 {
-    Arc::new(
-        move |rec: &mut Record<T::Value>,
-              table: &Table<T, EmptyEntity>|
-              -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            let id_field = table.id_field_name();
-            let generator = generator.clone();
-            Box::pin(async move {
-                let absent_or_null = match rec.get(id_field.as_str()) {
-                    None => true,
-                    Some(v) => v.is_null(),
-                };
-                if absent_or_null {
-                    rec.insert(id_field, T::Value::from(generator.generate()));
-                }
-                Ok(())
-            })
-        },
-    )
+    before_hook(move |cx: BeforeCx<'_, T>| {
+        let id_field = cx.table.id_field_name();
+        let generator = generator.clone();
+        Box::pin(async move {
+            let absent_or_null = match cx.record.get(id_field.as_str()) {
+                None => true,
+                Some(v) => v.is_null(),
+            };
+            if absent_or_null {
+                cx.record
+                    .insert(id_field, T::Value::from(generator.generate()));
+            }
+            Ok(())
+        })
+    })
 }

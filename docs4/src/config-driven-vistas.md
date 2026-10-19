@@ -252,8 +252,61 @@ driver's spec type as `S`, and a factory holds it as `Arc<dyn SpecResolver<S>>`.
 closure won't take every lifetime), and a type of your own can implement `resolve` directly — back
 it with an in-memory map, a folder of `.yaml` files, or a hot-reloading inventory. Because targets
 are re-resolved on every traversal, editing a spec changes what the *next* traversal builds.
-Without a resolver, a traversal falls back to a column-less target and the next query fails
-loudly.
+A name the resolver doesn't know, or a target that fails to build, is a traversal error, never a
+wider table. Without a resolver at all, a traversal falls back to a column-less target and the
+next query fails loudly.
+
+### The build injector
+
+Some rules belong on every table a factory builds, not on one spec: a tenant filter, an
+access-control condition, hooks that stamp who wrote a row. Copying them into each spec is how one
+gets forgotten. A **build injector** runs on every table the factory builds from a spec: the
+root, each reference target when it is traversed, each `base:` table under a derived vista, and
+tables built inside scripts. It runs after the table is built and before it becomes a vista, and
+it can add conditions, register hooks, or fail the build:
+
+```rust
+# use std::sync::Arc;
+#
+# use vantage_sql::prelude::*;
+# use vantage_table::table::{BuildKind, InjectCx, TableInjector};
+# use vantage_table::traits::table_source::TableSource;
+#
+# #[tokio::main(flavor = "current_thread")]
+# async fn main() -> vantage_core::Result<()> {
+# let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
+let tenant_only: TableInjector<SqliteDB> = Arc::new(|cx: &InjectCx<'_, SqliteDB>, table| {
+    if cx.kind == BuildKind::Root && cx.key == "audit_log" {
+        return Err(vantage_core::error!("audit_log is not exposed"));
+    }
+    let tenant = AnySqliteType::new("acme".to_string());
+    let condition = table.data_source().eq_value_condition("tenant_id", tenant)?;
+    table.add_condition(condition);
+    Ok(())
+});
+let factory = db.vista_factory().with_injector(tenant_only);
+# let _ = factory;
+# Ok(())
+# }
+```
+
+[`InjectCx`](vantage_table::table::InjectCx) carries the spec key, the
+[`BuildKind`](vantage_table::table::BuildKind) (`Root`, `Reference { from, relation }` or
+`Base { derived }`), and `build`, which builds another table by key through the same factory and
+injector. That is how an injector expresses "orders the caller may see are those of clients the
+caller may see": it builds `client` and narrows by its ids. A build that would re-enter a key
+already being built is an error naming the cycle (`a -> b -> a`), not a stack overflow.
+
+On a `Base` build only the conditions take effect. The derived vista is a fresh table over the
+base's `select()`, so the base's conditions carry into it but hooks an injector registers on the
+base never fire. The injector runs on the derived build too (as `Root` or `Reference`); register
+hooks there. `BuildKind` and `InjectCx` are `#[non_exhaustive]`, so match `BuildKind` with a
+wildcard arm.
+
+The SQLite, Postgres, MySQL, SurrealDB, MongoDB and CSV factories take `with_injector`. A
+reference target that fails injection fails its traversal, as above. A vista whose writes go
+through `Table`, so that the injector's hooks fire on them, advertises
+`Capability::WritesReachHooks` (`writes_reach_hooks`).
 
 ---
 

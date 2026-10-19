@@ -4,7 +4,10 @@
 //!
 //! `with_one` and `with_many` need a source whose value type converts to and
 //! from `ciborium::Value`, so these tests run on a small CBOR-valued source
-//! that stores nothing: relations only build conditions and metadata.
+//! that stores nothing: relations only build conditions and metadata. The
+//! build injector runs over spec-built tables of the same source.
+
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -19,9 +22,9 @@ use vantage_expressions::{
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::conditions::literal_equality;
 use vantage_table::prelude::*;
-use vantage_table::table::VistaMetadataOptions;
+use vantage_table::table::{BuildEnv, BuildKind, TableInjector, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity, Record};
-use vantage_vista::{JoinKey, Reference, ReferenceKind};
+use vantage_vista::{JoinKey, Reference, ReferenceKind, ReferenceSpec, SpecResolver, VistaSpec};
 
 #[derive(Clone)]
 struct CborSource;
@@ -386,6 +389,117 @@ fn vista_references_name_the_target_table_and_the_join_key() {
     );
 }
 
+// --- relations whose target build can fail --------------------------------------
+
+fn unbuildable(_src: CborSource) -> Result<CborTable> {
+    Err(vantage_core::error!("target has no spec"))
+}
+
+fn client_with_unbuildable_targets() -> CborTable {
+    Table::new("client", CborSource)
+        .with_id_column("id")
+        .with_column_of::<String>("bakery_id")
+        .try_with_one("bakery", "bakery_id", "bakery", unbuildable)
+        .try_with_many("orders", "client_id", "client_order", unbuildable)
+}
+
+#[test]
+fn traversing_a_relation_whose_target_fails_to_build_is_an_error() {
+    let table = client_with_unbuildable_targets();
+    let alice = row(&[("id", "alice"), ("bakery_id", "b1")]);
+    for relation in ["bakery", "orders"] {
+        assert!(
+            table
+                .get_ref_from_row::<EmptyEntity>(relation, &alice)
+                .is_err(),
+            "{relation}"
+        );
+        assert!(
+            table.get_ref_as::<EmptyEntity>(relation).is_err(),
+            "{relation}"
+        );
+        assert!(table.get_ref_target_erased(relation).is_err(), "{relation}");
+    }
+}
+
+#[test]
+fn a_relation_whose_target_fails_to_build_still_lists_under_its_declared_target() {
+    assert_eq!(
+        client_with_unbuildable_targets().vista_references(),
+        [
+            Reference::has_one("bakery", "bakery", JoinKey::to_target_id("bakery_id")),
+            Reference::has_many("orders", "client_order", JoinKey::new("id", "client_id")),
+        ]
+    );
+}
+
+#[test]
+fn vista_references_name_a_try_with_target_without_building_it() {
+    let builds = Arc::new(Mutex::new(0));
+    let counted = |builds: &Arc<Mutex<i32>>, build: fn(CborSource) -> CborTable| {
+        let builds = builds.clone();
+        move |src: CborSource| -> Result<CborTable> {
+            *builds.lock().unwrap() += 1;
+            Ok(build(src))
+        }
+    };
+    let table: CborTable = Table::new("client", CborSource)
+        .with_id_column("id")
+        .with_column_of::<String>("bakery_id")
+        .try_with_one(
+            "bakery",
+            "bakery_id",
+            "bakery_spec",
+            counted(&builds, bakery),
+        )
+        .try_with_many(
+            "orders",
+            "client_id",
+            "orders_spec",
+            counted(&builds, order),
+        );
+    assert_eq!(
+        table.vista_references(),
+        [
+            Reference::has_one("bakery", "bakery_spec", JoinKey::to_target_id("bakery_id")),
+            Reference::has_many("orders", "orders_spec", JoinKey::new("id", "client_id")),
+        ]
+    );
+    table.vista_metadata(VistaMetadataOptions {
+        references: true,
+        ..VistaMetadataOptions::default()
+    });
+    assert_eq!(*builds.lock().unwrap(), 0);
+}
+
+#[test]
+fn try_with_relations_that_build_traverse_like_with_one_and_with_many() {
+    let table: CborTable = Table::new("client", CborSource)
+        .with_id_column("id")
+        .with_column_of::<String>("bakery_id")
+        .try_with_one("bakery", "bakery_id", "bakery", |src| Ok(bakery(src)))
+        .try_with_many("orders", "client_id", "client_order", |src| Ok(order(src)));
+    let alice = row(&[("id", "alice"), ("bakery_id", "b1")]);
+    let orders: CborTable = table.get_ref_from_row("orders", &alice).unwrap();
+    assert_eq!(invariant_of(&orders, "client_id"), Some(text("alice")));
+    let bakery: CborTable = table.get_ref_from_row("bakery", &alice).unwrap();
+    assert_eq!(invariant_of(&bakery, "id"), Some(text("b1")));
+}
+
+#[test]
+fn a_source_that_does_not_describe_its_conditions_says_so() {
+    let table = client();
+    let condition = table
+        .data_source()
+        .eq_value_condition("name", text("a"))
+        .unwrap();
+    assert_eq!(
+        table.data_source().describe_condition(&condition),
+        "<condition>"
+    );
+    assert_eq!(table.data_source().condition_column(&condition), None);
+}
+
 #[test]
 fn a_has_many_join_key_starts_from_the_tables_own_id_column() {
     let table: CborTable = Table::new("client", CborSource)
@@ -510,6 +624,15 @@ fn get_ref_as_from_a_has_one_matches_the_targets_id_to_the_sources_foreign_key()
 }
 
 #[test]
+fn removed_fk_column_still_traverses() {
+    let mut client = client();
+    client.remove_column("bakery_id").unwrap();
+    let bakery = client.get_ref_as::<EmptyEntity>("bakery").unwrap();
+    let conditions: Vec<&str> = bakery.conditions().map(|c| c.template.as_str()).collect();
+    assert_eq!(conditions, ["id IN (SELECT bakery_id FROM client)"]);
+}
+
+#[test]
 fn get_subquery_as_correlates_the_target_with_the_source() {
     let orders = client().get_subquery_as::<EmptyEntity>("orders").unwrap();
     let conditions: Vec<&str> = orders.conditions().map(|c| c.template.as_str()).collect();
@@ -542,4 +665,181 @@ fn with_id_narrows_to_the_id_and_registers_it_as_an_invariant() {
         Some(("id".to_string(), text("c1")))
     );
     assert_eq!(invariant_of(&one, "id"), Some(text("c1")));
+}
+
+// --- build injector -----------------------------------------------------------
+
+type Spec = VistaSpec;
+type Env = BuildEnv<Spec, CborSource>;
+
+/// `name`, with a has-many `relation` to `target` keyed by `name_id`.
+fn spec(name: &str, refs: &[(&str, &str)]) -> Spec {
+    let mut spec = Spec::new(name);
+    for (relation, target) in refs {
+        let reference: ReferenceSpec = serde_json::from_value(serde_json::json!({
+            "table": target,
+            "kind": "has_many",
+            "foreign_key": format!("{name}_id"),
+        }))
+        .unwrap();
+        spec.references.insert(relation.to_string(), reference);
+    }
+    spec
+}
+
+/// The spec builder a backend factory would have: build, then inject.
+fn build_cbor(spec: &Spec, src: CborSource, env: &Env) -> Result<CborTable> {
+    let mut table = Table::new(spec.name.clone(), src)
+        .with_id_column("id")
+        .with_spec_references(spec, env, build_cbor)?;
+    env.inject(&spec.name, &mut table, build_cbor)?;
+    Ok(table)
+}
+
+fn resolver(specs: Vec<Spec>) -> Arc<dyn SpecResolver<Spec>> {
+    Arc::new(move |name: &str| specs.iter().find(|s| s.name == name).cloned())
+}
+
+fn tenant_condition(table: &CborTable) -> Option<CborValue> {
+    table
+        .conditions()
+        .find_map(literal_equality)
+        .filter(|(column, _)| column == "tenant")
+        .map(|(_, value)| value)
+}
+
+#[test]
+fn injector_runs_on_reference_targets_with_kind_reference() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let injector: TableInjector<CborSource> = Arc::new(move |cx, table| {
+        log.lock()
+            .unwrap()
+            .push((cx.key.to_string(), cx.kind.clone()));
+        table.add_condition(
+            table
+                .data_source()
+                .eq_value_condition("tenant", text("t1"))?,
+        );
+        Ok(())
+    });
+    let specs = vec![spec("client", &[("orders", "order")]), spec("order", &[])];
+    let env = Env::root("client", Some(resolver(specs.clone())), Some(injector));
+    let clients = build_cbor(&specs[0], CborSource, &env).unwrap();
+    let orders = clients.get_ref_target_erased("orders").unwrap();
+
+    assert_eq!(tenant_condition(&clients), Some(text("t1")));
+    assert_eq!(tenant_condition(&orders), Some(text("t1")));
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            ("client".to_string(), BuildKind::Root),
+            (
+                "order".to_string(),
+                BuildKind::Reference {
+                    from: "client".into(),
+                    relation: "orders".into()
+                }
+            ),
+        ]
+    );
+}
+
+#[test]
+fn injector_runs_on_bare_reference_targets_without_a_resolver() {
+    let injector: TableInjector<CborSource> = Arc::new(|_cx, table| {
+        table.add_condition(
+            table
+                .data_source()
+                .eq_value_condition("tenant", text("t1"))?,
+        );
+        Ok(())
+    });
+    let client = spec("client", &[("orders", "order")]);
+    let env = Env::root("client", None, Some(injector));
+    let clients = build_cbor(&client, CborSource, &env).unwrap();
+    let orders = clients.get_ref_target_erased("orders").unwrap();
+    assert_eq!(orders.table_name(), "order");
+    assert_eq!(tenant_condition(&orders), Some(text("t1")));
+}
+
+#[test]
+fn injector_builder_returns_an_injected_table() {
+    let parent_tenant = Arc::new(Mutex::new(None));
+    let seen = parent_tenant.clone();
+    let injector: TableInjector<CborSource> = Arc::new(move |cx, table| {
+        table.add_condition(
+            table
+                .data_source()
+                .eq_value_condition("tenant", text("t1"))?,
+        );
+        if cx.key == "order" {
+            let parent = (cx.build)("client")?;
+            *seen.lock().unwrap() = Some(tenant_condition(&parent));
+        }
+        Ok(())
+    });
+    let specs = vec![spec("client", &[]), spec("order", &[])];
+    let env = Env::root("order", Some(resolver(specs.clone())), Some(injector));
+    build_cbor(&specs[1], CborSource, &env).unwrap();
+    assert_eq!(*parent_tenant.lock().unwrap(), Some(Some(text("t1"))));
+}
+
+#[test]
+fn injector_cycle_is_an_error_naming_the_path() {
+    let injector: TableInjector<CborSource> = Arc::new(|cx, _table| {
+        let other = if cx.key == "a" { "b" } else { "a" };
+        (cx.build)(other)?;
+        Ok(())
+    });
+    let specs = vec![spec("a", &[]), spec("b", &[])];
+    let env = Env::root("a", Some(resolver(specs.clone())), Some(injector));
+    let err = build_cbor(&specs[0], CborSource, &env).unwrap_err();
+    assert!(err.to_string().contains("a -> b -> a"), "{err}");
+}
+
+/// Every way to reach `orders` from `clients` is an error, never a table.
+fn assert_orders_unreachable(clients: &CborTable, expect: &str) {
+    let alice = row(&[("id", "alice")]);
+    let errors = [
+        clients.get_ref_target_erased("orders").err(),
+        clients.get_ref_as::<EmptyEntity>("orders").err(),
+        clients
+            .get_ref_from_row::<EmptyEntity>("orders", &alice)
+            .err(),
+    ];
+    for err in errors {
+        let err = err.expect("traversal must fail closed");
+        assert!(format!("{err:?}").contains(expect), "{err:?}");
+    }
+}
+
+#[test]
+fn with_spec_references_fails_closed_when_the_resolver_misses_the_target() {
+    let specs = vec![spec("client", &[("orders", "order")])];
+    let env = Env::root("client", Some(resolver(specs.clone())), None);
+    let clients = build_cbor(&specs[0], CborSource, &env).unwrap();
+    assert_orders_unreachable(&clients, "reference target has no spec");
+}
+
+#[test]
+fn with_spec_references_fails_closed_when_the_target_build_fails() {
+    let injector: TableInjector<CborSource> = Arc::new(|cx, _table| match cx.key {
+        "order" => Err(vantage_core::error!("orders are not for you")),
+        _ => Ok(()),
+    });
+    let specs = vec![spec("client", &[("orders", "order")]), spec("order", &[])];
+    let env = Env::root("client", Some(resolver(specs.clone())), Some(injector));
+    let clients = build_cbor(&specs[0], CborSource, &env).unwrap();
+    assert_orders_unreachable(&clients, "orders are not for you");
+}
+
+#[test]
+fn a_failing_injector_fails_the_build() {
+    let injector: TableInjector<CborSource> =
+        Arc::new(|_cx, _table| Err(vantage_core::error!("not for you")));
+    let client = spec("client", &[]);
+    let env = Env::root("client", None, Some(injector));
+    let err = build_cbor(&client, CborSource, &env).unwrap_err();
+    assert!(err.to_string().contains("not for you"), "{err}");
 }

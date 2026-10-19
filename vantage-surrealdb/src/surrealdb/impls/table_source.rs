@@ -84,13 +84,32 @@ fn extract_first_map(
     }
 }
 
-/// UPDATE and DELETE on a specific record id don't fail when nothing exists
-/// at that id — they return an empty array. Report that as not-found.
-fn ensure_row_affected(result: &AnySurrealType, table_name: &str, id: &Thing) -> Result<()> {
-    if matches!(result.value(), ciborium::Value::Array(arr) if arr.is_empty()) {
-        return Err(error!("Row not found", table = table_name, id = id.clone()).mark_not_found());
+/// Whether a write statement came back with no rows. SurrealDB answers both a
+/// write that matched nothing and one the connection may not perform this way.
+fn is_empty_result(result: &AnySurrealType) -> bool {
+    matches!(result.value(), ciborium::Value::Array(arr) if arr.is_empty())
+}
+
+/// An UPDATE on a record id that came back empty: not found when the set no
+/// longer holds the record, refused when it still does.
+async fn ensure_row_affected<E: Entity<AnySurrealType>>(
+    db: &SurrealDB,
+    result: &AnySurrealType,
+    table: &Table<SurrealDB, E>,
+    id: &Thing,
+    op: &str,
+) -> Result<()> {
+    if !is_empty_result(result) {
+        return Ok(());
     }
-    Ok(())
+    if db.get_table_value(table, id).await?.is_some() {
+        return Err(set_writes::had_no_effect(
+            op,
+            &id.to_string(),
+            table.table_name(),
+        ));
+    }
+    Err(error!("Row not found", table = table.table_name(), id = id.clone()).mark_not_found())
 }
 
 #[async_trait]
@@ -114,6 +133,17 @@ impl TableSource for SurrealDB {
         Ok(SurrealOperation::eq(&column, value))
     }
 
+    /// `field IN ([…])`: the values travel as one array literal.
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnySurrealType> = Column::new(field);
+        let list = ciborium::Value::Array(values.into_iter().map(|v| v.into_value()).collect());
+        Ok(SurrealOperation::in_(&column, AnySurrealType::from(list)))
+    }
+
     /// A join value in `"table:key"` string form (a record id that
     /// round-tripped through JSON or a script) is re-tagged into a record
     /// id, so narrowing renders a record literal and inserts store a link.
@@ -130,6 +160,14 @@ impl TableSource for SurrealDB {
 
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
         vantage_table::conditions::literal_equality(condition)
+    }
+
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        condition.preview()
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        vantage_table::conditions::condition_column_of(condition)
     }
 
     fn can_confine_writes(&self) -> bool {
@@ -423,6 +461,13 @@ impl TableSource for SurrealDB {
                 return Err(e);
             }
         };
+        if is_empty_result(&result) {
+            return Err(set_writes::had_no_effect(
+                "insert",
+                &id.to_string(),
+                table.table_name(),
+            ));
+        }
         let map = extract_first_map(result)?;
         let id_field = table.id_field_name();
         let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
@@ -467,7 +512,14 @@ impl TableSource for SurrealDB {
         }
         let result = self.execute(&update.expr()).await?;
         if in_set {
-            ensure_row_affected(&result, table.table_name(), id)?;
+            ensure_row_affected(self, &result, table, id, "replace").await?;
+        } else if is_empty_result(&result) {
+            // An UPSERT yields the row it wrote, existing or new.
+            return Err(set_writes::had_no_effect(
+                "replace",
+                &id.to_string(),
+                table.table_name(),
+            ));
         }
         let map = extract_first_map(result)?;
         let id_field = table.id_field_name();
@@ -505,7 +557,7 @@ impl TableSource for SurrealDB {
             update = update.with_condition(condition.clone());
         }
         let result = self.execute(&update.expr()).await?;
-        ensure_row_affected(&result, table.table_name(), id)?;
+        ensure_row_affected(self, &result, table, id, "patch").await?;
         let map = extract_first_map(result)?;
         let id_field = table.id_field_name();
         let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
@@ -517,11 +569,20 @@ impl TableSource for SurrealDB {
         E: Entity<Self::Value>,
     {
         // A missing record, or one outside the conditions, matches nothing: Ok.
-        let mut delete = SurrealDelete::new(id.clone());
+        // A refused delete also comes back empty, so `RETURN BEFORE` tells the
+        // two apart: nothing returned while the set still holds the record.
+        let mut delete = SurrealDelete::new(id.clone()).return_before();
         for condition in table.conditions() {
             delete = delete.with_condition(condition.clone());
         }
-        self.execute(&delete.expr()).await?;
+        let result = self.execute(&delete.expr()).await?;
+        if is_empty_result(&result) && self.get_table_value(table, id).await?.is_some() {
+            return Err(set_writes::had_no_effect(
+                "delete",
+                &id.to_string(),
+                table.table_name(),
+            ));
+        }
         Ok(())
     }
 
@@ -535,6 +596,16 @@ impl TableSource for SurrealDB {
             delete = delete.with_condition(condition.clone());
         }
         self.execute(&delete.expr()).await?;
+        // A refused delete comes back as empty as a successful one; the set
+        // must be empty afterwards.
+        let remaining = match self.get_table_some_value(table).await {
+            Ok(row) => row,
+            Err(e) if set_writes::is_missing_table(&e) => None,
+            Err(e) => return Err(e),
+        };
+        if remaining.is_some() {
+            return Err(set_writes::delete_all_left_rows(table.table_name()));
+        }
         Ok(())
     }
 
@@ -556,6 +627,15 @@ impl TableSource for SurrealDB {
         let base = insert.expr();
         let query = Expression::new(format!("{} RETURN id", base.template), base.parameters);
         let result = self.execute(&query).await?;
+        if is_empty_result(&result) {
+            return Err(error!(
+                format!(
+                    "insert into `{}` had no effect: the connection may not create rows there",
+                    table.table_name()
+                ),
+                table = table.table_name()
+            ));
+        }
         let map = extract_first_map(result)?;
         let (thing, _rec) = parse_cbor_row(map, "id", table.table_name());
         thing.ok_or_else(|| error!("insert_table_return_id_value: no id returned"))

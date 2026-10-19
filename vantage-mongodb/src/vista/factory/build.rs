@@ -1,14 +1,11 @@
 //! Spec → `Table<MongoDB, EmptyEntity>`: the collection, its pipeline view,
 //! columns, references, joined (dotted) columns and contained relations.
 
-use std::sync::Arc;
-
 use bson::Document;
 use vantage_core::{Context, Result, error};
 use vantage_table::column::core::Column as TableColumn;
-use vantage_table::table::Table;
+use vantage_table::table::{BuildEnv, Table};
 use vantage_types::EmptyEntity;
-use vantage_vista::SpecResolver;
 
 use super::build_column;
 use crate::mongodb::impls::joins::table_joins;
@@ -18,12 +15,13 @@ use crate::vista::spec::{MongoBlock, MongoVistaSpec};
 
 /// Build a `Table<MongoDB, EmptyEntity>` from a spec. A spec without columns
 /// still gets an `_id` column, so the table knows its key. Each reference the
-/// spec declares rebuilds its target through `resolver` at traversal time (see
-/// `Table::with_spec_references`).
+/// spec declares rebuilds its target through the resolver at traversal time
+/// (see `Table::with_spec_references`). The built table goes through `env`'s
+/// injector last.
 pub(crate) fn build_mongo_table(
     spec: &MongoVistaSpec,
     db: MongoDB,
-    resolver: Option<Arc<dyn SpecResolver<MongoVistaSpec>>>,
+    env: &BuildEnv<MongoVistaSpec, MongoDB>,
 ) -> Result<Table<MongoDB, EmptyEntity>> {
     let block = spec.driver.mongo.as_ref();
     let collection = block
@@ -58,7 +56,7 @@ pub(crate) fn build_mongo_table(
         table.add_spec_columns(&spec.columns, build_column)?;
         table.set_spec_id_field(&spec.resolve_id_column("_id"))?;
     }
-    let mut table = table.with_spec_references(spec, resolver, build_mongo_table)?;
+    let mut table = table.with_spec_references(spec, env, build_mongo_table)?;
     // A dotted column name is a join through `has_one` references, which
     // must be declared first; resolving the chains now turns a broken one
     // into a build-time error.
@@ -66,7 +64,9 @@ pub(crate) fn build_mongo_table(
         table.add_imported_column(name)?;
     }
     table_joins(&table)?;
-    table.with_contained_specs(&spec.contained, build_column)
+    let mut table = table.with_contained_specs(&spec.contained, build_column)?;
+    env.inject(&spec.name, &mut table, build_mongo_table)?;
+    Ok(table)
 }
 
 /// The pipeline a `mongo:` block declares, from `pipeline:` or a `rhai:`

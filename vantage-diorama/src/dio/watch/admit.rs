@@ -11,8 +11,9 @@ use vantage_vista::{VistaMetadata, VistaQuery};
 use crate::dio::DioInner;
 use crate::ops::ChangeEvent;
 
-/// What a Dio's follow does with the changes its master pushes.
-pub(super) enum Admit {
+/// What a Dio's follow does with the changes its master pushes, and its hub
+/// follower with the rows other Dios over the table publish.
+pub(crate) enum Admit {
     /// Nothing narrows the Dio: every change applies as it is.
     All,
     /// A row that fails any of `queries` leaves the set, so it applies as a
@@ -33,7 +34,7 @@ impl Admit {
     /// augmentations. A pushed row doesn't carry its augmented values yet, so
     /// the residual clauses that could depend on them are left to the read
     /// path, which evaluates the residual over the hydrated rows.
-    pub(super) fn for_dio(inner: &DioInner) -> Self {
+    pub(crate) fn for_dio(inner: &DioInner) -> Self {
         let accepted = inner.master.query();
         if !accepted.is_locally_evaluable() {
             return Admit::Reread;
@@ -59,7 +60,7 @@ impl Admit {
 
     /// `change` as it applies to the Dio, or `None` when it can't be judged
     /// (always, under [`Admit::Reread`]) and the set must be re-read instead.
-    pub(super) fn judge(&self, change: ChangeEvent) -> Option<ChangeEvent> {
+    pub(crate) fn judge(&self, change: ChangeEvent) -> Option<ChangeEvent> {
         match self {
             Admit::All => Some(change),
             Admit::Reread => None,

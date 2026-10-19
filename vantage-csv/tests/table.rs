@@ -258,6 +258,111 @@ async fn search_is_unsupported_and_never_matches_everything() {
     assert!(err.is_unsupported(), "expected Unsupported, got {err:?}");
 }
 
+#[test]
+fn describe_condition_reads_as_the_expression() {
+    let src = csv();
+    let cond = src
+        .eq_value_condition("parent", AnyCsvType::new("p1".to_string()))
+        .unwrap();
+    assert_eq!(src.describe_condition(&cond), "parent = \"p1\"");
+}
+
+#[test]
+fn condition_column_names_eq_and_in() {
+    let src = csv();
+    let eq = src
+        .eq_value_condition("parent", AnyCsvType::new("p1".to_string()))
+        .unwrap();
+    assert_eq!(src.condition_column(&eq), Some("parent".to_string()));
+
+    let invoices = Table::<Csv, EmptyEntity>::new("invoice", src.clone()).with_id_column("id");
+    let in_cond = src.related_in_condition("invoice_id", &invoices, "id");
+    assert_eq!(
+        src.condition_column(&in_cond),
+        Some("invoice_id".to_string())
+    );
+}
+
+#[test]
+fn condition_column_is_none_for_raw_expressions() {
+    let src = csv();
+    assert_eq!(
+        src.condition_column(&Expression::new("1 = 1", vec![])),
+        None
+    );
+    let a = src
+        .eq_value_condition("a", AnyCsvType::new("x".to_string()))
+        .unwrap();
+    let b = src
+        .eq_value_condition("b", AnyCsvType::new("y".to_string()))
+        .unwrap();
+    let both = Expression::new(
+        "{} AND {}",
+        vec![ExpressiveEnum::Nested(a), ExpressiveEnum::Nested(b)],
+    );
+    assert_eq!(src.condition_column(&both), None);
+}
+
+fn binary(template: &str, column: &str, rhs: ExpressiveEnum<AnyCsvType>) -> Expression<AnyCsvType> {
+    Expression::new(
+        template,
+        vec![ExpressiveEnum::Nested(Expression::new(column, vec![])), rhs],
+    )
+}
+
+#[test]
+fn condition_column_names_a_comparison() {
+    let one = ExpressiveEnum::Scalar(AnyCsvType::new(1i64));
+    let gt = binary("{} > {}", "invoice_id", one);
+    assert_eq!(csv().condition_column(&gt), Some("invoice_id".to_string()));
+}
+
+#[test]
+fn condition_column_is_none_for_negations_and_non_value_operands() {
+    let src = csv();
+    let acme = || ExpressiveEnum::Scalar(AnyCsvType::new("acme".to_string()));
+    let nested = |template: &str| ExpressiveEnum::Nested(Expression::new(template, vec![]));
+    for cond in [
+        binary("{} != {}", "tenant_id", acme()),
+        binary("{} NOT IN ({})", "tenant_id", acme()),
+        binary("{} = {}", "tenant_id", nested("tenant_id")),
+        binary("{} = {}", "tenant_id", nested("7 OR 1 = 1")),
+    ] {
+        assert_eq!(src.condition_column(&cond), None, "{}", cond.preview());
+    }
+}
+
+#[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() -> Result<()> {
+    let src = csv();
+    let ids = |names: &[&str]| -> Vec<AnyCsvType> {
+        names
+            .iter()
+            .map(|n| AnyCsvType::new(n.to_string()))
+            .collect()
+    };
+    let clients = |values| {
+        Table::<Csv, EmptyEntity>::new("client", src.clone())
+            .with_column_of::<String>("name")
+            .with_condition(src.in_values_condition("id", values).unwrap())
+    };
+    let rows = clients(ids(&["marty", "biff"])).list_values().await?;
+    let mut keys: Vec<_> = rows.keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["biff", "marty"]);
+    assert!(clients(ids(&[])).list_values().await?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn condition_column_names_an_in_values_condition() {
+    let src = csv();
+    let cond = src
+        .in_values_condition("invoice_id", vec![AnyCsvType::new("i1".to_string())])
+        .unwrap();
+    assert_eq!(src.condition_column(&cond), Some("invoice_id".to_string()));
+}
+
 #[tokio::test]
 async fn eq_condition_on_bool_column_filters_rows() -> Result<()> {
     let mut table = Table::<Csv, EmptyEntity>::new("client", csv())

@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.2.0 — 2026-10-18
+
+- Requires vantage-table 3.0.0.
+- A view served from the cache now shows rows another view's window brings in. A paged view's
+  window load writes its rows straight into the Dio's shared cache and announces only
+  `RangeLoaded`, and a hub recheck that then finds the cached row equal announces nothing, so a
+  sorted view over the same Dio never showed the new row. A single-pass view that doesn't serve
+  windows now reseeds from the cache on `RangeLoaded`.
+- Dios over one table on one Lens see each other's settled changes. A Dio derived for client 7
+  used to keep listing an invoice its parent had moved to client 8, because each Dio has its own
+  cache table and bus. Now a confirmed flash, an `apply_change`, a reconcile's diff and a live
+  follow's pushed changes reach every other Dio over the table, and each judges them against its
+  own query: a row that leaves its set leaves its views and its cache, one that enters shows up,
+  and one inside it repaints. A row that only left a narrowed Dio's set is re-checked by the
+  others through their own masters, never deleted. A Dio with no peer sees exactly the events it
+  did before.
+- One live subscription per table. The first `live()` Dio over the whole table becomes its feed;
+  a narrowed live Dio built while the feed is up subscribes to nothing and follows the feed.
+- `DioBuilder::hub(key)` joins the Dios given the same key, instead of those whose master has the
+  same driver and name (the default). A layer that renames vistas per session passes the backend
+  table here. The key is also part of the cache table's name (`name?query#key`), so Dios with
+  different keys never share cached rows. A `#` in a vista name or query value is now
+  percent-encoded in cache table names.
+- `DioBuilder::recheck_facts()` re-reads every reported row through the Dio's own master instead
+  of judging it, for a master narrowed by a rule its `query()` doesn't show (a table hook's).
+  Reports for one id that arrive together cost one read. It keeps nothing apart by itself.
+- A per-session rule must be applied as a `Vista` condition, or each session's vista named apart
+  or given its own `hub` key. Otherwise two sessions' Dios share one cache table, and one session
+  can list the other's rows: Dios are told apart only by vista name, recorded query and hub key.
+- Known limit: facts carry no version, so two Dios writing one row at the same moment may reach a
+  third in either order. The next refresh settles it.
+- Writes carry the caller's `WriteContext`. `Dio::flash` takes the context in scope when the flash
+  has none, and the write worker runs the write inside it, so the master table's hooks and a Lens
+  writer see who made the change. `ChangeFlash::with_context` sets one explicitly and
+  `ChangeFlash::context` reads it. A `clear` run as one delete per row passes its context to each.
+
 ## 1.0.0 — 2026-10-15
 
 The 2.0 rework of the Lens and Dio layer, which needs the upgrade notes below and the migration

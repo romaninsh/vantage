@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-surrealdb"
-version = "2.0.1"
+version = "2.1.1"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for SurrealDB"
@@ -23,10 +23,10 @@ rhai = ["dep:vantage-rhai", "vista", "vantage-vista/rhai"]
 async-trait = "0.1"
 vantage-core = { version = "1.1.0", path = "../vantage-core" }
 vantage-expressions = { version = "1.2.0", path = "../vantage-expressions", features = ["chrono"] }
-vantage-table = { version = "2.0.0", path = "../vantage-table" }
+vantage-table = { version = "3.0.0", path = "../vantage-table" }
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
 vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "2.0.0", path = "../vantage-vista", optional = true }
+vantage-vista = { version = "2.1.0", path = "../vantage-vista", optional = true }
 surreal-client = { version = "1.0.0", path = "../surreal-client" }
 
 async-stream = "0.3"
@@ -52,7 +52,8 @@ futures = "0.3"
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }
 serde_yaml_ng = "0.10"
 tokio = { version = "1.52", features = ["full"] }
-vantage-vista = { version = "2.0.0", path = "../vantage-vista", features = ["contract"] }
+vantage-vista = { version = "2.1.0", path = "../vantage-vista", features = ["contract"] }
+vantage-table = { version = "3.0.0", path = "../vantage-table", features = ["rhai"] }
 
 [[example]]
 name = "expr"

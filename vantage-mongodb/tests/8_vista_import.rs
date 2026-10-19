@@ -149,16 +149,16 @@ async fn import_runs_insert_hooks_for_new_records_only() -> TestResult {
     let db = setup().await;
     let after_calls = Arc::new(AtomicUsize::new(0));
     let calls = after_calls.clone();
-    let before: BeforeFn<MongoDB> = Arc::new(|record, _table| {
+    let before: BeforeFn<MongoDB> = Arc::new(|cx| {
         Box::pin(async move {
-            record.insert(
+            cx.record.insert(
                 "status".to_string(),
                 AnyMongoType::new("defaulted".to_string()),
             );
             Ok(())
         })
     });
-    let after: AfterFn<MongoDB> = Arc::new(move |_id, _record, _table| {
+    let after: AfterFn<MongoDB> = Arc::new(move |_cx| {
         let calls = calls.clone();
         Box::pin(async move {
             calls.fetch_add(1, Ordering::SeqCst);

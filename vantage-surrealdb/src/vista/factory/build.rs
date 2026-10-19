@@ -1,32 +1,34 @@
 //! Spec → table lowering: a stored table, a `rhai:` query source, or a
 //! `base:` vista derived from another spec, plus `expr:` columns.
 
-use std::sync::Arc;
-
 use vantage_core::Result;
 #[cfg(not(feature = "rhai"))]
 use vantage_core::error;
-use vantage_table::table::Table;
+use vantage_table::table::{BuildEnv, BuildKind, Table};
 use vantage_types::EmptyEntity;
-use vantage_vista::{SpecResolver, resolve_base_spec};
+use vantage_vista::resolve_base_spec;
 
 use super::columns::build_column;
 use crate::statements::SurrealSelect;
 use crate::surrealdb::SurrealDB;
 use crate::vista::spec::{DriverBlockArgs as _, SurrealVistaSpec};
 
-/// Build a `Table<SurrealDB, EmptyEntity>` from a spec. Each reference the
-/// spec declares rebuilds its target through `resolver` at traversal time
-/// (see `Table::with_spec_references`).
+pub(super) type Env = BuildEnv<SurrealVistaSpec, SurrealDB>;
+
+/// Build a `Table<SurrealDB, EmptyEntity>` from a spec, then run `env`'s
+/// injector on it. Each reference the spec declares rebuilds its target
+/// through the resolver at traversal time (see `Table::with_spec_references`).
 pub(super) fn build_surreal_table(
     spec: &SurrealVistaSpec,
     db: SurrealDB,
-    resolver: Option<Arc<dyn SpecResolver<SurrealVistaSpec>>>,
+    env: &Env,
 ) -> Result<Table<SurrealDB, EmptyEntity>> {
     let block = spec.driver.surreal.as_ref();
 
     if let Some(base_name) = block.and_then(|m| m.base.clone()) {
-        return build_derived_table(spec, &base_name, db, resolver);
+        let mut table = build_derived_table(spec, &base_name, db, env)?;
+        env.inject(&spec.name, &mut table, build_surreal_table)?;
+        return Ok(table);
     }
 
     let mut table = match block.and_then(|m| m.rhai.clone()) {
@@ -49,20 +51,21 @@ pub(super) fn build_surreal_table(
     table.set_spec_id_field(&spec.resolve_id_column("id"))?;
 
     let table = table
-        .with_spec_references(spec, resolver, build_surreal_table)?
+        .with_spec_references(spec, env, build_surreal_table)?
         .with_contained_specs(&spec.contained, build_column)?;
 
     // A dotted column (`batch.name`) is an implicit reference, imported
     // through `with_active_columns`; as a plain column it would read one
     // ⟨batch.name⟩ field that doesn't exist. The active set must name every
     // column.
-    let table = if spec.columns.keys().any(|n| n.contains('.')) {
+    let mut table = if spec.columns.keys().any(|n| n.contains('.')) {
         let names: Vec<String> = table.columns().keys().cloned().collect();
         let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
         table.with_active_columns(&name_refs)?
     } else {
         table
     };
+    env.inject(&spec.name, &mut table, build_surreal_table)?;
     Ok(table)
 }
 
@@ -113,17 +116,23 @@ fn table_from_rhai(
     ))
 }
 
-/// A derived table: build `base_name` through the resolver, transform its
-/// `select()` by the `rhai:` script if there is one, and inherit the listed
-/// columns and relations.
+/// A derived table: build `base_name` through the resolver (injected as
+/// [`BuildKind::Base`]), transform its `select()` by the `rhai:` script if
+/// there is one, and inherit the listed columns and relations.
 fn build_derived_table(
     spec: &SurrealVistaSpec,
     base_name: &str,
     db: SurrealDB,
-    resolver: Option<Arc<dyn SpecResolver<SurrealVistaSpec>>>,
+    env: &Env,
 ) -> Result<Table<SurrealDB, EmptyEntity>> {
-    let (resolver, base_spec) = resolve_base_spec(resolver, base_name)?;
-    let base_table = build_surreal_table(&base_spec, db, Some(resolver))?;
+    let (_, base_spec) = resolve_base_spec(env.resolver.clone(), base_name)?;
+    let base_env = env.nested(
+        base_name,
+        BuildKind::Base {
+            derived: spec.name.clone(),
+        },
+    )?;
+    let base_table = build_surreal_table(&base_spec, db, &base_env)?;
 
     let block = spec.driver.surreal.as_ref();
     let select = match block.and_then(|m| m.rhai.clone()) {

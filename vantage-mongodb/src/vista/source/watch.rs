@@ -38,6 +38,7 @@ const OPERATION_TYPES: [&str; 8] = [
 /// Open a change stream on the shell's collection. The cursor is established
 /// server-side before this returns, so writes made afterwards are seen.
 pub(super) async fn watch(shell: &MongoTableShell) -> Result<VistaChangeStream> {
+    shell.table.check_read().await?;
     let table = shell.table.clone();
     let name = table.table_name();
     table.data_source().ensure_watchable(name)?;

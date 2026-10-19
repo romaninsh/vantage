@@ -25,6 +25,7 @@ pub mod rest;
 mod row_keys;
 mod transport;
 
+pub use transport::BearerSource;
 pub use vantage_api_pool::resilient::{
     AuthFuture, AuthRefresher, BreakerMode, BreakerState, CallPolicy, ClientError, ErrorKind,
     ResilientClient, ResilientClientBuilder, RetryMode, RetryPolicy, TransportEvent,

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.1.1 — 2026-10-19
+
+- Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
+- A write the connection may not perform now fails. SurrealDB answers a refused write (a `VIEWER`
+  user, or table permissions) with an empty result, which the driver took for success: a delete
+  of a row it could not remove returned `Ok`, so after-delete hooks ran for a row still there.
+  - `delete` runs `DELETE … RETURN BEFORE`; when it removes nothing and the set still holds the
+    row, it errors with "delete of `item:x` had no effect: the connection may not delete it".
+    Deleting a missing row stays a successful no-op.
+  - `delete_all` errors when rows of the set remain afterwards.
+  - `insert` (with or without an id), `replace` and `patch` say the write had no effect instead
+    of "expected map in array result" or "Row not found". A patch of a missing row is still
+    `NotFound`.
+- `vista::register_rule_conditions(engine)` (`rhai` feature): the `surreal::` vocabulary and
+  `table.with_condition(<expr>)` for rule scripts, narrowing the table as a `modify:` script's
+  `with_condition` narrows a vista. SQLite, Postgres and CSV have no `modify:` vocabulary and no
+  rule `with_condition`; there it is "function not found".
+- `SurrealVistaFactory::with_injector(TableInjector<SurrealDB>)`. The injector runs on the root
+  table, each reference target (plain or `rhai:`), each `base:` table, and `table()` inside
+  `modify:` scripts.
+- `in_values_condition` builds `col IN [..]`; `describe_condition` and `condition_column` are
+  implemented.
+- The shell's `watch` runs the table's `BeforeSelect` hooks first.
+- Writable vistas advertise `writes_reach_hooks`.
+
 ## 2.0.1 — 2026-10-15
 
 - The in-crate unit tests move to the blackbox suite under `tests/`, duplicate tests are dropped,

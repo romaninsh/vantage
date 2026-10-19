@@ -30,6 +30,9 @@ impl MockTableSource {
             let matched =
                 if let Some((column, expected)) = crate::conditions::literal_equality(condition) {
                     row.get(&column).is_some_and(|v| v.value_eq(&expected))
+                } else if let Some((column, listed)) = Self::in_values(condition) {
+                    row.get(&column)
+                        .is_some_and(|v| listed.iter().any(|x| v.value_eq(x)))
                 } else if let Some(branches) = Self::search_branches(condition) {
                     branches.iter().any(|(column, needle)| {
                         row.get(column)
@@ -48,6 +51,28 @@ impl MockTableSource {
             }
         }
         Ok(true)
+    }
+
+    /// The column and literal values of an `in_values_condition`.
+    fn in_values(condition: &Expression<Value>) -> Option<(String, Vec<Value>)> {
+        if condition.template != "{} IN ({})" {
+            return None;
+        }
+        let [ExpressiveEnum::Nested(lhs), ExpressiveEnum::Nested(list)] =
+            condition.parameters.as_slice()
+        else {
+            return None;
+        };
+        let column = crate::conditions::unquote_identifier(&lhs.template)?;
+        let values = list
+            .parameters
+            .iter()
+            .map(|p| match p {
+                ExpressiveEnum::Scalar(v) => Some(v.clone()),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some((column, values))
     }
 
     /// One `column LIKE '%value%'` per search column, OR-ed together, or

@@ -10,14 +10,9 @@
 //! value bound, so it works against any backend whose value type can carry a
 //! string — the column itself can be plain `TEXT`.
 
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
+use vantage_types::{Entity, InvariantValue};
 
-use vantage_core::Result;
-use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
-
-use crate::table::{BeforeFn, Hook, Phase, Table};
+use crate::table::{BeforeCx, BeforeFn, Hook, Phase, Table, before_hook};
 use crate::traits::table_source::TableSource;
 
 /// Which columns the audit stamps write. Defaults to `created_at` / `updated_at`.
@@ -89,23 +84,19 @@ fn created_hook<T: TableSource>(column: String) -> BeforeFn<T>
 where
     T::Value: InvariantValue + From<String>,
 {
-    Arc::new(
-        move |rec: &mut Record<T::Value>,
-              _table: &Table<T, EmptyEntity>|
-              -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            let column = column.clone();
-            Box::pin(async move {
-                let absent_or_null = match rec.get(column.as_str()) {
-                    None => true,
-                    Some(v) => v.is_null(),
-                };
-                if absent_or_null {
-                    rec.insert(column, T::Value::from(now_rfc3339()));
-                }
-                Ok(())
-            })
-        },
-    )
+    before_hook(move |cx: BeforeCx<'_, T>| {
+        let column = column.clone();
+        Box::pin(async move {
+            let absent_or_null = match cx.record.get(column.as_str()) {
+                None => true,
+                Some(v) => v.is_null(),
+            };
+            if absent_or_null {
+                cx.record.insert(column, T::Value::from(now_rfc3339()));
+            }
+            Ok(())
+        })
+    })
 }
 
 /// Before-save hook (insert + update): always set `column` to the current time.
@@ -113,17 +104,13 @@ fn updated_hook<T: TableSource>(column: String) -> BeforeFn<T>
 where
     T::Value: InvariantValue + From<String>,
 {
-    Arc::new(
-        move |rec: &mut Record<T::Value>,
-              _table: &Table<T, EmptyEntity>|
-              -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-            let column = column.clone();
-            Box::pin(async move {
-                rec.insert(column, T::Value::from(now_rfc3339()));
-                Ok(())
-            })
-        },
-    )
+    before_hook(move |cx: BeforeCx<'_, T>| {
+        let column = column.clone();
+        Box::pin(async move {
+            cx.record.insert(column, T::Value::from(now_rfc3339()));
+            Ok(())
+        })
+    })
 }
 
 /// Current UTC time as a second-precision RFC 3339 string (`…Z`).

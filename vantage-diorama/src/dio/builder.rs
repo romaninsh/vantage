@@ -23,6 +23,8 @@ pub struct DioBuilder {
     augmentations: Option<Arc<Vec<Augmentation>>>,
     live: bool,
     residual: VistaQuery,
+    hub: Option<String>,
+    recheck_facts: bool,
 }
 
 /// What [`DioBuilder::build`] resolved, handed to the Lens to spawn the Dio.
@@ -36,6 +38,11 @@ pub(crate) struct DioParts {
     pub(crate) augmented_columns: HashSet<String>,
     pub(crate) live: bool,
     pub(crate) cache_table_name: String,
+    /// The hub this Dio joins, `None` for one that joins none.
+    pub(crate) hub_key: Option<String>,
+    /// The key given to [`DioBuilder::hub`], which a derived Dio inherits.
+    pub(crate) explicit_hub: Option<String>,
+    pub(crate) recheck_facts: bool,
 }
 
 impl DioBuilder {
@@ -46,7 +53,45 @@ impl DioBuilder {
             augmentations: None,
             live: false,
             residual: VistaQuery::new(),
+            hub: None,
+            recheck_facts: false,
         }
+    }
+
+    /// Exchange settled changes with the other Dios on this Lens built with
+    /// the same `key`, instead of those over the same table.
+    ///
+    /// By default a Dio joins the Dios whose master has the same driver and
+    /// name: a Dio and every Dio derived from it, or two built from the same
+    /// vista. A layer that renames vistas (one name per session, say) passes
+    /// the backend table here, so its Dios still hear each other. Dios with
+    /// different keys never exchange anything, and never share a cache table
+    /// either: the key is part of the cache table's name, so rows cached by
+    /// one are never listed by the other. A Dio derived from this one keeps
+    /// the key.
+    pub fn hub(mut self, key: impl Into<String>) -> Self {
+        self.hub = Some(key.into());
+        self
+    }
+
+    /// Re-read every row another Dio reports changed through this Dio's
+    /// master, instead of judging the reported row against this Dio's query.
+    ///
+    /// For a master narrowed by something its [`query`](Vista::query)
+    /// doesn't show (a rule a table hook adds, such as "only rows whose
+    /// parent this user may see"), judging the row in memory would admit
+    /// rows the master would never return. The master's answer decides
+    /// instead: a row it returns joins or stays, one it doesn't leaves.
+    /// Facts for one id that arrive together cost one read. A Dio derived
+    /// from this one re-reads too.
+    ///
+    /// This doesn't keep the Dio's rows apart from another Dio's: two Dios
+    /// whose vistas have the same name and recorded query share a cache
+    /// table. Give a hidden rule its own vista name, a vista condition, or
+    /// its own [`hub`](Self::hub) key.
+    pub fn recheck_facts(mut self) -> Self {
+        self.recheck_facts = true;
+        self
     }
 
     /// Enrich each row from a second Vista, one row at a time: a cheap list
@@ -68,6 +113,13 @@ impl DioBuilder {
     /// its changes are applied once the copy has landed, so a change made
     /// during the copy is neither lost nor overwritten by it. A follow that
     /// falls behind re-reads the set (see [`Dio::refresh`]).
+    ///
+    /// Each change the master pushes also reaches every other Dio over the
+    /// table on this Lens, live or not, judged against its own query. The
+    /// first live Dio over the whole table (unnarrowed, nothing in its
+    /// residual) becomes the table's feed: a narrowed live Dio built while
+    /// it is up makes no subscription of its own and follows the feed's
+    /// changes instead, keeping the feed alive while it does.
     pub fn live(mut self) -> Self {
         self.live = true;
         self
@@ -87,13 +139,22 @@ impl DioBuilder {
         self
     }
 
+    /// The parent's hub key and recheck setting, for a Dio narrowed from it:
+    /// it is still a Dio over the parent's table.
+    pub(crate) fn same_table_as(mut self, hub: Option<String>, recheck_facts: bool) -> Self {
+        self.hub = hub;
+        self.recheck_facts = recheck_facts;
+        self
+    }
+
     /// Resolve the id column and the cache identity, open the cache table,
     /// and start the Dio's write worker, refresh timer, eager start and, with
     /// [`live`](Self::live), its live follow.
     ///
     /// While a Dio with the same cache identity, the same augmentations (the
-    /// same `Arc`, as a derivation passes on) and the same `live` setting is
-    /// held anywhere, this returns that Dio instead, after checking its cache
+    /// same `Arc`, as a derivation passes on), the same `live` setting, hub
+    /// and [`recheck_facts`](Self::recheck_facts) setting is held anywhere,
+    /// this returns that Dio instead, after checking its cache
     /// against the refresher's `max_age`. Once every holder has dropped it,
     /// the next build makes a new one.
     ///
@@ -107,6 +168,8 @@ impl DioBuilder {
             augmentations,
             live,
             residual,
+            hub,
+            recheck_facts,
         } = self;
         let id_column = master
             .id_column()
@@ -118,8 +181,15 @@ impl DioBuilder {
             })?
             .to_string();
         let query = full_query(&master, &residual);
-        let cache_table_name = cache_identity(master.name(), &query);
-        let key = DioKey::new(&cache_table_name, augmentations.as_ref(), live);
+        let cache_table_name = cache_identity(master.name(), &query, hub.as_deref());
+        let hub_key = hub_key(&master, hub.as_deref());
+        let key = DioKey::new(
+            &cache_table_name,
+            augmentations.as_ref(),
+            live,
+            hub_key.as_deref(),
+            recheck_facts,
+        );
         if let Some(dio) = lens.dios.live(&key) {
             // The shared Dio may be serving a cache older than `max_age`; a
             // build checks that whether or not it spawns.
@@ -144,9 +214,25 @@ impl DioBuilder {
                 augmented_columns,
                 live,
                 cache_table_name,
+                hub_key,
+                explicit_hub: hub,
+                recheck_facts,
             },
         )
         .await
+    }
+}
+
+/// The hub a Dio over `master` joins: `explicit` when given, else one per
+/// driver and table name. `None` over another Dio's facade (driver `"dio"`):
+/// such a Dio already follows its parent's bus when live, and its writes
+/// land on the parent, which publishes them, so joining would deliver every
+/// fact twice. Nor over an aggregate, whose rows are computed, not stored.
+fn hub_key(master: &Vista, explicit: Option<&str>) -> Option<String> {
+    match (explicit, master.driver_name()) {
+        (_, "dio" | "aggregate") => None,
+        (Some(key), _) => Some(key.to_string()),
+        (None, driver) => Some(format!("{driver}:{}", master.name())),
     }
 }
 
@@ -176,12 +262,22 @@ fn full_query(master: &Vista, residual: &VistaQuery) -> VistaQuery {
 /// `?` always separates the name from the key, and no vista's name can pass
 /// for another vista's narrowed table. A name without any of these is used
 /// as it is.
-pub(crate) fn cache_identity(name: &str, query: &VistaQuery) -> String {
+///
+/// A Dio given an explicit [`hub`](DioBuilder::hub) key gets `#key` on the
+/// end. A layer that keys its Dios apart (one key per session) does so
+/// because their masters differ in ways the vista doesn't record, so their
+/// rows must never meet in one table. A `#` in the name or the query key is
+/// encoded, so the first `#` always starts the hub key.
+pub(crate) fn cache_identity(name: &str, query: &VistaQuery, hub: Option<&str>) -> String {
     let mut identity = String::new();
-    encode(&mut identity, name, &['?']);
+    encode(&mut identity, name, &['?', '#']);
     if !query.is_empty() {
         identity.push('?');
-        encode(&mut identity, &query.key(), &[]);
+        encode(&mut identity, &query.key(), &['#']);
+    }
+    if let Some(hub) = hub {
+        identity.push('#');
+        encode(&mut identity, hub, &[]);
     }
     identity
 }

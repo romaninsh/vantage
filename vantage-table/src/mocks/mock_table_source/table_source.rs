@@ -34,6 +34,14 @@ impl TableSource for MockTableSource {
         crate::conditions::literal_equality(condition)
     }
 
+    fn describe_condition(&self, condition: &Expression<Value>) -> String {
+        condition.preview()
+    }
+
+    fn condition_column(&self, condition: &Expression<Value>) -> Option<String> {
+        crate::conditions::condition_column_of(condition)
+    }
+
     fn can_confine_writes(&self) -> bool {
         self.confines
     }
@@ -44,6 +52,23 @@ impl TableSource for MockTableSource {
             vec![
                 ExpressiveEnum::Nested(Expression::new(field.to_string(), vec![])),
                 ExpressiveEnum::Nested(Expression::new("{}", vec![ExpressiveEnum::Scalar(value)])),
+            ],
+        ))
+    }
+
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        Ok(Expression::new(
+            "{} IN ({})",
+            vec![
+                ExpressiveEnum::Nested(Expression::new(field.to_string(), vec![])),
+                ExpressiveEnum::Nested(Expression::new(
+                    vec!["{}"; values.len()].join(", "),
+                    values.into_iter().map(ExpressiveEnum::Scalar).collect(),
+                )),
             ],
         ))
     }

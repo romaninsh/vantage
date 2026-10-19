@@ -17,7 +17,7 @@ use std::sync::Arc;
 use vantage_core::Result;
 #[cfg(not(feature = "rhai"))]
 use vantage_core::error;
-use vantage_table::table::Table;
+use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
     Capability, SpecResolver, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
@@ -38,11 +38,26 @@ pub struct SurrealVistaFactory {
     /// Resolves a YAML spec by table name, so references and `base:` can
     /// rebuild their tables from the live spec.
     resolver: Option<Arc<dyn SpecResolver<SurrealVistaSpec>>>,
+    injector: Option<TableInjector<SurrealDB>>,
 }
 
 impl SurrealVistaFactory {
     pub fn new(db: SurrealDB) -> Self {
-        Self { db, resolver: None }
+        Self {
+            db,
+            resolver: None,
+            injector: None,
+        }
+    }
+
+    /// Attach a build injector, run on every table built from a spec: the
+    /// root, each reference target when traversed, each `base:` table, and
+    /// the tables a script's `table(name)` builds. A table handed to
+    /// [`from_table`](Self::from_table) is the caller's and is wrapped as it
+    /// is.
+    pub fn with_injector(mut self, injector: TableInjector<SurrealDB>) -> Self {
+        self.injector = Some(injector);
+        self
     }
 
     /// Attach a spec resolver. Required for YAML-declared references to
@@ -82,7 +97,7 @@ impl SurrealVistaFactory {
             table,
             surreal_capabilities(read_only),
             metadata,
-            self.resolver.clone(),
+            self.clone(),
         );
         Vista::new(name, shell)
     }
@@ -92,7 +107,8 @@ impl SurrealVistaFactory {
         &self,
         spec: &SurrealVistaSpec,
     ) -> Result<Table<SurrealDB, EmptyEntity>> {
-        build_surreal_table(spec, self.db.clone(), self.resolver.clone())
+        let env = BuildEnv::root(&spec.name, self.resolver.clone(), self.injector.clone());
+        build_surreal_table(spec, self.db.clone(), &env)
     }
 }
 
@@ -147,6 +163,7 @@ fn surreal_capabilities(read_only: bool) -> VistaCapabilities {
         Capability::Update,
         Capability::Delete,
         Capability::ConfineWrites,
+        Capability::WritesReachHooks,
         Capability::Subscribe,
     ];
     let caps: VistaCapabilities = reads.into_iter().collect();

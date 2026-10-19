@@ -94,21 +94,25 @@ where
     }
     /// Get count of records in the table
     pub async fn get_count(&self) -> Result<i64> {
+        self.check_read().await?;
         self.data_source.get_table_count(self).await
     }
 
     /// Get sum of a column in the table
     pub async fn get_sum(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
+        self.check_read().await?;
         self.data_source.get_table_sum(self, column).await
     }
 
     /// Get max of a column in the table
     pub async fn get_max(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
+        self.check_read().await?;
         self.data_source.get_table_max(self, column).await
     }
 
     /// Get min of a column in the table
     pub async fn get_min(&self, column: &T::Column<T::AnyType>) -> Result<T::Value> {
+        self.check_read().await?;
         self.data_source.get_table_min(self, column).await
     }
 
@@ -454,6 +458,7 @@ where
 {
     /// Get count using QuerySource for serde_json::Value
     pub async fn get_count_via_query(&self) -> Result<i64> {
+        self.check_read().await?;
         let count_query = self.get_count_query();
         let result = self.data_source.execute(&count_query).await?;
 

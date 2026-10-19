@@ -103,6 +103,27 @@ pub(crate) fn not_in_set(table_name: &str, id: Option<&Thing>) -> VantageError {
     .mark_conflict()
 }
 
+/// SurrealDB answers a write the connection's role or the table's permissions
+/// refuse with an empty result, not an error: `op` of record `target`
+/// acted on nothing although there was something to act on.
+pub(crate) fn had_no_effect(op: &str, target: &str, table_name: &str) -> VantageError {
+    let verb = if op == "insert" { "create" } else { op };
+    error!(
+        format!("{op} of `{target}` had no effect: the connection may not {verb} it"),
+        table = table_name
+    )
+}
+
+/// A delete-all after which rows of the set are still there.
+pub(crate) fn delete_all_left_rows(table_name: &str) -> VantageError {
+    error!(
+        format!(
+            "delete of all rows in `{table_name}` left rows in place: the connection may not delete them"
+        ),
+        table = table_name
+    )
+}
+
 /// A patch whose merged record would no longer satisfy the table's conditions.
 pub(crate) fn patch_leaves_set(table_name: &str, id: &Thing) -> VantageError {
     error!(

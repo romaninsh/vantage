@@ -95,6 +95,23 @@ impl TableSource for MemoryDB {
         }
     }
 
+    fn describe_condition(&self, condition: &Self::Condition) -> String {
+        condition.describe()
+    }
+
+    fn condition_column(&self, condition: &Self::Condition) -> Option<String> {
+        match condition {
+            MemoryCondition::Cmp {
+                op: FilterOp::Ne | FilterOp::NotInSet,
+                ..
+            } => None,
+            MemoryCondition::Cmp { path, .. } | MemoryCondition::DeferredIn { path, .. } => {
+                Some(path.clone())
+            }
+            _ => None,
+        }
+    }
+
     fn can_confine_writes(&self) -> bool {
         true
     }
@@ -104,6 +121,19 @@ impl TableSource for MemoryDB {
             field,
             FilterOp::Eq,
             value.into_value(),
+        ))
+    }
+
+    fn in_values_condition(
+        &self,
+        field: &str,
+        values: Vec<Self::Value>,
+    ) -> Result<Self::Condition> {
+        let set = values.into_iter().map(|v| v.into_value()).collect();
+        Ok(MemoryCondition::cmp(
+            field,
+            FilterOp::InSet,
+            ciborium::Value::Array(set),
         ))
     }
 

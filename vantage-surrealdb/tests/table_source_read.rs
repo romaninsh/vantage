@@ -60,6 +60,100 @@ async fn test_build_select_reserved_column_names() {
     );
 }
 
+#[tokio::test]
+async fn describe_condition_reads_as_the_expression() {
+    let db = SurrealDB::new(SurrealMockBuilder::new().build());
+    let cond = db
+        .eq_value_condition("parent", AnySurrealType::from("p1"))
+        .unwrap();
+    assert_eq!(db.describe_condition(&cond), "parent = \"p1\"");
+}
+
+#[tokio::test]
+async fn condition_column_names_eq_and_in() {
+    let db = SurrealDB::new(SurrealMockBuilder::new().build());
+    let eq = db
+        .eq_value_condition("parent", AnySurrealType::from("p1"))
+        .unwrap();
+    assert_eq!(db.condition_column(&eq), Some("parent".to_string()));
+
+    let invoices = Table::<SurrealDB, EmptyEntity>::new("invoice", db.clone()).with_id_column("id");
+    let in_cond = db.related_in_condition("invoice_id", &invoices, "id");
+    assert_eq!(
+        db.condition_column(&in_cond),
+        Some("invoice_id".to_string())
+    );
+}
+
+#[tokio::test]
+async fn condition_column_is_none_for_raw_expressions() {
+    let db = SurrealDB::new(SurrealMockBuilder::new().build());
+    assert_eq!(
+        db.condition_column(&surreal_expr!("active = {}", true)),
+        None
+    );
+    let a = db
+        .eq_value_condition("a", AnySurrealType::from("x"))
+        .unwrap();
+    let b = db
+        .eq_value_condition("b", AnySurrealType::from("y"))
+        .unwrap();
+    assert_eq!(
+        db.condition_column(&surreal_expr!("{} AND {}", (a), (b))),
+        None
+    );
+}
+
+#[tokio::test]
+async fn condition_column_names_a_comparison() {
+    let db = SurrealDB::new(SurrealMockBuilder::new().build());
+    let invoice = Column::<AnySurrealType>::new("invoice_id");
+    let gt = surreal_expr!("{} > {}", (invoice), 1i64);
+    assert_eq!(db.condition_column(&gt), Some("invoice_id".to_string()));
+}
+
+#[tokio::test]
+async fn condition_column_is_none_for_negations_and_non_value_operands() {
+    let db = SurrealDB::new(SurrealMockBuilder::new().build());
+    let tenant = Column::<AnySurrealType>::new("tenant_id");
+    for cond in [
+        surreal_expr!("{} != {}", (tenant), "acme"),
+        surreal_expr!("{} NOT IN {}", (tenant), "acme"),
+        surreal_expr!("{} = {}", (tenant), (tenant)),
+        surreal_expr!("{} = {}", (tenant), (surreal_expr!("7 OR 1 = 1"))),
+    ] {
+        assert_eq!(db.condition_column(&cond), None, "{}", cond.preview());
+    }
+}
+
+#[tokio::test]
+async fn condition_column_names_an_in_values_condition() {
+    let db = SurrealDB::new(SurrealMockBuilder::new().build());
+    let cond = db
+        .in_values_condition("invoice_id", vec![AnySurrealType::from("i1")])
+        .unwrap();
+    assert_eq!(db.condition_column(&cond), Some("invoice_id".to_string()));
+}
+
+#[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() {
+    let db = get_db().await;
+    let prices = |values: Vec<i64>| {
+        let values = values.into_iter().map(AnySurrealType::from).collect();
+        let cond = db.in_values_condition("price", values).unwrap();
+        Product::surreal_table(db.clone()).with_condition(cond)
+    };
+    let rows = db.list_table_values(&prices(vec![120, 299])).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.contains_key(&Thing::new("product", "flux_cupcake")));
+    assert!(
+        db.list_table_values(&prices(vec![]))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
 fn users_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
     Table::new("users", db)
         .with_column_of::<String>("name")

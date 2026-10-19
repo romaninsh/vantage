@@ -231,10 +231,8 @@ normalization, validation, soft-delete, and after-effects are expressed — gene
 backend.
 
 ```rust
-# use std::future::Future;
-# use std::pin::Pin;
-#
 # use vantage_sql::prelude::*;
+# use vantage_table::table::{BeforeCx, BoxFuture};
 # use vantage_types::prelude::*;
 #
 # #[entity(SqliteType)]
@@ -252,12 +250,9 @@ backend.
 #     }
 # }
 #
-# fn stamp_created<'a>(
-#     rec: &'a mut Record<AnySqliteType>,
-#     _t: &'a Table<SqliteDB, EmptyEntity>,
-# ) -> Pin<Box<dyn Future<Output = VantageResult<()>> + Send + 'a>> {
+# fn stamp_created(cx: BeforeCx<'_, SqliteDB>) -> BoxFuture<'_, VantageResult<()>> {
 #     Box::pin(async move {
-#         rec.insert("created".into(), AnySqliteType::new("2026-10-14".to_string()));
+#         cx.record.insert("created".into(), AnySqliteType::new("2026-10-14".to_string()));
 #         Ok(())
 #     })
 # }
@@ -265,10 +260,10 @@ backend.
 # #[tokio::main(flavor = "current_thread")]
 # async fn main() -> vantage_core::Result<()> {
 # let db = SqliteDB::connect("sqlite::memory:").await.context("connect")?;
-use std::sync::Arc;
 use vantage_table::prelude::{Hook, Phase};
+use vantage_table::table::before_hook;
 
-let launches = Launch::table(db).with_hook(Hook::BeforeInsert(Phase::Populate, Arc::new(stamp_created)));
+let launches = Launch::table(db).with_hook(Hook::BeforeInsert(Phase::Populate, before_hook(stamp_created)));
 # let _ = launches;
 # Ok(())
 # }
@@ -276,21 +271,23 @@ let launches = Launch::table(db).with_hook(Hook::BeforeInsert(Phase::Populate, A
 
 ### The `Hook` variants
 
-One enum carries a placement-specific closure, so each hook receives exactly what's available at
-its stage. Before-write hooks get the record (mutable) and the entity-erased table; the delete hook
-gets the id and the row's former contents:
+One enum carries a placement-specific closure. Each hook receives one context struct holding what's
+available at its stage, so new fields can be added without breaking existing hooks:
 
 | variant | when | receives | may |
 | --- | --- | --- | --- |
-| `BeforeInsert(Phase, _)` | before an insert | `&mut Record`, `&Table` | mutate / `Err` to cancel |
-| `BeforeUpdate(Phase, _)` | before replace/patch | `&mut Record`, `&Table` | mutate / `Err` to cancel |
-| `BeforeSave(Phase, _)` | before insert **and** update | `&mut Record`, `&Table` | mutate / `Err` to cancel |
-| `BeforeDelete(_)` | before a delete | `&Id`, `&Record` (former), `&Table` | `Err` to veto, or `HookReturn::Handled` to take over |
-| `AfterInsert` / `AfterUpdate` / `AfterSave` | after the write commits | `&Id`, `&Record`, `&Table` | side-effects |
-| `AfterDelete(_)` | after a delete | `&Id`, `&Record` (former), `&Table` | side-effects |
+| `BeforeInsert(Phase, _)` | before an insert | `BeforeCx { record: &mut Record, id: None, stored: None, context, table }` | mutate / `Err` to cancel |
+| `BeforeUpdate(Phase, _)` | before replace/patch | `BeforeCx`, with `id`, the `stored` row and `patch` (a patch's `record` holds only the patched fields; a replace's is the whole new row) | mutate / `Err` to cancel |
+| `BeforeSave(Phase, _)` | before insert **and** update | `BeforeCx` | mutate / `Err` to cancel |
+| `BeforeDelete(_)` | before a delete | `DeleteCx { id, record (former), context, table }` | `Err` to veto, or `HookReturn::Handled` to take over |
+| `AfterInsert` / `AfterUpdate` / `AfterSave` | after the write commits | `AfterCx { id, record, before, context, table }` | side-effects |
+| `AfterDelete(_)` | after a delete | `AfterCx` (`record` is the former row) | side-effects |
+| `BeforeDeleteAll(_)` / `AfterDeleteAll(_)` | around `delete_all` | `DeleteAllCx { context, table }` | `Err` to cancel (before) / side-effects |
+| `BeforeSelect(_)` | before a read: list, get, stream, count, sum/max/min | `SelectCx { context, table }` | `Err` to refuse the read |
 
-The `&Table` handed to a hook is entity-erased, so it can traverse relations (`get_ref`) and reach
-the datasource — enough for cross-row validation and after-effects.
+The `table` handed to a hook is entity-erased, so it can traverse relations (`get_ref`) and reach
+the datasource — enough for cross-row validation and after-effects. `context` is the
+[`WriteContext`](vantage_table::write_context::WriteContext) in scope for the write, if any.
 
 ### Ordering and control flow
 
@@ -300,24 +297,76 @@ the datasource — enough for cross-row validation and after-effects.
 - **Returning `Err` from any before-hook cancels the operation** before anything is written.
 - **`BeforeDelete` returning `HookReturn::Handled`** skips the real delete and reports success —
   this is how soft-delete works (patch a `deleted` marker, return `Handled`). A delete with hooks
-  loads the row once so before/after hooks see its contents; `delete_all` fires no hooks. A
-  delete with hooks on a row outside the set runs no hooks and deletes nothing.
+  loads the row once so before/after hooks see its contents. A delete with hooks on a row outside
+  the set runs no hooks and deletes nothing.
+- **An update with after-update hooks reads the row first**, through the set, so `cx.before`
+  holds the row as it was; without such hooks there is no extra read.
+- **`delete_all` runs `BeforeDeleteAll` / `AfterDeleteAll` once for the whole set**, never the
+  per-row delete hooks. The hook gets the table, whose `conditions()` describe the set; an error
+  from the before hook cancels it. A soft-delete `BeforeDelete` doesn't cover it: `delete_all`
+  still removes the rows, so a soft-deleting table needs a `BeforeDeleteAll` that refuses it.
 - After-hooks run for side-effects only. Vantage favours idempotence over transactions: an
   after-hook failure surfaces an error but does not roll back the committed write — design
   after-effects to be safe to retry.
 
-### Writing a hook
+### Read hooks
 
-Hooks are boxed async closures. The reliable construction is a free `fn` returning a boxed future
-whose lifetime ties to the arguments, then `Arc::new(it)`:
+`BeforeSelect` is the one hook on the read side. It runs before every read that returns rows or
+facts about rows, so a rule like "only signed-in callers read invoices" lives on the table rather
+than in every handler that lists it. A stream yields the hook's error as its first item. The hook
+reads `cx.context` (the same [`WriteContext`](vantage_table::write_context::WriteContext) writes
+see, so one scope covers a request's reads and writes) and `cx.table.conditions()`, which describe
+the set about to be read:
 
 ```rust
-use std::future::Future;
-use std::pin::Pin;
-use vantage_core::Result;
+use vantage_sql::sqlite::SqliteDB;
+use vantage_table::table::{SelectCx, select_hook};
+
+let signed_in_only = select_hook(|cx: SelectCx<'_, SqliteDB>| {
+    Box::pin(async move {
+        match cx.context.and_then(|c| c.principal.as_ref()) {
+            Some(_) => Ok(()),
+            None => Err(vantage_core::error!("sign in to read this table")),
+        }
+    })
+});
+# let _ = signed_in_only;
+```
+
+It does **not** run when the table is only embedded in another query: `related_in_condition`,
+`column_table_values_expr`, `get_*_query` and `get_expr_*` build expressions, not reads of this
+table. A rule that must hold inside a subquery belongs in the table's conditions, added when the
+table is built (see the build injector in
+[Config-Driven Vistas](./config-driven-vistas.md#the-build-injector)).
+
+A vista shell that reads the data source directly, without going through `Table` (a SQL count, a
+REST window, a live watch), calls
+[`Table::check_read`](vantage_table::table::Table::check_read) first, so the hook guards those
+reads too.
+
+Reads a write makes run the hook as well, so a refusing `BeforeSelect` also refuses:
+
+- an update once the table has an after-update hook, since the update reads `cx.before` first;
+- a delete once the table has delete hooks, since the delete reads the row for them;
+- a write whose backend reads the row back after it (an insert, replace or patch that returns the
+  stored row).
+
+So registering an audit hook can change whether a caller allowed to write but not to read can
+update. That is deliberate: a refused read must not leak the former row into a hook.
+
+Reads served by a Dio's cache are the exception; see the Dio note below.
+
+### Writing a hook
+
+Hooks are boxed async closures over their context struct. `before_hook`, `before_delete_hook` and
+`after_hook` wrap a closure or a free `fn` into the hook type; their bounds guide closure
+inference:
+
+```rust
 use vantage_types::Record;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
-use vantage_table::table::Table;
+use vantage_table::prelude::HookReturn;
+use vantage_table::table::{BeforeCx, DeleteCx, before_delete_hook, before_hook};
 # use vantage_dataset::WritableValueSet;
 #
 # fn now_iso8601() -> String {
@@ -325,31 +374,41 @@ use vantage_table::table::Table;
 # }
 
 // before-insert: stamp an audit field
-fn stamp_created<'a>(
-    rec: &'a mut Record<AnySqliteType>,
-    _t: &'a Table<SqliteDB, vantage_types::EmptyEntity>,
-) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+let stamp_created = before_hook(|cx: BeforeCx<'_, SqliteDB>| {
     Box::pin(async move {
-        rec.insert("created".into(), AnySqliteType::new(now_iso8601()));
+        cx.record.insert("created".into(), AnySqliteType::new(now_iso8601()));
         Ok(())
     })
-}
+});
 
 // before-delete: soft-delete instead of removing the row
-fn soft_delete<'a>(
-    id: &'a String,
-    _former: &'a Record<AnySqliteType>,
-    table: &'a Table<SqliteDB, vantage_types::EmptyEntity>,
-) -> Pin<Box<dyn Future<Output = Result<vantage_table::prelude::HookReturn>> + Send + 'a>> {
+let soft_delete = before_delete_hook(|cx: DeleteCx<'_, SqliteDB>| {
     Box::pin(async move {
         let mut patch = Record::new();
         patch.insert("deleted".into(), AnySqliteType::new(now_iso8601()));
-        table.patch_value(id.clone(), &patch).await?;
-        Ok(vantage_table::prelude::HookReturn::Handled)
+        cx.table.patch_value(cx.id.clone(), &patch).await?;
+        Ok(HookReturn::Handled)
     })
-}
+});
+# let _ = (stamp_created, soft_delete);
 ```
 
-To pull in outside context (e.g. an `updated_by` actor), have the hook capture an `Arc` or read a
-task-local — the closure runs in async context. A capturing closure works too, but needs its boxed
-return type annotated explicitly so it coerces to the hook type.
+Who made a write comes from the
+[`WriteContext`](vantage_table::write_context::WriteContext): a host wraps its work in
+`WriteContext::new().with_principal(p).with_group(g).scope(fut)`, and every write awaited inside
+it hands the context to its hooks as `cx.context`. Outside a scope, `cx.context` is `None`. The
+context and the hook context structs are `#[non_exhaustive]`: build a `WriteContext` with `new()`
+and the `with_*` builders, and read a `cx` by field or destructure it with `..`, so a field added
+later breaks neither.
+
+Writes through a Dio need one more step, because a Dio runs them on its own worker task where the
+caller's scope doesn't reach. [`Dio::flash`](vantage_diorama::Dio::flash) records the context in
+scope where it is called on the [`ChangeFlash`](vantage_diorama::ChangeFlash), and the worker runs
+the write inside it, so the master table's hooks (and a Lens writer) see the same context.
+`ChangeFlash::with_context` sets one explicitly. A `clear` the Dio runs as one delete per row
+passes its context to each of those deletes.
+
+Reads are another matter. A Dio's `list`, `count` and window serve its cache, which the loader
+fills from its own task with no `WriteContext` in scope, so reads through a Dio don't run the
+master table's `BeforeSelect` per caller. A per-caller read rule belongs in the conditions of the
+table the Dio is built over, or in a Dio per principal.

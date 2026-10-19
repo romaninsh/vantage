@@ -7,7 +7,8 @@ use crate::augment::Augmentation;
 use crate::dio::{Dio, DioInner};
 
 /// What makes two builds the same Dio: the cache identity, the very same
-/// augmentations `Arc`, and the `live` setting.
+/// augmentations `Arc`, the `live` setting, the hub it joins and whether it
+/// re-checks hub facts through its master.
 ///
 /// The augmentations are compared by address. A live Dio holds its `Arc`, so
 /// while an entry can be upgraded no other allocation can take that address.
@@ -16,6 +17,8 @@ pub(crate) struct DioKey {
     identity: String,
     augmentations: Option<usize>,
     live: bool,
+    hub: Option<String>,
+    recheck_facts: bool,
 }
 
 impl DioKey {
@@ -23,11 +26,15 @@ impl DioKey {
         identity: &str,
         augmentations: Option<&Arc<Vec<Augmentation>>>,
         live: bool,
+        hub: Option<&str>,
+        recheck_facts: bool,
     ) -> Self {
         Self {
             identity: identity.to_string(),
             augmentations: augmentations.map(|augs| Arc::as_ptr(augs) as usize),
             live,
+            hub: hub.map(str::to_string),
+            recheck_facts,
         }
     }
 }

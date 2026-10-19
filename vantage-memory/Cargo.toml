@@ -1,6 +1,6 @@
 [package]
 name = "vantage-memory"
-version = "2.0.2"
+version = "3.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -15,7 +15,7 @@ vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-types = { version = "1.0.0", path = "../vantage-types" }
 vantage-expressions = { version = "1.2.0", path = "../vantage-expressions" }
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
-vantage-table = { version = "2.0.0", path = "../vantage-table" }
+vantage-table = { version = "3.0.0", path = "../vantage-table" }
 vantage-vista = { version = "2.0.0", path = "../vantage-vista" }
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }

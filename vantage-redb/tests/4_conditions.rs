@@ -65,6 +65,28 @@ fn keys(rows: &indexmap::IndexMap<String, Record<AnyRedbType>>) -> Vec<&str> {
 }
 
 #[tokio::test]
+async fn in_values_condition_narrows_to_the_listed_values() {
+    use vantage_table::traits::table_source::TableSource;
+
+    let (_tmp, table) = seeded_with_status_indexed().await;
+    let db = table.data_source().clone();
+    let listed = |ids: &[&str]| {
+        let values = ids
+            .iter()
+            .map(|id| AnyRedbType::new(id.to_string()))
+            .collect();
+        table
+            .clone()
+            .with_condition(db.in_values_condition("id", values).unwrap())
+    };
+    assert_eq!(
+        keys(&listed(&["a", "c"]).list_values().await.unwrap()),
+        ["a", "c"]
+    );
+    assert!(listed(&[]).list_values().await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn test_eq_on_indexed_column_returns_matches() {
     let (_tmp, table) = seeded_with_status_indexed().await;
 

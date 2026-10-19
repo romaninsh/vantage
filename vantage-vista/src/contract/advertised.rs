@@ -50,7 +50,8 @@ pub async fn check_advertised(vista: &Vista) {
             | Capability::Update
             | Capability::Delete
             | Capability::Import
-            | Capability::ConfineWrites => {}
+            | Capability::ConfineWrites
+            | Capability::WritesReachHooks => {}
         }
     }
     leading_into(vista, &mut probe).await;

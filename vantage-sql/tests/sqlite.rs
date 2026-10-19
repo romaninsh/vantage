@@ -6,6 +6,9 @@ mod safe_writes_contract;
 #[path = "common/dotted.rs"]
 mod dotted;
 
+#[path = "common/condition_text.rs"]
+mod condition_text;
+
 #[cfg(feature = "vista")]
 #[macro_use]
 #[path = "common/vista.rs"]

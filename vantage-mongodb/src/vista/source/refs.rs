@@ -44,15 +44,10 @@ impl MongoTableShell {
         }
     }
 
-    /// A factory over this table's data source, carrying the spec resolver
-    /// and the live-update override.
+    /// The factory that built this shell, carrying its spec resolver, build
+    /// injector and live-update override.
     pub(super) fn factory(&self) -> MongoVistaFactory {
-        let mut factory = MongoVistaFactory::new(self.table.data_source().clone());
-        factory.change_streams = self.change_streams;
-        match &self.resolver {
-            Some(resolver) => factory.with_resolver(resolver.clone()),
-            None => factory,
-        }
+        self.factory.clone()
     }
 
     /// MongoDB stores nested objects and arrays natively, so the host value

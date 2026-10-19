@@ -116,6 +116,15 @@ impl RestApiBuilder {
         self
     }
 
+    /// Ask `source` for the bearer token on every request, retries
+    /// included; see [`BearerSource`](crate::BearerSource). Replaces
+    /// [`auth`](Self::auth) and [`auth_refresher`](Self::auth_refresher).
+    pub fn bearer_source(mut self, source: crate::BearerSource) -> Self {
+        self.auth_header = AuthHeader::Source(source);
+        self.transport.auth_refresher = None;
+        self
+    }
+
     /// Choose how the API wraps its row array. Defaults to
     /// `Wrapped { array_key: "data" }` for backwards compat.
     pub fn response_shape(mut self, shape: ResponseShape) -> Self {

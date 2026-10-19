@@ -146,8 +146,9 @@ async fn fetch_on_miss(dio: Arc<DioInner>, state: Arc<RecordSceneryState>) {
                 id: state.id.clone(),
                 new: Some(row),
             };
+            // A read, not a change: the other Dios over the table aren't told.
             (Dio { inner: dio })
-                .apply_change(inserted)
+                .apply_local(inserted)
                 .await
                 .map(|()| true)
         }

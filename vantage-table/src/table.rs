@@ -17,6 +17,9 @@ pub use audit::*;
 pub mod id_generator;
 pub use id_generator::*;
 
+pub mod inject;
+pub use inject::*;
+
 pub mod impls;
 pub use impls::*;
 

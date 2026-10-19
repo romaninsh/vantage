@@ -13,12 +13,15 @@ use super::{
     worker,
 };
 use crate::augment::Augmentation;
+use crate::lens::hub::TableHub;
 use crate::lens::{CacheTable, Lens};
 use crate::scenery::table::{SharedRows, TableView};
 
+mod publish;
 mod sceneries;
 mod shared_rows;
 
+pub(crate) use publish::applying;
 pub(crate) use shared_rows::shared_key;
 
 pub(crate) struct DioInner {
@@ -118,6 +121,30 @@ pub(crate) struct DioInner {
     /// A task that exists only to serve this Dio, such as the recomputation
     /// feeding a derived aggregate. It ends when the last holder drops.
     pub(crate) owned_task: OnceLock<AbortOnDrop>,
+
+    /// The hub of this Dio's table, which it publishes its settled changes
+    /// to and follows the other Dios' through. `None` over another Dio's
+    /// facade. See [`crate::lens::hub`].
+    pub(crate) hub: Option<Arc<TableHub>>,
+    /// This Dio's serial on its Lens, stamped on what it publishes so its
+    /// own hub follower skips it.
+    pub(crate) serial: u64,
+    /// The key given to [`DioBuilder::hub`](crate::DioBuilder::hub), passed
+    /// on to a Dio derived from this one.
+    pub(crate) explicit_hub: Option<String>,
+    /// Re-read every hub fact through the master instead of judging it. See
+    /// [`DioBuilder::recheck_facts`](crate::DioBuilder::recheck_facts).
+    pub(crate) recheck_facts: bool,
+    /// The live Dio whose subscription this one relies on instead of making
+    /// its own: its changes reach this Dio through the hub. Held strongly,
+    /// so the feed lives while a Dio relies on it.
+    pub(crate) feed_source: OnceLock<super::Dio>,
+    /// Ids whose hub facts were skipped while a flash on them was in flight,
+    /// re-checked once it settles.
+    pub(crate) deferred_rechecks: std::sync::Mutex<HashSet<String>>,
+    /// How many facts this Dio has published, so a re-read can tell whether
+    /// it told the others anything.
+    pub(crate) published: std::sync::atomic::AtomicU64,
 }
 
 impl Drop for DioInner {
