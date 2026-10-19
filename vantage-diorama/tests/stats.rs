@@ -20,6 +20,11 @@ use support::{eventually, meta, page_master, paged_dio, record};
 
 const WITHIN: Duration = Duration::from_secs(5);
 
+/// The ledger and the live counts are process-wide, and `cargo test` runs
+/// this file's tests as threads of one process: one test's
+/// `reset_fetch_stats` or open Dio would show up in another's numbers.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// `rows` rows `r00..` with a `v` column, behind a master named `table`.
 fn master(table: &str, rows: usize) -> Vista {
     let shell = (0..rows).fold(
@@ -61,6 +66,7 @@ async fn fetched_past(table: &str, before: usize) {
 
 #[tokio::test]
 async fn a_cold_page_is_counted_with_no_repeat_and_no_redundant_row() {
+    let _serial = SERIAL.lock().await;
     reset_fetch_stats();
     let dio = paged_dio(master("ledger_cold", 30)).await;
     let _view = first_page(&dio).await;
@@ -80,6 +86,7 @@ async fn a_cold_page_is_counted_with_no_repeat_and_no_redundant_row() {
 /// redundant, legitimately.
 #[tokio::test]
 async fn a_forced_refresh_counts_the_rows_the_cache_already_held() {
+    let _serial = SERIAL.lock().await;
     reset_fetch_stats();
     let dio = paged_dio(master("ledger_refresh", 30)).await;
     let view = first_page(&dio).await;
@@ -100,6 +107,7 @@ async fn a_forced_refresh_counts_the_rows_the_cache_already_held() {
 
 #[tokio::test]
 async fn a_range_asked_for_twice_is_a_repeat_and_the_worst_range() {
+    let _serial = SERIAL.lock().await;
     reset_fetch_stats();
     let dio = paged_dio(master("ledger_repeat", 30)).await;
     let view = first_page(&dio).await;
@@ -125,6 +133,7 @@ async fn a_range_asked_for_twice_is_a_repeat_and_the_worst_range() {
 
 #[tokio::test]
 async fn reset_forgets_every_recorded_fetch() {
+    let _serial = SERIAL.lock().await;
     let dio = paged_dio(master("ledger_reset", 30)).await;
     let _view = first_page(&dio).await;
     fetched_past("ledger_reset", 0).await;
@@ -135,6 +144,7 @@ async fn reset_forgets_every_recorded_fetch() {
 
 #[tokio::test]
 async fn the_busiest_table_comes_first() {
+    let _serial = SERIAL.lock().await;
     reset_fetch_stats();
     let busy = paged_dio(master("ledger_busy", 30)).await;
     let busy_view = first_page(&busy).await;
@@ -155,6 +165,7 @@ async fn the_busiest_table_comes_first() {
 
 #[tokio::test]
 async fn the_summary_renders_a_header_each_table_the_live_counts_and_the_process() {
+    let _serial = SERIAL.lock().await;
     reset_fetch_stats();
     let dio = paged_dio(master("ledger_summary", 30)).await;
     let _view = first_page(&dio).await;
@@ -190,6 +201,7 @@ async fn the_summary_renders_a_header_each_table_the_live_counts_and_the_process
 
 #[tokio::test]
 async fn live_counts_follow_dios_views_and_servos_as_they_open_and_drop() {
+    let _serial = SERIAL.lock().await;
     let before = live_counts();
     let lens = Lens::builder().cache(Cache::memory()).build().unwrap();
     let dio = lens.dio(master("census", 3)).build().await.unwrap();
@@ -226,6 +238,7 @@ async fn live_counts_follow_dios_views_and_servos_as_they_open_and_drop() {
 /// until some datasource has.
 #[tokio::test]
 async fn the_summary_is_emitted_only_once_a_datasource_enabled_the_stream() {
+    let _serial = SERIAL.lock().await;
     let (_guard, log) = capture();
     assert!(!debug::any_tap_enabled());
     emit_debug_summary();

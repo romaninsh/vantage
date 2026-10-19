@@ -24,19 +24,19 @@ fn rec(v: &str) -> Record<CborValue> {
     r
 }
 
-/// Poll `holds` until it is true, or panic naming `what`. The bound is for
-/// a hang, not a speed assertion.
+/// The bound is for a hang, not a speed assertion: the coverage job runs the
+/// whole instrumented workspace at once on a small runner.
+const HANG: Duration = Duration::from_secs(30);
+
+/// Poll `holds` until it is true, or panic naming `what`.
 async fn until(what: &str, holds: impl Fn() -> bool) {
     let wait = async {
         while !holds() {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     };
-    if tokio::time::timeout(Duration::from_secs(5), wait)
-        .await
-        .is_err()
-    {
-        panic!("{what}: not within 5s");
+    if tokio::time::timeout(HANG, wait).await.is_err() {
+        panic!("{what}: not within {HANG:?}");
     }
 }
 
@@ -71,7 +71,7 @@ async fn a_window_load_reaches_a_cache_served_view() -> Result<()> {
     until("the paged view shows b", || shows(&paged, &["v1", "v2"])).await;
     // The window's rows reach the cache when the load flushes, which can
     // trail the paged view by a moment.
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(HANG, async {
         while dio.cached().get_value("b").await.ok().flatten().is_none() {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }

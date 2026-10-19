@@ -11,7 +11,8 @@
   and nothing that reads, writes, sorts, limits, searches or reaches another table: those are
   "function not found". `eval_rule_script(host, code, env, &handle)` runs one with the handle as
   `table`. A hook closure's `throw` refuses the write with its message, and so does any other
-  failure inside it. `RuleHandle::verbs` lists what the script did, as `RuleVerb`s.
+  failure inside it. `RuleHandle::verbs` lists what the script did, as `RuleVerb`s. `RuleVerb`
+  and `HookOn` are `#[non_exhaustive]`.
   `RuleHookInput` (`#[non_exhaustive]`) is `Record`, `Id`, `Delete { id, row }` or
   `Update { record, stored }`. A `before_delete(|id, row| …)` closure gets the stored row, and a
   `before_update` / `before_save(|record, stored| …)` closure gets the row as it was before the

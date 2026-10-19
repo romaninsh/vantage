@@ -331,7 +331,7 @@ impl<F: core::ops::function::Fn(&str) -> vantage_core::util::error::Result<vanta
 pub fn F::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub type vantage_vista::prelude::CborValue = ciborium::value::Value
 pub mod vantage_vista::rhai
-pub enum vantage_vista::rhai::HookOn
+#[non_exhaustive] pub enum vantage_vista::rhai::HookOn
 pub vantage_vista::rhai::HookOn::BeforeDelete
 pub vantage_vista::rhai::HookOn::BeforeInsert
 pub vantage_vista::rhai::HookOn::BeforeSave
@@ -372,7 +372,7 @@ impl core::marker::Unpin for vantage_vista::rhai::RuleHookInput
 impl core::marker::UnsafeUnpin for vantage_vista::rhai::RuleHookInput
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RuleHookInput
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RuleHookInput
-pub enum vantage_vista::rhai::RuleVerb
+#[non_exhaustive] pub enum vantage_vista::rhai::RuleVerb
 pub vantage_vista::rhai::RuleVerb::Condition
 pub vantage_vista::rhai::RuleVerb::Condition::described: alloc::string::String
 pub vantage_vista::rhai::RuleVerb::Hook

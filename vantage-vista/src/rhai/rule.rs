@@ -25,6 +25,7 @@ use crate::FilterOp;
 
 /// A verb a rule script called, as the access explanation records it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RuleVerb {
     Where { column: String, described: String },
     Condition { described: String },
@@ -34,6 +35,7 @@ pub enum RuleVerb {
 
 /// The write a rule hook runs before.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HookOn {
     BeforeInsert,
     BeforeUpdate,

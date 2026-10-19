@@ -6,6 +6,7 @@ mod support;
 
 use std::sync::Arc;
 
+#[cfg(feature = "rhai")]
 use ciborium::Value as CborValue;
 use serde_json::json;
 use support::references::{row, texts};
