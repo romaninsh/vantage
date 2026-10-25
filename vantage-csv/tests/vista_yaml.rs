@@ -131,20 +131,6 @@ async fn yaml_vista_lists_rows_with_declared_types() -> Result<()> {
 }
 
 #[tokio::test]
-async fn yaml_vista_filters_on_a_typed_column() -> Result<()> {
-    let csv = Csv::new(data_dir());
-    let mut vista = csv
-        .vista_factory()
-        .from_yaml(&load_yaml("client.vista.yaml"))?;
-
-    vista.add_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
-
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.keys().collect::<Vec<_>>(), ["marty", "doc"]);
-    Ok(())
-}
-
-#[tokio::test]
 async fn yaml_column_type_aliases_lower_to_typed_columns() -> Result<()> {
     let csv = Csv::new(data_dir());
     let yaml = r#"

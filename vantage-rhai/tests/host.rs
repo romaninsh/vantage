@@ -69,12 +69,6 @@ mod vocab {
     }
 
     #[test]
-    fn a_vocab_registers_its_functions_on_the_host() {
-        let host = Host::builder(Limits::Ui).vocab(Doubler).build();
-        assert_eq!(eval_int(&host, "double(21)"), 42);
-    }
-
-    #[test]
     fn vocab_fn_registers_inline_functions() {
         let host = Host::builder(Limits::Ui)
             .vocab_fn(|engine| {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.1 — 2026-10-25
+
+- A test whose assertions another test already makes is dropped. No API or behaviour change.
+
 ## 3.0.0 — 2026-10-18
 
 Requires vantage-table 3.0.0 and vantage-vista 2.1.0.

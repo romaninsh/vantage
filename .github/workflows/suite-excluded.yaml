@@ -1,0 +1,101 @@
+name: Excluded crate suite
+
+# One crate outside the workspace (root Cargo.toml `exclude`): its own
+# lockfile, target dir and cache. ci.yaml calls this for each changed one.
+on:
+  workflow_call:
+    inputs:
+      dir:
+        type: string
+        required: true
+      workdir:
+        type: string
+        required: true
+      kind:
+        description: "plain | aws | kubernetes | ui | ui-example"
+        type: string
+        default: plain
+      save-cache:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    name: ${{ inputs.dir }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          key: ${{ inputs.dir }}
+          workspaces: ${{ inputs.workdir }} -> target
+          save: ${{ inputs.save-cache }}
+
+      - name: System libraries
+        if: inputs.kind == 'ui' || inputs.kind == 'ui-example'
+        working-directory: .
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update -qq > /dev/null
+          sudo apt-get install -qq -y --no-install-recommends \
+            pkg-config build-essential libssl-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libfontconfig-dev libwebkit2gtk-4.1-dev
+
+      - name: Start minikube
+        if: inputs.kind == 'kubernetes'
+        uses: medyagh/setup-minikube@e9e035a86bbc3caea26a450bd4dbf9d0c453682e # v0.0.21
+        with:
+          addons: metrics-server
+
+      - name: Deploy fixtures via Helm
+        if: inputs.kind == 'kubernetes'
+        run: ./scripts/ingress.sh
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      # As before the merge into one pipeline: the examples are only built, and
+      # the UI adapters are tested without clippy.
+      - name: Build
+        if: inputs.kind == 'ui-example'
+        run: cargo build
+
+      - name: Clippy
+        if: inputs.kind != 'ui-example' && inputs.kind != 'ui'
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        if: inputs.kind != 'ui-example' && inputs.kind != 'kubernetes'
+        run: cargo test ${{ inputs.kind == 'ui' && '--all-features' || '' }}
+
+      - name: Test against minikube
+        if: inputs.kind == 'kubernetes'
+        env:
+          RUN_K8S_INTEGRATION: "1"
+        run: |
+          cargo test --lib
+          cargo test --test '*' -- --test-threads=1
+          cargo run --example k8s-cli -- core.pods namespace=demo
+
+      - name: aws-cli against live AWS
+        if: inputs.kind == 'aws'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: eu-west-2
+        run: |
+          cargo run --example aws-cli -- log.groups
+          cargo run --example aws-cli -- log.groups logGroupNamePrefix=/aws/lambda/
+          cargo run --example aws-cli -- iam.users
+          cargo run --example aws-cli -- iam.roles PathPrefix=/aws-service-role/
+          cargo run --example aws-cli -- s3.buckets
+          cargo run --example aws-cli -- lambda.functions
+          cargo run --example aws-cli -- dynamodb.tables

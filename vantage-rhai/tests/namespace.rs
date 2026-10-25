@@ -35,11 +35,6 @@ fn int(code: &str) -> i64 {
 }
 
 #[test]
-fn a_namespaced_function_is_called_with_its_qualified_name() {
-    assert_eq!(int("demo::first(2)"), 20);
-}
-
-#[test]
 fn a_namespaced_function_does_not_shadow_the_global_one_of_the_same_name() {
     assert_eq!(int("first(2)"), 3);
     assert_eq!(int("demo::first(2)"), 20);

@@ -1,0 +1,88 @@
+name: Post-merge
+
+# After a merge, only what later PRs read: per-crate coverage for the crates
+# the merge changed (the baseline PR coverage compares against) and the
+# caches PRs restore. Everything else is assumed checked by the PR.
+# Publishing is publish-on-merge.yaml.
+on:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: post-merge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      crates: ${{ steps.c.outputs.crates }}
+      measured: ${{ steps.c.outputs.measured }}
+      services: ${{ steps.c.outputs.services }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: c
+        env:
+          BASE: ${{ github.event.before }}
+        run: script/ci-changes --base "$BASE" --head "$GITHUB_SHA"
+
+  coverage:
+    needs: changes
+    if: needs.changes.outputs.measured != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write # octocov stores each crate's report as an artifact
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: instrumented
+          tools: cargo-llvm-cov,cargo-nextest
+          save: "true"
+      - if: needs.changes.outputs.services != '[]'
+        uses: ./.github/actions/start-services
+        with:
+          services: ${{ needs.changes.outputs.services }}
+      - name: Tests with coverage
+        env:
+          CRATES: ${{ needs.changes.outputs.crates }}
+        run: |
+          cp .config/nextest.toml.example .config/nextest.toml
+          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
+          cargo llvm-cov nextest --all-features --no-fail-fast "${pkgs[@]}" --lcov --output-path lcov.info
+      - name: Install octocov
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.83.3 -R k1LoW/octocov -p 'octocov_v0.83.3_linux_amd64.tar.gz' -O - | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Per-crate coverage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MEASURED: ${{ needs.changes.outputs.measured }}
+        run: coverage/ci-octocov.sh lcov.info "$MEASURED"
+
+  # Saves the lint cache every PR's clippy restores. Nothing is gated here.
+  lint-cache:
+    needs: changes
+    if: needs.changes.outputs.crates != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          save: "true"
+      - run: cargo clippy --workspace --all-targets --all-features

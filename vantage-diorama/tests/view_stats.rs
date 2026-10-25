@@ -149,21 +149,6 @@ async fn the_shown_range_is_the_second_viewport_argument() -> Result<()> {
 }
 
 #[tokio::test]
-async fn a_hydration_viewport_is_not_showing() -> Result<()> {
-    let tmp = TempDir::new().unwrap();
-    let dio = eager_dio(tmp.path().join("c.redb")).await?;
-    let scenery = dio.table_scenery().open().await?;
-    wait_stats("rows", &scenery, |s| s.loaded == 3).await;
-
-    scenery.set_viewport(0..200, 0..0);
-    assert_eq!(scenery.view_stats().showing, None, "nothing is on screen");
-
-    scenery.set_viewport(0..2, 0..2);
-    assert_eq!(scenery.view_stats().showing, Some(0..2));
-    Ok(())
-}
-
-#[tokio::test]
 async fn order_search_and_filters_are_reported() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let dio = eager_dio(tmp.path().join("c.redb")).await?;

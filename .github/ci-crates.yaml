@@ -1,0 +1,61 @@
+# What script/ci-changes needs to know beyond `cargo metadata`.
+
+# Databases a crate's tests need. `sqlite` is a seeded file, not a container.
+services:
+  vantage-sql: [postgres, mysql, sqlite]
+  vantage-surrealdb: [surreal]
+  surreal-client: [surreal]
+  bakery_model3: [surreal]
+  vantage-mongodb: [mongo]
+
+# A change to any of these means every crate changed.
+global:
+  - Cargo.toml
+  - rust-toolchain*
+  - .github/**
+  - .config/**
+  - coverage/**
+
+# ...except these, which only feed the duplicate-test check.
+not_global:
+  - coverage/exceptions/**
+  - coverage/config.yaml
+  - coverage/INSTRUCTIONS.md
+
+# Crates whose types appear in the api/*.txt public-API snapshots.
+api_inputs:
+  - vantage-core
+  - vantage-types
+  - vantage-expressions
+  - vantage-dataset
+  - vantage-table
+  - vantage-rhai
+  - vantage-vista
+  - vantage-diorama
+
+# Tested but not reported for coverage: tutorials and demo models.
+coverage_ignore:
+  - learn-*
+  - bakery_model4
+
+# Changes here run the book job.
+book:
+  - docs4/**
+
+# Crates outside the workspace (root Cargo.toml `exclude`), each with its own
+# lockfile, run by suite-excluded.yaml when a file under the directory changes,
+# and all of them under the ALL_TESTS label. `kind` picks the suite's extra
+# steps; `workdir` is where Cargo.toml sits when it isn't the directory itself.
+# Directories not listed have no CI suite.
+excluded:
+  vantage-aws: { kind: aws }
+  vantage-kubernetes: { kind: kubernetes }
+  vantage-cmd: {}
+  vantage-spacetimedb: {}
+  vantage-ui-adapters: { kind: ui }
+  example_egui: { kind: ui-example }
+  example_gpui: { kind: ui-example }
+  example_slint: { kind: ui-example }
+  example_tui: { kind: ui-example }
+  example_cursive: { kind: ui-example }
+  example_tauri: { kind: ui-example, workdir: example_tauri/src-tauri }

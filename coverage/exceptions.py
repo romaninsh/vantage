@@ -30,6 +30,9 @@ HEADER = """\
 
 
 def key(create=False):
+    # CI has no ~/.config: it passes the same key as a repository secret.
+    if os.environ.get("COVERAGE_EXCEPTIONS_KEY"):
+        return os.environ["COVERAGE_EXCEPTIONS_KEY"]
     if not os.path.exists(KEY):
         if not create:
             return None

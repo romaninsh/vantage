@@ -1,0 +1,63 @@
+name: Set up Rust
+description: Toolchain, the shared cache for one build profile, and test tools.
+
+# Every job of one profile shares one cache and one set of flags, so no job
+# invalidates another's build. Caches save from main only: a PR's cache can
+# be read by that PR alone, so saving it just fills the 10 GB quota.
+inputs:
+  profile:
+    description: "normal | instrumented | nightly"
+    default: normal
+  toolchain:
+    description: Toolchain for the nightly profile (stable otherwise)
+    default: stable
+  tools:
+    description: Comma-separated tools for taiki-e/install-action
+    default: ""
+  save:
+    description: Save the cache ("true"/"false")
+    default: "false"
+  workspaces:
+    description: rust-cache workspaces (an excluded crate's dir)
+    default: ". -> target"
+  key:
+    description: Extra cache key (for excluded crates)
+    default: ""
+  cache:
+    description: Restore the Rust cache ("false" for jobs that only run archived binaries)
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Shared build flags
+      shell: bash
+      run: |
+        {
+          echo "CARGO_TERM_COLOR=always"
+          echo "CARGO_INCREMENTAL=0"
+          echo "CARGO_PROFILE_DEV_DEBUG=line-tables-only"
+          echo "CARGO_PROFILE_TEST_DEBUG=line-tables-only"
+        } >> "$GITHUB_ENV"
+
+    - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.profile == 'instrumented' && 'llvm-tools-preview' || 'clippy, rustfmt' }}
+
+    - if: inputs.cache == 'true'
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        shared-key: ci-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}
+        # The instrumented jobs also build coverage/matrix-rs, its own workspace.
+        workspaces: |
+          ${{ inputs.workspaces }}
+          ${{ inputs.profile == 'instrumented' && 'coverage/matrix-rs -> ../../target/matrix-rs' || '' }}
+        save-if: ${{ inputs.save }}
+        cache-on-failure: true
+        cache-all-crates: true
+
+    - if: inputs.tools != ''
+      uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+      with:
+        tool: ${{ inputs.tools }}

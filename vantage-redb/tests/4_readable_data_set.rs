@@ -182,18 +182,6 @@ async fn test_count_follows_conditions() {
 }
 
 #[tokio::test]
-async fn test_pagination_skip_and_limit() {
-    let (_tmp, table) = seeded_table().await;
-
-    let mut paged = table.clone();
-    paged.set_pagination(Some(Pagination::new(2, 1)));
-
-    let rows = paged.list_values().await.unwrap();
-    // page 2 with 1 item per page → exactly one row, not the whole set
-    assert_eq!(rows.len(), 1);
-}
-
-#[tokio::test]
 async fn test_pagination_pages_partition_the_rows() {
     let (_tmp, table) = seeded_table().await;
 

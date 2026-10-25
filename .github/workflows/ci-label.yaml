@@ -1,0 +1,33 @@
+name: CI label
+
+# Adding ALL_TESTS re-runs the PR's latest CI run, which reads the labels
+# live and widens to every crate and the gated suites. Any other label does
+# nothing.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    if: github.event.label.name == 'ALL_TESTS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yaml --commit "$SHA" --limit 1 --json databaseId,status -q '.[0]')
+          id=$(jq -r .databaseId <<<"$run")
+          if [ -z "$id" ] || [ "$id" = null ]; then
+            echo "no CI run for $SHA yet; it will read the label when it starts"
+            exit 0
+          fi
+          if [ "$(jq -r .status <<<"$run")" != completed ]; then
+            gh run cancel "$id" -R "$GITHUB_REPOSITORY"
+            gh run watch "$id" -R "$GITHUB_REPOSITORY" > /dev/null || true
+          fi
+          gh run rerun "$id" -R "$GITHUB_REPOSITORY"

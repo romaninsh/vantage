@@ -43,17 +43,6 @@ async fn ids_where(table: &Table<Redb, EmptyEntity>, column: &str, value: &str) 
 // ── Insert path ───────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_insert_creates_index_entries() {
-    let (_tmp, table) = user_table();
-    table
-        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
-        .await
-        .unwrap();
-
-    assert_eq!(ids_where(&table, "email", "alice@x.com").await, ["a"]);
-}
-
-#[tokio::test]
 async fn test_insert_indexes_on_each_indexed_column() {
     let (_tmp, table) = user_table();
     table

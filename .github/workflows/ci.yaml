@@ -1,0 +1,342 @@
+name: CI
+
+# One pipeline for every PR. `changes` maps the diff to crates; everything
+# after it tests only those (the ALL_TESTS label: everything). Layout A: one
+# instrumented build, archived, fanned out to suites grouped by the databases
+# they need. `ci-ok` is the one check to require.
+#
+# Labels are read live, not from the event: adding ALL_TESTS re-runs the
+# latest run (ci-label.yaml) instead of starting a second one, so no other
+# label can post a `ci-ok` over the real one.
+on:
+  pull_request:
+    branches: ["main", "v2"]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # TEMP: measurement. PR caches only serve their own PR; remove before merge.
+  SAVE_CACHE: ${{ github.head_ref == 'ci-measure' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      crates: ${{ steps.c.outputs.crates }}
+      libs: ${{ steps.c.outputs.libs }}
+      measured: ${{ steps.c.outputs.measured }}
+      new_tests: ${{ steps.c.outputs.new_tests }}
+      groups: ${{ steps.c.outputs.groups }}
+      services: ${{ steps.c.outputs.services }}
+      excluded: ${{ steps.c.outputs.excluded }}
+      api: ${{ steps.c.outputs.api }}
+      manifests: ${{ steps.c.outputs.manifests }}
+      book: ${{ steps.c.outputs.book }}
+      gated: ${{ steps.c.outputs.gated }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: c
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          labels=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '[.labels[].name]')
+          script/ci-changes --base "$BASE" --head "$HEAD" --labels "$labels"
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.crates != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-rust
+        with:
+          save: ${{ env.SAVE_CACHE }}
+      - name: Format
+        run: cargo fmt --all -- --check
+      # The whole workspace in check mode: a changed API breaking a dependent
+      # shows here even though the dependent's tests don't run.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Docs
+        env:
+          LIBS: ${{ needs.changes.outputs.libs }}
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          [ "$LIBS" = "[]" ] && exit 0
+          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$LIBS")
+          cargo doc --no-deps --all-features --document-private-items "${pkgs[@]}"
+      - name: No dependency on a layer above vantage
+        if: needs.changes.outputs.manifests == 'true'
+        run: script/check-repo-layers
+      - name: Exception tokens are vended, not written
+        env:
+          COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
+        run: python3 -I coverage/exceptions.py check
+      - name: No new internal tests
+        if: needs.changes.outputs.measured != '[]'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          CRATES: ${{ needs.changes.outputs.measured }}
+        run: |
+          mapfile -t dirs < <(jq -r '.[].dir' <<<"$CRATES")
+          python3 -I coverage/new_tests.py internal "$BASE" "${dirs[@]}"
+
+  public-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # api/snapshot.sh pins both versions; read them rather than repeat them.
+      - name: Read pinned versions
+        id: pins
+        run: |
+          echo "nightly=$(sed -n 's/^NIGHTLY="\(.*\)"$/\1/p' api/snapshot.sh)" >> "$GITHUB_OUTPUT"
+          echo "tool=$(sed -n 's/^PUBLIC_API_VERSION="\(.*\)"$/\1/p' api/snapshot.sh)" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: nightly
+          toolchain: ${{ steps.pins.outputs.nightly }}
+          key: public-api-${{ steps.pins.outputs.tool }}
+          tools: cargo-binstall
+          save: ${{ env.SAVE_CACHE }}
+      # A prebuilt binary when there is one; binstall compiles it otherwise.
+      - name: Install cargo-public-api
+        env:
+          TOOL_VERSION: ${{ steps.pins.outputs.tool }}
+        run: cargo binstall --no-confirm --locked "cargo-public-api@$TOOL_VERSION"
+      - name: Regenerate snapshots
+        run: api/snapshot.sh
+      - name: Compare with committed snapshots
+        run: |
+          git add --intent-to-add api/
+          if ! git diff --exit-code -- api/; then
+            echo "::error::Public API differs from api/*.txt. Run 'mise run api-snapshot' and commit the result."
+            exit 1
+          fi
+      - name: Check API rules
+        run: bash api/rules.sh
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.crates != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: instrumented
+          tools: cargo-llvm-cov,cargo-nextest
+          save: ${{ env.SAVE_CACHE }}
+      - name: Build the instrumented test archive
+        env:
+          CRATES: ${{ needs.changes.outputs.crates }}
+        run: |
+          cp .config/nextest.toml.example .config/nextest.toml
+          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
+          cargo llvm-cov nextest-archive --all-features "${pkgs[@]}" --archive-file ci-tests.tar.zst
+      # The coverage matrix's per-test runner, built outside the coverage environment.
+      - name: Build matrix-rs
+        if: needs.changes.outputs.new_tests != '[]'
+        run: |
+          env -u RUSTFLAGS -u CARGO_LLVM_COV -u LLVM_PROFILE_FILE \
+            cargo build --release --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
+          cp target/matrix-rs/release/matrix-rs .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-tests
+          path: |
+            ci-tests.tar.zst
+            matrix-rs
+          if-no-files-found: ignore
+          retention-days: 1
+          compression-level: 0
+
+  # Each group starts only its databases, runs its crates' tests from the
+  # archive, then runs the coverage matrix and the duplicate-test check.
+  suite:
+    needs: [changes, build]
+    name: suite (${{ matrix.group.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.changes.outputs.groups) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: instrumented
+          tools: cargo-llvm-cov,cargo-nextest
+          cache: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-tests
+      - if: toJSON(matrix.group.services) != '[]'
+        uses: ./.github/actions/start-services
+        with:
+          services: ${{ toJSON(matrix.group.services) }}
+      - name: Tests
+        env:
+          CRATES: ${{ toJSON(matrix.group.crates) }}
+        run: |
+          cp .config/nextest.toml.example .config/nextest.toml
+          cargo llvm-cov nextest --archive-file ci-tests.tar.zst --no-report --no-fail-fast \
+            -E "$(jq -r 'map("package(" + . + ")") | join(" or ")' <<<"$CRATES")"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: profraw-${{ matrix.group.name }}
+          path: target/llvm-cov-target/*.profraw
+          retention-days: 1
+      - name: Duplicate tests
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          CRATES: ${{ toJSON(matrix.group.crates) }}
+          NEW_TESTS: ${{ needs.changes.outputs.new_tests }}
+          COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
+        # Only crates whose tests/ changed: a PR without new tests can't add a duplicate.
+        run: |
+          status=0
+          for row in $(jq -c --argjson in "$CRATES" '.[] | select(.name as $n | $in | index($n))' <<<"$NEW_TESTS"); do
+            name=$(jq -r .name <<<"$row"); dir=$(jq -r .dir <<<"$row")
+            chmod +x matrix-rs
+            MATRIX_ARCHIVE=ci-tests.tar.zst MATRIX_RS=$PWD/matrix-rs coverage/matrix.sh "$name" || { status=1; continue; }
+            python3 -I coverage/new_tests.py clusters "$name" "$dir" "$BASE" || status=1
+          done
+          exit $status
+
+  coverage:
+    needs: [changes, build, suite]
+    if: needs.changes.outputs.measured != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: instrumented
+          tools: cargo-llvm-cov,cargo-nextest
+          cache: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-tests
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: profraw-*
+          path: target/llvm-cov-target
+          merge-multiple: true
+      - name: Report
+        run: |
+          cargo llvm-cov report --nextest-archive-file ci-tests.tar.zst --lcov --output-path lcov.info
+      - name: Install octocov
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.83.3 -R k1LoW/octocov -p 'octocov_v0.83.3_linux_amd64.tar.gz' -O - | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Per-crate coverage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MEASURED: ${{ needs.changes.outputs.measured }}
+        run: coverage/ci-octocov.sh lcov.info "$MEASURED"
+
+  # Doctests and diorama's cucumber `bdd` can't run from a nextest archive.
+  doctests:
+    needs: changes
+    if: needs.changes.outputs.libs != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          save: ${{ env.SAVE_CACHE }}
+      - name: Doctests
+        env:
+          LIBS: ${{ needs.changes.outputs.libs }}
+        run: |
+          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$LIBS")
+          cargo test --doc --all-features "${pkgs[@]}"
+      - name: diorama bdd
+        if: contains(fromJSON(needs.changes.outputs.crates), 'vantage-diorama')
+        run: cargo test -p vantage-diorama --all-features --test bdd
+
+  excluded:
+    needs: changes
+    if: needs.changes.outputs.excluded != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: ${{ fromJSON(needs.changes.outputs.excluded) }}
+    uses: ./.github/workflows/suite-excluded.yaml
+    with:
+      dir: ${{ matrix.crate.dir }}
+      workdir: ${{ matrix.crate.workdir }}
+      kind: ${{ matrix.crate.kind }}
+    secrets: inherit
+
+  # ALL_TESTS only: MariaDB under the MySQL driver, and the bakery CLI smokes.
+  gated:
+    needs: changes
+    if: needs.changes.outputs.gated == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          save: ${{ env.SAVE_CACHE }}
+      - uses: ./.github/actions/start-services
+        with:
+          services: '["mysql","postgres","sqlite","surreal"]'
+          mysql-image: mariadb:11
+      - name: MariaDB
+        run: cargo test -p vantage-sql --all-features --test mysql
+      - name: bakery_model3 smokes
+        run: |
+          cargo run -p bakery_model3 --example 0-intro
+          for db in sqlite postgres; do
+            cargo run -p bakery_model3 --example cli-vista -- $db bakeries
+            cargo run -p bakery_model3 --example cli-vista -- $db products
+            cargo run -p bakery_model3 --example cli-vista -- $db clients
+            cargo run -p bakery_model3 --example cli-vista -- $db client id=marty :bakery
+            cargo run -p bakery_model3 --example cli-vista -- $db bakery :clients[0] :orders
+            cargo run -p bakery_model3 --example cli-vista -- $db 'bakery[0]' :products
+          done
+          cargo run -p bakery_model3 --example cli-vista -- csv bakeries
+          cargo run -p bakery_model3 --example cli-vista -- csv products
+          cargo run -p bakery_model3 --example cli-vista -- csv clients
+
+  ci-ok:
+    needs: [changes, lint, public-api, build, suite, coverage, doctests, excluded, gated]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job passed or was skipped by design
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          jq -e 'all(. == "success" or . == "skipped")' <<<"$RESULTS"
