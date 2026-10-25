@@ -127,11 +127,13 @@ question at the top of your report. Don't ask about anything these instructions 
 
 ## In CI
 
-Every PR runs the matrix for each crate it changed, then `coverage/new_tests.py`. Only tests the PR
-added or edited are judged. The PR fails when a new test shares a cluster with any other test, or
-when it adds an internal test. Clusters of older tests alone pass. To get through, delete the test
-the new one duplicates; if the new test asserts a distinct outcome, the failure prints the
-`vend-exception.sh` command for a human to run.
+Every PR runs the matrix for each crate whose tests it changed, then `coverage/new_tests.py`. Only
+tests the PR added or edited are judged. The PR fails when a new test covers exactly the same
+regions as another test (at least 20), or when it adds an internal test. A new test sharing 98% or
+more with another is listed as a possible duplicate without failing. Overlap among older tests
+alone passes. To fix either, use `coverage/matrix-rs/skills/matrix-based-test-cleanup`: merge the
+cases into one test or drop the duplicate. A genuinely different scenario gets an exception from
+the `vend-exception.sh` command the failure prints, run by a human.
 
 ## Writing tests: contract first
 

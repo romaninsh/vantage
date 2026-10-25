@@ -4,10 +4,15 @@ usage: python3 -I new_tests.py clusters <package> <crate_dir> <base>
        python3 -I new_tests.py internal <base> <crate_dir>...
 
 A test is new when its line range overlaps a line the branch added or changed
-since <base>. <base> may be a `<base>...<head>` range to judge another commit. `clusters` reads coverage/report/<package>/ (run
-coverage/matrix.sh first) and fails a cluster that holds a new test with any
-other test, unless the new test has an approved exception. Clusters of old
-tests alone pass: existing overlap is cleanup work, not this branch's.
+since <base>. <base> may be a `<base>...<head>` range to judge another commit.
+
+`clusters` reads coverage/report/<package>/ (run coverage/matrix.sh first).
+A new test that covers at least FLOOR regions, exactly the same set as another
+test, fails unless it has an approved exception. A new test sharing at least
+NEAR of its regions with another is reported as a possible duplicate and
+doesn't fail. Overlap among old tests alone is cleanup work, not this branch's.
+Both point at the matrix-based-test-cleanup skill.
+
 `internal` fails any `#[cfg(test)]` line or `src/**/tests*` file added under a
 crate's src/. Both exit 1 on a violation.
 """
@@ -22,7 +27,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
-Violation = namedtuple("Violation", "kind test cluster anchor number")
+Violation = namedtuple("Violation", "kind test twin detail")
+FLOOR, NEAR = 20, 0.98
+SKILL = "coverage/matrix-rs/skills/matrix-based-test-cleanup/SKILL.md"
 HUNK = re.compile(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@")
 
 
@@ -65,31 +72,41 @@ def new_tests(ns, crate_rel, changed):
 
 
 def violations(ns, new):
+    """Blocking: a new test with exactly another test's regions (at least FLOOR),
+    and rejected exception tokens. Advisory: a new test sharing at least NEAR."""
     out = []
-    for number, cluster in enumerate(ns.clusters, 1):
-        judged = [k for k in cluster if k in new and k not in ns.exempt]
-        if not judged:
+    for n in sorted(new):
+        sn = ns.sets.get(n)
+        if n in ns.exempt or not sn or len(sn) < FLOOR:
             continue
-        names = [ns.short(k) for k in cluster]
-        anchor = ns.short(cluster[0])
-        old = [k for k in cluster if k not in new]
-        if old:
-            out += [Violation("joins-existing", ns.short(k), names, anchor, number) for k in judged]
-        else:
-            out.append(Violation("new-with-new", ns.short(judged[0]), names, anchor, number))
+        twin, near = None, None
+        for o, so in sorted(ns.sets.items()):
+            if o == n or not so:
+                continue
+            if so == sn:
+                twin = o
+                break
+            shared = len(sn & so) / len(sn | so)
+            if shared >= NEAR and near is None:
+                near = (o, shared)
+        if twin:
+            out.append(Violation("identical", ns.short(n), ns.short(twin), ns.where(twin)))
+        elif near:
+            out.append(Violation("near", ns.short(n), ns.short(near[0]), f"{near[1]:.0%} shared, {ns.where(near[0])}"))
     for entry, problem in ns.rejected:
-        out.append(Violation("rejected-exception", str(entry.get("test")), [problem], "", 0))
+        out.append(Violation("rejected-exception", str(entry.get("test")), "", problem))
     return out
 
 
 def describe(package, v):
     if v.kind == "rejected-exception":
-        return f"{package}: exception for `{v.test}` is rejected: {v.cluster[0]}"
-    what = "joins" if v.kind == "joins-existing" else "shares with other new tests"
+        return f"{package}: exception for `{v.test}` is rejected: {v.detail}"
+    if v.kind == "near":
+        return f"{package}: possible duplicate: `{v.test}` and `{v.twin}` ({v.detail})"
     return (
-        f"{package}: new test `{v.test}`\n"
-        f"  {what} cluster {v.number} (anchor `{v.anchor}`, {len(v.cluster)} tests)\n"
-        f"  delete the test it duplicates, or, if it asserts a distinct outcome, ask a human to run:\n"
+        f"{package}: new test `{v.test}` covers exactly what `{v.twin}` does ({v.detail}).\n"
+        f"  Merge its cases into that test, or drop it ({SKILL}).\n"
+        f"  If it is a genuinely different scenario, ask a human to run:\n"
         f"  coverage/vend-exception.sh {package} {v.test} \"<reason>\""
     )
 
@@ -136,9 +153,10 @@ def main(argv):
         found = violations(ns, new_tests(ns, crate_rel, changed_lines(base, [crate_rel])))
         if found:
             report([describe(package, v) for v in found])
-            return 1
-        print(f"{package}: no new test duplicates another")
-        return 0
+        blocking = [v for v in found if v.kind != "near"]
+        if not blocking:
+            print(f"{package}: no new test duplicates another")
+        return 1 if blocking else 0
     if len(argv) >= 3 and argv[0] == "internal":
         base, dirs = argv[1], [os.path.relpath(os.path.abspath(d), ROOT) for d in argv[2:]]
         found = internal_from_diff(git_diff(base, [f"{d}/src" for d in dirs]), dirs)
