@@ -1,0 +1,120 @@
+name: Post-merge
+
+# After a merge, only what later PRs read: per-crate coverage for the crates
+# the merge changed (the baseline PR coverage compares against) and the
+# caches PRs restore. Everything else is assumed checked by the PR.
+# Publishing is publish-on-merge.yaml.
+on:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: post-merge
+  cancel-in-progress: false
+
+# Each job asks for what it needs.
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      crates: ${{ steps.c.outputs.crates }}
+      measured: ${{ steps.c.outputs.measured }}
+      services: ${{ steps.c.outputs.services }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: c
+        env:
+          BASE: ${{ github.event.before }}
+        run: script/ci-changes --base "$BASE" --head "$GITHUB_SHA"
+
+  # Named `build` so its cache is the one ci.yaml's `build` restores.
+  build:
+    needs: changes
+    if: needs.changes.outputs.measured != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read # the previous coverage-baseline artifact
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: instrumented
+          tools: cargo-llvm-cov,cargo-nextest
+      - if: needs.changes.outputs.services != '[]'
+        uses: ./.github/actions/start-services
+        with:
+          services: ${{ needs.changes.outputs.services }}
+      - name: Tests with coverage
+        env:
+          CRATES: ${{ needs.changes.outputs.crates }}
+        run: |
+          cp .config/nextest.toml.example .config/nextest.toml
+          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
+          cargo llvm-cov nextest --all-features --no-fail-fast "${pkgs[@]}" --lcov --output-path lcov.info
+      # The baseline PR reports compare against: the last one, with the crates
+      # this merge measured replaced.
+      - name: Update the coverage baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MEASURED: ${{ needs.changes.outputs.measured }}
+        run: |
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=coverage-baseline&per_page=1" \
+            -q '.artifacts[0].workflow_run.id // empty')
+          [ -z "$run" ] || gh run download "$run" -R "$GITHUB_REPOSITORY" -n coverage-baseline -D previous
+          mkdir -p junit
+          python3 -I coverage/ci-report.py junit lcov.info "$MEASURED" \
+            --baseline previous/coverage-baseline.json --update-baseline coverage-baseline.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-baseline
+          path: coverage-baseline.json
+          retention-days: 90
+
+  # rust-cache keys a cache by job id: each job below shares its id with the
+  # ci.yaml job it warms (matrix-rs, lint; build above warms build).
+  matrix-rs:
+    needs: changes
+    if: needs.changes.outputs.crates != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          key: matrix-rs
+          workspaces: coverage/matrix-rs -> ../../target/matrix-rs
+      - run: cargo build --release --locked --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
+
+  # Warms the cache every PR's clippy restores. Nothing is gated here.
+  lint:
+    needs: changes
+    if: needs.changes.outputs.crates != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+      - run: cargo clippy --workspace --all-targets --all-features

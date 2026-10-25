@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Which crates a PR changed, for the CI job graph.
+
+usage: script/ci-changes --base <sha> [--head <sha>] [--labels <json list>]
+
+Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
+  crates    workspace members that changed, sorted
+  tested    those with tests: the test archive and its groups hold only these
+  libs      those whose library runs doctests (not `doctest = false`)
+  measured  those that get a coverage report: [{name, dir}]
+  new_tests crates whose tests/ changed: the duplicate check runs for these only
+  api       a public-API snapshot may have changed
+  manifests a Cargo.toml or Cargo.lock changed (repo-layer check)
+  excluded  crates outside the workspace whose own suite runs: [{dir, workdir, kind}]
+  services  databases the crates' tests need
+  groups    crates split by the databases they need: [{name, crates, services}]
+  all       every crate counts as changed
+  book      the book changed
+  gated     the ALL_TESTS label is set
+
+A file belongs to the crate whose directory holds it, longest prefix first,
+so a version bump in a crate's Cargo.toml or CHANGELOG.md selects that crate.
+Cargo.lock selects nothing when only workspace members' versions moved; any
+other lockfile change means every crate changed. .github/ci-crates.yaml holds
+the global paths, the database map and the excluded crates.
+"""
+import argparse
+import fnmatch
+import json
+import os
+import subprocess
+import sys
+import tomllib
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LABEL = "ALL_TESTS"
+
+
+def run(*cmd):
+    return subprocess.run(cmd, cwd=ROOT, check=True, capture_output=True, text=True).stdout
+
+
+def show(rev, path):
+    try:
+        return run("git", "show", f"{rev}:{path}")
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def has_tests(directory):
+    """A tests/ dir, or a test attribute anywhere under src/."""
+    if os.path.isdir(os.path.join(ROOT, directory, "tests")):
+        return True
+    for root, _, names in os.walk(os.path.join(ROOT, directory, "src")):
+        for n in names:
+            if n.endswith(".rs") and ("#[test]" in (text := open(os.path.join(root, n)).read())
+                                      or "#[tokio::test" in text):
+                return True
+    return False
+
+
+def members():
+    """({name: dir}, names whose library has doctests, names with tests) for the workspace."""
+    meta = json.loads(run("cargo", "metadata", "--no-deps", "--format-version", "1"))
+    ids = set(meta["workspace_members"])
+    packages = [p for p in meta["packages"] if p["id"] in ids]
+    dirs = {p["name"]: os.path.relpath(os.path.dirname(p["manifest_path"]), ROOT) for p in packages}
+    # `doctest = false` on the library is the crate saying its examples aren't doctests.
+    libs = {
+        p["name"] for p in packages
+        if any(("lib" in t["kind"] or "proc-macro" in t["kind"]) and t.get("doctest", True) for t in p["targets"])
+    }
+    tested = {name for name, d in dirs.items() if has_tests(d)}
+    return dirs, libs, tested
+
+
+def excluded(config):
+    """{crate dir: suite entry} for the excluded crates CI knows."""
+    out = {}
+    for path, settings in (config.get("excluded") or {}).items():
+        settings = settings or {}
+        workdir = settings.get("workdir", path)
+        if os.path.isfile(os.path.join(ROOT, workdir, "Cargo.toml")):
+            out[path] = {"dir": path, "workdir": workdir, "kind": settings.get("kind", "plain")}
+    return out
+
+
+def matches(path, patterns):
+    return any(fnmatch.fnmatch(path, p) for p in patterns)
+
+
+def lock_is_global(old, new, member_names):
+    """True when Cargo.lock's packages outside the workspace differ. Members'
+    own entries (versions, dependency lists) follow their Cargo.toml, which
+    already selects them."""
+    def outside(text):
+        packages = tomllib.loads(text).get("package", []) if text else []
+        return {json.dumps(p, sort_keys=True) for p in packages if p["name"] not in member_names}
+    return outside(old) != outside(new)
+
+
+def classify(files, locks, crates, libs, tested, outside, config, labels):
+    by_dir = sorted(((d, n) for n, d in crates.items()), key=lambda x: -len(x[0]))
+    outside_dirs = sorted(outside, key=len, reverse=True)
+    changed, changed_outside, tests_changed = set(), set(), set()
+    everything = LABEL in labels
+    book = False
+    for f in files:
+        if f == "Cargo.lock":
+            # Excluded crates show up as path dependencies: ours, not external.
+            ours = set(crates) | {os.path.basename(d) for d in outside}
+            everything |= lock_is_global(*locks, ours)
+            continue
+        if matches(f, config.get("not_global", [])):
+            pass
+        elif matches(f, config.get("global", [])):
+            everything = True
+        book |= matches(f, config.get("book", []))
+        owner = next((n for d, n in by_dir if f.startswith(d + "/")), None)
+        if owner:
+            changed.add(owner)
+            if f.startswith(crates[owner] + "/tests/"):
+                tests_changed.add(owner)
+            continue
+        owner = next((d for d in outside_dirs if f.startswith(d + "/")), None)
+        if owner:
+            changed_outside.add(owner)
+    if everything:
+        changed = set(crates)
+    # Without the label an excluded crate runs only when it changed.
+    if LABEL in labels:
+        changed_outside = set(outside)
+    service_map = config.get("services", {})
+    services = sorted({s for c in changed for s in service_map.get(c, [])})
+    groups = {}
+    # Only crates with tests go into the test archive and its groups.
+    for c in sorted(changed & tested):
+        need = tuple(sorted(service_map.get(c, [])))
+        groups.setdefault(need, []).append(c)
+    snapshots = set(config.get("api_inputs", []))
+    unmeasured = config.get("coverage_ignore", [])
+    return {
+        "crates": sorted(changed),
+        "tested": sorted(changed & tested),
+        "libs": sorted(changed & libs),
+        "measured": [{"name": c, "dir": crates[c]} for c in sorted(changed) if not matches(c, unmeasured)],
+        # Only these can have new tests, so only these need the duplicate check.
+        "new_tests": [{"name": c, "dir": crates[c]} for c in sorted(tests_changed)],
+        "api": bool(changed & snapshots) or any(f.startswith("api/") for f in files),
+        "manifests": any(os.path.basename(f) in ("Cargo.toml", "Cargo.lock") for f in files),
+        "excluded": [outside[d] for d in sorted(changed_outside)],
+        "services": services,
+        "groups": [
+            {"name": "-".join(need) or "plain", "crates": cs, "services": list(need)}
+            for need, cs in sorted(groups.items())
+        ],
+        "all": everything,
+        "book": book,
+        "gated": LABEL in labels,
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--base", required=True)
+    ap.add_argument("--head", default="HEAD")
+    ap.add_argument("--labels", default="[]")
+    a = ap.parse_args()
+    config = yaml.safe_load(open(os.path.join(ROOT, ".github", "ci-crates.yaml")))
+    span = f"{a.base}...{a.head}"
+    files = run("git", "diff", "--name-only", span).split()
+    base = run("git", "merge-base", a.base, a.head).strip()
+    locks = [show(base, "Cargo.lock"), show(a.head, "Cargo.lock")] if "Cargo.lock" in files else ["", ""]
+    dirs, libs, tested = members()
+    out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels))
+    lines = [f"{k}={json.dumps(v, separators=(',', ':'))}" for k, v in out.items()]
+    print("\n".join(lines))
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write("\n".join(lines) + "\n")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

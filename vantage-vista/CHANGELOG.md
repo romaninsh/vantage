@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.1 — 2026-10-25
+
+- A test whose assertions another test already makes is dropped. No API or behaviour change.
+
 ## 2.2.0 — 2026-10-25
 
 - `IdGenerator` (moved here from vantage-table, which re-exports it) says how a writer mints a new

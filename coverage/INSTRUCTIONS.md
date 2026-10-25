@@ -13,8 +13,9 @@ coverage/matrix.sh [--baseline] <package> [jaccard]     # or: mise run test-matr
 - **What it does.** It builds `<package>`'s tests instrumented, in their own target dir, so your
   regular build is untouched. It runs **every test alone** with its own coverage profile and records
   the code regions under `<crate>/src` that each test covers.
-- **Running it.** Run it as is: it writes its own log, so don't redirect or pipe it. It takes about a
-  minute per few hundred tests. Tests that need a database need it running, as for any test run.
+- **Running it.** Run it as is: it writes its own log, so don't redirect or pipe it. Once the tests
+  are built, a few hundred take seconds. Tests that need a database need it running, as for any
+  test run.
 - **`--baseline`** saves the run as `coverage/report/<package>.baseline/`. Every later run compares
   against it.
 - **`jaccard`** (default 0.9) is how much two tests must share to count as overlapping. You won't
@@ -123,6 +124,16 @@ question at the top of your report. Don't ask about anything these instructions 
 4. **Only remove.** Don't merge tests, rewrite assertions or add tests while removing. Tests outside any
    cluster stay.
 5. **Never change non-test code** in this step.
+
+## In CI
+
+Every PR runs the matrix for each crate whose tests it changed, then `coverage/new_tests.py`. Only
+tests the PR added or edited are judged. The PR fails when a new test covers exactly the same
+regions as another test (at least 20), or when it adds an internal test. A new test sharing 98% or
+more with another is listed as a possible duplicate without failing. Overlap among older tests
+alone passes. To fix either, use `coverage/matrix-rs/skills/matrix-based-test-cleanup`: merge the
+cases into one test or drop the duplicate. A genuinely different scenario gets an exception from
+the `vend-exception.sh` command the failure prints, run by a human.
 
 ## Writing tests: contract first
 

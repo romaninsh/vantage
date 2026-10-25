@@ -49,18 +49,6 @@ macro_rules! safe_writes_tests {
         confined_check!(delete_all_is_confined, check_delete_all, $value);
 
         #[tokio::test]
-        async fn where_eq_fills_on_insert() {
-            let (all, set) = fixture("where_eq_fills_on_insert").await;
-            set.insert_value("n9", &rec(&[("name", "z".into())]))
-                .await
-                .unwrap();
-            assert_eq!(
-                all.get_value("n9").await.unwrap().unwrap()["parent"],
-                <$value>::from("p1".to_string())
-            );
-        }
-
-        #[tokio::test]
         async fn operator_condition_keeps_rows_in_set() {
             let all = item("operator_condition_keeps_rows_in_set").await;
             all.insert_value(

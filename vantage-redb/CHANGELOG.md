@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — 2026-10-25
+
+- Tests whose assertions other tests already make are dropped. No API or behaviour change.
+
 ## 0.8.0 — 2026-10-18
 
 - Requires vantage-table 3.0.0.

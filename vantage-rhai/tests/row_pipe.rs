@@ -38,14 +38,6 @@ const DOUBLE: &str = r#"
 "#;
 
 #[test]
-fn each_row_is_answered_with_what_the_script_emitted() {
-    let p = pipe(DOUBLE);
-    let out = process_within(&p, vec![row(&[("n", 21_i64.into())])]);
-    assert_eq!(out.len(), 1);
-    assert_eq!(field(&out[0], "twice"), 42);
-}
-
-#[test]
 fn answers_come_back_in_row_order() {
     let p = pipe(DOUBLE);
     let rows = (1..=5_i64).map(|n| row(&[("n", n.into())])).collect();

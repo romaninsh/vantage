@@ -87,27 +87,6 @@ async fn test_patch_value() {
     assert_eq!(fetched["price"].try_get::<i64>().unwrap(), 55); // updated
 }
 
-#[tokio::test]
-async fn test_delete() {
-    let (_db, table) = setup().await;
-
-    table.delete("a").await.unwrap();
-
-    let all = table.list_values().await.unwrap();
-    assert_eq!(all.len(), 1);
-    assert!(!all.contains_key("a"));
-}
-
-#[tokio::test]
-async fn test_delete_all() {
-    let (_db, table) = setup().await;
-
-    table.delete_all().await.unwrap();
-
-    let all = table.list_values().await.unwrap();
-    assert!(all.is_empty());
-}
-
 // ── InsertableValueSet ─────────────────────────────────────────────────────
 
 #[tokio::test]

@@ -25,12 +25,6 @@ fn catalog() -> Catalog {
 }
 
 #[test]
-fn a_catalog_builds_each_model_with_its_loader() {
-    let vista = catalog().vista("client").unwrap();
-    assert_eq!(vista.name(), "client");
-}
-
-#[test]
 fn a_missing_model_is_not_found_and_an_unreachable_one_is_not() {
     let catalog = catalog().with("down", |_: &str| Err(error!("connection refused")));
     let missing = catalog.vista("nope").unwrap_err();

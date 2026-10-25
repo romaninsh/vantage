@@ -427,17 +427,6 @@ async fn search_is_an_or_of_ilikes_over_the_string_columns_but_not_the_id() {
 }
 
 #[tokio::test]
-async fn a_single_searchable_column_is_one_ilike() {
-    let table = Table::<GraphqlApi, EmptyEntity>::new("launches", hasura_api())
-        .with_id_column("id")
-        .with_column_of::<String>("mission_name");
-    assert_eq!(
-        search_filter(&table, "fal_con").await,
-        json!({ "mission_name": { "_ilike": "%fal\\_con%" } })
-    );
-}
-
-#[tokio::test]
 async fn search_escapes_percent_underscore_and_backslash() {
     let table = Table::<GraphqlApi, EmptyEntity>::new("launches", hasura_api())
         .with_id_column("id")

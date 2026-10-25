@@ -40,13 +40,6 @@ fn reads(c: &vantage_rhai::Compiled<impl vantage_rhai::Slot>) -> Vec<String> {
 }
 
 #[test]
-fn a_resolver_serves_a_top_level_leaf() {
-    let env = Env::new().resolver(resolver());
-    let c = host().compile(&Expr::from("args.id + 1")).unwrap();
-    assert_eq!(c.eval(&env).unwrap().as_int().unwrap(), 43);
-}
-
-#[test]
 fn dotted_paths_descend_through_namespaces() {
     let env = Env::new().resolver(resolver());
     let c = host().compile(&Expr::from("app.toolbar.currency")).unwrap();
@@ -171,18 +164,6 @@ fn discover_records_the_leaf_paths_a_slot_reads() {
         .unwrap();
     assert!(c.is_discovered());
     assert_eq!(reads(&c), ["app.toolbar.currency"]);
-}
-
-#[test]
-fn discover_records_leaves_only_not_the_namespaces_on_the_way() {
-    let env = Env::new().resolver(resolver());
-    let c = host()
-        .compile(&Expr::from("app.toolbar.currency"))
-        .unwrap()
-        .discover(&env)
-        .unwrap();
-    assert!(!c.read_set().contains("app"));
-    assert!(!c.read_set().contains("app.toolbar"));
 }
 
 #[test]

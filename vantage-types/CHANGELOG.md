@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 — 2026-10-25
+
+- A test whose assertions another test already makes is dropped. No API or behaviour change.
+
 ## 1.0.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or

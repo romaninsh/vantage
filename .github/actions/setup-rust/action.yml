@@ -1,0 +1,57 @@
+name: Set up Rust
+description: Toolchain, the job's Rust cache, and test tools.
+
+# Caching is the setup the per-crate workflows used before this pipeline:
+# rust-cache with a job's own key, workspace and all crates cached, saved on
+# every branch with the action's defaults.
+inputs:
+  profile:
+    description: "normal | instrumented | nightly"
+    default: normal
+  toolchain:
+    description: Toolchain for the nightly profile (stable otherwise)
+    default: stable
+  tools:
+    description: Comma-separated tools for taiki-e/install-action
+    default: ""
+  workspaces:
+    description: rust-cache workspaces (an excluded crate's dir)
+    default: ". -> target"
+  key:
+    description: Extra cache key (for excluded crates)
+    default: ""
+  cache:
+    description: Restore the Rust cache ("false" for jobs that only run archived binaries)
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Shared build flags
+      shell: bash
+      run: |
+        # No debug info: the workspace's [profile.dev] already has `debug = false`,
+        # coverage reads LLVM's own mapping, and it would only bloat the archive.
+        {
+          echo "CARGO_TERM_COLOR=always"
+          echo "CARGO_INCREMENTAL=0"
+        } >> "$GITHUB_ENV"
+
+    - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.profile == 'instrumented' && 'llvm-tools-preview' || 'clippy, rustfmt' }}
+
+    - if: inputs.cache == 'true'
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        key: ${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}
+        workspaces: ${{ inputs.workspaces }}
+        cache-on-failure: true
+        cache-workspace-crates: true
+        cache-all-crates: true
+
+    - if: inputs.tools != ''
+      uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+      with:
+        tool: ${{ inputs.tools }}

@@ -256,17 +256,3 @@ fn preview_names_the_file_and_lists_the_applied_conditions() -> Result<()> {
     assert!(after.contains("name = \"Doc Brown\""), "{after}");
     Ok(())
 }
-
-#[tokio::test]
-async fn cloned_vista_has_the_same_conditions_and_does_not_share_later_ones() -> Result<()> {
-    let original =
-        clients().with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
-
-    let mut copy = original.clone();
-    assert_eq!(copy.count().await?, 2);
-
-    copy.add_condition("name", FilterOp::Eq, "Doc Brown")?;
-    assert_eq!(copy.count().await?, 1);
-    assert_eq!(original.count().await?, 2);
-    Ok(())
-}

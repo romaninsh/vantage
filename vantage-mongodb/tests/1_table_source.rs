@@ -107,28 +107,6 @@ async fn test_get_some_value() {
     teardown(&db, &db_name).await;
 }
 
-// ── Count ────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_count() {
-    let (db, db_name) = setup().await;
-    let table = product_table(db.clone());
-
-    assert_eq!(table.get_count().await.unwrap(), 0);
-
-    for i in 0..3 {
-        let rec = record(&[("name", AnyMongoType::new(format!("Item {}", i)))]);
-        table
-            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
-            .await
-            .unwrap();
-    }
-
-    assert_eq!(table.get_count().await.unwrap(), 3);
-
-    teardown(&db, &db_name).await;
-}
-
 // ── Aggregates ───────────────────────────────────────────────────────
 
 #[tokio::test]

@@ -1,0 +1,108 @@
+name: Start databases
+description: Start and seed the databases a set of crates needs.
+
+# Containers start with `docker run` rather than job `services:`, so one job
+# starts only what its crates need. Seeding follows each backend's scripts.
+inputs:
+  services:
+    description: JSON list from script/ci-changes (postgres, mysql, sqlite, surreal, mongo)
+    required: true
+  mysql-image:
+    default: mysql:8
+
+runs:
+  using: composite
+  steps:
+    - name: Start containers
+      shell: bash
+      env:
+        SERVICES: ${{ inputs.services }}
+        MYSQL_IMAGE: ${{ inputs.mysql-image }}
+      run: |
+        has() { jq -e --arg s "$1" 'index($s) != null' <<<"$SERVICES" > /dev/null; }
+        if has postgres; then
+          docker run -d --name postgres -p 5433:5432 \
+            -e POSTGRES_USER=vantage -e POSTGRES_PASSWORD=vantage -e POSTGRES_DB=vantage \
+            postgres:17-alpine
+        fi
+        if has mysql; then
+          docker run -d --name mysql -p 3306:3306 \
+            -e MYSQL_ROOT_PASSWORD=root -e MYSQL_USER=vantage -e MYSQL_PASSWORD=vantage -e MYSQL_DATABASE=vantage \
+            -e MARIADB_ROOT_PASSWORD=root -e MARIADB_USER=vantage -e MARIADB_PASSWORD=vantage -e MARIADB_DATABASE=vantage \
+            "$MYSQL_IMAGE"
+        fi
+        if has surreal; then
+          docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:latest \
+            start --user root --pass root memory
+        fi
+        if has mongo; then
+          docker run -d --name mongo-vantage -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+        fi
+
+    - name: Seed
+      shell: bash
+      env:
+        SERVICES: ${{ inputs.services }}
+      run: |
+        has() { jq -e --arg s "$1" 'index($s) != null' <<<"$SERVICES" > /dev/null; }
+        wait_for() { for _ in $(seq 1 90); do eval "$1" > /dev/null 2>&1 && return 0; sleep 1; done; echo "$2 did not start" >&2; return 1; }
+
+        if has sqlite; then
+          bash vantage-sql/scripts/sqlite/ingress.sh
+        fi
+
+        if has postgres; then
+          wait_for "PGPASSWORD=vantage psql -h localhost -p 5433 -U vantage -d vantage -c 'select 1'" postgres
+          cd vantage-sql/scripts/postgres
+          for f in db/v[0-3]*.sql; do
+            PGPASSWORD=vantage psql -q -h localhost -p 5433 -U vantage -d vantage -f "$f"
+          done
+          for f in db/v*.sql; do
+            db="vantage_$(basename "$f" .sql)"
+            PGPASSWORD=vantage psql -q -h localhost -p 5433 -U vantage -d postgres -c "CREATE DATABASE \"$db\" OWNER vantage;"
+            PGPASSWORD=vantage psql -q -h localhost -p 5433 -U vantage -d "$db" -f "$f"
+          done
+          cd "$GITHUB_WORKSPACE"
+        fi
+
+        if has mysql; then
+          wait_for "mysql -h 127.0.0.1 -uvantage -pvantage vantage -e 'select 1'" mysql
+          cd vantage-sql/scripts/mysql
+          for f in db/v[0-3]*.sql; do
+            mysql -h 127.0.0.1 -uvantage -pvantage vantage < "$f"
+          done
+          for f in db/v*.sql; do
+            db="vantage_$(basename "$f" .sql)"
+            mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE \`$db\`; GRANT ALL PRIVILEGES ON \`$db\`.* TO 'vantage'@'%';"
+            mysql -h 127.0.0.1 -uvantage -pvantage "$db" < "$f"
+          done
+          cd "$GITHUB_WORKSPACE"
+        fi
+
+        if has surreal; then
+          wait_for "curl -sf http://localhost:8000/health" surrealdb
+          # The image ships the CLI; a shim runs it there rather than installing one.
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec docker exec -i surrealdb /surreal "$@"\n' > "$RUNNER_TEMP/bin/surreal"
+          chmod +x "$RUNNER_TEMP/bin/surreal"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          cd vantage-surrealdb/scripts
+          printf 'DB_ENDPOINT=ws://localhost:8000\nDB_USER=root\nDB_PASS=root\nDB_AUTH_LEVEL=root\nDB_NS=bakery\n' > .env
+          bash ingress.sh
+          cd "$GITHUB_WORKSPACE"
+          {
+            echo "DB_ENDPOINT=cbor://localhost:8000/rpc"
+            echo "DB_USER=root"
+            echo "DB_PASS=root"
+            echo "DB_AUTH_LEVEL=root"
+            echo "DB_NS=bakery"
+          } >> "$GITHUB_ENV"
+        fi
+
+        if has mongo; then
+          wait_for "docker exec mongo-vantage mongosh --quiet --eval 'db.runCommand({ping:1})'" mongo
+          docker exec mongo-vantage mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          wait_for "docker exec mongo-vantage mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true" "mongo primary"
+          docker exec -i mongo-vantage mongosh vantage < vantage-mongodb/scripts/db/v2.js
+          echo "MONGODB_URL=mongodb://localhost:27017/?directConnection=true" >> "$GITHUB_ENV"
+        fi

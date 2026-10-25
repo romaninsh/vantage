@@ -1,85 +1,24 @@
 """Per-test coverage matrix for one crate. Run through coverage/matrix.sh.
 
-usage: python3 -I matrix.py <list.json> <crate_dir> <out_dir> [jobs]
+usage: python3 -I matrix.py <out_dir>
 
-Runs every non-ignored test from `cargo nextest list --message-format json`
-alone, with its own LLVM profile, exports the code regions it covers inside
-<crate_dir>/src, and reports which tests cover nothing no other test covers.
+Reads <out_dir>/covered.json, the code regions each test covers inside the
+crate's src/ (written by coverage/matrix-rs, which runs every test alone with
+its own LLVM profile), and reports which tests cover nothing no other test
+covers.
 """
 import json
 import os
-import subprocess
 import sys
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 
-LIST, CRATE, OUT = sys.argv[1], os.path.abspath(sys.argv[2]), os.path.abspath(sys.argv[3])
-JOBS = int(sys.argv[4]) if len(sys.argv) > 4 else 8
-SYSROOT = subprocess.check_output(["rustc", "--print", "sysroot"], text=True).strip()
-HOST = [l.split(": ")[1] for l in subprocess.check_output(["rustc", "-vV"], text=True).splitlines() if l.startswith("host")][0]
-BIN = os.path.join(SYSROOT, "lib", "rustlib", HOST, "bin")
-PROFDATA, LLVMCOV = os.path.join(BIN, "llvm-profdata"), os.path.join(BIN, "llvm-cov")
-SRC = os.path.join(CRATE, "src")
-os.makedirs(os.path.join(OUT, "prof"), exist_ok=True)
-
-suites = json.load(open(LIST))["rust-suites"]
-# Unit tests built into a crate target are internal; `tests/` binaries are blackbox.
-UNIT_KINDS = {"lib", "bin", "proc-macro", "cdylib", "staticlib", "rlib", "dylib"}
-tests, internal = [], []
-for suite in suites.values():
-    for name, case in suite["testcases"].items():
-        if case.get("ignored") or case.get("filter-match", {}).get("status") != "matches":
-            continue
-        tests.append((suite["binary-id"], suite["binary-path"], suite["cwd"], name))
-        if suite.get("kind") in UNIT_KINDS:
-            internal.append(f"{suite['binary-id']}::{name}")
-
-sources = []
-for root, _, files in os.walk(SRC):
-    sources += [os.path.join(root, f) for f in files if f.endswith(".rs")]
-
-
-def run(idx_test):
-    idx, (bid, binary, cwd, name) = idx_test
-    raw = os.path.join(OUT, "prof", f"{idx}.profraw")
-    data = os.path.join(OUT, "prof", f"{idx}.profdata")
-    env = dict(os.environ, LLVM_PROFILE_FILE=raw, RUST_TEST_THREADS="1")
-    res = subprocess.run([binary, "--exact", name], cwd=cwd, env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-    if not os.path.exists(raw):
-        return (bid, name, res.returncode, None)
-    # A failed merge or export marks this one test unmeasured; it doesn't abort the run.
-    merged = subprocess.run([PROFDATA, "merge", "-sparse", raw, "-o", data])
-    exp = merged.returncode == 0 and subprocess.run(
-        [LLVMCOV, "export", "-format=text", f"-instr-profile={data}", binary, *sources],
-        capture_output=True, text=True)
-    for f in (raw, data):
-        if os.path.exists(f):
-            os.remove(f)
-    if not exp or exp.returncode != 0:
-        return (bid, name, res.returncode or 1, None)
-    regions = set()
-    for fn in json.loads(exp.stdout)["data"][0]["functions"]:
-        files = fn["filenames"]
-        for r in fn["regions"]:
-            ls, cs, le, ce, count, file_id, _exp, kind = r[:8]
-            path = files[file_id]
-            if count > 0 and kind == 0 and path.startswith(SRC):
-                regions.add((os.path.relpath(path, CRATE), ls, cs, le, ce))
-    return (bid, name, res.returncode, regions)
-
-
-with ThreadPoolExecutor(JOBS) as pool:
-    results = list(pool.map(run, enumerate(tests)))
-
-covered = {}
-failed = []
-for bid, name, code, regions in results:
-    key = f"{bid}::{name}"
-    if code != 0 or regions is None:
-        failed.append((key, code))
-    if regions is not None:
-        covered[key] = regions
+OUT = os.path.abspath(sys.argv[1])
+data = json.load(open(os.path.join(OUT, "covered.json")))
+tests, internal = data["tests"], data["internal"]
+if not isinstance(tests, int) or not 0 <= tests <= len(covered_keys := data["covered"]) + len(data["failed"]):
+    sys.exit(f"covered.json: test count {tests!r} doesn't match its {len(covered_keys)} measured tests")
+covered = {k: {tuple(r) for r in regions} for k, regions in data["covered"].items()}
+failed = [tuple(f) for f in data["failed"]]
 
 hits = defaultdict(int)
 for regions in covered.values():
@@ -123,12 +62,12 @@ json.dump({
     "internal": sorted(internal),
 }, open(os.path.join(OUT, "regions.json"), "w"))
 json.dump({
-    "tests": len(tests), "measured": len(covered), "failed": failed,
+    "tests": tests, "measured": len(covered), "failed": failed,
     "regions": len(universe), "cover_size": len(keep), "keep": keep,
     "rows": rows, "subsumed": subsumed,
 }, open(os.path.join(OUT, "matrix.json"), "w"), indent=1)
 
-print(f"tests {len(tests)}  measured {len(covered)}  failed/unmeasured {len(failed)}")
+print(f"tests {tests}  measured {len(covered)}  failed/unmeasured {len(failed)}")
 for key, code in failed:
     print(f"  FAILED (exit {code}): {key}")
 print(f"regions covered {len(universe)}")
