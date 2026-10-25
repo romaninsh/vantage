@@ -1074,8 +1074,8 @@ impl<R> core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ReferenceSpec
 impl<R> core::panic::unwind_safe::UnwindSafe for vantage_vista::ReferenceSpec<R> where R: core::panic::unwind_safe::UnwindSafe
 pub struct vantage_vista::ShortId
 impl vantage_vista::ShortId
-pub const vantage_vista::ShortId::ALNUM: &'static str
-pub const vantage_vista::ShortId::BASE58: &'static str
+pub const vantage_vista::ShortId::ALNUM: &str
+pub const vantage_vista::ShortId::BASE58: &str
 pub const vantage_vista::ShortId::MAX_LENGTH: usize
 pub fn vantage_vista::ShortId::alphabet(&self) -> alloc::string::String
 pub fn vantage_vista::ShortId::generate(&self) -> alloc::string::String
