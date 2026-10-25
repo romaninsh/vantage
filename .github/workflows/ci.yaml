@@ -154,7 +154,9 @@ jobs:
           for group in $(jq -c '.[]' <<<"$GROUP_LIST"); do
             name=$(jq -r .name <<<"$group")
             filter=$(jq -r '.crates | map("package(" + . + ")") | join(" or ")' <<<"$group")
-            cargo llvm-cov nextest-archive --all-features "${pkgs[@]}" -E "$filter" \
+            # --no-clean: llvm-cov otherwise wipes the workspace crates before
+            # every call, rebuilding them once per group.
+            cargo llvm-cov nextest-archive --no-clean --all-features "${pkgs[@]}" -E "$filter" \
               --zstd-level 9 --archive-file "ci-$name.tar.zst"
           done
           ls -la ci-*.tar.zst

@@ -36,7 +36,8 @@ jobs:
           BASE: ${{ github.event.before }}
         run: script/ci-changes --base "$BASE" --head "$GITHUB_SHA"
 
-  coverage:
+  # Named `build` so its cache is the one ci.yaml's `build` restores.
+  build:
     needs: changes
     if: needs.changes.outputs.measured != '[]'
     runs-on: ubuntu-latest
@@ -50,7 +51,6 @@ jobs:
         with:
           profile: instrumented
           tools: cargo-llvm-cov,cargo-nextest
-          save: "true"
       - if: needs.changes.outputs.services != '[]'
         uses: ./.github/actions/start-services
         with:
@@ -74,8 +74,9 @@ jobs:
           MEASURED: ${{ needs.changes.outputs.measured }}
         run: coverage/ci-octocov.sh lcov.info "$MEASURED"
 
-  # Saves matrix-rs's own cache, so a PR's duplicate check builds it in seconds.
-  matrix-rs-cache:
+  # rust-cache keys a cache by job id: each job below shares its id with the
+  # ci.yaml job it warms (matrix-rs, lint; coverage above warms build).
+  matrix-rs:
     needs: changes
     if: needs.changes.outputs.crates != '[]'
     runs-on: ubuntu-latest
@@ -86,11 +87,10 @@ jobs:
         with:
           key: matrix-rs
           workspaces: coverage/matrix-rs -> ../../target/matrix-rs
-          save: "true"
       - run: cargo build --release --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
 
-  # Saves the lint cache every PR's clippy restores. Nothing is gated here.
-  lint-cache:
+  # Warms the cache every PR's clippy restores. Nothing is gated here.
+  lint:
     needs: changes
     if: needs.changes.outputs.crates != '[]'
     runs-on: ubuntu-latest
@@ -98,6 +98,4 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-rust
-        with:
-          save: "true"
       - run: cargo clippy --workspace --all-targets --all-features

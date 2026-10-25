@@ -21,11 +21,13 @@ jq -c '.[]' <<<"$measured" | while read -r crate; do
     echo "$name: no coverage records" >&2
     continue
   fi
+  # octocov reads coverage paths relative to the config file; an absolute
+  # path measures nothing.
   cat > "$work/$name.yml" <<EOF
 repository: ${GITHUB_REPOSITORY}/${name}
 coverage:
   paths:
-    - $work/$name.info
+    - $name.info
 codeToTestRatio:
   code:
     - "$dir/src/**/*.rs"

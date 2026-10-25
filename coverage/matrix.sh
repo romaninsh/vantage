@@ -54,6 +54,8 @@ echo "building and listing $pkg tests (log: $log)"
 # diorama's `bdd` is cucumber (harness = false) and can't be listed.
 if [[ -n "${MATRIX_ARCHIVE:-}" ]]; then
   # The binaries must outlive the listing: matrix-rs runs them one test at a time.
+  # nextest won't create the directory it extracts into.
+  mkdir -p "$CARGO_TARGET_DIR/archive-$pkg"
   list=(cargo nextest list --archive-file "$MATRIX_ARCHIVE" --workspace-remap "$root"
     --extract-to "$CARGO_TARGET_DIR/archive-$pkg" --extract-overwrite
     -E "package($pkg) and not binary(bdd)")

@@ -1,8 +1,9 @@
 name: Set up Rust
-description: Toolchain, the shared cache for one build profile, and test tools.
+description: Toolchain, the job's Rust cache, and test tools.
 
-# Every job of one profile shares one cache and one set of flags, so no job
-# invalidates another's build.
+# Caching is the setup the per-crate workflows used before this pipeline:
+# rust-cache with a job's own key, workspace and all crates cached, saved on
+# every branch with the action's defaults.
 inputs:
   profile:
     description: "normal | instrumented | nightly"
@@ -13,12 +14,6 @@ inputs:
   tools:
     description: Comma-separated tools for taiki-e/install-action
     default: ""
-  save:
-    # rust-cache saves only when the exact key missed: a PR with main's
-    # Cargo.lock restores main's cache and saves nothing; one with other
-    # dependencies saves its own copy, which its next push and re-runs reuse.
-    description: Save the cache ("true"/"false")
-    default: "true"
   workspaces:
     description: rust-cache workspaces (an excluded crate's dir)
     default: ". -> target"
@@ -50,10 +45,10 @@ runs:
     - if: inputs.cache == 'true'
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
-        shared-key: ci-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}
+        key: ${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}
         workspaces: ${{ inputs.workspaces }}
-        save-if: ${{ inputs.save }}
         cache-on-failure: true
+        cache-workspace-crates: true
         cache-all-crates: true
 
     - if: inputs.tools != ''
