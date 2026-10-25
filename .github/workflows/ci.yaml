@@ -167,15 +167,25 @@ jobs:
         run: |
           cp .config/nextest.toml.example .config/nextest.toml
           mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$TESTED")
+          # The first call compiles, the rest only pack: --timings goes on the first.
+          timings=--timings
           for group in $(jq -c '.[]' <<<"$GROUP_LIST"); do
             name=$(jq -r .name <<<"$group")
             filter=$(jq -r '.crates | map("package(" + . + ")") | join(" or ")' <<<"$group")
             # --no-clean: llvm-cov otherwise wipes the workspace crates before
             # every call, rebuilding them once per group.
-            cargo llvm-cov nextest-archive --no-clean --all-features "${pkgs[@]}" -E "$filter" \
+            cargo llvm-cov nextest-archive --no-clean $timings --all-features "${pkgs[@]}" -E "$filter" \
               --zstd-level 9 --archive-file "ci-$name.tar.zst"
+            timings=
           done
           ls -la ci-*.tar.zst
+      # Cargo's per-crate compile timeline: which crates hold up the build.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings
+          path: target/**/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
+          retention-days: 7
       # Fixed names: upload-artifact can't loop. A group without a step fails here.
       - name: Every archive has an upload step
         run: |
@@ -268,7 +278,8 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: junit-${{ matrix.group.name }}
-          path: target/llvm-cov-target/nextest/ci/junit.xml
+          # An archive run keeps nextest's store in the workspace target dir.
+          path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
           retention-days: 1
       - name: Coverage for this group

@@ -21,6 +21,8 @@ MAX_FAILURES = 20
 
 
 def groups(junit_dir):
+    if not os.path.isdir(junit_dir):
+        return
     for name in sorted(os.listdir(junit_dir)):
         path = os.path.join(junit_dir, name, "junit.xml")
         if os.path.isfile(path):
@@ -48,43 +50,63 @@ def coverage(lcov, measured):
     return totals
 
 
-def main(junit_dir, lcov, measured_json, baseline_in=None, baseline_out=None):
-    measured = json.loads(measured_json)
-    baseline = json.load(open(baseline_in)) if baseline_in and os.path.isfile(baseline_in) else {}
-    out = [MARKER, "## CI report", "", "| group | passed | failed | skipped | time |", "|---|---:|---:|---:|---:|"]
+def failure_line(case):
+    """`- test: first line of its message` for a failed testcase, else None."""
+    problem = case.find("failure")
+    if problem is None:
+        problem = case.find("error")
+    if problem is None:
+        return None
+    message = (problem.get("message") or problem.text or "").strip().splitlines()
+    return f"- `{case.get('classname')}::{case.get('name')}`" + (f": {message[0][:160]}" if message else "")
+
+
+def tests_section(junit_dir):
+    found = list(groups(junit_dir))
+    if not found:
+        return ["No test results were uploaded: see the suite logs."]
+    out = ["| group | passed | failed | skipped | time |", "|---|---:|---:|---:|---:|"]
     failures = []
-    for name, root in groups(junit_dir):
+    for name, root in found:
         tests, failed, skipped = (int(root.get(k, 0)) for k in ("tests", "failures", "skipped"))
         failed += int(root.get("errors", 0))
         out.append(f"| {name} | {tests - failed - skipped} | {failed} | {skipped} | {float(root.get('time', 0)):.0f}s |")
-        for case in root.iter("testcase"):
-            problem = case.find("failure")
-            if problem is None:
-                problem = case.find("error")
-            if problem is not None:
-                message = (problem.get("message") or problem.text or "").strip().splitlines()
-                failures.append(f"- `{case.get('classname')}::{case.get('name')}`"
-                                + (f": {message[0][:160]}" if message else ""))
+        failures += [line for line in map(failure_line, root.iter("testcase")) if line]
     if failures:
         out += ["", f"**Failed ({len(failures)})**", ""] + failures[:MAX_FAILURES]
-        if len(failures) > MAX_FAILURES:
-            out.append(f"- … and {len(failures) - MAX_FAILURES} more (see the suite logs)")
+    if len(failures) > MAX_FAILURES:
+        out.append(f"- … and {len(failures) - MAX_FAILURES} more (see the suite logs)")
+    return out
+
+
+def coverage_section(current, baseline):
+    rows = [(c, found, hit) for c, (found, hit) in sorted(current.items()) if found]
+    if not rows:
+        return []
+    out = ["", "| crate | lines | covered | vs main |", "|---|---:|---:|---:|"]
+    for crate, found, hit in rows:
+        pct = 100 * hit / found
+        was = baseline.get(crate)
+        delta = f"{pct - 100 * was[1] / was[0]:+.1f}" if was and was[0] else "new"
+        out.append(f"| {crate} | {found} | {pct:.1f}% | {delta} |")
+    return out
+
+
+def footer():
+    env = os.environ.get
+    run = f"{env('GITHUB_SERVER_URL', '')}/{env('GITHUB_REPOSITORY', '')}/actions/runs/{env('GITHUB_RUN_ID', '')}"
+    return ["", f"<sub>{env('GITHUB_SHA', '')[:8]} · [run]({run})</sub>"]
+
+
+def main(junit_dir, lcov, measured_json, baseline_in=None, baseline_out=None):
+    measured = json.loads(measured_json)
+    baseline = json.load(open(baseline_in)) if baseline_in and os.path.isfile(baseline_in) else {}
     current = coverage(lcov, measured) if lcov and os.path.isfile(lcov) and measured else {}
-    if any(found for found, _ in current.values()):
-        out += ["", "| crate | lines | covered | vs main |", "|---|---:|---:|---:|"]
-        for crate, (found, hit) in sorted(current.items()):
-            if not found:
-                continue
-            pct = 100 * hit / found
-            was = baseline.get(crate)
-            delta = f"{pct - 100 * was[1] / was[0]:+.1f}" if was and was[0] else "new"
-            out.append(f"| {crate} | {found} | {pct:.1f}% | {delta} |")
     if baseline_out:
         updated = dict(baseline)
         updated.update({c: v for c, v in current.items() if v[0]})
         json.dump(updated, open(baseline_out, "w"), indent=1, sort_keys=True)
-    run = f"{os.environ.get('GITHUB_SERVER_URL', '')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
-    out += ["", f"<sub>{os.environ.get('GITHUB_SHA', '')[:8]} · [run]({run})</sub>"]
+    out = [MARKER, "## CI report", ""] + tests_section(junit_dir) + coverage_section(current, baseline) + footer()
     print("\n".join(out))
 
 

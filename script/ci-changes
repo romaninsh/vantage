@@ -8,7 +8,7 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   tested    those with tests: the test archive and its groups hold only these
   libs      those whose library runs doctests (not `doctest = false`)
   measured  those that get a coverage report: [{name, dir}]
-  new_tests crates whose tests/ changed: the duplicate check runs for these only
+  new_tests crates whose tests/ gained lines: the duplicate check runs for these only
   api       a public-API snapshot may have changed
   manifests a Cargo.toml or Cargo.lock changed (repo-layer check)
   excluded  crates outside the workspace whose own suite runs: [{dir, workdir, kind}]
@@ -101,7 +101,7 @@ def lock_is_global(old, new, member_names):
     return outside(old) != outside(new)
 
 
-def classify(files, locks, crates, libs, tested, outside, config, labels):
+def classify(files, locks, crates, libs, tested, outside, config, labels, adds=None):
     by_dir = sorted(((d, n) for n, d in crates.items()), key=lambda x: -len(x[0]))
     outside_dirs = sorted(outside, key=len, reverse=True)
     changed, changed_outside, tests_changed = set(), set(), set()
@@ -121,7 +121,9 @@ def classify(files, locks, crates, libs, tested, outside, config, labels):
         owner = next((n for d, n in by_dir if f.startswith(d + "/")), None)
         if owner:
             changed.add(owner)
-            if f.startswith(crates[owner] + "/tests/"):
+            # Only added lines can add a test: a tests/ diff that only deletes
+            # can't make a duplicate, so it doesn't need the matrix.
+            if f.startswith(crates[owner] + "/tests/") and (adds is None or f in adds):
                 tests_changed.add(owner)
             continue
         owner = next((d for d in outside_dirs if f.startswith(d + "/")), None)
@@ -174,7 +176,10 @@ def main():
     base = run("git", "merge-base", a.base, a.head).strip()
     locks = [show(base, "Cargo.lock"), show(a.head, "Cargo.lock")] if "Cargo.lock" in files else ["", ""]
     dirs, libs, tested = members()
-    out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels))
+    # Files the diff adds lines to ("-" marks a binary file; count it).
+    adds = {p for n, _, p in (row.split("\t", 2) for row in run("git", "diff", "--numstat", span).splitlines())
+            if n != "0"}
+    out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels), adds)
     lines = [f"{k}={json.dumps(v, separators=(',', ':'))}" for k, v in out.items()]
     print("\n".join(lines))
     if os.environ.get("GITHUB_OUTPUT"):

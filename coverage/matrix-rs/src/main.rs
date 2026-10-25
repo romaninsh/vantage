@@ -197,47 +197,61 @@ fn main() -> Result<()> {
     rayon::ThreadPoolBuilder::new()
         .num_threads(jobs)
         .build_global()?;
-    let codes: Vec<Option<i32>> = tests
-        .par_iter()
-        .map(|t| {
-            Command::new(&t.binary)
-                .args(["--exact", &t.name])
-                .current_dir(&t.cwd)
-                .env("LLVM_PROFILE_FILE", &t.profile)
-                .env("RUST_TEST_THREADS", "1")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .ok()
-                .and_then(|s| s.code())
-        })
-        .collect();
+    let run = |t: &Test| {
+        Command::new(&t.binary)
+            .args(["--exact", &t.name])
+            .current_dir(&t.cwd)
+            .env("LLVM_PROFILE_FILE", &t.profile)
+            .env("RUST_TEST_THREADS", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .and_then(|s| s.code())
+    };
 
-    // Each binary's mapping is read once and serves all of its tests.
+    // One binary at a time: run its tests, then read their profiles against
+    // its mapping (read once), so reading one binary's profiles overlaps the
+    // test runs of the others instead of waiting for every test to finish.
+    let started = std::time::Instant::now();
     let mut by_binary: BTreeMap<&Path, Vec<usize>> = BTreeMap::new();
     for (i, t) in tests.iter().enumerate() {
         by_binary.entry(&t.binary).or_default().push(i);
     }
-    let regions: Vec<(usize, Option<BTreeSet<Region>>)> = by_binary
+    let results: Vec<(usize, Option<i32>, Option<BTreeSet<Region>>)> = by_binary
         .par_iter()
         .flat_map(|(binary, idx)| {
+            let codes: Vec<Option<i32>> = idx.par_iter().map(|&i| run(&tests[i])).collect();
             let first = idx.iter().find_map(|&i| parse(&tests[i].profile).ok());
             let info =
                 first.and_then(|p| read_object_file(binary, p.version().unwrap_or_default()).ok());
             let local = info
                 .as_ref()
                 .map(|info| local(info, &crate_dirs, &crate_name));
-            idx.iter()
-                .map(|&i| {
+            idx.par_iter()
+                .zip(codes)
+                .map(|(&i, code)| {
                     let set = local
                         .as_ref()
                         .and_then(|l| covered(l, &tests[i].profile).ok());
                     let _ = fs::remove_file(&tests[i].profile);
-                    (i, set)
+                    (i, code, set)
                 })
                 .collect::<Vec<_>>()
         })
         .collect();
+    eprintln!(
+        "matrix-rs: {} tests in {} binaries, {jobs} at a time, in {:.1?}",
+        tests.len(),
+        by_binary.len(),
+        started.elapsed()
+    );
+    let mut codes = vec![None; tests.len()];
+    let mut regions = Vec::with_capacity(tests.len());
+    for (i, code, set) in results {
+        codes[i] = code;
+        regions.push((i, set));
+    }
 
     let mut covered_json = serde_json::Map::new();
     let mut failed = vec![];
