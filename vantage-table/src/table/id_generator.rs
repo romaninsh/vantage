@@ -10,56 +10,17 @@
 //! absent or null), and only on insert: `patch`/`replace`/`update`/`upsert`
 //! never touch the id. Because a present id is always kept, an id the caller
 //! assigned once survives a retried insert — generation stays idempotent.
+//!
+//! [`IdGenerator`] itself lives in vantage-vista, so a type-erased `Vista`
+//! (and every writer over one) mints ids the same way. A failing
+//! [`IdGenerator::Fallible`] fails the insert.
 
-use std::sync::Arc;
+pub use vantage_vista::{IdGenerator, ShortId};
 
 use vantage_types::{Entity, InvariantValue};
 
 use crate::table::{BeforeCx, BeforeFn, Hook, Phase, Table, before_hook};
 use crate::traits::table_source::TableSource;
-
-/// How a missing id is minted when a new record is inserted.
-///
-/// `UuidV7` is the recommended choice: it is time-ordered (RFC 9562), so ids
-/// sort by creation time and cluster together in a primary-key index instead of
-/// scattering it the way the purely-random `UuidV4` does.
-#[derive(Clone)]
-pub enum IdGenerator {
-    /// Time-ordered UUID (v7). Sortable and index-friendly — the recommended
-    /// default for new tables.
-    UuidV7,
-    /// Random UUID (v4).
-    UuidV4,
-    /// Any caller-supplied scheme (ULID, nanoid, a counter, …).
-    Custom(Arc<dyn Fn() -> String + Send + Sync>),
-}
-
-impl IdGenerator {
-    /// A custom generator from a closure.
-    pub fn custom(f: impl Fn() -> String + Send + Sync + 'static) -> Self {
-        IdGenerator::Custom(Arc::new(f))
-    }
-
-    /// Produce one fresh id string.
-    pub fn generate(&self) -> String {
-        match self {
-            IdGenerator::UuidV7 => uuid::Uuid::now_v7().to_string(),
-            IdGenerator::UuidV4 => uuid::Uuid::new_v4().to_string(),
-            IdGenerator::Custom(f) => f(),
-        }
-    }
-}
-
-impl std::fmt::Debug for IdGenerator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            IdGenerator::UuidV7 => "UuidV7",
-            IdGenerator::UuidV4 => "UuidV4",
-            IdGenerator::Custom(_) => "Custom",
-        };
-        f.debug_tuple("IdGenerator").field(&name).finish()
-    }
-}
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E>
 where
@@ -107,7 +68,7 @@ where
             };
             if absent_or_null {
                 cx.record
-                    .insert(id_field, T::Value::from(generator.generate()));
+                    .insert(id_field, T::Value::from(generator.try_generate()?));
             }
             Ok(())
         })

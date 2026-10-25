@@ -1,6 +1,55 @@
-use serde_json::json;
+use std::sync::Arc;
 
-use super::support::{eval, json, read_write, run, store};
+use serde_json::json;
+use vantage_core::error;
+use vantage_vista::mocks::MockShell;
+use vantage_vista::{
+    Column, ColumnFlag, IdGenerator, ShortId, Vista, VistaMetadata, VistaResolver,
+};
+
+use super::support::{eval, host_with, json, read_write, read_write_terminals, run, store};
+
+#[test]
+fn an_insert_without_an_id_mints_from_the_table_generator() {
+    let host = read_write(&store());
+    let id: String = eval(&host, r#"table("short").insert(#{ a: 1 })"#);
+    assert_eq!(id.chars().count(), 10, "{id}");
+    assert!(id.chars().all(|c| ShortId::BASE58.contains(c)), "{id}");
+    assert_eq!(
+        json(&host, &format!(r#"table("short").get("{id}")"#))["a"],
+        json!(1)
+    );
+}
+
+#[test]
+fn a_failing_generator_fails_the_insert() {
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+        .with_id_column("id")
+        .with_id_generator(IdGenerator::fallible(|| Err(error!("no ids today"))));
+    let shell = MockShell::new().with_metadata(metadata);
+    let resolver: Arc<dyn VistaResolver> =
+        Arc::new(move |name: &str| Ok(Vista::new(name, shell.clone())));
+    let host = host_with(resolver, read_write_terminals());
+    let err = run(&host, r#"table("t").insert(#{ a: 1 })"#).unwrap_err();
+    assert!(err.contains("no ids today"), "{err}");
+}
+
+#[test]
+fn an_explicit_id_wins_over_the_table_generator() {
+    let host = read_write(&store());
+    let id: String = eval(&host, r#"table("short").insert(#{ id: "mine", a: 1 })"#);
+    assert_eq!(id, "mine");
+}
+
+#[test]
+fn an_insert_of_an_existing_id_returns_it_and_writes_nothing() {
+    let host = read_write(&store());
+    let id: String = eval(&host, r#"table("short").insert(#{ id: "s1", a: 1 })"#);
+    let again: String = eval(&host, r#"table("short").insert(#{ id: "s1", a: 2 })"#);
+    assert_eq!(again, id);
+    assert_eq!(json(&host, r#"table("short").get("s1")"#)["a"], json!(1));
+}
 
 #[test]
 fn server_made_ids_ask_the_backend() {

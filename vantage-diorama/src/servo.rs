@@ -22,6 +22,7 @@ use std::sync::{Arc, RwLock, Weak};
 use ciborium::Value as CborValue;
 use tokio::sync::watch;
 use vantage_types::Record;
+use vantage_vista::IdGenerator;
 
 use crate::dio::{Dio, DioInner, Generation};
 use crate::ops::FlashRejection;
@@ -51,6 +52,13 @@ pub enum IdStrategy {
     /// untouched form stays clean, and saving it fires nothing.
     #[default]
     Uuid,
+    /// Mint the id the moment the servo opens, as `Uuid` does, from the
+    /// generator the master declares
+    /// ([`Vista::id_generator`](vantage_vista::Vista::id_generator)), a UUIDv7
+    /// when it declares none. A generator that fails leaves the servo
+    /// unbound; its first flash mints again and fails with the generator's
+    /// error if that fails too.
+    Generated,
     /// The backend assigns the id on the first save
     /// ([`ChangeFlash::insert_new`](crate::ChangeFlash::insert_new), through
     /// the Lens writer when there is one); the servo binds to the created
@@ -130,7 +138,9 @@ impl Drop for ServoGuard {
 
 impl Servo {
     /// The record id this servo is bound to. Bound at creation for
-    /// [`Dio::servo`](crate::Dio::servo) and [`IdStrategy::Uuid`];
+    /// [`Dio::servo`](crate::Dio::servo), [`IdStrategy::Uuid`] and
+    /// [`IdStrategy::Generated`] (unless the generator failed, then at the
+    /// first flash);
     /// `None` until the first confirmed save for [`IdStrategy::Auto`].
     pub fn id(&self) -> Option<String> {
         self.state.id.read().unwrap().clone()
@@ -157,17 +167,29 @@ impl Servo {
     }
 }
 
+/// A new id from the master's declared generator, a UUIDv7 when it declares
+/// none.
+pub(crate) fn mint_generated(dio: &Dio) -> vantage_core::Result<String> {
+    match dio.master().id_generator() {
+        Some(generator) => generator.try_generate(),
+        None => Ok(IdGenerator::UuidV7.generate()),
+    }
+}
+
 /// Wire the bus task and return the servo, bound to `id` when given. With
-/// [`IdStrategy::Uuid`] and no id, identity is minted here — before the
-/// first save — and bound; the insert record picks the id column up at
-/// flash time.
+/// [`IdStrategy::Uuid`] or [`IdStrategy::Generated`] and no id, identity is
+/// minted here — before the first save — and bound; the insert record picks
+/// the id column up at flash time.
 pub(crate) fn spawn_servo(dio: &Dio, id: Option<String>, strategy: IdStrategy) -> Servo {
-    let mut id = id;
     // Identity is the binding's, never the draft's: minting must not
     // dirty the data (an untouched form stays clean and fires nothing).
-    if id.is_none() && strategy == IdStrategy::Uuid {
-        id = Some(uuid::Uuid::now_v7().to_string());
-    }
+    // A generator that fails here leaves the servo unbound; its first flash
+    // mints again (see `Servo::freeze`).
+    let id = id.or_else(|| match strategy {
+        IdStrategy::Uuid => Some(IdGenerator::UuidV7.generate()),
+        IdStrategy::Generated => mint_generated(dio).ok(),
+        IdStrategy::Auto | IdStrategy::FromRecord => None,
+    });
 
     let (generation_tx, _rx) = watch::channel(Generation::default());
     let state = Arc::new(ServoState {

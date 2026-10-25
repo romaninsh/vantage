@@ -12,8 +12,8 @@ use vantage_rhai::Host;
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{
-    Capability, Column, ColumnFlag, TableShell, Vista, VistaCapabilities, VistaMetadata,
-    VistaResolver, forward_table_shell,
+    Capability, Column, ColumnFlag, IdGenerator, ShortId, TableShell, Vista, VistaCapabilities,
+    VistaMetadata, VistaResolver, forward_table_shell,
 };
 
 use super::support::{eval, host_with, json, read_write, read_write_terminals, run, store};
@@ -58,6 +58,40 @@ fn retried_new_record_flash_reuses_its_id() {
     );
     assert_eq!(out["first"], json!("failed"), "{out}");
     assert_eq!(out["ids"], json!(["r1", out["id"]]), "{out}");
+}
+
+#[test]
+fn retried_new_record_flash_reuses_its_generated_id() {
+    let caps = VistaCapabilities::new().with(Capability::Insert);
+    let short = IdGenerator::short(10, ShortId::BASE58).unwrap();
+    let metadata = id_metadata().with_id_generator(short);
+    let shell = SpyShell::new(
+        MockShell::new()
+            .with_metadata(metadata)
+            .with_capabilities(caps),
+    );
+    shell.lose_next_insert.store(true, Ordering::SeqCst);
+    let host = host_over(shell);
+    let out = json(
+        &host,
+        r#"
+        let r = table("t").record();
+        r.a = 5;
+        try {
+            r.flash();
+        } catch(err) {}
+        let id = r.flash();
+        #{ id: id, ids: table("t").ids() }
+    "#,
+    );
+    let id = out["id"].as_str().unwrap();
+    assert_eq!(id.chars().count(), 10, "{out}");
+    assert!(id.chars().all(|c| ShortId::BASE58.contains(c)), "{out}");
+    assert_eq!(
+        out["ids"],
+        json!([id]),
+        "one row, under the first minted id: {out}"
+    );
 }
 
 #[test]
@@ -205,13 +239,16 @@ fn mock_with(id: &str, fields: &[(&str, CborValue)], caps: VistaCapabilities) ->
     for (k, v) in fields {
         record.insert(k.to_string(), v.clone());
     }
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-        .with_id_column("id");
     MockShell::new()
-        .with_metadata(metadata)
+        .with_metadata(id_metadata())
         .with_capabilities(caps)
         .with_record(id, record)
+}
+
+fn id_metadata() -> VistaMetadata {
+    VistaMetadata::new()
+        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
+        .with_id_column("id")
 }
 
 /// A `ReadWrite`, unlimited host over a single fixed shell — every

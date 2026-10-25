@@ -6,7 +6,7 @@ use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_types::{Record, cbor_id_to_string};
 
-use super::{IdStrategy, Servo, ServoStatus, tracking};
+use super::{IdStrategy, Servo, ServoStatus, mint_generated, tracking};
 use crate::ops::{ChangeFlash, FlashOutcome, FlashRejection};
 
 impl Servo {
@@ -110,7 +110,10 @@ impl Servo {
         if data.is_empty() {
             return Ok(None);
         }
-        let flash = match self.state.id.read().unwrap().clone() {
+        // Read into a local: a guard in the scrutinee would live through the
+        // whole match and block the write lock taken below.
+        let bound = self.state.id.read().unwrap().clone();
+        let flash = match bound {
             // Identity lives in the binding, not the draft: the insert record
             // carries the id column even though the user never typed it.
             Some(id) => {
@@ -122,6 +125,26 @@ impl Servo {
             }
             None if self.state.strategy == IdStrategy::Auto => {
                 ChangeFlash::insert_new(data.clone())
+            }
+            // The generator failed when the servo opened: mint now, before
+            // this first attempt, or fail the flash with its error. The
+            // generator runs outside the lock (it may be slow); the first id
+            // bound wins, so a concurrent flash and every retry reuse it and
+            // a losing mint is dropped.
+            None if self.state.strategy == IdStrategy::Generated => {
+                let minted = mint_generated(&self.dio).map_err(|e| {
+                    error!(
+                        "couldn't mint an id for the new record",
+                        table = self.dio.master().name(),
+                        error = e.to_string()
+                    )
+                })?;
+                let id = self.state.id.write().unwrap().get_or_insert(minted).clone();
+                let mut record = data.clone();
+                record
+                    .entry(self.dio.id_column().to_string())
+                    .or_insert_with(|| CborValue::Text(id.clone()));
+                ChangeFlash::insert(id, record)
             }
             None => ChangeFlash::insert(self.id_from_record(&data)?, data.clone()),
         };

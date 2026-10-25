@@ -54,8 +54,9 @@ impl Dio {
 
     /// Open a [`Servo`] for a record that does not exist yet; the first
     /// [`flash`](crate::servo::Servo::flash) emits an insert. Identity
-    /// follows `strategy`: minted UUID (v7) at creation, backend-assigned
-    /// on first save, or commanded through the record's id column.
+    /// follows `strategy`: minted at creation (a UUIDv7, or the master's
+    /// declared generator), backend-assigned on first save, or commanded
+    /// through the record's id column.
     pub fn servo_new(&self, strategy: IdStrategy) -> Servo {
         spawn_servo(self, None, strategy)
     }

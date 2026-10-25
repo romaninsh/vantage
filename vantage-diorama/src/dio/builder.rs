@@ -302,5 +302,6 @@ fn metadata_of(master: &Vista) -> VistaMetadata {
     metadata.columns = master.columns().clone();
     metadata.references = master.references().clone();
     metadata.id_column = master.id_column().map(str::to_string);
+    metadata.id_generator = master.id_generator().cloned();
     metadata
 }

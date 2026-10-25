@@ -7,7 +7,9 @@ use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::rhai::{DataVocab, Terminals, Writes};
-use vantage_vista::{Column, ColumnFlag, Vista, VistaMetadata, VistaResolver};
+use vantage_vista::{
+    Column, ColumnFlag, IdGenerator, ShortId, Vista, VistaMetadata, VistaResolver,
+};
 
 pub fn rec(pairs: &[(&str, i64)]) -> Record<CborValue> {
     pairs
@@ -26,9 +28,10 @@ pub fn store() -> MemoryStore {
     store
 }
 
-/// Memory Vistas over `store`, declaring `id`, `a`, `n` and `tag`; `mock` a mock
-/// without bulk import that already holds `r1 {a:7}`, `auto` and `intid`
-/// empty mocks with a numeric id column, flagged `auto` on `auto`.
+/// Memory Vistas over `store`, declaring `id`, `a`, `n` and `tag` (`short`
+/// mints 10-character base58 ids); `mock` a mock without bulk import that
+/// already holds `r1 {a:7}`, `auto` and `intid` empty mocks with a numeric id
+/// column, flagged `auto` on `auto`.
 pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
     let store = store.clone();
     let mock = MockShell::new()
@@ -58,7 +61,11 @@ pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
             .with_id_column("id");
         let catalog = MemoryCatalog::new(store.clone());
         let shell = MemoryTableShell::new(store.table(name), metadata, catalog);
-        Ok(Vista::new(name, shell))
+        let vista = Vista::new(name, shell);
+        if name == "short" {
+            return Ok(vista.with_id_generator(IdGenerator::short(10, ShortId::BASE58)?));
+        }
+        Ok(vista)
     })
 }
 

@@ -245,6 +245,7 @@ pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantag
 pub fn vantage_vista::Vista::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
 pub fn vantage_vista::Vista::driver_name(&self) -> &'static str
 pub fn vantage_vista::Vista::id_column(&self) -> core::option::Option<&str>
+pub fn vantage_vista::Vista::id_generator(&self) -> core::option::Option<&vantage_vista::IdGenerator>
 pub fn vantage_vista::Vista::is_narrowed(&self) -> bool
 pub fn vantage_vista::Vista::map_shell<S: vantage_vista::TableShell>(self, impl core::ops::function::FnOnce(alloc::boxed::Box<dyn vantage_vista::TableShell>) -> S) -> Self
 pub fn vantage_vista::Vista::name(&self) -> &str
@@ -254,6 +255,7 @@ pub fn vantage_vista::Vista::query(&self) -> &vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::reference(&self, &str) -> core::option::Option<&vantage_vista::Reference>
 pub fn vantage_vista::Vista::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
 pub fn vantage_vista::Vista::title_columns(&self) -> alloc::vec::Vec<&str>
+pub fn vantage_vista::Vista::with_id_generator(self, vantage_vista::IdGenerator) -> Self
 pub fn vantage_vista::Vista::with_name(self, impl core::convert::Into<alloc::string::String>) -> Self
 impl vantage_vista::Vista
 pub async fn vantage_vista::Vista::count(&self) -> vantage_core::util::error::Result<i64>
@@ -663,6 +665,31 @@ impl core::marker::Unpin for vantage_vista::FilterOp
 impl core::marker::UnsafeUnpin for vantage_vista::FilterOp
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::FilterOp
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::FilterOp
+#[non_exhaustive] pub enum vantage_vista::IdGenerator
+pub vantage_vista::IdGenerator::Custom(alloc::rcs::arc::Arc<(dyn core::ops::function::Fn() -> alloc::string::String + core::marker::Send + core::marker::Sync)>)
+pub vantage_vista::IdGenerator::Fallible(alloc::rcs::arc::Arc<(dyn core::ops::function::Fn() -> vantage_core::util::error::Result<alloc::string::String> + core::marker::Send + core::marker::Sync)>)
+pub vantage_vista::IdGenerator::Short(vantage_vista::ShortId)
+pub vantage_vista::IdGenerator::UuidV4
+pub vantage_vista::IdGenerator::UuidV7
+impl vantage_vista::IdGenerator
+pub fn vantage_vista::IdGenerator::custom(impl core::ops::function::Fn() -> alloc::string::String + core::marker::Send + core::marker::Sync + 'static) -> Self
+pub fn vantage_vista::IdGenerator::fallible(impl core::ops::function::Fn() -> vantage_core::util::error::Result<alloc::string::String> + core::marker::Send + core::marker::Sync + 'static) -> Self
+pub fn vantage_vista::IdGenerator::generate(&self) -> alloc::string::String
+pub fn vantage_vista::IdGenerator::short(usize, &str) -> vantage_core::util::error::Result<Self>
+pub fn vantage_vista::IdGenerator::try_generate(&self) -> vantage_core::util::error::Result<alloc::string::String>
+impl core::clone::Clone for vantage_vista::IdGenerator
+pub fn vantage_vista::IdGenerator::clone(&self) -> Self
+impl core::default::Default for vantage_vista::IdGenerator
+pub fn vantage_vista::IdGenerator::default() -> Self
+impl core::fmt::Debug for vantage_vista::IdGenerator
+pub fn vantage_vista::IdGenerator::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_vista::IdGenerator
+impl core::marker::Send for vantage_vista::IdGenerator
+impl core::marker::Sync for vantage_vista::IdGenerator
+impl core::marker::Unpin for vantage_vista::IdGenerator
+impl core::marker::UnsafeUnpin for vantage_vista::IdGenerator
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::IdGenerator
+impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::IdGenerator
 #[non_exhaustive] pub enum vantage_vista::ReferenceKind
 pub vantage_vista::ReferenceKind::ContainsMany
 pub vantage_vista::ReferenceKind::ContainsOne
@@ -1045,6 +1072,30 @@ impl<R> core::marker::Unpin for vantage_vista::ReferenceSpec<R> where R: core::m
 impl<R> core::marker::UnsafeUnpin for vantage_vista::ReferenceSpec<R> where R: core::marker::UnsafeUnpin
 impl<R> core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ReferenceSpec<R> where R: core::panic::unwind_safe::RefUnwindSafe
 impl<R> core::panic::unwind_safe::UnwindSafe for vantage_vista::ReferenceSpec<R> where R: core::panic::unwind_safe::UnwindSafe
+pub struct vantage_vista::ShortId
+impl vantage_vista::ShortId
+pub const vantage_vista::ShortId::ALNUM: &str
+pub const vantage_vista::ShortId::BASE58: &str
+pub const vantage_vista::ShortId::MAX_LENGTH: usize
+pub fn vantage_vista::ShortId::alphabet(&self) -> alloc::string::String
+pub fn vantage_vista::ShortId::generate(&self) -> alloc::string::String
+pub fn vantage_vista::ShortId::length(&self) -> usize
+pub fn vantage_vista::ShortId::new(usize, &str) -> vantage_core::util::error::Result<Self>
+impl core::clone::Clone for vantage_vista::ShortId
+pub fn vantage_vista::ShortId::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::ShortId
+impl core::cmp::PartialEq for vantage_vista::ShortId
+pub fn vantage_vista::ShortId::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::ShortId
+pub fn vantage_vista::ShortId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_vista::ShortId
+impl core::marker::Freeze for vantage_vista::ShortId
+impl core::marker::Send for vantage_vista::ShortId
+impl core::marker::Sync for vantage_vista::ShortId
+impl core::marker::Unpin for vantage_vista::ShortId
+impl core::marker::UnsafeUnpin for vantage_vista::ShortId
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ShortId
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::ShortId
 pub struct vantage_vista::Vista
 impl vantage_vista::Vista
 pub fn vantage_vista::Vista::add_condition(&mut self, &str, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<()>
@@ -1063,6 +1114,7 @@ pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantag
 pub fn vantage_vista::Vista::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
 pub fn vantage_vista::Vista::driver_name(&self) -> &'static str
 pub fn vantage_vista::Vista::id_column(&self) -> core::option::Option<&str>
+pub fn vantage_vista::Vista::id_generator(&self) -> core::option::Option<&vantage_vista::IdGenerator>
 pub fn vantage_vista::Vista::is_narrowed(&self) -> bool
 pub fn vantage_vista::Vista::map_shell<S: vantage_vista::TableShell>(self, impl core::ops::function::FnOnce(alloc::boxed::Box<dyn vantage_vista::TableShell>) -> S) -> Self
 pub fn vantage_vista::Vista::name(&self) -> &str
@@ -1072,6 +1124,7 @@ pub fn vantage_vista::Vista::query(&self) -> &vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::reference(&self, &str) -> core::option::Option<&vantage_vista::Reference>
 pub fn vantage_vista::Vista::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
 pub fn vantage_vista::Vista::title_columns(&self) -> alloc::vec::Vec<&str>
+pub fn vantage_vista::Vista::with_id_generator(self, vantage_vista::IdGenerator) -> Self
 pub fn vantage_vista::Vista::with_name(self, impl core::convert::Into<alloc::string::String>) -> Self
 impl vantage_vista::Vista
 pub async fn vantage_vista::Vista::count(&self) -> vantage_core::util::error::Result<i64>
@@ -1144,6 +1197,7 @@ impl core::panic::unwind_safe::UnwindSafe for vantage_vista::VistaCapabilities
 #[non_exhaustive] pub struct vantage_vista::VistaMetadata
 pub vantage_vista::VistaMetadata::columns: indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
 pub vantage_vista::VistaMetadata::id_column: core::option::Option<alloc::string::String>
+pub vantage_vista::VistaMetadata::id_generator: core::option::Option<vantage_vista::IdGenerator>
 pub vantage_vista::VistaMetadata::references: indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
 impl vantage_vista::VistaMetadata
 pub fn vantage_vista::VistaMetadata::new() -> Self
@@ -1151,6 +1205,7 @@ pub fn vantage_vista::VistaMetadata::search_columns(&self) -> alloc::vec::Vec<&s
 pub fn vantage_vista::VistaMetadata::with_column(self, vantage_vista::Column) -> Self
 pub fn vantage_vista::VistaMetadata::with_columns_at<'a>(self, impl core::iter::traits::collect::IntoIterator<Item = (usize, &'a vantage_vista::Column)>) -> Self
 pub fn vantage_vista::VistaMetadata::with_id_column(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_vista::VistaMetadata::with_id_generator(self, vantage_vista::IdGenerator) -> Self
 pub fn vantage_vista::VistaMetadata::with_reference(self, vantage_vista::Reference) -> Self
 impl core::clone::Clone for vantage_vista::VistaMetadata
 pub fn vantage_vista::VistaMetadata::clone(&self) -> Self

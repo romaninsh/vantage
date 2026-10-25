@@ -14,6 +14,7 @@ pub mod eval;
 mod factory;
 mod filter;
 mod forward;
+mod id_generator;
 mod insert;
 mod metadata;
 #[cfg(any(test, feature = "mocks"))]
@@ -37,6 +38,7 @@ pub use column::{Column, ColumnFamily, ColumnFlag};
 pub use contained::{ContainedWriteback, build_contained_vista};
 pub use factory::VistaFactory;
 pub use filter::{FilterOp, operand_text};
+pub use id_generator::{IdGenerator, ShortId};
 pub use metadata::VistaMetadata;
 pub use page::{NativeCondition, Page, Preview};
 pub use query::{Condition, VistaQuery};

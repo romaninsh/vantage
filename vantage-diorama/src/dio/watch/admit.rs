@@ -20,7 +20,7 @@ pub(crate) enum Admit {
     /// delete.
     Matching {
         queries: Vec<VistaQuery>,
-        metadata: VistaMetadata,
+        metadata: Box<VistaMetadata>,
     },
     /// The master holds native conditions, which can't be judged in memory:
     /// every change re-reads the set instead.
@@ -53,7 +53,7 @@ impl Admit {
         } else {
             Admit::Matching {
                 queries,
-                metadata: inner.metadata.clone(),
+                metadata: Box::new(inner.metadata.clone()),
             }
         }
     }

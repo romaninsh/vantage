@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -30,8 +30,9 @@ serde_json = { version = "1", optional = true }
 tokio = { version = "1.52", features = ["sync"], optional = true }
 # Scripts hand `dynamic_to_cbor` chrono instants (a host's `now()`).
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
-# Rhai inserts without an id mint a UUIDv7 before the first attempt.
-uuid = { version = "1", features = ["v7"], optional = true }
+# `IdGenerator`: UUIDv7/v4 ids, and short ids drawn from the OS random source.
+uuid = { version = "1", features = ["v4", "v7"] }
+getrandom = "0.4"
 
 [features]
 # Rhai scripting over the type-erased `Vista`: `DataVocab`, the table handle
@@ -45,7 +46,6 @@ rhai = [
     "tokio/rt",
     "tokio/rt-multi-thread",
     "dep:chrono",
-    "dep:uuid",
     "vantage-types/serde",
 ]
 # Driver-facing checks (`vantage_vista::contract`) that every backend's test

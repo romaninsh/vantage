@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.0 — 2026-10-25
+
+- `IdGenerator` (moved here from vantage-table, which re-exports it) says how a writer mints a new
+  record's id: `UuidV7` (the default), `UuidV4`, `Short(ShortId)`, `Custom`, or `Fallible`, a
+  closure that can fail. `ShortId::new(length, alphabet)` makes ids of a fixed length from an
+  alphabet (`ShortId::BASE58`, `ShortId::ALNUM`, or your own), each character drawn uniformly from
+  the OS random source. Writers mint through `IdGenerator::try_generate`, so a failing generator
+  fails the write that asked for the id.
+- A table declares its generator in `VistaMetadata::id_generator` (`with_id_generator`).
+  `Vista::id_generator()` reads it, and `Vista::with_id_generator()` adds one to a Vista whose
+  metadata a driver factory built. Narrowing and clones keep it.
+- The Rhai `insert` and a `record()` draft's first `flash()` mint a missing id from the table's
+  generator instead of always using a UUIDv7. The id is still minted once, before the first
+  attempt, and a retried flash reuses it. An insert of an id already in the set still returns the
+  stored row.
+
 ## 2.1.0 — 2026-10-18
 
 - `Capability::WritesReachHooks` (`writes_reach_hooks`): every write the vista advertises runs
