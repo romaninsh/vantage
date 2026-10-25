@@ -127,27 +127,19 @@ impl Servo {
                 ChangeFlash::insert_new(data.clone())
             }
             // The generator failed when the servo opened: mint now, before
-            // this first attempt, or fail the flash with its error. The id is
-            // bound under the write lock, so a concurrent flash and every
-            // retry reuse it instead of minting their own.
+            // this first attempt, or fail the flash with its error. The
+            // generator runs outside the lock (it may be slow); the first id
+            // bound wins, so a concurrent flash and every retry reuse it and
+            // a losing mint is dropped.
             None if self.state.strategy == IdStrategy::Generated => {
-                let id = {
-                    let mut bound = self.state.id.write().unwrap();
-                    match bound.clone() {
-                        Some(id) => id,
-                        None => {
-                            let id = mint_generated(&self.dio).map_err(|e| {
-                                error!(
-                                    "couldn't mint an id for the new record",
-                                    table = self.dio.master().name(),
-                                    error = e.to_string()
-                                )
-                            })?;
-                            *bound = Some(id.clone());
-                            id
-                        }
-                    }
-                };
+                let minted = mint_generated(&self.dio).map_err(|e| {
+                    error!(
+                        "couldn't mint an id for the new record",
+                        table = self.dio.master().name(),
+                        error = e.to_string()
+                    )
+                })?;
+                let id = self.state.id.write().unwrap().get_or_insert(minted).clone();
                 let mut record = data.clone();
                 record
                     .entry(self.dio.id_column().to_string())

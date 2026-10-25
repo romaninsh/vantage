@@ -160,7 +160,8 @@ async fn a_failing_generator_fails_the_first_flash() -> Result<()> {
 
 /// The generator failed when the servo opened, so the first flash mints.
 /// Two flashes racing on that unbound servo from two threads must share one
-/// id, not insert under two. The slow generator holds both in the mint.
+/// id, not insert under two. Each mint waits (briefly, bounded) for the other
+/// flash to reach the generator too, so both mint and one id must win.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_flashes_share_one_late_minted_id() -> Result<()> {
     let shell = product_shell();
@@ -169,7 +170,10 @@ async fn concurrent_flashes_share_one_late_minted_id() -> Result<()> {
     let late = IdGenerator::fallible(move || match counter.fetch_add(1, Ordering::SeqCst) {
         0 => Err(vantage_core::error!("not yet")),
         n => {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(200);
+            while counter.load(Ordering::SeqCst) < 3 && std::time::Instant::now() < until {
+                std::hint::spin_loop();
+            }
             Ok(format!("g{n}"))
         }
     });
@@ -190,9 +194,11 @@ async fn concurrent_flashes_share_one_late_minted_id() -> Result<()> {
         .flatten()
         .filter_map(|f| f.id().map(str::to_string))
         .collect();
-    assert!(ids.iter().all(|id| id == "g1"), "{ids:?}");
-    assert_eq!(calls.load(Ordering::SeqCst), 2, "one failed mint, one real");
-    assert_eq!(servo.id().as_deref(), Some("g1"));
+    let bound = servo.id().expect("bound by the first flash");
+    assert!(
+        !ids.is_empty() && ids.iter().all(|id| *id == bound),
+        "{ids:?} vs {bound}"
+    );
     assert_eq!(shell.len(), 2, "p1 and the one created row");
     Ok(())
 }

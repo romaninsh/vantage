@@ -9,6 +9,7 @@ use vantage_types::Record;
 mod catalog;
 mod columns;
 mod eval;
+mod id_generator;
 mod insert;
 mod mini;
 mod query;

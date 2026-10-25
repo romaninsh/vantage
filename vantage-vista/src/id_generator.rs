@@ -105,10 +105,9 @@ pub struct ShortId {
 
 impl ShortId {
     /// Bitcoin's base58: letters and digits without `0`, `O`, `I` and `l`.
-    pub const BASE58: &'static str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    pub const BASE58: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
     /// `A`–`Z`, `a`–`z` and `0`–`9`.
-    pub const ALNUM: &'static str =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    pub const ALNUM: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     /// The longest id a `ShortId` makes.
     pub const MAX_LENGTH: usize = 256;
 
@@ -181,70 +180,5 @@ impl std::fmt::Debug for ShortId {
             .field("length", &self.length)
             .field("alphabet", &self.alphabet())
             .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn short_ids_have_the_length_and_alphabet_asked_for() {
-        let short = ShortId::new(10, ShortId::BASE58).unwrap();
-        for _ in 0..200 {
-            let id = short.generate();
-            assert_eq!(id.chars().count(), 10, "{id}");
-            assert!(id.chars().all(|c| ShortId::BASE58.contains(c)), "{id}");
-        }
-    }
-
-    #[test]
-    fn short_ids_reach_every_character_of_a_small_alphabet() {
-        let short = ShortId::new(64, "ab").unwrap();
-        let id = short.generate();
-        assert!(id.contains('a') && id.contains('b'), "{id}");
-    }
-
-    #[test]
-    fn base58_has_58_characters_without_lookalikes() {
-        assert_eq!(ShortId::BASE58.chars().count(), 58);
-        assert!(!ShortId::BASE58.contains(&['0', 'O', 'I', 'l'][..]));
-        assert_eq!(ShortId::ALNUM.chars().count(), 62);
-    }
-
-    #[test]
-    fn short_id_refuses_bad_lengths_and_alphabets() {
-        for (length, alphabet) in [
-            (0, ShortId::BASE58),
-            (257, ShortId::BASE58),
-            (8, "a"),
-            (8, "abca"),
-            (8, "ab c"),
-        ] {
-            assert!(
-                ShortId::new(length, alphabet).is_err(),
-                "{length} over {alphabet:?} accepted"
-            );
-        }
-    }
-
-    #[test]
-    fn a_fallible_generator_reports_its_error_through_try_generate() {
-        let failing = IdGenerator::fallible(|| Err(error!("no ids today")));
-        let err = failing.try_generate().unwrap_err();
-        assert!(err.to_string().contains("no ids today"), "{err}");
-        let ok = IdGenerator::fallible(|| Ok("made".into()));
-        assert_eq!(ok.try_generate().unwrap(), "made");
-        assert_eq!(ok.generate(), "made");
-        assert_eq!(
-            IdGenerator::custom(|| "c".into()).try_generate().unwrap(),
-            "c"
-        );
-    }
-
-    #[test]
-    fn the_default_generator_is_uuid_v7() {
-        let id = IdGenerator::default().generate();
-        assert_eq!(uuid::Uuid::parse_str(&id).unwrap().get_version_num(), 7);
     }
 }
