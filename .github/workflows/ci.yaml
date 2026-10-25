@@ -22,8 +22,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # TEMP: measurement. PR caches only serve their own PR; remove before merge.
-  SAVE_CACHE: ${{ github.head_ref == 'ci-measure' }}
 
 jobs:
   changes:
@@ -66,8 +64,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-rust
-        with:
-          save: ${{ env.SAVE_CACHE }}
       - name: Format
         run: cargo fmt --all -- --check
       # The whole workspace in check mode: a changed API breaking a dependent
@@ -117,7 +113,6 @@ jobs:
           toolchain: ${{ steps.pins.outputs.nightly }}
           key: public-api-${{ steps.pins.outputs.tool }}
           tools: cargo-binstall
-          save: ${{ env.SAVE_CACHE }}
       # A prebuilt binary when there is one; binstall compiles it otherwise.
       - name: Install cargo-public-api
         env:
@@ -149,7 +144,6 @@ jobs:
         with:
           profile: instrumented
           tools: cargo-llvm-cov,cargo-nextest
-          save: ${{ env.SAVE_CACHE }}
       - name: Build and pack an archive per group
         env:
           TESTED: ${{ needs.changes.outputs.tested }}
@@ -199,7 +193,6 @@ jobs:
         with:
           key: matrix-rs
           workspaces: coverage/matrix-rs -> ../../target/matrix-rs
-          save: ${{ github.ref == 'refs/heads/main' || env.SAVE_CACHE == 'true' }}
       - run: cargo build --release --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: matrix-rs, path: target/matrix-rs/release/matrix-rs, retention-days: 1 }
@@ -309,8 +302,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-rust
-        with:
-          save: ${{ env.SAVE_CACHE }}
       - name: Doctests
         env:
           LIBS: ${{ needs.changes.outputs.libs }}
@@ -344,8 +335,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-rust
-        with:
-          save: ${{ env.SAVE_CACHE }}
       - uses: ./.github/actions/start-services
         with:
           services: '["mysql","postgres","sqlite","surreal"]'

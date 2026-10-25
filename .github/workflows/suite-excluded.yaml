@@ -15,9 +15,6 @@ on:
         description: "plain | aws | kubernetes | ui | ui-example"
         type: string
         default: plain
-      save-cache:
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -37,7 +34,6 @@ jobs:
         with:
           key: ${{ inputs.dir }}
           workspaces: ${{ inputs.workdir }} -> target
-          save: ${{ inputs.save-cache }}
 
       - name: System libraries
         if: inputs.kind == 'ui' || inputs.kind == 'ui-example'
