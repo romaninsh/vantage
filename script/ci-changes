@@ -4,8 +4,9 @@
 usage: script/ci-changes --base <sha> [--head <sha>] [--labels <json list>]
 
 Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
-  crates    workspace members to test, sorted
-  libs      those with a library target (doctests)
+  crates    workspace members that changed, sorted
+  tested    those with tests: the test archive and its groups hold only these
+  libs      those whose library runs doctests (not `doctest = false`)
   measured  those that get a coverage report: [{name, dir}]
   new_tests crates whose tests/ changed: the duplicate check runs for these only
   api       a public-API snapshot may have changed
@@ -48,14 +49,31 @@ def show(rev, path):
         return ""
 
 
+def has_tests(directory):
+    """A tests/ dir, or a test attribute anywhere under src/."""
+    if os.path.isdir(os.path.join(ROOT, directory, "tests")):
+        return True
+    for root, _, names in os.walk(os.path.join(ROOT, directory, "src")):
+        for n in names:
+            if n.endswith(".rs") and ("#[test]" in (text := open(os.path.join(root, n)).read())
+                                      or "#[tokio::test" in text):
+                return True
+    return False
+
+
 def members():
-    """({name: dir}, names with a library target) for the workspace."""
+    """({name: dir}, names whose library has doctests, names with tests) for the workspace."""
     meta = json.loads(run("cargo", "metadata", "--no-deps", "--format-version", "1"))
     ids = set(meta["workspace_members"])
     packages = [p for p in meta["packages"] if p["id"] in ids]
     dirs = {p["name"]: os.path.relpath(os.path.dirname(p["manifest_path"]), ROOT) for p in packages}
-    libs = {p["name"] for p in packages if any("lib" in t["kind"] or "proc-macro" in t["kind"] for t in p["targets"])}
-    return dirs, libs
+    # `doctest = false` on the library is the crate saying its examples aren't doctests.
+    libs = {
+        p["name"] for p in packages
+        if any(("lib" in t["kind"] or "proc-macro" in t["kind"]) and t.get("doctest", True) for t in p["targets"])
+    }
+    tested = {name for name, d in dirs.items() if has_tests(d)}
+    return dirs, libs, tested
 
 
 def excluded(config):
@@ -83,7 +101,7 @@ def lock_is_global(old, new, member_names):
     return outside(old) != outside(new)
 
 
-def classify(files, locks, crates, libs, outside, config, labels):
+def classify(files, locks, crates, libs, tested, outside, config, labels):
     by_dir = sorted(((d, n) for n, d in crates.items()), key=lambda x: -len(x[0]))
     outside_dirs = sorted(outside, key=len, reverse=True)
     changed, changed_outside, tests_changed = set(), set(), set()
@@ -117,13 +135,15 @@ def classify(files, locks, crates, libs, outside, config, labels):
     service_map = config.get("services", {})
     services = sorted({s for c in changed for s in service_map.get(c, [])})
     groups = {}
-    for c in sorted(changed):
+    # Only crates with tests go into the test archive and its groups.
+    for c in sorted(changed & tested):
         need = tuple(sorted(service_map.get(c, [])))
         groups.setdefault(need, []).append(c)
     snapshots = set(config.get("api_inputs", []))
     unmeasured = config.get("coverage_ignore", [])
     return {
         "crates": sorted(changed),
+        "tested": sorted(changed & tested),
         "libs": sorted(changed & libs),
         "measured": [{"name": c, "dir": crates[c]} for c in sorted(changed) if not matches(c, unmeasured)],
         # Only these can have new tests, so only these need the duplicate check.
@@ -153,8 +173,8 @@ def main():
     files = run("git", "diff", "--name-only", span).split()
     base = run("git", "merge-base", a.base, a.head).strip()
     locks = [show(base, "Cargo.lock"), show(a.head, "Cargo.lock")] if "Cargo.lock" in files else ["", ""]
-    dirs, libs = members()
-    out = classify(files, locks, dirs, libs, excluded(config), config, json.loads(a.labels))
+    dirs, libs, tested = members()
+    out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels))
     lines = [f"{k}={json.dumps(v, separators=(',', ':'))}" for k, v in out.items()]
     print("\n".join(lines))
     if os.environ.get("GITHUB_OUTPUT"):

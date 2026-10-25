@@ -74,6 +74,21 @@ jobs:
           MEASURED: ${{ needs.changes.outputs.measured }}
         run: coverage/ci-octocov.sh lcov.info "$MEASURED"
 
+  # Saves matrix-rs's own cache, so a PR's duplicate check builds it in seconds.
+  matrix-rs-cache:
+    needs: changes
+    if: needs.changes.outputs.crates != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          key: matrix-rs
+          workspaces: coverage/matrix-rs -> ../../target/matrix-rs
+          save: "true"
+      - run: cargo build --release --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
+
   # Saves the lint cache every PR's clippy restores. Nothing is gated here.
   lint-cache:
     needs: changes

@@ -33,11 +33,11 @@ runs:
     - name: Shared build flags
       shell: bash
       run: |
+        # No debug info: the workspace's [profile.dev] already has `debug = false`,
+        # coverage reads LLVM's own mapping, and it would only bloat the archive.
         {
           echo "CARGO_TERM_COLOR=always"
           echo "CARGO_INCREMENTAL=0"
-          echo "CARGO_PROFILE_DEV_DEBUG=line-tables-only"
-          echo "CARGO_PROFILE_TEST_DEBUG=line-tables-only"
         } >> "$GITHUB_ENV"
 
     - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
@@ -49,10 +49,7 @@ runs:
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
         shared-key: ci-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}
-        # The instrumented jobs also build coverage/matrix-rs, its own workspace.
-        workspaces: |
-          ${{ inputs.workspaces }}
-          ${{ inputs.profile == 'instrumented' && 'coverage/matrix-rs -> ../../target/matrix-rs' || '' }}
+        workspaces: ${{ inputs.workspaces }}
         save-if: ${{ inputs.save }}
         cache-on-failure: true
         cache-all-crates: true
