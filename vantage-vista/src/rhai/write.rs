@@ -118,7 +118,7 @@ impl Gate {
 /// The id is the record's own (the id column, when set); otherwise the
 /// backend's, when the id column is flagged `auto` (`insert_return_id`, not
 /// retry-safe); otherwise `minted`, or a fresh one from the table's
-/// [`IdGenerator`](crate::IdGenerator) — made before the first attempt so a
+/// [`IdGenerator`] — made before the first attempt so a
 /// retry reuses it and lands on the idempotent insert.
 pub(crate) fn insert_record(
     vista: &Vista,

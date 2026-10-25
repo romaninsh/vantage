@@ -110,7 +110,10 @@ impl Servo {
         if data.is_empty() {
             return Ok(None);
         }
-        let flash = match self.state.id.read().unwrap().clone() {
+        // Read into a local: a guard in the scrutinee would live through the
+        // whole match and block the write lock taken below.
+        let bound = self.state.id.read().unwrap().clone();
+        let flash = match bound {
             // Identity lives in the binding, not the draft: the insert record
             // carries the id column even though the user never typed it.
             Some(id) => {
@@ -124,16 +127,27 @@ impl Servo {
                 ChangeFlash::insert_new(data.clone())
             }
             // The generator failed when the servo opened: mint now, before
-            // this first attempt, or fail the flash with its error. `flash`
-            // binds the id, so a retry reuses it.
+            // this first attempt, or fail the flash with its error. The id is
+            // bound under the write lock, so a concurrent flash and every
+            // retry reuse it instead of minting their own.
             None if self.state.strategy == IdStrategy::Generated => {
-                let id = mint_generated(&self.dio).map_err(|e| {
-                    error!(
-                        "couldn't mint an id for the new record",
-                        table = self.dio.master().name(),
-                        error = e.to_string()
-                    )
-                })?;
+                let id = {
+                    let mut bound = self.state.id.write().unwrap();
+                    match bound.clone() {
+                        Some(id) => id,
+                        None => {
+                            let id = mint_generated(&self.dio).map_err(|e| {
+                                error!(
+                                    "couldn't mint an id for the new record",
+                                    table = self.dio.master().name(),
+                                    error = e.to_string()
+                                )
+                            })?;
+                            *bound = Some(id.clone());
+                            id
+                        }
+                    }
+                };
                 let mut record = data.clone();
                 record
                     .entry(self.dio.id_column().to_string())

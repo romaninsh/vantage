@@ -2,7 +2,7 @@
 //! settles on, and a narrowed Dio filling and confining the insert.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
@@ -155,6 +155,45 @@ async fn a_failing_generator_fails_the_first_flash() -> Result<()> {
     };
     assert!(err.to_string().contains("couldn't mint an id"), "{err}");
     assert_eq!(shell.len(), 1, "nothing written");
+    Ok(())
+}
+
+/// The generator failed when the servo opened, so the first flash mints.
+/// Two flashes racing on that unbound servo from two threads must share one
+/// id, not insert under two. The slow generator holds both in the mint.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_flashes_share_one_late_minted_id() -> Result<()> {
+    let shell = product_shell();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let late = IdGenerator::fallible(move || match counter.fetch_add(1, Ordering::SeqCst) {
+        0 => Err(vantage_core::error!("not yet")),
+        n => {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            Ok(format!("g{n}"))
+        }
+    });
+    let lens = Lens::builder().cache(Cache::memory()).build()?;
+    let dio = lens
+        .dio(product_vista(&shell).with_id_generator(late))
+        .build()
+        .await?;
+    let servo = Arc::new(dio.servo_new(IdStrategy::Generated));
+    assert!(servo.id().is_none(), "the open-time mint failed");
+
+    servo.set("name", text("Croissant"));
+    let (one, two) = (servo.clone(), servo.clone());
+    let a = tokio::spawn(async move { one.flash().await });
+    let b = tokio::spawn(async move { two.flash().await });
+    let ids: Vec<_> = [a.await.unwrap()?, b.await.unwrap()?]
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f.id().map(str::to_string))
+        .collect();
+    assert!(ids.iter().all(|id| id == "g1"), "{ids:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), 2, "one failed mint, one real");
+    assert_eq!(servo.id().as_deref(), Some("g1"));
+    assert_eq!(shell.len(), 2, "p1 and the one created row");
     Ok(())
 }
 
