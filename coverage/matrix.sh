@@ -23,6 +23,7 @@
 #   MATRIX_ARCHIVE=<file>     run from an instrumented nextest archive (made by
 #                             `cargo llvm-cov nextest-archive`) instead of building
 #   MATRIX_RS=<file>          a prebuilt coverage/matrix-rs
+#   MATRIX_REPORTS=0          write regions.json only (CI), no reports
 #   JOBS=<n>                  tests run at once (default: every core)
 set -euo pipefail
 
@@ -74,6 +75,9 @@ print(next(os.path.dirname(p["manifest_path"]) for p in m["packages"] if p["name
 
 "$matrix_rs" "$out/list.json" "$dir" "$out" "${JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 python3 -I "$root/coverage/matrix.py" "$out" | tee -a "$log"
+# MATRIX_REPORTS=0 (CI) stops at regions.json: the duplicate check reads only
+# that, and the cluster reports are for people.
+if [[ "${MATRIX_REPORTS:-1}" = 0 ]]; then exit 0; fi
 python3 -I "$root/coverage/report.py" "$out" "$dir" "$pkg" "$jaccard" | tee -a "$log"
 
 if [[ "$baseline" = 1 ]]; then

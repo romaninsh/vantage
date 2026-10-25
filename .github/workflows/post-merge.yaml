@@ -12,9 +12,8 @@ concurrency:
   group: post-merge
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  actions: read
+# Each job asks for what it needs.
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,6 +21,8 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 5
     outputs:
       crates: ${{ steps.c.outputs.crates }}
@@ -31,6 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - id: c
         env:
           BASE: ${{ github.event.before }}
@@ -44,9 +46,11 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
-      actions: write # octocov stores each crate's report as an artifact
+      actions: read # the previous coverage-baseline artifact
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-rust
         with:
           profile: instrumented
@@ -62,40 +66,55 @@ jobs:
           cp .config/nextest.toml.example .config/nextest.toml
           mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
           cargo llvm-cov nextest --all-features --no-fail-fast "${pkgs[@]}" --lcov --output-path lcov.info
-      - name: Install octocov
+      # The baseline PR reports compare against: the last one, with the crates
+      # this merge measured replaced.
+      - name: Update the coverage baseline
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download v0.83.3 -R k1LoW/octocov -p 'octocov_v0.83.3_linux_amd64.tar.gz' -O - | tar -xz -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Per-crate coverage
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
           MEASURED: ${{ needs.changes.outputs.measured }}
-        run: coverage/ci-octocov.sh lcov.info "$MEASURED"
+        run: |
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=coverage-baseline&per_page=1" \
+            -q '.artifacts[0].workflow_run.id // empty')
+          [ -z "$run" ] || gh run download "$run" -R "$GITHUB_REPOSITORY" -n coverage-baseline -D previous
+          mkdir -p junit
+          python3 -I coverage/ci-report.py junit lcov.info "$MEASURED" \
+            --baseline previous/coverage-baseline.json --update-baseline coverage-baseline.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-baseline
+          path: coverage-baseline.json
+          retention-days: 90
 
   # rust-cache keys a cache by job id: each job below shares its id with the
-  # ci.yaml job it warms (matrix-rs, lint; coverage above warms build).
+  # ci.yaml job it warms (matrix-rs, lint; build above warms build).
   matrix-rs:
     needs: changes
     if: needs.changes.outputs.crates != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-rust
         with:
           key: matrix-rs
           workspaces: coverage/matrix-rs -> ../../target/matrix-rs
-      - run: cargo build --release --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
+      - run: cargo build --release --locked --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
 
   # Warms the cache every PR's clippy restores. Nothing is gated here.
   lint:
     needs: changes
     if: needs.changes.outputs.crates != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-rust
       - run: cargo clippy --workspace --all-targets --all-features

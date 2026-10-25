@@ -23,3 +23,8 @@ surreal = { max-threads = 1 }
 filter = 'package(vantage-surrealdb) or package(surreal-client) or package(bakery_model3)'
 test-group = 'surreal'
 retries = 2
+
+# CI (NEXTEST_PROFILE=ci): the default profile plus JUnit results, which the
+# coverage job turns into the PR's test report.
+[profile.ci.junit]
+path = "junit.xml"

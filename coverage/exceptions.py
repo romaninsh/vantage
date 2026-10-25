@@ -12,6 +12,7 @@ is used nowhere else, and its test isn't listed twice.
 import hashlib
 import os
 import secrets
+import subprocess
 import sys
 
 try:
@@ -30,9 +31,10 @@ HEADER = """\
 
 
 def key(create=False):
-    # CI has no ~/.config: it passes the same key as a repository secret.
-    if os.environ.get("COVERAGE_EXCEPTIONS_KEY"):
-        return os.environ["COVERAGE_EXCEPTIONS_KEY"]
+    # CI has no ~/.config: it passes the same key as a repository secret,
+    # stripped like the file, so a secret saved with a newline still signs.
+    if os.environ.get("COVERAGE_EXCEPTIONS_KEY", "").strip():
+        return os.environ["COVERAGE_EXCEPTIONS_KEY"].strip()
     if not os.path.exists(KEY):
         if not create:
             return None
@@ -58,6 +60,15 @@ def entries(package):
     return yaml.safe_load(open(path(package))) or []
 
 
+def base_entries(base, package):
+    """The package's entries as committed at `base`, or [] if it had none."""
+    shown = subprocess.run(
+        ["git", "show", f"{base}:coverage/exceptions/{package}.yaml"],
+        cwd=os.path.dirname(DIR), capture_output=True, text=True,
+    )
+    return (yaml.safe_load(shown.stdout) or []) if shown.returncode == 0 else []
+
+
 def packages():
     if not os.path.isdir(DIR):
         return []
@@ -68,6 +79,15 @@ def check(package=None):
     """({test: entry} accepted, [(entry, problem)] rejected) for one package,
     or for all packages when none is named. Tokens must be unique across all."""
     secret = key()
+    # GitHub gives fork and Dependabot PRs no secrets. There, an entry that sits
+    # unchanged on the base branch (verified when it merged) still counts; a new
+    # or edited one can't be verified and is rejected. Fails closed otherwise.
+    trusted = None
+    base = os.environ.get("EXCEPTIONS_BASE")
+    if secret is None and os.environ.get("GITHUB_ACTIONS") == "true" and base:
+        trusted = {p: base_entries(base, p) for p in packages()}
+        print("::warning::no COVERAGE_EXCEPTIONS_KEY: only exceptions already on the base branch count",
+              file=sys.stderr)
     tokens = {}
     for p in packages():
         for e in entries(p):
@@ -84,9 +104,11 @@ def check(package=None):
             nonce, _, sig = token.partition("-")
             if set(e) != {"test", "reason", "token"}:
                 problem = "an entry has exactly three fields: test, reason, token"
-            elif secret is None:
+            elif secret is None and trusted is None:
                 problem = f"no key at {KEY}: no token can be checked"
-            elif not nonce or sig != sign(secret, nonce, p, test, reason):
+            elif secret is None and e not in trusted.get(p, []):
+                problem = "new or edited, and this run has no key to verify it (a maintainer re-runs it)"
+            elif secret is not None and (not nonce or sig != sign(secret, nonce, p, test, reason)):
                 problem = "signature doesn't match (not vended, or edited after vending)"
             elif tokens[token] > 1:
                 problem = "token used more than once"

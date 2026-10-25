@@ -14,7 +14,9 @@ from collections import defaultdict
 
 OUT = os.path.abspath(sys.argv[1])
 data = json.load(open(os.path.join(OUT, "covered.json")))
-tests, internal = range(data["tests"]), data["internal"]
+tests, internal = data["tests"], data["internal"]
+if not isinstance(tests, int) or not 0 <= tests <= len(covered_keys := data["covered"]) + len(data["failed"]):
+    sys.exit(f"covered.json: test count {tests!r} doesn't match its {len(covered_keys)} measured tests")
 covered = {k: {tuple(r) for r in regions} for k, regions in data["covered"].items()}
 failed = [tuple(f) for f in data["failed"]]
 
@@ -60,12 +62,12 @@ json.dump({
     "internal": sorted(internal),
 }, open(os.path.join(OUT, "regions.json"), "w"))
 json.dump({
-    "tests": len(tests), "measured": len(covered), "failed": failed,
+    "tests": tests, "measured": len(covered), "failed": failed,
     "regions": len(universe), "cover_size": len(keep), "keep": keep,
     "rows": rows, "subsumed": subsumed,
 }, open(os.path.join(OUT, "matrix.json"), "w"), indent=1)
 
-print(f"tests {len(tests)}  measured {len(covered)}  failed/unmeasured {len(failed)}")
+print(f"tests {tests}  measured {len(covered)}  failed/unmeasured {len(failed)}")
 for key, code in failed:
     print(f"  FAILED (exit {code}): {key}")
 print(f"regions covered {len(universe)}")
