@@ -3,8 +3,8 @@ use indexmap::IndexMap;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_vista::mocks::MockShell;
 use vantage_vista::{
-    Capability, Column, ColumnFlag, Condition, FilterOp, NativeCondition, SortDirection, Vista,
-    VistaCapabilities, VistaMetadata, VistaQuery,
+    Capability, Column, ColumnFlag, Condition, FilterOp, IdGenerator, NativeCondition,
+    SortDirection, Vista, VistaCapabilities, VistaMetadata, VistaQuery,
 };
 
 use super::{i, rec, t};
@@ -76,6 +76,30 @@ fn a_vista_reports_its_schema_and_name() {
     assert!(vista.reference("nope").is_none());
     assert!(!vista.driver_name().is_empty());
     assert!(vista.capabilities().has(Capability::Insert));
+}
+
+#[tokio::test]
+async fn a_declared_id_generator_survives_narrowing_and_wrapping() {
+    assert!(people().id_generator().is_none(), "none declared: UUIDv7");
+    let vista = people()
+        .with_id_generator(IdGenerator::short(6, "ab").unwrap())
+        .with_condition("age", FilterOp::Gt, 25_i64)
+        .unwrap()
+        .map_shell(|inner| Wrap { inner });
+    let id = vista.id_generator().expect("generator kept").generate();
+    assert_eq!(id.len(), 6, "{id}");
+    assert!(id.chars().all(|c| c == 'a' || c == 'b'), "{id}");
+    assert_eq!(
+        ids(&vista).await,
+        ["p1", "p3"],
+        "reads still reach the shell"
+    );
+
+    let declared = Vista::new(
+        "people",
+        shell().with_metadata(metadata().with_id_generator(IdGenerator::UuidV4)),
+    );
+    assert!(matches!(declared.id_generator(), Some(IdGenerator::UuidV4)));
 }
 
 #[tokio::test]

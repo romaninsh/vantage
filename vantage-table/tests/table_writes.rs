@@ -843,6 +843,31 @@ async fn with_generated_id_uses_the_custom_generator() {
 }
 
 #[tokio::test]
+async fn with_generated_id_mints_short_ids() {
+    let table = empty()
+        .await
+        .with_generated_id(IdGenerator::short(8, "xyz").unwrap());
+    let id = table
+        .insert_return_id_value(&rec(json!({"name": "a"})))
+        .await
+        .unwrap();
+    assert_eq!(id.len(), 8, "{id}");
+    assert!(id.chars().all(|c| "xyz".contains(c)), "{id}");
+}
+
+#[tokio::test]
+async fn a_failing_generator_fails_the_insert() {
+    let table = empty().await.with_generated_id(IdGenerator::fallible(|| {
+        Err(vantage_core::error!("no ids today"))
+    }));
+    let err = table
+        .insert_return_id_value(&rec(json!({"name": "a"})))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("no ids today"), "{err}");
+}
+
+#[tokio::test]
 async fn add_generated_id_is_the_mutable_form() {
     let mut table = empty().await;
     table.add_generated_id(IdGenerator::custom(|| "made-up".into()));

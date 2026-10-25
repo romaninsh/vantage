@@ -6,7 +6,7 @@ use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_types::{Record, cbor_id_to_string};
 
-use super::{IdStrategy, Servo, ServoStatus, tracking};
+use super::{IdStrategy, Servo, ServoStatus, mint_generated, tracking};
 use crate::ops::{ChangeFlash, FlashOutcome, FlashRejection};
 
 impl Servo {
@@ -122,6 +122,23 @@ impl Servo {
             }
             None if self.state.strategy == IdStrategy::Auto => {
                 ChangeFlash::insert_new(data.clone())
+            }
+            // The generator failed when the servo opened: mint now, before
+            // this first attempt, or fail the flash with its error. `flash`
+            // binds the id, so a retry reuses it.
+            None if self.state.strategy == IdStrategy::Generated => {
+                let id = mint_generated(&self.dio).map_err(|e| {
+                    error!(
+                        "couldn't mint an id for the new record",
+                        table = self.dio.master().name(),
+                        error = e.to_string()
+                    )
+                })?;
+                let mut record = data.clone();
+                record
+                    .entry(self.dio.id_column().to_string())
+                    .or_insert_with(|| CborValue::Text(id.clone()));
+                ChangeFlash::insert(id, record)
             }
             None => ChangeFlash::insert(self.id_from_record(&data)?, data.clone()),
         };

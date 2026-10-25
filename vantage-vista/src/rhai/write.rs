@@ -21,7 +21,7 @@ use super::handle::Handle;
 use super::import::{import_rows, import_rows_mapped};
 use super::read::{RhaiResult, id_string, rhai_err, run};
 use super::vocab::Writes;
-use crate::{ColumnFamily, ColumnFlag, VistaResolver, vista::Vista};
+use crate::{ColumnFamily, ColumnFlag, IdGenerator, VistaResolver, vista::Vista};
 
 /// Register the write terminals. With [`Writes::Denied`] every verb exists
 /// and throws the denial message.
@@ -117,8 +117,9 @@ impl Gate {
 ///
 /// The id is the record's own (the id column, when set); otherwise the
 /// backend's, when the id column is flagged `auto` (`insert_return_id`, not
-/// retry-safe); otherwise `minted`, or a fresh UUIDv7 — made before the first
-/// attempt so a retry reuses it and lands on the idempotent insert.
+/// retry-safe); otherwise `minted`, or a fresh one from the table's
+/// [`IdGenerator`](crate::IdGenerator) — made before the first attempt so a
+/// retry reuses it and lands on the idempotent insert.
 pub(crate) fn insert_record(
     vista: &Vista,
     mut rec: vantage_types::Record<CborValue>,
@@ -151,9 +152,10 @@ pub(crate) fn has_auto_id(vista: &Vista) -> bool {
         .is_some_and(|c| c.has_flag(ColumnFlag::Auto))
 }
 
-/// A client-made UUIDv7 for a row inserted without an id. A numeric id column
-/// can't hold one: without the `auto` flag that is an error asking for either.
-/// An id column with no declared type isn't numeric.
+/// A client-made id for a row inserted without one, from the table's
+/// generator (a UUIDv7 when it declares none). A numeric id column can't hold
+/// one: without the `auto` flag that is an error asking for either. An id
+/// column with no declared type isn't numeric.
 pub(crate) fn new_id(vista: &Vista, id_col: &str) -> RhaiResult<String> {
     if let Some(column) = vista.column(id_col)
         && matches!(
@@ -167,7 +169,10 @@ pub(crate) fn new_id(vista: &Vista, id_col: &str) -> RhaiResult<String> {
             r#type = column.original_type.as_deref().unwrap_or_default()
         )));
     }
-    Ok(uuid::Uuid::now_v7().to_string())
+    match vista.id_generator() {
+        Some(generator) => generator.try_generate().map_err(rhai_err),
+        None => Ok(IdGenerator::UuidV7.generate()),
+    }
 }
 
 /// Delete `id` from `vista`'s set: `true` once the row is gone (missing or

@@ -57,6 +57,7 @@ impl DioShell {
             .collect();
         metadata.references = master.references().clone();
         metadata.id_column = Some(dio.id_column.clone());
+        metadata.id_generator = master.id_generator().cloned();
         let write_caps = dio.write_capabilities();
 
         // The facade advertises what `DioShell` itself answers, and nothing

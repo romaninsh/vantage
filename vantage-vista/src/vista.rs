@@ -4,6 +4,7 @@ use vantage_core::{Result, error};
 use crate::{
     capabilities::{Capability, VistaCapabilities, unsupported},
     column::{Column, ColumnFlag},
+    id_generator::{IdGenerator, IdGeneratorShell},
     metadata::VistaMetadata,
     page::Preview,
     query::VistaQuery,
@@ -118,6 +119,18 @@ impl Vista {
 
     pub fn id_column(&self) -> Option<&str> {
         self.metadata().id_column.as_deref()
+    }
+
+    /// How a writer mints the id of a new record in this table; `None`
+    /// means a UUIDv7.
+    pub fn id_generator(&self) -> Option<&IdGenerator> {
+        self.metadata().id_generator.as_ref()
+    }
+
+    /// This Vista with `generator` in its metadata, for a builder whose
+    /// metadata the driver's factory made. Narrowing and clones keep it.
+    pub fn with_id_generator(self, generator: IdGenerator) -> Self {
+        self.map_shell(|inner| IdGeneratorShell::new(inner, generator))
     }
 
     /// Columns flagged [`Title`](ColumnFlag::Title), in declaration order.

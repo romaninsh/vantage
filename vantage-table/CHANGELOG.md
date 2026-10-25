@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.0 — 2026-10-25
+
+- Requires vantage-vista 2.2.0.
+- `IdGenerator` now lives in vantage-vista and is re-exported at the same path, together with
+  `ShortId`. It gains `IdGenerator::Short` (built with `IdGenerator::short(length, alphabet)`) and
+  `IdGenerator::Fallible` (built with `IdGenerator::fallible`). It is now `#[non_exhaustive]`, so
+  a `match` on it needs a wildcard arm. `with_generated_id` fails the insert when a fallible
+  generator fails.
+
 ## 3.0.0 — 2026-10-18
 
 ### Breaking changes

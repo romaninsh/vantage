@@ -806,6 +806,7 @@ impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::FlashKind
 #[non_exhaustive] pub enum vantage_diorama::IdStrategy
 pub vantage_diorama::IdStrategy::Auto
 pub vantage_diorama::IdStrategy::FromRecord
+pub vantage_diorama::IdStrategy::Generated
 pub vantage_diorama::IdStrategy::Uuid
 impl core::clone::Clone for vantage_diorama::IdStrategy
 pub fn vantage_diorama::IdStrategy::clone(&self) -> Self

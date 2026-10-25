@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0 — 2026-10-25
+
+- Requires vantage-vista 2.2.0 and vantage-table 3.1.0.
+- `IdStrategy::Generated` mints a new servo's id when it opens, from the master's declared
+  `IdGenerator` (a UUIDv7 when none is declared). A retried create reuses it, as with
+  `IdStrategy::Uuid`, which keeps minting UUIDv7s whatever the table declares. If the generator
+  fails at open, the servo stays unbound and its first flash mints again; if that fails too, the
+  flash fails with the generator's error and nothing is written. The Dio facade (`Dio::cached`)
+  carries the master's generator.
+
 ## 1.2.0 — 2026-10-18
 
 - Requires vantage-table 3.0.0.
