@@ -9,28 +9,26 @@ and `rules.md` next to it. Your input is `coverage/report/{crate}/groups.md`.
 
 1. Read every test in the group. Search the file and the crate for other tests of the same
    behaviour (rules R6) and include them.
-2. Write `{workspace}/proposals/{n}.md`:
+2. Write `{workspace}/proposals/{n}.md`, short; one line per item:
 
    ```
-   # {n}. {behaviour in a few words}
-   ## Tests now
-   <each test: name, file:lines, its asserts in one line>
+   # {n}. {behaviour}
    ## Change
-   DELETE <test> (covered by <test>: <assertion>) | COMBINE into <name> | KEEP <test>: <reason>
+   DELETE <test> — covered by <test>: <assertion>
+   COMBINE <tests> into <name>
+   KEEP <test> — <how it differs>
    ## New code
-   <the complete resulting test(s), ready to paste>
+   <the complete resulting test(s), ready to paste, with file:lines replaced>
    ## Cases kept
-   <for every case left: what makes it different from every other case and test (path, input class,
-   outcome). "Same path as X" means it goes.>
+   <one line per case: how it differs from the others (path, input class, outcome)>
    ```
-3. Reply to the coordinator with the proposal path only.
+3. Reply with the proposal path only.
 
 ## When challenged
 
-A verdict file names what is wrong and the rule. Revise the proposal to fix it, overwrite the
-file, and reply with the path. Don't argue the point: if you think a demand is wrong, write
-`DISPUTE: <one line>` at the top of the revised proposal and still make your best fix. The
-coordinator takes disputes to the user.
+Fix every DEMAND in the proposal, overwrite it, reply with the path. If a demand is wrong, add
+`DISPUTE: <one line, citing the contract or a rule>` at the top and still make your best fix: the
+challenger decides whether to uphold it. Only an upheld dispute reaches the user.
 
 ## When told to apply
 

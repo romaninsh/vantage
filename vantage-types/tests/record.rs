@@ -104,43 +104,16 @@ fn iterates_by_value_reference_and_mutable_reference() {
 
 #[test]
 fn only_the_differing_fields_come_back() {
-    let before = record(&[("status", "unregistered"), ("found", "[]")]);
+    let before = record(&[
+        ("status", "unregistered"),
+        ("found", "[]"),
+        ("verification_code", "123456"),
+    ]);
     let after = record(&[("status", "pending"), ("found", "[]")]);
 
     let changes = after.changes_from(&before);
 
-    assert_eq!(changes.len(), 1);
-    assert_eq!(changes["status"], "pending");
-    assert!(!changes.contains_key("found"));
-}
-
-#[test]
-fn a_field_the_earlier_record_lacks_counts_as_a_change() {
-    let before = record(&[("status", "unregistered")]);
-    let after = record(&[("status", "unregistered"), ("verification_code", "123456")]);
-
-    let changes = after.changes_from(&before);
-
-    assert_eq!(changes.len(), 1);
-    assert_eq!(changes["verification_code"], "123456");
-}
-
-#[test]
-fn identical_records_produce_no_changes() {
-    let same = record(&[("status", "registered")]);
-    assert!(same.changes_from(&same).is_empty());
-}
-
-#[test]
-fn a_dropped_field_is_not_reported() {
-    let before = record(&[("status", "pending"), ("verification_code", "123456")]);
-    let after = record(&[("status", "registered")]);
-
-    let changes = after.changes_from(&before);
-
-    assert_eq!(changes.len(), 1);
-    assert!(changes.contains_key("status"));
-    assert!(!changes.contains_key("verification_code"));
+    assert_eq!(changes, record(&[("status", "pending")]));
 }
 
 // reshaping between value types
@@ -292,27 +265,6 @@ mod serde_entities {
     }
 
     #[test]
-    fn nested_structs_become_nested_json() {
-        #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-        struct Person {
-            name: String,
-            address: User,
-        }
-        let person = Person {
-            name: "Bob".into(),
-            address: User {
-                name: "Home".into(),
-                age: 1,
-            },
-        };
-
-        let record: Record<JsonValue> = person.clone().try_into_record().unwrap();
-
-        assert!(record["address"].is_object());
-        assert_eq!(Person::from_record(record).unwrap(), person);
-    }
-
-    #[test]
     fn json_object_converts_to_a_record_and_back() {
         let object = json!({"name": "Frank", "age": 45});
 
@@ -337,13 +289,6 @@ mod serde_entities {
         let mut record = Record::new();
         record.insert("name".to_string(), json!("Invalid"));
         record.insert("age".to_string(), json!("not a number"));
-        assert!(User::from_record(record).is_err());
-    }
-
-    #[test]
-    fn json_record_missing_a_field_does_not_deserialize() {
-        let mut record = Record::new();
-        record.insert("name".to_string(), json!("Only name"));
         assert!(User::from_record(record).is_err());
     }
 

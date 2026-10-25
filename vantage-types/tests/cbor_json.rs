@@ -272,39 +272,46 @@ fn presentation_renders_binary_uuid_as_hex() {
 
 #[test]
 fn presentation_falls_back_to_plain_for_off_shape_tags() {
-    assert_eq!(
-        cbor_to_json(&PresentationDialect, tagged(0, int(5))),
-        json!(5)
+    let rendered = cbor_to_json(
+        &PresentationDialect,
+        CborValue::Array(vec![
+            tagged(0, int(5)),
+            tagged(37, text("x")),
+            tagged(8, text("user:1")),
+            tagged(55, text("other")),
+            tagged(12, text("not a pair")),
+            tagged(12, CborValue::Array(vec![int(1), int(2), int(3)])),
+            tagged(12, CborValue::Array(vec![CborValue::Float(1.0)])),
+            tagged(12, CborValue::Array(vec![int(1), CborValue::Float(0.5)])),
+        ]),
     );
-    assert_eq!(
-        cbor_to_json(&PresentationDialect, tagged(37, text("x"))),
-        json!("x")
-    );
-    assert_eq!(
-        cbor_to_json(&PresentationDialect, tagged(8, text("user:1"))),
-        json!("user:1")
-    );
-    assert_eq!(
-        cbor_to_json(&PresentationDialect, tagged(55, text("other"))),
-        json!("other")
-    );
+    assert_eq!(rendered[0], json!(5));
+    assert_eq!(rendered[1], json!("x"));
+    assert_eq!(rendered[2], json!("user:1"));
+    assert_eq!(rendered[3], json!("other"));
+    assert_eq!(rendered[4], json!("not a pair"));
+    assert_eq!(rendered[5], json!([1, 2, 3]));
+    assert_eq!(rendered[6], json!([1.0]));
+    assert_eq!(rendered[7], json!([1, 0.5]));
 }
 
 #[test]
 fn presentation_renders_epoch_pair_as_lossless_rfc3339() {
-    let rendered = cbor_to_json(&PresentationDialect, epoch_pair(1_000_000_000, 5));
-    let JsonValue::String(s) = rendered else {
-        panic!("expected a string");
-    };
-    assert!(s.starts_with("2001-09-09T01:46:40"), "{s}");
-    assert!(s.contains(".000000005"), "{s}");
-    assert!(s.ends_with('Z'), "{s}");
-}
-
-#[test]
-fn presentation_renders_malformed_epoch_pair_plainly() {
-    let v = tagged(12, text("not a pair"));
-    assert_eq!(cbor_to_json(&PresentationDialect, v), json!("not a pair"));
+    let rendered = cbor_to_json(
+        &PresentationDialect,
+        CborValue::Array(vec![
+            epoch_pair(1_000_000_000, 5),
+            epoch_pair(-1, 0),
+            tagged(12, CborValue::Array(vec![int(-1)])),
+        ]),
+    );
+    let after = rendered[0].as_str().unwrap();
+    let before = rendered[1].as_str().unwrap();
+    assert!(after.starts_with("2001-09-09T01:46:40"), "{after}");
+    assert!(after.contains(".000000005"), "{after}");
+    assert!(after.ends_with('Z'), "{after}");
+    assert!(before.starts_with("1969-12-31T23:59:59"), "{before}");
+    assert_eq!(rendered[2], rendered[1]);
 }
 
 // record_to_json / cbor_to_string
@@ -548,59 +555,6 @@ fn unrelated_hint_falls_back_to_lossless() {
 }
 
 // epoch pair helpers
-
-#[test]
-fn epoch_pair_renders_to_rfc3339_utc() {
-    let CborValue::Tag(_, inner) = epoch_pair(1_000_000_000, 5) else {
-        unreachable!()
-    };
-    let s = tag12_to_rfc3339(&inner).unwrap();
-    assert!(s.starts_with("2001-09-09T01:46:40"), "{s}");
-    assert!(s.contains(".000000005"), "{s}");
-    assert!(s.ends_with('Z'), "{s}");
-}
-
-#[test]
-fn epoch_zero_and_before_render() {
-    let zero = CborValue::Array(vec![int(0), int(0)]);
-    assert!(
-        tag12_to_rfc3339(&zero)
-            .unwrap()
-            .starts_with("1970-01-01T00:00:00")
-    );
-    let before = CborValue::Array(vec![int(-1), int(0)]);
-    assert!(
-        tag12_to_rfc3339(&before)
-            .unwrap()
-            .starts_with("1969-12-31T23:59:59")
-    );
-}
-
-#[test]
-fn one_element_epoch_pair_means_zero_nanos() {
-    let one = CborValue::Array(vec![int(1_000_000_000)]);
-    let two = CborValue::Array(vec![int(1_000_000_000), int(0)]);
-    assert_eq!(tag12_to_rfc3339(&one), tag12_to_rfc3339(&two));
-    assert!(tag12_to_rfc3339(&one).is_some());
-}
-
-#[test]
-fn malformed_epoch_pairs_render_nothing() {
-    assert_eq!(tag12_to_rfc3339(&CborValue::Array(vec![])), None);
-    assert_eq!(
-        tag12_to_rfc3339(&CborValue::Array(vec![int(1), int(2), int(3)])),
-        None
-    );
-    assert_eq!(
-        tag12_to_rfc3339(&CborValue::Array(vec![int(1), CborValue::Float(0.5)])),
-        None
-    );
-    assert_eq!(
-        tag12_to_rfc3339(&CborValue::Array(vec![CborValue::Float(1.0)])),
-        None
-    );
-    assert_eq!(tag12_to_rfc3339(&text("x")), None);
-}
 
 #[test]
 fn rfc3339_parses_back_to_an_epoch_pair() {

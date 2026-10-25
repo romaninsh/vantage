@@ -1,7 +1,8 @@
 # Rules for combining and dropping tests
 
-Each rule comes from a case the user decided. Add a rule only with the user's approval, with the
-case that made it. The challenger cites these by number.
+R1–R11 come from cases the user decided. Rules the two agents agree during a run go under
+"Agreed in runs" at the end, with their case; the user reviews them from the run's report. The
+challenger cites rules by number.
 
 ## R1. One test per behaviour
 
@@ -81,3 +82,37 @@ Waiting for asynchronous work uses the crate's shared support helpers, not hand-
 subscribe-and-wait code in each test. (Diorama's `settle` helper is planned:
 `docs/superpowers/plans/2026-10-25-diorama-test-settle.md`. Until it lands, keep the existing
 `wait_for_gen` calls.)
+
+## R9. One call per branch that stops early
+
+When a function returns at its first error, one input can't reach two of its error branches.
+The cases still make one test (R1): one setup, then one call per such branch, each a plain line
+with its assert. This is the only exception to R2's single call.
+
+*Case: vantage-types `#[entity]` `from_record` stops at "Missing field" before it can reach
+"Failed to convert field"; a missing field and a wrongly typed field are two calls in one test.*
+
+## R10. Cases over the same machinery live together
+
+Inputs that run through the same machinery belong in one test, even when the tests reach it
+through different entry points (a function directly, or through a dialect or wrapper that calls
+it). A second entry point is a different behaviour only when the entry point adds something of its
+own (routing, a different output), and then the test asserts that addition.
+
+*Case: vantage-types epoch pairs: the positive pair was rendered through `PresentationDialect` and
+the negative pair through `tag12_to_rfc3339` directly, in two tests. Same rendering, so the
+negative pair joins the presentation test.*
+
+## R11. A difference must be shown, not only stated
+
+Every case kept for being different must have asserts that would fail if it weren't. Two inputs
+kept because they take different branches need asserts that tell the branches apart (the error
+message or kind, where the contract names it). Two bare `is_err()` asserts show one branch twice.
+
+*Case: vantage-types `entity_rejects_a_record_missing_or_mistyping_a_field` kept a missing field
+and a mistyped field for their different branches, but asserted only `is_err()` on both. Where
+the contract doesn't name the messages, `assert_ne!` on them shows the branches differ.*
+
+## Agreed in runs
+
+(none yet)
