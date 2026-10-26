@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 — 2026-10-26
+
+- S3 (REST-XML) and IAM (Query) requests honour `with_endpoint` and `AWS_ENDPOINT_URL`, as the
+  JSON services already did. They used to go to `amazonaws.com` regardless.
+- quick-xml 0.41 (RUSTSEC-2026-0194, RUSTSEC-2026-0195). XML text is read the same as before,
+  including entity and character references (`&amp;`, `&#38;`) and whitespace around text.
+
 ## 0.8.1 — 2026-10-18
 
 - Requires vantage-table 3.0.0.

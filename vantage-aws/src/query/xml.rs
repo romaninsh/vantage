@@ -23,6 +23,7 @@
 //! shape doesn't lean on them.
 
 use quick_xml::Reader;
+use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::Event;
 use serde_json::{Map, Value as JsonValue};
 use vantage_core::{Result, error};
@@ -75,7 +76,6 @@ enum XmlNode {
 
 fn parse_root_element(xml: &str) -> Result<XmlNode> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
 
     // Skip the prologue (XML decl, comments, whitespace) until we hit
     // the first start element — that's the root.
@@ -109,8 +109,16 @@ fn parse_root_element(xml: &str) -> Result<XmlNode> {
 /// parent.
 fn read_children(reader: &mut Reader<&[u8]>) -> Result<Vec<XmlNode>> {
     let mut children = Vec::new();
+    // Entity and character references (`&amp;`, `&#38;`) arrive as
+    // separate `GeneralRef` events, so a text run is collected piece by
+    // piece and trimmed once, when any other event ends it.
+    let mut text = String::new();
     loop {
-        match reader.read_event() {
+        let event = reader.read_event();
+        if !matches!(event, Ok(Event::Text(_) | Event::GeneralRef(_))) {
+            push_text(&mut children, &mut text);
+        }
+        match event {
             Ok(Event::Start(e)) => {
                 let name = local_name(e.name().as_ref());
                 let nested = read_children(reader)?;
@@ -128,11 +136,24 @@ fn read_children(reader: &mut Reader<&[u8]>) -> Result<Vec<XmlNode>> {
             }
             Ok(Event::Text(t)) => {
                 let s = t
-                    .unescape()
-                    .map_err(|e| error!("XML text decode failed", detail = e))?
-                    .into_owned();
-                if !s.is_empty() {
-                    children.push(XmlNode::Text(s));
+                    .decode()
+                    .map_err(|e| error!("XML text decode failed", detail = e))?;
+                text.push_str(&s);
+            }
+            Ok(Event::GeneralRef(r)) => {
+                let ch = r
+                    .resolve_char_ref()
+                    .map_err(|e| error!("XML character reference is invalid", detail = e))?;
+                match ch {
+                    Some(c) => text.push(c),
+                    None => {
+                        let name = r
+                            .decode()
+                            .map_err(|e| error!("XML text decode failed", detail = e))?;
+                        let s = resolve_predefined_entity(&name)
+                            .ok_or_else(|| error!("Unknown XML entity", entity = name))?;
+                        text.push_str(s);
+                    }
                 }
             }
             Ok(Event::CData(t)) => {
@@ -150,6 +171,16 @@ fn read_children(reader: &mut Reader<&[u8]>) -> Result<Vec<XmlNode>> {
             }
         }
     }
+}
+
+/// Trim the collected text run and keep it unless it was only the
+/// whitespace between elements.
+fn push_text(children: &mut Vec<XmlNode>, text: &mut String) {
+    let s = text.trim_matches(|c| matches!(c, ' ' | '\t' | '\r' | '\n'));
+    if !s.is_empty() {
+        children.push(XmlNode::Text(s.to_string()));
+    }
+    text.clear();
 }
 
 fn local_name(qname: &[u8]) -> String {
@@ -185,8 +216,8 @@ fn nodes_to_json(children: &[&XmlNode]) -> JsonValue {
     }
 
     // Drop interleaved whitespace text nodes when there are real
-    // element siblings (we already stripped pure whitespace via
-    // `trim_text`, but mixed content shouldn't appear in AWS payloads
+    // element siblings (we already stripped pure whitespace in
+    // `push_text`, but mixed content shouldn't appear in AWS payloads
     // anyway).
     let elements: Vec<&XmlNode> = children
         .iter()

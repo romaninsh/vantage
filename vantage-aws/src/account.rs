@@ -276,6 +276,13 @@ impl AwsAccount {
     /// is what goes into the SigV4 canonical request and the wire
     /// `Host` header.
     pub(crate) fn endpoint_for(&self, service: &str) -> (String, String) {
+        self.endpoint_or(format!("{service}.{}.amazonaws.com", self.inner.region))
+    }
+
+    /// Same as [`endpoint_for`](Self::endpoint_for), for services whose
+    /// default `host` isn't `{service}.{region}.amazonaws.com` (IAM's
+    /// global endpoint, S3 path-style).
+    pub(crate) fn endpoint_or(&self, host: String) -> (String, String) {
         match self.inner.endpoint.as_deref() {
             Some(ep) => {
                 let trimmed = ep.trim_end_matches('/');
@@ -286,10 +293,7 @@ impl AwsAccount {
                     .to_string();
                 (format!("{trimmed}/"), host)
             }
-            None => {
-                let host = format!("{service}.{}.amazonaws.com", self.inner.region);
-                (format!("https://{host}/"), host)
-            }
+            None => (format!("https://{host}/"), host),
         }
     }
 }
