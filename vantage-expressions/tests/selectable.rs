@@ -1,7 +1,91 @@
-//! `SourceRef`: a select source from a name or a subquery.
+//! `SourceRef`, `Order` and the `Selectable` builder, driven through `MockSelect`.
 
 use serde_json::{Value, json};
-use vantage_expressions::{ExpressiveEnum, expr, traits::selectable::SourceRef};
+use vantage_expressions::mocks::MockSelect;
+use vantage_expressions::{
+    Expression, Expressive, ExpressiveEnum, Order, Selectable, expr, traits::selectable::SourceRef,
+};
+
+#[test]
+fn order_suffix_names_the_direction_and_where_nulls_go() {
+    assert_eq!(Order::Asc.suffix(), "");
+    assert_eq!(Order::Desc.suffix(), " DESC");
+    assert_eq!(Order::Asc.nulls_last().suffix(), " NULLS LAST");
+    assert_eq!(Order::Asc.nulls_first().suffix(), " NULLS FIRST");
+    assert_eq!(Order::Desc.nulls_last().suffix(), " DESC NULLS LAST");
+    assert_eq!(Order::Desc.nulls_first().suffix(), " DESC NULLS FIRST");
+}
+
+#[test]
+fn builder_methods_render_every_clause_of_a_select() {
+    let adult: Expression<Value> = expr!("age > 18");
+    let name: Expression<Value> = expr!("name");
+    let email: Expression<Value> = expr!("email");
+    let select = MockSelect::new()
+        .with_source("users")
+        .with_field("name")
+        .with_field("email")
+        .with_condition(adult)
+        .with_order(name, Order::Asc)
+        .with_order(email, Order::Desc)
+        .with_distinct(true)
+        .with_limit(Some(10), Some(20));
+
+    assert_eq!(
+        select.expr().preview(),
+        "SELECT DISTINCT name, email FROM users WHERE age > 18 ORDER BY name ASC, email DESC LIMIT 10 OFFSET 20"
+    );
+}
+
+#[test]
+fn a_select_reports_its_parts_until_they_are_cleared() {
+    let paid: Expression<Value> = expr!("paid");
+    let total: Expression<Value> = expr!("total");
+    let mut select = MockSelect::new()
+        .with_source("orders")
+        .with_field("total")
+        .with_condition(paid)
+        .with_order(total, Order::Desc)
+        .with_limit(Some(5), None);
+    assert!(select.has_fields());
+    assert!(select.has_where_conditions());
+    assert!(select.has_order_by());
+    assert!(!select.is_distinct());
+    assert_eq!(select.get_limit(), Some(5));
+    assert_eq!(select.get_skip(), None);
+
+    select.clear_fields();
+    select.clear_where_conditions();
+    select.clear_order_by();
+    assert!(!select.has_fields());
+    assert!(!select.has_where_conditions());
+    assert!(!select.has_order_by());
+    assert_eq!(select.expr().preview(), "SELECT * FROM orders LIMIT 5");
+}
+
+#[test]
+fn aggregates_select_from_the_same_source() {
+    let select = MockSelect::new().with_source("orders");
+    let total: Expression<Value> = expr!("total");
+
+    assert_eq!(
+        select.as_count().preview(),
+        "SELECT COUNT(*) FROM \"orders\""
+    );
+    assert_eq!(
+        select.as_sum(total.clone()).preview(),
+        "SELECT SUM(total) FROM \"orders\""
+    );
+    assert_eq!(
+        select.as_max(total.clone()).preview(),
+        "SELECT MAX(total) FROM \"orders\""
+    );
+    assert_eq!(
+        select.as_min(total).preview(),
+        "SELECT MIN(total) FROM \"orders\""
+    );
+    assert_eq!(select.as_field("id").preview(), "SELECT id FROM orders");
+}
 
 #[test]
 fn source_ref_from_a_name_is_a_scalar() {
