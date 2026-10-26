@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.2 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (vista reference traversal, update hooks on
+  patch and replace) and tests another test already covers are dropped: 231 tests become 225 with
+  the same coverage. No API or behaviour change.
+
 ## 2.1.1 — 2026-10-19
 
 - Requires vantage-table 3.0.0 and vantage-vista 2.1.0.
