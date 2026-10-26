@@ -6,9 +6,10 @@ mod support;
 use std::time::Duration;
 
 use serde_json::{Map, json};
-use support::{mount, mount_with_header, recorder, requests, test_client};
-use vantage_api_client::{BreakerState, CountMode, FilterDialect, GraphqlApi, Priority, Supports};
-use wiremock::MockServer;
+use support::{client_with_user_agent, mount, mount_with_header, recorder, test_client};
+use vantage_api_client::{BreakerState, CountMode, FilterDialect, GraphqlApi, Supports};
+use wiremock::matchers::{body_json, header, method};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[test]
 fn an_api_reports_its_endpoint_and_defaults_to_the_generic_dialect() {
@@ -173,25 +174,6 @@ async fn the_configured_transport_knobs_still_deliver_the_request() {
 }
 
 #[tokio::test]
-async fn the_configured_auth_header_travels() {
-    let server = MockServer::start().await;
-    mount_with_header(
-        &server,
-        "POST",
-        ("Authorization", "Bearer t0k"),
-        200,
-        r#"{"data":{"ok":true}}"#,
-    )
-    .await;
-    let api = GraphqlApi::builder(server.uri())
-        .auth("Bearer t0k")
-        .http_client(test_client())
-        .build();
-    let data = api.post_graphql("{ ok }", &Map::new()).await.unwrap();
-    assert_eq!(data["ok"], json!(true));
-}
-
-#[tokio::test]
 async fn an_auth_refresher_supplies_the_token_and_is_asked_again_on_401() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -267,56 +249,26 @@ async fn a_response_that_is_not_json_is_an_error() {
     assert!(err.to_string().contains("JSON"), "{err}");
 }
 
+/// The mock answers only a request with this body, this `authorization`
+/// (from `.auth`) and this `user-agent` (from the overriding client), so a
+/// request missing any of them fails the call.
 #[tokio::test]
-async fn a_response_without_data_reads_as_null() {
-    let server = MockServer::start().await;
-    mount(&server, "POST", 200, "{}").await;
-    let api = GraphqlApi::builder(server.uri())
-        .http_client(test_client())
-        .build();
-    let data = api.post_graphql("{ ok }", &Map::new()).await.unwrap();
-    assert!(data.is_null());
-}
-
-#[tokio::test]
-async fn graphql_errors_are_joined_into_one_message() {
-    let server = MockServer::start().await;
-    mount(
-        &server,
-        "POST",
-        200,
-        r#"{"data":null,"errors":[{"message":"first"},{"message":"second"}]}"#,
-    )
-    .await;
-    let api = GraphqlApi::builder(server.uri())
-        .http_client(test_client())
-        .build();
-    let err = Priority::Essential
-        .scope(api.post_graphql("{ x }", &Map::new()))
-        .await
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("first; second"), "{err}");
-    assert_eq!(requests(&server).await, 1);
-}
-
-#[tokio::test]
-async fn the_body_carries_the_query_and_variables() {
-    use wiremock::matchers::{body_json, method};
-    use wiremock::{Mock, ResponseTemplate};
-
+async fn a_post_carries_the_query_variables_and_configured_headers() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
+        .and(header("authorization", "Bearer t0k"))
+        .and(header("user-agent", "probe-agent"))
         .and(body_json(json!({
             "query": "query ($limit: Int) { x(limit: $limit) { id } }",
             "variables": { "limit": 3 }
         })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": { "x": [] } })))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
         .expect(1)
         .mount(&server)
         .await;
     let api = GraphqlApi::builder(server.uri())
-        .http_client(test_client())
+        .auth("Bearer t0k")
+        .http_client(client_with_user_agent("probe-agent"))
         .build();
     let mut variables = Map::new();
     variables.insert("limit".into(), json!(3));
@@ -327,5 +279,5 @@ async fn the_body_carries_the_query_and_variables() {
         )
         .await
         .unwrap();
-    assert_eq!(data["x"], json!([]));
+    assert!(data.is_null(), "a response without `data` reads as null");
 }

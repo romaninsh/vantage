@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.2 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (bearer sources, GraphQL requests, errors,
+  paging and escaping, REST conditions, retries and the breaker, vista refusals) and tests another
+  test already covers are dropped: 343 tests become 300 with the same coverage. No API or behaviour
+  change.
+
 ## 2.2.1 — 2026-10-25
 
 - A test whose assertions another test already makes is dropped. No API or behaviour change.

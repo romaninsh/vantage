@@ -6,10 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Map;
-use support::{
-    Recorder, client_with_user_agent, mount, mount_n, mount_with_header, recorder, requests,
-    test_client,
-};
+use support::{Recorder, mount, mount_n, recorder, requests, test_client};
 use vantage_api_client::{GraphqlApi, Priority};
 use wiremock::MockServer;
 
@@ -72,34 +69,13 @@ async fn essential_post_retries_5xx() {
 }
 
 #[tokio::test]
-async fn http_client_override_travels_with_every_request() {
-    let server = MockServer::start().await;
-    mount_with_header(
-        &server,
-        "POST",
-        ("user-agent", "probe-agent"),
-        200,
-        r#"{"data":{"missions":[]}}"#,
-    )
-    .await;
-    let api = GraphqlApi::builder(server.uri())
-        .http_client(client_with_user_agent("probe-agent"))
-        .build();
-    let data = api
-        .post_graphql("{ missions { id } }", &Map::new())
-        .await
-        .unwrap();
-    assert_eq!(data["missions"], serde_json::json!([]));
-}
-
-#[tokio::test]
-async fn graphql_errors_in_a_200_are_not_retried() {
+async fn graphql_errors_in_a_200_are_joined_and_not_retried() {
     let server = MockServer::start().await;
     mount(
         &server,
         "POST",
         200,
-        r#"{"data":null,"errors":[{"message":"nope"}]}"#,
+        r#"{"data":null,"errors":[{"message":"first"},{"message":"second"}]}"#,
     )
     .await;
     let rec = recorder();
@@ -107,8 +83,9 @@ async fn graphql_errors_in_a_200_are_not_retried() {
     let err = Priority::Essential
         .scope(api.post_graphql("{ x }", &Map::new()))
         .await
-        .unwrap_err();
-    assert!(err.to_string().contains("nope"));
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("first; second"), "{err}");
     assert_eq!(requests(&server).await, 1);
     assert_eq!(rec.tags(), ["started", "ok:200"]);
 }

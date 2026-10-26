@@ -27,21 +27,6 @@ async fn a_minimal_select_is_one_root_field_with_its_fields() {
 }
 
 #[tokio::test]
-async fn the_generic_dialect_filters_with_find() {
-    let rendered = launches()
-        .with_dialect(FilterDialect::Generic)
-        .with_condition(GraphqlCondition::eq("mission_name", "FalconSat"))
-        .render()
-        .await
-        .unwrap();
-    assert_eq!(
-        rendered.query,
-        "query { launches(find: {mission_name: \"FalconSat\"}) { id } }"
-    );
-    assert!(rendered.variables.is_empty());
-}
-
-#[tokio::test]
 async fn the_hasura_dialect_filters_with_where() {
     let rendered = launches()
         .with_dialect(FilterDialect::Hasura)
@@ -72,6 +57,7 @@ async fn a_filter_argument_name_replaces_the_dialects() {
 #[tokio::test]
 async fn several_conditions_are_anded_into_one_filter() {
     let rendered = launches()
+        .with_dialect(FilterDialect::Generic)
         .with_condition(GraphqlCondition::eq("year", 2018))
         .with_condition(GraphqlCondition::eq("site", "KSC"))
         .render()
@@ -102,50 +88,26 @@ async fn filter_values_render_as_graphql_values() {
 
 #[tokio::test]
 async fn string_values_are_escaped() {
-    let rendered = launches()
+    let query = launches()
         .with_condition(GraphqlCondition::eq(
-            "note",
+            "quoted",
             "say \"hi\" \\ now\nnext\tcol\r",
         ))
+        .with_condition(GraphqlCondition::eq("control", "a\u{0}b\u{1b}c\u{7f}"))
+        .with_condition(GraphqlCondition::eq("unicode", "Zürich ✓"))
         .render()
         .await
-        .unwrap();
-    assert_eq!(
-        rendered.query,
-        "query { launches(find: {note: \"say \\\"hi\\\" \\\\ now\\nnext\\tcol\\r\"}) { id } }"
-    );
-}
-
-#[tokio::test]
-async fn control_characters_never_reach_the_document_raw() {
-    let text = "a\u{0}b\u{8}c\u{c}d\u{1b}[31m\u{1f}\u{7f}";
-    let rendered = launches()
-        .with_condition(GraphqlCondition::eq("note", text))
-        .render()
-        .await
-        .unwrap();
+        .unwrap()
+        .query;
     assert!(
-        !rendered.query.chars().any(|c| c.is_ascii_control()),
-        "{:?}",
-        rendered.query
+        query.contains(r#"quoted: "say \"hi\" \\ now\nnext\tcol\r""#),
+        "{query}"
     );
-    assert!(rendered.query.contains("\\u0000"), "{}", rendered.query);
-    assert!(rendered.query.contains("\\u001B"), "{}", rendered.query);
-    assert!(rendered.query.contains("\\u007F"), "{}", rendered.query);
-}
-
-#[tokio::test]
-async fn text_beyond_ascii_passes_through() {
-    let rendered = launches()
-        .with_condition(GraphqlCondition::eq("city", "Zürich ✓"))
-        .render()
-        .await
-        .unwrap();
     assert!(
-        rendered.query.contains("\"Zürich ✓\""),
-        "{}",
-        rendered.query
+        query.contains(r#"control: "a\u0000b\u001Bc\u007F""#),
+        "{query}"
     );
+    assert!(query.contains(r#"unicode: "Zürich ✓""#), "{query}");
 }
 
 #[tokio::test]

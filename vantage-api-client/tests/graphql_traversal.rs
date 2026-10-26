@@ -15,8 +15,10 @@ use support::references::{
     ALL_ORDERS, ORDERS, all_orders, answer, factory, registered, row, texts,
 };
 
+/// has_one narrows the target to the row's foreign key, has_many to the
+/// rows whose foreign key is the parent's id; both send it in the request.
 #[tokio::test]
-async fn has_one_sends_the_foreign_key_as_an_eq_condition() {
+async fn a_reference_sends_its_join_as_an_eq_condition() {
     let server = MockServer::start().await;
     answer(
         &server,
@@ -25,18 +27,6 @@ async fn has_one_sends_the_foreign_key_as_an_eq_condition() {
         json!([{ "id": "c2", "name": "Doc" }]),
     )
     .await;
-    let orders = registered(&server, "").build("order").unwrap();
-    let o3 = row(&[("id", "o3"), ("client_id", "c2")]);
-
-    let client = orders.get_ref("client", Some(&o3)).unwrap();
-    assert_eq!(client.name(), "client");
-    assert!(client.is_narrowed(), "the join is recorded in query()");
-    assert_eq!(texts(&client.list_values().await.unwrap(), "name"), ["Doc"]);
-}
-
-#[tokio::test]
-async fn has_many_sends_the_parent_id_as_an_eq_condition() {
-    let server = MockServer::start().await;
     answer(
         &server,
         "query { orders(where: {client_id: {_eq: \"c1\"}}) { id client_id item } }",
@@ -47,17 +37,25 @@ async fn has_many_sends_the_parent_id_as_an_eq_condition() {
         ]),
     )
     .await;
-    let clients = registered(&server, "").build("client").unwrap();
+    let factory = registered(&server, "");
+    let orders = factory.build("order").unwrap();
+    let clients = factory.build("client").unwrap();
+    let o3 = row(&[("id", "o3"), ("client_id", "c2")]);
     let marty = row(&[("id", "c1"), ("name", "Marty")]);
 
-    let orders = clients.get_ref("orders", Some(&marty)).unwrap();
+    let client = orders.get_ref("client", Some(&o3)).unwrap();
+    assert_eq!(client.name(), "client");
+    assert!(client.is_narrowed(), "the join is recorded in query()");
+    assert_eq!(texts(&client.list_values().await.unwrap(), "name"), ["Doc"]);
+
+    let martys_orders = clients.get_ref("orders", Some(&marty)).unwrap();
     assert_eq!(
-        texts(&orders.list_values().await.unwrap(), "item"),
+        texts(&martys_orders.list_values().await.unwrap(), "item"),
         ["almanac", "skateboard"]
     );
-    assert_eq!(orders.query().conditions[0].column, "client_id");
+    assert_eq!(martys_orders.query().conditions[0].column, "client_id");
     // The traversed Vista is built from its own spec, references included.
-    assert_eq!(orders.reference("client").unwrap().target, "client");
+    assert_eq!(martys_orders.reference("client").unwrap().target, "client");
 }
 
 /// `users` and `tickets`, both keyed by int ids; a ticket has one user.

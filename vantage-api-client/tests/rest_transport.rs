@@ -32,22 +32,10 @@ async fn list_rows(api: &RestApi) -> vantage_core::Result<usize> {
 }
 
 #[tokio::test]
-async fn background_makes_one_attempt_and_reports_the_status() {
+async fn essential_retries_5xx_and_429_until_the_server_answers() {
     let server = MockServer::start().await;
-    mount(&server, "GET", 503, "").await;
-    let rec = recorder();
-    let api = api(&server, &rec);
-    let err = list_rows(&api).await.unwrap_err();
-    let text = err.to_string();
-    assert!(text.contains("503"), "status in the error: {text}");
-    assert_eq!(requests(&server).await, 1);
-    assert_eq!(rec.tags(), ["started", "failed:status"]);
-}
-
-#[tokio::test]
-async fn essential_retries_until_the_server_answers() {
-    let server = MockServer::start().await;
-    mount_n(&server, "GET", 503, "", 2).await;
+    mount_n(&server, "GET", 503, "", 1).await;
+    mount_n(&server, "GET", 429, "", 1).await;
     mount(&server, "GET", 200, r#"[{"id":"a"},{"id":"b"},{"id":"c"}]"#).await;
     let rec = recorder();
     let api = api(&server, &rec);
@@ -62,26 +50,29 @@ async fn essential_retries_until_the_server_answers() {
     assert_eq!(requests(&server).await, 3);
     let tags = rec.tags();
     assert_eq!(tags.first().map(String::as_str), Some("started"));
-    assert!(tags.contains(&"retry:1".to_string()));
+    assert!(tags.contains(&"retry:1".to_string()), "{tags:?}");
+    assert!(tags.contains(&"retry:2".to_string()), "{tags:?}");
     assert_eq!(tags.last().map(String::as_str), Some("rows:3"));
 }
 
 #[tokio::test]
-async fn four_xx_is_final_and_carries_the_body() {
+async fn four_xx_is_final_and_carries_the_body_cut_to_500_characters() {
     let server = MockServer::start().await;
-    mount(&server, "GET", 422, r#"{"detail":"bad filter"}"#).await;
+    let body = format!("bad filter{}{}", "a".repeat(490), "z".repeat(500));
+    mount(&server, "GET", 422, &body).await;
     let rec = recorder();
     let api = api(&server, &rec);
-    let err = Priority::Essential
+    let text = Priority::Essential
         .scope(list_rows(&api))
         .await
-        .unwrap_err();
-    let text = err.to_string();
+        .unwrap_err()
+        .to_string();
     assert!(text.contains("422"), "{text}");
     assert!(
-        text.contains("bad filter"),
-        "body text in the error: {text}"
+        text.contains(&body[..500]),
+        "the first 500 characters are kept: {text}"
     );
+    assert!(!text.contains('z'), "the rest is dropped: {text}");
     assert_eq!(requests(&server).await, 1);
 }
 
@@ -126,7 +117,7 @@ async fn http_request_sends_headers_and_body_and_reports_a_write() {
 }
 
 #[tokio::test]
-async fn breaker_opens_after_five_background_failures() {
+async fn background_makes_one_attempt_and_five_failures_open_the_breaker() {
     let server = MockServer::start().await;
     mount(&server, "GET", 503, "").await;
     let rec = recorder();
@@ -140,27 +131,22 @@ async fn breaker_opens_after_five_background_failures() {
     // `default_breaker` opens after 5 consecutive failures.
     for _ in 0..5 {
         let err = list_rows(&api).await.unwrap_err();
-        assert!(err.to_string().contains("503"));
+        assert!(
+            err.to_string().contains("503"),
+            "status in the error: {err}"
+        );
     }
-
     let err = list_rows(&api).await.unwrap_err();
-    let text = err.to_string();
-    assert!(text.contains("breaker_open"), "{text}");
-    assert_eq!(
-        rec.tags().last().map(String::as_str),
-        Some("failed:breaker_open")
-    );
-}
+    assert!(err.to_string().contains("breaker_open"), "{err}");
 
-#[tokio::test]
-async fn http_client_override_travels_with_every_request() {
-    let server = MockServer::start().await;
-    mount_with_header(&server, "GET", ("user-agent", "probe-agent"), 200, "[]").await;
-    let api = RestApi::builder(server.uri())
-        .response_shape(ResponseShape::BareArray)
-        .http_client(client_with_user_agent("probe-agent"))
-        .build();
-    assert_eq!(list_rows(&api).await.unwrap(), 0);
+    assert_eq!(
+        requests(&server).await,
+        5,
+        "one attempt per call, none once open"
+    );
+    let tags = rec.tags();
+    assert_eq!(tags[..2], ["started", "failed:status"]);
+    assert_eq!(tags.last().map(String::as_str), Some("failed:breaker_open"));
 }
 
 #[tokio::test]
@@ -239,19 +225,20 @@ async fn auth_refresher_supplies_the_token_and_is_asked_again_on_401() {
     );
 }
 
+/// The mock answers only a request carrying the overriding client's
+/// `user-agent` and the fixed `authorization`; a fixed `auth` set after a
+/// refresher replaces it, so the refresher is never asked.
 #[tokio::test]
-async fn a_fixed_auth_set_after_a_refresher_replaces_it() {
+async fn the_configured_client_and_fixed_auth_reach_the_request() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let server = MockServer::start().await;
-    mount_with_header(
-        &server,
-        "GET",
-        ("Authorization", "Bearer fixed"),
-        200,
-        r#"[{"id":"a"}]"#,
-    )
-    .await;
+    Mock::given(method("GET"))
+        .and(header("user-agent", "probe-agent"))
+        .and(header("Authorization", "Bearer fixed"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"[{"id":"a"}]"#))
+        .mount(&server)
+        .await;
     let asked = Arc::new(AtomicUsize::new(0));
     let counter = asked.clone();
     let refresher: vantage_api_client::AuthRefresher = Arc::new(move || {
@@ -262,29 +249,11 @@ async fn a_fixed_auth_set_after_a_refresher_replaces_it() {
         .response_shape(ResponseShape::BareArray)
         .auth_refresher(refresher)
         .auth("Bearer fixed")
-        .http_client(test_client())
+        .http_client(client_with_user_agent("probe-agent"))
         .build();
 
     assert_eq!(list_rows(&api).await.unwrap(), 1);
     assert_eq!(asked.load(Ordering::SeqCst), 0, "the refresher is gone");
-}
-
-#[tokio::test]
-async fn too_many_requests_is_retried_when_someone_is_waiting() {
-    let server = MockServer::start().await;
-    mount_n(&server, "GET", 429, "", 2).await;
-    mount(&server, "GET", 200, r#"[{"id":"a"}]"#).await;
-    let rec = recorder();
-    let api = api(&server, &rec);
-    let n = tokio::time::timeout(
-        Duration::from_secs(5),
-        Priority::Essential.scope(list_rows(&api)),
-    )
-    .await
-    .expect("finishes")
-    .expect("succeeds after retries");
-    assert_eq!(n, 1);
-    assert_eq!(requests(&server).await, 3);
 }
 
 #[tokio::test]
@@ -330,21 +299,6 @@ async fn a_401_after_the_fresh_token_is_a_final_error() {
         "replayed once with a fresh token"
     );
     assert_eq!(requests(&server).await, 2);
-}
-
-#[tokio::test]
-async fn an_error_body_is_cut_to_500_characters() {
-    let server = MockServer::start().await;
-    let body = format!("{}{}", "a".repeat(500), "z".repeat(500));
-    mount(&server, "GET", 422, &body).await;
-    let rec = recorder();
-    let api = api(&server, &rec);
-    let err = list_rows(&api).await.unwrap_err().to_string();
-    assert!(
-        err.contains(&"a".repeat(500)),
-        "the first 500 characters are kept"
-    );
-    assert!(!err.contains('z'), "the rest is dropped");
 }
 
 #[tokio::test]

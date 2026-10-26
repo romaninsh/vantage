@@ -48,34 +48,47 @@ async fn ids(table: &Table<GraphqlApi, EmptyEntity>) -> Vec<String> {
     table.list_values().await.unwrap().into_keys().collect()
 }
 
+/// A listing selects the id then the columns and keys each row by its id.
+/// An id-less row gets a synthetic `~row:` key, so it can't overwrite the
+/// real row whose id is its index. `get_some` is the first listed row, and
+/// without `count: aggregate` even Hasura counts by listing, so a role
+/// lacking `allow_aggregations` still gets an answer.
 #[tokio::test]
-async fn a_table_selects_its_id_then_its_columns_and_keys_rows_by_id() {
+async fn a_table_lists_rows_by_id_and_reads_some_and_count_from_the_listing() {
     let server = MockServer::start().await;
     answer(
         &server,
         "query { launches { id mission_name launch_year } }",
         "launches",
         json!([
-            { "id": "a", "mission_name": "FalconSat", "launch_year": 2006 },
+            { "id": "1", "mission_name": "FalconSat", "launch_year": 2006 },
+            { "id": null, "mission_name": "no id" },
             { "id": 42, "mission_name": "Starlink", "launch_year": 2019 }
         ]),
     )
     .await;
-    let rows = launches(builder(&server).build())
-        .list_values()
-        .await
-        .unwrap();
+    let api = builder(&server).dialect(FilterDialect::Hasura).build();
+    let table = launches(api.clone());
 
+    let rows = table.list_values().await.unwrap();
     let keys: Vec<&String> = rows.keys().collect();
-    assert_eq!(keys, ["a", "42"]);
+    assert_eq!(keys, ["1", "~row:1", "42"]);
     assert_eq!(
-        rows["a"].get("mission_name").map(|v| v.value().clone()),
+        rows["1"].get("mission_name").map(|v| v.value().clone()),
         Some(json!("FalconSat"))
     );
     assert_eq!(
         rows["42"].get("launch_year").map(|v| v.value().clone()),
         Some(json!(2019))
     );
+
+    let (id, record) = table.get_some_value().await.unwrap().expect("a row");
+    assert_eq!(id, "1");
+    assert_eq!(
+        record.get("mission_name").map(|v| v.value().clone()),
+        Some(json!("FalconSat"))
+    );
+    assert_eq!(api.get_table_count(&table).await.unwrap(), 3);
 }
 
 #[tokio::test]
@@ -109,25 +122,6 @@ async fn a_hasura_table_orders_with_order_by() {
         direction: SortDirection::Descending,
     });
     assert_eq!(ids(&table).await, ["2", "1"]);
-}
-
-#[tokio::test]
-async fn get_some_is_the_first_listed_row() {
-    let server = MockServer::start().await;
-    mount(
-        &server,
-        "POST",
-        200,
-        r#"{"data":{"launches":[{"id":"7","mission_name":"x"},{"id":"8","mission_name":"y"}]}}"#,
-    )
-    .await;
-    let table = launches(builder(&server).build());
-    let (id, record) = table.get_some_value().await.unwrap().expect("a row");
-    assert_eq!(id, "7");
-    assert_eq!(
-        record.get("mission_name").map(|v| v.value().clone()),
-        Some(json!("x"))
-    );
 }
 
 #[tokio::test]
@@ -233,58 +227,35 @@ async fn dotted_columns_are_selected_nested_and_read_flat() {
     let server = MockServer::start().await;
     answer(
         &server,
-        "query { runs { id stack { id } commit { hash } } }",
+        "query { runs { run { id } stack { id } commit { hash } } }",
         "runs",
         json!([
-            { "id": "r1", "stack": { "id": "api-uat" }, "commit": { "hash": "deadbeef" } },
-            { "id": "r2", "stack": { "id": "api-dev" }, "commit": null }
+            { "run": { "id": "r1" }, "stack": { "id": "api-uat" }, "commit": { "hash": "deadbeef" } },
+            { "run": { "id": "r2" }, "stack": { "id": "api-dev" }, "commit": null }
         ]),
     )
     .await;
     let table = Table::<GraphqlApi, EmptyEntity>::new("runs", builder(&server).build())
-        .with_id_column("id")
+        .with_id_column("run.id")
         .with_column_of::<String>("stack.id")
         .with_column_of::<String>("commit.hash");
     let rows = table.list_values().await.unwrap();
 
-    let value = |id: &str, key: &str| rows[id].get(key).map(|v| v.value().clone());
-    assert_eq!(value("r1", "stack.id"), Some(json!("api-uat")));
-    assert_eq!(value("r1", "commit.hash"), Some(json!("deadbeef")));
+    let keys: Vec<&String> = rows.keys().collect();
+    assert_eq!(keys, ["r1", "r2"]);
     assert_eq!(
-        value("r2", "commit.hash"),
+        rows["r1"].get("stack.id").map(|v| v.value().clone()),
+        Some(json!("api-uat"))
+    );
+    assert_eq!(
+        rows["r1"].get("commit.hash").map(|v| v.value().clone()),
+        Some(json!("deadbeef"))
+    );
+    assert_eq!(
+        rows["r2"].get("commit.hash").map(|v| v.value().clone()),
         Some(Value::Null),
         "a null parent leaves the column present and null"
     );
-}
-
-#[tokio::test]
-async fn a_dotted_id_column_keys_the_row() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        "query { searchRuns { run { id } } }",
-        "searchRuns",
-        json!([{ "run": { "id": "r1" } }, { "run": { "id": "r2" } }]),
-    )
-    .await;
-    let table = Table::<GraphqlApi, EmptyEntity>::new("searchRuns", builder(&server).build())
-        .with_id_column("run.id");
-    assert_eq!(ids(&table).await, ["r1", "r2"]);
-}
-
-#[tokio::test]
-async fn a_table_counts_by_listing_unless_the_aggregate_is_asked_for() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        "query { launches { id mission_name launch_year } }",
-        "launches",
-        json!([{ "id": "1" }, { "id": "2" }, { "id": "3" }]),
-    )
-    .await;
-    let api = builder(&server).build();
-    let table = launches(api.clone());
-    assert_eq!(api.get_table_count(&table).await.unwrap(), 3);
 }
 
 #[tokio::test]

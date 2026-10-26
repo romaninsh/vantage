@@ -190,8 +190,10 @@ async fn get_by_string_id_quotes_it_and_limits_with_paging_on() {
 }
 
 /// A root field taking no filter is listed whole and the row picked out
-/// locally — sending the id would be rejected, and a limit would cut the
-/// list before the row is reached.
+/// locally by its id column: sending the id would be rejected, a limit
+/// would cut the list before the row is reached, a repeated id before the
+/// row doesn't get in the way, and an id-less row's position key must not
+/// stand in for a real id.
 #[tokio::test]
 async fn get_by_id_without_filter_push_down_lists_and_picks() {
     let server = MockServer::start().await;
@@ -199,9 +201,10 @@ async fn get_by_id_without_filter_push_down_lists_and_picks() {
         &server,
         json!({ "query": "query { launches { id name } }" }),
         launches(json!([
-            { "id": "1", "name": "a" },
-            { "id": "2", "name": "b" },
-            { "id": "3", "name": "c" }
+            { "id": "7", "name": "a" },
+            { "id": "7", "name": "b" },
+            { "id": "3", "name": "right" },
+            { "id": null, "name": "wrong" }
         ])),
     )
     .await;
@@ -211,30 +214,9 @@ async fn get_by_id_without_filter_push_down_lists_and_picks() {
         "  dialect: hasura\n  filter: false\n  paginate: true\n",
     );
 
-    let row = vista.get_value("2").await.unwrap().expect("row");
-    assert_eq!(row.get("name"), Some(&CborValue::Text("b".into())));
-    assert!(vista.get_value("9").await.unwrap().is_none());
-}
-
-/// A listed row without an id is keyed by its position; that key must not
-/// stand in for a real id when picking the row locally.
-#[tokio::test]
-async fn get_by_id_without_filter_push_down_matches_the_id_column() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        json!({ "query": "query { launches { id name } }" }),
-        launches(json!([
-            { "id": "2", "name": "right" },
-            { "id": "a", "name": "other" },
-            { "id": null, "name": "wrong" }
-        ])),
-    )
-    .await;
-    let vista = vista(&server, ID_AND_NAME, "  dialect: hasura\n  filter: false\n");
-
-    let row = vista.get_value("2").await.unwrap().expect("row");
+    let row = vista.get_value("3").await.unwrap().expect("row");
     assert_eq!(row.get("name"), Some(&CborValue::Text("right".into())));
+    assert!(vista.get_value("9").await.unwrap().is_none());
 }
 
 #[tokio::test]
