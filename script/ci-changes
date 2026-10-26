@@ -37,8 +37,8 @@ The repo's own settings, from .github/ci-crates.yaml (defaults suit vantage):
   cache     rust-cache | warpbuild (rust-cache)
   warm      post-merge cache warming: changed | full-on-miss (changed)
   internal_tests  forbid | allow: may a PR add tests under src/ (forbid)
-  one_job   `one_job: true` and at most one test group: the suite builds and
-            tests in place, with no archive (false)
+  build_in_suite  `build_in_suite: true` and at most one test group: the suite
+            builds and tests in place, with no build job or archive (false)
   suite_exclude  nextest filter the suites and the matrix don't run, for tests
             run elsewhere ("")
   skill_url the duplicate-test cleanup skill the summary links to
@@ -396,7 +396,7 @@ def main():
     out["internal_tests"] = config.get("internal_tests", "forbid")
     out["suite_exclude"] = config.get("suite_exclude", "")
     # One group needs no archive: its suite builds and tests in place.
-    out["one_job"] = bool(config.get("one_job")) and len(out["groups"]) <= 1
+    out["build_in_suite"] = bool(config.get("build_in_suite")) and len(out["groups"]) <= 1
     out["skill_url"] = config.get("skill_url", SKILL_URL)
     # A repo's own jobs gate on these: each flag is true when one of its crates is tested.
     out["flags"] = {name: bool(set(crates) & set(out["crates"])) for name, crates in (config.get("flags") or {}).items()}

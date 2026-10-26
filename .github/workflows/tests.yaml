@@ -40,10 +40,10 @@ env:
 jobs:
   # One instrumented build of every changed crate that has tests, packed into
   # one archive per database group (a filterset over the same build, so no
-  # recompile), so each suite downloads only its own binaries. With `one_job`
-  # (a single group) the suite builds and tests in place instead: no archive.
+  # recompile), so each suite downloads only its own binaries. With
+  # `build_in_suite` (a single group) the suite builds and tests in place instead: no archive.
   build:
-    if: fromJSON(inputs.run).one_job != 'true'
+    if: fromJSON(inputs.run).build_in_suite != 'true'
     runs-on: ${{ fromJSON(fromJSON(inputs.run).build_runner) }}
     permissions:
       contents: read
@@ -136,8 +136,10 @@ jobs:
           key: ${{ steps.prep.outputs.target-key }}
 
   # The coverage matrix's per-test runner: its own workspace and cache, built
-  # alongside the archive instead of after it.
+  # alongside the archive instead of after it. With `build_in_suite` the suite builds
+  # it into its cached target/: no second machine of the suite's size.
   matrix-rs:
+    if: fromJSON(inputs.run).build_in_suite != 'true'
     runs-on: ${{ fromJSON(fromJSON(inputs.run).runner) }}
     permissions:
       contents: read
@@ -163,13 +165,13 @@ jobs:
   # (pr mode) checks the PR's new tests for duplicates.
   suite:
     # Not matrix-rs: its binary is downloaded just before the matrix (built
-    # here if it isn't there), so a suite that builds (one_job) starts at once.
+    # here if it isn't there), so a suite that builds (build_in_suite) starts at once.
     needs: build
-    # build is skipped with `one_job`: this job builds then.
+    # build is skipped with `build_in_suite`: this job builds then.
     if: >-
       !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     name: suite (${{ matrix.group.name }})
-    runs-on: ${{ fromJSON(fromJSON(inputs.run).one_job == 'true' && fromJSON(inputs.run).build_runner || fromJSON(inputs.run).runner) }}
+    runs-on: ${{ fromJSON(fromJSON(inputs.run).build_in_suite == 'true' && fromJSON(inputs.run).build_runner || fromJSON(inputs.run).runner) }}
     permissions:
       contents: read
     timeout-minutes: 40
@@ -197,9 +199,9 @@ jobs:
           profile: instrumented
           tools: cargo-llvm-cov,cargo-nextest
           # Only a job that builds needs the build cache.
-          cache: ${{ fromJSON(inputs.run).one_job == 'true' && 'true' || 'false' }}
-          cache-target: ${{ fromJSON(inputs.run).one_job == 'true' && 'true' || 'false' }}
-      - if: fromJSON(inputs.run).one_job != 'true'
+          cache: ${{ fromJSON(inputs.run).build_in_suite == 'true' && 'true' || 'false' }}
+          cache-target: ${{ fromJSON(inputs.run).build_in_suite == 'true' && 'true' || 'false' }}
+      - if: fromJSON(inputs.run).build_in_suite != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ci-tests-${{ matrix.group.slot }}
@@ -214,7 +216,7 @@ jobs:
           NEXTEST_PROFILE: ci
           # Tests the repo runs elsewhere (an archive can only leave out whole binaries).
           EXCLUDE: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
-          ONE_JOB: ${{ fromJSON(inputs.run).one_job }}
+          BUILD_IN_SUITE: ${{ fromJSON(inputs.run).build_in_suite }}
           CRATES: ${{ toJSON(matrix.group.crates) }}
         run: |
           git ls-files --error-unmatch .config/nextest.toml > /dev/null 2>&1 \
@@ -223,7 +225,7 @@ jobs:
           mkdir -p target/llvm-cov-target
           filter=()
           [ -n "$EXCLUDE" ] && filter=(-E "not ($EXCLUDE)")
-          if [ "$ONE_JOB" = true ]; then
+          if [ "$BUILD_IN_SUITE" = true ]; then
             # Build and test in place; CI_TIME=1 (the repo's env) reports peak memory.
             mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
             time=()
@@ -248,9 +250,9 @@ jobs:
         env:
           ARCHIVE: ci-${{ matrix.group.slot }}.tar.zst
           NAME: ${{ matrix.group.name }}
-          ONE_JOB: ${{ fromJSON(inputs.run).one_job }}
+          BUILD_IN_SUITE: ${{ fromJSON(inputs.run).build_in_suite }}
         run: |
-          if [ "$ONE_JOB" = true ]; then
+          if [ "$BUILD_IN_SUITE" = true ]; then
             cargo llvm-cov report --lcov --output-path "lcov-$NAME.info"
           else
             cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-$NAME.info"
@@ -265,9 +267,10 @@ jobs:
           path: lcov-${{ matrix.group.name }}.info
           if-no-files-found: ignore
           retention-days: 1
-      # The matrix-rs job finished long ago by now. If its binary isn't there,
-      # matrix.sh builds it (no MATRIX_RS).
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      # The matrix-rs job finished long ago by now. If its binary isn't there
+      # (or `build_in_suite`, which has no such job), matrix.sh builds it (no MATRIX_RS).
+      - if: fromJSON(inputs.run).build_in_suite != 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           name: matrix-rs
@@ -276,8 +279,8 @@ jobs:
       - name: Coverage matrix
         id: matrix
         env:
-          # Built in place (one_job): the matrix lists the same build, no archive.
-          ARCHIVE: ${{ fromJSON(inputs.run).one_job != 'true' && format('ci-{0}.tar.zst', matrix.group.slot) || '' }}
+          # Built in place (build_in_suite): the matrix lists the same build, no archive.
+          ARCHIVE: ${{ fromJSON(inputs.run).build_in_suite != 'true' && format('ci-{0}.tar.zst', matrix.group.slot) || '' }}
           CRATES: ${{ toJSON(matrix.group.crates) }}
           MATRIX_SKIP: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
         run: |
@@ -285,7 +288,7 @@ jobs:
             chmod +x matrix-rs
             export MATRIX_RS=$PWD/matrix-rs
           else
-            echo "::notice::no matrix-rs artifact: building it here"
+            echo "::notice::building matrix-rs here"
           fi
           mkdir -p stats
           mapfile -t crates < <(jq -r '.[]' <<<"$CRATES")
@@ -325,7 +328,7 @@ jobs:
           path: stats
           if-no-files-found: ignore
           retention-days: 1
-      # one_job built here: WarpBuild saves target/ after the last step, only
+      # build_in_suite built here: WarpBuild saves target/ after the last step, only
       # third-party crates.
       - name: Third-party crates only, for the cache
         if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
