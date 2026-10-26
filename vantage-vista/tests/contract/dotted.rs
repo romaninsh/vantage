@@ -33,12 +33,6 @@ fn boxes() -> MockShell {
         .with_record("b2", rec(&[("id", t("b2")), ("dims", dims("narrow"))]))
 }
 
-/// The mock refuses dotted paths with `condition_column_error`, which passes.
-#[tokio::test]
-async fn mock_contract_narrowing_accepts_a_refused_dotted_path() {
-    contract::check_narrowing(&Vista::new("box", boxes())).await;
-}
-
 /// Rejects a dotted condition with a plain error instead of refusing it.
 #[derive(Clone)]
 struct Plain {

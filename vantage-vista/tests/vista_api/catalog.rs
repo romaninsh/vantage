@@ -53,19 +53,12 @@ fn the_loader_is_called_with_the_model_name_each_time() {
 }
 
 #[test]
-fn registering_a_model_again_replaces_its_loader() {
+fn registering_a_model_again_replaces_its_loader_in_a_cloned_resolver() {
     let catalog = catalog().with("client", |name: &str| {
         Ok(clients().with_name(format!("{name}-v2")))
     });
-    assert_eq!(catalog.vista("client").unwrap().name(), "client-v2");
-}
-
-#[test]
-fn a_catalog_goes_wherever_a_resolver_does_and_clones_share_loaders() {
-    let resolver: Arc<dyn VistaResolver> = Arc::new(catalog());
-    assert_eq!(resolver.vista("client").unwrap().name(), "client");
-    let copy = catalog().clone();
-    assert!(copy.vista("client").is_ok());
+    let resolver: Arc<dyn VistaResolver> = Arc::new(catalog.clone());
+    assert_eq!(resolver.vista("client").unwrap().name(), "client-v2");
 }
 
 #[test]
