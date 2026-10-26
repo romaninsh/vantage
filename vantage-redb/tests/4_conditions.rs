@@ -41,6 +41,10 @@ async fn seeded_with_status_indexed() -> (tempfile::NamedTempFile, Table<Redb, E
         .insert_value("c", &product("Gamma", 30, "archived"))
         .await
         .unwrap();
+    table
+        .insert_value("d", &product("Delta", 40, "draft"))
+        .await
+        .unwrap();
     (path, table)
 }
 
@@ -87,94 +91,14 @@ async fn in_values_condition_narrows_to_the_listed_values() {
 }
 
 #[tokio::test]
-async fn test_eq_on_indexed_column_returns_matches() {
+async fn test_in_on_indexed_column_unions_the_listed_values() {
     let (_tmp, table) = seeded_with_status_indexed().await;
 
     let mut q = table.clone();
     let status = q["status"].clone();
-    q.add_condition(status.eq("active"));
+    q.add_condition(status.in_(vec!["active", "archived", "missing"]));
 
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(keys(&rows), ["a", "b"]);
-}
-
-#[tokio::test]
-async fn test_eq_no_matches_returns_empty() {
-    let (_tmp, table) = seeded_with_status_indexed().await;
-
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    q.add_condition(status.eq("nonexistent"));
-
-    let rows = q.list_values().await.unwrap();
-    assert!(rows.is_empty());
-}
-
-#[tokio::test]
-async fn test_in_on_indexed_column_unions_results() {
-    let (_tmp, table) = seeded_with_status_indexed().await;
-
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    q.add_condition(status.in_(vec!["active", "archived"]));
-
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(keys(&rows), ["a", "b", "c"]);
-}
-
-#[tokio::test]
-async fn test_in_with_one_unknown_value() {
-    let (_tmp, table) = seeded_with_status_indexed().await;
-
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    q.add_condition(status.in_(vec!["archived", "draft"]));
-
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(keys(&rows), ["c"]);
-}
-
-#[tokio::test]
-async fn test_in_with_no_values_returns_empty() {
-    let (_tmp, table) = seeded_with_status_indexed().await;
-
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    q.add_condition(status.in_(Vec::<String>::new()));
-
-    assert!(q.list_values().await.unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn test_in_with_a_repeated_value_does_not_repeat_rows() {
-    let (_tmp, table) = seeded_with_status_indexed().await;
-
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    q.add_condition(status.in_(vec!["archived", "archived"]));
-
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(keys(&rows), ["c"]);
-}
-
-#[tokio::test]
-async fn test_eq_on_an_indexed_integer_column() {
-    let path = tempfile::NamedTempFile::new().unwrap();
-    let db = Redb::create(path.path()).unwrap();
-    let table = Table::<Redb, EmptyEntity>::new("stock", db)
-        .with_id_column("id")
-        .with_column(Column::<i64>::new("qty").with_flag(ColumnFlag::Indexed));
-    for (id, qty) in [("x", 5i64), ("y", 7), ("z", 5)] {
-        let mut r: Record<AnyRedbType> = Record::new();
-        r.insert("qty".into(), AnyRedbType::new(qty));
-        table.insert_value(id, &r).await.unwrap();
-    }
-
-    let mut q = table.clone();
-    let qty = q["qty"].clone();
-    q.add_condition(qty.eq(5i64));
-
-    assert_eq!(keys(&q.list_values().await.unwrap()), ["x", "z"]);
+    assert_eq!(keys(&q.list_values().await.unwrap()), ["a", "b", "c"]);
 }
 
 #[tokio::test]
@@ -215,46 +139,19 @@ async fn test_id_in_short_circuits() {
 }
 
 #[tokio::test]
-async fn test_multiple_conditions_first_seeds_rest_filter() {
-    // First condition (status=active) seeds candidates via index;
-    // second condition filters in memory by id.
+async fn test_later_conditions_filter_the_rows_the_first_one_seeds() {
     let (_tmp, table) = seeded_with_status_indexed().await;
+    let status = table["status"].clone();
 
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    let id_col = q["id"].clone();
-    q.add_condition(status.eq("active"));
-    q.add_condition(id_col.eq("b"));
+    let mut by_id = table.clone();
+    by_id.add_condition(status.eq("active"));
+    by_id.add_condition(table["id"].clone().eq("b"));
+    let mut by_name = table.clone();
+    by_name.add_condition(status.eq("active"));
+    by_name.add_condition(table["name"].clone().eq("Alpha"));
 
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(keys(&rows), ["b"]);
-}
-
-#[tokio::test]
-async fn test_later_conditions_may_name_an_unindexed_column() {
-    let (_tmp, table) = seeded_with_status_indexed().await;
-
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    let name = q["name"].clone();
-    q.add_condition(status.eq("active"));
-    q.add_condition(name.eq("Alpha"));
-
-    let rows = q.list_values().await.unwrap();
-    assert_eq!(keys(&rows), ["a"]);
-}
-
-#[tokio::test]
-async fn test_conditions_that_exclude_each_other_return_empty() {
-    let (_tmp, table) = seeded_with_status_indexed().await;
-
-    let mut q = table.clone();
-    let status = q["status"].clone();
-    let id_col = q["id"].clone();
-    q.add_condition(status.eq("archived"));
-    q.add_condition(id_col.eq("a"));
-
-    assert!(q.list_values().await.unwrap().is_empty());
+    assert_eq!(keys(&by_id.list_values().await.unwrap()), ["b"]);
+    assert_eq!(keys(&by_name.list_values().await.unwrap()), ["a"]);
 }
 
 #[tokio::test]

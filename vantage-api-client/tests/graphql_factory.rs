@@ -265,49 +265,25 @@ fn the_searchable_flag_reaches_the_vista_column() {
 }
 
 #[tokio::test]
-async fn the_root_field_can_be_renamed_in_the_block() {
+async fn a_block_names_the_root_field_args_and_response_path() {
     let server = MockServer::start().await;
     answer(
         &server,
-        "query { ordersList { id } }",
+        "query { ordersList(input: {}) { edges { node { id } } } }",
         "ordersList",
-        json!([{ "id": "o1" }]),
+        json!({ "edges": [{ "node": { "id": "o1" } }] }),
     )
     .await;
-    let api = api(&server);
-    let vista = vista_from(
-        &api,
-        "name: orders\ncolumns:\n  id:\n    type: string\n    flags: [id]\ngraphql:\n  root_field: ordersList\n",
-    );
-    assert_eq!(vista.list_values().await.unwrap().len(), 1);
+    let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(
+        "name: orders\ncolumns:\n  id:\n    type: string\n    flags: [id]\ngraphql:\n  root_field: ordersList\n  args: { input: {} }\n  response_path: edges.node\n",
+    )
+    .unwrap();
+    let factory = api(&server).vista_factory();
 
-    let table = api
-        .vista_factory()
-        .table_from_spec(
-            &serde_yaml_ng::from_str::<GraphqlApiVistaSpec>(
-                "name: orders\ncolumns:\n  id:\n    type: string\n    flags: [id]\ngraphql:\n  root_field: ordersList\n",
-            )
-            .unwrap(),
-        )
-        .unwrap();
+    let vista = factory.build_from_spec(spec.clone()).unwrap();
+    assert_eq!(vista.list_values().await.unwrap().len(), 1);
+    let table = factory.table_from_spec(&spec).unwrap();
     assert_eq!(table.table_name(), "ordersList");
-}
-
-#[tokio::test]
-async fn a_spec_reads_args_filter_arg_and_response_path_from_its_block() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        "query { searchRuns(input: {}) { edges { node { id } } } }",
-        "searchRuns",
-        json!({ "edges": [{ "node": { "id": "r1" } }] }),
-    )
-    .await;
-    let vista = vista_from(
-        &api(&server),
-        "name: searchRuns\ncolumns:\n  id:\n    type: string\n    flags: [id]\ngraphql:\n  args: { input: {} }\n  response_path: edges.node\n",
-    );
-    assert_eq!(vista.list_values().await.unwrap().len(), 1);
 }
 
 #[test]
@@ -349,18 +325,17 @@ fn capabilities(api: &GraphqlApi, graphql: &str) -> Vec<Capability> {
     .collect()
 }
 
+/// Generic leaves sort and search to the consumer; Hasura pushes them and
+/// the operators down; paging adds a window but never a cursor; nothing
+/// ever writes. `filter: false` switches off everything condition-shaped,
+/// and order and search can be switched off per table.
 #[test]
-fn a_generic_table_traverses_and_leaves_sort_and_search_to_the_consumer() {
+fn a_vista_advertises_what_its_block_pushes_down() {
     let api = GraphqlApi::new("http://x/graphql");
     assert_eq!(
         capabilities(&api, "  dialect: generic\n"),
         [Capability::Traverse]
     );
-}
-
-#[test]
-fn a_hasura_table_pushes_sort_search_and_operators_down() {
-    let api = GraphqlApi::new("http://x/graphql");
     assert_eq!(
         capabilities(&api, "  dialect: hasura\n"),
         [
@@ -370,40 +345,27 @@ fn a_hasura_table_pushes_sort_search_and_operators_down() {
             Capability::FilterOps
         ]
     );
-}
-
-#[test]
-fn paging_adds_a_window_but_never_a_cursor_and_nothing_ever_writes() {
-    let api = GraphqlApi::new("http://x/graphql");
-    let caps = capabilities(&api, "  dialect: hasura\n  paginate: true\n");
-    assert!(caps.contains(&Capability::Window));
-    assert!(!caps.contains(&Capability::Cursor));
-    for write in [
-        Capability::Insert,
-        Capability::Update,
-        Capability::Delete,
-        Capability::Import,
-        Capability::ConfineWrites,
-    ] {
-        assert!(!caps.contains(&write), "{write}");
-    }
-}
-
-#[test]
-fn filter_false_switches_off_everything_condition_shaped() {
-    let api = GraphqlApi::new("http://x/graphql");
-    let caps = capabilities(
-        &api,
-        "  dialect: hasura\n  filter: false\n  paginate: true\n",
+    assert_eq!(
+        capabilities(&api, "  dialect: hasura\n  paginate: true\n"),
+        [
+            Capability::Traverse,
+            Capability::Order,
+            Capability::Search,
+            Capability::FilterOps,
+            Capability::Window
+        ]
     );
-    assert_eq!(caps, [Capability::Traverse, Capability::Order]);
-}
-
-#[test]
-fn order_and_search_can_be_switched_off_per_table() {
-    let api = GraphqlApi::new("http://x/graphql");
-    let caps = capabilities(&api, "  dialect: hasura\n  order: false\n  search: false\n");
-    assert_eq!(caps, [Capability::Traverse, Capability::FilterOps]);
+    assert_eq!(
+        capabilities(
+            &api,
+            "  dialect: hasura\n  filter: false\n  paginate: true\n"
+        ),
+        [Capability::Traverse, Capability::Order]
+    );
+    assert_eq!(
+        capabilities(&api, "  dialect: hasura\n  order: false\n  search: false\n"),
+        [Capability::Traverse, Capability::FilterOps]
+    );
 }
 
 #[test]

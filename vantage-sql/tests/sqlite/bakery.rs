@@ -26,13 +26,6 @@ fn exec_rows(result: AnySqliteType) -> Vec<Record<JsonValue>> {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-struct Bakery {
-    id: String,
-    name: String,
-    profit_margin: i64,
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 struct Client {
     id: String,
     name: String,
@@ -52,19 +45,6 @@ struct Product {
     bakery_id: String,
     is_deleted: bool,
     inventory_stock: i64,
-}
-
-#[tokio::test]
-async fn test_read_bakery() {
-    let db = get_db().await;
-    let select = SqliteSelect::new().with_source("bakery");
-    let rows = exec_rows(db.execute(&select.expr()).await.unwrap());
-
-    assert_eq!(rows.len(), 1);
-    let bakery: Bakery = Bakery::from_record(rows[0].clone()).unwrap();
-    assert_eq!(bakery.id, "hill_valley");
-    assert_eq!(bakery.name, "Hill Valley Bakery");
-    assert_eq!(bakery.profit_margin, 15);
 }
 
 #[tokio::test]

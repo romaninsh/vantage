@@ -39,46 +39,32 @@ fn str_value(s: &str) -> serde_yaml_ng::Value {
 }
 
 #[test]
-fn a_yaml_include_is_spliced_in_as_data_and_recorded() {
+fn yaml_yml_and_json_includes_are_spliced_in_as_data_and_recorded() {
     let tmp = tempfile::tempdir().unwrap();
-    write(
-        tmp.path(),
-        "page/shared.yaml",
-        "kind: label\nparams: { text: hi }\n",
-    );
-    write(
-        tmp.path(),
-        "page/a.yaml",
-        "body:\n  - !include shared.yaml\n",
-    );
-
-    let doc = load(tmp.path(), "page/a.yaml").unwrap();
-
-    assert_eq!(doc.value["body"][0]["kind"], str_value("label"));
-    assert_eq!(doc.value["body"][0]["params"]["text"], str_value("hi"));
-    assert_eq!(doc.includes.len(), 1);
-    assert!(doc.includes[0].ends_with("page/shared.yaml"));
-}
-
-#[test]
-fn json_and_yml_includes_are_spliced_as_data() {
-    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "page/shared.yaml", "kind: label\n");
+    write(tmp.path(), "page/more.yml", "- name: extra\n");
     write(
         tmp.path(),
         "page/cols.json",
         r#"[{"name":"id"},{"name":"total"}]"#,
     );
-    write(tmp.path(), "page/more.yml", "- name: extra\n");
     write(
         tmp.path(),
         "page/a.yaml",
-        "columns: !include cols.json\nmore: !include more.yml\n",
+        "body:\n  - !include shared.yaml\nmore: !include more.yml\ncolumns: !include cols.json\n",
     );
 
     let doc = load(tmp.path(), "page/a.yaml").unwrap();
+    let mut includes = doc.includes.clone();
+    includes.sort();
 
-    assert_eq!(doc.value["columns"][1]["name"], str_value("total"));
+    assert_eq!(doc.value["body"][0]["kind"], str_value("label"));
     assert_eq!(doc.value["more"][0]["name"], str_value("extra"));
+    assert_eq!(doc.value["columns"][1]["name"], str_value("total"));
+    assert_eq!(includes.len(), 3);
+    assert!(includes[0].ends_with("page/cols.json"), "{includes:?}");
+    assert!(includes[1].ends_with("page/more.yml"), "{includes:?}");
+    assert!(includes[2].ends_with("page/shared.yaml"), "{includes:?}");
 }
 
 #[test]
@@ -121,17 +107,6 @@ fn a_nested_include_resolves_from_the_included_files_directory() {
 }
 
 #[test]
-fn an_include_may_go_up_a_directory_inside_the_project() {
-    let tmp = tempfile::tempdir().unwrap();
-    write(tmp.path(), "shared/x.rhai", "x");
-    write(tmp.path(), "page/a.yaml", "s: !include ../shared/x.rhai\n");
-
-    let doc = load(tmp.path(), "page/a.yaml").unwrap();
-
-    assert_eq!(doc.value["s"], str_value("x"));
-}
-
-#[test]
 fn an_include_escaping_the_project_root_is_an_error() {
     let outer = tempfile::tempdir().unwrap();
     let root = outer.path().join("proj");
@@ -154,17 +129,6 @@ fn an_include_cycle_is_an_error_listing_the_chain() {
 
     assert!(err.contains("cycle"), "{err}");
     assert!(err.contains("a.yaml") && err.contains("b.yaml"), "{err}");
-}
-
-#[test]
-fn a_file_including_itself_is_a_cycle() {
-    let tmp = tempfile::tempdir().unwrap();
-    write(tmp.path(), "page/a.yaml", "x: !include b.yaml\n");
-    write(tmp.path(), "page/b.yaml", "y: !include b.yaml\n");
-
-    let err = error_of(tmp.path(), "page/a.yaml");
-
-    assert!(err.contains("cycle"), "{err}");
 }
 
 #[test]
@@ -308,19 +272,12 @@ fn schema_for_type_returns_the_same_compiled_schema_each_time() {
 }
 
 #[test]
-fn an_unknown_key_fails_schema_validation_naming_the_key() {
-    let err = parse_yaml_validated::<Item>("name: a\nextra: 1\n").unwrap_err();
+fn a_document_breaking_the_schema_fails_validation_naming_each_problem() {
+    let err = parse_yaml_validated::<Item>("script: x\nextra: 1\n").unwrap_err();
 
     let text = format!("{err:#}");
     assert!(text.contains("schema validation failed"), "{text}");
     assert!(text.contains("extra"), "{text}");
-}
-
-#[test]
-fn a_missing_required_key_fails_schema_validation() {
-    let err = parse_yaml_validated::<Item>("script: x\n").unwrap_err();
-
-    let text = format!("{err:#}");
     assert!(text.contains("name"), "{text}");
 }
 

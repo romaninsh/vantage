@@ -43,22 +43,7 @@ async fn ids_where(table: &Table<Redb, EmptyEntity>, column: &str, value: &str) 
 // ── Insert path ───────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_insert_indexes_on_each_indexed_column() {
-    let (_tmp, table) = user_table();
-    table
-        .insert_value("a", &user("Alice", "alice@x.com", "admin"))
-        .await
-        .unwrap();
-
-    // Both flagged columns get an index.
-    assert_eq!(ids_where(&table, "group", "admin").await, ["a"]);
-    assert_eq!(ids_where(&table, "email", "alice@x.com").await, ["a"]);
-}
-
-// ── Non-unique columns ────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_non_unique_column_returns_all_matches() {
+async fn test_insert_indexes_every_flagged_column_and_lookups_find_every_match() {
     let (_tmp, table) = user_table();
     table
         .insert_value("a", &user("Alice", "alice@x.com", "admin"))
@@ -75,6 +60,7 @@ async fn test_non_unique_column_returns_all_matches() {
 
     assert_eq!(ids_where(&table, "group", "admin").await, ["a", "b"]);
     assert_eq!(ids_where(&table, "group", "user").await, ["c"]);
+    assert_eq!(ids_where(&table, "email", "alice@x.com").await, ["a"]);
 }
 
 // ── Delete path ───────────────────────────────────────────────────────────
@@ -143,38 +129,21 @@ async fn test_patch_updates_only_changed_index() {
 // ── Delete-all path ───────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_delete_all_drops_indexes() {
-    let (_tmp, table) = user_table();
-    for (id, name) in [("a", "Alice"), ("b", "Bob")] {
-        table
-            .insert_value(
-                id,
-                &user(name, &format!("{}@x.com", name.to_lowercase()), "admin"),
-            )
-            .await
-            .unwrap();
-    }
-
-    WritableValueSet::delete_all(&table).await.unwrap();
-
-    assert!(ids_where(&table, "email", "alice@x.com").await.is_empty());
-    assert!(ids_where(&table, "group", "admin").await.is_empty());
-}
-
-#[tokio::test]
-async fn test_indexes_work_for_rows_written_after_delete_all() {
+async fn test_delete_all_drops_indexes_and_later_rows_are_indexed_again() {
     let (_tmp, table) = user_table();
     table
         .insert_value("a", &user("Alice", "alice@x.com", "admin"))
         .await
         .unwrap();
     WritableValueSet::delete_all(&table).await.unwrap();
+    assert!(ids_where(&table, "group", "admin").await.is_empty());
 
     table
         .insert_value("b", &user("Bob", "bob@x.com", "admin"))
         .await
         .unwrap();
 
+    assert!(ids_where(&table, "email", "alice@x.com").await.is_empty());
     assert_eq!(ids_where(&table, "group", "admin").await, ["b"]);
 }
 

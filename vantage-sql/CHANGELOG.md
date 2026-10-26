@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.2 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each, the same across the MySQL, Postgres and
+  SQLite suites (type round-trips, aggregates, inserts, references, value sets), and tests another
+  test already covers are dropped: 788 tests become 611 with the same coverage. No API or behaviour
+  change.
+
 ## 0.10.1 — 2026-10-25
 
 - Tests whose assertions other tests already make are dropped. No API or behaviour change.

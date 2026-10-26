@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.7 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (an `id=` condition rendered as cbor-diag,
+  string columns keeping lookalikes as text) and tests another test already covers are dropped:
+  105 tests become 103 with the same coverage. No API or behaviour change.
+
 ## 0.6.6 — 2026-10-18
 
 - Requires vantage-table 3.0.0.

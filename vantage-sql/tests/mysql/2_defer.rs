@@ -67,70 +67,11 @@ async fn setup(prefix: &str) -> (MysqlDB, MysqlDB) {
 // ── defer() resolves a value from one query, binds it into another ────────
 
 #[tokio::test]
-async fn test_cross_database_deferred() {
-    let (config_db, shop_db) = setup("defer1").await;
+async fn test_deferred_parameter() {
+    let (config_db, shop_db) = setup("defer").await;
 
     let threshold_query = mysql_expr!(
-        "SELECT value FROM `defer1_config` WHERE `key` = {}",
-        "min_price"
-    );
-    let deferred_threshold = config_db.defer(threshold_query);
-
-    let shop_query = Expression::<AnyMysqlType>::new(
-        "SELECT name FROM `defer1_product` WHERE price >= {} ORDER BY price",
-        vec![ExpressiveEnum::Deferred(deferred_threshold)],
-    );
-
-    let result = records(shop_db.execute(&shop_query).await.unwrap());
-
-    assert_eq!(result.len(), 2);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Mid Thing".to_string())
-    );
-    assert_eq!(
-        result[1]["name"].try_get::<String>(),
-        Some("Expensive Thing".to_string())
-    );
-}
-
-// ── Deferred mixed with regular scalar parameters ──────────────────────────
-
-#[tokio::test]
-async fn test_deferred_mixed_with_scalars() {
-    let (config_db, shop_db) = setup("defer2").await;
-
-    let threshold_query = mysql_expr!(
-        "SELECT value FROM `defer2_config` WHERE `key` = {}",
-        "min_price"
-    );
-    let deferred_threshold = config_db.defer(threshold_query);
-
-    let shop_query = Expression::<AnyMysqlType>::new(
-        "SELECT name FROM `defer2_product` WHERE price >= {} AND name != {} ORDER BY price",
-        vec![
-            ExpressiveEnum::Deferred(deferred_threshold),
-            ExpressiveEnum::Scalar(AnyMysqlType::new("Mid Thing".to_string())),
-        ],
-    );
-
-    let result = records(shop_db.execute(&shop_query).await.unwrap());
-
-    assert_eq!(result.len(), 1);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Expensive Thing".to_string())
-    );
-}
-
-// ── Deferred inside a nested expression ───────────────────────────────────
-
-#[tokio::test]
-async fn test_nested_deferred() {
-    let (config_db, shop_db) = setup("defer3").await;
-
-    let threshold_query = mysql_expr!(
-        "SELECT value FROM `defer3_config` WHERE `key` = {}",
+        "SELECT value FROM `defer_config` WHERE `key` = {}",
         "min_price"
     );
     let deferred_threshold = config_db.defer(threshold_query);
@@ -139,21 +80,19 @@ async fn test_nested_deferred() {
         "price >= {}",
         vec![ExpressiveEnum::Deferred(deferred_threshold)],
     );
-
-    let shop_query = mysql_expr!(
-        "SELECT name FROM `defer3_product` WHERE {} ORDER BY price",
-        (inner)
+    let shop_query = Expression::<AnyMysqlType>::new(
+        "SELECT name FROM `defer_product` WHERE {} AND name != {} ORDER BY price",
+        vec![
+            ExpressiveEnum::Nested(inner),
+            ExpressiveEnum::Scalar(AnyMysqlType::new("Expensive Thing".to_string())),
+        ],
     );
 
     let result = records(shop_db.execute(&shop_query).await.unwrap());
 
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 1);
     assert_eq!(
         result[0]["name"].try_get::<String>(),
         Some("Mid Thing".to_string())
-    );
-    assert_eq!(
-        result[1]["name"].try_get::<String>(),
-        Some("Expensive Thing".to_string())
     );
 }

@@ -454,23 +454,35 @@ async fn declared_array_keeps_unchanged_elements_as_stored_and_types_the_rest() 
 }
 
 #[tokio::test]
-async fn declared_empty_text_and_null_clear_inside_an_array_too() -> TestResult {
+async fn declared_empty_text_and_null_clear_on_insert_and_over_a_stored_value_on_patch()
+-> TestResult {
     let (db, name) = setup().await;
     let vista = typed_events(&db);
     let tag_id = ObjectId::new();
-    let row = row_with(
-        "tags",
+    let mut row = typed_row(ObjectId::new(), tag_id, ObjectId::new());
+    row.insert("amount".into(), text(""));
+    row.insert(
+        "tags".into(),
         CborValue::Array(vec![text(&tag_id.to_hex()), text(""), CborValue::Null]),
     );
     vista.insert_value("n1", &row).await?;
+
+    let stored = raw(&db, "n1").await;
+    assert_eq!(stored.get("amount"), Some(&Bson::Null));
     assert_eq!(
-        raw(&db, "n1").await.get("tags"),
+        stored.get("tags"),
         Some(&Bson::Array(vec![
             Bson::ObjectId(tag_id),
             Bson::Null,
             Bson::Null
         ]))
     );
+
+    // `when` is stored as 2026-10-10T08:00:00Z; `""` over it clears it.
+    let mut partial = Record::new();
+    partial.insert("when".to_string(), text(""));
+    vista.patch_value("n1", &partial).await?;
+    assert_eq!(raw(&db, "n1").await.get("when"), Some(&Bson::Null));
 
     teardown(&db, &name).await;
     Ok(())
@@ -493,39 +505,6 @@ async fn declared_decimal_refusal_in_a_patch_writes_nothing() -> TestResult {
         .expect_err("text that is no decimal must be refused");
     assert!(err.is_conflict(), "{err}");
     assert_eq!(raw(&db, "p1").await, before);
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn declared_decimal_empty_text_clears() -> TestResult {
-    let (db, name) = setup().await;
-    let vista = typed_events(&db);
-    vista
-        .insert_value("c1", &row_with("amount", text("")))
-        .await?;
-    assert_eq!(raw(&db, "c1").await.get("amount"), Some(&Bson::Null));
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn declared_type_empty_text_clears() -> TestResult {
-    let (db, name) = setup().await;
-    let vista = typed_events(&db);
-    let row = typed_row(ObjectId::new(), ObjectId::new(), ObjectId::new());
-    vista.insert_value("e10", &row).await?;
-
-    let mut edited = vista.get_value("e10").await?.expect("e10");
-    edited.insert("when".into(), text(""));
-    edited.insert("amount".into(), text(""));
-    vista.patch_value("e10", &edited).await?;
-    let stored = raw(&db, "e10").await;
-    assert_eq!(stored.get("when"), Some(&Bson::Null));
-    assert_eq!(stored.get("amount"), Some(&Bson::Null));
-    assert!(matches!(stored.get("client_id"), Some(Bson::ObjectId(_))));
 
     teardown(&db, &name).await;
     Ok(())

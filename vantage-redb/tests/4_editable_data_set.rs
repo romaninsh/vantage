@@ -154,82 +154,48 @@ async fn test_patch_missing_row_errors() {
 }
 
 #[tokio::test]
-async fn test_delete_one() {
+async fn test_delete_removes_only_the_named_row_and_a_missing_id_is_ok() {
     let (_tmp, table) = fresh_table("del");
     seed(&table).await;
 
     WritableValueSet::delete(&table, "a").await.unwrap();
-
-    let all = table.list_values().await.unwrap();
-    assert_eq!(all.len(), 1);
-    assert!(!all.contains_key("a"));
-    assert!(all.contains_key("b"));
-}
-
-#[tokio::test]
-async fn test_delete_of_a_missing_row_is_ok() {
-    let (_tmp, table) = fresh_table("delmiss");
-    seed(&table).await;
-
     WritableValueSet::delete(&table, "nope").await.unwrap();
 
-    assert_eq!(table.list_values().await.unwrap().len(), 2);
+    let all = table.list_values().await.unwrap();
+    assert_eq!(all.keys().collect::<Vec<_>>(), ["b"]);
 }
 
 #[tokio::test]
-async fn test_delete_all() {
+async fn test_delete_all_can_be_repeated_and_the_table_takes_new_rows() {
     let (_tmp, table) = fresh_table("delall");
     seed(&table).await;
 
     WritableValueSet::delete_all(&table).await.unwrap();
+    WritableValueSet::delete_all(&table).await.unwrap();
     assert!(table.list_values().await.unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn test_delete_all_can_be_repeated() {
-    let (_tmp, table) = fresh_table("delall2");
-    seed(&table).await;
-
-    WritableValueSet::delete_all(&table).await.unwrap();
-    WritableValueSet::delete_all(&table).await.unwrap();
-
-    assert!(table.list_values().await.unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn test_rows_written_after_delete_all_are_readable() {
-    let (_tmp, table) = fresh_table("delallthenwrite");
-    seed(&table).await;
-    WritableValueSet::delete_all(&table).await.unwrap();
 
     seed(&table).await;
-
     assert_eq!(table.list_values().await.unwrap().len(), 2);
 }
 
 #[tokio::test]
-async fn test_insert_return_id_generates_uuid() {
+async fn test_insert_return_id_makes_a_new_id_unless_one_is_supplied() {
     let (_tmp, table) = fresh_table("auto");
-
-    let rec = record(&[
-        ("name", AnyRedbType::new("Auto".to_string())),
-        ("price", AnyRedbType::new(42i64)),
+    let rec = record(&[("name", AnyRedbType::new("Auto".to_string()))]);
+    let given = record(&[
+        ("id", AnyRedbType::new("given".to_string())),
+        ("name", AnyRedbType::new("Given".to_string())),
     ]);
-    let id = table.insert_return_id_value(&rec).await.unwrap();
-    assert!(!id.is_empty());
-
-    let fetched = table.get_value(&id).await.unwrap().expect("row exists");
-    assert_eq!(fetched["name"].try_get::<String>(), Some("Auto".into()));
-}
-
-#[tokio::test]
-async fn test_insert_return_id_makes_a_new_id_on_every_call() {
-    let (_tmp, table) = fresh_table("autotwice");
-    let rec = record(&[("name", AnyRedbType::new("Same".to_string()))]);
 
     let first = table.insert_return_id_value(&rec).await.unwrap();
     let second = table.insert_return_id_value(&rec).await.unwrap();
+    let supplied = table.insert_return_id_value(&given).await.unwrap();
 
+    assert!(!first.is_empty());
     assert_ne!(first, second);
-    assert_eq!(table.list_values().await.unwrap().len(), 2);
+    assert_eq!(supplied, "given");
+    let fetched = table.get_value(&first).await.unwrap().expect("row exists");
+    assert_eq!(fetched["name"].try_get::<String>(), Some("Auto".into()));
+    assert!(table.get_value("given").await.unwrap().is_some());
+    assert_eq!(table.list_values().await.unwrap().len(), 3);
 }

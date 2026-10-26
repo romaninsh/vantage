@@ -122,65 +122,58 @@ fn condition_column_is_none_for_raw_expressions() {
     assert_eq!(api.condition_column(&both), None);
 }
 
+/// The REST shell takes equality on a declared column or an endpoint
+/// `{placeholder}`. An undeclared column is a plain error; a dotted path
+/// is unimplemented and a null value unsupported. None of the three is
+/// added.
 #[test]
-fn a_declared_column_is_accepted() {
+fn add_condition_takes_declared_and_placeholder_columns() {
     let mut vista = albums();
     vista
         .add_condition("title", FilterOp::Eq, "Quidem")
         .expect("title is declared");
-    assert_eq!(vista.query().conditions.len(), 1);
-}
-
-#[test]
-fn a_placeholder_column_is_accepted() {
-    let mut vista = albums();
     vista
         .add_condition("userId", FilterOp::Eq, 1i64)
         .expect("userId fills the endpoint template");
-    assert_eq!(vista.query().conditions.len(), 1);
-}
 
-#[test]
-fn an_undeclared_column_is_an_error() {
-    let mut vista = albums();
-    let err = vista
+    let undeclared = vista
         .add_condition("ghost", FilterOp::Eq, 1i64)
         .unwrap_err();
-    assert!(!err.is_unsupported() && !err.is_unimplemented(), "{err}");
     assert!(
-        err.to_string().contains("Unknown column for condition"),
-        "{err}"
+        !undeclared.is_unsupported() && !undeclared.is_unimplemented(),
+        "{undeclared}"
     );
-    assert!(vista.query().conditions.is_empty());
-}
-
-/// A dotted path into a declared column is refused as unimplemented, not
-/// sent: `with_query` hands it back for the caller to evaluate over a
-/// complete set, and a paged view with no eager start fails on it.
-#[test]
-fn a_dotted_path_is_refused_and_left_for_local_evaluation() {
-    let mut vista = albums();
-    let err = vista
+    assert!(
+        undeclared
+            .to_string()
+            .contains("Unknown column for condition"),
+        "{undeclared}"
+    );
+    let dotted = vista
         .add_condition("title.first", FilterOp::Eq, "Quidem")
         .unwrap_err();
-    assert!(err.is_unimplemented(), "{err}");
-    assert!(vista.query().conditions.is_empty());
-
-    let dotted = Condition::new("title.first", FilterOp::Eq, "Quidem");
-    let query = VistaQuery::new().with_condition(dotted.clone());
-    let (vista, residual) = albums().with_query(&query).expect("with_query");
-    assert_eq!(residual.conditions, vec![dotted]);
-    assert!(vista.query().conditions.is_empty());
-}
-
-#[test]
-fn a_null_value_is_refused() {
-    let mut vista = albums();
-    let err = vista
+    assert!(dotted.is_unimplemented(), "{dotted}");
+    let null = vista
         .add_condition("title", FilterOp::Eq, CborValue::Null)
         .unwrap_err();
-    assert!(err.is_unsupported(), "{err}");
-    assert!(vista.query().conditions.is_empty());
+    assert!(null.is_unsupported(), "{null}");
+
+    assert_eq!(vista.query().conditions.len(), 2);
+}
+
+/// What the shell can't send, a dotted path or a null value, `with_query`
+/// hands back for the caller to evaluate over a complete set.
+#[test]
+fn with_query_leaves_dotted_paths_and_nulls_for_local_evaluation() {
+    let dotted = Condition::new("title.first", FilterOp::Eq, "Quidem");
+    let null = Condition::new("title", FilterOp::Eq, CborValue::Null);
+    let query = VistaQuery::new()
+        .with_condition(Condition::new("id", FilterOp::Eq, 3i64))
+        .with_condition(dotted.clone())
+        .with_condition(null.clone());
+    let (vista, residual) = albums().with_query(&query).expect("with_query");
+    assert_eq!(residual.conditions, vec![dotted, null]);
+    assert_eq!(vista.query().conditions, query.conditions[..1]);
 }
 
 const FILTERED_SPEC: &str = r#"
@@ -194,12 +187,14 @@ columns:
 
 /// Activities filtered in memory, from a server that sends every row back
 /// whatever the conditions: one row has `kind` and the hidden `note`, one
-/// lacks both, and none echoes the `mode` request parameter.
+/// lacks both, one has another `kind` and no `note`, and none echoes the
+/// `mode` request parameter.
 async fn client_filtered(server: &MockServer) -> Vista {
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             { "id": 1, "kind": "ride", "note": "x" },
-            { "id": 2 }
+            { "id": 2 },
+            { "id": 3, "kind": "walk" }
         ])))
         .mount(server)
         .await;
@@ -214,43 +209,31 @@ async fn client_filtered(server: &MockServer) -> Vista {
         .expect("build")
 }
 
+/// Filtered in memory, conditions stay off the wire and a row is kept only
+/// if it matches. A row lacking a filtered column is excluded, a hidden one
+/// included (`Hidden` is display only: a hidden column is still a row
+/// field), but not a `request_param` column, which the server consumes and
+/// never echoes back.
 #[tokio::test]
-async fn a_row_missing_a_visible_filtered_column_is_excluded() {
+async fn client_side_filtering_keeps_matching_rows_and_conditions_off_the_wire() {
     let server = MockServer::start().await;
-    let mut vista = client_filtered(&server).await;
-    vista.add_condition("kind", FilterOp::Eq, "ride").unwrap();
-    let ids: Vec<String> = vista.list_values().await.unwrap().into_keys().collect();
-    assert_eq!(ids, ["1"]);
-}
-
-/// `Hidden` is display only: a hidden column is still a row field.
-#[tokio::test]
-async fn a_row_missing_a_hidden_filtered_column_is_excluded() {
-    let server = MockServer::start().await;
-    let mut vista = client_filtered(&server).await;
-    vista.add_condition("note", FilterOp::Eq, "x").unwrap();
-    let ids: Vec<String> = vista.list_values().await.unwrap().into_keys().collect();
-    assert_eq!(ids, ["1"]);
-}
-
-#[tokio::test]
-async fn a_row_missing_a_request_param_filtered_column_is_kept() {
-    let server = MockServer::start().await;
-    let mut vista = client_filtered(&server).await;
-    vista
+    let mut by_kind = client_filtered(&server).await;
+    let mut by_note = client_filtered(&server).await;
+    let mut by_mode = client_filtered(&server).await;
+    by_kind.add_condition("kind", FilterOp::Eq, "ride").unwrap();
+    by_note.add_condition("note", FilterOp::Eq, "x").unwrap();
+    by_mode
         .add_condition("mode", FilterOp::Eq, "summary")
         .unwrap();
-    let ids: Vec<String> = vista.list_values().await.unwrap().into_keys().collect();
-    assert_eq!(ids, ["1", "2"]);
-}
 
-#[test]
-fn a_null_value_is_left_for_local_evaluation() {
-    let null = Condition::new("title", FilterOp::Eq, CborValue::Null);
-    let query = VistaQuery::new()
-        .with_condition(Condition::new("id", FilterOp::Eq, 3i64))
-        .with_condition(null.clone());
-    let (vista, residual) = albums().with_query(&query).expect("with_query");
-    assert_eq!(residual.conditions, vec![null]);
-    assert_eq!(vista.query().conditions, query.conditions[..1]);
+    let ids: Vec<String> = by_kind.list_values().await.unwrap().into_keys().collect();
+    assert_eq!(ids, ["1"]);
+    let ids: Vec<String> = by_note.list_values().await.unwrap().into_keys().collect();
+    assert_eq!(ids, ["1"]);
+    let ids: Vec<String> = by_mode.list_values().await.unwrap().into_keys().collect();
+    assert_eq!(ids, ["1", "2", "3"]);
+
+    let received = server.received_requests().await.unwrap();
+    assert_eq!(received[0].url.query(), None, "kind is not sent");
+    assert_eq!(received[1].url.query(), None, "note is not sent");
 }

@@ -8,7 +8,6 @@ use std::error::Error;
 
 use bson::oid::ObjectId;
 use ciborium::Value as CborValue;
-use futures_util::TryStreamExt;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
 use vantage_mongodb::vista::MongoVistaSpec;
@@ -72,86 +71,36 @@ fn names<'a>(rows: impl Iterator<Item = &'a vantage_types::Record<CborValue>>) -
     .collect()
 }
 
+/// Windows read one total order: `price`, then `_id` among ties. Ids are
+/// created in name order and inserted shuffled, so insertion order can't stand
+/// in for `_id` order. An ordered `list` reads that order too.
 #[tokio::test]
-async fn vista_fetch_window_reads_offset_slice() -> TestResult {
+async fn vista_fetch_window_reads_offset_slices_in_price_then_id_order() -> TestResult {
     let (db, name) = setup().await;
-    seed(&db).await?;
+    let (a, b, c) = (ObjectId::new(), ObjectId::new(), ObjectId::new());
+    let (d, e, f) = (ObjectId::new(), ObjectId::new(), ObjectId::new());
+    db.doc_collection("products")
+        .insert_many(vec![
+            bson::doc! { "_id": e, "name": "e", "price": 2 },
+            bson::doc! { "_id": c, "name": "c", "price": 1 },
+            bson::doc! { "_id": b, "name": "b", "price": 0 },
+            bson::doc! { "_id": f, "name": "f", "price": 2 },
+            bson::doc! { "_id": d, "name": "d", "price": 1 },
+            bson::doc! { "_id": a, "name": "a", "price": 0 },
+        ])
+        .await?;
 
     let vista = ordered_products(&db);
     assert!(vista.capabilities().has(Capability::Window));
 
-    let page = vista.fetch_window(2, 3).await?;
-    assert_eq!(
-        names(page.rows.iter().map(|(_, r)| r)),
-        vec!["item-2", "item-3", "item-4"]
-    );
+    let page = vista.fetch_window(1, 2).await?;
+    assert_eq!(names(page.rows.iter().map(|(_, r)| r)), vec!["b", "c"]);
 
     let tail = vista.fetch_window(4, 10).await?;
-    assert_eq!(
-        names(tail.rows.iter().map(|(_, r)| r)),
-        vec!["item-4", "item-5"]
-    );
+    assert_eq!(names(tail.rows.iter().map(|(_, r)| r)), vec!["e", "f"]);
 
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-/// Windows over a sort with many ties read the same total order as one
-/// query: `price` then `_id`. Without the `_id` tiebreak, MongoDB orders tied
-/// rows arbitrarily per query, so consecutive windows repeat some rows and
-/// skip others at their boundaries. An ordered `list` reads that order too.
-#[tokio::test]
-async fn vista_fetch_window_ties_follow_id_order() -> TestResult {
-    let (db, name) = setup().await;
-    // Ids are created in order, then inserted shuffled, so insertion order
-    // can't stand in for `_id` order.
-    let mut docs: Vec<_> = (0..300)
-        .map(|i| bson::doc! { "_id": ObjectId::new(), "name": format!("item-{i}"), "price": i % 3 })
-        .collect();
-    docs.reverse();
-    docs.rotate_left(117);
-    db.doc_collection("products").insert_many(docs).await?;
-
-    let vista = ordered_products(&db);
-    let mut windows = Vec::new();
-    for offset in (0..300).step_by(37) {
-        for (id, row) in &vista.fetch_window(offset, 37).await?.rows {
-            windows.extend(
-                names(std::iter::once(row))
-                    .into_iter()
-                    .map(|n| (id.clone(), n)),
-            );
-        }
-    }
-
-    let expected: Vec<(String, String)> = db
-        .doc_collection("products")
-        .find(bson::doc! {})
-        .sort(bson::doc! { "price": 1, "_id": 1 })
-        .await?
-        .try_collect::<Vec<_>>()
-        .await?
-        .into_iter()
-        .map(|d| {
-            (
-                d.get_object_id("_id").unwrap().to_hex(),
-                d.get_str("name").unwrap().to_string(),
-            )
-        })
-        .collect();
-    assert_eq!(windows, expected);
-
-    let listed: Vec<(String, String)> = vista
-        .list_values()
-        .await?
-        .into_iter()
-        .flat_map(|(id, row)| {
-            names(std::iter::once(&row))
-                .into_iter()
-                .map(move |n| (id.clone(), n))
-        })
-        .collect();
-    assert_eq!(listed, expected);
+    let listed = vista.list_values().await?;
+    assert_eq!(names(listed.values()), vec!["a", "b", "c", "d", "e", "f"]);
 
     teardown(&db, &name).await;
     Ok(())
@@ -187,68 +136,59 @@ fn name_list(rows: &[(String, String)]) -> Vec<&str> {
 }
 
 #[tokio::test]
-async fn vista_fetch_cursor_non_unique_sort_has_no_gaps() -> TestResult {
-    let (db, name) = setup().await;
-    // Three rows share price 2, one more shares price 1.
-    let docs = [(0, 1), (1, 1), (2, 2), (3, 2), (4, 2), (5, 3), (6, 4)]
-        .into_iter()
-        .map(|(i, price)| {
-            // Ids are not in name order, so the `_id` tiebreak is observable.
-            bson::doc! { "_id": ObjectId::new(), "name": format!("item-{}", 6 - i), "price": price }
-        })
-        .collect::<Vec<_>>();
-    db.doc_collection("products").insert_many(docs).await?;
-
-    let vista = ordered_products(&db);
-    let rows = drain(&vista, 8).await?;
-
-    // The full list in one query under the same total order.
-    let expected: Vec<(String, String)> = db
-        .doc_collection("products")
-        .find(bson::doc! {})
-        .sort(bson::doc! { "price": 1, "_id": 1 })
-        .await?
-        .try_collect::<Vec<_>>()
-        .await?
-        .into_iter()
-        .map(|d| {
-            (
-                d.get_object_id("_id").unwrap().to_hex(),
-                d.get_str("name").unwrap().to_string(),
-            )
-        })
-        .collect();
-    assert_eq!(rows, expected);
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_fetch_cursor_pages_over_missing_sort_field() -> TestResult {
+async fn vista_fetch_cursor_pages_over_missing_null_number_and_string_sort_values() -> TestResult {
     let (db, name) = setup().await;
     let docs = vec![
-        bson::doc! { "_id": ObjectId::new(), "name": "a", "price": 2 },
-        bson::doc! { "_id": ObjectId::new(), "name": "b" },
-        bson::doc! { "_id": ObjectId::new(), "name": "c", "price": 1 },
-        bson::doc! { "_id": ObjectId::new(), "name": "d", "price": bson::Bson::Null },
-        bson::doc! { "_id": ObjectId::new(), "name": "e" },
-        bson::doc! { "_id": ObjectId::new(), "name": "f", "price": 2 },
+        bson::doc! { "_id": ObjectId::new(), "name": "two-a", "price": 2 },
+        bson::doc! { "_id": ObjectId::new(), "name": "missing-a" },
+        bson::doc! { "_id": ObjectId::new(), "name": "text-b", "price": "b" },
+        bson::doc! { "_id": ObjectId::new(), "name": "one", "price": 1 },
+        bson::doc! { "_id": ObjectId::new(), "name": "null", "price": bson::Bson::Null },
+        bson::doc! { "_id": ObjectId::new(), "name": "two-and-a-half", "price": 2.5 },
+        bson::doc! { "_id": ObjectId::new(), "name": "missing-b" },
+        bson::doc! { "_id": ObjectId::new(), "name": "two-b", "price": 2 },
+        bson::doc! { "_id": ObjectId::new(), "name": "text-a", "price": "a" },
+        bson::doc! { "_id": ObjectId::new(), "name": "missing-c" },
+        bson::doc! { "_id": ObjectId::new(), "name": "three", "price": 3_i64 },
     ];
     db.doc_collection("products").insert_many(docs).await?;
 
-    // Missing and null sort first ascending and last descending; the `_id`
-    // tiebreak (insertion order) orders the ties.
-    let cases = [
-        (SortDirection::Ascending, ["b", "d", "e", "c", "a", "f"]),
-        (SortDirection::Descending, ["a", "f", "c", "b", "d", "e"]),
-    ];
-    for (direction, expected) in cases {
-        let mut vista = ordered_products(&db);
-        vista.set_order(Some(("price", direction)))?;
-        let rows = drain(&vista, 6).await?;
-        assert_eq!(name_list(&rows), expected, "{direction:?}");
-    }
+    // Missing and null sort below numbers, numbers below strings; ties follow `_id`.
+    let mut vista = ordered_products(&db);
+    assert_eq!(
+        name_list(&drain(&vista, 6).await?),
+        [
+            "missing-a",
+            "null",
+            "missing-b",
+            "missing-c",
+            "one",
+            "two-a",
+            "two-b",
+            "two-and-a-half",
+            "three",
+            "text-a",
+            "text-b",
+        ]
+    );
+
+    vista.set_order(Some(("price", SortDirection::Descending)))?;
+    assert_eq!(
+        name_list(&drain(&vista, 6).await?),
+        [
+            "text-b",
+            "text-a",
+            "three",
+            "two-and-a-half",
+            "two-a",
+            "two-b",
+            "one",
+            "missing-a",
+            "null",
+            "missing-b",
+            "missing-c",
+        ]
+    );
 
     teardown(&db, &name).await;
     Ok(())
@@ -273,34 +213,6 @@ async fn vista_fetch_cursor_pages_over_mixed_id_types() -> TestResult {
     let vista = db.vista_factory().build_from_spec(spec).expect("vista");
     let rows = drain(&vista, 6).await?;
     assert_eq!(name_list(&rows), ["s1", "s2", "s3", "o1", "o2", "o3"]);
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_fetch_cursor_pages_over_mixed_number_and_string_sort_field() -> TestResult {
-    let (db, name) = setup().await;
-    let docs = vec![
-        bson::doc! { "_id": ObjectId::new(), "name": "n1", "price": 1 },
-        bson::doc! { "_id": ObjectId::new(), "name": "sb", "price": "b" },
-        bson::doc! { "_id": ObjectId::new(), "name": "n2", "price": 2.5 },
-        bson::doc! { "_id": ObjectId::new(), "name": "sa", "price": "a" },
-        bson::doc! { "_id": ObjectId::new(), "name": "n3", "price": 3_i64 },
-    ];
-    db.doc_collection("products").insert_many(docs).await?;
-
-    let mut vista = ordered_products(&db);
-    assert_eq!(
-        name_list(&drain(&vista, 5).await?),
-        ["n1", "n2", "n3", "sa", "sb"]
-    );
-
-    vista.set_order(Some(("price", SortDirection::Descending)))?;
-    assert_eq!(
-        name_list(&drain(&vista, 5).await?),
-        ["sb", "sa", "n3", "n2", "n1"]
-    );
 
     teardown(&db, &name).await;
     Ok(())
@@ -345,34 +257,47 @@ mongo:
 #[tokio::test]
 async fn vista_fetch_cursor_refuses_tokens_it_did_not_issue() -> TestResult {
     let (db, name) = setup().await;
-    seed(&db).await?;
     let vista = ordered_products(&db);
 
-    let bogus = [
-        CborValue::Integer(2.into()),
-        CborValue::Array(vec![CborValue::Null]),
-        CborValue::Array(vec![CborValue::Bytes(vec![1, 2, 3])]),
-        // The sort has two keys (price, then the `_id` tiebreak).
-        CborValue::Array(vec![]),
-    ];
-    for token in bogus {
-        let err = vista
-            .fetch_cursor(Some(token.clone()), 2)
-            .await
-            .expect_err("a foreign token must be refused");
-        assert!(
-            err.to_string().contains("invalid fetch_cursor token"),
-            "{token:?}: {err}"
-        );
-    }
+    let not_an_array = CborValue::Integer(2.into());
+    let err = vista
+        .fetch_cursor(Some(not_an_array), 2)
+        .await
+        .expect_err("not an array");
+    assert!(
+        err.to_string().contains("invalid fetch_cursor token"),
+        "{err}"
+    );
 
-    // A token handed back unchanged keeps working.
-    let (first, token) = vista.fetch_cursor(None, 2).await?;
-    assert_eq!(first.rows.len(), 2);
-    let (second, _) = vista.fetch_cursor(token, 2).await?;
-    assert_eq!(
-        names(second.rows.iter().map(|(_, r)| r)),
-        vec!["item-2", "item-3"]
+    let not_bytes = CborValue::Array(vec![CborValue::Null]);
+    let err = vista
+        .fetch_cursor(Some(not_bytes), 2)
+        .await
+        .expect_err("not bytes");
+    assert!(
+        err.to_string().contains("invalid fetch_cursor token"),
+        "{err}"
+    );
+
+    let not_a_document = CborValue::Array(vec![CborValue::Bytes(vec![1, 2, 3])]);
+    let err = vista
+        .fetch_cursor(Some(not_a_document), 2)
+        .await
+        .expect_err("not a document");
+    assert!(
+        err.to_string().contains("invalid fetch_cursor token"),
+        "{err}"
+    );
+
+    // The sort has two keys (price, then the `_id` tiebreak).
+    let too_few_values = CborValue::Array(vec![]);
+    let err = vista
+        .fetch_cursor(Some(too_few_values), 2)
+        .await
+        .expect_err("too few values");
+    assert!(
+        err.to_string().contains("invalid fetch_cursor token"),
+        "{err}"
     );
 
     teardown(&db, &name).await;

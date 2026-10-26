@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Main's newest coverage-baseline artifact, for post-merge and the PR summary.
+#
+#   script/ci-baseline
+#
+# Prints run=<workflow run id> and sha=<commit it measured> (and appends them
+# to $GITHUB_OUTPUT when set); prints nothing when main has no baseline yet.
+# The artifacts API lists by artifact id, which doesn't follow upload order,
+# so taking its first entry can pick an older baseline and drop the crates
+# later merges added. Sort by created_at instead; post-merge runs one at a
+# time, so the newest upload is the one every later merge builds on.
+set -euo pipefail
+# The branch post-merge measures; a caller repo may not call it main.
+branch=${BASELINE_BRANCH:-main}
+
+found=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=coverage-baseline&per_page=100" |
+  jq -r --arg branch "$branch" \
+    '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == $branch)]
+     | sort_by(.created_at) | last // empty
+     | "run=\(.workflow_run.id)\nsha=\(.workflow_run.head_sha)"')
+
+[ -n "$found" ] || exit 0
+echo "$found"
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  echo "$found" >> "$GITHUB_OUTPUT"
+fi

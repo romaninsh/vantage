@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (live stream frames, `escape_identifier`,
+  `escape_record_id`, `query` results) and tests another test already covers are dropped: 95
+  tests become 84 with the same coverage. No API or behaviour change.
+
 ## 1.0.1 — 2026-10-15
 
 - The in-crate unit tests move to a blackbox suite under `tests/`, written from the README and run

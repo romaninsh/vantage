@@ -43,36 +43,24 @@ impl Product {
     }
 }
 
-/// Custom expression condition — columns passed as expression arguments
-#[tokio::test]
-async fn test_custom_expression_condition() {
-    let db = get_db().await;
-    let mut table = Product::sqlite_table(db);
-    table.add_condition(sqlite_expr!("{} > {}", (table["price"]), 130i64));
-
-    let products = table.list().await.unwrap();
-    assert_eq!(products.len(), 4); // all except flux_cupcake (120)
-    for (_id, p) in &products {
-        assert!(p.price > 130);
-    }
-}
-
 /// Multiple conditions combine with AND
 #[tokio::test]
 async fn test_multiple_conditions() {
     let db = get_db().await;
     let mut table = Product::sqlite_table(db);
-    // Products with price > 130 AND calories <= 250:
-    // delorean_donut (135, 250), time_tart (220, 200), hover_cookies (199, 150)
     table.add_condition(sqlite_expr!("{} > {}", (table["price"]), 130i64));
-    table.add_condition(sqlite_expr!("{} <= {}", (table["calories"]), 250i64));
+    table.add_condition(sqlite_expr!(
+        "{} > {}",
+        (table["calories"]),
+        (table["price"])
+    ));
 
     let products = table.list().await.unwrap();
-    assert_eq!(products.len(), 3);
-    for (_id, p) in &products {
-        assert!(p.price > 130);
-        assert!(p.calories <= 250);
-    }
+    // price > 130 removes flux_cupcake (120, 300 calories);
+    // calories > price removes time_tart (200 < 220) and hover_cookies (150 < 199)
+    assert_eq!(products.len(), 2);
+    assert!(products.contains_key("delorean_donut"));
+    assert!(products.contains_key("sea_pie"));
 }
 
 /// Operation::eq() on table column — the idiomatic way to build conditions
@@ -80,10 +68,11 @@ async fn test_multiple_conditions() {
 async fn test_operation_eq() {
     let db = get_db().await;
     let mut table = Product::sqlite_table(db);
-    table.add_condition(table["is_deleted"].eq(false));
+    table.add_condition(table["price"].eq(220i64));
 
     let products = table.list().await.unwrap();
-    assert_eq!(products.len(), 5); // all products have is_deleted = false
+    assert_eq!(products.len(), 1);
+    assert!(products.contains_key("time_tart"));
 }
 
 #[tokio::test]
@@ -139,15 +128,4 @@ async fn condition_column_names_an_in_values_condition() {
         &get_db().await,
         AnySqliteType::from("i1"),
     );
-}
-
-/// Condition that matches nothing returns empty
-#[tokio::test]
-async fn test_condition_no_matches() {
-    let db = get_db().await;
-    let mut table = Product::sqlite_table(db);
-    table.add_condition(sqlite_expr!("{} > {}", (table["price"]), 999));
-
-    let products = table.list().await.unwrap();
-    assert!(products.is_empty());
 }

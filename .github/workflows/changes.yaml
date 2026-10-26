@@ -19,6 +19,17 @@ on:
           to look up its cache.
         type: string
         default: ubuntu-latest
+      base:
+        description: >-
+          post-merge: the commit main's last baseline measured (script/ci-baseline).
+          Diffing from it keeps the crates of a queued run a later push replaced;
+          without it, or when it isn't on this history, the push's parent.
+        type: string
+        default: ""
+      all:
+        description: "post-merge: measure every crate (ALL_TESTS), e.g. to rebuild the baseline."
+        type: boolean
+        default: false
     secrets:
       COVERAGE_EXCEPTIONS_KEY:
         required: false
@@ -59,6 +70,9 @@ on:
       labels: { value: "${{ jobs.changes.outputs.labels }}" }
       versioning_mode: { value: "${{ jobs.changes.outputs.versioning_mode }}" }
       app: { value: "${{ jobs.changes.outputs.app }}" }
+      checks:
+        description: "failure when the exception-token or no-internal-tests check failed; the summary fails on it"
+        value: "${{ jobs.changes.outputs.checks }}"
 
 permissions: {}
 
@@ -106,6 +120,7 @@ jobs:
       labels: ${{ steps.c.outputs.labels }}
       versioning_mode: ${{ steps.c.outputs.versioning_mode }}
       app: ${{ steps.c.outputs.app }}
+      checks: ${{ (steps.exceptions.outcome == 'failure' || steps.internal.outcome == 'failure') && 'failure' || 'success' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -142,6 +157,8 @@ jobs:
           MODE: ${{ inputs.mode }}
           BASE: ${{ inputs.mode == 'pr' && github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ inputs.mode == 'pr' && github.event.pull_request.head.sha || github.sha }}
+          LAST: ${{ inputs.base }}
+          ALL: ${{ inputs.all }}
           PR: ${{ github.event.pull_request.number }}
           MISS: ${{ steps.warm.outputs.full == 'true' && steps.lookup.outputs.cache-hit != 'true' }}
           GH_TOKEN: ${{ github.token }}
@@ -149,20 +166,37 @@ jobs:
           labels='[]'
           if [ "$MODE" = pr ]; then
             labels=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '[.labels[].name]')
-          elif [ "$MISS" = true ]; then
-            echo "main's build cache key is new: building and measuring every crate"
-            labels='["ALL_TESTS"]'
+          else
+            if [ -n "$LAST" ] && git merge-base --is-ancestor "$LAST" "$HEAD"; then
+              BASE=$LAST
+            fi
+            # A manual run has no push parent.
+            [ -n "$BASE" ] || BASE=$(git rev-parse "$HEAD~1")
+            if [ "$ALL" = true ]; then
+              labels='["ALL_TESTS"]'
+            elif [ "$MISS" = true ]; then
+              echo "main's build cache key is new: building and measuring every crate"
+              labels='["ALL_TESTS"]'
+            fi
           fi
+          echo "base=$BASE labels=$labels"
           .ci/script/ci-changes --base "$BASE" --head "$HEAD" --labels "$labels"
+      # The two checks below don't stop the pipeline: every job needs this one,
+      # so a failure here would skip lint, tests and the rest. Their outcome
+      # is the `checks` output, which the summary fails on.
       - name: Exception tokens are vended, not written
+        id: exceptions
         if: inputs.mode == 'pr'
+        continue-on-error: true
         env:
           COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
           # Without the key (forks), only entries unchanged since this base count.
           EXCEPTIONS_BASE: ${{ github.event.pull_request.base.sha }}
         run: python3 -I .ci/coverage/exceptions.py check
       - name: No new internal tests
+        id: internal
         if: inputs.mode == 'pr' && steps.c.outputs.measured != '[]' && steps.c.outputs.internal_tests == '"forbid"'
+        continue-on-error: true
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           CRATES: ${{ steps.c.outputs.measured }}

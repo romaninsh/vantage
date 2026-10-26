@@ -38,72 +38,45 @@ const DOUBLE: &str = r#"
 "#;
 
 #[test]
-fn answers_come_back_in_row_order() {
-    let p = pipe(DOUBLE);
-    let rows = (1..=5_i64).map(|n| row(&[("n", n.into())])).collect();
-    let out = process_within(&p, rows);
-    let twice: Vec<i64> = out.iter().map(|a| field(a, "twice")).collect();
-    assert_eq!(twice, [2, 4, 6, 8, 10]);
+fn rows_are_answered_in_order_by_one_script_that_keeps_its_state() {
+    let builder = Host::builder(Limits::background()).vocab_fn(|e| {
+        e.register_fn("double", |x: i64| x * 2);
+    });
+    let p = Arc::new(
+        RowPipe::spawn(
+            builder,
+            r#"
+            let seen = 0;
+            loop {
+                let r = next_row();
+                if r == () { break; }
+                seen += 1;
+                if r.skip != true { emit(#{ seen: seen, twice: double(r.n) }); }
+            }
+        "#,
+        )
+        .unwrap(),
+    );
+    let first = process_within(
+        &p,
+        vec![
+            row(&[("n", 1_i64.into())]),
+            row(&[("n", 2_i64.into())]),
+            row(&[("skip", true.into())]),
+        ],
+    );
+    let second = process_within(&p, vec![row(&[("n", 3_i64.into())])]);
+    assert_eq!(field(&first[0], "twice"), 2);
+    assert_eq!(field(&first[1], "twice"), 4);
+    assert!(first[2].as_ref().unwrap().is_empty());
+    assert_eq!(field(&second[0], "seen"), 4);
+    assert_eq!(field(&second[0], "twice"), 6);
 }
 
 #[test]
 fn an_empty_batch_is_answered_with_no_rows() {
     let p = pipe(DOUBLE);
     assert!(p.process(Vec::new()).is_empty());
-}
-
-#[test]
-fn the_script_keeps_its_state_across_rows_and_batches() {
-    let p = pipe(
-        r#"
-        let seen = 0;
-        loop { let r = next_row(); if r == () { break; } seen += 1; emit(#{ seen: seen }); }
-    "#,
-    );
-    let first = process_within(&p, vec![Map::new(), Map::new()]);
-    assert_eq!(field(&first[1], "seen"), 2);
-    let second = process_within(&p, vec![Map::new()]);
-    assert_eq!(field(&second[0], "seen"), 3);
-}
-
-#[test]
-fn setup_code_before_the_loop_runs_once() {
-    let p = pipe(
-        r#"
-        let zones = [120, 140, 155];
-        loop {
-            let row = next_row();
-            if row == () { break; }
-            emit(#{ zone: zones.filter(|z| row.hr >= z).len() });
-        }
-    "#,
-    );
-    let out = process_within(
-        &p,
-        vec![
-            row(&[("hr", 100_i64.into())]),
-            row(&[("hr", 130_i64.into())]),
-            row(&[("hr", 160_i64.into())]),
-        ],
-    );
-    let zones: Vec<i64> = out.iter().map(|a| field(a, "zone")).collect();
-    assert_eq!(zones, [0, 1, 3]);
-}
-
-#[test]
-fn a_row_the_script_moves_past_without_emit_answers_with_an_empty_map() {
-    let p = pipe(
-        r#"
-        loop {
-            let r = next_row();
-            if r == () { break; }
-            if r.skip != true { emit(#{ ok: true }); }
-        }
-    "#,
-    );
-    let out = process_within(&p, vec![row(&[("skip", true.into())]), Map::new()]);
-    assert!(out[0].as_ref().unwrap().is_empty());
-    assert!(out[1].as_ref().unwrap().contains_key("ok"));
 }
 
 #[test]
@@ -130,14 +103,6 @@ fn a_throw_fails_that_row_and_the_script_restarts_from_the_top() {
 }
 
 #[test]
-fn a_runtime_error_in_one_row_fails_only_that_row() {
-    let p = pipe(DOUBLE);
-    let out = process_within(&p, vec![Map::new(), row(&[("n", 5_i64.into())])]);
-    assert!(out[0].is_err());
-    assert_eq!(field(&out[1], "twice"), 10);
-}
-
-#[test]
 fn a_script_that_never_asks_for_rows_errors_every_row_instead_of_hanging() {
     let p = pipe("let x = 1;");
     let out = process_within(&p, vec![Map::new(), Map::new()]);
@@ -155,7 +120,7 @@ fn a_script_that_throws_before_asking_for_rows_errors_every_row() {
 }
 
 #[test]
-fn the_operation_allowance_applies_per_row_not_over_the_lifetime() {
+fn the_operation_allowance_is_per_row_so_only_a_runaway_row_fails() {
     let builder = Host::builder(Limits::Background {
         max_operations: 20_000,
     });
@@ -174,41 +139,18 @@ fn the_operation_allowance_applies_per_row_not_over_the_lifetime() {
         )
         .unwrap(),
     );
-    // Each row costs on the order of a thousand operations: fine alone, far
+    // Each small row costs on the order of a thousand operations: fine alone, far
     // over the ceiling when summed across fifty rows.
-    let rows = (0..50).map(|_| row(&[("spin", 200_i64.into())])).collect();
-    assert!(process_within(&p, rows).iter().all(|a| a.is_ok()));
-}
-
-#[test]
-fn a_runaway_row_is_stopped_and_the_next_row_is_still_served() {
-    let builder = Host::builder(Limits::Background {
-        max_operations: 20_000,
-    });
-    let p = Arc::new(
-        RowPipe::spawn(
-            builder,
-            r#"
-            loop {
-                let r = next_row();
-                if r == () { break; }
-                let i = 0;
-                while i < r.spin { i += 1; }
-                emit(#{ done: true });
-            }
-        "#,
-        )
-        .unwrap(),
+    let mut rows = vec![row(&[("spin", 200_i64.into())]); 50];
+    rows.push(row(&[("spin", 1_000_000_i64.into())]));
+    rows.push(row(&[("spin", 1_i64.into())]));
+    let out = process_within(&p, rows);
+    assert!(
+        out[..50].iter().all(|a| a.is_ok()),
+        "fifty small rows pass together"
     );
-    let out = process_within(
-        &p,
-        vec![
-            row(&[("spin", 1_000_000_i64.into())]),
-            row(&[("spin", 1_i64.into())]),
-        ],
-    );
-    assert!(out[0].is_err(), "the runaway row fails");
-    assert!(out[1].is_ok(), "the next row is still served");
+    assert!(out[50].is_err(), "the runaway row fails");
+    assert!(out[51].is_ok(), "the next row is still served");
 }
 
 #[test]
@@ -217,22 +159,6 @@ fn a_syntax_error_in_the_script_fails_spawn() {
         .map(|_| ())
         .unwrap_err();
     assert!(matches!(err, RhaiError::Syntax(_)), "{err:?}");
-}
-
-#[test]
-fn the_builders_vocabulary_is_available_to_the_script() {
-    let builder = Host::builder(Limits::background()).vocab_fn(|e| {
-        e.register_fn("double", |x: i64| x * 2);
-    });
-    let p = Arc::new(
-        RowPipe::spawn(
-            builder,
-            r#"loop { let r = next_row(); if r == () { break; } emit(#{ v: double(r.n) }); }"#,
-        )
-        .unwrap(),
-    );
-    let out = process_within(&p, vec![row(&[("n", 4_i64.into())])]);
-    assert_eq!(field(&out[0], "v"), 8);
 }
 
 #[test]

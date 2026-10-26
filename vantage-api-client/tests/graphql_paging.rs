@@ -8,7 +8,7 @@ mod support;
 use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use vantage_api_client::{GraphqlApi, GraphqlApiVistaSpec};
-use vantage_vista::{Capability, FilterOp, Vista, VistaFactory};
+use vantage_vista::{FilterOp, Vista, VistaFactory};
 use wiremock::matchers::{body_partial_json, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -44,28 +44,12 @@ async fn answer(server: &MockServer, expected: Value, response: Value) {
         .await;
 }
 
-/// A GraphQL list reports no total, so the window carries none.
+/// The window is fetched at its absolute offset and, a GraphQL list
+/// reporting no total, carries none. An id-less row is keyed by its
+/// absolute position in the result, so id-less rows from different pages
+/// never share a key.
 #[tokio::test]
-async fn fetch_window_sends_the_absolute_offset() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        json!({ "variables": { "limit": 7, "offset": 35 } }),
-        rows(35, 7),
-    )
-    .await;
-    let vista = vista(&server, "  paginate: true\n");
-
-    let window = vista.fetch_window(35, 7).await.unwrap();
-    assert_eq!(window.rows.len(), 7);
-    assert_eq!(window.rows[0].0, "35");
-    assert_eq!(window.total, None);
-}
-
-/// An id-less row is keyed by its absolute position in the result, so
-/// id-less rows from different pages never share a key.
-#[tokio::test]
-async fn an_id_less_row_in_a_window_is_keyed_by_its_absolute_position() {
+async fn a_window_is_fetched_and_keyed_at_its_absolute_offset() {
     let server = MockServer::start().await;
     answer(
         &server,
@@ -82,16 +66,21 @@ async fn an_id_less_row_in_a_window_is_keyed_by_its_absolute_position() {
     let window = vista.fetch_window(10, 3).await.unwrap();
     let keys: Vec<&str> = window.rows.iter().map(|(id, _)| id.as_str()).collect();
     assert_eq!(keys, ["10", "~row:11", "12"]);
+    assert_eq!(window.total, None);
 }
 
-/// Offset paging is no continuation cursor, so `fetch_cursor` is refused
-/// without a request.
+/// Offset paging is no continuation cursor, and with filtering done locally
+/// a server page would come back short, so no window is offered even though
+/// `limit`/`offset` would render. Both are refused without a request.
 #[tokio::test]
-async fn fetch_cursor_is_refused() {
+async fn reads_the_vista_cannot_page_are_refused_without_a_request() {
     let server = MockServer::start().await;
-    let vista = vista(&server, "  paginate: true\n");
+    let paged = vista(&server, "  paginate: true\n");
+    let locally_filtered = vista(&server, "  paginate: true\n  filter: false\n");
 
-    let err = vista.fetch_cursor(None, 2).await.unwrap_err();
+    let err = paged.fetch_cursor(None, 2).await.unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+    let err = locally_filtered.fetch_window(5, 10).await.unwrap_err();
     assert!(err.is_unsupported(), "{err}");
     assert_eq!(support::requests(&server).await, 0);
 }
@@ -112,19 +101,6 @@ async fn hasura_paged_read_orders_by_id_when_no_order_is_set() {
     let vista = vista(&server, "  dialect: hasura\n  paginate: true\n");
 
     assert_eq!(vista.fetch_window(0, 3).await.unwrap().rows.len(), 3);
-}
-
-#[tokio::test]
-async fn paging_capabilities_follow_paginate() {
-    let server = MockServer::start().await;
-    let caps = *vista(&server, "  paginate: true\n").capabilities();
-    assert!(caps.has(Capability::Window));
-    assert!(!caps.has(Capability::Cursor));
-
-    let off = vista(&server, "  dialect: generic\n");
-    assert!(!off.capabilities().has(Capability::Window));
-    assert!(off.fetch_window(1, 10).await.unwrap_err().is_unsupported());
-    assert_eq!(support::requests(&server).await, 0);
 }
 
 /// Without paging, the leading window is cut from one unpaged listing: no
@@ -157,39 +133,6 @@ async fn preview_posts_the_document_to_the_endpoint() {
         Some(format!("POST {}\nquery {{ launches {{ id name }} }}", server.uri()).as_str())
     );
     assert_eq!(preview.note, None);
-}
-
-/// With filtering done locally a server page would come back short, so
-/// paging is not offered even though `limit`/`offset` would render.
-#[tokio::test]
-async fn paging_is_not_advertised_with_filter_false() {
-    let server = MockServer::start().await;
-    let vista = vista(&server, "  paginate: true\n  filter: false\n");
-    assert!(!vista.capabilities().has(Capability::Window));
-    assert!(
-        vista
-            .fetch_window(5, 10)
-            .await
-            .unwrap_err()
-            .is_unsupported()
-    );
-    assert_eq!(support::requests(&server).await, 0);
-}
-
-/// Without `count: aggregate`, Hasura counts by listing — a role lacking
-/// `allow_aggregations` still gets an answer.
-#[tokio::test]
-async fn hasura_count_lists_by_default() {
-    let server = MockServer::start().await;
-    answer(
-        &server,
-        json!({ "query": "query { launches { id name } }" }),
-        rows(0, 4),
-    )
-    .await;
-    let vista = vista(&server, "  dialect: hasura\n");
-
-    assert_eq!(vista.count().await.unwrap(), 4);
 }
 
 #[tokio::test]

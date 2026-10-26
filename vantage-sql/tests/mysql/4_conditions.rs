@@ -44,16 +44,6 @@ impl Product {
 }
 
 #[tokio::test]
-async fn test_custom_expression_condition() {
-    let db = get_db().await;
-    let mut table = Product::mysql_table(db);
-    table.add_condition(mysql_expr!("{} > {}", (table["price"]), 130i64));
-
-    let products = table.list().await.unwrap();
-    assert_eq!(products.len(), 4); // 135, 220, 299, 199
-}
-
-#[tokio::test]
 async fn conditions_describe_themselves_and_name_their_column() {
     use vantage_table::traits::table_source::TableSource;
     let db = get_db().await;
@@ -110,27 +100,27 @@ async fn test_multiple_conditions() {
     table.add_condition(mysql_expr!("{} > {}", (table["price"]), 130i64));
     table.add_condition(mysql_expr!(
         "{} > {}",
-        (table["price"]),
-        (table["calories"])
+        (table["calories"]),
+        (table["price"])
     ));
 
     let products = table.list().await.unwrap();
-    // price > 130 AND price > calories:
-    // delorean_donut: 135 > 250? no
-    // time_tart: 220 > 200? yes
-    // sea_pie: 299 > 350? no
-    // hover_cookies: 199 > 150? yes
+    // price > 130 removes flux_cupcake (120, 300 calories);
+    // calories > price removes time_tart (200 < 220) and hover_cookies (150 < 199)
     assert_eq!(products.len(), 2);
+    assert!(products.contains_key("delorean_donut"));
+    assert!(products.contains_key("sea_pie"));
 }
 
 #[tokio::test]
 async fn test_operation_eq() {
     let db = get_db().await;
     let mut table = Product::mysql_table(db);
-    table.add_condition(table["is_deleted"].eq(false));
+    table.add_condition(table["price"].eq(220i64));
 
     let products = table.list().await.unwrap();
-    assert_eq!(products.len(), 5); // all products have is_deleted=false
+    assert_eq!(products.len(), 1);
+    assert!(products.contains_key("time_tart"));
 }
 
 #[test]

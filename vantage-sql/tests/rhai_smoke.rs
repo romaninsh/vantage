@@ -29,12 +29,6 @@ mod rhai_smoke {
     }
 
     #[test]
-    fn eval_literal() {
-        let result: i64 = eval_rhai("2 + 3").cast();
-        assert_eq!(result, 5);
-    }
-
-    #[test]
     fn ident_creates_identifier() {
         let result = eval_rhai(r#"sql::ident("name")"#);
         let id = result
@@ -58,22 +52,25 @@ mod rhai_smoke {
     /// `ident` any more, so it stays free for the data vocabulary.
     #[test]
     fn free_functions_need_the_namespace() {
-        for (code, name) in [
-            (r#"ident("users")"#, "ident"),
-            (r#"table("users")"#, "table"),
-            (r#"sql::table("users")"#, "sql::table"),
-            ("select()", "select"),
-        ] {
-            let err = host()
-                .compile(&Block::from(code))
-                .and_then(|script| script.eval(&Env::new()))
-                .expect_err(code)
-                .to_string();
-            assert!(
-                err.contains("Function not found") && err.contains(name),
-                "{code}: {err}"
-            );
-        }
+        let bare = host()
+            .compile(&Block::from(r#"ident("users")"#))
+            .and_then(|script| script.eval(&Env::new()))
+            .expect_err("ident without sql::")
+            .to_string();
+        assert!(
+            bare.contains("Function not found") && bare.contains("ident"),
+            "{bare}"
+        );
+
+        let table = host()
+            .compile(&Block::from(r#"sql::table("users")"#))
+            .and_then(|script| script.eval(&Env::new()))
+            .expect_err("sql::table is not registered")
+            .to_string();
+        assert!(
+            table.contains("Function not found") && table.contains("sql::table"),
+            "{table}"
+        );
     }
 
     #[test]
@@ -301,86 +298,37 @@ mod rhai_smoke {
     // ── Checkpoint 4: Operator tests ──────────────────────────────
 
     #[test]
-    fn op_ident_eq_int() {
-        let result = eval_rhai(
+    fn op_comparisons() {
+        type Op = vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>;
+        let ops = eval_rhai(
             r#"
             let u = sql::ident("users").alias("u");
-            u["id"] == 42
+            [
+                u["id"] == 42,
+                u["role"] == "admin",
+                u["is_deleted"] == false,
+                u["salary"] > u["min_salary"],
+                u["price"] != 0.0,
+            ]
         "#,
+        )
+        .cast::<rhai::Array>();
+        assert_eq!(ops[0].clone().cast::<Op>().0.preview(), r#""u"."id" = 42"#);
+        assert_eq!(
+            ops[1].clone().cast::<Op>().0.preview(),
+            r#""u"."role" = 'admin'"#
         );
-        let ex = result
-            .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
-            .expect("should be RhaiExpr");
-        assert_eq!(ex.0.preview(), r#""u"."id" = 42"#);
-    }
-
-    #[test]
-    fn op_ident_eq_string() {
-        let result = eval_rhai(
-            r#"
-            let u = sql::ident("users").alias("u");
-            u["role"] == "admin"
-        "#,
+        assert_eq!(
+            ops[2].clone().cast::<Op>().0.preview(),
+            r#""u"."is_deleted" = 0"#
         );
-        let ex = result
-            .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
-            .expect("should be RhaiExpr");
-        assert_eq!(ex.0.preview(), r#""u"."role" = 'admin'"#);
-    }
-
-    #[test]
-    fn op_ident_eq_bool() {
-        let result = eval_rhai(
-            r#"
-            let p = sql::ident("product").alias("p");
-            p["is_deleted"] == false
-        "#,
+        assert_eq!(
+            ops[3].clone().cast::<Op>().0.preview(),
+            r#""u"."salary" > "u"."min_salary""#
         );
-        let ex = result
-            .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
-            .expect("should be RhaiExpr");
-        assert_eq!(ex.0.preview(), r#""p"."is_deleted" = 0"#);
-    }
-
-    #[test]
-    fn op_ident_gt_ident() {
-        let result = eval_rhai(
-            r#"
-            let u = sql::ident("users").alias("u");
-            u["salary"] > u["min_salary"]
-        "#,
+        assert_eq!(
+            ops[4].clone().cast::<Op>().0.preview(),
+            r#""u"."price" != 0.0"#
         );
-        let ex = result
-            .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
-            .expect("should be RhaiExpr");
-        assert_eq!(ex.0.preview(), r#""u"."salary" > "u"."min_salary""#);
-    }
-
-    #[test]
-    fn op_ident_ne_float() {
-        let result = eval_rhai(
-            r#"
-            let p = sql::ident("product").alias("p");
-            p["price"] != 0.0
-        "#,
-        );
-        let ex = result
-            .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
-            .expect("should be RhaiExpr");
-        assert_eq!(ex.0.preview(), r#""p"."price" != 0.0"#);
-    }
-
-    #[test]
-    fn op_ident_le_int() {
-        let result = eval_rhai(
-            r#"
-            let u = sql::ident("users").alias("u");
-            u["age"] <= 65
-        "#,
-        );
-        let ex = result
-            .try_cast::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>()
-            .expect("should be RhaiExpr");
-        assert_eq!(ex.0.preview(), r#""u"."age" <= 65"#);
     }
 }

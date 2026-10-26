@@ -31,5 +31,11 @@ done
 # Linked binaries and examples at the top level, and incremental state.
 find "$dir" -maxdepth 1 -type f -delete
 rm -rf "$dir/examples" "$dir/incremental"
+# nextest's output beside the profile dir (target/nextest, or
+# target/llvm-cov-target/nextest): a cached junit.xml would stand in for a
+# later run that never got to test.
+for out in "$(dirname "$dir")/nextest" "$(dirname "$(dirname "$dir")")/nextest"; do
+  case "$(basename "$(dirname "$out")")" in target | llvm-cov-target) rm -rf "$out" ;; esac
+done
 
 echo "pruned $dir for the cache: $before -> $(du -sh "$dir" | cut -f1)"

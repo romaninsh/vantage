@@ -37,6 +37,7 @@ ci_self:
   - .github/**
   - script/ci-changes
   - script/ci-audit
+  - script/ci-baseline
   - script/ci-cache-report
   - script/ci-prune-target
   - script/check-repo-layers

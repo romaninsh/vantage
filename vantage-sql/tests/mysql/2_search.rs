@@ -60,37 +60,14 @@ async fn setup(suffix: &str, rows: &[&str]) -> (MysqlDB, Table<MysqlDB, Item>) {
 }
 
 #[tokio::test]
-async fn test_search_percent_literal() {
-    let (db, table) = setup("pct", &["100% organic", "regular item", "50% off"]).await;
-    let condition = db.search_table_condition(&table, "100%");
+async fn test_search_escapes_like_wildcards() {
+    let (db, table) = setup("escape", &[r"a%b_c\d", r"aXb_c\d", r"a%bXc\d", r"a%b_cd"]).await;
+    let condition = db.search_table_condition(&table, r"a%b_c\d");
     let mut table = table;
     table.add_condition(condition);
     let results = table.list().await.unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(results.values().next().unwrap().name, "100% organic");
-}
-
-#[tokio::test]
-async fn test_search_underscore_literal() {
-    let (db, table) = setup("usc", &["a_b", "axb", "a__b", "axxb"]).await;
-    let condition = db.search_table_condition(&table, "a_b");
-    let mut table = table;
-    table.add_condition(condition);
-    let results = table.list().await.unwrap();
-    // Only "a_b" should match, not "axb"
-    assert_eq!(results.len(), 1);
-    assert_eq!(results.values().next().unwrap().name, "a_b");
-}
-
-#[tokio::test]
-async fn test_search_backslash_literal() {
-    let (db, table) = setup("bs", &["path\\to\\file", "pathXtoXfile", "other"]).await;
-    let condition = db.search_table_condition(&table, "\\to\\");
-    let mut table = table;
-    table.add_condition(condition);
-    let results = table.list().await.unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results.values().next().unwrap().name, "path\\to\\file");
+    assert_eq!(results.values().next().unwrap().name, r"a%b_c\d");
 }
 
 /// A search must keep the conditions of the table. The search looks in

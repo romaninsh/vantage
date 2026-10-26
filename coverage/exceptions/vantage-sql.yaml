@@ -30,3 +30,31 @@
 - test: sqlite::sqlite::vista::vista_yaml_base_aggregates_into_declared_column
   reason: 'named by the book: docs4/src/rhai/query-tables.md:48 tests its example with it'
   token: ee401356-60d0d3af8ab9
+
+- test: mysql::mysql::decimal::test_i64_bigint
+  reason: the i64 range round-trip (i64::MAX in a BIGINT) is a different behaviour from overwriting an existing row
+  token: 80f4b59a-42b69245a4c8
+
+- test: mysql::mysql::editable_data_set::test_replace
+  reason: overwriting an existing row is a different behaviour from the i64 range round-trip
+  token: 9fcec1d7-e9ad6be81b03
+
+- test: mysql::mysql::vista::vista_capabilities_advertise_read_write
+  reason: the advertised capability flags are a different promise from fetch_cursor refusing to run
+  token: 1e08766f-37c61c3a1e48
+
+- test: mysql::mysql::vista_paging::fetch_cursor_is_unsupported
+  reason: fetch_cursor refusing to run is a different behaviour from the advertised capability flags
+  token: ef8c5e5b-74144b0cd36a
+
+- test: sqlite::sqlite::vista::typed::vista_capabilities_advertise_read_write
+  reason: the advertised capability flags are a different promise from fetch_cursor refusing to run
+  token: 9ee172b0-f628cafb64c6
+
+- test: sqlite::sqlite::vista::typed::vista_columns_advertise_orderable_flag
+  reason: per-column Orderable flags are a different promise from set_order refusing an unknown column
+  token: 6638de93-8c6f28f36595
+
+- test: sqlite::sqlite::vista_targets::typed_references_carry_kind_keys_and_target
+  reason: what references() reports (kind, keys, target) is a different behaviour from set_order refusing an unknown column
+  token: 8c16fac1-4d069718f310

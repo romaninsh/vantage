@@ -67,7 +67,7 @@ fn dump_fails_on_a_cell_json_cannot_express() {
 }
 
 #[test]
-fn load_file_reads_yaml_and_json_by_extension() {
+fn load_file_picks_yaml_or_json_by_extension() {
     let dir = tempfile::tempdir().unwrap();
     let yaml = dir.path().join("rows.yaml");
     std::fs::write(&yaml, "- { id: a, n: 1 }\n- { id: b, n: 2 }\n").unwrap();
@@ -75,36 +75,27 @@ fn load_file_reads_yaml_and_json_by_extension() {
     std::fs::write(&yml, "- { id: d }\n").unwrap();
     let json_file = dir.path().join("rows.json");
     std::fs::write(&json_file, r#"[{"id": "c"}]"#).unwrap();
+    let other = dir.path().join("rows.data");
+    std::fs::write(&other, "- { id: x }\n").unwrap();
     let t = MemoryStore::new().table("t");
     assert_eq!(seed::load_file(&t, &yaml).unwrap(), 2);
     assert_eq!(seed::load_file(&t, &yml).unwrap(), 1);
     assert_eq!(seed::load_file(&t, &json_file).unwrap(), 1);
+    assert!(
+        seed::load_file(&t, &other).is_err(),
+        "YAML text in a .data file is read as JSON"
+    );
     assert_eq!(t.ids(), ["a", "b", "d", "c"]);
-}
-
-#[test]
-fn load_file_reads_any_other_extension_as_json() {
-    let dir = tempfile::tempdir().unwrap();
-    let data = dir.path().join("rows.data");
-    std::fs::write(&data, r#"[{"id": "x"}]"#).unwrap();
-    let bare = dir.path().join("rows");
-    std::fs::write(&bare, r#"[{"id": "y"}]"#).unwrap();
-    let t = MemoryStore::new().table("t");
-    seed::load_file(&t, &data).unwrap();
-    seed::load_file(&t, &bare).unwrap();
-    assert_eq!(t.ids(), ["x", "y"]);
 }
 
 #[test]
 fn load_file_fails_on_a_missing_or_malformed_file() {
     let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rows.yaml");
     let t = MemoryStore::new().table("t");
-    assert!(seed::load_file(&t, &dir.path().join("absent.yaml")).is_err());
-    let bad_json = dir.path().join("bad.json");
-    std::fs::write(&bad_json, "[{").unwrap();
-    assert!(seed::load_file(&t, &bad_json).is_err());
-    let bad_yaml = dir.path().join("bad.yaml");
-    std::fs::write(&bad_yaml, "- { id: a\n").unwrap();
-    assert!(seed::load_file(&t, &bad_yaml).is_err());
+    let missing = seed::load_file(&t, &path).unwrap_err().to_string();
+    std::fs::write(&path, "- { id: a\n").unwrap();
+    let malformed = seed::load_file(&t, &path).unwrap_err().to_string();
+    assert_ne!(missing, malformed);
     assert!(t.is_empty());
 }

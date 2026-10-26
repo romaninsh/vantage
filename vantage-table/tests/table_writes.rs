@@ -172,14 +172,20 @@ async fn patch_naming_the_sets_own_value_is_accepted() {
 }
 
 #[tokio::test]
-async fn replace_in_the_set_overwrites_the_row_and_fills_the_sets_column() {
+async fn replace_in_the_set_overwrites_or_creates_the_row_and_fills_the_sets_column() {
     let (all, set) = sets().await;
     set.replace_value("in1", &rec(json!({"name": "r"})))
         .await
         .unwrap();
-    let row = all.get_value("in1").await.unwrap().unwrap();
-    assert_eq!(row["name"], json!("r"));
-    assert_eq!(row["parent"], json!("p1"));
+    set.replace_value("new3", &rec(json!({"name": "s"})))
+        .await
+        .unwrap();
+    let replaced = all.get_value("in1").await.unwrap().unwrap();
+    assert_eq!(replaced["name"], json!("r"));
+    assert_eq!(replaced["parent"], json!("p1"));
+    let created = all.get_value("new3").await.unwrap().unwrap();
+    assert_eq!(created["name"], json!("s"));
+    assert_eq!(created["parent"], json!("p1"));
 }
 
 #[tokio::test]
@@ -215,18 +221,6 @@ async fn replace_that_would_leave_the_set_is_a_conflict() {
         .await
         .unwrap_err();
     assert!(err.is_conflict(), "{err}");
-}
-
-#[tokio::test]
-async fn replace_creates_a_missing_row_that_fits_the_set() {
-    let (all, set) = sets().await;
-    set.replace_value("new3", &rec(json!({"name": "r"})))
-        .await
-        .unwrap();
-    assert_eq!(
-        all.get_value("new3").await.unwrap().unwrap()["parent"],
-        json!("p1")
-    );
 }
 
 #[tokio::test]
@@ -313,32 +307,6 @@ async fn insert_fills_an_absent_invariant_column() {
     let table = scoped().await;
     let id = table
         .insert_return_id_value(&rec(json!({"name": "absent"})))
-        .await
-        .unwrap();
-    assert_eq!(
-        table.get_value(id).await.unwrap().unwrap()["parent_id"],
-        json!("p1")
-    );
-}
-
-#[tokio::test]
-async fn insert_fills_a_null_invariant_column() {
-    let table = scoped().await;
-    let id = table
-        .insert_return_id_value(&rec(json!({"name": "null", "parent_id": null})))
-        .await
-        .unwrap();
-    assert_eq!(
-        table.get_value(id).await.unwrap().unwrap()["parent_id"],
-        json!("p1")
-    );
-}
-
-#[tokio::test]
-async fn insert_keeps_an_equal_invariant_value() {
-    let table = scoped().await;
-    let id = table
-        .insert_return_id_value(&rec(json!({"name": "match", "parent_id": "p1"})))
         .await
         .unwrap();
     assert_eq!(
@@ -797,62 +765,32 @@ fn custom_generator_calls_the_closure() {
 }
 
 #[tokio::test]
-async fn with_generated_id_fills_a_missing_id_on_insert() {
-    let table = empty().await.with_generated_id(IdGenerator::UuidV7);
-    let id = table
-        .insert_return_id_value(&rec(json!({"name": "a"})))
-        .await
-        .unwrap();
-    assert_eq!(id.len(), 36);
-    assert_eq!(
-        table.get_value(id).await.unwrap().unwrap()["name"],
-        json!("a")
-    );
-}
-
-#[tokio::test]
-async fn with_generated_id_fills_a_null_id() {
-    let table = empty().await.with_generated_id(IdGenerator::UuidV4);
-    let id = table
-        .insert_return_id_value(&rec(json!({"id": null, "name": "a"})))
-        .await
-        .unwrap();
-    assert_eq!(id.len(), 36);
-}
-
-#[tokio::test]
-async fn with_generated_id_keeps_a_caller_supplied_id() {
-    let table = empty().await.with_generated_id(IdGenerator::UuidV7);
-    let id = table
-        .insert_return_id_value(&rec(json!({"id": "fixed-1", "name": "a"})))
-        .await
-        .unwrap();
-    assert_eq!(id, "fixed-1");
-}
-
-#[tokio::test]
-async fn with_generated_id_uses_the_custom_generator() {
+async fn a_generated_id_fills_an_absent_or_null_id_and_keeps_a_supplied_one() {
     let table = empty()
         .await
         .with_generated_id(IdGenerator::custom(|| "made-up".into()));
-    let id = table
+    let absent = table
         .insert_return_id_value(&rec(json!({"name": "a"})))
         .await
         .unwrap();
-    assert_eq!(id, "made-up");
-}
+    let supplied = table
+        .insert_return_id_value(&rec(json!({"id": "fixed-1", "name": "b"})))
+        .await
+        .unwrap();
+    assert_eq!(absent, "made-up");
+    assert_eq!(supplied, "fixed-1");
+    assert_eq!(
+        table.get_value("made-up").await.unwrap().unwrap()["name"],
+        json!("a")
+    );
 
-#[tokio::test]
-async fn with_generated_id_mints_short_ids() {
-    let table = empty()
-        .await
-        .with_generated_id(IdGenerator::short(8, "xyz").unwrap());
-    let id = table
-        .insert_return_id_value(&rec(json!({"name": "a"})))
+    let mut other = empty().await;
+    other.add_generated_id(IdGenerator::custom(|| "made-up".into()));
+    let null = other
+        .insert_return_id_value(&rec(json!({"id": null, "name": "c"})))
         .await
         .unwrap();
-    assert_eq!(id.len(), 8, "{id}");
-    assert!(id.chars().all(|c| "xyz".contains(c)), "{id}");
+    assert_eq!(null, "made-up");
 }
 
 #[tokio::test]
@@ -865,17 +803,6 @@ async fn a_failing_generator_fails_the_insert() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("no ids today"), "{err}");
-}
-
-#[tokio::test]
-async fn add_generated_id_is_the_mutable_form() {
-    let mut table = empty().await;
-    table.add_generated_id(IdGenerator::custom(|| "made-up".into()));
-    let id = table
-        .insert_return_id_value(&rec(json!({"name": "a"})))
-        .await
-        .unwrap();
-    assert_eq!(id, "made-up");
 }
 
 #[tokio::test]

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.2 — 2026-10-26
+
+- Two catalog tests are folded into one (re-registering a model replaces its loader, seen through a
+  cloned resolver) and a contract test another test already covers is dropped: 271 tests become
+  269 with the same coverage. No API or behaviour change.
+
 ## 2.2.1 — 2026-10-25
 
 - A test whose assertions another test already makes is dropped. No API or behaviour change.

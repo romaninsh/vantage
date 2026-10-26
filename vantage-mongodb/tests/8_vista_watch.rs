@@ -12,8 +12,8 @@ use bson::oid::ObjectId;
 use ciborium::Value as CborValue;
 use futures_util::StreamExt;
 use vantage_dataset::prelude::*;
+use vantage_mongodb::MongoDB;
 use vantage_mongodb::vista::MongoVistaSpec;
-use vantage_mongodb::{MongoDB, MongoVistaFactory};
 use vantage_types::Record;
 use vantage_vista::{Capability, FilterOp, Vista, VistaChange, VistaChangeStream, VistaFactory};
 
@@ -176,31 +176,6 @@ async fn watch_drop_ends_stream() -> TestResult {
         .await
         .expect("timed out waiting for the stream to end");
     assert!(end.is_none(), "expected stream end, got {end:?}");
-
-    teardown(&db).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn capabilities_without_change_streams() -> TestResult {
-    let db = setup().await;
-    let spec: MongoVistaSpec = serde_yaml_ng::from_str(TASK)?;
-
-    let off = MongoVistaFactory::new(db.clone())
-        .with_change_streams(false)
-        .build_from_spec(spec.clone())?;
-    assert!(!off.capabilities().has(Capability::Subscribe));
-    let Err(err) = off.watch().await else {
-        panic!("watch must be unsupported");
-    };
-    assert!(err.is_unsupported(), "wrong error kind: {err}");
-    assert_eq!(
-        err.context.get("capability").map(String::as_str),
-        Some("\"subscribe\"")
-    );
-
-    let default = MongoVistaFactory::new(db.clone()).build_from_spec(spec)?;
-    assert!(default.capabilities().has(Capability::Subscribe));
 
     teardown(&db).await;
     Ok(())

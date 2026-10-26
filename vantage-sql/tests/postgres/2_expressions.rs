@@ -57,116 +57,27 @@ fn test_interval_renders_interval_literal() {
     assert_eq!(one_month.preview(), "INTERVAL '1 month'");
 }
 
-// ── Basic select via ExprDataSource ────────────────────────────────────────
+// ── Scalar parameters, top level and nested ───────────────────────────────
 
 #[tokio::test]
-async fn test_select_all() {
-    let db = setup("expr_select_all").await;
-    let expr =
-        Expression::<AnyPostgresType>::new("SELECT * FROM \"expr_select_all\" ORDER BY id", vec![]);
-    let result = records(db.execute(&expr).await.unwrap());
+async fn test_scalar_parameters() {
+    let db = setup("expr_params").await;
 
-    assert_eq!(result.len(), 3);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Apple".to_string())
+    let price_above = Expression::<AnyPostgresType>::new(
+        "price > {}",
+        vec![ExpressiveEnum::Scalar(AnyPostgresType::new(75i64))],
     );
-    assert_eq!(
-        result[2]["name"].try_get::<String>(),
-        Some("Cherry".to_string())
-    );
-}
-
-// ── Parameterized query ────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_parameterized_integer() {
-    let db = setup("expr_param_int").await;
+    // (price > 75 AND active = true) OR name = 'Cherry'
     let expr = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM \"expr_param_int\" WHERE id = {}",
-        vec![ExpressiveEnum::Scalar(AnyPostgresType::new(2i64))],
-    );
-    let result = records(db.execute(&expr).await.unwrap());
-
-    assert_eq!(result.len(), 1);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Banana".to_string())
-    );
-}
-
-#[tokio::test]
-async fn test_parameterized_text() {
-    let db = setup("expr_param_text").await;
-    let expr = Expression::<AnyPostgresType>::new(
-        "SELECT price FROM \"expr_param_text\" WHERE name = {}",
-        vec![ExpressiveEnum::Scalar(AnyPostgresType::new(
-            "Cherry".to_string(),
-        ))],
-    );
-    let result = records(db.execute(&expr).await.unwrap());
-
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0]["price"].try_get::<i64>(), Some(200));
-}
-
-#[tokio::test]
-async fn test_parameterized_bool() {
-    let db = setup("expr_param_bool").await;
-    let expr = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM \"expr_param_bool\" WHERE active = {} ORDER BY name",
-        vec![ExpressiveEnum::Scalar(AnyPostgresType::new(true))],
-    );
-    let result = records(db.execute(&expr).await.unwrap());
-
-    assert_eq!(result.len(), 2);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Apple".to_string())
-    );
-    assert_eq!(
-        result[1]["name"].try_get::<String>(),
-        Some("Banana".to_string())
-    );
-}
-
-// ── Multiple parameters ───────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_multiple_params() {
-    let db = setup("expr_multi_params").await;
-    let expr = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM \"expr_multi_params\" WHERE price >= {} AND active = {}",
+        "SELECT name FROM \"expr_params\" WHERE {} AND active = {} OR name = {} ORDER BY name",
         vec![
-            ExpressiveEnum::Scalar(AnyPostgresType::new(100i64)),
+            ExpressiveEnum::Nested(price_above),
             ExpressiveEnum::Scalar(AnyPostgresType::new(true)),
+            ExpressiveEnum::Scalar(AnyPostgresType::new("Cherry".to_string())),
         ],
     );
     let result = records(db.execute(&expr).await.unwrap());
 
-    assert_eq!(result.len(), 1);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Apple".to_string())
-    );
-}
-
-// ── Nested expressions ────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_nested_expression() {
-    let db = setup("expr_nested").await;
-
-    let where_clause = Expression::<AnyPostgresType>::new(
-        "price > {}",
-        vec![ExpressiveEnum::Scalar(AnyPostgresType::new(75i64))],
-    );
-    let full_query = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM \"expr_nested\" WHERE {} ORDER BY name",
-        vec![ExpressiveEnum::Nested(where_clause)],
-    );
-
-    let result = records(db.execute(&full_query).await.unwrap());
     assert_eq!(result.len(), 2);
     assert_eq!(
         result[0]["name"].try_get::<String>(),

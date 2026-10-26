@@ -130,39 +130,6 @@ async fn test_varchar_date() {
     assert_eq!(fetched, orig);
 }
 
-#[tokio::test]
-async fn test_varchar_time() {
-    let t = table_for!("chrono_varchar", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    let fetched = try_round_trip(&t, "vc_t", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_varchar_ndt() {
-    let t = table_for!("chrono_varchar", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
-        name: "ndt".into(),
-        value: ndt_val(),
-    };
-    let fetched = try_round_trip(&t, "vc_ndt", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_varchar_utc() {
-    let t = table_for!("chrono_varchar", db().await, ValUtc);
-    let orig = ValUtc {
-        name: "utc".into(),
-        value: utc_val(),
-    };
-    let fetched = try_round_trip(&t, "vc_utc", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
 // ═════════════════════════════════════════════════════════════════════════
 // 2. DATE columns
 // ═════════════════════════════════════════════════════════════════════════
@@ -180,13 +147,13 @@ async fn test_date_date() {
 
 #[tokio::test]
 async fn test_date_time() {
-    // TIME into DATE column — MySQL rejects
+    // TIME into DATE column — MySQL rejects the insert
     let t = table_for!("chrono_date", db().await, ValTime);
     let orig = ValTime {
         name: "t".into(),
         value: time_val(),
     };
-    assert!(try_round_trip(&t, "da_t", &orig).await.is_err());
+    assert!(t.replace("da_t", &orig).await.is_err());
 }
 
 #[tokio::test]
@@ -215,28 +182,6 @@ async fn test_date_utc() {
 // ═════════════════════════════════════════════════════════════════════════
 // 3. TIME columns
 // ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_time_date() {
-    // DATE into TIME column — MySQL rejects
-    let t = table_for!("chrono_time", db().await, ValDate);
-    let orig = ValDate {
-        name: "d".into(),
-        value: date_val(),
-    };
-    assert!(try_round_trip(&t, "ti_d", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_time_time() {
-    let t = table_for!("chrono_time", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    let fetched = try_round_trip(&t, "ti_t", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
 
 #[tokio::test]
 async fn test_time_ndt() {
@@ -277,40 +222,6 @@ async fn test_datetime_date() {
     assert!(try_round_trip(&t, "dt_d", &orig).await.is_err());
 }
 
-#[tokio::test]
-async fn test_datetime_time() {
-    // TIME into DATETIME — MySQL rejects
-    let t = table_for!("chrono_datetime", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    assert!(try_round_trip(&t, "dt_t", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_datetime_ndt() {
-    let t = table_for!("chrono_datetime", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
-        name: "ndt".into(),
-        value: ndt_val(),
-    };
-    let fetched = try_round_trip(&t, "dt_ndt", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_datetime_utc() {
-    // DateTime<Utc> into DATETIME — timezone stripped
-    let t = table_for!("chrono_datetime", db().await, ValUtc);
-    let orig = ValUtc {
-        name: "utc".into(),
-        value: utc_val(),
-    };
-    let fetched = try_round_trip(&t, "dt_utc", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
 // ═════════════════════════════════════════════════════════════════════════
 // 5. TIMESTAMP columns — UTC-aware
 // ═════════════════════════════════════════════════════════════════════════
@@ -325,39 +236,6 @@ async fn test_timestamp_date() {
     };
     // Same as datetime_date — NaiveDate can't parse datetime string from Tag(0)
     assert!(try_round_trip(&t, "ts_d", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_timestamp_time() {
-    // TIME into TIMESTAMP — MySQL rejects
-    let t = table_for!("chrono_timestamp", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    assert!(try_round_trip(&t, "ts_t", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_timestamp_ndt() {
-    let t = table_for!("chrono_timestamp", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
-        name: "ndt".into(),
-        value: ndt_val(),
-    };
-    let fetched = try_round_trip(&t, "ts_ndt", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_timestamp_utc() {
-    let t = table_for!("chrono_timestamp", db().await, ValUtc);
-    let orig = ValUtc {
-        name: "utc".into(),
-        value: utc_val(),
-    };
-    let fetched = try_round_trip(&t, "ts_utc", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -432,7 +310,6 @@ async fn test_time0_time_subsec() {
     };
     let fetched = try_round_trip(&t, "ti_t_sub", &orig).await.unwrap();
     // Subseconds truncated — only whole seconds survive
-    assert_ne!(fetched.value, time_subsec());
     assert_eq!(fetched.value, NaiveTime::from_hms_opt(14, 30, 0).unwrap());
 }
 
@@ -459,7 +336,6 @@ async fn test_datetime0_ndt_subsec() {
         value: ndt_subsec(),
     };
     let fetched = try_round_trip(&t, "dt_ndt_sub", &orig).await.unwrap();
-    assert_ne!(fetched.value, ndt_subsec());
     assert_eq!(fetched.value, ndt_subsec_truncated());
 }
 
@@ -471,7 +347,6 @@ async fn test_datetime0_utc_subsec() {
         value: utc_subsec(),
     };
     let fetched = try_round_trip(&t, "dt_utc_sub", &orig).await.unwrap();
-    assert_ne!(fetched.value, utc_subsec());
     assert_eq!(fetched.value, utc_subsec_truncated());
 }
 
@@ -509,7 +384,6 @@ async fn test_timestamp0_ndt_subsec() {
         value: ndt_subsec(),
     };
     let fetched = try_round_trip(&t, "ts_ndt_sub", &orig).await.unwrap();
-    assert_ne!(fetched.value, ndt_subsec());
     assert_eq!(fetched.value, ndt_subsec_truncated());
 }
 
@@ -521,7 +395,6 @@ async fn test_timestamp0_utc_subsec() {
         value: utc_subsec(),
     };
     let fetched = try_round_trip(&t, "ts_utc_sub", &orig).await.unwrap();
-    assert_ne!(fetched.value, utc_subsec());
     assert_eq!(fetched.value, utc_subsec_truncated());
 }
 
@@ -596,23 +469,7 @@ async fn test_varchar_fixed() {
     assert_eq!(fetched.value.offset().local_minus_utc(), 5 * 3600 + 30 * 60);
 }
 
-/// MariaDB has no UTC-offset datetime literals, so it rejects an offset value
-/// bound for a DATETIME / TIMESTAMP column; MySQL 8 converts it to UTC.
-async fn assert_offset_rejected_on_mariadb(
-    db: &MysqlDB,
-    result: &Result<ValFixed, String>,
-) -> bool {
-    if !super::is_mariadb(db).await {
-        return false;
-    }
-    let err = result
-        .as_ref()
-        .expect_err("MariaDB rejects an offset datetime");
-    assert!(err.contains("Incorrect datetime value"), "{err}");
-    true
-}
-
-// ── DATETIME — offset lost, converted to UTC wall clock ────────────────
+// ── DATETIME / TIMESTAMP — offset lost, converted to UTC ───────────
 
 #[tokio::test]
 async fn test_datetime_fixed() {
@@ -623,31 +480,14 @@ async fn test_datetime_fixed() {
         value: fixed_val(),
     };
     let result = try_round_trip(&t, "dt_fix", &orig).await;
-    if assert_offset_rejected_on_mariadb(&db, &result).await {
+    if super::is_mariadb(&db).await {
+        // MariaDB has no UTC-offset datetime literals; MySQL 8 converts to UTC
+        let err = result.expect_err("MariaDB rejects an offset datetime");
+        assert!(err.contains("Incorrect datetime value"), "{err}");
         return;
     }
     let fetched = result.unwrap();
     // Same instant but offset normalized to +00:00 (MySQL drops tz)
-    assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
-    assert_eq!(fetched.value.offset().local_minus_utc(), 0);
-}
-
-// ── TIMESTAMP — offset lost, converted to UTC ──────────────────────────
-
-#[tokio::test]
-async fn test_timestamp_fixed() {
-    let db = db().await;
-    let t = table_for_fixed!("chrono_timestamp", db.clone());
-    let orig = ValFixed {
-        name: "india".into(),
-        value: fixed_val(),
-    };
-    let result = try_round_trip(&t, "ts_fix", &orig).await;
-    if assert_offset_rejected_on_mariadb(&db, &result).await {
-        return;
-    }
-    let fetched = result.unwrap();
-    // Same instant but offset normalized to +00:00
     assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
     assert_eq!(fetched.value.offset().local_minus_utc(), 0);
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.3 — 2026-10-26
+
+- Three insert tests are folded into one (one JSON line per insert, in call order, through a
+  clone too): 27 tests become 25 with the same coverage. No API or behaviour change.
+
 ## 0.7.2 — 2026-10-18
 
 - Requires vantage-table 3.0.0 and vantage-vista 2.1.0.

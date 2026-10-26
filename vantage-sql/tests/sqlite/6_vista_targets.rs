@@ -29,10 +29,16 @@ fn orders_vista(db: &SqliteDB) -> vantage_core::Result<Vista> {
 }
 
 #[tokio::test]
-async fn typed_reference_targets_are_table_names() -> TestResult {
+async fn typed_references_carry_kind_keys_and_target() -> TestResult {
     let db = setup_clients_orders().await;
     let clients = db.vista_factory().from_table(clients_table(db.clone()))?;
-    assert_eq!(clients.references()["orders"].target, "orders");
+
+    let refs = clients.references();
+    assert_eq!(refs.len(), 1);
+    let orders = &refs["orders"];
+    assert_eq!(orders.kind, ReferenceKind::HasMany);
+    assert_eq!(orders.keys, [JoinKey::new("id", "client_id")]);
+    assert_eq!(orders.target, "orders");
     assert_eq!(orders_vista(&db)?.references()["client"].target, "client");
     Ok(())
 }

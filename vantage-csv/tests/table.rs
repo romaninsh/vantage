@@ -82,23 +82,6 @@ async fn embedded_json_inventory_parses_when_column_is_json() -> Result<()> {
 }
 
 #[tokio::test]
-async fn columns_without_a_declared_type_stay_strings() -> Result<()> {
-    let table = Table::<Csv, EmptyEntity>::new("product", csv());
-
-    let rows = table.list_values().await?;
-    let cupcake = &rows["flux_cupcake"];
-    assert_eq!(
-        cupcake["calories"].type_variant(),
-        Some(CsvTypeVariants::String)
-    );
-    assert_eq!(
-        cupcake["calories"].try_get::<String>().as_deref(),
-        Some("300")
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn empty_field_reads_as_untyped_null() -> Result<()> {
     let table = Table::<Csv, EmptyEntity>::new("client", csv())
         .with_column_of::<serde_json::Value>("metadata");
@@ -128,51 +111,40 @@ async fn aliased_column_reads_the_aliased_header_under_the_column_name() -> Resu
 }
 
 #[tokio::test]
-async fn table_without_columns_surfaces_every_header() -> Result<()> {
+async fn table_without_columns_keys_rows_by_id_and_passes_every_header_through_as_text()
+-> Result<()> {
     let table = Table::<Csv, EmptyEntity>::new("client", csv());
 
     let rows = table.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["marty", "doc", "biff"]);
     let marty = &rows["marty"];
-    for header in [
-        "id",
-        "name",
-        "email",
-        "contact_details",
-        "is_paying_client",
-        "metadata",
-    ] {
-        assert!(marty.get(header).is_some(), "missing header {header}");
-    }
+    assert_eq!(marty["id"].value(), "marty");
+    assert_eq!(marty["name"].value(), "Marty McFly");
     assert_eq!(marty["email"].value(), "marty@gmail.com");
+    assert_eq!(marty["contact_details"].value(), "555-1955");
+    assert_eq!(marty["metadata"].value(), "");
+    assert_eq!(
+        marty["is_paying_client"].type_variant(),
+        Some(CsvTypeVariants::String)
+    );
+    assert_eq!(
+        marty["is_paying_client"].try_get::<String>().as_deref(),
+        Some("true")
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn id_column_defaults_to_id() -> Result<()> {
-    let table = Table::<Csv, EmptyEntity>::new("client", csv());
+async fn with_id_column_keys_rows_by_that_column_or_by_row_index_when_it_is_missing() -> Result<()>
+{
+    let by_name = Table::<Csv, EmptyEntity>::new("client", csv().with_id_column("name"));
+    let by_missing =
+        Table::<Csv, EmptyEntity>::new("client", csv().with_id_column("no_such_column"));
 
-    let ids: Vec<String> = table.list_values().await?.into_keys().collect();
-    assert_eq!(ids, ["marty", "doc", "biff"]);
-    Ok(())
-}
-
-#[tokio::test]
-async fn with_id_column_picks_the_record_identifier() -> Result<()> {
-    let table = Table::<Csv, EmptyEntity>::new("client", csv().with_id_column("name"));
-
-    let rows = table.list_values().await?;
-    assert_eq!(rows.len(), 3);
-    assert!(rows.contains_key("Doc Brown"));
-    assert!(!rows.contains_key("doc"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn missing_id_column_falls_back_to_row_indices_from_zero() -> Result<()> {
-    let table = Table::<Csv, EmptyEntity>::new("client", csv().with_id_column("no_such_column"));
-
-    let ids: Vec<String> = table.list_values().await?.into_keys().collect();
-    assert_eq!(ids, ["0", "1", "2"]);
+    let names: Vec<String> = by_name.list_values().await?.into_keys().collect();
+    assert_eq!(names, ["Marty McFly", "Doc Brown", "Biff Tannen"]);
+    let indices: Vec<String> = by_missing.list_values().await?.into_keys().collect();
+    assert_eq!(indices, ["0", "1", "2"]);
     Ok(())
 }
 

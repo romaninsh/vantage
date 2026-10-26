@@ -1,12 +1,19 @@
 name: Post-merge
 
-# After a merge, only what later PRs read: main's baseline for the crates the
-# merge changed (coverage, tests, dupes, overlaps), measured by the same
-# tests.yaml PRs run, and the caches PRs restore. Everything else is assumed
-# checked by the PR. Publishing is publish-on-merge.yaml.
+# After a merge, only what later PRs read: main's baseline for the crates
+# changed since the last baseline (coverage, tests, dupes, overlaps), measured
+# by the same tests.yaml PRs run, and the caches PRs restore. Everything else is
+# assumed checked by the PR. Publishing is publish-on-merge.yaml.
 on:
   push:
     branches: ["main"]
+  # Rebuild the baseline for every crate, e.g. after it lost entries.
+  workflow_dispatch:
+    inputs:
+      all:
+        description: "Measure every crate, not only those changed since the last baseline"
+        type: boolean
+        default: true
 
 concurrency:
   group: post-merge
@@ -19,13 +26,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The commit main's last coverage baseline measured. changes diffs from it,
+  # so crates of a queued run a later push replaced aren't lost. Its own job,
+  # so changes.yaml needs no `actions` permission from its callers.
+  last-baseline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # the last coverage-baseline artifact
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.last.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: last
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: script/ci-baseline
+
   changes:
+    needs: last-baseline
     uses: ./.github/workflows/changes.yaml
     permissions:
       contents: read
       pull-requests: read
     with:
       mode: post-merge
+      base: ${{ needs.last-baseline.outputs.sha }}
+      all: ${{ inputs.all == true }}
 
   # The PR pipeline in baseline mode. Its build and matrix-rs jobs share their
   # ids with the PR's, so they also warm the caches PRs restore.

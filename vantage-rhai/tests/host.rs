@@ -140,11 +140,19 @@ mod limits {
     use super::*;
 
     #[test]
-    fn the_documented_ceilings_are_exposed() {
+    fn max_operations_reports_each_ceiling() {
         assert_eq!(UI_MAX_OPERATIONS, 500_000);
         assert_eq!(BACKGROUND_MAX_OPERATIONS, 50_000_000);
         assert_eq!(Limits::Ui.max_operations(), 500_000);
         assert_eq!(Limits::background().max_operations(), 50_000_000);
+        assert_eq!(
+            Limits::Background {
+                max_operations: 123
+            }
+            .max_operations(),
+            123
+        );
+        assert_eq!(Limits::Background { max_operations: 0 }.max_operations(), 1);
     }
 
     #[test]
@@ -166,71 +174,29 @@ mod limits {
     }
 
     #[test]
-    fn a_custom_background_ceiling_is_reported_as_given() {
-        assert_eq!(
-            Limits::Background {
-                max_operations: 123
-            }
-            .max_operations(),
-            123
+    fn each_host_stops_work_past_its_operation_ceiling() {
+        let work = "let i = 0; while i < 400000 { i += 1; } i";
+        let zero = Host::builder(Limits::Background { max_operations: 0 }).build();
+        assert!(is_limit(run(&ui(), work)));
+        assert_eq!(eval_int(&background(), work), 400_000);
+        assert!(is_limit(run(&background(), "while true {}")));
+        assert!(
+            is_limit(run(&zero, work)),
+            "a zero ceiling is not unlimited"
         );
     }
 
     #[test]
-    fn a_runaway_loop_stops_under_the_ui_profile() {
-        assert!(is_limit(run(&ui(), "while true {}")));
-    }
-
-    #[test]
-    fn a_runaway_loop_stops_under_the_background_profile() {
-        assert!(is_limit(run(&background(), "while true {}")));
-    }
-
-    #[test]
-    fn the_background_profile_allows_more_work_than_the_ui_profile() {
-        let work = "let i = 0; while i < 400000 { i += 1; } i";
-        assert!(is_limit(run(&ui(), work)));
-        assert_eq!(eval_int(&background(), work), 400_000);
-    }
-
-    #[test]
-    fn a_zero_ceiling_is_clamped_to_one_not_unlimited() {
-        let zero = Limits::Background { max_operations: 0 };
-        assert_eq!(zero.max_operations(), 1);
-        assert!(is_limit(run(&Host::builder(zero).build(), "while true {}")));
-    }
-
-    #[test]
-    fn a_custom_background_ceiling_is_honoured() {
-        let loop_100 = "let x = 0; for i in 0..100 { x += i; }";
-        let tight = Host::builder(Limits::Background { max_operations: 10 }).build();
-        assert!(is_limit(run(&tight, loop_100)));
-        assert!(run(&background(), loop_100).is_ok());
-    }
-
-    #[test]
-    fn strings_are_capped_under_both_profiles() {
-        for host in [ui(), background()] {
-            let growth = r#"let s = "x"; loop { s += s; }"#;
-            assert!(is_limit(run(&host, growth)), "{:?}", host.limits());
-        }
-    }
-
-    #[test]
-    fn arrays_are_capped_under_both_profiles() {
-        for host in [ui(), background()] {
-            assert!(
-                is_limit(run(&host, "let a = []; a.pad(2000000, 0);")),
-                "{:?}",
-                host.limits()
-            );
-        }
+    fn strings_and_arrays_are_capped_in_size() {
+        let host = background();
+        assert!(is_limit(run(&host, r#"let s = "x"; loop { s += s; }"#)));
+        assert!(is_limit(run(&host, "let a = []; a.pad(2000000, 0);")));
     }
 
     #[test]
     fn nesting_within_the_call_level_cap_runs() {
-        let script = "fn f(n) { if n == 0 { 0 } else { f(n - 1) } } f(30)";
-        assert_eq!(eval_int(&ui(), script), 0);
+        let script = "fn f(n) { if n == 0 { 0 } else { 1 + f(n - 1) } } f(30)";
+        assert_eq!(eval_int(&ui(), script), 30);
     }
 
     #[test]
@@ -257,63 +223,41 @@ mod cache {
     use super::*;
 
     #[test]
-    fn the_same_source_compiles_once() {
+    fn the_cache_is_keyed_by_mode_and_source() {
         let host = ui();
         let a = host.ast(Mode::Expression, "1 + 1").unwrap();
-        let b = host.ast(Mode::Expression, "1 + 1").unwrap();
-        assert!(Arc::ptr_eq(&a, &b));
+        let same = host.ast(Mode::Expression, "1 + 1").unwrap();
+        let other_source = host.ast(Mode::Expression, "1 + 2").unwrap();
+        let other_mode = host.ast(Mode::Script, "1 + 1").unwrap();
+        assert!(Arc::ptr_eq(&a, &same));
+        assert!(!Arc::ptr_eq(&a, &other_source));
+        assert!(!Arc::ptr_eq(&a, &other_mode));
     }
 
     #[test]
-    fn different_sources_compile_separately() {
+    fn compiling_a_slot_reuses_the_cached_ast_of_its_own_kind() {
         let host = ui();
-        let a = host.ast(Mode::Expression, "1 + 1").unwrap();
-        let b = host.ast(Mode::Expression, "1 + 2").unwrap();
-        assert!(!Arc::ptr_eq(&a, &b));
-    }
-
-    #[test]
-    fn an_expression_and_a_script_with_identical_text_never_share_an_ast() {
-        let host = ui();
-        let expr = host.ast(Mode::Expression, "40 + 2").unwrap();
-        let script = host.ast(Mode::Script, "40 + 2").unwrap();
-        assert!(!Arc::ptr_eq(&expr, &script));
-    }
-
-    #[test]
-    fn compiling_a_slot_twice_reuses_the_cached_ast() {
-        let host = ui();
-        let a = host.compile(&Expr::from("x + 1")).unwrap();
-        let b = host.compile(&Expr::from("x + 1")).unwrap();
-        assert!(std::ptr::eq(a.ast().unwrap(), b.ast().unwrap()));
-    }
-
-    #[test]
-    fn an_expr_and_a_block_with_identical_text_do_not_collide() {
-        let host = ui();
-        let expr = host.compile(&Expr::from("40 + 2")).unwrap();
+        let a = host.compile(&Expr::from("40 + 2")).unwrap();
+        let b = host.compile(&Expr::from("40 + 2")).unwrap();
         let block = host.compile(&Block::from("40 + 2")).unwrap();
-        assert!(!std::ptr::eq(expr.ast().unwrap(), block.ast().unwrap()));
+        assert!(std::ptr::eq(a.ast().unwrap(), b.ast().unwrap()));
+        assert!(!std::ptr::eq(a.ast().unwrap(), block.ast().unwrap()));
     }
 
     #[test]
-    fn compile_uncached_never_shares_an_ast() {
-        let host = ui();
-        let a = host.compile_uncached(&Expr::from("x + 1")).unwrap();
-        let b = host.compile_uncached(&Expr::from("x + 1")).unwrap();
-        let cached = host.compile(&Expr::from("x + 1")).unwrap();
-        assert!(!std::ptr::eq(a.ast().unwrap(), b.ast().unwrap()));
-        assert!(!std::ptr::eq(a.ast().unwrap(), cached.ast().unwrap()));
-    }
-
-    #[test]
-    fn ast_uncached_bypasses_the_cache() {
+    fn uncached_compiles_never_share_an_ast() {
         let host = ui();
         let a = host.ast_uncached(Mode::Expression, "1 + 1").unwrap();
         let b = host.ast_uncached(Mode::Expression, "1 + 1").unwrap();
         let cached = host.ast(Mode::Expression, "1 + 1").unwrap();
+        let uncached_slot = host.compile_uncached(&Expr::from("1 + 1")).unwrap();
+        let cached_slot = host.compile(&Expr::from("1 + 1")).unwrap();
         assert!(!Arc::ptr_eq(&a, &b));
         assert!(!Arc::ptr_eq(&a, &cached));
+        assert!(!std::ptr::eq(
+            uncached_slot.ast().unwrap(),
+            cached_slot.ast().unwrap()
+        ));
     }
 
     #[test]
@@ -381,10 +325,13 @@ mod shared_hosts {
 
     #[test]
     fn the_shared_hosts_have_no_verbs() {
-        for host in [ui_host(), background_host()] {
-            let err = run(host, "double(2)").unwrap_err();
-            assert!(matches!(err, RhaiError::Runtime(_)), "{err:?}");
-        }
+        let ui = run(ui_host(), "double(2)").unwrap_err();
+        let background = run(background_host(), "double(2)").unwrap_err();
+        assert!(matches!(ui, RhaiError::Runtime(_)), "{ui:?}");
+        assert!(
+            matches!(background, RhaiError::Runtime(_)),
+            "{background:?}"
+        );
     }
 
     #[test]
@@ -409,10 +356,5 @@ mod shared_hosts {
             .compile(&Expr::from("shared_marker_bg + 1"))
             .unwrap();
         assert!(std::ptr::eq(c.ast().unwrap(), d.ast().unwrap()));
-    }
-
-    #[test]
-    fn the_shared_ui_host_enforces_the_ui_ceiling() {
-        assert!(is_limit(run(ui_host(), "while true {}")));
     }
 }

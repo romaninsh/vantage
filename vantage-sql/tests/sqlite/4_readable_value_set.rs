@@ -43,43 +43,6 @@ impl Product {
 }
 
 #[tokio::test]
-async fn test_list_values_products() {
-    let db = get_db().await;
-    let table = Product::sqlite_table(db);
-
-    let values = table.list_values().await.unwrap();
-    assert_eq!(values.len(), 5);
-
-    assert!(values.contains_key("flux_cupcake"));
-    assert!(values.contains_key("delorean_donut"));
-
-    let cupcake = &values["flux_cupcake"];
-    assert_eq!(
-        cupcake["name"].try_get::<String>(),
-        Some("Flux Capacitor Cupcake".to_string())
-    );
-    assert_eq!(cupcake["price"].try_get::<i64>(), Some(120));
-}
-
-#[tokio::test]
-async fn test_get_value_product() {
-    let db = get_db().await;
-    let table = Product::sqlite_table(db);
-
-    let record = table
-        .get_value("delorean_donut")
-        .await
-        .unwrap()
-        .expect("delorean_donut exists");
-    assert_eq!(
-        record["name"].try_get::<String>(),
-        Some("DeLorean Doughnut".to_string())
-    );
-    assert_eq!(record["price"].try_get::<i64>(), Some(135));
-    assert_eq!(record["calories"].try_get::<i64>(), Some(250));
-}
-
-#[tokio::test]
 async fn test_get_some_value_product() {
     let db = get_db().await;
     let table = Product::sqlite_table(db);

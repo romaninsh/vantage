@@ -53,7 +53,9 @@ jobs:
           JOBS: ${{ inputs.jobs }}
           LABELS: ${{ steps.labels.outputs.labels }}
         run: |
-          jobs=$(jq -c 'with_entries(.value = .value.result)' <<<"$JOBS")
+          # changes' own checks don't fail its job (see changes.yaml); they count as `checks`.
+          jobs=$(jq -c 'with_entries(.value = .value.result)
+            + (if .changes.outputs.checks == "failure" then {checks: "failure"} else {} end)' <<<"$JOBS")
           python3 -I .ci/coverage/ci-report.py --run "$RUN" --jobs "$jobs" --labels "$LABELS" --junit junit \
             --lcov lcov.info --stats stats --audit audit --baseline baseline/coverage-baseline.json > summary.md
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
@@ -103,5 +105,7 @@ jobs:
         env:
           JOBS: ${{ inputs.jobs }}
         run: |
-          jq -c 'with_entries(.value = .value.result)' <<<"$JOBS"
-          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$JOBS"
+          results=$(jq -c 'with_entries(.value = .value.result)
+            + (if .changes.outputs.checks == "failure" then {checks: "failure"} else {} end)' <<<"$JOBS")
+          echo "$results"
+          jq -e 'all(.[]; . == "success" or . == "skipped")' <<<"$results"

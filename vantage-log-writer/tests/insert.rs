@@ -43,62 +43,29 @@ fn events_table(writer: &LogWriter) -> Table<LogWriter, Event> {
 }
 
 #[tokio::test]
-async fn insert_appends_one_json_line_with_declared_columns_and_a_ulid() {
+async fn inserts_append_one_json_line_each_in_call_order_even_through_a_clone() {
     let dir = tempdir().unwrap();
     let table = events_table(&LogWriter::new(dir.path()));
+    let clone = table.clone();
 
-    let id = table.insert_return_id(&event()).await.unwrap();
-    assert_eq!(id.len(), 26, "a ULID is 26 characters: {id}");
-
-    sleep(Duration::from_millis(100)).await;
-
-    let rows = read_lines(&dir.path().join("events.jsonl")).await;
-    assert_eq!(rows.len(), 1);
-    let row = &rows[0];
-    assert_eq!(row["name"], "login");
-    assert_eq!(row["user_id"], 42);
-    assert_eq!(row["is_admin"], true);
-    assert_eq!(row["id"], id);
-    assert!(
-        row.get("extra").is_none(),
-        "a field outside the column list is dropped"
-    );
-}
-
-#[tokio::test]
-async fn inserts_through_a_cloned_table_land_in_the_same_log() {
-    let dir = tempdir().unwrap();
-    let t1 = events_table(&LogWriter::new(dir.path()));
-    let t2 = t1.clone();
-
-    t1.insert_return_id(&event()).await.unwrap();
-    t2.insert_return_id(&event()).await.unwrap();
+    let first = table.insert_return_id(&event()).await.unwrap();
+    let second = clone.insert_return_id(&event()).await.unwrap();
+    assert_eq!(first.len(), 26, "a ULID is 26 characters: {first}");
+    assert_ne!(first, second);
 
     sleep(Duration::from_millis(100)).await;
 
     let rows = read_lines(&dir.path().join("events.jsonl")).await;
     assert_eq!(rows.len(), 2);
-}
-
-#[tokio::test]
-async fn consecutive_inserts_append_in_order() {
-    let dir = tempdir().unwrap();
-    let table = events_table(&LogWriter::new(dir.path()));
-
-    for user_id in 1..=3 {
-        let mut e = event();
-        e.user_id = user_id;
-        table.insert_return_id(&e).await.unwrap();
-    }
-
-    sleep(Duration::from_millis(100)).await;
-
-    let rows = read_lines(&dir.path().join("events.jsonl")).await;
-    let ids: Vec<_> = rows
-        .iter()
-        .map(|r| r["user_id"].as_i64().unwrap())
-        .collect();
-    assert_eq!(ids, [1, 2, 3]);
+    assert_eq!(rows[0]["id"], first);
+    assert_eq!(rows[0]["name"], "login");
+    assert_eq!(rows[0]["user_id"], 42);
+    assert_eq!(rows[0]["is_admin"], true);
+    assert!(
+        rows[0].get("extra").is_none(),
+        "a field outside the column list is dropped"
+    );
+    assert_eq!(rows[1]["id"], second);
 }
 
 #[tokio::test]

@@ -149,11 +149,16 @@ mongo:
 }
 
 #[tokio::test]
-async fn capabilities_report_writes_reach_hooks() -> TestResult {
+async fn capabilities_of_a_collection_and_a_pipeline_view() -> TestResult {
     let (db, name) = setup().await;
     let orders = db.vista_factory().build_from_spec(spec(ORDER))?;
+    assert!(orders.capabilities().has(Capability::Traverse));
     assert!(orders.capabilities().has(Capability::WritesReachHooks));
+    // A pipeline view's rows reach other tables through its references too,
+    // but it takes no writes.
     let view = db.vista_factory().build_from_spec(spec(BY_CATEGORY))?;
+    assert!(view.capabilities().has(Capability::Traverse));
+    assert!(!view.capabilities().has(Capability::Insert));
     assert!(!view.capabilities().has(Capability::WritesReachHooks));
     teardown(&db, &name).await;
     Ok(())
@@ -179,19 +184,6 @@ async fn build_script_reference_refuses_with_condition_on_table() -> TestResult 
         "{err}"
     );
 
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn capabilities_advertise_traverse_for_scripted_refs() -> TestResult {
-    let (db, name) = setup().await;
-    let v = db.vista_factory().build_from_spec(spec(ORDER))?;
-    assert!(v.capabilities().has(Capability::Traverse));
-    // A pipeline view's rows reach other tables through its references too.
-    let view = db.vista_factory().build_from_spec(spec(BY_CATEGORY))?;
-    assert!(view.capabilities().has(Capability::Traverse));
-    assert!(!view.capabilities().has(Capability::Insert));
     teardown(&db, &name).await;
     Ok(())
 }
