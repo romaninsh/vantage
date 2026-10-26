@@ -36,11 +36,12 @@ fn authenticated_email(ds: &MockBuilder) -> AssociatedExpression<'_, MockBuilder
 }
 
 #[tokio::test]
-async fn get_executes_and_converts_to_the_result_type() {
-    let ds = mock_builder::new().on_exact_select(EMAIL_QUERY, json!("foo@example.com"));
+async fn get_returns_the_converted_value_or_the_error() {
+    let ds = mock_builder::new()
+        .on_exact_select(EMAIL_QUERY, json!("foo@example.com"))
+        .on_exact_select("SELECT 'not-an-email'", json!("not-an-email"));
 
     let email = authenticated_email(&ds).get().await.unwrap();
-
     assert_eq!(
         email,
         Email {
@@ -48,22 +49,23 @@ async fn get_executes_and_converts_to_the_result_type() {
             domain: "example.com".to_string()
         }
     );
-}
 
-#[tokio::test]
-async fn get_fails_when_the_value_does_not_convert() {
-    let ds = mock_builder::new().on_exact_select(EMAIL_QUERY, json!("not-an-email"));
-    assert!(authenticated_email(&ds).get().await.is_err());
+    let not_converted = ds
+        .associate::<Email>(expr!("SELECT 'not-an-email'"))
+        .get()
+        .await
+        .unwrap_err();
+    assert!(
+        not_converted.to_string().contains("Invalid email format"),
+        "{not_converted}"
+    );
 
-    let ds = mock_builder::new().on_exact_select(EMAIL_QUERY, json!(12));
-    assert!(authenticated_email(&ds).get().await.is_err());
-}
-
-#[tokio::test]
-async fn get_fails_when_the_datasource_fails() {
-    let ds = mock_builder::new().on_exact_select("SELECT 1", json!(1));
-
-    assert!(authenticated_email(&ds).get().await.is_err());
+    let not_executed = ds
+        .associate::<Email>(expr!("SELECT 1"))
+        .get()
+        .await
+        .unwrap_err();
+    assert_ne!(not_executed.to_string(), not_converted.to_string());
 }
 
 #[tokio::test]

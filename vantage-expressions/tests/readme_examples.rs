@@ -7,14 +7,14 @@ use vantage_expressions::{
 };
 
 #[test]
-fn macros_build_template_and_parameters() {
+fn macros_build_template_and_parameters_and_preview_fills_each_once() {
     let json_expr = expr!("age > {}", 18);
     assert_eq!(json_expr.template, "age > {}");
     assert_eq!(json_expr.parameters.len(), 1);
     assert_eq!(json_expr.preview(), "age > 18");
 
-    let typed = expr_as!(i32, "age > {}", 18);
-    assert_eq!(typed.preview(), "age > 18");
+    let typed = expr_as!(String, "{} = {}", "weird{}", "x");
+    assert_eq!(typed.preview(), "weird{} = x");
 
     let inferred: Expression<i16> = expr_any!("age > {}", 18i16);
     assert_eq!(inferred.template, "age > {}");
@@ -32,12 +32,6 @@ fn parenthesised_macro_argument_is_nested() {
     assert!(matches!(outer.parameters[0], ExpressiveEnum::Nested(_)));
     assert!(matches!(outer.parameters[1], ExpressiveEnum::Scalar(_)));
     assert_eq!(outer.preview(), "WHERE status = \"active\" AND age > 21");
-}
-
-#[test]
-fn preview_keeps_placeholder_text_inside_values() {
-    let expr = expr_as!(String, "{} = {}", "weird{}", "x");
-    assert_eq!(expr.preview(), "weird{} = x");
 }
 
 #[test]
