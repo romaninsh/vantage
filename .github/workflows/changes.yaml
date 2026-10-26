@@ -65,7 +65,7 @@ on:
       warm: { value: "${{ jobs.changes.outputs.warm }}" }
       internal_tests: { value: "${{ jobs.changes.outputs.internal_tests }}" }
       suite_exclude: { value: "${{ jobs.changes.outputs.suite_exclude }}" }
-      one_job: { value: "${{ jobs.changes.outputs.one_job }}" }
+      build_in_suite: { value: "${{ jobs.changes.outputs.build_in_suite }}" }
       skill_url: { value: "${{ jobs.changes.outputs.skill_url }}" }
       flags: { value: "${{ jobs.changes.outputs.flags }}" }
       labels: { value: "${{ jobs.changes.outputs.labels }}" }
@@ -116,7 +116,7 @@ jobs:
       warm: ${{ steps.c.outputs.warm }}
       internal_tests: ${{ steps.c.outputs.internal_tests }}
       suite_exclude: ${{ steps.c.outputs.suite_exclude }}
-      one_job: ${{ steps.c.outputs.one_job }}
+      build_in_suite: ${{ steps.c.outputs.build_in_suite }}
       skill_url: ${{ steps.c.outputs.skill_url }}
       flags: ${{ steps.c.outputs.flags }}
       labels: ${{ steps.c.outputs.labels }}
