@@ -118,92 +118,49 @@ references:
     )
 }
 
+/// Many-to-many from chained traversal, with no new YAML keyword: client →
+/// bakery (has_one) finds Marty's bakery, and bakery → clients (has_many)
+/// lists every client of it.
 #[tokio::test]
-async fn has_many_traversal_lists_related_rows() -> TestResult {
+async fn chained_has_one_and_has_many_reach_martys_bakery_and_its_clients() -> TestResult {
     let (db, bakery_table, client_table) = setup().await;
     seed_v2_like(&db, &bakery_table, &client_table).await?;
 
     let (bakery_spec, client_spec) = build_specs(&bakery_table, &client_table);
     let resolver = registry_resolver(vec![
-        ("bakery".into(), bakery_spec.clone()),
-        ("client".into(), client_spec),
+        ("bakery".into(), bakery_spec),
+        ("client".into(), client_spec.clone()),
     ]);
-    let factory = SurrealVistaFactory::new(db.clone()).with_resolver(resolver);
+    let factory = SurrealVistaFactory::new(db).with_resolver(resolver);
 
-    let bakery = factory.build_from_spec(bakery_spec)?;
-    let bakery_row = bakery.get_value("hill_valley").await?.expect("bakery row");
+    let client = factory.build_from_spec(client_spec)?;
+    let marty = client.get_value("marty").await?.expect("marty");
+
+    let bakery = client.get_ref("bakery", Some(&marty))?;
+    let bakery_rows = bakery.list_values().await?;
+    assert_eq!(bakery_rows.len(), 1, "marty belongs to one bakery");
+    let (_, bakery_row) = bakery_rows.into_iter().next().unwrap();
+    assert_eq!(
+        bakery_row.get("name"),
+        Some(&ciborium::Value::Text("Hill Valley Bakery".to_string()))
+    );
 
     let clients = bakery.get_ref("clients", Some(&bakery_row))?;
     assert!(clients.is_narrowed(), "the join is recorded on the target");
     let rows = clients.list_values().await?;
     assert_eq!(rows.len(), 3, "hill_valley has 3 clients");
-
-    let mut names: Vec<String> = rows
-        .values()
-        .filter_map(|r| match r.get("name") {
-            Some(ciborium::Value::Text(s)) => Some(s.clone()),
-            _ => None,
-        })
-        .collect();
-    names.sort();
-    assert_eq!(names, vec!["Biff Tannen", "Doc Brown", "Marty McFly"]);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn has_one_traversal_returns_parent_row() -> TestResult {
-    let (db, bakery_table, client_table) = setup().await;
-    seed_v2_like(&db, &bakery_table, &client_table).await?;
-
-    let (bakery_spec, client_spec) = build_specs(&bakery_table, &client_table);
-    let resolver = registry_resolver(vec![
-        ("bakery".into(), bakery_spec),
-        ("client".into(), client_spec.clone()),
-    ]);
-    let factory = SurrealVistaFactory::new(db.clone()).with_resolver(resolver);
-
-    let client = factory.build_from_spec(client_spec)?;
-    let client_row = client.get_value("marty").await?.expect("client row");
-
-    let bakery = client.get_ref("bakery", Some(&client_row))?;
-    let rows = bakery.list_values().await?;
-    assert_eq!(rows.len(), 1, "marty belongs to one bakery");
-    let row = rows.values().next().expect("bakery row");
     assert_eq!(
-        row.get("name"),
-        Some(&ciborium::Value::Text("Hill Valley Bakery".to_string()))
+        rows[&format!("{client_table}:marty")]["name"],
+        ciborium::Value::Text("Marty McFly".to_string())
     );
-
-    Ok(())
-}
-
-/// Many-to-many via chained traversal: client → bakery → clients.
-/// "Other clients of the same bakery as Marty" — relational m2m without
-/// any new YAML keyword.
-#[tokio::test]
-async fn many_to_many_via_chained_has_many_through_has_one() -> TestResult {
-    let (db, bakery_table, client_table) = setup().await;
-    seed_v2_like(&db, &bakery_table, &client_table).await?;
-
-    let (bakery_spec, client_spec) = build_specs(&bakery_table, &client_table);
-    let resolver = registry_resolver(vec![
-        ("bakery".into(), bakery_spec),
-        ("client".into(), client_spec.clone()),
-    ]);
-    let factory = SurrealVistaFactory::new(db.clone()).with_resolver(resolver);
-
-    let client = factory.build_from_spec(client_spec)?;
-    let marty = client.get_value("marty").await?.expect("marty");
-
-    let bakery_for_marty = client.get_ref("bakery", Some(&marty))?;
-    let bakery_rows = bakery_for_marty.list_values().await?;
-    assert_eq!(bakery_rows.len(), 1);
-    let (_, bakery_row) = bakery_rows.into_iter().next().unwrap();
-
-    let sibling_clients = bakery_for_marty.get_ref("clients", Some(&bakery_row))?;
-    let sibling_rows = sibling_clients.list_values().await?;
-    assert_eq!(sibling_rows.len(), 3, "all 3 clients of marty's bakery");
+    assert_eq!(
+        rows[&format!("{client_table}:doc")]["name"],
+        ciborium::Value::Text("Doc Brown".to_string())
+    );
+    assert_eq!(
+        rows[&format!("{client_table}:biff")]["name"],
+        ciborium::Value::Text("Biff Tannen".to_string())
+    );
 
     Ok(())
 }

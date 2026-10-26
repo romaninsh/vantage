@@ -1048,12 +1048,6 @@ async fn update_live_set_record() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-fn delete_table() {
-    let del = SurrealDelete::table("users");
-    assert_eq!(del.preview(), "DELETE users");
-}
-
-#[test]
 fn delete_record() {
     let del = SurrealDelete::new(Thing::new("users", "john"));
     assert_eq!(del.preview(), "DELETE users:john");

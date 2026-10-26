@@ -167,6 +167,18 @@ rule allowed the second `eval` in `a_compiled_slot_evaluates_against_whichever_e
 `the_resolver_is_asked_once_per_read_on_every_evaluation`, the paired `ast`/`compile` calls in the
 cache tests, and the second batch in `rows_are_answered_in_order_by_one_script_that_keeps_its_state`.*
 
+### A5. One error by design: each branch keeps its own call
+
+When the contract deliberately gives several branches the same error, each branch still keeps its
+own plain call and assert in one test, with no loop. The documented single message satisfies R11:
+no `assert_ne!` can tell those branches apart, and cutting them to one input would lose the
+branches. (A user ruling.)
+
+*Case: vantage-mongodb `6_vista_paging.rs` `vista_fetch_cursor_refuses_tokens_it_did_not_issue`:
+`decode_token` refuses every foreign token with "invalid fetch_cursor token". The integer, `[]`,
+`[null]` and `[bytes 1,2,3]` tokens each take a different early return, so each keeps its own
+plain `fetch_cursor` call asserting that message.*
+
 ### A6. A branch the contract names but can't isolate keeps one input
 
 Sometimes the contract names a condition as its own rule but gives it the same documented output

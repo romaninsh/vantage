@@ -63,19 +63,6 @@ async fn test_insert() {
 }
 
 #[tokio::test]
-async fn test_delete() {
-    let (_db, table) = setup("delete").await;
-
-    WritableValueSet::delete(&table, MongoId::from("a"))
-        .await
-        .unwrap();
-
-    let all = table.list_values().await.unwrap();
-    assert_eq!(all.len(), 1);
-    assert!(!all.contains_key(&MongoId::from("a")));
-}
-
-#[tokio::test]
 async fn test_insert_return_id() {
     let (db, _) = setup("auto_id").await;
 

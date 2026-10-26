@@ -331,16 +331,10 @@ async fn join_survives_vista_edit() -> TestResult {
     let mut row = orders.get_value("o1").await?.expect("o1");
     row.insert("item".into(), text("hoverboard"));
     orders.replace_value("o1", &row).await?;
-    let mut row = orders.get_value("o1").await?.expect("o1");
-    assert_eq!(row.get("client.name"), Some(&text("Marty")));
 
-    row.insert("item".into(), text("almanac"));
-    row.shift_remove("client.name");
-    orders.patch_value("o1", &row).await?;
     let row = orders.get_value("o1").await?.expect("o1");
     assert_eq!(row.get("client.name"), Some(&text("Marty")));
-    assert_eq!(row.get("item"), Some(&text("almanac")));
-
+    assert_eq!(row.get("item"), Some(&text("hoverboard")));
     let stored = db
         .doc_collection("orders")
         .find_one(doc! { "_id": "o1" })

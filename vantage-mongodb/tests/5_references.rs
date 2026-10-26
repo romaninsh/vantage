@@ -6,7 +6,7 @@ use bson::doc;
 use vantage_dataset::ReadableDataSet;
 #[allow(unused_imports)]
 use vantage_mongodb::AnyMongoType;
-use vantage_mongodb::MongoDB;
+use vantage_mongodb::{MongoDB, MongoId};
 use vantage_table::table::Table;
 use vantage_types::entity;
 
@@ -56,30 +56,31 @@ fn order_table(db: MongoDB) -> Table<MongoDB, ClientOrder> {
         .with_one("client", "client_id", client_table)
 }
 
-/// Traverse has_many: paying clients -> their orders
+/// has_many: client doc -> his orders; has_one: order1 -> its client.
 #[tokio::test]
-async fn test_has_many_orders_for_paying_clients() {
+async fn test_get_ref_as_traverses_has_many_and_has_one() {
     let db = get_db().await;
-    let mut clients = client_table(db.clone());
-    clients.add_condition(doc! { "is_paying_client": true });
+    let mut doc_brown = client_table(db.clone());
+    doc_brown.add_condition(doc! { "_id": "doc" });
+    let mut order1 = order_table(db.clone());
+    order1.add_condition(doc! { "_id": "order1" });
 
-    let orders = clients.get_ref_as::<ClientOrder>("orders").unwrap();
+    let orders = doc_brown
+        .get_ref_as::<ClientOrder>("orders")
+        .unwrap()
+        .list()
+        .await
+        .unwrap();
+    assert_eq!(orders.len(), 2);
+    assert!(orders.contains_key(&MongoId::from("order2")), "{orders:?}");
+    assert!(orders.contains_key(&MongoId::from("order3")), "{orders:?}");
 
-    let order_list = orders.list().await.unwrap();
-    // Marty has 1 order, Doc has 2 orders -> 3 total
-    assert_eq!(order_list.len(), 3);
-}
-
-/// Traverse has_one: order -> client
-#[tokio::test]
-async fn test_has_one_client_for_order() {
-    let db = get_db().await;
-    let mut orders = order_table(db.clone());
-    orders.add_condition(doc! { "_id": "order1" });
-
-    let client = orders.get_ref_as::<Client>("client").unwrap();
-
-    let client_list = client.list().await.unwrap();
-    assert_eq!(client_list.len(), 1);
-    assert_eq!(client_list.values().next().unwrap().name, "Marty McFly");
+    let client = order1
+        .get_ref_as::<Client>("client")
+        .unwrap()
+        .list()
+        .await
+        .unwrap();
+    assert_eq!(client.len(), 1);
+    assert_eq!(client.values().next().unwrap().name, "Marty McFly");
 }

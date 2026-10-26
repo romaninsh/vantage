@@ -202,40 +202,35 @@ async fn import_runs_insert_hooks_for_new_records_only() -> TestResult {
 }
 
 #[tokio::test]
-async fn import_fills_set_columns_the_record_lacks() -> TestResult {
+async fn import_into_a_narrowed_set_fills_set_columns_and_takes_rows_beyond_one_command_worth()
+-> TestResult {
     let db = setup().await;
     let mut open = vista(&db, TASK);
     open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
-    let id = ObjectId::new();
+
+    let no_status = ObjectId::new();
     let mut record = Record::new();
     record.insert("title".to_string(), CborValue::Text("no status".into()));
-
-    assert_eq!(open.import_values(&batch(vec![(id, record)])).await?, 1);
-
-    let docs = stored(&db, "tasks").await?;
-    assert_eq!(docs[0].get_str("status")?, "open");
-
-    teardown(&db).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn import_into_a_narrowed_set_takes_rows_beyond_one_command_worth() -> TestResult {
-    let db = setup().await;
-    let mut open = vista(&db, TASK);
-    open.add_condition("status", FilterOp::Eq, CborValue::Text("open".into()))?;
-
-    // Five rows of about 3.5 MB: more than a single check of the rows
+    // Five more rows of about 3.5 MB: more than a single check of the rows
     // against the set can carry.
     let pad = "x".repeat(3_500_000);
-    let rows = batch(
-        (0..5)
-            .map(|_| (ObjectId::new(), row(&pad, "open")))
-            .collect(),
-    );
+    let rows = batch(vec![
+        (no_status, record),
+        (ObjectId::new(), row(&pad, "open")),
+        (ObjectId::new(), row(&pad, "open")),
+        (ObjectId::new(), row(&pad, "open")),
+        (ObjectId::new(), row(&pad, "open")),
+        (ObjectId::new(), row(&pad, "open")),
+    ]);
 
-    assert_eq!(open.import_values(&rows).await?, 5);
-    assert_eq!(stored(&db, "tasks").await?.len(), 5);
+    assert_eq!(open.import_values(&rows).await?, 6);
+    assert_eq!(stored(&db, "tasks").await?.len(), 6);
+    let filled = db
+        .doc_collection("tasks")
+        .find_one(doc! { "_id": no_status })
+        .await?
+        .expect("stored no-status row");
+    assert_eq!(filled.get_str("status")?, "open");
 
     teardown(&db).await;
     Ok(())
@@ -384,20 +379,30 @@ async fn rows_copied_from_a_read_keep_object_id_keys() -> TestResult {
 }
 
 #[tokio::test]
-async fn capabilities_without_transactions_hide_import() -> TestResult {
+async fn capabilities_without_change_streams_hide_subscribe_and_import() -> TestResult {
     let db = setup().await;
     let spec: MongoVistaSpec = serde_yaml_ng::from_str(TASK)?;
 
     let off = MongoVistaFactory::new(db.clone())
         .with_change_streams(false)
         .build_from_spec(spec.clone())?;
+    assert!(!off.capabilities().has(Capability::Subscribe));
     assert!(!off.capabilities().has(Capability::Import));
+    let Err(err) = off.watch().await else {
+        panic!("watch must be unsupported");
+    };
+    assert!(err.is_unsupported(), "{err}");
+    assert_eq!(
+        err.context.get("capability").map(String::as_str),
+        Some("\"subscribe\"")
+    );
     let Err(err) = off.import_values(&IndexMap::new()).await else {
         panic!("import must be unsupported");
     };
     assert!(err.is_unsupported(), "{err:?}");
 
     let default = MongoVistaFactory::new(db.clone()).build_from_spec(spec)?;
+    assert!(default.capabilities().has(Capability::Subscribe));
     assert!(default.capabilities().has(Capability::Import));
 
     teardown(&db).await;

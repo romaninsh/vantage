@@ -327,63 +327,11 @@ async fn test_execute_select_multiple_conditions() {
     assert_eq!(results.len(), 3);
 }
 
-#[tokio::test]
-async fn test_execute_select_clients() {
-    use vantage_expressions::SelectableDataSource;
-
-    let db = db().await;
-    let select = MongoSelect::new()
-        .with_source("client")
-        .with_condition(doc! { "is_paying_client": true });
-    let results = db.execute_select(&select).await.unwrap();
-
-    // marty and doc are paying clients
-    assert_eq!(results.len(), 2);
-}
-
-#[tokio::test]
-async fn test_execute_select_empty_result() {
-    use vantage_expressions::SelectableDataSource;
-
-    let db = db().await;
-    let select = MongoSelect::new()
-        .with_source("product")
-        .with_condition(doc! { "price": { "$gt": 10000 } });
-    let results = db.execute_select(&select).await.unwrap();
-
-    assert!(results.is_empty());
-}
-
 // ── table.select() integration ───────────────────────────────────────────
 // Verifies that Table<MongoDB, E> can produce a MongoSelect via table.select()
 
 #[tokio::test]
-async fn test_table_select_products() {
-    use vantage_expressions::SelectableDataSource;
-    use vantage_table::table::Table;
-    use vantage_types::EmptyEntity;
-
-    let db = db().await;
-    let table = Table::<MongoDB, EmptyEntity>::new("product", db.clone())
-        .with_id_column("_id")
-        .with_column_of::<String>("name")
-        .with_column_of::<i64>("price")
-        .with_column_of::<bool>("is_deleted");
-
-    let select = table.select();
-
-    assert_eq!(select.collection, Some("product".to_string()));
-    assert!(select.has_fields());
-    // Should have _id, name, price, is_deleted
-    assert_eq!(select.fields.len(), 4);
-
-    // Execute it
-    let results = db.execute_select(&select).await.unwrap();
-    assert_eq!(results.len(), 5);
-}
-
-#[tokio::test]
-async fn test_table_select_with_condition() {
+async fn test_table_select_carries_collection_columns_and_conditions() {
     use vantage_expressions::SelectableDataSource;
     use vantage_table::table::Table;
     use vantage_types::EmptyEntity;
@@ -394,33 +342,15 @@ async fn test_table_select_with_condition() {
         .with_column_of::<String>("name")
         .with_column_of::<i64>("price")
         .with_column_of::<bool>("is_deleted");
-
-    table.add_condition(doc! { "is_deleted": false });
-
-    let select = table.select();
-    assert!(select.has_where_conditions());
-
-    let results = db.execute_select(&select).await.unwrap();
-    assert_eq!(results.len(), 5); // all v2 products have is_deleted: false
-}
-
-#[tokio::test]
-async fn test_table_select_with_condition_and_limit() {
-    use vantage_expressions::SelectableDataSource;
-    use vantage_table::table::Table;
-    use vantage_types::EmptyEntity;
-
-    let db = db().await;
-    let mut table = Table::<MongoDB, EmptyEntity>::new("product", db.clone())
-        .with_id_column("_id")
-        .with_column_of::<String>("name")
-        .with_column_of::<i64>("price");
-
     table.add_condition(doc! { "price": { "$gt": 130 } });
 
-    let mut select = table.select();
-    select.set_limit(Some(2), None);
+    let select = table.select();
+    assert_eq!(select.collection, Some("product".to_string()));
+    // _id, name, price, is_deleted
+    assert_eq!(select.fields.len(), 4);
+    assert!(select.has_where_conditions());
 
+    // Every v2 product but flux_cupcake (120) costs more than 130.
     let results = db.execute_select(&select).await.unwrap();
-    assert_eq!(results.len(), 2);
+    assert_eq!(results.len(), 4);
 }

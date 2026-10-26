@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (reopening a file, insert ids, deletes,
+  conditions, `in_`, indexes, conditioned reads, paging) and tests another test already covers
+  are dropped: 139 tests become 120 with the same coverage. No API or behaviour change.
+
 ## 0.8.1 — 2026-10-25
 
 - Tests whose assertions other tests already make are dropped. No API or behaviour change.
