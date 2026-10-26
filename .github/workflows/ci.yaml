@@ -46,6 +46,9 @@ jobs:
       ci_self: ${{ steps.c.outputs.ci_self }}
       versions: ${{ steps.c.outputs.versions }}
       published: ${{ steps.c.outputs.published }}
+      unbumped: ${{ steps.c.outputs.unbumped }}
+      no_changelog: ${{ steps.c.outputs.no_changelog }}
+      changelogs: ${{ steps.c.outputs.changelogs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -187,6 +190,8 @@ jobs:
       - name: actionlint
         env:
           GH_TOKEN: ${{ github.token }}
+          # shellcheck's info notes (publish-on-merge's unquoted words) don't fail it.
+          SHELLCHECK_OPTS: --severity=warning
         run: |
           gh release download v1.7.12 -R rhysd/actionlint -p 'actionlint_1.7.12_linux_amd64.tar.gz' -O - \
             | tar -xz -C "$RUNNER_TEMP" actionlint
@@ -284,7 +289,8 @@ jobs:
   # for main to fix.
   audit:
     needs: changes
-    if: needs.changes.outputs.manifests == 'true'
+    # Changed crates get their advisories listed; a lockfile change can bring new ones.
+    if: needs.changes.outputs.crates != '[]' || needs.changes.outputs.manifests == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -300,18 +306,7 @@ jobs:
       - name: Advisories, and the ones this PR brings in
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          mkdir -p audit base
-          cargo audit --json > audit/audit.json || true
-          git show "$BASE:Cargo.lock" > base/Cargo.lock
-          cargo audit --json -f base/Cargo.lock > base/audit.json || true
-          ids() { jq -r '.vulnerabilities.list[].advisory.id' "$1" | sort -u; }
-          comm -23 <(ids audit/audit.json) <(ids base/audit.json) | jq -R -s 'split("\n") | map(select(length > 0))' \
-            > audit/introduced.json
-          if [ "$(jq length audit/introduced.json)" != 0 ]; then
-            echo "::error::the lockfile change brings in advisories: $(jq -r 'join(", ")' audit/introduced.json)"
-            exit 1
-          fi
+        run: script/ci-audit "$BASE" audit
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -367,7 +362,23 @@ jobs:
           else
             gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@summary.md > /dev/null
           fi
+      # Every changed crate that goes to crates.io is bumped, with a CHANGELOG
+      # entry for its new version (publish-on-merge releases it as it stands).
+      - name: Versions bumped, with a CHANGELOG entry
+        env:
+          UNBUMPED: ${{ needs.changes.outputs.unbumped }}
+          NO_CHANGELOG: ${{ needs.changes.outputs.no_changelog }}
+        run: |
+          status=0
+          for c in $(jq -r '.[]' <<<"${UNBUMPED:-[]}"); do
+            echo "::error::$c changed but its version didn't: bump it (patch is fine)"; status=1
+          done
+          for c in $(jq -r '.[]' <<<"${NO_CHANGELOG:-[]}"); do
+            echo "::error::$c has no CHANGELOG.md entry for its new version (a '## <version>' heading)"; status=1
+          done
+          exit $status
       - name: Every job passed or was skipped by design
+        if: always()
         env:
           JOBS: ${{ toJSON(needs) }}
         run: |

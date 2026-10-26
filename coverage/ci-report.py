@@ -8,8 +8,9 @@ usage: python3 -I coverage/ci-report.py --run <json> [--jobs <json>] --junit <di
 --jobs: {job: result} of the jobs the summary waits on.
 --junit: one directory per test group holding nextest's junit.xml.
 --stats: <crate>.pairs.json (matrix-rs) and <crate>.findings.json (new_tests.py).
---audit: audit.json (cargo audit on the PR's lockfile) and introduced.json
-(advisories the PR's lockfile change brings in).
+--audit: script/ci-audit's output: audit.json, introduced.json and
+affected.json. Only advisories reaching a changed crate are listed, plus any
+the PR's lockfile brings in.
 Only changed crates are reported, each against main's baseline:
 {crate: {lines, covered, tests, identical, near}}. The output starts with a
 marker so CI finds and edits the same comment on every run.
@@ -95,24 +96,31 @@ def pct(r):
     return round(100 * r["covered"] / r["lines"], 1) if r and r.get("lines") else None
 
 
-def version_cell(crate, versions, published):
-    """1.0.~~2~~3: the unchanged leading parts, the old rest struck, the new rest."""
+def version_cell(crate, versions, published, no_changelog=(), changelogs=None):
+    """`2.3.1 (+patch)`: the new version and which part moved, by position
+    (+MAJOR, +minor, +patch). The version links to the CHANGELOG, and hovering
+    it shows the entry."""
     if crate not in published:
         return ""
     if crate not in versions:
         return "💤 not bumped"
     old, new = versions[crate]
+    entry = (changelogs or {}).get(crate)
+    shown = new
+    if entry:
+        env = os.environ.get
+        url = f"{env('GITHUB_SERVER_URL', 'https://github.com')}/{env('GITHUB_REPOSITORY', '')}/blob/{env('GITHUB_SHA', 'HEAD')}/{entry['path']}"
+        shown = f'[{new}]({url} "{entry["text"].replace(chr(34), chr(39))}")'
+    note = " 📝 no CHANGELOG entry" if crate in no_changelog else ""
     if not old:
-        return f"🆕 {new}"
-    o, n = old.split("."), new.split(".")
-    same = 0
-    while same < min(len(o), len(n)) and o[same] == n[same]:
-        same += 1
-    prefix = ".".join(n[:same]) + ("." if same else "")
-    return f"🆙 {prefix}~~{'.'.join(o[same:])}~~{'.'.join(n[same:])}"
+        return f"{shown} (new){note}"
+    o, n = old.split("-")[0].split("."), new.split("-")[0].split(".")
+    moved = next((i for i in range(3) if (o + ["0"] * 3)[i] != (n + ["0"] * 3)[i]), None)
+    kind = {0: "+MAJOR", 1: "+minor", 2: "+patch"}.get(moved, "+pre")
+    return f"{shown} ({kind}){note}"
 
 
-def crate_row(crate, m, was, versions, published):
+def crate_row(crate, m, was, versions, published, no_changelog=(), changelogs=None):
     was = was or {}
     tests = "—"
     if "tests" in m:
@@ -128,7 +136,8 @@ def crate_row(crate, m, was, versions, published):
     if "identical" in m:
         dupes = f"{'💔' if m['identical'] else '❤️'} {m['identical']}{change(m['identical'], was.get('identical'))}"
         overlaps = f"🔍 {m['near']}{change(m['near'], was.get('near'))}"
-    return f"| `{crate}` | {version_cell(crate, versions, published)} | {tests} | {covered} | {dupes} | {overlaps} |"
+    version = version_cell(crate, versions, published, no_changelog, changelogs)
+    return f"| `{crate}` | {version} | {tests} | {covered} | {dupes} | {overlaps} |"
 
 
 def findings_section(stats, crates):
@@ -147,19 +156,25 @@ def findings_section(stats, crates):
     return out
 
 
-def audit_section(audit_dir):
-    """Advisories in the PR's lockfile: the ones it introduces first, bold."""
+def audit_section(audit_dir, changed):
+    """Advisories reaching a changed crate (named after each), plus any the
+    PR's lockfile brings in wherever they land; the brought-in ones first."""
     report = read_json(os.path.join(audit_dir or "", "audit.json"), None)
     if not report:
         return []
     introduced = set(read_json(os.path.join(audit_dir, "introduced.json"), []))
+    affected = read_json(os.path.join(audit_dir, "affected.json"), {})
     rows = []
     for v in report.get("vulnerabilities", {}).get("list", []):
         adv, pkg = v["advisory"], v["package"]
+        reached = sorted(set(affected.get(adv["id"], [])) & set(changed))
+        if not reached and adv["id"] not in introduced:
+            continue
         fix = v.get("versions", {}).get("patched") or []
         mark = f"💊 upgrade to `{fix[0]}`" if fix else "☠️ no fixed version"
+        via = f" · in {', '.join(f'`{c}`' for c in reached)}" if reached else ""
         line = f"[{adv['id']}]({adv.get('url') or 'https://rustsec.org/advisories/' + adv['id']}) " \
-               f"`{pkg['name']} {pkg['version']}`: {adv['title']} · {mark}"
+               f"`{pkg['name']} {pkg['version']}`: {adv['title']} · {mark}{via}"
         rows.append((adv["id"] not in introduced, f"- {'**new** ' if adv['id'] in introduced else ''}{line}"))
     if not rows:
         return []
@@ -170,8 +185,9 @@ def audit_section(audit_dir):
         out += ["", f"**☠️ This PR's lockfile brings in {len(new)} advisor{'y' if len(new) == 1 else 'ies'}**", *new]
     if known:
         fixable = sum("💊" in r for r in known)
-        out += ["", f"<details><summary>💊 {len(known)} known advisories on main, {fixable} fixed by an upgrade"
-                "</summary>", "", *known, "", "</details>"]
+        out += ["", f"<details><summary>💊 {len(known)} known advisor{'y' if len(known) == 1 else 'ies'} "
+                f"in the changed crates' dependencies, {fixable} fixed by an upgrade</summary>",
+                "", *known, "", "</details>"]
     return out
 
 
@@ -201,15 +217,17 @@ def main():
 
     versions = json.loads(run.get("versions") or "{}")
     published = set(json.loads(run.get("published") or "[]"))
+    no_changelog = set(json.loads(run.get("no_changelog") or "[]"))
+    changelogs = json.loads(run.get("changelogs") or "{}")
     out = [MARKER] + headline(run, rows, jobs)
     shown = {c: m for c, m in rows.items() if m or c in published}
     if shown:
         out += ["", "| crate | version | tests | covered | dupes | overlaps |", "|---|---|--:|--:|--:|--:|"]
         for crate in sorted(shown):
             was = baseline.get(crate) if isinstance(baseline.get(crate), dict) else None
-            out.append(crate_row(crate, shown[crate], was, versions, published))
+            out.append(crate_row(crate, shown[crate], was, versions, published, no_changelog, changelogs))
     out += findings_section(a.stats, sorted(rows))
-    out += audit_section(a.audit)
+    out += audit_section(a.audit, rows)
     env = os.environ.get
     url = f"{env('GITHUB_SERVER_URL', '')}/{env('GITHUB_REPOSITORY', '')}/actions/runs/{env('GITHUB_RUN_ID', '')}"
     if run.get("gated") != "true":

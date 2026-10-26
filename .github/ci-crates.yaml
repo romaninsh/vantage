@@ -20,6 +20,7 @@ global:
 ci_self:
   - .github/**
   - script/ci-changes
+  - script/ci-audit
   - script/check-repo-layers
   - coverage/**.py
   - coverage/**.sh

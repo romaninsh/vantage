@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# RustSec advisories for the PR's lockfile, for the CI summary.
+#
+#   script/ci-audit <base sha> <out dir>
+#
+# Writes to <out dir>:
+#   audit.json       cargo audit --json on the workspace lockfile
+#   introduced.json  advisory ids the lockfile has and the base's doesn't
+#   affected.json    {advisory id: [workspace crates that depend on its package]}
+# Exits 1 when the PR's lockfile brings in an advisory.
+set -euo pipefail
+base=$1
+out=$2
+mkdir -p "$out"
+tmp=$(mktemp -d)
+
+cargo audit --json > "$out/audit.json" || true
+git show "$base:Cargo.lock" > "$tmp/Cargo.lock"
+cargo audit --json -f "$tmp/Cargo.lock" > "$tmp/audit.json" || true
+
+ids() { jq -r '.vulnerabilities.list[].advisory.id' "$1" | sort -u; }
+comm -23 <(ids "$out/audit.json") <(ids "$tmp/audit.json") \
+  | jq -R -s 'split("\n") | map(select(length > 0))' > "$out/introduced.json"
+
+# Which workspace crates reach each vulnerable package: the inverted tree's
+# lines with a local path are workspace (or path-dependency) crates.
+echo '{}' > "$out/affected.json"
+jq -r '.vulnerabilities.list[] | "\(.advisory.id) \(.package.name)@\(.package.version)"' "$out/audit.json" |
+  while read -r id pkg; do
+    # No match (a package only excluded crates use) is an empty list, not a failure.
+    crates=$( { cargo tree --workspace --all-features -e normal,build,dev -i "$pkg" --prefix none 2>/dev/null \
+      | grep -E ' \(/' || true; } | sed -E 's/ v[0-9].*//' | sort -u | jq -R -s 'split("\n") | map(select(length > 0))')
+    jq --arg id "$id" --argjson crates "$crates" '.[$id] = ((.[$id] // []) + $crates | unique)' \
+      "$out/affected.json" > "$tmp/affected.json"
+    mv "$tmp/affected.json" "$out/affected.json"
+  done
+
+if [ "$(jq length "$out/introduced.json")" != 0 ]; then
+  echo "::error::the lockfile change brings in advisories: $(jq -r 'join(", ")' "$out/introduced.json")"
+  exit 1
+fi
