@@ -6170,7 +6170,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "1.0.4"
+version = "1.0.3"
 dependencies = [
  "chrono",
  "ciborium",

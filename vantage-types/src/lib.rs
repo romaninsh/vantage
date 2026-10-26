@@ -1,7 +1,6 @@
 //! Typed values and records: `vantage_type_system!` generates a type system,
 //! `Record` carries a row of values, and `#[entity]` converts structs to and
 //! from records.
-//!
 
 pub use vantage_types_entity::entity;
 

@@ -1,9 +1,5 @@
 # Changelog
 
-## 1.0.4 — 2026-10-26
-
-- CI trial of the shared pipeline (reverted before merge).
-
 ## 1.0.3 — 2026-10-25
 
 - Tests of one behaviour are folded into one test each (epoch-pair rendering, `changes_from`,
