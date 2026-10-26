@@ -18,7 +18,10 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   book      the book changed
   ci_self   CI's own files changed: the ci-self job checks them
   versions  {crate: [old, new]} for changed crates whose version moved
-  published changed crates that go to crates.io (not `publish = false`),
+  touched   crates the PR changed files in (crates is wider under the label
+            or a global change)
+  touched_excluded  excluded crate dirs the PR changed files in
+  published touched crates that go to crates.io (not `publish = false`),
             excluded crates included
   unbumped  of those, the ones whose version didn't change (the PR fails)
   no_changelog bumped ones whose CHANGELOG.md has no `## <version>` (the PR fails)
@@ -163,6 +166,9 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
         owner = next((d for d in outside_dirs if f.startswith(d + "/")), None)
         if owner:
             changed_outside.add(owner)
+    # A version bump is owed only for files the PR changed in the crate itself,
+    # not for crates the label or a global file pulled in.
+    touched, touched_outside = sorted(changed), sorted(changed_outside)
     if everything:
         changed = set(crates)
     # Without the label an excluded crate runs only when it changed.
@@ -192,6 +198,8 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
             {"name": "-".join(need) or "plain", "crates": cs, "services": list(need)}
             for need, cs in sorted(groups.items())
         ],
+        "touched": touched,
+        "touched_excluded": touched_outside,
         "all": everything,
         "book": book,
         "ci_self": ci_self,
@@ -218,11 +226,13 @@ def main():
     # Excluded crates release too: check them by their own Cargo.toml.
     outside_names = {}
     for entry in out["excluded"]:
+        if entry["dir"] not in out["touched_excluded"]:
+            continue
         manifest = tomllib.loads(show(a.head, f"{entry['workdir']}/Cargo.toml") or "").get("package", {})
         if manifest.get("name") and manifest.get("publish", True) is not False:
             dirs.setdefault(manifest["name"], entry["workdir"])
             outside_names[manifest["name"]] = entry["workdir"]
-    checked = sorted((set(out["crates"]) & published) | set(outside_names))
+    checked = sorted((set(out["touched"]) & published) | set(outside_names))
     out["versions"] = versions(checked, dirs, base, a.head)
     out["published"] = checked
     out["unbumped"] = [c for c in checked if c not in out["versions"]]
