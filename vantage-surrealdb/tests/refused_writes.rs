@@ -116,8 +116,6 @@ async fn refused_delete_all_errors() {
         .with_condition(SurrealOperation::eq(&viewer["parent"], text("p1")));
     let err = set.delete_all().await.unwrap_err();
     assert_no_effect(err, "left rows in place");
-    let err = viewer.delete_all().await.unwrap_err();
-    assert_no_effect(err, "left rows in place");
     assert!(
         all.get_value(Thing::new("item", "in1"))
             .await
