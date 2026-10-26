@@ -71,116 +71,20 @@ async fn setup() -> SqliteDB {
     db
 }
 
-/// Gap 1 + Gap 2: traverse from a loaded parent and insert a child with no FK —
-/// the foreign key is filled from the set's definition.
+/// A set traversed from a parent carries `parent_id = <parent>` as an
+/// invariant: an absent FK is filled, a matching one kept, a conflicting one
+/// rejected on insert and on patch. The untyped ActiveRecord handle scopes the
+/// same way.
 #[tokio::test]
-async fn get_ref_insert_fills_foreign_key() {
+async fn scoped_set_enforces_its_foreign_key() {
     let db = setup().await;
     let parents = parent_table(db.clone());
+    let children_table = child_table(db.clone());
 
     let parent_id = parents
         .insert_return_id(&Parent {
             name: "Apollo".into(),
         })
-        .await
-        .unwrap();
-
-    let parent = parents
-        .get_entity(parent_id.clone())
-        .await
-        .unwrap()
-        .expect("parent loaded");
-
-    // Child entered without parent_id — the relation supplies it.
-    let child_id = parent
-        .get_ref::<Child>("children")
-        .unwrap()
-        .insert_return_id(&Child {
-            name: "Eagle".into(),
-            parent_id: None,
-        })
-        .await
-        .unwrap();
-
-    let child = child_table(db.clone())
-        .get(child_id)
-        .await
-        .unwrap()
-        .expect("child loaded");
-    assert_eq!(child.parent_id.as_deref(), Some(parent_id.as_str()));
-}
-
-/// A caller-supplied value that matches the set's invariant is kept (no error).
-#[tokio::test]
-async fn caller_matching_value_is_kept() {
-    let db = setup().await;
-    let parents = parent_table(db.clone());
-
-    let parent_id = parents
-        .insert_return_id(&Parent { name: "P".into() })
-        .await
-        .unwrap();
-    let parent = parents
-        .get_entity(parent_id.clone())
-        .await
-        .unwrap()
-        .expect("parent loaded");
-
-    let child_id = parent
-        .get_ref::<Child>("children")
-        .unwrap()
-        .insert_return_id(&Child {
-            name: "matches".into(),
-            parent_id: Some(parent_id.clone()), // same as the scope
-        })
-        .await
-        .unwrap();
-
-    let child = child_table(db.clone())
-        .get(child_id)
-        .await
-        .unwrap()
-        .expect("child loaded");
-    assert_eq!(child.parent_id.as_deref(), Some(parent_id.as_str()));
-}
-
-/// A caller-supplied value that conflicts with the set's invariant is rejected:
-/// the row does not belong to this set.
-#[tokio::test]
-async fn caller_conflict_errors() {
-    let db = setup().await;
-    let parents = parent_table(db.clone());
-
-    let parent_id = parents
-        .insert_return_id(&Parent { name: "P".into() })
-        .await
-        .unwrap();
-    let parent = parents
-        .get_entity(parent_id.clone())
-        .await
-        .unwrap()
-        .expect("parent loaded");
-
-    let result = parent
-        .get_ref::<Child>("children")
-        .unwrap()
-        .insert_return_id(&Child {
-            name: "wrong".into(),
-            parent_id: Some("someone-else".into()),
-        })
-        .await;
-
-    assert!(result.is_err(), "conflicting FK must be rejected");
-}
-
-/// Invariants are enforced on patch too: a conflicting foreign key is rejected.
-#[tokio::test]
-async fn patch_conflict_errors() {
-    let db = setup().await;
-    let parents = parent_table(db.clone());
-
-    let parent_id = parents
-        .insert_return_id(&Parent { name: "P".into() })
         .await
         .unwrap();
     let parent = parents
@@ -190,29 +94,56 @@ async fn patch_conflict_errors() {
         .expect("parent loaded");
     let children = parent.get_ref::<Child>("children").unwrap();
 
-    let child_id = children
+    let filled = children
         .insert_return_id(&Child {
-            name: "ok".into(),
+            name: "Eagle".into(),
             parent_id: None,
         })
         .await
         .unwrap();
+    let filled_child = children_table
+        .get(filled.clone())
+        .await
+        .unwrap()
+        .expect("filled");
+    assert_eq!(filled_child.parent_id.as_deref(), Some(parent_id.as_str()));
 
-    // Patching the same scoped set with a different parent_id is a conflict.
-    let result = children
-        .patch(
-            child_id,
-            &Child {
-                name: "moved".into(),
-                parent_id: Some("someone-else".into()),
-            },
-        )
-        .await;
+    let kept = children
+        .insert_return_id(&Child {
+            name: "matches".into(),
+            parent_id: Some(parent_id.clone()),
+        })
+        .await
+        .unwrap();
+    let kept_child = children_table.get(kept).await.unwrap().expect("kept");
+    assert_eq!(kept_child.parent_id.as_deref(), Some(parent_id.as_str()));
 
-    assert!(
-        result.is_err(),
-        "patch with conflicting FK must be rejected"
-    );
+    let conflicting = Child {
+        name: "wrong".into(),
+        parent_id: Some("someone-else".into()),
+    };
+    assert!(children.insert_return_id(&conflicting).await.is_err());
+    assert!(children.patch(filled, &conflicting).await.is_err());
+
+    let via_record = parents
+        .get_value_record(parent_id.clone())
+        .await
+        .unwrap()
+        .expect("parent record loaded")
+        .get_ref::<Child>("children")
+        .unwrap()
+        .insert_return_id(&Child {
+            name: "Titan".into(),
+            parent_id: None,
+        })
+        .await
+        .unwrap();
+    let record_child = children_table
+        .get(via_record)
+        .await
+        .unwrap()
+        .expect("via record");
+    assert_eq!(record_child.parent_id.as_deref(), Some(parent_id.as_str()));
 }
 
 /// `get_ref` returns a set scoped to the parent: only that parent's children.
@@ -230,20 +161,25 @@ async fn get_ref_returns_scoped_set() {
         .await
         .unwrap();
 
-    let parent_a = parents.get_entity(a.clone()).await.unwrap().unwrap();
-    for n in ["a1", "a2"] {
-        parent_a
-            .get_ref::<Child>("children")
-            .unwrap()
-            .insert_return_id(&Child {
-                name: n.into(),
-                parent_id: None,
-            })
-            .await
-            .unwrap();
-    }
-    let parent_b = parents.get_entity(b).await.unwrap().unwrap();
-    parent_b
+    let a_children = parents
+        .get_entity(a)
+        .await
+        .unwrap()
+        .unwrap()
+        .get_ref::<Child>("children")
+        .unwrap();
+    let a1 = a_children
+        .insert_return_id(&Child {
+            name: "a1".into(),
+            parent_id: None,
+        })
+        .await
+        .unwrap();
+    parents
+        .get_entity(b)
+        .await
+        .unwrap()
+        .unwrap()
         .get_ref::<Child>("children")
         .unwrap()
         .insert_return_id(&Child {
@@ -253,44 +189,7 @@ async fn get_ref_returns_scoped_set() {
         .await
         .unwrap();
 
-    let a_children = parent_a.get_ref::<Child>("children").unwrap();
-    assert_eq!(a_children.list().await.unwrap().len(), 2);
-}
-
-/// `get_ref` is available on the untyped `ActiveRecord` handle too: load the
-/// parent via `get_value_record` and traverse + insert a child with no FK.
-#[tokio::test]
-async fn get_ref_on_active_record_fills_foreign_key() {
-    let db = setup().await;
-    let parents = parent_table(db.clone());
-
-    let parent_id = parents
-        .insert_return_id(&Parent {
-            name: "Gemini".into(),
-        })
-        .await
-        .unwrap();
-
-    let parent_record = parents
-        .get_value_record(parent_id.clone())
-        .await
-        .unwrap()
-        .expect("parent record loaded");
-
-    let child_id = parent_record
-        .get_ref::<Child>("children")
-        .unwrap()
-        .insert_return_id(&Child {
-            name: "Titan".into(),
-            parent_id: None,
-        })
-        .await
-        .unwrap();
-
-    let child = child_table(db.clone())
-        .get(child_id)
-        .await
-        .unwrap()
-        .expect("child loaded");
-    assert_eq!(child.parent_id.as_deref(), Some(parent_id.as_str()));
+    let listed = a_children.list().await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(listed.contains_key(&a1));
 }

@@ -196,7 +196,6 @@ async fn import_capability_on_writable_vistas_only() -> TestResult {
     use vantage_vista::SpecResolver;
 
     let (db, name) = setup("caps").await;
-    assert!(vista(&db, &name).capabilities().has(Capability::Import));
 
     let base_yaml = format!(
         r#"

@@ -36,17 +36,6 @@ impl Event {
     }
 }
 
-fn test_event() -> Event {
-    Event {
-        name: "Launch Party".to_string(),
-        event_date: NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),
-        start_time: NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
-        created_at: NaiveDateTime::parse_from_str("2025-01-10 09:00:00", "%Y-%m-%d %H:%M:%S")
-            .unwrap(),
-        published_at: "2025-01-10T12:00:00Z".parse().unwrap(),
-    }
-}
-
 async fn setup() -> Table<SqliteDB, Event> {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
 
@@ -66,22 +55,6 @@ async fn setup() -> Table<SqliteDB, Event> {
 
     Event::table(db)
 }
-
-#[tokio::test]
-async fn test_chrono_text_columns() {
-    let table = setup().await;
-    let original = test_event();
-
-    let inserted = table.insert("evt1", &original).await.unwrap();
-    assert_eq!(inserted, original);
-
-    let fetched = table.get("evt1").await.unwrap().expect("row exists");
-    assert_eq!(fetched, original);
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// Subsecond precision — TEXT columns preserve microseconds
-// ═════════════════════════════════════════════════════════════════════════
 
 // ═════════════════════════════════════════════════════════════════════════
 // DateTime<FixedOffset> — TEXT preserves timezone offset

@@ -172,7 +172,8 @@ def audit_section(audit_dir, changed):
             continue
         fix = v.get("versions", {}).get("patched") or []
         mark = f"💊 upgrade to `{fix[0]}`" if fix else "☠️ no fixed version"
-        via = f" · in {', '.join(f'`{c}`' for c in reached)}" if reached else ""
+        named = ", ".join(f"`{c}`" for c in reached[:4]) + (f" +{len(reached) - 4} more" if len(reached) > 4 else "")
+        via = f" · in {named}" if reached else ""
         line = f"[{adv['id']}]({adv.get('url') or 'https://rustsec.org/advisories/' + adv['id']}) " \
                f"`{pkg['name']} {pkg['version']}`: {adv['title']} · {mark}{via}"
         rows.append((adv["id"] not in introduced, f"- {'**new** ' if adv['id'] in introduced else ''}{line}"))

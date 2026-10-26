@@ -128,6 +128,16 @@ user ruled they stay apart with exceptions rather than become one test.*
 
 ## Agreed in runs
 
+### A1. Sibling entry points: one call each, one test
+
+Sibling entry points over the same machinery (R10) that each add an output of their own can't
+share one call. They go in one test: one setup, then one plain line per entry point, each
+asserting its own distinct value. This is a second exception to R2's single call, next to R9.
+
+*Case: vantage-sql mysql `4_aggregates.rs`: `test_count`, `test_sum_price`, `test_max_price`,
+`test_min_price` became `test_aggregates`, with one `get_count` / `get_sum` / `get_max` /
+`get_min` line each (5, 973, 299, 120).*
+
 ### A2. One result per call: one call per case
 
 When the public API under test returns a single result per call, cases that need different

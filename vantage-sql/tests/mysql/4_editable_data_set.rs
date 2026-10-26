@@ -82,8 +82,7 @@ async fn test_replace() {
     table.replace("a", &item).await.unwrap();
 
     let fetched = table.get("a").await.unwrap().expect("row a");
-    assert_eq!(fetched.name, "Alpha Replaced");
-    assert_eq!(fetched.price, 99);
+    assert_eq!(fetched, item);
 }
 
 #[tokio::test]

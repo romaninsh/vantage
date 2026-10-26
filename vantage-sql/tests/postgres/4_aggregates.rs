@@ -39,33 +39,33 @@ impl Product {
 }
 
 #[tokio::test]
-async fn test_count() {
+async fn test_aggregates() {
     let db = get_db().await;
     let table = Product::postgres_table(db);
     assert_eq!(table.get_count().await.unwrap(), 5);
-}
-
-#[tokio::test]
-async fn test_max_price() {
-    let db = get_db().await;
-    let table = Product::postgres_table(db);
-    let max = table.get_max(&table["price"]).await.unwrap();
-    assert_eq!(max.try_get::<i64>().unwrap(), 299);
-}
-
-#[tokio::test]
-async fn test_min_price() {
-    let db = get_db().await;
-    let table = Product::postgres_table(db);
-    let min = table.get_min(&table["price"]).await.unwrap();
-    assert_eq!(min.try_get::<i64>().unwrap(), 120);
-}
-
-#[tokio::test]
-async fn test_sum_price() {
-    let db = get_db().await;
-    let table = Product::postgres_table(db);
-    let sum = table.get_sum(&table["price"]).await.unwrap();
     // 120 + 135 + 220 + 299 + 199 = 973
-    assert_eq!(sum.try_get::<i64>().unwrap(), 973);
+    assert_eq!(
+        table
+            .get_sum(&table["price"])
+            .await
+            .unwrap()
+            .try_get::<i64>(),
+        Some(973)
+    );
+    assert_eq!(
+        table
+            .get_max(&table["price"])
+            .await
+            .unwrap()
+            .try_get::<i64>(),
+        Some(299)
+    );
+    assert_eq!(
+        table
+            .get_min(&table["price"])
+            .await
+            .unwrap()
+            .try_get::<i64>(),
+        Some(120)
+    );
 }
