@@ -6,8 +6,10 @@ description: Toolchain, the job's Rust cache, and test tools.
 # every branch with the action's defaults. A repo on WarpBuild runners uses
 # WarpBuild's cache instead (backend: warpbuild): one key per profile, runner
 # and ISO week, saved when that key is new. It holds cargo's registry and git
-# checkouts only: vantage-ui's target/ came to 62 GB of linked test binaries,
-# which took 5m45s to restore and saved 1m30s of compile.
+# checkouts, plus target/ when `target: true` — a job that sets it runs
+# script/ci-prune-target last, so only third-party crates are saved:
+# vantage-ui's whole target/ was 62 GB of linked test binaries, 5m45s to
+# restore for 1m30s of compile.
 inputs:
   profile:
     description: "normal | instrumented | nightly"
@@ -32,6 +34,9 @@ inputs:
     default: rust-cache
   lookup:
     description: Only check whether the cache key exists (warpbuild); sets the cache-hit output
+    default: "false"
+  target:
+    description: Also cache target/ (warpbuild); the job prunes it with script/ci-prune-target before the save
     default: "false"
 outputs:
   cache-hit:
@@ -80,6 +85,7 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
+          ${{ inputs.target == 'true' && 'target' || '' }}
         key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
@@ -92,6 +98,7 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
+          ${{ inputs.target == 'true' && 'target' || '' }}
         key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
         lookup-only: true
 

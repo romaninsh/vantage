@@ -132,6 +132,8 @@ jobs:
         with:
           profile: instrumented
           backend: warpbuild
+          # The same paths as the build's cache, or the lookup misses it.
+          target: "true"
           lookup: "true"
       - id: c
         env:

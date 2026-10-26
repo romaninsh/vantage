@@ -64,6 +64,7 @@ jobs:
           ssh-keys: ${{ secrets.CI_SSH_KEYS }}
           profile: instrumented
           tools: cargo-llvm-cov,cargo-nextest
+          cache-target: "true"
       - name: nextest config
         run: |
           # The repo's own, when it tracks one; vantage's example otherwise. Either
@@ -118,6 +119,10 @@ jobs:
       - if: hashFiles('ci-6.tar.zst') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: ci-tests-6, path: ci-6.tar.zst, retention-days: 1, compression-level: 0 }
+      # WarpBuild saves target/ after the last step: only third-party crates.
+      - name: Third-party crates only, for the cache
+        if: always() && fromJSON(fromJSON(inputs.run).cache) == 'warpbuild'
+        run: bash .ci/script/ci-prune-target target/llvm-cov-target/debug
 
   # The coverage matrix's per-test runner: its own workspace and cache, built
   # alongside the archive instead of after it.
@@ -180,6 +185,7 @@ jobs:
           tools: cargo-llvm-cov,cargo-nextest
           # Only a job that builds needs the build cache.
           cache: ${{ fromJSON(inputs.run).one_job == 'true' && 'true' || 'false' }}
+          cache-target: ${{ fromJSON(inputs.run).one_job == 'true' && 'true' || 'false' }}
       - if: fromJSON(inputs.run).one_job != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -294,6 +300,11 @@ jobs:
           path: stats
           if-no-files-found: ignore
           retention-days: 1
+      # one_job built here: WarpBuild saves target/ after the last step, only
+      # third-party crates.
+      - name: Third-party crates only, for the cache
+        if: always() && fromJSON(inputs.run).one_job == 'true' && fromJSON(fromJSON(inputs.run).cache) == 'warpbuild'
+        run: bash .ci/script/ci-prune-target target/llvm-cov-target/debug
 
   # baseline mode: main's per-crate numbers (coverage, tests, dupes, overlaps),
   # the previous baseline with this merge's crates replaced. On PRs, the

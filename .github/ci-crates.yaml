@@ -38,6 +38,7 @@ ci_self:
   - script/ci-changes
   - script/ci-audit
   - script/ci-cache-report
+  - script/ci-prune-target
   - script/check-repo-layers
   - coverage/**.py
   - coverage/**.sh

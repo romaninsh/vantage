@@ -22,6 +22,9 @@ inputs:
     default: ""
   cache:
     default: "true"
+  cache-target:
+    description: Also cache target/ (WarpBuild); the job must run script/ci-prune-target last
+    default: "false"
 
 runs:
   using: composite
@@ -45,6 +48,7 @@ runs:
         tools: ${{ inputs.tools }}
         key: ${{ inputs.key }}
         cache: ${{ inputs.cache }}
+        target: ${{ inputs.cache-target }}
         backend: ${{ fromJSON(fromJSON(inputs.run).cache || '"rust-cache"') }}
     # CI_CACHE_REPORT=1 (the repo's env): what the restored cache holds.
     - name: What the cache restored
