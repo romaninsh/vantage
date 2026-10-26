@@ -56,17 +56,27 @@ eval "$(cargo llvm-cov show-env --export-prefix)"
 export CARGO_TARGET_DIR="${MATRIX_TARGET_DIR:-$root/target/llvm-cov-target}"
 
 echo "building and listing $pkg tests (log: $log)"
-# diorama's `bdd` is cucumber (harness = false) and can't be listed.
-skip="binary(bdd)${MATRIX_SKIP:+ or ($MATRIX_SKIP)}"
+# diorama's `bdd` is cucumber (harness = false) and can't be listed. nextest
+# rejects binary(bdd) in a workspace with no such binary (vantage-ui).
+skip=()
+if cargo metadata --no-deps --format-version 1 | jq -e '[.packages[].targets[].name] | index("bdd")' > /dev/null; then
+  skip+=("binary(bdd)")
+fi
+[[ -n "${MATRIX_SKIP:-}" ]] && skip+=("($MATRIX_SKIP)")
+filter="all()"
+if (( ${#skip[@]} )); then
+  joined=$(printf ' or %s' "${skip[@]}")
+  filter="not (${joined# or })"
+fi
 if [[ -n "${MATRIX_ARCHIVE:-}" ]]; then
   # The binaries must outlive the listing: matrix-rs runs them one test at a time.
   # nextest won't create the directory it extracts into.
   mkdir -p "$CARGO_TARGET_DIR/archive-$pkg"
   list=(cargo nextest list --archive-file "$MATRIX_ARCHIVE" --workspace-remap "$root"
     --extract-to "$CARGO_TARGET_DIR/archive-$pkg" --extract-overwrite
-    -E "package($pkg) and not ($skip)")
+    -E "package($pkg) and $filter")
 else
-  list=(cargo nextest list -p "$pkg" --all-features -E "not ($skip)")
+  list=(cargo nextest list -p "$pkg" --all-features -E "$filter")
 fi
 if ! "${list[@]}" --message-format json > "$out/list.json" 2> "$log"; then
   echo "build failed, see $log" >&2

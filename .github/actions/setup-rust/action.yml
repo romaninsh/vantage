@@ -73,7 +73,8 @@ runs:
         cache-all-crates: true
 
     # The week rotates the key: a restore-key hit saves restored plus new
-    # downloads, so without it the registry cache only grows.
+    # downloads, so without it the cache only grows. `deps-` and `cargo-` keep
+    # the two kinds apart: WarpBuild matched a key across path lists.
     - if: inputs.backend == 'warpbuild'
       id: week
       shell: bash
@@ -86,9 +87,9 @@ runs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
           ${{ inputs.target == 'true' && 'target' || '' }}
-        key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ inputs.target == 'true' && 'deps' || 'cargo' }}-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
+          ${{ inputs.target == 'true' && 'deps' || 'cargo' }}-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
     - if: inputs.lookup == 'true'
       id: lookup
       uses: WarpBuilds/cache/restore@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
@@ -99,7 +100,7 @@ runs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
           ${{ inputs.target == 'true' && 'target' || '' }}
-        key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ inputs.target == 'true' && 'deps' || 'cargo' }}-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
         lookup-only: true
 
     - if: inputs.tools != '' && inputs.lookup != 'true'
