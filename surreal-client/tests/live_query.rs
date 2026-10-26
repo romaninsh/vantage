@@ -44,9 +44,11 @@ async fn live_stream_reports_create_update_delete() {
     )
     .await
     .expect("create");
-
     let n = next(&mut stream).await;
     assert_eq!(n.action, Action::Create, "first frame should be a CREATE");
+    let row = cbor_to_json(&n.data);
+    assert_eq!(row["name"], json!("Negroni"));
+    assert_eq!(row["stock"], json!(5));
 
     // UPDATE — the same record changes.
     db.query("UPDATE bar_item:negroni SET stock = 4", None)
@@ -61,66 +63,21 @@ async fn live_stream_reports_create_update_delete() {
         .expect("delete");
     let n = next(&mut stream).await;
     assert_eq!(n.action, Action::Delete, "third frame should be a DELETE");
-
-    // KILL — release the server-side query.
-    let qid = stream.query_id().to_string();
-    db.kill(&qid).await.expect("kill");
-}
-
-#[tokio::test]
-async fn live_notification_carries_the_record() {
-    let db = client("live_payload").await;
-    db.query("DEFINE TABLE widget SCHEMALESS; DELETE widget", None)
-        .await
-        .expect("define + clear");
-
-    let mut stream = db.live("widget").await.expect("live");
-    db.query("CREATE widget:one SET label = 'hello', qty = 7", None)
-        .await
-        .expect("create");
-
-    let n = next(&mut stream).await;
-    assert_eq!(n.action, Action::Create);
-    // The frame must carry the row, not just the id — decode via CBOR→JSON.
-    let json = cbor_to_json(&n.data);
-    assert_eq!(json.get("label").and_then(|v| v.as_str()), Some("hello"));
-    assert_eq!(json.get("qty").and_then(|v| v.as_i64()), Some(7));
-
-    let qid = stream.query_id().to_string();
-    db.kill(&qid).await.expect("kill");
-}
-
-#[tokio::test]
-async fn delete_notification_carries_the_record_id() {
-    let db = client("live_delete").await;
-    db.query("DEFINE TABLE gadget SCHEMALESS; DELETE gadget", None)
-        .await
-        .expect("define + clear");
-    db.query("CREATE gadget:one SET label = 'x'", None)
-        .await
-        .expect("create");
-
-    let mut stream = db.live("gadget").await.expect("live");
-    db.query("DELETE gadget:one", None).await.expect("delete");
-
-    let n = tokio::time::timeout(std::time::Duration::from_secs(5), stream.recv())
-        .await
-        .expect("timed out waiting for a live notification")
-        .expect("live stream closed unexpectedly");
-    assert_eq!(n.action, Action::Delete);
     assert_eq!(n.query_id, stream.query_id());
     assert_eq!(
         n.record_id,
         ciborium::Value::Tag(
             8,
             Box::new(ciborium::Value::Array(vec![
-                ciborium::Value::Text("gadget".into()),
-                ciborium::Value::Text("one".into()),
+                ciborium::Value::Text("bar_item".into()),
+                ciborium::Value::Text("negroni".into()),
             ]))
         )
     );
 
-    stream.close().await.expect("close");
+    // KILL — release the server-side query.
+    let qid = stream.query_id().to_string();
+    db.kill(&qid).await.expect("kill");
 }
 
 #[tokio::test]
