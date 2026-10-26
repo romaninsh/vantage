@@ -201,34 +201,22 @@ async fn test_patch() {
 }
 
 #[tokio::test]
-async fn test_delete() {
+async fn test_delete_and_delete_all() {
     let (db, db_name) = setup().await;
+    db.doc_collection("product")
+        .insert_many(vec![
+            doc! { "_id": "a", "name": "A" },
+            doc! { "_id": "b", "name": "B" },
+            doc! { "_id": "c", "name": "C" },
+        ])
+        .await
+        .unwrap();
     let table = product_table(db.clone());
 
-    let id = MongoId::from(bson::oid::ObjectId::new());
-    let rec = record(&[("name", AnyMongoType::new("Gone".to_string()))]);
-    table.insert_value(id.clone(), &rec).await.unwrap();
-    assert_eq!(table.get_count().await.unwrap(), 1);
-
-    WritableValueSet::delete(&table, id.clone()).await.unwrap();
-    assert_eq!(table.get_count().await.unwrap(), 0);
-
-    teardown(&db, &db_name).await;
-}
-
-#[tokio::test]
-async fn test_delete_all() {
-    let (db, db_name) = setup().await;
-    let table = product_table(db.clone());
-
-    for i in 0..4 {
-        let rec = record(&[("name", AnyMongoType::new(format!("X{}", i)))]);
-        table
-            .insert_value(MongoId::from(bson::oid::ObjectId::new()), &rec)
-            .await
-            .unwrap();
-    }
-    assert_eq!(table.get_count().await.unwrap(), 4);
+    WritableValueSet::delete(&table, MongoId::from("a"))
+        .await
+        .unwrap();
+    assert_eq!(sorted_ids(&table).await, ["b", "c"]);
 
     WritableValueSet::delete_all(&table).await.unwrap();
     assert_eq!(table.get_count().await.unwrap(), 0);
@@ -660,48 +648,23 @@ fn people_table(db: &MongoDB) -> Table<MongoDB, EmptyEntity> {
 }
 
 #[tokio::test]
-async fn search_is_a_literal_case_insensitive_substring_match() {
+async fn search_is_a_literal_case_insensitive_substring_of_each_column_at_its_stored_path() {
     let (db, db_name) = setup().await;
     db.doc_collection("people")
         .insert_many(vec![
             doc! { "_id": "1", "name": "a.b" },
             doc! { "_id": "2", "name": "axb" },
             doc! { "_id": "3", "name": "Quick (fox)" },
-        ])
-        .await
-        .unwrap();
-
-    let people = people_table(&db);
-    assert_eq!(sorted_ids(&people.clone().with_search("a.b")).await, ["1"]);
-    assert_eq!(sorted_ids(&people.clone().with_search("A.B")).await, ["1"]);
-    assert_eq!(sorted_ids(&people.clone().with_search("(fox")).await, ["3"]);
-    assert_eq!(
-        sorted_ids(&people.clone().with_search("nobody")).await,
-        Vec::<String>::new()
-    );
-
-    teardown(&db, &db_name).await;
-}
-
-#[tokio::test]
-async fn search_reads_each_column_at_its_stored_path() {
-    let (db, db_name) = setup().await;
-    db.doc_collection("people")
-        .insert_many(vec![
-            doc! { "_id": "1", "name": "zed", "address": { "city": "Hill Valley" } },
-            doc! { "_id": "2", "name": "amy", "address": { "city": "Springfield" } },
+            doc! { "_id": "4", "name": "zed", "address": { "city": "Hill Valley" } },
         ])
         .await
         .unwrap();
     let people = people_table(&db)
         .with_column(Column::<AnyMongoType>::new("city").with_alias("address.city"));
 
-    assert_eq!(sorted_ids(&people.clone().with_search("hill")).await, ["1"]);
-    assert_eq!(sorted_ids(&people.clone().with_search("amy")).await, ["2"]);
-    assert_eq!(
-        sorted_ids(&people.clone().with_search("zzz")).await,
-        Vec::<String>::new()
-    );
+    assert_eq!(sorted_ids(&people.clone().with_search("A.B")).await, ["1"]);
+    assert_eq!(sorted_ids(&people.clone().with_search("(fox")).await, ["3"]);
+    assert_eq!(sorted_ids(&people.clone().with_search("hill")).await, ["4"]);
 
     teardown(&db, &db_name).await;
 }
