@@ -72,7 +72,6 @@ jobs:
         env:
           TESTED: ${{ fromJSON(inputs.run).tested }}
           GROUP_LIST: ${{ fromJSON(inputs.run).groups }}
-          EXCLUDE: ${{ fromJSON(fromJSON(inputs.run).archive_exclude || '""') }}
         run: |
           mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$TESTED")
           # The first call compiles, the rest only pack: --timings goes on the first.
@@ -83,7 +82,6 @@ jobs:
           for group in $(jq -c '.[]' <<<"$GROUP_LIST"); do
             slot=$(jq -r .slot <<<"$group")
             filter=$(jq -r '.crates | map("package(" + . + ")") | join(" or ")' <<<"$group")
-            [ -n "$EXCLUDE" ] && filter="($filter) and not ($EXCLUDE)"
             # --no-clean: llvm-cov otherwise wipes the workspace crates before
             # every call, rebuilding them once per group.
             "${time[@]}" cargo llvm-cov nextest-archive --no-clean $timings --all-features "${pkgs[@]}" -E "$filter" \
@@ -190,12 +188,16 @@ jobs:
           ARCHIVE: ci-${{ matrix.group.slot }}.tar.zst
           # The ci profile also writes JUnit for the report.
           NEXTEST_PROFILE: ci
+          # Tests the repo runs elsewhere (an archive can only leave out whole binaries).
+          EXCLUDE: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
         run: |
           git ls-files --error-unmatch .config/nextest.toml > /dev/null 2>&1 \
             || { mkdir -p .config && cp .ci/.config/nextest.toml.example .config/nextest.toml; }
           # A fresh runner has no target dir to extract into.
           mkdir -p target/llvm-cov-target
-          cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast
+          filter=()
+          [ -n "$EXCLUDE" ] && filter=(-E "not ($EXCLUDE)")
+          cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast "${filter[@]}"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -224,6 +226,7 @@ jobs:
         env:
           ARCHIVE: ci-${{ matrix.group.slot }}.tar.zst
           CRATES: ${{ toJSON(matrix.group.crates) }}
+          MATRIX_SKIP: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
         run: |
           chmod +x matrix-rs
           mkdir -p stats

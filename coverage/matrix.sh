@@ -24,6 +24,7 @@
 #                             `cargo llvm-cov nextest-archive`) instead of building
 #   MATRIX_RS=<file>          a prebuilt coverage/matrix-rs
 #   MATRIX_REPORTS=0          write regions.json only (CI), no reports
+#   MATRIX_SKIP=<filter>      a nextest filter of tests to leave out (run elsewhere)
 #   JOBS=<n>                  tests run at once (default: every core)
 set -euo pipefail
 
@@ -56,15 +57,16 @@ export CARGO_TARGET_DIR="${MATRIX_TARGET_DIR:-$root/target/llvm-cov-target}"
 
 echo "building and listing $pkg tests (log: $log)"
 # diorama's `bdd` is cucumber (harness = false) and can't be listed.
+skip="binary(bdd)${MATRIX_SKIP:+ or ($MATRIX_SKIP)}"
 if [[ -n "${MATRIX_ARCHIVE:-}" ]]; then
   # The binaries must outlive the listing: matrix-rs runs them one test at a time.
   # nextest won't create the directory it extracts into.
   mkdir -p "$CARGO_TARGET_DIR/archive-$pkg"
   list=(cargo nextest list --archive-file "$MATRIX_ARCHIVE" --workspace-remap "$root"
     --extract-to "$CARGO_TARGET_DIR/archive-$pkg" --extract-overwrite
-    -E "package($pkg) and not binary(bdd)")
+    -E "package($pkg) and not ($skip)")
 else
-  list=(cargo nextest list -p "$pkg" --all-features -E 'not binary(bdd)')
+  list=(cargo nextest list -p "$pkg" --all-features -E "not ($skip)")
 fi
 if ! "${list[@]}" --message-format json > "$out/list.json" 2> "$log"; then
   echo "build failed, see $log" >&2

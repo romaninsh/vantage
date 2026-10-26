@@ -9,7 +9,7 @@
 #   warm: full-on-miss                     post-merge builds everything when main's cache key is new
 #   internal_tests: allow                  PRs may add tests under src/ (vantage forbids them)
 #   flags: {name: [crates]}                outputs flags.name: one of them is tested (gates own jobs)
-#   archive_exclude: <nextest filter>      tests kept out of the archive (run them elsewhere)
+#   suite_exclude: <nextest filter>        tests the suites and the matrix don't run (run them elsewhere)
 #   skill_url: <url>                       the cleanup skill the summary links to
 #   versioning: {mode: app, crate, changelog, heading, plist, skip_label}
 #                                          one app version instead of per-crate versions
