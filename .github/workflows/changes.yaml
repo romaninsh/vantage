@@ -56,6 +56,7 @@ on:
       one_job: { value: "${{ jobs.changes.outputs.one_job }}" }
       skill_url: { value: "${{ jobs.changes.outputs.skill_url }}" }
       flags: { value: "${{ jobs.changes.outputs.flags }}" }
+      labels: { value: "${{ jobs.changes.outputs.labels }}" }
       versioning_mode: { value: "${{ jobs.changes.outputs.versioning_mode }}" }
       app: { value: "${{ jobs.changes.outputs.app }}" }
 
@@ -102,6 +103,7 @@ jobs:
       one_job: ${{ steps.c.outputs.one_job }}
       skill_url: ${{ steps.c.outputs.skill_url }}
       flags: ${{ steps.c.outputs.flags }}
+      labels: ${{ steps.c.outputs.labels }}
       versioning_mode: ${{ steps.c.outputs.versioning_mode }}
       app: ${{ steps.c.outputs.app }}
     steps:

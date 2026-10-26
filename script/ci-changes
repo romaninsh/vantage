@@ -43,6 +43,7 @@ The repo's own settings, from .github/ci-crates.yaml (defaults suit vantage):
   skill_url the duplicate-test cleanup skill the summary links to
   flags     {name: bool}: config `flags: {name: [crates]}`, true when one of
             them is tested (gates a repo's own jobs)
+  labels    the PR's labels (gate a repo's own jobs on one)
   versioning_mode  crates | app | none (crates)
   app       app mode: {crate, old, new, owed, heading, changelog, plist,
             plist_ok, skip_label, skipped}; owed means the PR changed a crate, the root
@@ -354,6 +355,8 @@ def main():
     out["skill_url"] = config.get("skill_url", SKILL_URL)
     # A repo's own jobs gate on these: each flag is true when one of its crates is tested.
     out["flags"] = {name: bool(set(crates) & set(out["crates"])) for name, crates in (config.get("flags") or {}).items()}
+    # The PR's labels as read at the start of the run: a repo's own jobs gate on them.
+    out["labels"] = sorted(labels)
     out["versioning_mode"] = mode
     out["app"] = {}
     if mode == "app":
