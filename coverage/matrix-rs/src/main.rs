@@ -285,5 +285,90 @@ fn main() -> Result<()> {
             "tests": tests.len(), "internal": internal, "failed": failed, "covered": covered_json,
         }))?,
     )?;
+
+    let excluded: Vec<String> = std::env::var("MATRIX_EXCLUDE")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|g| !g.is_empty())
+        .map(str::to_string)
+        .collect();
+    let blackbox: Vec<&BTreeSet<Region>> = tests
+        .iter()
+        .zip(&sets)
+        .filter(|(t, _)| internal.binary_search(&t.key).is_err())
+        .filter_map(|(_, set)| set.as_ref())
+        .collect();
+    let summary = pairs(&blackbox, &excluded);
+    fs::write(out.join("pairs.json"), serde_json::to_vec(&summary)?)?;
     Ok(())
+}
+
+/// A region path under an excluded glob: `dir/**` covers everything under
+/// `dir/`, anything else must match exactly (the forms coverage/config.yaml uses).
+fn is_excluded(path: &str, globs: &[String]) -> bool {
+    globs.iter().any(|g| match g.strip_suffix("/**") {
+        Some(dir) => path.starts_with(&format!("{dir}/")),
+        None => path == g,
+    })
+}
+
+/// Duplicate measures for the CI report, over blackbox tests with at least
+/// FLOOR regions: `identical` counts tests with an exact twin (a group of k
+/// counts k - 1, the ones that could go), `near` counts distinct pairs that
+/// share at least NEAR of their regions without being identical.
+fn pairs(sets: &[&BTreeSet<Region>], excluded: &[String]) -> Value {
+    const FLOOR: usize = 20;
+    const NEAR: f64 = 0.98;
+    let mut ids: HashMap<&Region, u32> = HashMap::new();
+    let mut tests: Vec<Vec<u32>> = sets
+        .iter()
+        .map(|set| {
+            let mut v: Vec<u32> = set
+                .iter()
+                .filter(|r| !is_excluded(&r.0, excluded))
+                .map(|r| {
+                    let next = ids.len() as u32;
+                    *ids.entry(r).or_insert(next)
+                })
+                .collect();
+            v.sort_unstable();
+            v
+        })
+        .filter(|v| v.len() >= FLOOR)
+        .collect();
+    tests.sort();
+    let mut identical = 0;
+    for group in tests.chunk_by(|a, b| a == b) {
+        identical += group.len() - 1;
+    }
+    tests.dedup();
+    let shared = |a: &[u32], b: &[u32]| {
+        let (mut i, mut j, mut n) = (0, 0, 0);
+        while i < a.len() && j < b.len() {
+            match a[i].cmp(&b[j]) {
+                std::cmp::Ordering::Less => i += 1,
+                std::cmp::Ordering::Greater => j += 1,
+                std::cmp::Ordering::Equal => (n, i, j) = (n + 1, i + 1, j + 1),
+            }
+        }
+        n
+    };
+    let near: usize = (0..tests.len())
+        .into_par_iter()
+        .map(|i| {
+            (i + 1..tests.len())
+                .filter(|&j| {
+                    let (a, b) = (&tests[i], &tests[j]);
+                    let (small, big) = (a.len().min(b.len()), a.len().max(b.len()));
+                    // Jaccard can't reach NEAR when the sizes differ this much.
+                    if (small as f64) < NEAR * big as f64 {
+                        return false;
+                    }
+                    let n = shared(a, b);
+                    n as f64 / (a.len() + b.len() - n) as f64 >= NEAR
+                })
+                .count()
+        })
+        .sum();
+    json!({"tests": sets.len(), "identical": identical, "near": near})
 }

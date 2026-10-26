@@ -233,6 +233,10 @@ def main(argv):
         found = violations(ns, changed_tests(ns, crate_rel, changed_lines(base, [crate_rel])))
         if found:
             report([describe(package, v) for v in found])
+        # The same findings as data, for the CI report.
+        import json
+        with open(os.path.join(HERE, "report", package, "findings.json"), "w") as f:
+            json.dump([v._asdict() for v in found], f)
         blocking = [v for v in found if v.kind != "near"]
         if not blocking:
             print(f"{package}: no new test duplicates another")

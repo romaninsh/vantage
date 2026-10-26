@@ -16,6 +16,9 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   groups    crates split by the databases they need: [{name, crates, services}]
   all       every crate counts as changed
   book      the book changed
+  ci_self   CI's own files changed: the ci-self job checks them
+  versions  {crate: [old, new]} for changed crates whose version moved
+  published changed crates that go to crates.io (not `publish = false`)
   gated     the ALL_TESTS label is set
 
 A file belongs to the crate whose directory holds it, longest prefix first,
@@ -40,6 +43,20 @@ LABEL = "ALL_TESTS"
 
 def run(*cmd):
     return subprocess.run(cmd, cwd=ROOT, check=True, capture_output=True, text=True).stdout
+
+
+def versions(names, dirs, base, head):
+    """{crate: [old, new]} for changed crates whose version moved; old is
+    null for a crate that didn't exist at base."""
+    def version(rev, name):
+        text = show(rev, f"{dirs[name]}/Cargo.toml")
+        return tomllib.loads(text).get("package", {}).get("version") if text else None
+    out = {}
+    for name in names:
+        old, new = version(base, name), version(head, name)
+        if old != new:
+            out[name] = [old, new]
+    return out
 
 
 def show(rev, path):
@@ -73,7 +90,9 @@ def members():
         if any(("lib" in t["kind"] or "proc-macro" in t["kind"]) and t.get("doctest", True) for t in p["targets"])
     }
     tested = {name for name, d in dirs.items() if has_tests(d)}
-    return dirs, libs, tested
+    # `publish = false` shows as an empty list; null means crates.io.
+    published = {p["name"] for p in packages if p.get("publish") != []}
+    return dirs, libs, tested, published
 
 
 def excluded(config):
@@ -106,17 +125,16 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
     outside_dirs = sorted(outside, key=len, reverse=True)
     changed, changed_outside, tests_changed = set(), set(), set()
     everything = LABEL in labels
-    book = False
+    book = ci_self = False
     for f in files:
         if f == "Cargo.lock":
             # Excluded crates show up as path dependencies: ours, not external.
             ours = set(crates) | {os.path.basename(d) for d in outside}
             everything |= lock_is_global(*locks, ours)
             continue
-        if matches(f, config.get("not_global", [])):
-            pass
-        elif matches(f, config.get("global", [])):
+        if matches(f, config.get("global", [])):
             everything = True
+        ci_self |= matches(f, config.get("ci_self", []))
         book |= matches(f, config.get("book", []))
         owner = next((n for d, n in by_dir if f.startswith(d + "/")), None)
         if owner:
@@ -160,6 +178,7 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
         ],
         "all": everything,
         "book": book,
+        "ci_self": ci_self,
         "gated": LABEL in labels,
     }
 
@@ -175,11 +194,13 @@ def main():
     files = run("git", "diff", "--name-only", span).split()
     base = run("git", "merge-base", a.base, a.head).strip()
     locks = [show(base, "Cargo.lock"), show(a.head, "Cargo.lock")] if "Cargo.lock" in files else ["", ""]
-    dirs, libs, tested = members()
+    dirs, libs, tested, published = members()
     # Files the diff adds lines to ("-" marks a binary file; count it).
     adds = {p for n, _, p in (row.split("\t", 2) for row in run("git", "diff", "--numstat", span).splitlines())
             if n != "0"}
     out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels), adds)
+    out["versions"] = versions(out["crates"], dirs, base, a.head)
+    out["published"] = sorted(set(out["crates"]) & published)
     lines = [f"{k}={json.dumps(v, separators=(',', ':'))}" for k, v in out.items()]
     print("\n".join(lines))
     if os.environ.get("GITHUB_OUTPUT"):

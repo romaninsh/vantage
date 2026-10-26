@@ -8,22 +8,22 @@ services:
   bakery_model3: [surreal]
   vantage-mongodb: [mongo]
 
-# A change to any of these means every crate changed.
+# A change to any of these means every crate changed: they change how every
+# crate builds or tests.
 global:
   - Cargo.toml
   - rust-toolchain*
-  - .github/**
   - .config/**
-  - coverage/**
-  # The scripts CI itself runs: a PR touching only these still runs everything.
+
+# The CI's own files. A change here runs the ci-self job (actionlint, and
+# script/ci-changes replayed on past merges), not every crate's tests.
+ci_self:
+  - .github/**
   - script/ci-changes
   - script/check-repo-layers
-
-# ...except these, which only feed the duplicate-test check.
-not_global:
-  - coverage/exceptions/**
-  - coverage/config.yaml
-  - coverage/INSTRUCTIONS.md
+  - coverage/**.py
+  - coverage/**.sh
+  - coverage/matrix-rs/**
 
 # Crates whose types appear in the api/*.txt public-API snapshots.
 api_inputs:
