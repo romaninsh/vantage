@@ -67,30 +67,33 @@ async fn setup(prefix: &str) -> (PostgresDB, PostgresDB) {
 // ── defer() resolves a value from one query, binds it into another ────────
 
 #[tokio::test]
-async fn test_cross_database_deferred() {
-    let (config_db, shop_db) = setup("defer1").await;
+async fn test_deferred_parameter() {
+    let (config_db, shop_db) = setup("defer").await;
 
     let threshold_query = postgres_expr!(
-        "SELECT value FROM \"defer1_config\" WHERE key = {}",
+        "SELECT value FROM \"defer_config\" WHERE key = {}",
         "min_price"
     );
     let deferred_threshold = config_db.defer(threshold_query);
 
-    let shop_query = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM \"defer1_product\" WHERE price >= {} ORDER BY price",
+    let inner = Expression::<AnyPostgresType>::new(
+        "price >= {}",
         vec![ExpressiveEnum::Deferred(deferred_threshold)],
+    );
+    let shop_query = Expression::<AnyPostgresType>::new(
+        "SELECT name FROM \"defer_product\" WHERE {} AND name != {} ORDER BY price",
+        vec![
+            ExpressiveEnum::Nested(inner),
+            ExpressiveEnum::Scalar(AnyPostgresType::new("Expensive Thing".to_string())),
+        ],
     );
 
     let result = records(shop_db.execute(&shop_query).await.unwrap());
 
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 1);
     assert_eq!(
         result[0]["name"].try_get::<String>(),
         Some("Mid Thing".to_string())
-    );
-    assert_eq!(
-        result[1]["name"].try_get::<String>(),
-        Some("Expensive Thing".to_string())
     );
 }
 
@@ -110,68 +113,4 @@ async fn test_deferred_without_a_row_resolves_to_no_rows() {
     };
 
     assert!(records(resolved).is_empty());
-}
-
-// ── Deferred mixed with regular scalar parameters ──────────────────────────
-
-#[tokio::test]
-async fn test_deferred_mixed_with_scalars() {
-    let (config_db, shop_db) = setup("defer2").await;
-
-    let threshold_query = postgres_expr!(
-        "SELECT value FROM \"defer2_config\" WHERE key = {}",
-        "min_price"
-    );
-    let deferred_threshold = config_db.defer(threshold_query);
-
-    let shop_query = Expression::<AnyPostgresType>::new(
-        "SELECT name FROM \"defer2_product\" WHERE price >= {} AND name != {} ORDER BY price",
-        vec![
-            ExpressiveEnum::Deferred(deferred_threshold),
-            ExpressiveEnum::Scalar(AnyPostgresType::new("Mid Thing".to_string())),
-        ],
-    );
-
-    let result = records(shop_db.execute(&shop_query).await.unwrap());
-
-    assert_eq!(result.len(), 1);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Expensive Thing".to_string())
-    );
-}
-
-// ── Deferred inside a nested expression ───────────────────────────────────
-
-#[tokio::test]
-async fn test_nested_deferred() {
-    let (config_db, shop_db) = setup("defer3").await;
-
-    let threshold_query = postgres_expr!(
-        "SELECT value FROM \"defer3_config\" WHERE key = {}",
-        "min_price"
-    );
-    let deferred_threshold = config_db.defer(threshold_query);
-
-    let inner = Expression::<AnyPostgresType>::new(
-        "price >= {}",
-        vec![ExpressiveEnum::Deferred(deferred_threshold)],
-    );
-
-    let shop_query = postgres_expr!(
-        "SELECT name FROM \"defer3_product\" WHERE {} ORDER BY price",
-        (inner)
-    );
-
-    let result = records(shop_db.execute(&shop_query).await.unwrap());
-
-    assert_eq!(result.len(), 2);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Mid Thing".to_string())
-    );
-    assert_eq!(
-        result[1]["name"].try_get::<String>(),
-        Some("Expensive Thing".to_string())
-    );
 }

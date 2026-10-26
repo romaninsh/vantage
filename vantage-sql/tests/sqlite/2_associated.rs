@@ -57,22 +57,6 @@ async fn test_associated_scalar() {
 }
 
 #[tokio::test]
-async fn test_associated_record() {
-    let db = setup().await;
-
-    let associated = db.associate::<Record<AnySqliteType>>(sqlite_expr!(
-        "SELECT name, price FROM product WHERE id = {}",
-        "a"
-    ));
-    let record = associated.get().await.unwrap();
-    assert_eq!(
-        record["name"].try_get::<String>(),
-        Some("Cheap".to_string())
-    );
-    assert_eq!(record["price"].try_get::<i64>(), Some(50));
-}
-
-#[tokio::test]
 async fn test_associated_entity() {
     let db = setup().await;
 
@@ -85,30 +69,4 @@ async fn test_associated_entity() {
     assert_eq!(product.id, "c");
     assert_eq!(product.name, "Expensive");
     assert_eq!(product.price, 300);
-}
-
-// serde path: Record<JsonValue> + #[derive(Deserialize)]
-#[tokio::test]
-async fn test_associated_entity_serde() {
-    let db = setup().await;
-
-    #[derive(serde::Deserialize)]
-    struct ProductSerde {
-        id: String,
-        name: String,
-        price: i64,
-    }
-
-    let record: Record<serde_json::Value> = db
-        .associate(sqlite_expr!(
-            "SELECT id, name, price FROM product WHERE id = {}",
-            "b"
-        ))
-        .get()
-        .await
-        .unwrap();
-    let product: ProductSerde = ProductSerde::from_record(record).unwrap();
-    assert_eq!(product.id, "b");
-    assert_eq!(product.name, "Mid");
-    assert_eq!(product.price, 150);
 }

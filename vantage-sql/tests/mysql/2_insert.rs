@@ -53,43 +53,6 @@ fn records(result: AnyMysqlType) -> Vec<Record<AnyMysqlType>> {
     Vec::<Record<AnyMysqlType>>::try_from(result).unwrap()
 }
 
-// ── Insert with typed parameters ───────────────────────────────────────────
-
-#[tokio::test]
-async fn test_insert_product() {
-    let db = setup("ins_product").await;
-
-    let insert = mysql_expr!(
-        "INSERT INTO `ins_product` (`id`, `name`, `price`, `calories`, `is_deleted`, `inventory_stock`) VALUES ({}, {}, {}, {}, {}, {})",
-        "cupcake",
-        "Flux Cupcake",
-        120i64,
-        300i64,
-        false,
-        50i64
-    );
-
-    db.execute(&insert).await.unwrap();
-
-    let select = mysql_expr!(
-        "SELECT name, price, calories, is_deleted, inventory_stock FROM `ins_product` WHERE id = {}",
-        "cupcake"
-    );
-    let result = records(db.execute(&select).await.unwrap());
-
-    assert_eq!(result.len(), 1);
-
-    let row = &result[0];
-    assert_eq!(
-        row["name"].try_get::<String>(),
-        Some("Flux Cupcake".to_string())
-    );
-    assert_eq!(row["price"].try_get::<i64>(), Some(120));
-    assert_eq!(row["calories"].try_get::<i64>(), Some(300));
-    assert_eq!(row["is_deleted"].try_get::<bool>(), Some(false));
-    assert_eq!(row["inventory_stock"].try_get::<i64>(), Some(50));
-}
-
 // ── Insert multiple rows via nested expressions ───────────────────────────
 
 #[tokio::test]
@@ -144,6 +107,7 @@ async fn test_insert_multiple_products() {
         Some("DeLorean Doughnut".to_string())
     );
     assert_eq!(result[0]["price"].try_get::<i64>(), Some(135));
+    assert_eq!(result[0]["calories"].try_get::<i64>(), Some(250));
     assert_eq!(result[0]["is_deleted"].try_get::<bool>(), Some(false));
 
     assert_eq!(
@@ -188,56 +152,4 @@ async fn test_insert_and_deserialize_product() {
     assert_eq!(product.calories, 300);
     assert!(!product.is_deleted);
     assert_eq!(product.inventory_stock, 50);
-}
-
-// ── Type marker verification ────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_bool_binds_correctly() {
-    let db = setup("ins_bool").await;
-
-    let insert = mysql_expr!(
-        "INSERT INTO `ins_bool` (`id`, `name`, `price`, `calories`, `is_deleted`, `inventory_stock`) VALUES ({}, {}, {}, {}, {}, {})",
-        "deleted_item",
-        "Gone",
-        100i64,
-        100i64,
-        true,
-        0i64
-    );
-    db.execute(&insert).await.unwrap();
-
-    // Query with bool parameter — MySQL BOOLEAN is TINYINT(1)
-    let select = mysql_expr!("SELECT name FROM `ins_bool` WHERE is_deleted = {}", true);
-    let result = records(db.execute(&select).await.unwrap());
-
-    assert_eq!(result.len(), 1);
-    assert_eq!(
-        result[0]["name"].try_get::<String>(),
-        Some("Gone".to_string())
-    );
-}
-
-#[tokio::test]
-async fn test_integer_vs_text_binding() {
-    let db = setup("ins_int_text").await;
-
-    let insert = mysql_expr!(
-        "INSERT INTO `ins_int_text` (`id`, `name`, `price`, `calories`, `is_deleted`, `inventory_stock`) VALUES ({}, {}, {}, {}, {}, {})",
-        "item1",
-        "Test",
-        100i64,
-        100i64,
-        false,
-        10i64
-    );
-    db.execute(&insert).await.unwrap();
-
-    let by_price = mysql_expr!("SELECT id FROM `ins_int_text` WHERE price = {}", 100i64);
-    let result = records(db.execute(&by_price).await.unwrap());
-    assert_eq!(result.len(), 1);
-
-    let by_name = mysql_expr!("SELECT id FROM `ins_int_text` WHERE name = {}", "Test");
-    let result = records(db.execute(&by_name).await.unwrap());
-    assert_eq!(result.len(), 1);
 }

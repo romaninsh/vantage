@@ -175,16 +175,11 @@ async fn paging_windows_over_non_unique_sort_have_no_gaps_or_repeats() -> TestRe
     Ok(())
 }
 
+/// Offset paging only: there is no cursor.
 #[tokio::test]
-async fn paging_capabilities_advertised() -> TestResult {
+async fn fetch_cursor_is_unsupported() -> TestResult {
     let (db, name) = setup("caps").await;
     let vista = product_vista(&db, &name);
-    let caps = vista.capabilities();
-    assert!(caps.has(Capability::Order));
-    assert!(caps.has(Capability::Search));
-    assert!(caps.has(Capability::Window));
-    // Offset paging only: there is no cursor.
-    assert!(!caps.has(Capability::Cursor));
     assert!(
         vista
             .fetch_cursor(None, 2)

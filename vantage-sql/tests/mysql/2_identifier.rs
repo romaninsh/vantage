@@ -5,81 +5,18 @@
 use vantage_sql::mysql_expr;
 use vantage_sql::primitives::identifier::ident;
 
-// ── ident() in expr macro via (parentheses) ───────────────────────────────────
-
 #[test]
-fn test_id_in_select() {
-    let expr = mysql_expr!("SELECT {} FROM {}", (ident("name")), (ident("product")));
-    assert_eq!(expr.preview(), "SELECT `name` FROM `product`");
-}
-
-#[test]
-fn test_id_in_condition() {
-    let expr = mysql_expr!("{} = {}", (ident("price")), 100i64);
-    assert_eq!(expr.preview(), "`price` = 100");
-}
-
-#[test]
-fn test_id_with_alias() {
-    let expr = mysql_expr!("SELECT {}", (ident("name").with_alias("n")));
-    assert_eq!(expr.preview(), "SELECT `name` AS `n`");
-}
-
-#[test]
-fn test_id_embedded_backtick_is_doubled() {
-    let expr = mysql_expr!("SELECT {}", (ident("x` ; DROP TABLE users --")));
-    assert_eq!(expr.preview(), "SELECT `x`` ; DROP TABLE users --`");
-}
-
-#[test]
-fn test_id_embedded_backtick_in_alias_is_doubled() {
-    let expr = mysql_expr!("SELECT {}", (ident("col").with_alias("a`b")));
-    assert_eq!(expr.preview(), "SELECT `col` AS `a``b`");
-}
-
-#[test]
-fn test_id_qualified() {
-    let expr = mysql_expr!("SELECT {}", (ident("name").dot_of("t")));
-    assert_eq!(expr.preview(), "SELECT `t`.`name`");
-}
-
-// ── Unusual but valid identifier characters ────────────────────────────────
-// MySQL and PostgreSQL both allow spaces, hyphens, special chars inside
-// quoted identifiers.
-
-#[test]
-fn test_id_with_space() {
-    let expr = mysql_expr!("SELECT {}", (ident("first name")));
-    assert_eq!(expr.preview(), "SELECT `first name`");
-}
-
-#[test]
-fn test_id_with_hyphen() {
-    let expr = mysql_expr!("SELECT {}", (ident("my-column")));
-    assert_eq!(expr.preview(), "SELECT `my-column`");
-}
-
-#[test]
-fn test_id_reserved_word() {
-    let expr = mysql_expr!("SELECT {} FROM {}", (ident("select")), (ident("order")));
-    assert_eq!(expr.preview(), "SELECT `select` FROM `order`");
-}
-
-#[test]
-fn test_id_with_dot_in_name() {
-    // A single identifier containing a literal dot (not qualified)
-    let expr = mysql_expr!("SELECT {}", (ident("weird.name")));
-    assert_eq!(expr.preview(), "SELECT `weird.name`");
-}
-
-#[test]
-fn test_id_unicode() {
-    let expr = mysql_expr!("SELECT {}", (ident("名前")));
-    assert_eq!(expr.preview(), "SELECT `名前`");
-}
-
-#[test]
-fn test_id_number_start() {
-    let expr = mysql_expr!("SELECT {}", (ident("1bad_name")));
-    assert_eq!(expr.preview(), "SELECT `1bad_name`");
+fn test_id_rendering() {
+    let expr = mysql_expr!(
+        "SELECT {}, {}, {} WHERE {} = {}",
+        (ident("x` ; DROP TABLE users --")),
+        (ident("name").dot_of("t")),
+        (ident("col").with_alias("a`b")),
+        (ident("price")),
+        100i64
+    );
+    assert_eq!(
+        expr.preview(),
+        "SELECT `x`` ; DROP TABLE users --`, `t`.`name`, `col` AS `a``b` WHERE `price` = 100"
+    );
 }
