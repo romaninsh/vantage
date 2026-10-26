@@ -166,3 +166,18 @@ and zero-ceiling hosts get one call each. Background's runaway loop is a second 
 rule allowed the second `eval` in `a_compiled_slot_evaluates_against_whichever_env_it_is_given` and
 `the_resolver_is_asked_once_per_read_on_every_evaluation`, the paired `ast`/`compile` calls in the
 cache tests, and the second batch in `rows_are_answered_in_order_by_one_script_that_keeps_its_state`.*
+
+### A6. A branch the contract names but can't isolate keeps one input
+
+Sometimes the contract names a condition as its own rule but gives it the same documented output
+as other conditions, and every input that meets it also meets one of the others. No assert can
+show that condition alone. It then keeps one input, the one that reaches its branch, with its own
+plain call and an exact assert of the documented output; that output satisfies R11. This is A5
+(the same error from several branches) for the same output. A second input on the same branch is
+still a weaker case (R4, R5).
+
+*Case: surreal-client `record.rs` `escape_identifier`. The doc wraps a name in `⟨…⟩` when it is
+"numeric" or "starts with a digit", among other conditions. Every numeric name is also
+digit-leading (`123`, `1.5`) or holds a non-identifier character (`-7`), so the numeric early
+return gives the same `⟨…⟩`. `123` stays as the one input reaching that return; `1.5` was dropped
+as a second input on the same branch; `1abc` shows the digit rule.*

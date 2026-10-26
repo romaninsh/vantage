@@ -962,28 +962,21 @@ async fn run_calls_a_function_without_arguments() {
 }
 
 #[tokio::test]
-async fn query_binds_the_variables_given() {
+async fn query_binds_variables_and_returns_one_json_result_per_statement() {
     let client = get_client().await;
 
     let response = client
-        .query("RETURN $a + $b", Some(json!({"a": 2, "b": 3})))
+        .query(
+            "RETURN $a + $b; RETURN <bytes>'hi'; RETURN [sc_ids:john, sc_ids:42]",
+            Some(json!({"a": 2, "b": 3})),
+        )
         .await
         .expect("query");
-    assert_eq!(first_result(&response), &json!(5));
+    assert_eq!(response.as_array().map(Vec::len), Some(3));
     assert_eq!(response[0]["status"], json!("OK"));
-}
-
-#[tokio::test]
-async fn query_returns_one_result_per_statement() {
-    let client = get_client().await;
-
-    let response = client
-        .query("RETURN 1; RETURN 'two'", None)
-        .await
-        .expect("query");
-    assert_eq!(response.as_array().map(Vec::len), Some(2));
-    assert_eq!(response[0]["result"], json!(1));
-    assert_eq!(response[1]["result"], json!("two"));
+    assert_eq!(response[0]["result"], json!(5));
+    assert_eq!(response[1]["result"], json!("aGk="));
+    assert_eq!(response[2]["result"], json!(["sc_ids:john", "sc_ids:42"]));
 }
 
 #[tokio::test]
@@ -1078,31 +1071,6 @@ async fn query_cbor_binds_cbor_variables_and_returns_cbor() {
         .find(|(k, _)| k == &Cbor::Text("result".into()))
         .map(|(_, v)| v);
     assert_eq!(result, Some(&Cbor::Integer(42.into())));
-}
-
-#[tokio::test]
-async fn json_methods_render_bytes_as_base64() {
-    let client = get_client().await;
-
-    let response = client
-        .query("RETURN <bytes>'hi'", None)
-        .await
-        .expect("query");
-    assert_eq!(first_result(&response), &json!("aGk="));
-}
-
-#[tokio::test]
-async fn json_methods_render_record_ids_as_table_colon_id() {
-    let client = get_client().await;
-
-    let response = client
-        .query("RETURN [sc_ids:john, sc_ids:42]", None)
-        .await
-        .expect("query");
-    assert_eq!(
-        first_result(&response),
-        &json!(["sc_ids:john", "sc_ids:42"])
-    );
 }
 
 #[tokio::test]

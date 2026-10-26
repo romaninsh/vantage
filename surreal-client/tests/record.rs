@@ -6,23 +6,13 @@ use surreal_client::{
 };
 
 #[test]
-fn escape_identifier_passes_plain_identifiers_through() {
-    assert_eq!(escape_identifier("normal"), "normal");
+fn escape_identifier_wraps_and_escapes_anything_but_a_plain_identifier() {
     assert_eq!(escape_identifier("snake_case_2"), "snake_case_2");
-}
-
-#[test]
-fn escape_identifier_quotes_empty_numeric_and_digit_leading() {
     assert_eq!(escape_identifier(""), "⟨⟩");
-    assert_eq!(escape_identifier("123"), "⟨123⟩");
-    assert_eq!(escape_identifier("1.5"), "⟨1.5⟩");
     assert_eq!(escape_identifier("1abc"), "⟨1abc⟩");
-}
-
-#[test]
-fn escape_identifier_quotes_non_identifier_characters() {
-    assert_eq!(escape_identifier("with-dash"), "⟨with-dash⟩");
-    assert_eq!(escape_identifier("two words"), "⟨two words⟩");
+    assert_eq!(escape_identifier("123"), "⟨123⟩");
+    assert_eq!(escape_identifier("Table"), "⟨Table⟩");
+    assert_eq!(escape_identifier(r"a\⟩b"), r"⟨a\\\u{27E9}b⟩");
 }
 
 #[test]
@@ -32,34 +22,8 @@ fn escape_identifier_quotes_non_ascii_letters() {
 }
 
 #[test]
-fn escape_identifier_quotes_reserved_keywords_in_any_case() {
-    assert_eq!(escape_identifier("SELECT"), "⟨SELECT⟩");
-    assert_eq!(escape_identifier("from"), "⟨from⟩");
-    assert_eq!(escape_identifier("Table"), "⟨Table⟩");
-}
-
-#[test]
-fn escape_identifier_doubles_backslashes_inside_quotes() {
-    assert_eq!(escape_identifier("a\\b"), "⟨a\\\\b⟩");
-}
-
-#[test]
-fn escape_identifier_emits_closing_bracket_as_unicode_escape() {
-    assert_eq!(escape_identifier("a⟩b"), "⟨a\\u{27E9}b⟩");
-    assert_eq!(escape_identifier("a\\⟩b"), "⟨a\\\\\\u{27E9}b⟩");
-}
-
-#[test]
-fn escape_record_id_leaves_integer_ids_unquoted() {
-    assert_eq!(escape_record_id("42"), "42");
+fn escape_record_id_leaves_integer_ids_bare_and_escapes_the_rest() {
     assert_eq!(escape_record_id("-7"), "-7");
-}
-
-#[test]
-fn escape_record_id_quotes_like_escape_identifier_otherwise() {
-    assert_eq!(escape_record_id("john"), "john");
-    assert_eq!(escape_record_id("with-dash"), "⟨with-dash⟩");
-    assert_eq!(escape_record_id(""), "⟨⟩");
     assert_eq!(escape_record_id("1.5"), "⟨1.5⟩");
 }
 
