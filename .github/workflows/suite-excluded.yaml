@@ -37,20 +37,21 @@ jobs:
           key: ${{ inputs.dir }}
           workspaces: ${{ inputs.workdir }} -> target
 
+      # The runner's apt timers can hold the dpkg lock at boot and hang the install.
+      - name: Stop apt's background jobs
+        if: inputs.kind == 'ui' || inputs.kind == 'ui-example'
+        run: sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer unattended-upgrades 2>/dev/null || true
+      # Cached .debs: the runner's mirror can take minutes for webkit alone. Only
+      # the first run after a package list change downloads.
       - name: System libraries
         if: inputs.kind == 'ui' || inputs.kind == 'ui-example'
-        working-directory: .
-        timeout-minutes: 8
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          # The runner's apt timers can hold the dpkg lock at boot and hang the
-          # install: stop them, wait at most 3 minutes for a held lock, and keep
-          # apt's output so a stall shows in the log.
-          sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer unattended-upgrades 2>/dev/null || true
-          sudo apt-get -o DPKG::Lock::Timeout=180 update
-          sudo apt-get -o DPKG::Lock::Timeout=180 install -y --no-install-recommends \
-            pkg-config build-essential libssl-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+        timeout-minutes: 15
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
+        with:
+          packages: >-
+            pkg-config build-essential libssl-dev libxcb-shape0-dev libxcb-xfixes0-dev
             libxkbcommon-dev libxkbcommon-x11-dev libfontconfig-dev libwebkit2gtk-4.1-dev
+          version: "1"
 
       - name: Start minikube
         if: inputs.kind == 'kubernetes'
