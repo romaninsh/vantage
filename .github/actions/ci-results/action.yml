@@ -22,14 +22,13 @@ runs:
     - name: Join coverage
       shell: bash
       run: cat lcov-*.info > lcov.info 2>/dev/null || touch lcov.info
-    # Main's per-crate numbers, kept current by post-merge, found with one call.
+    # Main's per-crate numbers, kept current by post-merge.
     - name: Main's baseline
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=coverage-baseline&per_page=1" \
-          -q '.artifacts[0].workflow_run.id // empty')
+        run=$(script/ci-baseline | sed -n 's/^run=//p')
         if [ -n "$run" ]; then
           gh run download "$run" -R "$GITHUB_REPOSITORY" -n coverage-baseline -D baseline
         else

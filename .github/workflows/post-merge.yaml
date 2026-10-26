@@ -1,12 +1,19 @@
 name: Post-merge
 
-# After a merge, only what later PRs read: main's baseline for the crates the
-# merge changed (coverage, tests, dupes, overlaps), measured by the same
-# tests.yaml PRs run, and the caches PRs restore. Everything else is assumed
-# checked by the PR. Publishing is publish-on-merge.yaml.
+# After a merge, only what later PRs read: main's baseline for the crates
+# changed since the last baseline (coverage, tests, dupes, overlaps), measured
+# by the same tests.yaml PRs run, and the caches PRs restore. Everything else is
+# assumed checked by the PR. Publishing is publish-on-merge.yaml.
 on:
   push:
     branches: ["main"]
+  # Rebuild the baseline for every crate, e.g. after it lost entries.
+  workflow_dispatch:
+    inputs:
+      all:
+        description: "Measure every crate, not only those changed since the last baseline"
+        type: boolean
+        default: true
 
 concurrency:
   group: post-merge
@@ -23,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read # the last coverage-baseline artifact
     timeout-minutes: 5
     outputs:
       crates: ${{ steps.c.outputs.crates }}
@@ -34,10 +42,29 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - id: last
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: script/ci-baseline
+      # Diff from the commit the last baseline measured, not from the push's
+      # parent: a queued run that a later push replaced never measured its
+      # crates, so this run takes them over. A baseline commit that isn't on
+      # this history (a force push) falls back to the parent.
       - id: c
         env:
-          BASE: ${{ github.event.before }}
-        run: script/ci-changes --base "$BASE" --head "$GITHUB_SHA"
+          LAST: ${{ steps.last.outputs.sha }}
+          BEFORE: ${{ github.event.before }}
+          ALL: ${{ inputs.all }}
+        run: |
+          base=$BEFORE
+          if [ -n "$LAST" ] && git merge-base --is-ancestor "$LAST" "$GITHUB_SHA"; then
+            base=$LAST
+          fi
+          [ -n "$base" ] || base=$(git rev-parse "$GITHUB_SHA~1")
+          labels='[]'
+          [ "$ALL" = "true" ] && labels='["ALL_TESTS"]'
+          echo "base=$base labels=$labels"
+          script/ci-changes --base "$base" --head "$GITHUB_SHA" --labels "$labels"
 
   # The PR pipeline in baseline mode. Its build and matrix-rs jobs share their
   # ids with the PR's, so they also warm the caches PRs restore.
