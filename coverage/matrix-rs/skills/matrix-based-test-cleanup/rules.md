@@ -113,6 +113,19 @@ message or kind, where the contract names it). Two bare `is_err()` asserts show 
 and a mistyped field for their different branches, but asserted only `is_err()` on both. Where
 the contract doesn't name the messages, `assert_ne!` on them shows the branches differ.*
 
+## R12. Identical coverage isn't a duplicate by itself: a legit case gets an exception
+
+Not every duplicate the matrix or CI's duplicate check reports must be resolved. Two tests that
+run the same code in this crate but check different behaviours (different calls, different
+promises, their asserts showing the difference per R11) stay as two tests. They aren't merged
+into one test just to satisfy the check. The proposal names each such test and gives the exact
+`coverage/vend-exception.sh <package> <test id> "<reason>"` command; the user vends it. Tests that
+check the same behaviour still merge or go (R1, R3).
+
+*Case: vantage-sql #478. CI paired the sqlite vista metadata tests (capability flags, Orderable
+columns, a refused `set_order`) because each only builds a `from_table` vista in vantage-sql. The
+user ruled they stay apart with exceptions rather than become one test.*
+
 ## Agreed in runs
 
 ### A1. Sibling entry points: one call each, one test

@@ -70,34 +70,29 @@ async fn test_varchar_high_precision() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// 2. NUMERIC(20,6) — precision limited to 6 decimal places
+// 2. NUMERIC(p,s) — the column's scale decides what survives
 // ════════════════════════════════════════════════════════���════════════════
 
 #[tokio::test]
-async fn test_numeric_rounds_to_scale() {
-    // More than 6 decimal places — NUMERIC(20,6) rounds to 6
-    let t = table_for!("decimal_numeric", db().await);
-    let orig = ValDecimal {
+async fn test_numeric_scale() {
+    let db = db().await;
+    let narrow = table_for!("decimal_numeric", db.clone());
+    let wide = table_for!("decimal_numeric_wide", db);
+    let rounded = ValDecimal {
         name: "trunc".into(),
         value: dec("123.123456789"),
     };
-    let fetched = try_round_trip(&t, "dn_trunc", &orig).await.unwrap();
-    assert_eq!(fetched.value, dec("123.123457"));
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 2b. NUMERIC(38,15) — wide enough for full rust_decimal precision
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_numeric_wide_high_precision() {
-    let t = table_for!("decimal_numeric_wide", db().await);
-    let orig = ValDecimal {
+    let exact = ValDecimal {
         name: "hp".into(),
         value: dec("99999999999999999.123456789012345"),
     };
-    let fetched = try_round_trip(&t, "dnw_hp", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
+    // NUMERIC(20,6) rounds to 6 places; NUMERIC(38,15) keeps all 33 digits
+    let fetched = try_round_trip(&narrow, "dn_trunc", &rounded).await.unwrap();
+    assert_eq!(fetched.value, dec("123.123457"));
+    assert_eq!(
+        try_round_trip(&wide, "dnw_hp", &exact).await.unwrap(),
+        exact
+    );
 }
 
 // ═══════════════════════════════════════════════════════��═════════════════

@@ -70,34 +70,26 @@ async fn test_varchar_high_precision() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// 2. DECIMAL(20,6) — precision limited to 6 decimal places
+// 2. DECIMAL(p,s) — the column's scale decides what survives
 // ═════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn test_decimal_rounds_to_scale() {
-    let t = table_for!("decimal_decimal", db().await);
-    let orig = ValDecimal {
+async fn test_decimal_scale() {
+    let db = db().await;
+    let narrow = table_for!("decimal_decimal", db.clone());
+    let wide = table_for!("decimal_decimal_wide", db);
+    let rounded = ValDecimal {
         name: "trunc".into(),
         value: dec("123.123456789"),
     };
-    let fetched = try_round_trip(&t, "dd_trunc", &orig).await.unwrap();
-    // DECIMAL(20,6) rounds to 6 places
-    assert_eq!(fetched.value, dec("123.123457"));
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 2b. DECIMAL(38,15) — wide enough for full rust_decimal precision
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_decimal_wide_high_precision() {
-    let t = table_for!("decimal_decimal_wide", db().await);
-    let orig = ValDecimal {
+    let exact = ValDecimal {
         name: "hp".into(),
         value: dec("99999999999999999.123456789012345"),
     };
-    let fetched = try_round_trip(&t, "dw_hp", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
+    // DECIMAL(20,6) rounds to 6 places; DECIMAL(38,15) keeps all 33 digits
+    let fetched = try_round_trip(&narrow, "dd_trunc", &rounded).await.unwrap();
+    assert_eq!(fetched.value, dec("123.123457"));
+    assert_eq!(try_round_trip(&wide, "dw_hp", &exact).await.unwrap(), exact);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -182,8 +174,8 @@ async fn test_i64_bigint() {
     let t = table_i64!("decimal_bigint", db().await);
     let orig = ValI64 {
         name: "i".into(),
-        value: 9_223_372_036_854_775_807,
-    }; // i64::MAX
+        value: i64::MAX,
+    };
     let fetched = try_i64(&t, "i64_bi", &orig).await.unwrap();
     assert_eq!(fetched, orig);
 }

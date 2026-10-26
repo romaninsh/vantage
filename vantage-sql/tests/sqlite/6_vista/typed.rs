@@ -149,10 +149,30 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.has(Capability::FilterOps));
     assert!(caps.has(Capability::Window));
     assert!(caps.has(Capability::Traverse));
+    assert!(caps.has(Capability::WritesReachHooks));
     assert!(!caps.has(Capability::Subscribe));
     assert!(!caps.has(Capability::Cursor));
     assert!(!caps.has(Capability::Import));
     assert!(!caps.has(Capability::NativeConditions));
+    Ok(())
+}
+
+#[tokio::test]
+async fn vista_columns_advertise_orderable_flag() -> TestResult {
+    use vantage_vista::ColumnFlag::Orderable;
+    let db = setup().await;
+    let table = product_table(db.clone());
+    let vista = db.vista_factory().from_table(table)?;
+
+    assert!(vista.column("id").expect("id").has_flag(Orderable));
+    assert!(vista.column("name").expect("name").has_flag(Orderable));
+    assert!(vista.column("price").expect("price").has_flag(Orderable));
+    assert!(
+        vista
+            .column("is_deleted")
+            .expect("is_deleted")
+            .has_flag(Orderable)
+    );
     Ok(())
 }
 
@@ -211,24 +231,5 @@ async fn vista_upsert_creates_then_replaces() -> TestResult {
     let stored = vista.get_value("z").await?.expect("upserted");
     assert_eq!(stored.get("name"), Some(&CborValue::Text("Zeta 2".into())));
     assert_eq!(vista.count().await?, 4);
-    Ok(())
-}
-
-#[tokio::test]
-async fn vista_columns_advertise_orderable_flag() -> TestResult {
-    use vantage_vista::ColumnFlag::Orderable;
-    let db = setup().await;
-    let table = product_table(db.clone());
-    let vista = db.vista_factory().from_table(table)?;
-
-    assert!(vista.column("id").expect("id").has_flag(Orderable));
-    assert!(vista.column("name").expect("name").has_flag(Orderable));
-    assert!(vista.column("price").expect("price").has_flag(Orderable));
-    assert!(
-        vista
-            .column("is_deleted")
-            .expect("is_deleted")
-            .has_flag(Orderable)
-    );
     Ok(())
 }

@@ -87,9 +87,12 @@ async fn test_delete_all() {
 
 // ── InsertableDataSet ──────────────────────────────────────────────────────
 
+/// `insert_return_id` hands back the database's key, or the table's
+/// generated one. A bare `TEXT PRIMARY KEY` with neither has no usable id:
+/// SQL NULL comes back, and that is an error, not a "Null" string.
 #[tokio::test]
 async fn test_insert_return_id() {
-    let (db, _) = setup().await;
+    let (db, table) = setup().await;
 
     sqlx::query(
         "CREATE TABLE auto_item (
@@ -101,8 +104,7 @@ async fn test_insert_return_id() {
     .execute(db.pool())
     .await
     .unwrap();
-
-    let table = Table::<SqliteDB, Item>::new("auto_item", db)
+    let auto = Table::<SqliteDB, Item>::new("auto_item", db)
         .with_id_column("id")
         .with_column_of::<String>("name")
         .with_column_of::<i64>("price");
@@ -111,52 +113,27 @@ async fn test_insert_return_id() {
         name: "Auto".into(),
         price: 42,
     };
-    let id = table.insert_return_id(&item).await.unwrap();
-    assert!(!id.is_empty());
 
-    let fetched = table.get(id).await.unwrap().expect("inserted row");
-    assert_eq!(fetched, item);
-}
+    let db_id = auto.insert_return_id(&item).await.unwrap();
+    assert!(!db_id.is_empty());
+    assert_eq!(auto.get(db_id).await.unwrap(), Some(item.clone()));
 
-#[tokio::test]
-async fn test_insert_return_id_null_pk_errors() {
-    // `item`'s id is a bare `TEXT PRIMARY KEY` — no DEFAULT, no AUTOINCREMENT.
-    // Omitting the id inserts SQL NULL, so RETURNING hands back a NULL id, which
-    // is not usable. It must surface as an error, not a bogus "Null" string.
-    let (_db, table) = setup().await;
-
-    let item = Item {
-        name: "Orphan".into(),
-        price: 7,
-    };
     let err = table
         .insert_return_id(&item)
         .await
         .expect_err("a NULL primary key must not be returned as a usable id");
-    let msg = err.to_string();
     assert!(
-        !msg.contains("Null"),
-        "error should explain the NULL id, not echo it: {msg}"
+        !err.to_string().contains("Null"),
+        "error should explain the NULL id, not echo it: {err}"
     );
-}
 
-#[tokio::test]
-async fn test_generated_id_fills_bare_primary_key() {
-    // Same bare `TEXT PRIMARY KEY` as above, but `with_generated_id` mints the id
-    // client-side before the INSERT, so `insert_return_id` succeeds and hands
-    // back the generated key.
-    let (_db, table) = setup().await;
-    let table = table.with_generated_id(IdGenerator::UuidV7);
-
-    let item = Item {
-        name: "Minted".into(),
-        price: 7,
-    };
-    let id = table.insert_return_id(&item).await.unwrap();
-    assert!(id.contains('-'), "expected a uuid, got {id:?}");
-
-    let fetched = table.get(id).await.unwrap().expect("inserted row");
-    assert_eq!(fetched, item);
+    let minted = table.with_generated_id(IdGenerator::UuidV7);
+    let minted_id = minted.insert_return_id(&item).await.unwrap();
+    assert!(
+        minted_id.contains('-'),
+        "expected a uuid, got {minted_id:?}"
+    );
+    assert_eq!(minted.get(minted_id).await.unwrap(), Some(item));
 }
 
 #[tokio::test]

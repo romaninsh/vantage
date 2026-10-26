@@ -154,6 +154,7 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.has(Capability::FilterOps));
     assert!(caps.has(Capability::Window));
     assert!(caps.has(Capability::Traverse));
+    assert!(caps.has(Capability::WritesReachHooks));
     assert!(!caps.has(Capability::Cursor));
     // Being writable says nothing about whether anyone installed the
     // `{table}_changed` trigger, so watchability is NOT inferred from it.

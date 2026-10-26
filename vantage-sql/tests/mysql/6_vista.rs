@@ -109,6 +109,7 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     assert!(caps.has(Capability::NativeConditions));
     assert!(caps.has(Capability::Window));
     assert!(caps.has(Capability::Traverse));
+    assert!(caps.has(Capability::WritesReachHooks));
     assert!(!caps.has(Capability::Subscribe));
     assert!(!caps.has(Capability::Cursor));
     Ok(())

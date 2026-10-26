@@ -147,64 +147,51 @@ async fn test_date_date() {
     assert_eq!(fetched, orig);
 }
 
+/// A chrono value its column can't hand back as that type. TIME into DATE is
+/// rejected on insert, so no row exists afterwards. The other three are stored
+/// through the typed bind, but the variant read back doesn't fit the entity,
+/// so `replace` (which returns the row) and `get` both fail on the stored row.
+/// Rows are cleared first so one left by an earlier run can't stand in.
 #[tokio::test]
-async fn test_date_time() {
-    // TIME into DATE — Postgres rejects the insert
-    let t = table_for!("chrono_date", db().await, ValTime);
-    let orig = ValTime {
+async fn test_mismatched_chrono_types() {
+    let db = db().await;
+    let time = table_for!("chrono_date", db.clone(), ValTime);
+    let ndt = table_for!("chrono_date", db.clone(), ValNaiveDateTime);
+    let utc = table_for!("chrono_date", db.clone(), ValUtc);
+    let date = table_for!("chrono_timestamp", db, ValDate);
+    time.delete("da_t").await.unwrap();
+    ndt.delete("da_ndt").await.unwrap();
+    utc.delete("da_utc").await.unwrap();
+    date.delete("ts_d").await.unwrap();
+
+    let time_row = ValTime {
         name: "t".into(),
         value: time_val(),
     };
-    assert!(t.replace("da_t", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_date_ndt() {
-    // NaiveDateTime into DATE — date part kept via typed bind, but the
-    // Date variant read back can't become a NaiveDateTime
-    let t = table_for!("chrono_date", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
+    let ndt_row = ValNaiveDateTime {
         name: "ndt".into(),
         value: ndt_val(),
     };
-    // The write lands; only converting the stored row back fails, on replace
-    // (which returns the row) and on get (which finds it). The row is cleared
-    // first so a row left by an earlier run can't stand in for this write.
-    t.delete("da_ndt").await.unwrap();
-    assert!(t.replace("da_ndt", &orig).await.is_err());
-    assert!(t.get("da_ndt").await.is_err());
-}
-
-#[tokio::test]
-async fn test_date_utc() {
-    // DateTime<Utc> into DATE — stored, but the Date variant read back
-    // can't become a DateTime
-    let t = table_for!("chrono_date", db().await, ValUtc);
-    let orig = ValUtc {
+    let utc_row = ValUtc {
         name: "utc".into(),
         value: utc_val(),
     };
-    t.delete("da_utc").await.unwrap();
-    assert!(t.replace("da_utc", &orig).await.is_err());
-    assert!(t.get("da_utc").await.is_err());
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 4. TIMESTAMP columns (without timezone)
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_timestamp_date() {
-    // NaiveDate into TIMESTAMP — stored, but the DateTime variant read back
-    // can't be parsed as a date
-    let t = table_for!("chrono_timestamp", db().await, ValDate);
-    let orig = ValDate {
+    let date_row = ValDate {
         name: "d".into(),
         value: date_val(),
     };
-    t.delete("ts_d").await.unwrap();
-    assert!(t.replace("ts_d", &orig).await.is_err());
-    assert!(t.get("ts_d").await.is_err());
+    assert!(time.replace("da_t", &time_row).await.is_err());
+    assert!(ndt.replace("da_ndt", &ndt_row).await.is_err());
+    assert!(utc.replace("da_utc", &utc_row).await.is_err());
+    assert!(date.replace("ts_d", &date_row).await.is_err());
+
+    assert!(
+        time.get("da_t").await.unwrap().is_none(),
+        "rejected: no row"
+    );
+    assert!(ndt.get("da_ndt").await.is_err(), "stored, unreadable");
+    assert!(utc.get("da_utc").await.is_err(), "stored, unreadable");
+    assert!(date.get("ts_d").await.is_err(), "stored, unreadable");
 }
 
 // ═════════════════════════════════════════════════════════════════════════
