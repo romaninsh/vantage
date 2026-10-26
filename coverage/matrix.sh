@@ -70,6 +70,7 @@ else
 fi
 if ! "${list[@]}" --message-format json > "$out/list.json" 2> "$log"; then
   echo "build failed, see $log" >&2
+  tail -n 20 "$log" >&2
   exit 1
 fi
 
