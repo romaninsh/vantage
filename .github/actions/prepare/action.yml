@@ -46,3 +46,15 @@ runs:
         key: ${{ inputs.key }}
         cache: ${{ inputs.cache }}
         backend: ${{ fromJSON(fromJSON(inputs.run).cache || '"rust-cache"') }}
+    # CI_CACHE_REPORT=1 (the repo's env): what the restored cache holds.
+    - name: What the cache restored
+      if: env.CI_CACHE_REPORT == '1' && inputs.cache == 'true'
+      shell: bash
+      run: bash .ci/script/ci-cache-report cache-report.md
+    - if: env.CI_CACHE_REPORT == '1' && inputs.cache == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: cache-report-${{ github.job }}
+        path: cache-report.md
+        overwrite: true
+        retention-days: 7

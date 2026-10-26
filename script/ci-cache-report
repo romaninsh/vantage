@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# What a restored build cache holds, for CI_CACHE_REPORT=1 (prepare runs it
+# right after the restore, before anything builds).
+#
+#   script/ci-cache-report <out file>
+#
+# Sizes by folder, the largest crates under deps/ (summed over their files),
+# and how many files each day left behind: old days are leftovers the cache
+# keeps saving again.
+set -uo pipefail
+out=$1
+
+{
+  echo "### Restored cache"
+  echo
+  echo '```'
+  du -sh ~/.cargo/registry ~/.cargo/git target 2>/dev/null
+  echo
+  du -sh target/* target/*/debug/* 2>/dev/null | sort -h | tail -25
+  echo '```'
+  echo
+  echo "### Largest crates in deps/"
+  echo
+  echo '```'
+  # libfoo_bar-0123abcd.rlib and foo_bar-0123abcd (a test binary) both count as foo_bar.
+  find target -path '*/debug/deps/*' -type f -printf '%s %f\n' 2>/dev/null \
+    | sed -E 's/ (lib)?([A-Za-z0-9_]+)-[0-9a-f]{16}.*/ \2/' \
+    | awk '{ size[$2] += $1 } END { for (c in size) printf "%10.1f MB  %s\n", size[c] / 1048576, c }' \
+    | sort -rn | head -30
+  echo '```'
+  echo
+  echo "### Files by last change"
+  echo
+  echo '```'
+  find target -type f -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | uniq -c
+  echo '```'
+} > "$out"
+cat "$out" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
