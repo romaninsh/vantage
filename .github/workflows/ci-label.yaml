@@ -13,13 +13,23 @@ permissions:
 jobs:
   rerun:
     if: github.event.label.name == 'ALL_TESTS'
-    runs-on: ubuntu-26.04
+    # gh and jq only: GitHub's one-CPU runner.
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
+          # A push after the label started a newer run, which reads the labels
+          # itself. Re-running the older one would join the PR's concurrency
+          # group and cancel it.
+          moved() {
+            [ "$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)" != "$SHA" ] \
+              && echo "the PR moved past $SHA: its newer run reads the labels"
+          }
+          moved && exit 0
           run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yaml --commit "$SHA" --limit 1 --json databaseId,status -q '.[0]')
           id=$(jq -r .databaseId <<<"$run")
           if [ -z "$id" ] || [ "$id" = null ]; then
@@ -30,4 +40,6 @@ jobs:
             gh run cancel "$id" -R "$GITHUB_REPOSITORY"
             gh run watch "$id" -R "$GITHUB_REPOSITORY" > /dev/null || true
           fi
+          # Again: the watch can take minutes.
+          moved && exit 0
           gh run rerun "$id" -R "$GITHUB_REPOSITORY"

@@ -58,6 +58,7 @@ on:
       runner: { value: "${{ jobs.changes.outputs.runner }}" }
       build_runner: { value: "${{ jobs.changes.outputs.build_runner }}" }
       small_runner: { value: "${{ jobs.changes.outputs.small_runner }}" }
+      summary_runner: { value: "${{ jobs.changes.outputs.summary_runner }}" }
       env: { value: "${{ jobs.changes.outputs.env }}" }
       setup: { value: "${{ jobs.changes.outputs.setup }}" }
       cache: { value: "${{ jobs.changes.outputs.cache }}" }
@@ -108,6 +109,7 @@ jobs:
       runner: ${{ steps.c.outputs.runner }}
       build_runner: ${{ steps.c.outputs.build_runner }}
       small_runner: ${{ steps.c.outputs.small_runner }}
+      summary_runner: ${{ steps.c.outputs.summary_runner }}
       env: ${{ steps.c.outputs.env }}
       setup: ${{ steps.c.outputs.setup }}
       cache: ${{ steps.c.outputs.cache }}
