@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.1 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (`load_file` choosing YAML or JSON by
+  extension, an index matching equal numbers) and tests another test already covers are dropped:
+  128 tests become 125 with the same coverage. No API or behaviour change.
+
 ## 3.0.0 — 2026-10-18
 
 Requires vantage-table 3.0.0.

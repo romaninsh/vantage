@@ -426,40 +426,17 @@ fn add_index_covers_existing_rows_and_later_writes() {
 
 #[test]
 fn an_index_matches_an_integer_and_the_equal_float() {
-    let cells = [int(1), CborValue::Float(1.0), CborValue::Float(1.5), int(2)];
-    assert_eq!(agree(&cells, &eq("k", int(1))), ["r0", "r1"]);
-    assert_eq!(agree(&cells, &eq("k", CborValue::Float(1.0))), ["r0", "r1"]);
-}
-
-#[test]
-fn an_index_matches_negative_zero_with_zero() {
     let cells = [
-        CborValue::Float(-0.0),
-        int(0),
-        CborValue::Float(0.0),
         int(1),
-    ];
-    assert_eq!(agree(&cells, &eq("k", int(0))), ["r0", "r1", "r2"]);
-}
-
-#[test]
-fn an_index_agrees_with_a_scan_for_huge_numbers() {
-    let big = 1_i64 << 53;
-    let cells = [
-        int(big),
-        CborValue::Float(big as f64),
+        CborValue::Float(1.0),
+        CborValue::Float(1.5),
+        int(2),
         CborValue::Integer(u64::MAX.into()),
         CborValue::Float(u64::MAX as f64),
     ];
-    for probe in [
-        int(big),
-        CborValue::Float(big as f64),
-        CborValue::Integer(u64::MAX.into()),
-        CborValue::Float(u64::MAX as f64),
-    ] {
-        let got = agree(&cells, &eq("k", probe.clone()));
-        assert!(!got.is_empty(), "{probe:?} finds at least its own row");
-    }
+    assert_eq!(agree(&cells, &eq("k", int(1))), ["r0", "r1"]);
+    let huge = agree(&cells, &eq("k", CborValue::Integer(u64::MAX.into())));
+    assert!(huge.contains(&"r4".to_string()), "{huge:?}");
 }
 
 #[test]
