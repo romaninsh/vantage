@@ -5,7 +5,9 @@ description: Toolchain, the job's Rust cache, and test tools.
 # rust-cache with a job's own key, workspace and all crates cached, saved on
 # every branch with the action's defaults. A repo on WarpBuild runners uses
 # WarpBuild's cache instead (backend: warpbuild): one key per profile, runner
-# and ISO week, saved when that key is new.
+# and ISO week, saved when that key is new. It holds cargo's registry and git
+# checkouts only: vantage-ui's target/ came to 62 GB of linked test binaries,
+# which took 5m45s to restore and saved 1m30s of compile.
 inputs:
   profile:
     description: "normal | instrumented | nightly"
@@ -66,7 +68,7 @@ runs:
         cache-all-crates: true
 
     # The week rotates the key: a restore-key hit saves restored plus new
-    # artifacts, so without it target/ only grows.
+    # downloads, so without it the registry cache only grows.
     - if: inputs.backend == 'warpbuild'
       id: week
       shell: bash
@@ -78,7 +80,6 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
-          target
         key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
@@ -91,7 +92,6 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
-          target
         key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
         lookup-only: true
 
