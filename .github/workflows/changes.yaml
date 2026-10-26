@@ -54,6 +54,7 @@ on:
       internal_tests: { value: "${{ jobs.changes.outputs.internal_tests }}" }
       archive_exclude: { value: "${{ jobs.changes.outputs.archive_exclude }}" }
       skill_url: { value: "${{ jobs.changes.outputs.skill_url }}" }
+      flags: { value: "${{ jobs.changes.outputs.flags }}" }
       versioning_mode: { value: "${{ jobs.changes.outputs.versioning_mode }}" }
       app: { value: "${{ jobs.changes.outputs.app }}" }
 
@@ -98,6 +99,7 @@ jobs:
       internal_tests: ${{ steps.c.outputs.internal_tests }}
       archive_exclude: ${{ steps.c.outputs.archive_exclude }}
       skill_url: ${{ steps.c.outputs.skill_url }}
+      flags: ${{ steps.c.outputs.flags }}
       versioning_mode: ${{ steps.c.outputs.versioning_mode }}
       app: ${{ steps.c.outputs.app }}
     steps:
