@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use vantage_rhai::rhai::FnPtr;
-use vantage_rhai::{Block, Compiled, Env, Expr, Host, Limits, RhaiError, Template};
+use vantage_rhai::{Block, Env, Expr, Host, Limits, RhaiError, Template};
 
 fn host() -> Host {
     Host::builder(Limits::Ui).build()
@@ -12,17 +10,12 @@ fn int(value: vantage_rhai::rhai::Dynamic) -> i64 {
 }
 
 #[test]
-fn an_expr_evaluates_against_pushed_variables() {
+fn a_compiled_slot_evaluates_against_whichever_env_it_is_given() {
     let c = host().compile(&Expr::from("qty * price")).unwrap();
-    let env = Env::new().var("qty", 3_i64).var("price", 5_i64);
-    assert_eq!(int(c.eval(&env).unwrap()), 15);
-}
-
-#[test]
-fn a_compiled_slot_is_reusable_with_a_fresh_env_each_time() {
-    let c = host().compile(&Expr::from("x + 1")).unwrap();
-    assert_eq!(int(c.eval(&Env::new().var("x", 1_i64)).unwrap()), 2);
-    assert_eq!(int(c.eval(&Env::new().var("x", 10_i64)).unwrap()), 11);
+    let small = Env::new().var("qty", 3_i64).var("price", 5_i64);
+    let large = Env::new().var("qty", 10_i64).var("price", 2_i64);
+    assert_eq!(int(c.eval(&small).unwrap()), 15);
+    assert_eq!(int(c.eval(&large).unwrap()), 20);
 }
 
 #[test]
@@ -129,26 +122,10 @@ fn a_template_with_a_hole_is_not_literal() {
 #[test]
 fn a_template_joins_text_and_holes_into_a_string() {
     let c = host()
-        .compile(&Template::from("Order ${id} in ${cur}"))
+        .compile(&Template::from("Order ${id} in ${cur}: ${id + 1}[${u}]"))
         .unwrap();
-    let env = Env::new().var("id", 42_i64).var("cur", "USD");
-    assert_eq!(c.eval_as::<String>(&env).unwrap(), "Order 42 in USD");
-}
-
-#[test]
-fn a_unit_valued_hole_renders_as_empty_text() {
-    let c = host().compile(&Template::from("u=[${u}]")).unwrap();
-    let env = Env::new().var("u", ());
-    assert_eq!(c.eval_as::<String>(&env).unwrap(), "u=[]");
-}
-
-#[test]
-fn every_hole_of_a_template_sees_the_same_variables() {
-    let c = host()
-        .compile(&Template::from("${a}-${b}-${a + b}"))
-        .unwrap();
-    let env = Env::new().var("a", 1_i64).var("b", 2_i64);
-    assert_eq!(c.eval_as::<String>(&env).unwrap(), "1-2-3");
+    let env = Env::new().var("id", 42_i64).var("cur", "USD").var("u", ());
+    assert_eq!(c.eval_as::<String>(&env).unwrap(), "Order 42 in USD: 43[]");
 }
 
 #[test]
@@ -198,21 +175,6 @@ fn whitespace_around_a_lone_hole_does_not_turn_its_value_into_text() {
 }
 
 #[test]
-fn a_hole_may_hold_an_expression_with_braces() {
-    let c = host()
-        .compile(&Template::from(r#"${ if big { "many" } else { "one" } }!"#))
-        .unwrap();
-    assert_eq!(
-        c.eval_as::<String>(&Env::new().var("big", true)).unwrap(),
-        "many!"
-    );
-    assert_eq!(
-        c.eval_as::<String>(&Env::new().var("big", false)).unwrap(),
-        "one!"
-    );
-}
-
-#[test]
 fn a_block_evaluates_to_its_final_expression() {
     let c = host().compile(&Block::from("let a = 40; a + 2")).unwrap();
     assert_eq!(int(c.eval(&Env::new()).unwrap()), 42);
@@ -232,19 +194,17 @@ fn run_executes_a_block_for_effect() {
 }
 
 #[test]
-fn run_reports_a_throw() {
-    let c = host().compile(&Block::from("throw \"boom\"")).unwrap();
-    let err = c.run(&Env::new()).unwrap_err();
-    assert!(matches!(err, RhaiError::Runtime(_)), "{err:?}");
-    assert!(err.to_string().contains("boom"), "{err}");
-}
-
-#[test]
-fn a_block_may_define_and_call_functions() {
-    let c = host()
-        .compile(&Block::from("fn twice(n) { n * 2 } twice(21)"))
+fn a_throw_is_a_runtime_error_carrying_its_message() {
+    let top = host().compile(&Block::from(r#"throw "boom""#)).unwrap();
+    let in_fn = host()
+        .compile(&Block::from(r#"fn f() { throw "bang" } f()"#))
         .unwrap();
-    assert_eq!(int(c.eval(&Env::new()).unwrap()), 42);
+    let top = top.run(&Env::new()).unwrap_err();
+    let in_fn = in_fn.run(&Env::new()).unwrap_err();
+    assert!(matches!(top, RhaiError::Runtime(_)), "{top:?}");
+    assert!(top.to_string().contains("boom"), "{top}");
+    assert!(matches!(in_fn, RhaiError::Runtime(_)), "{in_fn:?}");
+    assert!(in_fn.to_string().contains("bang"), "{in_fn}");
 }
 
 #[test]
@@ -431,33 +391,4 @@ fn compiled_debug_output_names_the_source() {
     let c = host().compile(&Expr::from("a + b")).unwrap();
     let shown = format!("{c:?}");
     assert!(shown.contains("a + b"), "{shown}");
-}
-
-#[test]
-fn a_compiled_slot_is_shared_across_threads() {
-    let c: Arc<Compiled<Expr>> = Arc::new(host().compile(&Expr::from("x * 2")).unwrap());
-    let handles: Vec<_> = (1..=4_i64)
-        .map(|i| {
-            let c = c.clone();
-            std::thread::spawn(move || int(c.eval(&Env::new().var("x", i)).unwrap()))
-        })
-        .collect();
-    let got: Vec<i64> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-    assert_eq!(got, vec![2, 4, 6, 8]);
-}
-
-#[test]
-fn a_host_compiles_from_many_threads() {
-    let h = Arc::new(host());
-    let handles: Vec<_> = (1..=4_i64)
-        .map(|i| {
-            let h = h.clone();
-            std::thread::spawn(move || {
-                let c = h.compile(&Expr::from("x + 1")).unwrap();
-                int(c.eval(&Env::new().var("x", i)).unwrap())
-            })
-        })
-        .collect();
-    let got: Vec<i64> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-    assert_eq!(got, vec![2, 3, 4, 5]);
 }

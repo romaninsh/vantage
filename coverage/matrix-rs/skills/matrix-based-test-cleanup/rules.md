@@ -149,3 +149,20 @@ several cases at once.
 so `test_select_single_record_into_entity` (cupcake, every column set) and
 `test_null_into_optional_field` (plain, NULLs → None) became one test with two fetches and two
 exact `Product` equalities.*
+
+### A4. Repetition or a separate subject: one call each, one test
+
+Some cases can't share one call. Either repeating the call is the behaviour (a slot evaluated
+against a second env, a second compile that must hit or miss the cache, a second batch through
+one pipe), or each case needs its own subject (hosts built with different limits). These cases go
+in one test: one setup, then one plain line per repetition or subject, each with its assert.
+Every case that can share a call still does, and the proposal names A4 for each extra call.
+This is another exception to R2's single call, next to R9, A1 and A2. A2 covers different inputs
+that each need their own result. A4 covers calls whose repetition is the point, or cases that need
+another subject.
+
+*Case: vantage-rhai `host.rs` `each_host_stops_work_past_its_operation_ceiling`: the UI, background
+and zero-ceiling hosts get one call each. Background's runaway loop is a second call by R9. The same
+rule allowed the second `eval` in `a_compiled_slot_evaluates_against_whichever_env_it_is_given` and
+`the_resolver_is_asked_once_per_read_on_every_evaluation`, the paired `ast`/`compile` calls in the
+cache tests, and the second batch in `rows_are_answered_in_order_by_one_script_that_keeps_its_state`.*

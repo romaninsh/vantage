@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (template rendering, operation ceilings,
+  the compile cache, namespaces, the row pipe, the template scanner) and tests another test already
+  covers are dropped: 204 tests become 160 with the same coverage. No API or behaviour change.
+
 ## 1.1.2 — 2026-10-25
 
 - Tests whose assertions other tests already make are dropped. No API or behaviour change.
