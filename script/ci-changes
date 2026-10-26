@@ -143,7 +143,11 @@ def members():
     # Path dependencies on other members, every kind: what a member's change reaches.
     deps = {p["name"]: {d["name"] for d in p["dependencies"] if d.get("path") and d["name"] in dirs}
             for p in packages}
-    return dirs, libs, tested, published, deps
+    # Every dependency key a member uses (renamed ones by both names): which
+    # members a [workspace.dependencies] entry reaches.
+    uses = {p["name"]: {d["name"] for d in p["dependencies"]} | {d["rename"] for d in p["dependencies"] if d.get("rename")}
+            for p in packages}
+    return dirs, libs, tested, published, deps, uses
 
 
 def dependents(changed, deps):
@@ -226,9 +230,28 @@ def lock_is_global(old, new, member_names):
     return outside(old) != outside(new)
 
 
-def classify(files, locks, crates, libs, tested, outside, config, labels, adds=None, deps=None, unselect=()):
-    """`unselect`: files that select no crate (app mode's own version bump)."""
+def root_dep_changes(old, new):
+    """The [workspace.dependencies] keys the root Cargo.toml added, changed or
+    removed, or None when anything else in it changed too (profiles, [patch],
+    members, workspace.package...), which reaches every crate."""
+    try:
+        old, new = tomllib.loads(old or ""), tomllib.loads(new or "")
+    except tomllib.TOMLDecodeError:
+        return None
+    old_deps = old.get("workspace", {}).pop("dependencies", {})
+    new_deps = new.get("workspace", {}).pop("dependencies", {})
+    if old != new:
+        return None
+    return {k for k in old_deps.keys() | new_deps.keys() if old_deps.get(k) != new_deps.get(k)}
+
+
+def classify(files, locks, crates, libs, tested, outside, config, labels, adds=None, deps=None, unselect=(),
+             root_deps=None, uses=None):
+    """`unselect`: files that select no crate (app mode's own version bump).
+    `root_deps`: the workspace dependencies the root Cargo.toml changed, when
+    that's all it changed (root_dep_changes); the members using them change."""
     files = [f for f in files if f not in unselect]
+    via_root = set()
     by_dir = sorted(((d, n) for n, d in crates.items()), key=lambda x: -len(x[0]))
     outside_dirs = sorted(outside, key=len, reverse=True)
     changed, changed_outside, tests_changed = set(), set(), set()
@@ -239,6 +262,9 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
             # Excluded crates show up as path dependencies: ours, not external.
             ours = set(crates) | {os.path.basename(d) for d in outside}
             everything |= lock_is_global(*locks, ours)
+            continue
+        if f == "Cargo.toml" and root_deps is not None:
+            via_root |= {m for m, used in (uses or {}).items() if used & root_deps}
             continue
         if matches(f, config.get("global", [])):
             everything = True
@@ -258,6 +284,9 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
     # A version bump is owed only for files the PR changed in the crate itself,
     # not for crates the label or a global file pulled in.
     touched, touched_outside = sorted(changed), sorted(changed_outside)
+    # A workspace dependency's users are tested, but owe no version bump:
+    # nothing in their own directory changed.
+    changed |= via_root
     if config.get("dependents"):
         changed = dependents(changed, deps or {})
     if everything:
@@ -310,7 +339,9 @@ def main():
     files = run("git", "diff", "--name-only", span).split()
     base = run("git", "merge-base", a.base, a.head).strip()
     locks = [show(base, "Cargo.lock"), show(a.head, "Cargo.lock")] if "Cargo.lock" in files else ["", ""]
-    dirs, libs, tested, published, deps = members()
+    dirs, libs, tested, published, deps, uses = members()
+    # The root manifest: when only [workspace.dependencies] moved, only their users changed.
+    root_deps = root_dep_changes(show(base, "Cargo.toml"), show(a.head, "Cargo.toml")) if "Cargo.toml" in files else None
     labels = json.loads(a.labels)
     # Files the diff adds lines to ("-" marks a binary file; count it).
     adds = {p for n, _, p in (row.split("\t", 2) for row in run("git", "diff", "--numstat", span).splitlines())
@@ -325,7 +356,8 @@ def main():
             unselect.add(app_toml)
         if versioning.get("plist"):
             unselect.add(versioning["plist"])
-    out = classify(files, locks, dirs, libs, tested, excluded(config), config, labels, adds, deps, unselect)
+    out = classify(files, locks, dirs, libs, tested, excluded(config), config, labels, adds, deps, unselect,
+                   root_deps, uses)
     if len(out["groups"]) > 6:
         print(f"::error::{len(out['groups'])} test groups; tests.yaml has 6 archive slots", file=sys.stderr)
         return 1
