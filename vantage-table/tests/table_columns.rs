@@ -359,22 +359,24 @@ fn string_column(name: &str, ty: &str) -> Result<Column<String>> {
 }
 
 #[test]
-fn from_spec_asks_for_the_string_type_when_the_spec_names_none() {
-    let spec = ColumnSpec::<NoExtras>::new();
-    let column = Column::from_spec("name", &spec, None, string_column).unwrap();
-    assert_eq!(column.name(), "name");
-}
+fn from_spec_passes_the_specs_type_or_string_to_the_constructor() {
+    let untyped = ColumnSpec::<NoExtras>::new();
+    let mut typed = ColumnSpec::<NoExtras>::new();
+    typed.col_type = Some("int".into());
 
-#[test]
-fn from_spec_passes_the_specs_type_to_the_constructor() {
-    let mut spec = ColumnSpec::<NoExtras>::new();
-    spec.col_type = Some("int".into());
-    let column = Column::from_spec("age", &spec, None, |name, ty| {
+    let name = Column::from_spec("name", &untyped, None, |name, ty| {
+        assert_eq!(ty, "string");
+        Ok(Column::<String>::new(name))
+    })
+    .unwrap();
+    let age = Column::from_spec("age", &typed, None, |name, ty| {
         assert_eq!(ty, "int");
         Ok(Column::<String>::new(name))
     })
     .unwrap();
-    assert_eq!(column.name(), "age");
+
+    assert_eq!(name.name(), "name");
+    assert_eq!(age.name(), "age");
 }
 
 #[test]
