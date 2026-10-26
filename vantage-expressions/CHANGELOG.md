@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3 — 2026-10-26
+
+- Tests for `Order::suffix` and the `Selectable` builder, inspection and aggregate methods, driven
+  through `MockSelect`. No API or behaviour change.
+
 ## 1.2.2 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (`get` converting or failing, macro previews
