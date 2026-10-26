@@ -5836,7 +5836,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "async-trait",
  "ciborium",

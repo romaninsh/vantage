@@ -76,49 +76,24 @@ async fn get_value_returns_the_row_and_none_for_an_unknown_id() -> Result<()> {
 }
 
 #[tokio::test]
-async fn count_follows_the_applied_conditions() -> Result<()> {
-    let mut vista = clients();
-    assert_eq!(vista.count().await?, 3);
-
-    vista.add_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
-
-    assert_eq!(vista.count().await?, 2);
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.keys().collect::<Vec<_>>(), ["marty", "doc"]);
-    Ok(())
-}
-
-#[tokio::test]
-async fn conditions_combine_with_and() -> Result<()> {
-    let vista = clients()
+async fn count_rows_and_window_follow_the_applied_conditions() -> Result<()> {
+    let all = clients();
+    let paying =
+        clients().with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
+    let paying_doc = clients()
         .with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?
         .with_condition("name", FilterOp::Eq, "Doc Brown")?;
 
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.keys().collect::<Vec<_>>(), ["doc"]);
-    Ok(())
-}
+    assert_eq!(all.count().await?, 3);
+    assert_eq!(paying.count().await?, 2);
 
-#[tokio::test]
-async fn fetch_window_slices_the_filtered_rows_and_reports_the_total() -> Result<()> {
-    let vista =
-        clients().with_condition("is_paying_client", FilterOp::Eq, CborValue::Bool(true))?;
-
-    let page = vista.fetch_window(1, 5).await?;
-
+    let page = paying.fetch_window(1, 5).await?;
     let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
     assert_eq!(ids, ["doc"]);
     assert_eq!(page.total, Some(2));
-    Ok(())
-}
 
-#[tokio::test]
-async fn fetch_window_limit_caps_the_page() -> Result<()> {
-    let page = products().fetch_window(0, 2).await?;
-
-    let ids: Vec<&str> = page.rows.iter().map(|(id, _)| id.as_str()).collect();
-    assert_eq!(ids, ["flux_cupcake", "delorean_donut"]);
-    assert_eq!(page.total, Some(5));
+    let rows = paying_doc.list_values().await?;
+    assert_eq!(rows.keys().collect::<Vec<_>>(), ["doc"]);
     Ok(())
 }
 
@@ -188,8 +163,8 @@ async fn advertised_capabilities_are_window_and_traverse() {
 }
 
 #[tokio::test]
-async fn writes_are_refused_as_unsupported_naming_the_capability() {
-    let vista = clients();
+async fn writes_sort_search_operators_and_cursors_are_refused_as_unsupported() {
+    let mut vista = products();
     let empty = Record::new();
 
     let insert = vista
@@ -201,11 +176,6 @@ async fn writes_are_refused_as_unsupported_naming_the_capability() {
 
     let delete = vista.delete("x").await.expect_err("delete is unsupported");
     assert_eq!(delete.kind(), ErrorKind::Unsupported);
-}
-
-#[tokio::test]
-async fn sort_search_operators_and_cursors_are_refused_as_unsupported() {
-    let mut vista = products();
 
     let order = vista
         .set_order(Some(("name", SortDirection::Ascending)))

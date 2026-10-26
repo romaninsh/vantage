@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.4 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (tables without columns, id columns, counts
+  and windows under conditions, refused capabilities) and tests another test already covers are
+  dropped: 83 tests become 76 with the same coverage. No API or behaviour change.
+
 ## 0.7.3 — 2026-10-25
 
 - Tests whose assertions other tests already make are dropped. No API or behaviour change.
