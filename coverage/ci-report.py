@@ -36,10 +36,9 @@ def junit_counts(junit_dir):
     out = {}
     if not junit_dir or not os.path.isdir(junit_dir):
         return out
-    for group in sorted(os.listdir(junit_dir)):
-        path = os.path.join(junit_dir, group, "junit.xml")
-        if not os.path.isfile(path):
-            continue
+    # One group's artifact lands in junit/ itself, several in junit/<artifact>/.
+    paths = sorted(os.path.join(d, "junit.xml") for d, _, names in os.walk(junit_dir) if "junit.xml" in names)
+    for path in paths:
         for suite in ET.parse(path).getroot().iter("testsuite"):
             crate = suite.get("name", "").split("::")[0]
             row = out.setdefault(crate, [0, 0])
