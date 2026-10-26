@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3 — 2026-10-26
+
+- Loader tests of one behaviour are folded into one test each (schema errors, data includes) and
+  tests another test already covers are dropped: 56 tests become 52 with the same coverage. No API
+  or behaviour change.
+
 ## 0.1.2 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; comments trimmed. No API or
