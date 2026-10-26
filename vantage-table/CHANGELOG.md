@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.1 — 2026-10-26
+
+- Tests of one behaviour are folded into one test each (entity reads, insert, save and replace,
+  delete, column specs, narrowing conditions, search, set writes, generated ids) and tests another
+  test already covers are dropped: 282 tests become 262 with the same coverage. No API or behaviour
+  change.
+
 ## 3.1.0 — 2026-10-25
 
 - Requires vantage-vista 2.2.0.

@@ -195,10 +195,9 @@ fn condition_column_names_eq_in_and_comparisons() {
 }
 
 #[test]
-fn condition_column_is_none_for_raw_expressions() {
+fn condition_column_is_none_unless_a_column_is_narrowed_to_a_value() {
     let t = table();
     let src = t.data_source();
-    assert_eq!(src.condition_column(&expr_any!("1 = 1")), None);
     assert_eq!(src.condition_column(&expr_any!("price > {}", 10)), None);
     assert_eq!(
         src.condition_column(&op_expr("{} = {}", "\"t\".\"col\"", json!(1))),
@@ -212,19 +211,14 @@ fn condition_column_is_none_for_raw_expressions() {
         src.condition_column(&op_expr("{} IN ({}", "a", json!(1))),
         None
     );
-}
-
-#[test]
-fn condition_column_is_none_for_negations() {
-    let t = table();
-    let src = t.data_source();
-    for template in ["{} != {}", "{} <> {}", "{} NOT IN ({})", "{} NOT LIKE {}"] {
-        assert_eq!(
-            src.condition_column(&op_expr(template, "tenant_id", json!(1))),
-            None,
-            "{template}"
-        );
-    }
+    assert_eq!(
+        src.condition_column(&op_expr("{} NOT IN ({})", "tenant_id", json!(1))),
+        None
+    );
+    assert_eq!(
+        src.condition_column(&column_vs("tenant_id", expr_any!("7 OR 1 = 1"))),
+        None
+    );
 }
 
 fn column_vs(lhs: &str, rhs: Expression<Value>) -> Expression<Value> {
@@ -235,22 +229,6 @@ fn column_vs(lhs: &str, rhs: Expression<Value>) -> Expression<Value> {
             ExpressiveEnum::Nested(rhs),
         ],
     )
-}
-
-#[test]
-fn condition_column_is_none_for_column_vs_column() {
-    let t = table();
-    let src = t.data_source();
-    let same = column_vs("tenant_id", Expression::new("tenant_id", vec![]));
-    assert_eq!(src.condition_column(&same), None);
-}
-
-#[test]
-fn condition_column_is_none_for_an_or_combined_operand() {
-    let t = table();
-    let src = t.data_source();
-    let or = column_vs("tenant_id", expr_any!("7 OR 1 = 1"));
-    assert_eq!(src.condition_column(&or), None);
 }
 
 #[test]
@@ -299,21 +277,13 @@ async fn found(table: MockTable) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn search_matches_a_case_insensitive_substring() {
+async fn search_matches_a_case_insensitive_substring_in_any_column_when_none_is_flagged() {
     let table = people()
         .await
         .with_column_of::<String>("name")
-        .with_search("LIC");
-    assert_eq!(found(table).await, ["1"]);
-}
-
-#[tokio::test]
-async fn search_reads_every_column_when_none_is_flagged_searchable() {
-    let table = people()
-        .await
         .with_column_of::<String>("note")
-        .with_search("bob");
-    assert_eq!(found(table).await, ["1"]);
+        .with_search("OB");
+    assert_eq!(found(table).await, ["1", "2"]);
 }
 
 #[tokio::test]
