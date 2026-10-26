@@ -151,11 +151,12 @@ jobs:
   # archive, writes its coverage, measures its crates with the matrix, and
   # (pr mode) checks the PR's new tests for duplicates.
   suite:
-    needs: [build, matrix-rs]
+    # Not matrix-rs: its binary is downloaded just before the matrix (built
+    # here if it isn't there), so a suite that builds (one_job) starts at once.
+    needs: build
     # build is skipped with `one_job`: this job builds then.
     if: >-
-      !cancelled() && needs.matrix-rs.result == 'success'
-      && (needs.build.result == 'success' || needs.build.result == 'skipped')
+      !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     name: suite (${{ matrix.group.name }})
     runs-on: ${{ fromJSON(fromJSON(inputs.run).one_job == 'true' && fromJSON(inputs.run).build_runner || fromJSON(inputs.run).runner) }}
     permissions:
@@ -190,9 +191,6 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ci-tests-${{ matrix.group.slot }}
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: matrix-rs
       - if: toJSON(matrix.group.services) != '[]'
         uses: ./.ci/.github/actions/start-services
         with:
@@ -255,6 +253,12 @@ jobs:
           path: lcov-${{ matrix.group.name }}.info
           if-no-files-found: ignore
           retention-days: 1
+      # The matrix-rs job finished long ago by now. If its binary isn't there,
+      # matrix.sh builds it (no MATRIX_RS).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: matrix-rs
       # Every crate of the group: its duplicate counts go into the report. The
       # matrix runs the PR's test binaries, so it gets no secret.
       - name: Coverage matrix
@@ -265,12 +269,21 @@ jobs:
           CRATES: ${{ toJSON(matrix.group.crates) }}
           MATRIX_SKIP: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
         run: |
-          chmod +x matrix-rs
+          if [ -f matrix-rs ]; then
+            chmod +x matrix-rs
+            export MATRIX_RS=$PWD/matrix-rs
+          else
+            echo "::notice::no matrix-rs artifact: building it here"
+          fi
           mkdir -p stats
+          mapfile -t crates < <(jq -r '.[]' <<<"$CRATES")
+          # The whole group in one run: one listing, one pool across every core.
           status=0
-          for name in $(jq -r '.[]' <<<"$CRATES"); do
-            MATRIX_REPORTS=0 MATRIX_ARCHIVE=$ARCHIVE MATRIX_RS=$PWD/matrix-rs .ci/coverage/matrix.sh "$name" || { status=1; continue; }
-            cp "coverage/report/$name/pairs.json" "stats/$name.pairs.json"
+          MATRIX_REPORTS=0 MATRIX_ARCHIVE=$ARCHIVE .ci/coverage/matrix.sh --group "${crates[@]}" || status=1
+          for name in "${crates[@]}"; do
+            if [ -f "coverage/report/$name/pairs.json" ]; then
+              cp "coverage/report/$name/pairs.json" "stats/$name.pairs.json"
+            fi
           done
           exit $status
       # Only crates whose tests/ gained lines can hold a new duplicate. Reads
