@@ -163,8 +163,8 @@ pub(crate) async fn restxml_call(
              or set AWS_REGION before issuing a REST-XML request"
         ));
     }
-    let host = format!("{service}.{region}.amazonaws.com");
-    let url = build_url(&host, path, query);
+    let (base, host) = account.endpoint_or(format!("{service}.{region}.amazonaws.com"));
+    let url = build_url(base.trim_end_matches('/'), path, query);
 
     let req_builder = match method {
         "GET" => account.http().get(&url),
@@ -299,8 +299,8 @@ fn xml_inner<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
     Some(&xml[start..end])
 }
 
-fn build_url(host: &str, path: &str, query: &[(String, String)]) -> String {
-    let mut url = format!("https://{host}{path}");
+fn build_url(base: &str, path: &str, query: &[(String, String)]) -> String {
+    let mut url = format!("{base}{path}");
     if !query.is_empty() {
         url.push('?');
         for (i, (k, v)) in query.iter().enumerate() {

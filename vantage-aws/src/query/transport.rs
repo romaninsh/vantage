@@ -43,7 +43,7 @@ pub(crate) async fn query_call(
             configured_region,
         )
     };
-    let url = format!("https://{host}/");
+    let (url, host) = account.endpoint_or(host);
 
     let body = form_encode(form);
     let body_bytes = body.into_bytes();

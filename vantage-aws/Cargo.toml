@@ -1,6 +1,6 @@
 [package]
 name = "vantage-aws"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -35,7 +35,7 @@ hex = "0.4"
 ciborium = "0.2"
 
 # AWS Query protocol responses are XML (IAM, STS, EC2, …).
-quick-xml = "0.36"
+quick-xml = "0.41"
 
 # Date parsing for AWS timestamps.
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
