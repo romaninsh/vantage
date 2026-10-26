@@ -26,6 +26,14 @@ inputs:
     description: Also cache target/ (WarpBuild); the job must run script/ci-prune-target last
     default: "false"
 
+outputs:
+  target-key:
+    description: With cache-target, the key to save the pruned target/ under
+    value: ${{ steps.rust.outputs.target-key }}
+  target-hit:
+    description: With cache-target, the exact key was restored (nothing to save)
+    value: ${{ steps.rust.outputs.target-hit }}
+
 runs:
   using: composite
   steps:
@@ -42,7 +50,8 @@ runs:
       if: inputs.hook == 'true' && hashFiles('.github/ci-setup.sh') != ''
       shell: bash
       run: bash .github/ci-setup.sh
-    - uses: ./.ci/.github/actions/setup-rust
+    - id: rust
+      uses: ./.ci/.github/actions/setup-rust
       with:
         profile: ${{ inputs.profile }}
         tools: ${{ inputs.tools }}

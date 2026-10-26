@@ -42,6 +42,12 @@ outputs:
   cache-hit:
     description: The exact key exists (lookup mode)
     value: ${{ steps.lookup.outputs.cache-hit }}
+  target-key:
+    description: With `target`, the key the job saves under (script/ci-prune-target, then WarpBuilds/cache/save)
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  target-hit:
+    description: With `target`, the exact key was restored (nothing to save)
+    value: ${{ steps.restore.outputs.cache-hit }}
 
 runs:
   using: composite
@@ -79,17 +85,31 @@ runs:
       id: week
       shell: bash
       run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
-    - if: inputs.cache == 'true' && inputs.backend == 'warpbuild' && inputs.lookup != 'true'
+    - if: inputs.cache == 'true' && inputs.backend == 'warpbuild' && inputs.lookup != 'true' && inputs.target != 'true'
       uses: WarpBuilds/cache@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
       with:
         path: |
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
-          ${{ inputs.target == 'true' && 'target' || '' }}
-        key: ${{ inputs.target == 'true' && 'deps' || 'cargo' }}-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
+        key: cargo-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ inputs.target == 'true' && 'deps' || 'cargo' }}-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
+          cargo-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
+    # With target/: restore only. The job saves it itself, last, after pruning,
+    # whether it passed or not (the action's own save runs on success only, and
+    # a suite with one failing test would never save).
+    - if: inputs.cache == 'true' && inputs.backend == 'warpbuild' && inputs.lookup != 'true' && inputs.target == 'true'
+      id: restore
+      uses: WarpBuilds/cache/restore@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          target
+        key: deps-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          deps-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
     - if: inputs.lookup == 'true'
       id: lookup
       uses: WarpBuilds/cache/restore@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1

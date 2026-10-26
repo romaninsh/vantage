@@ -58,7 +58,8 @@ jobs:
           ref: ${{ job.workflow_sha }}
           path: .ci
           persist-credentials: false
-      - uses: ./.ci/.github/actions/prepare
+      - id: prep
+        uses: ./.ci/.github/actions/prepare
         with:
           run: ${{ inputs.run }}
           ssh-keys: ${{ secrets.CI_SSH_KEYS }}
@@ -121,8 +122,18 @@ jobs:
         with: { name: ci-tests-6, path: ci-6.tar.zst, retention-days: 1, compression-level: 0 }
       # WarpBuild saves target/ after the last step: only third-party crates.
       - name: Third-party crates only, for the cache
-        if: always() && fromJSON(fromJSON(inputs.run).cache) == 'warpbuild'
+        if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
         run: bash .ci/script/ci-prune-target target/llvm-cov-target/debug
+      # Saved here, failed or not: the cache action's own save is for passing jobs only.
+      - if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
+        uses: WarpBuilds/cache/save@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ steps.prep.outputs.target-key }}
 
   # The coverage matrix's per-test runner: its own workspace and cache, built
   # alongside the archive instead of after it.
@@ -178,7 +189,8 @@ jobs:
           path: .ci
           persist-credentials: false
       # Deploy keys and the hook too: some tests run cargo or shell out to tools.
-      - uses: ./.ci/.github/actions/prepare
+      - id: prep
+        uses: ./.ci/.github/actions/prepare
         with:
           run: ${{ inputs.run }}
           ssh-keys: ${{ secrets.CI_SSH_KEYS }}
@@ -316,8 +328,18 @@ jobs:
       # one_job built here: WarpBuild saves target/ after the last step, only
       # third-party crates.
       - name: Third-party crates only, for the cache
-        if: always() && fromJSON(inputs.run).one_job == 'true' && fromJSON(fromJSON(inputs.run).cache) == 'warpbuild'
+        if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
         run: bash .ci/script/ci-prune-target target/llvm-cov-target/debug
+      # Saved here, failed or not: the cache action's own save is for passing jobs only.
+      - if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
+        uses: WarpBuilds/cache/save@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ steps.prep.outputs.target-key }}
 
   # baseline mode: main's per-crate numbers (coverage, tests, dupes, overlaps),
   # the previous baseline with this merge's crates replaced. On PRs, the
