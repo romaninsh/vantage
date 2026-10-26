@@ -210,9 +210,10 @@ fn main() -> Result<()> {
             .and_then(|s| s.code())
     };
 
-    // One binary at a time: run its tests, then read their profiles against
-    // its mapping (read once), so reading one binary's profiles overlaps the
-    // test runs of the others instead of waiting for every test to finish.
+    // Per binary: run one test and read the binary's mapping with its profile
+    // (once), then run the rest, each read and deleted as soon as it ends. A
+    // profile holds every counter of its binary, so keeping a whole binary's
+    // profiles until its last test ends can fill the disk.
     let started = std::time::Instant::now();
     let mut by_binary: BTreeMap<&Path, Vec<usize>> = BTreeMap::new();
     for (i, t) in tests.iter().enumerate() {
@@ -221,23 +222,39 @@ fn main() -> Result<()> {
     let results: Vec<(usize, Option<i32>, Option<BTreeSet<Region>>)> = by_binary
         .par_iter()
         .flat_map(|(binary, idx)| {
-            let codes: Vec<Option<i32>> = idx.par_iter().map(|&i| run(&tests[i])).collect();
-            let first = idx.iter().find_map(|&i| parse(&tests[i].profile).ok());
-            let info =
-                first.and_then(|p| read_object_file(binary, p.version().unwrap_or_default()).ok());
-            let local = info
-                .as_ref()
-                .map(|info| local(info, &crate_dirs, &crate_name));
-            idx.par_iter()
-                .zip(codes)
-                .map(|(&i, code)| {
-                    let set = local
-                        .as_ref()
-                        .and_then(|l| covered(l, &tests[i].profile).ok());
-                    let _ = fs::remove_file(&tests[i].profile);
-                    (i, code, set)
-                })
-                .collect::<Vec<_>>()
+            let mapping = |i: usize| {
+                let p = parse(&tests[i].profile).ok()?;
+                read_object_file(binary, p.version().unwrap_or_default()).ok()
+            };
+            let measure = |l: &Option<Vec<Local<'_>>>, i: usize| {
+                let set = l.as_ref().and_then(|l| covered(l, &tests[i].profile).ok());
+                let _ = fs::remove_file(&tests[i].profile);
+                set
+            };
+            let first = idx[0];
+            let first_code = run(&tests[first]);
+            let mut codes = vec![first_code];
+            let mut info = mapping(first);
+            if info.is_none() {
+                // The first test left no profile (it crashed before exiting):
+                // run the rest, then take the mapping from any profile there is.
+                codes.extend(idx[1..].par_iter().map(|&i| run(&tests[i])).collect::<Vec<_>>());
+                info = idx.iter().find_map(|&i| mapping(i));
+            }
+            let found = info.as_ref().map(|info| local(info, &crate_dirs, &crate_name));
+            if codes.len() == idx.len() {
+                return idx
+                    .par_iter()
+                    .zip(codes)
+                    .map(|(&i, code)| (i, code, measure(&found, i)))
+                    .collect::<Vec<_>>();
+            }
+            let mut out = vec![(first, first_code, measure(&found, first))];
+            out.par_extend(idx[1..].par_iter().map(|&i| {
+                let code = run(&tests[i]);
+                (i, code, measure(&found, i))
+            }));
+            out
         })
         .collect();
     eprintln!(

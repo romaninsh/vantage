@@ -239,6 +239,9 @@ jobs:
           else
             cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-$NAME.info"
           fi
+          # Read: every test process left a profile of its whole binary, and
+          # the matrix needs the disk next.
+          cargo llvm-cov clean --profraw-only
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
