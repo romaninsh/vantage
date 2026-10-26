@@ -24,45 +24,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # changes, tests, audit and summary are the shared pipeline other repos call
+  # too (at a vantage commit); vantage calls them at its own.
   changes:
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/changes.yaml
     permissions:
       contents: read
       pull-requests: read # labels, read live
-    timeout-minutes: 5
-    outputs:
-      crates: ${{ steps.c.outputs.crates }}
-      libs: ${{ steps.c.outputs.libs }}
-      measured: ${{ steps.c.outputs.measured }}
-      tested: ${{ steps.c.outputs.tested }}
-      new_tests: ${{ steps.c.outputs.new_tests }}
-      groups: ${{ steps.c.outputs.groups }}
-      excluded: ${{ steps.c.outputs.excluded }}
-      api: ${{ steps.c.outputs.api }}
-      manifests: ${{ steps.c.outputs.manifests }}
-      book: ${{ steps.c.outputs.book }}
-      gated: ${{ steps.c.outputs.gated }}
-      all: ${{ steps.c.outputs.all }}
-      ci_self: ${{ steps.c.outputs.ci_self }}
-      versions: ${{ steps.c.outputs.versions }}
-      published: ${{ steps.c.outputs.published }}
-      unbumped: ${{ steps.c.outputs.unbumped }}
-      no_changelog: ${{ steps.c.outputs.no_changelog }}
-      changelogs: ${{ steps.c.outputs.changelogs }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - id: c
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-          PR: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          labels=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '[.labels[].name]')
-          script/ci-changes --base "$BASE" --head "$HEAD" --labels "$labels"
+    secrets:
+      COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
 
   lint:
     needs: changes
@@ -94,20 +64,6 @@ jobs:
       - name: No dependency on a layer above vantage
         if: needs.changes.outputs.manifests == 'true'
         run: script/check-repo-layers
-      - name: Exception tokens are vended, not written
-        env:
-          COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
-          # Without the key (forks), only entries unchanged since this base count.
-          EXCEPTIONS_BASE: ${{ github.event.pull_request.base.sha }}
-        run: python3 -I coverage/exceptions.py check
-      - name: No new internal tests
-        if: needs.changes.outputs.measured != '[]'
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          CRATES: ${{ needs.changes.outputs.measured }}
-        run: |
-          mapfile -t dirs < <(jq -r '.[].dir' <<<"$CRATES")
-          python3 -I coverage/new_tests.py internal "$BASE" "${dirs[@]}"
 
   public-api:
     needs: changes
@@ -160,16 +116,10 @@ jobs:
       actions: read
     with:
       mode: pr
-      groups: ${{ needs.changes.outputs.groups }}
-      tested: ${{ needs.changes.outputs.tested }}
-      new_tests: ${{ needs.changes.outputs.new_tests }}
-      measured: ${{ needs.changes.outputs.measured }}
-      versions: ${{ needs.changes.outputs.versions }}
-      crates: ${{ needs.changes.outputs.crates }}
-      all: ${{ needs.changes.outputs.all }}
-      gated: ${{ needs.changes.outputs.gated }}
+      run: ${{ toJSON(needs.changes.outputs) }}
       base: ${{ github.event.pull_request.base.sha }}
-    secrets: inherit
+    secrets:
+      COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
 
   # CI's own files changed: lint the workflows and check that ci-changes still
   # selects sensibly on known merges, instead of running every crate's tests.
@@ -291,96 +241,23 @@ jobs:
     needs: changes
     # Changed crates get their advisories listed; a lockfile change can bring new ones.
     if: needs.changes.outputs.crates != '[]' || needs.changes.outputs.manifests == 'true'
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/audit.yaml
     permissions:
       contents: read
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-audit
-      - name: Advisories, and the ones this PR brings in
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: script/ci-audit "$BASE" audit
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: audit
-          path: audit
-          retention-days: 1
+    with:
+      run: ${{ toJSON(needs.changes.outputs) }}
+      base: ${{ github.event.pull_request.base.sha }}
 
-  # The one check to require: collects every job, posts the summary comment
-  # (edited in place on every run), and fails if any job failed. A broken
-  # comment never fails it; a failed job always does.
+  # The one check to require: posts the summary comment and fails if any job
+  # failed or a version is owed.
   summary:
     needs: [changes, lint, public-api, tests, ci-self, doctests, excluded, gated, audit]
     if: always()
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/summary.yaml
     permissions:
       contents: read
       actions: read # this run's artifacts and main's coverage-baseline
       pull-requests: write # the summary comment
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-results
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: audit
-          path: audit
-        continue-on-error: true
-      - name: Summary
-        continue-on-error: true
-        env:
-          RUN: ${{ toJSON(needs.changes.outputs) }}
-          JOBS: ${{ toJSON(needs) }}
-        run: |
-          jobs=$(jq -c 'with_entries(.value = .value.result)' <<<"$JOBS")
-          python3 -I coverage/ci-report.py --run "$RUN" --jobs "$jobs" --junit junit --lcov lcov.info \
-            --stats stats --audit audit --baseline baseline/coverage-baseline.json > summary.md
-          cat summary.md >> "$GITHUB_STEP_SUMMARY"
-      # One comment per PR, found by its marker and edited, never a new one per run.
-      # Fork PRs get a read-only token: the summary stays in the job summary.
-      - name: PR comment
-        if: hashFiles('summary.md') != ''
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
-            -q '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- vantage-ci-report -->"))) | .id' | head -1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@summary.md > /dev/null
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@summary.md > /dev/null
-          fi
-      # Every changed crate that goes to crates.io is bumped, with a CHANGELOG
-      # entry for its new version (publish-on-merge releases it as it stands).
-      - name: Versions bumped, with a CHANGELOG entry
-        env:
-          UNBUMPED: ${{ needs.changes.outputs.unbumped }}
-          NO_CHANGELOG: ${{ needs.changes.outputs.no_changelog }}
-        run: |
-          status=0
-          for c in $(jq -r '.[]' <<<"${UNBUMPED:-[]}"); do
-            echo "::error::$c changed but its version didn't: bump it (patch is fine)"; status=1
-          done
-          for c in $(jq -r '.[]' <<<"${NO_CHANGELOG:-[]}"); do
-            echo "::error::$c has no CHANGELOG.md entry for its new version (a '## <version>' heading)"; status=1
-          done
-          exit $status
-      - name: Every job passed or was skipped by design
-        if: always()
-        env:
-          JOBS: ${{ toJSON(needs) }}
-        run: |
-          jq -c 'with_entries(.value = .value.result)' <<<"$JOBS"
-          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$JOBS"
+    with:
+      run: ${{ toJSON(needs.changes.outputs) }}
+      jobs: ${{ toJSON(needs) }}

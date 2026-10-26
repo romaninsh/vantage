@@ -13,7 +13,8 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   manifests a Cargo.toml or Cargo.lock changed (repo-layer check)
   excluded  crates outside the workspace whose own suite runs: [{dir, workdir, kind}]
   services  databases the crates' tests need
-  groups    crates split by the databases they need: [{name, crates, services}]
+  groups    crates split by the databases they need: [{name, crates, services, slot}];
+            slot (1-6) is the group's archive artifact in tests.yaml
   all       every crate counts as changed
   book      the book changed
   ci_self   CI's own files changed: the ci-self job checks them
@@ -28,12 +29,30 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   changelogs {crate: {path, text}}: each bumped crate's entry, as one line
   gated     the ALL_TESTS label is set
 
+The repo's own settings, from .github/ci-crates.yaml (defaults suit vantage):
+  runner, build_runner, small_runner  runner labels (ubuntu-latest)
+  env       extra env for every cargo job ({})
+  setup     .github/ci-setup.sh exists: shared cargo jobs run it (apt packages)
+  cache     rust-cache | warpbuild (rust-cache)
+  warm      post-merge cache warming: changed | full-on-miss (changed)
+  internal_tests  forbid | allow: may a PR add tests under src/ (forbid)
+  archive_exclude  nextest filter kept out of the test archive ("")
+  skill_url the duplicate-test cleanup skill the summary links to
+  versioning_mode  crates | app | none (crates)
+  app       app mode: {crate, old, new, owed, heading, changelog, plist,
+            plist_ok, skip_label, skipped}; owed means the PR changed a crate, the root
+            Cargo.toml or the lockfile's outside packages
+
 A file belongs to the crate whose directory holds it, longest prefix first,
 so a version bump in a crate's Cargo.toml or CHANGELOG.md selects that crate.
-Cargo.lock selects nothing when only workspace members' versions moved; any
-other lockfile change means every crate changed. .github/ci-crates.yaml holds
-the global paths, the database map and the excluded crates.
+In app mode the app's own version bump (its version line, the plist) selects
+nothing. Cargo.lock selects nothing when only workspace members' versions
+moved; any other lockfile change means every crate changed. With
+`dependents: true` every member depending on a changed one, however
+indirectly, is changed too. .github/ci-crates.yaml holds the global paths, the
+database map and the excluded crates.
 """
+import plistlib
 import argparse
 import fnmatch
 import json
@@ -45,8 +64,12 @@ import tomllib
 
 import yaml
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The workspace is wherever this runs, not where the script lives: another repo
+# runs it from a checkout of vantage under .ci/.
+ROOT = subprocess.run(["git", "rev-parse", "--show-toplevel"], check=True, capture_output=True,
+                      text=True).stdout.strip()
 LABEL = "ALL_TESTS"
+SKILL_URL = "https://github.com/romaninsh/vantage/blob/main/coverage/matrix-rs/skills/matrix-based-test-cleanup/SKILL.md"
 
 
 def run(*cmd):
@@ -56,21 +79,18 @@ def run(*cmd):
 def versions(names, dirs, base, head):
     """{crate: [old, new]} for changed crates whose version moved; old is
     null for a crate that didn't exist at base."""
-    def version(rev, name):
-        text = show(rev, f"{dirs[name]}/Cargo.toml")
-        return tomllib.loads(text).get("package", {}).get("version") if text else None
     out = {}
     for name in names:
-        old, new = version(base, name), version(head, name)
+        old, new = versions_of(name, dirs, base), versions_of(name, dirs, head)
         if old != new:
             out[name] = [old, new]
     return out
 
 
-def changelog_entry(text, version, limit=400):
-    """The `## <version>` section of a CHANGELOG as one plain line, or None
-    when there's no such heading."""
-    match = re.search(rf"^## {re.escape(version)}( [^\n]*)?\n(.*?)(?=^## |\Z)", text or "", re.M | re.S)
+def changelog_entry(text, heading, limit=400):
+    """The section under `heading` (say `## 1.2.3`) of a CHANGELOG as one plain
+    line, or None when there's no such heading."""
+    match = re.search(rf"^{re.escape(heading)}( [^\n]*)?\n(.*?)(?=^## |\Z)", text or "", re.M | re.S)
     if not match:
         return None
     body = re.sub(r"(?m)^\s*[-*] ", "• ", re.sub(r"`|\*\*", "", match.group(2)))
@@ -111,7 +131,58 @@ def members():
     tested = {name for name, d in dirs.items() if has_tests(d)}
     # `publish = false` shows as an empty list; null means crates.io.
     published = {p["name"] for p in packages if p.get("publish") != []}
-    return dirs, libs, tested, published
+    # Path dependencies on other members, every kind: what a member's change reaches.
+    deps = {p["name"]: {d["name"] for d in p["dependencies"] if d.get("path") and d["name"] in dirs}
+            for p in packages}
+    return dirs, libs, tested, published, deps
+
+
+def dependents(changed, deps):
+    """`changed` plus every member that depends on one of them, however indirectly."""
+    users = {}
+    for name, needs in deps.items():
+        for n in needs:
+            users.setdefault(n, set()).add(name)
+    out, todo = set(changed), list(changed)
+    while todo:
+        for user in users.get(todo.pop(), ()):
+            if user not in out:
+                out.add(user)
+                todo.append(user)
+    return out
+
+
+def version_only(span, path):
+    """The diff to a Cargo.toml changes nothing but its `version = ` line."""
+    lines = [l for l in run("git", "diff", "-U0", span, "--", path).splitlines()
+             if l[:1] in "+-" and not l.startswith(("+++", "---"))]
+    return bool(lines) and all(re.match(r"[+-]\s*version\s*=", l) for l in lines)
+
+
+def app_version(settings, dirs, base, head, owed, labels):
+    """App mode's one version: the app crate's, with its CHANGELOG block and plist."""
+    name = settings["crate"]
+    old, new = versions_of(name, dirs, base), versions_of(name, dirs, head)
+    major, minor = (new or "0.0").split(".")[:2]
+    path = settings.get("changelog", "CHANGELOG.md")
+    heading = settings.get("heading", "## {major}.{minor}").format(major=major, minor=minor, version=new)
+    text = changelog_entry(show(head, path), heading) if new else None
+    plist = plist_ok = None
+    if settings.get("plist"):
+        info = plistlib.loads(show(head, settings["plist"]).encode() or b"<plist><dict/></plist>")
+        plist = info.get("CFBundleShortVersionString")
+        plist_ok = plist == new and info.get("CFBundleVersion") == new
+    return {
+        "crate": name, "old": old, "new": new, "owed": owed, "heading": heading,
+        "changelog": {"path": path, "text": text} if text is not None else None,
+        "plist": plist, "plist_ok": plist_ok if plist_ok is not None else True,
+        "skip_label": settings.get("skip_label"), "skipped": settings.get("skip_label") in labels,
+    }
+
+
+def versions_of(name, dirs, rev):
+    text = show(rev, f"{dirs[name]}/Cargo.toml")
+    return tomllib.loads(text).get("package", {}).get("version") if text else None
 
 
 def excluded(config):
@@ -139,7 +210,9 @@ def lock_is_global(old, new, member_names):
     return outside(old) != outside(new)
 
 
-def classify(files, locks, crates, libs, tested, outside, config, labels, adds=None):
+def classify(files, locks, crates, libs, tested, outside, config, labels, adds=None, deps=None, unselect=()):
+    """`unselect`: files that select no crate (app mode's own version bump)."""
+    files = [f for f in files if f not in unselect]
     by_dir = sorted(((d, n) for n, d in crates.items()), key=lambda x: -len(x[0]))
     outside_dirs = sorted(outside, key=len, reverse=True)
     changed, changed_outside, tests_changed = set(), set(), set()
@@ -169,6 +242,8 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
     # A version bump is owed only for files the PR changed in the crate itself,
     # not for crates the label or a global file pulled in.
     touched, touched_outside = sorted(changed), sorted(changed_outside)
+    if config.get("dependents"):
+        changed = dependents(changed, deps or {})
     if everything:
         changed = set(crates)
     # Without the label an excluded crate runs only when it changed.
@@ -194,9 +269,10 @@ def classify(files, locks, crates, libs, tested, outside, config, labels, adds=N
         "manifests": any(os.path.basename(f) in ("Cargo.toml", "Cargo.lock") for f in files),
         "excluded": [outside[d] for d in sorted(changed_outside)],
         "services": services,
+        # The slot is the group's archive artifact: tests.yaml has six.
         "groups": [
-            {"name": "-".join(need) or "plain", "crates": cs, "services": list(need)}
-            for need, cs in sorted(groups.items())
+            {"name": "-".join(need) or "plain", "crates": cs, "services": list(need), "slot": i}
+            for i, (need, cs) in enumerate(sorted(groups.items()), 1)
         ],
         "touched": touched,
         "touched_excluded": touched_outside,
@@ -218,11 +294,25 @@ def main():
     files = run("git", "diff", "--name-only", span).split()
     base = run("git", "merge-base", a.base, a.head).strip()
     locks = [show(base, "Cargo.lock"), show(a.head, "Cargo.lock")] if "Cargo.lock" in files else ["", ""]
-    dirs, libs, tested, published = members()
+    dirs, libs, tested, published, deps = members()
+    labels = json.loads(a.labels)
     # Files the diff adds lines to ("-" marks a binary file; count it).
     adds = {p for n, _, p in (row.split("\t", 2) for row in run("git", "diff", "--numstat", span).splitlines())
             if n != "0"}
-    out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels), adds)
+    versioning = config.get("versioning") or {}
+    mode = versioning.get("mode", "crates")
+    unselect = set()
+    if mode == "app":
+        # Every PR bumps the app: the bump alone tests nothing.
+        app_toml = f"{dirs[versioning['crate']]}/Cargo.toml"
+        if app_toml in files and version_only(span, app_toml):
+            unselect.add(app_toml)
+        if versioning.get("plist"):
+            unselect.add(versioning["plist"])
+    out = classify(files, locks, dirs, libs, tested, excluded(config), config, labels, adds, deps, unselect)
+    if len(out["groups"]) > 6:
+        print(f"::error::{len(out['groups'])} test groups; tests.yaml has 6 archive slots", file=sys.stderr)
+        return 1
     # Excluded crates release too: check them by their own Cargo.toml.
     outside_names = {}
     for entry in out["excluded"]:
@@ -232,16 +322,38 @@ def main():
         if manifest.get("name") and manifest.get("publish", True) is not False:
             dirs.setdefault(manifest["name"], entry["workdir"])
             outside_names[manifest["name"]] = entry["workdir"]
-    checked = sorted((set(out["touched"]) & published) | set(outside_names))
+    # Per-crate versions only in crates mode; app mode has one version, below.
+    checked = sorted((set(out["touched"]) & published) | set(outside_names)) if mode == "crates" else []
     out["versions"] = versions(checked, dirs, base, a.head)
     out["published"] = checked
     out["unbumped"] = [c for c in checked if c not in out["versions"]]
     out["changelogs"] = {}
     for c, (_, new) in sorted(out["versions"].items()):
-        entry = changelog_entry(show(a.head, f"{dirs[c]}/CHANGELOG.md"), new)
+        entry = changelog_entry(show(a.head, f"{dirs[c]}/CHANGELOG.md"), f"## {new}")
         if entry is not None:
             out["changelogs"][c] = {"path": f"{dirs[c]}/CHANGELOG.md", "text": entry}
     out["no_changelog"] = [c for c in sorted(out["versions"]) if c not in out["changelogs"]]
+
+    runner = config.get("runner", "ubuntu-latest")
+    out["runner"] = runner
+    out["build_runner"] = config.get("build_runner", runner)
+    out["small_runner"] = config.get("small_runner", "ubuntu-latest")
+    out["env"] = config.get("env") or {}
+    out["setup"] = os.path.isfile(os.path.join(ROOT, ".github", "ci-setup.sh"))
+    out["cache"] = config.get("cache", "rust-cache")
+    out["warm"] = config.get("warm", "changed")
+    out["internal_tests"] = config.get("internal_tests", "forbid")
+    out["archive_exclude"] = config.get("archive_exclude", "")
+    out["skill_url"] = config.get("skill_url", SKILL_URL)
+    out["versioning_mode"] = mode
+    out["app"] = {}
+    if mode == "app":
+        # The app's version is owed for any crate change, the root manifest, or a
+        # lockfile change outside the workspace (a dependency bump ships too).
+        ours = set(dirs) | {os.path.basename(d) for d in excluded(config)}
+        lock = "Cargo.lock" in files and lock_is_global(*locks, ours)
+        owed = bool(out["touched"]) or "Cargo.toml" in files or lock
+        out["app"] = app_version(versioning, dirs, base, a.head, owed, labels)
     lines = [f"{k}={json.dumps(v, separators=(',', ':'))}" for k, v in out.items()]
     print("\n".join(lines))
     if os.environ.get("GITHUB_OUTPUT"):

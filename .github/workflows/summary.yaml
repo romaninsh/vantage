@@ -1,0 +1,107 @@
+name: Summary
+
+# The one check to require: collects the run, posts the PR's summary comment
+# (edited in place on every run), and fails if any job failed or a version is
+# owed. A broken comment never fails it; a failed job always does.
+on:
+  workflow_call:
+    inputs:
+      run:
+        description: The changes job's outputs (toJSON(needs.changes.outputs))
+        type: string
+        required: true
+      jobs:
+        description: The caller's toJSON(needs), every job the summary waits on
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  summary:
+    # The changes job may have failed and left no outputs.
+    runs-on: ${{ fromJSON(inputs.run).small_runner && fromJSON(fromJSON(inputs.run).small_runner) || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      actions: read # this run's artifacts and main's coverage-baseline
+      pull-requests: write # the summary comment
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci
+          persist-credentials: false
+      - uses: ./.ci/.github/actions/ci-results
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: audit
+          path: audit
+        continue-on-error: true
+      # Labels are read live, so a skip label added after the run counts on a re-run of this job alone.
+      - name: Labels
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: echo "labels=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '[.labels[].name]')" >> "$GITHUB_OUTPUT"
+      - name: Summary
+        continue-on-error: true
+        env:
+          RUN: ${{ inputs.run }}
+          JOBS: ${{ inputs.jobs }}
+          LABELS: ${{ steps.labels.outputs.labels }}
+        run: |
+          jobs=$(jq -c 'with_entries(.value = .value.result)' <<<"$JOBS")
+          python3 -I .ci/coverage/ci-report.py --run "$RUN" --jobs "$jobs" --labels "$LABELS" --junit junit \
+            --lcov lcov.info --stats stats --audit audit --baseline baseline/coverage-baseline.json > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      # One comment per PR, found by its marker and edited, never a new one per run.
+      # Fork PRs get a read-only token: the summary stays in the job summary.
+      - name: PR comment
+        if: hashFiles('summary.md') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            -q '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- vantage-ci-report -->"))) | .id' | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@summary.md > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@summary.md > /dev/null
+          fi
+      # crates mode: every changed crate that goes to crates.io is bumped, with
+      # a CHANGELOG entry for its new version (publish-on-merge releases it as
+      # it stands). app mode: the app's one version, when the PR owes it.
+      - name: Versions bumped, with a CHANGELOG entry
+        env:
+          RUN: ${{ inputs.run }}
+          LABELS: ${{ steps.labels.outputs.labels }}
+        run: |
+          field() { jq -r --arg k "$1" '.[$k] // "null"' <<<"$RUN"; }
+          status=0
+          for c in $(jq -r '.[]' <<<"$(field unbumped)" 2>/dev/null); do
+            echo "::error::$c changed but its version didn't: bump it (patch is fine)"; status=1
+          done
+          for c in $(jq -r '.[]' <<<"$(field no_changelog)" 2>/dev/null); do
+            echo "::error::$c has no CHANGELOG.md entry for its new version (a '## <version>' heading)"; status=1
+          done
+          app=$(field app)
+          if [ "$(jq -r '.owed // false' <<<"$app" 2>/dev/null)" = true ] \
+             && ! jq -e --arg l "$(jq -r '.skip_label // ""' <<<"$app")" 'index($l)' <<<"$LABELS" > /dev/null; then
+            name=$(jq -r .crate <<<"$app"); new=$(jq -r .new <<<"$app"); skip=$(jq -r .skip_label <<<"$app")
+            [ "$(jq -r .old <<<"$app")" = "$new" ] && { echo "::error::$name's version is still $new: bump it, or add the $skip label"; status=1; }
+            [ "$(jq -r .changelog <<<"$app")" = null ] && { echo "::error::the CHANGELOG has no '$(jq -r .heading <<<"$app")' block"; status=1; }
+            [ "$(jq -r .plist_ok <<<"$app")" = true ] || { echo "::error::Info.plist says $(jq -r .plist <<<"$app"), not $new"; status=1; }
+          fi
+          exit $status
+      - name: Every job passed or was skipped by design
+        if: always()
+        env:
+          JOBS: ${{ inputs.jobs }}
+        run: |
+          jq -c 'with_entries(.value = .value.result)' <<<"$JOBS"
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$JOBS"

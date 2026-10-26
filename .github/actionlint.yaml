@@ -1,0 +1,6 @@
+# actionlint (1.7.12, the latest) doesn't know job.workflow_repository and
+# job.workflow_sha yet: the shared workflows check themselves out with them.
+paths:
+  .github/workflows/**/*.yaml:
+    ignore:
+      - 'property "workflow_(sha|repository)" is not defined'

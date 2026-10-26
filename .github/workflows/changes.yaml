@@ -1,0 +1,163 @@
+name: Changes
+
+# What a PR (or a merge to main) changed, for every job after it: ci-changes'
+# keys as outputs, each a JSON string. Also the checks that need the shared
+# scripts but no build: exception tokens, and no new internal tests.
+#
+# Shared: another repo calls this at a vantage commit; the scripts run from a
+# checkout of that commit (.ci/) against the caller's workspace.
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "pr | post-merge"
+        type: string
+        default: pr
+      runner:
+        description: >-
+          Runner label. post-merge with `warm: full-on-miss` needs the build's runner,
+          to look up its cache.
+        type: string
+        default: ubuntu-latest
+    secrets:
+      COVERAGE_EXCEPTIONS_KEY:
+        required: false
+    outputs:
+      crates: { value: "${{ jobs.changes.outputs.crates }}" }
+      tested: { value: "${{ jobs.changes.outputs.tested }}" }
+      libs: { value: "${{ jobs.changes.outputs.libs }}" }
+      measured: { value: "${{ jobs.changes.outputs.measured }}" }
+      new_tests: { value: "${{ jobs.changes.outputs.new_tests }}" }
+      api: { value: "${{ jobs.changes.outputs.api }}" }
+      manifests: { value: "${{ jobs.changes.outputs.manifests }}" }
+      excluded: { value: "${{ jobs.changes.outputs.excluded }}" }
+      services: { value: "${{ jobs.changes.outputs.services }}" }
+      groups: { value: "${{ jobs.changes.outputs.groups }}" }
+      touched: { value: "${{ jobs.changes.outputs.touched }}" }
+      touched_excluded: { value: "${{ jobs.changes.outputs.touched_excluded }}" }
+      all: { value: "${{ jobs.changes.outputs.all }}" }
+      book: { value: "${{ jobs.changes.outputs.book }}" }
+      ci_self: { value: "${{ jobs.changes.outputs.ci_self }}" }
+      gated: { value: "${{ jobs.changes.outputs.gated }}" }
+      versions: { value: "${{ jobs.changes.outputs.versions }}" }
+      published: { value: "${{ jobs.changes.outputs.published }}" }
+      unbumped: { value: "${{ jobs.changes.outputs.unbumped }}" }
+      changelogs: { value: "${{ jobs.changes.outputs.changelogs }}" }
+      no_changelog: { value: "${{ jobs.changes.outputs.no_changelog }}" }
+      runner: { value: "${{ jobs.changes.outputs.runner }}" }
+      build_runner: { value: "${{ jobs.changes.outputs.build_runner }}" }
+      small_runner: { value: "${{ jobs.changes.outputs.small_runner }}" }
+      env: { value: "${{ jobs.changes.outputs.env }}" }
+      setup: { value: "${{ jobs.changes.outputs.setup }}" }
+      cache: { value: "${{ jobs.changes.outputs.cache }}" }
+      warm: { value: "${{ jobs.changes.outputs.warm }}" }
+      internal_tests: { value: "${{ jobs.changes.outputs.internal_tests }}" }
+      archive_exclude: { value: "${{ jobs.changes.outputs.archive_exclude }}" }
+      skill_url: { value: "${{ jobs.changes.outputs.skill_url }}" }
+      versioning_mode: { value: "${{ jobs.changes.outputs.versioning_mode }}" }
+      app: { value: "${{ jobs.changes.outputs.app }}" }
+
+permissions: {}
+
+jobs:
+  changes:
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      pull-requests: read # labels, read live
+    timeout-minutes: 10
+    outputs:
+      crates: ${{ steps.c.outputs.crates }}
+      tested: ${{ steps.c.outputs.tested }}
+      libs: ${{ steps.c.outputs.libs }}
+      measured: ${{ steps.c.outputs.measured }}
+      new_tests: ${{ steps.c.outputs.new_tests }}
+      api: ${{ steps.c.outputs.api }}
+      manifests: ${{ steps.c.outputs.manifests }}
+      excluded: ${{ steps.c.outputs.excluded }}
+      services: ${{ steps.c.outputs.services }}
+      groups: ${{ steps.c.outputs.groups }}
+      touched: ${{ steps.c.outputs.touched }}
+      touched_excluded: ${{ steps.c.outputs.touched_excluded }}
+      all: ${{ steps.c.outputs.all }}
+      book: ${{ steps.c.outputs.book }}
+      ci_self: ${{ steps.c.outputs.ci_self }}
+      gated: ${{ steps.c.outputs.gated }}
+      versions: ${{ steps.c.outputs.versions }}
+      published: ${{ steps.c.outputs.published }}
+      unbumped: ${{ steps.c.outputs.unbumped }}
+      changelogs: ${{ steps.c.outputs.changelogs }}
+      no_changelog: ${{ steps.c.outputs.no_changelog }}
+      runner: ${{ steps.c.outputs.runner }}
+      build_runner: ${{ steps.c.outputs.build_runner }}
+      small_runner: ${{ steps.c.outputs.small_runner }}
+      env: ${{ steps.c.outputs.env }}
+      setup: ${{ steps.c.outputs.setup }}
+      cache: ${{ steps.c.outputs.cache }}
+      warm: ${{ steps.c.outputs.warm }}
+      internal_tests: ${{ steps.c.outputs.internal_tests }}
+      archive_exclude: ${{ steps.c.outputs.archive_exclude }}
+      skill_url: ${{ steps.c.outputs.skill_url }}
+      versioning_mode: ${{ steps.c.outputs.versioning_mode }}
+      app: ${{ steps.c.outputs.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The shared scripts, at the commit of this workflow (the same as the
+      # workspace when vantage runs it).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci
+          persist-credentials: false
+      # post-merge, `warm: full-on-miss`: when main's build cache key is new (a
+      # new week or lockfile), test everything, so the cache saved is complete.
+      - name: Warm settings
+        id: warm
+        if: inputs.mode == 'post-merge'
+        run: |
+          python3 -I -c 'import yaml; c = yaml.safe_load(open(".github/ci-crates.yaml")) or {}
+          print("full=" + str(c.get("warm") == "full-on-miss" and c.get("cache") == "warpbuild").lower())' >> "$GITHUB_OUTPUT"
+      - name: Main's build cache
+        id: lookup
+        if: steps.warm.outputs.full == 'true'
+        uses: ./.ci/.github/actions/setup-rust
+        with:
+          profile: instrumented
+          backend: warpbuild
+          lookup: "true"
+      - id: c
+        env:
+          MODE: ${{ inputs.mode }}
+          BASE: ${{ inputs.mode == 'pr' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ inputs.mode == 'pr' && github.event.pull_request.head.sha || github.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          MISS: ${{ steps.warm.outputs.full == 'true' && steps.lookup.outputs.cache-hit != 'true' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          labels='[]'
+          if [ "$MODE" = pr ]; then
+            labels=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '[.labels[].name]')
+          elif [ "$MISS" = true ]; then
+            echo "main's build cache key is new: building and measuring every crate"
+            labels='["ALL_TESTS"]'
+          fi
+          .ci/script/ci-changes --base "$BASE" --head "$HEAD" --labels "$labels"
+      - name: Exception tokens are vended, not written
+        if: inputs.mode == 'pr'
+        env:
+          COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
+          # Without the key (forks), only entries unchanged since this base count.
+          EXCEPTIONS_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 -I .ci/coverage/exceptions.py check
+      - name: No new internal tests
+        if: inputs.mode == 'pr' && steps.c.outputs.measured != '[]' && steps.c.outputs.internal_tests == '"forbid"'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          CRATES: ${{ steps.c.outputs.measured }}
+        run: |
+          mapfile -t dirs < <(jq -r '.[].dir' <<<"$CRATES")
+          python3 -I .ci/coverage/new_tests.py internal "$BASE" "${dirs[@]}"

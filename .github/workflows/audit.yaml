@@ -1,0 +1,57 @@
+name: Audit
+
+# RustSec advisories in the caller's lockfile: each mapped to the workspace
+# crates depending on it, for the summary. Fails only on advisories the PR's
+# lockfile change brings in; the rest are listed for main to fix.
+on:
+  workflow_call:
+    inputs:
+      run:
+        description: The changes job's outputs (toJSON(needs.changes.outputs))
+        type: string
+        required: true
+      base:
+        type: string
+        required: true
+    secrets:
+      CI_SSH_KEYS:
+        description: Deploy keys for private git dependencies (cargo tree fetches them)
+        required: false
+
+permissions: {}
+
+jobs:
+  audit:
+    runs-on: ${{ fromJSON(fromJSON(inputs.run).small_runner) }}
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci
+          persist-credentials: false
+      # cargo tree resolves the dependency graph: deploy keys, no build, no hook.
+      - uses: ./.ci/.github/actions/prepare
+        with:
+          run: ${{ inputs.run }}
+          ssh-keys: ${{ secrets.CI_SSH_KEYS }}
+          hook: "false"
+          cache: "false"
+          tools: cargo-audit
+      - name: Advisories, and the ones this PR brings in
+        env:
+          BASE: ${{ inputs.base }}
+        run: .ci/script/ci-audit "$BASE" audit
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: audit
+          path: audit
+          retention-days: 1

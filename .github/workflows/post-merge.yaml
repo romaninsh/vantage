@@ -20,24 +20,12 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/changes.yaml
     permissions:
       contents: read
-    timeout-minutes: 5
-    outputs:
-      crates: ${{ steps.c.outputs.crates }}
-      measured: ${{ steps.c.outputs.measured }}
-      tested: ${{ steps.c.outputs.tested }}
-      groups: ${{ steps.c.outputs.groups }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - id: c
-        env:
-          BASE: ${{ github.event.before }}
-        run: script/ci-changes --base "$BASE" --head "$GITHUB_SHA"
+      pull-requests: read
+    with:
+      mode: post-merge
 
   # The PR pipeline in baseline mode. Its build and matrix-rs jobs share their
   # ids with the PR's, so they also warm the caches PRs restore.
@@ -50,11 +38,7 @@ jobs:
       actions: read
     with:
       mode: baseline
-      groups: ${{ needs.changes.outputs.groups }}
-      tested: ${{ needs.changes.outputs.tested }}
-      measured: ${{ needs.changes.outputs.measured }}
-      crates: ${{ needs.changes.outputs.crates }}
-    secrets: inherit
+      run: ${{ toJSON(needs.changes.outputs) }}
 
   # rust-cache keys a cache by job id: this warms the cache ci.yaml's lint
   # restores. Nothing is gated here.

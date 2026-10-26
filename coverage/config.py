@@ -1,10 +1,20 @@
 """Per-package coverage settings from coverage/config.yaml."""
 import fnmatch
 import os
+import subprocess
 
 import yaml
 
-FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+
+def _file():
+    """The workspace's coverage/config.yaml; the one next to this script when the
+    workspace has none (another repo running the tools from .ci/)."""
+    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    own = os.path.join(root, "coverage", "config.yaml")
+    return own if root and os.path.exists(own) else os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+
+
+FILE = _file()
 
 
 def settings(package):

@@ -3,7 +3,9 @@ description: Toolchain, the job's Rust cache, and test tools.
 
 # Caching is the setup the per-crate workflows used before this pipeline:
 # rust-cache with a job's own key, workspace and all crates cached, saved on
-# every branch with the action's defaults.
+# every branch with the action's defaults. A repo on WarpBuild runners uses
+# WarpBuild's cache instead (backend: warpbuild): one key per profile, runner
+# and ISO week, saved when that key is new.
 inputs:
   profile:
     description: "normal | instrumented | nightly"
@@ -23,11 +25,22 @@ inputs:
   cache:
     description: Restore the Rust cache ("false" for jobs that only run archived binaries)
     default: "true"
+  backend:
+    description: "rust-cache | warpbuild"
+    default: rust-cache
+  lookup:
+    description: Only check whether the cache key exists (warpbuild); sets the cache-hit output
+    default: "false"
+outputs:
+  cache-hit:
+    description: The exact key exists (lookup mode)
+    value: ${{ steps.lookup.outputs.cache-hit }}
 
 runs:
   using: composite
   steps:
     - name: Shared build flags
+      if: inputs.lookup != 'true'
       shell: bash
       run: |
         # No debug info: the workspace's [profile.dev] already has `debug = false`,
@@ -37,12 +50,13 @@ runs:
           echo "CARGO_INCREMENTAL=0"
         } >> "$GITHUB_ENV"
 
-    - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+    - if: inputs.lookup != 'true'
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.profile == 'instrumented' && 'llvm-tools-preview' || 'clippy, rustfmt' }}
 
-    - if: inputs.cache == 'true'
+    - if: inputs.cache == 'true' && inputs.backend == 'rust-cache' && inputs.lookup != 'true'
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
         key: ${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}
@@ -51,7 +65,37 @@ runs:
         cache-workspace-crates: true
         cache-all-crates: true
 
-    - if: inputs.tools != ''
+    # The week rotates the key: a restore-key hit saves restored plus new
+    # artifacts, so without it target/ only grows.
+    - if: inputs.backend == 'warpbuild'
+      id: week
+      shell: bash
+      run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+    - if: inputs.cache == 'true' && inputs.backend == 'warpbuild' && inputs.lookup != 'true'
+      uses: WarpBuilds/cache@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          target
+        key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
+    - if: inputs.lookup == 'true'
+      id: lookup
+      uses: WarpBuilds/cache/restore@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
+      with:
+        # The same paths as the save: the cache's version is derived from them.
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          target
+        key: rust-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
+        lookup-only: true
+
+    - if: inputs.tools != '' && inputs.lookup != 'true'
       uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
       with:
         tool: ${{ inputs.tools }}

@@ -1,0 +1,48 @@
+name: Prepare a cargo job
+description: The repo's env, deploy keys and setup hook, then Rust. Every shared cargo job starts here.
+
+# Runs from the shared checkout (.ci/) in the caller's workspace. `run` is the
+# changes job's outputs (ci-changes' keys, each a JSON string). Secrets can't be
+# read in a composite action, so the job passes the deploy keys in.
+inputs:
+  run:
+    description: The changes job's outputs, as JSON
+    required: true
+  ssh-keys:
+    description: Private deploy keys for private git dependencies (newline-joined), or empty
+    default: ""
+  hook:
+    description: Run the repo's .github/ci-setup.sh (apt packages)
+    default: "true"
+  profile:
+    default: normal
+  tools:
+    default: ""
+  key:
+    default: ""
+  cache:
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: The repo's env
+      shell: bash
+      env:
+        REPO_ENV: ${{ fromJSON(inputs.run).env || '{}' }}
+      run: jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$REPO_ENV" >> "$GITHUB_ENV"
+    - if: inputs.ssh-keys != ''
+      uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-keys }}
+    - name: The repo's setup hook
+      if: inputs.hook == 'true' && hashFiles('.github/ci-setup.sh') != ''
+      shell: bash
+      run: bash .github/ci-setup.sh
+    - uses: ./.ci/.github/actions/setup-rust
+      with:
+        profile: ${{ inputs.profile }}
+        tools: ${{ inputs.tools }}
+        key: ${{ inputs.key }}
+        cache: ${{ inputs.cache }}
+        backend: ${{ fromJSON(fromJSON(inputs.run).cache || '"rust-cache"') }}

@@ -24,7 +24,9 @@ from collections import namedtuple
 
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+# The workspace is where this runs, not where the script lives (.ci/ in another repo).
+ROOT = subprocess.run(["git", "rev-parse", "--show-toplevel"], check=True, capture_output=True,
+                      text=True).stdout.strip()
 sys.path.insert(0, HERE)
 
 Violation = namedtuple("Violation", "kind test twin detail")
@@ -90,7 +92,7 @@ def light(package, crate):
 
     import config
     import exceptions
-    out = os.path.join(HERE, "report", package)
+    out = os.path.join(ROOT, "coverage", "report", package)
     data = json.load(open(os.path.join(out, "regions.json")))
     left_out = config.excluded(package)
     dropped = {i for i, r in enumerate(data["regions"]) if left_out(r[0])}
@@ -235,7 +237,7 @@ def main(argv):
             report([describe(package, v) for v in found])
         # The same findings as data, for the CI report.
         import json
-        with open(os.path.join(HERE, "report", package, "findings.json"), "w") as f:
+        with open(os.path.join(ROOT, "coverage", "report", package, "findings.json"), "w") as f:
             json.dump([v._asdict() for v in found], f)
         blocking = [v for v in found if v.kind != "near"]
         if not blocking:

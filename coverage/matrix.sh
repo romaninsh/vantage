@@ -31,7 +31,10 @@ baseline=0
 if [[ "${1:-}" = "--baseline" ]]; then baseline=1; shift; fi
 pkg=$1
 jaccard=${2:-0.9}
-root=$(cd "$(dirname "$0")/.." && pwd)
+# The workspace is where this runs; the tools are next to this script (another
+# repo runs them from a checkout of vantage under .ci/).
+root=$(git rev-parse --show-toplevel)
+here=$(cd "$(dirname "$0")" && pwd)
 out="$root/coverage/report/$pkg"
 base="$root/coverage/report/$pkg.baseline"
 rm -rf "$out"
@@ -42,7 +45,7 @@ log="$out/run.log"
 # MATRIX_RS=<binary> uses a prebuilt one (CI builds it once per run).
 matrix_rs=${MATRIX_RS:-$root/target/matrix-rs/release/matrix-rs}
 if [[ -z "${MATRIX_RS:-}" ]]; then
-  cargo build --release --quiet --manifest-path "$root/coverage/matrix-rs/Cargo.toml" \
+  cargo build --release --quiet --manifest-path "$here/matrix-rs/Cargo.toml" \
     --target-dir "$root/target/matrix-rs"
 fi
 
@@ -74,13 +77,13 @@ m = json.load(sys.stdin)
 print(next(os.path.dirname(p["manifest_path"]) for p in m["packages"] if p["name"] == sys.argv[1]))' "$pkg")
 
 # The package's excluded paths (coverage/config.yaml), for matrix-rs's pairs.json.
-MATRIX_EXCLUDE=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import config; print(",".join(config.patterns(sys.argv[2])))' "$root/coverage" "$pkg") \
+MATRIX_EXCLUDE=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import config; print(",".join(config.patterns(sys.argv[2])))' "$here" "$pkg") \
 "$matrix_rs" "$out/list.json" "$dir" "$out" "${JOBS:-$(getconf _NPROCESSORS_ONLN)}"
-python3 -I "$root/coverage/matrix.py" "$out" | tee -a "$log"
+python3 -I "$here/matrix.py" "$out" | tee -a "$log"
 # MATRIX_REPORTS=0 (CI) stops at regions.json: the duplicate check reads only
 # that, and the cluster reports are for people.
 if [[ "${MATRIX_REPORTS:-1}" = 0 ]]; then exit 0; fi
-python3 -I "$root/coverage/report.py" "$out" "$dir" "$pkg" "$jaccard" | tee -a "$log"
+python3 -I "$here/report.py" "$out" "$dir" "$pkg" "$jaccard" | tee -a "$log"
 
 if [[ "$baseline" = 1 ]]; then
   rm -rf "$base"
@@ -90,5 +93,5 @@ if [[ "$baseline" = 1 ]]; then
   cp -R "$dir/src" "$base/source/src"
   echo "baseline saved: $base"
 elif [[ -d "$base" ]]; then
-  python3 -I "$root/coverage/lost.py" "$pkg" "$dir" "$base" "$out" | tee "$out/lost.txt"
+  python3 -I "$here/lost.py" "$pkg" "$dir" "$base" "$out" | tee "$out/lost.txt"
 fi
