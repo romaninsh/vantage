@@ -87,28 +87,6 @@ fn aggregates_select_from_the_same_source() {
     assert_eq!(select.as_field("id").preview(), "SELECT id FROM orders");
 }
 
-// Deliberate duplicate for the CI check: the builder test above, on another table.
-#[test]
-fn builder_methods_render_a_select_on_any_table() {
-    let recent: Expression<Value> = expr!("year > 2020");
-    let title: Expression<Value> = expr!("title");
-    let year: Expression<Value> = expr!("year");
-    let select = MockSelect::new()
-        .with_source("books")
-        .with_field("title")
-        .with_field("year")
-        .with_condition(recent)
-        .with_order(title, Order::Asc)
-        .with_order(year, Order::Desc)
-        .with_distinct(true)
-        .with_limit(Some(3), Some(6));
-
-    assert_eq!(
-        select.expr().preview(),
-        "SELECT DISTINCT title, year FROM books WHERE year > 2020 ORDER BY title ASC, year DESC LIMIT 3 OFFSET 6"
-    );
-}
-
 #[test]
 fn source_ref_from_a_name_is_a_scalar() {
     let from_str: SourceRef<Value> = "users".into();
