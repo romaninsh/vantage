@@ -180,7 +180,7 @@ async fn observer() -> Client {
 }
 
 #[tokio::test]
-async fn watch_runs_on_stream_client() -> TestResult {
+async fn a_stream_runs_on_the_stream_client_and_leaves_current_op_when_dropped() -> TestResult {
     let db = setup(&format!("appName={MAIN_APP_NAME}")).await;
     let observer = observer().await;
     let task = poll_watch(&tasks(&db)).await;
@@ -190,6 +190,9 @@ async fn watch_runs_on_stream_client() -> TestResult {
     assert_eq!(main, 0, "a change stream ran on the main client");
 
     stop(task).await;
+    let ops = wait_until(&observer, &db, |ops| ops.is_empty()).await;
+    assert!(ops.is_empty(), "cursor outlived its stream: {ops:?}");
+
     teardown(&db).await;
     Ok(())
 }
@@ -222,35 +225,21 @@ async fn open_stream_does_not_block_reads() -> TestResult {
 }
 
 #[tokio::test]
-async fn dropped_stream_leaves_current_op() -> TestResult {
-    let db = setup("").await;
-    let observer = observer().await;
-    let task = poll_watch(&tasks(&db)).await;
-    let ops = wait_until(&observer, &db, |ops| !ops.is_empty()).await;
-    assert!(!ops.is_empty(), "change-stream cursor never appeared");
-
-    stop(task).await;
-    let ops = wait_until(&observer, &db, |ops| ops.is_empty()).await;
-    assert!(ops.is_empty(), "cursor outlived its stream: {ops:?}");
-
-    teardown(&db).await;
-    Ok(())
-}
-
-#[tokio::test]
 async fn stream_pool_size_caps_concurrent_streams() -> TestResult {
     let observer = observer().await;
     let span = Duration::from_millis(2500);
 
     // A zero pool would only fail on the first watch; it is raised to one.
+    // Vistas on clones of the handle share its stream client, so its one connection.
     let narrow = setup("").await.with_stream_pool_size(0);
     assert_eq!(narrow.stream_pool_size(), 1);
-    let polls = poll_all(&[&tasks(&narrow)], 3).await;
+    let (left, right) = (tasks(&narrow.clone()), tasks(&narrow.clone()));
+    let polls = poll_all(&[&left, &right], 2).await;
     expect_get_more(&observer, &narrow, STREAM_APP_NAME).await;
     let peak = peak_get_mores(&observer, &narrow, STREAM_APP_NAME, span).await;
     assert!(
         peak <= 1,
-        "streams over a one-connection pool ran side by side (peak {peak})"
+        "streams over a one-connection pool, or clones, ran side by side (peak {peak})"
     );
     stop_all(polls).await;
     teardown(&narrow).await;
@@ -262,25 +251,6 @@ async fn stream_pool_size_caps_concurrent_streams() -> TestResult {
     assert!(peak >= 2, "default pool serialised streams (peak {peak})");
     stop_all(polls).await;
     teardown(&wide).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn clones_share_one_stream_client() -> TestResult {
-    let observer = observer().await;
-    let db = setup("").await.with_stream_pool_size(1);
-    let (left, right) = (tasks(&db.clone()), tasks(&db.clone()));
-    let polls = poll_all(&[&left, &right], 2).await;
-
-    expect_get_more(&observer, &db, STREAM_APP_NAME).await;
-    let peak = peak_get_mores(&observer, &db, STREAM_APP_NAME, Duration::from_millis(2500)).await;
-    assert!(
-        peak <= 1,
-        "clones ran streams on separate clients (peak {peak})"
-    );
-
-    stop_all(polls).await;
-    teardown(&db).await;
     Ok(())
 }
 

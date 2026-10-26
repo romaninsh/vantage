@@ -37,16 +37,7 @@ fn map(pairs: &[(&str, Dynamic)]) -> Dynamic {
 // ── Constructors ───────────────────────────────────────────────────────────
 
 #[test]
-fn oid_builds_an_object_id_from_24_hex_characters() {
-    let oid = ObjectId::new();
-    assert_eq!(
-        bson_of(&format!(r#"mongo::oid("{oid}")"#)),
-        Bson::ObjectId(oid)
-    );
-}
-
-#[test]
-fn oid_given_an_object_id_returns_it_as_is() {
+fn oid_builds_an_object_id_from_24_hex_characters_and_returns_an_object_id_as_is() {
     let oid = ObjectId::new();
     assert_eq!(
         bson_of(&format!(r#"mongo::oid(mongo::oid("{oid}"))"#)),
@@ -71,16 +62,7 @@ fn oid_with_bad_hex_errors_naming_the_constructor_and_the_value() {
 }
 
 #[test]
-fn date_builds_a_bson_datetime_from_rfc_3339_text() {
-    let expected = DateTime::parse_rfc3339_str("2026-01-02T03:04:05Z").unwrap();
-    assert_eq!(
-        bson_of(r#"mongo::date("2026-01-02T03:04:05Z")"#),
-        Bson::DateTime(expected)
-    );
-}
-
-#[test]
-fn date_given_a_datetime_returns_it_as_is() {
+fn date_builds_a_datetime_from_rfc_3339_text_and_returns_a_datetime_as_is() {
     let expected = DateTime::parse_rfc3339_str("2026-01-02T03:04:05Z").unwrap();
     assert_eq!(
         bson_of(r#"mongo::date(mongo::date("2026-01-02T03:04:05Z"))"#),

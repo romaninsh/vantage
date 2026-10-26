@@ -13,11 +13,16 @@ use vantage_vista::{Capability, FilterOp, SortDirection};
 use super::{ORDER, TestResult, column, orders, pair, resolver, seed, setup, spec, teardown, text};
 
 #[tokio::test]
-async fn dotted_column_reads_joined_value() -> TestResult {
+async fn dotted_columns_read_joined_values_one_and_two_hops() -> TestResult {
     let (db, name) = setup().await;
-    seed(&db).await?;
+    let ids = seed(&db).await?;
+    // $lookup compares types strictly: Marty's id as hex text joins nothing.
+    db.doc_collection("orders")
+        .insert_one(doc! { "_id": "o5", "client_id": ids.marty.to_hex(), "item": "almanac" })
+        .await?;
 
-    let rows = orders(&db).list_values().await?;
+    let vista = orders(&db);
+    let rows = vista.list_values().await?;
     assert_eq!(
         column(&rows, "client.name"),
         vec![
@@ -25,12 +30,25 @@ async fn dotted_column_reads_joined_value() -> TestResult {
             pair("o2", Some("Marty")),
             pair("o3", Some("Doc")),
             pair("o4", None),
+            pair("o5", None),
+        ]
+    );
+    assert_eq!(
+        column(&rows, "client.country.name"),
+        vec![
+            pair("o1", Some("USA")),
+            pair("o2", Some("USA")),
+            pair("o3", Some("Canada")),
+            pair("o4", None),
+            pair("o5", None),
         ]
     );
     // The foreign key itself still reads, and no join scaffolding leaks.
     let o1 = &rows["o1"];
-    assert!(text(o1, "client_id").is_some());
+    assert_eq!(text(o1, "client_id"), Some(ids.marty.to_hex()));
     assert!(o1.keys().all(|k| !k.starts_with("__")), "{o1:?}");
+    // Rows whose join finds nothing still count.
+    assert_eq!(vista.count().await?, 5);
 
     teardown(&db, &name).await;
     Ok(())
@@ -67,71 +85,6 @@ async fn typed_table_joins_through_a_target_that_names_no_id_column() -> TestRes
     };
     assert_eq!(joined("o1").as_deref(), Some("Marty"));
     assert_eq!(joined("o2"), None);
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_string_foreign_key_does_not_join_an_object_id_key() -> TestResult {
-    let (db, name) = setup().await;
-    let marty = bson::oid::ObjectId::new();
-    db.doc_collection("clients")
-        .insert_one(doc! { "_id": marty, "name": "Marty" })
-        .await?;
-    db.doc_collection("orders")
-        .insert_many(vec![
-            doc! { "_id": "typed", "client_id": marty, "item": "skateboard" },
-            doc! { "_id": "text", "client_id": marty.to_hex(), "item": "almanac" },
-        ])
-        .await?;
-
-    // $lookup compares types strictly: the hex text joins nothing.
-    let rows = orders(&db).list_values().await?;
-    assert_eq!(
-        column(&rows, "client.name"),
-        vec![pair("typed", Some("Marty")), pair("text", None)]
-    );
-    assert_eq!(rows.len(), 2);
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn dotted_column_two_hops() -> TestResult {
-    let (db, name) = setup().await;
-    seed(&db).await?;
-
-    let rows = orders(&db).list_values().await?;
-    assert_eq!(
-        column(&rows, "client.country.name"),
-        vec![
-            pair("o1", Some("USA")),
-            pair("o2", Some("USA")),
-            pair("o3", Some("Canada")),
-            pair("o4", None),
-        ]
-    );
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn dotted_column_missing_target_is_null() -> TestResult {
-    let (db, name) = setup().await;
-    seed(&db).await?;
-
-    let vista = orders(&db);
-    assert_eq!(vista.count().await?, 4);
-    let o4 = vista
-        .get_value("o4")
-        .await?
-        .expect("dangling order still reads");
-    assert_eq!(text(&o4, "item").as_deref(), Some("hoverboard"));
-    assert_eq!(text(&o4, "client.name"), None);
-    assert_eq!(text(&o4, "client.country.name"), None);
 
     teardown(&db, &name).await;
     Ok(())
