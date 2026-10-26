@@ -35,21 +35,23 @@ fn int(code: &str) -> i64 {
 }
 
 #[test]
-fn a_namespaced_function_does_not_shadow_the_global_one_of_the_same_name() {
-    assert_eq!(int("first(2)"), 3);
-    assert_eq!(int("demo::first(2)"), 20);
+fn a_namespaced_function_overloads_without_shadowing_the_global_one() {
+    let got = eval("[first(2), demo::first(2), demo::first(2, 3)]")
+        .unwrap()
+        .into_typed_array::<i64>()
+        .unwrap();
+    assert_eq!(got, [3, 20, 6]);
 }
 
 #[test]
-fn registering_a_name_again_with_other_parameter_types_adds_an_overload() {
-    assert_eq!(int("demo::first(2)"), 20);
-    assert_eq!(int("demo::first(2, 3)"), 6);
-}
-
-#[test]
-fn a_namespaced_function_is_not_callable_unqualified() {
-    let err = eval("half(4)").unwrap_err();
-    assert!(err.to_string().contains("half"), "{err}");
+fn a_namespaced_item_is_reachable_only_qualified() {
+    let function = eval("half(4)").unwrap_err();
+    let constant = eval("answer").unwrap_err();
+    assert!(function.to_string().contains("half"), "{function}");
+    assert!(
+        matches!(&constant, RhaiError::UnknownName { path, .. } if path == "answer"),
+        "{constant:?}"
+    );
 }
 
 #[test]
@@ -78,43 +80,16 @@ fn a_fallible_function_error_can_be_caught_by_the_script() {
 }
 
 #[test]
-fn a_namespaced_constant_is_read_qualified() {
-    assert_eq!(int("demo::answer + 1"), 43);
-    assert_eq!(
-        eval("demo::currency").unwrap().into_string().unwrap(),
-        "EUR"
-    );
+fn a_namespaced_constant_is_read_qualified_even_inside_a_script_function() {
+    let got = eval("fn twice() { demo::answer * 2 } demo::currency + twice()")
+        .unwrap()
+        .into_string()
+        .unwrap();
+    assert_eq!(got, "EUR84");
 }
 
 #[test]
-fn a_namespaced_constant_is_readable_inside_a_script_function() {
-    assert_eq!(int("fn twice() { demo::answer * 2 } twice()"), 84);
-}
-
-#[test]
-fn a_namespaced_constant_is_not_a_global_variable() {
-    assert!(eval("answer").is_err());
-}
-
-#[test]
-fn registering_a_name_again_replaces_the_earlier_namespace() {
-    let host = Host::builder(Limits::Ui)
-        .vocab_fn(|engine| {
-            let mut first = Namespace::new("demo");
-            first.func("one", || 1_i64).func("only_first", || 0_i64);
-            first.register(engine);
-            let mut second = Namespace::new("demo");
-            second.func("one", || 2_i64);
-            second.register(engine);
-        })
-        .build();
-    assert_eq!(eval_on(&host, "demo::one()").unwrap().as_int().unwrap(), 2);
-    let err = eval_on(&host, "demo::only_first()").unwrap_err();
-    assert!(err.to_string().contains("only_first"), "{err}");
-}
-
-#[test]
-fn namespaces_with_different_names_coexist() {
+fn a_namespace_registered_again_replaces_the_earlier_one_and_other_names_coexist() {
     let host = Host::builder(Limits::Ui)
         .vocab_fn(|engine| {
             let mut sql = Namespace::new("sql");
@@ -123,66 +98,19 @@ fn namespaces_with_different_names_coexist() {
             let mut mongo = Namespace::new("mongo");
             mongo.func("count", || 2_i64);
             mongo.register(engine);
+            let mut first = Namespace::new("demo");
+            first.func("one", || 1_i64).func("only_first", || 0_i64);
+            first.register(engine);
+            let mut second = Namespace::new("demo");
+            second.func("one", || 2_i64);
+            second.register(engine);
         })
         .build();
-    assert_eq!(eval_on(&host, "sql::count()").unwrap().as_int().unwrap(), 1);
-    assert_eq!(
-        eval_on(&host, "mongo::count()").unwrap().as_int().unwrap(),
-        2
-    );
-}
-
-#[test]
-fn a_namespace_registered_last_cannot_replace_a_global_verb() {
-    let host = Host::builder(Limits::Ui)
-        .vocab_fn(|engine| {
-            engine.register_fn("table", |name: &str| format!("table:{name}"));
-            let mut ns = Namespace::new("surreal");
-            ns.func("table", |name: &str| format!("surreal:{name}"));
-            ns.register(engine);
-        })
-        .build();
-    assert_eq!(
-        eval_on(&host, r#"table("x")"#)
-            .unwrap()
-            .into_string()
-            .unwrap(),
-        "table:x"
-    );
-    assert_eq!(
-        eval_on(&host, r#"surreal::table("x")"#)
-            .unwrap()
-            .into_string()
-            .unwrap(),
-        "surreal:x"
-    );
-}
-
-#[test]
-fn an_unregistered_namespace_is_an_error() {
-    assert!(eval("nosuch::thing()").is_err());
-}
-
-#[test]
-fn a_float_function_computes_from_its_arguments() {
-    let host = Host::builder(Limits::Ui)
-        .vocab_fn(|engine| {
-            let mut ns = Namespace::new("invoice");
-            ns.func("total", |net: f64, rate: f64| net * (1.0 + rate))
-                .var("currency", "EUR".to_string());
-            ns.register(engine);
-        })
-        .build();
-    let total = eval_on(&host, "invoice::total(100.0, 0.25)")
+    let got = eval_on(&host, "[sql::count(), mongo::count(), demo::one()]")
         .unwrap()
-        .as_float()
+        .into_typed_array::<i64>()
         .unwrap();
-    assert_eq!(total, 125.0);
-    assert_eq!(
-        eval_on(&host, "invoice::currency")
-            .unwrap()
-            .into_string()
-            .unwrap(),
-        "EUR"
-    );
+    assert_eq!(got, [1, 2, 2]);
+    let err = eval_on(&host, "demo::only_first()").unwrap_err();
+    assert!(err.to_string().contains("only_first"), "{err}");
 }

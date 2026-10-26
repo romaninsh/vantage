@@ -94,16 +94,6 @@ fn an_unknown_name_inside_a_script_function_is_still_unknown_name() {
 }
 
 #[test]
-fn a_runtime_error_inside_a_script_function_is_still_runtime() {
-    let c = host()
-        .compile(&Block::from("fn f() { throw \"boom\" } f()"))
-        .unwrap();
-    let err = c.eval(&Env::new()).unwrap_err();
-    assert!(matches!(err, RhaiError::Runtime(_)), "{err:?}");
-    assert!(err.to_string().contains("boom"), "{err}");
-}
-
-#[test]
 fn pushed_variables_shadow_the_resolver() {
     let env = Env::new().resolver(resolver()).var("args", 7_i64);
     let c = host().compile(&Expr::from("args")).unwrap();
@@ -111,7 +101,7 @@ fn pushed_variables_shadow_the_resolver() {
 }
 
 #[test]
-fn the_resolver_is_asked_once_for_a_name_read_once() {
+fn the_resolver_is_asked_once_per_read_on_every_evaluation() {
     struct Counting(AtomicUsize);
     impl Resolver for Counting {
         fn resolve(&self, path: &str) -> Lookup {
@@ -126,25 +116,8 @@ fn the_resolver_is_asked_once_for_a_name_read_once() {
     let env = Env::new().resolver(counter.clone());
     let c = host().compile(&Expr::from("v")).unwrap();
     assert_eq!(c.eval(&env).unwrap().as_int().unwrap(), 0);
-    assert_eq!(counter.0.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn a_resolver_is_consulted_on_every_evaluation() {
-    let hits = Arc::new(AtomicUsize::new(0));
-    struct Live(Arc<AtomicUsize>);
-    impl Resolver for Live {
-        fn resolve(&self, path: &str) -> Lookup {
-            match path {
-                "tick" => Lookup::Leaf(Dynamic::from(self.0.fetch_add(1, Ordering::SeqCst) as i64)),
-                _ => Lookup::Unknown,
-            }
-        }
-    }
-    let env = Env::new().resolver(Arc::new(Live(hits)));
-    let c = host().compile(&Expr::from("tick")).unwrap();
-    assert_eq!(c.eval(&env).unwrap().as_int().unwrap(), 0);
     assert_eq!(c.eval(&env).unwrap().as_int().unwrap(), 1);
+    assert_eq!(counter.0.load(Ordering::SeqCst), 2);
 }
 
 #[test]

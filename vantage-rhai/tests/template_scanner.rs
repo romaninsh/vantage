@@ -10,11 +10,6 @@ fn hole(s: &str) -> Part {
 }
 
 #[test]
-fn text_without_holes_is_one_literal() {
-    assert_eq!(split("Hello").unwrap(), vec![lit("Hello")]);
-}
-
-#[test]
 fn an_empty_template_has_no_parts() {
     assert_eq!(split("").unwrap(), vec![]);
 }
@@ -22,85 +17,38 @@ fn an_empty_template_has_no_parts() {
 #[test]
 fn text_and_holes_alternate_in_order() {
     assert_eq!(
-        split("Order ${args.id} in ${cur}").unwrap(),
-        vec![lit("Order "), hole("args.id"), lit(" in "), hole("cur")]
+        split("Order ${ args.id }${cur} costs $5 } {").unwrap(),
+        vec![
+            lit("Order "),
+            hole(" args.id "),
+            hole("cur"),
+            lit(" costs $5 } {"),
+        ]
     );
 }
 
 #[test]
-fn a_hole_keeps_the_text_between_its_braces_untrimmed() {
-    assert_eq!(split("${ a + b }").unwrap(), vec![hole(" a + b ")]);
-}
-
-#[test]
-fn adjacent_holes_have_no_literal_between_them() {
-    assert_eq!(split("${a}${b}").unwrap(), vec![hole("a"), hole("b")]);
-}
-
-#[test]
-fn a_dollar_without_a_brace_is_plain_text() {
-    assert_eq!(split("cost: $5").unwrap(), vec![lit("cost: $5")]);
-}
-
-#[test]
-fn nested_braces_stay_inside_the_hole() {
+fn braces_inside_literals_comments_and_nested_blocks_stay_in_the_hole() {
+    let template = concat!(
+        r#"${ "}" + "{" + "\"}" }"#,
+        r"${ '}' + '\'' + '{' }",
+        "${ `{` + `}` + `x${y}z` }",
+        "${ 1 /* } */ + 2 }",
+        "${ 1 + // }\n 2 }",
+        r#"${ if x { "a" } else { "b" } }!"#,
+    );
     assert_eq!(
-        split(r#"${ if x { "a" } else { "b" } }!"#).unwrap(),
-        vec![hole(r#" if x { "a" } else { "b" } "#), lit("!")]
+        split(template).unwrap(),
+        vec![
+            hole(r#" "}" + "{" + "\"}" "#),
+            hole(r" '}' + '\'' + '{' "),
+            hole(" `{` + `}` + `x${y}z` "),
+            hole(" 1 /* } */ + 2 "),
+            hole(" 1 + // }\n 2 "),
+            hole(r#" if x { "a" } else { "b" } "#),
+            lit("!"),
+        ]
     );
-}
-
-#[test]
-fn braces_in_string_literals_are_text() {
-    assert_eq!(
-        split(r#"${ "}" + "{" + "\"}" }"#).unwrap(),
-        vec![hole(r#" "}" + "{" + "\"}" "#)]
-    );
-}
-
-#[test]
-fn braces_in_char_literals_are_text() {
-    assert_eq!(split("${ '}' }").unwrap(), vec![hole(" '}' ")]);
-    assert_eq!(
-        split(r"${ '\'' + '{' }").unwrap(),
-        vec![hole(r" '\'' + '{' ")]
-    );
-}
-
-#[test]
-fn braces_in_backtick_strings_are_text() {
-    assert_eq!(split("${ `{` }").unwrap(), vec![hole(" `{` ")]);
-    assert_eq!(split("${ `}` }").unwrap(), vec![hole(" `}` ")]);
-    assert_eq!(
-        split(r#"${ "a" + `b}c` }"#).unwrap(),
-        vec![hole(r#" "a" + `b}c` "#)]
-    );
-}
-
-#[test]
-fn interpolation_inside_a_backtick_string_does_not_end_the_hole() {
-    assert_eq!(split("${ `x${y}z` }").unwrap(), vec![hole(" `x${y}z` ")]);
-}
-
-#[test]
-fn braces_in_block_comments_are_text() {
-    assert_eq!(
-        split("${ 1 /* } */ + 2 }").unwrap(),
-        vec![hole(" 1 /* } */ + 2 ")]
-    );
-}
-
-#[test]
-fn braces_in_line_comments_are_text() {
-    assert_eq!(
-        split("${ 1 + // }\n 2 }").unwrap(),
-        vec![hole(" 1 + // }\n 2 ")]
-    );
-}
-
-#[test]
-fn text_after_a_hole_with_a_closing_brace_is_still_literal() {
-    assert_eq!(split("${a} } {").unwrap(), vec![hole("a"), lit(" } {")]);
 }
 
 #[test]

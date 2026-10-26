@@ -113,6 +113,34 @@ message or kind, where the contract names it). Two bare `is_err()` asserts show 
 and a mistyped field for their different branches, but asserted only `is_err()` on both. Where
 the contract doesn't name the messages, `assert_ne!` on them shows the branches differ.*
 
+## R12. Identical coverage isn't a duplicate by itself: a legit case gets an exception
+
+Not every duplicate the matrix or CI's duplicate check reports must be resolved. Two tests that
+run the same code in this crate but check different behaviours (different calls, different
+promises, their asserts showing the difference per R11) stay as two tests. They aren't merged
+into one test just to satisfy the check. The proposal names each such test and gives the exact
+`coverage/vend-exception.sh <package> <test id> "<reason>"` command; the user vends it. Tests that
+check the same behaviour still merge or go (R1, R3).
+
+*Case: vantage-sql #478. CI paired the sqlite vista metadata tests (capability flags, Orderable
+columns, a refused `set_order`) because each only builds a `from_table` vista in vantage-sql. The
+user ruled they stay apart with exceptions rather than become one test.*
+
 ## Agreed in runs
 
-(none yet)
+### A4. Repetition or a separate subject: one call each, one test
+
+Some cases can't share one call. Either repeating the call is the behaviour (a slot evaluated
+against a second env, a second compile that must hit or miss the cache, a second batch through
+one pipe), or each case needs its own subject (hosts built with different limits). These cases go
+in one test: one setup, then one plain line per repetition or subject, each with its assert.
+Every case that can share a call still does, and the proposal names A4 for each extra call.
+This is another exception to R2's single call, next to R9, A1 and A2. A2 covers different inputs
+that each need their own result. A4 covers calls whose repetition is the point, or cases that need
+another subject.
+
+*Case: vantage-rhai `host.rs` `each_host_stops_work_past_its_operation_ceiling`: the UI, background
+and zero-ceiling hosts get one call each. Background's runaway loop is a second call by R9. The same
+rule allowed the second `eval` in `a_compiled_slot_evaluates_against_whichever_env_it_is_given` and
+`the_resolver_is_asked_once_per_read_on_every_evaluation`, the paired `ast`/`compile` calls in the
+cache tests, and the second batch in `rows_are_answered_in_order_by_one_script_that_keeps_its_state`.*
