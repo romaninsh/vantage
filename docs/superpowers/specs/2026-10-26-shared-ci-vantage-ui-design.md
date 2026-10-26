@@ -153,7 +153,7 @@ romaninsh/vantage (public)                 atk4/vantage-ui (private)
   .github/actions/  setup-rust, ci-results   (used only from inside the shared workflows)
   script/ci-changes, script/ci-audit, coverage/*
                                             .github/ci-crates.yaml        (this repo's settings)
-                                            .github/ci-setup/action.yml   (apt packages)
+                                            .github/ci-setup.sh           (apt packages)
 ```
 
 `changes`, `audit` and `summary` move out of vantage's ci.yaml into reusable workflows. vantage's
@@ -223,7 +223,7 @@ runner: warp-ubuntu-latest-arm64-8x   # build, matrix-rs, suites; default ubuntu
 small_runner: ubuntu-latest           # audit, summary (changes takes a `runner` input instead,
                                       # default ubuntu-latest: it reads this file, so can't use it)
 warm: full-on-miss                    # post-merge: changed (default) | full-on-miss
-archive_exclude: "binary(compile_fail)"  # nextest filter kept out of the archive
+suite_exclude: "package(ui-component) and test(/^compile_fail::/)"  # tests the suites and the matrix skip
 cache: warpbuild                      # warpbuild | rust-cache (default rust-cache)
 dependents: true                      # test reverse dependents of changed crates (default false)
 versioning:
@@ -246,10 +246,11 @@ How the shared workflows get these values:
 - **Runner labels and `env`:** a reusable workflow's `runs-on` can't read a file in the caller.
   So `changes` (which already reads the config) emits them as outputs, and the shared jobs use
   `runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}`. The same goes for `env`.
-- **The `setup` hook:** a composite action in the caller's repo, at a fixed path,
-  `.github/ci-setup/action.yml`, for apt packages and the like. Every shared cargo job runs it
-  with `uses: ./.github/ci-setup` (this resolves in the caller's checkout, as intended) when
-  `changes` reports that the file exists.
+- **The `setup` hook:** a bash script in the caller's repo, at a fixed path,
+  `.github/ci-setup.sh`, for apt packages and the like (vantage-ui's stops the apt timers,
+  waits at most `DPKG::Lock::Timeout=180` for the dpkg lock, and installs GPUI's libraries).
+  Every shared cargo job's `prepare` step runs it when the file exists. A script rather than
+  a composite action: a missing composite can't be referenced from inside another one.
 - **Private git dependencies:** composite actions can't read `secrets`, so the hook can't load
   deploy keys. The shared workflows instead declare optional secrets under
   `on.workflow_call.secrets`:
@@ -395,9 +396,12 @@ hand-copied pin that can drift from the `uses:` pin. `lint` itself stays per rep
 - **Doctests:** a repo-local `doctests` job in each consumer, as vantage already has. vantage-ui's
   runs `cargo test --doc --workspace --all-features` with the ssh-agent and the apt hook.
 - **trybuild compile_fail tests** (framework/component): they run cargo at test time. Coverage
-  RUSTFLAGS can change their stderr snapshots. They are excluded from the archive with a config
-  key, `archive_exclude: "binary(compile_fail)"` (a nextest filter), and run in the same
-  repo-local `doctests` job, without instrumentation.
+  RUSTFLAGS can change their stderr snapshots. They are left out of the suites' run and the
+  coverage matrix with a config key, `suite_exclude: "package(ui-component) and
+  test(/^compile_fail::/)"` (a nextest filter), and run in the same repo-local `doctests` job,
+  without instrumentation. The filter applies when the tests run, not to the archive: a
+  `nextest archive` filter can name packages and binaries, not tests, so their binary still
+  ships in the archive.
 - **Suites:** they get the ssh-agent step and the hook like every shared cargo job. Some tests
   shell out to tools the hook installs.
 

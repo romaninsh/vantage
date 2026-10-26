@@ -158,11 +158,14 @@ def dependents(changed, deps):
     return out
 
 
-def version_only(span, path):
-    """The diff to a Cargo.toml changes nothing but its `version = ` line."""
-    lines = [l for l in run("git", "diff", "-U0", span, "--", path).splitlines()
-             if l[:1] in "+-" and not l.startswith(("+++", "---"))]
-    return bool(lines) and all(re.match(r"[+-]\s*version\s*=", l) for l in lines)
+def version_only(base, head, path):
+    """The Cargo.toml changes nothing but [package] version: parsed, not by
+    line, so a dependency's `version = ` in a [dependencies.x] table counts."""
+    def without_version(rev):
+        manifest = tomllib.loads(show(rev, path) or "")
+        manifest.get("package", {}).pop("version", None)
+        return manifest
+    return without_version(base) == without_version(head)
 
 
 def app_version(settings, dirs, base, head, owed, labels):
@@ -311,7 +314,7 @@ def main():
     if mode == "app":
         # Every PR bumps the app: the bump alone tests nothing.
         app_toml = f"{dirs[versioning['crate']]}/Cargo.toml"
-        if app_toml in files and version_only(span, app_toml):
+        if app_toml in files and version_only(base, a.head, app_toml):
             unselect.add(app_toml)
         if versioning.get("plist"):
             unselect.add(versioning["plist"])

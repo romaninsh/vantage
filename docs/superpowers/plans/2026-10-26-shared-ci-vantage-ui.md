@@ -136,9 +136,9 @@ onto it.
   | `build_runner` | JSON string | `runner` |
   | `small_runner` | JSON string | `"ubuntu-latest"` |
   | `env` | JSON object | `{}` |
-  | `setup` | `true` if `.github/ci-setup/action.yml` exists | — |
+  | `setup` | `true` if `.github/ci-setup.sh` exists | — |
   | `warm` | `"changed"` or `"full-on-miss"` | `"changed"` |
-  | `archive_exclude` | nextest filter string | `""` |
+  | `suite_exclude` | nextest filter string, applied when the suites and the matrix run | `""` |
   | `skill_url` | string | vantage's current SKILL URL |
   | `versioning_mode` | `"crates"`, `"app"` or `"none"` | `"crates"` |
   | `app` | JSON object (app mode), see below | `{}` |
@@ -166,16 +166,16 @@ onto it.
 
 - [ ] **Step 1: Write the draft vantage-ui config** at `/tmp/ui-ci-crates.yaml`. Use the spec's
   example block with `runner: warp-ubuntu-latest-arm64-8x`, `dependents: true`, `warm:
-  full-on-miss`, `archive_exclude: "binary(compile_fail)"`, `versioning.mode: app`, `crate:
+  full-on-miss`, `suite_exclude: "package(ui-component) and test(/^compile_fail::/)"`, `versioning.mode: app`, `crate:
   vantage-ui`, `plist: crates/app/vantage-ui/resources/Info.plist` and `skip_label:
   skip-changelog`. Add `global: [Cargo.toml, rust-toolchain*, .config/**]`, `ci_self:
   [".github/**"]` and `coverage_ignore: ["vantage-ui", "catalog", "auto-update", "feeds-ui", "services-ui",
   "agent-ui", "csv-dio", "form-tester", "inventory-viewer", "select-tester", "sqlite-dio",
   "story"]`. Take the exact package names from `cargo metadata` in vantage-ui.
 - [ ] **Step 2: Implement the defaults and the plain outputs** (runner, env, setup, warm,
-  archive_exclude, skill_url, versioning_mode, and slot on groups). Replay Task 1's five commits
+  suite_exclude, skill_url, versioning_mode, and slot on groups). Replay Task 1's five commits
   in vantage.
-  - Expected: `diff <(grep -v -E '^(runner|build_runner|small_runner|env|setup|warm|archive_exclude|skill_url|versioning_mode|app)=' new) /tmp/ci-before/X.txt`
+  - Expected: `diff <(grep -v -E '^(runner|build_runner|small_runner|env|setup|warm|suite_exclude|skill_url|versioning_mode|app)=' new) /tmp/ci-before/X.txt`
     shows only the added `"slot":n` in `groups`.
 - [ ] **Step 3: Implement `dependents`.** In a scratch copy of vantage-ui (`git -C
   /Users/rw/Work/vantage-ui worktree add /tmp/ui-replay gh/main`), with `/tmp/ui-crates.yaml`
@@ -254,8 +254,8 @@ patches resolve the private dependencies.
      - `env: HAS_SSH_KEYS: ${{ secrets.CI_SSH_KEYS != '' }}`;
      - `webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387` with
        `if: env.HAS_SSH_KEYS == 'true'`;
-     - `uses: ./.github/ci-setup` with `if: fromJSON(inputs.setup)` (in tests.yaml, where it
-       has the changes outputs) or a `hashFiles('.github/ci-setup/action.yml') != ''` guard;
+     - `bash .github/ci-setup.sh`, guarded by `hashFiles('.github/ci-setup.sh') != ''` (a
+       script, not a composite action: a missing composite can't be referenced from another);
      - `uses: ./.ci/.github/actions/setup-rust`.
 - **`changes.yaml`:**
   - Inputs: `base` (string), `runner` (string, default `ubuntu-latest`), `mode` (`pr` or
@@ -270,13 +270,16 @@ patches resolve the private dependencies.
     `actions/cache/restore` and `lookup-only: true`, using the same key setup-rust builds. On a
     miss it sets `all=true`.
 - **`tests.yaml`:**
-  - Inputs: the existing ones, plus `runner`, `build_runner`, `env` and `archive_exclude`.
+  - Inputs: `mode`, `base`, and `run`: the changes outputs as one JSON string (runner,
+    build_runner, env, groups, suite_exclude…).
   - Secrets: `CI_SSH_KEYS`, `COVERAGE_EXCEPTIONS_KEY`.
   - `runs-on: ${{ fromJSON(inputs.runner) }}`. `build` uses `build_runner`.
   - `env` is applied with a first step that writes `GITHUB_ENV` from `fromJSON(inputs.env)`.
   - Archives are uploaded through the fixed slots `ci-tests-1`..`ci-tests-6` (guarded by
     `hashFiles`). Each suite downloads `ci-tests-${{ matrix.group.slot }}`.
-  - `archive_exclude` is appended to each group's `-E` filter as `and not (<filter>)`.
+  - `suite_exclude` is applied where the tests run: the suite's nextest run gets `-E "not
+    (<filter>)"` and the matrix gets it as `MATRIX_SKIP`. A `nextest archive` filter can't
+    name tests, only packages and binaries.
   - When `env` sets `CI_TIME: "1"`, the archive loop runs under `/usr/bin/time -v`, so the build
     log shows peak memory (`Maximum resident set size`).
   - nextest config: the caller's tracked `.config/nextest.toml` if `git ls-files --error-unmatch`
@@ -330,8 +333,8 @@ patches resolve the private dependencies.
 - Create: `.github/ci-crates.yaml` (from `/tmp/ui-ci-crates.yaml` in Task 2; add a `perf:` list
   of crate names whose change runs perf: framework/perf, framework/core, framework/gpui,
   framework/layout, and every crate with a `*_workbench` bin, found with `cargo metadata`)
-- Create: `.github/ci-setup/action.yml` (composite; the apt step from today's ci.yaml lines 80–98,
-  including the timer stop and `DPKG::Lock::Timeout=180`)
+- Create: `.github/ci-setup.sh` (bash; the apt step from today's ci.yaml lines 80–98, including
+  the timer stop and `DPKG::Lock::Timeout=180`)
 - Create: `.github/workflows/post-merge.yaml`
 - Create: `.github/workflows/ci-label.yaml` (a copy of vantage's, plus the `skip-changelog` →
   rerun `summary` and `skip-abi-check` → rerun `plugin-abi-check` rules)
@@ -354,7 +357,7 @@ patches resolve the private dependencies.
       --all-features --all-targets -- -D warnings`);
     - `tests` (shared);
     - `doctests` (local: `cargo test --doc --workspace --all-features`, then `cargo nextest run
-      --workspace --all-features -E 'binary(compile_fail)'` without instrumentation);
+      -p ui-component --all-features -E 'test(/^compile_fail::/)'` without instrumentation);
     - `audit` (shared);
     - `headless-crates`, `client-names`, `client-skill`, `plugin-abi-check` (moved);
     - `perf` (the existing macOS job, `if:` any of `needs.changes.outputs.crates` is in the
